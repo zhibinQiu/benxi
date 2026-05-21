@@ -1,0 +1,63 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+      - 'enhancement'
+  - title: '🐛 Bug Fixes'
+    labels:
+      - 'fix'
+      - 'bugfix'
+      - 'bug'
+  - title: '🧰 Maintenance'
+    labels:
+      - 'chore'
+      - 'maintenance'
+      - 'refactor'
+  - title: '📝 Documentation'
+    labels:
+      - 'docs'
+      - 'documentation'
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+change-title-escapes: '\<*_&' # You can add # and @ to disable mentions
+version-resolver:
+  major:
+    labels:
+      - 'major'
+  minor:
+    labels:
+      - 'minor'
+  patch:
+    labels:
+      - 'patch'
+  default: patch
+template: |
+  > [!WARNING]
+  >
+  > This project is provided "as is" under the [AGPL v3](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/blob/main/LICENSE) license, and no guarantees are provided for the quality and performance of the program. **The entire risk of the program's quality and performance is borne by you.** If the program is found to be defective, you will be responsible for all necessary service, repair, or correction costs.
+  >
+  > Due to limited resources, we do not provide any form of usage assistance or problem-solving. Related issues will be closed directly! (Welcome to submit PRs to improve this project's documentation; Bugs or friendly issues are not affected by this.)
+
+  ## Changes
+
+  $CHANGES
+
+  ## Contributors
+  
+  $CONTRIBUTORS
+
+  ## Windows Specific
+
+  If you are unable to open the file after downloading, please install both [VC17](https://aka.ms/vs/17/release/vc_redist.x64.exe) and [VC15](https://aka.ms/vs/15/release/vc_redist.x64.exe), then try again.
+  ## Assets
+
+  - `pdf2zh-v$RESOLVED_VERSION-BabelDOC-<version>-win64.zip`: pdf2zh **without** assets(font, model, etc.)
+  - `pdf2zh-v$RESOLVED_VERSION-BabelDOC-<version>-with-assets-win64.zip`: (**Recommended**) pdf2zh **with** assets(font, model, etc.)
+
+  > [!NOTE]
+  > **What is the difference between `pdf2zh-v$RESOLVED_VERSION-BabelDOC-<version>-with-assets-win64.zip` and `pdf2zh-v$RESOLVED_VERSION-BabelDOC-<version>-win64.zip`?**
+  >
+  > - If you are downloading and using PDFMathTranslate for the first time, it is recommended to download `pdf2zh-v$RESOLVED_VERSION-BabelDOC-<version>-with-assets-win64.zip`.
+  > - The `pdf2zh-v$RESOLVED_VERSION-BabelDOC-<version>-with-assets-win64.zip` includes resource files (such as fonts and models) compared to `pdf2zh-v$RESOLVED_VERSION-BabelDOC-<version>-win64.zip`.
+  > - The version without assets will also dynamically download resources when running, but the download may fail due to network issues. So starting from the second time, you can use this version. (However, offline environments should still use the version with resource packages)

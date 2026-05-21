@@ -1,0 +1,79 @@
+name: Test and Build Python Package
+
+on:
+  push:
+    branches:
+      - '**'
+      - '!main'
+      - '!master'
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref to checkout'
+        required: false
+        type: string
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        runner:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+    steps:
+      - name: checkout babeldoc metadata
+        uses: actions/checkout@v6
+        with:
+          repository: funstory-ai/BabelDOC
+          path: babeldoctemp1234567
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sparse-checkout: babeldoc/assets/embedding_assets_metadata.py
+      - name: Cached Assets
+        id: cache-assets
+        uses: actions/cache@v4.2.2
+        with:
+          path: ~/.cache/babeldoc
+          key: test-1-babeldoc-assets-${{ hashFiles('babeldoctemp1234567/babeldoc/assets/embedding_assets_metadata.py') }}
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Setup uv with Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+          activate-environment: true
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Test - Unit Test
+        run: |
+          uv run pytest .
+
+      - name: Test - Translate a PDF file with plain text only
+        run: uv run pdf2zh_next ./test/file/translate.cli.plain.text.pdf --output ./test/file
+
+      - name: Test - Translate a PDF file figure
+        run: uv run pdf2zh_next ./test/file/translate.cli.text.with.figure.pdf --output ./test/file
+
+      # - name: Test - Translate a PDF file with unknown font
+      #   run:
+      #     pdf2zh_next ./test/file/translate.cli.font.unknown.pdf
+
+      - name: Test - Start GUI and exit
+        run: timeout 10 uv run pdf2zh_next --gui  || code=$?; if [[ $code -ne 124 && $code -ne 0 ]]; then exit $code; fi
+
+      - name: Build as a package
+        run: uv build
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-results-${{ matrix.python-version }}-${{ matrix.runner }}
+          path: ./test/file/

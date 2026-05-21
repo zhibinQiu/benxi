@@ -1,0 +1,59 @@
+site_name: PDF 翻译与文档平台
+site_description: PDF 科学文献翻译与企业文档 AI 平台（中文文档）
+repo_url: https://github.com/PDFMathTranslate-next/PDFMathTranslate-next
+edit_uri: edit/main/docs/zh/
+
+use_directory_urls: false
+docs_dir: docs/zh
+
+theme:
+  name: material
+  language: zh
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: red
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: pink
+  favicon: ../images/logo_photo.svg
+  logo: ../images/logo_photo.svg
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - 主页: index.md
+  - 快速开始:
+    - 概览: getting-started/getting-started.md
+    - 安装:
+      - Windows EXE: getting-started/INSTALLATION_winexe.md
+      - Docker: getting-started/INSTALLATION_docker.md
+      - uv / pip: getting-started/INSTALLATION_uv.md
+    - 使用:
+      - 命令行: getting-started/USAGE_commandline.md
+      - WebUI: getting-started/USAGE_webui.md
+  - 进阶:
+    - 进阶选项: advanced/advanced.md
+    - 语言代码: advanced/Language-Codes.md
+    - 翻译服务: advanced/Documentation-of-Translation-Services.md
+  - 开发:
+    - 本地开发: development/local-development.md
+    - 文档平台: development/doc-platform.md
+    - REST API: development/rest-api.md
+  - 平台设计:
+    - 功能插件: platform/feature-plugins.md
+  - 支持语言: supported_languages.md
+  - 常见问题: FAQ.md

@@ -1,0 +1,26 @@
+# PDF 翻译与文档平台
+
+基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 翻译，以及企业文档 AI 控制面。
+
+## 使用方式
+
+1. [文档 AI 平台](development/doc-platform.md) — 用户、文档、权限、翻译任务
+2. [命令行翻译](getting-started/USAGE_commandline.md)
+3. [WebUI](getting-started/USAGE_webui.md)
+4. [REST API](development/rest-api.md) — `pdf2zh_next --api`
+
+## 安装
+
+- [快速开始](getting-started/getting-started.md)
+- [Windows EXE](getting-started/INSTALLATION_winexe.md)
+- [Docker](getting-started/INSTALLATION_docker.md)
+- [uv / pip](getting-started/INSTALLATION_uv.md)
+
+## 开发
+
+- [本地开发](development/local-development.md)
+- [功能插件](platform/feature-plugins.md)
+
+## 许可
+
+[AGPL v3](../../LICENSE)

@@ -183,6 +183,15 @@ def _job_export_search_roots(job: Job) -> list[Path]:
     ]
 
 
+def _result_pdf_path(result: Any, watermarked_attr: str, no_watermark_attr: str) -> str | None:
+    """Prefer no-watermark outputs when BabelDOC produced both versions."""
+    nw = getattr(result, no_watermark_attr, None)
+    if nw:
+        return str(nw)
+    p = getattr(result, watermarked_attr, None)
+    return str(p) if p else None
+
+
 def _job_mono_pdf(job: Job) -> Path | None:
     if job.mono_path and Path(job.mono_path).is_file():
         return Path(job.mono_path)
@@ -218,12 +227,12 @@ def _serialize_event(event: dict) -> dict:
         "type": "finish",
         "token_usage": event.get("token_usage"),
         "translate_result": {
-            "mono_pdf_path": str(result.mono_pdf_path)
-            if result.mono_pdf_path
-            else None,
-            "dual_pdf_path": str(result.dual_pdf_path)
-            if result.dual_pdf_path
-            else None,
+            "mono_pdf_path": _result_pdf_path(
+                result, "mono_pdf_path", "no_watermark_mono_pdf_path"
+            ),
+            "dual_pdf_path": _result_pdf_path(
+                result, "dual_pdf_path", "no_watermark_dual_pdf_path"
+            ),
             "auto_extracted_glossary_path": str(
                 result.auto_extracted_glossary_path
             )
@@ -248,11 +257,11 @@ async def _run_job(job: Job, settings: SettingsModel) -> None:
             await job.publish(payload)
             if event["type"] == "finish":
                 result = event["translate_result"]
-                job.mono_path = (
-                    str(result.mono_pdf_path) if result.mono_pdf_path else None
+                job.mono_path = _result_pdf_path(
+                    result, "mono_pdf_path", "no_watermark_mono_pdf_path"
                 )
-                job.dual_path = (
-                    str(result.dual_pdf_path) if result.dual_pdf_path else None
+                job.dual_path = _result_pdf_path(
+                    result, "dual_pdf_path", "no_watermark_dual_pdf_path"
                 )
                 gpath = getattr(result, "auto_extracted_glossary_path", None)
                 job.glossary_path = str(gpath) if gpath else None

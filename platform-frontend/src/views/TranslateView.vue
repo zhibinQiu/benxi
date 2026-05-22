@@ -30,6 +30,10 @@ import {
   RocketOutline,
   ArrowBackOutline,
   SearchOutline,
+  LanguageOutline,
+  SwapHorizontalOutline,
+  CheckmarkCircleOutline,
+  TimeOutline,
 } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import {
@@ -114,15 +118,21 @@ const statusType = computed(() => {
   return "default";
 });
 const currentStep = computed(() => {
-  if (status.value === "done") return 4;
-  if (["running", "submitting"].includes(status.value)) return 4;
-  if (hasPdfSource.value && glossaryFiles.value.length) return 3;
+  if (status.value === "done" || ["running", "submitting"].includes(status.value)) return 3;
   if (hasPdfSource.value) return 2;
   return 1;
 });
-const hasExtractedExport = computed(
-  () => !!(files.value.extracted_json || files.value.extracted_md)
-);
+const statusLabel = computed(() => {
+  const map = {
+    idle: "待开始",
+    submitting: "提交中",
+    running: "翻译中",
+    done: "已完成",
+    error: "失败",
+  };
+  return map[status.value] || status.value;
+});
+const showProgressPanel = computed(() => status.value !== "idle");
 
 function applyJob(job) {
   platformJobId.value = job.platform_job_id;
@@ -367,43 +377,61 @@ async function dl(kind, name) {
 
 <template>
   <div class="translate-page">
-    <n-space align="center" justify="space-between" style="margin-bottom: 16px">
-      <n-button quaternary @click="router.push({ name: 'system-functions' })">
-        <template #icon>
-          <n-icon :component="ArrowBackOutline" />
-        </template>
-        返回系统功能
-      </n-button>
-      <n-tag v-if="platformJobId" size="small" round>任务 {{ platformJobId.slice(0, 8) }}…</n-tag>
-    </n-space>
+    <header class="page-header">
+      <n-space align="center" :size="12" class="header-main">
+        <n-button quaternary @click="router.push({ name: 'system-functions' })">
+          <template #icon>
+            <n-icon :component="ArrowBackOutline" />
+          </template>
+          返回
+        </n-button>
+        <div class="title-icon">
+          <n-icon :size="20" :component="LanguageOutline" />
+        </div>
+        <n-text strong class="page-title">PDF 翻译</n-text>
+        <n-tag v-if="platformJobId" size="small" round>
+          任务 {{ platformJobId.slice(0, 8) }}…
+        </n-tag>
+      </n-space>
+      <n-steps :current="currentStep" size="small" class="header-steps">
+        <n-step title="文档" />
+        <n-step title="配置" />
+        <n-step title="结果" />
+      </n-steps>
+    </header>
 
     <n-alert
       v-if="status === 'running'"
       type="info"
-      title="后台翻译中"
-      style="margin-bottom: 16px"
+      class="page-alert"
       closable
     >
-      可切换至其他菜单，翻译不会中断。完成后将通过消息通知，或在「任务中心」查看。
+      翻译在后台进行，可切换其他页面；完成后在消息或任务中心查看。
     </n-alert>
 
-    <n-alert v-if="error" type="error" :title="error" closable style="margin-bottom: 16px" @close="error = ''" />
+    <n-alert
+      v-if="error"
+      type="error"
+      :title="error"
+      closable
+      class="page-alert"
+      @close="error = ''"
+    />
 
-    <n-steps :current="currentStep" size="small" style="margin-bottom: 20px">
-      <n-step title="文档" description="上传或文档库" />
-      <n-step title="术语表" description="可选" />
-      <n-step title="翻译" description="语言与引擎" />
-      <n-step title="结果" description="下载" />
-    </n-steps>
-
-    <n-grid :cols="1" :y-gap="16" style="max-width: 880px">
-      <n-gi>
-        <n-card title="选择文档" :bordered="false" class="panel">
-          <template #header-extra><n-tag size="small" round>必填</n-tag></template>
+    <n-grid
+      cols="1 m:2 xl:3"
+      responsive="screen"
+      item-responsive
+      :x-gap="20"
+      :y-gap="20"
+      class="translate-grid"
+    >
+      <n-gi span="1 m:1 xl:1">
+        <n-card class="panel panel-fill" size="small" title="选择文档">
           <n-radio-group
             v-model:value="sourceMode"
             size="small"
-            style="margin-bottom: 14px"
+            class="source-toggle"
             :disabled="status === 'running'"
             @update:value="onSourceModeChange"
           >
@@ -415,22 +443,25 @@ async function dl(kind, name) {
             v-if="sourceMode === 'upload'"
             accept=".pdf"
             title="拖拽 PDF 到此处"
-            hint="或点击选择 · 支持学术论文与扫描件"
+            hint="或点击选择文件"
             :file-name="displayFileName"
             icon="doc"
+            compact
             :disabled="status === 'running'"
             @change="onPdfChange"
           />
 
           <div v-else class="library-pick">
-            <n-text v-if="libraryDoc" depth="2" style="display: block; margin-bottom: 10px">
-              已选：{{ libraryDoc.title }}
-              <n-text depth="3">（{{ libraryDoc.file_name }}）</n-text>
-            </n-text>
-            <n-text v-else depth="3" style="display: block; margin-bottom: 10px">
-              仅显示您有权限使用且已上传 PDF 的文档
-            </n-text>
-            <n-space>
+            <div v-if="libraryDoc" class="library-selected">
+              <n-icon :size="18" class="library-selected-icon">
+                <checkmark-circle-outline />
+              </n-icon>
+              <div class="library-selected-body">
+                <n-text strong>{{ libraryDoc.title }}</n-text>
+                <n-text depth="3" class="library-file-name">{{ libraryDoc.file_name }}</n-text>
+              </div>
+            </div>
+            <n-space :size="8">
               <n-button
                 type="primary"
                 secondary
@@ -453,94 +484,72 @@ async function dl(kind, name) {
             </n-space>
           </div>
         </n-card>
-
-        <n-modal
-          v-model:show="showLibraryModal"
-          preset="card"
-          title="选择文档库 PDF"
-          style="width: min(720px, 92vw)"
-        >
-          <n-space vertical :size="12">
-            <n-input
-              v-model:value="libraryKeyword"
-              placeholder="搜索文档标题"
-              clearable
-              @keyup.enter="libraryPage = 1; loadLibraryDocs()"
-            >
-              <template #prefix>
-                <n-icon :component="SearchOutline" />
-              </template>
-            </n-input>
-            <n-button size="small" @click="libraryPage = 1; loadLibraryDocs()">搜索</n-button>
-            <n-data-table
-              :columns="libraryColumns"
-              :data="libraryItems"
-              :loading="libraryLoading"
-              :pagination="{
-                page: libraryPage,
-                pageSize: 20,
-                itemCount: libraryTotal,
-                onUpdatePage: onLibraryPageChange,
-              }"
-              size="small"
-            />
-          </n-space>
-        </n-modal>
       </n-gi>
 
-      <n-gi>
-        <n-card :bordered="false" class="panel panel-glossary">
-          <template #header>
-            <n-space align="center" :size="8">
-              <n-icon :size="18" :depth="2"><book-outline /></n-icon>
-              <span>术语表</span>
-              <n-tag size="small" type="primary" round>推荐</n-tag>
-            </n-space>
-          </template>
-          <template #header-extra>
-            <n-tag v-if="glossarySupported" size="small" type="success" round>当前引擎可用</n-tag>
-            <n-tag v-else size="small" type="warning" round>需 LLM 引擎</n-tag>
-          </template>
-          <n-text depth="3" class="glossary-desc">
-            CSV 表头：<code>source,target,tgt_lng</code> · 目标语言需与下方一致
+      <n-gi span="1 m:1 xl:1">
+        <n-card class="panel panel-fill" size="small" title="翻译配置">
+          <div class="lang-row">
+            <div class="lang-field">
+              <n-text depth="3" class="field-label">源语言</n-text>
+              <n-select
+                v-model:value="langIn"
+                :options="langOptions"
+                filterable
+                :disabled="status === 'running'"
+              />
+            </div>
+            <div class="lang-swap" aria-hidden="true">
+              <n-icon :size="16" :depth="3"><swap-horizontal-outline /></n-icon>
+            </div>
+            <div class="lang-field">
+              <n-text depth="3" class="field-label">目标语言</n-text>
+              <n-select
+                v-model:value="langOut"
+                :options="langOptions"
+                filterable
+                :disabled="status === 'running'"
+              />
+            </div>
+          </div>
+
+          <n-text depth="3" class="field-label">翻译引擎</n-text>
+          <n-select
+            v-model:value="service"
+            :options="engineOptions"
+            :disabled="status === 'running'"
+          />
+
+          <n-divider class="section-divider" />
+
+          <n-text depth="3" class="field-label">
+            术语表
+            <n-text v-if="glossarySupported" depth="3" tag="span" class="glossary-badge">
+              · 当前引擎可用
+            </n-text>
+            <n-text v-else depth="3" tag="span" class="glossary-badge warn">
+              · 需 LLM 引擎
+            </n-text>
           </n-text>
           <file-drop-zone
             accept=".csv"
             multiple
+            compact
             :disabled="!glossarySupported || status === 'running'"
-            title="上传术语表 CSV"
-            hint="支持多文件"
+            title="上传 CSV（可选）"
+            hint="表头 source,target,tgt_lng"
             :file-name="
               glossaryFiles.length
-                ? `已选 ${glossaryFiles.length} 个：${glossaryFiles.map((f) => f.name).join('、')}`
+                ? `已选 ${glossaryFiles.length} 个文件`
                 : ''
             "
             @change="onGlossaryChange"
           />
-        </n-card>
-      </n-gi>
 
-      <n-gi>
-        <n-card title="翻译设置" :bordered="false" class="panel">
-          <n-grid :cols="2" :x-gap="16" :y-gap="16">
-            <n-gi>
-              <n-text depth="2" class="field-label">源语言</n-text>
-              <n-select v-model:value="langIn" :options="langOptions" filterable />
-            </n-gi>
-            <n-gi>
-              <n-text depth="2" class="field-label">目标语言</n-text>
-              <n-select v-model:value="langOut" :options="langOptions" filterable />
-            </n-gi>
-            <n-gi :span="2">
-              <n-text depth="2" class="field-label">翻译引擎</n-text>
-              <n-select v-model:value="service" :options="engineOptions" />
-            </n-gi>
-          </n-grid>
-          <n-divider />
           <n-button
             type="primary"
             size="large"
             block
+            class="start-btn"
             :disabled="!canStart"
             :loading="status === 'running' || status === 'submitting'"
             :render-icon="renderIcon(RocketOutline)"
@@ -548,82 +557,294 @@ async function dl(kind, name) {
           >
             {{ status === "running" || status === "submitting" ? "翻译进行中…" : "开始翻译" }}
           </n-button>
+          <n-text v-if="!hasPdfSource" depth="3" class="start-hint">
+            请先选择 PDF
+          </n-text>
         </n-card>
       </n-gi>
 
-      <n-gi v-if="status !== 'idle'">
-        <n-card title="进度与下载" :bordered="false" class="panel">
-          <n-space vertical :size="14">
-            <n-tag :type="statusType" round size="small">{{ status }}</n-tag>
+      <n-gi span="1 m:2 xl:1">
+        <n-card
+          class="panel panel-fill panel-side"
+          size="small"
+          title="进度与下载"
+          :class="{ 'panel-side-active': showProgressPanel }"
+        >
+          <div v-if="!showProgressPanel" class="side-idle">
+            <n-icon :size="32" :depth="3"><time-outline /></n-icon>
+            <n-text depth="2">提交翻译后在此查看进度与下载</n-text>
+          </div>
+
+          <n-space v-else vertical :size="14" class="side-body">
+            <div class="status-row">
+              <n-tag :type="statusType" round>{{ statusLabel }}</n-tag>
+              <n-text v-if="displayFileName" depth="3" class="status-file">
+                {{ displayFileName }}
+              </n-text>
+            </div>
+
             <n-progress
               v-if="status === 'running' || status === 'done'"
               type="line"
               :percentage="Math.round(progress)"
               indicator-placement="inside"
-              processing
+              :processing="status === 'running'"
+              :status="status === 'done' ? 'success' : 'default'"
               :height="22"
             />
-            <n-text v-if="stage" depth="2" style="font-size: 0.85rem">{{ stage }}</n-text>
+            <n-text v-if="stage" depth="2" class="stage-text">{{ stage }}</n-text>
 
             <template v-if="status === 'done'">
-              <n-space wrap>
-                <n-button secondary :render-icon="renderIcon(DownloadOutline)" @click="dl('mono', 'mono.pdf')">
+              <n-divider class="section-divider" />
+              <div class="download-row">
+                <n-button
+                  type="primary"
+                  :render-icon="renderIcon(DownloadOutline)"
+                  @click="dl('mono', 'mono.pdf')"
+                >
                   单语 PDF
                 </n-button>
-                <n-button secondary :render-icon="renderIcon(DownloadOutline)" @click="dl('dual', 'dual.pdf')">
+                <n-button
+                  secondary
+                  :render-icon="renderIcon(DownloadOutline)"
+                  @click="dl('dual', 'dual.pdf')"
+                >
                   双语 PDF
                 </n-button>
-                <n-button quaternary :render-icon="renderIcon(BookOutline)" @click="dl('glossary', 'glossary.csv')">
+                <n-button
+                  quaternary
+                  :render-icon="renderIcon(BookOutline)"
+                  @click="dl('glossary', 'glossary.csv')"
+                >
                   术语表
                 </n-button>
-              </n-space>
-              <n-divider />
-              <n-text depth="2" class="export-section-title">导出提取内容</n-text>
-              <n-space wrap>
-                <n-button type="primary" ghost :render-icon="renderIcon(DownloadOutline)" @click="dl('extracted-json', 'extracted.json')">
+              </div>
+              <div class="download-row download-row-secondary">
+                <n-button
+                  ghost
+                  :render-icon="renderIcon(DownloadOutline)"
+                  @click="dl('extracted-json', 'extracted.json')"
+                >
                   JSON
                 </n-button>
-                <n-button ghost :render-icon="renderIcon(DownloadOutline)" @click="dl('extracted-md', 'extracted.md')">
+                <n-button
+                  ghost
+                  :render-icon="renderIcon(DownloadOutline)"
+                  @click="dl('extracted-md', 'extracted.md')"
+                >
                   Markdown
                 </n-button>
-              </n-space>
+              </div>
             </template>
           </n-space>
         </n-card>
       </n-gi>
     </n-grid>
+
+    <n-modal
+      v-model:show="showLibraryModal"
+      preset="card"
+      title="选择文档库 PDF"
+      style="width: min(720px, 92vw)"
+    >
+      <n-space align="center" :size="10" style="margin-bottom: 12px">
+        <n-input
+          v-model:value="libraryKeyword"
+          placeholder="搜索文档标题"
+          clearable
+          style="flex: 1"
+          @keyup.enter="libraryPage = 1; loadLibraryDocs()"
+        >
+          <template #prefix>
+            <n-icon :component="SearchOutline" />
+          </template>
+        </n-input>
+        <n-button type="primary" @click="libraryPage = 1; loadLibraryDocs()">搜索</n-button>
+      </n-space>
+      <n-data-table
+        :columns="libraryColumns"
+        :data="libraryItems"
+        :loading="libraryLoading"
+        :pagination="{
+          page: libraryPage,
+          pageSize: 20,
+          itemCount: libraryTotal,
+          onUpdatePage: onLibraryPageChange,
+        }"
+        size="small"
+      />
+    </n-modal>
   </div>
 </template>
 
 <style scoped>
-.panel {
+.translate-page {
+  width: 100%;
+  max-width: none;
+}
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--n-divider-color);
+}
+.header-main {
+  flex-shrink: 0;
+}
+.header-steps {
+  flex: 1;
+  min-width: 280px;
+  max-width: 480px;
+}
+.title-icon {
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #eef2ff 0%, #e8f4f8 100%);
+  color: #4a5fc1;
 }
-.panel-glossary {
-  border: 1px solid var(--n-border-color);
+.page-title {
+  font-size: 1.125rem;
 }
-.glossary-desc {
-  display: block;
-  font-size: 0.82rem;
-  margin-bottom: 1rem;
+.page-alert {
+  margin-bottom: 16px;
 }
-.glossary-desc code {
-  font-size: 12px;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
-  background: var(--n-action-color);
+.translate-grid {
+  width: 100%;
+}
+.panel {
+  border-radius: 10px;
+  height: 100%;
+}
+.panel-fill :deep(.n-card__content) {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.panel-side {
+  position: sticky;
+  top: 16px;
+}
+.panel-side-active {
+  border-color: rgba(91, 141, 239, 0.22);
+}
+.source-toggle {
+  margin-bottom: 4px;
+}
+.section-divider {
+  margin: 4px 0 !important;
+}
+.lang-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.lang-field {
+  flex: 1;
+  min-width: 0;
+}
+.lang-swap {
+  flex-shrink: 0;
+  padding-bottom: 8px;
 }
 .field-label {
   display: block;
-  font-size: 0.78rem;
-  font-weight: 600;
-  margin-bottom: 0.4rem;
+  font-size: 12px;
+  margin-bottom: 6px;
 }
-.export-section-title {
-  font-size: 0.82rem;
+.glossary-badge {
+  font-weight: normal;
+  margin-left: 4px;
+}
+.glossary-badge.warn {
+  color: var(--n-warning-color);
+}
+.start-btn {
+  margin-top: 4px;
   font-weight: 600;
+}
+.start-hint {
+  display: block;
+  text-align: center;
+  font-size: 12px;
 }
 .library-pick {
-  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+.library-selected {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(24, 160, 88, 0.28);
+  background: rgba(24, 160, 88, 0.04);
+}
+.library-selected-icon {
+  color: #18a058;
+  flex-shrink: 0;
+}
+.library-selected-body {
+  min-width: 0;
+  flex: 1;
+}
+.library-file-name {
+  display: block;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.side-idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 160px;
+  text-align: center;
+  font-size: 13px;
+}
+.side-body {
+  width: 100%;
+}
+.status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.status-file {
+  font-size: 12px;
+  word-break: break-all;
+}
+.stage-text {
+  font-size: 13px;
+}
+.download-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.download-row-secondary {
+  opacity: 0.95;
+}
+@media (max-width: 1279px) {
+  .panel-side {
+    position: static;
+  }
+  .header-steps {
+    width: 100%;
+    max-width: none;
+  }
 }
 </style>

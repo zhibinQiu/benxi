@@ -1,5 +1,5 @@
 <script setup>
-import { DocumentTextOutline, CloudUploadOutline } from "@vicons/ionicons5";
+import { DocumentTextOutline, CloudUploadOutline, CheckmarkCircleOutline } from "@vicons/ionicons5";
 import { NIcon, NText, NButton } from "naive-ui";
 import { computed, ref } from "vue";
 
@@ -11,6 +11,7 @@ const props = defineProps({
   hint: { type: String, default: "" },
   fileName: { type: String, default: "" },
   icon: { type: String, default: "upload" },
+  compact: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["change"]);
@@ -34,15 +35,16 @@ function onDrop(e) {
   emit("change", { target: { files } });
 }
 
-const iconComponent = computed(() =>
-  props.icon === "doc" ? DocumentTextOutline : CloudUploadOutline
-);
+const iconComponent = computed(() => {
+  if (props.fileName) return CheckmarkCircleOutline;
+  return props.icon === "doc" ? DocumentTextOutline : CloudUploadOutline;
+});
 </script>
 
 <template>
   <div
     class="drop-zone"
-    :class="{ dragging, disabled, filled: !!fileName }"
+    :class="{ dragging, disabled, filled: !!fileName, compact }"
     @click="pick"
     @dragover.prevent="dragging = true"
     @dragleave="dragging = false"
@@ -57,37 +59,61 @@ const iconComponent = computed(() =>
       :disabled="disabled"
       @change="onChange"
     />
-    <div class="drop-icon">
-      <n-icon :size="24" :depth="2">
+    <div class="drop-icon-wrap" :class="{ filled: !!fileName }">
+      <n-icon :size="26" :depth="fileName ? 1 : 2">
         <component :is="iconComponent" />
       </n-icon>
     </div>
-    <n-text strong class="drop-title">{{ title }}</n-text>
-    <n-text depth="3" class="drop-hint">{{ hint }}</n-text>
-    <n-text v-if="fileName" depth="2" class="drop-file">{{ fileName }}</n-text>
-    <n-button v-if="!disabled" quaternary size="small" class="drop-btn" @click.stop="pick">
-      选择文件
+    <n-text strong class="drop-title">{{ fileName ? "已选择文件" : title }}</n-text>
+    <n-text depth="3" class="drop-hint">{{ fileName ? fileName : hint }}</n-text>
+    <n-button
+      v-if="!disabled"
+      :type="fileName ? 'default' : 'primary'"
+      :secondary="!fileName"
+      size="small"
+      class="drop-btn"
+      @click.stop="pick"
+    >
+      {{ fileName ? "更换文件" : "选择文件" }}
     </n-button>
   </div>
 </template>
 
 <style scoped>
 .drop-zone {
-  border: 1px dashed var(--n-border-color);
-  border-radius: 8px;
-  padding: 1rem 0.75rem;
+  border: 1.5px dashed var(--n-border-color);
+  border-radius: 10px;
+  padding: 1.35rem 1rem;
+  min-height: 148px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   cursor: pointer;
   background: var(--n-color);
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    box-shadow 0.2s;
 }
 .drop-zone:hover:not(.disabled) {
   border-color: var(--n-text-color-3);
   background: var(--n-action-color);
 }
 .drop-zone.dragging {
-  border-color: var(--n-text-color-2);
-  background: var(--n-action-color);
+  border-color: #5b8def;
+  background: rgba(91, 141, 239, 0.06);
+  box-shadow: 0 0 0 3px rgba(91, 141, 239, 0.12);
+}
+.drop-zone.filled {
+  border-style: solid;
+  border-color: rgba(24, 160, 88, 0.35);
+  background: rgba(24, 160, 88, 0.04);
+}
+.drop-zone.filled:hover:not(.disabled) {
+  border-color: rgba(24, 160, 88, 0.5);
+  background: rgba(24, 160, 88, 0.07);
 }
 .drop-zone.disabled {
   opacity: 0.45;
@@ -96,24 +122,49 @@ const iconComponent = computed(() =>
 .hidden-input {
   display: none;
 }
-.drop-icon {
-  margin-bottom: 0.35rem;
+.drop-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.65rem;
+  background: var(--n-action-color);
+  color: var(--n-text-color-2);
+}
+.drop-icon-wrap.filled {
+  background: rgba(24, 160, 88, 0.12);
+  color: #18a058;
 }
 .drop-title {
   display: block;
   font-size: 14px;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.25rem;
 }
 .drop-hint {
   display: block;
   font-size: 12px;
-}
-.drop-file {
-  display: block;
-  margin-top: 0.35rem;
-  font-size: 12px;
+  line-height: 1.45;
+  max-width: 100%;
+  word-break: break-all;
 }
 .drop-btn {
-  margin-top: 0.35rem;
+  margin-top: 0.75rem;
+}
+.drop-zone.compact {
+  min-height: 100px;
+  padding: 0.85rem 0.75rem;
+}
+.drop-zone.compact .drop-icon-wrap {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 0.4rem;
+}
+.drop-zone.compact .drop-title {
+  font-size: 13px;
+}
+.drop-zone.compact .drop-btn {
+  margin-top: 0.5rem;
 }
 </style>

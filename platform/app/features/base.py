@@ -30,7 +30,19 @@ class FeaturePlugin:
     enabled: bool = True
     tag: str = "可用"
     sort_order: int = 100
+    category: str = "tools"
+    external_url: str | None = None
+    embed_url: str | None = None
     grant_to_roles: tuple[str, ...] = ("sys_admin", "dept_admin", "member")
+
+    def _catalog_tag(self, *, accessible: bool) -> str:
+        if not self.enabled:
+            return self.tag
+        if not accessible:
+            return "无权限"
+        if self.tag != "可用":
+            return self.tag
+        return "可用"
 
     def catalog_dict(self, *, accessible: bool) -> dict[str, Any]:
         """供系统功能页展示的条目。"""
@@ -40,6 +52,7 @@ class FeaturePlugin:
                 "title": self.title,
                 "description": self.description,
                 "icon": self.icon,
+                "category": self.category,
                 "route": None,
                 "enabled": False,
                 "accessible": False,
@@ -51,9 +64,12 @@ class FeaturePlugin:
             "title": self.title,
             "description": self.description,
             "icon": self.icon,
+            "category": self.category,
             "route": self.route if accessible else None,
+            "external_url": self.external_url if accessible and self.external_url else None,
+            "embed_url": self.embed_url if accessible and self.embed_url else None,
             "enabled": True,
             "accessible": accessible,
-            "tag": "可用" if accessible else "无权限",
+            "tag": self._catalog_tag(accessible=accessible),
             "permission": self.permission_code,
         }

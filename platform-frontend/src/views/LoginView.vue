@@ -12,6 +12,7 @@ import {
   useMessage,
 } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
+import { PLATFORM_APP_NAME } from "../constants/platform";
 
 const route = useRoute();
 const router = useRouter();
@@ -27,7 +28,7 @@ async function onSubmit() {
   try {
     await login(username.value, password.value);
     message.success("登录成功");
-    const redirect = route.query.redirect || "/documents";
+    const redirect = route.query.redirect || "/system/functions";
     router.push(redirect);
   } catch (e) {
     message.error(e.message || "登录失败");
@@ -39,8 +40,14 @@ async function onSubmit() {
 
 <template>
   <div class="login-page">
-    <n-card class="login-card" title="文档 AI 平台" size="large">
-      <n-text depth="2">单企业文档管理与权限控制</n-text>
+    <n-card class="login-card" size="large">
+      <template #header>
+        <div class="login-brand">
+          <img src="/logo.svg" :alt="PLATFORM_APP_NAME" class="login-logo" />
+          <span class="login-title">{{ PLATFORM_APP_NAME }}</span>
+        </div>
+      </template>
+      <n-text depth="2">智碳AI能力统一入口</n-text>
       <n-form style="margin-top: 24px" @submit.prevent="onSubmit">
         <n-form-item label="用户名">
           <n-input v-model:value="username" placeholder="admin" />
@@ -77,5 +84,19 @@ async function onSubmit() {
 .login-card {
   width: 400px;
   max-width: calc(100vw - 32px);
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.login-logo {
+  width: 40px;
+  height: 40px;
+}
+.login-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1a1a2e;
 }
 </style>

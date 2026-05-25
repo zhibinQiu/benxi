@@ -9,9 +9,15 @@ import {
   NButton,
   NSpace,
   NEmpty,
+  NPopconfirm,
   useMessage,
 } from "naive-ui";
-import { fetchNotifications, markNotificationRead } from "../api/client";
+import {
+  clearNotifications,
+  fetchNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from "../api/client";
 
 const router = useRouter();
 const message = useMessage();
@@ -39,6 +45,26 @@ async function markRead(id) {
   }
 }
 
+async function markAllRead() {
+  try {
+    const { updated } = await markAllNotificationsRead();
+    message.success(updated ? `已标记 ${updated} 条为已读` : "暂无未读消息");
+    await load();
+  } catch (e) {
+    message.error(e.message);
+  }
+}
+
+async function doClear(scope) {
+  try {
+    const { deleted } = await clearNotifications(scope);
+    message.success(deleted ? `已删除 ${deleted} 条消息` : "没有可删除的消息");
+    await load();
+  } catch (e) {
+    message.error(e.message);
+  }
+}
+
 async function openNotification(n) {
   if (!n.read_at) {
     try {
@@ -59,7 +85,22 @@ onMounted(load);
 <template>
   <n-card title="消息中心">
     <template #header-extra>
-      <n-button size="small" @click="load">刷新</n-button>
+      <n-space :size="8">
+        <n-button size="small" @click="load">刷新</n-button>
+        <n-button size="small" @click="markAllRead">全部已读</n-button>
+        <n-popconfirm @positive-click="doClear('read')">
+          <template #trigger>
+            <n-button size="small">清空已读</n-button>
+          </template>
+          将删除所有已读消息，确定继续？
+        </n-popconfirm>
+        <n-popconfirm @positive-click="doClear('all')">
+          <template #trigger>
+            <n-button size="small" secondary>清空全部</n-button>
+          </template>
+          将删除全部消息记录，确定继续？
+        </n-popconfirm>
+      </n-space>
     </template>
     <n-list v-if="items.length" bordered>
       <n-list-item

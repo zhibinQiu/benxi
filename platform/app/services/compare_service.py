@@ -19,7 +19,10 @@ from app.integrations.text_extract import (
 from app.models.compare import CompareDiffItem, CompareJob, CompareSearchHit, CompareStatus
 from app.models.document import Document, DocumentVersion
 from app.models.org import User
-from app.services.document_service import get_document
+from app.config import get_settings
+from app.integrations.knowflow_client import get_knowflow_client_for_user
+from app.services.document_service import get_document, list_compareable_documents
+from app.services.ragflow_sync_service import sync_document_to_knowflow
 from app.storage.object_store import get_object_store
 
 
@@ -34,6 +37,7 @@ def validate_document_scope(
     *,
     min_count: int = 1,
     max_count: int = 4,
+    required_level: str | None = None,
 ) -> list[Document]:
     if len(document_ids) < min_count or len(document_ids) > max_count:
         from app.core.exceptions import bad_request
@@ -46,7 +50,8 @@ def validate_document_scope(
             from app.core.exceptions import bad_request
 
             raise bad_request(f"文档不存在: {did}")
-        if not can_access_document(db, user, doc, PermissionLevel.use.value):
+        level = required_level or PermissionLevel.query.value
+        if not can_access_document(db, user, doc, level):
             from app.core.exceptions import forbidden
 
             raise forbidden(f"无权使用文档: {doc.title}")
@@ -64,8 +69,46 @@ def validate_compare_documents(
     document_ids: list[uuid.UUID],
 ) -> list[Document]:
     return validate_document_scope(
-        db, user, document_ids, min_count=2, max_count=4
+        db,
+        user,
+        document_ids,
+        min_count=2,
+        max_count=4,
+        required_level=PermissionLevel.query.value,
     )
+
+
+def get_document_file_bytes(
+    db: Session, user: User, document_id: uuid.UUID
+) -> tuple[bytes, str, str]:
+    """返回文档原始字节，供对比页内嵌预览（同源 + Bearer）。"""
+    docs = validate_document_scope(db, user, [document_id], min_count=1, max_count=1)
+    doc = docs[0]
+    version = db.get(DocumentVersion, doc.current_version_id)
+    if not version:
+        from app.core.exceptions import bad_request
+
+        raise bad_request("文档版本不存在")
+    data = get_object_store().get_object_bytes(version.file_key)
+    mime = version.mime_type or "application/octet-stream"
+    return data, mime, version.file_name
+
+
+def get_document_content(
+    db: Session, user: User, document_id: uuid.UUID
+) -> dict:
+    """解析单份文档，供对比页预览（无需先创建比对任务）。"""
+    docs = validate_document_scope(db, user, [document_id], min_count=1, max_count=1)
+    parsed = load_parsed_documents(db, docs)[0]
+    return {
+        "document_id": str(parsed.document_id),
+        "file_name": parsed.file_name,
+        "full_text": parsed.full_text,
+        "pages": parsed.pages,
+        "parse_quality": parsed.parse_quality,
+        "warning": parsed.warning,
+        "char_count": len(parsed.full_text),
+    }
 
 
 def list_compare_documents(
@@ -76,9 +119,7 @@ def list_compare_documents(
     page_size: int,
     keyword: str | None = None,
 ) -> tuple[list[dict], int]:
-    from app.services.document_service import list_translatable_documents
-
-    rows, total = list_translatable_documents(
+    rows, total = list_compareable_documents(
         db, user, page=page, page_size=page_size, keyword=keyword
     )
     items = [
@@ -177,7 +218,16 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
                     "char_count": len(p.full_text),
                 }
                 for p in parsed_list
-            ]
+            ],
+            "documents": {
+                str(p.document_id): {
+                    "file_name": p.file_name,
+                    "pages": p.pages,
+                    "full_text": p.full_text,
+                }
+                for p in parsed_list
+            },
+            "knowflow": {},
         }
         job.progress = 40
         db.commit()
@@ -224,40 +274,230 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
         raise
 
 
+def _sync_ragflow_map(
+    db: Session,
+    user: User,
+    docs: list[Document],
+    *,
+    sync_knowflow: bool,
+) -> dict[str, str]:
+    if not sync_knowflow:
+        return {}
+    ragflow_map: dict[str, str] = {}
+    for doc in docs:
+        rid = sync_document_to_knowflow(db, user, doc)
+        if rid:
+            ragflow_map[str(doc.id)] = rid
+    return ragflow_map
+
+
+def _retrieve_compare_hits(
+    db: Session,
+    user: User,
+    *,
+    parsed: list[ParsedDocument],
+    scope_ids: list[str],
+    query: str,
+    ragflow_map: dict[str, str],
+    limit: int = 20,
+    field_match: bool = True,
+) -> list[dict]:
+    q = query.strip()
+    if not q:
+        return []
+    kf = get_knowflow_client_for_user(db, user)
+    if hasattr(kf, "_doc_map"):
+        kf._doc_map.update(ragflow_map)
+
+    scoped_parsed = [p for p in parsed if str(p.document_id) in scope_ids]
+    hits: list[dict] = []
+    if kf.enabled() and get_settings().knowflow_enabled:
+        hits = kf.retrieve(
+            parsed,
+            q,
+            document_ids=scope_ids,
+            limit=limit,
+        )
+        for h in hits:
+            h.setdefault("source", "knowflow")
+    if not hits:
+        hits = local_search(
+            scoped_parsed or parsed,
+            q,
+            limit=limit,
+            field_match=field_match,
+        )
+    return hits
+
+
+def search_compare_documents(
+    db: Session,
+    user: User,
+    *,
+    right_document_id: uuid.UUID,
+    query: str,
+    sync_knowflow: bool = True,
+    field_match: bool = True,
+    limit: int = 20,
+) -> list[dict]:
+    """在右侧目标文档内检索；左侧仅作参照，不要求与右侧一致。"""
+    docs = validate_document_scope(
+        db, user, [right_document_id], min_count=1, max_count=1
+    )
+    parsed = load_parsed_documents(db, docs)
+    scope_ids = [str(right_document_id)]
+    ragflow_map = _sync_ragflow_map(db, user, docs, sync_knowflow=sync_knowflow)
+    hits = _retrieve_compare_hits(
+        db,
+        user,
+        parsed=parsed,
+        scope_ids=scope_ids,
+        query=query,
+        ragflow_map=ragflow_map,
+        limit=limit,
+        field_match=field_match,
+    )
+    return [
+        {
+            "document_id": str(right_document_id),
+            "snippet": h["snippet"],
+            "score": float(h.get("score") or 0),
+            "anchor_json": h.get("anchor_json"),
+            "source": h.get("source", "local"),
+            "side": "right",
+        }
+        for h in hits
+    ]
+
+
 def search_compare_job(
     db: Session,
     job: CompareJob,
     query: str,
     *,
     limit: int = 20,
-) -> list[CompareSearchHit]:
+    scope: str = "right",
+    field_match: bool = True,
+) -> list[dict]:
     user = db.get(User, job.created_by)
     if not user:
         return []
     doc_ids = _parse_uuid_list(job.document_ids)
     docs = validate_compare_documents(db, user, doc_ids)
     parsed = load_parsed_documents(db, docs)
-    hits = local_search(parsed, query, limit=limit)
+
+    right_id = str(job.options.get("right_document_id", "")) if job.options else ""
+    if not right_id and len(doc_ids) >= 2:
+        right_id = str(doc_ids[1])
+
+    scope_ids: list[str]
+    if scope == "both":
+        scope_ids = [str(d) for d in doc_ids]
+    else:
+        scope_ids = [right_id] if right_id else [str(d) for d in doc_ids]
+
+    ragflow_map = (job.payload or {}).get("knowflow", {}).get("ragflow_doc_map") or {}
+    if not ragflow_map and job.options.get("sync_knowflow", True):
+        sync_docs = docs
+        if scope == "right" and right_id:
+            sync_docs = [d for d in docs if str(d.id) == right_id] or docs
+        ragflow_map = _sync_ragflow_map(
+            db, user, sync_docs, sync_knowflow=True
+        )
+
+    hits = _retrieve_compare_hits(
+        db,
+        user,
+        parsed=parsed,
+        scope_ids=scope_ids,
+        query=query,
+        ragflow_map=ragflow_map,
+        limit=limit,
+        field_match=field_match,
+    )
 
     db.query(CompareSearchHit).filter(
         CompareSearchHit.job_id == job.id,
-        CompareSearchHit.query == query,
+        CompareSearchHit.query == query.strip(),
     ).delete()
 
     rows: list[CompareSearchHit] = []
+    out: list[dict] = []
     for h in hits:
+        did = uuid.UUID(h["document_id"])
         row = CompareSearchHit(
             job_id=job.id,
-            query=query,
-            document_id=uuid.UUID(h["document_id"]),
+            query=query.strip(),
+            document_id=did,
             snippet=h["snippet"],
-            score=h["score"],
+            score=float(h.get("score") or 0),
             anchor_json=h.get("anchor_json"),
         )
         db.add(row)
         rows.append(row)
+        out.append(
+            {
+                "document_id": str(did),
+                "snippet": h["snippet"],
+                "score": float(h.get("score") or 0),
+                "anchor_json": h.get("anchor_json"),
+                "source": h.get("source", "local"),
+                "side": "right" if str(did) == right_id else "left",
+            }
+        )
     db.commit()
-    return rows
+    for i, row in enumerate(rows):
+        out[i]["id"] = str(row.id)
+    return out
+
+
+def create_compare_job(
+    db: Session,
+    user: User,
+    *,
+    left_document_id: uuid.UUID,
+    right_document_id: uuid.UUID,
+    sync_knowflow: bool = True,
+) -> CompareJob:
+    if left_document_id == right_document_id:
+        from app.core.exceptions import bad_request
+
+        raise bad_request("左右两侧请选择不同文档")
+    validate_compare_documents(
+        db, user, [left_document_id, right_document_id], min_count=2, max_count=2
+    )
+    job = CompareJob(
+        created_by=user.id,
+        base_document_id=left_document_id,
+        document_ids=[str(left_document_id), str(right_document_id)],
+        status=CompareStatus.pending.value,
+        options={
+            "left_document_id": str(left_document_id),
+            "right_document_id": str(right_document_id),
+            "sync_knowflow": sync_knowflow,
+        },
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    if sync_knowflow:
+        docs = validate_compare_documents(
+            db, user, [left_document_id, right_document_id], min_count=2, max_count=2
+        )
+        ragflow_map: dict[str, str] = {}
+        for doc in docs:
+            rid = sync_document_to_knowflow(db, user, doc)
+            if rid:
+                ragflow_map[str(doc.id)] = rid
+        payload = dict(job.payload or {})
+        knowflow = payload.get("knowflow") or {}
+        knowflow["ragflow_doc_map"] = ragflow_map
+        payload["knowflow"] = knowflow
+        job.payload = payload
+        db.commit()
+
+    return job
 
 
 def get_user_compare_job(
@@ -298,15 +538,25 @@ def job_to_dict(db: Session, job: CompareJob) -> dict:
         if d:
             doc_titles[str(did)] = d.title
 
+    opts = job.options or {}
+    left_id = opts.get("left_document_id") or str(job.base_document_id)
+    right_id = opts.get("right_document_id") or (
+        str(job.document_ids[1])
+        if job.document_ids and len(job.document_ids) > 1
+        else ""
+    )
+
     return {
         "id": str(job.id),
         "status": job.status,
         "progress": job.progress,
         "error_message": job.error_message,
+        "left_document_id": left_id,
+        "right_document_id": right_id,
         "base_document_id": str(job.base_document_id),
         "document_ids": job.document_ids,
         "document_titles": doc_titles,
-        "options": job.options or {},
+        "options": opts,
         "payload": job.payload or {},
         "diff_items": [
             {

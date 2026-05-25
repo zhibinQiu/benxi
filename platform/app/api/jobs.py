@@ -43,6 +43,38 @@ def list_jobs(
     )
 
 
+@router.delete("/clear", response_model=ApiResponse[dict])
+def clear_jobs(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: str = Query("finished", pattern="^(finished|all)$"),
+) -> ApiResponse[dict]:
+    from app.services import job_service
+
+    deleted = job_service.clear_jobs(db, user.id, scope=scope)
+    return ApiResponse(data={"deleted": deleted, "scope": scope})
+
+
+@router.post("/{job_id}/cancel", response_model=ApiResponse[JobOut])
+def cancel_job(
+    job_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[JobOut]:
+    from app.services import job_service
+
+    job = db.get(Job, job_id)
+    if not job:
+        raise not_found("任务不存在")
+    if job.created_by != user.id:
+        from app.core.permissions import user_has_permission
+
+        if not user_has_permission(db, user, "admin.user"):
+            raise forbidden()
+    job = job_service.cancel_job(db, job)
+    return ApiResponse(data=JobOut.model_validate(job))
+
+
 @router.get("/{job_id}", response_model=ApiResponse[JobOut])
 def get_job(
     job_id: uuid.UUID,

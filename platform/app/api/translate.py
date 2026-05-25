@@ -72,7 +72,7 @@ def list_translatable_documents(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = None,
 ) -> ApiResponse[PageResult[TranslatableDocumentOut]]:
-    """可翻译的文档库 PDF（仅返回当前用户有「使用」权限且已上传 PDF 的文档）。"""
+    """可翻译的文档库 PDF（未删除、已启用，且当前用户具备「可查询」及以上权限）。"""
     rows, total = document_service.list_translatable_documents(
         db, user, page=page, page_size=page_size, keyword=keyword
     )

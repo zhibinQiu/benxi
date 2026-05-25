@@ -1,10 +1,10 @@
-# PDF 翻译与文档平台
+# PDF 翻译与智碳 AI平台
 
-基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 翻译，以及企业文档 AI 控制面。
+基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 翻译，以及智碳 AI 企业应用控制面。
 
 ## 使用方式
 
-1. [文档 AI 平台](development/doc-platform.md) — 用户、文档、权限、翻译任务
+1. [智碳 AI平台](development/doc-platform.md) — 用户、文档、权限、翻译任务
 2. [命令行翻译](getting-started/USAGE_commandline.md)
 3. [WebUI](getting-started/USAGE_webui.md)
 4. [REST API](development/rest-api.md) — `pdf2zh_next --api`

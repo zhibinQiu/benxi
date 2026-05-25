@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_permission
+from app.api.deps import require_any_permission, require_permission
 from app.core.exceptions import not_found
 from app.database import get_db
 from app.models.org import Permission, Role, RolePermission, User
@@ -38,7 +38,9 @@ def _role_out(db: Session, role: Role) -> RoleOut:
 @router.get("", response_model=ApiResponse[list[RoleOut]])
 def list_roles(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission("admin.role"))],
+    _: Annotated[
+        User, Depends(require_any_permission("admin.role", "admin.user"))
+    ],
 ) -> ApiResponse[list[RoleOut]]:
     roles = db.scalars(select(Role)).all()
     return ApiResponse(data=[_role_out(db, r) for r in roles])

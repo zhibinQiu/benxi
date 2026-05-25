@@ -1,6 +1,6 @@
-# 文档 AI 平台
+# 智碳 AI平台
 
-企业文档平台：**用户 / 部门 / 角色 / 文档 ACL / 异步任务 / 站内通知 / 审计**。  
+智碳 AI 企业应用平台：**用户 / 部门 / 角色 / 文档 ACL / 异步任务 / 站内通知 / 审计**。  
 PDF 翻译经平台任务队列调用 `pdf2zh_next --api`（默认 `http://127.0.0.1:7861`）。
 
 ## 模块
@@ -53,6 +53,27 @@ pdf2zh_next --api --api-port 7861
 ## API 前缀
 
 `/api/v1` — 登录、文档、任务、翻译代理、通知、审计等。Swagger：`http://127.0.0.1:8000/docs`。
+
+## 知识问答（KnowFlow）
+
+Apple Silicon 推荐 **从源码构建**（官方 `zxwei/knowflow` 镜像仅 amd64）：
+
+```bash
+bash scripts/setup_knowflow.sh          # 克隆 KnowFlow 到 platform/third_party/KnowFlow
+bash scripts/build_knowflow_source.sh   # 构建 deps + RAGFlow + KnowFlow Server（首次 30–90 分钟）
+bash scripts/start_platform.sh knowflow # 启动基础设施 + 应用
+```
+
+在 `platform/.env` 中可选：`KNOWFLOW_ENABLED=true`、`RAGFLOW_API_KEY=...`（RAGFlow 控制台获取）。
+
+前端：**系统功能 → 知识问答**（iframe 嵌入 `http://127.0.0.1:9380`，保留溯源与 PDF 定位等完整能力）。
+
+| 服务 | 地址 |
+|------|------|
+| RAGFlow UI | http://127.0.0.1:9380 |
+| KnowFlow API | http://127.0.0.1:5001 |
+
+编排：单一文件 `platform/docker-compose.knowflow.yml`（基础组件 + 源码构建服务；原预构建镜像配置已注释）。
 
 ## 功能插件
 

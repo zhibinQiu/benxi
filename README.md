@@ -1,13 +1,13 @@
-# PDF 翻译与文档 AI 平台
+# PDF 翻译与智碳 AI平台
 
-基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及企业文档管理 / 翻译控制面平台。
+基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳 AI 企业应用控制面（文档、权限、翻译任务等）。
 
 ## 项目结构
 
 ```
 pdf_trans/
 ├── pdf2zh_next/          # PDF 翻译核心（CLI、WebUI、REST API）
-├── platform/             # 文档 AI 平台后端（FastAPI + Celery）
+├── platform/             # 智碳 AI平台后端（FastAPI + Celery）
 ├── platform-frontend/    # 平台前端（Vue 3）
 ├── scripts/              # 启动与资源脚本
 ├── docs/zh/              # 中文文档
@@ -42,6 +42,36 @@ cd .. && bash scripts/start_platform.sh
 
 停止：`bash scripts/stop_platform.sh`
 
+### 知识问答（KnowFlow）
+
+平台 **系统功能 → 知识问答** 内嵌 KnowFlow / RAGFlow 自带界面（:9380）。Apple Silicon 需 **从源码构建** arm64 镜像：
+
+```bash
+bash scripts/setup_knowflow.sh
+bash scripts/build_knowflow_source.sh   # 首次约 30–90 分钟
+bash scripts/start_platform.sh knowflow
+```
+
+| 服务 | 地址 |
+|------|------|
+| RAGFlow UI | http://127.0.0.1:9380 |
+| KnowFlow API | http://127.0.0.1:5001 |
+
+### 录音转文字（本地 Docker）
+
+系统功能 → **录音转文字**：**FunASR**（Paraformer + VAD + 标点）+ **CAM++** 说话人分离 + **DeepSeek** 在线总结。
+
+```bash
+bash scripts/setup_speech.sh          # 首次：构建 speech-api，模型下载到 .run/speech-models/
+# platform/.env 设置 DEEPSEEK_API_KEY（或与 pdf2zh 共用 ~/.config/pdf2zh 配置）
+bash scripts/start_platform.sh speech
+```
+
+| 服务 | 地址 |
+|------|------|
+| speech-api（FunASR 转写） | http://127.0.0.1:8765 |
+| DeepSeek（总结） | 平台 API 直连 api.deepseek.com |
+
 ## 单独使用 PDF 翻译
 
 ```bash
@@ -54,7 +84,7 @@ pdf2zh_next --api --api-port 7861     # REST API
 
 - [快速开始](docs/zh/getting-started/getting-started.md)
 - [本地开发](docs/zh/development/local-development.md)
-- [文档平台](docs/zh/development/doc-platform.md)
+- [智碳 AI平台](docs/zh/development/doc-platform.md)
 - [REST API](docs/zh/development/rest-api.md)
 
 ## 许可

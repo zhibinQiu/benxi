@@ -1,4 +1,4 @@
-# 文档平台前端
+# 智碳 AI平台前端
 
 Vue 3 + Naive UI，对接 `platform` 后端 `/api/v1`。
 

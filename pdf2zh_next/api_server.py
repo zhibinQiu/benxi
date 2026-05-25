@@ -35,16 +35,16 @@ from pdf2zh_next.high_level import TranslationError, do_translate_async_stream
 logger = logging.getLogger(__name__)
 
 COMMON_LANGUAGES = [
-    {"code": "en", "label": "English"},
-    {"code": "zh-CN", "label": "Simplified Chinese"},
-    {"code": "zh-TW", "label": "Traditional Chinese (Taiwan)"},
-    {"code": "ja", "label": "Japanese"},
-    {"code": "ko", "label": "Korean"},
-    {"code": "de", "label": "German"},
-    {"code": "fr", "label": "French"},
-    {"code": "es", "label": "Spanish"},
-    {"code": "ru", "label": "Russian"},
-    {"code": "auto", "label": "Auto detect"},
+    {"code": "en", "label": "英语"},
+    {"code": "zh-CN", "label": "简体中文"},
+    {"code": "zh-TW", "label": "繁体中文（台湾）"},
+    {"code": "ja", "label": "日语"},
+    {"code": "ko", "label": "韩语"},
+    {"code": "de", "label": "德语"},
+    {"code": "fr", "label": "法语"},
+    {"code": "es", "label": "西班牙语"},
+    {"code": "ru", "label": "俄语"},
+    {"code": "auto", "label": "自动检测"},
 ]
 
 
@@ -120,6 +120,48 @@ def _available_services() -> list[str]:
     return services
 
 
+def _engine_detail_settings(metadata):
+    assert _base_settings is not None
+    if metadata.cli_detail_field_name:
+        return getattr(_base_settings, metadata.cli_detail_field_name, None)
+    return metadata.setting_model_type()
+
+
+def _engine_model_name(metadata) -> str | None:
+    detail = _engine_detail_settings(metadata)
+    if detail is None:
+        return None
+    for field_name in detail.model_fields:
+        if field_name.endswith("_model"):
+            value = getattr(detail, field_name, None)
+            if value and str(value).strip():
+                return str(value).strip()
+    return None
+
+
+def _build_engine_meta(services: list[str]) -> list[dict]:
+    models = [_engine_model_name(TRANSLATION_ENGINE_METADATA_MAP[name]) for name in services]
+    duplicate_models = {
+        m for m in models if m and sum(1 for x in models if x == m) > 1
+    }
+    engines = []
+    for name, model in zip(services, models):
+        metadata = TRANSLATION_ENGINE_METADATA_MAP[name]
+        if model:
+            label = f"{model} ({name})" if model in duplicate_models else model
+        else:
+            label = name
+        engines.append(
+            {
+                "id": name,
+                "label": label,
+                "model": model,
+                "supports_glossary": bool(metadata.support_llm),
+            }
+        )
+    return engines
+
+
 async def _save_glossary_files(files: list[UploadFile], service: str) -> str | None:
     metadata = TRANSLATION_ENGINE_METADATA_MAP.get(service)
     if not metadata or not metadata.support_llm:
@@ -157,7 +199,9 @@ def _build_job_settings(
     settings.translation.output = str(output_dir)
     settings.translation.glossaries = glossaries
     settings.basic.gui = False
-    settings.basic.debug = True
+    # debug=True 会在 PDF 上绘制段落/公式等调试框（BabelDOC AddDebugInformation），
+    # 正常翻译输出应关闭；extracted-json/md 在缺少 il_translated.json 时回退为 PDF 文本提取。
+    settings.basic.debug = False
     settings.pdf.watermark_output_mode = "no_watermark"
 
     for metadata in TRANSLATION_ENGINE_METADATA:
@@ -337,15 +381,7 @@ def create_app() -> FastAPI:
     @app.get("/api/meta")
     async def meta() -> dict:
         services = _available_services()
-        engines = []
-        for name in services:
-            m = TRANSLATION_ENGINE_METADATA_MAP[name]
-            engines.append(
-                {
-                    "id": name,
-                    "supports_glossary": bool(m.support_llm),
-                }
-            )
+        engines = _build_engine_meta(services)
         return {
             "languages": COMMON_LANGUAGES,
             "engines": engines,

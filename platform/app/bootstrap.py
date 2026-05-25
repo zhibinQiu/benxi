@@ -114,7 +114,7 @@ def _seed_admin(db: Session) -> None:
     admin = User(
         username=settings.bootstrap_admin_username,
         email=settings.bootstrap_admin_email,
-        display_name="系统管理员",
+        display_name=settings.bootstrap_admin_username,
         password_hash=hash_password(settings.bootstrap_admin_password),
     )
     db.add(admin)

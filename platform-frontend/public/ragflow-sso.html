@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>正在进入知识问答…</title>
+  <style>
+    body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f5f6f8; color: #333; }
+  </style>
+</head>
+<body>
+  <p id="msg">正在同步登录状态…</p>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var token = params.get("token");
+      var target = params.get("target") || "http://127.0.0.1:9380/";
+      if (!token) {
+        document.getElementById("msg").textContent = "缺少登录凭证，请从智碳平台重新进入。";
+        return;
+      }
+      var raw = token.replace(/^Bearer\s+/i, "").trim();
+      try {
+        var u = new URL(target);
+        u.searchParams.set("auth", raw);
+        location.replace(u.toString());
+      } catch (e) {
+        document.getElementById("msg").textContent = "跳转失败: " + e;
+      }
+    })();
+  </script>
+</body>
+</html>

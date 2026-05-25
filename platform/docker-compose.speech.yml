@@ -1,0 +1,30 @@
+# 本地语音转写栈：FunASR（Paraformer + VAD + 标点 + CAM++ 说话人）
+# 模型目录默认挂载到仓库 .run/speech-models（与宿主机本地启动一致）
+# 用法: SPEECH_MODELS_DIR=../.run/speech-models docker compose -f docker-compose.speech.yml up -d --build
+
+services:
+  speech-api:
+    build:
+      context: speech-service
+      dockerfile: Dockerfile
+    ports:
+      - "8765:8765"
+    environment:
+      FUNASR_ASR_MODEL: ${FUNASR_ASR_MODEL:-paraformer-zh}
+      FUNASR_VAD_MODEL: ${FUNASR_VAD_MODEL:-fsmn-vad}
+      FUNASR_PUNC_MODEL: ${FUNASR_PUNC_MODEL:-ct-punc}
+      FUNASR_SPK_MODEL: ${FUNASR_SPK_MODEL:-cam++}
+      FUNASR_DEVICE: ${FUNASR_DEVICE:-cpu}
+      FUNASR_HUB: ms
+      SPEECH_MODELS_DIR: /models
+      MODELSCOPE_CACHE: /models
+      DIARIZATION_ENABLED: ${DIARIZATION_ENABLED:-true}
+      MAX_FILE_MB: ${SPEECH_MAX_FILE_MB:-100}
+    volumes:
+      - ${SPEECH_MODELS_DIR:-../.run/speech-models}:/models
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')\""]
+      interval: 30s
+      timeout: 15s
+      retries: 15
+      start_period: 300s

@@ -1,0 +1,81 @@
+/* 智碳 AI 平台 — 全局布局与视觉基线 */
+:root {
+  --platform-radius: 10px;
+  --platform-radius-sm: 8px;
+  --platform-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04);
+  --platform-border: rgba(15, 23, 42, 0.08);
+  --platform-surface: #ffffff;
+  --platform-muted: #64748b;
+}
+
+.n-card {
+  border-radius: var(--platform-radius) !important;
+  box-shadow: var(--platform-shadow);
+}
+
+.feature-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.feature-page--fill {
+  height: 100%;
+}
+
+.feature-tip {
+  flex-shrink: 0;
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--platform-muted);
+}
+
+.feature-tip code {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+/* 系统功能等卡片网格：同行等高、标签贴底 */
+.category-grid > * {
+  display: flex;
+}
+
+.category-grid .feature-card {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.category-grid .feature-card .n-card__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.category-grid .feature-card .feature-row {
+  flex: 1;
+}
+
+.category-grid .feature-card .feature-tag {
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.category-grid .feature-card .feature-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(1.35em * 2);
+}
+
+.category-grid .feature-card .feature-desc {
+  min-height: calc(1.4em * 2);
+}

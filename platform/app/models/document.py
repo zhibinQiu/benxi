@@ -12,10 +12,18 @@ from app.database import Base
 class DocumentStatus(str, enum.Enum):
     draft = "draft"
     active = "active"
+    disabled = "disabled"
     archived = "archived"
 
 
 class PermissionLevel(str, enum.Enum):
+    """文档显式授权级别（由低到高：可见 < 可查询 < 可编辑 < 完全）。"""
+
+    visible = "visible"
+    query = "query"
+    edit = "edit"
+    full = "full"
+    # 兼容旧数据与 API
     read = "read"
     use = "use"
     delete = "delete"
@@ -25,6 +33,12 @@ class SubjectType(str, enum.Enum):
     user = "user"
     dept = "dept"
     role = "role"
+
+
+class DocumentScope(str, enum.Enum):
+    company = "company"
+    department = "department"
+    personal = "personal"
 
 
 class Document(Base):
@@ -40,6 +54,9 @@ class Document(Base):
     dept_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True
     )
+    scope: Mapped[str] = mapped_column(
+        String(16), default=DocumentScope.personal.value, index=True
+    )
     status: Mapped[str] = mapped_column(String(16), default=DocumentStatus.active.value)
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
@@ -54,10 +71,14 @@ class Document(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
 
     versions: Mapped[list["DocumentVersion"]] = relationship(
         back_populates="document",
         foreign_keys="DocumentVersion.document_id",
+        cascade="all, delete-orphan",
     )
     permissions: Mapped[list["DocumentPermission"]] = relationship(
         back_populates="document"

@@ -1,5 +1,5 @@
-site_name: PDF 翻译与文档平台
-site_description: PDF 科学文献翻译与企业文档 AI 平台（中文文档）
+site_name: PDF 翻译与智碳 AI平台
+site_description: PDF 科学文献翻译与智碳 AI平台（中文文档）
 repo_url: https://github.com/PDFMathTranslate-next/PDFMathTranslate-next
 edit_uri: edit/main/docs/zh/
 
@@ -21,8 +21,8 @@ theme:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: pink
-  favicon: ../images/logo_photo.svg
-  logo: ../images/logo_photo.svg
+  favicon: ../../icon/yezi.svg
+  logo: ../../icon/yezi.svg
 
 plugins:
   - search
@@ -51,9 +51,13 @@ nav:
     - 翻译服务: advanced/Documentation-of-Translation-Services.md
   - 开发:
     - 本地开发: development/local-development.md
-    - 文档平台: development/doc-platform.md
+    - 智碳 AI平台: development/doc-platform.md
+    - 平台架构与运维: development/platform-architecture.md
     - REST API: development/rest-api.md
   - 平台设计:
     - 功能插件: platform/feature-plugins.md
+    - 权限模型: platform/permission-model.md
+    - 语音转写: platform/speech-models.md
+    - 文档对比: platform/doc-compare-product-design.md
   - 支持语言: supported_languages.md
   - 常见问题: FAQ.md

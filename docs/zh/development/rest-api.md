@@ -1,6 +1,6 @@
 # REST API 开发文档（Vue / 外部前端）
 
-本文档描述 `pdf2zh_next --api` 提供的 **REST + SSE** 接口。文档 AI 平台经 `platform` 代理调用；也可用于自建客户端。
+本文档描述 `pdf2zh_next --api` 提供的 **REST + SSE** 接口。智碳 AI平台经 `platform` 代理调用；也可用于自建客户端。
 
 > [!NOTE]
 > 文档 [../APIS.md](../APIS.md) 中的 Flask/Celery/Redis HTTP API **已废弃**。请以本文档为准。
@@ -284,7 +284,7 @@ es.addEventListener("complete", (e) => {
 | `extracted-json` | 提取/译文段落文本（JSON，按页与段落组织） |
 | `extracted-md` | 提取/译文段落文本（Markdown） |
 
-任务完成后由 `write_extracted_exports` 从 `~/.cache/babeldoc/working/<pdf_stem>/il_translated.json` 生成（API 任务已开启 `debug=True` 以写入 IL）。
+任务完成后由 `write_extracted_exports` 生成：优先使用 `il_translated.json`（仅当 `debug=True` 时由 BabelDOC 写入）；API 默认 `debug=False` 以避免 PDF 上出现调试框，此时从译文 PDF 提取文本。
 
 **响应：** `FileResponse`，`Content-Disposition` 带原始文件名。
 

@@ -3,10 +3,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.job import Job, JobEvent, JobStatus, JobType
+
+_CANCELLABLE_STATUSES = (JobStatus.pending.value, JobStatus.running.value)
 
 
 def create_job(
@@ -77,6 +79,61 @@ def list_jobs(
         .limit(page_size)
     ).all()
     return list(items), total
+
+
+_FINISHED_STATUSES = (
+    JobStatus.done.value,
+    JobStatus.failed.value,
+    JobStatus.cancelled.value,
+)
+
+
+def _cancel_pdf2zh_remote(pdf2zh_id: str) -> None:
+    import httpx
+
+    from app.integrations.pdf2zh_client import pdf2zh_base_url
+
+    try:
+        with httpx.Client(base_url=pdf2zh_base_url(), timeout=15.0) as client:
+            client.delete(f"/api/jobs/{pdf2zh_id}")
+    except Exception:
+        pass
+
+
+def cancel_job(db: Session, job: Job) -> Job:
+    """终止进行中的任务；翻译任务会同步请求 pdf2zh 取消。"""
+    from app.core.exceptions import bad_request
+
+    if job.status not in _CANCELLABLE_STATUSES:
+        raise bad_request("仅「等待中」或「运行中」的任务可终止")
+
+    if job.type == JobType.pdf_translate.value:
+        from app.services.translate_service import pdf2zh_job_id
+
+        zid = pdf2zh_job_id(job)
+        if zid:
+            _cancel_pdf2zh_remote(zid)
+
+    return update_job_status(
+        db,
+        job.id,
+        JobStatus.cancelled.value,
+        error_message="用户已终止",
+    )
+
+
+def clear_jobs(db: Session, user_id: uuid.UUID, *, scope: str) -> int:
+    """清理当前用户任务记录。scope: finished=仅已完成/失败/取消；all=除运行中外全部。"""
+    stmt = delete(Job).where(Job.created_by == user_id)
+    if scope == "finished":
+        stmt = stmt.where(Job.status.in_(_FINISHED_STATUSES))
+    elif scope == "all":
+        stmt = stmt.where(Job.status != JobStatus.running.value)
+    else:
+        raise ValueError(f"unknown scope: {scope}")
+    result = db.execute(stmt)
+    db.commit()
+    return int(result.rowcount or 0)
 
 
 def enqueue_delete_document(db: Session, document_id: uuid.UUID, user_id: uuid.UUID) -> Job:

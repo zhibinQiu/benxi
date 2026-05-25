@@ -7,7 +7,16 @@ from pydantic import BaseModel, Field
 class DocumentCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=512)
     description: str = ""
+    scope: str = Field(
+        "personal",
+        pattern="^(company|department|personal)$",
+    )
     dept_id: uuid.UUID | None = None
+
+
+class DocumentUpdate(BaseModel):
+    title: str | None = Field(None, min_length=1, max_length=512)
+    description: str | None = None
 
 
 class DocumentVersionOut(BaseModel):
@@ -17,19 +26,49 @@ class DocumentVersionOut(BaseModel):
     file_size: int
     mime_type: str
     created_at: datetime
+    uploaded: bool = False
+    is_current: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class DeleteDocumentVersionResult(BaseModel):
+    ok: bool = True
+    document_deleted: bool = False
+    message: str = ""
+
+
+class DocumentFolderOut(BaseModel):
+    scope: str
+    label: str
+    can_create: bool
+    can_edit: bool
+    can_delete: bool
+
+
+class DocumentLibraryOut(BaseModel):
+    folders: list[DocumentFolderOut]
+    departments: list[dict] = []
 
 
 class DocumentListItem(BaseModel):
     id: uuid.UUID
     title: str
     status: str
+    scope: str
     owner_id: uuid.UUID
+    owner_name: str | None = None
     dept_id: uuid.UUID | None
     current_version_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
+    uploaded_at: datetime | None = None
+    deleted_at: datetime | None = None
+    shared_level: str | None = None
+    granted_by_name: str | None = None
+    share_to_summary: str | None = None
+    share_count: int | None = None
+    effective_level: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -56,7 +95,10 @@ class UploadCompleteRequest(BaseModel):
 class DocumentGrant(BaseModel):
     subject_type: str = Field(..., pattern="^(user|dept|role)$")
     subject_id: uuid.UUID
-    level: str = Field(..., pattern="^(read|use|delete)$")
+    level: str = Field(
+        ...,
+        pattern="^(visible|query|edit|full|read|use|delete)$",
+    )
     expires_at: datetime | None = None
 
 
@@ -64,8 +106,33 @@ class DocumentPermissionOut(BaseModel):
     id: uuid.UUID
     subject_type: str
     subject_id: uuid.UUID
+    subject_label: str | None = None
     level: str
     expires_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class DocumentStatusUpdate(BaseModel):
+    status: str = Field(..., pattern="^(active|disabled)$")
+
+
+class DocumentAccessControlOut(BaseModel):
+    can_grant: bool
+    can_deny: bool
+    is_owner: bool
+    can_view: bool = False
+    can_query: bool = False
+    can_edit: bool = False
+    can_delete: bool = False
+    can_manage: bool = False
+    can_restore: bool = False
+    effective_level: str | None = None
+
+
+class AclUserCandidateOut(BaseModel):
+    id: uuid.UUID
+    username: str
+    display_name: str
+    department_names: list[str] = []

@@ -38,6 +38,25 @@ def list_notifications(
     )
 
 
+@router.patch("/read-all", response_model=ApiResponse[dict])
+def mark_all_read(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    updated = notification_service.mark_all_read(db, user.id)
+    return ApiResponse(data={"updated": updated})
+
+
+@router.delete("/clear", response_model=ApiResponse[dict])
+def clear_notifications(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: str = Query("read", pattern="^(read|all)$"),
+) -> ApiResponse[dict]:
+    deleted = notification_service.clear_notifications(db, user.id, scope=scope)
+    return ApiResponse(data={"deleted": deleted, "scope": scope})
+
+
 @router.patch("/{notification_id}/read", response_model=ApiResponse[None])
 def mark_read(
     notification_id: uuid.UUID,

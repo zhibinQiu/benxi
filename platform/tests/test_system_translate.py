@@ -18,6 +18,17 @@ def test_system_features_lists_pdf_translate(client, admin_token):
     assert translate.get("permission") == "feature.translate"
 
 
+def test_system_features_lists_ai_tools(client, admin_token):
+    r = client.get("/api/v1/system/features", headers=_auth(admin_token))
+    assert r.status_code == 200
+    items = r.json()["data"]
+    ai = next(x for x in items if x["id"] == "ai_tools")
+    assert ai["enabled"] is True
+    assert ai["route"] == "/system/ai-tools"
+    assert ai.get("accessible") is True
+    assert ai.get("tag") == "需联网"
+
+
 def test_translate_jobs_requires_auth(client):
     r = client.get("/api/v1/translate/jobs")
     assert r.status_code == 401

@@ -23,7 +23,14 @@ stop_pid_file() {
 echo "[stop] 停止 Docker 服务 ..."
 cd "$PLATFORM"
 $COMPOSE --profile docker-app --profile docker-full down 2>/dev/null || $COMPOSE down
+if [[ -f docker-compose.knowflow.yml ]]; then
+  docker compose -p knowflow -f docker-compose.knowflow.yml --env-file knowflow.env down 2>/dev/null || true
+fi
+if [[ -f docker-compose.speech.yml ]]; then
+  docker compose -f docker-compose.speech.yml down 2>/dev/null || true
+fi
 
+stop_pid_file "speech-api"       "$RUN_DIR/speech-api.pid"
 stop_pid_file "pdf2zh API"       "$RUN_DIR/pdf2zh-api.pid"
 stop_pid_file "平台 API"         "$RUN_DIR/platform-api.pid"
 stop_pid_file "Celery Worker"    "$RUN_DIR/platform-worker.pid"

@@ -61,6 +61,18 @@ def require_permission(code: str):
     return _checker
 
 
+def require_any_permission(*codes: str):
+    def _checker(
+        db: Annotated[Session, Depends(get_db)],
+        user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        if any(user_has_permission(db, user, code) for code in codes):
+            return user
+        raise forbidden(f"Missing permission (any of): {', '.join(codes)}")
+
+    return _checker
+
+
 def require_feature(feature_id: str):
     """按功能插件 ID 校验权限（请求时解析，避免插件尚未注册）。"""
 

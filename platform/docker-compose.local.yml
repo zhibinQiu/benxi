@@ -11,6 +11,10 @@ services:
       - docker-app
     environment:
       PDF2ZH_API_URL: http://host.docker.internal:7861
+      SPEECH_SERVICE_URL: http://host.docker.internal:8765
+      KNOWFLOW_ENABLED: ${KNOWFLOW_ENABLED:-false}
+      RAGFLOW_API_URL: http://ragflow-server:9380
+      KNOWFLOW_BACKEND_URL: http://knowflow-backend:5000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

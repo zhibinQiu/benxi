@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# 文档 AI 平台启动脚本（本地优先）
+# 智碳 AI平台启动脚本（本地优先）
 # - 有 .venv / node_modules 时：pdf2zh、平台 API、Worker、前端在宿主机运行
 # - 无本地环境时：回退 Docker 构建 api/worker/frontend
 # - 基础设施（postgres / redis / minio）默认 Docker
 set -euo pipefail
+# 避免上次 KnowFlow amd64 构建遗留的全局平台变量影响平台基础设施
+unset DOCKER_DEFAULT_PLATFORM DOCKER_PLATFORM
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM="$ROOT/platform"
@@ -100,10 +102,76 @@ start_infra_docker() {
   wait_url "http://127.0.0.1:9000/minio/health/live" "MinIO" 20 2 || true
 }
 
+start_speech_stack() {
+  require_cmd docker
+  SPEECH_MODELS="${SPEECH_MODELS_DIR:-$ROOT/.run/speech-models}"
+  mkdir -p "$SPEECH_MODELS"
+  export SPEECH_MODELS_DIR="$SPEECH_MODELS"
+  cd "$PLATFORM"
+  if ! curl -sf "http://127.0.0.1:8765/health" >/dev/null 2>&1; then
+    if [[ ! -f docker-compose.speech.yml ]]; then
+      warn "未找到 docker-compose.speech.yml，跳过语音栈"
+      return 0
+    fi
+    info "启动本地语音转写栈 (speech-api)，模型目录: $SPEECH_MODELS ..."
+    docker compose -f docker-compose.speech.yml up -d
+    warn "首次启动会下载 FunASR 模型（ModelScope），约需数分钟"
+    wait_url "http://127.0.0.1:8765/health" "speech-api" 90 5 \
+      || warn "speech-api 可能仍在初始化，日志: docker compose -f docker-compose.speech.yml logs speech-api"
+  else
+    info "speech-api 已在 8765 端口监听"
+  fi
+}
+
+start_knowflow_stack() {
+  require_cmd docker
+  if [[ ! -d "$PLATFORM/third_party/KnowFlow" ]]; then
+    info "首次使用 KnowFlow，正在克隆源码 ..."
+    bash "$ROOT/scripts/setup_knowflow.sh"
+  fi
+  [[ -f "$PLATFORM/knowflow.env" ]] || cp "$PLATFORM/knowflow.env.example" "$PLATFORM/knowflow.env"
+  cd "$PLATFORM"
+  if ! docker image inspect knowflow-ragflow:source >/dev/null 2>&1 \
+    || ! docker image inspect knowflow-server:source >/dev/null 2>&1; then
+    error "缺少源码镜像，请先执行: bash scripts/build_knowflow_source.sh"
+    exit 1
+  fi
+  info "启动 KnowFlow 栈（docker-compose.knowflow.yml，arm64 源码镜像）..."
+  docker compose -p knowflow -f docker-compose.knowflow.yml --env-file knowflow.env up -d --force-recreate ragflow knowflow-backend
+  warn "等待 RAGFlow 就绪（约 2–5 分钟，首次启动更久）..."
+  wait_url "http://127.0.0.1:9380" "RAGFlow" 90 5 || warn "RAGFlow 可能仍在初始化"
+  local kf_port=5001
+  grep -q '^KNOWFLOW_BACKEND_PORT=' knowflow.env 2>/dev/null && kf_port=$(grep '^KNOWFLOW_BACKEND_PORT=' knowflow.env | cut -d= -f2)
+  wait_url "http://127.0.0.1:${kf_port}/health" "KnowFlow Backend" 60 3 || true
+  if [[ -f "$PLATFORM/.env" ]]; then
+    # 保证末行有换行，避免 >> 拼到上一行
+    [[ -z $(tail -c1 "$PLATFORM/.env" 2>/dev/null | tr -d '\n') ]] || echo >> "$PLATFORM/.env"
+    ensure_env_kv() {
+      local key="$1" val="$2"
+      grep -q "^${key}=" "$PLATFORM/.env" || printf '%s=%s\n' "$key" "$val" >> "$PLATFORM/.env"
+    }
+    ensure_env_kv KNOWFLOW_ENABLED true
+    ensure_env_kv KNOWFLOW_UI_PROXY_PREFIX /ragflow-ui
+    ensure_env_kv DESIGN_SYSTEM_PROXY_PREFIX /design-system-ui
+    ensure_env_kv SMART_FORECAST_PROXY_PREFIX /smart-forecast-ui
+    ensure_env_kv RAGFLOW_ACCOUNT_MODE shared
+    ensure_env_kv RAGFLOW_SHARED_EMAIL admin@gmail.com
+    ensure_env_kv RAGFLOW_SHARED_PASSWORD admin
+    info "KnowFlow 集成已写入 platform/.env（默认 RAGFLOW_ACCOUNT_MODE=shared，可按需改为 mapped）"
+  fi
+}
+
 start_platform_api_local() {
   if curl -sf "http://127.0.0.1:8000/docs" >/dev/null 2>&1; then
     info "平台 API 已在 8000 端口监听"
     return 0
+  fi
+  local pid_file="$RUN_DIR/platform-api.pid"
+  if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    warn "平台 API 进程存在但未响应（可能启动时数据库未就绪），正在重启 ..."
+    kill "$(cat "$pid_file")" 2>/dev/null || true
+    pkill -P "$(cat "$pid_file")" 2>/dev/null || true
+    rm -f "$pid_file"
   fi
   start_bg "平台 API" "$RUN_DIR/platform-api.pid" "$LOG_DIR/platform-api.log" \
     bash -c "cd '$PLATFORM' && source .venv/bin/activate && uvicorn app.main:app --reload --host 127.0.0.1 --port 8000"
@@ -137,6 +205,14 @@ start_platform_docker() {
     || warn "平台 API 可能仍在启动"
 }
 
+mode_speech() {
+  info "模式: 本地优先 + 语音栈 (speech)"
+  start_infra_docker
+  start_speech_stack
+  mode_local
+  print_urls speech
+}
+
 mode_local() {
   info "模式: 本地优先 (local)"
   start_infra_docker
@@ -161,7 +237,6 @@ mode_local() {
     cd "$PLATFORM"
     $COMPOSE --profile docker-app up -d frontend
   fi
-  print_urls
 }
 
 mode_docker() {
@@ -188,15 +263,38 @@ mode_docker_full() {
   print_urls
 }
 
+mode_knowflow() {
+  info "模式: 本地优先 + KnowFlow 知识库栈"
+  start_infra_docker
+  start_knowflow_stack
+  mode_local
+  print_urls knowflow
+  return
+}
+
 print_urls() {
+  local with_knowflow="${1:-}"
   cat <<EOF
 
-${GREEN}=== 文档 AI 平台已启动 ===${NC}
+${GREEN}=== 智碳 AI平台已启动 ===${NC}
 
-  平台前端:     http://127.0.0.1:5174
+  平台前端:     http://127.0.0.1:5174  → 系统功能 → 知识问答（内嵌 KnowFlow 完整界面）
   平台 API:     http://127.0.0.1:8000  (Swagger: /docs)
   pdf2zh API:   http://127.0.0.1:7861
   MinIO 控制台: http://127.0.0.1:9001  (minioadmin / minioadmin)
+EOF
+  if [[ "$with_knowflow" == *knowflow* ]]; then
+    cat <<EOF
+  RAGFlow:      http://127.0.0.1:9380
+  KnowFlow API: http://127.0.0.1:5001
+EOF
+  fi
+  if [[ "$with_knowflow" == *speech* ]]; then
+    cat <<EOF
+  语音转写 API: http://127.0.0.1:8765  （总结走 DeepSeek 在线 API）
+EOF
+  fi
+  cat <<EOF
 
   默认账号: admin / admin123
 
@@ -212,21 +310,29 @@ usage() {
 
 MODE（默认 local）:
   local        本地优先：基础设施 Docker，其余用本机 .venv / npm（推荐）
+  speech       local + 语音转写 Docker（FunASR，总结用 DeepSeek）
+  knowflow     local + KnowFlow/RAGFlow Docker 栈（知识问答）
   docker       混合：宿主机 pdf2zh + Docker 平台 api/worker/frontend
   docker-full  全部进 Docker（含 pdf2zh-api 镜像构建，首次较慢）
 
 示例:
   bash scripts/start_platform.sh
-  bash scripts/start_platform.sh local
+  bash scripts/setup_speech.sh       # 首次：构建 speech-api Docker
+  bash scripts/start_platform.sh speech
+  bash scripts/start_platform.sh knowflow
+  bash scripts/build_knowflow_source.sh  # 首次从源码构建
+  bash scripts/setup_knowflow.sh
 EOF
 }
 
 main() {
   mkdir -p "$RUN_DIR" "$LOG_DIR"
   case "${1:-local}" in
-    up|start|local) mode_local ;;
-    docker|hybrid)  mode_docker ;;
-    docker-full)    mode_docker_full ;;
+    up|start|local) mode_local; print_urls ;;
+    speech)         mode_speech ;;
+    knowflow)       mode_knowflow ;;
+    docker|hybrid)  mode_docker; print_urls ;;
+    docker-full)    mode_docker_full; print_urls ;;
     -h|--help|help) usage ;;
     *)
       usage

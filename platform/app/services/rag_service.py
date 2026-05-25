@@ -1,25 +1,46 @@
-"""Knowledge Q&A — local retrieval stub until KnowFlow is deployed."""
+"""Knowledge Q&A — KnowFlow / RAGFlow 检索，未启用时回退本地关键词检索。"""
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.permissions import PermissionLevel, can_access_document
-from app.integrations.text_extract import local_search, split_paragraphs
+from app.config import get_settings
+from app.integrations.knowflow_client import get_knowflow_client_for_user
+from app.services.ragflow_sync_service import (
+    allowed_ragflow_doc_map,
+    sync_document_to_knowflow,
+)
+from app.integrations.text_extract import local_search
+from app.models.document import DocumentVersion
 from app.models.org import User
 from app.models.rag import RagMessage, RagSession
+from app.core.permissions import PermissionLevel
 from app.services.compare_service import (
     load_parsed_documents,
     validate_document_scope,
 )
 from app.services.document_service import get_document
+from app.storage.object_store import get_object_store
 
 
 def _parse_ids(ids: list[str]) -> list[uuid.UUID]:
     return [uuid.UUID(x) for x in ids]
+
+
+def _sync_docs_to_knowflow(
+    db: Session, user: User, docs
+) -> dict[str, str]:
+    """返回 platform_document_id -> ragflow_document_id"""
+    mapping: dict[str, str] = {}
+    for doc in docs:
+        rag_id = sync_document_to_knowflow(db, user, doc)
+        if rag_id:
+            mapping[str(doc.id)] = rag_id
+    return mapping
 
 
 def create_session(
@@ -34,8 +55,16 @@ def create_session(
         from app.core.exceptions import bad_request
 
         raise bad_request("请至少选择 1 份文档")
-    docs = validate_document_scope(db, user, uuids, min_count=1, max_count=20)
+    docs = validate_document_scope(
+        db,
+        user,
+        uuids,
+        min_count=1,
+        max_count=20,
+        required_level=PermissionLevel.query.value,
+    )
     parsed = load_parsed_documents(db, docs)
+    ragflow_map = _sync_docs_to_knowflow(db, user, docs)
     session = RagSession(
         created_by=user.id,
         title=title,
@@ -52,6 +81,8 @@ def create_session(
                 for p in parsed
             ],
             "full_text_cache": {str(p.document_id): p.full_text for p in parsed},
+            "ragflow_doc_map": ragflow_map,
+            "knowflow": get_knowflow_client_for_user(db, user).health(),
         },
     )
     db.add(session)
@@ -95,20 +126,24 @@ def _build_answer(query: str, hits: list[dict], doc_titles: dict[str, str]) -> t
     lines = [f"根据已选文档，与「{query}」相关的要点如下：", ""]
     citations: list[dict] = []
     for i, h in enumerate(hits[:5], start=1):
-        title = doc_titles.get(h["document_id"], h["document_id"])
+        did = str(h.get("document_id", ""))
+        title = doc_titles.get(did, did or "文档")
         lines.append(f"{i}. 【{title}】{h['snippet'][:280]}")
         citations.append(
             {
                 "index": i,
-                "document_id": h["document_id"],
+                "document_id": did,
                 "title": title,
                 "snippet": h["snippet"][:500],
-                "score": h["score"],
+                "score": h.get("score"),
                 "anchor_json": h.get("anchor_json"),
             }
         )
     lines.append("")
-    lines.append("以上内容来自检索片段，完整答案需结合原文判断。")
+    if get_settings().knowflow_enabled and get_settings().ragflow_api_key:
+        lines.append("以上内容来自 KnowFlow 向量检索；请结合原文判断。")
+    else:
+        lines.append("以上内容来自本地关键词检索；启用 KnowFlow 后可获得语义检索能力。")
     return "\n".join(lines), citations
 
 
@@ -130,7 +165,14 @@ def ask(
     db.flush()
 
     doc_ids = _parse_ids(session.document_ids)
-    docs = validate_compare_documents(db, user, doc_ids)
+    docs = validate_document_scope(
+        db,
+        user,
+        doc_ids,
+        min_count=1,
+        max_count=20,
+        required_level=PermissionLevel.query.value,
+    )
     parsed = load_parsed_documents(db, docs)
 
     cache = (session.payload or {}).get("full_text_cache") or {}
@@ -144,7 +186,20 @@ def ask(
             for did in session.document_ids
         ]
 
-    hits = local_search(parsed, question, limit=10)
+    kf = get_knowflow_client_for_user(db, user)
+    ragflow_map = (session.payload or {}).get("ragflow_doc_map") or {}
+    if hasattr(kf, "_doc_map"):
+        kf._doc_map.update(ragflow_map)
+
+    if hasattr(kf, "_doc_map"):
+        kf._doc_map.update(allowed_ragflow_doc_map(db, user, [str(x) for x in doc_ids]))
+    hits = kf.retrieve(
+        parsed,
+        question,
+        document_ids=[str(x) for x in doc_ids],
+        limit=10,
+    )
+
     doc_titles = {}
     for did in doc_ids:
         d = get_document(db, did)
@@ -159,6 +214,7 @@ def ask(
         citations=citations,
     )
     db.add(msg)
+    session.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(msg)
     return msg

@@ -6,7 +6,6 @@ import {
   NButton,
   NCard,
   NDataTable,
-  NDivider,
   NGi,
   NGrid,
   NIcon,
@@ -28,14 +27,17 @@ import {
   DownloadOutline,
   FolderOpenOutline,
   RocketOutline,
-  ArrowBackOutline,
   SearchOutline,
   LanguageOutline,
   SwapHorizontalOutline,
   CheckmarkCircleOutline,
   TimeOutline,
+  DocumentTextOutline,
+  SettingsOutline,
+  CloudDownloadOutline,
 } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
+import FeaturePageToolbar from "../components/FeaturePageToolbar.vue";
 import {
   createTranslateJob,
   downloadTranslateFile,
@@ -85,15 +87,28 @@ const selectedEngine = computed(() =>
 const glossarySupported = computed(
   () => selectedEngine.value?.supports_glossary ?? false
 );
+const LANG_LABEL_ZH = {
+  en: "英语",
+  "zh-CN": "简体中文",
+  "zh-TW": "繁体中文（台湾）",
+  ja: "日语",
+  ko: "韩语",
+  de: "德语",
+  fr: "法语",
+  es: "西班牙语",
+  ru: "俄语",
+  auto: "自动检测",
+};
+
 const langOptions = computed(() =>
   (meta.value?.languages || []).map((l) => ({
-    label: `${l.label} (${l.code})`,
+    label: LANG_LABEL_ZH[l.code] || l.label,
     value: l.code,
   }))
 );
 const engineOptions = computed(() =>
   (meta.value?.engines || []).map((e) => ({
-    label: e.supports_glossary ? `${e.id} · 支持术语表` : e.id,
+    label: e.label || e.model || e.id,
     value: e.id,
   }))
 );
@@ -133,6 +148,16 @@ const statusLabel = computed(() => {
   return map[status.value] || status.value;
 });
 const showProgressPanel = computed(() => status.value !== "idle");
+
+const langPairLabel = computed(() => {
+  const inL = LANG_LABEL_ZH[langIn.value] || langIn.value;
+  const outL = LANG_LABEL_ZH[langOut.value] || langOut.value;
+  return `${inL} → ${outL}`;
+});
+
+const engineLabel = computed(
+  () => engineOptions.value.find((o) => o.value === service.value)?.label || ""
+);
 
 function applyJob(job) {
   platformJobId.value = job.platform_job_id;
@@ -305,6 +330,9 @@ async function loadLibraryDocs() {
 function openLibraryPicker() {
   showLibraryModal.value = true;
   libraryPage.value = 1;
+  libraryKeyword.value = "";
+  libraryItems.value = [];
+  libraryTotal.value = 0;
   loadLibraryDocs();
 }
 
@@ -327,7 +355,7 @@ function onGlossaryChange(e) {
 async function startTranslation() {
   if (!hasPdfSource.value) return;
   if (glossaryFiles.value.length && !glossarySupported.value) {
-    error.value = "当前引擎不支持术语表";
+    error.value = "当前翻译方式不支持术语表";
     return;
   }
   error.value = "";
@@ -376,275 +404,395 @@ async function dl(kind, name) {
 </script>
 
 <template>
-  <div class="translate-page">
-    <header class="page-header">
-      <n-space align="center" :size="12" class="header-main">
-        <n-button quaternary @click="router.push({ name: 'system-functions' })">
-          <template #icon>
-            <n-icon :component="ArrowBackOutline" />
-          </template>
-          返回
-        </n-button>
-        <div class="title-icon">
-          <n-icon :size="20" :component="LanguageOutline" />
+  <div class="translate-page feature-page feature-page--fill">
+    <FeaturePageToolbar>
+      <n-tag v-if="platformJobId" size="small" round type="info" :bordered="false">
+        任务 {{ platformJobId.slice(0, 8) }}…
+      </n-tag>
+    </FeaturePageToolbar>
+
+    <header class="page-hero">
+      <div class="hero-brand">
+        <div class="hero-icon" aria-hidden="true">
+          <n-icon :size="26" :component="LanguageOutline" />
         </div>
-        <n-text strong class="page-title">PDF 翻译</n-text>
-        <n-tag v-if="platformJobId" size="small" round>
-          任务 {{ platformJobId.slice(0, 8) }}…
-        </n-tag>
-      </n-space>
-      <n-steps :current="currentStep" size="small" class="header-steps">
-        <n-step title="文档" />
-        <n-step title="配置" />
-        <n-step title="结果" />
+        <div class="hero-text">
+          <h1 class="hero-title">PDF 翻译</h1>
+          <p class="hero-desc">智能排版保留版式，支持双语对照与术语表，翻译可在后台持续进行</p>
+        </div>
+      </div>
+      <n-steps :current="currentStep" size="small" class="hero-steps">
+        <n-step title="文档" description="上传或选取" />
+        <n-step title="配置" description="语言与模型" />
+        <n-step title="结果" description="下载译文" />
       </n-steps>
     </header>
 
-    <n-alert
-      v-if="status === 'running'"
-      type="info"
-      class="page-alert"
-      closable
-    >
-      翻译在后台进行，可切换其他页面；完成后在消息或任务中心查看。
-    </n-alert>
+    <div v-if="status === 'running' || error" class="page-alerts">
+      <n-alert
+        v-if="status === 'running'"
+        type="info"
+        class="page-alert"
+        closable
+      >
+        翻译在后台进行，可切换其他页面；完成后在消息或任务中心查看。
+      </n-alert>
+      <n-alert
+        v-if="error"
+        type="error"
+        :title="error"
+        closable
+        class="page-alert"
+        @close="error = ''"
+      />
+    </div>
 
-    <n-alert
-      v-if="error"
-      type="error"
-      :title="error"
-      closable
-      class="page-alert"
-      @close="error = ''"
-    />
-
-    <n-grid
-      cols="1 m:2 xl:3"
-      responsive="screen"
-      item-responsive
-      :x-gap="20"
-      :y-gap="20"
-      class="translate-grid"
-    >
-      <n-gi span="1 m:1 xl:1">
-        <n-card class="panel panel-fill" size="small" title="选择文档">
-          <n-radio-group
-            v-model:value="sourceMode"
-            size="small"
-            class="source-toggle"
-            :disabled="status === 'running'"
-            @update:value="onSourceModeChange"
-          >
-            <n-radio-button value="upload">本地上传</n-radio-button>
-            <n-radio-button value="library">文档库</n-radio-button>
-          </n-radio-group>
-
-          <file-drop-zone
-            v-if="sourceMode === 'upload'"
-            accept=".pdf"
-            title="拖拽 PDF 到此处"
-            hint="或点击选择文件"
-            :file-name="displayFileName"
-            icon="doc"
-            compact
-            :disabled="status === 'running'"
-            @change="onPdfChange"
-          />
-
-          <div v-else class="library-pick">
-            <div v-if="libraryDoc" class="library-selected">
-              <n-icon :size="18" class="library-selected-icon">
-                <checkmark-circle-outline />
-              </n-icon>
-              <div class="library-selected-body">
-                <n-text strong>{{ libraryDoc.title }}</n-text>
-                <n-text depth="3" class="library-file-name">{{ libraryDoc.file_name }}</n-text>
+    <div class="translate-workspace">
+      <n-grid
+        cols="1 m:2 xl:3"
+        responsive="screen"
+        item-responsive
+        :x-gap="20"
+        :y-gap="20"
+        class="translate-grid"
+      >
+        <n-gi span="1 m:1 xl:1">
+          <n-card class="panel panel-fill" size="small" :bordered="false">
+            <template #header>
+              <div class="panel-header">
+                <span class="panel-header-icon panel-header-icon--doc">
+                  <n-icon :size="18" :component="DocumentTextOutline" />
+                </span>
+                <div class="panel-header-text">
+                  <span class="panel-header-title">选择文档</span>
+                  <span class="panel-header-desc">本地上传或从文档库选取 PDF</span>
+                </div>
               </div>
+            </template>
+
+            <n-radio-group
+              v-model:value="sourceMode"
+              size="small"
+              class="source-toggle"
+              :disabled="status === 'running'"
+              @update:value="onSourceModeChange"
+            >
+              <n-radio-button value="upload">本地上传</n-radio-button>
+              <n-radio-button value="library">文档库</n-radio-button>
+            </n-radio-group>
+
+            <div v-if="sourceMode === 'upload'" class="upload-fill">
+              <file-drop-zone
+                accept=".pdf"
+                title="拖拽 PDF 到此处"
+                hint="支持标准 PDF，建议单文件不超过平台限制"
+                :file-name="displayFileName"
+                icon="doc"
+                :disabled="status === 'running'"
+                @change="onPdfChange"
+              />
             </div>
-            <n-space :size="8">
+
+            <div v-else class="library-pick">
+              <div v-if="libraryDoc" class="library-selected">
+                <n-icon :size="20" class="library-selected-icon">
+                  <checkmark-circle-outline />
+                </n-icon>
+                <div class="library-selected-body">
+                  <n-text strong>{{ libraryDoc.title }}</n-text>
+                  <n-text depth="3" class="library-file-name">{{ libraryDoc.file_name }}</n-text>
+                </div>
+              </div>
+              <div v-else class="library-empty">
+                <n-icon :size="28" :depth="3" :component="FolderOpenOutline" />
+                <n-text depth="2">从文档库选择已上传的 PDF</n-text>
+              </div>
+              <n-space :size="8" class="library-actions">
+                <n-button
+                  type="primary"
+                  :disabled="status === 'running'"
+                  @click="openLibraryPicker"
+                >
+                  <template #icon>
+                    <n-icon :component="FolderOpenOutline" />
+                  </template>
+                  {{ libraryDoc ? "更换文档" : "浏览文档库" }}
+                </n-button>
+                <n-button
+                  v-if="libraryDoc"
+                  quaternary
+                  :disabled="status === 'running'"
+                  @click="libraryDoc = null"
+                >
+                  清除
+                </n-button>
+              </n-space>
+            </div>
+          </n-card>
+        </n-gi>
+
+        <n-gi span="1 m:1 xl:1">
+          <n-card class="panel panel-fill panel-config" size="small" :bordered="false">
+            <template #header>
+              <div class="panel-header">
+                <span class="panel-header-icon panel-header-icon--config">
+                  <n-icon :size="18" :component="SettingsOutline" />
+                </span>
+                <div class="panel-header-text">
+                  <span class="panel-header-title">翻译配置</span>
+                  <span class="panel-header-desc">语言方向、模型与可选术语表</span>
+                </div>
+              </div>
+            </template>
+
+            <section class="config-block">
+              <n-text class="block-label">语言方向</n-text>
+              <div class="lang-row">
+                <div class="lang-field">
+                  <n-text depth="3" class="field-label">源语言</n-text>
+                  <n-select
+                    v-model:value="langIn"
+                    :options="langOptions"
+                    filterable
+                    :disabled="status === 'running'"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="lang-swap-btn"
+                  aria-label="语言方向"
+                  :disabled="status === 'running'"
+                >
+                  <n-icon :size="18"><swap-horizontal-outline /></n-icon>
+                </button>
+                <div class="lang-field">
+                  <n-text depth="3" class="field-label">目标语言</n-text>
+                  <n-select
+                    v-model:value="langOut"
+                    :options="langOptions"
+                    filterable
+                    :disabled="status === 'running'"
+                  />
+                </div>
+              </div>
+              <n-tag size="small" :bordered="false" class="lang-pair-tag">
+                {{ langPairLabel }}
+              </n-tag>
+            </section>
+
+            <section class="config-block">
+              <n-text class="block-label">翻译模型</n-text>
+              <n-select
+                v-model:value="service"
+                :options="engineOptions"
+                :disabled="status === 'running'"
+              />
+              <n-text v-if="engineLabel" depth="3" class="engine-hint">{{ engineLabel }}</n-text>
+            </section>
+
+            <section class="config-block config-block--glossary">
+              <div class="block-label-row">
+                <n-text class="block-label">术语表（可选）</n-text>
+                <n-tag
+                  size="tiny"
+                  round
+                  :type="glossarySupported ? 'success' : 'warning'"
+                  :bordered="false"
+                >
+                  {{ glossarySupported ? "当前模型支持" : "需支持术语表的模型" }}
+                </n-tag>
+              </div>
+              <file-drop-zone
+                accept=".csv"
+                multiple
+                compact
+                :disabled="!glossarySupported || status === 'running'"
+                title="上传 CSV 术语表"
+                hint="表头：source, target, tgt_lng"
+                :file-name="
+                  glossaryFiles.length
+                    ? `已选 ${glossaryFiles.length} 个文件`
+                    : ''
+                "
+                @change="onGlossaryChange"
+              />
+            </section>
+
+            <div class="start-wrap">
               <n-button
                 type="primary"
-                secondary
-                :disabled="status === 'running'"
-                @click="openLibraryPicker"
+                size="large"
+                block
+                class="start-btn"
+                :disabled="!canStart"
+                :loading="status === 'running' || status === 'submitting'"
+                :render-icon="renderIcon(RocketOutline)"
+                @click="startTranslation"
               >
-                <template #icon>
-                  <n-icon :component="FolderOpenOutline" />
-                </template>
-                {{ libraryDoc ? "更换文档" : "从文档库选择" }}
+                {{ status === "running" || status === "submitting" ? "翻译进行中…" : "开始翻译" }}
               </n-button>
-              <n-button
-                v-if="libraryDoc"
-                quaternary
-                :disabled="status === 'running'"
-                @click="libraryDoc = null"
-              >
-                清除
-              </n-button>
-            </n-space>
-          </div>
-        </n-card>
-      </n-gi>
-
-      <n-gi span="1 m:1 xl:1">
-        <n-card class="panel panel-fill" size="small" title="翻译配置">
-          <div class="lang-row">
-            <div class="lang-field">
-              <n-text depth="3" class="field-label">源语言</n-text>
-              <n-select
-                v-model:value="langIn"
-                :options="langOptions"
-                filterable
-                :disabled="status === 'running'"
-              />
+              <n-text v-if="!hasPdfSource" depth="3" class="start-hint">
+                请先在左侧选择或上传 PDF
+              </n-text>
             </div>
-            <div class="lang-swap" aria-hidden="true">
-              <n-icon :size="16" :depth="3"><swap-horizontal-outline /></n-icon>
-            </div>
-            <div class="lang-field">
-              <n-text depth="3" class="field-label">目标语言</n-text>
-              <n-select
-                v-model:value="langOut"
-                :options="langOptions"
-                filterable
-                :disabled="status === 'running'"
-              />
-            </div>
-          </div>
+          </n-card>
+        </n-gi>
 
-          <n-text depth="3" class="field-label">翻译引擎</n-text>
-          <n-select
-            v-model:value="service"
-            :options="engineOptions"
-            :disabled="status === 'running'"
-          />
-
-          <n-divider class="section-divider" />
-
-          <n-text depth="3" class="field-label">
-            术语表
-            <n-text v-if="glossarySupported" depth="3" tag="span" class="glossary-badge">
-              · 当前引擎可用
-            </n-text>
-            <n-text v-else depth="3" tag="span" class="glossary-badge warn">
-              · 需 LLM 引擎
-            </n-text>
-          </n-text>
-          <file-drop-zone
-            accept=".csv"
-            multiple
-            compact
-            :disabled="!glossarySupported || status === 'running'"
-            title="上传 CSV（可选）"
-            hint="表头 source,target,tgt_lng"
-            :file-name="
-              glossaryFiles.length
-                ? `已选 ${glossaryFiles.length} 个文件`
-                : ''
-            "
-            @change="onGlossaryChange"
-          />
-
-          <n-button
-            type="primary"
-            size="large"
-            block
-            class="start-btn"
-            :disabled="!canStart"
-            :loading="status === 'running' || status === 'submitting'"
-            :render-icon="renderIcon(RocketOutline)"
-            @click="startTranslation"
+        <n-gi span="1 m:2 xl:1">
+          <n-card
+            class="panel panel-fill panel-side"
+            size="small"
+            :bordered="false"
+            :class="{
+              'panel-side-active': showProgressPanel,
+              'panel-side-done': status === 'done',
+            }"
           >
-            {{ status === "running" || status === "submitting" ? "翻译进行中…" : "开始翻译" }}
-          </n-button>
-          <n-text v-if="!hasPdfSource" depth="3" class="start-hint">
-            请先选择 PDF
-          </n-text>
-        </n-card>
-      </n-gi>
+            <template #header>
+              <div class="panel-header">
+                <span
+                  class="panel-header-icon"
+                  :class="status === 'done' ? 'panel-header-icon--done' : 'panel-header-icon--result'"
+                >
+                  <n-icon
+                    :size="18"
+                    :component="status === 'done' ? CheckmarkCircleOutline : CloudDownloadOutline"
+                  />
+                </span>
+                <div class="panel-header-text">
+                  <span class="panel-header-title">进度与下载</span>
+                  <span class="panel-header-desc">
+                    {{ status === "done" ? "翻译已完成，可下载成果文件" : "提交后在此查看状态" }}
+                  </span>
+                </div>
+              </div>
+            </template>
 
-      <n-gi span="1 m:2 xl:1">
-        <n-card
-          class="panel panel-fill panel-side"
-          size="small"
-          title="进度与下载"
-          :class="{ 'panel-side-active': showProgressPanel }"
-        >
-          <div v-if="!showProgressPanel" class="side-idle">
-            <n-icon :size="32" :depth="3"><time-outline /></n-icon>
-            <n-text depth="2">提交翻译后在此查看进度与下载</n-text>
-          </div>
-
-          <n-space v-else vertical :size="14" class="side-body">
-            <div class="status-row">
-              <n-tag :type="statusType" round>{{ statusLabel }}</n-tag>
-              <n-text v-if="displayFileName" depth="3" class="status-file">
-                {{ displayFileName }}
+            <div v-if="!showProgressPanel" class="side-idle">
+              <div class="side-idle-visual">
+                <n-icon :size="36" :depth="3"><time-outline /></n-icon>
+              </div>
+              <n-text strong class="side-idle-title">等待开始翻译</n-text>
+              <n-text depth="3" class="side-idle-desc">
+                配置语言与模型后点击「开始翻译」，进度与下载链接将显示在此处
               </n-text>
             </div>
 
-            <n-progress
-              v-if="status === 'running' || status === 'done'"
-              type="line"
-              :percentage="Math.round(progress)"
-              indicator-placement="inside"
-              :processing="status === 'running'"
-              :status="status === 'done' ? 'success' : 'default'"
-              :height="22"
-            />
-            <n-text v-if="stage" depth="2" class="stage-text">{{ stage }}</n-text>
+            <div v-else class="side-body">
+              <div class="status-card" :class="`status-card--${status}`">
+                <div class="status-row">
+                  <n-tag :type="statusType" round size="medium">{{ statusLabel }}</n-tag>
+                  <span
+                    v-if="status === 'running'"
+                    class="status-pulse"
+                    aria-hidden="true"
+                  />
+                </div>
+                <n-text v-if="displayFileName" depth="2" class="status-file">
+                  {{ displayFileName }}
+                </n-text>
+                <n-text v-if="status !== 'idle'" depth="3" class="status-meta">
+                  {{ langPairLabel }}
+                  <template v-if="engineLabel"> · {{ engineLabel }}</template>
+                </n-text>
+              </div>
 
-            <template v-if="status === 'done'">
-              <n-divider class="section-divider" />
-              <div class="download-row">
-                <n-button
-                  type="primary"
-                  :render-icon="renderIcon(DownloadOutline)"
-                  @click="dl('mono', 'mono.pdf')"
-                >
-                  单语 PDF
-                </n-button>
-                <n-button
-                  secondary
-                  :render-icon="renderIcon(DownloadOutline)"
-                  @click="dl('dual', 'dual.pdf')"
-                >
-                  双语 PDF
-                </n-button>
-                <n-button
-                  quaternary
-                  :render-icon="renderIcon(BookOutline)"
-                  @click="dl('glossary', 'glossary.csv')"
-                >
-                  术语表
-                </n-button>
+              <div
+                v-if="status === 'running' || status === 'done'"
+                class="progress-block"
+              >
+                <div class="progress-head">
+                  <n-text depth="3">整体进度</n-text>
+                  <n-text strong class="progress-pct">{{ Math.round(progress) }}%</n-text>
+                </div>
+                <n-progress
+                  type="line"
+                  :percentage="Math.round(progress)"
+                  indicator-placement="inside"
+                  :processing="status === 'running'"
+                  :status="status === 'done' ? 'success' : 'default'"
+                  :height="10"
+                  :border-radius="6"
+                />
+                <n-text v-if="stage" depth="2" class="stage-text">{{ stage }}</n-text>
               </div>
-              <div class="download-row download-row-secondary">
-                <n-button
-                  ghost
-                  :render-icon="renderIcon(DownloadOutline)"
-                  @click="dl('extracted-json', 'extracted.json')"
-                >
-                  JSON
-                </n-button>
-                <n-button
-                  ghost
-                  :render-icon="renderIcon(DownloadOutline)"
-                  @click="dl('extracted-md', 'extracted.md')"
-                >
-                  Markdown
-                </n-button>
-              </div>
-            </template>
-          </n-space>
-        </n-card>
-      </n-gi>
-    </n-grid>
+
+              <template v-if="status === 'done'">
+                <n-text class="download-section-label">下载译文</n-text>
+                <div class="download-grid">
+                  <button
+                    type="button"
+                    class="download-card download-card--primary"
+                    @click="dl('dual', 'dual.pdf')"
+                  >
+                    <span class="download-card-icon">
+                      <n-icon :size="22" :component="DownloadOutline" />
+                    </span>
+                    <span class="download-card-body">
+                      <strong>双语 PDF</strong>
+                      <span>左原文 · 右译文对照</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="download-card"
+                    @click="dl('mono', 'mono.pdf')"
+                  >
+                    <span class="download-card-icon">
+                      <n-icon :size="22" :component="DownloadOutline" />
+                    </span>
+                    <span class="download-card-body">
+                      <strong>单语 PDF</strong>
+                      <span>仅保留译文排版</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    class="download-card"
+                    @click="dl('glossary', 'glossary.csv')"
+                  >
+                    <span class="download-card-icon download-card-icon--muted">
+                      <n-icon :size="22" :component="BookOutline" />
+                    </span>
+                    <span class="download-card-body">
+                      <strong>术语表</strong>
+                      <span>自动提取的 CSV</span>
+                    </span>
+                  </button>
+                </div>
+                <n-text class="download-section-label download-section-label--sub">
+                  结构化导出
+                </n-text>
+                <div class="download-chips">
+                  <n-button
+                    size="small"
+                    round
+                    secondary
+                    @click="dl('extracted-json', 'extracted.json')"
+                  >
+                    JSON
+                  </n-button>
+                  <n-button
+                    size="small"
+                    round
+                    secondary
+                    @click="dl('extracted-md', 'extracted.md')"
+                  >
+                    Markdown
+                  </n-button>
+                </div>
+              </template>
+            </div>
+          </n-card>
+        </n-gi>
+      </n-grid>
+    </div>
 
     <n-modal
       v-model:show="showLibraryModal"
       preset="card"
       title="选择文档库 PDF"
+      class="library-modal"
       style="width: min(720px, 92vw)"
     >
       <n-space align="center" :size="10" style="margin-bottom: 12px">
@@ -679,172 +827,638 @@ async function dl(kind, name) {
 
 <style scoped>
 .translate-page {
-  width: 100%;
-  max-width: none;
-}
-.page-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--n-divider-color);
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  --translate-accent: #3b82f6;
+  --translate-accent-soft: rgba(59, 130, 246, 0.08);
+  --translate-success-soft: rgba(24, 160, 88, 0.08);
 }
-.header-main {
+
+.page-hero {
   flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.06) 0%,
+    rgba(255, 255, 255, 0.95) 48%,
+    rgba(24, 160, 88, 0.04) 100%
+  );
+  box-shadow: var(--platform-shadow);
 }
-.header-steps {
-  flex: 1;
-  min-width: 280px;
-  max-width: 480px;
+
+.hero-brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 280px;
 }
-.title-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+
+.hero-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, #eef2ff 0%, #e8f4f8 100%);
-  color: #4a5fc1;
+  color: var(--translate-accent);
+  background: var(--translate-accent-soft);
+  box-shadow: 0 1px 2px rgba(59, 130, 246, 0.12);
 }
-.page-title {
-  font-size: 1.125rem;
+
+.hero-title {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--n-text-color);
+  line-height: 1.3;
 }
+
+.hero-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--platform-muted, #64748b);
+  max-width: 42rem;
+}
+
+.hero-steps {
+  flex: 1 1 320px;
+  max-width: 420px;
+  min-width: 260px;
+}
+
+.page-alerts {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .page-alert {
-  margin-bottom: 16px;
+  margin: 0;
 }
+
+.translate-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .translate-grid {
   width: 100%;
+  flex: 1;
+  min-height: 0;
 }
-.panel {
-  border-radius: 10px;
+
+.translate-grid :deep(> div) {
   height: 100%;
 }
+
+.translate-grid :deep(.n-grid-item) {
+  display: flex;
+  min-height: 0;
+}
+
+.panel {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+  overflow: hidden;
+}
+
+.panel :deep(.n-card-header) {
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--platform-border, rgba(15, 23, 42, 0.06));
+}
+
+.panel :deep(.n-card__content) {
+  padding: 14px 18px 18px;
+}
+
 .panel-fill :deep(.n-card__content) {
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
-.panel-side {
-  position: sticky;
-  top: 16px;
+
+.panel-header-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.panel-side-active {
-  border-color: rgba(91, 141, 239, 0.22);
+
+.panel-header-icon--doc {
+  color: #0d9488;
+  background: rgba(13, 148, 136, 0.1);
 }
+
+.panel-header-icon--config {
+  color: var(--translate-accent);
+  background: var(--translate-accent-soft);
+}
+
+.panel-header-icon--result {
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.panel-header-icon--done {
+  color: #18a058;
+  background: var(--translate-success-soft);
+}
+
+.panel-header-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.panel-header-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--n-text-color);
+  line-height: 1.3;
+}
+
+.panel-header-desc {
+  font-size: 12px;
+  color: var(--platform-muted, #64748b);
+  line-height: 1.4;
+}
+
 .source-toggle {
-  margin-bottom: 4px;
+  width: 100%;
 }
-.section-divider {
-  margin: 4px 0 !important;
+
+.source-toggle :deep(.n-radio-group) {
+  display: flex;
+  width: 100%;
 }
+
+.source-toggle :deep(.n-radio-button) {
+  flex: 1;
+  text-align: center;
+}
+
+.upload-fill {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+}
+
+.upload-fill :deep(.drop-zone) {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  border-radius: 12px;
+}
+
+.config-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.config-block--glossary {
+  margin-top: 2px;
+}
+
+.block-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--n-text-color);
+}
+
+.block-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .lang-row {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
+
 .lang-field {
   flex: 1;
   min-width: 0;
 }
-.lang-swap {
+
+.lang-swap-btn {
   flex-shrink: 0;
-  padding-bottom: 8px;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 2px;
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.1));
+  border-radius: 50%;
+  background: var(--n-color);
+  color: var(--platform-muted, #64748b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: background 0.2s, border-color 0.2s;
 }
+
+.lang-pair-tag {
+  align-self: flex-start;
+  font-size: 12px;
+  background: var(--translate-accent-soft) !important;
+  color: var(--translate-accent) !important;
+}
+
 .field-label {
   display: block;
   font-size: 12px;
   margin-bottom: 6px;
 }
-.glossary-badge {
-  font-weight: normal;
-  margin-left: 4px;
+
+.engine-hint {
+  font-size: 12px;
+  margin-top: -2px;
 }
-.glossary-badge.warn {
-  color: var(--n-warning-color);
+
+.start-wrap {
+  margin-top: auto;
+  padding-top: 8px;
 }
+
 .start-btn {
-  margin-top: 4px;
   font-weight: 600;
+  height: 44px;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.28);
 }
+
+.start-btn:not(:disabled):hover {
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.34);
+}
+
 .start-hint {
   display: block;
   text-align: center;
   font-size: 12px;
+  margin-top: 8px;
 }
+
 .library-pick {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   flex: 1;
+  min-height: 200px;
 }
-.library-selected {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(24, 160, 88, 0.28);
-  background: rgba(24, 160, 88, 0.04);
-}
-.library-selected-icon {
-  color: #18a058;
-  flex-shrink: 0;
-}
-.library-selected-body {
-  min-width: 0;
-  flex: 1;
-}
-.library-file-name {
-  display: block;
-  font-size: 12px;
-  margin-top: 2px;
-}
-.side-idle {
+
+.library-empty {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 160px;
+  padding: 24px 16px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--n-border-color);
+  background: rgba(15, 23, 42, 0.02);
   text-align: center;
   font-size: 13px;
 }
-.side-body {
-  width: 100%;
+
+.library-selected {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(24, 160, 88, 0.3);
+  background: var(--translate-success-soft);
 }
+
+.library-selected-icon {
+  color: #18a058;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.library-selected-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.library-file-name {
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.library-actions {
+  margin-top: auto;
+}
+
+.panel-side-active {
+  border-color: rgba(59, 130, 246, 0.28);
+  box-shadow:
+    var(--platform-shadow),
+    0 0 0 1px rgba(59, 130, 246, 0.08);
+}
+
+.panel-side-done {
+  border-color: rgba(24, 160, 88, 0.28);
+}
+
+.side-idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 260px;
+  text-align: center;
+  padding: 16px;
+}
+
+.side-idle-visual {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.side-idle-title {
+  font-size: 15px;
+}
+
+.side-idle-desc {
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 260px;
+}
+
+.side-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  flex: 1;
+}
+
+.status-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.06));
+}
+
+.status-card--done {
+  background: var(--translate-success-soft);
+  border-color: rgba(24, 160, 88, 0.22);
+}
+
+.status-card--running {
+  background: var(--translate-accent-soft);
+  border-color: rgba(59, 130, 246, 0.18);
+}
+
 .status-row {
   display: flex;
   align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
+}
+
+.status-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--translate-accent);
+  animation: translate-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes translate-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+
+.status-file {
+  display: block;
+  font-size: 13px;
+  margin-top: 8px;
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+.status-meta {
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.progress-block {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
-.status-file {
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 12px;
-  word-break: break-all;
 }
+
+.progress-pct {
+  font-size: 14px;
+  color: var(--translate-accent);
+}
+
 .stage-text {
   font-size: 13px;
+  line-height: 1.5;
 }
-.download-row {
+
+.download-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--platform-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.download-section-label--sub {
+  margin-top: 4px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.download-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.download-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.1));
+  background: var(--n-color);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    transform 0.15s,
+    box-shadow 0.2s;
+}
+
+.download-card:hover {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: var(--translate-accent-soft);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.download-card:active {
+  transform: scale(0.99);
+}
+
+.download-card--primary {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.1) 0%,
+    rgba(59, 130, 246, 0.04) 100%
+  );
+}
+
+.download-card--primary:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.download-card-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--translate-accent);
+  background: var(--translate-accent-soft);
+}
+
+.download-card-icon--muted {
+  color: var(--platform-muted, #64748b);
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.download-card-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.download-card-body strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--n-text-color);
+}
+
+.download-card-body span {
+  font-size: 12px;
+  color: var(--platform-muted, #64748b);
+}
+
+.download-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.download-row-secondary {
-  opacity: 0.95;
-}
+
 @media (max-width: 1279px) {
-  .panel-side {
-    position: static;
+  .translate-workspace {
+    overflow-y: auto;
   }
-  .header-steps {
-    width: 100%;
+
+  .translate-grid {
+    flex: none;
+    min-height: min(72vh, 760px);
+  }
+
+  .page-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-steps {
     max-width: none;
+    width: 100%;
+  }
+}
+
+@media (max-width: 639px) {
+  .page-hero {
+    padding: 14px 16px;
+  }
+
+  .hero-title {
+    font-size: 1.1rem;
+  }
+
+  .lang-swap-btn {
+    display: none;
   }
 }
 </style>

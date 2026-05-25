@@ -20,6 +20,7 @@ from app.database import get_db
 from app.models.org import User
 from app.schemas.auth import LoginRequest, MeResponse, TokenResponse
 from app.schemas.common import ApiResponse
+from app.config import get_settings
 from app.services.audit_service import write_audit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -46,6 +47,13 @@ def login(
         resource_id=str(user.id),
         ip_address=get_client_ip(request),
     )
+    if get_settings().knowflow_enabled:
+        try:
+            from app.services.ragflow_identity_service import ensure_ragflow_account
+
+            ensure_ragflow_account(db, user)
+        except Exception:
+            pass
     return ApiResponse(
         data=TokenResponse(access_token=access, refresh_token=refresh)
     )
@@ -82,7 +90,7 @@ def me(
         data=MeResponse(
             id=user.id,
             username=user.username,
-            display_name=user.display_name,
+            display_name=user.username,
             email=user.email,
             permissions=sorted(user_permission_codes(db, user.id)),
             department_ids=user_dept_ids(db, user.id),

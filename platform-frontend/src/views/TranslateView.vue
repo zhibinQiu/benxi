@@ -37,7 +37,7 @@ import {
   CloudDownloadOutline,
 } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
-import FeaturePageToolbar from "../components/FeaturePageToolbar.vue";
+import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   createTranslateJob,
   downloadTranslateFile,
@@ -267,7 +267,7 @@ onBeforeUnmount(() => {
   if (closeEvents) closeEvents();
   stopPoll();
   if (status.value === "running") {
-    message.info("翻译将在后台继续，可在任务中心或消息中查看结果", { duration: 5000 });
+    message.info("翻译将在后台继续，可在后台任务或消息中查看结果", { duration: 5000 });
   }
 });
 
@@ -404,24 +404,15 @@ async function dl(kind, name) {
 </script>
 
 <template>
-  <div class="translate-page feature-page feature-page--fill">
-    <FeaturePageToolbar>
+  <FeatureSubsystemShell fill>
+    <template #extra>
       <n-tag v-if="platformJobId" size="small" round type="info" :bordered="false">
         任务 {{ platformJobId.slice(0, 8) }}…
       </n-tag>
-    </FeaturePageToolbar>
+    </template>
 
-    <header class="page-hero">
-      <div class="hero-brand">
-        <div class="hero-icon" aria-hidden="true">
-          <n-icon :size="26" :component="LanguageOutline" />
-        </div>
-        <div class="hero-text">
-          <h1 class="hero-title">PDF 翻译</h1>
-          <p class="hero-desc">智能排版保留版式，支持双语对照与术语表，翻译可在后台持续进行</p>
-        </div>
-      </div>
-      <n-steps :current="currentStep" size="small" class="hero-steps">
+    <header class="translate-steps-bar">
+      <n-steps :current="currentStep" size="small" class="translate-steps">
         <n-step title="文档" description="上传或选取" />
         <n-step title="配置" description="语言与模型" />
         <n-step title="结果" description="下载译文" />
@@ -435,7 +426,7 @@ async function dl(kind, name) {
         class="page-alert"
         closable
       >
-        翻译在后台进行，可切换其他页面；完成后在消息或任务中心查看。
+        翻译在后台进行，可切换其他页面；完成后在消息或后台任务查看。
       </n-alert>
       <n-alert
         v-if="error"
@@ -822,84 +813,17 @@ async function dl(kind, name) {
         size="small"
       />
     </n-modal>
-  </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>
-.translate-page {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  max-width: none;
-  --translate-accent: #3b82f6;
-  --translate-accent-soft: rgba(59, 130, 246, 0.08);
-  --translate-success-soft: rgba(24, 160, 88, 0.08);
-}
-
-.page-hero {
+.translate-steps-bar {
   flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px 24px;
-  margin-bottom: 16px;
-  padding: 18px 20px;
-  border-radius: 12px;
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
-  background: linear-gradient(
-    135deg,
-    rgba(59, 130, 246, 0.06) 0%,
-    rgba(255, 255, 255, 0.95) 48%,
-    rgba(24, 160, 88, 0.04) 100%
-  );
-  box-shadow: var(--platform-shadow);
+  margin-bottom: 8px;
 }
 
-.hero-brand {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  min-width: 0;
-  flex: 1 1 280px;
-}
-
-.hero-icon {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--translate-accent);
-  background: var(--translate-accent-soft);
-  box-shadow: 0 1px 2px rgba(59, 130, 246, 0.12);
-}
-
-.hero-title {
-  margin: 0 0 4px;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--n-text-color);
-  line-height: 1.3;
-}
-
-.hero-desc {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--platform-muted, #64748b);
-  max-width: 42rem;
-}
-
-.hero-steps {
-  flex: 1 1 320px;
-  max-width: 420px;
-  min-width: 260px;
+.translate-steps {
+  max-width: 520px;
 }
 
 .page-alerts {
@@ -919,6 +843,10 @@ async function dl(kind, name) {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  max-width: none;
+  --translate-accent: #3b82f6;
+  --translate-accent-soft: rgba(59, 130, 246, 0.08);
+  --translate-success-soft: rgba(24, 160, 88, 0.08);
 }
 
 .translate-grid {
@@ -1437,26 +1365,13 @@ async function dl(kind, name) {
     min-height: min(72vh, 760px);
   }
 
-  .page-hero {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .hero-steps {
+  .translate-steps {
     max-width: none;
     width: 100%;
   }
 }
 
 @media (max-width: 639px) {
-  .page-hero {
-    padding: 14px 16px;
-  }
-
-  .hero-title {
-    font-size: 1.1rem;
-  }
-
   .lang-swap-btn {
     display: none;
   }

@@ -1,4 +1,4 @@
-/* 智碳 AI 平台 — KnowFlow 全局绿色主题（与 platform-frontend App.vue 一致） */
+/* 智碳平台AI子系统 — KnowFlow 全局绿色主题（与 platform-frontend App.vue 一致） */
 :root {
   /* 主色阶：实心用于按钮/勾选，浅色用于背景，深色用于标题强调 */
   --platform-primary: #18a058;

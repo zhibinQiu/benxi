@@ -1,6 +1,6 @@
 # REST API 开发文档（Vue / 外部前端）
 
-本文档描述 `pdf2zh_next --api` 提供的 **REST + SSE** 接口。智碳 AI平台经 `platform` 代理调用；也可用于自建客户端。
+本文档描述 `pdf2zh_next --api` 提供的 **REST + SSE** 接口。智碳平台AI子系统经 `platform` 代理调用；也可用于自建客户端。
 
 > [!NOTE]
 > 文档 [../APIS.md](../APIS.md) 中的 Flask/Celery/Redis HTTP API **已废弃**。请以本文档为准。

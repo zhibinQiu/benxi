@@ -15,7 +15,7 @@
       var token = params.get("token");
       var target = params.get("target") || "http://127.0.0.1:9380/";
       if (!token) {
-        document.getElementById("msg").textContent = "缺少登录凭证，请从智碳平台重新进入。";
+        document.getElementById("msg").textContent = "缺少登录凭证，请从智碳平台 AI 子系统重新进入。";
         return;
       }
       var raw = token.replace(/^Bearer\s+/i, "").trim();

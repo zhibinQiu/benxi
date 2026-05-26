@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 智碳 AI平台启动脚本（本地优先）
+# 智碳平台 AI 子系统启动脚本（本地优先）
 # - 有 .venv / node_modules 时：pdf2zh、平台 API、Worker、前端在宿主机运行
 # - 无本地环境时：回退 Docker 构建 api/worker/frontend
 # - 基础设施（postgres / redis / minio）默认 Docker
@@ -123,6 +123,25 @@ start_speech_stack() {
   fi
 }
 
+ensure_speech_service() {
+  if curl -sf "http://127.0.0.1:8765/health" >/dev/null 2>&1; then
+    info "speech-api 已在 8765 端口监听"
+    return 0
+  fi
+  if [[ -x "$ROOT/platform/speech-service/.venv/bin/uvicorn" ]]; then
+    info "启动宿主机 speech-api（会议助手）..."
+    bash "$ROOT/scripts/start_speech_local.sh" || warn "speech-api 启动失败"
+    wait_url "http://127.0.0.1:8765/health" "speech-api" 60 5 \
+      || warn "speech-api 可能仍在加载模型，日志: $ROOT/.run/logs/speech-api.log"
+    return 0
+  fi
+  if command -v docker >/dev/null 2>&1 && [[ -f "$PLATFORM/docker-compose.speech.yml" ]]; then
+    start_speech_stack
+  else
+    warn "未检测到语音服务，会议助手不可用。可执行: bash scripts/setup_speech.sh"
+  fi
+}
+
 start_knowflow_stack() {
   require_cmd docker
   if [[ ! -d "$PLATFORM/third_party/KnowFlow" ]]; then
@@ -157,11 +176,38 @@ start_knowflow_stack() {
     ensure_env_kv RAGFLOW_ACCOUNT_MODE shared
     ensure_env_kv RAGFLOW_SHARED_EMAIL admin@gmail.com
     ensure_env_kv RAGFLOW_SHARED_PASSWORD admin
+    ensure_env_kv SMART_DATA_QUERY_V2_DIFY_BASE_URL "http://172.19.134.45:40001/v1"
+    ensure_env_kv SMART_DATA_QUERY_V2_DIFY_API_KEY "app-61GFhU5Lw1nESxMXv7mmuSzR"
     info "KnowFlow 集成已写入 platform/.env（默认 RAGFLOW_ACCOUNT_MODE=shared，可按需改为 mapped）"
   fi
 }
 
+ensure_smart_data_query_v2_env() {
+  [[ -f "$PLATFORM/.env" ]] || return 0
+  [[ -z $(tail -c1 "$PLATFORM/.env" 2>/dev/null | tr -d '\n') ]] || echo >> "$PLATFORM/.env"
+  ensure_env_kv() {
+    local key="$1" val="$2"
+    grep -q "^${key}=" "$PLATFORM/.env" || printf '%s=%s\n' "$key" "$val" >> "$PLATFORM/.env"
+  }
+  ensure_env_kv SMART_DATA_QUERY_V2_DIFY_BASE_URL "http://172.19.134.45:40001/v1"
+  ensure_env_kv SMART_DATA_QUERY_V2_DIFY_API_KEY "app-61GFhU5Lw1nESxMXv7mmuSzR"
+  ensure_env_kv CARBON_QA_V2_CHAT_BASE_URL "http://172.19.134.45:40001/v1"
+  ensure_env_kv CARBON_QA_V2_CHAT_API_KEY "app-eTtTSHqC9w2Di8CHVUVLu98s"
+}
+
+restart_platform_api_local() {
+  local pid_file="$RUN_DIR/platform-api.pid"
+  pkill -f "uvicorn app.main:app --reload --host 127.0.0.1 --port 8000" 2>/dev/null || true
+  if [[ -f "$pid_file" ]]; then
+    kill "$(cat "$pid_file")" 2>/dev/null || true
+    pkill -P "$(cat "$pid_file")" 2>/dev/null || true
+    rm -f "$pid_file"
+  fi
+  sleep 1
+}
+
 start_platform_api_local() {
+  ensure_smart_data_query_v2_env
   if curl -sf "http://127.0.0.1:8000/docs" >/dev/null 2>&1; then
     info "平台 API 已在 8000 端口监听"
     return 0
@@ -237,6 +283,7 @@ mode_local() {
     cd "$PLATFORM"
     $COMPOSE --profile docker-app up -d frontend
   fi
+  ensure_speech_service
 }
 
 mode_docker() {
@@ -276,7 +323,7 @@ print_urls() {
   local with_knowflow="${1:-}"
   cat <<EOF
 
-${GREEN}=== 智碳 AI平台已启动 ===${NC}
+${GREEN}=== 智碳平台 AI 子系统已启动 ===${NC}
 
   平台前端:     http://127.0.0.1:5174  → 系统功能 → 知识问答（内嵌 KnowFlow 完整界面）
   平台 API:     http://127.0.0.1:8000  (Swagger: /docs)

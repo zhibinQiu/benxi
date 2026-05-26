@@ -1,6 +1,6 @@
-# 智碳 AI 平台 — 架构与开发手册
+# 智碳平台AI子系统 — 架构与开发手册
 
-> 版本：**2.0.0**（标签 `v2.0`） · 展示名：**智碳AI平台v2**  
+> 版本：**2.1.0**（标签 `v2.1.0`） · 展示名：**智碳平台AI子系统**  
 > 本文档描述**平台自有代码**（`platform/`、`platform-frontend/`、`scripts/`），不包含 `platform/third_party/KnowFlow` 内部实现细节。
 
 ---
@@ -9,7 +9,7 @@
 
 ```
 pdf_trans/                          #  monorepo 根目录
-├── VERSION                         #  平台版本号 2.0.0
+├── VERSION                         #  平台版本号 2.1.0
 ├── scripts/                        #  一键启动、KnowFlow/语音构建脚本
 ├── platform/                       #  FastAPI 控制面 + Celery Worker
 │   ├── app/
@@ -299,7 +299,7 @@ pdf2zh_next --api --api-port 7861
 
 ## 11. 相关文档
 
-- [智碳 AI 平台快速上手](doc-platform.md)
+- [智碳平台AI子系统快速上手](doc-platform.md)
 - [本地开发](local-development.md)
 - [REST API](rest-api.md)
 - [功能插件](../platform/feature-plugins.md)

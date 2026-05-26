@@ -578,7 +578,7 @@ watch(
 
     <template #header-extra>
       <n-space>
-        <n-button v-if="!isMainView" @click="backToLibrary">返回文档库</n-button>
+        <n-button v-if="!isMainView" @click="backToLibrary">返回列表</n-button>
         <n-popconfirm
           v-if="isRecycleView"
           :disabled="!total"

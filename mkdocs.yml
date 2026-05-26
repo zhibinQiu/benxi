@@ -1,5 +1,5 @@
-site_name: PDF 翻译与智碳 AI平台
-site_description: PDF 科学文献翻译与智碳 AI平台（中文文档）
+site_name: PDF 翻译与智碳平台AI子系统
+site_description: PDF 科学文献翻译与智碳平台AI子系统（中文文档）
 repo_url: https://github.com/PDFMathTranslate-next/PDFMathTranslate-next
 edit_uri: edit/main/docs/zh/
 
@@ -51,7 +51,7 @@ nav:
     - 翻译服务: advanced/Documentation-of-Translation-Services.md
   - 开发:
     - 本地开发: development/local-development.md
-    - 智碳 AI平台: development/doc-platform.md
+    - 智碳平台AI子系统: development/doc-platform.md
     - 平台架构与运维: development/platform-architecture.md
     - REST API: development/rest-api.md
   - 平台设计:

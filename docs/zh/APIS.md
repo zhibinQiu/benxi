@@ -1,7 +1,7 @@
 # API 说明
 
 !!! warning "已废弃"
-    本文档面向 **pdf2zh 独立 API**，与智碳 AI 平台 `platform` 的 `/api/v1` 无关。  
+    本文档面向 **pdf2zh 独立 API**，与智碳平台AI子系统 `platform` 的 `/api/v1` 无关。  
     平台开发请阅读 [REST API（平台）](./development/rest-api.md) 与 [平台架构](./development/platform-architecture.md)。
 
 ## 当前推荐

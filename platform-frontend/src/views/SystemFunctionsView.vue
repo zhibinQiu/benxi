@@ -110,7 +110,7 @@ function openFeature(f) {
 <template>
   <div class="functions-page feature-page">
     <n-text depth="2" class="page-hint feature-tip">
-      按类别选择功能进入；长任务提交后可离开，在任务中心或消息中查看结果
+      按类别选择功能进入；长任务提交后可离开，在后台任务或消息中查看结果
     </n-text>
 
     <template v-if="!loading">

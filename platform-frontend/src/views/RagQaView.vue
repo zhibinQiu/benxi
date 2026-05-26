@@ -1,25 +1,20 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useAuth } from "../composables/useAuth";
-import { useRoute, useRouter } from "vue-router";
-import {
-  NAlert,
-  NButton,
-  NFloatButton,
-  NIcon,
-  NSpin,
-  useMessage,
-} from "naive-ui";
-import { ArrowBackOutline } from "@vicons/ionicons5";
+import { useRoute } from "vue-router";
+import { NAlert, NButton, useMessage } from "naive-ui";
 import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
+import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
 
 const route = useRoute();
-const router = useRouter();
 const message = useMessage();
 const { user } = useAuth();
 
-const loading = ref(true);
-const iframeLoading = ref(false);
+const STARTUP_HINT = "正在启动知识服务系统";
+
+const bootstrapping = ref(true);
+const iframeReady = ref(false);
 const meta = ref({
   ui_embed_url: "",
   ui_direct_url: "http://127.0.0.1:9380",
@@ -30,10 +25,7 @@ const meta = ref({
   integration_phase: 1,
 });
 const embedSession = ref(null);
-/** 仅在拿到平台 embed-session 后设置，避免无 auth 的首屏加载触发 KnowFlow 登录页 */
 const iframeSrc = ref("");
-
-let iframeLoadTimer = null;
 
 function resolveEmbedBase(url) {
   let base = url || meta.value.ui_direct_url || "http://127.0.0.1:9380";
@@ -87,20 +79,6 @@ function postSsoToIframe() {
   postToIframe({ type: "zt-platform-sso", sso });
 }
 
-function clearIframeLoadTimer() {
-  if (iframeLoadTimer) {
-    clearTimeout(iframeLoadTimer);
-    iframeLoadTimer = null;
-  }
-}
-
-function armIframeLoadTimeout(ms = 20000) {
-  clearIframeLoadTimer();
-  iframeLoadTimer = setTimeout(() => {
-    iframeLoading.value = false;
-  }, ms);
-}
-
 function applyIframeSession(session) {
   if (!meta.value.ui_available) {
     iframeSrc.value = "";
@@ -110,15 +88,18 @@ function applyIframeSession(session) {
     iframeSrc.value = "";
     return;
   }
-  iframeLoading.value = true;
+  iframeReady.value = false;
   iframeSrc.value = buildKnowflowUrl(session);
-  armIframeLoadTimeout();
 }
 
+const showStartupHint = computed(
+  () => bootstrapping.value || (Boolean(iframeSrc.value) && !iframeReady.value)
+);
+
 async function loadMeta() {
-  loading.value = true;
+  bootstrapping.value = true;
+  iframeReady.value = false;
   iframeSrc.value = "";
-  clearIframeLoadTimer();
   try {
     const [m, session] = await Promise.all([
       fetchRagMeta(),
@@ -137,33 +118,25 @@ async function loadMeta() {
   } catch (e) {
     message.error(e.message);
   } finally {
-    loading.value = false;
+    bootstrapping.value = false;
   }
 }
 
-function goBack() {
-  router.push({ name: "system-functions" });
-}
-
 function onIframeLoad() {
-  clearIframeLoadTimer();
-  iframeLoading.value = false;
+  iframeReady.value = true;
   postSsoToIframe();
   postThemeToIframe();
 }
 
 async function reloadKnowflowForUser() {
   if (route.name !== "rag") return;
-  loading.value = true;
+  iframeReady.value = false;
   iframeSrc.value = "";
   try {
     embedSession.value = await fetchRagEmbedSession().catch(() => null);
     applyIframeSession(embedSession.value);
   } catch (e) {
     message.error(e.message);
-    iframeLoading.value = false;
-  } finally {
-    loading.value = false;
   }
 }
 
@@ -177,41 +150,36 @@ watch(
 watch(
   () => user.value?.id,
   (id, prev) => {
-    if (id && id !== prev && route.name === "rag" && !loading.value) {
+    if (id && id !== prev && route.name === "rag" && !bootstrapping.value) {
       reloadKnowflowForUser();
     }
   }
 );
 
 onMounted(loadMeta);
-onBeforeUnmount(clearIframeLoadTimer);
 </script>
 
 <template>
-  <div class="knowflow-native">
-    <n-spin :show="loading" class="knowflow-spin">
+  <FeatureSubsystemShell fill>
+    <div class="subsystem-embed-host">
       <n-alert
-        v-if="!loading && !meta.ui_available"
+        v-if="!bootstrapping && !meta.ui_available"
         type="warning"
         title="知识问答服务未就绪"
-        class="knowflow-alert"
+        class="embed-alert"
       >
-        <p>KnowFlow（RAGFlow）Web 未启动或 :9380 不可访问，平台无法内嵌知识问答界面。</p>
+        <p>知识问答服务暂不可用，请稍后重试或联系管理员。</p>
         <p v-if="meta.ui_hint" style="margin: 8px 0 0">{{ meta.ui_hint }}</p>
-        <p v-else style="margin: 8px 0 0">
-          本地开发请执行：<code>bash scripts/start_platform.sh knowflow</code>，等待 RAGFlow 就绪后刷新。
-          诊断：<code>bash scripts/check_knowflow.sh</code>
-        </p>
         <template #action>
           <n-button size="small" @click="loadMeta">重新检测</n-button>
         </template>
       </n-alert>
 
       <n-alert
-        v-if="!loading && meta.ui_available && embedSession?.sso && !embedSession.sso.ready"
+        v-if="!bootstrapping && meta.ui_available && embedSession?.sso && !embedSession.sso.ready"
         type="info"
-        title="未自动登录 KnowFlow"
-        class="knowflow-alert"
+        title="登录未完成"
+        class="embed-alert"
       >
         {{ embedSession.sso.message || "请刷新页面重试。" }}
         <template #action>
@@ -219,81 +187,26 @@ onBeforeUnmount(clearIframeLoadTimer);
         </template>
       </n-alert>
 
+      <KnowledgeServiceStartup v-if="showStartupHint" :message="STARTUP_HINT" />
+
       <iframe
         v-if="iframeSrc"
         id="knowflow-embed"
-        class="knowflow-frame"
-        :class="{ 'knowflow-frame--loading': iframeLoading }"
+        class="subsystem-embed-frame"
+        :class="{ 'subsystem-embed-frame--loading': showStartupHint }"
         :src="iframeSrc"
         title="知识问答"
         allow="fullscreen; clipboard-read; clipboard-write"
         referrerpolicy="no-referrer-when-downgrade"
         @load="onIframeLoad"
       />
-      <div v-if="iframeSrc && iframeLoading" class="knowflow-iframe-hint">
-        正在加载 KnowFlow…
-      </div>
-    </n-spin>
-
-    <n-float-button
-      class="knowflow-back-float"
-      type="primary"
-      :width="88"
-      :height="54"
-      :bottom="96"
-      :left="24"
-      @click="goBack"
-    >
-      <template #description>返回平台</template>
-      <n-icon :component="ArrowBackOutline" />
-    </n-float-button>
-  </div>
+    </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>
-.knowflow-native {
-  position: relative;
-  width: 100%;
-  height: 100vh;
-  min-height: 480px;
-  background: #f5f5f5;
-}
-.knowflow-spin {
-  width: 100%;
-  height: 100%;
-}
-.knowflow-spin :deep(.n-spin-container) {
-  width: 100%;
-  height: 100%;
-}
-.knowflow-alert {
-  margin: 24px;
+.embed-alert {
+  margin: 16px;
   max-width: 640px;
-}
-.knowflow-frame {
-  display: block;
-  width: 100%;
-  height: 100vh;
-  border: none;
-  background: #fff;
-}
-.knowflow-frame--loading {
-  opacity: 0.35;
-}
-.knowflow-iframe-hint {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 8px;
-  font-size: 14px;
-  color: #666;
-  pointer-events: none;
-  z-index: 2;
-}
-.knowflow-back-float :deep(.n-float-button__body) {
-  padding-inline: 10px;
 }
 </style>

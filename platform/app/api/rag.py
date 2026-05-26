@@ -60,12 +60,9 @@ def rag_meta(
         mode = "iframe"
     ui_hint = ""
     if settings.knowflow_enabled and not ui_available:
-        ui_hint = (
-            "KnowFlow/RAGFlow Web 界面未响应（需 :9380 返回 HTML）。"
-            "请执行：bash scripts/start_platform.sh knowflow"
-        )
+        ui_hint = "知识问答 Web 服务未响应，请联系管理员检查服务状态。"
     elif not settings.knowflow_enabled:
-        ui_hint = "请在 platform/.env 中设置 KNOWFLOW_ENABLED=true 并启动 KnowFlow 栈。"
+        ui_hint = "知识问答未启用，请联系管理员在平台配置中开启。"
     return ApiResponse(
         data={
             "knowflow_enabled": stack_on,

@@ -49,3 +49,4 @@ body,
 </style>
 
 <style src="./styles/platform.css"></style>
+<style src="./styles/subsystem-embed.css"></style>

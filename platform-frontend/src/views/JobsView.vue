@@ -163,7 +163,7 @@ onMounted(load);
 </script>
 
 <template>
-  <n-card title="任务中心">
+  <n-card title="后台任务">
     <template #header-extra>
       <n-space :size="8">
         <n-popconfirm @positive-click="doClear('finished')">

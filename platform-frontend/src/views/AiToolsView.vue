@@ -8,7 +8,7 @@ import {
   ExtensionPuzzleOutline,
   GridOutline,
 } from "@vicons/ionicons5";
-import FeaturePageToolbar from "../components/FeaturePageToolbar.vue";
+import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
 const message = useMessage();
 
@@ -107,12 +107,7 @@ function openTool(tool) {
 </script>
 
 <template>
-  <div class="functions-page">
-    <FeaturePageToolbar />
-    <n-text depth="2" class="page-hint">
-      按类别浏览常用 AI 外链；点击卡片在新标签页打开（需可访问外网）。待开发项暂不可跳转。
-    </n-text>
-
+  <FeatureSubsystemShell>
     <section
       v-for="cat in categories"
       :key="cat.id"
@@ -169,7 +164,7 @@ function openTool(tool) {
         </n-gi>
       </n-grid>
     </section>
-  </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>

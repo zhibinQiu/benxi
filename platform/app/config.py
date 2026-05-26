@@ -1,17 +1,21 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_PLATFORM_DIR = Path(__file__).resolve().parent.parent
+_ENV_FILE = _PLATFORM_DIR / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE) if _ENV_FILE.is_file() else None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    app_name: str = "智碳AI平台v2"
-    platform_version: str = "2.0.0"
+    app_name: str = "智碳平台AI子系统"
+    platform_version: str = "2.1.0"
     debug: bool = False
     api_prefix: str = "/api/v1"
 
@@ -82,7 +86,7 @@ class Settings(BaseSettings):
     knowflow_theme_primary: str = "#18a058"
     knowflow_theme_primary_hover: str = "#36ad6a"
     knowflow_theme_primary_pressed: str = "#0c7a43"
-    knowflow_theme_app_name: str = "智碳AI平台"
+    knowflow_theme_app_name: str = "智碳平台AI子系统"
     knowflow_theme_logo_url: str = "/logo.svg"
     knowflow_theme_favicon_url: str = "/favicon.svg"
     knowflow_hide_file_manager: bool = True
@@ -116,6 +120,12 @@ class Settings(BaseSettings):
     design_system_upstream_url: str = "http://172.19.134.45:40001"
     design_system_proxy_prefix: str = "/design-system-ui"
     smart_data_query_path: str = "/ai/smart-data-query"
+    # 智能问数 v2（对话 API，密钥勿提交仓库）
+    smart_data_query_v2_dify_base_url: str = "http://172.19.134.45:40001/v1"
+    smart_data_query_v2_dify_api_key: str = ""
+    # 双碳问答 v2（对话 API 地址与问数一致，应用密钥独立）
+    carbon_qa_v2_chat_base_url: str = "http://172.19.134.45:40001/v1"
+    carbon_qa_v2_chat_api_key: str = ""
     carbon_qa_path: str = "/ai/retrieval"
     carbon_ai_v1_path: str = "/ai"
     # 智能预测：direct=直连上游（无需登录）；vite=前端 /smart-forecast-ui 代理

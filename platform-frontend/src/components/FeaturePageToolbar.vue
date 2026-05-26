@@ -1,48 +1,16 @@
 <script setup>
-import { useRouter } from "vue-router";
-import { NButton, NIcon } from "naive-ui";
-import { ArrowBackOutline } from "@vicons/ionicons5";
+import FeatureSubsystemHeader from "./FeatureSubsystemHeader.vue";
 
-const router = useRouter();
-
-function goBack() {
-  router.push({ name: "system-functions" });
-}
+defineProps({
+  description: { type: String, default: "" },
+  showIntro: { type: Boolean, default: true },
+});
 </script>
 
 <template>
-  <header class="feature-toolbar">
-    <n-button quaternary class="back-btn" @click="goBack">
-      <template #icon>
-        <n-icon :component="ArrowBackOutline" />
-      </template>
-      返回
-    </n-button>
-    <div v-if="$slots.default" class="feature-toolbar-extra">
+  <FeatureSubsystemHeader :description="description" :show-intro="showIntro">
+    <template v-if="$slots.default" #extra>
       <slot />
-    </div>
-  </header>
+    </template>
+  </FeatureSubsystemHeader>
 </template>
-
-<style scoped>
-.feature-toolbar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-  padding: 4px 0 8px;
-  border-bottom: 1px solid var(--platform-border, var(--n-border-color));
-}
-.back-btn {
-  flex-shrink: 0;
-}
-.feature-toolbar-extra {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-</style>

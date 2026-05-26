@@ -7,7 +7,7 @@
 | 路径 | 说明 |
 |------|------|
 | `pdf2zh_next/` | PDF 翻译核心（CLI、Gradio、REST API） |
-| `platform/` | 智碳 AI平台后端 |
+| `platform/` | 智碳平台AI子系统后端 |
 | `platform-frontend/` | 平台 Vue 前端 |
 | `scripts/` | `start_platform.sh`、`stop_platform.sh`、`download_babeldoc_assets.sh` |
 | `assets/babeldoc/` | BabelDOC 模型/字体（可选，见下文） |
@@ -43,7 +43,7 @@ bash scripts/download_babeldoc_assets.sh
 
 ## 4. 运行方式
 
-### 4.1 智碳 AI平台（推荐）
+### 4.1 智碳平台AI子系统（推荐）
 
 ```bash
 bash scripts/start_platform.sh

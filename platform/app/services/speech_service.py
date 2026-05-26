@@ -113,6 +113,17 @@ async def is_configured() -> bool:
     return await speech_local_client.check_health()
 
 
+def _speech_service_hint(healthy: bool) -> str | None:
+    if healthy:
+        return None
+    url = get_settings().speech_service_url.rstrip("/")
+    return (
+        f"语音转写服务未启动（{url}）。"
+        "请在项目根目录执行：bash scripts/start_speech_local.sh"
+        " 或 bash scripts/start_platform.sh speech"
+    )
+
+
 async def get_meta() -> SpeechMetaOut:
     settings = get_settings()
     lang = settings.stt_language.strip() or None
@@ -121,6 +132,7 @@ async def get_meta() -> SpeechMetaOut:
 
     remote = await speech_local_client.fetch_remote_meta()
     healthy = await speech_local_client.check_health()
+    hint = _speech_service_hint(healthy)
     if remote:
         asr = remote.get("asr_model", settings.funasr_asr_model)
         spk = remote.get("spk_model")
@@ -137,6 +149,7 @@ async def get_meta() -> SpeechMetaOut:
             diarization_available=bool(remote.get("diarization_available")),
             summarize_available=summarize_ok,
             summarize_model=summarize_model,
+            service_hint=hint,
         )
 
     return SpeechMetaOut(
@@ -149,6 +162,7 @@ async def get_meta() -> SpeechMetaOut:
         diarization_available=settings.diarization_enabled,
         summarize_available=summarize_ok,
         summarize_model=summarize_model,
+        service_hint=hint,
     )
 
 

@@ -13,11 +13,17 @@ const routes = [
     path: "/",
     component: () => import("../layouts/MainLayout.vue"),
     children: [
-      { path: "", redirect: "/system/functions" },
+      { path: "", redirect: { name: "ai-home" } },
+      {
+        path: "ai-home",
+        name: "ai-home",
+        meta: { title: "双碳智能体", fullHeight: true, featureIcon: "sparkles" },
+        component: () => import("../views/AiHomeView.vue"),
+      },
       {
         path: "system/functions",
         name: "system-functions",
-        meta: { title: "系统功能", featureIcon: "grid" },
+        meta: { title: "系统功能", featureIcon: "grid", hideAssistant: true },
         component: () => import("../views/SystemFunctionsView.vue"),
       },
       {
@@ -35,30 +41,28 @@ const routes = [
       {
         path: "system/rag",
         name: "rag",
-        meta: { title: "知识问答", knowflowNative: true, featureIcon: "chatbubbles" },
+        meta: { title: "知识问答", fullHeight: true, featureIcon: "chatbubbles" },
         component: () => import("../views/RagQaView.vue"),
       },
       {
         path: "system/smart-data-query",
         name: "smart-data-query",
-        meta: {
-          title: "智能问数",
-          fullHeight: true,
-          featureIcon: "stats-chart",
-          embedFeatureId: "smart_data_query",
-        },
-        component: () => import("../views/FeatureEmbedView.vue"),
+        meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart" },
+        component: () => import("../views/SmartDataQueryV2View.vue"),
+      },
+      {
+        path: "system/smart-data-query-v2",
+        redirect: { name: "smart-data-query" },
       },
       {
         path: "system/carbon-qa",
         name: "carbon-qa",
-        meta: {
-          title: "双碳问答",
-          fullHeight: true,
-          featureIcon: "chatbubbles",
-          embedFeatureId: "carbon_qa",
-        },
-        component: () => import("../views/FeatureEmbedView.vue"),
+        meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles" },
+        component: () => import("../views/CarbonQaV2View.vue"),
+      },
+      {
+        path: "system/carbon-qa-v2",
+        redirect: { name: "carbon-qa" },
       },
       {
         path: "system/smart-forecast",
@@ -96,8 +100,19 @@ const routes = [
         component: () => import("../views/AssistWritingView.vue"),
       },
       {
+        path: "knowledge-graph",
+        name: "knowledge-graph",
+        meta: {
+          title: "知识图谱",
+          fullHeight: true,
+          featureIcon: "git-network",
+        },
+        component: () => import("../views/KnowledgeGraphView.vue"),
+      },
+      {
         path: "documents",
         name: "documents",
+        meta: { title: "文档库", featureIcon: "document-text" },
         component: () => import("../views/DocumentsView.vue"),
       },
       {
@@ -107,6 +122,7 @@ const routes = [
       {
         path: "documents/:id",
         name: "document-detail",
+        meta: { title: "文档详情", featureIcon: "document-text" },
         component: () => import("../views/DocumentDetailView.vue"),
         beforeEnter: (to) => {
           const id = String(to.params.id || "");
@@ -124,6 +140,7 @@ const routes = [
       {
         path: "jobs",
         name: "jobs",
+        meta: { title: "后台任务" },
         component: () => import("../views/JobsView.vue"),
       },
       {
@@ -176,7 +193,7 @@ router.beforeEach(async (to) => {
   const { loadUser, hasPerm, user } = useAuth();
   if (!user.value) await loadUser();
   if (to.meta.perm && !hasPerm(to.meta.perm)) {
-    return { name: "system-functions" };
+    return { name: "ai-home" };
   }
   return true;
 });

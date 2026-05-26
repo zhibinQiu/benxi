@@ -195,7 +195,7 @@ async def create_job(
     )
 
     result = job_to_dict(job)
-    result["message"] = "翻译已在后台执行，可离开页面，稍后在「任务中心」或「消息」中查看结果"
+    result["message"] = "翻译已在后台执行，可离开页面，稍后在「后台任务」或「消息」中查看结果"
     return ApiResponse(data=result)
 
 

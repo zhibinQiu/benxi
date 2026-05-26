@@ -25,6 +25,10 @@ import {
   PulseOutline,
   HardwareChipOutline,
   ListOutline,
+  SparklesOutline,
+  LibraryOutline,
+  GitNetworkOutline,
+  ArrowBackOutline,
 } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
@@ -38,6 +42,7 @@ const router = useRouter();
 const { user, loadUser, logout, hasPerm } = useAuth();
 
 const SETTINGS_KEY = "system-settings";
+const KNOWLEDGE_CENTER_KEY = "knowledge-center";
 const expandedKeys = ref([]);
 
 const unreadCount = ref(0);
@@ -104,6 +109,11 @@ const settingsChildren = computed(() => {
 const menuOptions = computed(() => {
   const items = [
     {
+      label: "双碳智能体",
+      key: "ai-home",
+      icon: () => h(NIcon, null, { default: () => h(SparklesOutline) }),
+    },
+    {
       label: "系统功能",
       key: "system-functions",
       icon: () => h(NIcon, null, { default: () => h(GridOutline) }),
@@ -114,14 +124,26 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(ListOutline) }),
     },
     {
-      label: "文档库",
-      key: "documents",
-      icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
-    },
-    {
-      label: "任务中心",
+      label: "后台任务",
       key: "jobs",
       icon: () => h(NIcon, null, { default: () => h(TimeOutline) }),
+    },
+    {
+      label: "知识中心",
+      key: KNOWLEDGE_CENTER_KEY,
+      icon: () => h(NIcon, null, { default: () => h(LibraryOutline) }),
+      children: [
+        {
+          label: "文档库",
+          key: "documents",
+          icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
+        },
+        {
+          label: "知识图谱",
+          key: "knowledge-graph",
+          icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
+        },
+      ],
     },
   ];
   if (showSystemSettings.value && settingsChildren.value.length) {
@@ -135,14 +157,18 @@ const menuOptions = computed(() => {
   return items;
 });
 
-const knowflowNative = computed(() => Boolean(route.meta?.knowflowNative));
-
 const showAssistant = computed(
-  () => route.name !== "login" && !route.meta?.public
+  () =>
+    route.name !== "login" &&
+    route.name !== "ai-home" &&
+    route.name !== "system-functions" &&
+    !route.meta?.public &&
+    !route.meta?.hideAssistant
 );
 
 const activeKey = computed(() => {
   if (route.name === "document-detail") return "documents";
+  if (route.name === "knowledge-graph") return "knowledge-graph";
   if (
     route.name === "translate" ||
     route.name === "rag" ||
@@ -165,7 +191,7 @@ const activeKey = computed(() => {
   ) {
     return String(route.name);
   }
-  return String(route.name || "system-functions");
+  return String(route.name || "ai-home");
 });
 
 const fullHeightPage = computed(() => Boolean(route.meta?.fullHeight));
@@ -174,12 +200,48 @@ const headerTitle = computed(() => String(route.meta?.title || "").trim());
 
 const headerIcon = computed(() => resolveFeatureIcon(route.meta?.featureIcon));
 
-const showAppTitle = computed(
-  () => !knowflowNative.value && !headerTitle.value
+/** 从系统功能进入的子系统：全局顶栏展示返回 + 功能标题 */
+const SUBSYSTEM_HEADER_ROUTES = new Set([
+  "ai-home",
+  "ai-tools",
+  "translate",
+  "rag",
+  "smart-data-query",
+  "carbon-qa",
+  "smart-forecast",
+  "speech",
+  "ocr",
+  "compare",
+  "assist-writing",
+  "knowledge-graph",
+]);
+
+const isSubsystemPage = computed(() =>
+  SUBSYSTEM_HEADER_ROUTES.has(String(route.name || ""))
 );
 
+const showSubsystemNav = computed(
+  () => isSubsystemPage.value && Boolean(headerTitle.value)
+);
+
+const showSubsystemBack = computed(
+  () => showSubsystemNav.value && route.name !== "ai-home"
+);
+
+const showStandardFeatureTitle = computed(
+  () => Boolean(headerTitle.value) && !isSubsystemPage.value
+);
+
+const showAppTitle = computed(
+  () => !showSubsystemNav.value && !showStandardFeatureTitle.value
+);
+
+function goSubsystemBack() {
+  router.push({ name: "system-functions" });
+}
+
 const contentStyle = computed(() => {
-  if (knowflowNative.value || route.meta?.fullEmbed) {
+  if (route.meta?.fullEmbed) {
     return "padding: 0; height: 100vh; overflow: hidden";
   }
   if (fullHeightPage.value) {
@@ -188,20 +250,27 @@ const contentStyle = computed(() => {
   return "padding: 20px 24px";
 });
 
-function ensureSettingsExpanded() {
+function ensureMenuExpanded() {
+  const keys = [...expandedKeys.value];
+  if (
+    route.name === "documents" ||
+    route.name === "document-detail" ||
+    route.name === "knowledge-graph"
+  ) {
+    if (!keys.includes(KNOWLEDGE_CENTER_KEY)) keys.push(KNOWLEDGE_CENTER_KEY);
+  }
   if (
     route.name === "admin-users" ||
     route.name === "admin-departments" ||
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings"
   ) {
-    if (!expandedKeys.value.includes(SETTINGS_KEY)) {
-      expandedKeys.value = [...expandedKeys.value, SETTINGS_KEY];
-    }
+    if (!keys.includes(SETTINGS_KEY)) keys.push(SETTINGS_KEY);
   }
+  expandedKeys.value = keys;
 }
 
-watch(() => route.name, ensureSettingsExpanded, { immediate: true });
+watch(() => route.name, ensureMenuExpanded, { immediate: true });
 
 watch(
   () => route.name,
@@ -216,7 +285,9 @@ function onExpandedKeysUpdate(keys) {
 
 function onMenuSelect(key) {
   const map = {
+    "ai-home": "/ai-home",
     documents: "/documents",
+    "knowledge-graph": "/knowledge-graph",
     "system-functions": "/system/functions",
     jobs: "/jobs",
     notifications: "/notifications",
@@ -240,9 +311,8 @@ function doLogout() {
 </script>
 
 <template>
-  <n-layout class="app-shell" :has-sider="!knowflowNative">
+  <n-layout class="app-shell" has-sider>
     <n-layout-sider
-      v-if="!knowflowNative"
       class="app-sider"
       bordered
       collapse-mode="width"
@@ -266,13 +336,40 @@ function doLogout() {
       </div>
     </n-layout-sider>
     <n-layout class="app-main">
-      <n-layout-header v-if="!knowflowNative" bordered class="header">
+      <n-layout-header bordered class="header">
         <n-space align="center" justify="space-between" style="width: 100%">
-          <n-space align="center" :size="10" class="header-title-wrap">
-            <div v-if="headerIcon" class="header-feature-icon">
+          <n-space
+            v-if="showSubsystemNav"
+            align="center"
+            :size="8"
+            class="header-title-wrap header-subsystem-nav"
+          >
+            <n-button
+              v-if="showSubsystemBack"
+              quaternary
+              circle
+              size="small"
+              class="header-back"
+              aria-label="返回"
+              @click="goSubsystemBack"
+            >
+              <n-icon :size="20" :component="ArrowBackOutline" />
+            </n-button>
+            <div v-if="headerIcon" class="header-feature-icon header-feature-icon--brand">
+              <n-icon :size="20" :component="headerIcon" />
+            </div>
+            <n-text strong class="header-title">{{ headerTitle }}</n-text>
+          </n-space>
+          <n-space
+            v-else-if="showStandardFeatureTitle || showAppTitle"
+            align="center"
+            :size="10"
+            class="header-title-wrap"
+          >
+            <div v-if="headerIcon && showStandardFeatureTitle" class="header-feature-icon">
               <n-icon :size="22" :component="headerIcon" />
             </div>
-            <n-text v-if="headerTitle && !knowflowNative" strong class="header-title">
+            <n-text v-if="showStandardFeatureTitle" strong class="header-title">
               {{ headerTitle }}
             </n-text>
             <n-text v-else-if="showAppTitle" depth="2">{{ PLATFORM_APP_NAME }}</n-text>
@@ -310,7 +407,7 @@ function doLogout() {
         <div
           :class="[
             'app-view-host',
-            { 'app-view-host--full': fullHeightPage || knowflowNative },
+            { 'app-view-host--full': fullHeightPage },
           ]"
         >
           <router-view />
@@ -393,12 +490,38 @@ function doLogout() {
 .header-title-wrap {
   min-width: 0;
 }
+
+.header-subsystem-nav {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-back {
+  flex-shrink: 0;
+  color: #0d9488;
+}
+
+.header-back:hover {
+  color: #0f766e;
+}
+
 .header-feature-icon {
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--n-text-color);
 }
+
+.header-feature-icon--brand {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  color: #0d9488;
+  background: linear-gradient(160deg, #f0fdfa 0%, #ccfbf1 100%);
+  border: 1px solid rgba(13, 148, 136, 0.18);
+  border-radius: var(--platform-radius-sm, 8px);
+}
+
 .header-title {
   font-size: 16px;
 }

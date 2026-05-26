@@ -55,7 +55,7 @@
       });
   }
 
-  var APP_NAME = window.__ZT_PLATFORM_APP_NAME__ || "智碳AI平台";
+  var APP_NAME = window.__ZT_PLATFORM_APP_NAME__ || "智碳平台AI子系统";
   var PRIMARY = "#18a058";
   var PRIMARY_HOVER = "#36ad6a";
   var PRIMARY_PRESSED = "#0c7a43";

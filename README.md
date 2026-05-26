@@ -1,13 +1,13 @@
-# PDF 翻译与智碳 AI平台
+# PDF 翻译与智碳平台AI子系统
 
-基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳 AI 企业应用控制面（文档、权限、翻译任务等）。
+基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳平台 AI 子系统企业应用控制面（文档、权限、翻译任务等）。
 
 ## 项目结构
 
 ```
 pdf_trans/
 ├── pdf2zh_next/          # PDF 翻译核心（CLI、WebUI、REST API）
-├── platform/             # 智碳 AI平台后端（FastAPI + Celery）
+├── platform/             # 智碳平台AI子系统后端（FastAPI + Celery）
 ├── platform-frontend/    # 平台前端（Vue 3）
 ├── scripts/              # 启动与资源脚本
 ├── docs/zh/              # 中文文档
@@ -84,7 +84,7 @@ pdf2zh_next --api --api-port 7861     # REST API
 
 - [快速开始](docs/zh/getting-started/getting-started.md)
 - [本地开发](docs/zh/development/local-development.md)
-- [智碳 AI平台](docs/zh/development/doc-platform.md)
+- [智碳平台AI子系统](docs/zh/development/doc-platform.md)
 - [REST API](docs/zh/development/rest-api.md)
 
 ## 许可

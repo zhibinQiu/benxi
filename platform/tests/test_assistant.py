@@ -16,7 +16,7 @@ def test_build_platform_knowledge_contains_nav():
         assert admin is not None
         text = build_platform_knowledge(db, admin, page_hint="文档库")
         assert "文档库" in text
-        assert "任务中心" in text
+        assert "后台任务" in text
         assert "系统功能" in text
     finally:
         db.close()

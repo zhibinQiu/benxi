@@ -4,4 +4,4 @@
 
 - [快速开始](zh/getting-started/getting-started.md)
 - [本地开发](zh/development/local-development.md)
-- [智碳 AI平台](zh/development/doc-platform.md)
+- [智碳平台AI子系统](zh/development/doc-platform.md)

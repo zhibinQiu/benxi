@@ -19,7 +19,7 @@ import {
   assistWritingCompose,
   fetchAssistWritingPresets,
 } from "../api/client";
-import FeaturePageToolbar from "../components/FeaturePageToolbar.vue";
+import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
 const message = useMessage();
 
@@ -137,8 +137,8 @@ watch(presetId, (id) => {
 </script>
 
 <template>
-  <div class="assist-page feature-page feature-page--fill">
-    <FeaturePageToolbar>
+  <FeatureSubsystemShell fill>
+    <template #extra>
       <n-space align="center" :size="8" wrap>
         <n-button
           size="small"
@@ -165,12 +165,7 @@ watch(presetId, (id) => {
           重做
         </n-button>
       </n-space>
-    </FeaturePageToolbar>
-
-    <p class="feature-tip">
-      左侧编辑 Markdown，右侧实时预览；AI 改写结果写入左侧。发送：
-      <code>Ctrl/Cmd + Enter</code>
-    </p>
+    </template>
 
     <div class="assist-workspace">
       <div class="assist-columns">
@@ -241,7 +236,7 @@ watch(presetId, (id) => {
         </div>
       </n-spin>
     </footer>
-  </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>

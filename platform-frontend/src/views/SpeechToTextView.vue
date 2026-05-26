@@ -33,7 +33,7 @@ import {
   TrashOutline,
 } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
-import FeaturePageToolbar from "../components/FeaturePageToolbar.vue";
+import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import AudioWaveform from "../components/AudioWaveform.vue";
 import {
   deleteMeetingRecord,
@@ -599,8 +599,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="speech-page feature-page feature-page--fill">
-    <FeaturePageToolbar>
+  <FeatureSubsystemShell fill>
+    <template #extra>
       <n-space :size="8">
         <n-button quaternary @click="openRecordsDrawer">
           <template #icon><n-icon :component="FolderOpenOutline" /></template>
@@ -611,7 +611,7 @@ onBeforeUnmount(() => {
           保存
         </n-button>
       </n-space>
-    </FeaturePageToolbar>
+    </template>
 
     <n-modal
       v-model:show="saveModalOpen"
@@ -717,7 +717,10 @@ onBeforeUnmount(() => {
           title="语音服务未就绪"
           class="page-alert"
         >
-          语音服务尚未配置完成，请联系管理员部署并启用相关能力。
+          <p>{{ meta?.service_hint || "本地 FunASR 语音服务未启动，无法录音转写。" }}</p>
+          <template #action>
+            <n-button size="small" :loading="loadingMeta" @click="loadMeta">重新检测</n-button>
+          </template>
         </n-alert>
 
         <n-alert
@@ -950,7 +953,7 @@ onBeforeUnmount(() => {
           </div>
       </div>
     </n-spin>
-  </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>

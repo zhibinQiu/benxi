@@ -23,7 +23,7 @@ const messages = ref([
   {
     role: "assistant",
     content:
-      `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与任务中心等问题。`,
+      `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与后台任务等问题。`,
   },
 ]);
 
@@ -31,7 +31,7 @@ const quickPrompts = [
   "如何上传和管理文档？",
   "PDF 翻译怎么用？",
   "文档分享权限有哪些级别？",
-  "任务中心如何终止任务？",
+  "后台任务如何终止？",
 ];
 
 const pageHint = computed(() => {

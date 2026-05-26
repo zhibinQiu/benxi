@@ -28,7 +28,7 @@ import {
   DocumentTextOutline,
 } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
-import FeaturePageToolbar from "../components/FeaturePageToolbar.vue";
+import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
 const router = useRouter();
 const message = useMessage();
@@ -133,10 +133,10 @@ onBeforeUnmount(revokePreview);
 </script>
 
 <template>
-  <div class="ocr-page feature-page feature-page--fill">
-    <FeaturePageToolbar>
+  <FeatureSubsystemShell fill>
+    <template #extra>
       <n-tag size="small" round type="warning">界面预览</n-tag>
-    </FeaturePageToolbar>
+    </template>
     <header class="page-subheader">
       <n-steps :current="currentStep" size="small" class="header-steps">
         <n-step title="上传" />
@@ -270,7 +270,7 @@ onBeforeUnmount(revokePreview);
         </n-gi>
       </n-grid>
     </div>
-  </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>

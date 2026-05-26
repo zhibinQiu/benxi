@@ -10,6 +10,7 @@ import {
   DocumentTextOutline,
   ListOutline,
   CreateOutline,
+  GitNetworkOutline,
 } from "@vicons/ionicons5";
 
 /** 与系统功能插件 icon 字段一致 */
@@ -25,6 +26,7 @@ export const FEATURE_ICON_MAP = {
   "document-text": DocumentTextOutline,
   list: ListOutline,
   create: CreateOutline,
+  "git-network": GitNetworkOutline,
 };
 
 export function resolveFeatureIcon(key) {

@@ -28,7 +28,7 @@ async function onSubmit() {
   try {
     await login(username.value, password.value);
     message.success("登录成功");
-    const redirect = route.query.redirect || "/system/functions";
+    const redirect = route.query.redirect || "/ai-home";
     router.push(redirect);
   } catch (e) {
     message.error(e.message || "登录失败");
@@ -47,7 +47,7 @@ async function onSubmit() {
           <span class="login-title">{{ PLATFORM_APP_NAME }}</span>
         </div>
       </template>
-      <n-text depth="2">智碳AI能力统一入口</n-text>
+      <n-text depth="2">智碳平台 AI 子系统统一入口</n-text>
       <n-form style="margin-top: 24px" @submit.prevent="onSubmit">
         <n-form-item label="用户名">
           <n-input v-model:value="username" placeholder="admin" />

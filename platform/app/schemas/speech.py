@@ -38,6 +38,7 @@ class SpeechMetaOut(BaseModel):
     diarization_available: bool = False
     summarize_available: bool = False
     summarize_model: str | None = None
+    service_hint: str | None = None
 
 
 class SpeechTranscribeOut(BaseModel):

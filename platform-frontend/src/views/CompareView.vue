@@ -33,7 +33,7 @@ import {
   getCompareDocumentDownload,
   searchCompareDocuments,
 } from "../api/client";
-import FeaturePageToolbar from "../components/FeaturePageToolbar.vue";
+import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
 const router = useRouter();
 const message = useMessage();
@@ -499,8 +499,8 @@ function onDiffClick(d) {
 </script>
 
 <template>
-  <div class="compare-page feature-page feature-page--fill">
-    <FeaturePageToolbar>
+  <FeatureSubsystemShell fill>
+    <template #extra>
       <n-space :size="8" align="center" wrap>
         <n-checkbox v-model:checked="syncKnowflow" size="small">KnowFlow 检索</n-checkbox>
         <n-button
@@ -516,11 +516,7 @@ function onDiffClick(d) {
           段落差异
         </n-button>
       </n-space>
-    </FeaturePageToolbar>
-
-    <p class="feature-tip">
-      左参照、右检索；字段示例 <code>条款:违约金</code>。段落差异为可选。
-    </p>
+    </template>
 
     <div class="compare-workspace">
       <div class="compare-columns">
@@ -773,11 +769,11 @@ function onDiffClick(d) {
         size="small"
       />
     </n-modal>
-  </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>
-.compare-page {
+.compare-workspace {
   gap: 0;
 }
 .compare-workspace {

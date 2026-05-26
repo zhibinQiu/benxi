@@ -36,16 +36,22 @@ import { resolveFeatureIcon } from "../constants/featureIcons";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { fetchNotifications } from "../api/client";
 import AssistantChatFab from "../components/AssistantChatFab.vue";
+import { consumeSkipInnerRouteMotion } from "../utils/routeTransition";
 
 const route = useRoute();
 const router = useRouter();
 const { user, loadUser, logout, hasPerm } = useAuth();
+
+const innerRouteTransition = ref(
+  consumeSkipInnerRouteMotion() ? "route-instant" : "route-fade",
+);
 
 const SETTINGS_KEY = "system-settings";
 const KNOWLEDGE_CENTER_KEY = "knowledge-center";
 const expandedKeys = ref([]);
 
 const unreadCount = ref(0);
+const siderCollapsed = ref(false);
 
 async function refreshUnreadCount() {
   try {
@@ -309,6 +315,7 @@ function doLogout() {
 <template>
   <n-layout class="app-shell" has-sider>
     <n-layout-sider
+      v-model:collapsed="siderCollapsed"
       class="app-sider"
       bordered
       collapse-mode="width"
@@ -317,9 +324,9 @@ function doLogout() {
       show-trigger
     >
       <div class="sider-inner">
-        <div class="brand">
+        <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
           <img src="/logo.svg" alt="" class="brand-logo" />
-          <span>{{ PLATFORM_APP_NAME }}</span>
+          <span v-if="!siderCollapsed" class="brand-name">{{ PLATFORM_APP_NAME }}</span>
         </div>
         <n-menu
           class="sider-menu"
@@ -406,7 +413,11 @@ function doLogout() {
             { 'app-view-host--full': fullHeightPage },
           ]"
         >
-          <router-view />
+          <router-view v-slot="{ Component, route: viewRoute }">
+            <Transition :name="innerRouteTransition" mode="out-in">
+              <component :is="Component" :key="viewRoute.path" />
+            </Transition>
+          </router-view>
         </div>
       </n-layout-content>
     </n-layout>
@@ -446,6 +457,19 @@ function doLogout() {
   padding: 10px 18px 14px;
   color: #0f172a;
   flex-shrink: 0;
+  overflow: hidden;
+}
+.brand--collapsed {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+.brand-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .brand-logo {
   width: 28px;

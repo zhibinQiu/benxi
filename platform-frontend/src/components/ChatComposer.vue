@@ -1,0 +1,170 @@
+<script setup>
+import { computed } from "vue";
+import { NIcon, NInput } from "naive-ui";
+import { ArrowUpOutline, StopOutline } from "@vicons/ionicons5";
+
+const props = defineProps({
+  modelValue: { type: String, default: "" },
+  placeholder: { type: String, default: "输入您的问题" },
+  disabled: { type: Boolean, default: false },
+  /** 智能体正在流式回复 */
+  loading: { type: Boolean, default: false },
+  minRows: { type: Number, default: 2 },
+  maxRows: { type: Number, default: 6 },
+});
+
+const emit = defineEmits(["update:modelValue", "send", "stop", "keydown"]);
+
+const canSend = computed(
+  () => Boolean(props.modelValue?.trim()) && !props.disabled && !props.loading
+);
+
+const autosize = computed(() => ({
+  minRows: props.minRows,
+  maxRows: props.maxRows,
+}));
+
+const isSingleLine = computed(() => props.minRows <= 1 && props.maxRows <= 1);
+
+function onKeydown(e) {
+  emit("keydown", e);
+}
+</script>
+
+<template>
+  <div
+    class="chat-composer"
+    :class="{ 'chat-composer--generating': loading, 'chat-composer--single': isSingleLine }"
+  >
+    <n-input
+      :value="modelValue"
+      class="chat-composer__input ai-chat-textarea"
+      type="textarea"
+      :autosize="autosize"
+      :placeholder="placeholder"
+      :disabled="disabled || loading"
+      @update:value="emit('update:modelValue', $event)"
+      @keydown="onKeydown"
+    />
+    <button
+      v-if="loading"
+      type="button"
+      class="chat-composer__send chat-composer__send--stop"
+      aria-label="停止生成"
+      @click="emit('stop')"
+    >
+      <n-icon :size="15" :component="StopOutline" />
+    </button>
+    <button
+      v-else
+      type="button"
+      class="chat-composer__send"
+      :disabled="!canSend"
+      aria-label="发送"
+      @click="emit('send')"
+    >
+      <n-icon :size="15" :component="ArrowUpOutline" />
+    </button>
+  </div>
+</template>
+
+<style scoped>
+.chat-composer {
+  position: relative;
+  width: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.chat-composer__input :deep(.n-input__border),
+.chat-composer__input :deep(.n-input__state-border) {
+  border-radius: 16px;
+}
+
+.chat-composer__input :deep(.n-input-wrapper) {
+  border-radius: 16px;
+  box-shadow: none;
+  background: #fff;
+}
+
+.chat-composer__input :deep(.n-input__textarea-el),
+.chat-composer__input :deep(.n-input__placeholder),
+.chat-composer__input :deep(.n-input__textarea-mirror) {
+  padding-right: 52px !important;
+  padding-bottom: 44px !important;
+}
+
+.chat-composer--single .chat-composer__input :deep(.n-input__textarea-el),
+.chat-composer--single .chat-composer__input :deep(.n-input__placeholder),
+.chat-composer--single .chat-composer__input :deep(.n-input__textarea-mirror) {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  padding-right: 42px !important;
+  min-height: 40px !important;
+}
+
+.chat-composer__send {
+  position: absolute;
+  right: 8px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(160deg, #14b8a6 0%, #0d9488 100%);
+  box-shadow: 0 2px 6px rgba(13, 148, 136, 0.24);
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.chat-composer--single .chat-composer__send {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+.chat-composer:not(.chat-composer--single) .chat-composer__send {
+  bottom: 10px;
+}
+
+.chat-composer--single .chat-composer__send:hover {
+  transform: translateY(calc(-50% - 1px));
+  box-shadow: 0 3px 10px rgba(13, 148, 136, 0.3);
+}
+
+.chat-composer--single .chat-composer__send:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
+.chat-composer:not(.chat-composer--single) .chat-composer__send:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.32);
+}
+
+.chat-composer:not(.chat-composer--single) .chat-composer__send:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.chat-composer__send:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  box-shadow: none;
+}
+
+.chat-composer__send--stop {
+  background: linear-gradient(160deg, #14b8a6 0%, #0d9488 100%);
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.28);
+}
+
+.chat-composer__send--stop:hover {
+  background: linear-gradient(160deg, #2dd4bf 0%, #14b8a6 100%);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.32);
+}
+</style>

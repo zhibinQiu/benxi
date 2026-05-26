@@ -16,6 +16,7 @@ from app.api import embed_proxy as embed_proxy_api
 from app.api import (
     assistant,
     auth,
+    chat_history,
     departments,
     documents,
     jobs,
@@ -33,6 +34,7 @@ from app.schema_migrate import (
     ensure_document_schema,
     ensure_meeting_record_schema,
     ensure_permission_level_migration,
+    ensure_platform_chat_schema,
     ensure_ragflow_schema,
     ensure_todo_schema,
 )
@@ -51,6 +53,7 @@ from app.models import (  # noqa: F401 — register ORM models
     ragflow_scope_dataset,
     document_workflow,
     meeting_record,
+    platform_chat,
     todo,
 )
 from app.schemas.common import ApiResponse
@@ -63,6 +66,7 @@ async def lifespan(_app: FastAPI):
     ensure_ragflow_schema(engine)
     ensure_meeting_record_schema(engine)
     ensure_todo_schema(engine)
+    ensure_platform_chat_schema(engine)
     ensure_permission_level_migration(engine)
     db = SessionLocal()
     try:
@@ -142,6 +146,7 @@ def create_app() -> FastAPI:
         return ApiResponse(data={"name": settings.app_name, "version": __version__})
 
     app.include_router(assistant.router, prefix=prefix)
+    app.include_router(chat_history.router, prefix=prefix)
     app.include_router(auth.router, prefix=prefix)
     app.include_router(departments.router, prefix=prefix)
     app.include_router(users.router, prefix=prefix)

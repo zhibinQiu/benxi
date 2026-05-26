@@ -1,8 +1,11 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { NButton, NIcon, NInput, useMessage } from "naive-ui";
-import { SendOutline } from "@vicons/ionicons5";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { RouterLink, useRoute, useRouter } from "vue-router";
+import { TimeOutline } from "@vicons/ionicons5";
+import { fetchChatConversationMessages } from "../api/client";
+import { NButton, NIcon, NSpin, useMessage } from "naive-ui";
 import { marked } from "marked";
+import ChatComposer from "./ChatComposer.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import { PLATFORM_APP_NAME } from "../constants/platform";
@@ -12,19 +15,20 @@ const props = defineProps({
   description: { type: String, default: "" },
   subtitle: { type: String, default: "" },
   suggestions: { type: Array, default: () => [] },
+  /** { title, description?, route, icon? } */
+  toolLinks: { type: Array, default: () => [] },
   icon: { type: Object, required: true },
-  /** 流式对话（AI 首页等） */
   streaming: { type: Boolean, default: true },
   streamChat: { type: Function, default: null },
-  /** 非流式对话 */
   chatSend: { type: Function, default: null },
-  /** 流式结束后用 Markdown + ECharts 渲染 */
   richMarkdown: { type: Boolean, default: false },
-  /** 展示 Dify 工作流节点执行进度 */
   showWorkflowProgress: { type: Boolean, default: false },
-  /** 展示回答引用来源（Dify 知识库检索） */
   showCitations: { type: Boolean, default: false },
   chatHeaderSub: { type: String, default: "" },
+  /** 进入对话后输入框占位文案 */
+  replyPlaceholder: { type: String, default: "继续提问" },
+  /** 对话历史 scope：ai-home | carbon-qa | smart-data-query */
+  chatScope: { type: String, default: "" },
 });
 
 const conversationId = defineModel("conversationId", { type: String, default: null });
@@ -32,10 +36,13 @@ const conversationId = defineModel("conversationId", { type: String, default: nu
 const emit = defineEmits(["new-chat"]);
 
 const message = useMessage();
+const route = useRoute();
+const router = useRouter();
 
 marked.setOptions({ gfm: true, breaks: true });
 
 const started = ref(false);
+const loadingHistory = ref(false);
 const input = ref("");
 const sending = ref(false);
 const messages = ref([]);
@@ -52,7 +59,13 @@ const headerSub = computed(
     (props.streaming ? "多轮对话 · 流式回复" : "多轮对话 · Markdown / 图表")
 );
 
-const canSend = computed(() => input.value.trim().length > 0 && !sending.value);
+const composerPlaceholder = computed(() =>
+  started.value ? props.replyPlaceholder : "输入您的问题"
+);
+
+const landingComposerRows = computed(() => ({ minRows: 3, maxRows: 8 }));
+/** 对话中输入框固定 1 行 */
+const chatComposerRows = computed(() => ({ minRows: 1, maxRows: 1 }));
 
 function emptyWorkflow() {
   return { currentTitle: "", running: false, failed: false };
@@ -173,9 +186,31 @@ async function sendMessageStreaming(content, assistantIdx) {
       row.streaming = false;
     }
   } catch (e) {
-    if (e?.name === "AbortError") return;
+    if (e?.name === "AbortError") {
+      finalizeStoppedAssistant(assistantIdx);
+      return;
+    }
     throw e;
   }
+}
+
+function finalizeStoppedAssistant(assistantIdx) {
+  const row = messages.value[assistantIdx];
+  if (!row || row.role !== "assistant") return;
+  row.streaming = false;
+  if (row.workflow) row.workflow.running = false;
+  if (!row.content.trim()) {
+    row.content = "（已停止生成）";
+  }
+}
+
+function stopGeneration() {
+  if (!sending.value) return;
+  const assistantIdx = messages.value.length - 1;
+  streamAbort?.abort();
+  finalizeStoppedAssistant(assistantIdx);
+  sending.value = false;
+  streamAbort = null;
 }
 
 async function sendMessageBlocking(content, assistantIdx) {
@@ -218,10 +253,17 @@ async function sendMessage(text) {
     return;
   }
 
-  if (!started.value) started.value = true;
+  const firstTurn = !started.value;
+  if (firstTurn) started.value = true;
+
   messages.value.push({ role: "user", content });
   input.value = "";
   sending.value = true;
+
+  if (firstTurn) {
+    await nextTick();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  }
   await scrollToBottom();
 
   const assistantIdx = messages.value.length;
@@ -240,7 +282,10 @@ async function sendMessage(text) {
       await sendMessageBlocking(content, assistantIdx);
     }
   } catch (e) {
-    if (e?.name === "AbortError") return;
+    if (e?.name === "AbortError") {
+      finalizeStoppedAssistant(assistantIdx);
+      return;
+    }
     message.error(e.message || "发送失败");
     const row = messages.value[assistantIdx];
     if (row) {
@@ -263,14 +308,7 @@ async function sendMessage(text) {
   }
 }
 
-function onLandingKeydown(e) {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-}
-
-function onChatKeydown(e) {
+function onComposerKeydown(e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
@@ -291,7 +329,56 @@ function newChat() {
   input.value = "";
   conversationId.value = null;
   emit("new-chat");
+  if (route.query.conversationId) {
+    const { conversationId: _cid, ...rest } = route.query;
+    router.replace({ ...route, query: rest });
+  }
 }
+
+function goToHistory() {
+  if (!props.chatScope) return;
+  router.push({
+    name: "chat-history",
+    params: { scope: props.chatScope },
+  });
+}
+
+async function loadConversationFromId(id) {
+  if (!props.chatScope || !id) return;
+  loadingHistory.value = true;
+  try {
+    const rows = (await fetchChatConversationMessages(props.chatScope, id)) || [];
+    streamAbort?.abort();
+    streamAbort = null;
+    sending.value = false;
+    messages.value = rows.map((m) => ({
+      role: m.role,
+      content: m.content,
+      streaming: false,
+    }));
+    conversationId.value = id;
+    started.value = messages.value.length > 0;
+    input.value = "";
+    await scrollToBottom();
+  } catch (e) {
+    message.error(e.message || "加载对话失败");
+  } finally {
+    loadingHistory.value = false;
+  }
+}
+
+watch(
+  () => route.query.conversationId,
+  (id) => {
+    const cid = typeof id === "string" ? id : "";
+    if (cid) loadConversationFromId(cid);
+  }
+);
+
+onMounted(() => {
+  const cid = typeof route.query.conversationId === "string" ? route.query.conversationId : "";
+  if (cid) loadConversationFromId(cid);
+});
 
 onBeforeUnmount(() => {
   streamAbort?.abort();
@@ -300,57 +387,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="ai-home">
-    <div v-if="!started" class="ai-home-welcome">
-      <div class="ai-home-hero">
-        <div class="ai-home-icon">
-          <n-icon :size="36" :component="icon" />
-        </div>
-        <h1 class="ai-home-title">{{ title }}</h1>
-        <p v-if="description" class="ai-home-desc">{{ description }}</p>
-        <p class="ai-home-sub">{{ displaySubtitle }}</p>
-      </div>
-
-      <div class="ai-home-landing-input">
-        <n-input
-          v-model:value="input"
-          class="ai-chat-textarea"
-          type="textarea"
-          :autosize="{ minRows: 4, maxRows: 8 }"
-          placeholder="输入您的问题…"
-          :disabled="sending"
-          @keydown="onLandingKeydown"
-        />
-        <n-button
-          type="primary"
-          class="ai-home-send-btn"
-          :disabled="!canSend"
-          :loading="sending"
-          @click="sendMessage()"
-        >
-          <template #icon>
-            <n-icon :component="SendOutline" />
-          </template>
-          开始对话
-        </n-button>
-      </div>
-
-      <div v-if="suggestions.length" class="ai-home-suggestions">
-        <button
-          v-for="s in suggestions"
-          :key="s"
-          type="button"
-          class="ai-home-chip"
-          :disabled="sending"
-          @click="useSuggestion(s)"
-        >
-          {{ s }}
-        </button>
-      </div>
+  <div class="ai-home" :class="{ 'ai-home--active': started }">
+    <div v-if="!started && chatScope" class="ai-home-landing-topbar">
+      <n-button
+        class="ai-home-history-link"
+        text
+        type="primary"
+        size="small"
+        :disabled="loadingHistory"
+        @click="goToHistory"
+      >
+        <template #icon>
+          <n-icon :component="TimeOutline" />
+        </template>
+        查看历史对话
+      </n-button>
     </div>
 
-    <div v-else class="ai-home-chat">
-      <header class="ai-home-chat-header">
+    <Transition name="ai-chat-header">
+      <header v-if="started" class="ai-home-chat-header">
         <div class="ai-home-chat-brand">
           <div class="ai-home-icon ai-home-icon--sm">
             <n-icon :size="20" :component="icon" />
@@ -360,109 +415,208 @@ onBeforeUnmount(() => {
             <div class="ai-home-chat-sub">{{ headerSub }}</div>
           </div>
         </div>
-        <n-button size="small" quaternary @click="newChat">新对话</n-button>
+        <div class="ai-home-chat-actions">
+          <n-button
+            v-if="chatScope"
+            size="small"
+            quaternary
+            :disabled="loadingHistory"
+            @click="goToHistory"
+          >
+            <template #icon>
+              <n-icon :component="TimeOutline" />
+            </template>
+            历史对话
+          </n-button>
+          <n-button size="small" quaternary @click="newChat">新对话</n-button>
+        </div>
       </header>
+    </Transition>
 
-      <div ref="messagesRef" class="ai-home-messages">
-        <div
-          v-for="(m, i) in messages"
-          :key="i"
-          class="ai-home-msg"
-          :class="m.role === 'user' ? 'ai-home-msg--user' : 'ai-home-msg--bot'"
-        >
+    <div class="ai-home-main" :class="{ 'ai-home-main--landing': !started }">
+      <Transition name="ai-welcome">
+        <div v-if="!started" key="welcome" class="ai-home-welcome">
+          <div class="ai-home-hero">
+            <div class="ai-home-icon">
+              <n-icon :size="36" :component="icon" />
+            </div>
+            <h1 class="ai-home-title">{{ title }}</h1>
+            <p v-if="description" class="ai-home-desc">{{ description }}</p>
+            <p class="ai-home-sub">{{ displaySubtitle }}</p>
+          </div>
+        </div>
+      </Transition>
+
+      <div v-if="loadingHistory" class="ai-home-history-loading">
+        <n-spin size="small" />
+        <span>正在加载对话…</span>
+      </div>
+
+      <div
+        v-else-if="started"
+        ref="messagesRef"
+        class="ai-home-messages"
+        role="log"
+        aria-live="polite"
+      >
+        <TransitionGroup name="ai-msg" tag="div" class="ai-home-messages-inner">
           <div
-            v-if="m.role === 'assistant'"
-            class="ai-home-bubble ai-home-bubble--bot"
-            :class="{ 'ai-home-bubble--error': m.error, 'ai-home-bubble--streaming': m.streaming }"
+            v-for="(m, i) in messages"
+            :key="`msg-${i}`"
+            class="ai-home-msg"
+            :class="m.role === 'user' ? 'ai-home-msg--user' : 'ai-home-msg--bot'"
           >
             <div
-              v-if="
-                showWorkflowProgress &&
-                m.streaming &&
-                m.workflow?.running &&
-                m.workflow.currentTitle
-              "
-              class="ai-workflow-current"
-              :class="{ 'ai-workflow-current--failed': m.workflow.failed }"
+              v-if="m.role === 'assistant'"
+              class="ai-home-bubble ai-home-bubble--bot"
+              :class="{
+                'ai-home-bubble--error': m.error,
+                'ai-home-bubble--streaming': m.streaming,
+              }"
             >
-              <span v-if="!m.workflow.failed" class="ai-workflow-spinner" aria-hidden="true" />
-              正在执行：{{ m.workflow.currentTitle }}
+              <div
+                v-if="
+                  showWorkflowProgress &&
+                  m.streaming &&
+                  m.workflow?.running &&
+                  m.workflow.currentTitle
+                "
+                class="ai-workflow-current"
+                :class="{ 'ai-workflow-current--failed': m.workflow.failed }"
+              >
+                <span v-if="!m.workflow.failed" class="ai-workflow-spinner" aria-hidden="true" />
+                正在执行：{{ m.workflow.currentTitle }}
+              </div>
+              <div
+                v-else-if="m.streaming && richMarkdown && showWorkflowProgress"
+                class="ai-workflow-wait"
+              >
+                {{ m.content ? "正在整理回答…" : "正在生成回答…" }}
+              </div>
+              <div v-else-if="m.streaming" class="ai-home-stream-text">
+                {{ m.content }}<span class="ai-home-cursor">▍</span>
+              </div>
+              <MarkdownRichContent
+                v-else-if="richMarkdown && m.content"
+                :key="`md-${i}`"
+                :content="m.content"
+              />
+              <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
+              <div v-else class="ai-workflow-wait">（未收到回复内容）</div>
+              <ChatMessageCitations
+                v-if="showCitations && !m.streaming && m.citations?.length"
+                :citations="m.citations"
+              />
             </div>
-            <div
-              v-else-if="m.streaming && richMarkdown && showWorkflowProgress"
-              class="ai-workflow-wait"
+            <div v-else class="ai-home-bubble ai-home-bubble--user">
+              {{ m.content }}
+            </div>
+          </div>
+        </TransitionGroup>
+      </div>
+
+      <div class="ai-home-dock" :class="{ 'ai-home-dock--chat': started }">
+        <div class="ai-home-dock-inner">
+          <div v-if="!started && toolLinks.length" class="ai-home-tools">
+            <RouterLink
+              v-for="tool in toolLinks"
+              :key="tool.title"
+              :to="tool.route"
+              class="ai-home-tool-link"
             >
-              {{ m.content ? "正在整理回答…" : "正在生成回答…" }}
-            </div>
-            <div v-else-if="m.streaming" class="ai-home-stream-text">
-              {{ m.content }}<span class="ai-home-cursor">▍</span>
-            </div>
-            <MarkdownRichContent
-              v-else-if="richMarkdown && m.content"
-              :key="`md-${i}`"
-              :content="m.content"
-            />
-            <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
-            <div v-else class="ai-workflow-wait">（未收到回复内容）</div>
-            <ChatMessageCitations
-              v-if="showCitations && !m.streaming && m.citations?.length"
-              :citations="m.citations"
+              <n-icon v-if="tool.icon" :size="13" :component="tool.icon" />
+              <span>{{ tool.title }}</span>
+            </RouterLink>
+          </div>
+          <div class="ai-home-composer">
+            <ChatComposer
+              v-model="input"
+              :placeholder="composerPlaceholder"
+              :disabled="sending"
+              :loading="sending"
+              :min-rows="started ? chatComposerRows.minRows : landingComposerRows.minRows"
+              :max-rows="started ? chatComposerRows.maxRows : landingComposerRows.maxRows"
+              @keydown="onComposerKeydown"
+              @send="sendMessage()"
+              @stop="stopGeneration"
             />
           </div>
-          <div v-else class="ai-home-bubble ai-home-bubble--user">
-            {{ m.content }}
+          <div v-if="!started && suggestions.length" class="ai-home-suggestions">
+            <button
+              v-for="s in suggestions"
+              :key="s"
+              type="button"
+              class="ai-home-chip"
+              :disabled="sending"
+              @click="useSuggestion(s)"
+            >
+              {{ s }}
+            </button>
           </div>
         </div>
       </div>
-
-      <footer class="ai-home-footer">
-        <n-input
-          v-model:value="input"
-          class="ai-chat-textarea"
-          type="textarea"
-          :autosize="{ minRows: 2, maxRows: 6 }"
-          placeholder="继续提问…（Enter 发送，Shift+Enter 换行）"
-          :disabled="sending"
-          @keydown="onChatKeydown"
-        />
-        <n-button
-          type="primary"
-          class="ai-home-footer-send"
-          :disabled="!canSend"
-          :loading="sending"
-          @click="sendMessage()"
-        >
-          <template #icon>
-            <n-icon :component="SendOutline" />
-          </template>
-        </n-button>
-      </footer>
     </div>
   </div>
 </template>
 
 <style scoped>
 .ai-home {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: linear-gradient(180deg, #f8fafc 0%, #f0fdfa 40%, #ffffff 100%);
   border-radius: var(--platform-radius);
   overflow: hidden;
 }
 
+.ai-home-landing-topbar {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  z-index: 3;
+}
+
+.ai-home-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 首屏：标题 + 输入区作为整体，垂直居中偏下 */
+.ai-home-main--landing {
+  justify-content: center;
+  align-items: center;
+  padding-bottom: min(9vh, 64px);
+  overflow: auto;
+}
+
 .ai-home-welcome {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px 24px 48px;
-  min-height: 0;
+  padding: 24px 24px 8px;
   overflow: auto;
+}
+
+.ai-home-main--landing .ai-home-welcome {
+  flex: 0 0 auto;
+  justify-content: center;
+  padding: 0 24px;
+  overflow: visible;
 }
 
 .ai-home-hero {
   text-align: center;
   max-width: 560px;
-  margin-bottom: 32px;
+  margin-bottom: 12px;
 }
 
 .ai-home-icon {
@@ -507,58 +661,85 @@ onBeforeUnmount(() => {
   color: #94a3b8;
 }
 
-.ai-home-landing-input {
-  width: min(640px, 100%);
+.ai-home-dock {
+  flex-shrink: 0;
+  width: 100%;
+  padding: 0 20px 20px;
+  box-sizing: border-box;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.ai-home-dock-inner {
+  width: min(640px, calc(100% - 8px));
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 6px;
 }
 
-.ai-home-landing-input :deep(.ai-chat-textarea.n-input) {
-  border-radius: var(--platform-radius);
-  box-shadow: var(--platform-shadow);
+.ai-home-main--landing .ai-home-dock {
+  flex-shrink: 0;
+  margin-top: 20px;
+  padding: 0 20px;
+  transform: none;
 }
 
-/* Naive UI：placeholder 与 textarea 分层定位，须同步字体/行高/内边距 */
-.ai-home :deep(.ai-chat-textarea.n-input) {
-  --n-padding-left: 16px;
-  --n-padding-right: 16px;
-  --n-line-height-textarea: 1.55;
-  font-size: 15px;
+/* 对话中：输入区与消息区 flex 分区，视觉上悬浮但不遮挡内容 */
+.ai-home-dock--chat {
+  flex-shrink: 0;
+  margin-top: 10px;
+  padding: 0 20px 14px;
+  transform: none;
+  background: transparent;
 }
 
-.ai-home :deep(.ai-chat-textarea .n-input__textarea-el),
-.ai-home :deep(.ai-chat-textarea .n-input__placeholder),
-.ai-home :deep(.ai-chat-textarea .n-input__textarea-mirror) {
-  font-size: 15px;
-  line-height: 1.55;
-  padding-top: 14px;
-  padding-bottom: 14px;
-  padding-left: 0;
-  padding-right: 0;
+.ai-home-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding-left: 2px;
+  margin-bottom: 2px;
 }
 
-.ai-home :deep(.ai-chat-textarea .n-input__placeholder span) {
-  line-height: 1.55;
+.ai-home-tool-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #0f766e;
+  text-decoration: none;
+  border-radius: 999px;
+  border: 1px solid rgba(13, 148, 136, 0.2);
+  background: rgba(255, 255, 255, 0.85);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.ai-home-send-btn {
-  align-self: flex-end;
-  min-width: 120px;
+.ai-home-tool-link:hover {
+  background: rgba(13, 148, 136, 0.1);
+  border-color: rgba(13, 148, 136, 0.35);
 }
 
 .ai-home-suggestions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  max-width: 640px;
-  margin-top: 20px;
+  gap: 6px;
+  justify-content: flex-start;
+  width: 100%;
+  padding-left: 2px;
+  margin-top: 2px;
 }
 
 .ai-home-chip {
-  padding: 8px 14px;
-  font-size: 13px;
+  padding: 6px 12px;
+  font-size: 12px;
   color: #0f766e;
   background: rgba(13, 148, 136, 0.08);
   border: 1px solid rgba(13, 148, 136, 0.16);
@@ -577,11 +758,29 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-.ai-home-chat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+.ai-home-composer {
+  width: 100%;
+}
+
+.ai-home-dock--chat .ai-home-composer :deep(.chat-composer) {
+  border-radius: 16px;
+}
+
+.ai-home :deep(.ai-chat-textarea.n-input) {
+  --n-padding-left: 16px;
+  --n-padding-right: 16px;
+  --n-line-height-textarea: 1.55;
+  font-size: 15px;
+}
+
+.ai-home :deep(.ai-chat-textarea .n-input__textarea-el),
+.ai-home :deep(.ai-chat-textarea .n-input__placeholder),
+.ai-home :deep(.ai-chat-textarea .n-input__textarea-mirror) {
+  font-size: 15px;
+  line-height: 1.55;
+  padding-top: 14px;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .ai-home-chat-header {
@@ -592,6 +791,24 @@ onBeforeUnmount(() => {
   padding: 12px 16px;
   border-bottom: 1px solid var(--platform-border);
   background: var(--platform-surface);
+}
+
+.ai-home-chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ai-home-history-loading {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #64748b;
+  font-size: 14px;
 }
 
 .ai-home-chat-brand {
@@ -613,8 +830,14 @@ onBeforeUnmount(() => {
 
 .ai-home-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 20px 16px;
+  padding: 16px 20px 12px;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+}
+
+.ai-home-messages-inner {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -701,26 +924,6 @@ onBeforeUnmount(() => {
   padding: 2px 6px;
   border-radius: 4px;
   background: rgba(15, 23, 42, 0.06);
-}
-
-.ai-home-footer {
-  flex-shrink: 0;
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-  padding: 12px 16px 16px;
-  border-top: 1px solid var(--platform-border);
-  background: var(--platform-surface);
-}
-
-.ai-home-footer :deep(.n-input) {
-  flex: 1;
-}
-
-.ai-home-footer-send {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
 }
 
 .ai-workflow-current {

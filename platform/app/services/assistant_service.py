@@ -9,6 +9,7 @@ from app.core.exceptions import bad_request
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.assistant import AssistantChatMessage
+from app.services import platform_chat_store
 from app.services.assistant_knowledge import build_platform_knowledge
 
 _MAX_HISTORY = 10
@@ -21,6 +22,7 @@ async def chat_with_assistant(
     message: str,
     history: list[AssistantChatMessage],
     page_hint: str | None = None,
+    conversation_id: str | None = None,
 ) -> dict:
     if not is_configured():
         raise bad_request("智能客服未配置，请联系管理员配置 DeepSeek API")
@@ -66,4 +68,18 @@ async def chat_with_assistant(
     reply = reply.strip()
     if not reply:
         raise bad_request("AI 返回为空")
-    return {"reply": reply, "model": model}
+
+    conv = platform_chat_store.get_or_create_conversation(
+        db,
+        user_id=user.id,
+        scope="assistant",
+        conversation_id=conversation_id,
+    )
+    platform_chat_store.append_turn(
+        db,
+        conversation=conv,
+        user_message=message,
+        assistant_message=reply,
+    )
+    db.commit()
+    return {"reply": reply, "model": model, "conversation_id": str(conv.id)}

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "智碳平台AI系统"
-    platform_version: str = "2.2.0"
+    platform_version: str = "2.6.2"
     debug: bool = False
     api_prefix: str = "/api/v1"
 
@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str = "admin123"
     bootstrap_admin_email: str = "admin@local"
+    allow_public_register: bool = True
 
     cors_origins: str = "*"
 

@@ -29,5 +29,6 @@ async def assistant_chat(
         message=body.message,
         history=body.history,
         page_hint=body.page_hint,
+        conversation_id=body.conversation_id,
     )
     return ApiResponse(data=AssistantChatResponse.model_validate(result))

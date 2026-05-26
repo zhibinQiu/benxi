@@ -21,5 +21,6 @@
 }
 
 .subsystem-embed-frame--loading {
-  opacity: 0.35;
+  opacity: 0.72;
+  transition: opacity 0.2s ease;
 }

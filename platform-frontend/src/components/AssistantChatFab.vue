@@ -1,31 +1,34 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
-import { useRoute } from "vue-router";
-import { NButton, NIcon, NInput, NSpin } from "naive-ui";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { NButton, NIcon, NSpin } from "naive-ui";
 import {
   ChatbubbleEllipsesOutline,
   CloseOutline,
-  SendOutline,
   SparklesOutline,
+  TimeOutline,
 } from "@vicons/ionicons5";
+import ChatComposer from "./ChatComposer.vue";
 import { marked } from "marked";
-import { assistantChat } from "../api/client";
+import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 
 const route = useRoute();
+const router = useRouter();
 
 marked.setOptions({ gfm: true, breaks: true });
 
+const WELCOME_MESSAGE = {
+  role: "assistant",
+  content: `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与后台任务等问题。`,
+};
+
 const open = ref(false);
 const sending = ref(false);
+const loadingHistory = ref(false);
+const conversationId = ref(null);
 const input = ref("");
-const messages = ref([
-  {
-    role: "assistant",
-    content:
-      `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与后台任务等问题。`,
-  },
-]);
+const messages = ref([{ ...WELCOME_MESSAGE }]);
 
 const quickPrompts = [
   "如何上传和管理文档？",
@@ -82,7 +85,11 @@ async function sendMessage(text) {
       message: msg,
       history,
       page_hint: pageHint.value || null,
+      conversationId: conversationId.value,
     });
+    if (data?.conversation_id) {
+      conversationId.value = data.conversation_id;
+    }
     messages.value.push({ role: "assistant", content: data.reply });
   } catch (e) {
     messages.value.push({
@@ -105,6 +112,62 @@ function onKeydown(e) {
 function toggle() {
   open.value = !open.value;
 }
+
+function goToHistory() {
+  router.push({
+    name: "chat-history",
+    params: { scope: "assistant" },
+    query: { from: route.fullPath },
+  });
+}
+
+function startNewChat() {
+  conversationId.value = null;
+  messages.value = [{ ...WELCOME_MESSAGE }];
+  input.value = "";
+  if (route.query.assistantConversation) {
+    const { assistantConversation: _id, ...rest } = route.query;
+    router.replace({ ...route, query: rest });
+  }
+}
+
+async function loadConversationFromId(id) {
+  if (!id) return;
+  loadingHistory.value = true;
+  open.value = true;
+  try {
+    const rows = (await fetchChatConversationMessages("assistant", id)) || [];
+    conversationId.value = id;
+    messages.value =
+      rows.length > 0
+        ? rows.map((m) => ({ role: m.role, content: m.content }))
+        : [{ ...WELCOME_MESSAGE }];
+    await scrollToBottom();
+  } catch (e) {
+    messages.value.push({
+      role: "assistant",
+      content: `加载历史对话失败：${e.message || "请稍后重试"}`,
+    });
+  } finally {
+    loadingHistory.value = false;
+  }
+}
+
+watch(
+  () => route.query.assistantConversation,
+  (id) => {
+    const cid = typeof id === "string" ? id : "";
+    if (cid) loadConversationFromId(cid);
+  }
+);
+
+onMounted(() => {
+  const cid =
+    typeof route.query.assistantConversation === "string"
+      ? route.query.assistantConversation
+      : "";
+  if (cid) loadConversationFromId(cid);
+});
 </script>
 
 <template>
@@ -122,14 +185,28 @@ function toggle() {
               <div class="assistant-sub">{{ PLATFORM_APP_NAME }}</div>
             </div>
           </div>
-          <n-button quaternary circle size="small" aria-label="关闭" @click="open = false">
-            <template #icon>
-              <n-icon :component="CloseOutline" />
-            </template>
-          </n-button>
+          <div class="assistant-header-actions">
+            <n-button quaternary size="small" @click="goToHistory">
+              <template #icon>
+                <n-icon :component="TimeOutline" />
+              </template>
+              历史
+            </n-button>
+            <n-button quaternary size="small" @click="startNewChat">新对话</n-button>
+            <n-button quaternary circle size="small" aria-label="关闭" @click="open = false">
+              <template #icon>
+                <n-icon :component="CloseOutline" />
+              </template>
+            </n-button>
+          </div>
         </header>
 
-        <div ref="messagesRef" class="assistant-messages">
+        <div v-if="loadingHistory" class="assistant-history-loading">
+          <n-spin size="small" />
+          <span>正在加载对话…</span>
+        </div>
+
+        <div v-else ref="messagesRef" class="assistant-messages">
           <div
             v-for="(m, i) in messages"
             :key="i"
@@ -166,26 +243,16 @@ function toggle() {
         </div>
 
         <footer class="assistant-footer">
-          <n-input
-            v-model:value="input"
-            type="textarea"
+          <ChatComposer
+            v-model="input"
             placeholder="描述你的问题，Enter 发送"
-            :autosize="{ minRows: 1, maxRows: 3 }"
             :disabled="sending"
-            @keydown="onKeydown"
-          />
-          <n-button
-            type="primary"
-            circle
-            class="assistant-send"
-            :disabled="!input.trim() || sending"
             :loading="sending"
-            @click="sendMessage()"
-          >
-            <template #icon>
-              <n-icon :component="SendOutline" />
-            </template>
-          </n-button>
+            :min-rows="1"
+            :max-rows="3"
+            @keydown="onKeydown"
+            @send="sendMessage()"
+          />
         </footer>
       </div>
     </Transition>
@@ -208,7 +275,7 @@ function toggle() {
 .assistant-root {
   position: fixed;
   right: 24px;
-  bottom: 48px;
+  bottom: 24px;
   z-index: 1200;
   display: flex;
   flex-direction: column;
@@ -268,6 +335,25 @@ function toggle() {
     0 12px 40px rgba(15, 23, 42, 0.14),
     0 4px 12px rgba(15, 23, 42, 0.06);
   overflow: hidden;
+}
+
+.assistant-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.assistant-history-loading {
+  flex: 1;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 13px;
+  background: #f8fafc;
 }
 
 .assistant-header {
@@ -414,20 +500,9 @@ function toggle() {
 
 .assistant-footer {
   flex-shrink: 0;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
   padding: 10px 12px 12px;
   background: #fff;
   border-top: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
-}
-
-.assistant-footer :deep(.n-input) {
-  flex: 1;
-}
-
-.assistant-send {
-  flex-shrink: 0;
 }
 
 .assistant-panel-enter-active,

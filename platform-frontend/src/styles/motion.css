@@ -1,0 +1,150 @@
+/* 全局过渡：轻量、贴手，避免花哨 */
+
+/* 根路由切换（登录 ↔ 主应用）— 与平台浅绿底色协调 */
+.app-route-enter-active {
+  transition: opacity 0.48s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.app-route-leave-active {
+  transition: opacity 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.app-route-enter-from,
+.app-route-leave-to {
+  opacity: 0;
+}
+
+/* 登录飞行动画结束后：无额外页面过渡 */
+.app-route-instant-enter-active,
+.app-route-instant-leave-active {
+  transition: none !important;
+}
+
+.app-route-instant-enter-from {
+  opacity: 1;
+  transform: none;
+}
+
+.app-route-instant-leave-to {
+  opacity: 0;
+  transform: none;
+}
+
+.route-instant-enter-active,
+.route-instant-leave-active {
+  transition: none !important;
+}
+
+.route-instant-enter-from,
+.route-instant-leave-to {
+  opacity: 1;
+  transform: none;
+}
+
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition:
+    opacity 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.route-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.route-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.ai-welcome-leave-active {
+  transition:
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.ai-welcome-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.99);
+}
+
+.ai-chat-header-enter-active {
+  transition:
+    opacity 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ai-chat-header-enter-from {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.ai-msg-enter-active {
+  transition:
+    opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ai-msg-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.feature-card-enter-active {
+  transition:
+    opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.feature-card-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-route-enter-active,
+  .app-route-leave-active,
+  .app-route-instant-enter-active,
+  .app-route-instant-leave-active,
+  .route-fade-enter-active,
+  .route-fade-leave-active,
+  .route-instant-enter-active,
+  .route-instant-leave-active,
+  .ai-welcome-leave-active,
+  .ai-chat-header-enter-active,
+  .ai-msg-enter-active,
+  .feature-card-enter-active {
+    transition-duration: 0.01ms !important;
+  }
+
+  .app-route-enter-from,
+  .app-route-leave-to,
+  .route-fade-enter-from,
+  .route-fade-leave-to,
+  .ai-welcome-leave-to,
+  .ai-chat-header-enter-from,
+  .ai-msg-enter-from,
+  .feature-card-enter-from {
+    transform: none !important;
+  }
+
+  .feature-card-wrap {
+    animation: none !important;
+  }
+
+  .ai-home-dock,
+  .ai-home-main--landing {
+    transition: none !important;
+  }
+
+  .ai-home-dock {
+    transform: none !important;
+  }
+}

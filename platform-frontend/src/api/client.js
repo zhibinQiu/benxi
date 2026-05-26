@@ -70,6 +70,13 @@ export async function login(username, password) {
   });
 }
 
+export async function registerUser(username, password) {
+  return api("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
 export async function fetchMe() {
   return api("/api/v1/auth/me");
 }
@@ -574,10 +581,17 @@ export async function fetchRagEmbedSession() {
   return api("/api/v1/rag/embed-session");
 }
 
-export async function assistantChat({ message, history = [], page_hint = null }) {
+export async function assistantChat({
+  message,
+  history = [],
+  page_hint = null,
+  conversationId = null,
+}) {
+  const body = { message, history, page_hint };
+  if (conversationId) body.conversation_id = conversationId;
   return api("/api/v1/assistant/chat", {
     method: "POST",
-    body: JSON.stringify({ message, history, page_hint }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -666,6 +680,17 @@ export const smartDataQueryChatStream = createPlatformChatStream(
 export const carbonQaChatStream = createPlatformChatStream(
   "/api/v1/carbon-qa/chat/stream"
 );
+
+export async function fetchChatConversations(scope, { limit = 30 } = {}) {
+  const q = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+  return api(`/api/v1/chat-history/${encodeURIComponent(scope)}/conversations${q}`);
+}
+
+export async function fetchChatConversationMessages(scope, conversationId) {
+  return api(
+    `/api/v1/chat-history/${encodeURIComponent(scope)}/conversations/${encodeURIComponent(conversationId)}/messages`
+  );
+}
 
 /** @deprecated 使用 smartDataQueryChatStream */
 export const smartDataQueryV2ChatStream = smartDataQueryChatStream;

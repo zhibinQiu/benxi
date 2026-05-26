@@ -137,7 +137,13 @@ function openFeature(f) {
           item-responsive
           class="category-grid"
         >
-          <n-gi v-for="f in cat.features" :key="f.id" span="1 m:2 l:1">
+          <n-gi
+            v-for="(f, fi) in cat.features"
+            :key="f.id"
+            span="1 m:2 l:1"
+            class="feature-card-wrap"
+            :style="{ '--enter-delay': `${Math.min(fi, 8) * 40}ms` }"
+          >
             <n-card
               size="small"
               class="feature-card"
@@ -219,12 +225,36 @@ function openFeature(f) {
 .category-grid :deep(> *) {
   display: flex;
 }
+.feature-card-wrap {
+  animation: feature-card-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+@keyframes feature-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .feature-card {
   cursor: pointer;
   flex: 1;
   width: 100%;
   display: flex;
   flex-direction: column;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
+}
+
+.feature-card:not(.disabled):not(.locked):hover {
+  transform: translateY(-2px);
 }
 .feature-card :deep(.n-card__content) {
   flex: 1;

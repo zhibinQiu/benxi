@@ -25,6 +25,14 @@ def _chat_messages_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/chat-messages"
 
 
+def _conversations_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/conversations"
+
+
+def _messages_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/messages"
+
+
 def _workflow_sse_payload(event: dict) -> dict | None:
     """将 Dify Chatflow 工作流事件转为前端可展示的 SSE 载荷。"""
     ev = event.get("event") or ""
@@ -147,6 +155,109 @@ def parse_dify_citations(event: dict) -> list[dict]:
             }
         )
     return citations
+
+
+async def list_agent_conversations(
+    *,
+    base_url: str,
+    api_key: str,
+    user_id: str,
+    limit: int = 30,
+    feature_label: str = "对话",
+) -> list[dict]:
+    base = (_clean(base_url) or "").rstrip("/")
+    key = _clean(api_key)
+    if not base or not key:
+        raise bad_request(f"{feature_label}未配置对话服务")
+
+    headers = {"Authorization": f"Bearer {key}"}
+    params = {
+        "user": user_id,
+        "limit": max(1, min(limit, 100)),
+        "sort_by": "-updated_at",
+    }
+    url = _conversations_url(base)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            r = await client.get(url, headers=headers, params=params)
+            if r.status_code >= 400:
+                raise bad_request(
+                    f"{feature_label}历史列表不可用: {r.text[:500]}"
+                )
+            body = r.json()
+    except httpx.HTTPError as e:
+        raise bad_request(f"无法连接{feature_label}服务: {e}") from e
+
+    rows = body.get("data") if isinstance(body, dict) else body
+    if not isinstance(rows, list):
+        return []
+
+    out: list[dict] = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        cid = str(item.get("id") or "").strip()
+        if not cid:
+            continue
+        name = str(item.get("name") or "").strip() or "未命名对话"
+        out.append(
+            {
+                "id": cid,
+                "title": name,
+                "updated_at": item.get("updated_at"),
+                "created_at": item.get("created_at"),
+            }
+        )
+    return out
+
+
+async def list_agent_conversation_messages(
+    *,
+    base_url: str,
+    api_key: str,
+    user_id: str,
+    conversation_id: str,
+    limit: int = 100,
+    feature_label: str = "对话",
+) -> list[dict]:
+    base = (_clean(base_url) or "").rstrip("/")
+    key = _clean(api_key)
+    if not base or not key:
+        raise bad_request(f"{feature_label}未配置对话服务")
+
+    headers = {"Authorization": f"Bearer {key}"}
+    params = {
+        "user": user_id,
+        "conversation_id": conversation_id,
+        "limit": max(1, min(limit, 100)),
+    }
+    url = _messages_url(base)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            r = await client.get(url, headers=headers, params=params)
+            if r.status_code >= 400:
+                raise bad_request(
+                    f"{feature_label}历史消息不可用: {r.text[:500]}"
+                )
+            body = r.json()
+    except httpx.HTTPError as e:
+        raise bad_request(f"无法连接{feature_label}服务: {e}") from e
+
+    rows = body.get("data") if isinstance(body, dict) else body
+    if not isinstance(rows, list):
+        return []
+
+    messages: list[dict] = []
+    for item in reversed(rows):
+        if not isinstance(item, dict):
+            continue
+        query = str(item.get("query") or "").strip()
+        answer = str(item.get("answer") or "").strip()
+        if query:
+            messages.append({"role": "user", "content": query})
+        if answer:
+            messages.append({"role": "assistant", "content": answer})
+    return messages
 
 
 async def agent_chat_blocking(

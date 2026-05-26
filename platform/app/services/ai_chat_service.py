@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import AsyncIterator
 
 import httpx
+from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.schemas.ai_chat import AiChatMessage
+from app.services import platform_chat_store
 
 _MAX_HISTORY = 20
 
@@ -36,16 +39,46 @@ def _build_chat_messages(*, message: str, history: list[AiChatMessage]) -> list[
     return messages
 
 
+def _persist_turn(
+    db: Session | None,
+    *,
+    user_id: uuid.UUID | None,
+    conversation_id: str | None,
+    message: str,
+    reply: str,
+) -> str | None:
+    if db is None or user_id is None:
+        return conversation_id
+    conv = platform_chat_store.get_or_create_conversation(
+        db,
+        user_id=user_id,
+        scope="ai-home",
+        conversation_id=conversation_id,
+    )
+    platform_chat_store.append_turn(
+        db,
+        conversation=conv,
+        user_message=message,
+        assistant_message=reply,
+    )
+    db.commit()
+    return str(conv.id)
+
+
 async def iter_chat_with_ai_agent_stream(
     *,
     message: str,
     history: list[AiChatMessage],
+    db: Session | None = None,
+    user_id: uuid.UUID | None = None,
+    conversation_id: str | None = None,
 ) -> AsyncIterator[str]:
     """逐块产出 SSE data 行（不含 event: 前缀，由 API 层包装）。"""
     if not is_configured():
         yield json.dumps({"error": "AI 对话未配置，请联系管理员配置 DeepSeek API"}, ensure_ascii=False)
         return
 
+    accumulated = ""
     messages = _build_chat_messages(message=message, history=history)
     api_key, base_url, model = resolve_credentials()
     payload = {
@@ -79,8 +112,24 @@ async def iter_chat_with_ai_agent_stream(
                     delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
                     text = delta.get("content") or ""
                     if text:
+                        accumulated += text
                         yield json.dumps({"delta": text}, ensure_ascii=False)
-        yield json.dumps({"done": True, "model": model}, ensure_ascii=False)
+        out_conv_id = _persist_turn(
+            db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=message,
+            reply=accumulated,
+        )
+        yield json.dumps(
+            {
+                "done": True,
+                "model": model,
+                "reply": accumulated,
+                "conversation_id": out_conv_id,
+            },
+            ensure_ascii=False,
+        )
     except httpx.HTTPError as e:
         yield json.dumps({"error": f"无法连接 AI 服务: {e}"}, ensure_ascii=False)
 
@@ -89,6 +138,9 @@ async def chat_with_ai_agent(
     *,
     message: str,
     history: list[AiChatMessage],
+    db: Session | None = None,
+    user_id: uuid.UUID | None = None,
+    conversation_id: str | None = None,
 ) -> dict:
     if not is_configured():
         raise bad_request("AI 对话未配置，请联系管理员配置 DeepSeek API")
@@ -120,4 +172,11 @@ async def chat_with_ai_agent(
     reply = reply.strip()
     if not reply:
         raise bad_request("AI 返回为空")
-    return {"reply": reply, "model": model}
+    out_conv_id = _persist_turn(
+        db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        message=message,
+        reply=reply,
+    )
+    return {"reply": reply, "model": model, "conversation_id": out_conv_id}

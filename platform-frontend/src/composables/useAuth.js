@@ -4,6 +4,7 @@ import {
   fetchMe,
   getToken,
   login as apiLogin,
+  registerUser,
   setTokens,
 } from "../api/client";
 
@@ -44,6 +45,12 @@ export function useAuth() {
     return loadUser();
   }
 
+  async function register(username, password) {
+    const tokens = await registerUser(username, password);
+    setTokens(tokens.access_token, tokens.refresh_token);
+    return loadUser();
+  }
+
   function logout() {
     clearTokens();
     user.value = null;
@@ -57,6 +64,7 @@ export function useAuth() {
     hasPerm,
     loadUser,
     login,
+    register,
     logout,
   };
 }

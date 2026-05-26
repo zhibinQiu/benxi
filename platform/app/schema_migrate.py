@@ -20,6 +20,42 @@ def ensure_document_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_platform_chat_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS platform_chat_conversations (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            scope VARCHAR(32) NOT NULL,
+            title VARCHAR(256) NOT NULL DEFAULT '新对话',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_platform_chat_conversations_user_scope
+        ON platform_chat_conversations (user_id, scope)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS platform_chat_messages (
+            id UUID PRIMARY KEY,
+            conversation_id UUID NOT NULL
+                REFERENCES platform_chat_conversations(id) ON DELETE CASCADE,
+            role VARCHAR(16) NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_platform_chat_messages_conversation_id
+        ON platform_chat_messages (conversation_id)
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def ensure_permission_level_migration(engine: Engine) -> None:
     statements = [
         "UPDATE document_permissions SET level = 'visible' WHERE level = 'read'",

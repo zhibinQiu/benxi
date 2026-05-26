@@ -16,6 +16,7 @@ const suggestions = [
 <template>
   <FeatureSubsystemShell fill :show-intro="false">
     <AiChatPanel
+      chat-scope="smart-data-query"
       v-model:conversation-id="conversationId"
       :streaming="true"
       :rich-markdown="true"

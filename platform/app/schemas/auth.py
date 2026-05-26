@@ -1,11 +1,24 @@
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=64)
+    password: str = Field(..., min_length=6)
+
+    @field_validator("username")
+    @classmethod
+    def username_not_blank(cls, v: str) -> str:
+        s = v.strip()
+        if len(s) < 2:
+            raise ValueError("用户名至少 2 个字符")
+        return s
 
 
 class TokenResponse(BaseModel):

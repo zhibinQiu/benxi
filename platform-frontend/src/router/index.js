@@ -21,6 +21,12 @@ const routes = [
         component: () => import("../views/AiHomeView.vue"),
       },
       {
+        path: "chat-history/:scope",
+        name: "chat-history",
+        meta: { title: "历史对话", featureIcon: "chatbubbles" },
+        component: () => import("../views/ChatHistoryView.vue"),
+      },
+      {
         path: "system/functions",
         name: "system-functions",
         meta: { title: "系统功能", featureIcon: "grid" },

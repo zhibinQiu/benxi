@@ -10,7 +10,7 @@ export default defineConfig({
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
-      // 同源代理 KnowFlow Web UI（阶段 2 SSO），见 docs/KNOWFLOW_PLATFORM_INTEGRATION.md
+      // 同源代理 KnowFlow Web UI（阶段 2 SSO），见 docs/zh/development/doc-platform.md
       "/ragflow-ui": {
         target: "http://127.0.0.1:9380",
         changeOrigin: true,

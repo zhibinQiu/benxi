@@ -14,8 +14,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "智碳平台AI子系统"
-    platform_version: str = "2.1.0"
+    app_name: str = "智碳平台AI系统"
+    platform_version: str = "2.2.0"
     debug: bool = False
     api_prefix: str = "/api/v1"
 
@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     knowflow_theme_primary: str = "#18a058"
     knowflow_theme_primary_hover: str = "#36ad6a"
     knowflow_theme_primary_pressed: str = "#0c7a43"
-    knowflow_theme_app_name: str = "智碳平台AI子系统"
+    knowflow_theme_app_name: str = "智碳平台AI系统"
     knowflow_theme_logo_url: str = "/logo.svg"
     knowflow_theme_favicon_url: str = "/favicon.svg"
     knowflow_hide_file_manager: bool = True

@@ -1,6 +1,6 @@
-# 智碳平台AI子系统 — 架构与开发手册
+# 智碳平台AI系统 — 架构与开发手册
 
-> 版本：**2.1.0**（标签 `v2.1.0`） · 展示名：**智碳平台AI子系统**  
+> 版本：**2.1.0**（标签 `v2.1.0`） · 展示名：**智碳平台AI系统**  
 > 本文档描述**平台自有代码**（`platform/`、`platform-frontend/`、`scripts/`），不包含 `platform/third_party/KnowFlow` 内部实现细节。
 
 ---
@@ -202,7 +202,6 @@ sequenceDiagram
 | `bash scripts/start_platform.sh knowflow` | 上述 + KnowFlow/RAGFlow 栈 |
 | `bash scripts/start_platform.sh speech` | 上述 + 语音转写 Docker |
 | `bash scripts/stop_platform.sh` | 停止（**会 down KnowFlow**，慎用 `-v`） |
-| `bash scripts/restart_platform.sh api` | 仅重启平台 API（不重启 postgres/redis） |
 
 | 地址 | 服务 |
 |------|------|
@@ -269,8 +268,7 @@ sequenceDiagram
 | 未使用前端 API | 已删除 `fetchSmartDataQueryMeta` |
 | 文档对比阻塞 | 改为后台执行 + 前端轮询 |
 | MkDocs 断链图片 | logo 改为 `icon/yezi.svg`；上游 PDF 配图目录已移除 |
-| KnowFlow 双份文档 | `docs/KNOWFLOW_PLATFORM_INTEGRATION.md` 已合并指向本文档体系 |
-| `docs/zh/APIS.md` | 已废弃，以 `rest-api.md` 为准 |
+| 脚本与部署文档 | 见仓库根目录 `scripts/README.md`、`development/deploy-amd64.md` |
 | OCR / 占位功能 | 保留为 `enabled=false` 产品占位，非死代码 |
 
 **请勿删除**：`platform/third_party/KnowFlow/`（Docker 构建依赖）。
@@ -299,7 +297,7 @@ pdf2zh_next --api --api-port 7861
 
 ## 11. 相关文档
 
-- [智碳平台AI子系统快速上手](doc-platform.md)
+- [智碳平台AI系统快速上手](doc-platform.md)
 - [本地开发](local-development.md)
 - [REST API](rest-api.md)
 - [功能插件](../platform/feature-plugins.md)

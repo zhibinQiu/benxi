@@ -157,14 +157,32 @@ const menuOptions = computed(() => {
   return items;
 });
 
-const showAssistant = computed(
-  () =>
-    route.name !== "login" &&
-    route.name !== "ai-home" &&
-    route.name !== "system-functions" &&
-    !route.meta?.public &&
-    !route.meta?.hideAssistant
+/** 从系统功能进入的子功能页（翻译、问数、问答等） */
+const SUBSYSTEM_HEADER_ROUTES = new Set([
+  "ai-tools",
+  "translate",
+  "rag",
+  "smart-data-query",
+  "carbon-qa",
+  "smart-forecast",
+  "speech",
+  "ocr",
+  "compare",
+  "assist-writing",
+  "knowledge-graph",
+]);
+
+const isSubsystemPage = computed(() =>
+  SUBSYSTEM_HEADER_ROUTES.has(String(route.name || ""))
 );
+
+/** 主菜单一级页与常用业务页展示悬浮客服；子功能全屏页与双碳首页不展示 */
+const showAssistant = computed(() => {
+  if (route.meta?.public || route.meta?.hideAssistant) return false;
+  if (route.name === "login" || route.name === "ai-home") return false;
+  if (isSubsystemPage.value) return false;
+  return true;
+});
 
 const activeKey = computed(() => {
   if (route.name === "document-detail") return "documents";
@@ -200,33 +218,11 @@ const headerTitle = computed(() => String(route.meta?.title || "").trim());
 
 const headerIcon = computed(() => resolveFeatureIcon(route.meta?.featureIcon));
 
-/** 从系统功能进入的子系统：全局顶栏展示返回 + 功能标题 */
-const SUBSYSTEM_HEADER_ROUTES = new Set([
-  "ai-home",
-  "ai-tools",
-  "translate",
-  "rag",
-  "smart-data-query",
-  "carbon-qa",
-  "smart-forecast",
-  "speech",
-  "ocr",
-  "compare",
-  "assist-writing",
-  "knowledge-graph",
-]);
-
-const isSubsystemPage = computed(() =>
-  SUBSYSTEM_HEADER_ROUTES.has(String(route.name || ""))
-);
-
 const showSubsystemNav = computed(
   () => isSubsystemPage.value && Boolean(headerTitle.value)
 );
 
-const showSubsystemBack = computed(
-  () => showSubsystemNav.value && route.name !== "ai-home"
-);
+const showSubsystemBack = computed(() => showSubsystemNav.value);
 
 const showStandardFeatureTitle = computed(
   () => Boolean(headerTitle.value) && !isSubsystemPage.value

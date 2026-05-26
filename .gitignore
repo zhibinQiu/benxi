@@ -139,6 +139,11 @@ assets/offline_assets_*.zip
 
 # Environments
 .env
+platform/.env.docker
+platform/knowflow.env
+platform/knowflow.env.docker
+platform/deploy.target
+platform/third_party/
 .venv
 env/
 venv/

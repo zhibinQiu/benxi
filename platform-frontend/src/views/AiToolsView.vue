@@ -41,7 +41,7 @@ const categories = [
     hint: "智能体与自动化工作流",
     icon: ExtensionPuzzleOutline,
     tools: [
-      { id: "openclow", title: "OpenClow", description: "平台集成的 OpenClow 智能体", pending: true },
+      { id: "openclaw", title: "OpenClaw", description: "平台集成的 OpenClaw 智能体", pending: true },
       { id: "hermes", title: "Hermes", description: "平台集成的 Hermes 智能体", pending: true },
       { id: "coze", title: "扣子 Coze", description: "字节跳动 Agent 搭建与对话", url: "https://www.coze.cn/" },
       {

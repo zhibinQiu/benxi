@@ -1,7 +1,6 @@
 <script setup>
 import { LeafOutline } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
-import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import { aiHomeChatStream } from "../api/client";
 
 const suggestions = [
@@ -12,14 +11,12 @@ const suggestions = [
 </script>
 
 <template>
-  <FeatureSubsystemShell fill :show-intro="false">
-    <AiChatPanel
-      title="双碳智能体"
-      description="面向企业碳管理、碳核算与减排路径的专业 AI 助手，助您快速理解政策标准、梳理减排思路与 ESG 实践。"
-      subtitle="内置大模型对话"
-      :suggestions="suggestions"
-      :icon="LeafOutline"
-      :stream-chat="aiHomeChatStream"
-    />
-  </FeatureSubsystemShell>
+  <AiChatPanel
+    title="双碳智能体"
+    description="面向企业碳管理、碳核算与减排路径的专业 AI 助手，助您快速理解政策标准、梳理减排思路与 ESG 实践。"
+    subtitle="内置大模型对话"
+    :suggestions="suggestions"
+    :icon="LeafOutline"
+    :stream-chat="aiHomeChatStream"
+  />
 </template>

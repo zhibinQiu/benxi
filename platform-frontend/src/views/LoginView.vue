@@ -47,7 +47,7 @@ async function onSubmit() {
           <span class="login-title">{{ PLATFORM_APP_NAME }}</span>
         </div>
       </template>
-      <n-text depth="2">智碳平台 AI 子系统统一入口</n-text>
+      <n-text depth="2">{{ PLATFORM_APP_NAME }} · 统一入口</n-text>
       <n-form style="margin-top: 24px" @submit.prevent="onSubmit">
         <n-form-item label="用户名">
           <n-input v-model:value="username" placeholder="admin" />

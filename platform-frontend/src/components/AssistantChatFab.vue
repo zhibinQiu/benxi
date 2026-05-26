@@ -108,6 +108,7 @@ function toggle() {
 </script>
 
 <template>
+  <Teleport to="body">
   <div class="assistant-root" :class="{ 'assistant-root--open': open }">
     <Transition name="assistant-panel">
       <div v-if="open" class="assistant-panel" role="dialog" aria-label="智能客服">
@@ -200,6 +201,7 @@ function toggle() {
       <n-icon :size="20" :component="open ? CloseOutline : ChatbubbleEllipsesOutline" />
     </button>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

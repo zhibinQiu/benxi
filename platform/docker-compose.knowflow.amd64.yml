@@ -1,0 +1,35 @@
+# KnowFlow / RAGFlow — amd64 预构建镜像（最快，无需源码编译）
+# 需先: bash scripts/setup_knowflow.sh
+# 启动: bash scripts/deploy_amd64.sh knowflow
+#
+# 与 docker-compose.knowflow.yml（源码构建 arm64）二选一。
+
+include:
+  - path: ./third_party/KnowFlow/docker/docker-compose-base.yml
+    env_file: ./knowflow.env
+  - path: ./third_party/KnowFlow/docker/docker-compose.yml
+    env_file: ./knowflow.env
+
+networks:
+  ragflow:
+    name: zhitanai_default
+    external: true
+
+services:
+  ragflow:
+    platform: linux/amd64
+    ports:
+      - ${SVR_HTTP_PORT:-9380}:9380
+    volumes:
+      - ./knowflow-theme/platform-branding.css:/ragflow/web/dist/platform-branding.css:ro
+      - ./knowflow-theme/platform-branding.js:/ragflow/web/dist/platform-branding.js:ro
+      - ./knowflow-theme/logo.svg:/ragflow/web/dist/logo.svg:ro
+      - ./knowflow-theme/favicon.svg:/ragflow/web/dist/favicon.svg:ro
+
+  knowflow-backend:
+    platform: linux/amd64
+    ports:
+      - "${KNOWFLOW_BACKEND_PORT:-5001}:5000"
+
+  knowflow-gotenberg:
+    platform: linux/amd64

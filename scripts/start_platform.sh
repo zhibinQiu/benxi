@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 智碳平台 AI 子系统启动脚本（本地优先）
+# 智碳平台 AI 系统启动脚本（本地优先）
 # - 有 .venv / node_modules 时：pdf2zh、平台 API、Worker、前端在宿主机运行
 # - 无本地环境时：回退 Docker 构建 api/worker/frontend
 # - 基础设施（postgres / redis / minio）默认 Docker
@@ -323,7 +323,7 @@ print_urls() {
   local with_knowflow="${1:-}"
   cat <<EOF
 
-${GREEN}=== 智碳平台 AI 子系统已启动 ===${NC}
+${GREEN}=== 智碳平台 AI 系统已启动 ===${NC}
 
   平台前端:     http://127.0.0.1:5174  → 系统功能 → 知识问答（内嵌 KnowFlow 完整界面）
   平台 API:     http://127.0.0.1:8000  (Swagger: /docs)

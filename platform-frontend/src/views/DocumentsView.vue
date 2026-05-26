@@ -568,7 +568,11 @@ watch(
         <template #tab>
           <n-space :size="6" align="center">
             <span>{{ f.label }}</span>
-            <n-tag v-if="!f.can_create" size="tiny" :bordered="false">
+            <n-tag
+              v-if="!f.can_create && f.scope !== 'shared' && f.scope !== 'all'"
+              size="tiny"
+              :bordered="false"
+            >
               仅查阅
             </n-tag>
           </n-space>

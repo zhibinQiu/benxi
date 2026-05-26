@@ -1,15 +1,15 @@
-# PDF 翻译与智碳平台AI子系统
+# PDF 翻译与智碳平台AI系统
 
-基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳平台 AI 子系统企业应用控制面（文档、权限、翻译任务等）。
+基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳平台 AI 系统企业应用控制面（文档、权限、翻译任务等）。
 
 ## 项目结构
 
 ```
 pdf_trans/
 ├── pdf2zh_next/          # PDF 翻译核心（CLI、WebUI、REST API）
-├── platform/             # 智碳平台AI子系统后端（FastAPI + Celery）
+├── platform/             # 智碳平台AI系统后端（FastAPI + Celery）
 ├── platform-frontend/    # 平台前端（Vue 3）
-├── scripts/              # 启动与资源脚本
+├── scripts/              # 启动、部署、KnowFlow/语音脚本（见 scripts/README.md）
 ├── docs/zh/              # 中文文档
 └── tests/                # pdf2zh 配置相关测试
 ```
@@ -80,11 +80,22 @@ pdf2zh_next --gui                     # Gradio WebUI :7860
 pdf2zh_next --api --api-port 7861     # REST API
 ```
 
+## amd64 服务器部署（Docker 全栈）
+
+```bash
+bash scripts/push_and_deploy.sh           # SSH 免密同步 + 全量部署（见 platform/deploy.target）
+bash scripts/deploy_amd64.sh full       # 仅在目标机已有机上代码时
+```
+
+详见 [amd64 部署指南](docs/zh/development/deploy-amd64.md)（含 SSH 推送与 `deploy.target` 示例）。
+
 ## 文档
 
-- [快速开始](docs/zh/getting-started/getting-started.md)
+- [快速开始](docs/zh/getting-started.md)
+- [脚本说明](scripts/README.md)
+- [amd64 部署](docs/zh/development/deploy-amd64.md)
 - [本地开发](docs/zh/development/local-development.md)
-- [智碳平台AI子系统](docs/zh/development/doc-platform.md)
+- [智碳平台AI系统](docs/zh/development/doc-platform.md)
 - [REST API](docs/zh/development/rest-api.md)
 
 ## 许可

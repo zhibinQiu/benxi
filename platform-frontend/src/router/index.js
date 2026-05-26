@@ -23,7 +23,7 @@ const routes = [
       {
         path: "system/functions",
         name: "system-functions",
-        meta: { title: "系统功能", featureIcon: "grid", hideAssistant: true },
+        meta: { title: "系统功能", featureIcon: "grid" },
         component: () => import("../views/SystemFunctionsView.vue"),
       },
       {

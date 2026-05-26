@@ -1,4 +1,4 @@
-# 智碳平台AI子系统前端
+# 智碳平台AI系统前端
 
 Vue 3 + Naive UI，对接 `platform` 后端 `/api/v1`。
 

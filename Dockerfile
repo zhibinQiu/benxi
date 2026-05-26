@@ -1,4 +1,8 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+ARG BASE_IMAGE=ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+FROM ${BASE_IMAGE}
+
+# 镜像站部署若无法拉 ghcr，可传 BASE_IMAGE=docker.1ms.run/library/python:3.11-slim 并在下方安装 uv
+RUN if ! command -v uv >/dev/null 2>&1; then pip install --no-cache-dir uv; fi
 
 WORKDIR /app
 

@@ -27,7 +27,7 @@ async def chat_with_assistant(
 
     knowledge = build_platform_knowledge(db, user, page_hint=page_hint)
     system = (
-        "你是「智碳平台AI子系统」内置智能客服助手，专门帮助用户理解和使用本平台。\n\n"
+        "你是「智碳平台AI系统」内置智能客服助手，专门帮助用户理解和使用本平台。\n\n"
         "【平台知识库】\n"
         f"{knowledge}\n\n"
         "请严格依据知识库回答。若问题超出平台使用范围，礼貌说明并建议联系系统管理员。"

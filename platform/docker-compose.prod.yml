@@ -49,10 +49,13 @@ services:
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.27-alpine}
+        VITE_API_BASE: ${VITE_API_BASE:-/ai}
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/ai/}
     image: ${FRONTEND_IMAGE:-pdf-trans-frontend:prod}
     restart: unless-stopped
+    profiles: !reset []
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_PORT:-40005}:80"
     volumes: !reset []
     working_dir: /usr/share/nginx/html
     command: !reset null

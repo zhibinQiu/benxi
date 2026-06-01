@@ -20,7 +20,10 @@ from app.core.document_scope import (
     can_read_document,
 )
 from app.core.permissions import PermissionLevel, user_dept_ids, user_has_permission, user_is_superuser
+from app.config import get_settings
+from app.integrations.ragflow_client import RagflowClient
 from app.integrations.ragflow_kb_acl import grant_kb_user_permission, revoke_kb_user_permission
+from app.integrations.ragflow_rbac import ensure_ragflow_global_admin
 from app.models.document import Document
 from app.models.org import User, UserDepartment
 from app.models.ragflow_link import RagflowAccountLink
@@ -32,6 +35,9 @@ from app.models.ragflow_scope_dataset import (
 )
 from app.services.ragflow_identity_service import get_or_create_link
 from app.services.ragflow_naming import (
+    dataset_display_label_company,
+    dataset_display_label_dept,
+    dataset_display_label_personal,
     dataset_name_for_company,
     dataset_name_for_dept,
     dataset_name_for_personal,
@@ -72,6 +78,46 @@ def _can_create_scope_dataset(db: Session, user: User, scope: str) -> bool:
     return can_edit_in_scope(db, user, scope)
 
 
+def _admin_rag_client() -> RagflowClient | None:
+    """跨租户建库仅支持 RAGFLOW_API_KEY；mapped 模式应为用户授予 KnowFlow admin 后自建库。"""
+    key = (get_settings().ragflow_api_key or "").strip()
+    if not key:
+        return None
+    return RagflowClient(api_key=key)
+
+
+def _kb_permission_denied(exc: BaseException) -> bool:
+    msg = str(exc)
+    return "没有创建知识库" in msg or "permission" in msg.lower()
+
+
+def _visible_dataset_ids(kf) -> set[str]:
+    try:
+        return {
+            str(k.get("id"))
+            for k in kf._rag.list_datasets()
+            if k.get("id")
+        }
+    except Exception:
+        return set()
+
+
+def repair_stale_scope_registries(db: Session, kf) -> int:
+    """删除 RAGFlow 中已不存在、但注册表仍指向的旧知识库记录。"""
+    visible = _visible_dataset_ids(kf)
+    if not visible:
+        return 0
+    removed = 0
+    for reg in list(db.scalars(select(RagflowScopeDataset)).all()):
+        if reg.ragflow_dataset_id in visible:
+            continue
+        db.delete(reg)
+        removed += 1
+    if removed:
+        db.flush()
+    return removed
+
+
 def ensure_scope_dataset(
     db: Session,
     actor: User,
@@ -88,30 +134,65 @@ def ensure_scope_dataset(
 
     existing = _get_registry(db, reg_scope, scope_key)
     if existing:
-        return existing.ragflow_dataset_id
-
-    if not _can_create_scope_dataset(db, actor, scope):
-        logger.info("用户 %s 无权创建 %s 知识库", actor.username, scope)
-        return None
+        visible = _visible_dataset_ids(kf)
+        if visible and existing.ragflow_dataset_id in visible:
+            return existing.ragflow_dataset_id
+        db.delete(existing)
+        db.flush()
 
     if scope == SCOPE_COMPANY:
         name = dataset_name_for_company()
     elif scope == SCOPE_DEPARTMENT:
-        name = dataset_name_for_dept(uuid.UUID(scope_key))
+        name = dataset_name_for_dept(uuid.UUID(scope_key), db)
     else:
-        name = dataset_name_for_personal(uuid.UUID(scope_key))
-    try:
-        ds_id = kf._rag.ensure_dataset(name)
-    except Exception as e:
-        logger.warning("创建知识库 %s 失败: %s", name, e)
-        return None
+        name = dataset_name_for_personal(uuid.UUID(scope_key), db)
 
-    link = get_or_create_link(db, actor)
+    rag = kf._rag
+    owner_ragflow_user_id: str | None = None
+    if not _can_create_scope_dataset(db, actor, scope):
+        admin_rag = _admin_rag_client()
+        if not admin_rag:
+            logger.info(
+                "用户 %s 无权创建 %s 知识库，且未配置 RAGFLOW_API_KEY",
+                actor.username,
+                scope,
+            )
+            return None
+        rag = admin_rag
+        bootstrap = db.scalar(
+            select(RagflowAccountLink).where(
+                RagflowAccountLink.platform_user_id == actor.id
+            )
+        )
+        owner_ragflow_user_id = (
+            (bootstrap.ragflow_user_id or "").strip() if bootstrap else None
+        ) or None
+    else:
+        link = get_or_create_link(db, actor)
+        owner_ragflow_user_id = link.ragflow_user_id
+
+    try:
+        ds_id = rag.ensure_dataset(name)
+    except Exception as e:
+        if _kb_permission_denied(e) and owner_ragflow_user_id:
+            if ensure_ragflow_global_admin(owner_ragflow_user_id):
+                try:
+                    ds_id = rag.ensure_dataset(name)
+                except Exception as e2:
+                    logger.warning("创建知识库 %s 失败（已授予 admin）: %s", name, e2)
+                    return None
+            else:
+                logger.warning("创建知识库 %s 失败: %s", name, e)
+                return None
+        else:
+            logger.warning("创建知识库 %s 失败: %s", name, e)
+            return None
+
     reg = RagflowScopeDataset(
         scope=reg_scope,
         scope_key=scope_key,
         ragflow_dataset_id=ds_id,
-        owner_ragflow_user_id=link.ragflow_user_id,
+        owner_ragflow_user_id=owner_ragflow_user_id,
     )
     db.add(reg)
     db.flush()
@@ -168,6 +249,35 @@ def _ragflow_user_id(db: Session, platform_user_id: uuid.UUID) -> str | None:
     return (link.ragflow_user_id or "").strip() or None if link else None
 
 
+def _grant_explicit_user_permissions(
+    db: Session, document: Document, dataset_id: str
+) -> int:
+    """为文档的显式用户授权同步 KnowFlow 知识库权限（含跨部门分享）。"""
+    from app.models.document import DocumentPermission
+
+    granted = 0
+    perms = db.scalars(
+        select(DocumentPermission).where(
+            DocumentPermission.document_id == document.id,
+            DocumentPermission.subject_type == "user",
+        )
+    ).all()
+    seen: set[uuid.UUID] = set()
+    for perm in perms:
+        uid = perm.subject_id
+        if uid in seen:
+            continue
+        seen.add(uid)
+        user = db.get(User, uid)
+        if not user or user.status != "active":
+            continue
+        level = kb_level_for_user_on_document(db, user, document)
+        rid = _ragflow_user_id(db, uid)
+        if level and rid and grant_kb_user_permission(dataset_id, rid, level):
+            granted += 1
+    return granted
+
+
 def sync_document_kb_grants(db: Session, document: Document) -> int:
     """按平台文档 ACL 同步该文档所在知识库的 KnowFlow 授权（不复制文档）。"""
     from app.models.ragflow_document_link import RagflowDocumentLink
@@ -208,11 +318,14 @@ def sync_document_kb_grants(db: Session, document: Document) -> int:
                 granted += 1
         return granted
 
+    granted += _grant_explicit_user_permissions(db, document, link.dataset_id)
+
     if scope == SCOPE_DEPARTMENT and document.dept_id:
-        return _sync_dept_kb_grants(db, document.dept_id, link.dataset_id)
+        granted += _sync_dept_kb_grants(db, document.dept_id, link.dataset_id)
+        return granted
 
     if scope == SCOPE_COMPANY:
-        return _sync_company_kb_grants(db, link.dataset_id)
+        granted += _sync_company_kb_grants(db, link.dataset_id)
 
     return granted
 
@@ -373,3 +486,31 @@ def ensure_user_scope_datasets(db: Session, user: User, kf) -> None:
         ensure_scope_dataset(db, user, SCOPE_DEPARTMENT, str(dept_id), kf)
     if user_has_permission(db, user, "doc.read") or user_is_superuser(db, user):
         ensure_scope_dataset(db, user, SCOPE_COMPANY, COMPANY_SCOPE_KEY, kf)
+
+
+def knowflow_kb_labels_for_user(db: Session, user: User) -> list[dict[str, str]]:
+    """供前端 / KnowFlow 主题展示：技术库名 → 部门名/用户名（查询仍用 scope_key UUID）。"""
+    labels: list[dict[str, str]] = []
+    company_name = dataset_name_for_company()
+    labels.append({"name": company_name, "label": dataset_display_label_company()})
+
+    seen_names: set[str] = {company_name}
+    for dept_id in user_dept_ids(db, user.id):
+        technical = dataset_name_for_dept(dept_id, db)
+        if technical in seen_names:
+            continue
+        seen_names.add(technical)
+        labels.append(
+            {"name": technical, "label": dataset_display_label_dept(db, dept_id)}
+        )
+
+    personal_name = dataset_name_for_personal(user.id, db)
+    if personal_name not in seen_names:
+        labels.append(
+            {
+                "name": personal_name,
+                "label": dataset_display_label_personal(db, user.id),
+            }
+        )
+
+    return labels

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import logging
@@ -31,13 +32,18 @@ from app.api import (
 from app.features.registry import ensure_plugins_loaded, mount_routers
 from app.bootstrap import bootstrap_db
 from app.schema_migrate import (
+    ensure_carbon_market_schema,
     ensure_document_schema,
+    ensure_document_library_folder_schema,
     ensure_meeting_record_schema,
     ensure_permission_level_migration,
     ensure_platform_chat_schema,
     ensure_ragflow_schema,
     ensure_todo_schema,
+    ensure_wechat_mp_schema,
+    ensure_feed_subscription_schema,
 )
+from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
 from app.models import (  # noqa: F401 — register ORM models
@@ -52,9 +58,12 @@ from app.models import (  # noqa: F401 — register ORM models
     ragflow_document_link,
     ragflow_scope_dataset,
     document_workflow,
+    carbon_market,
     meeting_record,
     platform_chat,
     todo,
+    wechat_mp,
+    feed_subscription,
 )
 from app.schemas.common import ApiResponse
 
@@ -63,9 +72,13 @@ from app.schemas.common import ApiResponse
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_document_schema(engine)
+    ensure_document_library_folder_schema(engine)
     ensure_ragflow_schema(engine)
+    ensure_carbon_market_schema(engine)
     ensure_meeting_record_schema(engine)
     ensure_todo_schema(engine)
+    ensure_wechat_mp_schema(engine)
+    ensure_feed_subscription_schema(engine)
     ensure_platform_chat_schema(engine)
     ensure_permission_level_migration(engine)
     db = SessionLocal()
@@ -73,7 +86,15 @@ async def lifespan(_app: FastAPI):
         bootstrap_db(db)
     finally:
         db.close()
-    yield
+    sync_task = start_cea_history_scheduler()
+    try:
+        yield
+    finally:
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
 
 
 def create_app() -> FastAPI:
@@ -89,10 +110,11 @@ def create_app() -> FastAPI:
         if settings.cors_origins.strip() == "*"
         else [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
     )
+    allow_all_origins = settings.cors_origins.strip() == "*"
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=True,
+        allow_credentials=not allow_all_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -153,6 +175,7 @@ def create_app() -> FastAPI:
     app.include_router(roles.router, prefix=prefix)
     app.include_router(documents.router, prefix=prefix)
     app.include_router(system.router, prefix=prefix)
+    app.include_router(embed_proxy_api.public_router, prefix=prefix)
     app.include_router(embed_proxy_api.router, prefix=prefix)
     mount_routers(app, prefix)
     app.include_router(jobs.router, prefix=prefix)

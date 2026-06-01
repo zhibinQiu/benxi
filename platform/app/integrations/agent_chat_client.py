@@ -33,6 +33,10 @@ def _messages_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/messages"
 
 
+def _conversation_url(base_url: str, conversation_id: str) -> str:
+    return f"{_conversations_url(base_url)}/{conversation_id}"
+
+
 def _workflow_sse_payload(event: dict) -> dict | None:
     """将 Dify Chatflow 工作流事件转为前端可展示的 SSE 载荷。"""
     ev = event.get("event") or ""
@@ -209,6 +213,77 @@ async def list_agent_conversations(
             }
         )
     return out
+
+
+async def delete_agent_conversation(
+    *,
+    base_url: str,
+    api_key: str,
+    user_id: str,
+    conversation_id: str,
+    feature_label: str = "对话",
+) -> None:
+    base = (_clean(base_url) or "").rstrip("/")
+    key = _clean(api_key)
+    if not base or not key:
+        raise bad_request(f"{feature_label}未配置对话服务")
+
+    cid = str(conversation_id or "").strip()
+    if not cid:
+        raise bad_request("会话不存在")
+
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    url = _conversation_url(base, cid)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+            r = await client.request(
+                "DELETE",
+                url,
+                headers=headers,
+                json={"user": user_id},
+            )
+            if r.status_code == 404:
+                return
+            if r.status_code >= 400:
+                raise bad_request(
+                    f"{feature_label}删除会话失败: {r.text[:500]}"
+                )
+    except httpx.HTTPError as e:
+        raise bad_request(f"无法连接{feature_label}服务: {e}") from e
+
+
+async def clear_agent_conversations(
+    *,
+    base_url: str,
+    api_key: str,
+    user_id: str,
+    feature_label: str = "对话",
+    batch_limit: int = 100,
+) -> int:
+    """永久删除上游全部会话，返回删除条数。"""
+    deleted = 0
+    while True:
+        rows = await list_agent_conversations(
+            base_url=base_url,
+            api_key=api_key,
+            user_id=user_id,
+            limit=batch_limit,
+            feature_label=feature_label,
+        )
+        if not rows:
+            break
+        for row in rows:
+            await delete_agent_conversation(
+                base_url=base_url,
+                api_key=api_key,
+                user_id=user_id,
+                conversation_id=row["id"],
+                feature_label=feature_label,
+            )
+            deleted += 1
+        if len(rows) < batch_limit:
+            break
+    return deleted
 
 
 async def list_agent_conversation_messages(

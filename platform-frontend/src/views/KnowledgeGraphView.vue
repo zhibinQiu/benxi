@@ -6,6 +6,7 @@ import { NAlert, NButton, useMessage } from "naive-ui";
 import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
+import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
 
 const route = useRoute();
 const message = useMessage();
@@ -43,7 +44,7 @@ function stripBearer(token) {
 function buildKnowflowUrl(session) {
   const base = iframeBase.value;
   const auth = session?.sso?.authorization;
-  const q = new URLSearchParams({ zt_hide_file: "1" });
+  const q = new URLSearchParams({ zt_hide_file: "1", zt_embed: "knowledge" });
   if (session?.sso?.ready && auth) {
     q.set("auth", stripBearer(auth));
   }
@@ -100,11 +101,12 @@ async function loadMeta() {
   try {
     const [m, session] = await Promise.all([
       fetchRagMeta(),
-      fetchRagEmbedSession().catch(() => null),
+      fetchRagEmbedSession({ sync: false }).catch(() => null),
     ]);
     meta.value = m;
     embedSession.value = session;
     applyIframeSession(session);
+    scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-kg-embed" });
   } catch (e) {
     message.error(e.message);
   } finally {
@@ -116,6 +118,8 @@ function onIframeLoad() {
   iframeReady.value = true;
   postSsoToIframe();
   postThemeToIframe();
+  postToIframe({ type: "zt-platform-embed", mode: "knowledge" });
+  scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-kg-embed" });
 }
 
 watch(

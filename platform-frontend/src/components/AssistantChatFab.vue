@@ -12,6 +12,7 @@ import ChatComposer from "./ChatComposer.vue";
 import { marked } from "marked";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
+import { navigateWithReturn } from "../utils/navigationReturn";
 
 const route = useRoute();
 const router = useRouter();
@@ -114,11 +115,11 @@ function toggle() {
 }
 
 function goToHistory() {
-  router.push({
-    name: "chat-history",
-    params: { scope: "assistant" },
-    query: { from: route.fullPath },
-  });
+  navigateWithReturn(
+    router,
+    { name: "chat-history", params: { scope: "assistant" } },
+    route
+  );
 }
 
 function startNewChat() {

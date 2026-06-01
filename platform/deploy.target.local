@@ -1,0 +1,4 @@
+# Mac M1 / Apple Silicon 本地开发（不用于 SSH 部署）
+# 本地请使用: bash scripts/start_platform.sh
+# 环境文件: platform/.env（由 .env.example 复制，勿与 amd64 混用）
+DEPLOY_PROFILE=local

@@ -30,9 +30,14 @@ export function useAuth() {
     try {
       user.value = await fetchMe();
       return user.value;
-    } catch {
-      clearTokens();
-      user.value = null;
+    } catch (e) {
+      const msg = String(e?.message || "");
+      const authFailed =
+        /401|403|未授权|Unauthorized|Invalid access token|token/i.test(msg);
+      if (authFailed) {
+        clearTokens();
+        user.value = null;
+      }
       return null;
     } finally {
       loading.value = false;

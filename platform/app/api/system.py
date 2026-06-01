@@ -46,6 +46,8 @@ async def list_features(
     ensure_plugins_loaded()
     items = []
     for plugin in all_plugins():
+        if not getattr(plugin, "show_in_catalog", True):
+            continue
         if not plugin.enabled:
             items.append(plugin.catalog_dict(accessible=False))
             continue

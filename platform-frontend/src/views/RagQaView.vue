@@ -1,13 +1,15 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useAuth } from "../composables/useAuth";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { NAlert, NButton, useMessage } from "naive-ui";
 import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
+import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
 
 const route = useRoute();
+const router = useRouter();
 const message = useMessage();
 const { user } = useAuth();
 
@@ -56,10 +58,15 @@ function buildKnowflowUrl(session) {
 function themePayload() {
   const base = embedSession.value?.theme || {};
   const name = (user.value?.username || "").trim();
+  const kbLabels =
+    embedSession.value?.knowflow_kb_labels ||
+    base.knowflow_kb_labels ||
+    [];
   return {
     ...base,
     display_name: name || base.display_name,
     username: user.value?.username || base.username,
+    knowflow_kb_labels: kbLabels,
   };
 }
 
@@ -103,18 +110,21 @@ async function loadMeta() {
   try {
     const [m, session] = await Promise.all([
       fetchRagMeta(),
-      fetchRagEmbedSession().catch(() => null),
+      fetchRagEmbedSession({ sync: false }).catch(() => null),
     ]);
     meta.value = m;
     embedSession.value = session;
 
     if (meta.value.ui_embed_mode === "redirect" && meta.value.ui_available && session?.sso?.ready) {
-      const ret = encodeURIComponent(window.location.origin + "/system/functions");
+      const ret = encodeURIComponent(
+        `${window.location.origin}${router.resolve({ name: "system-functions" }).fullPath}`,
+      );
       window.location.href = `${buildKnowflowUrl(session)}&platform_return=${ret}`;
       return;
     }
 
     applyIframeSession(session);
+    scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-embed" });
   } catch (e) {
     message.error(e.message);
   } finally {
@@ -126,6 +136,7 @@ function onIframeLoad() {
   iframeReady.value = true;
   postSsoToIframe();
   postThemeToIframe();
+  scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-embed" });
 }
 
 async function reloadKnowflowForUser() {
@@ -133,7 +144,7 @@ async function reloadKnowflowForUser() {
   iframeReady.value = false;
   iframeSrc.value = "";
   try {
-    embedSession.value = await fetchRagEmbedSession().catch(() => null);
+    embedSession.value = await fetchRagEmbedSession({ sync: false }).catch(() => null);
     applyIframeSession(embedSession.value);
   } catch (e) {
     message.error(e.message);

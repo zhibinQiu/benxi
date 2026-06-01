@@ -131,9 +131,12 @@ def cli():
         logging.basicConfig(level=logging.INFO, handlers=[RichHandler()])
         logger.info("Warmup babeldoc assets...")
         babeldoc.assets.assets.warmup()
+        import os
+
         from pdf2zh_next.api_server import run_api_server
 
-        run_api_server(port=settings.gui_settings.api_port)
+        api_host = os.getenv("PDF2ZH_API_HOST", "127.0.0.1")
+        run_api_server(host=api_host, port=settings.gui_settings.api_port)
         sys.exit(0)
     sys.exit(asyncio.run(main()))
 

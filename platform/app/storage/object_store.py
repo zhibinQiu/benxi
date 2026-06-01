@@ -79,6 +79,16 @@ class ObjectStore:
         finally:
             resp["Body"].close()
 
+    def put_object_bytes(
+        self, file_key: str, data: bytes, content_type: str = "application/octet-stream"
+    ) -> None:
+        self._client.put_object(
+            Bucket=self.bucket,
+            Key=file_key,
+            Body=data,
+            ContentType=content_type,
+        )
+
 
 _store: ObjectStore | None = None
 

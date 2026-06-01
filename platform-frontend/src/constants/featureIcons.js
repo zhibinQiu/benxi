@@ -11,6 +11,9 @@ import {
   ListOutline,
   CreateOutline,
   GitNetworkOutline,
+  WalletOutline,
+  NewspaperOutline,
+  SearchOutline,
 } from "@vicons/ionicons5";
 
 /** 与系统功能插件 icon 字段一致 */
@@ -27,6 +30,9 @@ export const FEATURE_ICON_MAP = {
   list: ListOutline,
   create: CreateOutline,
   "git-network": GitNetworkOutline,
+  wallet: WalletOutline,
+  newspaper: NewspaperOutline,
+  search: SearchOutline,
 };
 
 export function resolveFeatureIcon(key) {

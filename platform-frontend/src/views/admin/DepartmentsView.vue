@@ -39,7 +39,7 @@ const isEdit = computed(() => Boolean(editingId.value));
 
 function deptName(id) {
   if (!id) return "（根）";
-  return items.value.find((d) => d.id === id)?.name || id;
+  return items.value.find((d) => d.id === id)?.name || "未知部门";
 }
 
 const parentOptions = computed(() => {

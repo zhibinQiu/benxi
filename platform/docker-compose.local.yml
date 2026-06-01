@@ -2,6 +2,12 @@
 # 用法: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis minio
 
 services:
+  postgres:
+    # 本地卷多为 pg16；amd64 部署栈仍用 docker-compose.yml 的 15
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+
   pdf2zh-api:
     profiles:
       - docker-full
@@ -43,3 +49,5 @@ services:
   frontend:
     profiles:
       - docker-app
+    ports:
+      - "40005:40005"

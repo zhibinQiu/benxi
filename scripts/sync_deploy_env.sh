@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 将本地 platform/.env、knowflow.env 转为 Docker 部署可用配置（仅改主机名/镜像，其余参数保持一致）
+# 生成 amd64 服务器用 .env.docker / knowflow.env.docker（不修改本地 .env）
 #
 # 用法:
 #   bash scripts/sync_deploy_env.sh
@@ -9,15 +9,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM="$ROOT/platform"
-# 本地开发用 .env / knowflow.env 只读；部署写入 .env.docker / knowflow.env.docker
+# 本地 Mac：.env + knowflow.env；服务器 amd64：.env.docker + knowflow.env.docker
 SRC_ENV="$PLATFORM/.env"
 OUT_ENV="$PLATFORM/.env.docker"
 SRC_KF="$PLATFORM/knowflow.env"
 OUT_KF="$PLATFORM/knowflow.env.docker"
 LOCAL_KF_BACKUP="$PLATFORM/knowflow.env"
-FALLBACK_ENV="$PLATFORM/.env.deploy.example"
+FALLBACK_ENV="$PLATFORM/.env.amd64.example"
 FALLBACK_KF="$PLATFORM/knowflow.env.amd64.example"
-DEPLOY_TARGET="$PLATFORM/deploy.target"
+DEPLOY_TARGET="${DEPLOY_TARGET:-$PLATFORM/deploy.target.amd64}"
 
 load_deploy_target() {
   if [[ -f "$DEPLOY_TARGET" ]]; then
@@ -67,7 +67,7 @@ sync_platform_env() {
     echo "[sync] 更新 platform/.env.docker"
   elif [[ -f "$FALLBACK_ENV" ]]; then
     cp "$FALLBACK_ENV" "$tmp"
-    echo "[sync] platform/.env.docker ← .env.deploy.example"
+    echo "[sync] platform/.env.docker ← .env.amd64.example"
   else
     cp "$PLATFORM/.env.example" "$tmp"
     echo "[sync] platform/.env.docker ← .env.example"
@@ -101,7 +101,7 @@ sync_platform_env() {
   set_kv "$tmp" KNOWFLOW_UI_URL "http://${host}:9380"
   set_kv "$tmp" KNOWFLOW_UI_EMBED_MODE iframe
   set_kv "$tmp" DEPLOY_HOST "$host"
-  set_kv "$tmp" FRONTEND_PORT "${FRONTEND_PORT:-80}"
+  set_kv "$tmp" FRONTEND_PORT "${FRONTEND_PORT:-40005}"
 
   grep -q '^KNOWFLOW_BACKEND_URL=' "$tmp" || set_kv "$tmp" KNOWFLOW_BACKEND_URL http://knowflow-backend:5000
   grep -q '^RAGFLOW_API_URL=' "$tmp" || set_kv "$tmp" RAGFLOW_API_URL http://ragflow-server:9380
@@ -129,6 +129,7 @@ sync_knowflow_env() {
   fi
 
   set_kv "$tmp" MACOS 0
+  set_kv "$tmp" KNOWFLOW_DOCKER_NETWORK zhitanai_default
   set_kv "$tmp" RAGFLOW_IMAGE zxwei/knowflow:v2.1.8
   set_kv "$tmp" KNOWFLOW_SERVER_IMAGE zxwei/knowflow-server:v2.1.8
   sed_inplace '/^KNOWFLOW_PLATFORM=/d' "$tmp"

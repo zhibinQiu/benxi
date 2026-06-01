@@ -40,9 +40,10 @@ def _issue_tokens(db: Session, user: User, request: Request) -> TokenResponse:
     )
     if get_settings().knowflow_enabled:
         try:
-            from app.services.ragflow_identity_service import ensure_ragflow_account
+            from app.services.ragflow_identity_service import warm_ragflow_on_login
 
-            ensure_ragflow_account(db, user)
+            warm_ragflow_on_login(db, user)
+            db.flush()
         except Exception:
             pass
     return TokenResponse(access_token=access, refresh_token=refresh)

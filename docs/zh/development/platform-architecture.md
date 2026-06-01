@@ -40,7 +40,7 @@ pdf_trans/                          #  monorepo 根目录
 ```mermaid
 flowchart TB
   subgraph client [浏览器]
-    FE[platform-frontend :5174]
+    FE[platform-frontend :40005]
   end
 
   subgraph platform_host [宿主机 / Docker]
@@ -205,7 +205,7 @@ sequenceDiagram
 
 | 地址 | 服务 |
 |------|------|
-| http://127.0.0.1:5174 | 平台前端 |
+| http://127.0.0.1:40005 | 平台前端 |
 | http://127.0.0.1:8000 | 平台 API（Swagger `/docs`） |
 | http://127.0.0.1:8000/api/v1/system/version | 版本信息 |
 | http://127.0.0.1:7861 | pdf2zh API |
@@ -287,7 +287,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 celery -A workers.celery_app worker --loglevel=info
 
 # 前端
-cd platform-frontend && npm run dev -- --host 127.0.0.1 --port 5174
+cd platform-frontend && npm run dev -- --host 127.0.0.1 --port 40005
 
 # 翻译（可选）
 pdf2zh_next --api --api-port 7861

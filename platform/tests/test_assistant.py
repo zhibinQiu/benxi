@@ -17,7 +17,7 @@ def test_build_platform_knowledge_contains_nav():
         text = build_platform_knowledge(db, admin, page_hint="文档库")
         assert "文档库" in text
         assert "后台任务" in text
-        assert "系统功能" in text
+        assert "功能列表" in text
     finally:
         db.close()
 

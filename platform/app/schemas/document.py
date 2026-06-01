@@ -12,11 +12,18 @@ class DocumentCreate(BaseModel):
         pattern="^(company|department|personal)$",
     )
     dept_id: uuid.UUID | None = None
+    folder_id: uuid.UUID | None = None
 
 
 class DocumentUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=512)
     description: str | None = None
+
+
+class DocumentMoveIn(BaseModel):
+    """移动到同分级下的知识库文件夹；folder_id 为空表示归入「未分类」。"""
+
+    folder_id: uuid.UUID | None = None
 
 
 class DocumentVersionOut(BaseModel):
@@ -44,6 +51,40 @@ class DocumentFolderOut(BaseModel):
     can_create: bool
     can_edit: bool
     can_delete: bool
+    can_manage_folders: bool = False
+
+
+class KbFolderOut(BaseModel):
+    id: uuid.UUID | None = None
+    virtual_id: str | None = None
+    name: str
+    description: str = ""
+    scope: str
+    dept_id: uuid.UUID | None = None
+    kind: str = "normal"
+    is_system: bool = False
+    system_hint: str | None = None
+    document_count: int = 0
+    can_manage: bool = False
+
+
+class KbFolderListOut(BaseModel):
+    scope: str
+    dept_id: uuid.UUID | None = None
+    can_manage_folders: bool = False
+    items: list[KbFolderOut] = []
+
+
+class KbFolderCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=256)
+    description: str = Field(default="", max_length=2000)
+    scope: str = Field(..., pattern="^(company|department|personal)$")
+    dept_id: uuid.UUID | None = None
+
+
+class KbFolderUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=256)
+    description: str | None = Field(default=None, max_length=2000)
 
 
 class DocumentLibraryOut(BaseModel):
@@ -56,9 +97,12 @@ class DocumentListItem(BaseModel):
     title: str
     status: str
     scope: str
+    folder_id: uuid.UUID | None = None
+    folder_name: str | None = None
     owner_id: uuid.UUID
     owner_name: str | None = None
     dept_id: uuid.UUID | None
+    dept_name: str | None = None
     current_version_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
@@ -69,6 +113,8 @@ class DocumentListItem(BaseModel):
     share_to_summary: str | None = None
     share_count: int | None = None
     effective_level: str | None = None
+    can_edit: bool = False
+    can_delete: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -16,9 +16,10 @@
 | 脚本 | 作用 |
 |------|------|
 | `deploy_amd64.sh` | 在目标机一键 Docker 部署。子命令：`core` / `knowflow` / `speech` / `full` / `down` |
-| `push_and_deploy.sh` | 本机 SSH + rsync 同步到 `platform/deploy.target`，远程后台执行 `deploy_amd64.sh` |
+| `push_and_deploy.sh` | 本机 SSH + rsync 同步到 `platform/deploy.target.amd64`，远程执行 `deploy_amd64.sh` |
 | `pack_deploy_bundle.sh` | 打包 `dist/pdf_trans-deploy-*.tar.gz`（内网/无 git 场景） |
-| `sync_deploy_env.sh` | 将本地 `platform/.env` 转为 Docker 用 `.env.docker`（仅改内网主机名等） |
+| `ensure_local_env.sh` | Mac 本地：把误写成 `postgres/redis` 的 `.env` 改回 `127.0.0.1` |
+| `sync_deploy_env.sh` | amd64：生成 `.env.docker`（**不修改**本地 `.env`） |
 
 详见 [amd64 部署指南](../docs/zh/development/deploy-amd64.md)。
 

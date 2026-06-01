@@ -8,7 +8,7 @@ PDF 翻译经平台任务队列调用 `pdf2zh_next --api`（默认 `http://127.0
 | 目录 | 说明 |
 |------|------|
 | `platform/` | FastAPI 后端、Celery Worker |
-| `platform-frontend/` | Vue 3 管理界面（:5174） |
+| `platform-frontend/` | Vue 3 管理界面（:40005） |
 | `pdf2zh_next/` | 翻译引擎（:7861） |
 
 ## 一键启动
@@ -22,7 +22,7 @@ bash scripts/stop_platform.sh
 
 | 服务 | 地址 |
 |------|------|
-| 平台前端 | http://127.0.0.1:5174 |
+| 平台前端 | http://127.0.0.1:40005/ai/ |
 | 平台 API | http://127.0.0.1:8000 |
 | pdf2zh API | http://127.0.0.1:7861 |
 | MinIO 控制台 | http://127.0.0.1:9001 |
@@ -52,7 +52,9 @@ pdf2zh_next --api --api-port 7861
 
 ## API 前缀
 
-`/api/v1` — 登录、文档、任务、翻译代理、通知、审计等。Swagger：`http://127.0.0.1:8000/docs`。
+- **本地直连**：`http://127.0.0.1:8000/api/v1`（Swagger `/docs`）；前端 dev：`http://127.0.0.1:40005/ai/`
+- **生产 / 网关**：前端 `http://<IP>:40005/ai/`，API `http://<IP>:40005/ai/api/v1`（`FRONTEND_PORT=40005`，构建 `VITE_BASE_PATH=/ai/`、`VITE_API_BASE=/ai`）
+- **跨域**：后端 `CORS_ORIGINS=*` 允许任意来源；若前端与 API 不同源，可设置 `VITE_API_BASE=http://<IP>/ai`
 
 ## 知识问答（KnowFlow）
 

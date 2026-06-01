@@ -9,6 +9,7 @@ import ChatComposer from "./ChatComposer.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import { PLATFORM_APP_NAME } from "../constants/platform";
+import { navigateWithReturn } from "../utils/navigationReturn";
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -337,10 +338,11 @@ function newChat() {
 
 function goToHistory() {
   if (!props.chatScope) return;
-  router.push({
-    name: "chat-history",
-    params: { scope: props.chatScope },
-  });
+  navigateWithReturn(
+    router,
+    { name: "chat-history", params: { scope: props.chatScope } },
+    route
+  );
 }
 
 async function loadConversationFromId(id) {

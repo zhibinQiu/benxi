@@ -15,7 +15,7 @@ from app.integrations.ragflow_client import RagflowClient
 from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.models.ragflow_document_link import RagflowDocumentLink
-from app.services.document_service import list_accessible_documents
+from app.services.document_service import list_queryable_documents
 from app.services.ragflow_scope_service import (
     resolve_dataset_for_document,
     sync_document_kb_grants,
@@ -141,21 +141,36 @@ def purge_stale_knowflow_links(db: Session) -> int:
 def sync_accessible_documents(
     db: Session, user: User, *, limit: int = 50
 ) -> dict[str, str]:
-    """仅为尚无索引、且用户具备「可查询」权限的平台文档创建 KnowFlow 副本。"""
-    docs, _ = list_accessible_documents(
-        db,
-        user,
-        page=1,
-        page_size=limit,
-        min_permission_level=PermissionLevel.query.value,
-    )
+    """将用户可查询的平台文档同步到分级 KnowFlow 库（公司/部门/个人/分享授权，对齐「所有」）。"""
     mapping: dict[str, str] = {}
-    for doc in docs:
-        if _get_link(db, doc.id):
-            continue
-        rid = sync_document_to_knowflow(db, user, doc)
-        if rid:
-            mapping[str(doc.id)] = rid
+    page = 1
+    page_size = max(min(limit, 100), 20) if limit > 0 else 50
+    new_synced = 0
+
+    while limit <= 0 or new_synced < limit:
+        docs, total = list_queryable_documents(
+            db, user, page=page, page_size=page_size
+        )
+        if not docs:
+            break
+        for doc in docs:
+            existing = _get_link(db, doc.id)
+            if existing:
+                try:
+                    sync_document_kb_grants(db, doc)
+                except Exception as e:
+                    logger.debug("刷新 KnowFlow 授权跳过 %s: %s", doc.id, e)
+                continue
+            if limit > 0 and new_synced >= limit:
+                return mapping
+            rid = sync_document_to_knowflow(db, user, doc)
+            if rid:
+                mapping[str(doc.id)] = rid
+                new_synced += 1
+        if page * page_size >= total:
+            break
+        page += 1
+
     return mapping
 
 

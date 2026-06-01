@@ -150,13 +150,25 @@ start_knowflow_stack() {
   fi
   [[ -f "$PLATFORM/knowflow.env" ]] || cp "$PLATFORM/knowflow.env.example" "$PLATFORM/knowflow.env"
   cd "$PLATFORM"
+  set -a
+  # shellcheck disable=SC1091
+  source knowflow.env
+  set +a
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:-elasticsearch}"
+  local -a kf_profile_args=()
+  local p
+  IFS=',' read -ra _kf_prof <<< "${COMPOSE_PROFILES}"
+  for p in "${_kf_prof[@]}"; do
+    p="${p// /}"
+    [[ -n "$p" ]] && kf_profile_args+=(--profile "$p")
+  done
   if ! docker image inspect knowflow-ragflow:source >/dev/null 2>&1 \
     || ! docker image inspect knowflow-server:source >/dev/null 2>&1; then
     error "缺少源码镜像，请先执行: bash scripts/build_knowflow_source.sh"
     exit 1
   fi
   info "启动 KnowFlow 栈（docker-compose.knowflow.yml，arm64 源码镜像）..."
-  docker compose -p knowflow -f docker-compose.knowflow.yml --env-file knowflow.env up -d --force-recreate ragflow knowflow-backend
+  docker compose -p knowflow "${kf_profile_args[@]}" -f docker-compose.knowflow.yml --env-file knowflow.env up -d --force-recreate ragflow knowflow-backend
   warn "等待 RAGFlow 就绪（约 2–5 分钟，首次启动更久）..."
   wait_url "http://127.0.0.1:9380" "RAGFlow" 90 5 || warn "RAGFlow 可能仍在初始化"
   local kf_port=5001
@@ -231,13 +243,13 @@ start_platform_worker_local() {
 }
 
 start_frontend_local() {
-  if curl -sf "http://127.0.0.1:5174/" >/dev/null 2>&1; then
-    info "平台前端已在 5174 端口监听"
+  if curl -sf "http://127.0.0.1:40005/ai/" >/dev/null 2>&1; then
+    info "平台前端已在 40005 端口监听"
     return 0
   fi
   start_bg "平台前端" "$RUN_DIR/platform-frontend.pid" "$LOG_DIR/platform-frontend.log" \
-    bash -c "cd '$FRONTEND' && npm run dev -- --host 127.0.0.1 --port 5174"
-  wait_url "http://127.0.0.1:5174/" "平台前端" 30 2 \
+    bash -c "cd '$FRONTEND' && npm run dev -- --host 127.0.0.1 --port 40005"
+  wait_url "http://127.0.0.1:40005/ai/" "平台前端" 30 2 \
     || warn "平台前端可能仍在启动，日志: $LOG_DIR/platform-frontend.log"
 }
 
@@ -261,6 +273,7 @@ mode_speech() {
 
 mode_local() {
   info "模式: 本地优先 (local)"
+  bash "$ROOT/scripts/ensure_local_env.sh"
   start_infra_docker
   if has_pdf2zh_local; then
     start_pdf2zh_api
@@ -325,7 +338,7 @@ print_urls() {
 
 ${GREEN}=== 智碳平台 AI 系统已启动 ===${NC}
 
-  平台前端:     http://127.0.0.1:5174  → 系统功能 → 知识问答（内嵌 KnowFlow 完整界面）
+  平台前端:     http://127.0.0.1:40005/ai/  → 系统功能 → 知识问答（内嵌 KnowFlow 完整界面）
   平台 API:     http://127.0.0.1:8000  (Swagger: /docs)
   pdf2zh API:   http://127.0.0.1:7861
   MinIO 控制台: http://127.0.0.1:9001  (minioadmin / minioadmin)

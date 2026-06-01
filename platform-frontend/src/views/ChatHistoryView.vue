@@ -1,27 +1,48 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { NButton, NEmpty, NIcon, NSpin, NText, useMessage } from "naive-ui";
-import { ArrowBackOutline, ChatbubblesOutline } from "@vicons/ionicons5";
-import { fetchChatConversations } from "../api/client";
+import {
+  NButton,
+  NEmpty,
+  NIcon,
+  NPopconfirm,
+  NSpin,
+  NText,
+  useDialog,
+  useMessage,
+} from "naive-ui";
+import { ArrowBackOutline, ChatbubblesOutline, TrashOutline } from "@vicons/ionicons5";
+import {
+  clearChatConversations,
+  deleteChatConversation,
+  fetchChatConversations,
+} from "../api/client";
 import { CHAT_SCOPES, chatScopeTitle } from "../constants/chatScopes";
+import { resolveReturnTarget } from "../utils/navigationReturn";
 
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
+const dialog = useDialog();
 
 const scope = computed(() => String(route.params.scope || ""));
 const pageTitle = computed(() => chatScopeTitle(scope.value));
 
 const loading = ref(false);
+const clearing = ref(false);
+const deletingId = ref("");
 const items = ref([]);
 
 const backTarget = computed(() => {
+  const fromReturn = resolveReturnTarget(route);
+  if (fromReturn) return fromReturn;
   const meta = CHAT_SCOPES[scope.value];
   if (!meta) return { name: "ai-home" };
   if (meta.routeName) return { name: meta.routeName };
   return { path: route.query.from || "/" };
 });
+
+const canClear = computed(() => !loading.value && items.value.length > 0);
 
 async function loadList() {
   if (!CHAT_SCOPES[scope.value]) {
@@ -60,6 +81,43 @@ function openConversation(item) {
   }
 }
 
+async function onDeleteItem(item) {
+  deletingId.value = item.id;
+  try {
+    await deleteChatConversation(scope.value, item.id);
+    items.value = items.value.filter((row) => row.id !== item.id);
+    message.success("已永久删除该对话");
+  } catch (e) {
+    message.error(e.message || "删除失败");
+  } finally {
+    deletingId.value = "";
+  }
+}
+
+function onClearAll() {
+  dialog.warning({
+    title: "清空全部历史对话",
+    content: "将永久删除当前场景下的全部历史对话，且无法恢复。确定继续？",
+    positiveText: "永久删除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      clearing.value = true;
+      try {
+        const res = await clearChatConversations(scope.value);
+        items.value = [];
+        const n = res?.deleted ?? 0;
+        message.success(n > 0 ? `已永久删除 ${n} 条对话` : "已清空");
+      } catch (e) {
+        message.error(e.message || "清空失败");
+        return false;
+      } finally {
+        clearing.value = false;
+      }
+      return true;
+    },
+  });
+}
+
 function formatTime(value) {
   if (!value) return "";
   const d = new Date(value);
@@ -96,6 +154,17 @@ watch(scope, loadList);
         <h1 class="chat-history-title">历史对话</h1>
         <n-text depth="3">{{ pageTitle }}</n-text>
       </div>
+      <n-button
+        v-if="canClear"
+        size="small"
+        type="error"
+        tertiary
+        :loading="clearing"
+        class="chat-history-clear-all"
+        @click="onClearAll"
+      >
+        清空全部
+      </n-button>
     </header>
 
     <n-spin :show="loading">
@@ -103,7 +172,7 @@ watch(scope, loadList);
         <n-empty description="暂无历史对话" />
       </div>
       <ul v-else class="chat-history-list">
-        <li v-for="item in items" :key="item.id">
+        <li v-for="item in items" :key="item.id" class="chat-history-row">
           <button type="button" class="chat-history-item" @click="openConversation(item)">
             <span class="chat-history-item-icon" aria-hidden="true">
               <n-icon :size="18" :component="ChatbubblesOutline" />
@@ -113,6 +182,28 @@ watch(scope, loadList);
               <span class="chat-history-item-time">{{ formatTime(item.updated_at) }}</span>
             </span>
           </button>
+          <n-popconfirm
+            positive-text="永久删除"
+            negative-text="取消"
+            @positive-click="onDeleteItem(item)"
+          >
+            <template #trigger>
+              <n-button
+                quaternary
+                circle
+                size="small"
+                class="chat-history-delete"
+                aria-label="删除对话"
+                :loading="deletingId === item.id"
+                @click.stop
+              >
+                <template #icon>
+                  <n-icon :component="TrashOutline" />
+                </template>
+              </n-button>
+            </template>
+            永久删除该对话？删除后无法恢复。
+          </n-popconfirm>
         </li>
       </ul>
     </n-spin>
@@ -134,7 +225,12 @@ watch(scope, loadList);
 }
 
 .chat-history-header-text {
+  flex: 1;
   min-width: 0;
+}
+
+.chat-history-clear-all {
+  flex-shrink: 0;
 }
 
 .chat-history-title {
@@ -158,8 +254,15 @@ watch(scope, loadList);
   gap: 8px;
 }
 
+.chat-history-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .chat-history-item {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -177,6 +280,15 @@ watch(scope, loadList);
 .chat-history-item:hover {
   border-color: rgba(13, 148, 136, 0.35);
   box-shadow: 0 4px 16px rgba(13, 148, 136, 0.08);
+}
+
+.chat-history-delete {
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+
+.chat-history-delete:hover {
+  color: #dc2626;
 }
 
 .chat-history-item-icon {

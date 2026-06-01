@@ -10,7 +10,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM="$ROOT/platform"
-DEPLOY_TARGET="$PLATFORM/deploy.target"
+DEPLOY_TARGET="${DEPLOY_TARGET:-$PLATFORM/deploy.target.amd64}"
 COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod.yml"
 if [[ "${DEPLOY_USE_MIRROR:-auto}" == 1 ]] || [[ "${DEPLOY_USE_MIRROR:-auto}" == auto ]]; then
   COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mirror.yml"
@@ -52,11 +52,18 @@ detect_host() {
 }
 
 sync_env_from_local() {
-  info "同步配置 → platform/.env / knowflow.env ..."
-  bash "$ROOT/scripts/sync_deploy_env.sh"
   cd "$PLATFORM"
-  cp -f .env.docker .env
-  cp -f knowflow.env.docker knowflow.env
+  if [[ -f .env.docker ]]; then
+    info "应用 platform/.env.docker → .env（amd64）"
+    cp -f .env.docker .env
+  else
+    info "生成 amd64 配置 ..."
+    bash "$ROOT/scripts/sync_deploy_env.sh"
+    cp -f .env.docker .env
+  fi
+  if [[ -f knowflow.env.docker ]]; then
+    cp -f knowflow.env.docker knowflow.env
+  fi
 }
 
 ensure_platform_network() {
@@ -85,16 +92,33 @@ warn_deepseek_key() {
 # --- KnowFlow（后台任务）---
 _job_knowflow() {
   cd "$PLATFORM"
-  if [[ ! -d third_party/KnowFlow/docker ]]; then
-    bash "$ROOT/scripts/setup_knowflow.sh"
+  bash "$ROOT/scripts/setup_knowflow.sh"
+  [[ -f knowflow.env ]] || cp -f knowflow.env.docker knowflow.env 2>/dev/null \
+    || cp -f knowflow.env.example knowflow.env
+  set -a
+  # shellcheck disable=SC1091
+  source knowflow.env
+  set +a
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:-elasticsearch}"
+  local -a kf_profile_args=()
+  local p
+  IFS=',' read -ra _kf_prof <<< "${COMPOSE_PROFILES}"
+  for p in "${_kf_prof[@]}"; do
+    p="${p// /}"
+    [[ -n "$p" ]] && kf_profile_args+=(--profile "$p")
+  done
+  local -a kf_compose=(-f docker-compose.knowflow.amd64.yml)
+  if [[ "${DEPLOY_USE_MIRROR:-1}" == 1 ]] || [[ "${DEPLOY_USE_MIRROR:-auto}" == auto ]]; then
+    kf_compose+=(-f docker-compose.knowflow.mirror.yml)
+    info "[并行] KnowFlow：使用 docker.1ms.run 镜像源"
   fi
-  info "[并行] KnowFlow：拉取镜像并启动 ..."
-  docker compose -p knowflow \
-    -f docker-compose.knowflow.amd64.yml \
+  info "[并行] KnowFlow：拉取镜像并启动（profiles=${COMPOSE_PROFILES}）..."
+  docker compose -p knowflow "${kf_profile_args[@]}" \
+    "${kf_compose[@]}" \
     --env-file knowflow.env \
-    pull ragflow knowflow-backend knowflow-gotenberg 2>/dev/null || true
-  docker compose -p knowflow \
-    -f docker-compose.knowflow.amd64.yml \
+    pull 2>/dev/null || true
+  docker compose -p knowflow "${kf_profile_args[@]}" \
+    "${kf_compose[@]}" \
     --env-file knowflow.env \
     up -d
   info "[并行] KnowFlow 栈已提交启动"
@@ -192,22 +216,31 @@ start_full_parallel() {
   warn_deepseek_key
 }
 
+read_frontend_port() {
+  local port="${FRONTEND_PORT:-40005}"
+  local f
+  for f in "$PLATFORM/.env.docker" "$PLATFORM/.env"; do
+    if [[ -f "$f" ]]; then
+      port="$(grep -E '^FRONTEND_PORT=' "$f" 2>/dev/null | cut -d= -f2)" || port="${FRONTEND_PORT:-40005}"
+      [[ -n "$port" ]] && break
+    fi
+  done
+  [[ -z "$port" ]] && port=40005
+  echo "$port"
+}
+
 print_urls() {
   local host port path_hint
   host="$(detect_host)"
   path_hint="${DEPLOY_PATH:-$ROOT}"
-  port="${FRONTEND_PORT:-80}"
-  if [[ -f "$PLATFORM/.env" ]]; then
-    port="$(grep -E '^FRONTEND_PORT=' "$PLATFORM/.env" 2>/dev/null | cut -d= -f2)" || port=80
-    [[ -z "$port" ]] && port=80
-  fi
+  port="$(read_frontend_port)"
   cat <<EOF
 
 ${GREEN}=== 部署已提交（amd64）===${NC}
   目录:         ${path_hint}
   并行日志:     .run/deploy-core.log / deploy-knowflow.log / deploy-speech.log
 
-  平台 Web:     http://${host}:${port}
+  平台 Web:     http://${host}:${port}/ai/
   平台 API:     http://${host}:8000/docs
   pdf2zh API:   http://${host}:7861
   MinIO:        http://${host}:9001

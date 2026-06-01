@@ -18,7 +18,7 @@ include:
 
 networks:
   ragflow:
-    name: platform_default
+    name: ${KNOWFLOW_DOCKER_NETWORK:-platform_default}
     external: true
 
 services:

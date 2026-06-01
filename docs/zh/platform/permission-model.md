@@ -7,7 +7,7 @@
 | 层级 | 作用 | 典型配置 |
 |------|------|----------|
 | **账号 / 功能权限** | 能否登录、能否进入某功能、能否在「公司/部门/个人」库**新建**文档 | 角色：`sys_admin`、`company_admin`、`dept_admin`、`member`；权限码如 `doc.read`、`doc.dept.edit` |
-| **文档分级（scope）** | 文档默认落在哪一级库、默认谁能看见 | `personal` / `department` / `company`；文档库另有 **「所有」** Tab，汇总可查询及以上权限的文档 |
+| **文档分级（scope）** | 文档默认落在哪一级库、默认谁能看见 | `personal` / `department` / `company`；文档库另有 **「所有」** Tab，汇总可见及以上权限的文档 |
 | **单文档 ACL** | 在默认规则之外的**例外** | 显式 `document_permissions`；`document_access_denials` 禁止 |
 
 原则：**默认靠分级 + 角色；单文档授权只用于例外**（例如个人文档分享给同事），不要靠复制文档或全员 admin。

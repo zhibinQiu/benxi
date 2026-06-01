@@ -1,0 +1,7 @@
+# amd64 服务器部署目标（仅 push_and_deploy / deploy_amd64 使用，勿用于 Mac 本地开发）
+DEPLOY_USER=root
+DEPLOY_HOST=172.19.134.45
+DEPLOY_PATH=/root/qzb/zhitanAI
+DEPLOY_USE_MIRROR=1
+DEPLOY_PARALLEL=1
+FRONTEND_PORT=40005

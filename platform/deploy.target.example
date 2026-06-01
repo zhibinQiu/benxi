@@ -1,0 +1,10 @@
+# 复制为 deploy.target.amd64 并填写服务器信息（仅 amd64 部署使用）
+#   cp deploy.target.example deploy.target.amd64
+#
+# Mac M1 本地开发不需要此文件，见 deploy.target.local
+
+DEPLOY_USER=root
+DEPLOY_HOST=192.168.1.100
+DEPLOY_PATH=/opt/zhitanAI
+DEPLOY_USE_MIRROR=1
+DEPLOY_PARALLEL=1

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 
 import httpx
@@ -14,7 +15,7 @@ from app.integrations.ragflow_provision import RagflowProvisionError, provision_
 from app.models.org import User
 from app.models.ragflow_link import RagflowAccountLink
 from app.services.ragflow_naming import (
-    dataset_name_for_personal,
+    dataset_display_label_personal,
     is_ragflow_valid_email,
     platform_email_for_user,
 )
@@ -31,8 +32,8 @@ def resolve_ui_embed_base() -> str:
     return settings.knowflow_ui_url.rstrip("/")
 
 
-def _sync_link_email(link: RagflowAccountLink, user: User) -> None:
-    """修正邮箱（含 shared 模式与无效 admin@local），并清除失效会话。"""
+def _sync_link_email(db: Session, link: RagflowAccountLink, user: User) -> None:
+    """修正邮箱（含 shared 模式），邮箱变更时清空凭据以便重新开户。"""
     expected = platform_email_for_user(user)
     current = (link.ragflow_email or "").strip().lower()
     settings = get_settings()
@@ -42,20 +43,22 @@ def _sync_link_email(link: RagflowAccountLink, user: User) -> None:
         link.ragflow_password = None
         link.ragflow_access_token = None
         link.ragflow_user_id = None
+    email_changed = current != expected
     if (
-        current == expected
+        not email_changed
         and is_ragflow_valid_email(current)
         and (not shared or link.ragflow_password == shared_pwd)
         and (shared or link.ragflow_password)
     ):
         return
+    if email_changed:
+        link.ragflow_access_token = None
+        link.ragflow_user_id = None
+        if not shared:
+            link.ragflow_password = None
     link.ragflow_email = expected
-    link.ragflow_access_token = None
-    link.ragflow_user_id = None
     if shared and shared_pwd:
         link.ragflow_password = shared_pwd
-    elif not shared:
-        link.ragflow_password = None
 
 
 def get_or_create_link(db: Session, user: User) -> RagflowAccountLink:
@@ -65,7 +68,7 @@ def get_or_create_link(db: Session, user: User) -> RagflowAccountLink:
         )
     )
     if link:
-        _sync_link_email(link, user)
+        _sync_link_email(db, link, user)
         db.flush()
         return link
     link = RagflowAccountLink(
@@ -83,8 +86,16 @@ def get_user_ragflow_auth(db: Session, user: User) -> str | None:
     if not settings.knowflow_enabled:
         return None
     link = get_or_create_link(db, user)
-    if link.ragflow_access_token:
-        return link.ragflow_access_token
+    cached = (link.ragflow_access_token or "").strip()
+    if cached:
+        if _ragflow_auth_valid(cached):
+            from app.integrations.ragflow_provision import finalize_ragflow_link
+
+            finalize_ragflow_link(link, cached, user)
+            db.flush()
+            return cached
+        link.ragflow_access_token = None
+        db.flush()
     try:
         return provision_and_login(link, user)
     except RagflowProvisionError as e:
@@ -92,83 +103,81 @@ def get_user_ragflow_auth(db: Session, user: User) -> str | None:
         return None
 
 
-def ensure_ragflow_account(db: Session, user: User) -> RagflowAccountLink:
-    """平台登录后对齐 KnowFlow 账号（邮箱/昵称一致），并预热可访问文档索引。"""
+def warm_ragflow_on_login(db: Session, user: User) -> RagflowAccountLink:
+    """登录时轻量预热：开户/会话、模型配置、KnowFlow 建库权限（不阻塞同步文档）。"""
     settings = get_settings()
     link = get_or_create_link(db, user)
-    if settings.knowflow_enabled:
-        get_user_ragflow_auth(db, user)
-        from app.services.ragflow_scope_service import (
-            ensure_user_scope_datasets,
-            sync_user_kb_grants,
-        )
+    if not settings.knowflow_enabled:
+        return link
+    get_user_ragflow_auth(db, user)
+    db.flush()
+    if link.ragflow_user_id:
+        from app.integrations.ragflow_rbac import ensure_ragflow_global_admin
 
-        kf = get_knowflow_client_for_user(db, user)
-        if kf.enabled():
-            try:
-                ensure_user_scope_datasets(db, user, kf)
-                sync_user_kb_grants(db, user)
-                from app.services.ragflow_sync_service import purge_stale_knowflow_links
-
-                purge_stale_knowflow_links(db)
-            except Exception as e:
-                logger.warning("登录后知识库授权同步跳过: %s", e)
-        if settings.ragflow_sync_on_login:
-            from app.services.ragflow_sync_service import sync_accessible_documents
-
-            try:
-                sync_accessible_documents(
-                    db, user, limit=settings.ragflow_sync_on_login_limit
-                )
-            except Exception as e:
-                logger.warning("登录后文档索引同步跳过: %s", e)
+        ensure_ragflow_global_admin(link.ragflow_user_id)
     return link
 
 
-def _ragflow_auth_valid(authorization: str | None) -> bool:
-    """校验平台侧已缓存的 RAGFlow 会话是否仍有效。"""
+def ensure_ragflow_account(db: Session, user: User) -> RagflowAccountLink:
+    """平台登录后对齐 KnowFlow 账号；重同步仅在配置开启时执行。"""
+    settings = get_settings()
+    link = warm_ragflow_on_login(db, user)
+    if settings.knowflow_enabled and settings.ragflow_sync_on_login:
+        from app.services.knowflow_catalog_service import reconcile_user_knowflow_catalog
+
+        try:
+            reconcile_user_knowflow_catalog(
+                db,
+                user,
+                sync_limit=settings.ragflow_sync_on_login_limit,
+            )
+        except Exception as e:
+            logger.warning("登录后 KnowFlow 目录同步跳过: %s", e)
+        from app.services.ragflow_sync_service import purge_stale_knowflow_links
+
+        try:
+            purge_stale_knowflow_links(db)
+        except Exception as e:
+            logger.warning("KnowFlow 残留索引清理跳过: %s", e)
+    return link
+
+
+def _ragflow_user_info(authorization: str | None) -> tuple[bool, dict | None]:
+    """校验 RAGFlow 会话并返回 user/info data（避免重复请求）。"""
     token = (authorization or "").strip()
     if not token:
-        return False
+        return False, None
     settings = get_settings()
     try:
-        with httpx.Client(timeout=8.0) as client:
+        with httpx.Client(timeout=5.0) as client:
             r = client.get(
                 f"{settings.ragflow_api_url.rstrip('/')}/v1/user/info",
                 headers={"Authorization": token},
             )
         if r.status_code != 200:
-            return False
+            return False, None
         body = r.json()
-        return isinstance(body, dict) and body.get("code") == 0
+        if not (isinstance(body, dict) and body.get("code") == 0):
+            return False, None
+        data = body.get("data")
+        return True, data if isinstance(data, dict) else None
     except Exception:
-        return False
+        return False, None
 
 
-def _fetch_ragflow_profile(authorization: str) -> dict | None:
-    settings = get_settings()
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            r = client.get(
-                f"{settings.ragflow_api_url.rstrip('/')}/v1/user/info",
-                headers={"Authorization": authorization},
-            )
-        if r.status_code != 200:
-            return None
-        body = r.json()
-        data = body.get("data") if isinstance(body, dict) else None
-        return data if isinstance(data, dict) else None
-    except Exception as e:
-        logger.debug("fetch ragflow profile: %s", e)
-        return None
+def _ragflow_auth_valid(authorization: str | None) -> bool:
+    valid, _ = _ragflow_user_info(authorization)
+    return valid
 
 
-def build_embed_session(db: Session, user: User) -> dict:
-    """开通账号、同步文档、返回 SSO token（无需管理员 API Key）。"""
+def build_embed_session(
+    db: Session, user: User, *, sync_catalog: bool | None = None
+) -> dict:
+    """开通账号、返回 SSO token；目录同步由 sync_catalog / 配置控制。"""
     from app.integrations.knowflow_client import get_knowflow_client_for_user
-    from app.services.ragflow_sync_service import sync_accessible_documents
-
+    from app.services.ragflow_scope_service import knowflow_kb_labels_for_user
     settings = get_settings()
+    kb_labels = knowflow_kb_labels_for_user(db, user)
     link = get_or_create_link(db, user)
     base = resolve_ui_embed_base()
     embed_url = f"{base}/"
@@ -178,10 +187,16 @@ def build_embed_session(db: Session, user: User) -> dict:
     synced_count = 0
 
     profile: dict | None = None
+    do_sync = (
+        settings.ragflow_sync_on_embed
+        if sync_catalog is None
+        else sync_catalog
+    )
     if settings.knowflow_enabled:
         try:
             cached = (link.ragflow_access_token or "").strip()
-            if _ragflow_auth_valid(cached):
+            valid, profile = _ragflow_user_info(cached)
+            if valid:
                 authorization = cached
                 sso_message = "已使用平台会话自动登录 KnowFlow"
                 if link.ragflow_user_id:
@@ -193,35 +208,44 @@ def build_embed_session(db: Session, user: User) -> dict:
                 db.flush()
                 authorization = provision_and_login(link, user)
                 sso_message = "已自动登录 KnowFlow（与平台同一账号）"
-            if authorization:
-                profile = _fetch_ragflow_profile(authorization)
+                if authorization:
+                    _, profile = _ragflow_user_info(authorization)
         except RagflowProvisionError as e:
-            logger.warning("RAGFlow SSO 失败: %s", e)
-            sso_message = f"自动登录失败: {e}"
+            logger.warning("RAGFlow SSO 失败 %s: %s", user.username, e)
+            try:
+                from app.integrations.ragflow_provision import recover_ragflow_account
 
-        kf = get_knowflow_client_for_user(db, user)
-        if authorization and kf.enabled():
-            from app.services.ragflow_scope_service import (
-                ensure_user_scope_datasets,
-                sync_user_kb_grants,
+                link.ragflow_access_token = None
+                db.flush()
+                authorization = recover_ragflow_account(link, user)
+                sso_message = "已自动登录 KnowFlow（已重置知识库账号）"
+                db.flush()
+                if authorization:
+                    _, profile = _ragflow_user_info(authorization)
+            except RagflowProvisionError as e2:
+                sso_message = f"自动登录失败: {e2}"
+
+        if authorization:
+            from app.services.knowflow_catalog_service import (
+                reconcile_user_knowflow_catalog,
             )
 
             try:
-                ensure_user_scope_datasets(db, user, kf)
-                sync_user_kb_grants(db, user)
-                from app.services.ragflow_sync_service import purge_stale_knowflow_links
+                result = reconcile_user_knowflow_catalog(
+                    db,
+                    user,
+                    sync_limit=settings.ragflow_sync_doc_limit if do_sync else 0,
+                    sync_documents=do_sync,
+                )
+                synced_count = int(result.get("synced_documents") or 0)
+                if do_sync:
+                    from app.services.ragflow_sync_service import purge_stale_knowflow_links
 
-                purge_stale_knowflow_links(db)
+                    purge_stale_knowflow_links(db)
+                elif int(result.get("visible_datasets") or 0) > 0:
+                    sso_message = "已登录；知识库已就绪，文档正在后台同步"
             except Exception as e:
-                logger.warning("RAGFlow 知识库授权同步跳过: %s", e)
-            if settings.ragflow_sync_on_embed:
-                try:
-                    synced = sync_accessible_documents(
-                        db, user, limit=settings.ragflow_sync_doc_limit
-                    )
-                    synced_count = len(synced)
-                except Exception as e:
-                    logger.warning("RAGFlow 文档同步跳过: %s", e)
+                logger.warning("RAGFlow 知识库目录同步跳过: %s", e)
         elif authorization and "自动登录" not in sso_message:
             sso_message = "已登录；知识库同步待 RAGFlow 就绪后自动重试"
 
@@ -229,8 +253,9 @@ def build_embed_session(db: Session, user: User) -> dict:
         "integration_phase": 4,
         "embed_url": embed_url,
         "ui_direct_url": settings.knowflow_ui_url.rstrip("/"),
-        "dataset_name": dataset_name_for_personal(user.id),
+        "dataset_name": dataset_display_label_personal(db, user.id),
         "platform_user_id": str(user.id),
+        "knowflow_kb_labels": kb_labels,
         "ragflow_email": link.ragflow_email,
         "synced_documents": synced_count,
         "theme": {
@@ -243,6 +268,7 @@ def build_embed_session(db: Session, user: User) -> dict:
             "favicon_url": settings.knowflow_theme_favicon_url,
             "display_name": (user.display_name or user.username or "用户").strip(),
             "username": user.username,
+            "knowflow_kb_labels": kb_labels,
         },
         "sso": {
             "ready": bool(authorization),

@@ -35,7 +35,7 @@ cd .. && bash scripts/start_platform.sh
 
 | 服务 | 地址 |
 |------|------|
-| 平台前端 | http://127.0.0.1:5174 |
+| 平台前端 | http://127.0.0.1:40005/ai/ |
 | 平台 API | http://127.0.0.1:8000/docs |
 | pdf2zh API | http://127.0.0.1:7861 |
 | 默认账号 | `admin` / `admin123` |
@@ -83,11 +83,11 @@ pdf2zh_next --api --api-port 7861     # REST API
 ## amd64 服务器部署（Docker 全栈）
 
 ```bash
-bash scripts/push_and_deploy.sh           # SSH 免密同步 + 全量部署（见 platform/deploy.target）
+bash scripts/push_and_deploy.sh           # SSH 免密同步 + 全量部署（见 platform/deploy.target.amd64）
 bash scripts/deploy_amd64.sh full       # 仅在目标机已有机上代码时
 ```
 
-详见 [amd64 部署指南](docs/zh/development/deploy-amd64.md)（含 SSH 推送与 `deploy.target` 示例）。
+详见 [amd64 部署指南](docs/zh/development/deploy-amd64.md)（含 SSH 推送与 `deploy.target.amd64` 示例）。
 
 ## 文档
 

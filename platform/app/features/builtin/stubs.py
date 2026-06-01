@@ -36,3 +36,4 @@ register(
         grant_to_roles=("sys_admin", "dept_admin"),
     )
 )
+

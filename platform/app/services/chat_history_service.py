@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request, not_found
 from app.integrations.agent_chat_client import (
+    clear_agent_conversations,
+    delete_agent_conversation,
     is_chat_configured,
     list_agent_conversation_messages,
     list_agent_conversations,
@@ -93,5 +95,64 @@ async def list_messages(
         api_key=key,
         user_id=str(user_id),
         conversation_id=conversation_id,
+        feature_label=label,
+    )
+
+
+async def delete_conversation(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    scope: str,
+    conversation_id: str,
+) -> None:
+    if scope not in CHAT_SCOPES:
+        raise bad_request("不支持的对话类型")
+
+    if scope in platform_chat_store._VALID_SCOPES:
+        platform_chat_store.delete_conversation(
+            db,
+            user_id=user_id,
+            scope=scope,
+            conversation_id=conversation_id,
+        )
+        db.commit()
+        return
+
+    base, key, label = _dify_credentials(scope)
+    if not is_chat_configured(base, key):
+        raise not_found("会话不存在")
+    await delete_agent_conversation(
+        base_url=base,
+        api_key=key,
+        user_id=str(user_id),
+        conversation_id=conversation_id,
+        feature_label=label,
+    )
+
+
+async def clear_conversations(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    scope: str,
+) -> int:
+    if scope not in CHAT_SCOPES:
+        raise bad_request("不支持的对话类型")
+
+    if scope in platform_chat_store._VALID_SCOPES:
+        count = platform_chat_store.clear_conversations(
+            db, user_id=user_id, scope=scope
+        )
+        db.commit()
+        return count
+
+    base, key, label = _dify_credentials(scope)
+    if not is_chat_configured(base, key):
+        return 0
+    return await clear_agent_conversations(
+        base_url=base,
+        api_key=key,
+        user_id=str(user_id),
         feature_label=label,
     )

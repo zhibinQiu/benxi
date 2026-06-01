@@ -14,6 +14,7 @@ import {
 import { useAuth } from "../composables/useAuth";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { markSkipMotionAfterLogin } from "../utils/routeTransition";
+import { publicAsset } from "../utils/appBase";
 
 const route = useRoute();
 const router = useRouter();
@@ -109,7 +110,7 @@ async function flyLoginCardToHeader() {
 
 async function navigateAfterAuth() {
   await flyLoginCardToHeader();
-  const redirect = route.query.redirect || "/ai-home";
+  const redirect = route.query.redirect || { name: "ai-home" };
   markSkipMotionAfterLogin();
   await router.push(redirect);
 }
@@ -180,7 +181,7 @@ function flipToLogin() {
     <div class="login-page__layout">
       <aside class="login-showcase">
         <div class="login-showcase__inner">
-          <img src="/logo.svg" :alt="PLATFORM_APP_NAME" class="login-showcase__logo" />
+          <img :src="publicAsset('logo.svg')" :alt="PLATFORM_APP_NAME" class="login-showcase__logo" />
           <h1 class="login-showcase__title">{{ PLATFORM_APP_NAME }}</h1>
           <p class="login-showcase__tagline">统一入口 · 企业级 AI 应用平台</p>
           <ul class="login-showcase__points">

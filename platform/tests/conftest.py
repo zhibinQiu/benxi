@@ -13,6 +13,15 @@ def client() -> TestClient:
     return TestClient(create_app())
 
 
+@pytest.fixture(autouse=True)
+def _skip_knowflow_sync_on_upload(monkeypatch):
+    """测试上传完成时不触发 KnowFlow（避免依赖对象存储中真实文件内容）。"""
+    monkeypatch.setattr(
+        "app.api.documents.sync_document_to_knowflow",
+        lambda *args, **kwargs: False,
+    )
+
+
 @pytest.fixture(scope="session")
 def admin_token(client: TestClient) -> str:
     r = client.post(

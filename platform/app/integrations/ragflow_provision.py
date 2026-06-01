@@ -28,7 +28,8 @@ def _base_url() -> str:
     return get_settings().ragflow_api_url.rstrip("/")
 
 
-def _register_user(email: str, nickname: str, password: str) -> None:
+def _register_user(email: str, nickname: str, password: str) -> str | None:
+    """注册并返回 Authorization（code=0 时注册接口常直接返回 token）。"""
     enc = rsa_encrypt_password(password)
     with httpx.Client(timeout=30.0) as client:
         r = client.post(
@@ -39,16 +40,22 @@ def _register_user(email: str, nickname: str, password: str) -> None:
         raise RagflowProvisionError(f"register HTTP {r.status_code}: {r.text[:300]}")
     body = r.json()
     code = body.get("code")
+    if code == 0:
+        data = body.get("data") if isinstance(body, dict) else None
+        if isinstance(data, dict) and data.get("access_token"):
+            return str(data["access_token"])
+        return None
     if code not in (0, None):
         msg = body.get("message", "") or str(body)
         lower = msg.lower()
         if "registered" in lower or "已注册" in lower or "already registered" in lower:
-            return
+            return None
         if "registration is disabled" in lower or "注册" in lower and "禁用" in lower:
             raise RagflowProvisionError(
                 "RAGFlow 未开放用户注册，请在服务配置中启用 REGISTER_ENABLED"
             )
         raise RagflowProvisionError(msg)
+    return None
 
 
 def _login_user(email: str, password: str) -> str:
@@ -76,6 +83,67 @@ def ensure_ragflow_password(link: RagflowAccountLink) -> str:
         return link.ragflow_password
     link.ragflow_password = secrets.token_urlsafe(24)
     return link.ragflow_password
+
+
+def _password_mismatch_message(msg: str) -> bool:
+    lower = (msg or "").lower()
+    return "password" in lower and ("match" in lower or "不匹配" in lower or "密码" in msg)
+
+
+def _not_registered_message(msg: str) -> bool:
+    lower = (msg or "").lower()
+    return "not registered" in lower or "未注册" in lower
+
+
+def finalize_ragflow_link(
+    link: RagflowAccountLink,
+    authorization: str,
+    user: User | None = None,
+) -> None:
+    """持久化 RAGFlow 会话，并同步租户 ID / 全局权限 / 共享模型配置。"""
+    token = (authorization or "").strip()
+    if not token:
+        return
+    link.ragflow_access_token = token
+    uid = (link.ragflow_user_id or "").strip() or _fetch_ragflow_user_id(token)
+    if not uid:
+        return
+    link.ragflow_user_id = uid
+    settings = get_settings()
+    mode = (settings.ragflow_account_mode or "").strip().lower()
+    grant_admin = (
+        settings.ragflow_grant_global_admin
+        or mode == "shared"
+        or settings.knowflow_enabled
+    )
+    if grant_admin:
+        ensure_ragflow_global_admin(uid)
+    ensure_shared_llm_config(uid)
+
+
+def recover_ragflow_account(link: RagflowAccountLink, user: User) -> str:
+    """密码不一致或账号异常时：清理 RAGFlow 侧旧账号并用新密码重新注册。"""
+    email = (link.ragflow_email or platform_email_for_user(user)).strip().lower()
+    nickname = (user.display_name or user.username or "用户")[:100]
+    if user.username and user.username not in nickname:
+        nickname = f"{nickname}({user.username})"[:100]
+
+    link.ragflow_access_token = None
+    link.ragflow_user_id = None
+    link.ragflow_password = None
+    password = ensure_ragflow_password(link)
+
+    _purge_ragflow_user_by_email(email)
+    authorization: str | None = None
+    try:
+        authorization = _register_user(email, nickname, password)
+    except RagflowProvisionError as e:
+        if not _not_registered_message(str(e)):
+            logger.info("RAGFlow recover register: %s", e)
+    if not authorization:
+        authorization = _login_user(email, password)
+    finalize_ragflow_link(link, authorization, user)
+    return authorization
 
 
 def resolve_ragflow_password(link: RagflowAccountLink) -> str:
@@ -139,39 +207,41 @@ def provision_and_login(link: RagflowAccountLink, user: User) -> str:
     if user.username and user.username not in nickname:
         nickname = f"{nickname}({user.username})"[:100]
     password = resolve_ragflow_password(link)
+    authorization: str | None = None
 
-    if not link.ragflow_user_id:
+    if link.ragflow_password:
         try:
-            _register_user(email, nickname, password)
+            authorization = _login_user(email, password)
+        except RagflowProvisionError as e:
+            msg = str(e)
+            if _password_mismatch_message(msg):
+                authorization = recover_ragflow_account(link, user)
+            elif not _not_registered_message(msg):
+                raise
+
+    if not authorization:
+        try:
+            authorization = _register_user(email, nickname, password)
         except RagflowProvisionError as e:
             logger.info("RAGFlow register: %s", e)
 
-    try:
-        authorization = _login_user(email, password)
-    except RagflowProvisionError as e:
-        msg = str(e).lower()
-        if "not registered" in msg or "未注册" in msg:
-            _register_user(email, nickname, password)
+    if not authorization:
+        try:
             authorization = _login_user(email, password)
-        elif "password" in msg and "match" in msg:
-            link.ragflow_password = None
-            link.ragflow_user_id = None
-            password = ensure_ragflow_password(link)
-            if _purge_ragflow_user_by_email(email):
-                _register_user(email, nickname, password)
-            authorization = _login_user(email, password)
-        else:
-            raise
-    link.ragflow_access_token = authorization
-    uid = _fetch_ragflow_user_id(authorization)
-    if uid:
-        link.ragflow_user_id = uid
-        settings = get_settings()
-        mode = (settings.ragflow_account_mode or "").strip().lower()
-        grant_admin = settings.ragflow_grant_global_admin or mode == "shared"
-        if grant_admin:
-            ensure_ragflow_global_admin(uid)
-        ensure_shared_llm_config(uid)
+        except RagflowProvisionError as e:
+            msg = str(e)
+            if _not_registered_message(msg):
+                authorization = _register_user(email, nickname, password)
+                if not authorization:
+                    authorization = _login_user(email, password)
+            elif _password_mismatch_message(msg):
+                authorization = recover_ragflow_account(link, user)
+            else:
+                raise
+
+    if not authorization:
+        raise RagflowProvisionError("无法完成 RAGFlow 登录")
+    finalize_ragflow_link(link, authorization, user)
     return authorization
 
 

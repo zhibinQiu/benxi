@@ -1,4 +1,12 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+function resolveApiBase() {
+  const raw = import.meta.env.VITE_API_BASE;
+  if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+    return String(raw).replace(/\/$/, "");
+  }
+  return import.meta.env.PROD ? "/ai" : "";
+}
+
+const API_BASE = resolveApiBase();
 const TOKEN_KEY = "platform_access_token";
 const REFRESH_KEY = "platform_refresh_token";
 
@@ -85,11 +93,44 @@ export async function fetchDocumentLibrary() {
   return api("/api/v1/documents/library");
 }
 
-export async function fetchDocuments({ page = 1, page_size = 20, keyword, scope } = {}) {
+export async function fetchDocuments({
+  page = 1,
+  page_size = 20,
+  keyword,
+  scope,
+  folder_id,
+  uncategorized,
+} = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (keyword) q.set("keyword", keyword);
   if (scope) q.set("scope", scope);
+  if (folder_id) q.set("folder_id", folder_id);
+  if (uncategorized) q.set("uncategorized", "true");
   return api(`/api/v1/documents?${q}`);
+}
+
+export async function fetchKbFolders({ scope, dept_id } = {}) {
+  const q = new URLSearchParams({ scope });
+  if (dept_id) q.set("dept_id", dept_id);
+  return api(`/api/v1/documents/kb-folders?${q}`);
+}
+
+export async function createKbFolder(payload) {
+  return api("/api/v1/documents/kb-folders", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateKbFolder(folderId, payload) {
+  return api(`/api/v1/documents/kb-folders/${folderId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteKbFolder(folderId) {
+  return api(`/api/v1/documents/kb-folders/${folderId}`, { method: "DELETE" });
 }
 
 export async function fetchRecycleDocuments({ page = 1, page_size = 20, keyword } = {}) {
@@ -154,6 +195,13 @@ export async function updateDocument(documentId, payload) {
   return api(`/api/v1/documents/${documentId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function moveDocument(documentId, { folder_id } = {}) {
+  return api(`/api/v1/documents/${documentId}/move`, {
+    method: "POST",
+    body: JSON.stringify({ folder_id: folder_id ?? null }),
   });
 }
 
@@ -455,6 +503,135 @@ export async function fetchSystemFeatures() {
   return api("/api/v1/system/features");
 }
 
+export async function fetchCarbonAssetOverview() {
+  return api("/api/v1/carbon-assets/overview");
+}
+
+export async function fetchCarbonAssetHoldings() {
+  return api("/api/v1/carbon-assets/holdings");
+}
+
+export async function fetchCarbonAssetMarket({ refresh = false } = {}) {
+  const q = refresh ? "?refresh=true" : "";
+  return api(`/api/v1/carbon-assets/market${q}`);
+}
+
+export async function fetchCarbonAssetHistory(assetCode, { days = 90 } = {}) {
+  const q = new URLSearchParams({ days: String(days) });
+  return api(`/api/v1/carbon-assets/market/${encodeURIComponent(assetCode)}/history?${q}`);
+}
+
+export async function fetchCarbonAssetTrades() {
+  return api("/api/v1/carbon-assets/trades");
+}
+
+export async function createCarbonAssetTrade(body) {
+  return api("/api/v1/carbon-assets/trades", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function resetCarbonAssetDemo() {
+  return api("/api/v1/carbon-assets/demo/reset", { method: "POST" });
+}
+
+export async function parseWechatMpUrl(url) {
+  return api("/api/v1/wechat-mp/parse-url", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+export async function fetchWechatMpSources() {
+  return api("/api/v1/wechat-mp/sources");
+}
+
+export async function createWechatMpSource({ name, sample_url, biz }) {
+  return api("/api/v1/wechat-mp/sources", {
+    method: "POST",
+    body: JSON.stringify({ name, sample_url, biz: biz || undefined }),
+  });
+}
+
+export async function deleteWechatMpSource(sourceId) {
+  return api(`/api/v1/wechat-mp/sources/${sourceId}`, { method: "DELETE" });
+}
+
+export async function syncWechatMpSource(sourceId) {
+  return api(`/api/v1/wechat-mp/sources/${sourceId}/sync`, { method: "POST" });
+}
+
+export async function fetchWechatMpArticles({ page = 1, page_size = 20, source_id } = {}) {
+  const q = new URLSearchParams({ page, page_size });
+  if (source_id) q.set("source_id", source_id);
+  return api(`/api/v1/wechat-mp/articles?${q}`);
+}
+
+export async function fetchWechatMpArticle(articleId) {
+  return api(`/api/v1/wechat-mp/articles/${articleId}`);
+}
+
+export async function ingestWechatMpUrl(url) {
+  return api("/api/v1/wechat-mp/articles/ingest-url", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+export async function importWechatMpArticle(articleId, body = {}) {
+  return api(`/api/v1/wechat-mp/articles/${articleId}/import`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchFeedPresets() {
+  return api("/api/v1/feed-subscriptions/presets");
+}
+
+export async function fetchFeedSources({ kind } = {}) {
+  const q = kind ? `?kind=${encodeURIComponent(kind)}` : "";
+  return api(`/api/v1/feed-subscriptions/sources${q}`);
+}
+
+export async function createFeedSubscription(body) {
+  return api("/api/v1/feed-subscriptions/sources", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function subscribeFeedPreset(index) {
+  return api(`/api/v1/feed-subscriptions/presets/${index}`, { method: "POST" });
+}
+
+export async function deleteFeedSubscription(sourceId) {
+  return api(`/api/v1/feed-subscriptions/sources/${sourceId}`, { method: "DELETE" });
+}
+
+export async function syncFeedSubscription(sourceId) {
+  return api(`/api/v1/feed-subscriptions/sources/${sourceId}/sync`, { method: "POST" });
+}
+
+export async function fetchFeedEntries({ page = 1, page_size = 20, source_id, kind } = {}) {
+  const q = new URLSearchParams({ page, page_size });
+  if (source_id) q.set("source_id", source_id);
+  if (kind) q.set("kind", kind);
+  return api(`/api/v1/feed-subscriptions/entries?${q}`);
+}
+
+export async function fetchFeedEntry(entryId) {
+  return api(`/api/v1/feed-subscriptions/entries/${entryId}`);
+}
+
+export async function importFeedEntry(entryId, body = {}) {
+  return api(`/api/v1/feed-subscriptions/entries/${entryId}/import`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function fetchTranslateJobs({ page = 1, page_size = 20 } = {}) {
   const q = new URLSearchParams({ page, page_size });
   return api(`/api/v1/translate/jobs?${q}`);
@@ -569,16 +746,42 @@ export async function deleteMeetingRecord(id) {
 
 // —— 知识问答（嵌入 KnowFlow / RAGFlow 自带 UI）——
 
-export async function fetchRagMeta() {
-  return api("/api/v1/rag/meta");
+let ragMetaCache = null;
+let ragMetaCacheAt = 0;
+const RAG_META_TTL_MS = 15000;
+
+export async function fetchRagMeta({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && ragMetaCache && now - ragMetaCacheAt < RAG_META_TTL_MS) {
+    return ragMetaCache;
+  }
+  const data = await api("/api/v1/rag/meta");
+  ragMetaCache = data;
+  ragMetaCacheAt = now;
+  return data;
+}
+
+export function invalidateRagMetaCache() {
+  ragMetaCache = null;
+  ragMetaCacheAt = 0;
+}
+
+export async function searchKnowledge({ query, scope, limit = 20 } = {}) {
+  const body = { query, limit };
+  if (scope) body.scope = scope;
+  return api("/api/v1/rag/search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function fetchFeatureEmbedMeta(featureId) {
   return api(`/api/v1/system/features/${encodeURIComponent(featureId)}/embed-meta`);
 }
 
-export async function fetchRagEmbedSession() {
-  return api("/api/v1/rag/embed-session");
+export async function fetchRagEmbedSession({ sync = false } = {}) {
+  const q = sync ? "?sync=true" : "?sync=false";
+  return api(`/api/v1/rag/embed-session${q}`);
 }
 
 export async function assistantChat({
@@ -692,11 +895,18 @@ export async function fetchChatConversationMessages(scope, conversationId) {
   );
 }
 
-/** @deprecated 使用 smartDataQueryChatStream */
-export const smartDataQueryV2ChatStream = smartDataQueryChatStream;
+export async function deleteChatConversation(scope, conversationId) {
+  return api(
+    `/api/v1/chat-history/${encodeURIComponent(scope)}/conversations/${encodeURIComponent(conversationId)}`,
+    { method: "DELETE" }
+  );
+}
 
-/** @deprecated 使用 carbonQaChatStream */
-export const carbonQaV2ChatStream = carbonQaChatStream;
+export async function clearChatConversations(scope) {
+  return api(`/api/v1/chat-history/${encodeURIComponent(scope)}/conversations`, {
+    method: "DELETE",
+  });
+}
 
 export async function fetchAssistWritingPresets() {
   return api("/api/v1/assist-writing/presets");

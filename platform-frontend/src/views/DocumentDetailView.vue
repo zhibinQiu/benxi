@@ -42,6 +42,8 @@ import {
   liftDocumentDenial,
 } from "../api/client";
 import { useAuth } from "../composables/useAuth";
+import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
+import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
 
 const SCOPE_LABELS = {
   company: "公司级",
@@ -65,6 +67,11 @@ const LEVEL_LABELS = {
 
 const route = useRoute();
 const router = useRouter();
+
+function goBack() {
+  goBackToEntry(router, route, { name: "documents" });
+}
+
 const message = useMessage();
 const dialog = useDialog();
 
@@ -111,8 +118,7 @@ const canDownloadFile = computed(() =>
 );
 
 function versionFileLabel(v) {
-  if (v.uploaded && v.file_name) return v.file_name;
-  return v.file_name || "（尚未上传）";
+  return v.file_name || "—";
 }
 
 function versionSizeLabel(v) {
@@ -145,6 +151,11 @@ const denyUserId = ref(null);
 const denyReason = ref("");
 const shareSelectedKeys = ref([]);
 const shareGranting = ref(false);
+const showMoveDoc = ref(false);
+
+const supportsKbFolder = computed(() =>
+  ["company", "department", "personal"].includes(doc.value?.scope)
+);
 
 const shareColumns = [
   { type: "selection" },
@@ -343,7 +354,7 @@ function confirmDeleteVersion(v) {
         const res = await deleteDocumentVersion(docId, v.id);
         if (res.document_deleted) {
           message.success(res.message || "文档已移入回收站");
-          router.push({ name: "documents", query: { view: "recycle" } });
+          goBack();
           return;
         }
         message.success(res.message || "版本已删除");
@@ -366,7 +377,7 @@ function handlePermanentDelete() {
       try {
         await permanentlyDeleteDocument(docId);
         message.success("已彻底删除");
-        router.push({ name: "documents", query: { view: "recycle" } });
+        goBack();
       } catch (e) {
         message.error(e.message);
         return false;
@@ -380,7 +391,11 @@ async function handleRestore() {
   try {
     doc.value = await restoreDocument(docId);
     message.success("已恢复");
-    router.push({ name: "document-detail", params: { id: docId } });
+    navigateWithReturn(
+      router,
+      { name: "document-detail", params: { id: docId } },
+      route
+    );
     await load();
   } catch (e) {
     message.error(e.message);
@@ -463,6 +478,11 @@ async function removeDenial(uid) {
   }
 }
 
+function onDocumentMoved(updated) {
+  doc.value = updated;
+  showMoveDoc.value = false;
+}
+
 onMounted(load);
 </script>
 
@@ -487,7 +507,13 @@ onMounted(load);
       </template>
       <template #header-extra>
         <n-space>
-          <n-button @click="router.push({ name: 'documents' })">返回</n-button>
+          <n-button @click="goBack">返回</n-button>
+          <n-button
+            v-if="canEditDoc && !isInRecycle && supportsKbFolder"
+            @click="showMoveDoc = true"
+          >
+            移动
+          </n-button>
           <n-button
             type="primary"
             :disabled="!canDownloadFile || !canViewDoc"
@@ -512,6 +538,15 @@ onMounted(load);
         </n-descriptions-item>
         <n-descriptions-item label="分级">
           <n-tag size="small">{{ SCOPE_LABELS[doc.scope] || doc.scope }}</n-tag>
+        </n-descriptions-item>
+        <n-descriptions-item v-if="supportsKbFolder" label="所在文件夹">
+          {{ doc.folder_name || "未分类" }}
+        </n-descriptions-item>
+        <n-descriptions-item
+          v-if="doc.scope === 'department' && (doc.dept_name || doc.dept_id)"
+          label="所属部门"
+        >
+          {{ doc.dept_name || "—" }}
         </n-descriptions-item>
         <n-descriptions-item label="上传人">{{ ownerLabel }}</n-descriptions-item>
         <n-descriptions-item label="上传时间">{{ uploadedAtLabel }}</n-descriptions-item>
@@ -547,7 +582,7 @@ onMounted(load);
           </n-button>
         </n-space>
         <n-text v-else-if="!isInRecycle" depth="3" style="font-size: 13px">
-          按版本删除；删光全部版本后文档进入回收站
+          每个文档至少保留一个已上传版本；删光全部版本后文档进入回收站
         </n-text>
       </template>
       <n-table :single-line="false">
@@ -566,7 +601,6 @@ onMounted(load);
               <n-space :size="6" align="center">
                 <span>v{{ v.version_no }}</span>
                 <n-tag v-if="v.is_current" size="small" type="info">当前</n-tag>
-                <n-tag v-if="!v.uploaded" size="small">待上传</n-tag>
               </n-space>
             </td>
             <td>{{ versionFileLabel(v) }}</td>
@@ -632,7 +666,9 @@ onMounted(load);
               {{
                 p.subject_type === "user"
                   ? p.subject_label || userNameById[p.subject_id] || "未知用户"
-                  : p.subject_type
+                  : p.subject_type === "dept"
+                    ? p.subject_label || "未知部门"
+                    : p.subject_type
               }}
             </td>
             <td>{{ LEVEL_LABELS[p.level] || p.level }}</td>
@@ -698,6 +734,16 @@ onMounted(load);
     </template>
   </n-modal>
 
+  <MoveDocumentFolderModal
+    v-if="doc"
+    v-model:show="showMoveDoc"
+    :document-id="doc.id"
+    :document-title="doc.title"
+    :scope="doc.scope"
+    :dept-id="doc.dept_id"
+    :current-folder-id="doc.folder_id"
+    @moved="onDocumentMoved"
+  />
 </template>
 
 <style scoped>

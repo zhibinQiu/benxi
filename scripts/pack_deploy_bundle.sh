@@ -16,22 +16,25 @@ ARCHIVE="$OUT_DIR/${NAME}.tar.gz"
 
 mkdir -p "$OUT_DIR"
 
-# 打包前同步：本地 .env → .env.docker，再复制为部署用 .env（打进压缩包，不提交 git）
-bash "$ROOT/scripts/sync_deploy_env.sh"
-cp "$ROOT/platform/.env.docker" "$ROOT/platform/.env"
-cp "$ROOT/platform/knowflow.env.docker" "$ROOT/platform/knowflow.env"
+STAGING="$(mktemp -d)"
+trap 'rm -rf "$STAGING"' EXIT
 
-echo "[pack] 打包到 $ARCHIVE（含与本地一致的 platform/.env、knowflow.env）..."
-tar -czf "$ARCHIVE" \
+bash "$ROOT/scripts/sync_deploy_env.sh"
+
+echo "[pack] 准备打包目录（amd64 .env，不修改本机 platform/.env）..."
+rsync -a \
   --exclude='.git' \
   --exclude='.venv' \
-  --exclude='**/.venv' \
-  --exclude='**/node_modules' \
+  --exclude='node_modules' \
   --exclude='.run' \
   --exclude='dist' \
-  --exclude='**/__pycache__' \
-  --exclude='*.pyc' \
-  -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
+  "$ROOT/" "$STAGING/pdf_trans/"
+cp "$ROOT/platform/.env.docker" "$STAGING/pdf_trans/platform/.env"
+[[ -f "$ROOT/platform/knowflow.env.docker" ]] && \
+  cp "$ROOT/platform/knowflow.env.docker" "$STAGING/pdf_trans/platform/knowflow.env"
+
+echo "[pack] 打包到 $ARCHIVE ..."
+tar -czf "$ARCHIVE" -C "$STAGING" pdf_trans
 
 ls -lh "$ARCHIVE"
 echo "[pack] 完成。目标机（配置已与本地一致，无需再改密钥）:"

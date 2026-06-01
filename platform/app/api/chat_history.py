@@ -70,3 +70,36 @@ async def list_chat_messages(
         conversation_id=conversation_id,
     )
     return ApiResponse(data=rows)
+
+
+@router.delete("/{scope}/conversations", response_model=ApiResponse[dict])
+async def clear_chat_conversations(
+    scope: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    _ensure_scope_access(db, user, scope)
+    deleted = await chat_history_service.clear_conversations(
+        db, user_id=user.id, scope=scope
+    )
+    return ApiResponse(data={"ok": True, "deleted": deleted})
+
+
+@router.delete(
+    "/{scope}/conversations/{conversation_id}",
+    response_model=ApiResponse[dict],
+)
+async def delete_chat_conversation(
+    scope: str,
+    conversation_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    _ensure_scope_access(db, user, scope)
+    await chat_history_service.delete_conversation(
+        db,
+        user_id=user.id,
+        scope=scope,
+        conversation_id=conversation_id,
+    )
+    return ApiResponse(data={"ok": True})

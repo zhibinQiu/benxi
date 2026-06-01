@@ -24,7 +24,7 @@ from app.core.document_scope import (
 from app.core.exceptions import forbidden, not_found
 from app.core.permissions import PermissionLevel, can_access_document
 from app.database import get_db
-from app.models.document import Document, DocumentVersion
+from app.models.document import Document, DocumentLibraryFolder, DocumentVersion
 from app.models.org import User
 from app.schemas.common import ApiResponse, PageResult
 from app.models.org import Department
@@ -40,11 +40,17 @@ from app.schemas.document import (
     DocumentPermissionOut,
     DocumentStatusUpdate,
     DocumentUpdate,
+    DocumentMoveIn,
     DeleteDocumentVersionResult,
     DocumentVersionOut,
     UploadCompleteRequest,
     UploadPrepareResponse,
+    KbFolderCreate,
+    KbFolderListOut,
+    KbFolderOut,
+    KbFolderUpdate,
 )
+from app.services import library_folder_service
 from app.schemas.document_workflow import DocumentDenialCreate, DocumentDenialOut
 from app.services import document_workflow_service
 from app.core.document_scope import library_folders
@@ -68,6 +74,17 @@ def _owner_display(db: Session, owner_id: uuid.UUID) -> str:
     return login or name or "未知用户"
 
 
+def _dept_display(db: Session, dept_id: uuid.UUID | None) -> str | None:
+    if not dept_id:
+        return None
+    from app.models.org import Department
+
+    dept = db.get(Department, dept_id)
+    if not dept:
+        return None
+    return (dept.name or "").strip() or None
+
+
 def _uploaded_at(db: Session, doc: Document) -> datetime | None:
     if doc.current_version_id:
         ver = db.get(DocumentVersion, doc.current_version_id)
@@ -89,31 +106,132 @@ def _version_out(db: Session, doc: Document, version: DocumentVersion) -> Docume
         update={
             "uploaded": uploaded,
             "is_current": version.id == doc.current_version_id,
-            "file_name": version.file_name or ("（尚未上传）" if not uploaded else ""),
+            "file_name": version.file_name or "",
         }
     )
 
 
-def _detail(db: Session, doc: Document) -> DocumentDetail:
-    if not doc.deleted_at:
-        document_service.ensure_initial_version(db, doc)
+def _folder_name(db: Session, folder_id: uuid.UUID | None) -> str | None:
+    if not folder_id:
+        return None
+    folder = db.get(DocumentLibraryFolder, folder_id)
+    return (folder.name or "").strip() or None if folder else None
+
+
+def _detail(db: Session, doc: Document, *, user: User | None = None) -> DocumentDetail:
     versions = document_service.list_document_versions(db, doc.id)
+    can_edit = can_edit_document(db, user, doc) if user else False
     return DocumentDetail(
         id=doc.id,
         title=doc.title,
         status=doc.status,
         scope=doc.scope,
+        folder_id=doc.folder_id,
+        folder_name=_folder_name(db, doc.folder_id),
         owner_id=doc.owner_id,
         owner_name=_owner_display(db, doc.owner_id),
         dept_id=doc.dept_id,
+        dept_name=_dept_display(db, doc.dept_id),
         current_version_id=doc.current_version_id,
         description=doc.description,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         uploaded_at=_uploaded_at(db, doc),
         deleted_at=doc.deleted_at,
+        can_edit=can_edit,
         versions=[_version_out(db, doc, v) for v in versions],
     )
+
+
+@router.get("/kb-folders", response_model=ApiResponse[KbFolderListOut])
+def list_kb_folders(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: str = Query(..., pattern="^(company|department|personal)$"),
+    dept_id: uuid.UUID | None = None,
+) -> ApiResponse[KbFolderListOut]:
+    data = library_folder_service.list_kb_folders(
+        db, user, scope=scope, dept_id=dept_id
+    )
+    return ApiResponse(
+        data=KbFolderListOut(
+            scope=data["scope"],
+            dept_id=data["dept_id"],
+            can_manage_folders=data["can_manage_folders"],
+            items=[KbFolderOut.model_validate(i) for i in data["items"]],
+        )
+    )
+
+
+@router.post("/kb-folders", response_model=ApiResponse[KbFolderOut])
+def create_kb_folder(
+    body: KbFolderCreate,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[KbFolderOut]:
+    folder = library_folder_service.create_kb_folder(
+        db,
+        user,
+        name=body.name,
+        description=body.description,
+        scope=body.scope,
+        dept_id=body.dept_id,
+    )
+    db.commit()
+    return ApiResponse(
+        data=KbFolderOut(
+            id=folder.id,
+            name=folder.name,
+            description=folder.description or "",
+            scope=folder.scope,
+            dept_id=folder.dept_id,
+            kind="normal",
+            is_system=False,
+            document_count=0,
+            can_manage=True,
+        )
+    )
+
+
+@router.patch("/kb-folders/{folder_id}", response_model=ApiResponse[KbFolderOut])
+def update_kb_folder(
+    folder_id: uuid.UUID,
+    body: KbFolderUpdate,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[KbFolderOut]:
+    folder = library_folder_service.update_kb_folder(
+        db,
+        user,
+        folder_id,
+        name=body.name,
+        description=body.description,
+    )
+    db.commit()
+    return ApiResponse(
+        data=KbFolderOut(
+            id=folder.id,
+            name=folder.name,
+            description=folder.description or "",
+            scope=folder.scope,
+            dept_id=folder.dept_id,
+            kind="normal",
+            is_system=False,
+            document_count=0,
+            can_manage=True,
+        )
+    )
+
+
+@router.delete("/kb-folders/{folder_id}", response_model=ApiResponse[dict])
+def delete_kb_folder(
+    folder_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    library_folder_service.delete_kb_folder(db, user, folder_id)
+    db.commit()
+    return ApiResponse(data={"ok": True})
 
 
 @router.get("/library", response_model=ApiResponse[DocumentLibraryOut])
@@ -135,15 +253,46 @@ def document_library(
     )
 
 
-def _list_items_with_owners(
-    db: Session, docs: list[Document], *, include_owner_name: bool
+def _attach_folder_names(
+    db: Session, items: list[DocumentListItem]
 ) -> list[DocumentListItem]:
+    folder_ids = {i.folder_id for i in items if i.folder_id}
+    names: dict[uuid.UUID, str] = {}
+    if folder_ids:
+        for row in db.scalars(
+            select(DocumentLibraryFolder).where(
+                DocumentLibraryFolder.id.in_(folder_ids)
+            )
+        ).all():
+            names[row.id] = row.name
+    return [
+        item.model_copy(
+            update={"folder_name": names.get(item.folder_id) if item.folder_id else None}
+        )
+        for item in items
+    ]
+
+
+def _list_items_with_owners(
+    db: Session,
+    docs: list[Document],
+    *,
+    include_owner_name: bool,
+    user: User | None = None,
+) -> list[DocumentListItem]:
+    from app.core.document_scope import can_edit_document
+
     out: list[DocumentListItem] = []
     for d in docs:
         item = DocumentListItem.model_validate(d)
         extra: dict = {"uploaded_at": _uploaded_at(db, d)}
         if include_owner_name:
             extra["owner_name"] = _owner_display(db, d.owner_id)
+        if d.dept_id:
+            extra["dept_name"] = _dept_display(db, d.dept_id)
+        if user is not None:
+            extra["can_edit"] = can_edit_document(db, user, d)
+            extra["can_delete"] = can_delete_document(db, user, d)
         out.append(item.model_copy(update=extra))
     return out
 
@@ -158,13 +307,17 @@ def list_documents(
     scope: str | None = Query(
         None, pattern="^(company|department|personal|shared|all)$"
     ),
+    folder_id: uuid.UUID | None = None,
+    uncategorized: bool = Query(False, description="仅未归入文件夹的文档"),
 ) -> ApiResponse[PageResult[DocumentListItem]]:
     if scope == "shared":
         rows, total = document_service.list_shared_documents(
             db, user, page=page, page_size=page_size, keyword=keyword
         )
         docs = [d for d, _ in rows]
-        list_items = _list_items_with_owners(db, docs, include_owner_name=True)
+        list_items = _list_items_with_owners(
+            db, docs, include_owner_name=True, user=user
+        )
         meta_by_id = {d.id: m for d, m in rows}
         list_items = [
             item.model_copy(
@@ -178,25 +331,40 @@ def list_documents(
             for item in list_items
         ]
     elif scope == "all":
-        items, total = document_service.list_queryable_documents(
+        items, total = document_service.list_all_visible_documents(
             db, user, page=page, page_size=page_size, keyword=keyword
         )
-        list_items = _list_items_with_owners(db, items, include_owner_name=True)
+        list_items = _list_items_with_owners(
+            db, items, include_owner_name=True, user=user
+        )
         list_items = [
             item.model_copy(
                 update={
-                    "effective_level": effective_permission_level(db, user, doc)
+                    "effective_level": effective_permission_level(db, user, doc),
+                    "can_edit": can_edit_document(db, user, doc),
+                    "can_delete": can_delete_document(db, user, doc),
                 }
             )
             for item, doc in zip(list_items, items)
         ]
     else:
         items, total = document_service.list_accessible_documents(
-            db, user, page=page, page_size=page_size, keyword=keyword, scope=scope
+            db,
+            user,
+            page=page,
+            page_size=page_size,
+            keyword=keyword,
+            scope=scope,
+            folder_id=folder_id,
+            uncategorized_only=uncategorized,
         )
         list_items = _list_items_with_owners(
-            db, items, include_owner_name=scope in ("company", "department", "personal")
+            db,
+            items,
+            include_owner_name=scope in ("company", "department", "personal"),
+            user=user,
         )
+        list_items = _attach_folder_names(db, list_items)
     return ApiResponse(
         data=PageResult(
             items=list_items,
@@ -221,6 +389,7 @@ def create_document(
         description=body.description,
         scope=body.scope,
         dept_id=body.dept_id,
+        folder_id=body.folder_id,
     )
     audit_service.write_audit(
         db,
@@ -230,7 +399,7 @@ def create_document(
         resource_id=str(doc.id),
         ip_address=get_client_ip(request),
     )
-    return ApiResponse(data=_detail(db, doc))
+    return ApiResponse(data=_detail(db, doc, user=user))
 
 
 @router.get("/my-shares", response_model=ApiResponse[PageResult[DocumentListItem]])
@@ -329,7 +498,7 @@ def get_document(
             raise not_found("Document not found")
     elif not can_read_document(db, user, doc):
         raise forbidden()
-    return ApiResponse(data=_detail(db, doc))
+    return ApiResponse(data=_detail(db, doc, user=user))
 
 
 @router.patch("/{document_id}", response_model=ApiResponse[DocumentDetail])
@@ -363,7 +532,33 @@ def patch_document(
         ip_address=get_client_ip(request),
         detail={"title": doc.title} if body.title is not None else None,
     )
-    return ApiResponse(data=_detail(db, doc))
+    return ApiResponse(data=_detail(db, doc, user=user))
+
+
+@router.post("/{document_id}/move", response_model=ApiResponse[DocumentDetail])
+def move_document(
+    document_id: uuid.UUID,
+    body: DocumentMoveIn,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[DocumentDetail]:
+    doc = document_service.get_document(db, document_id)
+    if not doc or doc.deleted_at:
+        raise not_found()
+    doc = document_service.move_document_to_folder(
+        db, user, doc, folder_id=body.folder_id
+    )
+    audit_service.write_audit(
+        db,
+        user_id=user.id,
+        action="document.move",
+        resource_type="document",
+        resource_id=str(doc.id),
+        ip_address=get_client_ip(request),
+        detail={"folder_id": str(body.folder_id) if body.folder_id else None},
+    )
+    return ApiResponse(data=_detail(db, doc, user=user))
 
 
 @router.delete("/{document_id}/permanent", response_model=ApiResponse[dict])
@@ -373,7 +568,7 @@ def permanent_delete_document(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[dict]:
-    """从回收站彻底删除文档，清除存储与全部关联记录。"""
+    """彻底删除文档：清除全部版本文件、对象存储与文档记录（回收站内或列表直接删除）。"""
     doc = document_service.get_document(db, document_id)
     if not doc:
         raise not_found()
@@ -435,7 +630,7 @@ def complete_upload(
         get_user_ragflow_auth(db, user)
         sync_document_to_knowflow(db, user, doc, force=True)
         db.commit()
-    return ApiResponse(data=_detail(db, doc))
+    return ApiResponse(data=_detail(db, doc, user=user))
 
 
 @router.get("/{document_id}/download", response_model=ApiResponse[dict])
@@ -509,7 +704,7 @@ def patch_document_status(
         ip_address=get_client_ip(request),
         detail={"status": body.status},
     )
-    return ApiResponse(data=_detail(db, doc))
+    return ApiResponse(data=_detail(db, doc, user=user))
 
 
 @router.post("/{document_id}/restore", response_model=ApiResponse[DocumentDetail])
@@ -533,7 +728,7 @@ def restore_document(
         resource_id=str(doc.id),
         ip_address=get_client_ip(request),
     )
-    return ApiResponse(data=_detail(db, doc))
+    return ApiResponse(data=_detail(db, doc, user=user))
 
 
 @router.get(
@@ -569,19 +764,26 @@ def list_permissions(
     if not can_grant_document_permissions(db, user, doc):
         raise forbidden()
     perms = document_service.list_document_permissions(db, document_id)
-    user_ids = {
-        p.subject_id for p in perms if p.subject_type == "user"
-    }
-    labels: dict[uuid.UUID, str] = {}
+    user_ids = {p.subject_id for p in perms if p.subject_type == "user"}
+    dept_ids = {p.subject_id for p in perms if p.subject_type == "dept"}
+    user_labels: dict[uuid.UUID, str] = {}
     if user_ids:
         for u in db.scalars(select(User).where(User.id.in_(user_ids))).all():
-            labels[u.id] = _owner_display(db, u.id)
+            user_labels[u.id] = _owner_display(db, u.id)
+    dept_labels: dict[uuid.UUID, str] = {}
+    if dept_ids:
+        for d in db.scalars(select(Department).where(Department.id.in_(dept_ids))).all():
+            dept_labels[d.id] = (d.name or "").strip() or "未知部门"
     out: list[DocumentPermissionOut] = []
     for p in perms:
         item = DocumentPermissionOut.model_validate(p)
         if p.subject_type == "user":
             item = item.model_copy(
-                update={"subject_label": labels.get(p.subject_id)}
+                update={"subject_label": user_labels.get(p.subject_id)}
+            )
+        elif p.subject_type == "dept":
+            item = item.model_copy(
+                update={"subject_label": dept_labels.get(p.subject_id)}
             )
         out.append(item)
     return ApiResponse(data=out)

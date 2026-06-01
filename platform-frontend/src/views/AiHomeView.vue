@@ -1,7 +1,17 @@
 <script setup>
-import { ChatbubblesOutline, LeafOutline, StatsChartOutline } from "@vicons/ionicons5";
+import { computed } from "vue";
+import { useRoute } from "vue-router";
+import {
+  ChatbubblesOutline,
+  LeafOutline,
+  SearchOutline,
+  StatsChartOutline,
+} from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import { aiHomeChatStream } from "../api/client";
+import { encodeReturnLocation } from "../utils/navigationReturn";
+
+const route = useRoute();
 
 const suggestions = [
   "请介绍企业碳盘查的一般流程",
@@ -9,10 +19,23 @@ const suggestions = [
   "制造业常见的减排路径有哪些？",
 ];
 
-const toolLinks = [
-  { title: "双碳问答", route: { name: "carbon-qa" }, icon: ChatbubblesOutline },
-  { title: "智能问数", route: { name: "smart-data-query" }, icon: StatsChartOutline },
-];
+const toolLinks = computed(() => {
+  const encoded = encodeReturnLocation(route);
+  const returnQuery = encoded ? { return: encoded } : {};
+  return [
+    { title: "双碳问答", route: { name: "carbon-qa", query: returnQuery }, icon: ChatbubblesOutline },
+    {
+      title: "智能问数",
+      route: { name: "smart-data-query", query: returnQuery },
+      icon: StatsChartOutline,
+    },
+    {
+      title: "知识搜索",
+      route: { name: "knowledge-search", query: returnQuery },
+      icon: SearchOutline,
+    },
+  ];
+});
 </script>
 
 <template>

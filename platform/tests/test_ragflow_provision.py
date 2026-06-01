@@ -30,7 +30,10 @@ def test_provision_and_login_sets_token(platform_user):
         ragflow_password="secret-pass",
     )
     mock_resp_reg = MagicMock(status_code=200)
-    mock_resp_reg.json.return_value = {"code": 0}
+    mock_resp_reg.json.return_value = {
+        "code": 0,
+        "data": {"access_token": "jwt-from-register"},
+    }
     mock_resp_login = MagicMock(status_code=200)
     mock_resp_login.headers = {"Authorization": "jwt-token-abc"}
     mock_resp_login.json.return_value = {"code": 0, "data": {}}
@@ -39,7 +42,7 @@ def test_provision_and_login_sets_token(platform_user):
 
     with patch("app.integrations.ragflow_provision.httpx.Client") as client_cls:
         client = client_cls.return_value.__enter__.return_value
-        client.post.side_effect = [mock_resp_reg, mock_resp_login]
+        client.post.side_effect = [mock_resp_login, mock_resp_reg]
         client.get.return_value = mock_resp_info
         token = provision_and_login(link, platform_user)
 

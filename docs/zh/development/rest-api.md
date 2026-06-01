@@ -59,7 +59,7 @@ API **不单独管理** API Key。引擎凭证、默认语言等仍来自：
 |------|------|----------|
 | Gradio WebUI | `pdf2zh_next --gui` | 7860 |
 | REST API | `pdf2zh_next --api` | 7861 |
-| 平台前端 | `cd platform-frontend && npm run dev` | 5174（平台 API 代理翻译） |
+| 平台前端 | `cd platform-frontend && npm run dev` | 40005（平台 API 代理翻译） |
 
 ---
 

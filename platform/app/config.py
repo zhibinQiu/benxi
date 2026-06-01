@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "智碳平台AI系统"
-    platform_version: str = "2.6.2"
+    platform_version: str = "3.0.0"
     debug: bool = False
     api_prefix: str = "/api/v1"
 
@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     allow_public_register: bool = True
 
     cors_origins: str = "*"
+    # 经网关对外暴露时的路径前缀（如 http://<IP>/ai/api/v1）；后端仍注册 /api/v1
+    api_public_path_prefix: str = "/ai"
 
     pdf2zh_api_url: str = "http://127.0.0.1:7861"
 
@@ -61,8 +63,8 @@ class Settings(BaseSettings):
     ragflow_account_mode: str = "mapped"
     ragflow_shared_email: str = "admin@gmail.com"
     ragflow_shared_password: str = "admin"
-    # mapped 下应为 false；shared 演示环境可为 true 以便创建知识库
-    ragflow_grant_global_admin: bool = False
+    # KnowFlow 分级知识库需用户能创建 dataset；mapped 模式默认开启（经 KnowFlow RBAC）
+    ragflow_grant_global_admin: bool = True
     ragflow_mysql_container: str = "ragflow-mysql"
     ragflow_mysql_password: str = "infini_rag_flow"
     ragflow_mysql_db: str = "rag_flow"
@@ -72,11 +74,11 @@ class Settings(BaseSettings):
     ragflow_personal_dataset_prefix: str = "zt-personal"
     ragflow_company_dataset_name: str = "zt-company"
     ragflow_dept_dataset_prefix: str = "zt-dept"
-    ragflow_sync_doc_limit: int = 50
-    # 平台登录后后台同步可访问文档到该用户知识库（mapped 推荐开启）
-    ragflow_sync_on_login: bool = True
-    ragflow_sync_on_login_limit: int = 30
-    # 进入知识问答页时是否同步文档（关闭可加快首屏）
+    ragflow_sync_doc_limit: int = 100
+    # 平台登录后全量同步文档（耗时长，建议关闭；进入知识问答页时由 embed 触发）
+    ragflow_sync_on_login: bool = False
+    ragflow_sync_on_login_limit: int = 50
+    # 进入知识问答页时是否同步文档（关闭可加快首屏；前端可后台 sync=1 补同步）
     ragflow_sync_on_embed: bool = False
     # 新用户/登录时从 RAGFlow 模板账号复制模型供应商与 API（全员共用，默认开启）
     ragflow_llm_shared_from_template: bool = True
@@ -136,6 +138,22 @@ class Settings(BaseSettings):
     carbon_platform_url: str = (
         "http://carbon3.hy.05351757.xyz/login?redirect=/index"
     )
+
+    # 碳资产行情（CEA：上海环交所官网；可选 JSON 覆盖）
+    carbon_market_live_enabled: bool = True
+    carbon_market_cneeex_base_url: str = "https://www.cneeex.com"
+    carbon_market_cache_ttl_seconds: int = 900
+    carbon_market_fetch_timeout_seconds: float = 15.0
+    carbon_market_quotes_json_url: str = ""
+    # CCER：全国温室气体自愿减排交易系统日行情（ccer.com.cn）
+    carbon_market_ccer_base_url: str = "https://www.ccer.com.cn"
+    carbon_market_ccer_use_llm_parse: bool = False
+    # 无 CCER 官方源时，按 CEA 收盘价比例生成参考价（0 表示不估算）
+    carbon_market_ccer_cea_ratio: float = 0.8
+    carbon_market_history_max_fetch: int = 30
+    # CEA 历史日行情：收盘后定时同步（上海时区）
+    carbon_market_history_sync_hour: int = 18
+    carbon_market_history_sync_minute: int = 0
 
     @property
     def broker(self) -> str:

@@ -34,6 +34,8 @@ class FeaturePlugin:
     external_url: str | None = None
     embed_url: str | None = None
     grant_to_roles: tuple[str, ...] = ("sys_admin", "dept_admin", "member")
+    # False：不在「系统功能」页展示（改由知识中心 → 订阅 等入口进入）
+    show_in_catalog: bool = True
 
     def _catalog_tag(self, *, accessible: bool) -> str:
         if not self.enabled:

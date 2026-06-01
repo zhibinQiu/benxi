@@ -35,16 +35,18 @@ def test_platform_email():
         display_name="Alice",
     )
     with patch("app.services.ragflow_naming.get_settings", return_value=mapped):
-        assert platform_email_for_user(user) == "alice@corp.com"
+        assert platform_email_for_user(user).endswith("@platform.local")
+        assert platform_email_for_user(user).startswith("alice-")
         user2 = User(username="bob", email=None, password_hash="x", display_name="Bob")
-        assert platform_email_for_user(user2) == "bob@platform.local"
+        assert platform_email_for_user(user2).startswith("bob-")
         admin = User(
+            id=uuid.UUID("caf46c9d-0000-0000-0000-000000000001"),
             username="admin",
             email="admin@local",
             password_hash="x",
             display_name="Admin",
         )
-        assert platform_email_for_user(admin) == "admin@platform.local"
+        assert platform_email_for_user(admin) == "admin-caf46c9d@platform.local"
 
     shared_settings = MagicMock(
         ragflow_account_mode="shared",

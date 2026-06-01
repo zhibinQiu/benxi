@@ -493,10 +493,81 @@
     }
   }
 
+  function enablePlatformEmbedChrome(mode) {
+    var m = (mode || "1").trim();
+    if (m !== "search" && m !== "knowledge" && m !== "1") {
+      m = "1";
+    }
+    try {
+      document.documentElement.setAttribute("data-zt-platform-embed", m);
+    } catch (e) {
+      /* ignore */
+    }
+    applyEmbedLayoutChrome(m);
+  }
+
+  /** 仅隐藏根布局应用导航（siderStyle），保留 /search 的 searchSide 知识库树 */
+  function applyEmbedLayoutChrome(mode) {
+    var embed = (mode || document.documentElement.getAttribute("data-zt-platform-embed") || "").trim();
+    if (!embed) return;
+    var path = (location.pathname || "").replace(/\/+$/, "") || "/";
+    var onSearch = path === "/search" || embed === "search";
+
+    document.querySelectorAll("aside.ant-layout-sider, .ant-layout-sider").forEach(function (el) {
+      var cls = typeof el.className === "string" ? el.className : "";
+      if (cls.indexOf("searchSide") >= 0) {
+        el.style.removeProperty("display");
+        el.style.removeProperty("width");
+        el.style.removeProperty("flex");
+        el.style.removeProperty("pointer-events");
+        return;
+      }
+      if (cls.indexOf("siderStyle") >= 0) {
+        el.style.setProperty("display", "none", "important");
+        el.style.setProperty("width", "0", "important");
+        el.style.setProperty("min-width", "0", "important");
+        el.style.setProperty("max-width", "0", "important");
+        el.style.setProperty("flex", "0 0 0", "important");
+        el.style.setProperty("pointer-events", "none", "important");
+      }
+    });
+
+    if (onSearch) {
+      document.querySelectorAll('aside.ant-layout-sider[class*="searchSide"]').forEach(function (el) {
+        el.style.setProperty("flex", "0 0 220px", "important");
+        el.style.setProperty("width", "220px", "important");
+        el.style.setProperty("display", "block", "important");
+        el.style.setProperty("pointer-events", "auto", "important");
+      });
+      var rootLayout = document.querySelector("#root > .ant-layout.ant-layout-has-sider");
+      if (rootLayout) {
+        var main = rootLayout.querySelector(":scope > .ant-layout");
+        if (main) {
+          main.style.setProperty("margin-left", "0", "important");
+          main.style.setProperty("margin-inline-start", "0", "important");
+        }
+      }
+    }
+  }
+
+  function bootstrapEmbedFromUrl() {
+    var params = new URLSearchParams(location.search);
+    var embed = params.get("zt_embed");
+    if (embed === "1" || embed === "search" || embed === "knowledge") {
+      enablePlatformEmbedChrome(embed);
+      return true;
+    }
+    return false;
+  }
+
   window.addEventListener("message", function (ev) {
     if (!ev.data) return;
     if (ev.data.type === "zt-platform-sso") {
       applyPlatformSso(ev.data.sso);
+      return;
+    }
+    if (ev.data.type === "zt-platform-embed") {
+      enablePlatformEmbedChrome(ev.data.mode || "1");
       return;
     }
     if (ev.data.type !== "zt-platform-theme") return;
@@ -538,6 +609,9 @@
     hideFileManagerMenu();
     if (brandingTick % 4 === 0) applyPlatformLogo();
     if (PLATFORM_DISPLAY_NAME) patchWelcomeNickname(PLATFORM_DISPLAY_NAME);
+    if (document.documentElement.getAttribute("data-zt-platform-embed")) {
+      applyEmbedLayoutChrome();
+    }
     brandingTick += 1;
   }
 
@@ -577,5 +651,6 @@
     }, 0);
   };
 
+  bootstrapEmbedFromUrl();
   bootstrapAuthFromUrl();
 })();

@@ -26,6 +26,8 @@ SCOPE_DEPARTMENT = "department"
 SCOPE_PERSONAL = "personal"
 
 VALID_SCOPES = (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_PERSONAL)
+# 文档库 Tab 展示顺序（我的 → 部门 → 公司 → 分享）
+LIBRARY_TAB_SCOPES = (SCOPE_PERSONAL, SCOPE_DEPARTMENT, SCOPE_COMPANY)
 
 SCOPE_LABELS = {
     SCOPE_COMPANY: "公司级",
@@ -65,6 +67,31 @@ def can_delete_in_scope(db: Session, user: User, scope: str) -> bool:
     if user_is_superuser(db, user):
         return True
     return user_has_permission(db, user, scope_perm(scope, "delete"))
+
+
+def can_manage_library_folders(
+    db: Session,
+    user: User,
+    scope: str,
+    *,
+    dept_id: uuid.UUID | None = None,
+) -> bool:
+    """知识库文件夹新建/删除：个人库按 create 权限；公司/部门库需对应管理员或分级 create。"""
+    if scope not in VALID_SCOPES:
+        return False
+    if user_is_superuser(db, user):
+        return True
+    if scope == SCOPE_PERSONAL:
+        return can_create_in_scope(db, user, scope)
+    if scope == SCOPE_COMPANY:
+        return user_is_company_admin(db, user) or can_create_in_scope(db, user, scope)
+    if scope == SCOPE_DEPARTMENT:
+        if dept_id and dept_id in user_dept_ids(db, user.id):
+            if user_is_dept_admin(db, user) or can_create_in_scope(db, user, scope):
+                return True
+        elif user_is_dept_admin(db, user) or can_create_in_scope(db, user, scope):
+            return True
+    return False
 
 
 def _document_scope(doc: Document) -> str:
@@ -382,9 +409,13 @@ SCOPE_LABELS[SCOPE_ALL] = "所有"
 
 
 def library_folders(db: Session, user: User) -> list[dict]:
-    """前端文档库分级 Tab（公司/部门/我的/分享）。"""
+    """前端文档库分级 Tab：我的 / 部门级 / 公司级 / 分享。"""
     folders = []
-    for scope in VALID_SCOPES:
+    for scope in LIBRARY_TAB_SCOPES:
+        dept_for_perm = None
+        if scope == SCOPE_DEPARTMENT:
+            depts = user_dept_ids(db, user.id)
+            dept_for_perm = depts[0] if depts else None
         folders.append(
             {
                 "scope": scope,
@@ -392,6 +423,9 @@ def library_folders(db: Session, user: User) -> list[dict]:
                 "can_create": can_create_in_scope(db, user, scope),
                 "can_edit": can_edit_in_scope(db, user, scope),
                 "can_delete": can_delete_in_scope(db, user, scope),
+                "can_manage_folders": can_manage_library_folders(
+                    db, user, scope, dept_id=dept_for_perm
+                ),
             }
         )
     folders.append(
@@ -401,15 +435,7 @@ def library_folders(db: Session, user: User) -> list[dict]:
             "can_create": False,
             "can_edit": False,
             "can_delete": False,
-        }
-    )
-    folders.append(
-        {
-            "scope": SCOPE_ALL,
-            "label": SCOPE_LABELS[SCOPE_ALL],
-            "can_create": False,
-            "can_edit": False,
-            "can_delete": False,
+            "can_manage_folders": False,
         }
     )
     return folders

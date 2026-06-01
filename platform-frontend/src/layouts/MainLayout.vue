@@ -29,6 +29,7 @@ import {
   LibraryOutline,
   GitNetworkOutline,
   ArrowBackOutline,
+  NewspaperOutline,
 } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
@@ -37,6 +38,8 @@ import { PLATFORM_APP_NAME } from "../constants/platform";
 import { fetchNotifications } from "../api/client";
 import AssistantChatFab from "../components/AssistantChatFab.vue";
 import { consumeSkipInnerRouteMotion } from "../utils/routeTransition";
+import { publicAsset } from "../utils/appBase";
+import { goBackToEntry } from "../utils/navigationReturn";
 
 const route = useRoute();
 const router = useRouter();
@@ -120,7 +123,7 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(SparklesOutline) }),
     },
     {
-      label: "系统功能",
+      label: "功能列表",
       key: "system-functions",
       icon: () => h(NIcon, null, { default: () => h(GridOutline) }),
     },
@@ -145,9 +148,14 @@ const menuOptions = computed(() => {
           icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
         },
         {
-          label: "知识图谱",
+          label: "切片库",
           key: "knowledge-graph",
           icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
+        },
+        {
+          label: "订阅",
+          key: "knowledge-subscriptions",
+          icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) }),
         },
       ],
     },
@@ -170,12 +178,22 @@ const SUBSYSTEM_HEADER_ROUTES = new Set([
   "rag",
   "smart-data-query",
   "carbon-qa",
+  "carbon-assets",
   "smart-forecast",
   "speech",
   "ocr",
   "compare",
   "assist-writing",
   "knowledge-graph",
+  "knowledge-search",
+  "knowledge-subscriptions",
+  "wechat-mp",
+  "wechat-mp-article",
+  "feed-subscriptions",
+  "feed-entry",
+  "document-detail",
+  "chat-history",
+  "carbon-assets-history",
 ]);
 
 const isSubsystemPage = computed(() =>
@@ -192,7 +210,17 @@ const showAssistant = computed(() => {
 
 const activeKey = computed(() => {
   if (route.name === "document-detail") return "documents";
+  if (route.name === "knowledge-search") return "ai-home";
   if (route.name === "knowledge-graph") return "knowledge-graph";
+  if (
+    route.name === "knowledge-subscriptions" ||
+    route.name === "wechat-mp" ||
+    route.name === "wechat-mp-article" ||
+    route.name === "feed-subscriptions" ||
+    route.name === "feed-entry"
+  ) {
+    return "knowledge-subscriptions";
+  }
   if (
     route.name === "translate" ||
     route.name === "rag" ||
@@ -239,7 +267,7 @@ const showAppTitle = computed(
 );
 
 function goSubsystemBack() {
-  router.push({ name: "system-functions" });
+  goBackToEntry(router, route);
 }
 
 const contentStyle = computed(() => {
@@ -257,7 +285,13 @@ function ensureMenuExpanded() {
   if (
     route.name === "documents" ||
     route.name === "document-detail" ||
-    route.name === "knowledge-graph"
+    route.name === "knowledge-graph" ||
+    route.name === "knowledge-search" ||
+    route.name === "knowledge-subscriptions" ||
+    route.name === "wechat-mp" ||
+    route.name === "wechat-mp-article" ||
+    route.name === "feed-subscriptions" ||
+    route.name === "feed-entry"
   ) {
     if (!keys.includes(KNOWLEDGE_CENTER_KEY)) keys.push(KNOWLEDGE_CENTER_KEY);
   }
@@ -286,20 +320,8 @@ function onExpandedKeysUpdate(keys) {
 }
 
 function onMenuSelect(key) {
-  const map = {
-    "ai-home": "/ai-home",
-    documents: "/documents",
-    "knowledge-graph": "/knowledge-graph",
-    "system-functions": "/system/functions",
-    jobs: "/jobs",
-    notifications: "/notifications",
-    todos: "/todos",
-    "admin-users": "/admin/users",
-    "admin-departments": "/admin/departments",
-    "admin-monitor": "/admin/monitor",
-    "admin-model-settings": "/admin/model-settings",
-  };
-  if (map[key]) router.push(map[key]);
+  if (key === SETTINGS_KEY || key === KNOWLEDGE_CENTER_KEY) return;
+  router.push({ name: key });
 }
 
 function goNotifications() {
@@ -325,7 +347,7 @@ function doLogout() {
     >
       <div class="sider-inner">
         <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
-          <img src="/logo.svg" alt="" class="brand-logo" />
+          <img :src="publicAsset('logo.svg')" alt="" class="brand-logo" />
           <span v-if="!siderCollapsed" class="brand-name">{{ PLATFORM_APP_NAME }}</span>
         </div>
         <n-menu

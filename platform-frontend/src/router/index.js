@@ -29,7 +29,7 @@ const routes = [
       {
         path: "system/functions",
         name: "system-functions",
-        meta: { title: "系统功能", featureIcon: "grid" },
+        meta: { title: "功能列表", featureIcon: "grid" },
         component: () => import("../views/SystemFunctionsView.vue"),
       },
       {
@@ -65,6 +65,84 @@ const routes = [
         name: "carbon-qa",
         meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles" },
         component: () => import("../views/CarbonQaV2View.vue"),
+      },
+      {
+        path: "system/carbon-assets",
+        name: "carbon-assets",
+        meta: { title: "碳资产管理与交易", fullHeight: true, featureIcon: "wallet" },
+        component: () => import("../views/CarbonAssetTradingView.vue"),
+      },
+      {
+        path: "system/carbon-assets/history",
+        name: "carbon-assets-history",
+        meta: {
+          title: "CEA 历史走势",
+          fullHeight: true,
+          featureIcon: "stats-chart",
+          backTo: "carbon-assets",
+        },
+        component: () => import("../views/CarbonMarketHistoryView.vue"),
+      },
+      {
+        path: "system/wechat-mp",
+        redirect: { name: "wechat-mp" },
+      },
+      {
+        path: "system/wechat-mp/articles/:id",
+        redirect: (to) => ({
+          name: "wechat-mp-article",
+          params: { id: to.params.id },
+        }),
+      },
+      {
+        path: "knowledge/subscriptions",
+        name: "knowledge-subscriptions",
+        meta: { title: "订阅", featureIcon: "newspaper" },
+        component: () => import("../views/KnowledgeSubscriptionsView.vue"),
+      },
+      {
+        path: "knowledge/wechat-mp",
+        name: "wechat-mp",
+        meta: {
+          title: "微信公众号资讯",
+          fullHeight: true,
+          featureIcon: "newspaper",
+          backTo: "knowledge-subscriptions",
+        },
+        component: () => import("../views/WechatMpFeedView.vue"),
+      },
+      {
+        path: "knowledge/wechat-mp/articles/:id",
+        name: "wechat-mp-article",
+        meta: {
+          title: "推文详情",
+          fullHeight: true,
+          featureIcon: "newspaper",
+          backTo: "wechat-mp",
+        },
+        component: () => import("../views/WechatMpArticleView.vue"),
+      },
+      {
+        path: "knowledge/feed-subscriptions",
+        name: "feed-subscriptions",
+        meta: {
+          title: "RSS 与网站订阅",
+          fullHeight: true,
+          featureIcon: "stats-chart",
+          backTo: "knowledge-subscriptions",
+        },
+        component: () => import("../views/FeedSubscriptionsView.vue"),
+      },
+      {
+        path: "knowledge/feed-subscriptions/entries/:id",
+        name: "feed-entry",
+        meta: {
+          title: "资讯详情",
+          fullHeight: true,
+          featureIcon: "stats-chart",
+          backTo: "feed-subscriptions",
+        },
+        component: () => import("../views/FeedEntryView.vue"),
       },
       {
         path: "system/carbon-qa-v2",
@@ -109,11 +187,23 @@ const routes = [
         path: "knowledge-graph",
         name: "knowledge-graph",
         meta: {
-          title: "知识图谱",
+          title: "切片库",
           fullHeight: true,
           featureIcon: "git-network",
+          backTo: "ai-home",
         },
         component: () => import("../views/KnowledgeGraphView.vue"),
+      },
+      {
+        path: "knowledge/search",
+        name: "knowledge-search",
+        meta: {
+          title: "知识搜索",
+          fullHeight: true,
+          featureIcon: "search",
+          backTo: "ai-home",
+        },
+        component: () => import("../views/KnowledgeSearchView.vue"),
       },
       {
         path: "documents",
@@ -128,7 +218,11 @@ const routes = [
       {
         path: "documents/:id",
         name: "document-detail",
-        meta: { title: "文档详情", featureIcon: "document-text" },
+        meta: {
+          title: "文档详情",
+          featureIcon: "document-text",
+          backTo: "documents",
+        },
         component: () => import("../views/DocumentDetailView.vue"),
         beforeEnter: (to) => {
           const id = String(to.params.id || "");
@@ -189,7 +283,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 });
 

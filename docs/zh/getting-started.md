@@ -16,7 +16,7 @@ cd .. && bash scripts/start_platform.sh
 
 | 服务 | 地址 |
 |------|------|
-| 平台前端 | http://127.0.0.1:5174 |
+| 平台前端 | http://127.0.0.1:40005/ai/ |
 | 平台 API | http://127.0.0.1:8000/docs |
 | pdf2zh API | http://127.0.0.1:7861 |
 | 默认账号 | `admin` / `admin123` |
@@ -69,7 +69,7 @@ pdf2zh_next --api --api-port 7861
 ## amd64 服务器部署
 
 ```bash
-# 本机配置 platform/deploy.target 后
+# 本机配置 platform/deploy.target.amd64 后
 bash scripts/push_and_deploy.sh
 ```
 

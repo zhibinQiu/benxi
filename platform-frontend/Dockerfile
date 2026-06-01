@@ -6,8 +6,10 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --prefer-offline 2>/dev/null || npm install
 COPY . .
-ARG VITE_API_BASE=
+ARG VITE_API_BASE=/ai
+ARG VITE_BASE_PATH=/ai/
 ENV VITE_API_BASE=${VITE_API_BASE}
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN npm run build
 
 FROM ${NGINX_IMAGE}

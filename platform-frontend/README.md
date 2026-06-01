@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-浏览器：http://127.0.0.1:5174（需先启动后端，见仓库根目录 `bash scripts/start_platform.sh`）。
+浏览器：http://127.0.0.1:40005/ai/（需先启动后端，见仓库根目录 `bash scripts/start_platform.sh`）。
 
 Vite 将 `/api` 代理到 `http://127.0.0.1:8000`。
 

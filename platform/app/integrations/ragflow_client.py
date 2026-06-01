@@ -16,6 +16,27 @@ class RagflowError(RuntimeError):
     pass
 
 
+def _extract_uploaded_doc(data: Any) -> dict:
+    """解析 RAGFlow /v1/document/upload 多种返回结构。"""
+    if isinstance(data, list) and data:
+        first = data[0]
+        if isinstance(first, dict):
+            return first
+    if isinstance(data, dict):
+        if isinstance(data.get("document"), dict):
+            return data["document"]
+        if isinstance(data.get("doc"), dict):
+            return data["doc"]
+        if data.get("id") or data.get("doc_id"):
+            return data
+        nested = data.get("data")
+        if isinstance(nested, dict):
+            return _extract_uploaded_doc(nested)
+        if isinstance(nested, list):
+            return _extract_uploaded_doc(nested)
+    raise RagflowError(f"上传文档返回为空或无法解析: {data!r}")
+
+
 class RagflowClient:
     def __init__(
         self,
@@ -151,13 +172,8 @@ class RagflowClient:
                 files=files,
                 data=form,
             )
-            if isinstance(data, list) and data:
-                doc = data[0]
-            elif isinstance(data, dict):
-                doc = data
-            else:
-                raise RagflowError("上传文档返回为空")
-            doc_id = doc.get("id")
+            doc = _extract_uploaded_doc(data)
+            doc_id = doc.get("id") or doc.get("doc_id")
             if doc_id:
                 self.parse_documents(dataset_id, [str(doc_id)])
             return doc
@@ -167,13 +183,8 @@ class RagflowClient:
             f"/api/v1/datasets/{dataset_id}/documents",
             files=files,
         )
-        if isinstance(data, list) and data:
-            doc = data[0]
-        elif isinstance(data, dict):
-            doc = data
-        else:
-            raise RagflowError("上传文档返回为空")
-        doc_id = doc.get("id")
+        doc = _extract_uploaded_doc(data)
+        doc_id = doc.get("id") or doc.get("doc_id")
         if doc_id and meta_fields:
             self._request(
                 "PUT",

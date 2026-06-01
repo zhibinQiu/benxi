@@ -516,3 +516,51 @@ a[href*="/user-setting/management/file-management"] {
   --ant-color-info: var(--platform-primary);
   --ant-color-link: var(--platform-primary);
 }
+
+/*
+ * 平台 iframe：只隐藏 KnowFlow 根布局「应用导航」侧栏（class 含 siderStyle，约 150px）。
+ * 搜索页知识库树在 searchSide（约 220px），是独立 Sider，切勿用 aside 通配隐藏。
+ */
+html[data-zt-platform-embed] aside.ant-layout-sider[class*="siderStyle"],
+html[data-zt-platform-embed] .ant-layout-sider[class*="siderStyle"] {
+  display: none !important;
+  flex: 0 0 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+
+html[data-zt-platform-embed] #root > .ant-layout.ant-layout-has-sider > .ant-layout {
+  margin-inline-start: 0 !important;
+  margin-left: 0 !important;
+}
+
+/* 搜索嵌入：保证知识库选择侧栏与主输入区可交互 */
+html[data-zt-platform-embed="search"] aside.ant-layout-sider[class*="searchSide"],
+html[data-zt-platform-embed="1"] aside.ant-layout-sider[class*="searchSide"] {
+  display: block !important;
+  visibility: visible !important;
+  flex: 0 0 220px !important;
+  width: 220px !important;
+  min-width: 220px !important;
+  max-width: 400px !important;
+  overflow: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+html[data-zt-platform-embed="search"] [class*="searchPage"].ant-layout-has-sider > .ant-layout,
+html[data-zt-platform-embed="1"] [class*="searchPage"].ant-layout-has-sider > .ant-layout {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+html[data-zt-platform-embed="search"] [class*="globalInput"] input,
+html[data-zt-platform-embed="search"] [class*="partialInput"] input,
+html[data-zt-platform-embed="1"] [class*="globalInput"] input,
+html[data-zt-platform-embed="1"] [class*="partialInput"] input {
+  pointer-events: auto !important;
+}

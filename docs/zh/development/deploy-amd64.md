@@ -17,13 +17,13 @@
 
 | 方式 | 适用 | 入口脚本 |
 |------|------|----------|
-| **SSH 推送** | 开发机已配置 `platform/deploy.target` | `push_and_deploy.sh` |
+| **SSH 推送** | 开发机已配置 `platform/deploy.target.amd64` | `push_and_deploy.sh` |
 | **Git 克隆** | 目标机可拉仓库 | `deploy_amd64.sh` |
 | **tar 包** | 内网/无 git | `pack_deploy_bundle.sh` → 目标机 `deploy_amd64.sh` |
 
 ## 方式 A：SSH 推送（日常更新推荐）
 
-在 `platform/deploy.target` 中设置 `DEPLOY_HOST`、`DEPLOY_PATH`、`DEPLOY_USER`（示例见仓库内该文件）。
+在 `platform/deploy.target.amd64` 中设置 `DEPLOY_HOST`、`DEPLOY_PATH`、`DEPLOY_USER`（可从 `deploy.target.example` 复制）。
 
 ```bash
 cd /path/to/pdf_trans
@@ -69,13 +69,13 @@ bash scripts/deploy_amd64.sh full
 - **仅改写**：Docker 内网服务名、amd64 KnowFlow 镜像名
 - **保持不变**：密码、`DEEPSEEK_*`、Dify Key、RAGFlow 账号等
 
-无本地 `.env` 时回退 `platform/.env.deploy.example`。
+无本地 `.env` 时回退 `platform/.env.amd64.example`。
 
 ## 服务端口
 
 | 服务 | 端口 |
 |------|------|
-| 平台 Web（Nginx + `/api`） | 80 |
+| 平台 Web（Nginx + `/ai/`） | 40005（`FRONTEND_PORT`，映射容器 80） |
 | 平台 API | 8000 |
 | pdf2zh API | 7861 |
 | MinIO 控制台 | 9001 |
@@ -92,11 +92,13 @@ bash scripts/deploy_amd64.sh full
 | **amd64** | `deploy_amd64.sh knowflow`（`zxwei/knowflow:v2.1.8` 预构建镜像） |
 | Apple Silicon | `build_knowflow_source.sh` + `start_platform.sh knowflow` |
 
+编排逻辑一致：仅 `include` `docker-compose-base.yml`，应用服务在 `docker-compose.knowflow*.yml` 内定义；差异为 **镜像**（amd64 预构建 vs Mac 源码 build）与 **`KNOWFLOW_DOCKER_NETWORK`**（`zhitanai_default` / `platform_default`）。
+
 Compose：`platform/docker-compose.knowflow.amd64.yml`、`knowflow.env.amd64.example`。
 
-## 目标机示例（deploy.target）
+## 目标机示例（deploy.target.amd64）
 
-当前仓库默认目标（可按环境修改 `platform/deploy.target`）：
+当前仓库默认目标（**仅服务器**，见 `platform/deploy.target.amd64`；Mac 本地用 `platform/.env.example`）：
 
 | 项 | 值 |
 |----|-----|
@@ -107,11 +109,11 @@ Compose：`platform/docker-compose.knowflow.amd64.yml`、`knowflow.env.amd64.exa
 
 | 服务 | URL |
 |------|-----|
-| 平台 Web | http://172.19.134.45 |
-| 平台 API | http://172.19.134.45:8000/docs |
+| 平台 Web | http://172.19.134.45:40005/ai/ |
+| 平台 API | http://172.19.134.45:40005/ai/api/v1（Swagger 直连：:8000/docs） |
 | RAGFlow | http://172.19.134.45:9380 |
 
-防火墙需放行：`80`、`8000`、`7861`、`9380`、`5001`、`8765`（按需 `9000`/`9001`）。
+防火墙需放行：`40005`、`8000`、`7861`、`9380`、`5001`、`8765`（按需 `9000`/`9001`）。
 
 目标机运维：
 
@@ -132,6 +134,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f pdf2zh-a
 ## 相关文件
 
 - `platform/docker-compose.prod.yml` — 生产覆盖
-- `platform/.env.deploy.example` — 环境变量模板
-- `platform/deploy.target` — SSH 推送目标
+- `platform/.env.amd64.example` — amd64 环境变量模板
+- `platform/deploy.target.amd64` — SSH 推送目标（模板见 `deploy.target.example`）
+- `platform/.env.example` / `platform/knowflow.env.example` — Mac 本地开发
 - `scripts/deploy_amd64.sh` / `push_and_deploy.sh` / `pack_deploy_bundle.sh`

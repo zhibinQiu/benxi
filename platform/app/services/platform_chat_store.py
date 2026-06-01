@@ -139,3 +139,45 @@ def list_messages(
     )
     rows = db.scalars(stmt).all()
     return [{"role": row.role, "content": row.content} for row in rows]
+
+
+def delete_conversation(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    scope: str,
+    conversation_id: str,
+) -> None:
+    if scope not in _VALID_SCOPES:
+        raise not_found("会话不存在")
+    try:
+        cid = uuid.UUID(str(conversation_id))
+    except ValueError as e:
+        raise not_found("会话不存在") from e
+
+    conv = db.get(PlatformChatConversation, cid)
+    if not conv or conv.user_id != user_id or conv.scope != scope:
+        raise not_found("会话不存在")
+    db.delete(conv)
+    db.flush()
+
+
+def clear_conversations(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    scope: str,
+) -> int:
+    if scope not in _VALID_SCOPES:
+        return 0
+
+    stmt = select(PlatformChatConversation).where(
+        PlatformChatConversation.user_id == user_id,
+        PlatformChatConversation.scope == scope,
+    )
+    rows = list(db.scalars(stmt).all())
+    for row in rows:
+        db.delete(row)
+    if rows:
+        db.flush()
+    return len(rows)

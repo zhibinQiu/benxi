@@ -13,7 +13,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM="$ROOT/platform"
-TARGET_FILE="$PLATFORM/deploy.target"
+TARGET_FILE="${DEPLOY_TARGET:-$PLATFORM/deploy.target.amd64}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -38,7 +38,7 @@ load_target() {
   set -a && source "$TARGET_FILE" && set +a
   DEPLOY_USER="${DEPLOY_USER:-root}"
   [[ -n "${DEPLOY_HOST:-}" && -n "${DEPLOY_PATH:-}" ]] \
-    || { error "deploy.target 需设置 DEPLOY_HOST 与 DEPLOY_PATH"; exit 1; }
+    || { error "deploy.target.amd64 需设置 DEPLOY_HOST 与 DEPLOY_PATH"; exit 1; }
 }
 
 parse_args() {
@@ -62,10 +62,8 @@ parse_args() {
 }
 
 prepare_env() {
-  info "同步本地配置 ..."
-  bash "$ROOT/scripts/sync_deploy_env.sh"
-  cp -f "$PLATFORM/.env.docker" "$PLATFORM/.env"
-  cp -f "$PLATFORM/knowflow.env.docker" "$PLATFORM/knowflow.env"
+  info "生成 amd64 部署配置（仅 .env.docker，不覆盖本地 .env）..."
+  DEPLOY_TARGET="$TARGET_FILE" bash "$ROOT/scripts/sync_deploy_env.sh"
 }
 
 rsync_to_remote() {
@@ -89,15 +87,25 @@ rsync_to_remote() {
     --exclude '**/__pycache__/' \
     --exclude '*.pyc' \
     --exclude '.DS_Store' \
+    --exclude 'platform/.env' \
+    --exclude 'platform/knowflow.env' \
     --exclude 'platform/.env.docker' \
     --exclude 'platform/knowflow.env.docker' \
     "$ROOT/" "$dest"
 
-  # 部署用配置（含密钥）单独同步
+  # amd64 部署配置（勿同步本地 Mac 用的 .env）
+  if [[ ! -f "$PLATFORM/.env.docker" ]]; then
+    error "缺少 platform/.env.docker，请先运行 sync_deploy_env.sh"
+    exit 1
+  fi
   rsync -avz \
-    "$PLATFORM/.env" \
-    "$PLATFORM/knowflow.env" \
-    "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/platform/"
+    "$PLATFORM/.env.docker" \
+    "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/platform/.env.docker"
+  if [[ -f "$PLATFORM/knowflow.env.docker" ]]; then
+    rsync -avz \
+      "$PLATFORM/knowflow.env.docker" \
+      "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/platform/knowflow.env.docker"
+  fi
 }
 
 remote_deploy_background() {

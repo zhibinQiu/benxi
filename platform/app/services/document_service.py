@@ -74,6 +74,8 @@ def list_shared_documents(
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible: list[tuple[Document, dict[str, str | None]]] = []
     for doc in candidates:
+        if not document_has_uploaded_version(db, doc.id):
+            continue
         if not _has_explicit_permission(
             db, user, doc, PermissionLevel.visible.value
         ):
@@ -97,6 +99,8 @@ def list_accessible_documents(
     keyword: str | None = None,
     scope: str | None = None,
     min_permission_level: str | None = None,
+    folder_id: uuid.UUID | None = None,
+    uncategorized_only: bool = False,
 ) -> tuple[list[Document], int]:
     from app.core.document_scope import VALID_SCOPES
     from app.models.document import DocumentStatus
@@ -114,21 +118,69 @@ def list_accessible_documents(
         stmt = stmt.where(Document.scope == scope)
     if keyword:
         stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+    if uncategorized_only:
+        stmt = stmt.where(Document.folder_id.is_(None))
+    elif folder_id is not None:
+        stmt = stmt.where(Document.folder_id == folder_id)
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     from app.core.document_scope import owner_qualifies_for_scope_list
 
+    from app.core.permissions import user_is_superuser
+
+    is_super = user_is_superuser(db, user)
     visible: list[Document] = []
     for d in candidates:
+        if not document_has_uploaded_version(db, d.id):
+            continue
         if not can_access_document(db, user, d, required):
             continue
         doc_scope = d.scope or "personal"
-        if scope == "personal" and d.owner_id != user.id:
+        if scope == "personal" and d.owner_id != user.id and not is_super:
             continue
-        if doc_scope == "company" and not owner_qualifies_for_scope_list(db, d):
+        if (
+            not is_super
+            and doc_scope == "company"
+            and not owner_qualifies_for_scope_list(db, d)
+        ):
             continue
-        if doc_scope == "department" and not owner_qualifies_for_scope_list(db, d):
+        if (
+            not is_super
+            and doc_scope == "department"
+            and not owner_qualifies_for_scope_list(db, d)
+        ):
             continue
         visible.append(d)
+    total = len(visible)
+    start = (page - 1) * page_size
+    return visible[start : start + page_size], total
+
+
+def list_all_visible_documents(
+    db: Session,
+    user: User,
+    *,
+    page: int,
+    page_size: int,
+    keyword: str | None = None,
+) -> tuple[list[Document], int]:
+    """跨分级汇总：当前用户具备「可见」及以上权限的全部文档（不做分级入库员过滤）。"""
+    from app.models.document import DocumentStatus
+
+    required = PermissionLevel.visible.value
+    stmt = select(Document).where(
+        Document.deleted_at.is_(None),
+        Document.status == DocumentStatus.active.value,
+    )
+    if keyword:
+        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+    candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
+    visible: list[Document] = []
+    for doc in candidates:
+        if not document_has_uploaded_version(db, doc.id):
+            continue
+        if not can_access_document(db, user, doc, required):
+            continue
+        visible.append(doc)
     total = len(visible)
     start = (page - 1) * page_size
     return visible[start : start + page_size], total
@@ -157,6 +209,8 @@ def list_queryable_documents(
     for doc in candidates:
         if doc.deleted_at is not None:
             continue
+        if not document_has_uploaded_version(db, doc.id):
+            continue
         if not can_query_document(db, user, doc):
             continue
         visible.append(doc)
@@ -173,41 +227,58 @@ def is_version_uploaded(version: DocumentVersion) -> bool:
     return bool(version.file_size and (version.file_key or "").strip())
 
 
-def ensure_initial_version(
-    db: Session, document: Document, *, created_by: uuid.UUID | None = None
-) -> DocumentVersion | None:
-    """无版本记录时创建 v1 占位，保证版本历史至少有一条。"""
-    exists = db.scalar(
-        select(func.count())
-        .select_from(DocumentVersion)
-        .where(DocumentVersion.document_id == document.id)
+def document_has_uploaded_version(db: Session, document_id: uuid.UUID) -> bool:
+    row = db.scalar(
+        select(DocumentVersion.id)
+        .where(
+            DocumentVersion.document_id == document_id,
+            DocumentVersion.file_size > 0,
+        )
+        .limit(1)
     )
-    if exists:
-        return None
-    author = created_by or document.owner_id
+    return row is not None
+
+
+def create_initial_uploaded_version(
+    db: Session,
+    document: Document,
+    user: User,
+    *,
+    file_name: str,
+    mime_type: str,
+    content: bytes,
+    checksum: str | None = None,
+) -> DocumentVersion:
+    """创建并落库首版文件（用于导入、订阅等服务端直传场景）。"""
+    store = get_object_store()
     version = DocumentVersion(
         document_id=document.id,
         version_no=1,
-        file_key="",
-        file_name="",
-        file_size=0,
-        mime_type="application/octet-stream",
-        created_by=author,
+        file_key=store.build_file_key(document.id, 1, file_name),
+        file_name=file_name,
+        mime_type=mime_type or "application/octet-stream",
+        file_size=len(content),
+        checksum=checksum,
+        created_by=user.id,
     )
+    store.put_object_bytes(version.file_key, content, mime_type)
     db.add(version)
+    document.current_version_id = version.id
     db.commit()
     db.refresh(version)
+    db.refresh(document)
     return version
 
 
 def list_document_versions(db: Session, document_id: uuid.UUID) -> list[DocumentVersion]:
-    return list(
+    rows = list(
         db.scalars(
             select(DocumentVersion)
             .where(DocumentVersion.document_id == document_id)
             .order_by(DocumentVersion.version_no.desc())
         ).all()
     )
+    return [v for v in rows if is_version_uploaded(v)]
 
 
 def _pick_current_version_id(
@@ -285,11 +356,20 @@ def create_document(
     description: str = "",
     scope: str = "personal",
     dept_id: uuid.UUID | None = None,
+    folder_id: uuid.UUID | None = None,
 ) -> Document:
     from app.core.document_scope import resolve_create_params
+    from app.services.library_folder_service import resolve_document_folder_id
 
     norm_scope, norm_dept = resolve_create_params(
         db, user, scope=scope, dept_id=dept_id
+    )
+    norm_folder_id = resolve_document_folder_id(
+        db,
+        user,
+        scope=norm_scope,
+        folder_id=folder_id,
+        dept_id=norm_dept,
     )
     doc = Document(
         title=title,
@@ -297,11 +377,11 @@ def create_document(
         owner_id=user.id,
         dept_id=norm_dept,
         scope=norm_scope,
+        folder_id=norm_folder_id,
     )
     db.add(doc)
     db.commit()
     db.refresh(doc)
-    ensure_initial_version(db, doc, created_by=user.id)
     return doc
 
 
@@ -319,38 +399,22 @@ def prepare_upload(
         raise forbidden("No permission to upload new version")
 
     store = get_object_store()
-    pending = db.scalar(
-        select(DocumentVersion)
-        .where(
-            DocumentVersion.document_id == document.id,
-            DocumentVersion.file_size == 0,
+    max_ver = db.scalar(
+        select(func.max(DocumentVersion.version_no)).where(
+            DocumentVersion.document_id == document.id
         )
-        .order_by(DocumentVersion.version_no.asc())
-        .limit(1)
     )
-    if pending and not is_version_uploaded(pending):
-        pending.file_name = file_name
-        pending.mime_type = mime_type
-        pending.file_key = store.build_file_key(
-            document.id, pending.version_no, file_name
-        )
-        version = pending
-    else:
-        max_ver = db.scalar(
-            select(func.max(DocumentVersion.version_no)).where(
-                DocumentVersion.document_id == document.id
-            )
-        )
-        version_no = (max_ver or 0) + 1
-        version = DocumentVersion(
-            document_id=document.id,
-            version_no=version_no,
-            file_key=store.build_file_key(document.id, version_no, file_name),
-            file_name=file_name,
-            mime_type=mime_type,
-            created_by=user.id,
-        )
-        db.add(version)
+    version_no = (max_ver or 0) + 1
+    version = DocumentVersion(
+        document_id=document.id,
+        version_no=version_no,
+        file_key=store.build_file_key(document.id, version_no, file_name),
+        file_name=file_name,
+        mime_type=mime_type,
+        file_size=0,
+        created_by=user.id,
+    )
+    db.add(version)
     db.commit()
     db.refresh(version)
     upload_url = store.presigned_put(version.file_key, mime_type)
@@ -506,7 +570,6 @@ def restore_document(db: Session, document: Document) -> Document:
     document.deleted_by = None
     db.commit()
     db.refresh(document)
-    ensure_initial_version(db, document)
     return document
 
 
@@ -614,12 +677,15 @@ def purge_document_completely(db: Session, document: Document) -> None:
 def permanently_delete_document(
     db: Session, user: User, document: Document
 ) -> None:
+    from app.core.document_scope import can_delete_document
     from app.core.exceptions import bad_request, forbidden
 
-    if not can_permanently_delete_document(db, user, document):
-        if document.deleted_at is None:
-            raise bad_request("请先将文档移入回收站后再彻底删除")
+    if document.deleted_at is None:
+        if not can_delete_document(db, user, document):
+            raise forbidden("无权删除该文档")
+    elif not can_permanently_delete_document(db, user, document):
         raise forbidden("无权彻底删除该文档")
+
     purge_document_completely(db, document)
     db.commit()
 
@@ -640,6 +706,38 @@ def empty_recycle_bin(db: Session, user: User) -> int:
     if count:
         db.commit()
     return count
+
+
+def move_document_to_folder(
+    db: Session,
+    user: User,
+    document: Document,
+    *,
+    folder_id: uuid.UUID | None,
+) -> Document:
+    from app.core.document_scope import VALID_SCOPES, can_edit_document
+    from app.core.exceptions import bad_request, forbidden
+    from app.services.library_folder_service import resolve_document_folder_id
+
+    if document.deleted_at is not None:
+        raise bad_request("回收站中的文档不可移动")
+    if not can_edit_document(db, user, document):
+        raise forbidden("无权移动该文档")
+    scope = (document.scope or "personal").strip()
+    if scope not in VALID_SCOPES:
+        raise bad_request("该文档分级不支持文件夹")
+
+    norm_folder_id = resolve_document_folder_id(
+        db,
+        user,
+        scope=scope,
+        folder_id=folder_id,
+        dept_id=document.dept_id,
+    )
+    document.folder_id = norm_folder_id
+    db.commit()
+    db.refresh(document)
+    return document
 
 
 def update_document(
@@ -717,6 +815,8 @@ def list_my_shared_out_documents(
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible: list[tuple[Document, dict]] = []
     for doc in candidates:
+        if not document_has_uploaded_version(db, doc.id):
+            continue
         perms = list(
             db.scalars(
                 select(DocumentPermission).where(

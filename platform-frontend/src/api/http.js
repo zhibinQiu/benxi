@@ -69,10 +69,12 @@ async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
-    throw new Error(sanitizeUserFacingMessage(msg));
+    throw new Error(sanitizeUserFacingMessage(msg, "请求失败"));
   }
   if (json.code !== undefined && json.code !== 0) {
-    throw new Error(sanitizeUserFacingMessage(json.message || "请求失败", "请求失败"));
+    throw new Error(
+      sanitizeUserFacingMessage(json.message || "请求失败", "请求失败")
+    );
   }
   return json.data;
 }

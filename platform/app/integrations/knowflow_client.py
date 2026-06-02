@@ -141,12 +141,17 @@ class RagflowKnowflowClient:
                     "mime_type": mime_type,
                 },
             )
-            rag_doc_id = doc.get("id")
+            rag_doc_id = doc.get("id") or doc.get("doc_id")
             if not rag_doc_id:
                 return None
-            self._rag.parse_documents(ds_id, [rag_doc_id])
-            self._doc_map[pid] = rag_doc_id
-            return rag_doc_id
+            try:
+                self._rag.parse_documents(ds_id, [str(rag_doc_id)])
+            except RagflowError as e:
+                logger.warning(
+                    "KnowFlow 解析文档失败（文件已上传）%s: %s", pid, e
+                )
+            self._doc_map[pid] = str(rag_doc_id)
+            return str(rag_doc_id)
         except RagflowError as e:
             logger.warning("KnowFlow 索引文档失败 %s: %s", pid, e)
             return None

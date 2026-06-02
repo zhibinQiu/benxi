@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 import subprocess
-import uuid
 
 import httpx
 
@@ -159,21 +159,16 @@ def resolve_ragflow_password(link: RagflowAccountLink) -> str:
     return ensure_ragflow_password(link)
 
 
-def _purge_ragflow_user_by_email(email: str) -> bool:
-    """本地开发：清理 RAGFlow 中邮箱冲突的旧账号（密码与平台 link 不一致时）。"""
+def _uid_suffix_from_platform_email(email: str) -> str | None:
+    m = re.search(r"-([a-f0-9]{8})@platform\.local$", (email or "").strip().lower())
+    return m.group(1) if m else None
+
+
+def _run_ragflow_mysql(sql: str) -> tuple[bool, str]:
     settings = get_settings()
     container = (settings.ragflow_mysql_container or "ragflow-mysql").strip()
     mysql_pwd = (settings.ragflow_mysql_password or "infini_rag_flow").strip()
     db = (settings.ragflow_mysql_db or "rag_flow").strip()
-    safe_email = email.replace("'", "''")
-    sql = (
-        f"SET @e='{safe_email}'; "
-        "SET @uid=(SELECT id FROM user WHERE email=@e LIMIT 1); "
-        "DELETE FROM user_tenant WHERE user_id=@uid OR tenant_id=@uid; "
-        "DELETE FROM tenant_llm WHERE tenant_id=@uid; "
-        "DELETE FROM tenant WHERE id=@uid; "
-        "DELETE FROM user WHERE id=@uid;"
-    )
     try:
         proc = subprocess.run(
             [
@@ -184,6 +179,7 @@ def _purge_ragflow_user_by_email(email: str) -> bool:
                 f"-uroot",
                 f"-p{mysql_pwd}",
                 db,
+                "--default-character-set=utf8mb4",
                 "-e",
                 sql,
             ],
@@ -192,12 +188,60 @@ def _purge_ragflow_user_by_email(email: str) -> bool:
             timeout=20,
         )
         if proc.returncode != 0:
-            logger.warning("purge RAGFlow user %s failed: %s", email, proc.stderr[:300])
-            return False
-        return True
+            err = (proc.stderr or proc.stdout or "").strip()
+            return False, err[:300]
+        return True, ""
     except Exception as e:
-        logger.warning("purge RAGFlow user %s: %s", email, e)
+        return False, str(e)
+
+
+def _purge_ragflow_user_by_email(email: str) -> bool:
+    """清理 RAGFlow 中邮箱冲突的旧账号（密码与平台 link 不一致时）。"""
+    raw = (email or "").strip().lower()
+    if not raw:
         return False
+    safe_email = raw.replace("'", "''")
+    sql = (
+        f"SET @e='{safe_email}'; "
+        "SET @uid=(SELECT id FROM user WHERE email=@e LIMIT 1); "
+        "DELETE FROM user_tenant WHERE user_id=@uid OR tenant_id=@uid; "
+        "DELETE FROM tenant_llm WHERE tenant_id=@uid; "
+        "DELETE FROM tenant WHERE id=@uid; "
+        "DELETE FROM user WHERE id=@uid;"
+    )
+    ok, err = _run_ragflow_mysql(sql)
+    if not ok:
+        logger.warning("purge RAGFlow user %s failed: %s", raw, err)
+    suffix = _uid_suffix_from_platform_email(raw)
+    if suffix:
+        suffix_ok = _purge_ragflow_user_by_uid_suffix(suffix)
+        return ok or suffix_ok
+    return ok
+
+
+def _purge_ragflow_user_by_uid_suffix(suffix: str) -> bool:
+    """按平台用户 id 后缀清理历史脏账号（中文邮箱在 MySQL 中可能乱码）。"""
+    token = (suffix or "").strip().lower()
+    if not re.fullmatch(r"[a-f0-9]{8}", token):
+        return False
+    pattern = f"%-{token}@platform.local".replace("'", "''")
+    sql = (
+        f"SET @pat='{pattern}'; "
+        "DELETE ut FROM user_tenant ut "
+        "JOIN user u ON ut.user_id=u.id OR ut.tenant_id=u.id "
+        "WHERE u.email LIKE @pat; "
+        "DELETE tl FROM tenant_llm tl "
+        "JOIN user u ON tl.tenant_id=u.id "
+        "WHERE u.email LIKE @pat; "
+        "DELETE t FROM tenant t "
+        "JOIN user u ON t.id=u.id "
+        "WHERE u.email LIKE @pat; "
+        "DELETE FROM user WHERE email LIKE @pat;"
+    )
+    ok, err = _run_ragflow_mysql(sql)
+    if not ok:
+        logger.warning("purge RAGFlow suffix %s failed: %s", token, err)
+    return ok
 
 
 def provision_and_login(link: RagflowAccountLink, user: User) -> str:

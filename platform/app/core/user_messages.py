@@ -19,6 +19,9 @@ def sanitize_user_message(message: str | None, *, fallback: str = "") -> str:
     text = (message or "").strip()
     if not text:
         return fallback
+    lower = text.lower()
+    if "password" in lower and ("match" in lower or "不匹配" in text):
+        return fallback or KNOWLEDGE_SERVICE_UNAVAILABLE
     if _VENDOR_RE.search(text) or "服务器内部" in text or "Internal Server" in text:
         return fallback or KNOWLEDGE_SERVICE_UNAVAILABLE
     return text

@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NButton, NIcon, NSpin } from "naive-ui";
 import {
-  ChatbubbleEllipsesOutline,
   CloseOutline,
   SparklesOutline,
   TimeOutline,
@@ -13,6 +12,8 @@ import { marked } from "marked";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { navigateWithReturn } from "../utils/navigationReturn";
+
+const open = defineModel("open", { type: Boolean, default: false });
 
 const route = useRoute();
 const router = useRouter();
@@ -24,7 +25,6 @@ const WELCOME_MESSAGE = {
   content: `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与后台任务等问题。`,
 };
 
-const open = ref(false);
 const sending = ref(false);
 const loadingHistory = ref(false);
 const conversationId = ref(null);
@@ -108,10 +108,6 @@ function onKeydown(e) {
     e.preventDefault();
     sendMessage();
   }
-}
-
-function toggle() {
-  open.value = !open.value;
 }
 
 function goToHistory() {
@@ -257,17 +253,6 @@ onMounted(() => {
         </footer>
       </div>
     </Transition>
-
-    <button
-      type="button"
-      class="assistant-fab"
-      :class="{ 'assistant-fab--active': open }"
-      :aria-expanded="open"
-      aria-label="打开智能助手"
-      @click="toggle"
-    >
-      <n-icon :size="20" :component="open ? CloseOutline : ChatbubbleEllipsesOutline" />
-    </button>
   </div>
   </Teleport>
 </template>

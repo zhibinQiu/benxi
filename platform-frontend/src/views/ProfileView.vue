@@ -8,12 +8,14 @@ import {
   NInput,
   NSpace,
   NText,
-  useMessage,
 } from "naive-ui";
 import { updateMe } from "../api/client";
 import { useAuth } from "../composables/useAuth";
+import { useI18n } from "../composables/useI18n";
+import { usePlatformUi } from "../composables/usePlatformUi";
 
-const message = useMessage();
+const ui = usePlatformUi();
+const { t } = useI18n();
 const { user, loadUser, hasPerm, isBootstrapAdmin } = useAuth();
 
 const saving = ref(false);
@@ -31,8 +33,8 @@ const departmentLabel = computed(() => user.value?.department_name || "—");
 const roleLabel = computed(() => {
   const names = user.value?.role_names || [];
   if (names.length) return names.join("、");
-  if (user.value?.is_system_admin) return "系统管理员";
-  return "普通用户";
+  if (user.value?.is_system_admin) return t("profile.roleAdmin");
+  return t("profile.roleUser");
 });
 
 function syncFormFromUser() {
@@ -45,19 +47,19 @@ function syncFormFromUser() {
 
 function validateForm() {
   if (!form.value.display_name?.trim()) {
-    message.warning("姓名必填");
+    ui.warning("validation.nameRequired");
     return false;
   }
   if (form.value.display_name.trim().length < 2) {
-    message.warning("姓名至少 2 个字符");
+    ui.warning("validation.nameMinLength");
     return false;
   }
   if (!form.value.email?.trim()) {
-    message.warning("邮箱必填");
+    ui.warning("validation.emailRequired");
     return false;
   }
   if (form.value.password && form.value.password.length < 6) {
-    message.warning("新密码至少 6 个字符，留空则不修改");
+    ui.warning("validation.passwordOptionalMin");
     return false;
   }
   return true;
@@ -75,9 +77,9 @@ async function submit() {
     await updateMe(payload);
     await loadUser();
     syncFormFromUser();
-    message.success("个人信息已保存");
+    ui.success("profile.saved");
   } catch (e) {
-    message.error(e.message);
+    ui.error(e);
   } finally {
     saving.value = false;
   }
@@ -89,46 +91,49 @@ onMounted(() => {
 </script>
 
 <template>
-  <n-card title="信息维护">
+  <n-card class="profile-page">
     <n-form label-placement="left" label-width="88" style="max-width: 520px">
-      <n-form-item label="手机号">
+      <n-form-item :label="t('profile.phone')">
         <n-input :value="user?.phone || '—'" disabled />
       </n-form-item>
-      <n-form-item label="姓名" required>
+      <n-form-item :label="t('profile.displayName')" required>
         <n-input
           v-model:value="form.display_name"
           :disabled="isBootstrapAdmin"
-          placeholder="登录与界面均显示此名称"
+          :placeholder="t('profile.displayNamePlaceholder')"
         />
       </n-form-item>
       <n-form-item v-if="isBootstrapAdmin" label="">
-        <n-text depth="3">系统默认管理员姓名不可在此修改</n-text>
+        <n-text depth="3">{{ t("profile.bootstrapHint") }}</n-text>
       </n-form-item>
-      <n-form-item label="邮箱" required>
-        <n-input v-model:value="form.email" placeholder="不可与他人重复" />
+      <n-form-item :label="t('profile.email')" required>
+        <n-input
+          v-model:value="form.email"
+          :placeholder="t('profile.emailPlaceholder')"
+        />
       </n-form-item>
-      <n-form-item label="新密码">
+      <n-form-item :label="t('profile.newPassword')">
         <n-input
           v-model:value="form.password"
           type="password"
           show-password-on="click"
-          placeholder="留空则不修改"
+          :placeholder="t('profile.passwordPlaceholder')"
         />
       </n-form-item>
-      <n-form-item label="部门">
+      <n-form-item :label="t('profile.department')">
         <n-text>{{ departmentLabel }}</n-text>
       </n-form-item>
-      <n-form-item label="角色">
+      <n-form-item :label="t('profile.role')">
         <n-text>{{ roleLabel }}</n-text>
       </n-form-item>
       <n-form-item v-if="showAdminGrantFields" label="">
-        <n-text depth="3">
-          部门与角色授权请在「系统设置 → 用户管理」中操作
-        </n-text>
+        <n-text depth="3">{{ t("profile.adminHint") }}</n-text>
       </n-form-item>
       <n-form-item label="">
         <n-space>
-          <n-button type="primary" :loading="saving" @click="submit">保存</n-button>
+          <n-button type="primary" :loading="saving" @click="submit">
+            {{ t("common.save") }}
+          </n-button>
         </n-space>
       </n-form-item>
     </n-form>

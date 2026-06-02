@@ -5,6 +5,7 @@ import { NButton, NSpace, NSpin, NTag, NText, useMessage } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   DOCUMENT_SCOPE_PERSONAL,
+  deleteSubscriptionItem,
   fetchSubscriptionItem,
   importSubscriptionItem,
 } from "../api/client";
@@ -17,6 +18,7 @@ const message = useMessage();
 
 const loading = ref(true);
 const importing = ref(false);
+const deleting = ref(false);
 const item = ref(null);
 
 const articleBody = computed(() => resolveArticleBody(item.value));
@@ -66,6 +68,19 @@ function openOriginal() {
   if (url) window.open(url, "_blank", "noopener");
 }
 
+async function onDelete() {
+  deleting.value = true;
+  try {
+    await deleteSubscriptionItem(route.params.ref);
+    message.success("已删除");
+    goBackToEntry(router, route, { name: "knowledge-subscriptions" });
+  } catch (e) {
+    message.error(e.message);
+  } finally {
+    deleting.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -74,16 +89,6 @@ onMounted(load);
     <div class="subscription-detail-page">
       <NSpin :show="loading" class="detail-spin">
         <div v-if="item" class="detail-layout">
-          <NSpace align="center" class="detail-toolbar">
-            <NButton
-              quaternary
-              @click="goBackToEntry(router, route, { name: 'knowledge-subscriptions' })"
-            >
-              返回列表
-            </NButton>
-            <NTag v-if="item.imported" type="success" :bordered="false">已入文档库</NTag>
-          </NSpace>
-
           <div class="detail-panel">
             <header class="detail-header">
               <span v-if="item.is_wechat" class="wechat-badge" title="微信公众号">公众号</span>
@@ -92,7 +97,8 @@ onMounted(load);
                 收录于 {{ fmtTime(item.created_at || item.publish_at) }}
                 <template v-if="item.author"> · {{ item.author }}</template>
               </NText>
-              <NSpace class="detail-actions">
+              <NSpace class="detail-actions" align="center">
+                <NTag v-if="item.imported" type="success" :bordered="false">已入文档库</NTag>
                 <NButton
                   v-if="!item.imported"
                   type="primary"
@@ -114,6 +120,9 @@ onMounted(load);
                   打开「我的」文档库
                 </NButton>
                 <NButton @click="openOriginal">查看原文</NButton>
+                <NButton type="error" secondary :loading="deleting" @click="onDelete">
+                  删除
+                </NButton>
               </NSpace>
             </header>
 
@@ -168,11 +177,6 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.detail-toolbar {
-  flex-shrink: 0;
-  margin-bottom: 12px;
 }
 
 .detail-panel {

@@ -19,6 +19,15 @@ def is_ragflow_valid_email(email: str) -> bool:
     return bool(email and RAGFLOW_EMAIL_RE.match(email.strip()))
 
 
+def _ascii_local_slug(text: str, *, max_len: int = 24) -> str:
+    """RAGFlow 登录邮箱 local 段仅 ASCII，避免 MySQL 字符集导致开户/清理失败。"""
+    slug = re.sub(
+        r"[^a-z0-9._-]+", "_", (text or "").strip().lower(), flags=re.ASCII
+    )
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug[:max_len]
+
+
 def platform_email_for_user(user) -> str:
     """mapped：每平台用户固定 username@platform.local（避免多人共用同一 QQ/企业邮箱）。"""
     settings = get_settings()
@@ -26,10 +35,10 @@ def platform_email_for_user(user) -> str:
         shared = (settings.ragflow_shared_email or "").strip().lower()
         if shared and is_ragflow_valid_email(shared):
             return shared
-    uname = re.sub(r"[^\w._-]+", "_", (user.username or "user").strip().lower())
-    uname = re.sub(r"_+", "_", uname).strip("_")[:40] or "user"
     uid_suffix = str(getattr(user, "id", "") or "").replace("-", "")[:8] or "user"
-    return f"{uname}-{uid_suffix}@platform.local"
+    uname = _ascii_local_slug(user.username or "user")
+    local = f"{uname}-{uid_suffix}" if uname else f"u-{uid_suffix}"
+    return f"{local}@platform.local"
 
 
 def _slug_token(text: str, *, max_len: int = 24) -> str:

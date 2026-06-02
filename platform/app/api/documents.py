@@ -397,6 +397,7 @@ def list_documents(
             )
             for item, doc in zip(list_items, items)
         ]
+        list_items = _attach_folder_names(db, list_items)
     else:
         items, total = document_service.list_accessible_documents(
             db,
@@ -767,7 +768,18 @@ def sync_document_knowflow(
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[DocumentKnowflowSyncOut]:
     """将当前文档强制同步到分级 KnowFlow 知识库（个人/部门/公司）。"""
+    import logging
+
+    from app.core.user_messages import (
+        KNOWLEDGE_NOT_READY,
+        KNOWLEDGE_SERVICE_UNAVAILABLE,
+        KNOWLEDGE_SYNC_DISABLED,
+        KNOWLEDGE_SYNC_FAILED,
+        KNOWLEDGE_SYNC_OK,
+    )
     from app.services.document_service import resolve_current_version
+
+    logger = logging.getLogger(__name__)
 
     doc = document_service.get_document(db, document_id)
     if not doc or doc.deleted_at:
@@ -781,37 +793,56 @@ def sync_document_knowflow(
         return ApiResponse(
             data=DocumentKnowflowSyncOut(
                 knowflow_synced=False,
-                message="知识库同步未启用，请联系管理员。",
+                message=KNOWLEDGE_SYNC_DISABLED,
             )
         )
 
-    kf = knowledge.client_for_user(db, user)
-    if not kf.enabled():
+    if not knowledge.stack_reachable():
         return ApiResponse(
             data=DocumentKnowflowSyncOut(
                 knowflow_synced=False,
-                message="知识服务未就绪，请稍后重试。",
+                message=KNOWLEDGE_SERVICE_UNAVAILABLE,
             )
         )
 
-    rid = knowledge.sync_document(db, user, doc, force=True)
-    db.commit()
-    link = knowledge.document_link(db, document_id)
-    if rid:
+    try:
+        knowledge.user_auth(db, user)
+        kf = knowledge.client_for_user(db, user)
+        if not kf.enabled():
+            return ApiResponse(
+                data=DocumentKnowflowSyncOut(
+                    knowflow_synced=False,
+                    message=KNOWLEDGE_NOT_READY,
+                )
+            )
+
+        rid = knowledge.sync_document(db, user, doc, force=True)
+        db.commit()
+        link = knowledge.document_link(db, document_id)
+        if rid:
+            return ApiResponse(
+                data=DocumentKnowflowSyncOut(
+                    knowflow_synced=True,
+                    ragflow_document_id=rid,
+                    dataset_id=link.dataset_id if link else None,
+                    message=KNOWLEDGE_SYNC_OK,
+                )
+            )
         return ApiResponse(
             data=DocumentKnowflowSyncOut(
-                knowflow_synced=True,
-                ragflow_document_id=rid,
-                dataset_id=link.dataset_id if link else None,
-                message="已同步到知识库",
+                knowflow_synced=False,
+                message=KNOWLEDGE_SYNC_FAILED,
             )
         )
-    return ApiResponse(
-        data=DocumentKnowflowSyncOut(
-            knowflow_synced=False,
-            message="同步到知识库失败，请稍后重试或联系管理员。",
+    except Exception:
+        logger.exception("sync-knowflow failed doc=%s user=%s", document_id, user.id)
+        db.rollback()
+        return ApiResponse(
+            data=DocumentKnowflowSyncOut(
+                knowflow_synced=False,
+                message=KNOWLEDGE_SYNC_FAILED,
+            )
         )
-    )
 
 
 @router.get(

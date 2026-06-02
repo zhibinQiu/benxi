@@ -12,14 +12,20 @@ import {
   useMessage,
 } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
-import { PLATFORM_APP_NAME } from "../constants/platform";
+import { useAppPreferences } from "../composables/useAppPreferences";
+import { useI18n } from "../composables/useI18n";
 import { markSkipMotionAfterLogin } from "../utils/routeTransition";
 import { publicAsset } from "../utils/appBase";
+import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
+import { NIcon } from "naive-ui";
+import PlatformCopyright from "../components/PlatformCopyright.vue";
 
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
 const { login, register } = useAuth();
+const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
+const { t, localeLabel } = useI18n();
 
 const account = ref("15963564658");
 const password = ref("admin123");
@@ -203,15 +209,24 @@ function flipToLogin() {
     </div>
 
     <div class="login-page__layout">
+      <div class="login-preferences">
+        <n-button quaternary circle size="small" :aria-label="isDark ? t('userMenu.lightMode') : t('userMenu.darkMode')" @click="toggleTheme">
+          <n-icon :size="18" :component="isDark ? SunnyOutline : MoonOutline" />
+        </n-button>
+        <n-button quaternary size="small" @click="toggleLocale">
+          <n-icon :size="16" :component="LanguageOutline" style="margin-right: 4px" />
+          {{ localeLabel }}
+        </n-button>
+      </div>
       <aside class="login-showcase">
         <div class="login-showcase__inner">
-          <img :src="publicAsset('logo.svg')" :alt="PLATFORM_APP_NAME" class="login-showcase__logo" />
-          <h1 class="login-showcase__title">{{ PLATFORM_APP_NAME }}</h1>
-          <p class="login-showcase__tagline">统一入口 · 企业级 AI 应用平台</p>
+          <img :src="publicAsset('logo.svg')" :alt="t('app.name')" class="login-showcase__logo" />
+          <h1 class="login-showcase__title">{{ t("login.showcaseTitle") }}</h1>
+          <p class="login-showcase__tagline">{{ t("login.showcaseTagline") }}</p>
           <ul class="login-showcase__points">
-            <li>智能体本地化部署</li>
-            <li>数据不出域 · 隐私可控</li>
-            <li>文档 · 问答 · 双碳业务一体</li>
+            <li>{{ t("login.point1") }}</li>
+            <li>{{ t("login.point2") }}</li>
+            <li>{{ t("login.point3") }}</li>
           </ul>
         </div>
       </aside>
@@ -226,27 +241,27 @@ function flipToLogin() {
             <div class="login-flip__face login-flip__face--front">
               <n-card class="login-card" size="large">
                 <template #header>
-                  <span class="login-title">登录</span>
+                  <span class="login-title">{{ t("login.title") }}</span>
                 </template>
                 <n-form class="login-form" @submit.prevent="onSubmit">
-                  <n-form-item label="手机号 / 姓名">
+                  <n-form-item :label="t('login.account')">
                     <n-input
                       v-model:value="account"
-                      placeholder="11 位手机号或姓名"
+                      :placeholder="t('login.account')"
                     />
                   </n-form-item>
-                  <n-form-item label="密码">
+                  <n-form-item :label="t('login.password')">
                     <n-input
                       v-model:value="password"
                       type="password"
                       show-password-on="click"
-                      placeholder="请输入密码"
+                      :placeholder="t('login.password')"
                       @keyup.enter="onSubmit"
                     />
                   </n-form-item>
                   <n-space vertical :size="10" style="width: 100%">
                     <n-button type="primary" block :loading="loading" attr-type="submit">
-                      登录
+                      {{ t("login.submit") }}
                     </n-button>
                     <n-button
                       block
@@ -254,10 +269,10 @@ function flipToLogin() {
                       :disabled="loading || exiting"
                       @click="flipToRegister"
                     >
-                      注册账号
+                      {{ t("login.register") }}
                     </n-button>
                     <n-text depth="3" class="login-footnote">
-                      聚焦智能体本地化开发，重视数据隐私
+                      {{ t("login.footnote") }}
                     </n-text>
                   </n-space>
                 </n-form>
@@ -267,51 +282,51 @@ function flipToLogin() {
             <div class="login-flip__face login-flip__face--back">
               <n-card class="login-card" size="large">
                 <template #header>
-                  <span class="login-title">注册账号</span>
+                  <span class="login-title">{{ t("login.registerTitle") }}</span>
                 </template>
                 <n-text depth="3" class="login-register-hint">
-                  公开注册仅创建普通用户，如需管理员权限请联系系统管理员。
+                  {{ t("login.registerHint") }}
                 </n-text>
                 <n-form class="login-register-form" @submit.prevent="onRegister">
-                  <n-form-item label="手机号">
+                  <n-form-item :label="t('login.phone')">
                     <n-input
                       v-model:value="regPhone"
-                      placeholder="11 位手机号"
+                      :placeholder="t('login.phone')"
                       maxlength="11"
                     />
                   </n-form-item>
-                  <n-form-item label="邮箱" required>
+                  <n-form-item :label="t('login.email')" required>
                     <n-input
                       v-model:value="regEmail"
-                      placeholder="用于登录与找回，不可重复"
+                      :placeholder="t('login.email')"
                     />
                   </n-form-item>
-                  <n-form-item label="姓名">
+                  <n-form-item :label="t('login.displayName')">
                     <n-input
                       v-model:value="regDisplayName"
-                      placeholder="登录与界面均显示此名称，至少 2 个字符"
+                      :placeholder="t('login.displayName')"
                     />
                   </n-form-item>
-                  <n-form-item label="密码">
+                  <n-form-item :label="t('login.password')">
                     <n-input
                       v-model:value="regPassword"
                       type="password"
                       show-password-on="click"
-                      placeholder="至少 6 个字符"
+                      :placeholder="t('login.password')"
                     />
                   </n-form-item>
-                  <n-form-item label="确认密码">
+                  <n-form-item :label="t('login.passwordConfirm')">
                     <n-input
                       v-model:value="regPassword2"
                       type="password"
                       show-password-on="click"
-                      placeholder="再次输入密码"
+                      :placeholder="t('login.passwordConfirm')"
                       @keyup.enter="onRegister"
                     />
                   </n-form-item>
                   <n-space vertical :size="10" style="width: 100%">
                     <n-button type="primary" block :loading="registering" attr-type="submit">
-                      注册并登录
+                      {{ t("login.registerSubmit") }}
                     </n-button>
                     <n-button
                       block
@@ -319,7 +334,7 @@ function flipToLogin() {
                       :disabled="registering || exiting"
                       @click="flipToLogin"
                     >
-                      返回登录
+                      {{ t("login.backToLogin") }}
                     </n-button>
                   </n-space>
                 </n-form>
@@ -329,6 +344,9 @@ function flipToLogin() {
         </div>
       </main>
     </div>
+    <footer class="login-page__copyright">
+      <PlatformCopyright compact />
+    </footer>
   </div>
 </template>
 
@@ -337,7 +355,26 @@ function flipToLogin() {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  background: linear-gradient(180deg, #f8fafc 0%, #f0fdfa 42%, #f1f5f9 100%);
+  background: var(--platform-bg);
+}
+
+.login-page__copyright {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.login-preferences {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .login-page--exit {
@@ -367,7 +404,7 @@ function flipToLogin() {
   height: min(48vw, 480px);
   top: -8%;
   left: -6%;
-  background: radial-gradient(circle, rgba(13, 148, 136, 0.22) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--platform-accent-soft-2) 0%, transparent 70%);
 }
 
 .login-page__orb--2 {
@@ -375,7 +412,7 @@ function flipToLogin() {
   height: min(40vw, 400px);
   bottom: -6%;
   right: 4%;
-  background: radial-gradient(circle, rgba(45, 212, 191, 0.18) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--platform-accent-soft) 0%, transparent 70%);
 }
 
 .login-page__orb--3 {
@@ -383,15 +420,15 @@ function flipToLogin() {
   height: min(32vw, 320px);
   top: 42%;
   left: 38%;
-  background: radial-gradient(circle, rgba(148, 163, 184, 0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--platform-divider) 0%, transparent 70%);
 }
 
 .login-page__grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+    linear-gradient(var(--platform-divider) 1px, transparent 1px),
+    linear-gradient(90deg, var(--platform-divider) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, #000 15%, transparent 100%);
 }
@@ -431,14 +468,14 @@ function flipToLogin() {
   font-size: clamp(1.75rem, 3vw, 2.25rem);
   font-weight: 700;
   line-height: 1.25;
-  color: #0f172a;
-  letter-spacing: 0.02em;
+  color: var(--platform-text);
+  letter-spacing: -0.03em;
 }
 
 .login-showcase__tagline {
   margin: 0 0 28px;
   font-size: 15px;
-  color: #64748b;
+  color: var(--platform-text-secondary);
   line-height: 1.6;
 }
 
@@ -455,7 +492,7 @@ function flipToLogin() {
   position: relative;
   padding-left: 18px;
   font-size: 14px;
-  color: #475569;
+  color: var(--platform-text-secondary);
   line-height: 1.5;
 }
 
@@ -467,8 +504,7 @@ function flipToLogin() {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #0d9488;
-  box-shadow: 0 0 6px rgba(13, 148, 136, 0.35);
+  background: var(--platform-accent);
 }
 
 .login-main {
@@ -509,8 +545,8 @@ function flipToLogin() {
 
 .login-card {
   width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--platform-border);
+  box-shadow: var(--platform-shadow-lg);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -526,7 +562,8 @@ function flipToLogin() {
 .login-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--platform-text);
+  letter-spacing: -0.02em;
 }
 
 .login-form {
@@ -538,7 +575,7 @@ function flipToLogin() {
   font-size: 12px;
   line-height: 1.55;
   text-align: center;
-  color: #94a3b8;
+  color: var(--platform-text-tertiary);
 }
 
 .login-register-hint {
@@ -574,7 +611,7 @@ function flipToLogin() {
 <style>
 .login-card-fly-clone {
   box-sizing: border-box;
-  background: #fff !important;
+  background: var(--platform-bg-elevated) !important;
   will-change: transform, opacity;
 }
 </style>

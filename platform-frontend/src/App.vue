@@ -1,31 +1,28 @@
 <script setup>
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { NConfigProvider, NMessageProvider, NDialogProvider, zhCN, dateZhCN } from "naive-ui";
+import {
+  NConfigProvider,
+  NMessageProvider,
+  NDialogProvider,
+  darkTheme,
+  zhCN,
+  enUS,
+  dateZhCN,
+  dateEnUS,
+} from "naive-ui";
+import { useAppPreferences } from "./composables/useAppPreferences";
+import { useI18n } from "./composables/useI18n";
+import { createThemeOverrides } from "./utils/platformTheme";
 import { shouldSkipAppRouteMotion } from "./utils/routeTransition";
 
-const platformTheme = {
-  common: {
-    primaryColor: "#0d9488",
-    primaryColorHover: "#14b8a6",
-    primaryColorPressed: "#0f766e",
-    primaryColorSuppl: "#2dd4bf",
-    bodyColor: "#f1f5f9",
-    cardColor: "#ffffff",
-    borderRadius: "10px",
-    borderRadiusSmall: "8px",
-    fontWeightStrong: "600",
-  },
-  Card: {
-    borderRadius: "10px",
-    paddingMedium: "14px 16px",
-    titleFontSizeMedium: "14px",
-  },
-  Button: {
-    borderRadiusMedium: "8px",
-    borderRadiusSmall: "6px",
-  },
-};
+const { isDark } = useAppPreferences();
+const { locale, t } = useI18n();
+
+const naiveTheme = computed(() => (isDark.value ? darkTheme : null));
+const themeOverrides = computed(() => createThemeOverrides(isDark.value));
+const naiveLocale = computed(() => (locale.value === "en" ? enUS : zhCN));
+const naiveDateLocale = computed(() => (locale.value === "en" ? dateEnUS : dateZhCN));
 
 const router = useRouter();
 const appRouteTransition = ref("app-route");
@@ -35,10 +32,23 @@ router.beforeEach((to, from) => {
     ? "app-route-instant"
     : "app-route";
 });
+
+watch(
+  locale,
+  () => {
+    document.title = t("app.name");
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
-  <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme-overrides="platformTheme">
+  <n-config-provider
+    :theme="naiveTheme"
+    :locale="naiveLocale"
+    :date-locale="naiveDateLocale"
+    :theme-overrides="themeOverrides"
+  >
     <n-message-provider>
       <n-dialog-provider>
         <div class="app-shell">
@@ -54,15 +64,19 @@ router.beforeEach((to, from) => {
 </template>
 
 <style>
+@import "./styles/tokens.css";
+
 html,
 body,
 #app {
   margin: 0;
   min-height: 100vh;
-  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  background: #f1f5f9;
-  color: #0f172a;
+  font-family: var(--platform-font);
+  background: var(--platform-bg);
+  color: var(--platform-text);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .app-shell {

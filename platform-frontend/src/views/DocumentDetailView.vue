@@ -346,10 +346,17 @@ async function syncKnowflow() {
     if (res.knowflow_synced) {
       message.success(res.message || "已同步到知识库");
     } else {
-      message.warning(res.message || "未能同步到知识库");
+      message.warning(res.message || "未能同步到知识库，请稍后重试");
     }
   } catch (e) {
-    message.error(e.message);
+    const text = String(e?.message || "");
+    if (text.includes("知识服务暂不可用") || text.includes("服务器内部")) {
+      message.warning(
+        "同步知识库失败：请确认 KnowFlow/RAGFlow 服务已启动，且当前账号已完成知识库开户（可先打开「切片管理」页）。"
+      );
+    } else {
+      message.error(text || "同步知识库失败");
+    }
   } finally {
     syncingKnowflow.value = false;
   }

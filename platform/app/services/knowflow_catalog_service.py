@@ -16,6 +16,7 @@ from app.models.ragflow_scope_dataset import RagflowScopeDataset
 from app.services.ragflow_identity_service import get_or_create_link, get_user_ragflow_auth
 from app.services.ragflow_scope_service import (
     _visible_dataset_ids,
+    dedupe_orphan_scope_datasets,
     ensure_user_scope_datasets,
     repair_stale_scope_registries,
     sync_all_kb_display_names,
@@ -83,6 +84,7 @@ def reconcile_user_knowflow_catalog(
 
     ensure_user_scope_datasets(db, user, kf)
     renamed_kb = sync_all_kb_display_names(db, kf)
+    orphan_datasets = dedupe_orphan_scope_datasets(db, user, kf)
     grants = sync_user_kb_grants(db, user)
     repaired_scopes = repair_stale_scope_registries(db, kf)
     orphan_links = _drop_orphan_document_links(db, kf)
@@ -102,4 +104,5 @@ def reconcile_user_knowflow_catalog(
         "catalog_prepared": True,
         "visible_datasets": len(_visible_dataset_ids(kf)),
         "renamed_kb": renamed_kb,
+        "orphan_datasets": orphan_datasets,
     }

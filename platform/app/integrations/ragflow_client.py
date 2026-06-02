@@ -175,6 +175,17 @@ class RagflowClient:
             json={"name": name},
         )
 
+    def delete_dataset(self, dataset_id: str) -> bool:
+        """删除知识库（仅 session API / KnowFlow Web）。"""
+        ds_id = (dataset_id or "").strip()
+        if not ds_id:
+            return False
+        if self._use_session_api:
+            self._request("POST", "/v1/kb/rm", json={"kb_id": ds_id})
+            return True
+        self._request("DELETE", f"/api/v1/datasets/{ds_id}")
+        return True
+
     def find_dataset_by_names(self, names: list[str]) -> dict | None:
         seen: set[str] = set()
         for name in names:

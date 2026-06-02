@@ -30,15 +30,16 @@ def test_dataset_names_by_scope():
 def test_scope_key_for_document():
     owner = uuid.uuid4()
     dept = uuid.uuid4()
+    db = MagicMock()
 
     company = MagicMock(dept_id=None, owner_id=owner, scope=SCOPE_COMPANY)
-    assert scope_key_for_document(company) == COMPANY_SCOPE_KEY
+    assert scope_key_for_document(db, company) == COMPANY_SCOPE_KEY
 
     dept_doc = MagicMock(dept_id=dept, owner_id=owner, scope=SCOPE_DEPARTMENT)
-    assert scope_key_for_document(dept_doc) == str(dept)
+    assert scope_key_for_document(db, dept_doc) == str(dept)
 
     personal = MagicMock(dept_id=None, owner_id=owner, scope=SCOPE_PERSONAL)
-    assert scope_key_for_document(personal) == str(owner)
+    assert scope_key_for_document(db, personal) == str(owner)
 
 
 def test_kb_level_maps_delete_to_admin():

@@ -11,6 +11,7 @@ from app.models.org import User
 from app.storage.object_store import get_object_store
 
 from app.services.documents.crud import document_has_uploaded_version
+from app.services.documents.acl import _subject_user_label
 
 
 def _user_share_meta(

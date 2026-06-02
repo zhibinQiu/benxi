@@ -121,7 +121,7 @@ async function onIngest() {
   ingesting.value = true;
   try {
     const detail = await ingestSubscriptionUrl(url);
-    message.success("已收录");
+    message.success(detail.summary ? "已收录并生成摘要" : "已收录");
     ingestUrl.value = "";
     await loadItems();
     openItem(detail.ref);
@@ -148,7 +148,7 @@ onMounted(reload);
     <div class="subscriptions-page">
       <NCard size="small" class="subscriptions-ingest">
         <NText depth="3" class="ingest-hint">
-          粘贴文章链接即可收录（微信公众号、网站文章等），收录后可在下方搜索与管理。
+          粘贴文章链接即可收录（微信公众号、网站文章等）；收录后将自动生成 AI 摘要，并可在下方搜索与管理。
         </NText>
         <NSpace align="center">
           <NInput

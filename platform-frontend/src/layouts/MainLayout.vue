@@ -14,6 +14,7 @@ import {
   NAvatar,
   NPopover,
   NDropdown,
+  NTooltip,
 } from "naive-ui";
 import {
   DocumentTextOutline,
@@ -33,13 +34,21 @@ import {
   NewspaperOutline,
   PersonOutline,
   ChevronDownOutline,
+  MoonOutline,
+  SunnyOutline,
+  LanguageOutline,
+  ChatbubbleEllipsesOutline,
 } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
+import { useAppPreferences } from "../composables/useAppPreferences";
+import { useI18n } from "../composables/useI18n";
+import { getPageHeaderOverride } from "../composables/usePageHeader";
 import { resolveFeatureIcon } from "../constants/featureIcons";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { fetchJobs, fetchNotifications } from "../api/client";
 import AssistantChatFab from "../components/AssistantChatFab.vue";
+import PlatformCopyright from "../components/PlatformCopyright.vue";
 import JobsPanel from "../components/JobsPanel.vue";
 import NotificationsPanel from "../components/NotificationsPanel.vue";
 import { consumeSkipInnerRouteMotion } from "../utils/routeTransition";
@@ -49,6 +58,9 @@ import { goBackToEntry } from "../utils/navigationReturn";
 const route = useRoute();
 const router = useRouter();
 const { user, loadUser, logout, hasPerm } = useAuth();
+const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
+const { t, routeTitle, localeLabel } = useI18n();
+const pageHeaderOverride = getPageHeaderOverride();
 
 const innerRouteTransition = ref(
   consumeSkipInnerRouteMotion() ? "route-instant" : "route-fade",
@@ -62,6 +74,7 @@ const activeJobCount = ref(0);
 const siderCollapsed = ref(false);
 const jobsPopoverOpen = ref(false);
 const notificationsPopoverOpen = ref(false);
+const assistantOpen = ref(false);
 
 async function refreshUnreadCount() {
   try {
@@ -108,28 +121,28 @@ const settingsChildren = computed(() => {
   const children = [];
   if (showUserAdmin.value) {
     children.push({
-      label: "用户管理",
+      label: t("menu.users"),
       key: "admin-users",
       icon: () => h(NIcon, null, { default: () => h(PeopleOutline) }),
     });
   }
   if (showDeptAdmin.value) {
     children.push({
-      label: "部门管理",
+      label: t("menu.departments"),
       key: "admin-departments",
       icon: () => h(NIcon, null, { default: () => h(BusinessOutline) }),
     });
   }
   if (showMonitor.value) {
     children.push({
-      label: "系统监控",
+      label: t("menu.monitor"),
       key: "admin-monitor",
       icon: () => h(NIcon, null, { default: () => h(PulseOutline) }),
     });
   }
   if (showModelSettings.value) {
     children.push({
-      label: "模型配置",
+      label: t("menu.modelSettings"),
       key: "admin-model-settings",
       icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) }),
     });
@@ -140,39 +153,34 @@ const settingsChildren = computed(() => {
 const menuOptions = computed(() => {
   const items = [
     {
-      label: "双碳智能体",
+      label: t("menu.aiHome"),
       key: "ai-home",
       icon: () => h(NIcon, null, { default: () => h(SparklesOutline) }),
     },
     {
-      label: "功能列表",
+      label: t("menu.systemFunctions"),
       key: "system-functions",
       icon: () => h(NIcon, null, { default: () => h(GridOutline) }),
     },
     {
-      label: "待办事项",
-      key: "todos",
-      icon: () => h(NIcon, null, { default: () => h(ListOutline) }),
-    },
-    {
-      label: "文档中心",
+      label: t("menu.documents"),
       key: "documents",
       icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
     },
     {
-      label: "网站收藏",
+      label: t("menu.knowledgeSubscriptions"),
       key: "knowledge-subscriptions",
       icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) }),
     },
     {
-      label: "切片管理",
+      label: t("menu.knowledgeGraph"),
       key: "knowledge-graph",
       icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
     },
   ];
   if (showSystemSettings.value && settingsChildren.value.length) {
     items.push({
-      label: "系统设置",
+      label: t("menu.systemSettings"),
       key: SETTINGS_KEY,
       icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
       children: settingsChildren.value,
@@ -211,13 +219,11 @@ const isSubsystemPage = computed(() =>
   SUBSYSTEM_HEADER_ROUTES.has(String(route.name || ""))
 );
 
-/** 主菜单一级页与常用业务页展示悬浮客服；子功能全屏页与双碳首页不展示 */
-const showAssistant = computed(() => {
-  if (route.meta?.public || route.meta?.hideAssistant) return false;
-  if (route.name === "login" || route.name === "ai-home") return false;
-  if (isSubsystemPage.value) return false;
-  return true;
-});
+function toggleAssistant() {
+  jobsPopoverOpen.value = false;
+  notificationsPopoverOpen.value = false;
+  assistantOpen.value = !assistantOpen.value;
+}
 
 const activeKey = computed(() => {
   if (route.name === "document-detail") return "documents";
@@ -260,7 +266,12 @@ const activeKey = computed(() => {
 
 const fullHeightPage = computed(() => Boolean(route.meta?.fullHeight));
 
-const headerTitle = computed(() => String(route.meta?.title || "").trim());
+const headerTitle = computed(() => {
+  if (pageHeaderOverride.value) return pageHeaderOverride.value;
+  return routeTitle(String(route.name || ""), String(route.meta?.title || "").trim());
+});
+
+const appDisplayName = computed(() => t("app.name") || PLATFORM_APP_NAME);
 
 const headerIcon = computed(() => resolveFeatureIcon(route.meta?.featureIcon));
 
@@ -310,6 +321,8 @@ watch(() => route.name, ensureMenuExpanded, { immediate: true });
 watch(
   () => route.name,
   (name) => {
+    jobsPopoverOpen.value = false;
+    notificationsPopoverOpen.value = false;
     if (name && name !== "login") refreshHeaderBadges();
   }
 );
@@ -330,12 +343,20 @@ function closeNotificationsPopover() {
   notificationsPopoverOpen.value = false;
 }
 
+function goTodos() {
+  jobsPopoverOpen.value = false;
+  notificationsPopoverOpen.value = false;
+  router.push({ name: "todos" });
+}
+
 function onExpandedKeysUpdate(keys) {
   expandedKeys.value = keys;
 }
 
 function onMenuSelect(key) {
   if (key === SETTINGS_KEY) return;
+  jobsPopoverOpen.value = false;
+  notificationsPopoverOpen.value = false;
   router.push({ name: key });
 }
 
@@ -345,31 +366,64 @@ function doLogout() {
 }
 
 const userDisplayName = computed(
-  () => user.value?.display_name || user.value?.username || "用户"
+  () =>
+    user.value?.display_name ||
+    user.value?.username ||
+    t("userMenu.defaultName")
 );
 
-const userMenuOptions = [
+const userMenuOptions = computed(() => [
   {
-    label: "信息维护",
+    label: t("userMenu.profile"),
     key: "profile",
     icon: () => h(NIcon, null, { default: () => h(PersonOutline) }),
   },
-  { type: "divider", key: "divider" },
+  { type: "divider", key: "divider-prefs" },
   {
-    label: "退出",
+    label: isDark.value ? t("userMenu.lightMode") : t("userMenu.darkMode"),
+    key: "theme",
+    icon: () =>
+      h(NIcon, null, {
+        default: () => h(isDark.value ? SunnyOutline : MoonOutline),
+      }),
+  },
+  {
+    label: localeLabel.value,
+    key: "locale",
+    icon: () => h(NIcon, null, { default: () => h(LanguageOutline) }),
+  },
+  { type: "divider", key: "divider-logout" },
+  {
+    label: t("userMenu.logout"),
     key: "logout",
     icon: () => h(NIcon, null, { default: () => h(LogOutOutline) }),
   },
-];
+]);
 
 function onUserMenuSelect(key) {
   if (key === "profile") {
     router.push({ name: "profile" });
     return;
   }
+  if (key === "theme") {
+    toggleTheme();
+    return;
+  }
+  if (key === "locale") {
+    toggleLocale();
+    return;
+  }
   if (key === "logout") {
     doLogout();
   }
+}
+
+function renderUserMenuOption({ node, option }) {
+  if (option.type === "divider") return node;
+  if (option.key === "logout") {
+    return h("div", { class: "platform-dropdown-option--danger" }, node);
+  }
+  return node;
 }
 </script>
 
@@ -387,7 +441,7 @@ function onUserMenuSelect(key) {
       <div class="sider-inner">
         <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
           <img :src="publicAsset('logo.svg')" alt="" class="brand-logo" />
-          <span v-if="!siderCollapsed" class="brand-name">{{ PLATFORM_APP_NAME }}</span>
+          <span v-if="!siderCollapsed" class="brand-name">{{ appDisplayName }}</span>
         </div>
         <n-menu
           class="sider-menu"
@@ -397,6 +451,7 @@ function onUserMenuSelect(key) {
           @update:expanded-keys="onExpandedKeysUpdate"
           @update:value="onMenuSelect"
         />
+        <PlatformCopyright v-if="!siderCollapsed" class="sider-copyright" />
       </div>
     </n-layout-sider>
     <n-layout class="app-main">
@@ -414,7 +469,7 @@ function onUserMenuSelect(key) {
               circle
               size="small"
               class="header-back"
-              aria-label="返回"
+              :aria-label="t('header.back')"
               @click="goSubsystemBack"
             >
               <n-icon :size="20" :component="ArrowBackOutline" />
@@ -436,10 +491,21 @@ function onUserMenuSelect(key) {
             <n-text v-if="showStandardFeatureTitle" strong class="header-title">
               {{ headerTitle }}
             </n-text>
-            <n-text v-else-if="showAppTitle" depth="2">{{ PLATFORM_APP_NAME }}</n-text>
+            <n-text v-else-if="showAppTitle" depth="2">{{ appDisplayName }}</n-text>
           </n-space>
           <div class="header-actions">
             <div class="header-toolbar">
+              <n-button
+                quaternary
+                circle
+                size="small"
+                class="header-icon-btn"
+                :type="route.name === 'todos' ? 'primary' : 'default'"
+                :aria-label="t('header.todos')"
+                @click="goTodos"
+              >
+                <n-icon :size="18" :component="ListOutline" />
+              </n-button>
               <n-popover
                 v-model:show="jobsPopoverOpen"
                 trigger="click"
@@ -455,7 +521,7 @@ function onUserMenuSelect(key) {
                       size="small"
                       class="header-icon-btn"
                       :type="jobsPopoverOpen || route.name === 'jobs' ? 'primary' : 'default'"
-                      aria-label="后台任务"
+                      :aria-label="t('header.jobs')"
                     >
                       <n-icon :size="18" :component="TimeOutline" />
                     </n-button>
@@ -487,7 +553,7 @@ function onUserMenuSelect(key) {
                           ? 'primary'
                           : 'default'
                       "
-                      aria-label="消息"
+                      :aria-label="t('header.notifications')"
                     >
                       <n-icon :size="18" :component="NotificationsOutline" />
                     </n-button>
@@ -500,14 +566,31 @@ function onUserMenuSelect(key) {
                   @navigate="closeNotificationsPopover"
                 />
               </n-popover>
+              <n-tooltip placement="bottom">
+                <template #trigger>
+                  <n-button
+                    quaternary
+                    circle
+                    size="small"
+                    class="header-icon-btn"
+                    :type="assistantOpen ? 'primary' : 'default'"
+                    :aria-label="t('header.assistant')"
+                    @click="toggleAssistant"
+                  >
+                    <n-icon :size="18" :component="ChatbubbleEllipsesOutline" />
+                  </n-button>
+                </template>
+                {{ t("header.assistant") }}
+              </n-tooltip>
             </div>
             <n-dropdown
               trigger="click"
               placement="bottom-end"
               :options="userMenuOptions"
+              :render-option="renderUserMenuOption"
               @select="onUserMenuSelect"
             >
-              <button type="button" class="header-user-trigger" aria-label="用户菜单">
+              <button type="button" class="header-user-trigger" :aria-label="t('header.userMenu')">
                 <n-avatar round size="small" class="header-user-avatar">
                   {{ userDisplayName[0] || "U" }}
                 </n-avatar>
@@ -536,7 +619,7 @@ function onUserMenuSelect(key) {
         </div>
       </n-layout-content>
     </n-layout>
-    <AssistantChatFab v-if="showAssistant" />
+    <AssistantChatFab v-model:open="assistantOpen" />
   </n-layout>
 </template>
 
@@ -568,9 +651,9 @@ function onUserMenuSelect(key) {
   gap: 10px;
   font-weight: 600;
   font-size: 0.95rem;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.02em;
   padding: 10px 18px 14px;
-  color: #0f172a;
+  color: var(--platform-text);
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -596,6 +679,10 @@ function onUserMenuSelect(key) {
   min-height: 0;
   overflow-y: auto;
 }
+.sider-copyright {
+  flex-shrink: 0;
+  border-top: 1px solid var(--platform-divider);
+}
 .app-main {
   height: 100vh;
   min-height: 0;
@@ -619,8 +706,9 @@ function onUserMenuSelect(key) {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
+  background: var(--platform-header-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 .header-title-wrap {
   min-width: 0;
@@ -633,32 +721,35 @@ function onUserMenuSelect(key) {
 
 .header-back {
   flex-shrink: 0;
-  color: #0d9488;
+  color: var(--platform-accent);
 }
 
 .header-back:hover {
-  color: #0f766e;
+  color: var(--platform-accent-hover);
 }
 
 .header-feature-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--n-text-color);
+  color: var(--platform-text);
 }
 
 .header-feature-icon--brand {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  color: #0d9488;
-  background: linear-gradient(160deg, #f0fdfa 0%, #ccfbf1 100%);
-  border: 1px solid rgba(13, 148, 136, 0.18);
-  border-radius: var(--platform-radius-sm, 8px);
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius-sm);
 }
 
 .header-title {
   font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--platform-text);
 }
 .header-actions {
   flex-shrink: 0;
@@ -674,8 +765,8 @@ function onUserMenuSelect(key) {
   gap: 2px;
   padding: 3px;
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.04);
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: var(--platform-toolbar-bg);
+  border: 1px solid var(--platform-border);
 }
 
 .header-icon-btn {
@@ -689,9 +780,9 @@ function onUserMenuSelect(key) {
   gap: 8px;
   max-width: 180px;
   padding: 4px 10px 4px 4px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius-pill);
+  background: var(--platform-toolbar-bg);
   cursor: pointer;
   font: inherit;
   color: inherit;
@@ -701,12 +792,15 @@ function onUserMenuSelect(key) {
 }
 
 .header-user-trigger:hover {
-  background: rgba(240, 253, 250, 0.95);
-  border-color: rgba(13, 148, 136, 0.22);
+  background: var(--platform-bg-elevated);
+  border-color: var(--platform-border-strong);
 }
 
 .header-user-avatar {
   flex-shrink: 0;
+  background: var(--platform-accent-soft) !important;
+  color: var(--platform-accent) !important;
+  font-weight: 600;
 }
 
 .header-username {
@@ -715,12 +809,13 @@ function onUserMenuSelect(key) {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  color: #334155;
+  font-weight: 500;
+  color: var(--platform-text);
 }
 
 .header-user-chevron {
   flex-shrink: 0;
-  color: #94a3b8;
+  color: var(--platform-text-tertiary);
 }
 .app-content--full {
   display: flex;

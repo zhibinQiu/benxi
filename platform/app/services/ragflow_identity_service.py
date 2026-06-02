@@ -56,6 +56,19 @@ def _sync_link_email(db: Session, link: RagflowAccountLink, user: User) -> None:
         link.ragflow_user_id = None
         if not shared:
             link.ragflow_password = None
+        if current:
+            from app.integrations.ragflow_provision import (
+                _purge_ragflow_user_by_email,
+                _purge_ragflow_user_by_uid_suffix,
+                _uid_suffix_from_platform_email,
+            )
+
+            _purge_ragflow_user_by_email(current)
+            suffix = _uid_suffix_from_platform_email(current) or _uid_suffix_from_platform_email(
+                expected
+            )
+            if suffix:
+                _purge_ragflow_user_by_uid_suffix(suffix)
     link.ragflow_email = expected
     if shared and shared_pwd:
         link.ragflow_password = shared_pwd

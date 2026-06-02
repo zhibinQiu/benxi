@@ -226,6 +226,7 @@ const routes = [
       {
         path: "notifications",
         name: "notifications",
+        meta: { title: "消息通知", featureIcon: "notifications" },
         component: () => import("../views/NotificationsView.vue"),
       },
       {

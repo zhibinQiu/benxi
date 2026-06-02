@@ -2,6 +2,7 @@
 import { computed, useSlots } from "vue";
 import { useRoute } from "vue-router";
 import { getFeatureDescription } from "../constants/featureDescriptions";
+import HintTooltip from "./HintTooltip.vue";
 
 const props = defineProps({
   description: { type: String, default: "" },
@@ -26,22 +27,17 @@ const showHeader = computed(
 
 <template>
   <header v-if="showHeader" class="subsystem-header">
-    <div v-if="$slots.extra" class="subsystem-extra-row">
+    <div v-if="showIntroBlock || $slots.extra" class="subsystem-extra-row">
       <slot name="extra" />
+      <HintTooltip v-if="showIntroBlock" :text="introText" />
     </div>
-    <p v-if="showIntroBlock" class="subsystem-desc">{{ introText }}</p>
   </header>
 </template>
 
 <style scoped>
 .subsystem-header {
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+  margin-bottom: 4px;
 }
 
 .subsystem-extra-row {
@@ -49,13 +45,6 @@ const showHeader = computed(
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 8px;
-}
-
-.subsystem-desc {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--platform-muted, #64748b);
+  gap: 6px;
 }
 </style>

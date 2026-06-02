@@ -10,13 +10,15 @@ import {
   NSpin,
   NTag,
   NText,
-  useDialog,
-  useMessage,
 } from "naive-ui";
 import { cancelJob, clearJobs, fetchJobs } from "../api/client";
 import BatchTableToolbar from "./BatchTableToolbar.vue";
+import IconAction from "./IconAction.vue";
 import { useBatchTableSelection } from "../composables/useBatchTableSelection";
+import { useI18n } from "../composables/useI18n";
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { deleteSequentially } from "../utils/batchActions";
+import { RefreshOutline, TrashOutline } from "@vicons/ionicons5";
 
 const props = defineProps({
   variant: {
@@ -33,28 +35,38 @@ const props = defineProps({
 const emit = defineEmits(["updated", "navigate"]);
 
 const router = useRouter();
-const message = useMessage();
-const dialog = useDialog();
+const ui = usePlatformUi();
+const { t, locale } = useI18n();
 const loading = ref(false);
 const items = ref([]);
 const page = ref(1);
 const total = ref(0);
 
 const TYPE_LABELS = {
-  pdf_translate: "PDF 翻译",
-  delete_document: "删除文档",
-  document_index: "文档索引",
-  document_parse: "文档解析",
-  maintenance: "维护任务",
+  pdf_translate: "jobs.types.pdf_translate",
+  delete_document: "jobs.types.delete_document",
+  document_index: "jobs.types.document_index",
+  document_parse: "jobs.types.document_parse",
+  maintenance: "jobs.types.maintenance",
 };
 
 const STATUS_LABELS = {
-  pending: "等待中",
-  running: "运行中",
-  done: "已完成",
-  failed: "失败",
-  cancelled: "已终止",
+  pending: "jobs.status.pending",
+  running: "jobs.status.running",
+  done: "jobs.status.done",
+  failed: "jobs.status.failed",
+  cancelled: "jobs.status.cancelled",
 };
+
+function jobTypeLabel(type) {
+  const key = TYPE_LABELS[type];
+  return key ? t(key) : type;
+}
+
+function jobStatusLabel(status) {
+  const key = STATUS_LABELS[status];
+  return key ? t(key) : status;
+}
 
 const statusType = {
   pending: "default",
@@ -95,46 +107,42 @@ function goJobsPage() {
   router.push({ name: "jobs" });
 }
 
-const pageColumns = computed(() => [
+const pageColumns = computed(() => {
+  locale.value;
+  return [
   selectionColumn(),
   {
-    title: "类型",
+    title: t("jobs.columns.type"),
     key: "type",
     width: 120,
-    render: (row) => TYPE_LABELS[row.type] || row.type,
+    render: (row) => jobTypeLabel(row.type),
   },
   {
-    title: "状态",
+    title: t("jobs.columns.status"),
     key: "status",
     width: 100,
     render: (row) =>
       h(
         NTag,
         { type: statusType[row.status] || "default", size: "small" },
-        () => STATUS_LABELS[row.status] || row.status
+        () => jobStatusLabel(row.status)
       ),
   },
-  { title: "进度", key: "progress", width: 80, render: (row) => `${row.progress}%` },
+  { title: t("jobs.columns.progress"), key: "progress", width: 80, render: (row) => `${row.progress}%` },
   {
-    title: "文档",
+    title: t("jobs.columns.document"),
     key: "document_id",
     ellipsis: { tooltip: true },
     render: (row) => row.document_id || "—",
   },
   {
-    title: "创建时间",
+    title: t("jobs.columns.createdAt"),
     key: "created_at",
     width: 180,
     render: (row) => new Date(row.created_at).toLocaleString(),
   },
   {
-    title: "错误",
-    key: "error_message",
-    ellipsis: { tooltip: true },
-    render: (row) => row.error_message || "—",
-  },
-  {
-    title: "操作",
+    title: t("jobs.columns.actions"),
     key: "actions",
     width: 80,
     render: (row) => {
@@ -142,11 +150,12 @@ const pageColumns = computed(() => [
       return h(
         NButton,
         { text: true, type: "primary", size: "small", onClick: () => openJob(row) },
-        () => "查看"
+        () => t("common.view")
       );
     },
   },
-]);
+];
+});
 
 async function load() {
   loading.value = true;
@@ -158,7 +167,7 @@ async function load() {
     clearSelection();
     emit("updated", data);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e);
   } finally {
     loading.value = false;
   }
@@ -172,34 +181,35 @@ function onPageChange(p) {
 async function doCancel(jobId) {
   try {
     await cancelJob(jobId);
-    message.success("任务已终止");
+    ui.success("jobs.messages.cancelled");
     await load();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e);
   }
 }
 
 function handleBatchCancel() {
   const rows = selectedRows.value;
   if (!rows.length) return;
-  const summary = rows.length === 1 ? "该任务" : `选中的 ${rows.length} 个任务`;
-  dialog.warning({
-    title: "批量终止任务",
-    content: `确定终止${summary}？进行中的翻译将停止。`,
-    positiveText: "终止",
-    negativeText: "取消",
-    onPositiveClick: async () => {
+  ui.confirmAction({
+    title: t("batch.cancel"),
+    content: t("jobs.confirm.cancelBatch", { count: rows.length }),
+    positiveText: t("batch.cancel"),
+    onPositive: async () => {
       const { deleted, failed } = await deleteSequentially(rows, (row) => cancelJob(row.id));
       if (failed.length) {
-        message.warning(
-          `已终止 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
-        );
+        ui.warning("messages.batchDeletedPartial", {
+          success: deleted,
+          failed: failed.length,
+        });
       } else {
-        message.success(deleted > 1 ? `已终止 ${deleted} 个任务` : "任务已终止");
+        ui.success(
+          deleted > 1 ? "jobs.messages.cancelledBatch" : "jobs.messages.cancelled",
+          { count: deleted }
+        );
       }
       clearSelection();
       await load();
-      return !failed.length;
     },
   });
 }
@@ -207,11 +217,14 @@ function handleBatchCancel() {
 async function doClear(scope) {
   try {
     const { deleted } = await clearJobs(scope);
-    message.success(deleted ? `已清理 ${deleted} 条任务` : "没有可清理的任务");
+    ui.success(
+      deleted ? "jobs.messages.cleared" : "jobs.messages.nothingToClear",
+      { count: deleted || 0 }
+    );
     page.value = 1;
     await load();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e);
   }
 }
 
@@ -232,10 +245,12 @@ defineExpose({ load, refresh: load });
 <template>
   <div :class="['jobs-panel', { 'jobs-panel--popover': variant === 'popover' }]">
     <div v-if="variant === 'popover'" class="jobs-panel__header">
-      <n-text strong>后台任务</n-text>
-      <n-space :size="6">
-        <n-button text type="primary" size="small" @click="load">刷新</n-button>
-        <n-button text type="primary" size="small" @click="goJobsPage">查看全部</n-button>
+      <n-text strong>{{ t("jobs.title") }}</n-text>
+      <n-space :size="4">
+        <IconAction :label="t('common.refresh')" :icon="RefreshOutline" size="tiny" @click="load" />
+        <n-button text type="primary" size="small" @click="goJobsPage">
+          {{ t("jobs.viewAll") }}
+        </n-button>
       </n-space>
     </div>
 
@@ -245,9 +260,9 @@ defineExpose({ load, refresh: load });
           <div v-for="row in items" :key="row.id" class="jobs-panel__item">
             <div class="jobs-panel__item-main">
               <n-space :size="6" align="center">
-                <n-tag size="small">{{ TYPE_LABELS[row.type] || row.type }}</n-tag>
+                <n-tag size="small">{{ jobTypeLabel(row.type) }}</n-tag>
                 <n-tag :type="statusType[row.status] || 'default'" size="small">
-                  {{ STATUS_LABELS[row.status] || row.status }}
+                  {{ jobStatusLabel(row.status) }}
                 </n-tag>
                 <span class="jobs-panel__progress">{{ row.progress }}%</span>
               </n-space>
@@ -263,21 +278,21 @@ defineExpose({ load, refresh: load });
                 size="tiny"
                 @click="openJob(row)"
               >
-                查看
+                {{ t("common.view") }}
               </n-button>
               <n-popconfirm
                 v-if="CANCELLABLE.has(row.status)"
                 @positive-click="doCancel(row.id)"
               >
                 <template #trigger>
-                  <n-button text type="warning" size="tiny">终止</n-button>
+                  <n-button text type="warning" size="tiny">{{ t("batch.cancel") }}</n-button>
                 </template>
-                确定终止该任务？
+                {{ t("jobs.confirm.cancelOne") }}
               </n-popconfirm>
             </n-space>
           </div>
         </div>
-        <n-empty v-else size="small" description="暂无后台任务" />
+        <n-empty v-else size="small" :description="t('common.empty')" />
       </template>
 
       <template v-else>
@@ -286,20 +301,21 @@ defineExpose({ load, refresh: load });
             <BatchTableToolbar
               :count="selectedCount"
               :disabled="!canBatchCancel"
-              label="终止"
+              label-key="batch.cancel"
+              action-type="warning"
               @action="handleBatchCancel"
             />
             <n-popconfirm @positive-click="doClear('finished')">
               <template #trigger>
-                <n-button size="small">清理已完成</n-button>
+                <IconAction :label="t('jobs.clearDone')" :icon="TrashOutline" />
               </template>
-              将删除所有已完成、失败或已取消的任务记录，确定继续？
+              {{ t("jobs.confirm.clearDone") }}
             </n-popconfirm>
             <n-popconfirm @positive-click="doClear('all')">
               <template #trigger>
-                <n-button size="small" secondary>清空全部</n-button>
+                <IconAction :label="t('notifications.clearAll')" :icon="TrashOutline" type="default" />
               </template>
-              将删除除「运行中」外的全部任务记录，确定继续？
+              {{ t("jobs.confirm.clearAll") }}
             </n-popconfirm>
           </n-space>
         </div>
@@ -326,9 +342,11 @@ defineExpose({ load, refresh: load });
 .jobs-panel--popover {
   width: min(420px, calc(100vw - 32px));
   padding: 12px 14px;
-  background: var(--n-color);
-  border-radius: var(--n-border-radius);
+  background: var(--platform-bg-elevated);
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius);
   box-sizing: border-box;
+  box-shadow: var(--platform-shadow-lg);
 }
 
 .jobs-panel__header {
@@ -337,7 +355,7 @@ defineExpose({ load, refresh: load });
   justify-content: space-between;
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--n-divider-color);
+  border-bottom: 1px solid var(--platform-border);
 }
 
 .jobs-panel__toolbar {
@@ -364,7 +382,7 @@ defineExpose({ load, refresh: load });
   justify-content: space-between;
   gap: 8px;
   padding: 10px 0;
-  border-bottom: 1px solid var(--n-divider-color);
+  border-bottom: 1px solid var(--platform-border);
 }
 
 .jobs-panel__item:last-child {

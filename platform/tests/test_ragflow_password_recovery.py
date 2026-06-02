@@ -19,6 +19,14 @@ def test_password_mismatch_detection():
     assert not _password_mismatch_message("network error")
 
 
+def test_uid_suffix_from_platform_email():
+    from app.integrations.ragflow_provision import _uid_suffix_from_platform_email
+
+    assert _uid_suffix_from_platform_email("u-84bfc14a@platform.local") == "84bfc14a"
+    assert _uid_suffix_from_platform_email("alice-caf46c9d@platform.local") == "caf46c9d"
+    assert _uid_suffix_from_platform_email("bad@example.com") is None
+
+
 def test_recover_clears_and_relogins():
     user = User(
         id=uuid.uuid4(),

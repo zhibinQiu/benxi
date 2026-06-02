@@ -110,6 +110,57 @@ async def summarize_text(text: str, style: str = "minutes") -> dict:
     return {"summary": summary, "model": model}
 
 
+async def summarize_article_content(*, title: str, text: str) -> dict:
+    """为订阅收录的文章生成信息量充足的摘要。"""
+    settings = get_settings()
+    api_key, base_url, model = resolve_credentials()
+    clipped = text.strip()[: settings.deepseek_max_chars]
+    if not clipped:
+        raise bad_request("正文过短，无法生成摘要")
+
+    title_text = (title or "").strip() or "（无标题）"
+    system = (
+        "你是专业的中文内容编辑。请阅读用户提供的文章标题与正文，"
+        "撰写一篇信息量充足的摘要。要求：\n"
+        "1. 使用简体中文；\n"
+        "2. 保留关键事实、数据、结论、时间、主体与因果，尽量不要遗漏重要信息；\n"
+        "3. 避免空洞套话，不要编造正文中没有的内容；\n"
+        "4. 可采用 2–4 个自然段或分点列表，篇幅约 150–450 字（正文很长时可适当加长）；\n"
+        "5. 只输出摘要正文，不要输出标题、前缀标签或寒暄语。"
+    )
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": f"标题：{title_text}\n\n正文：\n{clipped}",
+            },
+        ],
+        "temperature": 0.25,
+    }
+    url = f"{base_url}/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
+            r = await client.post(url, headers=headers, json=payload)
+            r.raise_for_status()
+            body = r.json()
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text[:500] if e.response is not None else str(e)
+        raise bad_request(f"文章摘要生成失败: {detail}") from e
+    except httpx.HTTPError as e:
+        raise bad_request(f"无法连接摘要服务: {e}") from e
+
+    choices = body.get("choices") or []
+    if not choices:
+        raise bad_request("摘要服务返回空结果")
+    summary = (choices[0].get("message", {}).get("content") or "").strip()
+    if not summary:
+        raise bad_request("摘要内容为空")
+    return {"summary": summary, "model": model}
+
+
 def _format_merged_blocks(merged_blocks: list[dict]) -> str:
     lines = []
     for i, block in enumerate(merged_blocks, 1):

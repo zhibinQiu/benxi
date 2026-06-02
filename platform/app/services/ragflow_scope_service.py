@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 COMPANY_SCOPE_KEY = "global"
 
 
-def scope_key_for_document(document: Document) -> str:
+def scope_key_for_document(db: Session, document: Document) -> str:
     scope = _document_scope(db, document)
     if scope == SCOPE_COMPANY:
         if document.dept_id:
@@ -149,6 +149,113 @@ def repair_stale_scope_registries(db: Session, kf) -> int:
             continue
         db.delete(reg)
         removed += 1
+    if removed:
+        db.flush()
+    return removed
+
+
+def _alias_names_for_registry(db: Session, reg: RagflowScopeDataset) -> set[str]:
+    names: set[str] = set()
+    scope_map = {
+        REG_PERSONAL: SCOPE_PERSONAL,
+        REG_DEPARTMENT: SCOPE_DEPARTMENT,
+        REG_TEAM: SCOPE_TEAM,
+        REG_COMPANY: SCOPE_COMPANY,
+    }
+    doc_scope = scope_map.get(reg.scope, SCOPE_PERSONAL)
+    names.update(legacy_scope_dataset_names(doc_scope, reg.scope_key))
+    try:
+        key_uuid = uuid.UUID(reg.scope_key)
+    except ValueError:
+        key_uuid = None
+    if reg.scope == REG_PERSONAL and key_uuid:
+        names.add(dataset_name_for_personal(key_uuid, db))
+        names.add(dataset_display_label_personal(db, key_uuid))
+        names.add(legacy_dataset_name_for_platform_user(key_uuid))
+    elif reg.scope in (REG_DEPARTMENT, REG_TEAM) and key_uuid:
+        names.add(dataset_name_for_dept(key_uuid, db))
+        names.add(dataset_display_label_dept(db, key_uuid))
+    elif reg.scope == REG_COMPANY:
+        names.add(dataset_name_for_company())
+        names.add(dataset_display_label_company())
+        names.add(legacy_dataset_name_for_company())
+    return {n for n in names if n}
+
+
+def _scope_registries_for_user(db: Session, user: User) -> list[RagflowScopeDataset]:
+    from app.core.document_scope import library_companies_for_user
+
+    regs: list[RagflowScopeDataset] = []
+    personal = _get_registry(db, REG_PERSONAL, str(user.id))
+    if personal:
+        regs.append(personal)
+    for dept_id in _dept_ids_for_kb_labels(db, user):
+        for reg_scope in (REG_DEPARTMENT, REG_TEAM):
+            reg = _get_registry(db, reg_scope, str(dept_id))
+            if reg:
+                regs.append(reg)
+    for row in library_companies_for_user(db, user):
+        reg = _get_registry(db, REG_COMPANY, str(row["id"]))
+        if reg:
+            regs.append(reg)
+    return regs
+
+
+def dedupe_orphan_scope_datasets(db: Session, user: User, kf) -> int:
+    """删除重复/历史分级知识库（同名文件夹、旧账号遗留库）。"""
+    if not kf.enabled():
+        return 0
+    rag = kf._rag
+    try:
+        datasets = rag.list_datasets()
+    except Exception as e:
+        logger.warning("列出知识库失败，跳过重复库清理: %s", e)
+        return 0
+
+    regs = _scope_registries_for_user(db, user)
+    registered_ids = {
+        (reg.ragflow_dataset_id or "").strip()
+        for reg in regs
+        if reg.ragflow_dataset_id
+    }
+    alias_names: set[str] = set()
+    for reg in regs:
+        alias_names.update(_alias_names_for_registry(db, reg))
+
+    by_name: dict[str, list[str]] = {}
+    for ds in datasets:
+        ds_id = str(ds.get("id") or "").strip()
+        name = (ds.get("name") or "").strip()
+        if not ds_id or not name:
+            continue
+        by_name.setdefault(name, []).append(ds_id)
+
+    to_delete: set[str] = set()
+    for name, ids in by_name.items():
+        if len(ids) <= 1:
+            continue
+        keep = next((ds_id for ds_id in ids if ds_id in registered_ids), None)
+        if keep:
+            for ds_id in ids:
+                if ds_id != keep:
+                    to_delete.add(ds_id)
+
+    for ds in datasets:
+        ds_id = str(ds.get("id") or "").strip()
+        name = (ds.get("name") or "").strip()
+        if not ds_id or ds_id in registered_ids or ds_id in to_delete:
+            continue
+        if name in alias_names:
+            to_delete.add(ds_id)
+
+    removed = 0
+    for ds_id in to_delete:
+        try:
+            rag.delete_dataset(ds_id)
+            removed += 1
+            logger.info("已清理重复知识库 user=%s id=%s", user.username, ds_id)
+        except Exception as e:
+            logger.warning("清理重复知识库失败 user=%s id=%s: %s", user.username, ds_id, e)
     if removed:
         db.flush()
     return removed
@@ -258,7 +365,7 @@ def ensure_scope_dataset(
 
 def resolve_dataset_for_document(db: Session, actor: User, document: Document, kf) -> str | None:
     scope = _document_scope(db, document)
-    key = scope_key_for_document(document)
+    key = scope_key_for_document(db, document)
     return ensure_scope_dataset(db, actor, scope, key, kf)
 
 

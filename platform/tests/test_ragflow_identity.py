@@ -47,6 +47,14 @@ def test_platform_email():
             display_name="Admin",
         )
         assert platform_email_for_user(admin) == "admin-caf46c9d@platform.local"
+        cn_user = User(
+            id=uuid.UUID("84bfc14a-0000-0000-0000-000000000001"),
+            username="邱智斌",
+            email=None,
+            password_hash="x",
+            display_name="邱智斌",
+        )
+        assert platform_email_for_user(cn_user) == "u-84bfc14a@platform.local"
 
     shared_settings = MagicMock(
         ragflow_account_mode="shared",

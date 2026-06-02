@@ -27,16 +27,11 @@ export function sanitizeUserFacingMessage(text, fallback = KNOWLEDGE_UNAVAILABLE
   return m;
 }
 
-export function notifyDeduped(messageApi, type, text) {
-  const msg =
-    sanitizeUserFacingMessage(
-      text,
-      type === "error"
-        ? "操作失败"
-        : type === "warning"
-          ? "请注意"
-          : "操作成功"
-    ) || (type === "error" ? "操作失败" : type === "warning" ? "请注意" : "操作成功");
+export function notifyDeduped(messageApi, type, text, fallback = "") {
+  const fb =
+    fallback ||
+    (type === "error" ? "操作失败" : type === "warning" ? "请注意" : "操作成功");
+  const msg = sanitizeUserFacingMessage(text, fb) || fb;
   const key = `${type}:${msg}`;
   const now = Date.now();
   if (key === lastKey && now - lastAt < DEDUPE_MS) return;

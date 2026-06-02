@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 
@@ -31,10 +32,13 @@ from app.models.wechat_mp import (
     WechatMpSourceSubscription,
 )
 from app.services import feed_subscription_service as feed_svc
+from app.services import subscription_summary_service as summary_svc
 from app.services import wechat_mp_service as wechat_svc
 
 REF_WECHAT = "w"
 REF_FEED = "f"
+
+logger = logging.getLogger(__name__)
 
 
 def make_ref(prefix: str, item_id: uuid.UUID) -> str:
@@ -116,7 +120,9 @@ def ingest_url(db: Session, user: User, url: str) -> dict:
 
     if is_wechat_article_url(text):
         detail = wechat_svc.ingest_url(db, user, text)
-        return get_item_detail(db, user, make_ref(REF_WECHAT, detail["id"]))
+        ref = make_ref(REF_WECHAT, detail["id"])
+        _try_enrich_ai_summary(db, ref)
+        return get_item_detail(db, user, ref)
 
     try:
         parsed = fetch_web_article(text)
@@ -176,7 +182,16 @@ def ingest_url(db: Session, user: User, url: str) -> dict:
         db.add(entry)
         db.flush()
 
-    return get_item_detail(db, user, make_ref(REF_FEED, entry.id))
+    ref = make_ref(REF_FEED, entry.id)
+    _try_enrich_ai_summary(db, ref)
+    return get_item_detail(db, user, ref)
+
+
+def _try_enrich_ai_summary(db: Session, ref: str) -> None:
+    try:
+        summary_svc.enrich_subscription_item_ai_summary(db, ref)
+    except Exception:
+        logger.exception("subscription AI summary skipped ref=%s", ref)
 
 
 def list_items(

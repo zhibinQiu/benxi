@@ -330,7 +330,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <n-card title="用户管理">
+  <n-card class="admin-page">
     <template #header-extra>
       <n-button type="primary" @click="openCreate">新建用户</n-button>
     </template>

@@ -11,7 +11,8 @@ import {
   useDialog,
   useMessage,
 } from "naive-ui";
-import { ArrowBackOutline, ChatbubblesOutline } from "@vicons/ionicons5";
+import { ArrowBackOutline, ChatbubblesOutline, TrashOutline } from "@vicons/ionicons5";
+import IconAction from "../components/IconAction.vue";
 import {
   clearChatConversations,
   deleteChatConversation,
@@ -195,28 +196,22 @@ watch(scope, loadList);
         <h1 class="chat-history-title">历史对话</h1>
         <n-text depth="3">{{ pageTitle }}</n-text>
       </div>
-      <n-button
-        size="small"
-        type="error"
-        tertiary
-        :disabled="!canBatchDelete"
-        :loading="batchDeleting"
-        class="chat-history-batch-delete"
-        @click="handleBatchDelete"
-      >
-        删除
-      </n-button>
-      <n-button
-        v-if="canClear"
-        size="small"
-        type="error"
-        tertiary
-        :loading="clearing"
-        class="chat-history-clear-all"
-        @click="onClearAll"
-      >
-        清空全部
-      </n-button>
+      <n-space align="center" :size="4" class="chat-history-actions">
+        <IconAction
+          label="删除"
+          :icon="TrashOutline"
+          type="error"
+          :disabled="!canBatchDelete"
+          @click="handleBatchDelete"
+        />
+        <IconAction
+          v-if="canClear"
+          label="清空全部"
+          :icon="TrashOutline"
+          type="error"
+          @click="onClearAll"
+        />
+      </n-space>
     </header>
 
     <div v-if="selectedCount > 0" class="chat-history-selection-hint">
@@ -269,9 +264,9 @@ watch(scope, loadList);
   min-width: 0;
 }
 
-.chat-history-clear-all,
-.chat-history-batch-delete {
+.chat-history-actions {
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .chat-history-selection-hint {

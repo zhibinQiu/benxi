@@ -11,14 +11,17 @@ import {
   NSpin,
   NText,
   NThing,
-  useMessage,
 } from "naive-ui";
+import { RefreshOutline, TrashOutline, CheckmarkDoneOutline } from "@vicons/ionicons5";
 import {
   clearNotifications,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
 } from "../api/client";
+import IconAction from "./IconAction.vue";
+import { useI18n } from "../composables/useI18n";
+import { usePlatformUi } from "../composables/usePlatformUi";
 
 const props = defineProps({
   variant: {
@@ -35,7 +38,8 @@ const props = defineProps({
 const emit = defineEmits(["updated", "navigate"]);
 
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
+const { t } = useI18n();
 const items = ref([]);
 const loading = ref(false);
 
@@ -47,7 +51,7 @@ async function load({ notifyOnError = true } = {}) {
     items.value = data.items;
     emit("updated", data);
   } catch (e) {
-    if (notifyOnError) message.error(e.message);
+    if (notifyOnError) ui.error(e);
   } finally {
     loading.value = false;
   }
@@ -58,27 +62,32 @@ async function markRead(id) {
     await markNotificationRead(id);
     await load({ notifyOnError: false });
   } catch (e) {
-    message.error(e.message);
+    ui.error(e);
   }
 }
 
 async function markAllRead() {
   try {
     const { updated } = await markAllNotificationsRead();
-    message.success(updated ? `已标记 ${updated} 条为已读` : "暂无未读消息");
+    ui.success(updated ? "notifications.messages.markedRead" : "notifications.messages.noneUnread", {
+      count: updated || 0,
+    });
     await load({ notifyOnError: false });
   } catch (e) {
-    message.error(e.message);
+    ui.error(e);
   }
 }
 
 async function doClear(scope) {
   try {
     const { deleted } = await clearNotifications(scope);
-    message.success(deleted ? `已删除 ${deleted} 条消息` : "没有可删除的消息");
+    ui.success(
+      deleted ? "notifications.messages.cleared" : "notifications.messages.nothingToClear",
+      { count: deleted || 0 }
+    );
     await load({ notifyOnError: false });
   } catch (e) {
-    message.error(e.message);
+    ui.error(e);
   }
 }
 
@@ -125,31 +134,40 @@ defineExpose({ load, refresh: load });
     ]"
   >
     <div v-if="variant === 'popover'" class="notifications-panel__header">
-      <n-text strong>消息</n-text>
-      <n-space :size="6">
-        <n-button text type="primary" size="small" @click="load">刷新</n-button>
-        <n-button text type="primary" size="small" @click="markAllRead">全部已读</n-button>
+      <n-text strong>{{ t("notifications.title") }}</n-text>
+      <n-space :size="4">
+        <IconAction :label="t('common.refresh')" :icon="RefreshOutline" size="tiny" @click="load" />
+        <IconAction
+          :label="t('notifications.markAllRead')"
+          :icon="CheckmarkDoneOutline"
+          size="tiny"
+          @click="markAllRead"
+        />
         <n-button text type="primary" size="small" @click="goNotificationsPage">
-          查看全部
+          {{ t("common.viewAll") }}
         </n-button>
       </n-space>
     </div>
 
     <div v-else class="notifications-panel__toolbar">
-      <n-space :size="8">
-        <n-button size="small" @click="load">刷新</n-button>
-        <n-button size="small" @click="markAllRead">全部已读</n-button>
+      <n-space :size="6">
+        <IconAction :label="t('common.refresh')" :icon="RefreshOutline" @click="load" />
+        <IconAction
+          :label="t('notifications.markAllRead')"
+          :icon="CheckmarkDoneOutline"
+          @click="markAllRead"
+        />
         <n-popconfirm @positive-click="doClear('read')">
           <template #trigger>
-            <n-button size="small">清空已读</n-button>
+            <IconAction :label="t('notifications.actions.delete')" :icon="TrashOutline" />
           </template>
-          将删除所有已读消息，确定继续？
+          {{ t("notifications.confirm.clearRead") }}
         </n-popconfirm>
         <n-popconfirm @positive-click="doClear('all')">
           <template #trigger>
-            <n-button size="small" secondary>清空全部</n-button>
+            <IconAction :label="t('notifications.clearAll')" :icon="TrashOutline" type="default" />
           </template>
-          将删除全部消息记录，确定继续？
+          {{ t("notifications.confirm.clearAll") }}
         </n-popconfirm>
       </n-space>
     </div>
@@ -181,15 +199,15 @@ defineExpose({ load, refresh: load });
                     size="small"
                     @click.stop="markRead(n.id)"
                   >
-                    标为已读
+                    {{ t("notifications.actions.markRead") }}
                   </n-button>
-                  <span v-else class="notif-read">已读</span>
+                  <span v-else class="notif-read">{{ t("notifications.read") }}</span>
                 </n-space>
               </template>
             </n-thing>
           </n-list-item>
         </n-list>
-        <n-empty v-else description="暂无消息" />
+        <n-empty v-else :description="t('notifications.empty')" />
       </div>
     </n-spin>
   </div>
@@ -199,9 +217,11 @@ defineExpose({ load, refresh: load });
 .notifications-panel--popover {
   width: min(400px, calc(100vw - 32px));
   padding: 12px 14px;
-  background: var(--n-color);
-  border-radius: var(--n-border-radius);
+  background: var(--platform-bg-elevated);
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius);
   box-sizing: border-box;
+  box-shadow: var(--platform-shadow-lg);
 }
 
 .notifications-panel__header {
@@ -211,7 +231,7 @@ defineExpose({ load, refresh: load });
   gap: 8px;
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--n-divider-color);
+  border-bottom: 1px solid var(--platform-border);
 }
 
 .notifications-panel__toolbar {
@@ -230,20 +250,20 @@ defineExpose({ load, refresh: load });
 }
 
 .notif-clickable:hover {
-  background: var(--n-action-color);
+  background: var(--platform-toolbar-bg);
 }
 
 .notif-unread {
-  background: rgba(13, 148, 136, 0.06);
+  background: var(--platform-accent-soft);
 }
 
 .notif-time {
   font-size: 12px;
-  color: #888;
+  color: var(--platform-text-tertiary);
 }
 
 .notif-read {
   font-size: 12px;
-  color: #18a058;
+  color: var(--platform-accent);
 }
 </style>

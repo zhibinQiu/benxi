@@ -6,6 +6,7 @@ import { fetchChatConversationMessages } from "../api/client";
 import { NButton, NIcon, NSpin, useMessage } from "naive-ui";
 import { marked } from "marked";
 import ChatComposer from "./ChatComposer.vue";
+import IconAction from "./IconAction.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import { PLATFORM_APP_NAME } from "../constants/platform";
@@ -391,19 +392,12 @@ onBeforeUnmount(() => {
 <template>
   <div class="ai-home" :class="{ 'ai-home--active': started }">
     <div v-if="!started && chatScope" class="ai-home-landing-topbar">
-      <n-button
-        class="ai-home-history-link"
-        text
-        type="primary"
-        size="small"
+      <IconAction
+        label="查看历史对话"
+        :icon="TimeOutline"
         :disabled="loadingHistory"
         @click="goToHistory"
-      >
-        <template #icon>
-          <n-icon :component="TimeOutline" />
-        </template>
-        查看历史对话
-      </n-button>
+      />
     </div>
 
     <Transition name="ai-chat-header">
@@ -418,18 +412,13 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="ai-home-chat-actions">
-          <n-button
+          <IconAction
             v-if="chatScope"
-            size="small"
-            quaternary
+            label="历史对话"
+            :icon="TimeOutline"
             :disabled="loadingHistory"
             @click="goToHistory"
-          >
-            <template #icon>
-              <n-icon :component="TimeOutline" />
-            </template>
-            历史对话
-          </n-button>
+          />
           <n-button size="small" quaternary @click="newChat">新对话</n-button>
         </div>
       </header>

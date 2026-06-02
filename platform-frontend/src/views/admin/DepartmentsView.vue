@@ -179,7 +179,7 @@ onMounted(load);
 </script>
 
 <template>
-  <n-card title="部门管理">
+  <n-card class="admin-page">
     <template #header-extra>
       <n-button type="primary" @click="openCreate">新建部门</n-button>
     </template>

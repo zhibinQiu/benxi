@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
   NButton,
   NCard,
@@ -17,7 +17,10 @@ import {
   useDialog,
   useMessage,
 } from "naive-ui";
-import { ReorderThreeOutline, SparklesOutline } from "@vicons/ionicons5";
+import { ReorderThreeOutline, SparklesOutline, TrashOutline } from "@vicons/ionicons5";
+import IconAction from "../components/IconAction.vue";
+import HintTooltip from "../components/HintTooltip.vue";
+import { useI18n } from "../composables/useI18n";
 import {
   batchCreateTodos,
   createTodo,
@@ -30,6 +33,7 @@ import {
 } from "../api/client";
 import { deleteSequentially } from "../utils/batchActions";
 
+const { t } = useI18n();
 const message = useMessage();
 const dialog = useDialog();
 
@@ -50,6 +54,9 @@ const dragFrom = ref(-1);
 const dragStatus = ref(null);
 const selectedPendingIds = ref([]);
 const selectedDoneIds = ref([]);
+/** 避免复选框挂载时误触发 update:checked 导致反复 load */
+const statusToggleReady = ref(false);
+let loadSeq = 0;
 
 const canBatchDeletePending = computed(() => selectedPendingIds.value.length > 0);
 const canBatchDeleteDone = computed(() => selectedDoneIds.value.length > 0);
@@ -69,17 +76,25 @@ function toggleTodoSelected(status, id, checked) {
 }
 
 async function load() {
+  const seq = ++loadSeq;
   loading.value = true;
+  statusToggleReady.value = false;
   try {
     const [p, d] = await Promise.all([fetchTodos("pending"), fetchTodos("done")]);
-    pending.value = p;
-    done.value = d;
+    if (seq !== loadSeq) return;
+    pending.value = Array.isArray(p) ? p : [];
+    done.value = Array.isArray(d) ? d : [];
     selectedPendingIds.value = [];
     selectedDoneIds.value = [];
   } catch (e) {
+    if (seq !== loadSeq) return;
     message.error(e.message);
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) {
+      loading.value = false;
+      await nextTick();
+      statusToggleReady.value = true;
+    }
   }
 }
 
@@ -109,6 +124,13 @@ async function toggleDone(item, checked) {
   } catch (e) {
     message.error(e.message);
   }
+}
+
+function onStatusChange(item, checked) {
+  if (!statusToggleReady.value) return;
+  const isDone = item.status === "done";
+  if (checked === isDone) return;
+  toggleDone(item, checked);
 }
 
 function handleBatchDelete(status) {
@@ -235,14 +257,17 @@ function isDragging(index, status) {
 }
 
 onMounted(load);
+onUnmounted(() => {
+  loadSeq += 1;
+});
 </script>
 
 <template>
   <div class="todos-page feature-page">
     <n-card size="small" class="todos-card">
-      <template #header>
-        <n-space align="center" justify="space-between" style="width: 100%">
-          <n-text strong>待办事项</n-text>
+      <template #header-extra>
+        <n-space align="center" :size="4">
+          <HintTooltip text="左右分栏同时查看；拖拽手柄排序；勾选移至右侧「已完成」。" />
           <n-button size="small" quaternary @click="openLlm">
             <template #icon>
               <n-icon :component="SparklesOutline" />
@@ -261,7 +286,6 @@ onMounted(load);
         />
         <n-button type="primary" :loading="adding" @click="addTodo">添加</n-button>
       </div>
-      <p class="feature-tip">左右分栏同时查看；拖拽手柄排序；勾选移至右侧「已完成」。</p>
 
       <n-spin :show="loading">
         <div class="todos-columns">
@@ -269,15 +293,14 @@ onMounted(load);
             <header class="column-head">
               <span class="column-title">待办</span>
               <n-tag size="small" :bordered="false" type="info">{{ pending.length }}</n-tag>
-              <n-button
-                size="tiny"
+              <IconAction
+                :label="t('common.delete')"
+                :icon="TrashOutline"
                 type="error"
-                secondary
+                size="tiny"
                 :disabled="!canBatchDeletePending"
                 @click="handleBatchDelete('pending')"
-              >
-                删除
-              </n-button>
+              />
             </header>
             <n-empty
               v-if="!pending.length && !loading"
@@ -304,8 +327,8 @@ onMounted(load);
                   <n-icon :component="ReorderThreeOutline" :size="18" />
                 </span>
                 <n-checkbox
-                  :checked="false"
-                  @update:checked="(v) => v && toggleDone(item, true)"
+                  :checked="item.status === 'done'"
+                  @update:checked="(v) => onStatusChange(item, v)"
                 />
                 <div class="todo-body">
                   <n-text class="todo-title">{{ item.title }}</n-text>
@@ -319,15 +342,14 @@ onMounted(load);
             <header class="column-head">
               <span class="column-title">已完成</span>
               <n-tag size="small" :bordered="false" type="success">{{ done.length }}</n-tag>
-              <n-button
-                size="tiny"
+              <IconAction
+                :label="t('common.delete')"
+                :icon="TrashOutline"
                 type="error"
-                secondary
+                size="tiny"
                 :disabled="!canBatchDeleteDone"
                 @click="handleBatchDelete('done')"
-              >
-                删除
-              </n-button>
+              />
             </header>
             <n-empty
               v-if="!done.length && !loading"
@@ -354,8 +376,8 @@ onMounted(load);
                   <n-icon :component="ReorderThreeOutline" :size="18" />
                 </span>
                 <n-checkbox
-                  :checked="true"
-                  @update:checked="(v) => !v && toggleDone(item, false)"
+                  :checked="item.status === 'done'"
+                  @update:checked="(v) => onStatusChange(item, v)"
                 />
                 <div class="todo-body">
                   <n-text delete class="todo-title">{{ item.title }}</n-text>
@@ -461,8 +483,8 @@ onMounted(load);
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--platform-border, rgba(15, 23, 42, 0.06));
-  background: #fff;
+  border-bottom: 1px solid var(--platform-border);
+  background: var(--platform-bg-elevated);
 }
 .column-title {
   font-size: 14px;

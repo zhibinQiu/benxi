@@ -55,6 +55,6 @@ ${GREEN}=== 语音栈配置提示 ===${NC}
     platform/.env 设置 DEEPSEEK_API_KEY=sk-...
     或沿用 ~/.config/pdf2zh/config.v3.toml 中的 deepseek_api_key
 
-  启动平台: bash scripts/start_platform.sh speech
+  启动平台: bash scripts/zhitan.sh speech
 
 EOF

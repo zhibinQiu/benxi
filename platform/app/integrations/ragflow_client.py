@@ -155,6 +155,44 @@ class RagflowClient:
             return str(kid)
         raise RagflowError(f"创建知识库失败: {created!r}")
 
+    def update_dataset_name(self, dataset_id: str, name: str) -> None:
+        """将知识库名称改为展示名（兼容旧 zt-* 技术名）。"""
+        if not dataset_id or not name:
+            return
+        if self._use_session_api:
+            try:
+                self._request(
+                    "POST",
+                    "/v1/kb/update",
+                    json={"kb_id": dataset_id, "name": name},
+                )
+                return
+            except RagflowError as e:
+                logger.debug("KnowFlow kb/update 改名跳过: %s", e)
+        self._request(
+            "PUT",
+            f"/api/v1/datasets/{dataset_id}",
+            json={"name": name},
+        )
+
+    def find_dataset_by_names(self, names: list[str]) -> dict | None:
+        seen: set[str] = set()
+        for name in names:
+            n = (name or "").strip()
+            if not n or n in seen:
+                continue
+            seen.add(n)
+            for ds in self.list_datasets(name=n):
+                if ds.get("name") == n and ds.get("id"):
+                    return ds
+        return None
+
+    def get_dataset_name(self, dataset_id: str) -> str | None:
+        for ds in self.list_datasets():
+            if str(ds.get("id")) == str(dataset_id):
+                return (ds.get("name") or "").strip() or None
+        return None
+
     def upload_document(
         self,
         dataset_id: str,
@@ -191,6 +229,8 @@ class RagflowClient:
                 f"/api/v1/datasets/{dataset_id}/documents/{doc_id}",
                 json={"meta_fields": meta_fields},
             )
+        if doc_id:
+            self.parse_documents(dataset_id, [str(doc_id)])
         return doc
 
     def delete_documents(self, dataset_id: str, document_ids: list[str]) -> None:

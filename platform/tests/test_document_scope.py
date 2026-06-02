@@ -31,9 +31,9 @@ def test_document_library_api(client, admin_token):
     )
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert len(data["folders"]) == 4
+    assert len(data["folders"]) == 5
     scopes = [f["scope"] for f in data["folders"]]
-    assert scopes == ["personal", "department", "company", "shared"]
+    assert scopes == ["personal", "team", "department", "company", "shared"]
 
 
 def test_list_all_scope_ok(client, admin_token):

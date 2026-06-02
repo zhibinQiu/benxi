@@ -25,7 +25,8 @@ export const FEATURE_DESCRIPTIONS = {
   "assist-writing":
     "Markdown 双栏编辑，预设提示词由 AI 润色、扩写与续写；发送快捷键 Ctrl/Cmd + Enter。",
   "knowledge-subscriptions":
-    "订阅外部资讯来源；当前支持微信公众号推文跟踪与导入文档库。",
+    "粘贴链接收录资讯，支持按标题/正文搜索与收录时间筛选；微信文章带角标，正文以 Markdown 排版展示。",
+  "subscription-item": "查看已收录资讯正文，导入「我的」文档库或打开原文。",
   documents: "按公司、部门、个人分级管理文档，支持分享授权与个人回收站。",
   "document-detail": "查看文档版本、权限分享与翻译/对比等关联操作。",
   jobs: "查看翻译、对比等后台异步任务的进度与结果。",

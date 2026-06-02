@@ -16,11 +16,11 @@ register(
         router=wechat_mp_api.router,
         permission_code="feature.wechat_mp_feed",
         permission_name="公众号资讯",
-        enabled=True,
-        tag="可用",
+        enabled=False,
+        tag="已合并",
         category="tools",
         sort_order=36,
         show_in_catalog=False,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

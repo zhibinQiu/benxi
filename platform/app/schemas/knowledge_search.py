@@ -16,8 +16,8 @@ class KnowledgeSearchRequest(BaseModel):
         if value is None or str(value).strip() == "":
             return None
         scope = str(value).strip()
-        if scope not in ("company", "department", "personal"):
-            raise ValueError("scope 须为 company、department 或 personal")
+        if scope not in ("company", "department", "team", "personal"):
+            raise ValueError("scope 须为 company、department、team 或 personal")
         return scope
     limit: int = Field(default=20, ge=1, le=50)
 

@@ -19,6 +19,6 @@ register(
         enabled=True,
         category="ai",
         sort_order=1,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

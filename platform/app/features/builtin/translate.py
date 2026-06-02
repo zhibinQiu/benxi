@@ -16,7 +16,7 @@ translate_plugin = FeaturePlugin(
     enabled=True,
     category="document",
     sort_order=10,
-    grant_to_roles=("sys_admin", "dept_admin", "member"),
+    grant_to_roles=("sys_admin", "member", "member"),
 )
 
 register(translate_plugin)

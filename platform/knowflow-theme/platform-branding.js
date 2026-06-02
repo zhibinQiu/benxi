@@ -406,6 +406,113 @@
   }
 
   var PLATFORM_DISPLAY_NAME = "";
+  /** RAGFlow 技术库名 → 展示名（用户名 / 部门名 / 公司） */
+  var KB_LABEL_MAP = {};
+  /** zt-dept-xxxxxx 的 6 位后缀 → 部门名 */
+  var DEPT_SUFFIX_LABELS = {};
+
+  function applyKnowflowKbLabels(theme) {
+    var list = (theme && theme.knowflow_kb_labels) || [];
+    KB_LABEL_MAP = {};
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (!item || !item.name || !item.label) continue;
+      KB_LABEL_MAP[String(item.name).trim()] = String(item.label).trim();
+    }
+    DEPT_SUFFIX_LABELS = {};
+    var suf = (theme && theme.dept_suffix_labels) || {};
+    Object.keys(suf).forEach(function (key) {
+      var k = String(key).trim().toLowerCase();
+      var v = String(suf[key] || "").trim();
+      if (k && v) DEPT_SUFFIX_LABELS[k] = v;
+    });
+  }
+
+  function deptLabelFromSuffix(suffix) {
+    var s = String(suffix || "").trim().toLowerCase();
+    return DEPT_SUFFIX_LABELS[s] || "";
+  }
+
+  function replaceZtLegacyKbText(text) {
+    if (!text || text.indexOf("zt-") === -1) return text;
+    var out = text;
+    var keys = Object.keys(KB_LABEL_MAP);
+    for (var i = 0; i < keys.length; i++) {
+      var technical = keys[i];
+      var label = KB_LABEL_MAP[technical];
+      if (!label || technical === label) continue;
+      if (out.indexOf(technical) !== -1) {
+        out = out.split(technical).join(label);
+      }
+    }
+    if (out.indexOf("zt-company") !== -1) {
+      out = out.split("zt-company").join(KB_LABEL_MAP["公司"] || "公司");
+    }
+    out = out.replace(/\bzt-personal-[\w-]+\b/gi, function (m) {
+      return KB_LABEL_MAP[m] || PLATFORM_DISPLAY_NAME || "我的";
+    });
+    out = out.replace(/zt-dept-([a-f0-9]{6})/gi, function (m, suf) {
+      return KB_LABEL_MAP[m] || deptLabelFromSuffix(suf) || "部门";
+    });
+    out = out.replace(/([\w\u4e00-\u9fff]+)-([a-f0-9]{6})/g, function (m, _prefix, suf) {
+      if (m.indexOf("zt-") === 0) return m;
+      var bySuf = deptLabelFromSuffix(suf);
+      return bySuf || KB_LABEL_MAP[m] || m;
+    });
+    out = out.replace(/\bzt-platform-[\w-]+\b/gi, function (m) {
+      return KB_LABEL_MAP[m] || PLATFORM_DISPLAY_NAME || "我的";
+    });
+    return out;
+  }
+
+  function patchElementKbLabel(el) {
+    if (!el || !el.getAttribute) return;
+    ["title", "aria-label", "data-name", "data-title"].forEach(function (attr) {
+      var raw = el.getAttribute(attr);
+      if (!raw || raw.indexOf("zt-") === -1) return;
+      var next = replaceZtLegacyKbText(raw);
+      if (next !== raw) el.setAttribute(attr, next);
+    });
+  }
+
+  function patchKnowflowKbLabels() {
+    var keys = Object.keys(KB_LABEL_MAP);
+    if (!keys.length && !PLATFORM_DISPLAY_NAME && !Object.keys(DEPT_SUFFIX_LABELS).length) {
+      return;
+    }
+    var walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+    var node;
+    while ((node = walker.nextNode())) {
+      var parent = node.parentElement;
+      if (!parent || parent.tagName === "SCRIPT" || parent.tagName === "STYLE") {
+        continue;
+      }
+      var text = node.textContent;
+      if (!text || text.indexOf("zt-") === -1) continue;
+      var next = replaceZtLegacyKbText(text);
+      if (next !== text) node.textContent = next;
+    }
+    document.querySelectorAll("[title],[aria-label],[data-name],[data-title]").forEach(patchElementKbLabel);
+    document.querySelectorAll("input[value*='zt-dept'],textarea").forEach(function (el) {
+      if (el.tagName === "TEXTAREA") {
+        var t = el.value;
+        if (t && t.indexOf("zt-dept") !== -1) {
+          var n = replaceZtLegacyKbText(t);
+          if (n !== t) el.value = n;
+        }
+        return;
+      }
+      var v = el.value;
+      if (v && v.indexOf("zt-dept") !== -1) {
+        var nv = replaceZtLegacyKbText(v);
+        if (nv !== v) el.value = nv;
+      }
+    });
+  }
 
   function applyPlatformUser(theme) {
     var t = theme || {};
@@ -443,6 +550,7 @@
 
   function applyBranding(theme) {
     var t = theme || {};
+    applyKnowflowKbLabels(t);
     applyPlatformUser(t);
     if (t.app_name) {
       window.__ZT_PLATFORM_APP_NAME__ = t.app_name;
@@ -609,6 +717,7 @@
     hideFileManagerMenu();
     if (brandingTick % 4 === 0) applyPlatformLogo();
     if (PLATFORM_DISPLAY_NAME) patchWelcomeNickname(PLATFORM_DISPLAY_NAME);
+    patchKnowflowKbLabels();
     if (document.documentElement.getAttribute("data-zt-platform-embed")) {
       applyEmbedLayoutChrome();
     }

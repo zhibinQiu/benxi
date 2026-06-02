@@ -42,3 +42,35 @@ def test_cached_auth_finalizes_llm_config():
     assert token == "cached-jwt"
     finalize.assert_called_once_with(link, "cached-jwt", user)
     db.flush.assert_called()
+
+
+def test_get_user_ragflow_auth_swallows_connect_error():
+    import httpx
+
+    from app.services.ragflow_identity_service import get_user_ragflow_auth
+
+    user = User(
+        id=uuid.uuid4(),
+        username="dave",
+        email="dave@corp.com",
+        password_hash="x",
+        display_name="Dave",
+    )
+    link = RagflowAccountLink(
+        platform_user_id=user.id,
+        ragflow_email="dave@platform.local",
+    )
+    db = MagicMock()
+
+    with patch("app.services.ragflow_identity_service.get_settings") as gs, patch(
+        "app.services.ragflow_identity_service.get_or_create_link",
+        return_value=link,
+    ), patch(
+        "app.services.ragflow_identity_service._ragflow_auth_valid",
+        return_value=False,
+    ), patch(
+        "app.services.ragflow_identity_service.provision_and_login",
+        side_effect=httpx.ConnectError("connection refused"),
+    ):
+        gs.return_value.knowflow_enabled = True
+        assert get_user_ragflow_auth(db, user) is None

@@ -15,10 +15,19 @@ export function useAuth() {
   const isLoggedIn = computed(() => !!getToken());
   const permissions = computed(() => user.value?.permissions || []);
 
+  /** 持有系统管理员权限（sys_admin 角色，与后端 is_system_admin 一致） */
+  const isSystemAdmin = computed(() => user.value?.is_system_admin === true);
+  /** 唯一内置管理员账号（bootstrap 手机号） */
+  const isBootstrapAdmin = computed(() => user.value?.is_bootstrap_admin === true);
+  const isSuperuser = isSystemAdmin;
+
   function hasPerm(code) {
-    if (permissions.value.includes("admin.user")) return true;
-    if (user.value?.username === "admin") return true;
+    if (isSystemAdmin.value) return true;
     return permissions.value.includes(code);
+  }
+
+  function displayName() {
+    return user.value?.display_name || user.value?.username || user.value?.phone || "";
   }
 
   async function loadUser() {
@@ -44,14 +53,14 @@ export function useAuth() {
     }
   }
 
-  async function login(username, password) {
-    const tokens = await apiLogin(username, password);
+  async function login(account, password) {
+    const tokens = await apiLogin(account, password);
     setTokens(tokens.access_token, tokens.refresh_token);
     return loadUser();
   }
 
-  async function register(username, password) {
-    const tokens = await registerUser(username, password);
+  async function register({ phone, email, displayName, password }) {
+    const tokens = await registerUser({ phone, email, displayName, password });
     setTokens(tokens.access_token, tokens.refresh_token);
     return loadUser();
   }
@@ -67,6 +76,10 @@ export function useAuth() {
     isLoggedIn,
     permissions,
     hasPerm,
+    isSystemAdmin,
+    isBootstrapAdmin,
+    isSuperuser,
+    displayName,
     loadUser,
     login,
     register,

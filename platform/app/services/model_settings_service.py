@@ -7,7 +7,7 @@ from app.schemas.model_settings import ModelEndpointOut, ModelSettingsOut
 
 NOTICE = (
     "本页配置暂不生效，仅供查看与规划。实际调用请以服务器环境变量（platform/.env）为准，"
-    "修改后需重启平台 API。知识问答（RAGFlow）的模型供应商另在 KnowFlow 管理界面维护。"
+    "修改后需重启平台 API。知识问答的模型供应商在知识服务管理界面维护。"
 )
 
 

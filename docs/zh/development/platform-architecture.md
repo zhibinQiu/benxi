@@ -82,7 +82,13 @@ flowchart TB
 
 ---
 
-## 3. 功能插件机制
+## 3. 分层与代码组织
+
+后端采用 **API → domains/services → integrations** 分层；KnowFlow/RAGFlow 统一经 `app.domains.knowledge.KnowledgeGateway`（Facade）访问。详见 [分层架构](./layered-architecture.md)。
+
+---
+
+## 4. 功能插件机制
 
 系统功能页（`/system/functions`）**不硬编码**路由列表，而由后端插件注册：
 
@@ -108,7 +114,7 @@ sequenceDiagram
 
 ---
 
-## 4. 核心时序
+## 5. 核心时序
 
 ### 4.1 登录与 KnowFlow 账号
 
@@ -185,7 +191,7 @@ sequenceDiagram
 
 ---
 
-## 5. 数据与权限
+## 6. 数据与权限
 
 - **平台库（PostgreSQL）**：用户、部门、角色、文档、版本、ACL、任务、通知、对比任务、RAG 会话（遗留 API）等。
 - **对象存储（MinIO）**：文档二进制。
@@ -194,14 +200,14 @@ sequenceDiagram
 
 ---
 
-## 6. 启动方式
+## 7. 启动方式
 
 | 命令 | 说明 |
 |------|------|
-| `bash scripts/start_platform.sh` | 默认：基础设施 Docker + 本地 API/Worker/前端 |
-| `bash scripts/start_platform.sh knowflow` | 上述 + KnowFlow/RAGFlow 栈 |
-| `bash scripts/start_platform.sh speech` | 上述 + 语音转写 Docker |
-| `bash scripts/stop_platform.sh` | 停止（**会 down KnowFlow**，慎用 `-v`） |
+| `bash scripts/zhitan.sh` | 默认：基础设施 Docker + 本地 API/Worker/前端 |
+| `bash scripts/zhitan.sh knowflow` | 上述 + KnowFlow/RAGFlow 栈 |
+| `bash scripts/zhitan.sh speech` | 上述 + 语音转写 Docker |
+| `bash scripts/zhitan.sh stop` | 停止（**会 down KnowFlow**，慎用 `-v`） |
 
 | 地址 | 服务 |
 |------|------|
@@ -217,7 +223,7 @@ sequenceDiagram
 
 ---
 
-## 7. 配置要点（`platform/.env`）
+## 8. 配置要点（`platform/.env`）
 
 | 变量 | 说明 |
 |------|------|
@@ -239,7 +245,7 @@ sequenceDiagram
 
 ---
 
-## 8. API 与错误响应
+## 9. API 与错误响应
 
 - 统一前缀：`/api/v1`
 - 成功：`{ "code": 0, "message": "ok", "data": ... }`
@@ -260,7 +266,7 @@ sequenceDiagram
 
 ---
 
-## 9. 代码清理说明（v2.0）
+## 10. 代码清理说明（v2.0）
 
 | 类别 | 处理 |
 |------|------|
@@ -275,7 +281,7 @@ sequenceDiagram
 
 ---
 
-## 10. 本地开发命令
+## 11. 本地开发命令
 
 ```bash
 # 基础设施
@@ -295,8 +301,9 @@ pdf2zh_next --api --api-port 7861
 
 ---
 
-## 11. 相关文档
+## 12. 相关文档
 
+- [分层架构](layered-architecture.md)
 - [智碳平台AI系统快速上手](doc-platform.md)
 - [本地开发](local-development.md)
 - [REST API](rest-api.md)

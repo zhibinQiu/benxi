@@ -26,14 +26,14 @@ def test_delete_department_rejects_child(client, admin_token):
     parent = client.post(
         "/api/v1/departments",
         headers=_auth(admin_token),
-        json={"name": "测试父部门", "parent_id": None, "sort_order": 0},
+        json={"name": "测试父部门", "parent_id": None},
     )
     assert parent.status_code == 200, parent.text
     parent_id = parent.json()["data"]["id"]
     child = client.post(
         "/api/v1/departments",
         headers=_auth(admin_token),
-        json={"name": "测试子部门", "parent_id": parent_id, "sort_order": 0},
+        json={"name": "测试子部门", "parent_id": parent_id},
     )
     assert child.status_code == 200, child.text
     r = client.delete(
@@ -48,7 +48,7 @@ def test_delete_department_ok(client, admin_token):
     created = client.post(
         "/api/v1/departments",
         headers=_auth(admin_token),
-        json={"name": "待删除部门", "parent_id": None, "sort_order": 99},
+        json={"name": "待删除部门", "parent_id": None},
     )
     assert created.status_code == 200, created.text
     dept_id = created.json()["data"]["id"]

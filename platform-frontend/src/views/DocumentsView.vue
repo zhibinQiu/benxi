@@ -17,6 +17,8 @@ import {
   NTag,
   NPopconfirm,
   NEmpty,
+  NProgress,
+  NText,
   NTooltip,
   NIcon,
   NDropdown,
@@ -24,13 +26,8 @@ import {
   useDialog,
 } from "naive-ui";
 import {
-  Folder,
-  FolderOpen,
-  ShareSocial,
-  EllipsisHorizontal,
   CreateOutline,
   TrashOutline,
-  AddOutline,
   ArrowBackOutline,
 } from "@vicons/ionicons5";
 import {
@@ -45,14 +42,31 @@ import {
   prepareUpload,
   completeUpload,
   restoreDocument,
+  batchDeleteDocuments,
   permanentlyDeleteDocument,
   emptyRecycleBin,
   updateKbFolder,
 } from "../api/client";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
+import KbFolderCard from "../components/KbFolderCard.vue";
+import KbFolderCreateCard from "../components/KbFolderCreateCard.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
+import { useAuth } from "../composables/useAuth";
+import {
+  ORG_SCOPES,
+  LIBRARY_FOLDER_ORDER,
+  SCOPE_LABELS,
+} from "../constants/documentScope";
+import {
+  DOCUMENT_UPLOAD_MAX_FILES,
+  DOCUMENT_UPLOAD_MAX_MB,
+  formatDocumentFormatLabel,
+  titleFromFileName,
+  validateUploadFiles,
+} from "../constants/documentUpload";
 
 const route = useRoute();
+const { isSystemAdmin } = useAuth();
 const router = useRouter();
 const message = useMessage();
 const dialog = useDialog();
@@ -72,7 +86,25 @@ const kbCanManageFolders = ref(false);
 const activeDeptId = ref(null);
 /** main | recycle | my-shares */
 const libraryView = ref("main");
+const companies = ref([]);
 const departments = ref([]);
+const teams = ref([]);
+/** 忽略过期的 load / loadKbFolders 结果，避免切换分级时串数据 */
+let kbFoldersLoadSeq = 0;
+let documentsLoadSeq = 0;
+
+const orgUnits = computed(() => {
+  if (activeScope.value === "company") return companies.value;
+  if (activeScope.value === "team") return teams.value;
+  if (activeScope.value === "department") return departments.value;
+  return [];
+});
+
+const showOrgPicker = computed(
+  () =>
+    ORG_SCOPES.includes(activeScope.value) &&
+    orgUnits.value.length > (isSystemAdmin.value ? 0 : 1)
+);
 
 const showCreateFolder = ref(false);
 const createFolderName = ref("");
@@ -84,6 +116,8 @@ const editFolderDesc = ref("");
 
 const showMoveDoc = ref(false);
 const moveDocTarget = ref(null);
+const batchMoveDocIds = ref([]);
+const checkedRowKeys = ref([]);
 
 const showCreate = ref(false);
 const createTitle = ref("");
@@ -92,6 +126,11 @@ const createScope = ref("personal");
 const createDeptId = ref(null);
 const uploadFile = ref(null);
 const creating = ref(false);
+
+const showBatchUpload = ref(false);
+const batchUploadFiles = ref([]);
+const batchUploading = ref(false);
+const batchProgress = ref({ done: 0, total: 0 });
 const activeFolder = computed(() =>
   folders.value.find((f) => f.scope === activeScope.value)
 );
@@ -99,29 +138,20 @@ const activeFolder = computed(() =>
 const canCreateInActive = computed(() => activeFolder.value?.can_create ?? false);
 
 const deptOptions = computed(() =>
-  departments.value.map((d) => ({ label: d.name, value: d.id }))
+  orgUnits.value.map((d) => ({ label: d.name, value: d.id }))
 );
 
 const scopeTagType = {
   company: "info",
   department: "warning",
+  team: "success",
   personal: "default",
   shared: "success",
   all: "primary",
 };
 
-const FOLDER_ORDER = ["personal", "department", "company", "shared"];
-
 const VIRTUAL_UNCATEGORIZED = "__uncategorized__";
 const VIRTUAL_SHARED = "__shared__";
-
-const SCOPE_LABELS = {
-  company: "公司级",
-  department: "部门级",
-  personal: "我的",
-  shared: "分享",
-  all: "所有",
-};
 
 const STATUS_LABELS = {
   active: "启用",
@@ -189,7 +219,7 @@ const moveFolderScope = computed(() => {
 });
 
 const moveFolderDeptId = computed(() => {
-  if (activeScope.value === "department" && activeDeptId.value) {
+  if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
     return activeDeptId.value;
   }
   return moveDocTarget.value?.dept_id ?? null;
@@ -199,16 +229,72 @@ const canShowDeleteInList = computed(
   () => isMainView.value && !isRecycleView.value && !isMySharesView.value
 );
 
+const showBatchDocActions = computed(
+  () =>
+    isMainView.value &&
+    !showKbFolderList.value &&
+    !isSharedFolderView.value &&
+    !isSharedScopeTab.value &&
+    activeScope.value !== "all"
+);
+
+const showBatchRecycleActions = computed(() => isRecycleView.value);
+
+const selectedRows = computed(() =>
+  items.value.filter((row) => checkedRowKeys.value.includes(row.id))
+);
+
+const canBatchMove = computed(
+  () =>
+    showBatchDocActions.value &&
+    canShowMoveInList.value &&
+    selectedRows.value.length > 0 &&
+    selectedRows.value.every((row) => row.can_edit)
+);
+
+const canBatchDelete = computed(
+  () =>
+    showBatchDocActions.value &&
+    canShowDeleteInList.value &&
+    selectedRows.value.length > 0 &&
+    selectedRows.value.every((row) => row.can_delete)
+);
+
+const canBatchRecycleDelete = computed(
+  () => showBatchRecycleActions.value && selectedRows.value.length > 0
+);
+
 const cardTitle = computed(() => {
   if (isRecycleView.value) return "回收站";
   if (isMySharesView.value) return "我的分享";
-  return "文档库";
+  return "文档中心";
 });
 
 const columns = computed(() => {
-  const base = [
-    { title: "标题", key: "title", ellipsis: { tooltip: true } },
-  ];
+  const base = [];
+  if (showBatchDocActions.value || showBatchRecycleActions.value) {
+    base.push({
+      type: "selection",
+      disabled: (row) =>
+        showBatchRecycleActions.value ? false : !row.can_edit && !row.can_delete,
+    });
+  }
+  base.push({ title: "标题", key: "title", ellipsis: { tooltip: true } });
+  if (!isRecycleView.value) {
+    base.push({
+      title: "格式",
+      key: "file_format",
+      width: 88,
+      render: (row) =>
+        row.file_format
+          ? h(
+              NTag,
+              { size: "small", bordered: false, type: "info" },
+              { default: () => formatDocumentFormatLabel(row.file_format) }
+            )
+          : "—",
+    });
+  }
   if (isRecycleView.value) {
     base.push(
       {
@@ -233,28 +319,17 @@ const columns = computed(() => {
       {
         title: "操作",
         key: "actions",
-        width: 160,
+        width: 100,
         render: (row) =>
-          h(NSpace, { size: 8 }, () => [
-            h(
-              NButton,
-              {
-                text: true,
-                type: "primary",
-                onClick: () => handleRestore(row.id),
-              },
-              { default: () => "恢复" }
-            ),
-            h(
-              NButton,
-              {
-                text: true,
-                type: "default",
-                onClick: () => handlePermanentDelete(row.id, row.title),
-              },
-              { default: () => "彻底删除" }
-            ),
-          ]),
+          h(
+            NButton,
+            {
+              text: true,
+              type: "primary",
+              onClick: () => handleRestore(row.id),
+            },
+            { default: () => "恢复" }
+          ),
       }
     );
     return base;
@@ -292,7 +367,7 @@ const columns = computed(() => {
               onClick: () =>
                 openDocumentDetail(row.id),
             },
-            { default: () => "详情" }
+            { default: () => "查看" }
           ),
       }
     );
@@ -323,7 +398,7 @@ const columns = computed(() => {
         key: "dept_name",
         width: 110,
         render: (row) =>
-          row.scope === "department" ? row.dept_name || "—" : "—",
+          ORG_SCOPES.includes(row.scope) ? row.dept_name || "—" : "—",
       },
       {
         title: "我的权限",
@@ -353,10 +428,15 @@ const columns = computed(() => {
         render: (row) => LEVEL_LABELS[row.shared_level] || row.shared_level || "—",
       }
     );
-  } else if (activeScope.value === "department") {
+  } else if (ORG_SCOPES.includes(activeScope.value)) {
     base.push(
       {
-        title: "所属部门",
+        title:
+          activeScope.value === "company"
+            ? "所属公司"
+            : activeScope.value === "team"
+              ? "所属小组"
+              : "所属部门",
         key: "dept_name",
         width: 120,
         render: (row) => row.dept_name || "—",
@@ -368,24 +448,8 @@ const columns = computed(() => {
         render: (row) => row.owner_name || "未知用户",
       }
     );
-  } else if (activeScope.value === "company") {
-    base.push({
-      title: "上传人",
-      key: "owner_name",
-      width: 140,
-      render: (row) => row.owner_name || "未知用户",
-    });
   }
   base.push(
-    {
-      title: "上传时间",
-      key: "uploaded_at",
-      width: 180,
-      render: (row) =>
-        row.uploaded_at
-          ? new Date(row.uploaded_at).toLocaleString()
-          : new Date(row.updated_at).toLocaleString(),
-    },
     {
       title: "更新时间",
       key: "updated_at",
@@ -395,61 +459,17 @@ const columns = computed(() => {
     {
       title: "操作",
       key: "actions",
-      width: canShowDeleteInList.value ? 168 : 100,
-      render: (row) => {
-        if (!canShowDeleteInList.value) {
-          return h(
-            NButton,
-            {
-              text: true,
-              type: "primary",
-              onClick: () =>
-                openDocumentDetail(row.id),
-            },
-            { default: () => "详情" }
-          );
-        }
-        return h(NSpace, { size: 8 }, () => {
-          const buttons = [
-            h(
-              NButton,
-              {
-                text: true,
-                type: "primary",
-                onClick: () =>
-                  openDocumentDetail(row.id),
-              },
-              { default: () => "详情" }
-            ),
-          ];
-          if (canShowMoveInList.value && row.can_edit) {
-            buttons.push(
-              h(
-                NButton,
-                {
-                  text: true,
-                  onClick: () => openMoveDocument(row),
-                },
-                { default: () => "移动" }
-              )
-            );
-          }
-          if (row.can_delete) {
-            buttons.push(
-              h(
-                NButton,
-                {
-                  text: true,
-                  type: "error",
-                  onClick: () => handleDeleteDocument(row.id, row.title),
-                },
-                { default: () => "删除" }
-              )
-            );
-          }
-          return buttons;
-        });
-      },
+      width: 80,
+      render: (row) =>
+        h(
+          NButton,
+          {
+            text: true,
+            type: "primary",
+            onClick: () => openDocumentDetail(row.id),
+          },
+          { default: () => "查看" }
+        ),
     }
   );
   return base;
@@ -491,6 +511,51 @@ function handleDeleteDocument(documentId, title) {
   confirmPurgeDocument(documentId, title, { fromRecycle: false });
 }
 
+function onCheckedRowKeysChange(keys) {
+  checkedRowKeys.value = keys;
+}
+
+function handleBatchDelete() {
+  const rows = selectedRows.value;
+  if (!rows.length) return;
+  const fromRecycle = isRecycleView.value;
+  const title =
+    rows.length === 1
+      ? `「${rows[0].title || "该文档"}」`
+      : `选中的 ${rows.length} 份文档`;
+  dialog.warning({
+    title: fromRecycle ? "批量彻底删除" : "批量删除文档",
+    content: fromRecycle
+      ? `确定彻底删除${title}？删除后无法恢复。`
+      : `确定删除${title}？将删除全部版本文件及文档记录，且无法恢复。`,
+    positiveText: fromRecycle ? "彻底删除" : "删除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      try {
+        const res = await batchDeleteDocuments(
+          rows.map((row) => row.id),
+          { permanent: true }
+        );
+        const count = res.deleted_count ?? res.deleted?.length ?? 0;
+        const failed = res.failed || [];
+        if (failed.length) {
+          message.warning(
+            `已删除 ${count} 份，${failed.length} 份失败：${failed[0].message || "未知错误"}`
+          );
+        } else {
+          message.success(fromRecycle ? `已彻底删除 ${count} 份文档` : `已删除 ${count} 份文档`);
+        }
+        checkedRowKeys.value = [];
+        await load();
+      } catch (e) {
+        message.error(e.message);
+        return false;
+      }
+      return true;
+    },
+  });
+}
+
 function handlePermanentDelete(documentId, title) {
   confirmPurgeDocument(documentId, title, { fromRecycle: true });
 }
@@ -508,7 +573,22 @@ async function confirmEmptyRecycle() {
 
 function normalizeFolders(list) {
   const byScope = Object.fromEntries((list || []).map((f) => [f.scope, f]));
-  return FOLDER_ORDER.filter((s) => byScope[s]).map((s) => byScope[s]);
+  return LIBRARY_FOLDER_ORDER.filter((s) => byScope[s]).map((s) => byScope[s]);
+}
+
+function resolveScopeFromRouteQuery() {
+  const q = route.query.scope;
+  if (typeof q === "string" && q && q !== "recycle") {
+    return q;
+  }
+  const deptId = route.query.dept_id;
+  if (
+    deptId &&
+    companies.value.some((c) => String(c.id) === String(deptId))
+  ) {
+    return "company";
+  }
+  return null;
 }
 
 function applyRouteFromQuery() {
@@ -524,31 +604,56 @@ function applyRouteFromQuery() {
     return;
   }
   libraryView.value = "main";
-  const q = route.query.scope;
-  if (typeof q === "string" && q && q !== "recycle") {
-    activeScope.value = q;
+  const resolvedScope = resolveScopeFromRouteQuery();
+  if (resolvedScope === "shared") {
+    activeScope.value = "personal";
+    activeDeptId.value = null;
+    const fk = route.query.folder;
+    activeKbFolderKey.value =
+      typeof fk === "string" && fk ? fk : VIRTUAL_SHARED;
+    return;
+  }
+  if (resolvedScope) {
+    activeScope.value = resolvedScope;
   }
   if (route.query.dept_id) {
     activeDeptId.value = route.query.dept_id;
+  } else if (!ORG_SCOPES.includes(activeScope.value)) {
+    activeDeptId.value = null;
   }
   const fk = route.query.folder;
   activeKbFolderKey.value =
     typeof fk === "string" && fk ? fk : null;
 }
 
+async function syncLegacySharedScopeRoute() {
+  if (route.query.scope !== "shared" || libraryView.value !== "main") return;
+  await router.replace({
+    name: "documents",
+    query: {
+      scope: "personal",
+      folder: activeKbFolderKey.value || VIRTUAL_SHARED,
+    },
+  });
+}
+
 async function loadFolders() {
   try {
     const lib = await fetchDocumentLibrary();
     folders.value = normalizeFolders(lib.folders);
+    companies.value = lib.companies || [];
     departments.value = lib.departments || [];
+    teams.value = lib.teams || [];
+    const units = orgUnits.value;
     if (
-      activeScope.value === "department" &&
-      departments.value.length &&
+      ORG_SCOPES.includes(activeScope.value) &&
+      units.length &&
       !activeDeptId.value
     ) {
-      activeDeptId.value = departments.value[0].id;
+      activeDeptId.value = units[0].id;
     }
     applyRouteFromQuery();
+    await syncLegacySharedScopeRoute();
     if (
       libraryView.value === "main" &&
       folders.value.length &&
@@ -562,30 +667,36 @@ async function loadFolders() {
 }
 
 async function loadKbFolders() {
+  const seq = ++kbFoldersLoadSeq;
   if (!usesKbFolders.value) {
     kbFolders.value = [];
     return;
   }
   try {
     const params = { scope: activeScope.value };
-    if (activeScope.value === "department" && activeDeptId.value) {
+    if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
       params.dept_id = activeDeptId.value;
     }
     const data = await fetchKbFolders(params);
+    if (seq !== kbFoldersLoadSeq) return;
     kbFolders.value = data.items || [];
     kbCanManageFolders.value = !!data.can_manage_folders;
   } catch (e) {
+    if (seq !== kbFoldersLoadSeq) return;
     kbFolders.value = [];
     message.error(e.message);
   }
 }
 
 async function load() {
+  const seq = ++documentsLoadSeq;
   loading.value = true;
   items.value = [];
+  checkedRowKeys.value = [];
   try {
     if (usesKbFolders.value && !activeKbFolderKey.value) {
       await loadKbFolders();
+      if (seq !== documentsLoadSeq) return;
       total.value = 0;
       return;
     }
@@ -603,7 +714,7 @@ async function load() {
       data = await fetchDocuments({ ...params, scope: "shared" });
     } else if (usesKbFolders.value && activeKbFolderKey.value) {
       const docParams = { ...params, scope: activeScope.value };
-      if (activeScope.value === "department" && activeDeptId.value) {
+      if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
         docParams.dept_id = activeDeptId.value;
       }
       if (activeKbFolderKey.value === VIRTUAL_UNCATEGORIZED) {
@@ -613,16 +724,24 @@ async function load() {
       }
       data = await fetchDocuments(docParams);
     } else {
-      data = await fetchDocuments({ ...params, scope: activeScope.value });
+      const docParams = { ...params, scope: activeScope.value };
+      if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
+        docParams.dept_id = activeDeptId.value;
+      }
+      data = await fetchDocuments(docParams);
     }
+    if (seq !== documentsLoadSeq) return;
     items.value = data.items || [];
     total.value = data.total ?? 0;
   } catch (e) {
+    if (seq !== documentsLoadSeq) return;
     items.value = [];
     total.value = 0;
     message.error(e.message);
   } finally {
-    loading.value = false;
+    if (seq === documentsLoadSeq) {
+      loading.value = false;
+    }
   }
 }
 
@@ -632,9 +751,8 @@ function onPageChange(p) {
 }
 
 function buildLibraryQuery() {
-  const query = {};
-  if (activeScope.value !== "company") query.scope = activeScope.value;
-  if (activeScope.value === "department" && activeDeptId.value) {
+  const query = { scope: activeScope.value };
+  if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
     query.dept_id = activeDeptId.value;
   }
   if (activeKbFolderKey.value) query.folder = activeKbFolderKey.value;
@@ -649,19 +767,22 @@ function openDocumentDetail(id) {
   );
 }
 
-function onTabChange(scope) {
+async function onTabChange(scope) {
   activeScope.value = scope;
-  if (scope === "shared") {
-    activeKbFolderKey.value = null;
-  }
   activeKbFolderKey.value = null;
   page.value = 1;
-  if (scope === "department" && departments.value.length) {
-    activeDeptId.value = departments.value[0].id;
+  let units = [];
+  if (scope === "company") units = companies.value;
+  else if (scope === "team") units = teams.value;
+  else if (scope === "department") units = departments.value;
+  if (ORG_SCOPES.includes(scope) && units.length) {
+    activeDeptId.value = units[0].id;
+  } else {
+    activeDeptId.value = null;
   }
-  router.replace({ name: "documents", query: buildLibraryQuery() });
-  loadKbFolders();
-  load();
+  await router.replace({ name: "documents", query: buildLibraryQuery() });
+  await loadKbFolders();
+  await load();
 }
 
 function openKbFolder(folder) {
@@ -714,7 +835,7 @@ async function submitCreateFolder() {
       description: createFolderDesc.value.trim(),
       scope: activeScope.value,
     };
-    if (activeScope.value === "department" && activeDeptId.value) {
+    if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
       payload.dept_id = activeDeptId.value;
     }
     await createKbFolder(payload);
@@ -774,18 +895,6 @@ async function onDeleteKbFolder(folder) {
   }
 }
 
-function folderIconColor(folder) {
-  if (folder.kind === "shared") return "#3b82f6";
-  if (folder.is_system) return "#94a3b8";
-  return "#f0b429";
-}
-
-function folderIconComponent(folder) {
-  if (folder.kind === "shared") return ShareSocial;
-  if (folder.kind === "uncategorized") return FolderOpen;
-  return Folder;
-}
-
 function folderTooltip(folder) {
   const parts = [];
   if (folder.description) parts.push(folder.description);
@@ -810,14 +919,18 @@ function folderMenuOptions(folder) {
   ];
 }
 
-function openMoveDocument(row) {
-  moveDocTarget.value = row;
+function openBatchMove() {
+  if (!canBatchMove.value) return;
+  batchMoveDocIds.value = selectedRows.value.map((row) => row.id);
+  moveDocTarget.value = selectedRows.value[0] || null;
   showMoveDoc.value = true;
 }
 
 function onDocumentMoved() {
   showMoveDoc.value = false;
   moveDocTarget.value = null;
+  batchMoveDocIds.value = [];
+  checkedRowKeys.value = [];
   load();
 }
 
@@ -851,28 +964,75 @@ function openMyShares() {
 function backToLibrary() {
   libraryView.value = "main";
   page.value = 1;
-  const query =
-    activeScope.value === "company" ? {} : { scope: activeScope.value };
-  router.replace({ name: "documents", query });
+  router.replace({ name: "documents", query: buildLibraryQuery() });
   load();
 }
 
-function titleFromFileName(fileName) {
-  const base = String(fileName || "").replace(/^.*[/\\]/, "").trim();
-  if (!base) return "";
-  const dot = base.lastIndexOf(".");
-  return dot > 0 ? base.slice(0, dot) : base;
+function buildCreatePayload(title, description = "") {
+  const payload = {
+    title,
+    description: description || "",
+    scope: createScope.value,
+  };
+  if (ORG_SCOPES.includes(createScope.value) && createDeptId.value) {
+    payload.dept_id = createDeptId.value;
+  }
+  if (
+    activeKbFolderKey.value &&
+    activeKbFolderKey.value !== VIRTUAL_UNCATEGORIZED &&
+    activeKbFolderKey.value !== VIRTUAL_SHARED
+  ) {
+    payload.folder_id = activeKbFolderKey.value;
+  }
+  return payload;
+}
+
+async function uploadFileToDocument(docId, file) {
+  const prep = await prepareUpload(
+    docId,
+    file.name,
+    file.type || "application/octet-stream"
+  );
+  const putRes = await fetch(prep.upload_url, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  if (!putRes.ok) throw new Error("上传到存储失败");
+  await completeUpload(docId, {
+    version_id: prep.version_id,
+    file_size: file.size,
+  });
 }
 
 function onCreateFileChange(opts) {
   const file = opts.fileList[0]?.file ?? null;
+  if (file) {
+    const check = validateUploadFiles([file], { maxFiles: 1 });
+    if (!check.ok) {
+      message.warning(check.message);
+      uploadFile.value = null;
+      return;
+    }
+  }
   uploadFile.value = file;
   if (file && !createTitle.value.trim()) {
     createTitle.value = titleFromFileName(file.name);
   }
 }
 
-function openCreate() {
+function onBatchFileChange(opts) {
+  const files = opts.fileList.map((f) => f.file).filter(Boolean);
+  const check = validateUploadFiles(files);
+  if (!check.ok) {
+    message.warning(check.message);
+    batchUploadFiles.value = check.ok ? check.files : files.slice(0, DOCUMENT_UPLOAD_MAX_FILES);
+    return;
+  }
+  batchUploadFiles.value = check.files;
+}
+
+function ensureCanCreateDocuments() {
   if (
     !isMainView.value ||
     activeScope.value === "all" ||
@@ -880,30 +1040,47 @@ function openCreate() {
     isSharedFolderView.value
   ) {
     message.warning("请进入知识库文件夹后再新建（分享文件夹内不可新建）");
-    return;
+    return false;
   }
   if (!activeKbFolderKey.value) {
     message.warning("请先进入具体文件夹");
-    return;
+    return false;
   }
   if (!canCreateInActive.value) {
     message.warning("当前分级下无权新建文档");
-    return;
+    return false;
   }
   createScope.value = activeScope.value;
   createDeptId.value =
-    activeScope.value === "department"
-      ? activeDeptId.value || departments.value[0]?.id
+    ORG_SCOPES.includes(activeScope.value)
+      ? activeDeptId.value || orgUnits.value[0]?.id
       : null;
+  return true;
+}
+
+function openCreate() {
+  if (!ensureCanCreateDocuments()) return;
   createTitle.value = "";
   createDesc.value = "";
   uploadFile.value = null;
   showCreate.value = true;
 }
 
+function openBatchUpload() {
+  if (!ensureCanCreateDocuments()) return;
+  batchUploadFiles.value = [];
+  batchProgress.value = { done: 0, total: 0 };
+  showBatchUpload.value = true;
+}
+
 async function submitCreate() {
   if (!uploadFile.value) {
     message.warning("请选择要上传的文件");
+    return;
+  }
+  const check = validateUploadFiles([uploadFile.value], { maxFiles: 1 });
+  if (!check.ok) {
+    message.warning(check.message);
     return;
   }
   let title = createTitle.value.trim();
@@ -917,39 +1094,9 @@ async function submitCreate() {
   creating.value = true;
   let createdId = null;
   try {
-    const payload = {
-      title,
-      description: createDesc.value,
-      scope: createScope.value,
-    };
-    if (createScope.value === "department" && createDeptId.value) {
-      payload.dept_id = createDeptId.value;
-    }
-    if (
-      activeKbFolderKey.value &&
-      activeKbFolderKey.value !== VIRTUAL_UNCATEGORIZED &&
-      activeKbFolderKey.value !== VIRTUAL_SHARED
-    ) {
-      payload.folder_id = activeKbFolderKey.value;
-    }
-    const doc = await createDocument(payload);
+    const doc = await createDocument(buildCreatePayload(title, createDesc.value));
     createdId = doc.id;
-    const file = uploadFile.value;
-    const prep = await prepareUpload(
-      doc.id,
-      file.name,
-      file.type || "application/octet-stream"
-    );
-    const putRes = await fetch(prep.upload_url, {
-      method: "PUT",
-      body: file,
-      headers: { "Content-Type": file.type || "application/octet-stream" },
-    });
-    if (!putRes.ok) throw new Error("上传到存储失败");
-    await completeUpload(doc.id, {
-      version_id: prep.version_id,
-      file_size: file.size,
-    });
+    await uploadFileToDocument(doc.id, uploadFile.value);
     message.success("文档已创建");
     showCreate.value = false;
     createTitle.value = "";
@@ -971,12 +1118,69 @@ async function submitCreate() {
   }
 }
 
+async function submitBatchUpload() {
+  const check = validateUploadFiles(batchUploadFiles.value);
+  if (!check.ok) {
+    message.warning(check.message);
+    return;
+  }
+  if (ORG_SCOPES.includes(createScope.value) && !createDeptId.value) {
+    message.warning("请选择所属部门");
+    return;
+  }
+  batchUploading.value = true;
+  batchProgress.value = { done: 0, total: check.files.length };
+  const failed = [];
+  let success = 0;
+  try {
+    for (const file of check.files) {
+      let createdId = null;
+      try {
+        const title = titleFromFileName(file.name) || file.name;
+        const doc = await createDocument(buildCreatePayload(title, ""));
+        createdId = doc.id;
+        await uploadFileToDocument(doc.id, file);
+        success += 1;
+      } catch (e) {
+        failed.push({ name: file.name, reason: e.message });
+        if (createdId) {
+          try {
+            await permanentlyDeleteDocument(createdId);
+          } catch {
+            /* 忽略回滚失败 */
+          }
+        }
+      } finally {
+        batchProgress.value = {
+          done: batchProgress.value.done + 1,
+          total: check.files.length,
+        };
+      }
+    }
+    if (success && !failed.length) {
+      message.success(`已成功上传 ${success} 个文档`);
+      showBatchUpload.value = false;
+      batchUploadFiles.value = [];
+    } else if (success) {
+      message.warning(
+        `成功 ${success} 个，失败 ${failed.length} 个：${failed.map((f) => f.name).join("、")}`
+      );
+    } else {
+      message.error(failed[0]?.reason || "批量上传失败");
+    }
+    await load();
+  } finally {
+    batchUploading.value = false;
+  }
+}
+
 watch(activeScope, () => {
   if (isMainView.value) page.value = 1;
 });
 
 onMounted(async () => {
   applyRouteFromQuery();
+  await syncLegacySharedScopeRoute();
   await loadFolders();
   await loadKbFolders();
   await load();
@@ -986,6 +1190,7 @@ watch(
   () => [route.query.view, route.query.scope, route.query.folder, route.query.dept_id],
   async () => {
     applyRouteFromQuery();
+    await syncLegacySharedScopeRoute();
     page.value = 1;
     await loadKbFolders();
     load();
@@ -1001,10 +1206,6 @@ watch(
     <p v-if="isMySharesView" style="margin: 0 0 12px; color: #666; font-size: 13px">
       此处显示您作为上传人分享给其他用户的文档；「我的」下的「分享」文件夹中为别人分享给您的文档。
     </p>
-    <p v-if="isSharedScopeTab" style="margin: 0 0 12px; color: #666; font-size: 13px">
-      其他用户分享给您的文档；「我的分享」中可查看您分享给他人的文档。
-    </p>
-
     <n-tabs
       v-if="isMainView"
       v-model:value="activeScope"
@@ -1016,7 +1217,7 @@ watch(
           <n-space :size="6" align="center">
             <span>{{ f.label }}</span>
             <n-tag
-              v-if="!f.can_create && f.scope !== 'shared'"
+              v-if="!f.can_create"
               size="tiny"
               :bordered="false"
             >
@@ -1028,7 +1229,7 @@ watch(
     </n-tabs>
 
     <n-form
-      v-if="isMainView && activeScope === 'department' && departments.length > 1"
+      v-if="isMainView && showOrgPicker"
       inline
       style="margin-bottom: 12px"
     >
@@ -1075,6 +1276,13 @@ watch(
         >
           新建文档
         </n-button>
+        <n-button
+          v-if="isMainView && usesKbFolders && activeKbFolderKey && !isSharedFolderView"
+          :disabled="!canCreateInActive"
+          @click="openBatchUpload"
+        >
+          批量上传
+        </n-button>
       </n-space>
     </template>
 
@@ -1099,77 +1307,87 @@ watch(
       >
         {{ activeKbFolderLabel }}
       </span>
-      <n-button
-        v-if="showKbFolderList && canManageKbFolders"
-        quaternary
-        circle
-        type="primary"
-        title="新建文件夹"
-        @click="openCreateFolder"
-      >
-        <template #icon>
-          <n-icon :component="AddOutline" />
-        </template>
-      </n-button>
     </div>
 
     <div v-if="showKbFolderList" v-loading="loading">
-      <n-empty v-if="!kbFolders.length" description="暂无文件夹" />
+      <n-empty
+        v-if="!kbFolders.length && !canManageKbFolders"
+        description="暂无文件夹"
+      />
       <div v-else class="kb-folder-explorer">
-        <n-tooltip
-          v-for="folder in kbFolders"
-          :key="folder.virtual_id || folder.id"
-          trigger="hover"
-          :delay="400"
+        <div
+          v-if="canManageKbFolders"
+          class="kb-folder-explorer__cell"
+          :style="{ '--folder-i': 0 }"
         >
-          <template #trigger>
-            <div
-              class="kb-folder-item"
-              role="button"
-              tabindex="0"
-              @click="openKbFolder(folder)"
-              @keydown.enter="openKbFolder(folder)"
-              @dblclick="openKbFolder(folder)"
-            >
-              <span v-if="folder.is_system" class="kb-folder-item__badge">内置</span>
-              <div
-                v-if="folderMenuOptions(folder).length"
-                class="kb-folder-item__actions"
-                @click.stop
-              >
-                <n-dropdown
-                  trigger="click"
-                  :options="folderMenuOptions(folder)"
-                  @select="(key) => onFolderMenuSelect(key, folder)"
-                >
-                  <n-button quaternary circle size="tiny" title="更多操作">
-                    <template #icon>
-                      <n-icon :component="EllipsisHorizontal" />
-                    </template>
-                  </n-button>
-                </n-dropdown>
-              </div>
-              <div class="kb-folder-item__icon">
-                <n-icon
-                  :size="folder.kind === 'shared' ? 40 : 44"
-                  :color="folderIconColor(folder)"
-                  :component="folderIconComponent(folder)"
-                />
-              </div>
-              <div class="kb-folder-item__name">{{ folder.name }}</div>
-              <div class="kb-folder-item__meta">{{ folder.document_count ?? 0 }} 项</div>
-            </div>
-          </template>
-          {{ folderTooltip(folder) }}
-        </n-tooltip>
+          <KbFolderCreateCard @create="openCreateFolder" />
+        </div>
+        <div
+          v-for="(folder, folderIdx) in kbFolders"
+          :key="folder.virtual_id || folder.id"
+          class="kb-folder-explorer__cell"
+          :style="{ '--folder-i': canManageKbFolders ? folderIdx + 1 : folderIdx }"
+        >
+          <n-tooltip trigger="hover" :delay="400">
+            <template #trigger>
+              <KbFolderCard
+                :folder="folder"
+                :card-key="folder.virtual_id || folder.id || `f-${folderIdx}`"
+                :menu-options="folderMenuOptions(folder)"
+                @open="openKbFolder"
+                @menu-select="onFolderMenuSelect"
+              />
+            </template>
+            {{ folderTooltip(folder) }}
+          </n-tooltip>
+        </div>
       </div>
     </div>
 
+    <template v-else>
+    <div v-if="showBatchRecycleActions" class="batch-table-toolbar">
+      <n-space align="center" :size="8">
+        <n-button
+          :disabled="!canBatchRecycleDelete"
+          type="error"
+          secondary
+          @click="handleBatchDelete"
+        >
+          彻底删除
+        </n-button>
+        <span v-if="checkedRowKeys.length" class="batch-table-toolbar__hint">
+          已选 {{ checkedRowKeys.length }} 项
+        </span>
+      </n-space>
+    </div>
+
+    <div v-else-if="showBatchDocActions" class="doc-list-toolbar">
+      <n-space align="center">
+        <n-button :disabled="!canBatchMove" @click="openBatchMove">移动</n-button>
+        <n-button
+          :disabled="!canBatchDelete"
+          type="error"
+          secondary
+          @click="handleBatchDelete"
+        >
+          删除
+        </n-button>
+        <span
+          v-if="checkedRowKeys.length"
+          class="doc-list-toolbar__hint"
+        >
+          已选 {{ checkedRowKeys.length }} 项
+        </span>
+      </n-space>
+    </div>
+
     <n-data-table
-      v-else
       :columns="columns"
       :data="items"
       :loading="loading"
+      :row-key="(row) => row.id"
+      :checked-row-keys="checkedRowKeys"
+      @update:checked-row-keys="onCheckedRowKeysChange"
       :pagination="{
         page: page,
         pageSize: pageSize,
@@ -1177,6 +1395,7 @@ watch(
         onUpdatePage: onPageChange,
       }"
     />
+    </template>
   </n-card>
 
   <n-modal
@@ -1193,7 +1412,7 @@ watch(
         </n-tag>
       </n-form-item>
       <n-form-item
-        v-if="createScope === 'department'"
+        v-if="ORG_SCOPES.includes(createScope)"
         label="所属部门"
         required
       >
@@ -1220,6 +1439,9 @@ watch(
         >
           <n-button>选择文件</n-button>
         </n-upload>
+        <n-text depth="3" style="display: block; margin-top: 6px; font-size: 12px">
+          单文件不超过 {{ DOCUMENT_UPLOAD_MAX_MB }}MB
+        </n-text>
       </n-form-item>
     </n-form>
     <template #footer>
@@ -1227,6 +1449,73 @@ watch(
         <n-button @click="showCreate = false">取消</n-button>
         <n-button type="primary" :loading="creating" @click="submitCreate">
           创建
+        </n-button>
+      </n-space>
+    </template>
+  </n-modal>
+
+  <n-modal
+    v-model:show="showBatchUpload"
+    preset="card"
+    :title="`批量上传 · ${activeFolder?.label || ''}`"
+    style="width: 520px"
+    :mask-closable="false"
+  >
+    <n-form>
+      <n-form-item label="分级">
+        <n-tag :type="scopeTagType[createScope] || 'default'">
+          {{ folders.find((x) => x.scope === createScope)?.label || createScope }}
+        </n-tag>
+      </n-form-item>
+      <n-form-item
+        v-if="ORG_SCOPES.includes(createScope)"
+        label="所属部门"
+        required
+      >
+        <n-select
+          v-model:value="createDeptId"
+          :options="deptOptions"
+          placeholder="选择部门"
+        />
+      </n-form-item>
+      <n-form-item label="文件" required>
+        <n-upload
+          multiple
+          :max="DOCUMENT_UPLOAD_MAX_FILES"
+          :default-upload="false"
+          @change="onBatchFileChange"
+        >
+          <n-button>选择文件（最多 {{ DOCUMENT_UPLOAD_MAX_FILES }} 个）</n-button>
+        </n-upload>
+        <n-text depth="3" style="display: block; margin-top: 6px; font-size: 12px">
+          每个文件不超过 {{ DOCUMENT_UPLOAD_MAX_MB }}MB；文档名默认为文件名，说明留空
+        </n-text>
+        <n-text
+          v-if="batchUploadFiles.length"
+          depth="3"
+          style="display: block; margin-top: 4px; font-size: 12px"
+        >
+          已选 {{ batchUploadFiles.length }} 个文件
+        </n-text>
+      </n-form-item>
+      <n-progress
+        v-if="batchUploading && batchProgress.total"
+        type="line"
+        :percentage="Math.round((batchProgress.done / batchProgress.total) * 100)"
+        :show-indicator="true"
+        style="margin-top: 8px"
+      />
+    </n-form>
+    <template #footer>
+      <n-space justify="end">
+        <n-button :disabled="batchUploading" @click="showBatchUpload = false">取消</n-button>
+        <n-button
+          type="primary"
+          :loading="batchUploading"
+          :disabled="!batchUploadFiles.length"
+          @click="submitBatchUpload"
+        >
+          开始上传
         </n-button>
       </n-space>
     </template>
@@ -1298,9 +1587,10 @@ watch(
   </n-modal>
 
   <MoveDocumentFolderModal
-    v-if="moveDocTarget"
+    v-if="showMoveDoc && moveDocTarget"
     v-model:show="showMoveDoc"
     :document-id="moveDocTarget.id"
+    :document-ids="batchMoveDocIds"
     :document-title="moveDocTarget.title"
     :scope="moveDocTarget.scope"
     :folder-scope="moveFolderScope"

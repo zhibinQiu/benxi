@@ -209,7 +209,7 @@ def test_library_tabs_order_and_shared(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     r = client.get("/api/v1/documents/library", headers=headers)
     scopes = [f["scope"] for f in r.json()["data"]["folders"]]
-    assert scopes == ["personal", "department", "company", "shared"]
+    assert scopes == ["personal", "team", "department", "company", "shared"]
     personal = next(f for f in r.json()["data"]["folders"] if f["scope"] == "personal")
     assert personal.get("can_manage_folders") is True
     shared = next(f for f in r.json()["data"]["folders"] if f["scope"] == "shared")

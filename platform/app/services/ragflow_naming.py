@@ -46,34 +46,79 @@ def _id_suffix(value: uuid.UUID, *, length: int = 6) -> str:
     return str(value).replace("-", "")[:length]
 
 
-def dataset_name_for_personal(user_id: uuid.UUID, db: Session | None = None) -> str:
-    settings = get_settings()
-    prefix = (settings.ragflow_personal_dataset_prefix or "zt-personal").strip()
-    if db is not None:
-        from app.models.org import User
+_LEGACY_DEPT_RE = re.compile(r"^zt-dept-([a-f0-9]{6})$", re.I)
+_NAME_SUFFIX_RE = re.compile(r"-([a-f0-9]{6})$")
 
-        user = db.get(User, user_id)
-        login = _slug_token(user.username if user else "")
-        return f"{prefix}-{login}-{_id_suffix(user_id)}"
-    short = str(user_id).replace("-", "")[:12]
-    return f"{prefix}-{short}"
+
+def dept_id_from_name_suffix(db: Session, suffix: str) -> uuid.UUID | None:
+    """由知识库名中的 6 位 id 后缀反查部门 UUID。"""
+    from sqlalchemy import select
+
+    from app.models.org import Department
+
+    s = (suffix or "").strip().lower()
+    if len(s) != 6:
+        return None
+    for dept in db.scalars(select(Department)).all():
+        if str(dept.id).replace("-", "")[:6].lower() == s:
+            return dept.id
+    return None
+
+
+def dept_id_from_dataset_name(db: Session, name: str) -> uuid.UUID | None:
+    """从 zt-dept-xxxxxx 或 部门名-xxxxxx 解析部门 id。"""
+    raw = (name or "").strip()
+    if not raw:
+        return None
+    m = _LEGACY_DEPT_RE.match(raw)
+    if m:
+        return dept_id_from_name_suffix(db, m.group(1))
+    m2 = _NAME_SUFFIX_RE.search(raw)
+    if m2:
+        return dept_id_from_name_suffix(db, m2.group(1))
+    return None
+
+
+def _user_visible_name(user) -> str:
+    if not user:
+        return "我的"
+    name = (getattr(user, "display_name", None) or "").strip()
+    if name:
+        return name
+    login = (getattr(user, "username", None) or "").strip()
+    return login or "我的"
+
+
+def _needs_global_unique_dataset_name() -> bool:
+    """管理员 API Key 建库时，库名需带短后缀避免跨用户冲突。"""
+    return bool((get_settings().ragflow_api_key or "").strip())
 
 
 def dataset_display_label_personal(db: Session, user_id: uuid.UUID) -> str:
     from app.models.org import User
 
-    user = db.get(User, user_id)
-    login = (user.username if user else "").strip()
-    return f"个人·{login}" if login else "个人"
+    return _user_visible_name(db.get(User, user_id))
 
 
-def dataset_name_for_company() -> str:
+def dataset_name_for_personal(user_id: uuid.UUID, db: Session | None = None) -> str:
+    if db is not None:
+        from app.models.org import User
+
+        base = _slug_token(_user_visible_name(db.get(User, user_id)), max_len=40)
+        if _needs_global_unique_dataset_name():
+            return f"{base}-{_id_suffix(user_id)}"
+        return base
     settings = get_settings()
-    return (settings.ragflow_company_dataset_name or "zt-company").strip()
+    prefix = (settings.ragflow_personal_dataset_prefix or "zt-personal").strip()
+    return f"{prefix}-{_id_suffix(user_id)}"
 
 
 def dataset_display_label_company() -> str:
-    return "公司级"
+    return "公司"
+
+
+def dataset_name_for_company() -> str:
+    return dataset_display_label_company()
 
 
 def dataset_name_for_user(user_id: uuid.UUID, db: Session | None = None) -> str:
@@ -81,22 +126,60 @@ def dataset_name_for_user(user_id: uuid.UUID, db: Session | None = None) -> str:
     return dataset_name_for_personal(user_id, db)
 
 
-def dataset_name_for_dept(dept_id: uuid.UUID, db: Session | None = None) -> str:
-    settings = get_settings()
-    prefix = (settings.ragflow_dept_dataset_prefix or "zt-dept").strip()
-    if db is not None:
-        from app.models.org import Department
-
-        dept = db.get(Department, dept_id)
-        slug = _slug_token(dept.name if dept else "dept")
-        return f"{prefix}-{slug}-{_id_suffix(dept_id)}"
-    short = str(dept_id).replace("-", "")[:12]
-    return f"{prefix}-{short}"
-
-
 def dataset_display_label_dept(db: Session, dept_id: uuid.UUID) -> str:
     from app.models.org import Department
 
     dept = db.get(Department, dept_id)
     name = (dept.name if dept else "").strip()
-    return f"部门·{name}" if name else "部门"
+    return name or "部门"
+
+
+def dataset_name_for_dept(dept_id: uuid.UUID, db: Session | None = None) -> str:
+    if db is not None:
+        from app.models.org import Department
+
+        base = _slug_token(dataset_display_label_dept(db, dept_id), max_len=40)
+        if _needs_global_unique_dataset_name():
+            return f"{base}-{_id_suffix(dept_id)}"
+        return base
+    settings = get_settings()
+    prefix = (settings.ragflow_dept_dataset_prefix or "zt-dept").strip()
+    return f"{prefix}-{_id_suffix(dept_id)}"
+
+
+def legacy_dataset_name_for_personal(user_id: uuid.UUID) -> str:
+    prefix = (get_settings().ragflow_personal_dataset_prefix or "zt-personal").strip()
+    return f"{prefix}-{_id_suffix(user_id)}"
+
+
+def legacy_dataset_name_for_dept(dept_id: uuid.UUID) -> str:
+    prefix = (get_settings().ragflow_dept_dataset_prefix or "zt-dept").strip()
+    return f"{prefix}-{_id_suffix(dept_id)}"
+
+
+def legacy_dataset_name_for_company() -> str:
+    return (get_settings().ragflow_company_dataset_name or "zt-company").strip()
+
+
+def legacy_dataset_name_for_platform_user(user_id: uuid.UUID) -> str:
+    """更早期每用户单库命名 zt-platform-{id 前 8 位}。"""
+    prefix = (get_settings().ragflow_dataset_prefix or "zt-platform").strip()
+    return f"{prefix}-{_id_suffix(user_id, length=8)}"
+
+
+def legacy_scope_dataset_names(scope: str, scope_key: str) -> list[str]:
+    """历史技术库名（用于展示映射与复用旧 dataset）。"""
+    names: list[str] = []
+    if scope == "company":
+        names.append(legacy_dataset_name_for_company())
+        return names
+    try:
+        key_uuid = uuid.UUID(scope_key)
+    except ValueError:
+        return names
+    if scope == "department":
+        names.append(legacy_dataset_name_for_dept(key_uuid))
+    else:
+        names.append(legacy_dataset_name_for_personal(key_uuid))
+        names.append(legacy_dataset_name_for_platform_user(key_uuid))
+    return names

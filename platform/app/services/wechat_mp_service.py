@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.document_scope import content_subscription_import_scope
 from app.core.exceptions import bad_request, not_found
 from app.integrations.wechat_mp_fetcher import (
     ParsedArticle,
@@ -353,6 +354,30 @@ def get_article_detail(
     return data
 
 
+def delete_article(db: Session, user: User, article_id: uuid.UUID) -> None:
+    """删除用户可访问的公众号文章（不删除已导入的文档库文档）。"""
+    row = db.execute(
+        select(WechatMpArticle, WechatMpSource)
+        .join(WechatMpSource, WechatMpSource.id == WechatMpArticle.source_id)
+        .where(WechatMpArticle.id == article_id)
+    ).first()
+    if not row:
+        raise not_found("文章不存在")
+    article, source = row
+    if source.id not in _user_source_ids(db, user):
+        raise not_found("文章不存在")
+    for imp in list(
+        db.scalars(
+            select(WechatMpArticleImport).where(
+                WechatMpArticleImport.article_id == article.id
+            )
+        ).all()
+    ):
+        db.delete(imp)
+    db.delete(article)
+    db.flush()
+
+
 def ingest_url(db: Session, user: User, url: str) -> dict:
     parsed = parse_url(url)
     source = _get_or_create_source(db, parsed, parsed.account_name or parsed.author)
@@ -469,6 +494,11 @@ def import_article_to_document(
     dept_id: uuid.UUID | None = None,
     sync_knowflow: bool = True,
 ) -> dict:
+    # 资讯导入文档库固定「我的」，忽略请求中的其它分级
+    _ = scope
+    scope = content_subscription_import_scope()
+    dept_id = None
+
     detail = get_article_detail(db, user, article_id)
     existing = db.scalar(
         select(WechatMpArticleImport).where(
@@ -502,22 +532,41 @@ def import_article_to_document(
         dept_id=dept_id,
     )
 
-    html_body = article.content_html or f"<p>{article.summary}</p>"
-    safe_name = "".join(c for c in doc.title if c.isalnum() or c in "._- ")[:80]
-    file_name = f"{safe_name or 'wechat-article'}.html"
-    content = (
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-        f"<title>{doc.title}</title></head><body>{html_body}</body></html>"
-    ).encode("utf-8")
+    from app.integrations.html_document_export import (
+        html_body_to_pdf_bytes,
+        resolve_article_html_body,
+    )
+
+    link = detail.get("original_url") or article.original_url or ""
+    html_body, summary_text = resolve_article_html_body(
+        article.content_html or "",
+        summary=article.summary or "",
+        link=link,
+    )
+    if html_body and html_body != (article.content_html or ""):
+        article.content_html = html_body
+    if summary_text and summary_text != (article.summary or ""):
+        article.summary = summary_text
+
+    file_name, content, mime_type = html_body_to_pdf_bytes(
+        doc.title,
+        html_body or f"<p>{article.summary}</p>",
+        summary=summary_text or article.summary or "",
+        link=link,
+        source_label=detail.get("source_name") or "微信公众号",
+        fallback_stem="wechat-article",
+        allow_refetch=False,
+    )
 
     create_initial_uploaded_version(
         db,
         doc,
         user,
         file_name=file_name,
-        mime_type="text/html; charset=utf-8",
+        mime_type=mime_type,
         content=content,
     )
+    db.refresh(doc)
 
     db.add(
         WechatMpArticleImport(
@@ -539,9 +588,13 @@ def _try_sync_knowflow(db: Session, user: User, document_id: uuid.UUID) -> bool:
     from app.models.document import Document
     from app.services.ragflow_sync_service import sync_document_to_knowflow
 
+    from app.services.document_service import resolve_current_version
+
     doc = db.get(Document, document_id)
     if not doc:
         return False
+    db.refresh(doc)
+    resolve_current_version(db, doc)
     try:
         return bool(sync_document_to_knowflow(db, user, doc, force=True))
     except Exception as e:

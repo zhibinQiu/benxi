@@ -16,11 +16,11 @@ register(
         router=feed_api.router,
         permission_code="feature.feed_subscriptions",
         permission_name="RSS 与网站订阅",
-        enabled=True,
-        tag="可用",
+        enabled=False,
+        tag="已合并",
         category="tools",
         sort_order=35,
         show_in_catalog=False,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.core.document_scope import (
     SCOPE_COMPANY,
     SCOPE_DEPARTMENT,
+    SCOPE_TEAM,
     SCOPE_PERSONAL,
     VALID_SCOPES,
     can_query_document,
@@ -53,12 +54,16 @@ def _dataset_ids_for_search(
         if reg and reg.ragflow_dataset_id:
             candidates.append(reg.ragflow_dataset_id)
 
+    from app.core.document_scope import library_companies_for_user, scope_for_department
+
     if scope is None or scope == SCOPE_COMPANY:
-        if user_is_superuser(db, user) or user_has_permission(db, user, "doc.read"):
-            add_reg(SCOPE_COMPANY, COMPANY_SCOPE_KEY)
-    if scope is None or scope == SCOPE_DEPARTMENT:
+        for row in library_companies_for_user(db, user):
+            add_reg(SCOPE_COMPANY, str(row["id"]))
+    if scope is None or scope in (SCOPE_DEPARTMENT, SCOPE_TEAM):
         for dept_id in user_dept_ids(db, user.id):
-            add_reg(SCOPE_DEPARTMENT, str(dept_id))
+            tier = scope_for_department(db, dept_id)
+            if scope is None or scope == tier:
+                add_reg(tier, str(dept_id))
     if scope is None or scope == SCOPE_PERSONAL:
         add_reg(SCOPE_PERSONAL, str(user.id))
 

@@ -8,16 +8,21 @@ import uuid
 def test_delete_user_via_api(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     users = client.get("/api/v1/users", headers=headers).json()["data"]
-    template = next((u for u in users if u["username"] == "admin"), users[0])
+    template = next(
+        (u for u in users if u.get("phone") == "admin"),
+        users[0],
+    )
 
-    uname = f"todel_{uuid.uuid4().hex[:8]}"
+    phone = f"139{int(uuid.uuid4().hex[:8], 16) % 100000000:08d}"
+    display_name = f"待删{uuid.uuid4().hex[:4]}"
     create = client.post(
         "/api/v1/users",
         headers=headers,
         json={
-            "username": uname,
+            "phone": phone,
+            "display_name": display_name,
             "password": "Test1234!",
-            "email": f"{uname}@test.local",
+            "email": f"{phone}@test.local",
             "department_ids": template.get("department_ids") or [],
             "role_ids": template.get("role_ids") or [],
         },

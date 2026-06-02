@@ -31,10 +31,13 @@ from app.api import (
 )
 from app.features.registry import ensure_plugins_loaded, mount_routers
 from app.bootstrap import bootstrap_db
+from app.core.bootstrap_user import enforce_unique_bootstrap_admin
 from app.schema_migrate import (
     ensure_carbon_market_schema,
     ensure_document_schema,
     ensure_document_library_folder_schema,
+    ensure_document_scope_tier_v2,
+    ensure_document_scope_org_depth,
     ensure_meeting_record_schema,
     ensure_permission_level_migration,
     ensure_platform_chat_schema,
@@ -42,6 +45,10 @@ from app.schema_migrate import (
     ensure_todo_schema,
     ensure_wechat_mp_schema,
     ensure_feed_subscription_schema,
+    ensure_user_single_department_schema,
+    ensure_user_phone_schema,
+    backfill_user_phones,
+    migrate_legacy_admin_roles,
 )
 from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
 from app.config import get_settings
@@ -73,6 +80,8 @@ async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_document_schema(engine)
     ensure_document_library_folder_schema(engine)
+    ensure_document_scope_tier_v2(engine)
+    ensure_document_scope_org_depth(engine)
     ensure_ragflow_schema(engine)
     ensure_carbon_market_schema(engine)
     ensure_meeting_record_schema(engine)
@@ -80,10 +89,16 @@ async def lifespan(_app: FastAPI):
     ensure_wechat_mp_schema(engine)
     ensure_feed_subscription_schema(engine)
     ensure_platform_chat_schema(engine)
+    ensure_user_single_department_schema(engine)
+    ensure_user_phone_schema(engine)
     ensure_permission_level_migration(engine)
+    migrate_legacy_admin_roles(engine)
     db = SessionLocal()
     try:
+        backfill_user_phones(db)
         bootstrap_db(db)
+        enforce_unique_bootstrap_admin(db)
+        db.commit()
     finally:
         db.close()
     sync_task = start_cea_history_scheduler()

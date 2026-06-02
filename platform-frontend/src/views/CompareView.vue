@@ -502,7 +502,7 @@ function onDiffClick(d) {
   <FeatureSubsystemShell fill>
     <template #extra>
       <n-space :size="8" align="center" wrap>
-        <n-checkbox v-model:checked="syncKnowflow" size="small">KnowFlow 检索</n-checkbox>
+        <n-checkbox v-model:checked="syncKnowflow" size="small">知识库检索</n-checkbox>
         <n-button
           size="small"
           secondary
@@ -735,7 +735,7 @@ function onDiffClick(d) {
             @click="onHitClick(h, i)"
           >
             <n-space align="center" :size="6">
-              <n-tag size="tiny" type="info">{{ h.source === 'knowflow' ? 'KnowFlow' : '关键词' }}</n-tag>
+              <n-tag size="tiny" type="info">{{ h.source === 'knowflow' ? '知识库' : '关键词' }}</n-tag>
               <n-tag v-if="hitPage(h) > 0" size="tiny" :bordered="false">P{{ hitPage(h) }}</n-tag>
               <n-text depth="3">得分 {{ h.score?.toFixed?.(1) ?? h.score }}</n-text>
             </n-space>

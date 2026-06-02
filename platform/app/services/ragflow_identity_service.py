@@ -101,6 +101,9 @@ def get_user_ragflow_auth(db: Session, user: User) -> str | None:
     except RagflowProvisionError as e:
         logger.warning("RAGFlow 开户/登录失败 %s: %s", user.username, e)
         return None
+    except httpx.HTTPError as e:
+        logger.warning("RAGFlow 不可达，跳过开户/登录 %s: %s", user.username, e)
+        return None
 
 
 def warm_ragflow_on_login(db: Session, user: User) -> RagflowAccountLink:
@@ -175,15 +178,25 @@ def build_embed_session(
 ) -> dict:
     """开通账号、返回 SSO token；目录同步由 sync_catalog / 配置控制。"""
     from app.integrations.knowflow_client import get_knowflow_client_for_user
-    from app.services.ragflow_scope_service import knowflow_kb_labels_for_user
+    from app.services.ragflow_scope_service import (
+        dept_suffix_labels_for_theme,
+        knowflow_kb_labels_for_user,
+    )
     settings = get_settings()
     kb_labels = knowflow_kb_labels_for_user(db, user)
+    dept_suffix_labels = dept_suffix_labels_for_theme(db, user)
     link = get_or_create_link(db, user)
     base = resolve_ui_embed_base()
     embed_url = f"{base}/"
 
     authorization: str | None = None
-    sso_message = "未启用 KnowFlow"
+    from app.core.user_messages import (
+        KNOWLEDGE_NOT_ENABLED,
+        KNOWLEDGE_SERVICE_UNAVAILABLE,
+        sanitize_user_message,
+    )
+
+    sso_message = KNOWLEDGE_NOT_ENABLED
     synced_count = 0
 
     profile: dict | None = None
@@ -198,7 +211,7 @@ def build_embed_session(
             valid, profile = _ragflow_user_info(cached)
             if valid:
                 authorization = cached
-                sso_message = "已使用平台会话自动登录 KnowFlow"
+                sso_message = "知识服务已就绪"
                 if link.ragflow_user_id:
                     from app.integrations.ragflow_llm_template import ensure_shared_llm_config
 
@@ -207,10 +220,10 @@ def build_embed_session(
                 link.ragflow_access_token = None
                 db.flush()
                 authorization = provision_and_login(link, user)
-                sso_message = "已自动登录 KnowFlow（与平台同一账号）"
+                sso_message = "知识服务已就绪"
                 if authorization:
                     _, profile = _ragflow_user_info(authorization)
-        except RagflowProvisionError as e:
+        except (RagflowProvisionError, httpx.HTTPError) as e:
             logger.warning("RAGFlow SSO 失败 %s: %s", user.username, e)
             try:
                 from app.integrations.ragflow_provision import recover_ragflow_account
@@ -218,12 +231,15 @@ def build_embed_session(
                 link.ragflow_access_token = None
                 db.flush()
                 authorization = recover_ragflow_account(link, user)
-                sso_message = "已自动登录 KnowFlow（已重置知识库账号）"
+                sso_message = "知识服务已就绪"
                 db.flush()
                 if authorization:
                     _, profile = _ragflow_user_info(authorization)
-            except RagflowProvisionError as e2:
-                sso_message = f"自动登录失败: {e2}"
+            except (RagflowProvisionError, httpx.HTTPError) as e2:
+                sso_message = sanitize_user_message(
+                    str(e2),
+                    fallback=KNOWLEDGE_SERVICE_UNAVAILABLE,
+                )
 
         if authorization:
             from app.services.knowflow_catalog_service import (
@@ -247,7 +263,7 @@ def build_embed_session(
             except Exception as e:
                 logger.warning("RAGFlow 知识库目录同步跳过: %s", e)
         elif authorization and "自动登录" not in sso_message:
-            sso_message = "已登录；知识库同步待 RAGFlow 就绪后自动重试"
+            sso_message = "知识服务已就绪，文档正在后台同步"
 
     return {
         "integration_phase": 4,
@@ -256,6 +272,7 @@ def build_embed_session(
         "dataset_name": dataset_display_label_personal(db, user.id),
         "platform_user_id": str(user.id),
         "knowflow_kb_labels": kb_labels,
+        "dept_suffix_labels": dept_suffix_labels,
         "ragflow_email": link.ragflow_email,
         "synced_documents": synced_count,
         "theme": {
@@ -269,6 +286,7 @@ def build_embed_session(
             "display_name": (user.display_name or user.username or "用户").strip(),
             "username": user.username,
             "knowflow_kb_labels": kb_labels,
+            "dept_suffix_labels": dept_suffix_labels,
         },
         "sso": {
             "ready": bool(authorization),

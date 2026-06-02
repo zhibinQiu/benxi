@@ -88,6 +88,98 @@ def ensure_platform_chat_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_document_scope_tier_v2(engine: Engine) -> None:
+    """分级重划：原 company→department（部门级），原 department→team（小组级）。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS schema_patches (
+                    name VARCHAR(64) PRIMARY KEY,
+                    applied_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        )
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = 'document_scope_tier_v2'")
+        ).first()
+        if done:
+            return
+        conn.execute(
+            text(
+                "UPDATE document_library_folders SET scope = 'team' "
+                "WHERE scope = 'department'"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE documents SET scope = 'team' WHERE scope = 'department'"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE document_library_folders SET scope = 'department' "
+                "WHERE scope = 'company'"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE documents SET scope = 'department' WHERE scope = 'company'"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO schema_patches (name) VALUES ('document_scope_tier_v2')"
+            )
+        )
+
+
+def ensure_document_scope_org_depth(engine: Engine) -> None:
+    """按组织树深度重算 scope：根=company，二级=department，三级=team。"""
+    from app.database import SessionLocal
+    from app.core.document_scope import scope_for_department
+    from app.models.document import Document, DocumentLibraryFolder
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS schema_patches (
+                    name VARCHAR(64) PRIMARY KEY,
+                    applied_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        )
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = 'document_scope_org_depth'")
+        ).first()
+        if done:
+            return
+
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        for doc in db.scalars(select(Document).where(Document.dept_id.is_not(None))).all():
+            doc.scope = scope_for_department(db, doc.dept_id)
+        for folder in db.scalars(
+            select(DocumentLibraryFolder).where(DocumentLibraryFolder.dept_id.is_not(None))
+        ).all():
+            folder.scope = scope_for_department(db, folder.dept_id)
+        db.commit()
+    finally:
+        db.close()
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO schema_patches (name) VALUES ('document_scope_org_depth')"
+            )
+        )
+
+
 def ensure_permission_level_migration(engine: Engine) -> None:
     statements = [
         "UPDATE document_permissions SET level = 'visible' WHERE level = 'read'",
@@ -320,6 +412,118 @@ def ensure_feed_subscription_schema(engine: Engine) -> None:
     with engine.begin() as conn:
         for sql in statements:
             conn.execute(text(sql))
+
+
+def ensure_user_phone_schema(engine: Engine) -> None:
+    """用户手机号登录：新增 phone，username 改为显示名（去掉唯一约束）。"""
+    statements = [
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20)",
+        "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key",
+        "DROP INDEX IF EXISTS ix_users_username",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_phone ON users (phone) WHERE phone IS NOT NULL",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email
+        ON users (lower(email)) WHERE email IS NOT NULL AND email <> ''
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username
+        ON users (lower(username)) WHERE username IS NOT NULL AND username <> ''
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def backfill_user_phones(db) -> None:
+    """为历史账号补全手机号（username 形如手机号则迁移）。"""
+    import re
+
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.core.phone import bootstrap_login_id, normalize_phone
+    from app.models.org import User
+
+    settings = get_settings()
+    phone_re = re.compile(r"^1\d{10}$")
+    for user in db.scalars(select(User).where(User.phone.is_(None))).all():
+        uname = (user.username or "").strip()
+        if phone_re.match(uname):
+            user.phone = normalize_phone(uname)
+        elif uname in (
+            settings.bootstrap_admin_username,
+            settings.bootstrap_admin_display_name,
+            bootstrap_login_id(),
+        ):
+            user.phone = bootstrap_login_id()
+            if not user.display_name:
+                user.display_name = settings.bootstrap_admin_display_name
+        db.flush()
+    db.commit()
+
+
+def ensure_user_single_department_schema(engine: Engine) -> None:
+    """每人至多一条 user_departments；清理历史多部门并加唯一约束。"""
+    statements = [
+        """
+        DELETE FROM user_departments ud
+        WHERE ud.id NOT IN (
+            SELECT DISTINCT ON (user_id) id
+            FROM user_departments
+            ORDER BY user_id, is_primary DESC, dept_id
+        )
+        """,
+        "ALTER TABLE user_departments DROP CONSTRAINT IF EXISTS uq_user_dept",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_user_single_dept
+        ON user_departments (user_id)
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def migrate_legacy_admin_roles(engine: Engine) -> None:
+    """将公司/部门级管理员角色用户并入普通用户（member）。"""
+    with engine.begin() as conn:
+        member = conn.execute(
+            text("SELECT id FROM roles WHERE code = 'member' LIMIT 1")
+        ).fetchone()
+        if not member:
+            return
+        member_id = member[0]
+        legacy_ids = [
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT id FROM roles WHERE code IN ('company_admin', 'dept_admin')"
+                )
+            ).fetchall()
+        ]
+        if not legacy_ids:
+            return
+        for legacy_id in legacy_ids:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO user_roles (id, user_id, role_id, scope_dept_id)
+                    SELECT gen_random_uuid(), ur.user_id, :member_id, ur.scope_dept_id
+                    FROM user_roles ur
+                    WHERE ur.role_id = :legacy_id
+                      AND NOT EXISTS (
+                        SELECT 1 FROM user_roles ur2
+                        WHERE ur2.user_id = ur.user_id AND ur2.role_id = :member_id
+                      )
+                    """
+                ),
+                {"member_id": member_id, "legacy_id": legacy_id},
+            )
+            conn.execute(
+                text("DELETE FROM user_roles WHERE role_id = :legacy_id"),
+                {"legacy_id": legacy_id},
+            )
 
 
 def ensure_meeting_record_schema(engine: Engine) -> None:

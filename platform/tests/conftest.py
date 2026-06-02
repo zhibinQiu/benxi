@@ -17,8 +17,8 @@ def client() -> TestClient:
 def _skip_knowflow_sync_on_upload(monkeypatch):
     """测试上传完成时不触发 KnowFlow（避免依赖对象存储中真实文件内容）。"""
     monkeypatch.setattr(
-        "app.api.documents.sync_document_to_knowflow",
-        lambda *args, **kwargs: False,
+        "app.domains.knowledge.gateway.KnowledgeGateway.sync_document",
+        staticmethod(lambda *args, **kwargs: None),
     )
 
 
@@ -26,7 +26,7 @@ def _skip_knowflow_sync_on_upload(monkeypatch):
 def admin_token(client: TestClient) -> str:
     r = client.post(
         "/api/v1/auth/login",
-        json={"username": "admin", "password": "admin123"},
+        json={"account": "15963564658", "password": "admin123"},
     )
     assert r.status_code == 200, r.text
     body = r.json()

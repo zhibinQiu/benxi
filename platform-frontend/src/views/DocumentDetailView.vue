@@ -10,15 +10,15 @@ import {
   NTag,
   NUpload,
   NTable,
-  NDataTable,
   NModal,
   NForm,
   NFormItem,
   NInput,
-  NSelect,
   NSwitch,
   NText,
   NDivider,
+  NRadio,
+  NRadioGroup,
   useMessage,
   useDialog,
 } from "naive-ui";
@@ -27,34 +27,28 @@ import {
   updateDocument,
   prepareUpload,
   completeUpload,
-  getDownloadUrl,
+  downloadDocumentFile,
+  syncDocumentToKnowflow,
   deleteDocumentVersion,
   patchDocumentStatus,
   restoreDocument,
   permanentlyDeleteDocument,
   fetchDocumentAccessControl,
   fetchDocumentAclCandidates,
-  fetchDocumentPermissions,
-  grantPermission,
-  revokePermission,
+  fetchDocumentShares,
+  grantDocumentShares,
+  revokeDocumentShare,
   fetchDocumentDenials,
   denyDocumentAccess,
   liftDocumentDenial,
 } from "../api/client";
 import { useAuth } from "../composables/useAuth";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
+import OrgUserPickerTree from "../components/OrgUserPickerTree.vue";
+import OrgDeptPickerTree from "../components/OrgDeptPickerTree.vue";
+import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
-
-const SCOPE_LABELS = {
-  company: "公司级",
-  department: "部门级",
-  personal: "个人级",
-};
-const SCOPE_PERM = {
-  company: "doc.company",
-  department: "doc.dept",
-  personal: "doc.personal",
-};
+import { ORG_SCOPES, SCOPE_LABELS, SCOPE_PERM } from "../constants/documentScope";
 const LEVEL_LABELS = {
   visible: "可见",
   query: "可查询",
@@ -75,11 +69,12 @@ function goBack() {
 const message = useMessage();
 const dialog = useDialog();
 
-const { user } = useAuth();
+const { user, hasPerm } = useAuth();
 
 const docId = route.params.id;
 const doc = ref(null);
 const loading = ref(false);
+const syncingKnowflow = ref(false);
 const editTitle = ref("");
 const titleSaving = ref(false);
 
@@ -114,7 +109,7 @@ const uploadedAtLabel = computed(() => {
 const displayVersions = computed(() => doc.value?.versions || []);
 
 const canDownloadFile = computed(() =>
-  displayVersions.value.some((v) => v.is_current && v.uploaded)
+  displayVersions.value.some((v) => v.uploaded),
 );
 
 function versionFileLabel(v) {
@@ -143,33 +138,48 @@ const canGrantAcl = computed(() => aclCaps.value.can_grant);
 const canDenyAcl = computed(() => aclCaps.value.can_deny);
 const canManageAcl = computed(() => canGrantAcl.value || canDenyAcl.value);
 
-const perms = ref([]);
+const shares = ref([]);
 const denials = ref([]);
 const showDeny = ref(false);
-const aclCandidates = ref([]);
+const aclPicker = ref({
+  company_label: "公司",
+  departments: [],
+  users: [],
+});
+const aclCandidates = computed(() => aclPicker.value.users || []);
+const aclDepartments = computed(() => aclPicker.value.departments || []);
 const denyUserId = ref(null);
 const denyReason = ref("");
 const shareSelectedKeys = ref([]);
 const shareGranting = ref(false);
 const showMoveDoc = ref(false);
+const publishTarget = ref("department");
+const publishDeptIds = ref([]);
+const publishLoading = ref(false);
+
+const canPublishCompany = computed(
+  () => isOwner.value && hasPerm("doc.company.create")
+);
+const canPublishDept = computed(() => isOwner.value && hasPerm("doc.dept.create"));
+const canPublishTeam = computed(() => isOwner.value && hasPerm("doc.team.create"));
+const showPublishCard = computed(
+  () =>
+    !isInRecycle.value &&
+    (canPublishCompany.value || canPublishDept.value || canPublishTeam.value)
+);
+const currentScopeLabel = computed(() => {
+  const s = doc.value?.scope || "personal";
+  if (ORG_SCOPES.includes(s) && doc.value?.dept_id) {
+    const d = aclDepartments.value.find((x) => x.id === doc.value.dept_id);
+    const tier = SCOPE_LABELS[s] || s;
+    return `${tier} · ${d?.name || "已选组织"}`;
+  }
+  return SCOPE_LABELS[s] || s;
+});
 
 const supportsKbFolder = computed(() =>
-  ["company", "department", "personal"].includes(doc.value?.scope)
+  ["company", "department", "team", "personal"].includes(doc.value?.scope)
 );
-
-const shareColumns = [
-  { type: "selection" },
-  {
-    title: "用户",
-    key: "username",
-    render: (row) => userLabel(row),
-  },
-  {
-    title: "部门",
-    key: "department_names",
-    render: (row) => (row.department_names || []).join("、") || "—",
-  },
-];
 
 const sharePermissionActions = [
   { level: "visible", label: "可见", desc: "下载、预览" },
@@ -178,25 +188,14 @@ const sharePermissionActions = [
   { level: "full", label: "完全", desc: "含删除" },
 ];
 
-function userLabel(u) {
-  return u.username || "—";
-}
-
-const userSelectOptions = computed(() =>
-  aclCandidates.value.map((u) => ({
-    label: userLabel(u),
-    value: u.id,
-  }))
-);
-
 const userNameById = computed(() => {
   const m = {};
   for (const u of aclCandidates.value) {
     m[u.id] = userLabel(u);
   }
-  for (const p of perms.value) {
-    if (p.subject_type === "user" && p.subject_label) {
-      m[p.subject_id] = p.subject_label;
+  for (const s of shares.value) {
+    if (s.user_name) {
+      m[s.user_id] = s.user_name;
     }
   }
   return m;
@@ -205,14 +204,14 @@ const userNameById = computed(() => {
 async function loadAclCandidates() {
   if (!canManageAcl.value) return;
   try {
-    aclCandidates.value = await fetchDocumentAclCandidates(docId);
+    aclPicker.value = await fetchDocumentAclCandidates(docId);
   } catch {
-    aclCandidates.value = [];
+    aclPicker.value = { company_label: "公司", departments: [], users: [] };
   }
 }
 
 async function ensureCandidates() {
-  if (!aclCandidates.value.length) {
+  if (!aclPicker.value.users?.length && !aclPicker.value.departments?.length) {
     await loadAclCandidates();
   }
 }
@@ -239,11 +238,20 @@ async function saveTitle() {
   }
 }
 
-async function load() {
+async function load({ notifyOnError = true } = {}) {
   loading.value = true;
   try {
     doc.value = await fetchDocument(docId);
     editTitle.value = doc.value.title || "";
+    if (doc.value.scope === "company") {
+      publishTarget.value = "company";
+    } else if (doc.value.scope === "department" && doc.value.dept_id) {
+      publishTarget.value = "department";
+      publishDeptIds.value = [doc.value.dept_id];
+    } else {
+      publishTarget.value = "department";
+      publishDeptIds.value = [];
+    }
     try {
       aclCaps.value = await fetchDocumentAccessControl(docId);
     } catch {
@@ -259,19 +267,20 @@ async function load() {
         can_restore: false,
       };
     }
-    await loadAclCandidates();
-    perms.value = [];
+    shares.value = [];
     denials.value = [];
-    if (canGrantAcl.value) {
+    const docOwner =
+      user.value?.id && doc.value?.owner_id === user.value.id;
+    if (canGrantAcl.value || docOwner) {
       await loadAclCandidates();
       try {
-        perms.value = await fetchDocumentPermissions(docId);
+        shares.value = await fetchDocumentShares(docId);
       } catch {
-        perms.value = [];
+        shares.value = [];
       }
     } else {
-      aclCandidates.value = [];
-      perms.value = [];
+      aclPicker.value = { company_label: "公司", departments: [], users: [] };
+      shares.value = [];
     }
     if (canDenyAcl.value) {
       try {
@@ -281,7 +290,7 @@ async function load() {
       }
     }
   } catch (e) {
-    message.error(e.message);
+    if (notifyOnError) message.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -310,7 +319,7 @@ async function uploadVersion({ file, onFinish, onError }) {
       file_size: raw.size,
     });
     message.success("新版本已上传");
-    await load();
+    await load({ notifyOnError: false });
     onFinish?.();
   } catch (e) {
     message.error(e.message);
@@ -320,10 +329,29 @@ async function uploadVersion({ file, onFinish, onError }) {
 
 async function download() {
   try {
-    const { download_url } = await getDownloadUrl(docId);
-    window.open(download_url, "_blank");
+    const fallback =
+      displayVersions.value.find((v) => v.is_current)?.file_name ||
+      `${doc.value?.title || "document"}.pdf`;
+    await downloadDocumentFile(docId, fallback);
+    message.success("已开始下载");
   } catch (e) {
     message.error(e.message);
+  }
+}
+
+async function syncKnowflow() {
+  syncingKnowflow.value = true;
+  try {
+    const res = await syncDocumentToKnowflow(docId);
+    if (res.knowflow_synced) {
+      message.success(res.message || "已同步到知识库");
+    } else {
+      message.warning(res.message || "未能同步到知识库");
+    }
+  } catch (e) {
+    message.error(e.message);
+  } finally {
+    syncingKnowflow.value = false;
   }
 }
 
@@ -335,7 +363,7 @@ async function onStatusChange(enabled) {
     message.success(enabled ? "已启用" : "已关闭");
   } catch (e) {
     message.error(e.message);
-    await load();
+    await load({ notifyOnError: false });
   }
 }
 
@@ -358,7 +386,7 @@ function confirmDeleteVersion(v) {
           return;
         }
         message.success(res.message || "版本已删除");
-        await load();
+        await load({ notifyOnError: false });
       } catch (e) {
         message.error(e.message);
       }
@@ -396,9 +424,43 @@ async function handleRestore() {
       { name: "document-detail", params: { id: docId } },
       route
     );
-    await load();
+    await load({ notifyOnError: false });
   } catch (e) {
     message.error(e.message);
+  }
+}
+
+async function publishToLibrary() {
+  if (ORG_SCOPES.includes(publishTarget.value)) {
+    if (!publishDeptIds.value.length) {
+      message.warning("请选择要发布到的组织单元");
+      return;
+    }
+    if (publishTarget.value === "team" && !canPublishTeam.value) {
+      message.warning("无权发布到小组级文库");
+      return;
+    }
+    if (publishTarget.value === "department" && !canPublishDept.value) {
+      message.warning("无权发布到部门级文库");
+      return;
+    }
+  } else if (!canPublishCompany.value) {
+    message.warning("无权发布到公司级文库");
+    return;
+  }
+  publishLoading.value = true;
+  try {
+    const payload = { scope: publishTarget.value };
+    if (ORG_SCOPES.includes(publishTarget.value)) {
+      payload.dept_id = publishDeptIds.value[0];
+    }
+    doc.value = await updateDocument(docId, payload);
+    message.success("已发布到文库，可在文档库对应分级中查看");
+    await load({ notifyOnError: false });
+  } catch (e) {
+    message.error(e.message);
+  } finally {
+    publishLoading.value = false;
   }
 }
 
@@ -409,18 +471,14 @@ async function grantShareLevel(level) {
   }
   shareGranting.value = true;
   try {
-    for (const uid of shareSelectedKeys.value) {
-      await grantPermission(docId, {
-        subject_type: "user",
-        subject_id: uid,
-        level,
-      });
-    }
+    shares.value = await grantDocumentShares(docId, {
+      userIds: shareSelectedKeys.value,
+      level,
+    });
     const label = LEVEL_LABELS[level] || level;
     message.success(
       `已为 ${shareSelectedKeys.value.length} 人授予「${label}」权限`
     );
-    perms.value = await fetchDocumentPermissions(docId);
   } catch (e) {
     message.error(e.message);
   } finally {
@@ -438,11 +496,11 @@ async function openDenyModal() {
   }
 }
 
-async function removePerm(permId) {
+async function removeShare(userId) {
   try {
-    await revokePermission(docId, permId);
-    message.success("已移除");
-    perms.value = await fetchDocumentPermissions(docId);
+    await revokeDocumentShare(docId, userId);
+    message.success("已取消该用户的分享");
+    shares.value = await fetchDocumentShares(docId);
   } catch (e) {
     message.error(e.message);
   }
@@ -520,6 +578,14 @@ onMounted(load);
             @click="download"
           >
             下载
+          </n-button>
+          <n-button
+            tertiary
+            :disabled="!canDownloadFile || !canViewDoc"
+            :loading="syncingKnowflow"
+            @click="syncKnowflow"
+          >
+            同步知识库
           </n-button>
         </n-space>
       </template>
@@ -621,21 +687,48 @@ onMounted(load);
       </n-table>
     </n-card>
 
-    <n-card v-if="canGrantAcl && !isInRecycle" title="分享">
+    <n-card v-if="showPublishCard" title="发布到文库">
       <p style="margin: 0 0 12px; color: #666; font-size: 13px">
-        先勾选要分享的用户，再点击下方权限按钮完成授权（默认建议「可见」）。
+        发布后文档出现在文档库「部门级」或「公司级」中，按分级默认可见；不会进入「分享」Tab。
+        当前：{{ currentScopeLabel }}。
       </p>
-      <n-data-table
-        v-if="aclCandidates.length"
-        :columns="shareColumns"
-        :data="aclCandidates"
-        :row-key="(row) => row.id"
-        :checked-row-keys="shareSelectedKeys"
-        @update:checked-row-keys="(keys) => (shareSelectedKeys = keys)"
-        size="small"
+      <n-radio-group v-model:value="publishTarget" style="margin-bottom: 12px">
+        <n-space>
+          <n-radio v-if="canPublishCompany" value="company">公司级</n-radio>
+          <n-radio v-if="canPublishDept" value="department">部门级</n-radio>
+          <n-radio v-if="canPublishTeam" value="team">小组级</n-radio>
+        </n-space>
+      </n-radio-group>
+      <OrgDeptPickerTree
+        v-if="ORG_SCOPES.includes(publishTarget) && aclDepartments.length"
+        :departments="aclDepartments"
+        v-model:department-ids="publishDeptIds"
         :max-height="280"
+        style="margin-bottom: 12px"
       />
-      <span v-else style="color: #999; font-size: 13px">暂无可选用户</span>
+      <n-button
+        type="primary"
+        :loading="publishLoading"
+        :disabled="ORG_SCOPES.includes(publishTarget) && !publishDeptIds.length"
+        @click="publishToLibrary"
+      >
+        {{ doc.scope === "personal" ? "发布" : "更新发布位置" }}
+      </n-button>
+    </n-card>
+
+    <n-card v-if="canGrantAcl && !isInRecycle" title="分享给个人">
+      <p style="margin: 0 0 12px; color: #666; font-size: 13px">
+        仅用于个人文档的例外协作：被分享者可在「分享」中查看，不会进入部门/公司文库。
+        勾选部门将展开为该部门全部用户；也可单独勾选用户。
+      </p>
+      <OrgUserPickerTree
+        v-if="aclCandidates.length || aclDepartments.length"
+        mode="multi"
+        :departments="aclDepartments"
+        :users="aclCandidates"
+        v-model:checked-keys="shareSelectedKeys"
+        :max-height="320"
+      />
       <n-space v-if="aclCandidates.length" style="margin-top: 12px" wrap>
         <n-button
           v-for="act in sharePermissionActions"
@@ -648,42 +741,36 @@ onMounted(load);
           {{ act.label }}（{{ act.desc }}）
         </n-button>
       </n-space>
-      <n-divider v-if="perms.length" style="margin: 16px 0" />
-      <p v-if="perms.length" style="margin: 0 0 8px; font-weight: 500; font-size: 13px">
-        已分享用户
+      <n-divider v-if="shares.length" style="margin: 16px 0" />
+      <p v-if="shares.length" style="margin: 0 0 8px; font-weight: 500; font-size: 13px">
+        当前已授权
       </p>
-      <n-table v-if="perms.length" :single-line="false">
+      <n-table v-if="shares.length" :single-line="false">
         <thead>
           <tr>
             <th>用户</th>
-            <th>级别</th>
+            <th>权限</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in perms" :key="p.id">
+          <tr v-for="s in shares" :key="s.user_id">
+            <td>{{ s.user_name || userNameById[s.user_id] || "未知用户" }}</td>
+            <td>{{ LEVEL_LABELS[s.level] || s.level }}</td>
             <td>
-              {{
-                p.subject_type === "user"
-                  ? p.subject_label || userNameById[p.subject_id] || "未知用户"
-                  : p.subject_type === "dept"
-                    ? p.subject_label || "未知部门"
-                    : p.subject_type
-              }}
-            </td>
-            <td>{{ LEVEL_LABELS[p.level] || p.level }}</td>
-            <td>
-              <n-button text type="error" size="small" @click="removePerm(p.id)">移除</n-button>
+              <n-button text type="error" size="small" @click="removeShare(s.user_id)">
+                取消分享
+              </n-button>
             </td>
           </tr>
         </tbody>
       </n-table>
-      <span v-else>暂无额外授权。个人文档默认仅自己可见；部门/公司文档默认按分级与角色可见。</span>
+      <span v-else>暂无个人分享。部门/公司文库文档请使用上方「发布到文库」。</span>
     </n-card>
 
     <n-card v-if="canDenyAcl && !isInRecycle" title="访问限制">
       <p style="margin: 0 0 12px; color: #666; font-size: 13px">
-        屏蔽在部门/公司分级下本应可见的成员；个人文档仅创建人或系统管理员可操作。
+        屏蔽在部门/公司分级下本应可见的成员；仅文档创建人或系统管理员可操作。
       </p>
       <template #header-extra>
         <n-button size="small" @click="openDenyModal">禁止用户访问</n-button>
@@ -712,14 +799,16 @@ onMounted(load);
     </n-card>
   </n-space>
 
-  <n-modal v-model:show="showDeny" preset="card" title="禁止用户访问" style="width: 480px">
+  <n-modal v-model:show="showDeny" preset="card" title="禁止用户访问" style="width: 520px">
     <n-form>
       <n-form-item label="用户">
-        <n-select
-          v-model:value="denyUserId"
-          :options="userSelectOptions"
-          filterable
-          placeholder="搜索并选择员工"
+        <OrgUserPickerTree
+          v-if="aclCandidates.length || aclDepartments.length"
+          mode="single"
+          :departments="aclDepartments"
+          :users="aclCandidates"
+          v-model:selected-key="denyUserId"
+          :max-height="360"
         />
       </n-form-item>
       <n-form-item label="原因">

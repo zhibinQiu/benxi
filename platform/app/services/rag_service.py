@@ -141,9 +141,9 @@ def _build_answer(query: str, hits: list[dict], doc_titles: dict[str, str]) -> t
         )
     lines.append("")
     if get_settings().knowflow_enabled and get_settings().ragflow_api_key:
-        lines.append("以上内容来自 KnowFlow 向量检索；请结合原文判断。")
+        lines.append("以上内容来自知识库语义检索；请结合原文判断。")
     else:
-        lines.append("以上内容来自本地关键词检索；启用 KnowFlow 后可获得语义检索能力。")
+        lines.append("以上内容来自本地关键词检索；知识服务就绪后可获得语义检索能力。")
     return "\n".join(lines), citations
 
 

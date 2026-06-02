@@ -13,6 +13,7 @@ from app.database import Base
 
 SCOPE_COMPANY = "company"
 SCOPE_DEPARTMENT = "department"
+SCOPE_TEAM = "team"
 SCOPE_PERSONAL = "personal"
 
 

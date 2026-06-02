@@ -21,14 +21,16 @@ const router = useRouter();
 const message = useMessage();
 const { login, register } = useAuth();
 
-const username = ref("admin");
+const account = ref("15963564658");
 const password = ref("admin123");
 const loading = ref(false);
 const exiting = ref(false);
 const loginCardRef = ref(null);
 
 const cardFlipped = ref(false);
-const regUsername = ref("");
+const regPhone = ref("");
+const regEmail = ref("");
+const regDisplayName = ref("");
 const regPassword = ref("");
 const regPassword2 = ref("");
 const registering = ref(false);
@@ -118,7 +120,7 @@ async function navigateAfterAuth() {
 async function onSubmit() {
   loading.value = true;
   try {
-    await login(username.value, password.value);
+    await login(account.value.trim(), password.value);
     message.success("登录成功");
     await navigateAfterAuth();
   } catch (e) {
@@ -129,10 +131,20 @@ async function onSubmit() {
   }
 }
 
+function isValidPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return /^1\d{10}$/.test(digits);
+}
+
 async function onRegister() {
-  const name = regUsername.value.trim();
+  const mobile = regPhone.value.trim();
+  const name = regDisplayName.value.trim();
+  if (!isValidPhone(mobile)) {
+    message.warning("请输入有效的 11 位手机号");
+    return;
+  }
   if (name.length < 2) {
-    message.warning("用户名至少 2 个字符");
+    message.warning("姓名至少 2 个字符");
     return;
   }
   if (regPassword.value.length < 6) {
@@ -143,9 +155,19 @@ async function onRegister() {
     message.warning("两次输入的密码不一致");
     return;
   }
+  const email = regEmail.value.trim();
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    message.warning("请输入有效的邮箱");
+    return;
+  }
   registering.value = true;
   try {
-    await register(name, regPassword.value);
+    await register({
+      phone: mobile,
+      email,
+      displayName: name,
+      password: regPassword.value,
+    });
     message.success("注册成功，已自动登录");
     await navigateAfterAuth();
   } catch (e) {
@@ -157,7 +179,9 @@ async function onRegister() {
 
 function flipToRegister() {
   if (loading.value || registering.value || exiting.value) return;
-  regUsername.value = "";
+  regPhone.value = "";
+  regEmail.value = "";
+  regDisplayName.value = "";
   regPassword.value = "";
   regPassword2.value = "";
   cardFlipped.value = true;
@@ -205,8 +229,11 @@ function flipToLogin() {
                   <span class="login-title">登录</span>
                 </template>
                 <n-form class="login-form" @submit.prevent="onSubmit">
-                  <n-form-item label="用户名">
-                    <n-input v-model:value="username" placeholder="请输入用户名" />
+                  <n-form-item label="手机号 / 姓名">
+                    <n-input
+                      v-model:value="account"
+                      placeholder="11 位手机号或姓名"
+                    />
                   </n-form-item>
                   <n-form-item label="密码">
                     <n-input
@@ -246,8 +273,24 @@ function flipToLogin() {
                   公开注册仅创建普通用户，如需管理员权限请联系系统管理员。
                 </n-text>
                 <n-form class="login-register-form" @submit.prevent="onRegister">
-                  <n-form-item label="用户名">
-                    <n-input v-model:value="regUsername" placeholder="至少 2 个字符" />
+                  <n-form-item label="手机号">
+                    <n-input
+                      v-model:value="regPhone"
+                      placeholder="11 位手机号"
+                      maxlength="11"
+                    />
+                  </n-form-item>
+                  <n-form-item label="邮箱" required>
+                    <n-input
+                      v-model:value="regEmail"
+                      placeholder="用于登录与找回，不可重复"
+                    />
+                  </n-form-item>
+                  <n-form-item label="姓名">
+                    <n-input
+                      v-model:value="regDisplayName"
+                      placeholder="登录与界面均显示此名称，至少 2 个字符"
+                    />
                   </n-form-item>
                   <n-form-item label="密码">
                     <n-input

@@ -18,6 +18,7 @@ from app.services.ragflow_scope_service import (
     _visible_dataset_ids,
     ensure_user_scope_datasets,
     repair_stale_scope_registries,
+    sync_all_kb_display_names,
     sync_user_kb_grants,
 )
 from app.services.ragflow_sync_service import sync_accessible_documents
@@ -81,6 +82,7 @@ def reconcile_user_knowflow_catalog(
         return {"ok": False, "reason": "client_disabled"}
 
     ensure_user_scope_datasets(db, user, kf)
+    renamed_kb = sync_all_kb_display_names(db, kf)
     grants = sync_user_kb_grants(db, user)
     repaired_scopes = repair_stale_scope_registries(db, kf)
     orphan_links = _drop_orphan_document_links(db, kf)
@@ -99,4 +101,5 @@ def reconcile_user_knowflow_catalog(
         "synced_documents": synced_count,
         "catalog_prepared": True,
         "visible_datasets": len(_visible_dataset_ids(kf)),
+        "renamed_kb": renamed_kb,
     }

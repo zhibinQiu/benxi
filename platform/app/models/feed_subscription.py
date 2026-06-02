@@ -13,6 +13,7 @@ from app.database import Base
 
 SOURCE_KIND_RSS = "rss"
 SOURCE_KIND_WEBSITE = "website"
+SOURCE_KIND_LINK = "link"
 
 
 class FeedSource(Base):

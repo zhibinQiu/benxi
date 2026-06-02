@@ -20,6 +20,7 @@ def register_builtin_plugins() -> None:
     from app.features.builtin import smart_forecast  # noqa: F401
     from app.features.builtin import speech  # noqa: F401
     from app.features.builtin import stubs  # noqa: F401
+    from app.features.builtin import subscriptions  # noqa: F401
     from app.features.builtin import wechat_mp_feed  # noqa: F401
     from app.features.builtin import feed_subscriptions  # noqa: F401
     from app.features.builtin import translate  # noqa: F401

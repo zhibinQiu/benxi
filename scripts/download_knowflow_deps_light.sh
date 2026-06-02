@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KF="$ROOT/platform/third_party/KnowFlow"
 
-[[ -d "$KF" ]] || { echo "请先运行 scripts/setup_knowflow.sh"; exit 1; }
+[[ -d "$KF" ]] || { echo "请先运行: bash scripts/zhitan.sh knowflow setup"; exit 1; }
 
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 cd "$KF"

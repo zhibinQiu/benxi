@@ -30,7 +30,7 @@ cd platform && python -m venv .venv && source .venv/bin/activate && pip install 
 cd ../platform-frontend && npm install
 
 # 5. 一键启动（本地优先：基础设施 Docker，应用进程在宿主机）
-cd .. && bash scripts/start_platform.sh
+cd .. && bash scripts/zhitan.sh
 ```
 
 | 服务 | 地址 |
@@ -40,16 +40,16 @@ cd .. && bash scripts/start_platform.sh
 | pdf2zh API | http://127.0.0.1:7861 |
 | 默认账号 | `admin` / `admin123` |
 
-停止：`bash scripts/stop_platform.sh`
+停止：`bash scripts/zhitan.sh stop`
 
 ### 知识问答（KnowFlow）
 
 平台 **系统功能 → 知识问答** 内嵌 KnowFlow / RAGFlow 自带界面（:9380）。Apple Silicon 需 **从源码构建** arm64 镜像：
 
 ```bash
-bash scripts/setup_knowflow.sh
-bash scripts/build_knowflow_source.sh   # 首次约 30–90 分钟
-bash scripts/start_platform.sh knowflow
+bash scripts/zhitan.sh knowflow setup
+bash scripts/zhitan.sh knowflow build   # 首次约 30–90 分钟
+bash scripts/zhitan.sh knowflow
 ```
 
 | 服务 | 地址 |
@@ -64,7 +64,7 @@ bash scripts/start_platform.sh knowflow
 ```bash
 bash scripts/setup_speech.sh          # 首次：构建 speech-api，模型下载到 .run/speech-models/
 # platform/.env 设置 DEEPSEEK_API_KEY（或与 pdf2zh 共用 ~/.config/pdf2zh 配置）
-bash scripts/start_platform.sh speech
+bash scripts/zhitan.sh speech
 ```
 
 | 服务 | 地址 |
@@ -83,11 +83,11 @@ pdf2zh_next --api --api-port 7861     # REST API
 ## amd64 服务器部署（Docker 全栈）
 
 ```bash
-bash scripts/push_and_deploy.sh           # SSH 免密同步 + 全量部署（见 platform/deploy.target.amd64）
-bash scripts/deploy_amd64.sh full       # 仅在目标机已有机上代码时
+bash scripts/deploy.sh                    # SSH 推送 + 部署（自动 amd64/arm64，见 deploy.target）
+bash scripts/deploy.sh local full         # 仅在目标机已有代码时
 ```
 
-详见 [amd64 部署指南](docs/zh/development/deploy-amd64.md)（含 SSH 推送与 `deploy.target.amd64` 示例）。
+详见 [amd64 部署指南](docs/zh/development/deploy-amd64.md)（SSH 推送与 `platform/deploy.target` 配置）。
 
 ## 文档
 

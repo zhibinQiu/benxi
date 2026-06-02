@@ -82,7 +82,7 @@ def _extract_pdf(data: bytes, *, document_id: uuid.UUID, file_name: str) -> Pars
         )
     full = "\n\n".join(parts).strip()
     quality = "text_layer" if full else "ocr_required"
-    warning = None if full else "PDF 无文本层，后续可接入 KnowFlow OCR"
+    warning = None if full else "PDF 无文本层，后续可接入 OCR 识别"
     return ParsedDocument(
         document_id=document_id,
         file_name=file_name,

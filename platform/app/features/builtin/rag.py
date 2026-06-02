@@ -17,6 +17,6 @@ register(
         enabled=True,
         category="document",
         sort_order=20,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

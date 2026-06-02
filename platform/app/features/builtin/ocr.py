@@ -19,6 +19,6 @@ register(
         tag="界面预览",
         category="tools",
         sort_order=18,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

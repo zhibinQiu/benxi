@@ -85,64 +85,44 @@ const routes = [
       },
       {
         path: "system/wechat-mp",
-        redirect: { name: "wechat-mp" },
+        redirect: { name: "knowledge-subscriptions" },
       },
       {
         path: "system/wechat-mp/articles/:id",
-        redirect: (to) => ({
-          name: "wechat-mp-article",
-          params: { id: to.params.id },
-        }),
+        redirect: { name: "knowledge-subscriptions" },
       },
       {
         path: "knowledge/subscriptions",
         name: "knowledge-subscriptions",
-        meta: { title: "订阅", featureIcon: "newspaper" },
-        component: () => import("../views/KnowledgeSubscriptionsView.vue"),
+        meta: { title: "网站收藏", fullHeight: true, featureIcon: "newspaper" },
+        component: () => import("../views/SubscriptionsView.vue"),
       },
       {
-        path: "knowledge/wechat-mp",
-        name: "wechat-mp",
-        meta: {
-          title: "微信公众号资讯",
-          fullHeight: true,
-          featureIcon: "newspaper",
-          backTo: "knowledge-subscriptions",
-        },
-        component: () => import("../views/WechatMpFeedView.vue"),
-      },
-      {
-        path: "knowledge/wechat-mp/articles/:id",
-        name: "wechat-mp-article",
-        meta: {
-          title: "推文详情",
-          fullHeight: true,
-          featureIcon: "newspaper",
-          backTo: "wechat-mp",
-        },
-        component: () => import("../views/WechatMpArticleView.vue"),
-      },
-      {
-        path: "knowledge/feed-subscriptions",
-        name: "feed-subscriptions",
-        meta: {
-          title: "RSS 与网站订阅",
-          fullHeight: true,
-          featureIcon: "stats-chart",
-          backTo: "knowledge-subscriptions",
-        },
-        component: () => import("../views/FeedSubscriptionsView.vue"),
-      },
-      {
-        path: "knowledge/feed-subscriptions/entries/:id",
-        name: "feed-entry",
+        path: "knowledge/subscriptions/items/:ref",
+        name: "subscription-item",
         meta: {
           title: "资讯详情",
           fullHeight: true,
-          featureIcon: "stats-chart",
-          backTo: "feed-subscriptions",
+          featureIcon: "newspaper",
+          backTo: "knowledge-subscriptions",
         },
-        component: () => import("../views/FeedEntryView.vue"),
+        component: () => import("../views/SubscriptionItemView.vue"),
+      },
+      {
+        path: "knowledge/wechat-mp",
+        redirect: { name: "knowledge-subscriptions" },
+      },
+      {
+        path: "knowledge/wechat-mp/articles/:id",
+        redirect: { name: "knowledge-subscriptions" },
+      },
+      {
+        path: "knowledge/feed-subscriptions",
+        redirect: { name: "knowledge-subscriptions" },
+      },
+      {
+        path: "knowledge/feed-subscriptions/entries/:id",
+        redirect: { name: "knowledge-subscriptions" },
       },
       {
         path: "system/carbon-qa-v2",
@@ -187,7 +167,7 @@ const routes = [
         path: "knowledge-graph",
         name: "knowledge-graph",
         meta: {
-          title: "切片库",
+          title: "切片管理",
           fullHeight: true,
           featureIcon: "git-network",
           backTo: "ai-home",
@@ -208,7 +188,7 @@ const routes = [
       {
         path: "documents",
         name: "documents",
-        meta: { title: "文档库", featureIcon: "document-text" },
+        meta: { title: "文档中心", featureIcon: "document-text" },
         component: () => import("../views/DocumentsView.vue"),
       },
       {
@@ -253,6 +233,12 @@ const routes = [
         name: "todos",
         meta: { title: "待办事项", featureIcon: "list" },
         component: () => import("../views/TodosView.vue"),
+      },
+      {
+        path: "profile",
+        name: "profile",
+        meta: { title: "信息维护", featureIcon: "settings" },
+        component: () => import("../views/ProfileView.vue"),
       },
       {
         path: "admin/users",

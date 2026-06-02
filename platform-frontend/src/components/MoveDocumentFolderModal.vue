@@ -6,6 +6,8 @@ import { fetchKbFolders, moveDocument } from "../api/client";
 const props = defineProps({
   show: { type: Boolean, default: false },
   documentId: { type: String, default: "" },
+  /** 批量移动时传入多个文档 ID */
+  documentIds: { type: Array, default: () => [] },
   /** 文档分级（用于判断是否支持文件夹） */
   scope: { type: String, default: "" },
   /** 列出目标文件夹时优先使用当前文档库 Tab 的分级 */
@@ -17,6 +19,14 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update:show", "moved"]);
+
+const moveIds = computed(() => {
+  if (props.documentIds?.length) return props.documentIds.map(String);
+  if (props.documentId) return [String(props.documentId)];
+  return [];
+});
+
+const isBatch = computed(() => moveIds.value.length > 1);
 
 const message = useMessage();
 const loading = ref(false);
@@ -87,15 +97,20 @@ watch(
 );
 
 async function submit() {
-  if (!props.documentId || targetFolder.value == null) return;
+  if (!moveIds.value.length || targetFolder.value == null) return;
   saving.value = true;
   try {
     const folder_id =
       targetFolder.value === UNCATEGORIZED ? null : targetFolder.value;
-    const doc = await moveDocument(props.documentId, { folder_id });
-    message.success("文档已移动");
+    let lastDoc = null;
+    for (const id of moveIds.value) {
+      lastDoc = await moveDocument(id, { folder_id });
+    }
+    message.success(
+      isBatch.value ? `已移动 ${moveIds.value.length} 份文档` : "文档已移动"
+    );
     emit("update:show", false);
-    emit("moved", doc);
+    emit("moved", lastDoc);
   } catch (e) {
     message.error(e.message);
   } finally {
@@ -108,7 +123,13 @@ async function submit() {
   <n-modal
     :show="show"
     preset="card"
-    :title="documentTitle ? `移动文档 · ${documentTitle}` : '移动文档'"
+    :title="
+      isBatch
+        ? `批量移动 · ${moveIds.length} 份文档`
+        : documentTitle
+          ? `移动文档 · ${documentTitle}`
+          : '移动文档'
+    "
     style="width: 420px"
     :mask-closable="false"
     @update:show="(v) => emit('update:show', v)"

@@ -1,6 +1,6 @@
 # KnowFlow / RAGFlow 栈（智碳平台AI系统）
 # - 基础设施：third_party/KnowFlow/docker/docker-compose-base.yml
-# - 应用服务：从源码构建（arm64），需先 bash scripts/build_knowflow_source.sh
+# - 应用服务：从源码构建（arm64），需先 bash scripts/zhitan.sh knowflow build
 #
 # 原官方预构建镜像编排（已停用，仅保留注释备查）：
 # include:

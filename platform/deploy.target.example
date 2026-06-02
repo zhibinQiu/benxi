@@ -1,10 +1,13 @@
-# 复制为 deploy.target.amd64 并填写服务器信息（仅 amd64 部署使用）
-#   cp deploy.target.example deploy.target.amd64
+# 复制为 deploy.target 并填写（本机推送用，勿提交含密码的副本到公开仓库）
+#   cp deploy.target.example platform/deploy.target
 #
-# Mac M1 本地开发不需要此文件，见 deploy.target.local
+# 复制为 deploy.target 后填写（勿提交含密码的 deploy.target）
 
 DEPLOY_USER=root
 DEPLOY_HOST=192.168.1.100
 DEPLOY_PATH=/opt/zhitanAI
+# auto：SSH 到目标机执行 uname -m 判断；也可写死 amd64 | arm64
+DEPLOY_ARCH=auto
 DEPLOY_USE_MIRROR=1
 DEPLOY_PARALLEL=1
+FRONTEND_PORT=40005

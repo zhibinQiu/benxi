@@ -2,15 +2,19 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useAuth } from "../composables/useAuth";
 import { useRoute, useRouter } from "vue-router";
-import { NAlert, NButton, useMessage } from "naive-ui";
+import { NAlert, NButton } from "naive-ui";
 import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
+import {
+  KNOWLEDGE_UNAVAILABLE,
+  knowflowUnavailableHint,
+  sanitizeUserFacingMessage,
+} from "../utils/uiMessage";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
 import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
 const { user } = useAuth();
 
 const STARTUP_HINT = "正在启动知识服务系统";
@@ -57,16 +61,25 @@ function buildKnowflowUrl(session) {
 
 function themePayload() {
   const base = embedSession.value?.theme || {};
-  const name = (user.value?.username || "").trim();
+  const name = (
+    user.value?.display_name ||
+    user.value?.username ||
+    ""
+  ).trim();
   const kbLabels =
     embedSession.value?.knowflow_kb_labels ||
     base.knowflow_kb_labels ||
     [];
+  const deptSuffixLabels =
+    embedSession.value?.dept_suffix_labels ||
+    base.dept_suffix_labels ||
+    {};
   return {
     ...base,
     display_name: name || base.display_name,
     username: user.value?.username || base.username,
     knowflow_kb_labels: kbLabels,
+    dept_suffix_labels: deptSuffixLabels,
   };
 }
 
@@ -126,7 +139,12 @@ async function loadMeta() {
     applyIframeSession(session);
     scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-embed" });
   } catch (e) {
-    message.error(e.message);
+    meta.value = {
+      ...meta.value,
+      ui_available: false,
+      knowflow_enabled: false,
+      ui_hint: knowflowUnavailableHint(e),
+    };
   } finally {
     bootstrapping.value = false;
   }
@@ -143,12 +161,8 @@ async function reloadKnowflowForUser() {
   if (route.name !== "rag") return;
   iframeReady.value = false;
   iframeSrc.value = "";
-  try {
-    embedSession.value = await fetchRagEmbedSession({ sync: false }).catch(() => null);
-    applyIframeSession(embedSession.value);
-  } catch (e) {
-    message.error(e.message);
-  }
+  embedSession.value = await fetchRagEmbedSession({ sync: false }).catch(() => null);
+  applyIframeSession(embedSession.value);
 }
 
 watch(
@@ -179,8 +193,7 @@ onMounted(loadMeta);
         title="知识问答服务未就绪"
         class="embed-alert"
       >
-        <p>知识问答服务暂不可用，请稍后重试或联系管理员。</p>
-        <p v-if="meta.ui_hint" style="margin: 8px 0 0">{{ meta.ui_hint }}</p>
+        <p>{{ meta.ui_hint || KNOWLEDGE_UNAVAILABLE }}</p>
         <template #action>
           <n-button size="small" @click="loadMeta">重新检测</n-button>
         </template>
@@ -192,7 +205,12 @@ onMounted(loadMeta);
         title="登录未完成"
         class="embed-alert"
       >
-        {{ embedSession.sso.message || "请刷新页面重试。" }}
+        {{
+          sanitizeUserFacingMessage(
+            embedSession.sso.message,
+            "请刷新页面重试。"
+          )
+        }}
         <template #action>
           <n-button size="small" @click="loadMeta">重试</n-button>
         </template>

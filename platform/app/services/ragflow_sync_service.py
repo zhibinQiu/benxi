@@ -15,7 +15,7 @@ from app.integrations.ragflow_client import RagflowClient
 from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.models.ragflow_document_link import RagflowDocumentLink
-from app.services.document_service import list_queryable_documents
+from app.services.document_service import list_queryable_documents, resolve_current_version
 from app.services.ragflow_scope_service import (
     resolve_dataset_for_document,
     sync_document_kb_grants,
@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 
 def _get_link(db: Session, document_id: uuid.UUID) -> RagflowDocumentLink | None:
+    return get_document_link(db, document_id)
+
+
+def get_document_link(db: Session, document_id: uuid.UUID) -> RagflowDocumentLink | None:
+    """平台文档 ↔ RAGFlow 映射（公开接口，供 API / 域层使用）。"""
     return db.scalar(
         select(RagflowDocumentLink).where(
             RagflowDocumentLink.platform_document_id == document_id
@@ -60,8 +65,6 @@ def sync_document_to_knowflow(
         return None
     if not can_access_document(db, user, document, PermissionLevel.query.value):
         return None
-    if not document.current_version_id:
-        return None
 
     kf = get_knowflow_client_for_user(db, user)
     if not kf.enabled():
@@ -78,19 +81,37 @@ def sync_document_to_knowflow(
             return existing.ragflow_document_id
         force = True
 
-    version = db.get(DocumentVersion, document.current_version_id)
+    if existing and force and existing.ragflow_document_id and existing.dataset_id:
+        try:
+            RagflowClient().delete_documents(
+                existing.dataset_id, [existing.ragflow_document_id]
+            )
+        except Exception as e:
+            logger.debug("强制重同步前删除旧索引跳过: %s", e)
+
+    version = resolve_current_version(db, document)
     if not version:
+        logger.warning("KnowFlow 同步跳过：无已上传版本 platform_doc=%s", document.id)
         return None
 
     from app.storage.object_store import get_object_store
 
     store = get_object_store()
     content = store.get_object_bytes(version.file_key)
+    from app.integrations.html_document_export import normalize_file_for_knowflow_upload
+
+    upload_name, upload_content, upload_mime = normalize_file_for_knowflow_upload(
+        version.file_name,
+        content,
+        version.mime_type,
+        title=document.title or "",
+        description=document.description or "",
+    )
     rag_doc_id = kf.sync_platform_document(
         platform_document_id=document.id,
-        file_name=version.file_name,
-        content=content,
-        mime_type=version.mime_type,
+        file_name=upload_name,
+        content=upload_content,
+        mime_type=upload_mime,
         dataset_id=target_ds,
     )
     if not rag_doc_id:
@@ -100,7 +121,7 @@ def sync_document_to_knowflow(
         existing.ragflow_document_id = rag_doc_id
         existing.dataset_id = target_ds
         existing.platform_user_id = user.id
-        existing.file_name = version.file_name
+        existing.file_name = upload_name
     else:
         db.add(
             RagflowDocumentLink(
@@ -108,7 +129,7 @@ def sync_document_to_knowflow(
                 platform_user_id=user.id,
                 ragflow_document_id=rag_doc_id,
                 dataset_id=target_ds,
-                file_name=version.file_name,
+                file_name=upload_name,
             )
         )
     db.flush()

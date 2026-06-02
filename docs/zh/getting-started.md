@@ -11,7 +11,7 @@ pip install -e .
 bash scripts/download_babeldoc_assets.sh
 cd platform && python -m venv .venv && source .venv/bin/activate && pip install -e .
 cd ../platform-frontend && npm install
-cd .. && bash scripts/start_platform.sh
+cd .. && bash scripts/zhitan.sh
 ```
 
 | 服务 | 地址 |
@@ -21,7 +21,7 @@ cd .. && bash scripts/start_platform.sh
 | pdf2zh API | http://127.0.0.1:7861 |
 | 默认账号 | `admin` / `admin123` |
 
-停止：`bash scripts/stop_platform.sh`
+停止：`bash scripts/zhitan.sh stop`
 
 延伸阅读：[智碳平台说明](development/doc-platform.md)、[本地开发](development/local-development.md)、[脚本索引](../../scripts/README.md)。
 
@@ -63,18 +63,18 @@ pdf2zh_next --api --api-port 7861
 
 | 能力 | 首次准备 | 启动 |
 |------|----------|------|
-| 知识问答（KnowFlow） | `bash scripts/setup_knowflow.sh` + `bash scripts/build_knowflow_source.sh` | `bash scripts/start_platform.sh knowflow` |
-| 录音转文字 | `bash scripts/setup_speech.sh`，配置 `platform/.env` 中 `DEEPSEEK_API_KEY` | `bash scripts/start_platform.sh speech` |
+| 知识问答（KnowFlow） | `bash scripts/zhitan.sh knowflow setup` + `knowflow build` | `bash scripts/zhitan.sh knowflow` |
+| 录音转文字 | `bash scripts/setup_speech.sh`，配置 `platform/.env` 中 `DEEPSEEK_API_KEY` | `bash scripts/zhitan.sh speech` |
 
 ## amd64 服务器部署
 
 ```bash
-# 本机配置 platform/deploy.target.amd64 后
-bash scripts/push_and_deploy.sh
+# 本机配置 platform/deploy.target 后
+bash scripts/deploy.sh
 ```
 
-或目标机直接：`bash scripts/deploy_amd64.sh full`。见 [amd64 部署](development/deploy-amd64.md)。
+或目标机直接：`bash scripts/deploy.sh local full`。见 [部署指南](development/deploy-amd64.md)。
 
 ## 其他安装方式
 
-Windows 安装包、独立 Docker 镜像等见上游 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next) 文档；本 monorepo 以源码 + `scripts/start_platform.sh` 为主。
+Windows 安装包、独立 Docker 镜像等见上游 [PDFMathTranslate-next](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next) 文档；本 monorepo 以源码 + `scripts/zhitan.sh` 为主。

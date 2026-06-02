@@ -137,10 +137,11 @@ celerybeat.pid
 assets/babeldoc/
 assets/offline_assets_*.zip
 
-# Environments
+# Environments（platform/.env、knowflow.env 可提交；*.docker 为 sync 生成物勿提交）
 .env
+!platform/.env
+!platform/knowflow.env
 platform/.env.docker
-platform/knowflow.env
 platform/knowflow.env.docker
 platform/deploy.target
 platform/third_party/

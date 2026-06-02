@@ -8,10 +8,9 @@ import {
   NForm,
   NFormItem,
   NInput,
-  NInputNumber,
   NSelect,
   NSpace,
-  NPopconfirm,
+  useDialog,
   useMessage,
 } from "naive-ui";
 import {
@@ -20,8 +19,12 @@ import {
   updateDepartment,
   deleteDepartment,
 } from "../../api/client";
+import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
+import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
+import { deleteSequentially } from "../../utils/batchActions";
 
 const message = useMessage();
+const dialog = useDialog();
 const loading = ref(false);
 const items = ref([]);
 const showModal = ref(false);
@@ -31,11 +34,21 @@ const saving = ref(false);
 const emptyForm = () => ({
   name: "",
   parent_id: null,
-  sort_order: 0,
 });
 
 const form = ref(emptyForm());
 const isEdit = computed(() => Boolean(editingId.value));
+
+const {
+  checkedRowKeys,
+  selectedRows,
+  selectedCount,
+  onCheckedRowKeysChange,
+  clearSelection,
+  selectionColumn,
+} = useBatchTableSelection(items);
+
+const canBatchDelete = computed(() => selectedRows.value.length > 0);
 
 function deptName(id) {
   if (!id) return "（根）";
@@ -52,43 +65,33 @@ const parentOptions = computed(() => {
   return opts;
 });
 
-const columns = [
+const columns = computed(() => [
+  selectionColumn(),
   { title: "名称", key: "name" },
   {
     title: "上级部门",
     key: "parent_id",
     render: (r) => deptName(r.parent_id),
   },
-  { title: "排序", key: "sort_order", width: 80 },
   {
     title: "操作",
     key: "actions",
-    width: 150,
+    width: 80,
     render(row) {
-      return h(NSpace, { size: 8 }, () => [
-        h(
-          NButton,
-          { size: "small", quaternary: true, type: "primary", onClick: () => openEdit(row) },
-          { default: () => "编辑" }
-        ),
-        h(
-          NPopconfirm,
-          { onPositiveClick: () => removeDept(row) },
-          {
-            trigger: () =>
-              h(NButton, { size: "small", quaternary: true, type: "error" }, { default: () => "删除" }),
-            default: () => `确定删除部门「${row.name}」？`,
-          }
-        ),
-      ]);
+      return h(
+        NButton,
+        { size: "small", quaternary: true, type: "primary", onClick: () => openEdit(row) },
+        { default: () => "编辑" }
+      );
     },
   },
-];
+]);
 
 async function load() {
   loading.value = true;
   try {
     items.value = await fetchDepartments();
+    clearSelection();
   } catch (e) {
     message.error(e.message);
   } finally {
@@ -107,7 +110,6 @@ function openEdit(row) {
   form.value = {
     name: row.name,
     parent_id: row.parent_id ?? null,
-    sort_order: row.sort_order ?? 0,
   };
   showModal.value = true;
 }
@@ -118,14 +120,32 @@ function closeModal() {
   form.value = emptyForm();
 }
 
-async function removeDept(row) {
-  try {
-    await deleteDepartment(row.id);
-    message.success("部门已删除");
-    await load();
-  } catch (e) {
-    message.error(e.message);
-  }
+function handleBatchDelete() {
+  const rows = selectedRows.value;
+  if (!rows.length) return;
+  const summary =
+    rows.length === 1 ? `「${rows[0].name}」` : `选中的 ${rows.length} 个部门`;
+  dialog.warning({
+    title: "批量删除部门",
+    content: `确定删除${summary}？`,
+    positiveText: "删除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      const { deleted, failed } = await deleteSequentially(rows, (row) =>
+        deleteDepartment(row.id)
+      );
+      if (failed.length) {
+        message.warning(
+          `已删除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
+        );
+      } else {
+        message.success(deleted > 1 ? `已删除 ${deleted} 个部门` : "部门已删除");
+      }
+      clearSelection();
+      await load();
+      return !failed.length;
+    },
+  });
 }
 
 async function submit() {
@@ -137,7 +157,6 @@ async function submit() {
   const payload = {
     name: form.value.name.trim(),
     parent_id: form.value.parent_id ?? null,
-    sort_order: form.value.sort_order ?? 0,
   };
   try {
     if (isEdit.value) {
@@ -164,7 +183,19 @@ onMounted(load);
     <template #header-extra>
       <n-button type="primary" @click="openCreate">新建部门</n-button>
     </template>
-    <n-data-table :columns="columns" :data="items" :loading="loading" />
+    <BatchTableToolbar
+      :count="selectedCount"
+      :disabled="!canBatchDelete"
+      @action="handleBatchDelete"
+    />
+    <n-data-table
+      :columns="columns"
+      :data="items"
+      :loading="loading"
+      :row-key="(row) => row.id"
+      :checked-row-keys="checkedRowKeys"
+      @update:checked-row-keys="onCheckedRowKeysChange"
+    />
   </n-card>
 
   <n-modal
@@ -186,9 +217,6 @@ onMounted(load);
           placeholder="不选则为根部门"
         />
       </n-form-item>
-      <n-form-item label="排序">
-        <n-input-number v-model:value="form.sort_order" :min="0" class="sort-input" />
-      </n-form-item>
     </n-form>
     <template #footer>
       <n-space justify="end">
@@ -200,9 +228,3 @@ onMounted(load);
     </template>
   </n-modal>
 </template>
-
-<style scoped>
-.sort-input {
-  width: 100%;
-}
-</style>

@@ -2,8 +2,8 @@
 # 编排逻辑与 docker-compose.knowflow.yml（Mac 本地）一致：
 #   仅 include 基础设施，应用服务在本文件内显式定义（此处用预构建镜像，本地用源码 build）。
 #
-# 需先: bash scripts/setup_knowflow.sh
-# 启动: bash scripts/deploy_amd64.sh knowflow
+# 本地: bash scripts/zhitan.sh knowflow build && zhitan.sh knowflow
+# 服务器: bash scripts/deploy.sh full
 
 include:
   - path: ./third_party/KnowFlow/docker/docker-compose-base.yml

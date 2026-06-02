@@ -21,6 +21,6 @@ register(
         tag="外链",
         category="external",
         sort_order=60,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

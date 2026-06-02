@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocumentPermission, PermissionLevel
-from app.models.org import Permission, RolePermission, User, UserDepartment, UserRole
+from app.models.org import Permission, RolePermission, User, UserRole
 
 LEVEL_ALIASES: dict[str, str] = {
     PermissionLevel.read.value: PermissionLevel.visible.value,
@@ -63,6 +63,9 @@ CORE_PERMISSIONS = [
     ("doc.dept.create", "部门级-新建"),
     ("doc.dept.edit", "部门级-编辑"),
     ("doc.dept.delete", "部门级-删除"),
+    ("doc.team.create", "小组级-新建"),
+    ("doc.team.edit", "小组级-编辑"),
+    ("doc.team.delete", "小组级-删除"),
     ("doc.personal.create", "个人级-新建"),
     ("doc.personal.edit", "个人级-编辑"),
     ("doc.personal.delete", "个人级-删除"),
@@ -73,42 +76,22 @@ DEFAULT_ROLES = {
         "name": "系统管理员",
         "permissions": [p[0] for p in CORE_PERMISSIONS],
     },
-    "company_admin": {
-        "name": "公司级管理员",
+    "member": {
+        "name": "普通用户",
         "permissions": [
             "doc.read",
-            "doc.grant",
+            "doc.personal.create",
+            "doc.personal.edit",
+            "doc.personal.delete",
+            "doc.dept.create",
+            "doc.dept.edit",
+            "doc.dept.delete",
+            "doc.team.create",
+            "doc.team.edit",
+            "doc.team.delete",
             "doc.company.create",
             "doc.company.edit",
             "doc.company.delete",
-            "doc.dept.create",
-            "doc.dept.edit",
-            "doc.dept.delete",
-            "doc.personal.create",
-            "doc.personal.edit",
-            "doc.personal.delete",
-        ],
-    },
-    "dept_admin": {
-        "name": "部门管理员",
-        "permissions": [
-            "doc.read",
-            "doc.grant",
-            "doc.dept.create",
-            "doc.dept.edit",
-            "doc.dept.delete",
-            "doc.personal.create",
-            "doc.personal.edit",
-            "doc.personal.delete",
-        ],
-    },
-    "member": {
-        "name": "普通成员",
-        "permissions": [
-            "doc.read",
-            "doc.personal.create",
-            "doc.personal.edit",
-            "doc.personal.delete",
         ],
     },
 }
@@ -125,15 +108,17 @@ def user_role_codes(db: Session, user_id: uuid.UUID) -> set[str]:
     return set(db.scalars(stmt).all())
 
 
+def user_is_system_admin(db: Session, user: User) -> bool:
+    """系统管理员：持有 sys_admin 角色（含唯一内置 bootstrap 账号）。"""
+    from app.core.platform_admin import user_has_system_admin_role
+
+    return user_has_system_admin_role(db, user.id)
+
+
 def describe_user_tier(db: Session, user: User) -> str:
-    """便于界面展示的用户层级（与 KnowFlow 知识库授权策略一致）。"""
-    if user_is_superuser(db, user):
+    """便于界面展示的用户层级（系统管理员 / 普通用户）。"""
+    if user_is_system_admin(db, user):
         return "system_admin"
-    codes = user_role_codes(db, user.id)
-    if "company_admin" in codes or "sys_admin" in codes:
-        return "company_admin"
-    if "dept_admin" in codes:
-        return "dept_admin"
     return "member"
 
 
@@ -148,23 +133,18 @@ def user_permission_codes(db: Session, user_id: uuid.UUID) -> set[str]:
 
 
 def user_is_superuser(db: Session, user: User) -> bool:
-    """系统管理员：默认 admin 账号或拥有 admin.user 权限的用户。"""
-    if user.username == "admin":
-        return True
-    return "admin.user" in user_permission_codes(db, user.id)
+    """文档与全局最高权限（与系统管理员身份一致，保留旧名供各模块调用）。"""
+    return user_is_system_admin(db, user)
 
 
 def user_is_company_admin(db: Session, user: User) -> bool:
-    if user_is_superuser(db, user):
-        return True
-    codes = user_role_codes(db, user.id)
-    return "company_admin" in codes or "sys_admin" in codes
+    """已废弃分级管理员；仅系统管理员视为公司级管理身份。"""
+    return user_is_superuser(db, user)
 
 
 def user_is_dept_admin(db: Session, user: User) -> bool:
-    if user_is_superuser(db, user):
-        return True
-    return "dept_admin" in user_role_codes(db, user.id)
+    """已废弃分级管理员。"""
+    return False
 
 
 def user_has_permission(db: Session, user: User, code: str) -> bool:
@@ -174,8 +154,9 @@ def user_has_permission(db: Session, user: User, code: str) -> bool:
 
 
 def user_dept_ids(db: Session, user_id: uuid.UUID) -> list[uuid.UUID]:
-    stmt = select(UserDepartment.dept_id).where(UserDepartment.user_id == user_id)
-    return list(db.scalars(stmt).all())
+    from app.core.user_department import user_dept_ids as _user_dept_ids
+
+    return _user_dept_ids(db, user_id)
 
 
 def user_role_ids(db: Session, user_id: uuid.UUID) -> list[uuid.UUID]:

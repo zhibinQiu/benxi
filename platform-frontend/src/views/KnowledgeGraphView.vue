@@ -2,14 +2,18 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useAuth } from "../composables/useAuth";
 import { useRoute } from "vue-router";
-import { NAlert, NButton, useMessage } from "naive-ui";
+import { NAlert, NButton } from "naive-ui";
 import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
+import {
+  KNOWLEDGE_UNAVAILABLE,
+  knowflowUnavailableHint,
+  sanitizeUserFacingMessage,
+} from "../utils/uiMessage";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
 import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
 
 const route = useRoute();
-const message = useMessage();
 const { user } = useAuth();
 
 const STARTUP_HINT = "正在启动知识服务系统";
@@ -53,11 +57,25 @@ function buildKnowflowUrl(session) {
 
 function themePayload() {
   const base = embedSession.value?.theme || {};
-  const name = (user.value?.username || "").trim();
+  const name = (
+    user.value?.display_name ||
+    user.value?.username ||
+    ""
+  ).trim();
+  const kbLabels =
+    embedSession.value?.knowflow_kb_labels ||
+    base.knowflow_kb_labels ||
+    [];
+  const deptSuffixLabels =
+    embedSession.value?.dept_suffix_labels ||
+    base.dept_suffix_labels ||
+    {};
   return {
     ...base,
     display_name: name || base.display_name,
     username: user.value?.username || base.username,
+    knowflow_kb_labels: kbLabels,
+    dept_suffix_labels: deptSuffixLabels,
   };
 }
 
@@ -78,7 +96,7 @@ function postSsoToIframe() {
 }
 
 function applyIframeSession(session) {
-  if (!meta.value.ui_available) {
+  if (!serviceReady.value) {
     iframeSrc.value = "";
     return;
   }
@@ -92,6 +110,11 @@ function applyIframeSession(session) {
 
 const showStartupHint = computed(
   () => bootstrapping.value || (Boolean(iframeSrc.value) && !iframeReady.value)
+);
+
+/** Web 探活或 KnowFlow API 健康即视为可嵌入 */
+const serviceReady = computed(
+  () => Boolean(meta.value.ui_available || meta.value.knowflow_enabled)
 );
 
 async function loadMeta() {
@@ -108,7 +131,12 @@ async function loadMeta() {
     applyIframeSession(session);
     scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-kg-embed" });
   } catch (e) {
-    message.error(e.message);
+    meta.value = {
+      ...meta.value,
+      ui_available: false,
+      knowflow_enabled: false,
+      ui_hint: knowflowUnavailableHint(e),
+    };
   } finally {
     bootstrapping.value = false;
   }
@@ -145,25 +173,29 @@ onMounted(loadMeta);
   <FeatureSubsystemShell fill>
     <div class="subsystem-embed-host">
       <n-alert
-        v-if="!bootstrapping && !meta.ui_available"
+        v-if="!bootstrapping && !serviceReady"
         type="warning"
-        title="知识图谱服务未就绪"
+        title="切片管理服务未就绪"
         class="embed-alert"
       >
-        <p>知识服务系统暂不可用，请稍后重试或联系管理员。</p>
-        <p v-if="meta.ui_hint" style="margin: 8px 0 0">{{ meta.ui_hint }}</p>
+        <p>{{ meta.ui_hint || KNOWLEDGE_UNAVAILABLE }}</p>
         <template #action>
           <n-button size="small" @click="loadMeta">重新检测</n-button>
         </template>
       </n-alert>
 
       <n-alert
-        v-if="!bootstrapping && meta.ui_available && embedSession?.sso && !embedSession.sso.ready"
+        v-if="!bootstrapping && serviceReady && embedSession?.sso && !embedSession.sso.ready"
         type="info"
         title="登录未完成"
         class="embed-alert"
       >
-        {{ embedSession.sso.message || "请刷新页面重试。" }}
+        {{
+          sanitizeUserFacingMessage(
+            embedSession.sso.message,
+            "请刷新页面重试。"
+          )
+        }}
         <template #action>
           <n-button size="small" @click="loadMeta">重试</n-button>
         </template>
@@ -177,7 +209,7 @@ onMounted(loadMeta);
         class="subsystem-embed-frame"
         :class="{ 'subsystem-embed-frame--loading': showStartupHint }"
         :src="iframeSrc"
-        title="知识图谱"
+        title="切片管理"
         allow="fullscreen; clipboard-read; clipboard-write"
         referrerpolicy="no-referrer-when-downgrade"
         @load="onIframeLoad"

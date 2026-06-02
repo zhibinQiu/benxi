@@ -3,15 +3,15 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
+  NCheckbox,
   NEmpty,
   NIcon,
-  NPopconfirm,
   NSpin,
   NText,
   useDialog,
   useMessage,
 } from "naive-ui";
-import { ArrowBackOutline, ChatbubblesOutline, TrashOutline } from "@vicons/ionicons5";
+import { ArrowBackOutline, ChatbubblesOutline } from "@vicons/ionicons5";
 import {
   clearChatConversations,
   deleteChatConversation,
@@ -19,6 +19,7 @@ import {
 } from "../api/client";
 import { CHAT_SCOPES, chatScopeTitle } from "../constants/chatScopes";
 import { resolveReturnTarget } from "../utils/navigationReturn";
+import { deleteSequentially } from "../utils/batchActions";
 
 const route = useRoute();
 const router = useRouter();
@@ -30,8 +31,9 @@ const pageTitle = computed(() => chatScopeTitle(scope.value));
 
 const loading = ref(false);
 const clearing = ref(false);
-const deletingId = ref("");
+const batchDeleting = ref(false);
 const items = ref([]);
+const selectedIds = ref([]);
 
 const backTarget = computed(() => {
   const fromReturn = resolveReturnTarget(route);
@@ -43,6 +45,20 @@ const backTarget = computed(() => {
 });
 
 const canClear = computed(() => !loading.value && items.value.length > 0);
+const selectedCount = computed(() => selectedIds.value.length);
+const canBatchDelete = computed(() => selectedCount.value > 0 && !batchDeleting.value);
+
+function isSelected(id) {
+  return selectedIds.value.includes(id);
+}
+
+function toggleSelected(id, checked) {
+  if (checked) {
+    if (!selectedIds.value.includes(id)) selectedIds.value = [...selectedIds.value, id];
+  } else {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id);
+  }
+}
 
 async function loadList() {
   if (!CHAT_SCOPES[scope.value]) {
@@ -53,9 +69,11 @@ async function loadList() {
   loading.value = true;
   try {
     items.value = (await fetchChatConversations(scope.value)) || [];
+    selectedIds.value = [];
   } catch (e) {
     message.error(e.message || "加载历史对话失败");
     items.value = [];
+    selectedIds.value = [];
   } finally {
     loading.value = false;
   }
@@ -81,17 +99,39 @@ function openConversation(item) {
   }
 }
 
-async function onDeleteItem(item) {
-  deletingId.value = item.id;
-  try {
-    await deleteChatConversation(scope.value, item.id);
-    items.value = items.value.filter((row) => row.id !== item.id);
-    message.success("已永久删除该对话");
-  } catch (e) {
-    message.error(e.message || "删除失败");
-  } finally {
-    deletingId.value = "";
-  }
+function handleBatchDelete() {
+  const rows = items.value.filter((row) => selectedIds.value.includes(row.id));
+  if (!rows.length) return;
+  const summary = rows.length === 1 ? "该对话" : `选中的 ${rows.length} 条对话`;
+  dialog.warning({
+    title: "批量删除对话",
+    content: `确定永久删除${summary}？删除后无法恢复。`,
+    positiveText: "永久删除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      batchDeleting.value = true;
+      try {
+        const { deleted, failed } = await deleteSequentially(rows, (row) =>
+          deleteChatConversation(scope.value, row.id)
+        );
+        items.value = items.value.filter((row) => !selectedIds.value.includes(row.id));
+        selectedIds.value = [];
+        if (failed.length) {
+          message.warning(
+            `已删除 ${deleted} 条，${failed.length} 条失败：${failed[0].message || "未知错误"}`
+          );
+        } else {
+          message.success(deleted > 1 ? `已永久删除 ${deleted} 条对话` : "已永久删除该对话");
+        }
+      } catch (e) {
+        message.error(e.message || "删除失败");
+        return false;
+      } finally {
+        batchDeleting.value = false;
+      }
+      return true;
+    },
+  });
 }
 
 function onClearAll() {
@@ -105,6 +145,7 @@ function onClearAll() {
       try {
         const res = await clearChatConversations(scope.value);
         items.value = [];
+        selectedIds.value = [];
         const n = res?.deleted ?? 0;
         message.success(n > 0 ? `已永久删除 ${n} 条对话` : "已清空");
       } catch (e) {
@@ -155,6 +196,17 @@ watch(scope, loadList);
         <n-text depth="3">{{ pageTitle }}</n-text>
       </div>
       <n-button
+        size="small"
+        type="error"
+        tertiary
+        :disabled="!canBatchDelete"
+        :loading="batchDeleting"
+        class="chat-history-batch-delete"
+        @click="handleBatchDelete"
+      >
+        删除
+      </n-button>
+      <n-button
         v-if="canClear"
         size="small"
         type="error"
@@ -167,12 +219,22 @@ watch(scope, loadList);
       </n-button>
     </header>
 
+    <div v-if="selectedCount > 0" class="chat-history-selection-hint">
+      已选 {{ selectedCount }} 项
+    </div>
+
     <n-spin :show="loading">
       <div v-if="!loading && !items.length" class="chat-history-empty">
         <n-empty description="暂无历史对话" />
       </div>
       <ul v-else class="chat-history-list">
         <li v-for="item in items" :key="item.id" class="chat-history-row">
+          <n-checkbox
+            :checked="isSelected(item.id)"
+            class="chat-history-select"
+            @update:checked="(v) => toggleSelected(item.id, v)"
+            @click.stop
+          />
           <button type="button" class="chat-history-item" @click="openConversation(item)">
             <span class="chat-history-item-icon" aria-hidden="true">
               <n-icon :size="18" :component="ChatbubblesOutline" />
@@ -182,28 +244,6 @@ watch(scope, loadList);
               <span class="chat-history-item-time">{{ formatTime(item.updated_at) }}</span>
             </span>
           </button>
-          <n-popconfirm
-            positive-text="永久删除"
-            negative-text="取消"
-            @positive-click="onDeleteItem(item)"
-          >
-            <template #trigger>
-              <n-button
-                quaternary
-                circle
-                size="small"
-                class="chat-history-delete"
-                aria-label="删除对话"
-                :loading="deletingId === item.id"
-                @click.stop
-              >
-                <template #icon>
-                  <n-icon :component="TrashOutline" />
-                </template>
-              </n-button>
-            </template>
-            永久删除该对话？删除后无法恢复。
-          </n-popconfirm>
         </li>
       </ul>
     </n-spin>
@@ -229,8 +269,15 @@ watch(scope, loadList);
   min-width: 0;
 }
 
-.chat-history-clear-all {
+.chat-history-clear-all,
+.chat-history-batch-delete {
   flex-shrink: 0;
+}
+
+.chat-history-selection-hint {
+  margin: -8px 0 12px;
+  font-size: 13px;
+  color: #666;
 }
 
 .chat-history-title {
@@ -257,7 +304,11 @@ watch(scope, loadList);
 .chat-history-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+}
+
+.chat-history-select {
+  flex-shrink: 0;
 }
 
 .chat-history-item {
@@ -280,15 +331,6 @@ watch(scope, loadList);
 .chat-history-item:hover {
   border-color: rgba(13, 148, 136, 0.35);
   box-shadow: 0 4px 16px rgba(13, 148, 136, 0.08);
-}
-
-.chat-history-delete {
-  flex-shrink: 0;
-  color: #94a3b8;
-}
-
-.chat-history-delete:hover {
-  color: #dc2626;
 }
 
 .chat-history-item-icon {

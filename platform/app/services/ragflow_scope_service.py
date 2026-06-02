@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.document_scope import (
     SCOPE_COMPANY,
     SCOPE_DEPARTMENT,
+    SCOPE_TEAM,
     SCOPE_PERSONAL,
     _document_scope,
     can_delete_document,
@@ -30,17 +31,25 @@ from app.models.ragflow_link import RagflowAccountLink
 from app.models.ragflow_scope_dataset import (
     SCOPE_COMPANY as REG_COMPANY,
     SCOPE_DEPARTMENT as REG_DEPARTMENT,
+    SCOPE_TEAM as REG_TEAM,
     SCOPE_PERSONAL as REG_PERSONAL,
     RagflowScopeDataset,
 )
 from app.services.ragflow_identity_service import get_or_create_link
 from app.services.ragflow_naming import (
+    _id_suffix,
     dataset_display_label_company,
     dataset_display_label_dept,
     dataset_display_label_personal,
     dataset_name_for_company,
     dataset_name_for_dept,
     dataset_name_for_personal,
+    dept_id_from_dataset_name,
+    legacy_dataset_name_for_company,
+    legacy_dataset_name_for_dept,
+    legacy_dataset_name_for_personal,
+    legacy_dataset_name_for_platform_user,
+    legacy_scope_dataset_names,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,10 +58,12 @@ COMPANY_SCOPE_KEY = "global"
 
 
 def scope_key_for_document(document: Document) -> str:
-    scope = _document_scope(document)
+    scope = _document_scope(db, document)
     if scope == SCOPE_COMPANY:
+        if document.dept_id:
+            return str(document.dept_id)
         return COMPANY_SCOPE_KEY
-    if scope == SCOPE_DEPARTMENT:
+    if scope in (SCOPE_DEPARTMENT, SCOPE_TEAM):
         if document.dept_id:
             return str(document.dept_id)
         return str(document.owner_id)
@@ -102,6 +113,31 @@ def _visible_dataset_ids(kf) -> set[str]:
         return set()
 
 
+def _append_kb_label(
+    labels: list[dict[str, str]],
+    seen: set[str],
+    technical: str,
+    label: str,
+) -> None:
+    tech = (technical or "").strip()
+    disp = (label or "").strip()
+    if not tech or not disp or tech in seen:
+        return
+    seen.add(tech)
+    labels.append({"name": tech, "label": disp})
+
+
+def _align_dataset_display_name(rag: RagflowClient, dataset_id: str, target_name: str) -> None:
+    current = rag.get_dataset_name(dataset_id)
+    if not current or current == target_name:
+        return
+    try:
+        rag.update_dataset_name(dataset_id, target_name)
+        logger.info("知识库已重命名: %s → %s", current, target_name)
+    except Exception as e:
+        logger.warning("知识库重命名 %s → %s 失败: %s", current, target_name, e)
+
+
 def repair_stale_scope_registries(db: Session, kf) -> int:
     """删除 RAGFlow 中已不存在、但注册表仍指向的旧知识库记录。"""
     visible = _visible_dataset_ids(kf)
@@ -129,25 +165,32 @@ def ensure_scope_dataset(
     reg_scope = {
         SCOPE_COMPANY: REG_COMPANY,
         SCOPE_DEPARTMENT: REG_DEPARTMENT,
+        SCOPE_TEAM: REG_TEAM,
         SCOPE_PERSONAL: REG_PERSONAL,
     }.get(scope, REG_PERSONAL)
 
-    existing = _get_registry(db, reg_scope, scope_key)
-    if existing:
-        visible = _visible_dataset_ids(kf)
-        if visible and existing.ragflow_dataset_id in visible:
-            return existing.ragflow_dataset_id
-        db.delete(existing)
-        db.flush()
-
     if scope == SCOPE_COMPANY:
-        name = dataset_name_for_company()
-    elif scope == SCOPE_DEPARTMENT:
+        if scope_key == COMPANY_SCOPE_KEY:
+            name = dataset_name_for_company()
+        else:
+            name = dataset_name_for_dept(uuid.UUID(scope_key), db)
+    elif scope in (SCOPE_DEPARTMENT, SCOPE_TEAM):
         name = dataset_name_for_dept(uuid.UUID(scope_key), db)
     else:
         name = dataset_name_for_personal(uuid.UUID(scope_key), db)
 
+    lookup_names = [name, *legacy_scope_dataset_names(scope, scope_key)]
+    lookup_names = list(dict.fromkeys(n for n in lookup_names if n))
+
+    existing = _get_registry(db, reg_scope, scope_key)
     rag = kf._rag
+    if existing:
+        visible = _visible_dataset_ids(kf)
+        if visible and existing.ragflow_dataset_id in visible:
+            _align_dataset_display_name(rag, existing.ragflow_dataset_id, name)
+            return existing.ragflow_dataset_id
+        db.delete(existing)
+        db.flush()
     owner_ragflow_user_id: str | None = None
     if not _can_create_scope_dataset(db, actor, scope):
         admin_rag = _admin_rag_client()
@@ -170,6 +213,20 @@ def ensure_scope_dataset(
     else:
         link = get_or_create_link(db, actor)
         owner_ragflow_user_id = link.ragflow_user_id
+
+    found = rag.find_dataset_by_names(lookup_names)
+    if found and found.get("id"):
+        ds_id = str(found["id"])
+        _align_dataset_display_name(rag, ds_id, name)
+        reg = RagflowScopeDataset(
+            scope=reg_scope,
+            scope_key=scope_key,
+            ragflow_dataset_id=ds_id,
+            owner_ragflow_user_id=owner_ragflow_user_id,
+        )
+        db.add(reg)
+        db.flush()
+        return ds_id
 
     try:
         ds_id = rag.ensure_dataset(name)
@@ -200,7 +257,7 @@ def ensure_scope_dataset(
 
 
 def resolve_dataset_for_document(db: Session, actor: User, document: Document, kf) -> str | None:
-    scope = _document_scope(document)
+    scope = _document_scope(db, document)
     key = scope_key_for_document(document)
     return ensure_scope_dataset(db, actor, scope, key, kf)
 
@@ -220,7 +277,7 @@ def _user_has_queryable_doc_in_scope(
         Document.status == DocumentStatus.active.value,
         Document.scope == scope,
     )
-    if scope == SCOPE_DEPARTMENT and dept_id:
+    if scope in (SCOPE_DEPARTMENT, SCOPE_TEAM) and dept_id:
         stmt = stmt.where(Document.dept_id == dept_id)
     for doc_id in db.scalars(stmt.limit(300)):
         doc = db.get(Document, doc_id)
@@ -290,7 +347,7 @@ def sync_document_kb_grants(db: Session, document: Document) -> int:
     if not link or not link.dataset_id:
         return 0
 
-    scope = _document_scope(document)
+    scope = _document_scope(db, document)
     granted = 0
     if scope == SCOPE_PERSONAL:
         candidates = [document.owner_id]
@@ -320,8 +377,10 @@ def sync_document_kb_grants(db: Session, document: Document) -> int:
 
     granted += _grant_explicit_user_permissions(db, document, link.dataset_id)
 
-    if scope == SCOPE_DEPARTMENT and document.dept_id:
-        granted += _sync_dept_kb_grants(db, document.dept_id, link.dataset_id)
+    if scope in (SCOPE_DEPARTMENT, SCOPE_TEAM) and document.dept_id:
+        granted += _sync_dept_kb_grants(
+            db, document.dept_id, link.dataset_id, doc_scope=scope
+        )
         return granted
 
     if scope == SCOPE_COMPANY:
@@ -330,8 +389,14 @@ def sync_document_kb_grants(db: Session, document: Document) -> int:
     return granted
 
 
-def _sync_dept_kb_grants(db: Session, dept_id: uuid.UUID, dataset_id: str) -> int:
-    """部门库授权：仅授予当前部门成员（user_departments）。"""
+def _sync_dept_kb_grants(
+    db: Session,
+    dept_id: uuid.UUID,
+    dataset_id: str,
+    *,
+    doc_scope: str = SCOPE_DEPARTMENT,
+) -> int:
+    """部门/小组库授权：授予对应组织单元成员。"""
     granted = 0
     rows = db.scalars(
         select(UserDepartment.user_id).where(UserDepartment.dept_id == dept_id)
@@ -340,7 +405,7 @@ def _sync_dept_kb_grants(db: Session, dept_id: uuid.UUID, dataset_id: str) -> in
         user = db.get(User, uid)
         if not user or user.status != "active":
             continue
-        level = _dept_kb_level(db, user, dept_id)
+        level = _dept_kb_level(db, user, dept_id, scope=doc_scope)
         if not level:
             continue
         rid = _ragflow_user_id(db, uid)
@@ -362,10 +427,12 @@ def _sync_company_kb_grants(db: Session, dataset_id: str) -> int:
     return granted
 
 
-def _dept_kb_level(db: Session, user: User, dept_id: uuid.UUID) -> str | None:
-    if can_edit_in_scope(db, user, SCOPE_DEPARTMENT):
+def _dept_kb_level(
+    db: Session, user: User, dept_id: uuid.UUID, *, scope: str = SCOPE_DEPARTMENT
+) -> str | None:
+    if can_edit_in_scope(db, user, scope):
         return "write"
-    if _user_has_queryable_doc_in_scope(db, user, SCOPE_DEPARTMENT, dept_id=dept_id):
+    if _user_has_queryable_doc_in_scope(db, user, scope, dept_id=dept_id):
         return "read"
     return None
 
@@ -458,18 +525,30 @@ def sync_user_kb_grants(db: Session, user: User) -> int:
     ):
         count += 1
 
+    from app.core.document_scope import scope_for_department
+
     for dept_id in user_dept_ids(db, user.id):
-        reg = _get_registry(db, REG_DEPARTMENT, str(dept_id))
+        tier = scope_for_department(db, dept_id)
+        reg_scope = {
+            SCOPE_TEAM: REG_TEAM,
+            SCOPE_DEPARTMENT: REG_DEPARTMENT,
+            SCOPE_COMPANY: REG_COMPANY,
+        }.get(tier, REG_DEPARTMENT)
+        reg = _get_registry(db, reg_scope, str(dept_id))
         if not reg:
             continue
-        level = _dept_kb_level(db, user, dept_id)
+        level = _dept_kb_level(db, user, dept_id, scope=tier)
         if level and grant_kb_user_permission(
             reg.ragflow_dataset_id, link.ragflow_user_id, level
         ):
             count += 1
 
-    company = _get_registry(db, REG_COMPANY, COMPANY_SCOPE_KEY)
-    if company:
+    from app.core.document_scope import library_companies_for_user
+
+    for row in library_companies_for_user(db, user):
+        company = _get_registry(db, REG_COMPANY, str(row["id"]))
+        if not company:
+            continue
         level = _company_kb_level(db, user)
         if level and grant_kb_user_permission(
             company.ragflow_dataset_id, link.ragflow_user_id, level
@@ -480,37 +559,157 @@ def sync_user_kb_grants(db: Session, user: User) -> int:
 
 
 def ensure_user_scope_datasets(db: Session, user: User, kf) -> None:
-    """预创建用户相关的分级知识库（个人 + 所属部门 + 公司）。"""
+    """预创建用户相关的分级知识库（个人 + 部门/小组 + 公司）。"""
+    from app.core.document_scope import (
+        library_companies_for_user,
+        scope_for_department,
+    )
+
     ensure_scope_dataset(db, user, SCOPE_PERSONAL, str(user.id), kf)
-    for dept_id in user_dept_ids(db, user.id):
-        ensure_scope_dataset(db, user, SCOPE_DEPARTMENT, str(dept_id), kf)
-    if user_has_permission(db, user, "doc.read") or user_is_superuser(db, user):
-        ensure_scope_dataset(db, user, SCOPE_COMPANY, COMPANY_SCOPE_KEY, kf)
+    for dept_id in _dept_ids_for_kb_labels(db, user):
+        ensure_scope_dataset(
+            db, user, scope_for_department(db, dept_id), str(dept_id), kf
+        )
+    for row in library_companies_for_user(db, user):
+        ensure_scope_dataset(db, user, SCOPE_COMPANY, str(row["id"]), kf)
+
+
+def _dept_ids_for_kb_labels(db: Session, user: User) -> list[uuid.UUID]:
+    """标签与重命名覆盖的部门范围（含公司级可见时的全部部门）。"""
+    from app.models.org import Department
+
+    ids = list(user_dept_ids(db, user.id))
+    seen = set(ids)
+    if user_is_superuser(db, user) or user_has_permission(db, user, "doc.read"):
+        for dept_id in db.scalars(select(Department.id)).all():
+            if dept_id not in seen:
+                seen.add(dept_id)
+                ids.append(dept_id)
+    return ids
+
+
+def dept_suffix_labels_for_theme(db: Session, user: User) -> dict[str, str]:
+    """zt-dept-xxxxxx 后缀 → 部门展示名（供 KnowFlow 主题脚本兜底）。"""
+    out: dict[str, str] = {}
+    for dept_id in _dept_ids_for_kb_labels(db, user):
+        suf = _id_suffix(dept_id)
+        label = dataset_display_label_dept(db, dept_id)
+        if label:
+            out[suf] = label
+    return out
+
+
+def sync_all_kb_display_names(db: Session, kf) -> int:
+    """将 RAGFlow 中仍显示 zt-dept-* 等旧名的知识库改为部门/公司展示名。"""
+    rag = kf._rag
+    try:
+        datasets = rag.list_datasets()
+    except Exception as e:
+        logger.warning("列出知识库失败，跳过重命名: %s", e)
+        return 0
+
+    reg_by_id = {
+        reg.ragflow_dataset_id: reg
+        for reg in db.scalars(select(RagflowScopeDataset)).all()
+    }
+    renamed = 0
+    for ds in datasets:
+        ds_id = str(ds.get("id") or "")
+        name = (ds.get("name") or "").strip()
+        if not ds_id or not name:
+            continue
+        target: str | None = None
+        reg = reg_by_id.get(ds_id)
+        if reg:
+            try:
+                key = uuid.UUID(reg.scope_key)
+            except ValueError:
+                key = None
+            if reg.scope in (REG_DEPARTMENT, REG_TEAM) and key:
+                target = dataset_name_for_dept(key, db)
+            elif reg.scope == REG_PERSONAL and key:
+                target = dataset_name_for_personal(key, db)
+            elif reg.scope == REG_COMPANY:
+                target = dataset_name_for_company()
+        else:
+            dept_id = dept_id_from_dataset_name(db, name)
+            if dept_id:
+                target = dataset_name_for_dept(dept_id, db)
+        if target and name != target:
+            _align_dataset_display_name(rag, ds_id, target)
+            renamed += 1
+    return renamed
 
 
 def knowflow_kb_labels_for_user(db: Session, user: User) -> list[dict[str, str]]:
     """供前端 / KnowFlow 主题展示：技术库名 → 部门名/用户名（查询仍用 scope_key UUID）。"""
     labels: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+
+    company_label = dataset_display_label_company()
     company_name = dataset_name_for_company()
-    labels.append({"name": company_name, "label": dataset_display_label_company()})
+    _append_kb_label(labels, seen_names, company_name, company_label)
+    _append_kb_label(labels, seen_names, legacy_dataset_name_for_company(), company_label)
 
-    seen_names: set[str] = {company_name}
-    for dept_id in user_dept_ids(db, user.id):
-        technical = dataset_name_for_dept(dept_id, db)
-        if technical in seen_names:
-            continue
-        seen_names.add(technical)
-        labels.append(
-            {"name": technical, "label": dataset_display_label_dept(db, dept_id)}
+    for dept_id in _dept_ids_for_kb_labels(db, user):
+        dept_label = dataset_display_label_dept(db, dept_id)
+        _append_kb_label(
+            labels, seen_names, dataset_name_for_dept(dept_id, db), dept_label
+        )
+        _append_kb_label(
+            labels, seen_names, legacy_dataset_name_for_dept(dept_id), dept_label
         )
 
-    personal_name = dataset_name_for_personal(user.id, db)
-    if personal_name not in seen_names:
-        labels.append(
-            {
-                "name": personal_name,
-                "label": dataset_display_label_personal(db, user.id),
-            }
-        )
+    try:
+        from app.integrations.knowflow_client import get_knowflow_client_for_user
+
+        kf = get_knowflow_client_for_user(db, user)
+        if kf.enabled():
+            for ds in kf._rag.list_datasets():
+                technical = (ds.get("name") or "").strip()
+                ds_id = str(ds.get("id") or "")
+                if not technical:
+                    continue
+                reg = None
+                if ds_id:
+                    reg = db.scalar(
+                        select(RagflowScopeDataset).where(
+                            RagflowScopeDataset.ragflow_dataset_id == ds_id
+                        )
+                    )
+                label: str | None = None
+                if reg:
+                    try:
+                        key = uuid.UUID(reg.scope_key)
+                    except ValueError:
+                        key = None
+                    if reg.scope == REG_DEPARTMENT and key:
+                        label = dataset_display_label_dept(db, key)
+                    elif reg.scope == REG_PERSONAL and key:
+                        label = dataset_display_label_personal(db, key)
+                    elif reg.scope == REG_COMPANY:
+                        label = dataset_display_label_company()
+                if not label:
+                    dept_id = dept_id_from_dataset_name(db, technical)
+                    if dept_id:
+                        label = dataset_display_label_dept(db, dept_id)
+                if label:
+                    _append_kb_label(labels, seen_names, technical, label)
+    except Exception as e:
+        logger.debug("从 KnowFlow 列出知识库标签跳过: %s", e)
+
+    personal_label = dataset_display_label_personal(db, user.id)
+    _append_kb_label(
+        labels, seen_names, dataset_name_for_personal(user.id, db), personal_label
+    )
+    _append_kb_label(
+        labels, seen_names, legacy_dataset_name_for_personal(user.id), personal_label
+    )
+    _append_kb_label(
+        labels,
+        seen_names,
+        legacy_dataset_name_for_platform_user(user.id),
+        personal_label,
+    )
 
     return labels

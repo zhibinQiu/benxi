@@ -1,7 +1,7 @@
 # 生产 / amd64 全栈 Docker 覆盖（勿与 docker-compose.local.yml 混用）
 # 用法: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
-# 或: bash scripts/deploy_amd64.sh
+# 或: bash scripts/deploy.sh local full
 
 services:
   postgres:

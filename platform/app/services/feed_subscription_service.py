@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.document_scope import content_subscription_import_scope
 from app.core.exceptions import bad_request, not_found
 from app.integrations.feed_fetcher import (
     CARBON_FEED_PRESETS,
@@ -354,6 +355,26 @@ def get_entry_detail(db: Session, user: User, entry_id: uuid.UUID) -> dict:
     return data
 
 
+def delete_entry(db: Session, user: User, entry_id: uuid.UUID) -> None:
+    """删除用户可访问的订阅条目（不删除已导入的文档库文档）。"""
+    row = db.execute(
+        select(FeedEntry, FeedSource)
+        .join(FeedSource, FeedSource.id == FeedEntry.source_id)
+        .where(FeedEntry.id == entry_id)
+    ).first()
+    if not row:
+        raise not_found("条目不存在")
+    entry, source = row
+    if source.id not in _user_source_ids(db, user):
+        raise not_found("条目不存在")
+    for imp in list(
+        db.scalars(select(FeedEntryImport).where(FeedEntryImport.entry_id == entry.id)).all()
+    ):
+        db.delete(imp)
+    db.delete(entry)
+    db.flush()
+
+
 def sync_source(db: Session, user: User, source_id: uuid.UUID) -> dict:
     if source_id not in _user_source_ids(db, user):
         raise not_found("未订阅该源")
@@ -388,6 +409,10 @@ def import_entry_to_document(
     dept_id: uuid.UUID | None = None,
     sync_knowflow: bool = True,
 ) -> dict:
+    _ = scope
+    scope = content_subscription_import_scope()
+    dept_id = None
+
     detail = get_entry_detail(db, user, entry_id)
     existing = db.scalar(
         select(FeedEntryImport).where(
@@ -417,25 +442,42 @@ def import_entry_to_document(
         scope=scope,
         dept_id=dept_id,
     )
-    html_body = entry.content_html or f"<p>{entry.summary}</p>"
-    if entry.link and entry.link not in html_body:
-        html_body += f'<p><a href="{entry.link}">原文链接</a></p>'
+    from app.integrations.html_document_export import (
+        html_body_to_pdf_bytes,
+        resolve_article_html_body,
+    )
 
-    safe = "".join(c for c in doc.title if c.isalnum() or c in "._- ")[:80]
-    file_name = f"{safe or 'feed-entry'}.html"
-    content = (
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-        f"<title>{doc.title}</title></head><body>{html_body}</body></html>"
-    ).encode("utf-8")
+    link = detail.get("link") or entry.link or ""
+    source_label = f"{detail['source_name']}（{detail['source_kind']}）"
+    html_body, summary_text = resolve_article_html_body(
+        entry.content_html or "",
+        summary=entry.summary or "",
+        link=link,
+    )
+    if html_body and html_body != (entry.content_html or ""):
+        entry.content_html = html_body
+    if summary_text and summary_text != (entry.summary or ""):
+        entry.summary = summary_text
+
+    file_name, content, mime_type = html_body_to_pdf_bytes(
+        doc.title,
+        html_body or f"<p>{entry.summary}</p>",
+        summary=summary_text or entry.summary or "",
+        link=link,
+        source_label=source_label,
+        fallback_stem="subscription-article",
+        allow_refetch=False,
+    )
 
     create_initial_uploaded_version(
         db,
         doc,
         user,
         file_name=file_name,
-        mime_type="text/html; charset=utf-8",
+        mime_type=mime_type,
         content=content,
     )
+    db.refresh(doc)
 
     db.add(
         FeedEntryImport(entry_id=entry_id, user_id=user.id, document_id=doc.id)
@@ -449,9 +491,13 @@ def _try_sync_knowflow(db: Session, user: User, document_id: uuid.UUID) -> bool:
     from app.models.document import Document
     from app.services.ragflow_sync_service import sync_document_to_knowflow
 
+    from app.services.document_service import resolve_current_version
+
     doc = db.get(Document, document_id)
     if not doc:
         return False
+    db.refresh(doc)
+    resolve_current_version(db, doc)
     try:
         return bool(sync_document_to_knowflow(db, user, doc, force=True))
     except Exception as e:

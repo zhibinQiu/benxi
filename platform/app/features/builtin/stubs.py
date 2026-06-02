@@ -17,7 +17,7 @@ register(
         tag="即将推出",
         category="document",
         sort_order=30,
-        grant_to_roles=("sys_admin", "dept_admin"),
+        grant_to_roles=("sys_admin", "member"),
     )
 )
 
@@ -33,7 +33,7 @@ register(
         tag="待集成",
         category="carbon",
         sort_order=49,
-        grant_to_roles=("sys_admin", "dept_admin"),
+        grant_to_roles=("sys_admin", "member"),
     )
 )
 

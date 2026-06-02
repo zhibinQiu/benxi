@@ -92,8 +92,11 @@ def delete_user_account(db: Session, user: User) -> None:
     db.execute(
         update(Document).where(Document.deleted_by == uid).values(deleted_by=None)
     )
-    admin_name = get_settings().bootstrap_admin_username
-    admin = db.scalar(select(User).where(User.username == admin_name).limit(1))
+    from app.core.platform_admin import normalize_bootstrap_login_id
+
+    admin = db.scalar(
+        select(User).where(User.phone == normalize_bootstrap_login_id()).limit(1)
+    )
     if admin and admin.id != uid:
         db.execute(
             update(DocumentVersion)

@@ -1,0 +1,69 @@
+# 生产 / arm64 Linux 全栈 Docker 覆盖（勿与 docker-compose.local.yml 混用）
+
+services:
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  minio:
+    restart: unless-stopped
+
+  pdf2zh-api:
+    platform: linux/arm64
+    restart: unless-stopped
+    build:
+      platforms:
+        - linux/arm64
+
+  api:
+    platform: linux/arm64
+    restart: unless-stopped
+    build:
+      platforms:
+        - linux/arm64
+    environment:
+      KNOWFLOW_ENABLED: ${KNOWFLOW_ENABLED:-false}
+      RAGFLOW_API_URL: ${RAGFLOW_API_URL:-http://ragflow-server:9380}
+      KNOWFLOW_BACKEND_URL: ${KNOWFLOW_BACKEND_URL:-http://knowflow-backend:5000}
+      SPEECH_SERVICE_URL: ${SPEECH_SERVICE_URL:-http://speech-api:8765}
+
+  worker:
+    platform: linux/arm64
+    restart: unless-stopped
+    build:
+      platforms:
+        - linux/arm64
+
+  frontend:
+    platform: linux/arm64
+    build:
+      context: ../platform-frontend
+      dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.27-alpine}
+        VITE_API_BASE: ${VITE_API_BASE:-/ai}
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/ai/}
+    image: ${FRONTEND_IMAGE:-pdf-trans-frontend:prod}
+    restart: unless-stopped
+    profiles: !reset []
+    ports:
+      - "${FRONTEND_PORT:-40005}:80"
+    volumes: !reset []
+    working_dir: /usr/share/nginx/html
+    command: !reset null
+    depends_on:
+      api:
+        condition: service_started
+
+networks:
+  default:
+    name: zhitanai_default
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.60.0.0/16

@@ -22,8 +22,8 @@ from app.services.ragflow_scope_service import (
 def test_dataset_names_by_scope():
     uid = uuid.UUID("caf46c9d-81cd-4faa-a20b-285c7ed0fe54")
     did = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    assert dataset_name_for_company() == "公司"
     assert dataset_name_for_personal(uid).startswith("zt-personal-")
-    assert dataset_name_for_company() == "zt-company"
     assert dataset_name_for_dept(did).startswith("zt-dept-")
 
 

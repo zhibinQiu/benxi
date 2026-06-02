@@ -28,7 +28,9 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # phone、username 均可用于登录；display_name 为界面展示名
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(128), default="")
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(128), default="")
     password_hash: Mapped[str] = mapped_column(String(255))
@@ -69,7 +71,7 @@ class Department(Base):
 
 class UserDepartment(Base):
     __tablename__ = "user_departments"
-    __table_args__ = (UniqueConstraint("user_id", "dept_id", name="uq_user_dept"),)
+    __table_args__ = (UniqueConstraint("user_id", name="uq_user_single_dept"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

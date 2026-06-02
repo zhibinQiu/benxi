@@ -100,21 +100,45 @@ def _sync_plugin_role_grants(db: Session) -> None:
 
 
 def _seed_admin(db: Session) -> None:
+    from app.core.platform_admin import normalize_bootstrap_login_id
+
     settings = get_settings()
-    admin = db.scalar(select(User).where(User.username == settings.bootstrap_admin_username))
+    boot_phone = normalize_bootstrap_login_id()
+    display = (
+        settings.bootstrap_admin_display_name or settings.bootstrap_admin_username
+    )
+
+    admin = db.scalar(select(User).where(User.phone == boot_phone))
+    if not admin:
+        admin = db.scalar(
+            select(User).where(User.email == settings.bootstrap_admin_email)
+        )
+    if not admin:
+        admin = db.scalar(
+            select(User).where(User.username == settings.bootstrap_admin_username)
+        )
+    if not admin:
+        admin = db.scalar(select(User).where(User.display_name == display))
+    if not admin:
+        admin = db.scalar(select(User).where(User.username == display))
+
     if admin:
+        admin.display_name = display
+        if not (admin.username or "").strip():
+            admin.username = settings.bootstrap_admin_username or "admin"
+        admin.phone = boot_phone
+        db.query(UserDepartment).filter(UserDepartment.user_id == admin.id).delete()
+        from app.core.platform_admin import ensure_bootstrap_has_system_admin_role
+
+        ensure_bootstrap_has_system_admin_role(db, admin)
+        db.commit()
         return
 
-    root_dept = db.scalar(select(Department).where(Department.name == "总部"))
-    if not root_dept:
-        root_dept = Department(name="总部", parent_id=None, sort_order=0)
-        db.add(root_dept)
-        db.flush()
-
     admin = User(
-        username=settings.bootstrap_admin_username,
+        phone=boot_phone,
+        username=settings.bootstrap_admin_username or "admin",
+        display_name=display,
         email=settings.bootstrap_admin_email,
-        display_name=settings.bootstrap_admin_username,
         password_hash=hash_password(settings.bootstrap_admin_password),
     )
     db.add(admin)
@@ -123,8 +147,5 @@ def _seed_admin(db: Session) -> None:
     sys_role = db.scalar(select(Role).where(Role.code == "sys_admin"))
     if sys_role:
         db.add(UserRole(user_id=admin.id, role_id=sys_role.id, scope_dept_id=None))
-    db.add(
-        UserDepartment(user_id=admin.id, dept_id=root_dept.id, is_primary=True)
-    )
 
     db.commit()

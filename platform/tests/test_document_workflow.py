@@ -16,19 +16,17 @@ def test_is_access_denied():
     assert is_access_denied(db, user, doc)
 
 
-def test_dept_admin_can_deny_dept_doc():
+def test_only_owner_can_deny_dept_doc():
     db = MagicMock()
     owner = uuid.uuid4()
-    admin = MagicMock(id=uuid.uuid4())
-    dept = uuid.uuid4()
+    other = MagicMock(id=uuid.uuid4())
     doc = MagicMock(
         deleted_at=None,
         owner_id=owner,
         scope="department",
-        dept_id=dept,
+        dept_id=uuid.uuid4(),
     )
 
-    with patch("app.core.document_scope.user_is_superuser", return_value=False), patch(
-        "app.core.document_scope.user_dept_ids", return_value=[dept]
-    ), patch("app.core.document_scope.can_edit_in_scope", return_value=True):
-        assert can_manage_document_denials(db, admin, doc)
+    with patch("app.core.document_scope.user_is_superuser", return_value=False):
+        assert can_manage_document_denials(db, MagicMock(id=owner), doc)
+        assert not can_manage_document_denials(db, other, doc)

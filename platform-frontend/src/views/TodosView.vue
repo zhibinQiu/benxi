@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   NButton,
   NCard,
@@ -14,9 +14,10 @@ import {
   NSpin,
   NTag,
   NText,
+  useDialog,
   useMessage,
 } from "naive-ui";
-import { ReorderThreeOutline, SparklesOutline, TrashOutline } from "@vicons/ionicons5";
+import { ReorderThreeOutline, SparklesOutline } from "@vicons/ionicons5";
 import {
   batchCreateTodos,
   createTodo,
@@ -27,8 +28,10 @@ import {
   todoLlmPreview,
   updateTodo,
 } from "../api/client";
+import { deleteSequentially } from "../utils/batchActions";
 
 const message = useMessage();
+const dialog = useDialog();
 
 const loading = ref(false);
 const pending = ref([]);
@@ -45,6 +48,25 @@ const showLlmModal = ref(false);
 
 const dragFrom = ref(-1);
 const dragStatus = ref(null);
+const selectedPendingIds = ref([]);
+const selectedDoneIds = ref([]);
+
+const canBatchDeletePending = computed(() => selectedPendingIds.value.length > 0);
+const canBatchDeleteDone = computed(() => selectedDoneIds.value.length > 0);
+
+function isTodoSelected(status, id) {
+  const list = status === "pending" ? selectedPendingIds.value : selectedDoneIds.value;
+  return list.includes(id);
+}
+
+function toggleTodoSelected(status, id, checked) {
+  const target = status === "pending" ? selectedPendingIds : selectedDoneIds;
+  if (checked) {
+    if (!target.value.includes(id)) target.value = [...target.value, id];
+  } else {
+    target.value = target.value.filter((x) => x !== id);
+  }
+}
 
 async function load() {
   loading.value = true;
@@ -52,6 +74,8 @@ async function load() {
     const [p, d] = await Promise.all([fetchTodos("pending"), fetchTodos("done")]);
     pending.value = p;
     done.value = d;
+    selectedPendingIds.value = [];
+    selectedDoneIds.value = [];
   } catch (e) {
     message.error(e.message);
   } finally {
@@ -87,14 +111,34 @@ async function toggleDone(item, checked) {
   }
 }
 
-async function remove(item) {
-  try {
-    await deleteTodo(item.id);
-    await load();
-    message.success("已删除");
-  } catch (e) {
-    message.error(e.message);
-  }
+function handleBatchDelete(status) {
+  const ids = status === "pending" ? selectedPendingIds.value : selectedDoneIds.value;
+  const rows =
+    status === "pending"
+      ? pending.value.filter((item) => ids.includes(item.id))
+      : done.value.filter((item) => ids.includes(item.id));
+  if (!rows.length) return;
+  const summary = rows.length === 1 ? "该待办" : `选中的 ${rows.length} 条待办`;
+  dialog.warning({
+    title: "批量删除待办",
+    content: `确定删除${summary}？`,
+    positiveText: "删除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      const { deleted, failed } = await deleteSequentially(rows, (row) => deleteTodo(row.id));
+      if (status === "pending") selectedPendingIds.value = [];
+      else selectedDoneIds.value = [];
+      if (failed.length) {
+        message.warning(
+          `已删除 ${deleted} 条，${failed.length} 条失败：${failed[0].message || "未知错误"}`
+        );
+      } else {
+        message.success(deleted > 1 ? `已删除 ${deleted} 条待办` : "已删除");
+      }
+      await load();
+      return !failed.length;
+    },
+  });
 }
 
 function onDragStart(index, status) {
@@ -225,6 +269,15 @@ onMounted(load);
             <header class="column-head">
               <span class="column-title">待办</span>
               <n-tag size="small" :bordered="false" type="info">{{ pending.length }}</n-tag>
+              <n-button
+                size="tiny"
+                type="error"
+                secondary
+                :disabled="!canBatchDeletePending"
+                @click="handleBatchDelete('pending')"
+              >
+                删除
+              </n-button>
             </header>
             <n-empty
               v-if="!pending.length && !loading"
@@ -243,6 +296,10 @@ onMounted(load);
                 @dragover="onDragOver"
                 @drop="onDrop(index, 'pending')"
               >
+                <n-checkbox
+                  :checked="isTodoSelected('pending', item.id)"
+                  @update:checked="(v) => toggleTodoSelected('pending', item.id, v)"
+                />
                 <span class="todo-drag" title="拖拽排序">
                   <n-icon :component="ReorderThreeOutline" :size="18" />
                 </span>
@@ -254,11 +311,6 @@ onMounted(load);
                   <n-text class="todo-title">{{ item.title }}</n-text>
                   <n-text v-if="item.note" depth="3" class="todo-note">{{ item.note }}</n-text>
                 </div>
-                <n-button quaternary size="tiny" type="error" @click="remove(item)">
-                  <template #icon>
-                    <n-icon :component="TrashOutline" />
-                  </template>
-                </n-button>
               </li>
             </ul>
           </section>
@@ -267,6 +319,15 @@ onMounted(load);
             <header class="column-head">
               <span class="column-title">已完成</span>
               <n-tag size="small" :bordered="false" type="success">{{ done.length }}</n-tag>
+              <n-button
+                size="tiny"
+                type="error"
+                secondary
+                :disabled="!canBatchDeleteDone"
+                @click="handleBatchDelete('done')"
+              >
+                删除
+              </n-button>
             </header>
             <n-empty
               v-if="!done.length && !loading"
@@ -285,6 +346,10 @@ onMounted(load);
                 @dragover="onDragOver"
                 @drop="onDrop(index, 'done')"
               >
+                <n-checkbox
+                  :checked="isTodoSelected('done', item.id)"
+                  @update:checked="(v) => toggleTodoSelected('done', item.id, v)"
+                />
                 <span class="todo-drag" title="拖拽排序">
                   <n-icon :component="ReorderThreeOutline" :size="18" />
                 </span>
@@ -299,11 +364,6 @@ onMounted(load);
                     {{ formatDoneTime(item.completed_at) }}
                   </n-text>
                 </div>
-                <n-button quaternary size="tiny" type="error" @click="remove(item)">
-                  <template #icon>
-                    <n-icon :component="TrashOutline" />
-                  </template>
-                </n-button>
               </li>
             </ul>
           </section>

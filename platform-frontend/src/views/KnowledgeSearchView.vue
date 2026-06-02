@@ -3,6 +3,7 @@ import { NAlert, NButton } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
 import { useKnowflowEmbed } from "../composables/useKnowflowEmbed";
+import { KNOWLEDGE_UNAVAILABLE } from "../utils/uiMessage";
 
 const STARTUP_HINT = "正在加载知识搜索";
 
@@ -31,8 +32,7 @@ const {
         title="知识搜索未就绪"
         class="embed-alert"
       >
-        <p>KnowFlow 检索服务暂不可用，请确认知识服务已启动。</p>
-        <p v-if="meta.ui_hint" style="margin: 8px 0 0">{{ meta.ui_hint }}</p>
+        <p>{{ meta.ui_hint || KNOWLEDGE_UNAVAILABLE }}</p>
         <template #action>
           <n-button size="small" @click="loadMeta">重新检测</n-button>
         </template>

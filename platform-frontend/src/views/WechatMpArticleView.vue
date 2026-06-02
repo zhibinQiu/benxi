@@ -11,7 +11,11 @@ import {
   useMessage,
 } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
-import { fetchWechatMpArticle, importWechatMpArticle } from "../api/client";
+import {
+  DOCUMENT_SCOPE_PERSONAL,
+  fetchWechatMpArticle,
+  importWechatMpArticle,
+} from "../api/client";
 import { goBackToEntry } from "../utils/navigationReturn";
 
 const route = useRoute();
@@ -31,13 +35,15 @@ function fmtTime(iso) {
   }
 }
 
-async function load() {
+async function load({ notifyOnError = true } = {}) {
   loading.value = true;
   try {
     article.value = await fetchWechatMpArticle(route.params.id);
   } catch (e) {
-    message.error(e.message);
-    goBackToEntry(router, route, { name: route.meta.backTo || "wechat-mp" });
+    if (notifyOnError) message.error(e.message);
+    if (notifyOnError) {
+      goBackToEntry(router, route, { name: route.meta.backTo || "wechat-mp" });
+    }
   } finally {
     loading.value = false;
   }
@@ -46,14 +52,13 @@ async function load() {
 async function onImport() {
   importing.value = true;
   try {
-    const res = await importWechatMpArticle(route.params.id, {
-      scope: "personal",
-      sync_knowflow: true,
-    });
+    const res = await importWechatMpArticle(route.params.id);
     message.success(
-      res.knowflow_synced ? "已入文档库并同步知识库" : "已入文档库",
+      res.knowflow_synced
+        ? "已入「我的」文档库并同步知识库"
+        : "已入「我的」文档库",
     );
-    await load();
+    await load({ notifyOnError: false });
   } catch (e) {
     message.error(e.message);
   } finally {
@@ -97,8 +102,17 @@ onMounted(load);
             >
               导入文档库
             </NButton>
-            <NButton v-else tertiary @click="router.push({ name: 'documents' })">
-              打开文档库
+            <NButton
+              v-else
+              tertiary
+              @click="
+                router.push({
+                  name: 'documents',
+                  query: { scope: DOCUMENT_SCOPE_PERSONAL },
+                })
+              "
+            >
+              打开「我的」文档库
             </NButton>
             <NButton @click="openOriginal">查看原文</NButton>
           </NSpace>

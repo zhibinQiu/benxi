@@ -16,6 +16,6 @@ register(
         enabled=True,
         category="carbon",
         sort_order=48,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

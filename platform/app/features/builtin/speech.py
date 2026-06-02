@@ -17,6 +17,6 @@ register(
         enabled=True,
         category="tools",
         sort_order=15,
-        grant_to_roles=("sys_admin", "dept_admin", "member"),
+        grant_to_roles=("sys_admin", "member", "member"),
     )
 )

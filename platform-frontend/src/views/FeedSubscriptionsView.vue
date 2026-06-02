@@ -5,6 +5,7 @@ import { navigateWithReturn } from "../utils/navigationReturn";
 import {
   NButton,
   NCard,
+  NCheckbox,
   NEmpty,
   NForm,
   NFormItem,
@@ -21,6 +22,7 @@ import {
   NSpin,
   NTag,
   NText,
+  useDialog,
   useMessage,
 } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
@@ -33,10 +35,12 @@ import {
   subscribeFeedPreset,
   syncFeedSubscription,
 } from "../api/client";
+import { deleteSequentially } from "../utils/batchActions";
 
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
+const dialog = useDialog();
 
 const pageTitle = computed(() => {
   if (route.query.kind === "website") return "双碳网站资讯";
@@ -59,6 +63,7 @@ const filterSourceId = ref(null);
 const showAdd = ref(false);
 const addForm = ref({ name: "", feed_url: "", kind: "rss", category: "双碳" });
 const submitting = ref(false);
+const selectedSourceIds = ref([]);
 
 const sourceOptions = computed(() => [
   { label: "全部订阅源", value: null },
@@ -95,6 +100,9 @@ function fmtTime(iso) {
 
 async function loadSources() {
   sources.value = await fetchFeedSources({ kind: filterKind.value || undefined });
+  selectedSourceIds.value = selectedSourceIds.value.filter((id) =>
+    sources.value.some((s) => s.id === id)
+  );
 }
 
 async function loadPresets() {
@@ -181,15 +189,54 @@ async function onSyncSource(source) {
   }
 }
 
-async function onRemoveSource(source) {
-  try {
-    await deleteFeedSubscription(source.id);
-    message.success("已取消订阅");
-    if (filterSourceId.value === source.id) filterSourceId.value = null;
-    await reload();
-  } catch (e) {
-    message.error(e.message);
+const selectedSources = computed(() =>
+  sources.value.filter((s) => selectedSourceIds.value.includes(s.id))
+);
+
+const canBatchRemove = computed(() => selectedSources.value.length > 0);
+
+function isSourceSelected(id) {
+  return selectedSourceIds.value.includes(id);
+}
+
+function toggleSourceSelected(id, checked) {
+  if (checked) {
+    if (!selectedSourceIds.value.includes(id)) {
+      selectedSourceIds.value = [...selectedSourceIds.value, id];
+    }
+  } else {
+    selectedSourceIds.value = selectedSourceIds.value.filter((x) => x !== id);
   }
+}
+
+function handleBatchRemoveSources() {
+  const rows = selectedSources.value;
+  if (!rows.length) return;
+  const summary = rows.length === 1 ? `「${rows[0].name}」` : `选中的 ${rows.length} 个订阅`;
+  dialog.warning({
+    title: "批量取消订阅",
+    content: `确定取消${summary}？`,
+    positiveText: "移除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      const { deleted, failed } = await deleteSequentially(rows, (row) =>
+        deleteFeedSubscription(row.id)
+      );
+      if (filterSourceId.value && selectedSourceIds.value.includes(filterSourceId.value)) {
+        filterSourceId.value = null;
+      }
+      selectedSourceIds.value = [];
+      if (failed.length) {
+        message.warning(
+          `已移除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
+        );
+      } else {
+        message.success(deleted > 1 ? `已移除 ${deleted} 个订阅` : "已取消订阅");
+      }
+      await reload();
+      return !failed.length;
+    },
+  });
 }
 
 function openEntry(id) {
@@ -247,6 +294,20 @@ onMounted(() => {
           <NText v-if="!presets.length" depth="3" style="font-size: 12px">暂无推荐源</NText>
 
           <NText depth="3" class="section-label">我的订阅</NText>
+          <NSpace v-if="sources.length" align="center" :size="8" style="margin-bottom: 8px">
+            <NButton
+              size="tiny"
+              type="error"
+              secondary
+              :disabled="!canBatchRemove"
+              @click="handleBatchRemoveSources"
+            >
+              移除
+            </NButton>
+            <NText v-if="selectedSourceIds.length" depth="3" style="font-size: 12px">
+              已选 {{ selectedSourceIds.length }} 项
+            </NText>
+          </NSpace>
           <NList v-if="sources.length" hoverable clickable>
             <NListItem
               v-for="s in sources"
@@ -254,7 +315,12 @@ onMounted(() => {
               @click="filterSourceId = s.id; page = 1; loadArticles()"
             >
               <div class="source-row">
-                <div>
+                <NCheckbox
+                  :checked="isSourceSelected(s.id)"
+                  @update:checked="(v) => toggleSourceSelected(s.id, v)"
+                  @click.stop
+                />
+                <div class="source-row-main">
                   <div class="source-name">
                     {{ s.name }}
                     <NTag size="tiny" :bordered="false">{{ s.kind === "website" ? "网站" : "RSS" }}</NTag>
@@ -263,7 +329,6 @@ onMounted(() => {
                 </div>
                 <NSpace size="small">
                   <NButton size="tiny" quaternary @click.stop="onSyncSource(s)">同步</NButton>
-                  <NButton size="tiny" quaternary type="error" @click.stop="onRemoveSource(s)">移除</NButton>
                 </NSpace>
               </div>
             </NListItem>
@@ -380,6 +445,10 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
+}
+.source-row-main {
+  flex: 1;
+  min-width: 0;
 }
 .source-name {
   font-weight: 500;

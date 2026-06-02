@@ -9,7 +9,7 @@ class DocumentCreate(BaseModel):
     description: str = ""
     scope: str = Field(
         "personal",
-        pattern="^(company|department|personal)$",
+        pattern="^(company|department|team|personal)$",
     )
     dept_id: uuid.UUID | None = None
     folder_id: uuid.UUID | None = None
@@ -18,12 +18,28 @@ class DocumentCreate(BaseModel):
 class DocumentUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=512)
     description: str | None = None
+    scope: str | None = Field(
+        None,
+        pattern="^(company|department|team|personal)$",
+    )
+    dept_id: uuid.UUID | None = None
 
 
 class DocumentMoveIn(BaseModel):
     """移动到同分级下的知识库文件夹；folder_id 为空表示归入「未分类」。"""
 
     folder_id: uuid.UUID | None = None
+
+
+class DocumentBatchDeleteIn(BaseModel):
+    document_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=100)
+    permanent: bool = True
+
+
+class DocumentBatchDeleteOut(BaseModel):
+    deleted: list[str] = Field(default_factory=list)
+    failed: list[dict[str, str]] = Field(default_factory=list)
+    deleted_count: int = 0
 
 
 class DocumentVersionOut(BaseModel):
@@ -78,7 +94,7 @@ class KbFolderListOut(BaseModel):
 class KbFolderCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=256)
     description: str = Field(default="", max_length=2000)
-    scope: str = Field(..., pattern="^(company|department|personal)$")
+    scope: str = Field(..., pattern="^(company|department|team|personal)$")
     dept_id: uuid.UUID | None = None
 
 
@@ -89,7 +105,9 @@ class KbFolderUpdate(BaseModel):
 
 class DocumentLibraryOut(BaseModel):
     folders: list[DocumentFolderOut]
+    companies: list[dict] = []
     departments: list[dict] = []
+    teams: list[dict] = []
 
 
 class DocumentListItem(BaseModel):
@@ -104,6 +122,7 @@ class DocumentListItem(BaseModel):
     dept_id: uuid.UUID | None
     dept_name: str | None = None
     current_version_id: uuid.UUID | None
+    file_format: str | None = None
     created_at: datetime
     updated_at: datetime
     uploaded_at: datetime | None = None
@@ -138,8 +157,15 @@ class UploadCompleteRequest(BaseModel):
     checksum: str | None = None
 
 
+class DocumentKnowflowSyncOut(BaseModel):
+    knowflow_synced: bool = False
+    ragflow_document_id: str | None = None
+    dataset_id: str | None = None
+    message: str = ""
+
+
 class DocumentGrant(BaseModel):
-    subject_type: str = Field(..., pattern="^(user|dept|role)$")
+    subject_type: str = Field(..., pattern="^user$")
     subject_id: uuid.UUID
     level: str = Field(
         ...,
@@ -158,6 +184,22 @@ class DocumentPermissionOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class DocumentShareOut(BaseModel):
+    """文档当前分享状态：每人一条，仅表示对该用户的授权级别。"""
+
+    user_id: uuid.UUID
+    user_name: str | None = None
+    level: str
+
+
+class DocumentShareBatchIn(BaseModel):
+    user_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=200)
+    level: str = Field(
+        ...,
+        pattern="^(visible|query|edit|full|read|use|delete)$",
+    )
 
 
 class DocumentStatusUpdate(BaseModel):
@@ -181,4 +223,20 @@ class AclUserCandidateOut(BaseModel):
     id: uuid.UUID
     username: str
     display_name: str
+    department_id: uuid.UUID | None = None
     department_names: list[str] = []
+    department_ids: list[uuid.UUID] = []
+
+
+class DepartmentPickerOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    parent_id: uuid.UUID | None = None
+
+
+class AclPickerOut(BaseModel):
+    """分享/禁止访问时的组织树数据（公司 → 部门 → 员工）。"""
+
+    company_label: str = "公司"
+    departments: list[DepartmentPickerOut] = []
+    users: list[AclUserCandidateOut] = []

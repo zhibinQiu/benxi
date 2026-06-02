@@ -8,7 +8,7 @@ AI 能力通过 `app/features` 插件注册；PDF 翻译对接宿主机或容器
 推荐使用仓库根目录脚本（本地优先）：
 
 ```bash
-bash scripts/start_platform.sh
+bash scripts/zhitan.sh
 ```
 
 详见 [智碳平台AI系统说明](../docs/zh/development/doc-platform.md) 与 [功能插件](../docs/zh/platform/feature-plugins.md)。

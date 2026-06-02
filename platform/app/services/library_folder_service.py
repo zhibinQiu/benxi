@@ -8,8 +8,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.document_scope import (
+    ORG_SCOPES,
     SCOPE_COMPANY,
-    SCOPE_DEPARTMENT,
     SCOPE_PERSONAL,
     VALID_SCOPES,
     can_manage_library_folders,
@@ -40,12 +40,12 @@ def _folder_visible_to_user(db: Session, user: User, folder: DocumentLibraryFold
         return folder.owner_id == user.id
     if scope == SCOPE_COMPANY:
         return True
-    if scope == SCOPE_DEPARTMENT:
+    if scope in ORG_SCOPES:
         if not folder.dept_id:
             return False
-        from app.core.permissions import user_dept_ids
+        from app.core.document_scope import user_can_access_org_unit
 
-        return folder.dept_id in user_dept_ids(db, user.id)
+        return user_can_access_org_unit(db, user, folder.dept_id)
     return False
 
 
@@ -59,19 +59,21 @@ def _normalize_folder_scope(
     """规范化文件夹分级（列表、移动等，不校验新建权限）。"""
     if scope not in VALID_SCOPES:
         raise bad_request("无效的分级 scope")
-    if scope == SCOPE_COMPANY:
-        return scope, None, None
-    if scope == SCOPE_DEPARTMENT:
-        from app.core.document_scope import primary_dept_id
+    if scope in ORG_SCOPES:
+        from app.core.document_scope import primary_dept_id, user_can_access_org_unit
         from app.core.permissions import user_dept_ids
 
+        if user_is_superuser(db, user):
+            if dept_id is None:
+                raise bad_request("请选择组织节点")
+            return scope, dept_id, None
         user_depts = user_dept_ids(db, user.id)
         if not user_depts:
             raise bad_request("您未归属任何部门")
         if dept_id is None:
             dept_id = primary_dept_id(db, user.id) or user_depts[0]
-        if dept_id not in user_depts:
-            raise forbidden("只能选择本人所属部门")
+        if not user_can_access_org_unit(db, user, dept_id):
+            raise forbidden("只能选择本人可访问的组织节点")
         return scope, dept_id, None
     return SCOPE_PERSONAL, None, user.id
 
@@ -122,7 +124,7 @@ def _count_docs_in_folder(
         stmt = stmt.where(Document.folder_id == folder_id)
     if scope == SCOPE_PERSONAL and owner_id:
         stmt = stmt.where(Document.owner_id == owner_id)
-    if scope == SCOPE_DEPARTMENT and dept_id:
+    if scope in ORG_SCOPES and dept_id:
         stmt = stmt.where(Document.dept_id == dept_id)
     return int(db.scalar(stmt) or 0)
 
@@ -143,12 +145,8 @@ def list_kb_folders(
     )
     if norm_scope == SCOPE_PERSONAL:
         stmt = stmt.where(DocumentLibraryFolder.owner_id == user.id)
-    elif norm_scope == SCOPE_DEPARTMENT:
+    elif norm_scope in ORG_SCOPES:
         stmt = stmt.where(DocumentLibraryFolder.dept_id == norm_dept)
-    else:
-        stmt = stmt.where(DocumentLibraryFolder.dept_id.is_(None)).where(
-            DocumentLibraryFolder.owner_id.is_(None)
-        )
 
     rows = list(
         db.scalars(
@@ -367,8 +365,8 @@ def resolve_document_folder_id(
     )
     if folder.scope != norm_scope:
         raise bad_request("文件夹与文档分级不一致")
-    if norm_scope == SCOPE_DEPARTMENT and folder.dept_id != norm_dept:
-        raise bad_request("文件夹与所选部门不一致")
+    if norm_scope in ORG_SCOPES and folder.dept_id != norm_dept:
+        raise bad_request("文件夹与所选组织单元不一致")
     if (
         norm_scope == SCOPE_PERSONAL
         and folder.owner_id != user.id

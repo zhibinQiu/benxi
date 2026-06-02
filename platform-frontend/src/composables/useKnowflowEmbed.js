@@ -1,7 +1,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { useMessage } from "naive-ui";
 import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
+import { knowflowUnavailableHint } from "../utils/uiMessage";
 import { useAuth } from "./useAuth";
 import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
 
@@ -20,7 +20,6 @@ export function useKnowflowEmbed({
   embedMode = "1",
 }) {
   const route = useRoute();
-  const message = useMessage();
   const { user } = useAuth();
 
   const bootstrapping = ref(true);
@@ -65,16 +64,25 @@ export function useKnowflowEmbed({
 
   function themePayload() {
     const base = embedSession.value?.theme || {};
-    const name = (user.value?.username || "").trim();
+    const name = (
+      user.value?.display_name ||
+      user.value?.username ||
+      ""
+    ).trim();
     const kbLabels =
       embedSession.value?.knowflow_kb_labels ||
       base.knowflow_kb_labels ||
       [];
+    const deptSuffixLabels =
+      embedSession.value?.dept_suffix_labels ||
+      base.dept_suffix_labels ||
+      {};
     return {
       ...base,
       display_name: name || base.display_name,
       username: user.value?.username || base.username,
       knowflow_kb_labels: kbLabels,
+      dept_suffix_labels: deptSuffixLabels,
     };
   }
 
@@ -126,7 +134,12 @@ export function useKnowflowEmbed({
       // 首屏已建库；文档全量同步放后台，完成后刷新 iframe 知识库树
       scheduleKnowflowCatalogSync({ iframeElementId });
     } catch (e) {
-      message.error(e.message);
+      meta.value = {
+        ...meta.value,
+        ui_available: false,
+        knowflow_enabled: false,
+        ui_hint: knowflowUnavailableHint(e),
+      };
     } finally {
       bootstrapping.value = false;
     }
@@ -153,12 +166,8 @@ export function useKnowflowEmbed({
     if (route.name !== watchRouteName) return;
     iframeReady.value = false;
     iframeSrc.value = "";
-    try {
-      embedSession.value = await fetchRagEmbedSession({ sync: false }).catch(() => null);
-      applyIframeSession(embedSession.value);
-    } catch (e) {
-      message.error(e.message);
-    }
+    embedSession.value = await fetchRagEmbedSession({ sync: false }).catch(() => null);
+    applyIframeSession(embedSession.value);
   }
 
   watch(

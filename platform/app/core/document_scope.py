@@ -1,9 +1,10 @@
-"""文档库分级（公司 / 部门 / 个人）与分级权限。"""
+"""文档库分级（公司 / 部门 / 小组 / 个人）与分级权限。"""
 
 from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import (
@@ -12,34 +13,116 @@ from app.core.permissions import (
     normalize_permission_level,
     user_dept_ids,
     user_has_permission,
-    user_is_company_admin,
-    user_is_dept_admin,
     user_is_superuser,
 )
 from app.models.document import Document, DocumentPermission, DocumentStatus
-from app.models.org import User
+from app.models.org import Department, User
 
 DocumentScope = str
 
 SCOPE_COMPANY = "company"
 SCOPE_DEPARTMENT = "department"
+SCOPE_TEAM = "team"
 SCOPE_PERSONAL = "personal"
 
-VALID_SCOPES = (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_PERSONAL)
-# 文档库 Tab 展示顺序（我的 → 部门 → 公司 → 分享）
-LIBRARY_TAB_SCOPES = (SCOPE_PERSONAL, SCOPE_DEPARTMENT, SCOPE_COMPANY)
+VALID_SCOPES = (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM, SCOPE_PERSONAL)
+# 文档库 Tab：我的 → 小组级 → 部门级 → 公司级（分享另列）
+LIBRARY_TAB_SCOPES = (
+    SCOPE_PERSONAL,
+    SCOPE_TEAM,
+    SCOPE_DEPARTMENT,
+    SCOPE_COMPANY,
+)
 
 SCOPE_LABELS = {
     SCOPE_COMPANY: "公司级",
     SCOPE_DEPARTMENT: "部门级",
+    SCOPE_TEAM: "小组级",
     SCOPE_PERSONAL: "我的",
 }
+
+# 绑定组织节点的分级（根=公司，二级=部门，三级=小组）
+ORG_SCOPES = (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM)
+DEPT_SCOPES = ORG_SCOPES
+
+
+def content_subscription_import_scope() -> str:
+    """公众号 / RSS / 网站资讯导入文档库时固定为「我的」分级。"""
+    return SCOPE_PERSONAL
 
 _SCOPE_PERM_PREFIX = {
     SCOPE_COMPANY: "doc.company",
     SCOPE_DEPARTMENT: "doc.dept",
+    SCOPE_TEAM: "doc.team",
     SCOPE_PERSONAL: "doc.personal",
 }
+
+
+def department_depth(db: Session, dept_id: uuid.UUID) -> int:
+    """组织树深度：根节点=0（公司级），子节点依次 +1。"""
+    depth = 0
+    current = db.get(Department, dept_id)
+    while current and current.parent_id:
+        depth += 1
+        current = db.get(Department, current.parent_id)
+    return depth
+
+
+def scope_for_department_depth(depth: int) -> str:
+    if depth == 0:
+        return SCOPE_COMPANY
+    if depth == 1:
+        return SCOPE_DEPARTMENT
+    if depth == 2:
+        return SCOPE_TEAM
+    return SCOPE_PERSONAL
+
+
+def scope_for_department(db: Session, dept_id: uuid.UUID) -> str:
+    return scope_for_department_depth(department_depth(db, dept_id))
+
+
+def department_root_id(db: Session, dept_id: uuid.UUID) -> uuid.UUID:
+    current = db.get(Department, dept_id)
+    if not current:
+        return dept_id
+    while current.parent_id:
+        parent = db.get(Department, current.parent_id)
+        if not parent:
+            break
+        current = parent
+    return current.id
+
+
+def is_ancestor_department(
+    db: Session, ancestor_id: uuid.UUID, descendant_id: uuid.UUID
+) -> bool:
+    current = db.get(Department, descendant_id)
+    while current and current.parent_id:
+        if current.parent_id == ancestor_id:
+            return True
+        current = db.get(Department, current.parent_id)
+    return descendant_id == ancestor_id
+
+
+def user_can_access_org_unit(db: Session, user: User, dept_id: uuid.UUID) -> bool:
+    """用户属于该节点或其下级组织。"""
+    if user_is_superuser(db, user):
+        return True
+    for did in user_dept_ids(db, user.id):
+        if did == dept_id or is_ancestor_department(db, dept_id, did):
+            return True
+    return False
+
+
+def validate_dept_for_scope(db: Session, scope: str, dept_id: uuid.UUID) -> None:
+    from app.core.exceptions import bad_request
+
+    expected = scope_for_department(db, dept_id)
+    if scope != expected:
+        raise bad_request(
+            f"该组织节点对应「{SCOPE_LABELS[expected]}」，与所选「{SCOPE_LABELS[scope]}」不一致"
+        )
 
 
 def scope_perm(scope: str, action: str) -> str:
@@ -76,30 +159,24 @@ def can_manage_library_folders(
     *,
     dept_id: uuid.UUID | None = None,
 ) -> bool:
-    """知识库文件夹新建/删除：个人库按 create 权限；公司/部门库需对应管理员或分级 create。"""
+    """知识库文件夹新建/删除：具备对应分级 create 权限即可。"""
     if scope not in VALID_SCOPES:
         return False
     if user_is_superuser(db, user):
         return True
-    if scope == SCOPE_PERSONAL:
-        return can_create_in_scope(db, user, scope)
-    if scope == SCOPE_COMPANY:
-        return user_is_company_admin(db, user) or can_create_in_scope(db, user, scope)
-    if scope == SCOPE_DEPARTMENT:
-        if dept_id and dept_id in user_dept_ids(db, user.id):
-            if user_is_dept_admin(db, user) or can_create_in_scope(db, user, scope):
-                return True
-        elif user_is_dept_admin(db, user) or can_create_in_scope(db, user, scope):
-            return True
-    return False
+    if not can_create_in_scope(db, user, scope):
+        return False
+    if scope in ORG_SCOPES and dept_id is not None:
+        return user_can_access_org_unit(db, user, dept_id)
+    return True
 
 
-def _document_scope(doc: Document) -> str:
+def _document_scope(db: Session, doc: Document) -> str:
     s = (getattr(doc, "scope", None) or "").strip()
     if s in VALID_SCOPES:
         return s
     if doc.dept_id:
-        return SCOPE_DEPARTMENT
+        return scope_for_department(db, doc.dept_id)
     return SCOPE_PERSONAL
 
 
@@ -164,8 +241,8 @@ def can_manage_document(db: Session, user: User, document: Document) -> bool:
         return True
     if _has_explicit_permission(db, user, document, PermissionLevel.full.value):
         return True
-    scope = _document_scope(document)
-    if scope in (SCOPE_COMPANY, SCOPE_DEPARTMENT):
+    scope = _document_scope(db, document)
+    if scope in (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM):
         return can_edit_in_scope(db, user, scope)
     return False
 
@@ -180,19 +257,10 @@ def can_grant_document_permissions(db: Session, user: User, document: Document) 
 
 
 def can_manage_document_denials(db: Session, user: User, document: Document) -> bool:
-    """禁止访问：创建人/系统管理员；部门/公司管理员可对下属机构内文档屏蔽默认可见。"""
+    """禁止访问：仅文档创建人与系统管理员。"""
     if document.deleted_at is not None:
         return False
-    if user_is_superuser(db, user) or document.owner_id == user.id:
-        return True
-
-    scope = _document_scope(document)
-    if scope == SCOPE_COMPANY:
-        return can_edit_in_scope(db, user, SCOPE_COMPANY)
-    if scope == SCOPE_DEPARTMENT:
-        if document.dept_id and document.dept_id in user_dept_ids(db, user.id):
-            return can_edit_in_scope(db, user, SCOPE_DEPARTMENT)
-    return False
+    return user_is_superuser(db, user) or document.owner_id == user.id
 
 
 def can_manage_document_acl(db: Session, user: User, document: Document) -> bool:
@@ -203,21 +271,10 @@ def can_manage_document_acl(db: Session, user: User, document: Document) -> bool
 
 
 def owner_qualifies_for_scope_list(db: Session, document: Document) -> bool:
-    """公司/部门库列表：仅展示由对应分级管理员（或系统管理员）上传的文档。"""
-    from app.models.org import User
-
-    owner = db.get(User, document.owner_id)
-    if not owner:
-        return False
-    scope = _document_scope(document)
-    if scope == SCOPE_COMPANY:
-        return user_is_company_admin(db, owner)
-    if scope == SCOPE_DEPARTMENT:
-        if not document.dept_id:
-            return False
-        if not user_is_dept_admin(db, owner):
-            return False
-        return document.dept_id in user_dept_ids(db, owner.id)
+    """公司/部门库列表：展示已发布到该分级的文档（与上传者角色无关）。"""
+    scope = _document_scope(db, document)
+    if scope in ORG_SCOPES:
+        return document.dept_id is not None
     return True
 
 
@@ -231,7 +288,7 @@ def can_read_document(db: Session, user: User, document: Document) -> bool:
         if not can_manage_document(db, user, document):
             return False
 
-    scope = _document_scope(document)
+    scope = _document_scope(db, document)
     if _has_explicit_permission(db, user, document, PermissionLevel.visible.value):
         return True
 
@@ -241,15 +298,14 @@ def can_read_document(db: Session, user: User, document: Document) -> bool:
     if scope == SCOPE_PERSONAL:
         return document.owner_id == user.id
 
-    if scope == SCOPE_DEPARTMENT:
+    if scope in ORG_SCOPES:
         if document.owner_id == user.id:
             return True
-        if document.dept_id and document.dept_id in user_dept_ids(db, user.id):
-            return user_has_permission(db, user, "doc.read")
-        return False
-
-    if scope == SCOPE_COMPANY:
-        return user_has_permission(db, user, "doc.read")
+        if not document.dept_id:
+            return False
+        if not user_has_permission(db, user, "doc.read"):
+            return False
+        return user_can_access_org_unit(db, user, document.dept_id)
 
     return False
 
@@ -261,19 +317,17 @@ def readable_by_scope_default(db: Session, user: User, document: Document) -> bo
     if is_access_denied(db, user, document):
         return False
 
-    scope = _document_scope(document)
+    scope = _document_scope(db, document)
     if scope == SCOPE_PERSONAL:
         return document.owner_id == user.id
-    if scope == SCOPE_DEPARTMENT:
+    if scope in ORG_SCOPES:
         if document.owner_id == user.id:
             return True
         return bool(
             document.dept_id
-            and document.dept_id in user_dept_ids(db, user.id)
             and user_has_permission(db, user, "doc.read")
+            and user_can_access_org_unit(db, user, document.dept_id)
         )
-    if scope == SCOPE_COMPANY:
-        return user_has_permission(db, user, "doc.read")
     return False
 
 
@@ -303,8 +357,8 @@ def can_edit_document(db: Session, user: User, document: Document) -> bool:
     if _has_explicit_permission(db, user, document, PermissionLevel.edit.value):
         return True
 
-    scope = _document_scope(document)
-    if scope in (SCOPE_COMPANY, SCOPE_DEPARTMENT):
+    scope = _document_scope(db, document)
+    if scope in (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM):
         return can_edit_in_scope(db, user, scope)
     return False
 
@@ -362,17 +416,9 @@ def can_access_document(
 
 
 def primary_dept_id(db: Session, user_id: uuid.UUID) -> uuid.UUID | None:
-    from sqlalchemy import select
+    from app.core.user_department import user_department_id
 
-    from app.models.org import UserDepartment
-
-    ud = db.scalar(
-        select(UserDepartment)
-        .where(UserDepartment.user_id == user_id)
-        .order_by(UserDepartment.is_primary.desc())
-        .limit(1)
-    )
-    return ud.dept_id if ud else None
+    return user_department_id(db, user_id)
 
 
 def resolve_create_params(
@@ -386,16 +432,18 @@ def resolve_create_params(
     if not can_create_in_scope(db, user, scope):
         raise forbidden(f"无权在{SCOPE_LABELS[scope]}新建文档")
 
-    if scope == SCOPE_COMPANY:
-        return scope, None
-    if scope == SCOPE_DEPARTMENT:
+    if scope in ORG_SCOPES:
+        label = SCOPE_LABELS[scope]
+        if dept_id is None:
+            raise bad_request(f"请选择{label}所属组织")
+        validate_dept_for_scope(db, scope, dept_id)
+        if user_is_superuser(db, user):
+            return scope, dept_id
         user_depts = user_dept_ids(db, user.id)
         if not user_depts:
-            raise bad_request("您未归属任何部门，无法在部门级新建文档")
-        if dept_id is None:
-            dept_id = primary_dept_id(db, user.id) or user_depts[0]
-        if dept_id not in user_depts:
-            raise forbidden("只能选择本人所属部门")
+            raise bad_request(f"您未归属任何部门，无法在{label}新建文档")
+        if not user_can_access_org_unit(db, user, dept_id):
+            raise forbidden("只能选择本人可访问的组织节点")
         return scope, dept_id
     return scope, None
 
@@ -408,12 +456,77 @@ SCOPE_LABELS[SCOPE_SHARED] = "分享"
 SCOPE_LABELS[SCOPE_ALL] = "所有"
 
 
+def _all_departments_for_user(db: Session, user: User) -> list[dict]:
+    if user_is_superuser(db, user):
+        rows = db.scalars(select(Department).order_by(Department.name)).all()
+        return [{"id": d.id, "name": d.name} for d in rows]
+    out: list[dict] = []
+    for did in user_dept_ids(db, user.id):
+        d = db.get(Department, did)
+        if d:
+            out.append({"id": d.id, "name": d.name})
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
+def _library_org_units_for_user(
+    db: Session, user: User, *, depth: int
+) -> list[dict]:
+    if user_is_superuser(db, user):
+        rows = db.scalars(select(Department).order_by(Department.name)).all()
+        return [
+            {"id": d.id, "name": d.name}
+            for d in rows
+            if department_depth(db, d.id) == depth
+        ]
+    seen: set[uuid.UUID] = set()
+    out: list[dict] = []
+    for did in user_dept_ids(db, user.id):
+        d = db.get(Department, did)
+        if not d or department_depth(db, d.id) != depth:
+            continue
+        if d.id in seen:
+            continue
+        seen.add(d.id)
+        out.append({"id": d.id, "name": d.name})
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
+def library_companies_for_user(db: Session, user: User) -> list[dict]:
+    """公司级 Tab：组织树根节点（depth=0）。"""
+    if user_is_superuser(db, user):
+        return _library_org_units_for_user(db, user, depth=0)
+    seen: set[uuid.UUID] = set()
+    out: list[dict] = []
+    for did in user_dept_ids(db, user.id):
+        root_id = department_root_id(db, did)
+        if root_id in seen:
+            continue
+        seen.add(root_id)
+        root = db.get(Department, root_id)
+        if root:
+            out.append({"id": root.id, "name": root.name})
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
+def library_departments_for_user(db: Session, user: User) -> list[dict]:
+    """部门级 Tab：二级节点（depth=1）。"""
+    return _library_org_units_for_user(db, user, depth=1)
+
+
+def library_teams_for_user(db: Session, user: User) -> list[dict]:
+    """小组级 Tab：三级节点（depth=2）。"""
+    return _library_org_units_for_user(db, user, depth=2)
+
+
 def library_folders(db: Session, user: User) -> list[dict]:
-    """前端文档库分级 Tab：我的 / 部门级 / 公司级 / 分享。"""
+    """前端文档库分级 Tab：我的 / 小组级 / 部门级 / 公司级 / 分享。"""
     folders = []
     for scope in LIBRARY_TAB_SCOPES:
         dept_for_perm = None
-        if scope == SCOPE_DEPARTMENT:
+        if scope in ORG_SCOPES:
             depts = user_dept_ids(db, user.id)
             dept_for_perm = depts[0] if depts else None
         folders.append(

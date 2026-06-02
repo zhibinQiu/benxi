@@ -15,9 +15,9 @@ PDF 翻译经平台任务队列调用 `pdf2zh_next --api`（默认 `http://127.0
 
 ```bash
 # 仓库根目录
-bash scripts/start_platform.sh        # 本地优先（默认）
-bash scripts/start_platform.sh docker # 宿主机 pdf2zh + Docker 平台
-bash scripts/stop_platform.sh
+bash scripts/zhitan.sh        # 本地优先（默认）
+bash scripts/zhitan.sh docker # 宿主机 pdf2zh + Docker 平台
+bash scripts/zhitan.sh stop
 ```
 
 | 服务 | 地址 |
@@ -61,9 +61,9 @@ pdf2zh_next --api --api-port 7861
 Apple Silicon 推荐 **从源码构建**（官方 `zxwei/knowflow` 镜像仅 amd64）：
 
 ```bash
-bash scripts/setup_knowflow.sh          # 克隆 KnowFlow 到 platform/third_party/KnowFlow
-bash scripts/build_knowflow_source.sh   # 构建 deps + RAGFlow + KnowFlow Server（首次 30–90 分钟）
-bash scripts/start_platform.sh knowflow # 启动基础设施 + 应用
+bash scripts/zhitan.sh knowflow setup   # 克隆 KnowFlow 到 platform/third_party/KnowFlow
+bash scripts/zhitan.sh knowflow build   # 构建 deps + RAGFlow + KnowFlow Server（首次 30–90 分钟）
+bash scripts/zhitan.sh knowflow # 启动基础设施 + 应用
 ```
 
 在 `platform/.env` 中可选：`KNOWFLOW_ENABLED=true`、`RAGFLOW_API_KEY=...`（RAGFlow 控制台获取）。

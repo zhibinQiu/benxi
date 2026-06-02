@@ -42,7 +42,7 @@ def list_departments(
         User, Depends(require_any_permission("admin.dept", "admin.user"))
     ],
 ) -> ApiResponse[list[DepartmentOut]]:
-    items = db.scalars(select(Department).order_by(Department.sort_order)).all()
+    items = db.scalars(select(Department).order_by(Department.name)).all()
     return ApiResponse(data=[DepartmentOut.model_validate(d) for d in items])
 
 
@@ -52,9 +52,7 @@ def create_department(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_permission("admin.dept"))],
 ) -> ApiResponse[DepartmentOut]:
-    dept = Department(
-        name=body.name, parent_id=body.parent_id, sort_order=body.sort_order
-    )
+    dept = Department(name=body.name, parent_id=body.parent_id)
     db.add(dept)
     db.commit()
     db.refresh(dept)
@@ -85,8 +83,6 @@ def update_department(
         raise not_found("Department not found")
     if body.name is not None:
         dept.name = body.name.strip()
-    if body.sort_order is not None:
-        dept.sort_order = body.sort_order
     if "parent_id" in body.model_fields_set:
         parent_id = body.parent_id
         if parent_id is not None:

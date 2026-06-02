@@ -1,263 +1,13 @@
-function resolveApiBase() {
-  const raw = import.meta.env.VITE_API_BASE;
-  if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
-    return String(raw).replace(/\/$/, "");
-  }
-  return import.meta.env.PROD ? "/ai" : "";
-}
+/**
+ * 平台 API 聚合入口（兼容既有 `from "../api/client"`）。
+ * 新代码请按域引用：`api/http.js`、`api/documents.js`、`api/rag.js`。
+ */
+export * from "./http.js";
+export * from "./auth.js";
+export * from "./documents.js";
+export * from "./rag.js";
 
-const API_BASE = resolveApiBase();
-const TOKEN_KEY = "platform_access_token";
-const REFRESH_KEY = "platform_refresh_token";
-
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setTokens(access, refresh) {
-  localStorage.setItem(TOKEN_KEY, access);
-  if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
-}
-
-export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-}
-
-function formatApiDetail(detail) {
-  if (!detail) return null;
-  if (typeof detail === "string") return detail;
-  if (typeof detail === "object" && detail.message) return detail.message;
-  if (!Array.isArray(detail)) return null;
-  const fieldLabels = {
-    username: "用户名",
-    password: "密码",
-    display_name: "显示名",
-    email: "邮箱",
-  };
-  return detail
-    .map((item) => {
-      const loc = Array.isArray(item.loc) ? item.loc : [];
-      const field = loc.filter((x) => x !== "body").pop();
-      const label = fieldLabels[field] || field || "参数";
-      const raw = item.msg || "";
-      if (raw.includes("at least 6 characters")) return `${label}至少 6 个字符`;
-      if (raw.includes("at least 2 characters")) return `${label}至少 2 个字符`;
-      return `${label}：${raw}`;
-    })
-    .join("；");
-}
-
-async function parseResponse(res) {
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    let msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
-    throw new Error(msg);
-  }
-  if (json.code !== undefined && json.code !== 0) {
-    throw new Error(json.message || "请求失败");
-  }
-  return json.data;
-}
-
-export async function api(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (!(options.body instanceof FormData)) {
-    headers["Content-Type"] = headers["Content-Type"] || "application/json";
-  }
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  return parseResponse(res);
-}
-
-export async function login(username, password) {
-  return api("/api/v1/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
-}
-
-export async function registerUser(username, password) {
-  return api("/api/v1/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
-}
-
-export async function fetchMe() {
-  return api("/api/v1/auth/me");
-}
-
-export async function fetchDocumentLibrary() {
-  return api("/api/v1/documents/library");
-}
-
-export async function fetchDocuments({
-  page = 1,
-  page_size = 20,
-  keyword,
-  scope,
-  folder_id,
-  uncategorized,
-} = {}) {
-  const q = new URLSearchParams({ page, page_size });
-  if (keyword) q.set("keyword", keyword);
-  if (scope) q.set("scope", scope);
-  if (folder_id) q.set("folder_id", folder_id);
-  if (uncategorized) q.set("uncategorized", "true");
-  return api(`/api/v1/documents?${q}`);
-}
-
-export async function fetchKbFolders({ scope, dept_id } = {}) {
-  const q = new URLSearchParams({ scope });
-  if (dept_id) q.set("dept_id", dept_id);
-  return api(`/api/v1/documents/kb-folders?${q}`);
-}
-
-export async function createKbFolder(payload) {
-  return api("/api/v1/documents/kb-folders", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function updateKbFolder(folderId, payload) {
-  return api(`/api/v1/documents/kb-folders/${folderId}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function deleteKbFolder(folderId) {
-  return api(`/api/v1/documents/kb-folders/${folderId}`, { method: "DELETE" });
-}
-
-export async function fetchRecycleDocuments({ page = 1, page_size = 20, keyword } = {}) {
-  const q = new URLSearchParams({ page, page_size });
-  if (keyword) q.set("keyword", keyword);
-  return api(`/api/v1/documents/trash?${q}`);
-}
-
-export async function fetchMySharedDocuments({ page = 1, page_size = 20, keyword } = {}) {
-  const q = new URLSearchParams({ page, page_size });
-  if (keyword) q.set("keyword", keyword);
-  return api(`/api/v1/documents/my-shares?${q}`);
-}
-
-export async function createDocument(payload) {
-  return api("/api/v1/documents", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function fetchDocument(id) {
-  return api(`/api/v1/documents/${id}`);
-}
-
-export async function prepareUpload(documentId, fileName, mimeType) {
-  const q = new URLSearchParams({ file_name: fileName, mime_type: mimeType });
-  return api(`/api/v1/documents/${documentId}/upload/prepare?${q}`, {
-    method: "POST",
-  });
-}
-
-export async function completeUpload(documentId, body) {
-  return api(`/api/v1/documents/${documentId}/upload/complete`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function getDownloadUrl(documentId) {
-  return api(`/api/v1/documents/${documentId}/download`);
-}
-
-export async function deleteDocument(documentId) {
-  return api(`/api/v1/documents/${documentId}`, { method: "DELETE" });
-}
-
-export async function deleteDocumentVersion(documentId, versionId) {
-  return api(`/api/v1/documents/${documentId}/versions/${versionId}`, {
-    method: "DELETE",
-  });
-}
-
-export async function patchDocumentStatus(documentId, status) {
-  return api(`/api/v1/documents/${documentId}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ status }),
-  });
-}
-
-export async function updateDocument(documentId, payload) {
-  return api(`/api/v1/documents/${documentId}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function moveDocument(documentId, { folder_id } = {}) {
-  return api(`/api/v1/documents/${documentId}/move`, {
-    method: "POST",
-    body: JSON.stringify({ folder_id: folder_id ?? null }),
-  });
-}
-
-export async function restoreDocument(documentId) {
-  return api(`/api/v1/documents/${documentId}/restore`, { method: "POST" });
-}
-
-export async function permanentlyDeleteDocument(documentId) {
-  return api(`/api/v1/documents/${documentId}/permanent`, { method: "DELETE" });
-}
-
-export async function emptyRecycleBin() {
-  return api("/api/v1/documents/trash/empty", { method: "POST" });
-}
-
-export async function fetchDocumentAccessControl(documentId) {
-  return api(`/api/v1/documents/${documentId}/access-control`);
-}
-
-export async function fetchDocumentAclCandidates(documentId) {
-  return api(`/api/v1/documents/${documentId}/acl-candidates`);
-}
-
-export async function fetchDocumentPermissions(documentId) {
-  return api(`/api/v1/documents/${documentId}/permissions`);
-}
-
-export async function grantPermission(documentId, body) {
-  return api(`/api/v1/documents/${documentId}/permissions`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function revokePermission(documentId, permId) {
-  return api(`/api/v1/documents/${documentId}/permissions/${permId}`, {
-    method: "DELETE",
-  });
-}
-
-export async function fetchDocumentDenials(documentId) {
-  return api(`/api/v1/documents/${documentId}/denials`);
-}
-
-export async function denyDocumentAccess(documentId, body) {
-  return api(`/api/v1/documents/${documentId}/denials`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function liftDocumentDenial(documentId, userId) {
-  return api(`/api/v1/documents/${documentId}/denials/${userId}`, {
-    method: "DELETE",
-  });
-}
+import { API_BASE, api, formatApiDetail, getToken } from "./http.js";
 
 export async function fetchJobs({ page = 1, page_size = 20, job_type } = {}) {
   const q = new URLSearchParams({ page, page_size });
@@ -377,32 +127,6 @@ export async function replacePendingTodos(items) {
 
 export async function fetchModelSettings() {
   return api("/api/v1/admin/model-settings");
-}
-
-export async function fetchUsers() {
-  return api("/api/v1/users");
-}
-
-export async function createUser(body) {
-  return api("/api/v1/users", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function updateUser(userId, body) {
-  return api(`/api/v1/users/${userId}`, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function deleteUser(userId) {
-  return api(`/api/v1/users/${userId}`, { method: "DELETE" });
-}
-
-export async function fetchRoles() {
-  return api("/api/v1/roles");
 }
 
 // —— 文档对比 ——
@@ -582,7 +306,7 @@ export async function ingestWechatMpUrl(url) {
 export async function importWechatMpArticle(articleId, body = {}) {
   return api(`/api/v1/wechat-mp/articles/${articleId}/import`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify(buildImportToPersonalLibraryBody(body)),
   });
 }
 
@@ -628,7 +352,49 @@ export async function fetchFeedEntry(entryId) {
 export async function importFeedEntry(entryId, body = {}) {
   return api(`/api/v1/feed-subscriptions/entries/${entryId}/import`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify(buildImportToPersonalLibraryBody(body)),
+  });
+}
+
+/** 统一资讯订阅：粘贴链接收录 */
+export async function ingestSubscriptionUrl(url) {
+  return api("/api/v1/subscriptions/ingest-url", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+export async function fetchSubscriptionItems({
+  page = 1,
+  page_size = 20,
+  keyword,
+  created_from,
+  created_to,
+} = {}) {
+  const q = new URLSearchParams({ page, page_size });
+  if (keyword) q.set("keyword", keyword);
+  if (created_from) q.set("created_from", created_from);
+  if (created_to) q.set("created_to", created_to);
+  return api(`/api/v1/subscriptions/items?${q}`);
+}
+
+export async function fetchSubscriptionItem(ref) {
+  return api(`/api/v1/subscriptions/items/${encodeURIComponent(ref)}`);
+}
+
+export async function importSubscriptionItem(ref, body = {}) {
+  return api(`/api/v1/subscriptions/items/${encodeURIComponent(ref)}/import`, {
+    method: "POST",
+    body: JSON.stringify({
+      sync_knowflow: body.sync_knowflow !== false,
+      ...body,
+    }),
+  });
+}
+
+export async function deleteSubscriptionItem(ref) {
+  return api(`/api/v1/subscriptions/items/${encodeURIComponent(ref)}`, {
+    method: "DELETE",
   });
 }
 
@@ -744,44 +510,8 @@ export async function deleteMeetingRecord(id) {
   return api(`/api/v1/speech/records/${id}`, { method: "DELETE" });
 }
 
-// —— 知识问答（嵌入 KnowFlow / RAGFlow 自带 UI）——
-
-let ragMetaCache = null;
-let ragMetaCacheAt = 0;
-const RAG_META_TTL_MS = 15000;
-
-export async function fetchRagMeta({ force = false } = {}) {
-  const now = Date.now();
-  if (!force && ragMetaCache && now - ragMetaCacheAt < RAG_META_TTL_MS) {
-    return ragMetaCache;
-  }
-  const data = await api("/api/v1/rag/meta");
-  ragMetaCache = data;
-  ragMetaCacheAt = now;
-  return data;
-}
-
-export function invalidateRagMetaCache() {
-  ragMetaCache = null;
-  ragMetaCacheAt = 0;
-}
-
-export async function searchKnowledge({ query, scope, limit = 20 } = {}) {
-  const body = { query, limit };
-  if (scope) body.scope = scope;
-  return api("/api/v1/rag/search", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
 export async function fetchFeatureEmbedMeta(featureId) {
   return api(`/api/v1/system/features/${encodeURIComponent(featureId)}/embed-meta`);
-}
-
-export async function fetchRagEmbedSession({ sync = false } = {}) {
-  const q = sync ? "?sync=true" : "?sync=false";
-  return api(`/api/v1/rag/embed-session${q}`);
 }
 
 export async function assistantChat({
@@ -804,85 +534,6 @@ export async function aiHomeChat({ message, history = [] }) {
     body: JSON.stringify({ message, history }),
   });
 }
-
-/**
- * 平台流式对话（SSE）。onDelta 增量；onDone 结束（可含 conversation_id）；onError 失败。
- */
-export function createPlatformChatStream(path) {
-  return async function platformChatStream(
-    { message, history = [], conversationId = null },
-    { onDelta, onReplace, onWorkflow, onDone, onError, signal } = {}
-  ) {
-    const headers = { "Content-Type": "application/json" };
-    const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
-
-    const body = { message, history };
-    if (conversationId) body.conversation_id = conversationId;
-
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
-
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
-      throw new Error(msg);
-    }
-
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error("浏览器不支持流式响应");
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
-      for (const block of parts) {
-        const line = block
-          .split("\n")
-          .map((l) => l.trim())
-          .find((l) => l.startsWith("data:"));
-        if (!line) continue;
-        let payload;
-        try {
-          payload = JSON.parse(line.slice(5).trim());
-        } catch {
-          continue;
-        }
-        if (payload.error) {
-          onError?.(new Error(payload.error));
-          return;
-        }
-        if (payload.workflow) onWorkflow?.(payload.workflow);
-        if (payload.replace != null) onReplace?.(payload.replace);
-        if (payload.delta) onDelta?.(payload.delta);
-        if (payload.done) {
-          onDone?.(payload);
-          return;
-        }
-      }
-    }
-    onDone?.({});
-  };
-}
-
-export const aiHomeChatStream = createPlatformChatStream("/api/v1/ai-chat/chat/stream");
-
-export const smartDataQueryChatStream = createPlatformChatStream(
-  "/api/v1/smart-data-query/chat/stream"
-);
-
-export const carbonQaChatStream = createPlatformChatStream(
-  "/api/v1/carbon-qa/chat/stream"
-);
 
 export async function fetchChatConversations(scope, { limit = 30 } = {}) {
   const q = limit ? `?limit=${encodeURIComponent(limit)}` : "";

@@ -12,9 +12,20 @@ from app.api.deps import get_current_user, require_permission
 from app.config import get_settings
 from app.core.exceptions import bad_request, not_found
 from app.core.permissions import user_dept_ids
+from app.core.phone import is_bootstrap_login_id
+from app.core.user_identity import email_taken, phone_taken, username_taken
+from app.core.platform_admin import (
+    SYSTEM_ADMIN_ROLE_CODE,
+    ensure_bootstrap_has_system_admin_role,
+    is_bootstrap_admin,
+)
+from app.core.user_department import (
+    set_user_departments_or_bad_request,
+    user_department_id,
+)
 from app.core.security import hash_password
 from app.database import get_db
-from app.models.org import User, UserDepartment, UserRole
+from app.models.org import Role, User, UserRole
 from app.schemas.common import ApiResponse
 from app.schemas.org import UserCreate, UserOut, UserUpdate
 from app.services.user_service import delete_user_account
@@ -23,40 +34,53 @@ router = APIRouter(prefix="/users", tags=["users"])
 logger = logging.getLogger(__name__)
 
 
+def _display_name(user: User) -> str:
+    return (user.display_name or user.username or "").strip() or "用户"
+
+
 def _try_provision_ragflow_account(db: Session, user: User) -> None:
-    """创建/更新用户后，在 RAGFlow 注册对应账号（KnowFlow 懒加载 SSO 用）。"""
-    if not get_settings().knowflow_enabled:
+    from app.domains.knowledge import knowledge
+
+    if not knowledge.enabled():
         return
     try:
-        from app.services.ragflow_identity_service import ensure_ragflow_account
-
-        ensure_ragflow_account(db, user)
+        knowledge.ensure_account(db, user)
     except Exception as e:
         logger.warning(
-            "RAGFlow 开户失败（平台用户已保存）username=%s: %s",
-            user.username,
+            "RAGFlow 开户失败（平台用户已保存）%s: %s",
+            _display_name(user),
             e,
         )
 
 
 def _user_out(db: Session, user: User) -> UserOut:
-    dept_ids = list(
-        db.scalars(
-            select(UserDepartment.dept_id).where(UserDepartment.user_id == user.id)
+    pid = user_department_id(db, user.id)
+    dept_ids = [pid] if pid else []
+    role_rows = list(
+        db.execute(
+            select(UserRole.role_id, Role.name)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(UserRole.user_id == user.id)
         ).all()
     )
-    role_ids = list(
-        db.scalars(select(UserRole.role_id).where(UserRole.user_id == user.id)).all()
-    )
+    role_ids = [rid for rid, _ in role_rows]
+    role_names = [rname for _, rname in role_rows]
+    if is_bootstrap_admin(user) and "系统管理员" not in role_names:
+        role_names = ["系统管理员", *role_names]
+    name = _display_name(user)
+    uname = (user.username or "").strip() or name
     return UserOut(
         id=user.id,
-        username=user.username,
-        display_name=user.username,
+        phone=user.phone,
+        display_name=name,
+        username=uname,
         email=user.email,
         status=user.status,
         created_at=user.created_at,
+        department_id=pid,
         department_ids=dept_ids,
         role_ids=role_ids,
+        role_names=role_names,
     )
 
 
@@ -75,23 +99,31 @@ def create_user(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_permission("admin.user"))],
 ) -> ApiResponse[UserOut]:
-    if db.scalar(select(User).where(User.username == body.username)):
-        raise bad_request("Username already exists")
+    settings = get_settings()
+    if is_bootstrap_login_id(body.phone):
+        raise bad_request("该登录号为系统保留")
+    if phone_taken(db, body.phone):
+        raise bad_request("该手机号已存在")
+    if email_taken(db, body.email):
+        raise bad_request("该邮箱已存在")
+    name = body.display_name.strip()
+    if username_taken(db, name):
+        raise bad_request("该姓名已被使用")
     user = User(
-        username=body.username,
-        display_name=body.username,
+        phone=body.phone,
+        username=name,
+        display_name=name,
         email=body.email,
         password_hash=hash_password(body.password),
     )
     db.add(user)
     db.flush()
-    for i, dept_id in enumerate(body.department_ids):
-        db.add(
-            UserDepartment(
-                user_id=user.id, dept_id=dept_id, is_primary=(i == 0)
-            )
-        )
-    for role_id in body.role_ids:
+    set_user_departments_or_bad_request(db, user.id, body.department_ids)
+    member_role = db.scalar(select(Role).where(Role.code == "member"))
+    role_ids = list(body.role_ids)
+    if not role_ids and member_role:
+        role_ids = [member_role.id]
+    for role_id in role_ids:
         db.add(UserRole(user_id=user.id, role_id=role_id))
     _try_provision_ragflow_account(db, user)
     db.commit()
@@ -109,47 +141,73 @@ def update_user(
     user = db.get(User, user_id)
     if not user:
         raise not_found("User not found")
-    if body.username is not None:
-        existing = db.scalar(
-            select(User).where(User.username == body.username, User.id != user.id)
-        )
-        if existing:
-            raise bad_request("Username already exists")
-        user.username = body.username
-        user.display_name = body.username
+    if body.phone is not None:
+        if is_bootstrap_admin(user):
+            raise bad_request("不能修改系统管理员的手机号")
+        if phone_taken(db, body.phone, exclude_user_id=user.id):
+            raise bad_request("该手机号已被使用")
+        user.phone = body.phone
+    if body.display_name is not None:
+        name = body.display_name.strip()
+        if is_bootstrap_admin(user):
+            raise bad_request("不能修改系统管理员的姓名")
+        if username_taken(db, name, exclude_user_id=user.id):
+            raise bad_request("该姓名已被使用")
+        user.display_name = name
+        user.username = name
+    elif body.username is not None:
+        name = body.username.strip()
+        if is_bootstrap_admin(user):
+            raise bad_request("不能修改系统管理员的姓名")
+        if username_taken(db, name, exclude_user_id=user.id):
+            raise bad_request("该姓名已被使用")
+        user.username = name
+        user.display_name = name
     if body.password is not None:
         user.password_hash = hash_password(body.password)
     if body.email is not None:
+        if email_taken(db, body.email, exclude_user_id=user.id):
+            raise bad_request("该邮箱已被使用")
         user.email = body.email
     if body.status is not None:
         if body.status not in ("active", "disabled"):
             raise bad_request("Invalid status")
+        if is_bootstrap_admin(user) and body.status != "active":
+            raise bad_request("不能禁用系统默认管理员")
         user.status = body.status
     previous_dept_ids: list | None = None
     if body.department_ids is not None:
+        if is_bootstrap_admin(user) and body.department_ids:
+            raise bad_request("系统默认管理员不归属任何部门")
         previous_dept_ids = user_dept_ids(db, user.id)
-        db.query(UserDepartment).filter(UserDepartment.user_id == user.id).delete()
-        for i, dept_id in enumerate(body.department_ids):
-            db.add(
-                UserDepartment(
-                    user_id=user.id, dept_id=dept_id, is_primary=(i == 0)
-                )
-            )
+        set_user_departments_or_bad_request(db, user.id, body.department_ids)
     if body.role_ids is not None:
+        role_ids = list(body.role_ids)
+        sys_role = db.scalar(select(Role).where(Role.code == SYSTEM_ADMIN_ROLE_CODE))
+        member_role = db.scalar(select(Role).where(Role.code == "member"))
+        if sys_role and is_bootstrap_admin(user):
+            if sys_role.id not in role_ids:
+                role_ids.append(sys_role.id)
+        if not role_ids and member_role:
+            role_ids = [member_role.id]
         db.query(UserRole).filter(UserRole.user_id == user.id).delete()
-        for role_id in body.role_ids:
+        for role_id in role_ids:
             db.add(UserRole(user_id=user.id, role_id=role_id))
-    user.display_name = user.username
+        if is_bootstrap_admin(user):
+            ensure_bootstrap_has_system_admin_role(db, user)
     db.flush()
-    if previous_dept_ids is not None and get_settings().knowflow_enabled:
-        from app.services.ragflow_scope_service import reconcile_dept_membership_kb
+    if previous_dept_ids is not None:
+        from app.domains.knowledge import knowledge
 
-        try:
-            reconcile_dept_membership_kb(
-                db, user, previous_dept_ids=previous_dept_ids
-            )
-        except Exception as e:
-            logger.warning("部门变动 KnowFlow 授权同步失败 %s: %s", user.username, e)
+        if knowledge.enabled():
+            try:
+                knowledge.reconcile_dept_membership_kb(
+                    db, user, previous_dept_ids=previous_dept_ids
+                )
+            except Exception as e:
+                logger.warning(
+                    "部门变动 KnowFlow 授权同步失败 %s: %s", _display_name(user), e
+                )
     db.commit()
     db.refresh(user)
     return ApiResponse(data=_user_out(db, user))
@@ -162,21 +220,22 @@ def delete_user(
     current: Annotated[User, Depends(get_current_user)],
     _: Annotated[User, Depends(require_permission("admin.user"))],
 ) -> ApiResponse[dict]:
-    settings = get_settings()
     user = db.get(User, user_id)
     if not user:
         raise not_found("User not found")
     if user.id == current.id:
         raise bad_request("不能删除当前登录用户")
-    if user.username == settings.bootstrap_admin_username:
+    if is_bootstrap_admin(user):
         raise bad_request("不能删除系统默认管理员")
-    if get_settings().knowflow_enabled:
-        from app.services.ragflow_scope_service import revoke_all_dept_kb_grants
+    from app.domains.knowledge import knowledge
 
+    if knowledge.enabled():
         try:
-            revoke_all_dept_kb_grants(db, user)
+            knowledge.revoke_all_dept_kb_grants(db, user)
         except Exception as e:
-            logger.warning("删除用户 KnowFlow 部门库回收失败 %s: %s", user.username, e)
+            logger.warning(
+                "删除用户 KnowFlow 部门库回收失败 %s: %s", _display_name(user), e
+            )
     delete_user_account(db, user)
     db.commit()
     return ApiResponse(data={"deleted": True, "id": str(user_id)})

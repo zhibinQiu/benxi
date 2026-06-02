@@ -3,12 +3,14 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, get_current_user
+from app.core.document_format import version_file_format_label
 from app.core.document_scope import (
     can_delete_document,
     can_edit_document,
@@ -35,16 +37,21 @@ from app.schemas.document import (
     DocumentLibraryOut,
     DocumentGrant,
     DocumentListItem,
-    AclUserCandidateOut,
+    AclPickerOut,
     DocumentAccessControlOut,
     DocumentPermissionOut,
+    DocumentShareOut,
+    DocumentShareBatchIn,
     DocumentStatusUpdate,
     DocumentUpdate,
     DocumentMoveIn,
+    DocumentBatchDeleteIn,
+    DocumentBatchDeleteOut,
     DeleteDocumentVersionResult,
     DocumentVersionOut,
     UploadCompleteRequest,
     UploadPrepareResponse,
+    DocumentKnowflowSyncOut,
     KbFolderCreate,
     KbFolderListOut,
     KbFolderOut,
@@ -54,24 +61,32 @@ from app.services import library_folder_service
 from app.schemas.document_workflow import DocumentDenialCreate, DocumentDenialOut
 from app.services import document_workflow_service
 from app.core.document_scope import library_folders
-from app.core.permissions import user_dept_ids
+from app.core.document_scope import (
+    library_companies_for_user,
+    library_departments_for_user,
+    library_teams_for_user,
+)
+from app.core.permissions import user_dept_ids, user_is_superuser
 from app.config import get_settings
+from app.domains.knowledge import knowledge
 from app.services import audit_service, document_service, job_service
-from app.services.ragflow_sync_service import sync_document_to_knowflow
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
+def _sync_kb_grants_if_enabled(db: Session, doc: Document) -> None:
+    if not get_settings().knowflow_enabled:
+        return
+    try:
+        knowledge.sync_kb_grants(db, doc)
+    except Exception:
+        pass
+
+
 def _owner_display(db: Session, owner_id: uuid.UUID) -> str:
-    """上传人展示名：优先用户名，附带显示名；不向界面暴露 UUID。"""
-    owner = db.get(User, owner_id)
-    if not owner:
-        return "未知用户"
-    login = (owner.username or "").strip()
-    name = (owner.display_name or "").strip()
-    if login and name and name != login:
-        return f"{login} · {name}"
-    return login or name or "未知用户"
+    from app.core.user_display import user_display_name
+
+    return user_display_name(db.get(User, owner_id))
 
 
 def _dept_display(db: Session, dept_id: uuid.UUID | None) -> str | None:
@@ -119,6 +134,8 @@ def _folder_name(db: Session, folder_id: uuid.UUID | None) -> str | None:
 
 
 def _detail(db: Session, doc: Document, *, user: User | None = None) -> DocumentDetail:
+    document_service.resolve_current_version(db, doc)
+    db.refresh(doc)
     versions = document_service.list_document_versions(db, doc.id)
     can_edit = can_edit_document(db, user, doc) if user else False
     return DocumentDetail(
@@ -147,7 +164,7 @@ def _detail(db: Session, doc: Document, *, user: User | None = None) -> Document
 def list_kb_folders(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    scope: str = Query(..., pattern="^(company|department|personal)$"),
+    scope: str = Query(..., pattern="^(company|department|team|personal)$"),
     dept_id: uuid.UUID | None = None,
 ) -> ApiResponse[KbFolderListOut]:
     data = library_folder_service.list_kb_folders(
@@ -240,15 +257,24 @@ def document_library(
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[DocumentLibraryOut]:
     folders = library_folders(db, user)
-    dept_rows = []
-    for did in user_dept_ids(db, user.id):
-        d = db.get(Department, did)
-        if d:
-            dept_rows.append({"id": str(d.id), "name": d.name})
+    dept_rows = [
+        {"id": str(d["id"]), "name": d["name"]}
+        for d in library_departments_for_user(db, user)
+    ]
+    team_rows = [
+        {"id": str(d["id"]), "name": d["name"]}
+        for d in library_teams_for_user(db, user)
+    ]
+    company_rows = [
+        {"id": str(d["id"]), "name": d["name"]}
+        for d in library_companies_for_user(db, user)
+    ]
     return ApiResponse(
         data=DocumentLibraryOut(
             folders=[DocumentFolderOut.model_validate(f) for f in folders],
+            companies=company_rows,
             departments=dept_rows,
+            teams=team_rows,
         )
     )
 
@@ -273,6 +299,20 @@ def _attach_folder_names(
     ]
 
 
+def _current_version_formats(
+    db: Session, docs: list[Document]
+) -> dict[uuid.UUID, str | None]:
+    version_ids = [d.current_version_id for d in docs if d.current_version_id]
+    if not version_ids:
+        return {}
+    rows = db.scalars(
+        select(DocumentVersion).where(DocumentVersion.id.in_(version_ids))
+    ).all()
+    return {
+        v.id: version_file_format_label(v.file_name, v.mime_type) for v in rows
+    }
+
+
 def _list_items_with_owners(
     db: Session,
     docs: list[Document],
@@ -282,10 +322,13 @@ def _list_items_with_owners(
 ) -> list[DocumentListItem]:
     from app.core.document_scope import can_edit_document
 
+    fmt_by_ver = _current_version_formats(db, docs)
     out: list[DocumentListItem] = []
     for d in docs:
         item = DocumentListItem.model_validate(d)
         extra: dict = {"uploaded_at": _uploaded_at(db, d)}
+        if d.current_version_id and d.current_version_id in fmt_by_ver:
+            extra["file_format"] = fmt_by_ver[d.current_version_id]
         if include_owner_name:
             extra["owner_name"] = _owner_display(db, d.owner_id)
         if d.dept_id:
@@ -305,11 +348,18 @@ def list_documents(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = None,
     scope: str | None = Query(
-        None, pattern="^(company|department|personal|shared|all)$"
+        None, pattern="^(company|department|team|personal|shared|all)$"
     ),
     folder_id: uuid.UUID | None = None,
     uncategorized: bool = Query(False, description="仅未归入文件夹的文档"),
+    dept_id: uuid.UUID | None = None,
 ) -> ApiResponse[PageResult[DocumentListItem]]:
+    if scope in ("company", "department", "team") and dept_id is not None:
+        from app.core.document_scope import user_can_access_org_unit
+        from app.core.exceptions import forbidden
+
+        if not user_can_access_org_unit(db, user, dept_id):
+            raise forbidden("无权查看该组织节点下的文档")
     if scope == "shared":
         rows, total = document_service.list_shared_documents(
             db, user, page=page, page_size=page_size, keyword=keyword
@@ -357,6 +407,7 @@ def list_documents(
             scope=scope,
             folder_id=folder_id,
             uncategorized_only=uncategorized,
+            dept_id=dept_id,
         )
         list_items = _list_items_with_owners(
             db,
@@ -373,6 +424,33 @@ def list_documents(
             page_size=page_size,
         )
     )
+
+
+@router.post("/batch-delete", response_model=ApiResponse[DocumentBatchDeleteOut])
+def batch_delete_documents(
+    body: DocumentBatchDeleteIn,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[DocumentBatchDeleteOut]:
+    """批量删除文档（默认彻底删除，单事务提交）。"""
+    result = document_service.batch_delete_documents(
+        db,
+        user,
+        body.document_ids,
+        permanent=body.permanent,
+    )
+    for doc_id in result.get("deleted") or []:
+        audit_service.write_audit(
+            db,
+            user_id=user.id,
+            action="document.purge" if body.permanent else "document.recycle",
+            resource_type="document",
+            resource_id=doc_id,
+            ip_address=get_client_ip(request),
+            detail={"batch": True},
+        )
+    return ApiResponse(data=DocumentBatchDeleteOut.model_validate(result))
 
 
 @router.post("", response_model=ApiResponse[DocumentDetail])
@@ -512,7 +590,7 @@ def patch_document(
     doc = document_service.get_document(db, document_id)
     if not doc or doc.deleted_at:
         raise not_found()
-    if body.title is None and body.description is None:
+    if body.title is None and body.description is None and body.scope is None:
         from app.core.exceptions import bad_request
 
         raise bad_request("请提供要更新的字段")
@@ -522,6 +600,8 @@ def patch_document(
         doc,
         title=body.title,
         description=body.description,
+        scope=body.scope,
+        dept_id=body.dept_id,
     )
     audit_service.write_audit(
         db,
@@ -624,13 +704,22 @@ def complete_upload(
     doc = document_service.complete_upload(
         db, user, doc, version, file_size=body.file_size, checksum=body.checksum
     )
-    if get_settings().knowflow_enabled:
-        from app.services.ragflow_identity_service import get_user_ragflow_auth
-
-        get_user_ragflow_auth(db, user)
-        sync_document_to_knowflow(db, user, doc, force=True)
+    if knowledge.enabled():
+        knowledge.user_auth(db, user)
+        knowledge.sync_document(db, user, doc, force=True)
         db.commit()
     return ApiResponse(data=_detail(db, doc, user=user))
+
+
+def _attachment_disposition(file_name: str) -> str:
+    name = (file_name or "download").replace("\n", "").replace("\r", "")
+    ascii_name = "".join(
+        c if ord(c) < 128 and c not in ('"', "\\") else "_" for c in name
+    ).strip() or "download"
+    return (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{quote(name)}"
+    )
 
 
 @router.get("/{document_id}/download", response_model=ApiResponse[dict])
@@ -646,6 +735,83 @@ def download_document(
     if not url:
         raise forbidden("No download permission or no file uploaded")
     return ApiResponse(data={"download_url": url, "expires_in": 3600})
+
+
+@router.get("/{document_id}/file")
+def download_document_file(
+    document_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """经平台鉴权代理下载当前版本文件（推荐；presigned MinIO 地址浏览器常无法访问）。"""
+    doc = document_service.get_document(db, document_id)
+    if not doc:
+        raise not_found()
+    content, file_name, mime_type = document_service.read_document_file_bytes(
+        db, user, doc
+    )
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={"Content-Disposition": _attachment_disposition(file_name)},
+    )
+
+
+@router.post(
+    "/{document_id}/sync-knowflow",
+    response_model=ApiResponse[DocumentKnowflowSyncOut],
+)
+def sync_document_knowflow(
+    document_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[DocumentKnowflowSyncOut]:
+    """将当前文档强制同步到分级 KnowFlow 知识库（个人/部门/公司）。"""
+    from app.services.document_service import resolve_current_version
+
+    doc = document_service.get_document(db, document_id)
+    if not doc or doc.deleted_at:
+        raise not_found()
+    if not can_read_document(db, user, doc):
+        raise forbidden()
+    if not resolve_current_version(db, doc):
+        raise forbidden("文档尚未上传文件，无法同步知识库")
+
+    if not knowledge.enabled():
+        return ApiResponse(
+            data=DocumentKnowflowSyncOut(
+                knowflow_synced=False,
+                message="知识库同步未启用，请联系管理员。",
+            )
+        )
+
+    kf = knowledge.client_for_user(db, user)
+    if not kf.enabled():
+        return ApiResponse(
+            data=DocumentKnowflowSyncOut(
+                knowflow_synced=False,
+                message="知识服务未就绪，请稍后重试。",
+            )
+        )
+
+    rid = knowledge.sync_document(db, user, doc, force=True)
+    db.commit()
+    link = knowledge.document_link(db, document_id)
+    if rid:
+        return ApiResponse(
+            data=DocumentKnowflowSyncOut(
+                knowflow_synced=True,
+                ragflow_document_id=rid,
+                dataset_id=link.dataset_id if link else None,
+                message="已同步到知识库",
+            )
+        )
+    return ApiResponse(
+        data=DocumentKnowflowSyncOut(
+            knowflow_synced=False,
+            message="同步到知识库失败，请稍后重试或联系管理员。",
+        )
+    )
 
 
 @router.get(
@@ -733,13 +899,13 @@ def restore_document(
 
 @router.get(
     "/{document_id}/acl-candidates",
-    response_model=ApiResponse[list[AclUserCandidateOut]],
+    response_model=ApiResponse[AclPickerOut],
 )
 def list_acl_candidates(
     document_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[list[AclUserCandidateOut]]:
+) -> ApiResponse[AclPickerOut]:
     doc = document_service.get_document(db, document_id)
     if not doc or doc.deleted_at:
         raise not_found()
@@ -748,58 +914,80 @@ def list_acl_candidates(
         or can_manage_document_denials(db, user, doc)
     ):
         raise forbidden()
-    rows = document_service.list_acl_user_candidates(db, doc)
-    return ApiResponse(data=[AclUserCandidateOut(**r) for r in rows])
+    data = document_service.list_acl_picker_data(db, doc)
+    return ApiResponse(data=AclPickerOut.model_validate(data))
 
 
-@router.get("/{document_id}/permissions", response_model=ApiResponse[list[DocumentPermissionOut]])
+@router.get("/{document_id}/permissions", response_model=ApiResponse[list[DocumentShareOut]])
 def list_permissions(
     document_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[list[DocumentPermissionOut]]:
+) -> ApiResponse[list[DocumentShareOut]]:
     doc = document_service.get_document(db, document_id)
     if not doc or doc.deleted_at:
         raise not_found()
     if not can_grant_document_permissions(db, user, doc):
         raise forbidden()
-    perms = document_service.list_document_permissions(db, document_id)
-    user_ids = {p.subject_id for p in perms if p.subject_type == "user"}
-    dept_ids = {p.subject_id for p in perms if p.subject_type == "dept"}
-    user_labels: dict[uuid.UUID, str] = {}
-    if user_ids:
-        for u in db.scalars(select(User).where(User.id.in_(user_ids))).all():
-            user_labels[u.id] = _owner_display(db, u.id)
-    dept_labels: dict[uuid.UUID, str] = {}
-    if dept_ids:
-        for d in db.scalars(select(Department).where(Department.id.in_(dept_ids))).all():
-            dept_labels[d.id] = (d.name or "").strip() or "未知部门"
-    out: list[DocumentPermissionOut] = []
-    for p in perms:
-        item = DocumentPermissionOut.model_validate(p)
-        if p.subject_type == "user":
-            item = item.model_copy(
-                update={"subject_label": user_labels.get(p.subject_id)}
-            )
-        elif p.subject_type == "dept":
-            item = item.model_copy(
-                update={"subject_label": dept_labels.get(p.subject_id)}
-            )
-        out.append(item)
-    return ApiResponse(data=out)
+    shares = document_service.list_document_shares(db, document_id)
+    return ApiResponse(
+        data=[DocumentShareOut.model_validate(s) for s in shares]
+    )
 
 
-@router.post("/{document_id}/permissions", response_model=ApiResponse[DocumentPermissionOut])
+@router.post(
+    "/{document_id}/permissions/batch",
+    response_model=ApiResponse[list[DocumentShareOut]],
+)
+def batch_share_permissions(
+    document_id: uuid.UUID,
+    body: DocumentShareBatchIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[DocumentShareOut]]:
+    doc = document_service.get_document(db, document_id)
+    if not doc or doc.deleted_at:
+        raise not_found()
+    shares = document_service.set_document_shares(
+        db,
+        user,
+        doc,
+        user_ids=body.user_ids,
+        level=body.level,
+    )
+    _sync_kb_grants_if_enabled(db, doc)
+    return ApiResponse(data=[DocumentShareOut.model_validate(s) for s in shares])
+
+
+@router.delete(
+    "/{document_id}/permissions/users/{target_user_id}",
+    response_model=ApiResponse[None],
+)
+def revoke_user_share(
+    document_id: uuid.UUID,
+    target_user_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[None]:
+    doc = document_service.get_document(db, document_id)
+    if not doc:
+        raise not_found()
+    document_service.revoke_document_share(db, user, doc, target_user_id)
+    _sync_kb_grants_if_enabled(db, doc)
+    return ApiResponse()
+
+
+@router.post("/{document_id}/permissions", response_model=ApiResponse[DocumentShareOut])
 def grant_permission(
     document_id: uuid.UUID,
     body: DocumentGrant,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[DocumentPermissionOut]:
+) -> ApiResponse[DocumentShareOut]:
     doc = document_service.get_document(db, document_id)
     if not doc or doc.deleted_at:
         raise not_found()
-    perm = document_service.grant_permission(
+    document_service.grant_permission(
         db,
         user,
         doc,
@@ -808,14 +996,12 @@ def grant_permission(
         level=body.level,
         expires_at=body.expires_at,
     )
-    if get_settings().knowflow_enabled:
-        from app.services.ragflow_scope_service import sync_document_kb_grants
-
-        try:
-            sync_document_kb_grants(db, doc)
-        except Exception:
-            pass
-    return ApiResponse(data=DocumentPermissionOut.model_validate(perm))
+    _sync_kb_grants_if_enabled(db, doc)
+    shares = document_service.list_document_shares(db, document_id)
+    match = next((s for s in shares if s["user_id"] == body.subject_id), None)
+    if not match:
+        raise not_found()
+    return ApiResponse(data=DocumentShareOut.model_validate(match))
 
 
 @router.delete("/{document_id}/permissions/{perm_id}", response_model=ApiResponse[None])
@@ -829,13 +1015,7 @@ def revoke_permission(
     if not doc:
         raise not_found()
     document_service.revoke_permission(db, user, doc, perm_id)
-    if get_settings().knowflow_enabled:
-        from app.services.ragflow_scope_service import sync_document_kb_grants
-
-        try:
-            sync_document_kb_grants(db, doc)
-        except Exception:
-            pass
+    _sync_kb_grants_if_enabled(db, doc)
     return ApiResponse()
 
 
@@ -873,13 +1053,7 @@ def deny_access(
     row = document_workflow_service.deny_user_access(
         db, user, doc, user_id=body.user_id, reason=body.reason
     )
-    if get_settings().knowflow_enabled:
-        from app.services.ragflow_scope_service import sync_document_kb_grants
-
-        try:
-            sync_document_kb_grants(db, doc)
-        except Exception:
-            pass
+    _sync_kb_grants_if_enabled(db, doc)
     return ApiResponse(data=DocumentDenialOut.model_validate(row))
 
 

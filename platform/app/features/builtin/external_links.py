@@ -17,6 +17,6 @@ register(
         tag="待集成",
         category="external",
         sort_order=62,
-        grant_to_roles=("sys_admin", "dept_admin"),
+        grant_to_roles=("sys_admin", "member"),
     )
 )

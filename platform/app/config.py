@@ -39,7 +39,9 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     minio_region: str = "us-east-1"
 
-    bootstrap_admin_username: str = "admin"
+    bootstrap_admin_phone: str = "15963564658"  # 唯一系统管理员登录手机号（存 users.phone）
+    bootstrap_admin_display_name: str = "系统管理员"
+    bootstrap_admin_username: str = "admin"  # 兼容旧配置，等同显示名
     bootstrap_admin_password: str = "admin123"
     bootstrap_admin_email: str = "admin@local"
     allow_public_register: bool = True

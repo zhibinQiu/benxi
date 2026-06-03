@@ -1,102 +1,54 @@
-# PDF 翻译与智碳平台AI系统
+# PDF 翻译与智碳平台 AI 系统
 
-基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳平台 AI 系统企业应用控制面（文档、权限、翻译任务等）。
+基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳平台 AI 企业应用（文档、权限、知识库、双碳工具等）。
 
 ## 项目结构
 
 ```
 pdf_trans/
-├── pdf2zh_next/          # PDF 翻译核心（CLI、WebUI、REST API）
-├── platform/             # 智碳平台AI系统后端（FastAPI + Celery）
-├── platform-frontend/    # 平台前端（Vue 3）
-├── scripts/              # 启动、部署、KnowFlow/语音脚本（见 scripts/README.md）
-├── docs/zh/              # 中文文档
-└── tests/                # pdf2zh 配置相关测试
+├── compose.yaml              # 统一 Docker 栈（v3.4+）
+├── compose.dev.yaml          # 开发：热重载、API :18000
+├── deploy/knowflow.yml       # KnowFlow profile
+├── platform/                 # FastAPI + Celery 后端
+├── platform-frontend/        # Vue 3 前端
+├── pdf2zh_next/              # PDF 翻译核心
+├── scripts/stack.sh          # 编排入口
+└── docs/zh/operations/       # 运维文档（最新）
 ```
 
-## 快速启动（推荐）
+## 快速启动
 
 ```bash
-# 1. 安装翻译核心
-pip install -e .
-
-# 2. 下载模型与字体（首次）
-bash scripts/download_babeldoc_assets.sh
-
-# 3. 安装平台后端
-cd platform && python -m venv .venv && source .venv/bin/activate && pip install -e .
-
-# 4. 安装平台前端
-cd ../platform-frontend && npm install
-
-# 5. 一键启动（本地优先：基础设施 Docker，应用进程在宿主机）
-cd .. && bash scripts/zhitan.sh
+cp .env.stack.example .env
+bash scripts/stack.sh dev-up --profile knowflow   # 按需加 speech
 ```
 
 | 服务 | 地址 |
 |------|------|
-| 平台前端 | http://127.0.0.1:40005/ai/ |
-| 平台 API | http://127.0.0.1:8000/docs |
-| pdf2zh API | http://127.0.0.1:7861 |
-| 默认账号 | `admin` / `admin123` |
+| Web | http://127.0.0.1:40005/ai/ |
+| API（开发） | http://127.0.0.1:18000 |
 
-停止：`bash scripts/zhitan.sh stop`
+停止：`bash scripts/stack.sh down`
 
-### 知识问答（KnowFlow）
+## 文档（请勿被旧版误导）
 
-平台 **系统功能 → 知识问答** 内嵌 KnowFlow / RAGFlow 自带界面（:9380）。Apple Silicon 需 **从源码构建** arm64 镜像：
-
-```bash
-bash scripts/zhitan.sh knowflow setup
-bash scripts/zhitan.sh knowflow build   # 首次约 30–90 分钟
-bash scripts/zhitan.sh knowflow
-```
-
-| 服务 | 地址 |
+| 文档 | 说明 |
 |------|------|
-| RAGFlow UI | http://127.0.0.1:9380 |
-| KnowFlow API | http://127.0.0.1:5001 |
+| **[运维手册](docs/zh/operations/README.md)** | 架构、容器、网络、部署、配置、升级、安全 — **操作以此为准** |
+| [快速开始](docs/zh/getting-started.md) | 5 分钟上手 |
+| [开发实现说明书](docs/zh/development/implementation-manual.md) | 代码与模块 |
+| [脚本说明](scripts/README.md) | stack / deploy |
 
-### 录音转文字（本地 Docker）
+预览全文：`pip install -r docs/requirements-docs.txt && mkdocs serve`
 
-系统功能 → **录音转文字**：**FunASR**（Paraformer + VAD + 标点）+ **CAM++** 说话人分离 + **DeepSeek** 在线总结。
-
-```bash
-bash scripts/setup_speech.sh          # 首次：构建 speech-api，模型下载到 .run/speech-models/
-# platform/.env 设置 DEEPSEEK_API_KEY（或与 pdf2zh 共用 ~/.config/pdf2zh 配置）
-bash scripts/zhitan.sh speech
-```
-
-| 服务 | 地址 |
-|------|------|
-| speech-api（FunASR 转写） | http://127.0.0.1:8765 |
-| DeepSeek（总结） | 平台 API 直连 api.deepseek.com |
-
-## 单独使用 PDF 翻译
+## 服务器部署
 
 ```bash
-pdf2zh_next document.pdf              # 命令行
-pdf2zh_next --gui                     # Gradio WebUI :7860
-pdf2zh_next --api --api-port 7861     # REST API
+bash scripts/stack.sh build && bash scripts/stack.sh save
+bash scripts/deploy.sh stack push
 ```
 
-## amd64 服务器部署（Docker 全栈）
-
-```bash
-bash scripts/deploy.sh                    # SSH 推送 + 部署（自动 amd64/arm64，见 deploy.target）
-bash scripts/deploy.sh local full         # 仅在目标机已有代码时
-```
-
-详见 [amd64 部署指南](docs/zh/development/deploy-amd64.md)（SSH 推送与 `platform/deploy.target` 配置）。
-
-## 文档
-
-- [快速开始](docs/zh/getting-started.md)
-- [脚本说明](scripts/README.md)
-- [amd64 部署](docs/zh/development/deploy-amd64.md)
-- [本地开发](docs/zh/development/local-development.md)
-- [智碳平台AI系统](docs/zh/development/doc-platform.md)
-- [REST API](docs/zh/development/rest-api.md)
+详见 [部署指南](docs/zh/operations/deployment.md)。
 
 ## 许可
 

@@ -10,6 +10,29 @@ from app.services import library_folder_service as lfs
 from sqlalchemy import select
 
 
+def test_kb_folder_display_order(client, admin_token):
+    """内置文件夹在前，用户文件夹居中，新建按钮由前端单独渲染在末尾。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    folder_name = f"排序夹-{uuid.uuid4().hex[:8]}"
+    client.post(
+        "/api/v1/documents/kb-folders",
+        json={"name": folder_name, "scope": "personal"},
+        headers=headers,
+    )
+    r = client.get(
+        "/api/v1/documents/kb-folders",
+        params={"scope": "personal"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["data"]["items"]
+    kinds = [i["kind"] for i in items]
+    assert kinds[:2] == ["uncategorized", "shared"]
+    assert "normal" in kinds
+    created = next(i for i in items if i.get("name") == folder_name)
+    assert items.index(created) >= 2
+
+
 def test_can_manage_personal_folders(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     r = client.get(

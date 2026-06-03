@@ -25,6 +25,14 @@ def test_builtin_plugins_registered():
     assert "carbon_reduction_strategy" not in ids
 
 
+def test_rag_plugin_admin_only():
+    p = get_plugin("rag_qa")
+    assert p is not None
+    assert p.title == "编码管理"
+    assert p.permission_code == "feature.rag_qa"
+    assert p.grant_to_roles == ("sys_admin",)
+
+
 def test_translate_plugin_has_router_and_permission():
     p = get_plugin("pdf_translate")
     assert p is not None
@@ -88,11 +96,11 @@ def test_smart_forecast_plugin():
     assert p.route == "/system/smart-forecast"
 
 
-def test_carbon_platform_v3_in_external_category():
+def test_carbon_platform_v3_in_carbon_category():
     p = get_plugin("carbon_platform")
     assert p is not None
     assert p.title == "智碳平台V3"
-    assert p.category == "external"
+    assert p.category == "carbon"
     assert p.external_url
     assert "carbon3.hy.05351757.xyz" in p.external_url
     assert p.tag == "外链"
@@ -113,7 +121,7 @@ def test_carbon_ai_v1_external_link():
     assert p.route is None
     assert p.external_url
     assert "/ai" in p.external_url
-    assert p.category == "external"
+    assert p.category == "carbon"
     assert p.tag == "外链"
 
 
@@ -121,7 +129,7 @@ def test_ai_digital_robot_stub():
     p = get_plugin("ai_digital_robot")
     assert p is not None
     assert p.title == "AI数字机器人"
-    assert p.category == "external"
+    assert p.category == "carbon"
     assert p.enabled is False
     assert p.tag == "待集成"
 

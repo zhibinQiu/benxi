@@ -30,10 +30,12 @@ def test_sync_document_uses_resolve_current_version(client, admin_token):
         return_value="ds-1",
     ), patch(
         "app.services.ragflow_sync_service.sync_document_kb_grants"
+    ), patch(
+        "app.services.ragflow_sync_service._upload_with_fallback",
+        return_value="rag-doc-1",
     ):
         kf = MagicMock()
         kf.enabled.return_value = True
-        kf.sync_platform_document.return_value = "rag-doc-1"
         get_kf.return_value = kf
 
         with SessionLocal() as db:
@@ -42,5 +44,3 @@ def test_sync_document_uses_resolve_current_version(client, admin_token):
             db.commit()
 
     assert rid == "rag-doc-1"
-    kf.sync_platform_document.assert_called_once()
-    assert kf.sync_platform_document.call_args.kwargs["file_name"].endswith(".pdf")

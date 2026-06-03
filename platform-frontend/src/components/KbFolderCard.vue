@@ -53,65 +53,73 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
     </div>
 
     <div class="kb-folder-card__body">
-      <svg
-        class="kb-folder-card__art"
-        viewBox="0 0 200 148"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient
-            :id="`kb-f-back-${uid}`"
-            x1="36"
-            y1="40"
-            x2="172"
-            y2="128"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" class="kb-folder-stop-a" />
-            <stop offset="100%" class="kb-folder-stop-b" />
-          </linearGradient>
-          <linearGradient
-            :id="`kb-f-front-${uid}`"
-            x1="16"
-            y1="48"
-            x2="184"
-            y2="138"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" class="kb-folder-stop-c" />
-            <stop offset="55%" class="kb-folder-stop-d" />
-            <stop offset="100%" class="kb-folder-stop-e" />
-          </linearGradient>
-        </defs>
-        <path
-          d="M30 46h42l11 13h71c5.5 0 10 4.5 10 10v54c0 5.5-4.5 10-10 10H38c-5.5 0-10-4.5-10-10V56c0-5.5 4.5-10 10-10z"
-          :fill="`url(#kb-f-back-${uid})`"
-          opacity="0.42"
-        />
-        <path
-          d="M18 54h50l15 17h81c8.3 0 15 6.7 15 15v50c0 8.3-6.7 15-15 15H33c-8.3 0-15-6.7-15-15V69c0-8.3 6.7-15 15-15z"
-          :fill="`url(#kb-f-front-${uid})`"
-        />
-        <path
-          d="M18 54h50l15 17h24v-11L67 54H30c-5 0-9 4-9 9v0z"
-          fill="rgba(255,255,255,0.22)"
-        />
-      </svg>
+      <div class="kb-folder-card__art-wrap">
+        <svg
+          class="kb-folder-card__art"
+          viewBox="0 0 200 148"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient
+              :id="`kb-f-back-${uid}`"
+              x1="36"
+              y1="40"
+              x2="172"
+              y2="128"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop offset="0%" class="kb-folder-stop-a" />
+              <stop offset="100%" class="kb-folder-stop-b" />
+            </linearGradient>
+            <linearGradient
+              :id="`kb-f-front-${uid}`"
+              x1="16"
+              y1="48"
+              x2="184"
+              y2="138"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop offset="0%" class="kb-folder-stop-c" />
+              <stop offset="55%" class="kb-folder-stop-d" />
+              <stop offset="100%" class="kb-folder-stop-e" />
+            </linearGradient>
+          </defs>
+          <g class="kb-folder-card__layer kb-folder-card__layer--back">
+            <path
+              d="M30 46h42l11 13h71c5.5 0 10 4.5 10 10v54c0 5.5-4.5 10-10 10H38c-5.5 0-10-4.5-10-10V56c0-5.5 4.5-10 10-10z"
+              :fill="`url(#kb-f-back-${uid})`"
+              opacity="0.42"
+            />
+          </g>
+          <g class="kb-folder-card__layer kb-folder-card__layer--front">
+            <path
+              d="M18 54h50l15 17h81c8.3 0 15 6.7 15 15v50c0 8.3-6.7 15-15 15H33c-8.3 0-15-6.7-15-15V69c0-8.3 6.7-15 15-15z"
+              :fill="`url(#kb-f-front-${uid})`"
+            />
+            <path
+              d="M18 54h50l15 17h24v-11L67 54H30c-5 0-9 4-9 9v0z"
+              fill="rgba(255,255,255,0.22)"
+            />
+          </g>
+        </svg>
+      </div>
 
-      <h3 class="kb-folder-card__title" :title="folder.name">
-        {{ folder.name }}
-      </h3>
-      <p class="kb-folder-card__meta">{{ countLabel }}</p>
+      <div class="kb-folder-card__caption">
+        <h3 class="kb-folder-card__title" :title="folder.name">
+          {{ folder.name }}
+        </h3>
+        <p class="kb-folder-card__meta">{{ countLabel }}</p>
+      </div>
     </div>
   </article>
 </template>
 
 <style scoped>
 .kb-folder-card {
-  --accent: #0d9488;
-  --accent-border: rgba(13, 148, 136, 0.2);
+  --accent: var(--platform-accent, #0d9488);
+  --accent-border: var(--platform-accent-soft, rgba(13, 148, 136, 0.2));
   --stop-a: #52c9bc;
   --stop-b: #3db5a8;
   --stop-c: #6adccf;
@@ -124,23 +132,34 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   align-items: center;
   width: 100%;
   padding: 10px 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--platform-radius-sm, 10px);
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   box-shadow: none;
   cursor: pointer;
   outline: none;
   user-select: none;
-  transition: background 0.15s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 
 .kb-folder-card:hover,
 .kb-folder-card:focus-visible {
-  background: rgba(13, 148, 136, 0.06);
+  background: var(--platform-accent-soft);
+  border-color: var(--platform-border);
+  box-shadow: var(--platform-shadow-sm);
+  transform: translateY(-2px);
+}
+
+.kb-folder-card:active {
+  transform: translateY(0);
 }
 
 .kb-folder-card:focus-visible {
-  box-shadow: 0 0 0 2px rgba(153, 246, 228, 0.9);
+  box-shadow: var(--platform-focus-ring), var(--platform-shadow-sm);
 }
 
 .kb-folder-card--shared {
@@ -166,22 +185,23 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 
 .kb-folder-card__badge {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 2px;
+  left: 2px;
   z-index: 2;
   font-size: 9px;
   font-weight: 600;
   padding: 2px 5px;
   border-radius: 4px;
   color: var(--accent);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   line-height: 1.2;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .kb-folder-card__menu {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: 0;
+  right: 0;
   z-index: 2;
   opacity: 0;
   transition: opacity 0.15s ease;
@@ -197,26 +217,78 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   flex-direction: column;
   align-items: center;
   width: 100%;
-  text-align: center;
+}
+
+.kb-folder-card__art-wrap {
+  width: var(--kb-folder-icon-width, 92%);
+  max-width: var(--kb-folder-icon-max, 120px);
+  margin: 0 auto;
+  transition: transform 0.32s cubic-bezier(0.34, 1.25, 0.64, 1);
 }
 
 .kb-folder-card__art {
-  width: 72%;
-  max-width: 88px;
+  width: 100%;
   height: auto;
   display: block;
-  margin-bottom: 8px;
-  filter: drop-shadow(0 2px 5px rgba(13, 148, 136, 0.14));
+  overflow: visible;
+  filter: drop-shadow(0 4px 10px rgba(13, 148, 136, 0.15));
+  transition: filter 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+.kb-folder-card__layer {
+  transition: transform 0.34s cubic-bezier(0.34, 1.35, 0.64, 1);
+  transform-box: fill-box;
+}
+
+.kb-folder-card__layer--back {
+  transform-origin: 50% 88%;
+}
+
+.kb-folder-card__layer--front {
+  transform-origin: 8% 46%;
+}
+
+.kb-folder-card:hover .kb-folder-card__art-wrap,
+.kb-folder-card:focus-visible .kb-folder-card__art-wrap {
+  transform: translateY(-3px) scale(1.02);
+}
+
+.kb-folder-card:hover .kb-folder-card__layer--back,
+.kb-folder-card:focus-visible .kb-folder-card__layer--back {
+  transform: scale(1.05) translateY(2%);
+}
+
+.kb-folder-card:hover .kb-folder-card__layer--front,
+.kb-folder-card:focus-visible .kb-folder-card__layer--front {
+  transform: rotate(-16deg) translate(-2%, -4%) scale(1.02);
+}
+
+.kb-folder-card:hover .kb-folder-card__art,
+.kb-folder-card:focus-visible .kb-folder-card__art {
+  filter: drop-shadow(0 10px 22px rgba(13, 148, 136, 0.28));
+}
+
+.kb-folder-card__caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 0 4px;
+  text-align: center;
 }
 
 .kb-folder-card__title {
-  margin: 0;
+  margin: 0 auto;
   width: 100%;
-  max-width: 120px;
+  max-width: 100%;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1.35;
-  color: #0f172a;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--platform-text, #0f172a);
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -224,14 +296,46 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   line-clamp: 2;
   -webkit-box-orient: vertical;
   word-break: break-word;
+  transition: color 0.2s ease;
+}
+
+.kb-folder-card:hover .kb-folder-card__title,
+.kb-folder-card:focus-visible .kb-folder-card__title {
+  color: var(--accent);
 }
 
 .kb-folder-card__meta {
   margin: 3px 0 0;
+  width: 100%;
   font-size: 11px;
   font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
   color: var(--accent);
-  opacity: 0.85;
+  opacity: 0.88;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-folder-card,
+  .kb-folder-card__art-wrap,
+  .kb-folder-card__art,
+  .kb-folder-card__layer {
+    transition: none;
+  }
+
+  .kb-folder-card:hover,
+  .kb-folder-card:focus-visible {
+    transform: none;
+  }
+
+  .kb-folder-card:hover .kb-folder-card__art-wrap,
+  .kb-folder-card:focus-visible .kb-folder-card__art-wrap,
+  .kb-folder-card:hover .kb-folder-card__layer--back,
+  .kb-folder-card:focus-visible .kb-folder-card__layer--back,
+  .kb-folder-card:hover .kb-folder-card__layer--front,
+  .kb-folder-card:focus-visible .kb-folder-card__layer--front {
+    transform: none;
+  }
 }
 
 :deep(.kb-folder-stop-a) {

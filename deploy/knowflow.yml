@@ -1,0 +1,193 @@
+# KnowFlow / RAGFlow（profile: knowflow）
+#
+# 并入根 compose: bash scripts/stack.sh up --profile knowflow
+# 共用栈内 minio、redis；不单独暴露端口
+# 配置: deploy/knowflow/settings.yaml、theme/、nginx/
+
+services:
+  knowflow-mysql:
+    profiles: ["knowflow"]
+    image: mysql:8.0.39
+    container_name: ragflow-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-infini_rag_flow}
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+    command:
+      - --max_connections=1000
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --tls_version=TLSv1.2,TLSv1.3
+      - --init-file
+      - /data/application/init.sql
+      - --binlog_expire_logs_seconds=604800
+    volumes:
+      - ${DATA_ROOT:-./data}/knowflow-mysql:/var/lib/mysql
+      - ./deploy/knowflow/init.sql:/data/application/init.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "-uroot",
+          "-p${MYSQL_PASSWORD:-infini_rag_flow}",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      zhitan:
+        aliases:
+          - mysql
+
+  knowflow-es:
+    profiles: ["knowflow"]
+    image: elasticsearch:${STACK_VERSION:-8.11.3}
+    container_name: ragflow-es-01
+    restart: unless-stopped
+    environment:
+      node.name: es01
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-infini_rag_flow}
+      bootstrap.memory_lock: "false"
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      cluster.routing.allocation.disk.watermark.low: 5gb
+      cluster.routing.allocation.disk.watermark.high: 3gb
+      cluster.routing.allocation.disk.watermark.flood_stage: 2gb
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+    mem_limit: ${MEM_LIMIT:-8073741824}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ${DATA_ROOT:-./data}/knowflow-es:/usr/share/elasticsearch/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS -u elastic:${ELASTIC_PASSWORD:-infini_rag_flow} http://127.0.0.1:9200 >/dev/null || curl -fsS http://127.0.0.1:9200 >/dev/null",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+    networks:
+      zhitan:
+        aliases:
+          - es01
+
+  knowflow-gotenberg:
+    profiles: ["knowflow"]
+    image: gotenberg/gotenberg:8
+    container_name: knowflow-gotenberg
+    restart: unless-stopped
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+    networks:
+      - zhitan
+
+  ragflow:
+    profiles: ["knowflow"]
+    platform: ${RAGFLOW_PLATFORM:-linux/arm64}
+    image: ${RAGFLOW_IMAGE:-knowflow-ragflow:source}
+    build:
+      context: ./platform/third_party/KnowFlow
+      dockerfile: Dockerfile
+      args:
+        LIGHTEN: ${KNOWFLOW_LIGHTEN:-1}
+        NEED_MIRROR: ${KNOWFLOW_NEED_MIRROR:-1}
+    container_name: ragflow-server
+    restart: unless-stopped
+    depends_on:
+      knowflow-mysql:
+        condition: service_healthy
+      knowflow-es:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      MACOS: ${MACOS:-0}
+      LIGHTEN: ${KNOWFLOW_LIGHTEN:-1}
+      KNOWFLOW_API_URL: http://knowflow-backend:5000
+      GOTENBERG_URL: http://knowflow-gotenberg:3000
+      MINIO_HOST: minio
+      MINIO_PORT: "9000"
+      MINIO_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      DB_HOST: knowflow-mysql
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - ${DATA_ROOT:-./data}/knowflow-logs:/ragflow/logs
+      - ./deploy/knowflow/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/knowflow/nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf:ro
+      - ./deploy/knowflow/nginx/proxy.conf:/etc/nginx/proxy.conf:ro
+      - ./deploy/knowflow/theme/platform-branding.css:/ragflow/web/dist/platform-branding.css:ro
+      - ./deploy/knowflow/theme/platform-branding.js:/ragflow/web/dist/platform-branding.js:ro
+      - ./deploy/knowflow/theme/logo.svg:/ragflow/web/dist/logo.svg:ro
+      - ./deploy/knowflow/theme/favicon.svg:/ragflow/web/dist/favicon.svg:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1/v1/system/config | grep -q '\"code\":0'",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    networks:
+      - zhitan
+
+  knowflow-backend:
+    profiles: ["knowflow"]
+    platform: ${KNOWFLOW_SERVER_PLATFORM:-linux/arm64}
+    image: ${KNOWFLOW_SERVER_IMAGE:-knowflow-server:source}
+    build:
+      context: ./platform/third_party/KnowFlow/knowflow
+      dockerfile: Dockerfile
+      target: backend
+      args:
+        NEED_MIRROR: ${KNOWFLOW_NEED_MIRROR:-1}
+    container_name: knowflow-backend
+    restart: unless-stopped
+    depends_on:
+      knowflow-mysql:
+        condition: service_healthy
+      knowflow-gotenberg:
+        condition: service_started
+      ragflow:
+        condition: service_started
+    environment:
+      FLASK_DEBUG: "false"
+      RAGFLOW_BASE_URL: http://ragflow:9380
+      DB_HOST: knowflow-mysql
+      MYSQL_PORT: "3306"
+      MINIO_HOST: minio
+      MINIO_PORT: "9000"
+      ES_HOST: knowflow-es
+      ES_PORT: "9200"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      GOTENBERG_URL: http://knowflow-gotenberg:3000
+      MANAGEMENT_ADMIN_USERNAME: ${MANAGEMENT_ADMIN_USERNAME:-admin}
+      MANAGEMENT_ADMIN_PASSWORD: ${MANAGEMENT_ADMIN_PASSWORD:-12345678}
+      MANAGEMENT_JWT_SECRET: ${MANAGEMENT_JWT_SECRET:-12345678}
+      TZ: ${TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - ./deploy/knowflow/settings.yaml:/app/services/config/settings.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - zhitan

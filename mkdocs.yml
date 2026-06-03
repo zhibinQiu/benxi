@@ -13,6 +13,7 @@ theme:
     - content.code.copy
     - navigation.sections
     - navigation.top
+    - navigation.expand
     - search.suggest
   palette:
     - media: "(prefers-color-scheme: light)"
@@ -26,31 +27,65 @@ theme:
 
 plugins:
   - search
+  # Mermaid 图表渲染（与 Material 主题配合，见 mermaid2.fence_mermaid_custom）
+  - mermaid2:
+      version: 10.9.0
 
 markdown_extensions:
   - admonition
   - pymdownx.highlight
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
   - pymdownx.tabbed:
       alternate_style: true
 
 nav:
   - 主页: index.md
-  - 快速开始: getting-started.md
-  - 进阶:
-    - 进阶选项: advanced/advanced.md
-    - 语言代码: advanced/Language-Codes.md
-    - 翻译服务: advanced/Documentation-of-Translation-Services.md
-  - 开发:
-    - 本地开发: development/local-development.md
-    - amd64 部署: development/deploy-amd64.md
-    - 智碳平台AI系统: development/doc-platform.md
-    - 平台架构与运维: development/platform-architecture.md
-    - REST API: development/rest-api.md
-  - 平台设计:
-    - 功能插件: platform/feature-plugins.md
-    - 权限模型: platform/permission-model.md
-    - 语音转写: platform/speech-models.md
-    - 文档对比: platform/doc-compare-product-design.md
-  - 支持语言: supported_languages.md
-  - 常见问题: FAQ.md
+  - 运维与部署（v3.4+ 最新）:
+    - 手册索引: operations/README.md
+    - 系统架构: operations/architecture.md
+    - Docker 容器: operations/docker-services.md
+    - 网络拓扑: operations/network-topology.md
+    - 部署指南: operations/deployment.md
+    - 配置说明: operations/configuration.md
+    - 数据库迁移: operations/database-migration.md
+    - 权限与账户: operations/permissions.md
+    - 测试: operations/testing.md
+    - 升级: operations/upgrade.md
+    - 安全: operations/security.md
+    - 日常操作: operations/operations-manual.md
+  - 开发实现说明书:
+    - 说明书总览: development/implementation-manual.md
+    - 第一篇 总览与架构:
+      - 项目总体架构: development/system-architecture-overview.md
+      - 平台架构与运维: development/platform-architecture.md
+      - 分层与代码组织: development/layered-architecture.md
+    - 第二篇 环境与部署:
+      - 快速开始: getting-started.md
+      - 统一栈操作: development/stack-deployment.md
+    - 第三篇 后端实现:
+      - API 与约定: implementation/api-conventions.md
+      - 应用服务与域: implementation/backend-implementation.md
+      - 权限模型: platform/permission-model.md
+      - 文档库实现: implementation/documents-implementation.md
+      - 知识服务实现: implementation/knowledge-implementation.md
+      - 异步任务: implementation/async-and-jobs.md
+    - 第四篇 前端实现:
+      - 前端结构: implementation/frontend-implementation.md
+    - 第五篇 业务能力:
+      - 功能插件: platform/feature-plugins.md
+      - 文档对比: platform/doc-compare-product-design.md
+      - 语音转写: platform/speech-models.md
+    - 第六篇 PDF 翻译:
+      - REST API: development/rest-api.md
+      - 进阶选项: advanced/advanced.md
+      - 语言代码: advanced/Language-Codes.md
+      - 翻译服务: advanced/Documentation-of-Translation-Services.md
+      - 阿里云翻译: advanced/TranslationServices/Aliyun.md
+      - SiliconFlow: advanced/TranslationServices/SiliconFlow.md
+  - 附录:
+    - 支持语言: supported_languages.md
+    - 常见问题: FAQ.md

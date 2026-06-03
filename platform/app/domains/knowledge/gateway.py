@@ -6,8 +6,11 @@ ragflow_identity / ragflow_sync / ragflow_scope 形成环依赖。
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from app.config import get_settings
 from app.integrations.knowflow_client import (
@@ -101,6 +104,63 @@ class KnowledgeGateway:
         return sync_document_to_knowflow(db, user, document, force=force)
 
     @staticmethod
+    def sync_document_after_ingest(
+        db: Session,
+        user: User,
+        document: Document,
+        *,
+        force: bool = True,
+    ) -> str | None:
+        """将单篇文档同步到 KnowFlow（供后台任务或手动同步调用）。"""
+        if not KnowledgeGateway.enabled():
+            return None
+        try:
+            if not KnowledgeGateway.user_auth(db, user):
+                logger.warning(
+                    "KnowFlow 入库同步跳过：用户 %s 未就绪", user.username
+                )
+                return None
+            KnowledgeGateway.reconcile_catalog(db, user, sync_documents=False)
+            return KnowledgeGateway.sync_document(db, user, document, force=force)
+        except Exception as e:
+            from app.services.ragflow_sync_service import KnowflowSyncError
+
+            if isinstance(e, KnowflowSyncError):
+                logger.warning(
+                    "KnowFlow 入库同步失败 doc=%s user=%s: %s",
+                    document.id,
+                    user.username,
+                    e.message,
+                )
+                return None
+            logger.warning(
+                "KnowFlow 入库同步失败 doc=%s user=%s: %s",
+                document.id,
+                user.username,
+                e,
+            )
+            return None
+
+    @staticmethod
+    def schedule_sync_after_ingest(
+        background_tasks,
+        document_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        from app.domains.knowledge.background_sync import schedule_sync_after_ingest
+
+        schedule_sync_after_ingest(background_tasks, document_id, user_id)
+
+    @staticmethod
+    def enqueue_sync_after_ingest(
+        document_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> None:
+        from app.domains.knowledge.background_sync import enqueue_sync_after_ingest
+
+        enqueue_sync_after_ingest(document_id, user_id)
+
+    @staticmethod
     def remove_document(db: Session, document: Document) -> bool:
         from app.services.ragflow_sync_service import remove_platform_document_from_knowflow
 
@@ -131,6 +191,12 @@ class KnowledgeGateway:
         return reconcile_user_knowflow_catalog(
             db, user, sync_limit=sync_limit, sync_documents=sync_documents
         )
+
+    @staticmethod
+    def purge_user(db: Session, user: User) -> dict:
+        from app.services.user_knowflow_purge import purge_user_knowledge_resources
+
+        return purge_user_knowledge_resources(db, user)
 
     @staticmethod
     def purge_stale_links(db: Session) -> int:

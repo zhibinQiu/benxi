@@ -1,41 +1,44 @@
-# 脚本说明
+# 脚本说明（v3.4+ 统一栈）
 
-**只记两个入口：**
+## 推荐入口
 
 | 脚本 | 用途 |
 |------|------|
-| **`zhitan.sh`** | 本地启动/停止、修 `.env`、KnowFlow 构建 |
-| **`deploy.sh`** | SSH 推送 + 服务器 Docker 部署 |
+| **`stack.sh`** | 根目录 `compose.yaml`：build / up / dev-up / save / load / backup |
+| **`zhitan.sh`** | 包装：`start`→`stack up`，`dev`→`dev-up`，`stop`→`down` |
+| **`deploy.sh stack`** | 远程：rsync 镜像包 + 编排，**不 rsync 源码** |
 
 ```bash
-bash scripts/zhitan.sh              # 启动
-bash scripts/zhitan.sh stop         # 停止
-bash scripts/zhitan.sh env          # 本地 .env 被远程地址污染时修复
-bash scripts/zhitan.sh knowflow setup|build|（无子命令=启动栈）
-bash scripts/zhitan.sh speech       # 含语音服务
-bash scripts/zhitan.sh deploy …     # 同 deploy.sh
+cp .env.stack.example .env
+bash scripts/stack.sh dev-up --profile knowflow --profile speech
 
-bash scripts/deploy.sh              # 远程 app
-bash scripts/deploy.sh full         # 首次 / 大版本
+bash scripts/stack.sh build && bash scripts/stack.sh save
+bash scripts/deploy.sh stack push    # 需 platform/deploy.target
 ```
 
-## 辅助脚本（由上述入口间接调用）
+文档：**[docs/zh/operations/README.md](../docs/zh/operations/README.md)**
+
+## 辅助脚本
 
 | 脚本 | 说明 |
 |------|------|
-| `download_babeldoc_assets.sh` | 首次下载 pdf2zh 模型 |
-| `download_knowflow_deps_light.sh` | KnowFlow 构建依赖 |
-| `setup_speech.sh` | 构建 speech-api 镜像 |
-| `start_speech_local.sh` | 本地启动 speech 容器 |
-| `pack_deploy_bundle.sh` | 打离线 tar 包 |
+| `setup-stack-env.sh` | 生成/合并根目录 `.env` |
+| `download_babeldoc_assets.sh` | pdf2zh 模型与字体 |
+| `download_knowflow_deps_light.sh` | KnowFlow 源码构建依赖 |
+| `setup_speech.sh` | `stack.sh build/up --profile speech` |
+| `start_speech_local.sh` | 宿主机 FunASR（compose.dev 可选） |
+
+## 已移除
+
+- `merge-stack-env.sh` → 使用 `setup-stack-env.sh`
+- `platform/docker-compose*.yml` → 使用根目录 `compose.yaml`
+- `deploy.sh full/app` → 使用 `deploy.sh stack push`
+- `pack_deploy_bundle.sh`（legacy 离线包）
 
 ## 配置模板
 
 | 文件 | 说明 |
 |------|------|
-| `platform/.env.example` | → `.env` |
-| `platform/knowflow.env.example` | → `knowflow.env` |
-| `platform/deploy.target.example` | → `deploy.target`（勿提交密码） |
-| `platform-frontend/.env.example` | → `.env`（`VITE_BASE_PATH`） |
-
-部署生成（勿提交）：`.env.docker`、`knowflow.env.docker`
+| `.env.stack.example` | → 仓库根 `.env` |
+| `platform/.env.example` | 业务密钥模板 |
+| `platform/deploy.target.example` | → `deploy.target`（SSH 部署） |

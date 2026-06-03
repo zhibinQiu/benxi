@@ -1,0 +1,17 @@
+# KnowFlow profile 镜像加速（与 compose.mirror.yaml 配合）
+
+services:
+  knowflow-mysql:
+    image: docker.1ms.run/library/mysql:8.0.39
+
+  knowflow-es:
+    image: docker.1ms.run/library/elasticsearch:${STACK_VERSION:-8.11.3}
+
+  knowflow-gotenberg:
+    image: docker.1ms.run/gotenberg/gotenberg:8
+
+  ragflow:
+    image: ${RAGFLOW_IMAGE:-docker.1ms.run/zxwei/knowflow:v2.1.8}
+
+  knowflow-backend:
+    image: ${KNOWFLOW_SERVER_IMAGE:-docker.1ms.run/zxwei/knowflow-server:v2.1.8}

@@ -180,6 +180,32 @@ def _document_scope(db: Session, doc: Document) -> str:
     return SCOPE_PERSONAL
 
 
+def has_explicit_user_query_share(
+    db: Session, user: User, document: Document
+) -> bool:
+    """他人对当前用户的显式用户级分享，且档位为可查询及以上。"""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.core.permissions import PermissionLevel, level_satisfies
+
+    now = datetime.now(timezone.utc)
+    perms = db.scalars(
+        select(DocumentPermission).where(
+            DocumentPermission.document_id == document.id,
+            DocumentPermission.subject_type == "user",
+            DocumentPermission.subject_id == user.id,
+        )
+    ).all()
+    for perm in perms:
+        if perm.expires_at and perm.expires_at < now:
+            continue
+        if level_satisfies(perm.level, PermissionLevel.query.value):
+            return True
+    return False
+
+
 def _has_explicit_permission(
     db: Session, user: User, document: Document, required_level: str
 ) -> bool:

@@ -5,20 +5,85 @@ let ragMetaCache = null;
 let ragMetaCacheAt = 0;
 const RAG_META_TTL_MS = 15000;
 
+let embedSessionCache = null;
+let embedSessionCacheAt = 0;
+const EMBED_SESSION_TTL_MS = 30 * 60 * 1000;
+
+let prefetchInflight = null;
+
 export async function fetchRagMeta({ force = false } = {}) {
   const now = Date.now();
   if (!force && ragMetaCache && now - ragMetaCacheAt < RAG_META_TTL_MS) {
     return ragMetaCache;
   }
-  const data = await api("/api/v1/rag/meta");
+  const data = await api("/api/v1/knowledge/meta");
   ragMetaCache = data;
   ragMetaCacheAt = now;
   return data;
 }
 
+export function getCachedRagMeta() {
+  const now = Date.now();
+  if (ragMetaCache && now - ragMetaCacheAt < RAG_META_TTL_MS) {
+    return ragMetaCache;
+  }
+  return null;
+}
+
 export function invalidateRagMetaCache() {
   ragMetaCache = null;
   ragMetaCacheAt = 0;
+}
+
+export function getCachedRagEmbedSession() {
+  const now = Date.now();
+  if (embedSessionCache && now - embedSessionCacheAt < EMBED_SESSION_TTL_MS) {
+    return embedSessionCache;
+  }
+  return null;
+}
+
+export function invalidateKnowflowSessionCache() {
+  embedSessionCache = null;
+  embedSessionCacheAt = 0;
+  prefetchInflight = null;
+}
+
+export function invalidateRagCaches() {
+  invalidateRagMetaCache();
+  invalidateKnowflowSessionCache();
+}
+
+/** 登录后后台预热 KnowFlow SSO + 分级库（不阻塞界面）。 */
+export function prefetchKnowflowSession() {
+  if (!getToken()) {
+    return Promise.resolve(null);
+  }
+  const cached = getCachedRagEmbedSession();
+  if (cached?.sso?.ready) {
+    return Promise.resolve(cached);
+  }
+  if (prefetchInflight) {
+    return prefetchInflight;
+  }
+  prefetchInflight = (async () => {
+    try {
+      const meta = await fetchRagMeta();
+      if (!meta?.knowflow_enabled && !meta?.ui_available) {
+        return null;
+      }
+      return await fetchRagEmbedSession({ sync: false, force: true });
+    } catch {
+      return null;
+    } finally {
+      prefetchInflight = null;
+    }
+  })();
+  return prefetchInflight;
+}
+
+export function waitForKnowflowPrefetch() {
+  return prefetchInflight || Promise.resolve(null);
 }
 
 export async function searchKnowledge({ query, scope, limit = 20 } = {}) {
@@ -30,7 +95,37 @@ export async function searchKnowledge({ query, scope, limit = 20 } = {}) {
   });
 }
 
-export async function fetchRagEmbedSession({ sync = false } = {}) {
+export async function fetchRagEmbedSession({ sync = false, force = false } = {}) {
+  const now = Date.now();
+  if (
+    !sync &&
+    !force &&
+    embedSessionCache &&
+    now - embedSessionCacheAt < EMBED_SESSION_TTL_MS
+  ) {
+    return embedSessionCache;
+  }
+  if (prefetchInflight && !sync && !force) {
+    const prefetched = await prefetchInflight;
+    if (prefetched?.sso?.ready) {
+      return prefetched;
+    }
+  }
+  const q = sync ? "?sync=true" : "?sync=false";
+  const data = await api(`/api/v1/knowledge/embed-session${q}`);
+  if (!sync) {
+    embedSessionCache = data;
+    embedSessionCacheAt = Date.now();
+  }
+  return data;
+}
+
+/** 编码管理（仅管理员）：KnowFlow 模型配置页 SSO */
+export async function fetchEncodingMeta() {
+  return api("/api/v1/rag/meta");
+}
+
+export async function fetchEncodingEmbedSession({ sync = false } = {}) {
   const q = sync ? "?sync=true" : "?sync=false";
   return api(`/api/v1/rag/embed-session${q}`);
 }

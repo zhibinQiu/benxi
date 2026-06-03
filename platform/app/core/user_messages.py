@@ -10,6 +10,9 @@ KNOWLEDGE_NOT_ENABLED = "知识问答未启用，请联系管理员。"
 KNOWLEDGE_SYNC_DISABLED = "知识库同步未启用，请联系管理员。"
 KNOWLEDGE_NOT_READY = "知识服务未就绪，请稍后重试。"
 KNOWLEDGE_SYNC_FAILED = "同步到知识库失败，请稍后重试或联系管理员。"
+KNOWLEDGE_SYNC_NO_KB = "无法创建或访问目标知识库，请先打开「切片管理」完成知识库开户。"
+KNOWLEDGE_SYNC_NO_FILE = "文档尚未上传文件，无法同步知识库。"
+KNOWLEDGE_SYNC_UPLOAD_FAILED = "文档上传到知识库失败，请确认知识服务正常运行。"
 KNOWLEDGE_SYNC_OK = "已同步到知识库。"
 
 _VENDOR_RE = re.compile(r"ragflow|knowflow", re.I)

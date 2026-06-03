@@ -15,7 +15,7 @@ register(
         permission_name="AI数字机器人",
         enabled=False,
         tag="待集成",
-        category="external",
+        category="carbon",
         sort_order=62,
         grant_to_roles=("sys_admin", "member"),
     )

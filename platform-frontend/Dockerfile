@@ -1,8 +1,13 @@
-# 生产前端：构建静态资源 + Nginx 反代平台 API
+# 生产前端：Vite 构建 + Nginx 反代（最终阶段基于 node:alpine + apk nginx，兼容 1ms 无 nginx 镜像）
 ARG NODE_IMAGE=node:22-alpine
-ARG NGINX_IMAGE=nginx:1.27-alpine
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn
+
 FROM ${NODE_IMAGE} AS build
+ARG NPM_REGISTRY
+ENV NPM_REGISTRY=${NPM_REGISTRY}
 WORKDIR /app
+RUN npm config set registry "${NPM_REGISTRY}"
 COPY package.json package-lock.json* ./
 RUN npm ci --prefer-offline 2>/dev/null || npm install
 COPY . .
@@ -12,8 +17,14 @@ ENV VITE_API_BASE=${VITE_API_BASE}
 ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN npm run build
 
-FROM ${NGINX_IMAGE}
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+FROM ${NODE_IMAGE} AS runtime
+ARG ALPINE_MIRROR
+ENV ALPINE_MIRROR=${ALPINE_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR}/g" /etc/apk/repositories && \
+    apk add --no-cache nginx && \
+    mkdir -p /run/nginx && \
+    rm -f /etc/nginx/http.d/default.conf
+COPY nginx.conf /etc/nginx/http.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

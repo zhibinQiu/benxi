@@ -19,6 +19,7 @@ import {
   CreateOutline,
   WalletOutline,
   NewspaperOutline,
+  SearchOutline,
 } from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
 import { fetchSystemFeatures } from "../api/client";
@@ -43,30 +44,26 @@ const iconMap = {
   create: CreateOutline,
   wallet: WalletOutline,
   newspaper: NewspaperOutline,
+  search: SearchOutline,
 };
 
-const CATEGORY_ORDER = ["document", "tools", "carbon", "external"];
+const CATEGORY_ORDER = ["document", "tools", "carbon"];
 
 const categoryMeta = {
   document: {
-    title: "文档类",
-    hint: "翻译、问答、对比、辅助写作与文档生成",
+    title: "文档",
+    hint: "翻译、对比、辅助写作、知识检索与文档生成",
     icon: DocumentTextOutline,
   },
   tools: {
-    title: "常用工具类",
-    hint: "会议、识别与在线 AI 外链",
+    title: "工具",
+    hint: "会议助手、OCR、数据分析、在线 AI 工具等",
     icon: GridOutline,
   },
   carbon: {
-    title: "双碳应用类",
-    hint: "双碳业务智能应用",
+    title: "双碳",
+    hint: "双碳业务应用与智碳平台等外链入口",
     icon: LeafOutline,
-  },
-  external: {
-    title: "外链",
-    hint: "智碳相关系统入口（部分为平台内嵌）",
-    icon: OpenOutline,
   },
 };
 
@@ -78,10 +75,16 @@ function tagType(f) {
   return "success";
 }
 
+function shouldShowTag(f) {
+  const tag = String(f.tag || "").trim();
+  return Boolean(tag) && tag !== "可用";
+}
+
 const groupedCategories = computed(() => {
   const buckets = Object.fromEntries(CATEGORY_ORDER.map((k) => [k, []]));
   for (const f of features.value) {
-    const cat = f.category || DEFAULT_CATEGORY;
+    const raw = f.category || DEFAULT_CATEGORY;
+    const cat = raw === "external" ? "carbon" : raw;
     if (buckets[cat]) buckets[cat].push(f);
   }
   return CATEGORY_ORDER.map((id) => ({
@@ -181,6 +184,7 @@ function openFeature(f) {
                   </n-icon>
                 </div>
                 <n-tag
+                  v-if="shouldShowTag(f)"
                   size="tiny"
                   round
                   :bordered="false"

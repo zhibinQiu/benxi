@@ -1,5 +1,7 @@
 # 平台权限模型说明
 
+> **开发实现说明书 · 第三篇 §3.3** · [说明书总览](../development/implementation-manual.md)
+
 本文描述智碳平台 **账号身份**、**功能权限（RBAC）** 与 **文档权限（分级 + 单文档 ACL）** 的关系与判定顺序。实现以 `platform/app/core/permissions.py`、`document_scope.py`、`platform_admin.py` 为准。
 
 ---

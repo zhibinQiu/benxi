@@ -6,6 +6,7 @@ export * from "./http.js";
 export * from "./auth.js";
 export * from "./documents.js";
 export * from "./rag.js";
+export * from "./dataAnalysis.js";
 
 import { API_BASE, api, formatApiDetail, getToken } from "./http.js";
 

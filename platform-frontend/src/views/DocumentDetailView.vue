@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NCard,
@@ -26,6 +26,7 @@ import {
   fetchDocument,
   updateDocument,
   prepareUpload,
+  uploadDocumentBlob,
   completeUpload,
   downloadDocumentFile,
   syncDocumentToKnowflow,
@@ -43,7 +44,6 @@ import {
   liftDocumentDenial,
 } from "../api/client";
 import { useAuth } from "../composables/useAuth";
-import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
 import OrgUserPickerTree from "../components/OrgUserPickerTree.vue";
 import OrgDeptPickerTree from "../components/OrgDeptPickerTree.vue";
 import { userLabel } from "../utils/orgUserTree";
@@ -76,7 +76,9 @@ const doc = ref(null);
 const loading = ref(false);
 const syncingKnowflow = ref(false);
 const editTitle = ref("");
+const titleEditing = ref(false);
 const titleSaving = ref(false);
+const titleInputRef = ref(null);
 
 const canEditDoc = computed(() => aclCaps.value.can_edit === true);
 
@@ -152,7 +154,6 @@ const denyUserId = ref(null);
 const denyReason = ref("");
 const shareSelectedKeys = ref([]);
 const shareGranting = ref(false);
-const showMoveDoc = ref(false);
 const publishTarget = ref("department");
 const publishDeptIds = ref([]);
 const publishLoading = ref(false);
@@ -216,6 +217,18 @@ async function ensureCandidates() {
   }
 }
 
+function startEditTitle() {
+  if (!doc.value || !canEditDoc.value || isInRecycle.value) return;
+  editTitle.value = doc.value.title || "";
+  titleEditing.value = true;
+  nextTick(() => titleInputRef.value?.focus());
+}
+
+function cancelEditTitle() {
+  editTitle.value = doc.value?.title || "";
+  titleEditing.value = false;
+}
+
 async function saveTitle() {
   if (!doc.value || !canEditDoc.value || isInRecycle.value) return;
   const next = editTitle.value.trim();
@@ -224,11 +237,15 @@ async function saveTitle() {
     editTitle.value = doc.value.title;
     return;
   }
-  if (next === doc.value.title) return;
+  if (next === doc.value.title) {
+    titleEditing.value = false;
+    return;
+  }
   titleSaving.value = true;
   try {
     doc.value = await updateDocument(docId, { title: next });
     editTitle.value = doc.value.title;
+    titleEditing.value = false;
     message.success("标题已保存");
   } catch (e) {
     editTitle.value = doc.value.title;
@@ -308,17 +325,12 @@ async function uploadVersion({ file, onFinish, onError }) {
       raw.name,
       raw.type || "application/octet-stream"
     );
-    const putRes = await fetch(prep.upload_url, {
-      method: "PUT",
-      body: raw,
-      headers: { "Content-Type": raw.type || "application/octet-stream" },
-    });
-    if (!putRes.ok) throw new Error("上传失败");
+    await uploadDocumentBlob(prep.upload_url, raw);
     await completeUpload(docId, {
       version_id: prep.version_id,
       file_size: raw.size,
     });
-    message.success("新版本已上传");
+    message.success("新版本已上传，知识库正在后台同步");
     await load({ notifyOnError: false });
     onFinish?.();
   } catch (e) {
@@ -543,11 +555,6 @@ async function removeDenial(uid) {
   }
 }
 
-function onDocumentMoved(updated) {
-  doc.value = updated;
-  showMoveDoc.value = false;
-}
-
 onMounted(load);
 </script>
 
@@ -556,29 +563,45 @@ onMounted(load);
     <n-card :loading="loading">
       <template #header>
         <n-space align="center" :size="12" style="flex-wrap: wrap">
-          <n-input
-            v-if="canEditDoc && !isInRecycle"
-            v-model:value="editTitle"
-            class="doc-title-input"
-            placeholder="文档标题"
-            maxlength="512"
-            :loading="titleSaving"
-            :disabled="titleSaving"
-            @blur="saveTitle"
-            @keyup.enter="saveTitle"
-          />
-          <n-text v-else strong style="font-size: 16px">{{ doc.title }}</n-text>
+          <template v-if="titleEditing && canEditDoc && !isInRecycle">
+            <n-input
+              ref="titleInputRef"
+              v-model:value="editTitle"
+              class="doc-title-input"
+              placeholder="文档标题"
+              maxlength="512"
+              :disabled="titleSaving"
+              @keyup.enter="saveTitle"
+            />
+            <n-button
+              size="small"
+              type="primary"
+              :loading="titleSaving"
+              :disabled="titleSaving"
+              @click="saveTitle"
+            >
+              保存
+            </n-button>
+            <n-button size="small" :disabled="titleSaving" @click="cancelEditTitle">
+              取消
+            </n-button>
+          </template>
+          <template v-else>
+            <n-text strong style="font-size: 16px">{{ doc.title }}</n-text>
+            <n-button
+              v-if="canEditDoc && !isInRecycle"
+              text
+              type="primary"
+              size="small"
+              @click="startEditTitle"
+            >
+              修改
+            </n-button>
+          </template>
         </n-space>
       </template>
       <template #header-extra>
         <n-space>
-          <n-button @click="goBack">返回</n-button>
-          <n-button
-            v-if="canEditDoc && !isInRecycle && supportsKbFolder"
-            @click="showMoveDoc = true"
-          >
-            移动
-          </n-button>
           <n-button
             type="primary"
             :disabled="!canDownloadFile || !canViewDoc"
@@ -830,16 +853,6 @@ onMounted(load);
     </template>
   </n-modal>
 
-  <MoveDocumentFolderModal
-    v-if="doc"
-    v-model:show="showMoveDoc"
-    :document-id="doc.id"
-    :document-title="doc.title"
-    :scope="doc.scope"
-    :dept-id="doc.dept_id"
-    :current-folder-id="doc.folder_id"
-    @moved="onDocumentMoved"
-  />
 </template>
 
 <style scoped>

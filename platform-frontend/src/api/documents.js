@@ -77,6 +77,36 @@ export async function prepareUpload(documentId, fileName, mimeType) {
   });
 }
 
+/** 解析 prepare 返回的上传地址（相对路径拼 API_BASE，presigned 原样返回） */
+export function resolveUploadUrl(uploadUrl) {
+  const raw = String(uploadUrl || "").trim();
+  if (!raw) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const base = API_BASE.replace(/\/$/, "");
+  return raw.startsWith("/") ? `${base}${raw}` : `${base}/${raw}`;
+}
+
+/** 经平台鉴权上传文件 blob（MinIO 内网地址由后端代理） */
+export async function uploadDocumentBlob(uploadUrl, file) {
+  const url = resolveUploadUrl(uploadUrl);
+  const headers = {
+    "Content-Type": file.type || "application/octet-stream",
+  };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, { method: "PUT", body: file, headers });
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const body = await res.json();
+      msg = formatApiDetail(body?.detail ?? body?.message ?? body) || msg;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || "上传到存储失败");
+  }
+}
+
 export async function completeUpload(documentId, body) {
   return api(`/api/v1/documents/${documentId}/upload/complete`, {
     method: "POST",

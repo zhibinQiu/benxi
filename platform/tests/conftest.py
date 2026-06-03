@@ -14,12 +14,16 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def _skip_knowflow_sync_on_upload(monkeypatch):
+def _skip_knowflow_sync_on_upload(monkeypatch, request):
     """测试上传完成时不触发 KnowFlow（避免依赖对象存储中真实文件内容）。"""
+    if request.module.__name__.endswith("test_knowledge_ingest_sync"):
+        yield
+        return
     monkeypatch.setattr(
-        "app.domains.knowledge.gateway.KnowledgeGateway.sync_document",
+        "app.domains.knowledge.gateway.KnowledgeGateway.sync_document_after_ingest",
         staticmethod(lambda *args, **kwargs: None),
     )
+    yield
 
 
 @pytest.fixture(scope="session")

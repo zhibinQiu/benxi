@@ -216,8 +216,31 @@ def prepare_upload(
     db.add(version)
     db.commit()
     db.refresh(version)
-    upload_url = store.presigned_put(version.file_key, mime_type)
+    # 浏览器经平台 API 代理写入 MinIO（presigned 内网地址浏览器无法访问）
+    upload_url = f"/api/v1/documents/{document.id}/upload/{version.id}/blob"
     return version, upload_url
+
+
+def save_upload_blob(
+    db: Session,
+    user: User,
+    document: Document,
+    version: DocumentVersion,
+    data: bytes,
+    *,
+    content_type: str | None = None,
+) -> None:
+    if version.document_id != document.id:
+        from app.core.exceptions import not_found
+
+        raise not_found("Version not found")
+    if not can_access_document(db, user, document, PermissionLevel.edit.value):
+        from app.core.exceptions import forbidden
+
+        raise forbidden("No permission to upload new version")
+    mime = (content_type or version.mime_type or "application/octet-stream").strip()
+    store = get_object_store()
+    store.put_object_bytes(version.file_key, data, mime)
 
 
 def complete_upload(

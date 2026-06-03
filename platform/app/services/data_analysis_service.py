@@ -1,0 +1,339 @@
+"""数据分析 — 会话、对话生成代码、单元格执行。"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from app.config import get_settings
+from app.core.exceptions import bad_request, not_found
+from app.integrations.data_analysis_executor import execute_analysis_code
+from app.integrations.deepseek_client import is_configured, resolve_credentials
+from app.schemas.data_analysis import (
+    ChatMessageOut,
+    DataAnalysisMetaOut,
+    DatasetProfileOut,
+    DatasetUploadOut,
+    LlmCellDraft,
+    NotebookCellOut,
+    SessionOut,
+)
+from app.services import data_analysis_store as store
+from app.services.data_analysis_profile import (
+    build_dataset_profile,
+    profile_summary_for_llm,
+)
+
+_ACCEPTED_EXTENSIONS = (".xlsx", ".xls", ".csv")
+
+_SYSTEM_PROMPT = (
+    "你是企业数据分析助手。用户已上传 Excel 或 CSV，你只能看到数据结构画像（字段、类型、"
+    "样例行、统计摘要），看不到全量数据。\n"
+    "支持多轮连续对话：请结合历史问答与已有 Notebook 单元格及其运行结果，"
+    "在同一数据集上递进分析，避免重复已完成的工作。\n"
+    "请根据用户问题生成可执行的 pandas / matplotlib / seaborn 分析代码。\n"
+    "约束：\n"
+    "1. 已有变量 df（已加载数据）、DATA_PATH、FILE_TYPE、pd、np、plt、sns；"
+    "Excel 另有 ACTIVE_SHEET\n"
+    "2. 禁止文件读写、网络、系统调用\n"
+    "3. 统计用 df 聚合；绘图用 plt 或 sns，无需 plt.show()\n"
+    "4. 输出必须是 JSON 对象，不要 Markdown 围栏，格式：\n"
+    '{"reply":"自然语言说明","cells":[{"title":"单元标题","code":"python代码"}]}\n'
+    "若仅需解释无需代码，cells 可为空数组。"
+)
+
+
+def get_meta() -> DataAnalysisMetaOut:
+    settings = get_settings()
+    configured = is_configured()
+    hint = None
+    if not configured:
+        hint = "未配置 DeepSeek API，无法生成分析代码。请在系统设置或 .env 中配置。"
+    _, _, model = resolve_credentials() if configured else (None, None, settings.deepseek_model)
+    return DataAnalysisMetaOut(
+        configured=configured,
+        llm_model=model if configured else None,
+        max_file_mb=settings.data_analysis_max_file_mb,
+        accepted_extensions=list(_ACCEPTED_EXTENSIONS),
+        exec_timeout_seconds=settings.data_analysis_exec_timeout_seconds,
+        service_hint=hint,
+    )
+
+
+def upload_dataset(*, user_id: int, filename: str, content: bytes) -> DatasetUploadOut:
+    settings = get_settings()
+    max_bytes = settings.data_analysis_max_file_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        raise bad_request(f"文件超过 {settings.data_analysis_max_file_mb}MB 限制")
+    ext = Path(filename or "").suffix.lower()
+    if ext not in _ACCEPTED_EXTENSIONS:
+        raise bad_request("仅支持 .xlsx / .xls / .csv 格式")
+
+    dataset_id = store.new_dataset_id()
+    path = store.save_dataset_bytes(user_id, dataset_id, filename=filename, content=content)
+    profile = build_dataset_profile(path, filename=filename or path.name)
+    store.save_profile(user_id, dataset_id, profile)
+    return DatasetUploadOut(
+        dataset_id=dataset_id,
+        profile=DatasetProfileOut.model_validate(profile),
+    )
+
+
+def create_session(*, user_id: int, dataset_id: str | None) -> SessionOut:
+    profile = None
+    if dataset_id:
+        if not store.dataset_exists(user_id, dataset_id):
+            raise not_found("数据集不存在")
+        profile = store.load_profile(user_id, dataset_id)
+    session_id = store.new_session_id()
+    state = store.create_session_state(
+        user_id=user_id,
+        session_id=session_id,
+        dataset_id=dataset_id,
+        profile=profile,
+    )
+    store.save_session(user_id, session_id, state)
+    return _session_out(state)
+
+
+def get_session(*, user_id: int, session_id: str) -> SessionOut:
+    state = _load_owned_session(user_id, session_id)
+    return _session_out(state)
+
+
+def _load_owned_session(user_id: Any, session_id: str) -> dict[str, Any]:
+    state = store.load_session(user_id, session_id)
+    if not state:
+        raise not_found("会话不存在")
+    if str(state.get("user_id") or "") != str(user_id):
+        raise not_found("会话不存在")
+    return state
+
+
+def _session_out(state: dict[str, Any]) -> SessionOut:
+    profile = state.get("profile")
+    return SessionOut(
+        session_id=state["session_id"],
+        dataset_id=state.get("dataset_id"),
+        profile=DatasetProfileOut.model_validate(profile) if profile else None,
+        active_sheet=state.get("active_sheet"),
+        messages=[ChatMessageOut.model_validate(m) for m in state.get("messages") or []],
+        cells=[NotebookCellOut.model_validate(c) for c in state.get("cells") or []],
+    )
+
+
+def _extract_json_payload(text: str) -> dict[str, Any]:
+    raw = (text or "").strip()
+    if not raw:
+        raise bad_request("模型未返回有效内容")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    if match:
+        return json.loads(match.group(1))
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        return json.loads(raw[start : end + 1])
+    raise bad_request("无法解析模型返回的 JSON")
+
+
+def _notebook_summary_for_llm(cells: list[dict[str, Any]]) -> str:
+    if not cells:
+        return "（尚无 Notebook 单元格）"
+    lines = ["【已有 Notebook 分析上下文 — 可在此基础上继续追问】"]
+    for index, cell in enumerate(cells[-8:], 1):
+        lines.append(f"### 单元 {index}: {cell.get('title') or '分析单元'}")
+        lines.append(f"- 状态: {cell.get('status') or 'idle'}")
+        code = (cell.get("code") or "").strip()
+        if code:
+            clipped = code if len(code) <= 900 else code[:900] + "\n# ..."
+            lines.append(f"- 代码:\n{clipped}")
+        stdout = (cell.get("stdout") or "").strip()
+        if stdout:
+            clipped = stdout if len(stdout) <= 600 else stdout[:600] + "\n..."
+            lines.append(f"- 输出:\n{clipped}")
+        if cell.get("status") == "error":
+            stderr = (cell.get("stderr") or "").strip()
+            if stderr:
+                clipped = stderr if len(stderr) <= 400 else stderr[:400] + "\n..."
+                lines.append(f"- 错误:\n{clipped}")
+        if cell.get("images"):
+            lines.append(f"- 已生成图表: {len(cell.get('images') or [])} 张")
+    lines.append("请结合上述结果回答后续问题；若用户要求修改或深入，生成新的代码单元。")
+    return "\n".join(lines)
+
+
+def _build_llm_messages(
+    *,
+    profile: dict[str, Any],
+    history: list[dict[str, str]],
+    cells: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    context_block = (
+        "【数据结构画像】\n"
+        + profile_summary_for_llm(profile)
+        + "\n\n"
+        + _notebook_summary_for_llm(cells)
+    )
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": _SYSTEM_PROMPT + "\n\n" + context_block},
+    ]
+    for item in history[-24:]:
+        role = item.get("role")
+        content = (item.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            messages.append({"role": role, "content": content})
+    return messages
+
+
+async def chat(
+    *,
+    user_id: int,
+    session_id: str,
+    message: str,
+    dataset_id: str | None = None,
+) -> tuple[str, list[NotebookCellOut], SessionOut]:
+    if not is_configured():
+        raise bad_request("未配置 DeepSeek API，无法生成分析代码")
+
+    state = _load_owned_session(user_id, session_id)
+    if dataset_id and dataset_id != state.get("dataset_id"):
+        if not store.dataset_exists(user_id, dataset_id):
+            raise not_found("数据集不存在")
+        profile = store.load_profile(user_id, dataset_id)
+        state["dataset_id"] = dataset_id
+        state["profile"] = profile
+        state["active_sheet"] = profile.get("active_sheet") if profile else None
+
+    profile = state.get("profile")
+    if not profile:
+        raise bad_request("请先上传 Excel 或 CSV 数据文件")
+
+    user_text = message.strip()
+    if not user_text:
+        raise bad_request("请输入分析问题")
+
+    history = state.get("messages") or []
+    history.append({"role": "user", "content": user_text})
+
+    llm_messages = _build_llm_messages(
+        profile=profile,
+        history=history,
+        cells=state.get("cells") or [],
+    )
+
+    api_key, base_url, model = resolve_credentials()
+    payload = {
+        "model": model,
+        "messages": llm_messages,
+        "temperature": 0.2,
+    }
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
+        response = await client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+    content = (
+        data.get("choices", [{}])[0]
+        .get("message", {})
+        .get("content", "")
+    )
+    parsed = _extract_json_payload(content)
+    reply = str(parsed.get("reply") or "").strip() or "已生成分析代码，请在右侧 Notebook 运行。"
+    drafts = parsed.get("cells") or []
+
+    added: list[NotebookCellOut] = []
+    for draft in drafts:
+        try:
+            item = LlmCellDraft.model_validate(draft)
+        except Exception:
+            continue
+        if not item.code.strip():
+            continue
+        cell = {
+            "id": store.new_cell_id(),
+            "title": item.title.strip() or "分析单元",
+            "code": item.code.strip(),
+            "status": "idle",
+            "stdout": "",
+            "stderr": "",
+            "images": [],
+        }
+        state.setdefault("cells", []).append(cell)
+        added.append(NotebookCellOut.model_validate(cell))
+
+    history.append({"role": "assistant", "content": reply})
+    state["messages"] = history
+    store.save_session(user_id, session_id, state)
+    return reply, added, _session_out(state)
+
+
+def update_cell(
+    *,
+    user_id: int,
+    session_id: str,
+    cell_id: str,
+    code: str,
+    title: str | None = None,
+) -> NotebookCellOut:
+    state = _load_owned_session(user_id, session_id)
+    cells = state.get("cells") or []
+    target = next((c for c in cells if c.get("id") == cell_id), None)
+    if not target:
+        raise not_found("单元格不存在")
+    target["code"] = code.strip()
+    if title is not None:
+        target["title"] = title.strip() or target.get("title") or "分析单元"
+    store.save_session(user_id, session_id, state)
+    return NotebookCellOut.model_validate(target)
+
+
+def run_cell(*, user_id: int, session_id: str, cell_id: str) -> NotebookCellOut:
+    state = _load_owned_session(user_id, session_id)
+    dataset_id = state.get("dataset_id")
+    profile = state.get("profile")
+    if not dataset_id or not profile:
+        raise bad_request("请先上传数据文件并绑定数据集")
+
+    cells = state.get("cells") or []
+    target = next((c for c in cells if c.get("id") == cell_id), None)
+    if not target:
+        raise not_found("单元格不存在")
+
+    data_path = store.dataset_file_path(user_id, dataset_id)
+    file_type = profile.get("file_type") or store.dataset_file_type(user_id, dataset_id)
+    active_sheet = state.get("active_sheet") or profile.get("active_sheet") or 0
+
+    target["status"] = "running"
+    target["stdout"] = ""
+    target["stderr"] = ""
+    target["images"] = []
+    store.save_session(user_id, session_id, state)
+
+    try:
+        result = execute_analysis_code(
+            data_path=data_path,
+            file_type=file_type,
+            active_sheet=str(active_sheet),
+            code=target.get("code") or "",
+        )
+        target["status"] = result["status"]
+        target["stdout"] = result.get("stdout") or ""
+        target["stderr"] = result.get("stderr") or ""
+        target["images"] = result.get("images") or []
+    except Exception as exc:
+        target["status"] = "error"
+        target["stderr"] = str(exc)
+
+    store.save_session(user_id, session_id, state)
+    return NotebookCellOut.model_validate(target)

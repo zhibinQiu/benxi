@@ -11,7 +11,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.database import SessionLocal
-from app.integrations.ragflow_llm_template import ensure_shared_llm_config
+from app.integrations.ragflow_llm_template import (
+    ensure_shared_llm_config,
+    sync_all_tenant_llm_configs,
+)
 from app.integrations.ragflow_rbac import ensure_ragflow_global_admin
 from app.models.org import User
 from app.models.ragflow_link import RagflowAccountLink
@@ -38,8 +41,10 @@ def main() -> int:
                 print(f"  跳过：无 ragflow_user_id")
                 continue
             admin_ok = ensure_ragflow_global_admin(uid)
-            llm_ok = ensure_shared_llm_config(uid)
+            llm_ok = ensure_shared_llm_config(uid, db=db)
             print(f"  admin={admin_ok} llm={llm_ok} uid={uid}")
+        pushed = sync_all_tenant_llm_configs(db)
+        print(f"全员模型配置已推送: {pushed} 个租户")
         db.commit()
         print("完成")
         return 0

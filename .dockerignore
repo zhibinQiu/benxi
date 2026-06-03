@@ -1,6 +1,17 @@
 .github
 docs
 .git
+platform/
+platform-frontend/
+third_party/
+data/
+images/
+.run/
+backups/
+*.tar.gz
+deploy/
+mkdocs.yml
+site/
 .pre-commit-config.yaml
 uv.lock
 pdf2zh_files

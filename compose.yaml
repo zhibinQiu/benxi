@@ -1,0 +1,246 @@
+# 智碳平台 AI — 统一容器栈（仓库根目录）
+#
+# 编排入口: bash scripts/stack.sh [build|up|dev-up|down|save|load|backup]
+# 文档: docs/zh/operations/README.md
+#
+# 对外: 仅 frontend:${FRONTEND_PORT}（Nginx → /ai/api、/ragflow-ui、SPA）
+# 可选 profile: knowflow → deploy/knowflow.yml；speech → 本文件 speech-api
+# 开发覆盖: compose.dev.yaml（API :18000 热重载、Vite 前端）
+
+name: zhitan
+
+services:
+  # --- 数据层（不映射主机端口）---
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-platform}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-platform}
+      POSTGRES_DB: ${POSTGRES_DB:-platform}
+    volumes:
+      - ${DATA_ROOT:-./data}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-platform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - zhitan
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --requirepass "$$REDIS_PASSWORD"
+        else
+          exec redis-server
+        fi
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$REDIS_PASSWORD" ]; then redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG; else redis-cli ping | grep -q PONG; fi',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - zhitan
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ${DATA_ROOT:-./data}/minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - zhitan
+
+  # --- PDF 翻译 API（BabelDOC / pdf2zh_next）---
+  pdf2zh-api:
+    image: zhitan-pdf2zh:${ZHITAN_VERSION:-3.4.0}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${PDF2ZH_BASE_IMAGE:-ghcr.io/astral-sh/uv:python3.13-bookworm-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+    restart: unless-stopped
+    command:
+      - python
+      - -c
+      - |
+        import logging
+        from rich.logging import RichHandler
+        logging.basicConfig(level=logging.INFO, handlers=[RichHandler()])
+        from babeldoc.assets import assets as bassets
+        bassets.warmup()
+        from pdf2zh_next.api_server import run_api_server
+        run_api_server(host="0.0.0.0", port=7861)
+    volumes:
+      - ${DATA_ROOT:-./data}/pdf2zh-config:/root/.config/pdf2zh
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:7861/api/health')\"",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 180s
+    networks:
+      - zhitan
+
+  # --- 平台 API（FastAPI）与 Celery Worker，共用 zhitan-api 镜像 ---
+  api:
+    image: zhitan-api:${ZHITAN_VERSION:-3.4.0}
+    build:
+      context: platform
+      dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      PDF2ZH_API_URL: http://pdf2zh-api:7861
+      SPEECH_SERVICE_URL: http://speech-api:8765
+      KNOWFLOW_ENABLED: ${KNOWFLOW_ENABLED:-false}
+      KNOWFLOW_BACKEND_URL: http://knowflow-backend:5000
+      RAGFLOW_API_URL: http://ragflow:9380
+      KNOWFLOW_UI_UPSTREAM_URL: http://ragflow:80
+      KNOWFLOW_UI_PUBLIC_URL: ${KNOWFLOW_UI_PUBLIC_URL:-http://127.0.0.1:40005}
+      KNOWFLOW_UI_PROXY_PREFIX: ${KNOWFLOW_UI_PROXY_PREFIX:-/ragflow-ui}
+      RAGFLOW_MYSQL_HOST: knowflow-mysql
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      pdf2zh-api:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    networks:
+      - zhitan
+
+  worker:
+    image: zhitan-api:${ZHITAN_VERSION:-3.4.0}
+    build:
+      context: platform
+      dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      PDF2ZH_API_URL: http://pdf2zh-api:7861
+      SPEECH_SERVICE_URL: http://speech-api:8765
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command: celery -A workers.celery_app worker --loglevel=info
+    networks:
+      - zhitan
+
+  # --- 唯一对外 Web 入口（生产 Nginx；dev 见 compose.dev.yaml 的 Vite）---
+  frontend:
+    image: zhitan-frontend:${ZHITAN_VERSION:-3.4.0}
+    build:
+      context: platform-frontend
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        ALPINE_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+        VITE_API_BASE: ${VITE_API_BASE:-/ai}
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/ai/}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-40005}:80"
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - zhitan
+
+  # --- profile speech: FunASR 会议转写（模型卷 data/speech-models）---
+  speech-api:
+    profiles: ["speech"]
+    image: zhitan-speech:${ZHITAN_VERSION:-3.4.0}
+    build:
+      context: platform/speech-service
+      dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${SPEECH_PYTHON_IMAGE:-python:3.11-slim}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    restart: unless-stopped
+    environment:
+      FUNASR_ASR_MODEL: ${FUNASR_ASR_MODEL:-paraformer-zh}
+      FUNASR_VAD_MODEL: ${FUNASR_VAD_MODEL:-fsmn-vad}
+      FUNASR_PUNC_MODEL: ${FUNASR_PUNC_MODEL:-ct-punc}
+      FUNASR_SPK_MODEL: ${FUNASR_SPK_MODEL:-cam++}
+      FUNASR_DEVICE: ${FUNASR_DEVICE:-cpu}
+      FUNASR_HUB: ms
+      SPEECH_MODELS_DIR: /models
+      MODELSCOPE_CACHE: /models
+      DIARIZATION_ENABLED: ${DIARIZATION_ENABLED:-true}
+      MAX_FILE_MB: ${SPEECH_MAX_FILE_MB:-100}
+    volumes:
+      - ${DATA_ROOT:-./data}/speech-models:/models
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')\"",
+        ]
+      interval: 30s
+      timeout: 15s
+      retries: 15
+      start_period: 300s
+    networks:
+      - zhitan
+
+networks:
+  zhitan:
+    name: zhitan
+    driver: bridge

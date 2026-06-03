@@ -83,18 +83,18 @@ def _sync_plugin_role_grants(db: Session) -> None:
         if not perm:
             continue
         target_roles = set(plugin.grant_to_roles) | {"sys_admin"}
-        for role_code in target_roles:
-            role = role_by_code.get(role_code)
-            if not role:
-                continue
-            exists = db.scalar(
-                select(RolePermission.id).where(
+        for role_code, role in role_by_code.items():
+            should_have = role_code in target_roles
+            rp = db.scalar(
+                select(RolePermission).where(
                     RolePermission.role_id == role.id,
                     RolePermission.permission_id == perm.id,
                 )
             )
-            if not exists:
+            if should_have and not rp:
                 db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+            elif not should_have and rp:
+                db.delete(rp)
 
     db.commit()
 

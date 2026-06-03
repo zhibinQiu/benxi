@@ -211,3 +211,28 @@ def get_knowflow_client_for_user(db, user) -> KnowflowClient:
 
     auth = get_user_ragflow_auth(db, user)
     return get_knowflow_client(platform_user_id=user.id, ragflow_auth=auth)
+
+
+def get_knowflow_client_for_catalog(db, user) -> KnowflowClient:
+    """目录对齐：mapped 模式下分级库在 bootstrap 租户，普通用户也用特权会话建库/匹配。"""
+    from app.config import get_settings
+    from app.core.permissions import user_is_system_admin
+    from app.services.ragflow_scope_service import _privileged_rag_client
+
+    mode = (get_settings().ragflow_account_mode or "").strip().lower()
+    use_privileged = user_is_system_admin(db, user) or mode == "mapped"
+    if use_privileged:
+        priv = _privileged_rag_client(db)
+        if priv and priv.session_auth:
+            client = get_knowflow_client(
+                platform_user_id=user.id,
+                ragflow_auth=priv.session_auth,
+            )
+            if client.enabled():
+                return client
+        if priv and priv.api_key:
+            client = RagflowKnowflowClient(platform_user_id=user.id)
+            client._rag = priv
+            if client.enabled():
+                return client
+    return get_knowflow_client_for_user(db, user)

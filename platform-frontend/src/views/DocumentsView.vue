@@ -68,6 +68,7 @@ import {
   fetchRecycleDocuments,
   fetchMySharedDocuments,
   prepareUpload,
+  uploadDocumentBlob,
   completeUpload,
   restoreDocument,
   batchDeleteDocuments,
@@ -165,6 +166,24 @@ const scopeTagType = {
 
 const VIRTUAL_UNCATEGORIZED = "__uncategorized__";
 const VIRTUAL_SHARED = "__shared__";
+
+/** 内置文件夹 → 用户文件夹（同组内保持 API 原序） */
+function sortKbFoldersForDisplay(items) {
+  const systemOrder = {
+    uncategorized: 0,
+    shared: 1,
+    normal: 2,
+  };
+  return [...(items || [])]
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const ar = systemOrder[a.item.kind] ?? 50;
+      const br = systemOrder[b.item.kind] ?? 50;
+      if (ar !== br) return ar - br;
+      return a.index - b.index;
+    })
+    .map(({ item }) => item);
+}
 
 function docStatusLabel(key) {
   const label = t(`documents.status.${key}`);
@@ -696,7 +715,7 @@ async function loadKbFolders() {
     }
     const data = await fetchKbFolders(params);
     if (seq !== kbFoldersLoadSeq) return;
-    kbFolders.value = data.items || [];
+    kbFolders.value = sortKbFoldersForDisplay(data.items || []);
     kbCanManageFolders.value = !!data.can_manage_folders;
   } catch (e) {
     if (seq !== kbFoldersLoadSeq) return;
@@ -1042,12 +1061,7 @@ async function uploadFileToDocument(docId, file) {
     file.name,
     file.type || "application/octet-stream"
   );
-  const putRes = await fetch(prep.upload_url, {
-    method: "PUT",
-    body: file,
-    headers: { "Content-Type": file.type || "application/octet-stream" },
-  });
-  if (!putRes.ok) throw new Error("上传到存储失败");
+  await uploadDocumentBlob(prep.upload_url, file);
   await completeUpload(docId, {
     version_id: prep.version_id,
     file_size: file.size,

@@ -5,9 +5,12 @@ export const FEATURE_DESCRIPTIONS = {
   "ai-tools": "聚合常用在线 AI 工具外链，快速跳转至翻译、绘图、办公等能力。",
   translate:
     "智能排版保留 PDF 版式，支持双语对照与术语表；翻译任务可在后台持续进行。",
-  rag: "基于企业知识库进行检索增强问答，支持引用溯源与文档定位。",
+  rag: "KnowFlow 知识库编码与配置，支持引用溯源与文档定位。",
+  "knowledge-search": "在企业知识库中检索文档与片段，支持分级库筛选（与双碳智能体快捷入口一致）。",
   "smart-data-query":
     "用自然语言查询业务数据，自动生成统计图表与分析洞察，支持多轮追问。",
+  "data-analysis":
+    "上传 Excel / CSV，多轮对话生成 pandas 统计与可视化代码；结合 Notebook 历史结果连续分析。",
   "carbon-qa":
     "面向双碳政策、碳市场与减排实践的智能问答，支持引用来源与图表展示。",
   "carbon-assets":

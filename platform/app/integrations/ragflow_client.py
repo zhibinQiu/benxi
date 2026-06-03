@@ -126,14 +126,18 @@ class RagflowClient:
 
     def create_dataset(self, name: str, *, description: str = "", permission: str = "me") -> dict:
         if self._use_session_api:
+            payload: dict[str, Any] = {
+                "name": name,
+                "description": description or name,
+                "parser_id": "naive",
+            }
+            perm = (permission or "me").strip().lower()
+            if perm in ("me", "team"):
+                payload["permission"] = perm
             data = self._request(
                 "POST",
                 "/v1/kb/create",
-                json={
-                    "name": name,
-                    "description": description or name,
-                    "parser_id": "naive",
-                },
+                json=payload,
             )
             kb_id = data.get("kb_id") if isinstance(data, dict) else None
             return {"id": kb_id} if kb_id else {}
@@ -145,11 +149,11 @@ class RagflowClient:
         }
         return self._request("POST", "/api/v1/datasets", json=payload)
 
-    def ensure_dataset(self, name: str) -> str:
+    def ensure_dataset(self, name: str, *, permission: str = "me") -> str:
         for ds in self.list_datasets(name=name):
             if ds.get("name") == name:
                 return str(ds["id"])
-        created = self.create_dataset(name)
+        created = self.create_dataset(name, permission=permission)
         kid = created.get("id") or created.get("kb_id")
         if kid:
             return str(kid)
@@ -173,6 +177,28 @@ class RagflowClient:
             "PUT",
             f"/api/v1/datasets/{dataset_id}",
             json={"name": name},
+        )
+
+    def update_dataset_permission(self, dataset_id: str, permission: str) -> None:
+        """将知识库可见范围改为 me（仅自己）或 team（租户成员）。"""
+        ds_id = (dataset_id or "").strip()
+        perm = (permission or "me").strip().lower()
+        if not ds_id or perm not in ("me", "team"):
+            return
+        if self._use_session_api:
+            try:
+                self._request(
+                    "POST",
+                    "/v1/kb/update",
+                    json={"kb_id": ds_id, "permission": perm},
+                )
+                return
+            except RagflowError as e:
+                logger.debug("KnowFlow kb/update permission 跳过: %s", e)
+        self._request(
+            "PUT",
+            f"/api/v1/datasets/{ds_id}",
+            json={"permission": perm},
         )
 
     def delete_dataset(self, dataset_id: str) -> bool:

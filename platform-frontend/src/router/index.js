@@ -47,7 +47,12 @@ const routes = [
       {
         path: "system/rag",
         name: "rag",
-        meta: { title: "知识问答", fullHeight: true, featureIcon: "chatbubbles" },
+        meta: {
+          title: "编码管理",
+          fullHeight: true,
+          featureIcon: "chatbubbles",
+          perm: "feature.rag_qa",
+        },
         component: () => import("../views/RagQaView.vue"),
       },
       {
@@ -55,6 +60,12 @@ const routes = [
         name: "smart-data-query",
         meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart" },
         component: () => import("../views/SmartDataQueryV2View.vue"),
+      },
+      {
+        path: "system/data-analysis",
+        name: "data-analysis",
+        meta: { title: "数据分析", fullHeight: true, featureIcon: "stats-chart" },
+        component: () => import("../views/DataAnalysisView.vue"),
       },
       {
         path: "system/smart-data-query-v2",
@@ -178,10 +189,11 @@ const routes = [
         path: "knowledge/search",
         name: "knowledge-search",
         meta: {
-          title: "知识搜索",
+          title: "知识检索",
           fullHeight: true,
           featureIcon: "search",
           backTo: "ai-home",
+          perm: "feature.knowledge_search",
         },
         component: () => import("../views/KnowledgeSearchView.vue"),
       },

@@ -16,6 +16,11 @@
 #   bash scripts/deploy.sh local full
 #   bash scripts/deploy.sh local down
 #
+# 统一栈（镜像 save/load，不 rsync 源码）:
+#   bash scripts/stack.sh build && bash scripts/stack.sh save
+#   bash scripts/deploy.sh stack push
+#   bash scripts/deploy.sh local stack
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -488,6 +493,94 @@ tail -15 .run/deploy.log 2>/dev/null || echo "(无)"
 EOF
 }
 
+stack_image_tarball() {
+  local arch ver
+  arch="$(normalize_arch "${DEPLOY_ARCH:-auto}")"
+  ver="${ZHITAN_VERSION:-3.4.0}"
+  if [[ -f "$ROOT/.env" ]]; then
+    # shellcheck disable=SC1091
+    set -a && source "$ROOT/.env" && set +a
+    ver="${ZHITAN_VERSION:-$ver}"
+  fi
+  echo "${ROOT}/images/zhitan-${ver}-${arch}.tar.gz"
+}
+
+rsync_stack_bundle() {
+  local dest="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+  local tarball
+  tarball="$(stack_image_tarball)"
+  [[ -f "$tarball" ]] || {
+    error "未找到镜像包 ${tarball}，请先在本机: bash scripts/stack.sh build && bash scripts/stack.sh save"
+    exit 1
+  }
+  ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/images' '${DEPLOY_PATH}/data'"
+  info "rsync 编排与镜像（不含业务源码）→ ${dest}"
+  ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/scripts' '${DEPLOY_PATH}/deploy/knowflow'"
+  rsync -avz \
+    "$ROOT/compose.yaml" \
+    "$ROOT/compose.dev.yaml" \
+    "$ROOT/.env.stack.example" \
+    "$ROOT/deploy/" \
+    "$tarball" \
+    "${dest}"
+  rsync -avz \
+    "$ROOT/scripts/stack.sh" \
+    "$ROOT/scripts/setup-stack-env.sh" \
+    "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/scripts/"
+  if [[ -f "$ROOT/.env" ]]; then
+    rsync -avz "$ROOT/.env" "${dest}.env"
+  elif [[ -f "$PLATFORM/.env.docker" ]]; then
+    rsync -avz "$PLATFORM/.env.docker" "${dest}.env"
+  fi
+}
+
+remote_stack_up() {
+  local profiles="${STACK_PROFILES:-knowflow speech}"
+  local tarball_name up_cmd="bash scripts/stack.sh up"
+  local p
+  for p in $profiles; do
+    up_cmd+=" --profile ${p}"
+  done
+  tarball_name="$(basename "$(stack_image_tarball)")"
+  ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<EOF
+set -euo pipefail
+cd '${DEPLOY_PATH}'
+bash scripts/stack.sh load "images/${tarball_name}"
+${up_cmd}
+EOF
+}
+
+run_stack_local() {
+  load_env_root() {
+    [[ -f "$ROOT/.env" ]] && return 0
+    [[ -f "$PLATFORM/.env.docker" ]] && cp -f "$PLATFORM/.env.docker" "$ROOT/.env" && return 0
+    warn "建议 cp .env.stack.example .env"
+  }
+  load_env_root
+  local tarball profiles="${STACK_PROFILES:-knowflow speech}"
+  tarball="$(stack_image_tarball)"
+  if [[ -f "$tarball" ]]; then
+    bash "$ROOT/scripts/stack.sh" load "$tarball"
+  else
+    warn "未找到 ${tarball}，将尝试使用本地已有镜像直接 up"
+  fi
+  local -a pargs=()
+  local p
+  for p in $profiles; do
+    pargs+=(--profile "$p")
+  done
+  bash "$ROOT/scripts/stack.sh" up "${pargs[@]}"
+}
+
+run_stack_push() {
+  load_target || { error "缺少 platform/deploy.target"; exit 1; }
+  DEPLOY_ARCH="$(detect_remote_arch)"
+  info "stack 部署 arch=${DEPLOY_ARCH}（仅镜像+编排，不 rsync 源码）"
+  rsync_stack_bundle
+  remote_stack_up
+  info "远程 stack up 已执行。Web: http://${DEPLOY_HOST}:$(grep -E '^FRONTEND_PORT=' "$ROOT/.env" 2>/dev/null | cut -d= -f2 || echo 40005)/ai/"
+}
+
 run_push() {
   load_target || { error "缺少 platform/deploy.target（可从 deploy.target.example 复制）"; exit 1; }
   if [[ "$DO_STATUS" == 1 ]]; then
@@ -528,6 +621,8 @@ parse_args() {
         sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
+      stack)
+        DEPLOY_MODE="stack"; shift ;;
       app|core|knowflow|speech|full|down)
         DEPLOY_MODE="$1"; shift ;;
       *)
@@ -548,10 +643,15 @@ main() {
     exit 0
   fi
   parse_args "$@"
+  if [[ "$DEPLOY_MODE" != stack ]]; then
+    error "DEPLOY_MODE=${DEPLOY_MODE} deprecated; use: deploy.sh stack push"
+    error "See docs/zh/operations/deployment.md"
+    exit 1
+  fi
   if [[ "$RUN_LOCAL" == 1 ]]; then
-    run_local_deploy
+    run_stack_local
   else
-    run_push
+    run_stack_push
   fi
 }
 

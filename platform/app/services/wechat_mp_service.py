@@ -585,18 +585,17 @@ def import_article_to_document(
 
 
 def _try_sync_knowflow(db: Session, user: User, document_id: uuid.UUID) -> bool:
+    from app.domains.knowledge.gateway import knowledge
     from app.models.document import Document
-    from app.services.ragflow_sync_service import sync_document_to_knowflow
-
     from app.services.document_service import resolve_current_version
 
+    if not knowledge.enabled():
+        return False
     doc = db.get(Document, document_id)
     if not doc:
         return False
     db.refresh(doc)
-    resolve_current_version(db, doc)
-    try:
-        return bool(sync_document_to_knowflow(db, user, doc, force=True))
-    except Exception as e:
-        logger.warning("KnowFlow sync after wechat import: %s", e)
+    if not resolve_current_version(db, doc):
         return False
+    knowledge.enqueue_sync_after_ingest(document_id, user.id)
+    return True

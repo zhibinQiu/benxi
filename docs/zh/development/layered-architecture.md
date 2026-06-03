@@ -1,5 +1,6 @@
 # 分层架构与代码组织
 
+> **开发实现说明书 · 第一篇 §1.3** · [说明书总览](implementation-manual.md)  
 > 与 [平台架构手册](./platform-architecture.md) 配套：本文说明**自有代码**应如何分层、各层职责及推荐调用方向。
 
 ---
@@ -143,6 +144,8 @@ platform-frontend/src/
 
 ## 6. 相关文档
 
+- [开发实现说明书总览](implementation-manual.md)
 - [平台架构手册](./platform-architecture.md)
+- [应用服务与域](../implementation/backend-implementation.md)
 - [功能插件](../platform/feature-plugins.md)
 - [权限模型](../platform/permission-model.md)

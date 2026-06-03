@@ -298,11 +298,27 @@ def fetch_article(url: str, *, timeout: float = 25.0) -> ParsedArticle:
     title = (
         parser.og.get("og:title")
         or "".join(parser._capture_chunks).strip()
-        or "未命名文章"
+        or ""
     )
+    if not title:
+        m = re.search(
+            r'class=[\"\'][^\"\']*rich_media_title[^\"\']*[\"\'][^>]*>([\s\S]*?)</h1>',
+            html,
+            re.I,
+        )
+        if m:
+            title = unescape(re.sub(r"<[^>]+>", "", m.group(1)).strip())
+    if not title:
+        title = "未命名文章"
     cover = parser.og.get("og:image", "")
     summary = parser.og.get("og:description", "")
     content_html = "".join(parser._js_chunks).strip()
+    if not content_html or len(re.sub(r"\s+", "", content_html)) < 40:
+        from app.integrations.web_article_fetcher import _extract_article_html
+
+        extracted = _extract_article_html(html, site_kind="wechat")
+        if extracted:
+            content_html = extracted
     if not content_html and summary:
         content_html = f"<p>{summary}</p>"
 

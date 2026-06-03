@@ -21,6 +21,7 @@ from app.api import (
     departments,
     documents,
     jobs,
+    knowledge_embed,
     model_settings,
     monitor,
     notifications,
@@ -63,6 +64,7 @@ from app.models import (  # noqa: F401 — register ORM models
     rag,
     ragflow_link,
     ragflow_document_link,
+    ragflow_document_mirror_link,
     ragflow_scope_dataset,
     document_workflow,
     carbon_market,
@@ -101,6 +103,9 @@ async def lifespan(_app: FastAPI):
         db.commit()
     finally:
         db.close()
+    from app.services.data_analysis_profile import warn_if_data_analysis_deps_missing
+
+    warn_if_data_analysis_deps_missing()
     sync_task = start_cea_history_scheduler()
     try:
         yield
@@ -189,9 +194,12 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix=prefix)
     app.include_router(roles.router, prefix=prefix)
     app.include_router(documents.router, prefix=prefix)
+    app.include_router(knowledge_embed.router, prefix=prefix)
     app.include_router(system.router, prefix=prefix)
     app.include_router(embed_proxy_api.public_router, prefix=prefix)
     app.include_router(embed_proxy_api.router, prefix=prefix)
+    if settings.knowflow_enabled:
+        app.include_router(embed_proxy_api.knowflow_browser_router)
     mount_routers(app, prefix)
     app.include_router(jobs.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)

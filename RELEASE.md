@@ -1,5 +1,26 @@
 # 发布说明
 
+## 3.8.0（v3.8.0）— KnowFlow 权限与同步、订阅与数据分析
+
+- KnowFlow：普通用户 embed 仅用自己的 SSO 会话，不再借用 bootstrap 管理员身份；切片管理默认 `sync=false` 快路径，登录后后台 catalog 对账
+- KnowFlow：知识库可见范围收紧为个人库 + 所属部门链；mapped 模式下个人/部门库在 bootstrap 租户创建并通过 KB ACL 授权；登录时刷新 `ragflow_user_id`
+- KnowFlow：上传后后台同步至 KnowFlow；文档详情可手动同步；孤立「部门」库与脏 scope 注册表自动清理
+- 订阅中心：统一订阅 API 与前端页面；网页/公众号文章抓取与 HTML→Markdown 导入
+- 数据分析：内置插件与 Notebook 面板（pandas/matplotlib）
+- 部署：根目录 `compose.yaml` + `deploy/` 统一栈；`scripts/stack.sh` / `scripts/deploy.sh stack`
+- 知识检索插件、分享文档 KnowFlow 镜像同步；编码管理仅管理员可见
+
+## 3.4.0（v3.4.0）— 统一容器栈
+
+> 操作指南：[统一栈部署](docs/zh/development/stack-deployment.md)
+
+- 仓库根 `compose.yaml` + `deploy/knowflow.yml`（profile），对外仅 `FRONTEND_PORT`
+- `scripts/stack.sh`：build / up / dev-up / save / load / backup
+- `scripts/deploy.sh stack`：rsync 镜像包+编排，**不 rsync 源码**
+- `scripts/zhitan.sh` 默认走容器栈；`legacy` 保留宿主机开发模式
+- `deploy/knowflow/` 打包 init.sql、settings、主题（服务器无需 third_party）
+- 数据目录 `./data/` 绑定挂载，便于迁移
+
 ## 3.3.0（v3.3.0）
 
 - 全局 UI：设计 tokens、深色/浅色主题、中英文 i18n；顶栏待办/任务/消息/主题/语言布局优化

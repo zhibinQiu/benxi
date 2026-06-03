@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# 智碳平台 — 本地开发与运维统一入口（配置见 platform/.env.example、deploy.target.example）
+# 智碳平台 — 本地开发与运维统一入口
 #
-#   bash scripts/zhitan.sh              # 启动（同 start）
-#   bash scripts/zhitan.sh stop         # 停止
-#   bash scripts/zhitan.sh env          # 修正本地 .env 误用远程地址
-#   bash scripts/zhitan.sh knowflow setup|build
-#   bash scripts/zhitan.sh deploy …     # 转 deploy.sh（远程部署）
-# - 有 .venv / node_modules 时：pdf2zh、平台 API、Worker、前端在宿主机运行
-# - 无本地环境时：回退 Docker 构建 api/worker/frontend
-# - 基础设施（postgres / redis / minio）默认 Docker
+#   bash scripts/zhitan.sh              # stack.sh up（全 Docker，推荐）
+#   bash scripts/zhitan.sh dev          # stack.sh dev-up（热重载）
+#   bash scripts/zhitan.sh stop         # stack.sh down
+#   bash scripts/zhitan.sh stack …      # 转 scripts/stack.sh
+#   bash scripts/zhitan.sh knowflow setup|build  # KnowFlow 源码镜像
+#   bash scripts/zhitan.sh deploy stack push      # 远程部署（仅镜像）
+#
+# 已废弃: legacy / docker / hybrid / 独立 knowflow|speech compose
 set -euo pipefail
 # 避免上次 KnowFlow amd64 构建遗留的全局平台变量影响平台基础设施
 unset DOCKER_DEFAULT_PLATFORM DOCKER_PLATFORM
@@ -19,7 +19,6 @@ PLATFORM="$ROOT/platform"
 FRONTEND="$ROOT/platform-frontend"
 RUN_DIR="$ROOT/.run"
 LOG_DIR="$RUN_DIR/logs"
-COMPOSE="docker compose -f docker-compose.yml -f docker-compose.local.yml"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -76,6 +75,18 @@ pdf2zh_bin() {
 
 has_platform_venv() {
   [[ -x "$PLATFORM/.venv/bin/uvicorn" && -x "$PLATFORM/.venv/bin/celery" ]]
+}
+
+ensure_platform_analysis_deps() {
+  [[ -x "$PLATFORM/.venv/bin/python" ]] || return 0
+  if "$PLATFORM/.venv/bin/python" -c "import pandas, openpyxl" 2>/dev/null; then
+    return 0
+  fi
+  info "安装数据分析依赖（pandas / openpyxl / numpy / matplotlib / seaborn）..."
+  "$PLATFORM/.venv/bin/pip" install -e "$PLATFORM" || {
+    error "平台依赖安装失败，请手动执行: cd platform && pip install -e ."
+    exit 1
+  }
 }
 
 has_frontend_local() {
@@ -227,6 +238,7 @@ restart_platform_api_local() {
 
 start_platform_api_local() {
   ensure_smart_data_query_v2_env
+  ensure_platform_analysis_deps
   if curl -sf "http://127.0.0.1:8000/docs" >/dev/null 2>&1; then
     info "平台 API 已在 8000 端口监听"
     return 0
@@ -245,6 +257,7 @@ start_platform_api_local() {
 }
 
 start_platform_worker_local() {
+  ensure_platform_analysis_deps
   start_bg "Celery Worker" "$RUN_DIR/platform-worker.pid" "$LOG_DIR/platform-worker.log" \
     bash -c "cd '$PLATFORM' && source .venv/bin/activate && celery -A workers.celery_app worker --loglevel=info"
 }
@@ -271,76 +284,83 @@ start_platform_docker() {
 }
 
 mode_speech() {
-  info "模式: 本地优先 + 语音栈 (speech)"
-  start_infra_docker
-  start_speech_stack
-  mode_local
-  print_urls speech
+  warn "speech 独立 compose 已废弃，使用 stack profile speech"
+  ZHITAN_STACK_PROFILES="speech ${ZHITAN_STACK_PROFILES:-}"
+  mode_stack
 }
 
 mode_local() {
-  info "模式: 本地优先 (local)"
-  zhitan_fix_local_env
-  start_infra_docker
-  if has_pdf2zh_local; then
-    start_pdf2zh_api
-  else
-    warn "未找到 pdf2zh 本地环境，跳过 pdf2zh API（翻译功能不可用）"
-  fi
-  if has_platform_venv; then
-    start_platform_api_local
-    start_platform_worker_local
-  else
-    warn "未找到 platform/.venv，回退 Docker 运行平台后端"
-    start_platform_docker
-    print_urls
-    return
-  fi
-  if has_frontend_local; then
-    start_frontend_local
-  else
-    warn "未找到 platform-frontend/node_modules，回退 Docker 前端"
-    cd "$PLATFORM"
-    $COMPOSE --profile docker-app up -d frontend
-  fi
-  ensure_speech_service
+  error "legacy/local 宿主机模式已废弃，请使用: bash scripts/zhitan.sh dev"
+  exit 1
 }
 
 mode_docker() {
-  info "模式: Docker 混合 (docker) — 宿主机 pdf2zh + Docker 平台"
-  start_infra_docker
-  if has_pdf2zh_local; then
-    start_pdf2zh_api
-  else
-    error "docker 模式需要本地 pdf2zh_next (pip install -e .)"
-    exit 1
-  fi
-  cd "$PLATFORM"
-  $COMPOSE --profile docker-app up -d --build api worker frontend
-  wait_url "http://127.0.0.1:8000/docs" "平台 API" 30 2 || true
-  print_urls
+  error "docker 混合模式已废弃，请使用: bash scripts/stack.sh dev-up"
+  exit 1
 }
 
 mode_docker_full() {
-  info "模式: 全 Docker (docker-full)"
-  require_cmd docker
-  cd "$PLATFORM"
-  [[ -f .env ]] || cp .env.example .env
-  docker compose --profile docker-full up -d --build
-  print_urls
+  error "docker-full 已废弃，请使用: bash scripts/stack.sh up"
+  exit 1
 }
 
 mode_knowflow() {
-  info "模式: 本地优先 + KnowFlow 知识库栈"
-  start_infra_docker
-  start_knowflow_stack
-  mode_local
-  print_urls knowflow
-  return
+  warn "独立 knowflow compose 已废弃，使用 stack profile knowflow"
+  ZHITAN_STACK_PROFILES="knowflow ${ZHITAN_STACK_PROFILES:-}"
+  mode_stack
+}
+
+mode_stack() {
+  require_cmd docker
+  local -a pargs=()
+  local profiles="${ZHITAN_STACK_PROFILES:-${STACK_PROFILES:-knowflow speech}}"
+  local p
+  for p in $profiles; do
+    pargs+=(--profile "$p")
+  done
+  info "模式: 统一容器栈 (stack) profiles=${profiles}"
+  bash "$SCRIPT_DIR/setup-stack-env.sh" 2>/dev/null || true
+  bash "$SCRIPT_DIR/stack.sh" up "${pargs[@]}"
+  print_urls stack
+}
+
+mode_stack_dev() {
+  require_cmd docker
+  local -a pargs=()
+  local profiles="${ZHITAN_STACK_PROFILES:-}"
+  local p
+  for p in $profiles; do
+    [[ -n "$p" ]] && pargs+=(--profile "$p")
+  done
+  info "模式: 统一栈开发 (stack dev-up)"
+  bash "$SCRIPT_DIR/setup-stack-env.sh" 2>/dev/null || true
+  bash "$SCRIPT_DIR/stack.sh" dev-up "${pargs[@]}"
+  print_urls stack
+}
+
+zhitan_stop_stack() {
+  if [[ -f "$ROOT/compose.yaml" ]]; then
+    bash "$SCRIPT_DIR/stack.sh" down 2>/dev/null || true
+  fi
 }
 
 print_urls() {
   local with_knowflow="${1:-}"
+  if [[ "$with_knowflow" == stack ]]; then
+    local port="${FRONTEND_PORT:-40005}"
+    [[ -f "$ROOT/.env" ]] && port="$(grep -E '^FRONTEND_PORT=' "$ROOT/.env" | cut -d= -f2 | tr -d '\r' || echo "$port")"
+    cat <<EOF
+
+${GREEN}=== 智碳平台 AI 系统（容器栈）===${NC}
+
+  Web（唯一入口）: http://127.0.0.1:${port}/ai/
+  数据目录:        ${DATA_ROOT:-./data}
+  日志:            bash scripts/stack.sh logs
+  停止:            bash scripts/zhitan.sh stop
+
+EOF
+    return
+  fi
   cat <<EOF
 
 ${GREEN}=== 智碳平台 AI 系统已启动 ===${NC}
@@ -462,10 +482,7 @@ zhitan_knowflow_build() {
 }
 
 zhitan_stop() {
-  cd "$PLATFORM"
-  $COMPOSE --profile docker-app --profile docker-full down 2>/dev/null || $COMPOSE down
-  [[ -f docker-compose.knowflow.yml ]] && docker compose -p knowflow -f docker-compose.knowflow.yml --env-file knowflow.env down 2>/dev/null || true
-  [[ -f docker-compose.speech.yml ]] && docker compose -f docker-compose.speech.yml down 2>/dev/null || true
+  zhitan_stop_stack
   for name_pid in "speech-api:$RUN_DIR/speech-api.pid" "pdf2zh API:$RUN_DIR/pdf2zh-api.pid" \
     "平台 API:$RUN_DIR/platform-api.pid" "Celery:$RUN_DIR/platform-worker.pid" "前端:$RUN_DIR/platform-frontend.pid"; do
     local name="${name_pid%%:*}" pid_file="${name_pid#*:}"
@@ -482,22 +499,15 @@ usage() {
 用法: bash scripts/zhitan.sh <命令> [参数]
 
 命令:
-  start [local|speech|knowflow|docker|docker-full]   启动平台（默认 local）
-  stop                                              停止
-  env                                               修正本地 platform/.env
-  knowflow setup | knowflow build                   KnowFlow 源码/镜像
-  deploy [参数…]                                    远程部署（同 deploy.sh）
+  start [stack|dev]            默认 stack；dev=热重载
+  stop                         stack.sh down
+  dev                          stack dev-up
+  stack [build|save|…]         转 scripts/stack.sh
+  env                          修正本地 platform/.env
+  knowflow setup | build       KnowFlow 源码镜像
+  deploy stack push            远程部署（仅镜像）
 
-配置（仅两份模板）:
-  platform/.env.example        → cp 为 .env（本地）
-  platform/knowflow.env.example → cp 为 knowflow.env
-  platform/deploy.target.example → cp 为 deploy.target（部署）
-
-示例:
-  bash scripts/zhitan.sh
-  bash scripts/zhitan.sh knowflow
-  bash scripts/zhitan.sh deploy
-  bash scripts/zhitan.sh deploy full
+已废弃: legacy / docker / hybrid / 独立 speech|knowflow compose
 EOF
 }
 
@@ -507,8 +517,10 @@ main() {
   shift || true
   case "$cmd" in
     start|up)
-      case "${1:-local}" in
-        local|"") mode_local; print_urls ;;
+      case "${1:-stack}" in
+        stack|"") mode_stack ;;
+        dev) mode_stack_dev ;;
+        legacy|local) mode_local; print_urls ;;
         speech) mode_speech ;;
         knowflow) mode_knowflow ;;
         docker|hybrid) mode_docker; print_urls ;;
@@ -516,6 +528,8 @@ main() {
         *) usage; exit 1 ;;
       esac
       ;;
+    dev) mode_stack_dev ;;
+    stack) exec bash "$SCRIPT_DIR/stack.sh" "$@" ;;
     stop) zhitan_stop ;;
     env|fix-env) zhitan_fix_local_env ;;
     knowflow)
@@ -527,7 +541,7 @@ main() {
       ;;
     deploy) exec bash "$SCRIPT_DIR/deploy.sh" "$@" ;;
     -h|--help|help) usage ;;
-    local|speech|knowflow|docker|docker-full|hybrid)
+    legacy|local|speech|knowflow|docker|docker-full|hybrid)
       main start "$cmd" "$@"
       ;;
     *)

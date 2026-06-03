@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useAuth } from "../composables/useAuth";
 import { useRoute } from "vue-router";
 import { NAlert, NButton } from "naive-ui";
-import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
+import { fetchRagEmbedSession } from "../api/client";
 import {
   KNOWLEDGE_UNAVAILABLE,
   knowflowUnavailableHint,
@@ -11,10 +11,13 @@ import {
 } from "../utils/uiMessage";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
-import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
+import {
+  loadKnowflowEmbedResources,
+  tryApplyCachedKnowflowEmbed,
+} from "../utils/knowflowEmbedBootstrap";
 
 const route = useRoute();
-const { user } = useAuth();
+const { user, isSystemAdmin } = useAuth();
 
 const STARTUP_HINT = "正在启动知识服务系统";
 
@@ -25,6 +28,7 @@ const meta = ref({
   ui_available: false,
   ui_hint: "",
   ui_embed_mode: "iframe",
+  knowflow_enabled: false,
 });
 const embedSession = ref(null);
 const iframeSrc = ref("");
@@ -55,28 +59,38 @@ function buildKnowflowUrl(session) {
   return `${base}/knowledge?${q.toString()}`;
 }
 
-function themePayload() {
-  const base = embedSession.value?.theme || {};
+function buildKnowflowThemePayload(session, user, { isSystemAdmin } = {}) {
+  const base = session?.theme || {};
   const name = (
-    user.value?.display_name ||
-    user.value?.username ||
+    user?.display_name ||
+    user?.username ||
     ""
   ).trim();
   const kbLabels =
-    embedSession.value?.knowflow_kb_labels ||
+    session?.knowflow_kb_labels ||
     base.knowflow_kb_labels ||
     [];
   const deptSuffixLabels =
-    embedSession.value?.dept_suffix_labels ||
+    session?.dept_suffix_labels ||
     base.dept_suffix_labels ||
     {};
   return {
     ...base,
     display_name: name || base.display_name,
-    username: user.value?.username || base.username,
+    username: user?.username || base.username,
     knowflow_kb_labels: kbLabels,
     dept_suffix_labels: deptSuffixLabels,
+    is_system_admin:
+      isSystemAdmin === true ||
+      base.is_system_admin === true ||
+      user?.is_system_admin === true,
   };
+}
+
+function themePayload() {
+  return buildKnowflowThemePayload(embedSession.value, user.value, {
+    isSystemAdmin: isSystemAdmin.value,
+  });
 }
 
 function postToIframe(payload) {
@@ -118,18 +132,24 @@ const serviceReady = computed(
 );
 
 async function loadMeta() {
-  bootstrapping.value = true;
   iframeReady.value = false;
-  iframeSrc.value = "";
+  const cachedApplied = tryApplyCachedKnowflowEmbed({
+    metaRef: meta,
+    sessionRef: embedSession,
+    applySession: applyIframeSession,
+  });
+  bootstrapping.value = !cachedApplied;
+  if (!cachedApplied) {
+    iframeSrc.value = "";
+  }
+
   try {
-    const [m, session] = await Promise.all([
-      fetchRagMeta(),
-      fetchRagEmbedSession({ sync: false }).catch(() => null),
-    ]);
+    const { meta: m, session } = await loadKnowflowEmbedResources({
+      sync: false,
+    });
     meta.value = m;
     embedSession.value = session;
     applyIframeSession(session);
-    scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-kg-embed" });
   } catch (e) {
     meta.value = {
       ...meta.value,
@@ -147,7 +167,6 @@ function onIframeLoad() {
   postSsoToIframe();
   postThemeToIframe();
   postToIframe({ type: "zt-platform-embed", mode: "knowledge" });
-  scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-kg-embed" });
 }
 
 watch(

@@ -10,15 +10,15 @@ from app.features.registry import all_plugins, ensure_plugins_loaded
 from app.models.org import User
 
 _CATEGORY_LABELS = {
-    "document": "文档类",
-    "tools": "工具类",
-    "carbon": "双碳类",
-    "external": "外部链接",
+    "document": "文档",
+    "tools": "工具",
+    "carbon": "双碳",
+    "external": "双碳",
 }
 
 _NAV_GUIDE = """
 ## 主导航（左侧菜单）
-- **功能列表**：平台能力入口，按文档类 / 工具类 / 双碳类等分组展示卡片。
+- **功能列表**：平台能力入口，按文档 / 工具 / 双碳分组展示卡片。
 - **待办事项**：个人待办，支持勾选、拖拽排序、智能录入与调整（需配置 AI）。
 - **知识中心 · 文档库**：上传与管理文档，支持公司级 / 部门级 / 小组级 / 个人级分级；可分享授权、回收站恢复。
 - **知识中心 · 切片库**：查看与管理知识库及文档切片（需知识服务就绪）。

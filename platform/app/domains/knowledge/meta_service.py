@@ -64,17 +64,11 @@ def build_rag_meta_payload(db, user) -> dict:
     """供知识问答 / 切片库嵌入页使用的 meta 字典。"""
     settings = get_settings()
     kf = get_knowflow_client(platform_user_id=user.id)
-    direct = settings.knowflow_ui_url.rstrip("/")
+    browser_base = settings.knowflow_ui_browser_base
     embed_base = resolve_ui_embed_base()
-    proxy = (settings.knowflow_ui_proxy_prefix or "").strip()
-    if proxy.startswith("http"):
-        check_url = proxy.rstrip("/")
-    elif embed_base.startswith("http"):
-        check_url = embed_base
-    else:
-        check_url = direct
+    upstream = settings.knowflow_ui_upstream
     stack_on = settings.knowflow_enabled and _knowflow_stack_reachable_cached()
-    ui_available = _ragflow_ui_available_cached(check_url)
+    ui_available = _ragflow_ui_available_cached(upstream)
     if not ui_available and stack_on:
         ui_available = True
     mode = (settings.knowflow_ui_embed_mode or "iframe").strip().lower()
@@ -83,7 +77,7 @@ def build_rag_meta_payload(db, user) -> dict:
     ui_hint = ""
     if settings.knowflow_enabled and not stack_on:
         ui_hint = KNOWLEDGE_SERVICE_UNAVAILABLE
-    elif settings.knowflow_enabled and not _ragflow_ui_available_cached(check_url):
+    elif settings.knowflow_enabled and not _ragflow_ui_available_cached(upstream):
         ui_hint = KNOWLEDGE_WEB_UNAVAILABLE
     elif not settings.knowflow_enabled:
         ui_hint = KNOWLEDGE_NOT_ENABLED
@@ -93,7 +87,7 @@ def build_rag_meta_payload(db, user) -> dict:
         "health": kf.health(),
         "integration_phase": 4,
         "ui_embed_url": f"{embed_base}/",
-        "ui_direct_url": direct,
+        "ui_direct_url": browser_base,
         "ui_embed_mode": mode,
         "ui_available": ui_available,
         "ui_hint": ui_hint,

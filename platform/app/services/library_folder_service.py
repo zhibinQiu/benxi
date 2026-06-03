@@ -185,6 +185,28 @@ def list_kb_folders(
         }
     )
 
+    if norm_scope == SCOPE_PERSONAL:
+        from app.services import document_service
+
+        shared_total = document_service.list_shared_documents(
+            db, user, page=1, page_size=1, keyword=None
+        )[1]
+        items.append(
+            {
+                "id": None,
+                "virtual_id": VIRTUAL_SHARED_ID,
+                "name": "分享",
+                "description": SYSTEM_FOLDER_HINTS[FOLDER_KIND_SHARED],
+                "scope": norm_scope,
+                "dept_id": None,
+                "kind": FOLDER_KIND_SHARED,
+                "is_system": True,
+                "system_hint": SYSTEM_FOLDER_HINTS[FOLDER_KIND_SHARED],
+                "document_count": shared_total,
+                "can_manage": False,
+            }
+        )
+
     for folder in rows:
         if not _folder_visible_to_user(db, user, folder):
             continue
@@ -207,28 +229,6 @@ def list_kb_folders(
                     owner_id=owner_id if norm_scope == SCOPE_PERSONAL else None,
                 ),
                 "can_manage": can_manage,
-            }
-        )
-
-    if norm_scope == SCOPE_PERSONAL:
-        from app.services import document_service
-
-        shared_total = document_service.list_shared_documents(
-            db, user, page=1, page_size=1, keyword=None
-        )[1]
-        items.append(
-            {
-                "id": None,
-                "virtual_id": VIRTUAL_SHARED_ID,
-                "name": "分享",
-                "description": SYSTEM_FOLDER_HINTS[FOLDER_KIND_SHARED],
-                "scope": norm_scope,
-                "dept_id": None,
-                "kind": FOLDER_KIND_SHARED,
-                "is_system": True,
-                "system_hint": SYSTEM_FOLDER_HINTS[FOLDER_KIND_SHARED],
-                "document_count": shared_total,
-                "can_manage": False,
             }
         )
 

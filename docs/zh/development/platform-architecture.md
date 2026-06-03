@@ -1,5 +1,6 @@
 # 智碳平台AI系统 — 架构与开发手册
 
+> **开发实现说明书 · 第一篇 §1.2** · 总索引见 [说明书总览](implementation-manual.md)  
 > 版本：**2.1.0**（标签 `v2.1.0`） · 展示名：**智碳平台AI系统**  
 > 本文档描述**平台自有代码**（`platform/`、`platform-frontend/`、`scripts/`），不包含 `platform/third_party/KnowFlow` 内部实现细节。
 
@@ -303,6 +304,8 @@ pdf2zh_next --api --api-port 7861
 
 ## 12. 相关文档
 
+- [开发实现说明书总览](implementation-manual.md)
+- [项目总体架构](system-architecture-overview.md)（架构图、核心流程、难点与实现）
 - [分层架构](layered-architecture.md)
 - [智碳平台AI系统快速上手](doc-platform.md)
 - [本地开发](local-development.md)

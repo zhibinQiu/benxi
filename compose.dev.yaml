@@ -1,0 +1,52 @@
+# 开发覆盖：挂载 platform 源码、API --reload、Vite 前端
+# 用法: bash scripts/stack.sh dev-up [--profile knowflow] [--profile speech]
+#
+# 浏览器: 40005/ai/（SPA） + 18000（API 与 KnowFlow iframe，见 KNOWFLOW_UI_PUBLIC_URL）
+
+services:
+  api:
+    build:
+      context: platform
+      dockerfile: Dockerfile
+    ports:
+      # 开发时浏览器直连 API（8000 常被本机其它进程占用，默认用 18000）
+      - "127.0.0.1:${STACK_DEV_API_PORT:-18000}:8000"
+    volumes:
+      - ./platform/app:/app/app:ro
+      - ./platform/workers:/app/workers:ro
+      - ./platform/knowflow-theme:/app/knowflow-theme:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      # 开发栈优先使用宿主机 speech-api（scripts/start_speech_local.sh），避免容器内重复下载/损坏模型
+      SPEECH_SERVICE_URL: http://host.docker.internal:8765
+      KNOWFLOW_UI_UPSTREAM_URL: http://ragflow:80
+      # iframe 直链 /knowledge（umi 根路由）；静态资源前缀见 KNOWFLOW_UI_PROXY_PREFIX
+      KNOWFLOW_UI_PUBLIC_URL: http://127.0.0.1:${STACK_DEV_API_PORT:-18000}
+      KNOWFLOW_UI_PROXY_PREFIX: ""
+      RAGFLOW_MYSQL_HOST: knowflow-mysql
+
+  worker:
+    volumes:
+      - ./platform/app:/app/app:ro
+      - ./platform/workers:/app/workers:ro
+    environment:
+      SPEECH_SERVICE_URL: http://host.docker.internal:8765
+
+  frontend:
+    image: ${NODE_IMAGE:-node:22-alpine}
+    working_dir: /app
+    volumes:
+      - ./platform-frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: sh -c "npm config set registry ${NPM_REGISTRY:-https://registry.npmmirror.com} && npm install --cache /tmp/npm-cache && npm run dev -- --host 0.0.0.0 --port 80"
+    ports:
+      - "${FRONTEND_PORT:-40005}:80"
+    environment:
+      # 勿用 .env 的 VITE_API_BASE=/ai（Vite 反代会挂）；开发固定直连本机 API 端口
+      VITE_API_BASE: http://127.0.0.1:${STACK_DEV_API_PORT:-18000}
+      VITE_BASE_PATH: ${VITE_BASE_PATH:-/ai/}
+      VITE_DEV_API_TARGET: ${VITE_DEV_API_TARGET:-http://api:8000}
+
+volumes:
+  frontend_node_modules:

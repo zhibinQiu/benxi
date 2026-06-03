@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from app.services.knowflow_embed_proxy import (
     inject_branding_html,
+    inject_spa_path_prefix_strip,
     rewrite_knowflow_root_assets,
+    rewrite_umi_runtime_public_path,
     should_inject_branding,
+    spa_path_prefix_strip_script,
 )
 
 
@@ -40,3 +43,30 @@ def test_rewrite_knowflow_root_assets():
     out = rewrite_knowflow_root_assets(html, proxy_prefix="/ragflow-ui")
     assert 'src="/ragflow-ui/umi.abc.js"' in out
     assert 'href="/ragflow-ui/umi.css"' in out
+
+
+def test_spa_path_prefix_strip_script():
+    script = spa_path_prefix_strip_script(proxy_prefix="/ragflow-ui")
+    assert 'var p="/ragflow-ui"' in script
+    assert "history.replaceState" in script
+
+
+def test_inject_spa_path_prefix_strip_at_head_start():
+    html = "<html><head><title>x</title></head><body></body></html>"
+    out = inject_spa_path_prefix_strip(html, proxy_prefix="/ragflow-ui")
+    assert out.index("history.replaceState") < out.index("<title>")
+
+
+def test_inject_branding_html_includes_path_strip():
+    html = "<html><head></head><body></body></html>"
+    out = inject_branding_html(html, proxy_prefix="/ragflow-ui")
+    assert "history.replaceState" in out
+    assert "window.publicPath=" in out
+    assert "/ragflow-ui/platform-branding.js" in out
+
+
+def test_rewrite_umi_runtime_public_path():
+    js = 'publicPath:"/",runtimePublicPath:false'
+    out = rewrite_umi_runtime_public_path(js, proxy_prefix="/ragflow-ui")
+    assert 'publicPath:"/ragflow-ui/"' in out
+    assert "runtimePublicPath:true" in out

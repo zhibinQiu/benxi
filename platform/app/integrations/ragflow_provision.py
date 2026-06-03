@@ -14,7 +14,6 @@ from app.integrations.ragflow_crypto import rsa_encrypt_password
 from app.models.org import User
 from app.models.ragflow_link import RagflowAccountLink
 from app.integrations.ragflow_llm_template import ensure_shared_llm_config
-from app.integrations.ragflow_rbac import ensure_ragflow_global_admin
 from app.services.ragflow_naming import platform_email_for_user
 
 logger = logging.getLogger(__name__)
@@ -99,26 +98,24 @@ def finalize_ragflow_link(
     link: RagflowAccountLink,
     authorization: str,
     user: User | None = None,
+    db=None,
 ) -> None:
-    """持久化 RAGFlow 会话，并同步租户 ID / 全局权限 / 共享模型配置。"""
+    """持久化 RAGFlow 会话，并同步租户 ID / 共享模型配置。"""
     token = (authorization or "").strip()
     if not token:
         return
     link.ragflow_access_token = token
-    uid = (link.ragflow_user_id or "").strip() or _fetch_ragflow_user_id(token)
+    uid = _fetch_ragflow_user_id(token) or (link.ragflow_user_id or "").strip()
     if not uid:
         return
+    if link.ragflow_user_id and link.ragflow_user_id != uid:
+        logger.info(
+            "RAGFlow 用户 id 已更新: %s → %s",
+            link.ragflow_user_id,
+            uid,
+        )
     link.ragflow_user_id = uid
-    settings = get_settings()
-    mode = (settings.ragflow_account_mode or "").strip().lower()
-    grant_admin = (
-        settings.ragflow_grant_global_admin
-        or mode == "shared"
-        or settings.knowflow_enabled
-    )
-    if grant_admin:
-        ensure_ragflow_global_admin(uid)
-    ensure_shared_llm_config(uid)
+    ensure_shared_llm_config(uid, db=db)
 
 
 def recover_ragflow_account(link: RagflowAccountLink, user: User) -> str:
@@ -165,6 +162,12 @@ def _uid_suffix_from_platform_email(email: str) -> str | None:
 
 
 def _run_ragflow_mysql(sql: str) -> tuple[bool, str]:
+    from app.integrations.ragflow_llm_template import _mysql_exec, _mysql_settings
+
+    _, _, _, host, _ = _mysql_settings()
+    if host:
+        if _mysql_exec(sql):
+            return True, ""
     settings = get_settings()
     container = (settings.ragflow_mysql_container or "ragflow-mysql").strip()
     mysql_pwd = (settings.ragflow_mysql_password or "infini_rag_flow").strip()
@@ -204,6 +207,7 @@ def _purge_ragflow_user_by_email(email: str) -> bool:
     sql = (
         f"SET @e='{safe_email}'; "
         "SET @uid=(SELECT id FROM user WHERE email=@e LIMIT 1); "
+        "DELETE FROM knowledgebase WHERE tenant_id=@uid; "
         "DELETE FROM user_tenant WHERE user_id=@uid OR tenant_id=@uid; "
         "DELETE FROM tenant_llm WHERE tenant_id=@uid; "
         "DELETE FROM tenant WHERE id=@uid; "
@@ -227,6 +231,9 @@ def _purge_ragflow_user_by_uid_suffix(suffix: str) -> bool:
     pattern = f"%-{token}@platform.local".replace("'", "''")
     sql = (
         f"SET @pat='{pattern}'; "
+        "DELETE kb FROM knowledgebase kb "
+        "JOIN user u ON kb.tenant_id=u.id "
+        "WHERE u.email LIKE @pat; "
         "DELETE ut FROM user_tenant ut "
         "JOIN user u ON ut.user_id=u.id OR ut.tenant_id=u.id "
         "WHERE u.email LIKE @pat; "
@@ -244,7 +251,7 @@ def _purge_ragflow_user_by_uid_suffix(suffix: str) -> bool:
     return ok
 
 
-def provision_and_login(link: RagflowAccountLink, user: User) -> str:
+def provision_and_login(link: RagflowAccountLink, user: User, db=None) -> str:
     """创建 RAGFlow 账号（如需）并返回 Web UI 用的 Authorization。"""
     email = link.ragflow_email or platform_email_for_user(user)
     nickname = (user.display_name or user.username or "用户")[:100]
@@ -285,7 +292,7 @@ def provision_and_login(link: RagflowAccountLink, user: User) -> str:
 
     if not authorization:
         raise RagflowProvisionError("无法完成 RAGFlow 登录")
-    finalize_ragflow_link(link, authorization, user)
+    finalize_ragflow_link(link, authorization, user, db=db)
     return authorization
 
 

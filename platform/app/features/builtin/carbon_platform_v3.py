@@ -19,7 +19,7 @@ register(
         permission_name="智碳平台V3",
         enabled=True,
         tag="外链",
-        category="external",
+        category="carbon",
         sort_order=60,
         grant_to_roles=("sys_admin", "member", "member"),
     )

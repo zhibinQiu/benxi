@@ -27,9 +27,15 @@ from app.models.ragflow_document_link import RagflowDocumentLink
 from app.services.compare_service import load_parsed_documents
 from app.services.document_service import get_document, list_queryable_documents
 from app.services.ragflow_scope_service import (
-    COMPANY_SCOPE_KEY,
-    _get_registry,
-    _visible_dataset_ids,
+    allowed_dataset_ids_for_user,
+    visible_dataset_ids_for_user,
+)
+from app.models.ragflow_scope_dataset import (
+    SCOPE_COMPANY as REG_COMPANY,
+    SCOPE_DEPARTMENT as REG_DEPARTMENT,
+    SCOPE_TEAM as REG_TEAM,
+    SCOPE_PERSONAL as REG_PERSONAL,
+    RagflowScopeDataset,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,33 +53,41 @@ def _dataset_ids_for_search(
     if not hasattr(kf, "_rag"):
         return []
 
-    candidates: list[str] = []
+    from app.core.document_scope import scope_for_department
 
-    def add_reg(reg_scope: str, key: str) -> None:
-        reg = _get_registry(db, reg_scope, key)
-        if reg and reg.ragflow_dataset_id:
-            candidates.append(reg.ragflow_dataset_id)
+    allowed = allowed_dataset_ids_for_user(db, user)
+    visible = visible_dataset_ids_for_user(db, user, kf)
+    if visible:
+        allowed = allowed & visible
 
-    from app.core.document_scope import library_companies_for_user, scope_for_department
+    if not scope:
+        return list(dict.fromkeys(allowed))
 
-    if scope is None or scope == SCOPE_COMPANY:
-        for row in library_companies_for_user(db, user):
-            add_reg(SCOPE_COMPANY, str(row["id"]))
-    if scope is None or scope in (SCOPE_DEPARTMENT, SCOPE_TEAM):
-        for dept_id in user_dept_ids(db, user.id):
-            tier = scope_for_department(db, dept_id)
-            if scope is None or scope == tier:
-                add_reg(tier, str(dept_id))
-    if scope is None or scope == SCOPE_PERSONAL:
-        add_reg(SCOPE_PERSONAL, str(user.id))
-
-    try:
-        visible = _visible_dataset_ids(kf)
-        if visible:
-            candidates = [ds for ds in candidates if ds in visible]
-    except Exception as e:
-        logger.warning("列举知识库失败，使用注册表缓存: %s", e)
-    return list(dict.fromkeys(candidates))
+    filtered: list[str] = []
+    for ds_id in allowed:
+        reg = db.scalar(
+            select(RagflowScopeDataset).where(
+                RagflowScopeDataset.ragflow_dataset_id == ds_id
+            )
+        )
+        if not reg:
+            continue
+        if scope == SCOPE_PERSONAL:
+            if reg.scope == REG_PERSONAL and reg.scope_key == str(user.id):
+                filtered.append(ds_id)
+        elif scope == SCOPE_COMPANY:
+            if reg.scope == REG_COMPANY:
+                filtered.append(ds_id)
+        elif scope in (SCOPE_DEPARTMENT, SCOPE_TEAM):
+            if reg.scope not in (REG_DEPARTMENT, REG_TEAM):
+                continue
+            try:
+                dept_uuid = uuid.UUID(reg.scope_key)
+            except ValueError:
+                continue
+            if scope_for_department(db, dept_uuid) == scope:
+                filtered.append(ds_id)
+    return list(dict.fromkeys(filtered))
 
 
 def _safe_score(value) -> float:

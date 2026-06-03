@@ -189,3 +189,9 @@ uv.lock
 *.pdf
 *.docx
 CLAUDE.md
+
+# 统一栈数据与镜像包（v3.4+）
+/data/
+/images/
+/backups/
+.env

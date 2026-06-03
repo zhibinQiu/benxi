@@ -514,6 +514,7 @@ function flipToLogin() {
   align-items: center;
   width: 100%;
   max-width: 400px;
+  box-sizing: border-box;
 }
 
 .login-flip {
@@ -590,14 +591,27 @@ function flipToLogin() {
 }
 
 @media (min-width: 900px) {
+  .login-page__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    align-items: start;
+    align-content: center;
+    gap: 48px 64px;
+    padding: 48px 40px;
+  }
+
   .login-showcase {
     display: block;
   }
 
   .login-main {
-    flex: 0 0 400px;
+    flex: none;
     max-width: none;
-    justify-content: flex-end;
+    width: 100%;
+    align-items: flex-start;
+    justify-content: flex-start;
+    /* logo 高度 + 间距，与左侧标题行对齐 */
+    padding-top: 82px;
   }
 }
 

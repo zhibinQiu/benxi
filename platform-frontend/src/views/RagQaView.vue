@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useAuth } from "../composables/useAuth";
 import { useRoute, useRouter } from "vue-router";
 import { NAlert, NButton } from "naive-ui";
-import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
+import { fetchEncodingEmbedSession, fetchEncodingMeta } from "../api/rag.js";
 import {
   KNOWLEDGE_UNAVAILABLE,
   knowflowUnavailableHint,
@@ -11,11 +11,10 @@ import {
 } from "../utils/uiMessage";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
-import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
 
 const route = useRoute();
 const router = useRouter();
-const { user } = useAuth();
+const { user, isSystemAdmin } = useAuth();
 
 const STARTUP_HINT = "正在启动知识服务系统";
 
@@ -56,31 +55,41 @@ function buildKnowflowUrl(session) {
   if (session?.sso?.ready && auth) {
     q.set("auth", stripBearer(auth));
   }
-  return `${base}/?${q.toString()}`;
+  return `${base}/user-setting/model?${q.toString()}`;
 }
 
-function themePayload() {
-  const base = embedSession.value?.theme || {};
+function buildKnowflowThemePayload(session, user, { isSystemAdmin } = {}) {
+  const base = session?.theme || {};
   const name = (
-    user.value?.display_name ||
-    user.value?.username ||
+    user?.display_name ||
+    user?.username ||
     ""
   ).trim();
   const kbLabels =
-    embedSession.value?.knowflow_kb_labels ||
+    session?.knowflow_kb_labels ||
     base.knowflow_kb_labels ||
     [];
   const deptSuffixLabels =
-    embedSession.value?.dept_suffix_labels ||
+    session?.dept_suffix_labels ||
     base.dept_suffix_labels ||
     {};
   return {
     ...base,
     display_name: name || base.display_name,
-    username: user.value?.username || base.username,
+    username: user?.username || base.username,
     knowflow_kb_labels: kbLabels,
     dept_suffix_labels: deptSuffixLabels,
+    is_system_admin:
+      isSystemAdmin === true ||
+      base.is_system_admin === true ||
+      user?.is_system_admin === true,
   };
+}
+
+function themePayload() {
+  return buildKnowflowThemePayload(embedSession.value, user.value, {
+    isSystemAdmin: isSystemAdmin.value,
+  });
 }
 
 function postToIframe(payload) {
@@ -100,7 +109,7 @@ function postSsoToIframe() {
 }
 
 function applyIframeSession(session) {
-  if (!meta.value.ui_available) {
+  if (!serviceReady.value) {
     iframeSrc.value = "";
     return;
   }
@@ -116,14 +125,20 @@ const showStartupHint = computed(
   () => bootstrapping.value || (Boolean(iframeSrc.value) && !iframeReady.value)
 );
 
+/** Web 探活或 KnowFlow API 健康即视为可嵌入 */
+const serviceReady = computed(
+  () => Boolean(meta.value.ui_available || meta.value.knowflow_enabled)
+);
+
 async function loadMeta() {
-  bootstrapping.value = true;
   iframeReady.value = false;
+  bootstrapping.value = true;
   iframeSrc.value = "";
+
   try {
     const [m, session] = await Promise.all([
-      fetchRagMeta(),
-      fetchRagEmbedSession({ sync: false }).catch(() => null),
+      fetchEncodingMeta(),
+      fetchEncodingEmbedSession({ sync: true }),
     ]);
     meta.value = m;
     embedSession.value = session;
@@ -137,7 +152,6 @@ async function loadMeta() {
     }
 
     applyIframeSession(session);
-    scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-embed" });
   } catch (e) {
     meta.value = {
       ...meta.value,
@@ -154,14 +168,15 @@ function onIframeLoad() {
   iframeReady.value = true;
   postSsoToIframe();
   postThemeToIframe();
-  scheduleKnowflowCatalogSync({ iframeElementId: "knowflow-embed" });
 }
 
 async function reloadKnowflowForUser() {
   if (route.name !== "rag") return;
   iframeReady.value = false;
   iframeSrc.value = "";
-  embedSession.value = await fetchRagEmbedSession({ sync: false }).catch(() => null);
+  embedSession.value = await fetchEncodingEmbedSession({ sync: false }).catch(
+    () => null
+  );
   applyIframeSession(embedSession.value);
 }
 
@@ -188,9 +203,9 @@ onMounted(loadMeta);
   <FeatureSubsystemShell fill>
     <div class="subsystem-embed-host">
       <n-alert
-        v-if="!bootstrapping && !meta.ui_available"
+        v-if="!bootstrapping && !serviceReady"
         type="warning"
-        title="知识问答服务未就绪"
+        title="编码管理服务未就绪"
         class="embed-alert"
       >
         <p>{{ meta.ui_hint || KNOWLEDGE_UNAVAILABLE }}</p>
@@ -200,7 +215,7 @@ onMounted(loadMeta);
       </n-alert>
 
       <n-alert
-        v-if="!bootstrapping && meta.ui_available && embedSession?.sso && !embedSession.sso.ready"
+        v-if="!bootstrapping && serviceReady && embedSession?.sso && !embedSession.sso.ready"
         type="info"
         title="登录未完成"
         class="embed-alert"
@@ -224,7 +239,7 @@ onMounted(loadMeta);
         class="subsystem-embed-frame"
         :class="{ 'subsystem-embed-frame--loading': showStartupHint }"
         :src="iframeSrc"
-        title="知识问答"
+        title="编码管理"
         allow="fullscreen; clipboard-read; clipboard-write"
         referrerpolicy="no-referrer-when-downgrade"
         @load="onIframeLoad"

@@ -1,13 +1,26 @@
-FROM python:3.11-slim-bookworm
+ARG PYTHON_IMAGE=python:3.11-slim
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 静态 ffmpeg，避免 apt 网络不稳定
-COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/ffmpeg
-COPY --from=mwader/static-ffmpeg:7.1 /ffprobe /usr/local/bin/ffprobe
+FROM ${PYTHON_IMAGE}
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
+RUN set -eux; \
+    if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+      sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    elif [ -f /etc/apt/sources.list ]; then \
+      sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list; \
+    fi; \
+    apt-get update && \
+    apt-get install --no-install-recommends -y ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -i "${PIP_INDEX_URL}" -r requirements.txt
 
 COPY app ./app
 

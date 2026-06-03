@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import urlparse
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "智碳平台AI系统"
-    platform_version: str = "3.0.0"
+    platform_version: str = "3.4.0"
     debug: bool = False
     api_prefix: str = "/api/v1"
 
@@ -54,8 +55,12 @@ class Settings(BaseSettings):
 
     knowflow_enabled: bool = False
     knowflow_backend_url: str = "http://127.0.0.1:5001"
-    # KnowFlow / RAGFlow 自带 Web UI（须直连源站以保留溯源、PDF 定位等能力）
+    # KnowFlow / RAGFlow 自带 Web UI（浏览器 iframe 基址见 knowflow_ui_public_url）
     knowflow_ui_url: str = "http://127.0.0.1:9380"
+    # embed-proxy 反代上游（Docker 栈内通常为 http://ragflow:80）
+    knowflow_ui_upstream_url: str = ""
+    # 浏览器 iframe 完整基址（如 http://127.0.0.1:40005/ragflow-ui）；留空则用 proxy 前缀
+    knowflow_ui_public_url: str = ""
     # iframe：平台内嵌完整界面；redirect：跳转至源站全屏
     knowflow_ui_embed_mode: str = "iframe"
     ragflow_api_url: str = "http://127.0.0.1:9380"
@@ -70,6 +75,9 @@ class Settings(BaseSettings):
     ragflow_mysql_container: str = "ragflow-mysql"
     ragflow_mysql_password: str = "infini_rag_flow"
     ragflow_mysql_db: str = "rag_flow"
+    # 容器内直连 KnowFlow MySQL（优先于 docker exec，供模型配置同步）
+    ragflow_mysql_host: str = ""
+    ragflow_mysql_port: int = 3306
     # 已废弃全局单库；每用户使用 zt-platform-{user_id}
     ragflow_dataset_name: str = "智碳平台知识库"
     ragflow_dataset_prefix: str = "zt-platform"
@@ -84,8 +92,10 @@ class Settings(BaseSettings):
     ragflow_sync_on_embed: bool = False
     # 新用户/登录时从 RAGFlow 模板账号复制模型供应商与 API（全员共用，默认开启）
     ragflow_llm_shared_from_template: bool = True
-    # 模板账号邮箱，留空则用 RAGFLOW_SHARED_EMAIL 或 admin@gmail.com
+    # 模板账号邮箱，留空则用 bootstrap 平台账号 / 已配置最全的租户 / admin@gmail.com
     ragflow_llm_template_email: str = ""
+    # 模板租户 RAGFlow user id（留空则自动解析）
+    ragflow_llm_template_tenant_id: str = ""
     # 开发环境前端代理前缀，如 /ragflow-ui（同源，供阶段 2 SSO）
     knowflow_ui_proxy_prefix: str = ""
     knowflow_theme_primary: str = "#18a058"
@@ -157,6 +167,11 @@ class Settings(BaseSettings):
     carbon_market_history_sync_hour: int = 18
     carbon_market_history_sync_minute: int = 0
 
+    # 数据分析（Excel + Notebook 代码执行）
+    data_analysis_storage_dir: str = ""
+    data_analysis_max_file_mb: int = 50
+    data_analysis_exec_timeout_seconds: int = 60
+
     @property
     def broker(self) -> str:
         return self.celery_broker_url or self.redis_url
@@ -164,6 +179,52 @@ class Settings(BaseSettings):
     @property
     def result_backend(self) -> str:
         return self.celery_result_backend or self.redis_url
+
+    @property
+    def knowflow_ui_upstream(self) -> str:
+        """API 容器内反代 KnowFlow Web 的上游地址。"""
+        raw = (self.knowflow_ui_upstream_url or "").strip()
+        if raw:
+            return raw.rstrip("/")
+        legacy = (self.knowflow_ui_url or "").strip().rstrip("/")
+        if legacy.startswith("http://ragflow") or legacy.startswith("http://ragflow-server"):
+            return legacy
+        if self.knowflow_enabled:
+            return "http://ragflow:80"
+        return legacy or "http://127.0.0.1:9380"
+
+    def _knowflow_public_path(self) -> str:
+        public = (self.knowflow_ui_public_url or "").strip()
+        if not public:
+            return ""
+        if public.startswith("/"):
+            return public.rstrip("/")
+        return urlparse(public).path.rstrip("/")
+
+    @property
+    def knowflow_ui_asset_prefix(self) -> str:
+        """KnowFlow HTML 内静态资源改写前缀（须与浏览器 iframe 基址路径一致）。"""
+        public_path = self._knowflow_public_path()
+        explicit = (self.knowflow_ui_proxy_prefix or "").strip().rstrip("/")
+        # 浏览器基址为完整 URL 时，静态资源前缀须与其 path 一致（避免 compose 默认 /ragflow-ui 与 dev 直连冲突）
+        if public_path and (not explicit or (explicit == "/ragflow-ui" and public_path != "/ragflow-ui")):
+            return public_path
+        if explicit:
+            return explicit
+        if public_path:
+            return public_path
+        return ""
+
+    @property
+    def knowflow_ui_browser_base(self) -> str:
+        """浏览器 iframe 使用的基址（完整 URL 或同源路径前缀）。"""
+        public = (self.knowflow_ui_public_url or "").strip().rstrip("/")
+        if public:
+            return public
+        proxy = (self.knowflow_ui_proxy_prefix or "").strip().rstrip("/")
+        if proxy:
+            return proxy
+        return (self.knowflow_ui_url or "http://127.0.0.1:9380").strip().rstrip("/")
 
 
 @lru_cache

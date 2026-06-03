@@ -1,5 +1,7 @@
 # 功能插件接入指南
 
+> **开发实现说明书 · 第五篇 §5.1** · [说明书总览](../development/implementation-manual.md)
+
 平台业务能力（翻译、RAG、文档对比等）通过 **`app/features`** 插件机制接入，避免在 `main.py` / `system.py` 中硬编码。
 
 ## 架构一览

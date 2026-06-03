@@ -5,7 +5,9 @@ function resolveApiBase() {
   if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
     return String(raw).replace(/\/$/, "");
   }
-  return import.meta.env.PROD ? "/ai" : "";
+  if (import.meta.env.PROD) return "/ai";
+  // compose.dev：浏览器直连本机 API（18000），规避 Vite 反代挂起
+  return "http://127.0.0.1:18000";
 }
 
 export const API_BASE = resolveApiBase();
@@ -86,6 +88,15 @@ export async function api(path, options = {}) {
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch (err) {
+    const msg = String(err?.message || "");
+    if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+      throw new Error("无法连接服务器，请确认 API 服务已启动并可访问");
+    }
+    throw err;
+  }
   return parseResponse(res);
 }

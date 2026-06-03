@@ -96,6 +96,8 @@ def _purge_rag_sessions_for_document(db: Session, document_id: uuid.UUID) -> Non
     db.execute(delete(RagMessage).where(RagMessage.session_id.in_(session_ids)))
     db.execute(delete(RagSession).where(RagSession.id.in_(session_ids)))
 def _purge_document_storage(db: Session, document: Document) -> None:
+    from app.services.documents.crud import is_version_uploaded
+
     versions = list(
         db.scalars(
             select(DocumentVersion).where(DocumentVersion.document_id == document.id)

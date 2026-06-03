@@ -24,14 +24,10 @@ from app.services import rag_service
 from app.services.compare_service import list_compare_documents
 from app.services.knowledge_search_service import search_knowledge
 
-router = APIRouter(
-    prefix="/rag",
-    tags=["rag"],
-    dependencies=[Depends(require_feature("rag_qa"))],
-)
+router = APIRouter(prefix="/rag", tags=["rag"])
 
 
-@router.get("/meta")
+@router.get("/meta", dependencies=[Depends(require_feature("rag_qa"))])
 def rag_meta(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -39,7 +35,11 @@ def rag_meta(
     return ApiResponse(data=knowledge.meta_payload(db, user))
 
 
-@router.post("/search", response_model=ApiResponse[KnowledgeSearchOut])
+@router.post(
+    "/search",
+    response_model=ApiResponse[KnowledgeSearchOut],
+    dependencies=[Depends(require_feature("knowledge_search"))],
+)
 def knowledge_search(
     body: KnowledgeSearchRequest,
     user: Annotated[User, Depends(get_current_user)],
@@ -62,7 +62,7 @@ def knowledge_search(
     )
 
 
-@router.get("/embed-session")
+@router.get("/embed-session", dependencies=[Depends(require_feature("rag_qa"))])
 def rag_embed_session(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -76,7 +76,11 @@ def rag_embed_session(
     return ApiResponse(data=data)
 
 
-@router.get("/documents", response_model=ApiResponse[PageResult[RagDocumentOut]])
+@router.get(
+    "/documents",
+    response_model=ApiResponse[PageResult[RagDocumentOut]],
+    dependencies=[Depends(require_feature("rag_qa"))],
+)
 def list_rag_documents(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -100,7 +104,7 @@ def list_rag_documents(
     return ApiResponse(data=PageResult(items=items, total=total, page=page, page_size=page_size))
 
 
-@router.get("/sessions")
+@router.get("/sessions", dependencies=[Depends(require_feature("rag_qa"))])
 def list_sessions(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
@@ -128,7 +132,11 @@ def list_sessions(
     )
 
 
-@router.post("/sessions", response_model=ApiResponse[RagSessionOut])
+@router.post(
+    "/sessions",
+    response_model=ApiResponse[RagSessionOut],
+    dependencies=[Depends(require_feature("rag_qa"))],
+)
 def create_session(
     body: RagSessionCreate,
     user: Annotated[User, Depends(get_current_user)],
@@ -145,7 +153,11 @@ def create_session(
     return ApiResponse(data=data)
 
 
-@router.get("/sessions/{session_id}", response_model=ApiResponse[RagSessionOut])
+@router.get(
+    "/sessions/{session_id}",
+    response_model=ApiResponse[RagSessionOut],
+    dependencies=[Depends(require_feature("rag_qa"))],
+)
 def get_session(
     session_id: str,
     user: Annotated[User, Depends(get_current_user)],
@@ -162,7 +174,11 @@ def get_session(
     return ApiResponse(data=data)
 
 
-@router.post("/sessions/{session_id}/ask", response_model=ApiResponse[dict])
+@router.post(
+    "/sessions/{session_id}/ask",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_feature("rag_qa"))],
+)
 def ask_session(
     session_id: str,
     body: RagAskRequest,

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,7 @@ from app.core.document_scope import (
     can_restore_document,
     effective_permission_level,
 )
-from app.core.exceptions import forbidden, not_found
+from app.core.exceptions import bad_request, forbidden, not_found
 from app.core.permissions import PermissionLevel, can_access_document
 from app.database import get_db
 from app.models.document import Document, DocumentLibraryFolder, DocumentVersion
@@ -689,10 +689,41 @@ def prepare_upload(
     )
 
 
+@router.put("/{document_id}/upload/{version_id}/blob")
+async def upload_document_blob(
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """经平台鉴权代理上传文件到 MinIO（浏览器无法直连 minio:9000）。"""
+    doc = document_service.get_document(db, document_id)
+    if not doc or doc.deleted_at:
+        raise not_found()
+    version = db.get(DocumentVersion, version_id)
+    if not version or version.document_id != doc.id:
+        raise not_found("Version not found")
+    data = await request.body()
+    if not data:
+        raise bad_request("Empty upload body")
+    content_type = (request.headers.get("content-type") or "").split(";")[0].strip()
+    document_service.save_upload_blob(
+        db,
+        user,
+        doc,
+        version,
+        data,
+        content_type=content_type or None,
+    )
+    return Response(status_code=204)
+
+
 @router.post("/{document_id}/upload/complete", response_model=ApiResponse[DocumentDetail])
 def complete_upload(
     document_id: uuid.UUID,
     body: UploadCompleteRequest,
+    background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[DocumentDetail]:
@@ -706,9 +737,7 @@ def complete_upload(
         db, user, doc, version, file_size=body.file_size, checksum=body.checksum
     )
     if knowledge.enabled():
-        knowledge.user_auth(db, user)
-        knowledge.sync_document(db, user, doc, force=True)
-        db.commit()
+        knowledge.schedule_sync_after_ingest(background_tasks, doc.id, user.id)
     return ApiResponse(data=_detail(db, doc, user=user))
 
 
@@ -816,6 +845,7 @@ def sync_document_knowflow(
                 )
             )
 
+        knowledge.reconcile_catalog(db, user, sync_documents=False)
         rid = knowledge.sync_document(db, user, doc, force=True)
         db.commit()
         link = knowledge.document_link(db, document_id)
@@ -834,7 +864,23 @@ def sync_document_knowflow(
                 message=KNOWLEDGE_SYNC_FAILED,
             )
         )
-    except Exception:
+    except Exception as e:
+        from app.services.ragflow_sync_service import KnowflowSyncError
+
+        if isinstance(e, KnowflowSyncError):
+            logger.warning(
+                "sync-knowflow failed doc=%s user=%s: %s",
+                document_id,
+                user.id,
+                e.message,
+            )
+            db.rollback()
+            return ApiResponse(
+                data=DocumentKnowflowSyncOut(
+                    knowflow_synced=False,
+                    message=e.message,
+                )
+            )
         logger.exception("sync-knowflow failed doc=%s user=%s", document_id, user.id)
         db.rollback()
         return ApiResponse(

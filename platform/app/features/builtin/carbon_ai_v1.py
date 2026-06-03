@@ -22,7 +22,7 @@ register(
         permission_name="智碳 AI平台v1",
         enabled=True,
         tag="外链",
-        category="external",
+        category="carbon",
         sort_order=61,
         grant_to_roles=("sys_admin", "member", "member"),
     )

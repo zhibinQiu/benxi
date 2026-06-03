@@ -35,7 +35,7 @@ def test_reconcile_calls_grant_and_sync():
         gs.return_value.ragflow_grant_global_admin = True
         gs.return_value.ragflow_sync_doc_limit = 10
         with patch(
-            "app.services.knowflow_catalog_service.get_knowflow_client_for_user",
+            "app.services.knowflow_catalog_service.get_knowflow_client_for_catalog",
             return_value=kf,
         ), patch(
             "app.services.knowflow_catalog_service._ensure_ragflow_kb_admin"
@@ -43,7 +43,25 @@ def test_reconcile_calls_grant_and_sync():
             "app.services.knowflow_catalog_service.repair_stale_scope_registries",
             return_value=1,
         ), patch(
+            "app.services.knowflow_catalog_service.repair_orphan_scope_registries",
+            return_value=0,
+        ), patch(
             "app.services.knowflow_catalog_service._drop_orphan_document_links",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.sync_all_kb_display_names",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.dedupe_orphan_scope_datasets",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.purge_unregistered_knowledge_bases",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.purge_orphan_kbs_for_user_tenant",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.enforce_all_registered_personal_kbs_private",
             return_value=0,
         ), patch(
             "app.services.knowflow_catalog_service.ensure_user_scope_datasets",
@@ -75,13 +93,28 @@ def test_reconcile_prepare_only_skips_document_sync():
         gs.return_value.knowflow_enabled = True
         gs.return_value.ragflow_grant_global_admin = True
         with patch(
-            "app.services.knowflow_catalog_service.get_knowflow_client_for_user",
+            "app.services.knowflow_catalog_service.get_knowflow_client_for_catalog",
             return_value=kf,
         ), patch("app.services.knowflow_catalog_service._ensure_ragflow_kb_admin"), patch(
             "app.services.knowflow_catalog_service.repair_stale_scope_registries",
             return_value=0,
         ), patch(
             "app.services.knowflow_catalog_service._drop_orphan_document_links",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.sync_all_kb_display_names",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.dedupe_orphan_scope_datasets",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.purge_unregistered_knowledge_bases",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.purge_orphan_kbs_for_user_tenant",
+            return_value=0,
+        ), patch(
+            "app.services.knowflow_catalog_service.enforce_all_registered_personal_kbs_private",
             return_value=0,
         ), patch(
             "app.services.knowflow_catalog_service.ensure_user_scope_datasets"

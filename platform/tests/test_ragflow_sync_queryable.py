@@ -18,6 +18,9 @@ def test_sync_accessible_uses_queryable_list():
     with patch(
         "app.services.ragflow_sync_service.list_queryable_documents"
     ) as list_q, patch(
+        "app.services.ragflow_sync_service._should_mirror_shared_document",
+        return_value=False,
+    ), patch(
         "app.services.ragflow_sync_service._get_link", return_value=None
     ), patch(
         "app.services.ragflow_sync_service.sync_document_to_knowflow",
@@ -42,6 +45,9 @@ def test_sync_accessible_refreshes_grants_when_link_exists():
     with patch(
         "app.services.ragflow_sync_service.list_queryable_documents",
         return_value=([doc], 1),
+    ), patch(
+        "app.services.ragflow_sync_service._should_mirror_shared_document",
+        return_value=False,
     ), patch(
         "app.services.ragflow_sync_service._get_link", return_value=link
     ), patch(

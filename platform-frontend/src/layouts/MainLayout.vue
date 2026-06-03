@@ -47,6 +47,7 @@ import { getPageHeaderOverride } from "../composables/usePageHeader";
 import { resolveFeatureIcon } from "../constants/featureIcons";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { fetchJobs, fetchNotifications } from "../api/client";
+import { prefetchKnowflowSession } from "../api/rag.js";
 import AssistantChatFab from "../components/AssistantChatFab.vue";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
 import JobsPanel from "../components/JobsPanel.vue";
@@ -102,6 +103,7 @@ async function refreshHeaderBadges() {
 
 onMounted(async () => {
   await loadUser();
+  prefetchKnowflowSession();
   refreshHeaderBadges();
 });
 
@@ -109,12 +111,15 @@ const showUserAdmin = computed(() => hasPerm("admin.user"));
 const showDeptAdmin = computed(() => hasPerm("admin.dept"));
 const showMonitor = computed(() => hasPerm("admin.audit"));
 const showModelSettings = computed(() => hasPerm("admin.settings"));
+const showRagEncoding = computed(() => hasPerm("feature.rag_qa"));
+
 const showSystemSettings = computed(
   () =>
     showUserAdmin.value ||
     showDeptAdmin.value ||
     showMonitor.value ||
-    showModelSettings.value
+    showModelSettings.value ||
+    showRagEncoding.value
 );
 
 const settingsChildren = computed(() => {
@@ -145,6 +150,13 @@ const settingsChildren = computed(() => {
       label: t("menu.modelSettings"),
       key: "admin-model-settings",
       icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) }),
+    });
+  }
+  if (showRagEncoding.value) {
+    children.push({
+      label: t("menu.encodingManagement"),
+      key: "rag",
+      icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
     });
   }
   return children;
@@ -195,6 +207,7 @@ const SUBSYSTEM_HEADER_ROUTES = new Set([
   "translate",
   "rag",
   "smart-data-query",
+  "data-analysis",
   "carbon-qa",
   "carbon-assets",
   "smart-forecast",
@@ -227,7 +240,7 @@ function toggleAssistant() {
 
 const activeKey = computed(() => {
   if (route.name === "document-detail") return "documents";
-  if (route.name === "knowledge-search") return "ai-home";
+  if (route.name === "knowledge-search") return "system-functions";
   if (route.name === "knowledge-graph") return "knowledge-graph";
   if (
     route.name === "knowledge-subscriptions" ||
@@ -241,13 +254,13 @@ const activeKey = computed(() => {
   }
   if (
     route.name === "translate" ||
-    route.name === "rag" ||
     route.name === "speech" ||
     route.name === "ocr" ||
     route.name === "compare" ||
     route.name === "assist-writing" ||
     route.name === "ai-tools" ||
     route.name === "smart-data-query" ||
+    route.name === "data-analysis" ||
     route.name === "carbon-qa" ||
     route.name === "smart-forecast"
   ) {
@@ -257,7 +270,8 @@ const activeKey = computed(() => {
     route.name === "admin-users" ||
     route.name === "admin-departments" ||
     route.name === "admin-monitor" ||
-    route.name === "admin-model-settings"
+    route.name === "admin-model-settings" ||
+    route.name === "rag"
   ) {
     return String(route.name);
   }
@@ -309,7 +323,8 @@ function ensureMenuExpanded() {
     route.name === "admin-users" ||
     route.name === "admin-departments" ||
     route.name === "admin-monitor" ||
-    route.name === "admin-model-settings"
+    route.name === "admin-model-settings" ||
+    route.name === "rag"
   ) {
     if (!keys.includes(SETTINGS_KEY)) keys.push(SETTINGS_KEY);
   }

@@ -1,9 +1,12 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { fetchRagEmbedSession, fetchRagMeta } from "../api/client";
+import { fetchRagEmbedSession } from "../api/client";
 import { knowflowUnavailableHint } from "../utils/uiMessage";
 import { useAuth } from "./useAuth";
-import { scheduleKnowflowCatalogSync } from "../utils/knowflowCatalogSync";
+import {
+  loadKnowflowEmbedResources,
+  tryApplyCachedKnowflowEmbed,
+} from "../utils/knowflowEmbedBootstrap";
 
 /**
  * 内嵌 KnowFlow / RAGFlow Web UI（SSO + 主题同步）。
@@ -120,19 +123,22 @@ export function useKnowflowEmbed({
   );
 
   async function loadMeta() {
-    bootstrapping.value = true;
     iframeReady.value = false;
-    iframeSrc.value = "";
+    const cachedApplied = tryApplyCachedKnowflowEmbed({
+      metaRef: meta,
+      sessionRef: embedSession,
+      applySession: applyIframeSession,
+    });
+    bootstrapping.value = !cachedApplied;
+    if (!cachedApplied) {
+      iframeSrc.value = "";
+    }
+
     try {
-      const [m, session] = await Promise.all([
-        fetchRagMeta(),
-        fetchRagEmbedSession({ sync: false }).catch(() => null),
-      ]);
+      const { meta: m, session } = await loadKnowflowEmbedResources({ sync: false });
       meta.value = m;
       embedSession.value = session;
       applyIframeSession(session);
-      // 首屏已建库；文档全量同步放后台，完成后刷新 iframe 知识库树
-      scheduleKnowflowCatalogSync({ iframeElementId });
     } catch (e) {
       meta.value = {
         ...meta.value,
@@ -156,8 +162,6 @@ export function useKnowflowEmbed({
     postSsoToIframe();
     postThemeToIframe();
     postEmbedChromeToIframe();
-    scheduleKnowflowCatalogSync({ iframeElementId });
-    // SSO/路由就绪后再发一次，避免 searchSide 被误隐藏
     window.setTimeout(postEmbedChromeToIframe, 400);
     window.setTimeout(postEmbedChromeToIframe, 1500);
   }
@@ -166,7 +170,9 @@ export function useKnowflowEmbed({
     if (route.name !== watchRouteName) return;
     iframeReady.value = false;
     iframeSrc.value = "";
-    embedSession.value = await fetchRagEmbedSession({ sync: false }).catch(() => null);
+    embedSession.value = await fetchRagEmbedSession({ sync: false, force: true }).catch(
+      () => null
+    );
     applyIframeSession(embedSession.value);
   }
 

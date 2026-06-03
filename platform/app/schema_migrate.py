@@ -210,6 +210,23 @@ def ensure_ragflow_schema(engine: Engine) -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS ragflow_document_mirror_links (
+            id UUID PRIMARY KEY,
+            platform_document_id UUID NOT NULL REFERENCES documents(id),
+            platform_user_id UUID NOT NULL REFERENCES users(id),
+            ragflow_document_id VARCHAR(64) NOT NULL,
+            dataset_id VARCHAR(64) NOT NULL,
+            file_name VARCHAR(512) NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_ragflow_doc_mirror_doc_user
+                UNIQUE (platform_document_id, platform_user_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_ragflow_doc_mirror_doc "
+        "ON ragflow_document_mirror_links (platform_document_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ragflow_doc_mirror_user "
+        "ON ragflow_document_mirror_links (platform_user_id)",
+        """
         CREATE TABLE IF NOT EXISTS document_access_denials (
             id UUID PRIMARY KEY,
             document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,

@@ -324,8 +324,8 @@ watch(scope, loadList);
 }
 
 .chat-history-item:hover {
-  border-color: rgba(13, 148, 136, 0.35);
-  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.08);
+  border-color: var(--platform-accent-border);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--platform-accent) 8%, transparent);
 }
 
 .chat-history-item-icon {
@@ -336,8 +336,8 @@ watch(scope, loadList);
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  color: #0d9488;
-  background: rgba(13, 148, 136, 0.1);
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
 }
 
 .chat-history-item-body {

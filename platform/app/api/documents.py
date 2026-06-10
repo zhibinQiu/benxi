@@ -49,6 +49,7 @@ from app.schemas.document import (
     DocumentBatchDeleteOut,
     DeleteDocumentVersionResult,
     DocumentVersionOut,
+    DocumentUploadCompleteOut,
     UploadCompleteRequest,
     UploadPrepareResponse,
     DocumentKnowflowSyncOut,
@@ -68,6 +69,7 @@ from app.core.document_scope import (
 )
 from app.core.permissions import user_dept_ids, user_is_superuser
 from app.config import get_settings
+from app.core.document_upload_limits import document_upload_max_label
 from app.domains.knowledge import knowledge
 from app.services import audit_service, document_service, job_service
 
@@ -114,16 +116,28 @@ def _uploaded_at(db: Session, doc: Document) -> datetime | None:
     return first or doc.created_at
 
 
-def _version_out(db: Session, doc: Document, version: DocumentVersion) -> DocumentVersionOut:
+def _version_out(
+    db: Session,
+    doc: Document,
+    version: DocumentVersion,
+    *,
+    user: User | None = None,
+    index_meta: dict | None = None,
+) -> DocumentVersionOut:
+    from app.services.document_index_service import apply_index_meta_to_item
+
     uploaded = document_service.is_version_uploaded(version)
     base = DocumentVersionOut.model_validate(version)
-    return base.model_copy(
+    row = base.model_copy(
         update={
             "uploaded": uploaded,
             "is_current": version.id == doc.current_version_id,
             "file_name": version.file_name or "",
         }
     )
+    if user is not None and index_meta is not None:
+        row = apply_index_meta_to_item(row, index_meta.get(str(version.id)))
+    return row
 
 
 def _folder_name(db: Session, folder_id: uuid.UUID | None) -> str | None:
@@ -134,11 +148,21 @@ def _folder_name(db: Session, folder_id: uuid.UUID | None) -> str | None:
 
 
 def _detail(db: Session, doc: Document, *, user: User | None = None) -> DocumentDetail:
+    from app.services.document_index_service import (
+        apply_index_meta_to_item,
+        enrich_document_index_meta,
+    )
+
     document_service.resolve_current_version(db, doc)
     db.refresh(doc)
-    versions = document_service.list_document_versions(db, doc.id)
+    from app.services.document_index_service import enrich_version_index_meta
+
     can_edit = can_edit_document(db, user, doc) if user else False
-    return DocumentDetail(
+    version_rows = document_service.list_document_versions(db, doc.id)
+    version_meta = (
+        enrich_version_index_meta(db, user, version_rows) if user else {}
+    )
+    detail = DocumentDetail(
         id=doc.id,
         title=doc.title,
         status=doc.status,
@@ -156,8 +180,15 @@ def _detail(db: Session, doc: Document, *, user: User | None = None) -> Document
         uploaded_at=_uploaded_at(db, doc),
         deleted_at=doc.deleted_at,
         can_edit=can_edit,
-        versions=[_version_out(db, doc, v) for v in versions],
+        versions=[
+            _version_out(db, doc, v, user=user, index_meta=version_meta)
+            for v in version_rows
+        ],
     )
+    if user is not None:
+        meta = enrich_document_index_meta(db, user, [doc]).get(str(doc.id))
+        detail = apply_index_meta_to_item(detail, meta)
+    return detail
 
 
 @router.get("/kb-folders", response_model=ApiResponse[KbFolderListOut])
@@ -275,6 +306,8 @@ def document_library(
             companies=company_rows,
             departments=dept_rows,
             teams=team_rows,
+            upload_max_file_mb=get_settings().document_upload_max_file_mb,
+            upload_max_size_label=document_upload_max_label(),
         )
     )
 
@@ -321,8 +354,13 @@ def _list_items_with_owners(
     user: User | None = None,
 ) -> list[DocumentListItem]:
     from app.core.document_scope import can_edit_document
+    from app.services.document_index_service import (
+        apply_index_meta_to_item,
+        enrich_document_index_meta,
+    )
 
     fmt_by_ver = _current_version_formats(db, docs)
+    index_meta = enrich_document_index_meta(db, user, docs) if user else {}
     out: list[DocumentListItem] = []
     for d in docs:
         item = DocumentListItem.model_validate(d)
@@ -336,7 +374,10 @@ def _list_items_with_owners(
         if user is not None:
             extra["can_edit"] = can_edit_document(db, user, d)
             extra["can_delete"] = can_delete_document(db, user, d)
-        out.append(item.model_copy(update=extra))
+        item = item.model_copy(update=extra)
+        if user is not None:
+            item = apply_index_meta_to_item(item, index_meta.get(str(d.id)))
+        out.append(item)
     return out
 
 
@@ -493,7 +534,7 @@ def list_my_shares(
         db, user, page=page, page_size=page_size, keyword=keyword
     )
     docs = [d for d, _ in rows]
-    list_items = _list_items_with_owners(db, docs, include_owner_name=False)
+    list_items = _list_items_with_owners(db, docs, include_owner_name=False, user=user)
     meta = {d.id: m for d, m in rows}
     list_items = [
         item.model_copy(
@@ -719,14 +760,17 @@ async def upload_document_blob(
     return Response(status_code=204)
 
 
-@router.post("/{document_id}/upload/complete", response_model=ApiResponse[DocumentDetail])
+@router.post(
+    "/{document_id}/upload/complete",
+    response_model=ApiResponse[DocumentUploadCompleteOut],
+)
 def complete_upload(
     document_id: uuid.UUID,
     body: UploadCompleteRequest,
     background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[DocumentDetail]:
+) -> ApiResponse[DocumentUploadCompleteOut]:
     doc = document_service.get_document(db, document_id)
     if not doc or doc.deleted_at:
         raise not_found()
@@ -734,11 +778,28 @@ def complete_upload(
     if not version or version.document_id != doc.id:
         raise not_found("Version not found")
     doc = document_service.complete_upload(
-        db, user, doc, version, file_size=body.file_size, checksum=body.checksum
+        db,
+        user,
+        doc,
+        version,
+        file_size=body.file_size,
+        checksum=body.checksum,
+        change_description=body.change_description,
     )
+    job_id = None
     if knowledge.enabled():
-        knowledge.schedule_sync_after_ingest(background_tasks, doc.id, user.id)
-    return ApiResponse(data=_detail(db, doc, user=user))
+        job_id = knowledge.schedule_sync_after_ingest(
+            background_tasks,
+            doc.id,
+            user.id,
+            version_id=version.id,
+        )
+    return ApiResponse(
+        data=DocumentUploadCompleteOut(
+            document=_detail(db, doc, user=user),
+            knowledge_job_id=job_id,
+        )
+    )
 
 
 def _attachment_disposition(file_name: str) -> str:
@@ -772,13 +833,14 @@ def download_document_file(
     document_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    version_id: uuid.UUID | None = None,
 ) -> Response:
-    """经平台鉴权代理下载当前版本文件（推荐；presigned MinIO 地址浏览器常无法访问）。"""
+    """经平台鉴权代理下载文件；不传 version_id 时下载当前版本。"""
     doc = document_service.get_document(db, document_id)
     if not doc:
         raise not_found()
     content, file_name, mime_type = document_service.read_document_file_bytes(
-        db, user, doc
+        db, user, doc, version_id=version_id
     )
     return Response(
         content=content,
@@ -800,11 +862,9 @@ def sync_document_knowflow(
     import logging
 
     from app.core.user_messages import (
-        KNOWLEDGE_NOT_READY,
         KNOWLEDGE_SERVICE_UNAVAILABLE,
         KNOWLEDGE_SYNC_DISABLED,
         KNOWLEDGE_SYNC_FAILED,
-        KNOWLEDGE_SYNC_OK,
     )
     from app.services.document_service import resolve_current_version
 
@@ -834,61 +894,31 @@ def sync_document_knowflow(
             )
         )
 
-    try:
-        knowledge.user_auth(db, user)
-        kf = knowledge.client_for_user(db, user)
-        if not kf.enabled():
-            return ApiResponse(
-                data=DocumentKnowflowSyncOut(
-                    knowflow_synced=False,
-                    message=KNOWLEDGE_NOT_READY,
-                )
-            )
+    from app.services.knowledge_sync_job_service import enqueue_document_knowledge_index
 
-        knowledge.reconcile_catalog(db, user, sync_documents=False)
-        rid = knowledge.sync_document(db, user, doc, force=True)
-        db.commit()
-        link = knowledge.document_link(db, document_id)
-        if rid:
-            return ApiResponse(
-                data=DocumentKnowflowSyncOut(
-                    knowflow_synced=True,
-                    ragflow_document_id=rid,
-                    dataset_id=link.dataset_id if link else None,
-                    message=KNOWLEDGE_SYNC_OK,
-                )
-            )
+    job = enqueue_document_knowledge_index(
+        db,
+        user_id=user.id,
+        document_id=doc.id,
+        version_id=doc.current_version_id,
+        force=True,
+        document_title=doc.title,
+    )
+    if job:
         return ApiResponse(
             data=DocumentKnowflowSyncOut(
                 knowflow_synced=False,
-                message=KNOWLEDGE_SYNC_FAILED,
+                queued=True,
+                knowledge_job_id=job.id,
+                message="已加入后台任务，正在同步并解析知识库，请在「后台任务」查看进度。",
             )
         )
-    except Exception as e:
-        from app.services.ragflow_sync_service import KnowflowSyncError
-
-        if isinstance(e, KnowflowSyncError):
-            logger.warning(
-                "sync-knowflow failed doc=%s user=%s: %s",
-                document_id,
-                user.id,
-                e.message,
-            )
-            db.rollback()
-            return ApiResponse(
-                data=DocumentKnowflowSyncOut(
-                    knowflow_synced=False,
-                    message=e.message,
-                )
-            )
-        logger.exception("sync-knowflow failed doc=%s user=%s", document_id, user.id)
-        db.rollback()
-        return ApiResponse(
-            data=DocumentKnowflowSyncOut(
-                knowflow_synced=False,
-                message=KNOWLEDGE_SYNC_FAILED,
-            )
+    return ApiResponse(
+        data=DocumentKnowflowSyncOut(
+            knowflow_synced=False,
+            message=KNOWLEDGE_SYNC_FAILED,
         )
+    )
 
 
 @router.get(

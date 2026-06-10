@@ -118,13 +118,13 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 
 <style scoped>
 .kb-folder-card {
-  --accent: var(--platform-accent, #0d9488);
-  --accent-border: var(--platform-accent-soft, rgba(13, 148, 136, 0.2));
-  --stop-a: #52c9bc;
-  --stop-b: #3db5a8;
-  --stop-c: #6adccf;
-  --stop-d: #5ad0c4;
-  --stop-e: #42b0a4;
+  --accent: var(--platform-accent);
+  --accent-border: var(--platform-accent-soft);
+  --stop-a: #93c5fd;
+  --stop-b: #5b9cf5;
+  --stop-c: #c4b5fd;
+  --stop-d: #8b5cf6;
+  --stop-e: #4789e8;
 
   position: relative;
   display: flex;
@@ -163,13 +163,13 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 }
 
 .kb-folder-card--shared {
-  --accent: #0891b2;
-  --accent-border: rgba(8, 145, 178, 0.2);
-  --stop-a: #5ec9dc;
-  --stop-b: #48adc4;
-  --stop-c: #72d4e8;
-  --stop-d: #5ec9dc;
-  --stop-e: #48adc4;
+  --accent: var(--platform-accent-secondary);
+  --accent-border: var(--platform-accent-soft-2);
+  --stop-a: #c4b5fd;
+  --stop-b: #a78bfa;
+  --stop-c: #ddd6fe;
+  --stop-d: #8b5cf6;
+  --stop-e: #7c4fe0;
 }
 
 .kb-folder-card--system,
@@ -231,7 +231,7 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   height: auto;
   display: block;
   overflow: visible;
-  filter: drop-shadow(0 4px 10px rgba(13, 148, 136, 0.15));
+  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--platform-accent) 15%, transparent));
   transition: filter 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 
@@ -265,7 +265,7 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 
 .kb-folder-card:hover .kb-folder-card__art,
 .kb-folder-card:focus-visible .kb-folder-card__art {
-  filter: drop-shadow(0 10px 22px rgba(13, 148, 136, 0.28));
+  filter: drop-shadow(0 10px 22px color-mix(in srgb, var(--platform-accent) 28%, transparent));
 }
 
 .kb-folder-card__caption {

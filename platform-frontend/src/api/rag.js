@@ -1,5 +1,5 @@
 /** 知识问答 / KnowFlow 嵌入 API */
-import { API_BASE, api, formatApiDetail, getToken } from "./http.js";
+import { api, formatApiDetail, getApiBase, getToken } from "./http.js";
 
 let ragMetaCache = null;
 let ragMetaCacheAt = 0;
@@ -142,7 +142,7 @@ export function createPlatformChatStream(path) {
     const body = { message, history };
     if (conversationId) body.conversation_id = conversationId;
 
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${getApiBase()}${path}`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),

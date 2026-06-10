@@ -1,5 +1,5 @@
 /** 文档库 REST API */
-import { API_BASE, api, formatApiDetail, getToken } from "./http.js";
+import { getApiBase, api, formatApiDetail, getToken } from "./http.js";
 
 export async function fetchDocumentLibrary() {
   return api("/api/v1/documents/library");
@@ -77,12 +77,12 @@ export async function prepareUpload(documentId, fileName, mimeType) {
   });
 }
 
-/** 解析 prepare 返回的上传地址（相对路径拼 API_BASE，presigned 原样返回） */
+/** 解析 prepare 返回的上传地址（相对路径拼 API 根地址，presigned 原样返回） */
 export function resolveUploadUrl(uploadUrl) {
   const raw = String(uploadUrl || "").trim();
   if (!raw) return raw;
   if (/^https?:\/\//i.test(raw)) return raw;
-  const base = API_BASE.replace(/\/$/, "");
+  const base = getApiBase().replace(/\/$/, "");
   return raw.startsWith("/") ? `${base}${raw}` : `${base}/${raw}`;
 }
 
@@ -122,8 +122,13 @@ export async function syncDocumentToKnowflow(documentId) {
   return api(`/api/v1/documents/${documentId}/sync-knowflow`, { method: "POST" });
 }
 
-export async function downloadDocumentFile(documentId, fallbackName = "document") {
-  const res = await fetch(`${API_BASE}/api/v1/documents/${documentId}/file`, {
+export async function downloadDocumentFile(
+  documentId,
+  fallbackName = "document",
+  versionId = null,
+) {
+  const qs = versionId ? `?version_id=${encodeURIComponent(versionId)}` : "";
+  const res = await fetch(`${getApiBase()}/api/v1/documents/${documentId}/file${qs}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) {

@@ -42,8 +42,8 @@ defineProps({
   flex-shrink: 0;
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(13, 148, 136, 0.18);
-  border-top-color: #0d9488;
+  border: 2px solid var(--platform-accent-border-soft);
+  border-top-color: var(--platform-accent);
   border-radius: 50%;
   animation: ks-startup-spin 0.65s linear infinite;
 }
@@ -69,7 +69,7 @@ defineProps({
 
   .ks-startup__spinner {
     animation: none;
-    border-top-color: rgba(13, 148, 136, 0.35);
+    border-top-color: var(--platform-accent-border);
   }
 }
 </style>

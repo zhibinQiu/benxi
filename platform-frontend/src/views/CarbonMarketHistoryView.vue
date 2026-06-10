@@ -70,7 +70,7 @@ function renderChart() {
   chart = echarts.init(chartEl.value);
   const pts = series.value.points;
   chart.setOption({
-    color: ["#0d9488"],
+    color: ["#5b9cf5"],
     grid: { left: 48, right: 24, top: 32, bottom: 48 },
     tooltip: {
       trigger: "axis",
@@ -93,7 +93,7 @@ function renderChart() {
         smooth: true,
         showSymbol: pts.length < 40,
         data: pts.map((p) => p.close_cny),
-        areaStyle: { color: "rgba(13, 148, 136, 0.08)" },
+        areaStyle: { color: "rgba(91, 156, 245, 0.08)" },
       },
     ],
   });

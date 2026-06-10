@@ -302,6 +302,111 @@ class RagflowClient:
             json={"document_ids": document_ids},
         )
 
+    def list_dataset_documents(
+        self,
+        dataset_id: str,
+        *,
+        page: int = 1,
+        page_size: int = 30,
+        keywords: str | None = None,
+    ) -> tuple[list[dict], int]:
+        ds_id = (dataset_id or "").strip()
+        if not ds_id:
+            return [], 0
+        if self._use_session_api:
+            payload: dict[str, Any] = {
+                "kb_id": ds_id,
+                "page": page,
+                "page_size": page_size,
+            }
+            if keywords:
+                payload["keywords"] = keywords
+            data = self._request("POST", "/v1/document/list", json=payload)
+            if not isinstance(data, dict):
+                return [], 0
+            docs = data.get("docs") or data.get("documents") or []
+            total = data.get("total", len(docs))
+            return list(docs), int(total or 0)
+        params = f"page={page}&page_size={page_size}"
+        if keywords:
+            params += f"&keywords={keywords}"
+        data = self._request(
+            "GET",
+            f"/api/v1/datasets/{ds_id}/documents?{params}",
+        )
+        if isinstance(data, dict):
+            docs = data.get("docs") or data.get("documents") or data.get("items") or []
+            total = data.get("total", len(docs))
+            return list(docs), int(total or 0)
+        if isinstance(data, list):
+            return data, len(data)
+        return [], 0
+
+    def list_document_chunks(
+        self,
+        dataset_id: str,
+        document_id: str,
+        *,
+        page: int = 1,
+        page_size: int = 30,
+        keywords: str | None = None,
+    ) -> tuple[list[dict], int, dict | None]:
+        ds_id = (dataset_id or "").strip()
+        doc_id = (document_id or "").strip()
+        if not ds_id or not doc_id:
+            return [], 0, None
+        if self._use_session_api:
+            payload: dict[str, Any] = {
+                "doc_id": doc_id,
+                "page": page,
+                "page_size": page_size,
+            }
+            if keywords:
+                payload["keywords"] = keywords
+            data = self._request("POST", "/v1/chunk/list", json=payload)
+            if not isinstance(data, dict):
+                return [], 0, None
+            chunks = data.get("chunks") or []
+            total = data.get("total", len(chunks))
+            doc_meta = data.get("doc") if isinstance(data.get("doc"), dict) else None
+            return list(chunks), int(total or 0), doc_meta
+        params = f"page={page}&page_size={page_size}"
+        if keywords:
+            params += f"&keywords={keywords}"
+        data = self._request(
+            "GET",
+            f"/api/v1/datasets/{ds_id}/documents/{doc_id}/chunks?{params}",
+        )
+        if not isinstance(data, dict):
+            return [], 0, None
+        chunks = data.get("chunks") or []
+        total = data.get("total", len(chunks))
+        doc_meta = data.get("doc") if isinstance(data.get("doc"), dict) else None
+        return list(chunks), int(total or 0), doc_meta
+
+    def change_document_parser(
+        self,
+        document_id: str,
+        parser_id: str,
+        *,
+        parser_config: dict | None = None,
+    ) -> None:
+        doc_id = (document_id or "").strip()
+        parser = (parser_id or "naive").strip()
+        if not doc_id or not parser:
+            return
+        if self._use_session_api:
+            payload: dict[str, Any] = {"doc_id": doc_id, "parser_id": parser}
+            if parser_config:
+                payload["parser_config"] = parser_config
+            self._request("POST", "/v1/document/change_parser", json=payload)
+            return
+        self._request(
+            "PUT",
+            f"/api/v1/datasets/documents/{doc_id}",
+            json={"parser_id": parser, "parser_config": parser_config or {}},
+        )
+
     def retrieval(
         self,
         *,

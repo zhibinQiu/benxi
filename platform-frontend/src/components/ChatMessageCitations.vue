@@ -46,13 +46,13 @@ function formatScore(score) {
 .chat-citations {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(13, 148, 136, 0.15);
+  border-top: 1px solid var(--platform-accent-border-soft);
 }
 
 .chat-citations-title {
   font-size: 12px;
   font-weight: 600;
-  color: #0f766e;
+  color: var(--platform-accent-pressed);
   margin-bottom: 8px;
 }
 
@@ -74,20 +74,20 @@ function formatScore(score) {
   text-align: left;
   font-size: 12px;
   color: #334155;
-  background: rgba(13, 148, 136, 0.06);
-  border: 1px solid rgba(13, 148, 136, 0.12);
+  background: var(--platform-accent-muted);
+  border: 1px solid var(--platform-accent-border-soft);
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .chat-citation-head:hover {
-  background: rgba(13, 148, 136, 0.1);
+  background: var(--platform-accent-soft);
 }
 
 .chat-citation-num {
   font-weight: 600;
-  color: #0d9488;
+  color: var(--platform-accent);
 }
 
 .chat-citation-doc {

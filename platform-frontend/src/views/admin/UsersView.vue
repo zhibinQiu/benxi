@@ -4,7 +4,6 @@ import {
   NCard,
   NDataTable,
   NButton,
-  NModal,
   NForm,
   NFormItem,
   NInput,
@@ -24,6 +23,7 @@ import {
 } from "../../api/client";
 import OrgDeptPickerTree from "../../components/OrgDeptPickerTree.vue";
 import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
+import AdminFormModal from "../../components/AdminFormModal.vue";
 import { useAuth } from "../../composables/useAuth";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
@@ -350,67 +350,62 @@ onMounted(async () => {
     />
   </n-card>
 
-  <n-modal
+  <AdminFormModal
     v-model:show="showModal"
-    preset="card"
     :title="isEdit ? '编辑用户' : '新建用户'"
-    style="width: 560px"
+    :subtitle="isEdit ? '修改账号信息、部门与角色' : '创建可登录平台的用户账号'"
+    :width="580"
     @after-leave="closeModal"
   >
-    <n-form label-placement="left" label-width="88">
-      <n-form-item v-if="!isEdit" label="手机号" required>
-        <n-input
-          v-model:value="form.phone"
-          placeholder="11 位手机号，用于登录"
-          maxlength="11"
-        />
-      </n-form-item>
-      <n-form-item v-else label="手机号">
-        <n-input :value="form.phone" disabled />
-      </n-form-item>
-      <n-form-item label="姓名" required>
-        <n-input
-          v-model:value="form.display_name"
-          placeholder="登录与界面均显示此名称，不可与他人重复"
-        />
-      </n-form-item>
-      <n-form-item label="邮箱" required>
-        <n-input v-model:value="form.email" placeholder="不可与他人重复" />
-      </n-form-item>
-      <n-form-item :label="isEdit ? '新密码' : '密码'" :required="!isEdit">
-        <n-input
-          v-model:value="form.password"
-          type="password"
-          show-password-on="click"
-          :placeholder="isEdit ? '留空则不修改' : '至少 6 位'"
-        />
-      </n-form-item>
-      <n-form-item label="状态">
-        <n-select v-model:value="form.status" :options="statusOptions" />
-      </n-form-item>
-      <n-form-item v-if="!editingBootstrap" label="部门">
-        <div style="width: 100%">
-          <p style="margin: 0 0 8px; color: #666; font-size: 13px">
+    <n-form class="admin-form-modal__form" label-placement="top">
+      <div class="admin-form-modal__group">
+        <p class="admin-form-modal__group-title">基本信息</p>
+        <n-form-item v-if="!isEdit" label="手机号" required>
+          <n-input
+            v-model:value="form.phone"
+            placeholder="11 位手机号，用于登录"
+            maxlength="11"
+          />
+        </n-form-item>
+        <n-form-item v-else label="手机号">
+          <n-input :value="form.phone" disabled />
+        </n-form-item>
+        <n-form-item label="姓名" required>
+          <n-input
+            v-model:value="form.display_name"
+            placeholder="登录与界面均显示此名称，不可与他人重复"
+          />
+        </n-form-item>
+        <n-form-item label="邮箱" required>
+          <n-input v-model:value="form.email" placeholder="不可与他人重复" />
+        </n-form-item>
+        <n-form-item :label="isEdit ? '新密码' : '密码'" :required="!isEdit">
+          <n-input
+            v-model:value="form.password"
+            type="password"
+            show-password-on="click"
+            :placeholder="isEdit ? '留空则不修改' : '至少 6 位'"
+          />
+        </n-form-item>
+        <n-form-item label="状态">
+          <n-select v-model:value="form.status" :options="statusOptions" />
+        </n-form-item>
+      </div>
+
+      <div v-if="!editingBootstrap" class="admin-form-modal__group">
+        <p class="admin-form-modal__group-title">组织与权限</p>
+        <n-form-item label="部门">
+          <p class="admin-form-modal__hint">
             每人只能归属一个部门；在树中勾选目标部门即可（勾选新部门会自动取消原选择）。
           </p>
           <OrgDeptPickerTree
             v-model:department-ids="form.department_ids"
             :departments="departments"
-            :max-height="300"
+            :max-height="240"
           />
-        </div>
-      </n-form-item>
-      <n-form-item v-else label="部门">
-        <n-text depth="3">系统默认管理员不归属任何部门</n-text>
-      </n-form-item>
-      <n-form-item v-if="editingBootstrap" label="角色">
-        <n-text depth="3">
-          唯一内置管理员账号（手机号 {{ BOOTSTRAP_PHONE }}），始终为系统管理员，不可在此修改
-        </n-text>
-      </n-form-item>
-      <n-form-item v-else label="角色">
-        <div style="width: 100%">
-          <p style="margin: 0 0 8px; color: #666; font-size: 13px">
+        </n-form-item>
+        <n-form-item label="角色">
+          <p class="admin-form-modal__hint">
             可分配「普通用户」或「系统管理员」权限；内置管理员账号仅 {{ BOOTSTRAP_PHONE }} 一个。
           </p>
           <n-select
@@ -421,16 +416,28 @@ onMounted(async () => {
             placeholder="选择角色"
             :options="roleOptions"
           />
-        </div>
-      </n-form-item>
+        </n-form-item>
+      </div>
+
+      <div v-else class="admin-form-modal__group">
+        <p class="admin-form-modal__group-title">组织与权限</p>
+        <n-form-item label="部门">
+          <n-text depth="3">系统默认管理员不归属任何部门</n-text>
+        </n-form-item>
+        <n-form-item label="角色">
+          <n-text depth="3">
+            唯一内置管理员账号（手机号 {{ BOOTSTRAP_PHONE }}），始终为系统管理员，不可在此修改
+          </n-text>
+        </n-form-item>
+      </div>
     </n-form>
     <template #footer>
-      <n-space justify="end">
+      <n-space :size="10">
         <n-button @click="showModal = false">取消</n-button>
         <n-button type="primary" :loading="saving" @click="submit">
           {{ isEdit ? "保存" : "创建" }}
         </n-button>
       </n-space>
     </template>
-  </n-modal>
+  </AdminFormModal>
 </template>

@@ -1,6 +1,6 @@
 [project]
 name = "doc-platform"
-version = "3.8.0"
+version = "3.9.3"
 description = "Single-tenant document platform (IAM, documents, jobs, notifications)"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"

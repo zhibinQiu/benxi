@@ -26,7 +26,7 @@ const showHeader = computed(
 </script>
 
 <template>
-  <header v-if="showHeader" class="subsystem-header">
+  <header v-if="showHeader" class="subsystem-header feature-local-nav">
     <div v-if="showIntroBlock || $slots.extra" class="subsystem-extra-row">
       <slot name="extra" />
       <HintTooltip v-if="showIntroBlock" :text="introText" />
@@ -37,7 +37,6 @@ const showHeader = computed(
 <style scoped>
 .subsystem-header {
   flex-shrink: 0;
-  margin-bottom: 4px;
 }
 
 .subsystem-extra-row {

@@ -1,0 +1,21 @@
+/* 系统渐变字 — 用于标题/强调文字，非按钮背板 */
+
+.platform-text-gradient,
+.header-title--gradient {
+  background-image: var(--platform-accent-gradient);
+  background-size: 120% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-icon-btn--active {
+  color: var(--platform-accent) !important;
+  background: var(--platform-accent-muted) !important;
+}
+
+.header-icon-btn--active .n-icon {
+  color: var(--platform-accent) !important;
+}

@@ -4,7 +4,6 @@ import {
   NCard,
   NDataTable,
   NButton,
-  NModal,
   NForm,
   NFormItem,
   NInput,
@@ -20,6 +19,7 @@ import {
   deleteDepartment,
 } from "../../api/client";
 import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
+import AdminFormModal from "../../components/AdminFormModal.vue";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
 
@@ -198,33 +198,34 @@ onMounted(load);
     />
   </n-card>
 
-  <n-modal
+  <AdminFormModal
     v-model:show="showModal"
-    preset="card"
     :title="isEdit ? '编辑部门' : '新建部门'"
-    style="width: 400px"
+    :subtitle="isEdit ? '修改部门名称与层级关系' : '在组织架构中新增部门节点'"
+    :width="460"
     @after-leave="closeModal"
   >
-    <n-form label-placement="left" label-width="88">
+    <n-form class="admin-form-modal__form" label-placement="top">
       <n-form-item label="部门名称" required>
-        <n-input v-model:value="form.name" placeholder="部门名称" />
+        <n-input v-model:value="form.name" placeholder="请输入部门名称" />
       </n-form-item>
       <n-form-item label="上级部门">
+        <p class="admin-form-modal__hint">不选择上级时，该部门将作为根部门。</p>
         <n-select
           v-model:value="form.parent_id"
           :options="parentOptions"
           clearable
-          placeholder="不选则为根部门"
+          placeholder="选择上级部门（可选）"
         />
       </n-form-item>
     </n-form>
     <template #footer>
-      <n-space justify="end">
+      <n-space :size="10">
         <n-button @click="showModal = false">取消</n-button>
         <n-button type="primary" :loading="saving" @click="submit">
           {{ isEdit ? "保存" : "创建" }}
         </n-button>
       </n-space>
     </template>
-  </n-modal>
+  </AdminFormModal>
 </template>

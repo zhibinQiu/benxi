@@ -99,6 +99,13 @@ def test_build_embed_session_skips_reconcile_when_catalog_ready():
             "app.services.knowflow_catalog_service.reconcile_user_knowflow_kb_acl"
         ) as reconcile_acl,
         patch(
+            "app.services.ragflow_scope_service.allowed_dataset_ids_for_user",
+            return_value={"ds-personal-1"},
+        ),
+        patch(
+            "app.domains.knowledge.background_sync.enqueue_embed_warmup"
+        ) as enqueue_warmup,
+        patch(
             "app.integrations.ragflow_llm_template.ensure_shared_llm_config",
         ),
         patch(
@@ -130,4 +137,6 @@ def test_build_embed_session_skips_reconcile_when_catalog_ready():
     assert out["sso"]["ready"] is True
     assert out["sso"]["authorization"] == "Bearer cached"
     reconcile.assert_not_called()
-    reconcile_acl.assert_called_once()
+    reconcile_acl.assert_called_once_with(db, user)
+    assert out["theme"]["allowed_dataset_ids"] == ["ds-personal-1"]
+    enqueue_warmup.assert_called_once_with(user.id)

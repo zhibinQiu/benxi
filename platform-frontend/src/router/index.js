@@ -274,8 +274,14 @@ const routes = [
       {
         path: "admin/model-settings",
         name: "admin-model-settings",
-        meta: { title: "模型配置", perm: "admin.settings" },
+        meta: { title: "模型配置", perm: "admin.settings", featureLocalNav: true },
         component: () => import("../views/admin/ModelSettingsView.vue"),
+      },
+      {
+        path: "admin/docs",
+        name: "admin-docs",
+        meta: { title: "说明文档" },
+        component: () => import("../views/admin/SystemDocsView.vue"),
       },
     ],
   },

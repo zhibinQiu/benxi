@@ -31,6 +31,8 @@ const suggestions = [
       :suggestions="suggestions"
       :icon="ChatbubblesOutline"
       :stream-chat="carbonQaChatStream"
+      title-gradient
+      :show-chat-header-brand="false"
     />
   </FeatureSubsystemShell>
 </template>

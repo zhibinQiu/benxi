@@ -6,7 +6,7 @@ export const FEATURE_DESCRIPTIONS = {
   translate:
     "智能排版保留 PDF 版式，支持双语对照与术语表；翻译任务可在后台持续进行。",
   rag: "KnowFlow 知识库编码与配置，支持引用溯源与文档定位。",
-  "knowledge-search": "在企业知识库中检索文档与片段，支持分级库筛选（与双碳智能体快捷入口一致）。",
+  "knowledge-search": "在企业知识库中检索与问答，左侧选文档范围、右侧对话，支持分级库筛选与引用溯源。",
   "smart-data-query":
     "用自然语言查询业务数据，自动生成统计图表与分析洞察，支持多轮追问。",
   "data-analysis":

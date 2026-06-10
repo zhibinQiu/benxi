@@ -20,6 +20,11 @@ gradio_files
 tmp
 gui/gradio_files
 gui/tmp
+# 平台 API 镜像需打包说明文档
+!docs/
+!docs/**
+!运维部署指南.md
+!RELEASE.md
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

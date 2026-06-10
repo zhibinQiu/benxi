@@ -58,6 +58,7 @@ import {
   validateUploadFiles,
 } from "../constants/documentUpload";
 import { renderIconAction, renderIconActionGroup } from "../utils/tableIconActions";
+import { renderKnowledgeIndexTag } from "../utils/knowledgeIndex.js";
 import {
   createDocument,
   createKbFolder,
@@ -346,6 +347,12 @@ const columns = computed(() => {
               { default: () => formatDocumentFormatLabel(row.file_format) }
             )
           : "—",
+    });
+    base.push({
+      title: t("documents.columns.indexStatus"),
+      key: "indexStatus",
+      width: 96,
+      render: (row) => renderKnowledgeIndexTag(row),
     });
   }
   if (isRecycleView.value) {
@@ -1274,8 +1281,9 @@ watch(
 
 <template>
   <div class="documents-page feature-page">
-    <n-card class="documents-actions-card" size="small">
-      <div class="documents-actions-toolbar">
+    <Teleport to="#page-header-extension">
+      <div class="documents-actions-bar">
+        <div class="documents-actions-toolbar">
         <n-space align="center" :size="4" class="documents-toolbar documents-toolbar--primary">
           <IconAction
             v-if="!isMainView"
@@ -1389,8 +1397,9 @@ watch(
             @click="openUploadModal('batch')"
           />
         </n-space>
+        </div>
       </div>
-    </n-card>
+    </Teleport>
 
     <n-card class="documents-list-card" size="small">
     <div v-if="isSearchMode" class="documents-search-results-head">

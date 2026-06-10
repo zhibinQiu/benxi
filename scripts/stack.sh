@@ -24,7 +24,9 @@ info()  { echo -e "${GREEN}[stack]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[stack]${NC} $*"; }
 error() { echo -e "${RED}[stack]${NC} $*" >&2; }
 
-ZHITAN_VERSION="${ZHITAN_VERSION:-3.4.0}"
+# shellcheck source=lib/version.sh
+source "$ROOT/scripts/lib/version.sh"
+ZHITAN_VERSION="${ZHITAN_VERSION:-$(read_repo_version "$ROOT")}"
 DATA_ROOT="${DATA_ROOT:-./data}"
 IMAGES_DIR="${IMAGES_DIR:-./images}"
 COMPOSE_PROFILES_EXTRA=()
@@ -44,7 +46,7 @@ load_env() {
     source .env
     set +a
   fi
-  ZHITAN_VERSION="${ZHITAN_VERSION:-3.4.0}"
+  ZHITAN_VERSION="${ZHITAN_VERSION:-$(read_repo_version "$ROOT")}"
   export ZHITAN_VERSION DATA_ROOT COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-zhitan}"
   mkdir -p "$DATA_ROOT" "$IMAGES_DIR" backups
 }
@@ -244,7 +246,7 @@ cmd_save() {
 }
 
 cmd_load() {
-  local f="${1:?用法: stack.sh load images/zhitan-3.4.0-amd64.tar.gz}"
+  local f="${1:?用法: stack.sh load images/zhitan-3.9.2-amd64.tar.gz}"
   [[ -f "$f" ]] || { error "文件不存在: $f"; exit 1; }
   info "导入 $f ..."
   gzip -dc "$f" | docker load
@@ -319,7 +321,7 @@ usage() {
   bash scripts/stack.sh up --profile knowflow --profile speech
   bash scripts/stack.sh save
   rsync -avz images/ user@server:/opt/zhitan/images/
-  ssh user@server 'cd /opt/zhitan && bash scripts/stack.sh load images/zhitan-3.4.0-amd64.tar.gz && bash scripts/stack.sh up'
+  ssh user@server 'cd /opt/zhitan && bash scripts/stack.sh load images/zhitan-3.9.2-amd64.tar.gz && bash scripts/stack.sh up'
 EOF
 }
 

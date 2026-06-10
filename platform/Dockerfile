@@ -6,15 +6,21 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 
 WORKDIR /app
 
+# 系统说明文档（构建上下文为仓库根目录）
+COPY docs ./system-docs/docs
+COPY 运维部署指南.md ./system-docs/
+COPY RELEASE.md ./system-docs/
+ENV SYSTEM_DOCS_ROOT=/app/system-docs
+
 # 数据分析 Notebook 绘图需中文字体（matplotlib 默认 DejaVu Sans 不含 CJK）
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-wqy-microhei \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md ./
-COPY app ./app
-COPY workers ./workers
+COPY platform/pyproject.toml platform/README.md ./
+COPY platform/app ./app
+COPY platform/workers ./workers
 # KnowFlow iframe 白标资源（与 deploy/knowflow/theme 保持一致）
-COPY knowflow-theme ./knowflow-theme
+COPY platform/knowflow-theme ./knowflow-theme
 
 RUN pip install --no-cache-dir -i "${PIP_INDEX_URL}" -e . && \
     python -c "\

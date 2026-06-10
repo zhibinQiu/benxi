@@ -1,0 +1,183 @@
+/* 功能页局部顶栏：与系统 .header 无缝衔接，共用渐变底 */
+
+.main-layout:has(.app-content .feature-local-nav),
+.main-layout:has(.app-content .feature-top-strip) {
+  --feature-nav-inset-x: 20px;
+}
+
+.main-layout .app-content:has(.feature-local-nav),
+.main-layout .app-content:has(.feature-top-strip) {
+  padding-top: 0 !important;
+}
+
+.main-layout:has(.app-content .feature-local-nav) .header,
+.main-layout:has(.app-content .feature-top-strip) .header {
+  border-bottom: none !important;
+}
+
+.feature-top-strip {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--platform-chat-gradient);
+  margin-left: calc(-1 * var(--feature-nav-inset-x, 20px));
+  margin-right: calc(-1 * var(--feature-nav-inset-x, 20px));
+}
+
+.main-layout .app-content--full .feature-top-strip,
+.main-layout .app-content--full .feature-local-nav {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.feature-local-nav,
+.feature-top-strip > .feature-local-nav {
+  position: relative;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  background: var(--platform-chat-gradient) !important;
+  border: none !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-radius: 0 !important;
+  margin-top: 0 !important;
+}
+
+.feature-top-strip > .feature-local-nav {
+  background: transparent !important;
+}
+
+/* 与系统顶栏同宽：抵消 app-content 水平 padding，内容再内缩 inset-x */
+.main-layout .app-content:not(.app-content--full) .feature-page > .feature-local-nav:first-child,
+.main-layout .app-content:not(.app-content--full) .feature-page > .feature-top-strip:first-child,
+.main-layout .app-content:not(.app-content--full) > .app-view-host > .app-route-page > .feature-local-nav:first-child,
+.main-layout .app-content:not(.app-content--full) > .app-view-host > .app-route-page > .feature-top-strip:first-child {
+  margin-left: calc(-1 * var(--feature-nav-inset-x, 20px));
+  margin-right: calc(-1 * var(--feature-nav-inset-x, 20px));
+}
+
+.feature-local-nav::before,
+.n-card.feature-local-nav::before,
+.page-toolbar.feature-local-nav::before {
+  display: none !important;
+}
+
+/* 文档中心操作条（Teleport 至系统顶栏 extension 槽） */
+.header-extension .documents-actions-bar {
+  padding: 4px 20px 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.header-extension .documents-actions-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 40px;
+}
+
+/* 文档中心操作条（旧：内容区 feature-local-nav，保留兼容） */
+.n-card.documents-actions-card.feature-local-nav {
+  margin-bottom: 0 !important;
+}
+
+.n-card.documents-actions-card.feature-local-nav :deep(.n-card__content) {
+  padding: 10px var(--feature-nav-inset-x, 20px);
+}
+
+/* 子系统壳：顶栏操作区 + 步骤条连续渐变 */
+.subsystem-shell > .subsystem-header.feature-local-nav {
+  margin-bottom: 0 !important;
+  padding: 8px 20px;
+  min-height: 44px;
+  align-items: center;
+}
+
+.subsystem-shell > .subsystem-header.feature-local-nav .subsystem-extra-row {
+  width: 100%;
+}
+
+.subsystem-shell--fill .subsystem-body > .feature-local-nav:first-child {
+  padding: 10px 20px 12px;
+}
+
+/* 通用工具条 / 步骤条 */
+.page-toolbar.feature-local-nav,
+.page-subheader.feature-local-nav,
+.translate-steps-bar.feature-local-nav {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0 !important;
+  padding: 10px var(--feature-nav-inset-x, 20px) 12px;
+}
+
+.page-toolbar.feature-local-nav {
+  justify-content: flex-end;
+  min-height: 48px;
+}
+
+.page-subheader.feature-local-nav,
+.translate-steps-bar.feature-local-nav {
+  min-height: 52px;
+}
+
+/* 网站收藏：收录 + 筛选条 */
+.feature-top-strip .subscriptions-ingest.feature-local-nav :deep(.n-card__content),
+.feature-top-strip .subscriptions-ingest.feature-local-nav {
+  padding-bottom: 0;
+}
+
+.feature-top-strip .subscriptions-toolbar.feature-local-nav {
+  padding-top: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 0 !important;
+}
+
+/* 知识检索范围提示条 */
+.knowledge-search-page__scope-bar.feature-local-nav {
+  padding: 10px 16px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--platform-border);
+}
+
+.knowledge-search-page:has(.feature-local-nav) {
+  border-top: none;
+  border-radius: 0;
+}
+
+.subsystem-shell--fill .knowledge-search-page {
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+/* 局部顶栏与正文之间仅保留内容区内边距，不再重复顶部分割 */
+.feature-top-strip + .documents-list-card,
+.feature-local-nav + .page-alert,
+.subsystem-body > .feature-local-nav + .page-alert,
+.subsystem-body > .feature-local-nav + .page-alerts,
+.subsystem-body > .feature-local-nav + .ocr-workspace,
+.subsystem-body > .feature-local-nav + .translate-workspace {
+  margin-top: 12px;
+}
+
+.subscriptions-page > .feature-top-strip + .list-spin {
+  margin-top: 12px;
+}
+
+.documents-page.feature-page:has(.feature-top-strip) {
+  gap: 12px;
+}
+
+.resource-settings-page.feature-page > .page-alert {
+  margin: 12px 0 0;
+}
+
+.resource-settings-page.feature-page > .page-toolbar.feature-local-nav + .category-block {
+  margin-top: 12px;
+}

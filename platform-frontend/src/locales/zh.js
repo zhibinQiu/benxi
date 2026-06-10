@@ -14,7 +14,8 @@ export default {
     users: "用户管理",
     departments: "部门管理",
     monitor: "系统监控",
-    modelSettings: "模型配置",
+    modelSettings: "资源管理",
+    systemDocs: "说明文档",
     encodingManagement: "编码管理",
     readOnly: "仅查阅",
   },
@@ -57,7 +58,8 @@ export default {
     "admin-users": "用户管理",
     "admin-departments": "部门管理",
     "admin-monitor": "系统监控",
-    "admin-model-settings": "模型配置",
+    "admin-model-settings": "资源管理",
+    "admin-docs": "说明文档",
   },
   header: {
     back: "返回",
@@ -207,6 +209,7 @@ export default {
       team: "所属小组",
       department: "所属部门",
       folder: "文件夹",
+      indexStatus: "索引",
     },
     status: {
       active: "启用",
@@ -294,8 +297,9 @@ export default {
   jobs: {
     title: "后台任务",
     viewAll: "查看全部任务",
-    clearDone: "清理已完成",
     clearDone: "清除已完成",
+    clearAll: "清空全部",
+    clearRecords: "清理记录",
     columns: {
       type: "类型",
       status: "状态",

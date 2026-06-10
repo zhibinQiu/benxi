@@ -108,12 +108,12 @@ const iconComponent = computed(() => {
 }
 .drop-zone.filled {
   border-style: solid;
-  border-color: rgba(24, 160, 88, 0.35);
-  background: rgba(24, 160, 88, 0.04);
+  border-color: var(--platform-accent-border);
+  background: var(--platform-accent-muted);
 }
 .drop-zone.filled:hover:not(.disabled) {
-  border-color: rgba(24, 160, 88, 0.5);
-  background: rgba(24, 160, 88, 0.07);
+  border-color: var(--platform-accent);
+  background: var(--platform-accent-soft);
 }
 .drop-zone.disabled {
   opacity: 0.45;
@@ -134,8 +134,8 @@ const iconComponent = computed(() => {
   color: var(--n-text-color-2);
 }
 .drop-icon-wrap.filled {
-  background: rgba(24, 160, 88, 0.12);
-  color: #18a058;
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
 }
 .drop-title {
   display: block;

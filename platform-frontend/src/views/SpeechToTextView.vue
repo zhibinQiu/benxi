@@ -160,7 +160,7 @@ function formatTime(sec) {
 
 function speakerColor(speaker) {
   const n = parseInt(String(speaker).replace(/\D/g, ""), 10) || 1;
-  const colors = ["#2080f0", "#18a058", "#f0a020", "#d03050", "#7c3aed"];
+  const colors = ["#2080f0", "#8b5cf6", "#f0a020", "#d03050", "#5b9cf5"];
   return colors[(n - 1) % colors.length];
 }
 

@@ -1,0 +1,390 @@
+/* iOS 26 Liquid Glass — 静态通透底材（动画光效仅用于大容器背景） */
+
+:root {
+  --liquid-x: 0.5;
+  --liquid-y: 0.38;
+  --liquid-tilt-x: 0;
+  --liquid-tilt-y: 0;
+  --liquid-scroll: 0;
+  --liquid-drape-offset: 0px;
+}
+
+/* 结构层：磨砂玻璃（顶栏 .header 除外 — 浮层 n-popover/n-dropdown 不参与，避免 tooltip/菜单定位异常） */
+.n-card:not(.feature-local-nav),
+.glass-float-panel,
+.n-data-table,
+.n-list.n-list--bordered,
+.n-layout-sider,
+.n-dialog,
+.page-toolbar:not(.feature-local-nav),
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked),
+.login-card {
+  position: relative;
+  isolation: isolate;
+  background: var(--platform-bg-elevated) !important;
+  border-color: var(--platform-glass-border) !important;
+  box-shadow: var(--platform-glass-shadow) !important;
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
+}
+
+.header {
+  background: var(--platform-header-bg) !important;
+  border-bottom: 1px solid var(--platform-glass-outline);
+  box-shadow:
+    var(--platform-glass-highlight),
+    0 0 0 1px var(--platform-glass-outline);
+}
+
+.n-card:not(.feature-local-nav) > *,
+.glass-float-panel > *,
+.n-data-table > *,
+.n-list.n-list--bordered > *,
+.n-layout-sider > *,
+.n-dialog > *,
+.page-toolbar:not(.feature-local-nav) > *,
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked) > *,
+.login-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 卡片 / 面板：轻量顶缘高光（静态层不再叠加重描边） */
+.n-card:not(.feature-local-nav)::before,
+.glass-float-panel::before,
+.n-data-table::before,
+.n-list.n-list--bordered::before,
+.n-layout-sider::before,
+.login-card::before,
+.page-toolbar:not(.feature-local-nav)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 var(--liquid-edge-highlight);
+}
+
+html[data-theme="light"] .n-card:not(.feature-local-nav),
+html[data-theme="light"] .glass-float-panel,
+html[data-theme="light"] .n-data-table,
+html[data-theme="light"] .n-list.n-list--bordered,
+html[data-theme="light"] .page-toolbar:not(.feature-local-nav),
+html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature-card--locked) {
+  border: 1px solid var(--platform-border) !important;
+}
+
+.n-card:not(.feature-local-nav)::after,
+.login-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 var(--liquid-edge-highlight);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .n-card:not(.feature-local-nav),
+  .glass-float-panel,
+  .n-data-table,
+  .n-list.n-list--bordered,
+  .n-layout-sider,
+  .n-dialog,
+  .page-toolbar:not(.feature-local-nav),
+  .feature-card:not(.feature-card--disabled):not(.feature-card--locked),
+  .login-card {
+    background: var(--platform-bg-elevated-solid) !important;
+  }
+
+  .header {
+    background: var(--platform-bg-elevated-solid) !important;
+  }
+}
+
+/* 通用可点击块 — 悬浮时轻量玻璃衬底（顶栏控件不用 backdrop-filter，避免 popover 定位异常） */
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked),
+.glass-float-panel,
+.kb-folder-create-card,
+.kb-folder-card,
+.assistant-chip,
+.assistant-fab,
+.documents-scope-bookmarks__tab,
+.table-icon-action:not(:disabled),
+.page-toolbar .icon-action:not(:disabled),
+.n-button:not(.n-button--disabled) {
+  position: relative;
+}
+
+.header-user-trigger,
+.header-toolbar {
+  position: relative;
+}
+
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked)::before,
+.kb-folder-create-card::before,
+.kb-folder-card::before,
+.assistant-chip::before,
+.documents-scope-bookmarks__tab::before,
+.table-icon-action:not(:disabled)::before,
+.page-toolbar .icon-action:not(:disabled)::before,
+.n-button:not(.n-button--disabled):not(.header-icon-btn)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    var(--menu-glass-bg) 0%,
+    var(--menu-glass-bg-bottom) 100%
+  );
+  backdrop-filter: saturate(150%) blur(8px);
+  -webkit-backdrop-filter: saturate(150%) blur(8px);
+  box-shadow: var(--platform-glass-rim-edge);
+  transition:
+    opacity 0.2s var(--platform-ease-smooth),
+    box-shadow 0.2s var(--platform-ease-smooth);
+}
+
+.header-user-trigger::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    var(--menu-glass-bg) 0%,
+    var(--menu-glass-bg-bottom) 100%
+  );
+  box-shadow: var(--platform-glass-rim-edge);
+  transition:
+    opacity 0.2s var(--platform-ease-smooth),
+    box-shadow 0.2s var(--platform-ease-smooth);
+}
+
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked):hover::before,
+.header-user-trigger:hover::before,
+.n-button:not(.n-button--disabled):not(.header-icon-btn):hover::before,
+.kb-folder-create-card:hover::before,
+.kb-folder-card:hover::before,
+.assistant-chip:hover::before,
+.documents-scope-bookmarks__tab:hover::before,
+.table-icon-action:not(:disabled):hover::before,
+.page-toolbar .icon-action:not(:disabled):hover::before {
+  opacity: var(--menu-glass-hover-opacity, 0.38);
+  box-shadow: var(--platform-glass-rim-edge);
+}
+
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked) > *,
+.header-user-trigger > *,
+.n-button:not(.n-button--disabled):not(.header-icon-btn) > *,
+.kb-folder-create-card > *,
+.kb-folder-card > *,
+.assistant-chip > *,
+.documents-scope-bookmarks__tab > *,
+.table-icon-action:not(:disabled) > *,
+.page-toolbar .icon-action:not(:disabled) > * {
+  position: relative;
+  z-index: 1;
+}
+
+.n-button:not(.n-button--disabled) {
+  transition:
+    transform 0.18s var(--platform-ease-smooth),
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease !important;
+}
+
+.n-button:not(.n-button--disabled):active {
+  transform: scale(0.98);
+}
+
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked):hover {
+  transform: none;
+}
+
+@keyframes liquid-orb-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(2vw, -1vh, 0);
+  }
+}
+
+@keyframes liquid-ambient-shift {
+  0%,
+  100% {
+    filter: blur(72px);
+  }
+  50% {
+    filter: blur(80px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-card:hover,
+  .n-button:active,
+  .login-page .login-glass-btn:active {
+    transform: none !important;
+  }
+
+  .app-ambient__orb {
+    animation: none !important;
+  }
+}
+
+/* 登录页按钮 — 悬浮玻璃衬底 + 边缘高光 */
+.login-page .login-glass-btn.n-button:not(.n-button--disabled) {
+  position: relative;
+  overflow: hidden;
+  min-height: 48px;
+  font-size: 15px;
+  border-radius: var(--platform-radius-sm) !important;
+  transition:
+    transform 0.18s var(--platform-ease-smooth),
+    box-shadow 0.2s var(--platform-ease-smooth),
+    filter 0.2s var(--platform-ease-smooth),
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease !important;
+}
+
+.login-page .login-glass-btn--pref.n-button:not(.n-button--disabled) {
+  min-height: 40px;
+  padding: 0 16px !important;
+  background: rgba(255, 255, 255, 0.28) !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.42) !important;
+}
+
+.login-page .login-glass-btn--pref.n-button--circle:not(.n-button--disabled) {
+  width: 42px;
+  min-height: 42px;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.login-page .login-glass-btn--pref.n-button--circle:not(.n-button--disabled) .n-button__icon,
+.login-page .login-glass-btn--pref.n-button--circle:not(.n-button--disabled) .n-icon {
+  margin: 0 !important;
+}
+
+html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-button--disabled) {
+  background: rgba(28, 28, 36, 0.52) !important;
+  border-color: rgba(147, 197, 253, 0.16) !important;
+}
+
+.login-page .login-glass-btn.n-button:not(.n-button--disabled)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    var(--menu-glass-bg) 0%,
+    var(--menu-glass-bg-bottom) 100%
+  );
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  box-shadow: var(--platform-glass-rim-edge);
+  transition:
+    opacity 0.22s var(--platform-ease-smooth),
+    box-shadow 0.22s var(--platform-ease-smooth);
+}
+
+.login-page .login-glass-btn.n-button:not(.n-button--primary-type):not(.n-button--disabled):hover::before {
+  opacity: 0.62;
+  box-shadow: var(--platform-glass-rim-edge);
+}
+
+.login-page .login-glass-btn.n-button--primary-type:not(.n-button--disabled):hover::before {
+  opacity: 0.72;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.36) 0%,
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.login-page .login-glass-btn--pref.n-button:not(.n-button--disabled):hover::before {
+  opacity: 0.55;
+}
+
+.login-page .login-glass-btn.n-button--primary-type:not(.n-button--disabled):hover {
+  box-shadow: var(--platform-glass-rim-edge), 0 6px 20px rgba(91, 156, 245, 0.28);
+  filter: brightness(1.06);
+}
+
+.login-page .login-glass-btn.n-button:not(.n-button--disabled) > * {
+  position: relative;
+  z-index: 1;
+}
+
+.login-page .login-glass-btn.n-button:not(.n-button--disabled):active {
+  transform: scale(0.98);
+}
+
+/* 列表项玻璃悬浮（网站收藏 SERP 等） */
+.glass-float-panel {
+  cursor: pointer;
+  transition:
+    transform 0.22s var(--platform-ease-smooth),
+    box-shadow 0.22s var(--platform-ease-smooth),
+    border-color 0.22s var(--platform-ease-smooth);
+}
+
+.glass-float-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    var(--menu-glass-bg) 0%,
+    var(--menu-glass-bg-bottom) 100%
+  );
+  backdrop-filter: saturate(150%) blur(10px);
+  -webkit-backdrop-filter: saturate(150%) blur(10px);
+  box-shadow: var(--platform-glass-rim-edge);
+  transition:
+    opacity 0.22s var(--platform-ease-smooth),
+    box-shadow 0.22s var(--platform-ease-smooth);
+}
+
+.glass-float-panel:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--platform-glass-shadow),
+    0 10px 28px color-mix(in srgb, var(--platform-accent) 8%, transparent);
+}
+
+.glass-float-panel:hover::after {
+  opacity: var(--menu-glass-hover-opacity, 0.42);
+}
+
+.glass-float-panel:active {
+  transform: translateY(-1px);
+}

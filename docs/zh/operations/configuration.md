@@ -19,7 +19,7 @@
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `ZHITAN_VERSION` | 3.4.0 | 自有镜像 tag |
+| `ZHITAN_VERSION` | 3.9.3（见根目录 `VERSION`） | 自有镜像 tag |
 | `DATA_ROOT` | ./data | 持久化根目录 |
 | `FRONTEND_PORT` | 40005 | 唯一对外 Web 端口 |
 | `STACK_USE_MIRROR` | 1 | 启用 compose.mirror.yaml |

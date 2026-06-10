@@ -14,7 +14,8 @@ export default {
     users: "Users",
     departments: "Departments",
     monitor: "Monitoring",
-    modelSettings: "Models",
+    modelSettings: "Resources",
+    systemDocs: "Documentation",
     encodingManagement: "Encoding",
     readOnly: "View only",
   },
@@ -57,7 +58,8 @@ export default {
     "admin-users": "Users",
     "admin-departments": "Departments",
     "admin-monitor": "Monitoring",
-    "admin-model-settings": "Models",
+    "admin-model-settings": "Resources",
+    "admin-docs": "Documentation",
   },
   header: {
     back: "Back",
@@ -207,6 +209,7 @@ export default {
       team: "Team",
       department: "Department",
       folder: "Folder",
+      indexStatus: "Index",
     },
     status: {
       active: "Active",
@@ -295,7 +298,8 @@ export default {
     title: "Background jobs",
     viewAll: "View all jobs",
     clearDone: "Clear completed",
-    clearDone: "Clear completed",
+    clearAll: "Clear all",
+    clearRecords: "Clear records",
     columns: {
       type: "Type",
       status: "Status",

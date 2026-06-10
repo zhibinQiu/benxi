@@ -2,7 +2,7 @@
 
 ## 版本号
 
-- 镜像 tag：`ZHITAN_VERSION`（默认 3.4.0，见 `VERSION` 或 `.env.stack.example`）
+- 镜像 tag：`ZHITAN_VERSION`（默认 3.9.3，见根目录 `VERSION` 或 `.env.stack.example`）
 - 升级时 bump 版本并 rebuild / save / load
 
 ## 标准升级（stack）

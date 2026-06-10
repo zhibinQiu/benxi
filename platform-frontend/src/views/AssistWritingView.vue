@@ -273,7 +273,7 @@ watch(presetId, (id) => {
 }
 
 .doc-panel--editor {
-  border-top: 2px solid #14b8a6;
+  border-top: 2px solid var(--platform-accent);
 }
 
 .doc-panel--preview {
@@ -308,8 +308,8 @@ watch(presetId, (id) => {
 }
 
 .doc-panel-badge--editor {
-  background: rgba(20, 184, 166, 0.12);
-  color: #0f766e;
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent-pressed);
 }
 
 .doc-panel-badge--preview {
@@ -420,7 +420,7 @@ watch(presetId, (id) => {
 .md-preview :deep(blockquote) {
   margin: 0.6em 0;
   padding-left: 12px;
-  border-left: 3px solid #14b8a6;
+  border-left: 3px solid var(--platform-accent);
   color: var(--platform-muted, #64748b);
 }
 

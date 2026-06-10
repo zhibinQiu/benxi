@@ -22,6 +22,8 @@ import {
   useMessage,
   useDialog,
 } from "naive-ui";
+import { DownloadOutline, TrashOutline } from "@vicons/ionicons5";
+import IconAction from "../components/IconAction.vue";
 import {
   fetchDocument,
   updateDocument,
@@ -29,7 +31,6 @@ import {
   uploadDocumentBlob,
   completeUpload,
   downloadDocumentFile,
-  syncDocumentToKnowflow,
   deleteDocumentVersion,
   patchDocumentStatus,
   restoreDocument,
@@ -46,6 +47,8 @@ import {
 import { useAuth } from "../composables/useAuth";
 import OrgUserPickerTree from "../components/OrgUserPickerTree.vue";
 import OrgDeptPickerTree from "../components/OrgDeptPickerTree.vue";
+import DocumentKnowledgePanel from "../components/DocumentKnowledgePanel.vue";
+import { knowledgeIndexTagProps } from "../utils/knowledgeIndex.js";
 import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
 import { ORG_SCOPES, SCOPE_LABELS, SCOPE_PERM } from "../constants/documentScope";
@@ -74,7 +77,6 @@ const { user, hasPerm } = useAuth();
 const docId = route.params.id;
 const doc = ref(null);
 const loading = ref(false);
-const syncingKnowflow = ref(false);
 const editTitle = ref("");
 const titleEditing = ref(false);
 const titleSaving = ref(false);
@@ -109,10 +111,6 @@ const uploadedAtLabel = computed(() => {
 });
 
 const displayVersions = computed(() => doc.value?.versions || []);
-
-const canDownloadFile = computed(() =>
-  displayVersions.value.some((v) => v.uploaded),
-);
 
 function versionFileLabel(v) {
   return v.file_name || "—";
@@ -157,6 +155,7 @@ const shareGranting = ref(false);
 const publishTarget = ref("department");
 const publishDeptIds = ref([]);
 const publishLoading = ref(false);
+const accessMode = ref("publish");
 
 const canPublishCompany = computed(
   () => isOwner.value && hasPerm("doc.company.create")
@@ -168,6 +167,21 @@ const showPublishCard = computed(
     !isInRecycle.value &&
     (canPublishCompany.value || canPublishDept.value || canPublishTeam.value)
 );
+const showAccessCard = computed(
+  () => !isInRecycle.value && (showPublishCard.value || canGrantAcl.value)
+);
+
+function syncAccessModeDefault() {
+  if (accessMode.value === "publish" && !showPublishCard.value && canGrantAcl.value) {
+    accessMode.value = "share";
+  } else if (accessMode.value === "share" && !canGrantAcl.value && showPublishCard.value) {
+    accessMode.value = "publish";
+  } else if (!showPublishCard.value && canGrantAcl.value) {
+    accessMode.value = "share";
+  } else if (showPublishCard.value && !canGrantAcl.value) {
+    accessMode.value = "publish";
+  }
+}
 const currentScopeLabel = computed(() => {
   const s = doc.value?.scope || "personal";
   if (ORG_SCOPES.includes(s) && doc.value?.dept_id) {
@@ -260,6 +274,7 @@ async function load({ notifyOnError = true } = {}) {
   try {
     doc.value = await fetchDocument(docId);
     editTitle.value = doc.value.title || "";
+    syncAccessModeDefault();
     if (doc.value.scope === "company") {
       publishTarget.value = "company";
     } else if (doc.value.scope === "department" && doc.value.dept_id) {
@@ -339,38 +354,15 @@ async function uploadVersion({ file, onFinish, onError }) {
   }
 }
 
-async function download() {
+async function downloadVersion(v) {
+  if (!v?.uploaded) return;
   try {
     const fallback =
-      displayVersions.value.find((v) => v.is_current)?.file_name ||
-      `${doc.value?.title || "document"}.pdf`;
-    await downloadDocumentFile(docId, fallback);
+      v.file_name || `${doc.value?.title || "document"}.pdf`;
+    await downloadDocumentFile(docId, fallback, v.id);
     message.success("已开始下载");
   } catch (e) {
     message.error(e.message);
-  }
-}
-
-async function syncKnowflow() {
-  syncingKnowflow.value = true;
-  try {
-    const res = await syncDocumentToKnowflow(docId);
-    if (res.knowflow_synced) {
-      message.success(res.message || "已同步到知识库");
-    } else {
-      message.warning(res.message || "未能同步到知识库，请稍后重试");
-    }
-  } catch (e) {
-    const text = String(e?.message || "");
-    if (text.includes("知识服务暂不可用") || text.includes("服务器内部")) {
-      message.warning(
-        "同步知识库失败：请确认 KnowFlow/RAGFlow 服务已启动，且当前账号已完成知识库开户（可先打开「切片管理」页）。"
-      );
-    } else {
-      message.error(text || "同步知识库失败");
-    }
-  } finally {
-    syncingKnowflow.value = false;
   }
 }
 
@@ -600,25 +592,6 @@ onMounted(load);
           </template>
         </n-space>
       </template>
-      <template #header-extra>
-        <n-space>
-          <n-button
-            type="primary"
-            :disabled="!canDownloadFile || !canViewDoc"
-            @click="download"
-          >
-            下载
-          </n-button>
-          <n-button
-            tertiary
-            :disabled="!canDownloadFile || !canViewDoc"
-            :loading="syncingKnowflow"
-            @click="syncKnowflow"
-          >
-            同步知识库
-          </n-button>
-        </n-space>
-      </template>
       <n-descriptions :column="2" label-placement="left">
         <n-descriptions-item label="ID">{{ doc.id }}</n-descriptions-item>
         <n-descriptions-item label="文档状态">
@@ -662,6 +635,16 @@ onMounted(load);
       </n-upload>
     </n-card>
 
+    <DocumentKnowledgePanel
+      v-if="canViewDoc && !isInRecycle"
+      :document-id="docId"
+      :title="doc.title"
+      :versions="doc.versions || []"
+      :current-version-id="doc.current_version_id"
+      :can-manage="canEditDoc"
+      @updated="load({ notifyOnError: false })"
+    />
+
     <n-card title="版本历史">
       <template #header-extra>
         <n-space v-if="isInRecycle" :size="8">
@@ -688,7 +671,8 @@ onMounted(load);
             <th>文件名</th>
             <th>大小</th>
             <th>时间</th>
-            <th v-if="!isInRecycle && canDeleteDoc">操作</th>
+            <th v-if="!isInRecycle">索引</th>
+            <th v-if="!isInRecycle && (canViewDoc || canDeleteDoc)">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -702,100 +686,128 @@ onMounted(load);
             <td>{{ versionFileLabel(v) }}</td>
             <td>{{ versionSizeLabel(v) }}</td>
             <td>{{ new Date(v.created_at).toLocaleString() }}</td>
-            <td v-if="!isInRecycle && canDeleteDoc">
-              <n-button
-                text
-                type="error"
+            <td v-if="!isInRecycle">
+              <n-tag
+                v-if="v.uploaded"
                 size="small"
-                @click="confirmDeleteVersion(v)"
+                :type="knowledgeIndexTagProps(v).type"
+                :bordered="false"
               >
-                删除
-              </n-button>
+                {{ knowledgeIndexTagProps(v).label }}
+              </n-tag>
+              <span v-else>—</span>
+            </td>
+            <td v-if="!isInRecycle && (canViewDoc || canDeleteDoc)">
+              <div class="table-icon-actions">
+                <IconAction
+                  v-if="v.uploaded && canViewDoc"
+                  label="下载"
+                  :icon="DownloadOutline"
+                  type="primary"
+                  @click="downloadVersion(v)"
+                />
+                <IconAction
+                  v-if="canDeleteDoc"
+                  label="删除"
+                  :icon="TrashOutline"
+                  type="error"
+                  @click="confirmDeleteVersion(v)"
+                />
+              </div>
             </td>
           </tr>
         </tbody>
       </n-table>
     </n-card>
 
-    <n-card v-if="showPublishCard" title="发布到文库">
-      <p style="margin: 0 0 12px; color: #666; font-size: 13px">
-        发布后文档出现在文档库「部门级」或「公司级」中，按分级默认可见；不会进入「分享」Tab。
-        当前：{{ currentScopeLabel }}。
-      </p>
-      <n-radio-group v-model:value="publishTarget" style="margin-bottom: 12px">
+    <n-card v-if="showAccessCard" title="发布与分享">
+      <n-radio-group v-model:value="accessMode" style="margin-bottom: 14px">
         <n-space>
-          <n-radio v-if="canPublishCompany" value="company">公司级</n-radio>
-          <n-radio v-if="canPublishDept" value="department">部门级</n-radio>
-          <n-radio v-if="canPublishTeam" value="team">小组级</n-radio>
+          <n-radio v-if="showPublishCard" value="publish">发布到文库</n-radio>
+          <n-radio v-if="canGrantAcl" value="share">分享给个人</n-radio>
         </n-space>
       </n-radio-group>
-      <OrgDeptPickerTree
-        v-if="ORG_SCOPES.includes(publishTarget) && aclDepartments.length"
-        :departments="aclDepartments"
-        v-model:department-ids="publishDeptIds"
-        :max-height="280"
-        style="margin-bottom: 12px"
-      />
-      <n-button
-        type="primary"
-        :loading="publishLoading"
-        :disabled="ORG_SCOPES.includes(publishTarget) && !publishDeptIds.length"
-        @click="publishToLibrary"
-      >
-        {{ doc.scope === "personal" ? "发布" : "更新发布位置" }}
-      </n-button>
-    </n-card>
 
-    <n-card v-if="canGrantAcl && !isInRecycle" title="分享给个人">
-      <p style="margin: 0 0 12px; color: #666; font-size: 13px">
-        仅用于个人文档的例外协作：被分享者可在「分享」中查看，不会进入部门/公司文库。
-        勾选部门将展开为该部门全部用户；也可单独勾选用户。
-      </p>
-      <OrgUserPickerTree
-        v-if="aclCandidates.length || aclDepartments.length"
-        mode="multi"
-        :departments="aclDepartments"
-        :users="aclCandidates"
-        v-model:checked-keys="shareSelectedKeys"
-        :max-height="320"
-      />
-      <n-space v-if="aclCandidates.length" style="margin-top: 12px" wrap>
+      <template v-if="accessMode === 'publish' && showPublishCard">
+        <p style="margin: 0 0 12px; color: #666; font-size: 13px">
+          发布后文档出现在文档库「部门级」或「公司级」中，按分级默认可见；不会进入「分享」Tab。
+          当前：{{ currentScopeLabel }}。
+        </p>
+        <n-radio-group v-model:value="publishTarget" style="margin-bottom: 12px">
+          <n-space>
+            <n-radio v-if="canPublishCompany" value="company">公司级</n-radio>
+            <n-radio v-if="canPublishDept" value="department">部门级</n-radio>
+            <n-radio v-if="canPublishTeam" value="team">小组级</n-radio>
+          </n-space>
+        </n-radio-group>
+        <OrgDeptPickerTree
+          v-if="ORG_SCOPES.includes(publishTarget) && aclDepartments.length"
+          :departments="aclDepartments"
+          v-model:department-ids="publishDeptIds"
+          :max-height="280"
+          style="margin-bottom: 12px"
+        />
         <n-button
-          v-for="act in sharePermissionActions"
-          :key="act.level"
-          size="small"
-          :loading="shareGranting"
-          :disabled="!shareSelectedKeys.length"
-          @click="grantShareLevel(act.level)"
+          type="primary"
+          :loading="publishLoading"
+          :disabled="ORG_SCOPES.includes(publishTarget) && !publishDeptIds.length"
+          @click="publishToLibrary"
         >
-          {{ act.label }}（{{ act.desc }}）
+          {{ doc.scope === "personal" ? "发布" : "更新发布位置" }}
         </n-button>
-      </n-space>
-      <n-divider v-if="shares.length" style="margin: 16px 0" />
-      <p v-if="shares.length" style="margin: 0 0 8px; font-weight: 500; font-size: 13px">
-        当前已授权
-      </p>
-      <n-table v-if="shares.length" :single-line="false">
-        <thead>
-          <tr>
-            <th>用户</th>
-            <th>权限</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in shares" :key="s.user_id">
-            <td>{{ s.user_name || userNameById[s.user_id] || "未知用户" }}</td>
-            <td>{{ LEVEL_LABELS[s.level] || s.level }}</td>
-            <td>
-              <n-button text type="error" size="small" @click="removeShare(s.user_id)">
-                取消分享
-              </n-button>
-            </td>
-          </tr>
-        </tbody>
-      </n-table>
-      <span v-else>暂无个人分享。部门/公司文库文档请使用上方「发布到文库」。</span>
+      </template>
+
+      <template v-else-if="accessMode === 'share' && canGrantAcl">
+        <p style="margin: 0 0 12px; color: #666; font-size: 13px">
+          仅用于个人文档的例外协作：被分享者可在「分享」中查看，不会进入部门/公司文库。
+          勾选部门将展开为该部门全部用户；也可单独勾选用户。
+        </p>
+        <OrgUserPickerTree
+          v-if="aclCandidates.length || aclDepartments.length"
+          mode="multi"
+          :departments="aclDepartments"
+          :users="aclCandidates"
+          v-model:checked-keys="shareSelectedKeys"
+          :max-height="320"
+        />
+        <n-space v-if="aclCandidates.length" style="margin-top: 12px" wrap>
+          <n-button
+            v-for="act in sharePermissionActions"
+            :key="act.level"
+            size="small"
+            :loading="shareGranting"
+            :disabled="!shareSelectedKeys.length"
+            @click="grantShareLevel(act.level)"
+          >
+            {{ act.label }}（{{ act.desc }}）
+          </n-button>
+        </n-space>
+        <n-divider v-if="shares.length" style="margin: 16px 0" />
+        <p v-if="shares.length" style="margin: 0 0 8px; font-weight: 500; font-size: 13px">
+          当前已授权
+        </p>
+        <n-table v-if="shares.length" :single-line="false">
+          <thead>
+            <tr>
+              <th>用户</th>
+              <th>权限</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in shares" :key="s.user_id">
+              <td>{{ s.user_name || userNameById[s.user_id] || "未知用户" }}</td>
+              <td>{{ LEVEL_LABELS[s.level] || s.level }}</td>
+              <td>
+                <n-button text type="error" size="small" @click="removeShare(s.user_id)">
+                  取消分享
+                </n-button>
+              </td>
+            </tr>
+          </tbody>
+        </n-table>
+        <span v-else>暂无个人分享。</span>
+      </template>
     </n-card>
 
     <n-card v-if="canDenyAcl && !isInRecycle" title="访问限制">

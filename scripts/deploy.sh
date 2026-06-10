@@ -25,6 +25,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM="$ROOT/platform"
+# shellcheck source=lib/version.sh
+source "$ROOT/scripts/lib/version.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -496,7 +498,7 @@ EOF
 stack_image_tarball() {
   local arch ver
   arch="$(normalize_arch "${DEPLOY_ARCH:-auto}")"
-  ver="${ZHITAN_VERSION:-3.4.0}"
+  ver="${ZHITAN_VERSION:-$(read_repo_version "$ROOT")}"
   if [[ -f "$ROOT/.env" ]]; then
     # shellcheck disable=SC1091
     set -a && source "$ROOT/.env" && set +a

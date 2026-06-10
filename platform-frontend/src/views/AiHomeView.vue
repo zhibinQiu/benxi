@@ -30,7 +30,7 @@ const toolLinks = computed(() => {
       icon: StatsChartOutline,
     },
     {
-      title: "知识搜索",
+      title: "知识检索",
       route: { name: "knowledge-search", query: returnQuery },
       icon: SearchOutline,
     },
@@ -48,5 +48,7 @@ const toolLinks = computed(() => {
     :tool-links="toolLinks"
     :icon="LeafOutline"
     :stream-chat="aiHomeChatStream"
+    title-gradient
+    :show-chat-header-brand="false"
   />
 </template>

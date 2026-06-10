@@ -17,12 +17,12 @@ defineEmits(["create"]);
       <svg viewBox="0 0 200 148" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path
           d="M30 46h42l11 13h71c5.5 0 10 4.5 10 10v54c0 5.5-4.5 10-10 10H38c-5.5 0-10-4.5-10-10V56c0-5.5 4.5-10 10-10z"
-          fill="rgba(13, 148, 136, 0.14)"
+          fill="var(--platform-accent-soft)"
         />
         <path
           d="M18 54h50l15 17h81c8.3 0 15 6.7 15 15v50c0 8.3-6.7 15-15 15H33c-8.3 0-15-6.7-15-15V69c0-8.3 6.7-15 15-15z"
-          fill="rgba(13, 148, 136, 0.2)"
-          stroke="rgba(13, 148, 136, 0.38)"
+          fill="var(--platform-accent-muted)"
+          stroke="var(--platform-accent-border)"
           stroke-width="2"
           stroke-dasharray="6 4"
         />

@@ -217,7 +217,7 @@ function statusTag(status) {
 }
 
 .cell-output.stdout {
-  background: #f8fffe;
+  background: var(--platform-accent-gradient-soft);
 }
 
 .cell-output.stderr {

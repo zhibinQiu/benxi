@@ -15,6 +15,12 @@ from app.features.registry import all_plugins, ensure_plugins_loaded, get_plugin
 from app.models.org import User
 from app.config import get_settings
 from app.schemas.common import ApiResponse
+from app.schemas.model_settings import ClientConfigOut
+from app.services.model_settings_service import (
+    get_frontend_app_title,
+    get_frontend_default_theme,
+    get_platform_api_base_url,
+)
 from app import __version__
 
 router = APIRouter(prefix="/system", tags=["system"])
@@ -34,6 +40,18 @@ def system_version() -> ApiResponse[dict]:
             "version_label": label,
             "app_name": settings.app_name,
         }
+    )
+
+
+@router.get("/client-config", response_model=ApiResponse[ClientConfigOut])
+def client_config(db: Annotated[Session, Depends(get_db)]) -> ApiResponse[ClientConfigOut]:
+    """前端启动配置（无需登录）：浏览器请求平台后端的根地址与前台展示项。"""
+    return ApiResponse(
+        data=ClientConfigOut(
+            api_base=get_platform_api_base_url(db),
+            app_title=get_frontend_app_title(db),
+            default_theme=get_frontend_default_theme(db),
+        )
     )
 
 

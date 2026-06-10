@@ -8,7 +8,7 @@ export * from "./documents.js";
 export * from "./rag.js";
 export * from "./dataAnalysis.js";
 
-import { API_BASE, api, formatApiDetail, getToken } from "./http.js";
+import { api, formatApiDetail, getApiBase, getToken } from "./http.js";
 
 export async function fetchJobs({ page = 1, page_size = 20, job_type } = {}) {
   const q = new URLSearchParams({ page, page_size });
@@ -130,6 +130,24 @@ export async function fetchModelSettings() {
   return api("/api/v1/admin/model-settings");
 }
 
+export async function updateModelSettings(payload) {
+  return api("/api/v1/admin/model-settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchResourceHealth() {
+  return api("/api/v1/admin/model-settings/health");
+}
+
+export async function testResourceHealth(resourceId, draft = {}) {
+  return api("/api/v1/admin/model-settings/health/test", {
+    method: "POST",
+    body: JSON.stringify({ resource_id: resourceId, draft }),
+  });
+}
+
 // —— 文档对比 ——
 
 export async function fetchCompareDocuments({ page = 1, page_size = 20, keyword } = {}) {
@@ -208,7 +226,7 @@ export async function fetchCompareDocumentFileBlob(documentId) {
   const token = getToken();
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}/api/v1/compare/documents/${documentId}/file`, {
+  const res = await fetch(`${getApiBase()}/api/v1/compare/documents/${documentId}/file`, {
     headers,
   });
   if (!res.ok) {
@@ -437,7 +455,7 @@ export async function fetchTranslateJob(platformJobId) {
 
 export function subscribeTranslateEvents(platformJobId, { onEvent, onError, onComplete }) {
   const token = getToken();
-  const url = `${API_BASE}/api/v1/translate/jobs/${platformJobId}/events${
+  const url = `${getApiBase()}/api/v1/translate/jobs/${platformJobId}/events${
     token ? `?token=${encodeURIComponent(token)}` : ""
   }`;
   const es = new EventSource(url);
@@ -572,7 +590,7 @@ export async function assistWritingCompose(body) {
 }
 
 export async function downloadTranslateFile(jobId, kind, fallbackName = "download") {
-  const res = await fetch(`${API_BASE}/api/v1/translate/jobs/${jobId}/download/${kind}`, {
+  const res = await fetch(`${getApiBase()}/api/v1/translate/jobs/${jobId}/download/${kind}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new Error(await res.text());

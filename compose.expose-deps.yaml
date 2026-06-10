@@ -1,0 +1,38 @@
+# 远程本地开发：在服务器上暴露依赖端口，供本机 API/Worker 通过 URL 连接
+# 用法（服务器）:
+#   EXPOSE_DEPS=1 bash scripts/stack.sh up --profile knowflow --profile speech
+#
+# 端口约定 40002–40009（40001 保留给同机 Dify 设计系统）；见 .env.server.deps.example
+
+services:
+  postgres:
+    ports:
+      - "${REMOTE_POSTGRES_PORT:-40002}:5432"
+
+  redis:
+    ports:
+      - "${REMOTE_REDIS_PORT:-40003}:6379"
+
+  minio:
+    ports:
+      - "${REMOTE_MINIO_PORT:-40004}:9000"
+
+  pdf2zh-api:
+    ports:
+      - "${REMOTE_PDF2ZH_PORT:-40005}:7861"
+
+  speech-api:
+    ports:
+      - "${REMOTE_SPEECH_PORT:-40006}:8765"
+
+  ragflow:
+    ports:
+      - "${REMOTE_RAGFLOW_PORT:-40007}:80"
+
+  knowflow-backend:
+    ports:
+      - "${REMOTE_KNOWFLOW_BACKEND_PORT:-40008}:5000"
+
+  knowflow-mysql:
+    ports:
+      - "${REMOTE_MYSQL_PORT:-40009}:3306"

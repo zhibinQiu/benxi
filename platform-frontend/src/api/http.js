@@ -1,16 +1,61 @@
 /** HTTP 核心：Token、统一 fetch、错误解析 */
 
+let runtimeApiBase = null;
+
+function normalizeApiBase(raw) {
+  const trimmed = raw !== undefined && raw !== null ? String(raw).trim().replace(/\/$/, "") : "";
+  return trimmed || "/ai";
+}
+
 function resolveApiBase() {
   const raw = import.meta.env.VITE_API_BASE;
-  if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
-    return String(raw).replace(/\/$/, "");
+  const trimmed =
+    raw !== undefined && raw !== null ? String(raw).trim().replace(/\/$/, "") : "";
+
+  if (import.meta.env.PROD) {
+    return trimmed || "/ai";
   }
-  if (import.meta.env.PROD) return "/ai";
-  // compose.dev：浏览器直连本机 API（18000），规避 Vite 反代挂起
+
+  // 浏览器开发态：走同源 /ai/api 反代，避免直连 127.0.0.1:18000
+  // （局域网 IP、远程桌面、IDE 内置浏览器访问 40005 时 127.0.0.1 不可达）
+  if (typeof window !== "undefined") {
+    return "/ai";
+  }
+
+  if (trimmed) return trimmed;
   return "http://127.0.0.1:18000";
 }
 
-export const API_BASE = resolveApiBase();
+export function setApiBase(value) {
+  runtimeApiBase = normalizeApiBase(value);
+}
+
+export function getApiBase() {
+  if (runtimeApiBase) return runtimeApiBase;
+  return resolveApiBase();
+}
+
+/** @deprecated 请使用 getApiBase()，运行时可被服务端配置覆盖 */
+export function getApiBaseSnapshot() {
+  return getApiBase();
+}
+
+/** 应用启动时从平台拉取公开配置（无需登录） */
+export async function bootstrapClientConfig() {
+  const initial = resolveApiBase();
+  try {
+    const res = await fetch(`${initial}/api/v1/system/client-config`);
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => ({}));
+    const data = json?.data || {};
+    const base = normalizeApiBase(data?.api_base);
+    if (base) setApiBase(base);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 const TOKEN_KEY = "platform_access_token";
 const REFRESH_KEY = "platform_refresh_token";
 
@@ -89,11 +134,22 @@ export async function api(path, options = {}) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
   let res;
+  const base = getApiBase();
   try {
-    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    res = await fetch(`${base}${path}`, { ...options, headers });
   } catch (err) {
     const msg = String(err?.message || "");
     if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+      if (base === "/ai" || base.endsWith("/ai")) {
+        throw new Error(
+          "无法连接 API。请确认已执行 bash scripts/stack.sh dev-up，并通过 http://127.0.0.1:40005/ai/ 访问前端（勿混用其它端口或旧标签页）"
+        );
+      }
+      if (/127\.0\.0\.1:18000|localhost:18000/.test(base)) {
+        throw new Error(
+          "无法连接开发 API（127.0.0.1:18000）。请执行 bash scripts/stack.sh dev-up 启动完整开发栈，或确认 api 容器已映射 18000 端口"
+        );
+      }
       throw new Error("无法连接服务器，请确认 API 服务已启动并可访问");
     }
     throw err;

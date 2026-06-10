@@ -1,0 +1,125 @@
+<script setup>
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+
+const show = defineModel("show", { type: Boolean, default: false });
+
+const props = defineProps({
+  width: { type: String, default: "min(420px, calc(100vw - 32px))" },
+  ariaLabel: { type: String, default: "" },
+  anchorEl: { type: Object, default: null },
+});
+
+const panelRef = ref(null);
+const position = ref({ top: "58px", right: "16px" });
+/** 等宿主布局稳定后再 Teleport，避免与路由 Transition 同时 patch 导致 parentNode 为 null */
+const teleportReady = ref(false);
+
+function resolveAnchorNode() {
+  const raw = props.anchorEl;
+  if (!raw) return null;
+  if (raw instanceof HTMLElement) return raw;
+  if (raw.$el instanceof HTMLElement) return raw.$el;
+  if (raw.value instanceof HTMLElement) return raw.value;
+  if (raw.value?.$el instanceof HTMLElement) return raw.value.$el;
+  return null;
+}
+
+function updatePosition() {
+  const anchor = resolveAnchorNode();
+  if (!anchor) {
+    position.value = { top: "58px", right: "16px" };
+    return;
+  }
+  const rect = anchor.getBoundingClientRect();
+  position.value = {
+    top: `${Math.max(56, rect.bottom + 8)}px`,
+    right: `${Math.max(12, window.innerWidth - rect.right)}px`,
+  };
+}
+
+const panelStyle = computed(() => ({
+  width: props.width,
+  top: position.value.top,
+  right: position.value.right,
+}));
+
+function onKeydown(event) {
+  if (show.value && event.key === "Escape") {
+    show.value = false;
+  }
+}
+
+watch(show, async (visible) => {
+  if (visible) {
+    updatePosition();
+    await nextTick();
+    updatePosition();
+    document.addEventListener("keydown", onKeydown);
+  } else {
+    document.removeEventListener("keydown", onKeydown);
+  }
+});
+
+watch(
+  () => props.anchorEl,
+  () => {
+    if (show.value) updatePosition();
+  },
+);
+
+function onViewportChange() {
+  if (show.value) updatePosition();
+}
+
+onMounted(() => {
+  requestAnimationFrame(() => {
+    teleportReady.value = true;
+  });
+  window.addEventListener("resize", onViewportChange, { passive: true });
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("resize", onViewportChange);
+});
+</script>
+
+<template>
+  <Teleport v-if="teleportReady" to="body">
+    <div
+      v-if="show"
+      ref="panelRef"
+      class="header-flyout"
+      :style="panelStyle"
+      role="dialog"
+      :aria-label="ariaLabel"
+      @click.stop
+    >
+      <slot />
+    </div>
+  </Teleport>
+</template>
+
+<style scoped>
+.header-flyout {
+  position: fixed;
+  z-index: 10050;
+  min-height: 160px;
+  min-width: min(280px, calc(100vw - 32px));
+  max-height: min(560px, calc(100vh - 72px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--platform-radius);
+  background: var(--platform-bg-elevated-solid);
+  border: 1px solid var(--platform-glass-border);
+  box-shadow: var(--platform-shadow-lg);
+}
+
+.header-flyout > :deep(*) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+</style>

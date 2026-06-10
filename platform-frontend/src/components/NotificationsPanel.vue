@@ -2,15 +2,14 @@
 import { onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
-  NButton,
   NEmpty,
+  NIcon,
   NList,
   NListItem,
-  NPopconfirm,
   NSpace,
   NSpin,
-  NText,
   NThing,
+  NTooltip,
 } from "naive-ui";
 import { RefreshOutline, TrashOutline, CheckmarkDoneOutline } from "@vicons/ionicons5";
 import {
@@ -19,16 +18,10 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "../api/client";
-import IconAction from "./IconAction.vue";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 
 const props = defineProps({
-  variant: {
-    type: String,
-    default: "page",
-    validator: (v) => v === "page" || v === "popover",
-  },
   active: {
     type: Boolean,
     default: true,
@@ -46,8 +39,7 @@ const loading = ref(false);
 async function load({ notifyOnError = true } = {}) {
   loading.value = true;
   try {
-    const pageSize = props.variant === "popover" ? 12 : 20;
-    const data = await fetchNotifications({ page: 1, page_size: pageSize });
+    const data = await fetchNotifications({ page: 1, page_size: 12 });
     items.value = data.items;
     emit("updated", data);
   } catch (e) {
@@ -107,11 +99,6 @@ async function openNotification(n) {
   }
 }
 
-function goNotificationsPage() {
-  emit("navigate");
-  router.push({ name: "notifications" });
-}
-
 watch(
   () => props.active,
   (visible) => {
@@ -120,65 +107,65 @@ watch(
 );
 
 onMounted(() => {
-  if (props.variant === "page" || props.active) load();
+  if (props.active) load();
 });
 
 defineExpose({ load, refresh: load });
 </script>
 
 <template>
-  <div
-    :class="[
-      'notifications-panel',
-      { 'notifications-panel--popover': variant === 'popover' },
-    ]"
-  >
-    <div v-if="variant === 'popover'" class="notifications-panel__header">
-      <n-text strong>{{ t("notifications.title") }}</n-text>
-      <n-space :size="4">
-        <IconAction :label="t('common.refresh')" :icon="RefreshOutline" size="tiny" @click="load" />
-        <IconAction
-          :label="t('notifications.markAllRead')"
-          :icon="CheckmarkDoneOutline"
-          size="tiny"
-          @click="markAllRead"
-        />
-        <n-button text type="primary" size="small" @click="goNotificationsPage">
-          {{ t("common.viewAll") }}
-        </n-button>
-      </n-space>
-    </div>
-
-    <div v-else class="notifications-panel__toolbar">
-      <n-space :size="6">
-        <IconAction :label="t('common.refresh')" :icon="RefreshOutline" @click="load" />
-        <IconAction
-          :label="t('notifications.markAllRead')"
-          :icon="CheckmarkDoneOutline"
-          @click="markAllRead"
-        />
-        <n-popconfirm @positive-click="doClear('read')">
+  <div class="notifications-panel">
+    <header class="notifications-panel__header">
+      <strong class="platform-text-gradient notifications-panel__title">
+        {{ t("notifications.title") }}
+      </strong>
+      <div class="notifications-panel__actions">
+        <n-tooltip placement="bottom">
           <template #trigger>
-            <IconAction :label="t('notifications.actions.delete')" :icon="TrashOutline" />
+            <button
+              type="button"
+              class="notif-header-btn notif-header-btn--refresh"
+              :aria-label="t('common.refresh')"
+              :disabled="loading"
+              @click="load"
+            >
+              <n-icon :size="16" :component="RefreshOutline" />
+            </button>
           </template>
-          {{ t("notifications.confirm.clearRead") }}
-        </n-popconfirm>
-        <n-popconfirm @positive-click="doClear('all')">
+          {{ t("common.refresh") }}
+        </n-tooltip>
+        <n-tooltip placement="bottom">
           <template #trigger>
-            <IconAction :label="t('notifications.clearAll')" :icon="TrashOutline" type="default" />
+            <button
+              type="button"
+              class="notif-header-btn notif-header-btn--read"
+              :aria-label="t('notifications.markAllRead')"
+              @click="markAllRead"
+            >
+              <n-icon :size="16" :component="CheckmarkDoneOutline" />
+            </button>
           </template>
-          {{ t("notifications.confirm.clearAll") }}
-        </n-popconfirm>
-      </n-space>
-    </div>
+          {{ t("notifications.markAllRead") }}
+        </n-tooltip>
+        <n-tooltip placement="bottom">
+          <template #trigger>
+            <button
+              type="button"
+              class="notif-header-btn notif-header-btn--clear"
+              :aria-label="t('notifications.clearAll')"
+              :title="t('notifications.clearAll')"
+              @click="doClear('all')"
+            >
+              <n-icon :size="16" :component="TrashOutline" />
+            </button>
+          </template>
+          {{ t("notifications.clearAll") }}
+        </n-tooltip>
+      </div>
+    </header>
 
     <n-spin :show="loading">
-      <div
-        :class="[
-          'notifications-panel__body',
-          { 'notifications-panel__body--popover': variant === 'popover' },
-        ]"
-      >
+      <div class="notifications-panel__body">
         <n-list v-if="items.length" bordered>
           <n-list-item
             v-for="n in items"
@@ -192,15 +179,14 @@ defineExpose({ load, refresh: load });
                   <span class="notif-time">
                     {{ new Date(n.created_at).toLocaleString() }}
                   </span>
-                  <n-button
+                  <button
                     v-if="!n.read_at"
-                    text
-                    type="primary"
-                    size="small"
+                    type="button"
+                    class="notif-mark-read"
                     @click.stop="markRead(n.id)"
                   >
                     {{ t("notifications.actions.markRead") }}
-                  </n-button>
+                  </button>
                   <span v-else class="notif-read">{{ t("notifications.read") }}</span>
                 </n-space>
               </template>
@@ -214,35 +200,122 @@ defineExpose({ load, refresh: load });
 </template>
 
 <style scoped>
-.notifications-panel--popover {
-  width: min(400px, calc(100vw - 32px));
-  padding: 12px 14px;
-  background: var(--platform-bg-elevated);
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-radius);
+.notifications-panel {
+  width: 100%;
   box-sizing: border-box;
-  box-shadow: var(--platform-shadow-lg);
 }
 
 .notifications-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
+  gap: 10px;
+  padding: 12px 14px 10px;
   border-bottom: 1px solid var(--platform-border);
+  background: linear-gradient(
+    180deg,
+    var(--platform-toolbar-bg) 0%,
+    transparent 100%
+  );
 }
 
-.notifications-panel__toolbar {
+.notifications-panel__title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: var(--platform-tracking-tight);
+}
+
+.notifications-panel__actions {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--platform-radius-sm);
+  background: var(--platform-bg-elevated-solid);
+  border: 1px solid var(--platform-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.notifications-panel__body--popover {
+.notif-header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--platform-radius-sm) - 2px);
+  cursor: pointer;
+  transition:
+    transform 0.15s var(--platform-ease-smooth),
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.notif-header-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.notif-header-btn:not(:disabled):active {
+  transform: translateY(0);
+}
+
+.notif-header-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.notif-header-btn--refresh {
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+}
+
+.notif-header-btn--refresh:not(:disabled):hover {
+  color: var(--platform-accent-hover, var(--platform-accent));
+  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 22%, transparent);
+}
+
+.notif-header-btn--read {
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+}
+
+.notif-header-btn--read:not(:disabled):hover {
+  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 18%, transparent);
+}
+
+.notif-header-btn--clear {
+  color: var(--platform-danger, #d03050);
+  background: var(--platform-danger-soft, color-mix(in srgb, #d03050 12%, transparent));
+}
+
+.notif-header-btn--clear:not(:disabled):hover {
+  background: color-mix(in srgb, var(--platform-danger, #d03050) 22%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-danger, #d03050) 16%, transparent);
+}
+
+.notifications-panel__body {
   max-height: 360px;
   overflow-y: auto;
+  padding: 10px 14px 14px;
+}
+
+.notifications-panel :deep(.n-list) {
+  border: none;
+  background: transparent;
+}
+
+.notifications-panel :deep(.n-list-item) {
+  padding-left: 0;
+  padding-right: 0;
+  border-radius: var(--platform-radius-sm);
+}
+
+.notifications-panel :deep(.n-empty) {
+  padding: 16px 0 8px;
 }
 
 .notif-clickable {
@@ -262,8 +335,24 @@ defineExpose({ load, refresh: load });
   color: var(--platform-text-tertiary);
 }
 
+.notif-mark-read {
+  border: none;
+  padding: 0 2px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--platform-accent);
+  cursor: pointer;
+}
+
+.notif-mark-read:hover {
+  color: var(--platform-accent-hover, var(--platform-accent));
+  text-decoration: underline;
+}
+
 .notif-read {
   font-size: 12px;
-  color: var(--platform-accent);
+  color: var(--platform-text-tertiary);
 }
 </style>

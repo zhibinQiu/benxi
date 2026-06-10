@@ -2,9 +2,8 @@
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
 > **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
-> **版本对齐**：平台 `2.1.x` · Monorepo `pdf_trans/`  
-> **范围**：自有代码（`platform/`、`platform-frontend/`、`pdf2zh_next/`、`scripts/`）；`third_party/KnowFlow` 仅描述集成边界，不展开其内部实现。  
-> **配套文档**：[平台架构手册](./platform-architecture.md) · [分层架构](./layered-architecture.md) · [权限模型](../platform/permission-model.md)
+> **版本对齐**：平台 **v3.9.3** · Monorepo `pdf_trans/`  
+> **运维架构（推荐）**：[系统架构](../operations/architecture.md) · [运维手册](../operations/README.md)
 
 ---
 

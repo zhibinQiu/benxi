@@ -69,7 +69,7 @@ bash scripts/stack.sh build --profile knowflow --profile speech
 
 ```bash
 bash scripts/stack.sh save
-# 生成 images/zhitan-3.4.0-arm64.tar.gz 或 amd64
+# 生成 images/zhitan-3.9.3-arm64.tar.gz 或 amd64
 ```
 
 ### 2.3 启动（本机全 Docker）
@@ -110,9 +110,9 @@ bash scripts/stack.sh save
 bash scripts/deploy.sh stack push
 
 # 或手动：
-rsync -avz images/zhitan-3.4.0-amd64.tar.gz compose.yaml deploy/ scripts/stack.sh .env \
+rsync -avz images/zhitan-3.9.3-amd64.tar.gz compose.yaml deploy/ scripts/stack.sh .env \
   user@server:/opt/zhitan/
-ssh user@server 'cd /opt/zhitan && bash scripts/stack.sh load images/zhitan-3.4.0-amd64.tar.gz && \
+ssh user@server 'cd /opt/zhitan && bash scripts/stack.sh load images/zhitan-3.9.3-amd64.tar.gz && \
   bash scripts/stack.sh up --profile knowflow --profile speech'
 ```
 

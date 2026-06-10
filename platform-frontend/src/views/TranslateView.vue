@@ -411,7 +411,7 @@ async function dl(kind, name) {
       </n-tag>
     </template>
 
-    <header class="translate-steps-bar">
+    <header class="translate-steps-bar feature-local-nav">
       <n-steps :current="currentStep" size="small" class="translate-steps">
         <n-step title="文档" description="上传或选取" />
         <n-step title="配置" description="语言与模型" />
@@ -819,7 +819,6 @@ async function dl(kind, name) {
 <style scoped>
 .translate-steps-bar {
   flex-shrink: 0;
-  margin-bottom: 8px;
 }
 
 .translate-steps {
@@ -846,7 +845,7 @@ async function dl(kind, name) {
   max-width: none;
   --translate-accent: #3b82f6;
   --translate-accent-soft: rgba(59, 130, 246, 0.08);
-  --translate-success-soft: rgba(24, 160, 88, 0.08);
+  --translate-success-soft: var(--platform-accent-soft);
 }
 
 .translate-grid {
@@ -907,8 +906,8 @@ async function dl(kind, name) {
 }
 
 .panel-header-icon--doc {
-  color: #0d9488;
-  background: rgba(13, 148, 136, 0.1);
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
 }
 
 .panel-header-icon--config {
@@ -922,7 +921,7 @@ async function dl(kind, name) {
 }
 
 .panel-header-icon--done {
-  color: #18a058;
+  color: var(--platform-accent);
   background: var(--translate-success-soft);
 }
 
@@ -1094,12 +1093,12 @@ async function dl(kind, name) {
   gap: 10px;
   padding: 12px 14px;
   border-radius: 10px;
-  border: 1px solid rgba(24, 160, 88, 0.3);
+  border: 1px solid var(--platform-accent-border);
   background: var(--translate-success-soft);
 }
 
 .library-selected-icon {
-  color: #18a058;
+  color: var(--platform-accent);
   flex-shrink: 0;
   margin-top: 1px;
 }
@@ -1127,7 +1126,7 @@ async function dl(kind, name) {
 }
 
 .panel-side-done {
-  border-color: rgba(24, 160, 88, 0.28);
+  border-color: var(--platform-accent-border);
 }
 
 .side-idle {
@@ -1180,7 +1179,7 @@ async function dl(kind, name) {
 
 .status-card--done {
   background: var(--translate-success-soft);
-  border-color: rgba(24, 160, 88, 0.22);
+  border-color: var(--platform-accent-border-soft);
 }
 
 .status-card--running {

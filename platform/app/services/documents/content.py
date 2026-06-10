@@ -59,9 +59,13 @@ def get_download_url(
         return None
     return get_object_store().presigned_get(version.file_key)
 def read_document_file_bytes(
-    db: Session, user: User, document: Document
+    db: Session,
+    user: User,
+    document: Document,
+    *,
+    version_id: uuid.UUID | None = None,
 ) -> tuple[bytes, str, str]:
-    """读取当前版本文件（经平台 API 代理下载，避免浏览器无法访问 MinIO 内网地址）。"""
+    """读取指定或当前版本文件（经平台 API 代理下载，避免浏览器无法访问 MinIO 内网地址）。"""
     from app.core.exceptions import bad_request, forbidden, not_found
     from app.models.document import DocumentStatus
 
@@ -71,8 +75,13 @@ def read_document_file_bytes(
         raise bad_request("文档已关闭或不可用")
     if not can_access_document(db, user, document, PermissionLevel.visible.value):
         raise forbidden("无权下载该文档")
-    version = resolve_current_version(db, document)
-    if not version:
+    if version_id is not None:
+        version = db.get(DocumentVersion, version_id)
+        if not version or version.document_id != document.id:
+            raise not_found("版本不存在")
+    else:
+        version = resolve_current_version(db, document)
+    if not version or not version.file_key:
         raise bad_request("文档尚未上传文件")
     data = get_object_store().get_object_bytes(version.file_key)
     file_name = version.file_name or "document"

@@ -56,9 +56,7 @@ function formatTime(iso) {
 const logColumns = [
   { title: "时间", key: "created_at", width: 170, render: (r) => formatTime(r.created_at) },
   { title: "用户", key: "username", width: 100, render: (r) => r.username || "—" },
-  { title: "操作", key: "action", width: 140 },
-  { title: "资源类型", key: "resource_type", width: 100 },
-  { title: "资源 ID", key: "resource_id", ellipsis: { tooltip: true }, render: (r) => r.resource_id || "—" },
+  { title: "操作", key: "action", minWidth: 160, ellipsis: { tooltip: true } },
   { title: "IP", key: "ip_address", width: 120, render: (r) => r.ip_address || "—" },
 ];
 
@@ -228,7 +226,7 @@ onUnmounted(() => {
         :columns="logColumns"
         :data="logs"
         :loading="loadingLogs"
-        :scroll-x="900"
+        :scroll-x="640"
         size="small"
       />
     </n-card>

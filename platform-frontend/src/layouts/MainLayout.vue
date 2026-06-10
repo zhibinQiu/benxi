@@ -8,103 +8,92 @@ import {
   NLayoutContent,
   NMenu,
   NButton,
-  NBadge,
   NSpace,
   NText,
-  NAvatar,
-  NPopover,
-  NDropdown,
-  NTooltip,
+  NIcon,
 } from "naive-ui";
 import {
   DocumentTextOutline,
-  NotificationsOutline,
-  TimeOutline,
   PeopleOutline,
   BusinessOutline,
-  LogOutOutline,
   GridOutline,
   SettingsOutline,
   PulseOutline,
   HardwareChipOutline,
-  ListOutline,
   SparklesOutline,
-  GitNetworkOutline,
   ArrowBackOutline,
   NewspaperOutline,
-  PersonOutline,
-  ChevronDownOutline,
-  MoonOutline,
-  SunnyOutline,
-  LanguageOutline,
   ChatbubbleEllipsesOutline,
+  BookOutline,
 } from "@vicons/ionicons5";
-import { NIcon } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
-import { useAppPreferences } from "../composables/useAppPreferences";
 import { useI18n } from "../composables/useI18n";
 import { getPageHeaderOverride } from "../composables/usePageHeader";
 import { resolveFeatureIcon } from "../constants/featureIcons";
 import { PLATFORM_APP_NAME } from "../constants/platform";
-import { fetchJobs, fetchNotifications } from "../api/client";
+import { usePlatformBranding } from "../composables/usePlatformBranding";
+import { fetchSystemFeatures } from "../api/client";
 import { prefetchKnowflowSession } from "../api/rag.js";
-import AssistantChatFab from "../components/AssistantChatFab.vue";
+import { useFeatureFavorites } from "../composables/useFeatureFavorites";
+import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
+import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
-import JobsPanel from "../components/JobsPanel.vue";
-import NotificationsPanel from "../components/NotificationsPanel.vue";
-import { consumeSkipInnerRouteMotion } from "../utils/routeTransition";
+import { useMainLayoutRouteMotion } from "../composables/useMainLayoutRouteMotion";
+import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
+import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { publicAsset } from "../utils/appBase";
 import { goBackToEntry } from "../utils/navigationReturn";
 
 const route = useRoute();
 const router = useRouter();
-const { user, loadUser, logout, hasPerm } = useAuth();
-const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
-const { t, routeTitle, localeLabel } = useI18n();
+const { loadUser, hasPerm } = useAuth();
+const { t, routeTitle } = useI18n();
 const pageHeaderOverride = getPageHeaderOverride();
-
-const innerRouteTransition = ref(
-  consumeSkipInnerRouteMotion() ? "route-instant" : "route-fade",
-);
+const { innerRouteTransition } = useMainLayoutRouteMotion();
+const headerToolbarRef = ref(null);
 
 const SETTINGS_KEY = "system-settings";
 const expandedKeys = ref([]);
+const siderMenuWrapRef = ref(null);
 
-const unreadCount = ref(0);
-const activeJobCount = ref(0);
 const siderCollapsed = ref(false);
-const jobsPopoverOpen = ref(false);
-const notificationsPopoverOpen = ref(false);
-const assistantOpen = ref(false);
+const systemFeatures = ref([]);
+const { favoriteIds } = useFeatureFavorites();
 
-async function refreshUnreadCount() {
-  try {
-    const data = await fetchNotifications({ page: 1, page_size: 1, unread_only: true });
-    unreadCount.value = data.total ?? 0;
-  } catch {
-    unreadCount.value = 0;
-  }
+function favoriteMenuKey(feature) {
+  if (feature.external_url) return `feature-ext:${feature.id}`;
+  return `feature-fav:${feature.id}`;
 }
 
-async function refreshActiveJobCount() {
-  try {
-    const data = await fetchJobs({ page: 1, page_size: 50 });
-    activeJobCount.value = (data.items || []).filter((job) =>
-      ["pending", "running"].includes(job.status)
-    ).length;
-  } catch {
-    activeJobCount.value = 0;
-  }
-}
+const favoriteMenuFeatures = computed(() => {
+  const byId = Object.fromEntries(systemFeatures.value.map((f) => [f.id, f]));
+  return favoriteIds.value.map((id) => byId[id]).filter((f) => f && f.enabled);
+});
 
-async function refreshHeaderBadges() {
-  await Promise.all([refreshUnreadCount(), refreshActiveJobCount()]);
+const favoriteActiveKey = computed(() => {
+  const path = route.path;
+  for (const id of favoriteIds.value) {
+    const feature = systemFeatures.value.find((f) => f.id === id);
+    if (!feature?.route) continue;
+    if (path === feature.route || path.startsWith(`${feature.route}/`)) {
+      return favoriteMenuKey(feature);
+    }
+  }
+  return null;
+});
+
+async function loadSystemFeatures() {
+  try {
+    systemFeatures.value = (await fetchSystemFeatures()) || [];
+  } catch {
+    systemFeatures.value = [];
+  }
 }
 
 onMounted(async () => {
   await loadUser();
   prefetchKnowflowSession();
-  refreshHeaderBadges();
+  loadSystemFeatures();
 });
 
 const showUserAdmin = computed(() => hasPerm("admin.user"));
@@ -159,6 +148,13 @@ const settingsChildren = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
     });
   }
+  if (showSystemSettings.value) {
+    children.push({
+      label: t("menu.systemDocs"),
+      key: "admin-docs",
+      icon: () => h(NIcon, null, { default: () => h(BookOutline) }),
+    });
+  }
   return children;
 });
 
@@ -174,6 +170,18 @@ const menuOptions = computed(() => {
       key: "system-functions",
       icon: () => h(NIcon, null, { default: () => h(GridOutline) }),
     },
+  ];
+
+  for (const feature of favoriteMenuFeatures.value) {
+    const Icon = resolveFeatureIcon(feature.icon) || GridOutline;
+    items.push({
+      label: feature.title,
+      key: favoriteMenuKey(feature),
+      icon: () => h(NIcon, null, { default: () => h(Icon) }),
+    });
+  }
+
+  items.push(
     {
       label: t("menu.documents"),
       key: "documents",
@@ -183,13 +191,9 @@ const menuOptions = computed(() => {
       label: t("menu.knowledgeSubscriptions"),
       key: "knowledge-subscriptions",
       icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) }),
-    },
-    {
-      label: t("menu.knowledgeGraph"),
-      key: "knowledge-graph",
-      icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }),
-    },
-  ];
+    }
+  );
+
   if (showSystemSettings.value && settingsChildren.value.length) {
     items.push({
       label: t("menu.systemSettings"),
@@ -202,46 +206,18 @@ const menuOptions = computed(() => {
 });
 
 /** 从系统功能进入的子功能页（翻译、问数、问答等） */
-const SUBSYSTEM_HEADER_ROUTES = new Set([
-  "ai-tools",
-  "translate",
-  "rag",
-  "smart-data-query",
-  "data-analysis",
-  "carbon-qa",
-  "carbon-assets",
-  "smart-forecast",
-  "speech",
-  "ocr",
-  "compare",
-  "assist-writing",
-  "knowledge-graph",
-  "knowledge-search",
-  "knowledge-subscriptions",
-  "subscription-item",
-  "wechat-mp",
-  "wechat-mp-article",
-  "feed-subscriptions",
-  "feed-entry",
-  "document-detail",
-  "chat-history",
-  "carbon-assets-history",
-]);
+const SUBSYSTEM_HEADER_ROUTES = SUBSYSTEM_PAGE_ROUTES;
 
 const isSubsystemPage = computed(() =>
   SUBSYSTEM_HEADER_ROUTES.has(String(route.name || ""))
 );
 
-function toggleAssistant() {
-  jobsPopoverOpen.value = false;
-  notificationsPopoverOpen.value = false;
-  assistantOpen.value = !assistantOpen.value;
-}
-
 const activeKey = computed(() => {
   if (route.name === "document-detail") return "documents";
-  if (route.name === "knowledge-search") return "system-functions";
-  if (route.name === "knowledge-graph") return "knowledge-graph";
+  if (favoriteActiveKey.value) return favoriteActiveKey.value;
+  if (route.name === "knowledge-qa") {
+    return "system-functions";
+  }
   if (
     route.name === "knowledge-subscriptions" ||
     route.name === "subscription-item" ||
@@ -271,6 +247,7 @@ const activeKey = computed(() => {
     route.name === "admin-departments" ||
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
+    route.name === "admin-docs" ||
     route.name === "rag"
   ) {
     return String(route.name);
@@ -280,14 +257,47 @@ const activeKey = computed(() => {
 
 const fullHeightPage = computed(() => Boolean(route.meta?.fullHeight));
 
+const flushFeatureNav = computed(
+  () => fullHeightPage.value || Boolean(route.meta?.featureLocalNav)
+);
+
 const headerTitle = computed(() => {
   if (pageHeaderOverride.value) return pageHeaderOverride.value;
   return routeTitle(String(route.name || ""), String(route.meta?.title || "").trim());
 });
 
-const appDisplayName = computed(() => t("app.name") || PLATFORM_APP_NAME);
+const { platformAppTitle } = usePlatformBranding();
 
-const headerIcon = computed(() => resolveFeatureIcon(route.meta?.featureIcon));
+const appDisplayName = computed(
+  () => platformAppTitle.value || t("app.name") || PLATFORM_APP_NAME
+);
+
+const menuOptionKeys = computed(() => {
+  const keys = new Set();
+  function walk(items) {
+    for (const item of items || []) {
+      if (item?.key) keys.add(String(item.key));
+      if (item?.children?.length) walk(item.children);
+    }
+  }
+  walk(menuOptions.value);
+  return keys;
+});
+
+const resolvedActiveKey = computed(() => {
+  const key = String(activeKey.value || "");
+  if (menuOptionKeys.value.has(key)) return key;
+  if (key.startsWith("feature-fav:") || key.startsWith("feature-ext:")) {
+    return "system-functions";
+  }
+  return key || "ai-home";
+});
+
+const { indicatorStyle: menuIndicatorStyle } = useSiderMenuIndicator(siderMenuWrapRef, {
+  activeKey: resolvedActiveKey,
+  collapsed: siderCollapsed,
+  expandedKeys,
+});
 
 const showSubsystemNav = computed(
   () => isSubsystemPage.value && Boolean(headerTitle.value)
@@ -312,9 +322,15 @@ const contentStyle = computed(() => {
     return "padding: 0; height: 100vh; overflow: hidden";
   }
   if (fullHeightPage.value) {
-    return "padding: 8px 12px; height: calc(100vh - 52px); overflow: hidden; box-sizing: border-box";
+    return "padding: 0; height: calc(100vh - 56px); overflow: hidden; box-sizing: border-box";
   }
-  return "padding: 20px 24px";
+  if (route.name === "system-functions") {
+    return "padding: 0";
+  }
+  if (flushFeatureNav.value) {
+    return "padding: 0 20px 12px";
+  }
+  return "padding: 12px 20px";
 });
 
 function ensureMenuExpanded() {
@@ -324,6 +340,7 @@ function ensureMenuExpanded() {
     route.name === "admin-departments" ||
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
+    route.name === "admin-docs" ||
     route.name === "rag"
   ) {
     if (!keys.includes(SETTINGS_KEY)) keys.push(SETTINGS_KEY);
@@ -336,33 +353,12 @@ watch(() => route.name, ensureMenuExpanded, { immediate: true });
 watch(
   () => route.name,
   (name) => {
-    jobsPopoverOpen.value = false;
-    notificationsPopoverOpen.value = false;
-    if (name && name !== "login") refreshHeaderBadges();
-  }
+    headerToolbarRef.value?.closeAllFlyouts?.();
+    if (name && name !== "login") {
+      headerToolbarRef.value?.refreshHeaderBadges?.();
+    }
+  },
 );
-
-function onJobsUpdated() {
-  refreshActiveJobCount();
-}
-
-function onNotificationsUpdated() {
-  refreshUnreadCount();
-}
-
-function closeJobsPopover() {
-  jobsPopoverOpen.value = false;
-}
-
-function closeNotificationsPopover() {
-  notificationsPopoverOpen.value = false;
-}
-
-function goTodos() {
-  jobsPopoverOpen.value = false;
-  notificationsPopoverOpen.value = false;
-  router.push({ name: "todos" });
-}
 
 function onExpandedKeysUpdate(keys) {
   expandedKeys.value = keys;
@@ -370,80 +366,32 @@ function onExpandedKeysUpdate(keys) {
 
 function onMenuSelect(key) {
   if (key === SETTINGS_KEY) return;
-  jobsPopoverOpen.value = false;
-  notificationsPopoverOpen.value = false;
+  headerToolbarRef.value?.closeAllFlyouts?.();
+
+  if (key.startsWith("feature-ext:")) {
+    const featureId = key.slice("feature-ext:".length);
+    const feature = systemFeatures.value.find((f) => f.id === featureId);
+    if (feature?.external_url) {
+      window.open(feature.external_url, "_blank", "noopener,noreferrer");
+    }
+    return;
+  }
+
+  if (key.startsWith("feature-fav:")) {
+    const featureId = key.slice("feature-fav:".length);
+    const feature = systemFeatures.value.find((f) => f.id === featureId);
+    if (feature?.route) {
+      router.push({ path: feature.route });
+    }
+    return;
+  }
+
   router.push({ name: key });
-}
-
-function doLogout() {
-  logout();
-  router.push({ name: "login" });
-}
-
-const userDisplayName = computed(
-  () =>
-    user.value?.display_name ||
-    user.value?.username ||
-    t("userMenu.defaultName")
-);
-
-const userMenuOptions = computed(() => [
-  {
-    label: t("userMenu.profile"),
-    key: "profile",
-    icon: () => h(NIcon, null, { default: () => h(PersonOutline) }),
-  },
-  { type: "divider", key: "divider-prefs" },
-  {
-    label: isDark.value ? t("userMenu.lightMode") : t("userMenu.darkMode"),
-    key: "theme",
-    icon: () =>
-      h(NIcon, null, {
-        default: () => h(isDark.value ? SunnyOutline : MoonOutline),
-      }),
-  },
-  {
-    label: localeLabel.value,
-    key: "locale",
-    icon: () => h(NIcon, null, { default: () => h(LanguageOutline) }),
-  },
-  { type: "divider", key: "divider-logout" },
-  {
-    label: t("userMenu.logout"),
-    key: "logout",
-    icon: () => h(NIcon, null, { default: () => h(LogOutOutline) }),
-  },
-]);
-
-function onUserMenuSelect(key) {
-  if (key === "profile") {
-    router.push({ name: "profile" });
-    return;
-  }
-  if (key === "theme") {
-    toggleTheme();
-    return;
-  }
-  if (key === "locale") {
-    toggleLocale();
-    return;
-  }
-  if (key === "logout") {
-    doLogout();
-  }
-}
-
-function renderUserMenuOption({ node, option }) {
-  if (option.type === "divider") return node;
-  if (option.key === "logout") {
-    return h("div", { class: "platform-dropdown-option--danger" }, node);
-  }
-  return node;
 }
 </script>
 
 <template>
-  <n-layout class="app-shell" has-sider>
+  <n-layout class="main-layout" has-sider>
     <n-layout-sider
       v-model:collapsed="siderCollapsed"
       class="app-sider"
@@ -456,165 +404,73 @@ function renderUserMenuOption({ node, option }) {
       <div class="sider-inner">
         <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
           <img :src="publicAsset('logo.svg')" alt="" class="brand-logo" />
-          <span v-if="!siderCollapsed" class="brand-name">{{ appDisplayName }}</span>
+          <span v-if="!siderCollapsed" class="brand-name">
+            <PlatformBrandTitle :title="appDisplayName" />
+          </span>
         </div>
-        <n-menu
-          class="sider-menu"
-          :value="activeKey"
-          :options="menuOptions"
-          :expanded-keys="expandedKeys"
-          @update:expanded-keys="onExpandedKeysUpdate"
-          @update:value="onMenuSelect"
-        />
+        <div ref="siderMenuWrapRef" class="sider-menu-wrap">
+          <div
+            class="sider-menu-indicator"
+            aria-hidden="true"
+            :style="menuIndicatorStyle"
+          />
+          <n-menu
+            class="sider-menu"
+            :value="resolvedActiveKey"
+            :options="menuOptions"
+            :expanded-keys="expandedKeys"
+            @update:expanded-keys="onExpandedKeysUpdate"
+            @update:value="onMenuSelect"
+          />
+        </div>
         <PlatformCopyright v-if="!siderCollapsed" class="sider-copyright" />
       </div>
     </n-layout-sider>
     <n-layout class="app-main">
       <n-layout-header bordered class="header">
-        <n-space align="center" justify="space-between" style="width: 100%">
-          <n-space
-            v-if="showSubsystemNav"
-            align="center"
-            :size="8"
-            class="header-title-wrap header-subsystem-nav"
-          >
-            <n-button
-              v-if="showSubsystemBack"
-              quaternary
-              circle
-              size="small"
-              class="header-back"
-              :aria-label="t('header.back')"
-              @click="goSubsystemBack"
-            >
-              <n-icon :size="20" :component="ArrowBackOutline" />
-            </n-button>
-            <div v-if="headerIcon" class="header-feature-icon header-feature-icon--brand">
-              <n-icon :size="20" :component="headerIcon" />
-            </div>
-            <n-text strong class="header-title">{{ headerTitle }}</n-text>
-          </n-space>
-          <n-space
-            v-else-if="showStandardFeatureTitle || showAppTitle"
-            align="center"
-            :size="10"
-            class="header-title-wrap"
-          >
-            <div v-if="headerIcon && showStandardFeatureTitle" class="header-feature-icon">
-              <n-icon :size="22" :component="headerIcon" />
-            </div>
-            <n-text v-if="showStandardFeatureTitle" strong class="header-title">
-              {{ headerTitle }}
-            </n-text>
-            <n-text v-else-if="showAppTitle" depth="2">{{ appDisplayName }}</n-text>
-          </n-space>
-          <div class="header-actions">
-            <div class="header-toolbar">
-              <n-button
-                quaternary
-                circle
-                size="small"
-                class="header-icon-btn"
-                :type="route.name === 'todos' ? 'primary' : 'default'"
-                :aria-label="t('header.todos')"
-                @click="goTodos"
+        <div class="header-stack">
+          <div class="header-primary">
+            <n-space align="center" justify="space-between" style="width: 100%">
+              <n-space
+                v-if="showSubsystemNav"
+                align="center"
+                :size="8"
+                class="header-title-wrap header-subsystem-nav"
               >
-                <n-icon :size="18" :component="ListOutline" />
-              </n-button>
-              <n-popover
-                v-model:show="jobsPopoverOpen"
-                trigger="click"
-                placement="bottom-end"
-                :show-arrow="false"
-                raw
+                <n-button
+                  v-if="showSubsystemBack"
+                  quaternary
+                  circle
+                  size="small"
+                  class="header-back"
+                  :aria-label="t('header.back')"
+                  @click="goSubsystemBack"
+                >
+                  <n-icon :size="20" :component="ArrowBackOutline" />
+                </n-button>
+                <n-text strong class="header-title">{{ headerTitle }}</n-text>
+              </n-space>
+              <n-space
+                v-else-if="showStandardFeatureTitle || showAppTitle"
+                align="center"
+                :size="10"
+                class="header-title-wrap"
               >
-                <template #trigger>
-                  <n-badge :value="activeJobCount" :max="99" :show="activeJobCount > 0">
-                    <n-button
-                      quaternary
-                      circle
-                      size="small"
-                      class="header-icon-btn"
-                      :type="jobsPopoverOpen || route.name === 'jobs' ? 'primary' : 'default'"
-                      :aria-label="t('header.jobs')"
-                    >
-                      <n-icon :size="18" :component="TimeOutline" />
-                    </n-button>
-                  </n-badge>
-                </template>
-                <JobsPanel
-                  variant="popover"
-                  :active="jobsPopoverOpen"
-                  @updated="onJobsUpdated"
-                  @navigate="closeJobsPopover"
+                <n-text v-if="showStandardFeatureTitle" strong class="header-title">
+                  {{ headerTitle }}
+                </n-text>
+                <PlatformBrandTitle
+                  v-else-if="showAppTitle"
+                  tag="div"
+                  class="header-app-title"
+                  :title="appDisplayName"
                 />
-              </n-popover>
-              <n-popover
-                v-model:show="notificationsPopoverOpen"
-                trigger="click"
-                placement="bottom-end"
-                :show-arrow="false"
-                raw
-              >
-                <template #trigger>
-                  <n-badge :value="unreadCount" :max="99" :show="unreadCount > 0">
-                    <n-button
-                      quaternary
-                      circle
-                      size="small"
-                      class="header-icon-btn"
-                      :type="
-                        notificationsPopoverOpen || route.name === 'notifications'
-                          ? 'primary'
-                          : 'default'
-                      "
-                      :aria-label="t('header.notifications')"
-                    >
-                      <n-icon :size="18" :component="NotificationsOutline" />
-                    </n-button>
-                  </n-badge>
-                </template>
-                <NotificationsPanel
-                  variant="popover"
-                  :active="notificationsPopoverOpen"
-                  @updated="onNotificationsUpdated"
-                  @navigate="closeNotificationsPopover"
-                />
-              </n-popover>
-              <n-tooltip placement="bottom">
-                <template #trigger>
-                  <n-button
-                    quaternary
-                    circle
-                    size="small"
-                    class="header-icon-btn"
-                    :type="assistantOpen ? 'primary' : 'default'"
-                    :aria-label="t('header.assistant')"
-                    @click="toggleAssistant"
-                  >
-                    <n-icon :size="18" :component="ChatbubbleEllipsesOutline" />
-                  </n-button>
-                </template>
-                {{ t("header.assistant") }}
-              </n-tooltip>
-            </div>
-            <n-dropdown
-              trigger="click"
-              placement="bottom-end"
-              :options="userMenuOptions"
-              :render-option="renderUserMenuOption"
-              @select="onUserMenuSelect"
-            >
-              <button type="button" class="header-user-trigger" :aria-label="t('header.userMenu')">
-                <n-avatar round size="small" class="header-user-avatar">
-                  {{ userDisplayName[0] || "U" }}
-                </n-avatar>
-                <span class="header-username">{{ userDisplayName }}</span>
-                <n-icon :size="14" :component="ChevronDownOutline" class="header-user-chevron" />
-              </button>
-            </n-dropdown>
+              </n-space>
+              <HeaderToolbar ref="headerToolbarRef" />
+            </n-space>
           </div>
-        </n-space>
+          <div id="page-header-extension" class="header-extension" />
+        </div>
       </n-layout-header>
       <n-layout-content
         :class="['app-content', { 'app-content--full': fullHeightPage }]"
@@ -627,23 +483,74 @@ function renderUserMenuOption({ node, option }) {
           ]"
         >
           <router-view v-slot="{ Component, route: viewRoute }">
-            <Transition :name="innerRouteTransition" mode="out-in">
-              <component :is="Component" :key="viewRoute.path" />
+            <Transition
+              v-if="innerRouteTransition !== 'route-instant'"
+              :name="innerRouteTransition"
+            >
+              <div
+                :key="viewRoute.path"
+                :class="[
+                  'app-route-page',
+                  { 'app-route-page--full': fullHeightPage },
+                ]"
+              >
+                <component :is="Component" />
+              </div>
             </Transition>
+            <div
+              v-else
+              :key="viewRoute.path"
+              :class="[
+                'app-route-page',
+                { 'app-route-page--full': fullHeightPage },
+              ]"
+            >
+              <component :is="Component" />
+            </div>
           </router-view>
         </div>
       </n-layout-content>
     </n-layout>
-    <AssistantChatFab v-model:open="assistantOpen" />
   </n-layout>
 </template>
 
 <style scoped>
-.app-shell {
+.main-layout :deep(.n-layout-header) {
+  overflow: visible !important;
+}
+
+.main-layout {
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
 }
+
+/* 系统壳层：与智能体页相同的渐变底 */
+.main-layout :deep(.app-sider.n-layout-sider) {
+  background: var(--platform-chat-gradient) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-right: 1px solid var(--platform-border) !important;
+}
+
+.main-layout :deep(.app-sider.n-layout-sider::before) {
+  display: none;
+}
+
+.main-layout .header {
+  background: var(--platform-chat-gradient) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-bottom: 1px solid var(--platform-border) !important;
+}
+
+.main-layout:has(.app-content .feature-local-nav) .header,
+.main-layout:has(.app-content .feature-top-strip) .header {
+  border-bottom: none !important;
+}
+
 .app-sider {
   height: 100vh;
 }
@@ -657,18 +564,14 @@ function renderUserMenuOption({ node, option }) {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 12px 0;
+  padding: 8px 0;
   box-sizing: border-box;
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  letter-spacing: -0.02em;
-  padding: 10px 18px 14px;
-  color: var(--platform-text);
+  padding: 6px 14px 10px;
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -679,20 +582,57 @@ function renderUserMenuOption({ node, option }) {
   padding-right: 0;
 }
 .brand-name {
+  font-family: var(--platform-font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
 .brand-logo {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
 }
+.sider-menu-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sider-menu-indicator {
+  position: absolute;
+  left: 14px;
+  right: 10px;
+  top: 0;
+  z-index: 0;
+  border-radius: var(--platform-radius-sm);
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    var(--menu-glass-bg-active) 0%,
+    var(--menu-glass-bg-active-bottom) 100%
+  );
+  box-shadow: inset 0 1px 0 var(--liquid-edge-highlight);
+  transition:
+    transform 0.45s var(--platform-ease-spring-soft),
+    height 0.4s var(--platform-ease-spring-soft),
+    opacity 0.3s var(--platform-ease-smooth),
+    box-shadow 0.3s var(--platform-ease-smooth);
+}
+
 .sider-menu {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding: 4px 10px 10px 14px;
 }
 .sider-copyright {
   flex-shrink: 0;
@@ -703,6 +643,7 @@ function renderUserMenuOption({ node, option }) {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--platform-chat-gradient);
 }
 .app-main :deep(.n-layout-scroll-container) {
   display: flex;
@@ -710,20 +651,60 @@ function renderUserMenuOption({ node, option }) {
   min-height: 0;
   height: 100%;
 }
+
+.app-content:not(.app-content--full) :deep(.n-layout-scroll-container) {
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
 .app-content {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
 }
 .header {
+  position: relative;
+  z-index: 100;
+  overflow: visible;
+  padding: 0;
+  height: auto;
+  min-height: 56px;
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
+.header-stack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.header-primary {
+  height: 56px;
   padding: 0 20px;
-  height: 52px;
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  background: var(--platform-header-bg);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-sizing: border-box;
+}
+
+.header-extension:empty {
+  display: none;
+}
+
+.header-extension:not(:empty) {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  background: transparent;
+  border-top: none;
+  border-bottom: none;
 }
 .header-title-wrap {
   min-width: 0;
@@ -743,94 +724,23 @@ function renderUserMenuOption({ node, option }) {
   color: var(--platform-accent-hover);
 }
 
-.header-feature-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--platform-text);
-}
-
-.header-feature-icon--brand {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  color: var(--platform-accent);
-  background: var(--platform-accent-soft);
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-radius-sm);
-}
-
 .header-title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--platform-text);
-}
-.header-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
-}
-
-.header-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--platform-toolbar-bg);
-  border: 1px solid var(--platform-border);
-}
-
-.header-icon-btn {
-  width: 32px;
-  height: 32px;
-}
-
-.header-user-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 180px;
-  padding: 4px 10px 4px 4px;
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-radius-pill);
-  background: var(--platform-toolbar-bg);
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.header-user-trigger:hover {
-  background: var(--platform-bg-elevated);
-  border-color: var(--platform-border-strong);
-}
-
-.header-user-avatar {
-  flex-shrink: 0;
-  background: var(--platform-accent-soft) !important;
-  color: var(--platform-accent) !important;
-  font-weight: 600;
-}
-
-.header-username {
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
+  letter-spacing: var(--platform-tracking-tight);
   color: var(--platform-text);
 }
 
-.header-user-chevron {
-  flex-shrink: 0;
-  color: var(--platform-text-tertiary);
+.header-app-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: var(--platform-tracking-tight);
+}
+
+.header-app-title :deep(.platform-brand-title) {
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
 }
 .app-content--full {
   display: flex;
@@ -838,14 +748,50 @@ function renderUserMenuOption({ node, option }) {
   overflow: hidden;
   box-sizing: border-box;
 }
-.app-view-host--full {
+.app-view-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+  transform: translateZ(0);
+}
+
+.app-content:not(.app-content--full) .app-view-host {
+  flex: none;
+  min-height: auto;
+  overflow: visible;
+}
+
+.app-route-page {
+  min-height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.app-content:not(.app-content--full) .app-route-page:not(.app-route-page--full) {
+  min-height: auto;
+}
+
+.app-route-page--full {
+  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-route-page--full > :deep(*) {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   width: 100%;
 }
-.app-view-host--full > * {
+
+.app-view-host--full {
   flex: 1;
   min-height: 0;
   display: flex;

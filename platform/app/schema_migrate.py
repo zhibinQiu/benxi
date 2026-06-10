@@ -195,8 +195,6 @@ def ensure_ragflow_schema(engine: Engine) -> None:
     statements = [
         "ALTER TABLE ragflow_account_links "
         "ADD COLUMN IF NOT EXISTS ragflow_password VARCHAR(128)",
-        "ALTER TABLE ragflow_account_links "
-        "ADD COLUMN IF NOT EXISTS dept_dataset_id VARCHAR(64)",
         """
         CREATE TABLE IF NOT EXISTS ragflow_scope_datasets (
             id UUID PRIMARY KEY,
@@ -226,6 +224,25 @@ def ensure_ragflow_schema(engine: Engine) -> None:
         "ON ragflow_document_mirror_links (platform_document_id)",
         "CREATE INDEX IF NOT EXISTS ix_ragflow_doc_mirror_user "
         "ON ragflow_document_mirror_links (platform_user_id)",
+        """
+        CREATE TABLE IF NOT EXISTS ragflow_document_version_links (
+            id UUID PRIMARY KEY,
+            platform_document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            platform_version_id UUID UNIQUE REFERENCES document_versions(id) ON DELETE SET NULL,
+            version_no INTEGER NOT NULL DEFAULT 1,
+            platform_user_id UUID NOT NULL REFERENCES users(id),
+            ragflow_document_id VARCHAR(64) NOT NULL,
+            dataset_id VARCHAR(64) NOT NULL,
+            file_name VARCHAR(512) NOT NULL DEFAULT '',
+            parser_id VARCHAR(32),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_ragflow_doc_ver_doc "
+        "ON ragflow_document_version_links (platform_document_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ragflow_doc_ver_rag "
+        "ON ragflow_document_version_links (ragflow_document_id)",
         """
         CREATE TABLE IF NOT EXISTS document_access_denials (
             id UUID PRIMARY KEY,
@@ -257,6 +274,25 @@ def ensure_ragflow_schema(engine: Engine) -> None:
     with engine.begin() as conn:
         for sql in statements:
             conn.execute(text(sql))
+
+
+def backfill_ragflow_version_links(engine: Engine) -> None:
+    """启动时把既有 canonical 索引回填到当前版本映射。"""
+    from app.database import SessionLocal
+    from app.services.ragflow_version_link_service import backfill_version_links_from_canonical
+
+    with SessionLocal() as db:
+        try:
+            n = backfill_version_links_from_canonical(db)
+            db.commit()
+            if n:
+                import logging
+
+                logging.getLogger(__name__).info(
+                    "已回填 %s 条文档版本索引映射", n
+                )
+        except Exception:
+            db.rollback()
 
 
 def ensure_todo_schema(engine: Engine) -> None:
@@ -564,3 +600,45 @@ def ensure_meeting_record_schema(engine: Engine) -> None:
     with engine.begin() as conn:
         for sql in statements:
             conn.execute(text(sql))
+
+
+def ensure_document_version_change_description(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS "
+                "change_description TEXT NOT NULL DEFAULT ''"
+            )
+        )
+
+
+def ensure_platform_model_settings_schema(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS platform_model_settings (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        )
+
+
+def drop_legacy_ragflow_account_dataset_columns(engine: Engine) -> None:
+    """移除 RagflowAccountLink 上已废弃的个人/部门 dataset 缓存列（改由 ragflow_scope_datasets 管理）。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE ragflow_account_links "
+                "DROP COLUMN IF EXISTS dataset_id"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE ragflow_account_links "
+                "DROP COLUMN IF EXISTS dept_dataset_id"
+            )
+        )

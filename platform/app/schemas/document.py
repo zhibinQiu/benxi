@@ -51,6 +51,12 @@ class DocumentVersionOut(BaseModel):
     created_at: datetime
     uploaded: bool = False
     is_current: bool = False
+    knowledge_synced: bool = False
+    parse_status: str | None = None
+    parse_progress: int | None = None
+    parse_message: str | None = None
+    chunk_count: int | None = None
+    ragflow_document_id: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -134,6 +140,12 @@ class DocumentListItem(BaseModel):
     effective_level: str | None = None
     can_edit: bool = False
     can_delete: bool = False
+    knowledge_synced: bool = False
+    parse_status: str | None = None
+    parse_progress: int | None = None
+    parse_message: str | None = None
+    chunk_count: int | None = None
+    ragflow_document_id: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -155,6 +167,12 @@ class UploadCompleteRequest(BaseModel):
     version_id: uuid.UUID
     file_size: int = Field(..., ge=0)
     checksum: str | None = None
+    change_description: str = ""
+
+
+class DocumentUploadCompleteOut(BaseModel):
+    document: DocumentDetail
+    knowledge_job_id: str | None = None
 
 
 class DocumentKnowflowSyncOut(BaseModel):

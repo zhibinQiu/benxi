@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -19,6 +19,8 @@ import { publicAsset } from "../utils/appBase";
 import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
+import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
+import TypewriterText from "../components/TypewriterText.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -26,6 +28,16 @@ const message = useMessage();
 const { login, register } = useAuth();
 const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
 const { t, localeLabel } = useI18n();
+
+const showcaseTaglines = computed(() => [t("login.showcaseTagline")]);
+
+const showcaseTypewriterOptions = {
+  charDelay: 48,
+  pauseAfterLine: 2800,
+  eraseDelay: 22,
+  pauseBetweenLines: 400,
+  loopSingle: true,
+};
 
 const account = ref("15963564658");
 const password = ref("admin123");
@@ -110,7 +122,7 @@ async function flyLoginCardToHeader() {
   clone.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
   clone.style.opacity = "0.12";
   clone.style.borderRadius = "50%";
-  clone.style.boxShadow = "0 0 0 1px rgba(13, 148, 136, 0.25)";
+  clone.style.boxShadow = "0 0 0 1px var(--platform-accent-border)";
 
   await wait(FLY_DURATION_MS);
   clone.remove();
@@ -201,28 +213,48 @@ function flipToLogin() {
 
 <template>
   <div class="login-page" :class="{ 'login-page--exit': exiting }">
+    <div class="login-preferences">
+      <n-button
+        quaternary
+        circle
+        size="small"
+        class="login-glass-btn login-glass-btn--pref"
+        :aria-label="isDark ? t('userMenu.lightMode') : t('userMenu.darkMode')"
+        @click="toggleTheme"
+      >
+        <n-icon :size="18" :component="isDark ? SunnyOutline : MoonOutline" />
+      </n-button>
+      <n-button quaternary size="small" class="login-glass-btn login-glass-btn--pref" @click="toggleLocale">
+        <template #icon>
+          <n-icon :size="16" :component="LanguageOutline" />
+        </template>
+        {{ localeLabel }}
+      </n-button>
+    </div>
+
     <div class="login-page__bg" aria-hidden="true">
       <div class="login-page__orb login-page__orb--1" />
       <div class="login-page__orb login-page__orb--2" />
-      <div class="login-page__orb login-page__orb--3" />
-      <div class="login-page__grid" />
     </div>
 
     <div class="login-page__layout">
-      <div class="login-preferences">
-        <n-button quaternary circle size="small" :aria-label="isDark ? t('userMenu.lightMode') : t('userMenu.darkMode')" @click="toggleTheme">
-          <n-icon :size="18" :component="isDark ? SunnyOutline : MoonOutline" />
-        </n-button>
-        <n-button quaternary size="small" @click="toggleLocale">
-          <n-icon :size="16" :component="LanguageOutline" style="margin-right: 4px" />
-          {{ localeLabel }}
-        </n-button>
-      </div>
       <aside class="login-showcase">
         <div class="login-showcase__inner">
-          <img :src="publicAsset('logo.svg')" :alt="t('app.name')" class="login-showcase__logo" />
-          <h1 class="login-showcase__title">{{ t("login.showcaseTitle") }}</h1>
-          <p class="login-showcase__tagline">{{ t("login.showcaseTagline") }}</p>
+          <div class="login-showcase__brand">
+            <img :src="publicAsset('logo.svg')" :alt="t('app.name')" class="login-showcase__logo" />
+            <PlatformBrandTitle
+              tag="h1"
+              class="login-showcase__title"
+              strong
+              :title="t('login.showcaseTitle')"
+            />
+          </div>
+          <TypewriterText
+            class="login-showcase__tagline"
+            tag="p"
+            :lines="showcaseTaglines"
+            :options="showcaseTypewriterOptions"
+          />
           <ul class="login-showcase__points">
             <li>{{ t("login.point1") }}</li>
             <li>{{ t("login.point2") }}</li>
@@ -260,12 +292,13 @@ function flipToLogin() {
                     />
                   </n-form-item>
                   <n-space vertical :size="10" style="width: 100%">
-                    <n-button type="primary" block :loading="loading" attr-type="submit">
+                    <n-button type="primary" block class="login-glass-btn" :loading="loading" attr-type="submit">
                       {{ t("login.submit") }}
                     </n-button>
                     <n-button
                       block
                       quaternary
+                      class="login-glass-btn"
                       :disabled="loading || exiting"
                       @click="flipToRegister"
                     >
@@ -325,12 +358,13 @@ function flipToLogin() {
                     />
                   </n-form-item>
                   <n-space vertical :size="10" style="width: 100%">
-                    <n-button type="primary" block :loading="registering" attr-type="submit">
+                    <n-button type="primary" block class="login-glass-btn" :loading="registering" attr-type="submit">
                       {{ t("login.registerSubmit") }}
                     </n-button>
                     <n-button
                       block
                       quaternary
+                      class="login-glass-btn"
                       :disabled="registering || exiting"
                       @click="flipToLogin"
                     >
@@ -355,7 +389,7 @@ function flipToLogin() {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  background: var(--platform-bg);
+  background: var(--platform-bg-base);
 }
 
 .login-page__copyright {
@@ -363,16 +397,28 @@ function flipToLogin() {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 2;
+  z-index: 4;
   pointer-events: none;
 }
 
 .login-preferences {
-  position: absolute;
-  top: 16px;
-  right: 20px;
-  z-index: 2;
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: max(20px, env(safe-area-inset-right, 0px));
+  z-index: 20;
   display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-preferences :deep(.login-glass-btn--pref.n-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-preferences :deep(.login-glass-btn--pref .n-button__content) {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
 }
@@ -382,7 +428,8 @@ function flipToLogin() {
 }
 
 .login-page--exit .login-page__layout,
-.login-page--exit .login-page__bg {
+.login-page--exit .login-page__bg,
+.login-page--exit .login-preferences {
   opacity: 0;
   transition: opacity 0.28s ease;
 }
@@ -391,51 +438,37 @@ function flipToLogin() {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
 }
 
 .login-page__orb {
   position: absolute;
   border-radius: 50%;
   filter: blur(72px);
+  opacity: 0.55;
+  mix-blend-mode: soft-light;
 }
 
 .login-page__orb--1 {
-  width: min(48vw, 480px);
-  height: min(48vw, 480px);
-  top: -8%;
-  left: -6%;
+  width: min(42vw, 420px);
+  height: min(42vw, 420px);
+  top: 8%;
+  left: 6%;
   background: radial-gradient(circle, var(--platform-accent-soft-2) 0%, transparent 70%);
 }
 
 .login-page__orb--2 {
-  width: min(40vw, 400px);
-  height: min(40vw, 400px);
-  bottom: -6%;
-  right: 4%;
-  background: radial-gradient(circle, var(--platform-accent-soft) 0%, transparent 70%);
-}
-
-.login-page__orb--3 {
-  width: min(32vw, 320px);
-  height: min(32vw, 320px);
-  top: 42%;
-  left: 38%;
-  background: radial-gradient(circle, var(--platform-divider) 0%, transparent 70%);
-}
-
-.login-page__grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--platform-divider) 1px, transparent 1px),
-    linear-gradient(90deg, var(--platform-divider) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, #000 15%, transparent 100%);
+  width: min(36vw, 360px);
+  height: min(36vw, 360px);
+  bottom: 10%;
+  right: 8%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.28) 0%, transparent 70%);
 }
 
 .login-page__layout {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -457,15 +490,26 @@ function flipToLogin() {
   max-width: 420px;
 }
 
+.login-showcase__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
 .login-showcase__logo {
-  width: 56px;
-  height: 56px;
-  margin-bottom: 20px;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  margin: 0;
+  display: block;
 }
 
 .login-showcase__title {
-  margin: 0 0 10px;
-  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(1.5rem, 2.8vw, 2rem);
   font-weight: 700;
   line-height: 1.25;
   color: var(--platform-text);
@@ -489,8 +533,10 @@ function flipToLogin() {
 }
 
 .login-showcase__points li {
-  position: relative;
-  padding-left: 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-left: 0;
   font-size: 14px;
   color: var(--platform-text-secondary);
   line-height: 1.5;
@@ -498,11 +544,10 @@ function flipToLogin() {
 
 .login-showcase__points li::before {
   content: "";
-  position: absolute;
-  left: 0;
-  top: 0.55em;
+  flex-shrink: 0;
   width: 6px;
   height: 6px;
+  margin-top: 0.5em;
   border-radius: 50%;
   background: var(--platform-accent);
 }
@@ -546,8 +591,28 @@ function flipToLogin() {
 
 .login-card {
   width: 100%;
-  border: 1px solid var(--platform-border);
-  box-shadow: var(--platform-shadow-lg);
+}
+
+.login-page :deep(.login-card.n-card) {
+  background: rgba(255, 255, 255, 0.34) !important;
+  backdrop-filter: blur(32px) saturate(190%);
+  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.48) !important;
+  box-shadow:
+    0 12px 40px rgba(91, 120, 200, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+}
+
+html[data-theme="dark"] .login-page :deep(.login-card.n-card) {
+  background: rgba(22, 22, 32, 0.48) !important;
+  border-color: rgba(147, 197, 253, 0.18) !important;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+}
+
+.login-page :deep(.login-card.n-card::before) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -602,16 +667,17 @@ function flipToLogin() {
 
   .login-showcase {
     display: block;
+    align-self: start;
   }
 
   .login-main {
     flex: none;
     max-width: none;
     width: 100%;
-    align-items: flex-start;
+    align-items: stretch;
     justify-content: flex-start;
-    /* logo 高度 + 间距，与左侧标题行对齐 */
-    padding-top: 82px;
+    align-self: start;
+    padding-top: 0;
   }
 }
 

@@ -116,7 +116,9 @@ async def is_configured() -> bool:
 def _speech_service_hint(healthy: bool) -> str | None:
     if healthy:
         return None
-    url = get_settings().speech_service_url.rstrip("/")
+    from app.services.model_settings_service import get_speech_service_url
+
+    url = get_speech_service_url().rstrip("/")
     return (
         f"语音转写服务未启动（{url}）。"
         "请在项目根目录执行：bash scripts/start_speech_local.sh"

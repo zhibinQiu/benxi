@@ -20,13 +20,17 @@ import {
   WalletOutline,
   NewspaperOutline,
   SearchOutline,
+  StarOutline,
+  Star,
 } from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
 import { fetchSystemFeatures } from "../api/client";
+import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 
 const route = useRoute();
 const router = useRouter();
 const message = useMessage();
+const { isFavorite, toggleFavorite } = useFeatureFavorites();
 const features = ref([]);
 const loading = ref(true);
 
@@ -104,6 +108,11 @@ onMounted(async () => {
   }
 });
 
+function onFavoriteClick(event, featureId) {
+  event.stopPropagation();
+  toggleFavorite(featureId);
+}
+
 function openFeature(f) {
   if (!f.enabled) {
     message.info(`「${f.title}」${f.tag || "即将推出"}，敬请期待`);
@@ -131,6 +140,7 @@ function openFeature(f) {
 
 <template>
   <div class="functions-page feature-page">
+    <div class="functions-page__content">
     <header class="functions-page__intro">
       <HintTooltip
         text="按类别选择功能进入；长任务提交后可离开，在后台任务或消息中查看结果"
@@ -154,8 +164,8 @@ function openFeature(f) {
 
         <n-grid
           cols="2 s:3 m:4 xl:5"
-          :x-gap="10"
-          :y-gap="10"
+          :x-gap="8"
+          :y-gap="8"
           responsive="screen"
           class="category-grid"
         >
@@ -183,19 +193,35 @@ function openFeature(f) {
                     <component :is="iconMap[f.icon] || DocumentTextOutline" />
                   </n-icon>
                 </div>
-                <n-tag
-                  v-if="shouldShowTag(f)"
-                  size="tiny"
-                  round
-                  :bordered="false"
-                  :type="tagType(f)"
-                  class="feature-card__tag"
+                <button
+                  type="button"
+                  class="feature-card__star"
+                  :class="{ 'feature-card__star--active': isFavorite(f.id) }"
+                  :aria-label="isFavorite(f.id) ? '取消收藏' : '收藏到侧栏'"
+                  :aria-pressed="isFavorite(f.id)"
+                  @click="onFavoriteClick($event, f.id)"
                 >
-                  {{ f.tag }}
-                </n-tag>
+                  <n-icon :size="15">
+                    <component :is="isFavorite(f.id) ? Star : StarOutline" />
+                  </n-icon>
+                </button>
               </div>
-              <h3 class="feature-card__title">{{ f.title }}</h3>
-              <p class="feature-card__desc">{{ f.description }}</p>
+              <div class="feature-card__body">
+                <div class="feature-card__title-row">
+                  <h3 class="feature-card__title">{{ f.title }}</h3>
+                  <n-tag
+                    v-if="shouldShowTag(f)"
+                    size="tiny"
+                    round
+                    :bordered="false"
+                    :type="tagType(f)"
+                    class="feature-card__tag"
+                  >
+                    {{ f.tag }}
+                  </n-tag>
+                </div>
+                <p class="feature-card__desc">{{ f.description }}</p>
+              </div>
             </article>
           </n-gi>
         </n-grid>
@@ -205,8 +231,8 @@ function openFeature(f) {
     <n-grid
       v-else
       cols="2 s:3 m:4 xl:5"
-      :x-gap="10"
-      :y-gap="10"
+      :x-gap="8"
+      :y-gap="8"
       responsive="screen"
       class="functions-page__loading"
     >
@@ -218,38 +244,50 @@ function openFeature(f) {
         </n-card>
       </n-gi>
     </n-grid>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .functions-page {
+  position: relative;
   width: 100%;
   max-width: 1280px;
   --cat-accent: var(--platform-accent);
   --cat-accent-soft: var(--platform-accent-soft);
 }
 
+.functions-page__content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 8px 10px 10px;
+  box-sizing: border-box;
+}
+
 .functions-page__intro {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: 2px;
+  margin-bottom: 0;
 }
 
 .category-block {
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 .category-block:first-of-type {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .category-block__head {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-bottom: 10px;
-  padding: 0 0 8px 10px;
-  border-left: 3px solid var(--cat-accent, #0d9488);
+  margin-bottom: 8px;
+  padding: 0 0 6px 6px;
+  border-left: 3px solid var(--cat-accent, var(--platform-accent));
 }
 
 .category-block__icon {
@@ -260,8 +298,8 @@ function openFeature(f) {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: var(--cat-accent, #0d9488);
-  background: var(--cat-accent-soft, rgba(13, 148, 136, 0.1));
+  color: var(--cat-accent, var(--platform-accent));
+  background: var(--cat-accent-soft, var(--platform-accent-soft));
 }
 
 .category-block__text {
@@ -309,10 +347,11 @@ function openFeature(f) {
 .feature-card {
   flex: 1;
   width: 100%;
+  min-height: 112px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 11px 12px;
+  padding: 12px 14px;
   border-radius: var(--platform-radius-sm, 10px);
   background: var(--platform-bg-elevated);
   border: 1px solid var(--platform-border);
@@ -348,10 +387,57 @@ function openFeature(f) {
 
 .feature-card__top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 6px;
   margin-bottom: 6px;
+}
+
+.feature-card__star {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: -2px -2px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--platform-radius-xs, 6px);
+  background: transparent;
+  color: var(--platform-text-quaternary);
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    transform 0.18s var(--platform-ease-smooth, ease);
+}
+
+.feature-card__star:hover {
+  color: var(--platform-text-secondary);
+  transform: scale(1.08);
+}
+
+.feature-card__star--active {
+  color: #e8a317;
+}
+
+.feature-card__star:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--platform-bg-elevated), 0 0 0 4px var(--cat-accent);
+}
+
+.feature-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.feature-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .feature-card__icon {
@@ -362,8 +448,8 @@ function openFeature(f) {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: var(--cat-accent, #0d9488);
-  background: var(--cat-accent-soft, rgba(13, 148, 136, 0.1));
+  color: var(--cat-accent, var(--platform-accent));
+  background: var(--cat-accent-soft, var(--platform-accent-soft));
   transition: transform 0.2s ease;
 }
 
@@ -375,11 +461,13 @@ function openFeature(f) {
   flex-shrink: 0;
   max-width: 48%;
   transform: scale(0.92);
-  transform-origin: top right;
+  transform-origin: center right;
 }
 
 .feature-card__title {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
@@ -392,7 +480,7 @@ function openFeature(f) {
 
 .feature-card__desc {
   margin: 4px 0 0;
-  flex: 1;
+  margin-top: auto;
   font-size: 11px;
   line-height: 1.45;
   color: var(--platform-text-tertiary);
@@ -411,7 +499,7 @@ function openFeature(f) {
 }
 
 .feature-card--skeleton {
-  min-height: 88px;
+  min-height: 112px;
   pointer-events: none;
 }
 

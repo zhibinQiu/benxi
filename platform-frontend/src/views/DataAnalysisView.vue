@@ -399,8 +399,8 @@ onMounted(async () => {
 }
 
 .chat-item.system .bubble {
-  background: #eefaf3;
-  color: #1a7f4b;
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent-pressed);
   font-size: 12px;
 }
 

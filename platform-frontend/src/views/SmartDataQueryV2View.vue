@@ -28,6 +28,8 @@ const suggestions = [
       :suggestions="suggestions"
       :icon="StatsChartOutline"
       :stream-chat="smartDataQueryChatStream"
+      title-gradient
+      :show-chat-header-brand="false"
     />
   </FeatureSubsystemShell>
 </template>

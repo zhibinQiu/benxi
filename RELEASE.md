@@ -1,5 +1,22 @@
 # 发布说明
 
+## 3.9.3（v3.9.3）— 知识检索原生页、文档索引与 UI 体验
+
+- **知识检索**：独立原生页（左分级文档树 + 右问答），与 KnowFlow 嵌入解耦；统一「知识检索」命名
+- **文档中心**：恢复发布/分享合并卡片、知识索引与重新解析、列表/详情索引状态展示；解析器（DeepDOC/PaddleOCR 等）与分块方法可配置；顶栏操作区与系统顶栏融合（Teleport）
+- **说明文档**：系统设置内 Markdown/Mermaid 说明文档（`/admin/docs`），后端 API 打包/挂载 `docs/` 与运维手册
+- **体验**：全局视频背景 + Liquid Glass UI 统一（卡片/表格/输入/按钮）；网站收藏 Google SERP 式单列列表；主内容区纵向滚动修复；操作日志去掉资源类型/ID 列
+- **部署**：服务器依赖 compose 与 `server-deps.sh`；前端 Docker 入口与 Nginx 模板；根目录《运维部署指南》
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（3.9.3）
+
+## 3.9.2（v3.9.2）— 启动脚本整理、架构文档与稳定性
+
+- **版本统一**：`VERSION` 为单一来源，同步 API / 前端 / Docker 镜像 tag（3.9.2）
+- **启动脚本**：精简 `zhitan.sh`（移除废弃宿主机混合模式）；`stack.sh` 自动读取 `VERSION`；新增 `scripts/README.md`
+- **文档**：恢复并更新运维手册、架构说明；根 `README.md` 重写；KnowFlow 白标脚本恢复
+- **稳定性**：修复 `RagflowAccountLink` 与数据库 schema 不一致导致知识检索/嵌入 meta 500；资源管理支持保存前连通性测试
+- **清理**：删除空占位运维脚本（`sync_resource_settings_from_env.py`、`reconcile_knowledge_data.py`）
+
 ## 3.8.0（v3.8.0）— KnowFlow 权限与同步、订阅与数据分析
 
 - KnowFlow：普通用户 embed 仅用自己的 SSO 会话，不再借用 bootstrap 管理员身份；切片管理默认 `sync=false` 快路径，登录后后台 catalog 对账

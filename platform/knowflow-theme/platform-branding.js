@@ -1,5 +1,7 @@
 (function () {
   /** 平台 iframe 注入 ?auth= 时尽早写入会话，避免 SPA 路由守卫先跳到 /login */
+  bootstrapAuthFromUrl();
+
   function bootstrapAuthFromUrl() {
     var params = new URLSearchParams(location.search);
     var auth = params.get("auth");
@@ -55,7 +57,7 @@
       });
   }
 
-  var APP_NAME = window.__ZT_PLATFORM_APP_NAME__ || "智碳平台AI系统";
+  var APP_NAME = window.__ZT_PLATFORM_APP_NAME__ || "AI原型演示系统";
   var PRIMARY = "#18a058";
   var PRIMARY_HOVER = "#36ad6a";
   var PRIMARY_PRESSED = "#0c7a43";
@@ -361,6 +363,7 @@
   }
 
   var ALLOWED_KB_TITLES = new Set();
+  var ALLOWED_DATASET_IDS = new Set();
   var KB_VISIBILITY_FILTER_ENABLED = false;
   var STRICT_KB_FILTER = false;
   var IS_SYSTEM_ADMIN = false;
@@ -378,8 +381,54 @@
     if (n) ALLOWED_KB_TITLES.add(n);
   }
 
+  function addAllowedDatasetId(value) {
+    var id = String(value || "").trim();
+    if (id) ALLOWED_DATASET_IDS.add(id);
+  }
+
+  function extractDatasetIdFromNode(node) {
+    if (!node) return "";
+    var links = [];
+    if (node.querySelectorAll) {
+      node.querySelectorAll("a[href]").forEach(function (a) {
+        links.push(a.getAttribute("href"));
+      });
+    }
+    if (node.getAttribute) {
+      var href = node.getAttribute("href");
+      if (href) links.push(href);
+      var dataId =
+        node.getAttribute("data-id") ||
+        node.getAttribute("data-key") ||
+        node.getAttribute("data-dataset-id");
+      if (dataId) return String(dataId).trim();
+    }
+    for (var i = 0; i < links.length; i++) {
+      var m = String(links[i] || "").match(
+        /(?:dataset|knowledgebase|kb)[s]?\/([a-f0-9-]{32,36})/i
+      );
+      if (m) return m[1];
+    }
+    return "";
+  }
+
+  function isAllowedDatasetId(id) {
+    if (!STRICT_KB_FILTER || IS_SYSTEM_ADMIN) return true;
+    if (!ALLOWED_DATASET_IDS.size) return true;
+    return ALLOWED_DATASET_IDS.has(String(id || "").trim());
+  }
+
+  function isAllowedKbNode(node, text) {
+    if (!KB_VISIBILITY_FILTER_ENABLED) return true;
+    var dsId = extractDatasetIdFromNode(node);
+    if (dsId && !isAllowedDatasetId(dsId)) return false;
+    if (!text || !normalizeKbTitle(text)) return !STRICT_KB_FILTER;
+    return isAllowedKbTitle(text);
+  }
+
   function rebuildAllowedKbTitles(theme) {
     ALLOWED_KB_TITLES = new Set();
+    ALLOWED_DATASET_IDS = new Set();
     KB_VISIBILITY_FILTER_ENABLED = false;
     STRICT_KB_FILTER = false;
     IS_SYSTEM_ADMIN = !!(theme && theme.is_system_admin);
@@ -388,6 +437,10 @@
       return;
     }
     STRICT_KB_FILTER = !!(theme && theme.kb_visibility_strict);
+    var ids = (theme && theme.allowed_dataset_ids) || [];
+    for (var j = 0; j < ids.length; j++) {
+      addAllowedDatasetId(ids[j]);
+    }
     var list = (theme && theme.knowflow_kb_labels) || [];
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
@@ -425,7 +478,7 @@
           node.querySelector(".ant-typography");
         var text = titleEl ? titleEl.textContent : node.textContent;
         if (!text || !normalizeKbTitle(text)) return;
-        if (isAllowedKbTitle(text)) {
+        if (isAllowedKbNode(node, text)) {
           showKbElement(node);
         } else {
           hideKbElement(node);
@@ -446,7 +499,7 @@
           card.querySelector(".ant-typography");
         var text = titleEl ? titleEl.textContent : "";
         if (!text || !normalizeKbTitle(text)) return;
-        if (isAllowedKbTitle(text)) {
+        if (isAllowedKbNode(card, text)) {
           showKbElement(card);
         } else {
           hideKbElement(card);
@@ -515,6 +568,66 @@
       location.replace(fallbacks[i]);
       return;
     }
+  }
+
+  function isPlatformEmbedMode() {
+    var params = new URLSearchParams(location.search);
+    var embed =
+      params.get("zt_embed") ||
+      document.documentElement.getAttribute("data-zt-platform-embed") ||
+      "";
+    return embed === "1" || embed === "search" || embed === "knowledge";
+  }
+
+  function isKnowflowLoginPath() {
+    var path = (location.pathname || "").replace(/\/+$/, "").toLowerCase();
+    return (
+      path === "/login" ||
+      path.endsWith("/login") ||
+      path.indexOf("/login-next") >= 0
+    );
+  }
+
+  var ssoRefreshRequestedAt = 0;
+
+  function requestParentEmbedSso() {
+    if (!window.parent || window.parent === window) return;
+    var now = Date.now();
+    if (now - ssoRefreshRequestedAt < 2500) return;
+    ssoRefreshRequestedAt = now;
+    try {
+      window.parent.postMessage({ type: "zt-request-embed-sso" }, "*");
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function suppressKnowflowLoginPage() {
+    if (!isPlatformEmbedMode() || !isKnowflowLoginPath()) return;
+    try {
+      document.documentElement.setAttribute("data-zt-suppress-login", "1");
+    } catch (e) {
+      /* ignore */
+    }
+    var auth = "";
+    try {
+      auth = (localStorage.getItem("Authorization") || "").trim();
+    } catch (e) {
+      auth = "";
+    }
+    if (auth) {
+      var embed = document.documentElement.getAttribute("data-zt-platform-embed") || "knowledge";
+      var target = embed === "search" ? "/search" : "/knowledge";
+      var path = (location.pathname || "").replace(/\/+$/, "") || "/";
+      if (path !== target && path.indexOf(target + "/") !== 0) {
+        var qs = new URLSearchParams(location.search);
+        qs.delete("auth");
+        var nextQs = qs.toString();
+        location.replace(target + (nextQs ? "?" + nextQs : "") + location.hash);
+        return;
+      }
+    }
+    requestParentEmbedSso();
   }
 
   var PLATFORM_DISPLAY_NAME = "";
@@ -815,7 +928,12 @@
     ".ant-menu-item:has(a[href*='/management/files']),.ant-menu-item:has(a[href*='/file-management'])," +
     ".ant-tabs-tab:has([data-node-key='file-management']),.ant-tabs-tab:has([data-node-key='file-manager'])," +
     ".ragItem:has(.ragText){display:none!important}" +
-    "[data-zt-hidden-file='1']{display:none!important}";
+    "[data-zt-hidden-file='1']{display:none!important}" +
+    "html[data-zt-suppress-login='1'] #root," +
+    "html[data-zt-platform-embed] .login-page," +
+    "html[data-zt-platform-embed] [class*='login-page']," +
+    "html[data-zt-platform-embed] [class*='loginPage']" +
+    "{visibility:hidden!important;opacity:0!important;pointer-events:none!important}";
   document.head.appendChild(style);
 
   applyGreenTheme();
@@ -829,6 +947,7 @@
     applyGreenTheme();
     if (full) fixInlineBlueStyles();
     hideFileManagerMenu();
+    suppressKnowflowLoginPage();
     if (brandingTick % 4 === 0) applyPlatformLogo();
     if (PLATFORM_DISPLAY_NAME) patchWelcomeNickname(PLATFORM_DISPLAY_NAME);
     patchKnowflowKbLabels();
@@ -865,6 +984,7 @@
     setTimeout(function () {
       hideFileManagerMenu();
       redirectFromFileManager();
+      suppressKnowflowLoginPage();
     }, 0);
   };
   history.replaceState = function () {
@@ -872,9 +992,10 @@
     setTimeout(function () {
       hideFileManagerMenu();
       redirectFromFileManager();
+      suppressKnowflowLoginPage();
     }, 0);
   };
 
   bootstrapEmbedFromUrl();
-  bootstrapAuthFromUrl();
+  suppressKnowflowLoginPage();
 })();

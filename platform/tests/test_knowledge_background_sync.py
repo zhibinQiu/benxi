@@ -38,14 +38,24 @@ def test_run_sync_after_ingest_delegates_to_gateway():
     db.close.assert_called_once()
 
 
-def test_schedule_sync_after_ingest_uses_background_tasks():
+def test_schedule_sync_after_ingest_creates_job():
     tasks = MagicMock()
     doc_id = uuid.uuid4()
     user_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    job_id = uuid.uuid4()
 
-    schedule_sync_after_ingest(tasks, doc_id, user_id)
+    with patch(
+        "app.services.knowledge_sync_job_service.schedule_knowledge_index_after_upload",
+        return_value=MagicMock(id=job_id),
+    ) as schedule:
+        out = schedule_sync_after_ingest(
+            tasks, doc_id, user_id, version_id=version_id
+        )
 
-    tasks.add_task.assert_called_once_with(run_sync_after_ingest, doc_id, user_id)
+    assert out == job_id
+    schedule.assert_called_once()
+    tasks.add_task.assert_not_called()
 
 
 def test_enqueue_sync_after_ingest_starts_thread_when_enabled():
@@ -76,6 +86,23 @@ def test_enqueue_catalog_reconcile_starts_thread():
         from app.domains.knowledge.background_sync import enqueue_catalog_reconcile_after_login
 
         enqueue_catalog_reconcile_after_login(user_id)
+
+    thread_cls.assert_called_once()
+    thread_cls.return_value.start.assert_called_once()
+
+
+def test_enqueue_warm_on_login_starts_thread():
+    user_id = uuid.uuid4()
+
+    with patch(
+        "app.domains.knowledge.background_sync._should_enqueue",
+        return_value=True,
+    ), patch(
+        "app.domains.knowledge.background_sync.threading.Thread"
+    ) as thread_cls:
+        from app.domains.knowledge.background_sync import enqueue_warm_on_login
+
+        enqueue_warm_on_login(user_id)
 
     thread_cls.assert_called_once()
     thread_cls.return_value.start.assert_called_once()

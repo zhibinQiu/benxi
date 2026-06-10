@@ -6,8 +6,8 @@
 services:
   api:
     build:
-      context: platform
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: platform/Dockerfile
     ports:
       # 开发时浏览器直连 API（8000 常被本机其它进程占用，默认用 18000）
       - "127.0.0.1:${STACK_DEV_API_PORT:-18000}:8000"
@@ -15,9 +15,13 @@ services:
       - ./platform/app:/app/app:ro
       - ./platform/workers:/app/workers:ro
       - ./platform/knowflow-theme:/app/knowflow-theme:ro
+      - ./docs:/app/system-docs/docs:ro
+      - ./运维部署指南.md:/app/system-docs/运维部署指南.md:ro
+      - ./RELEASE.md:/app/system-docs/RELEASE.md:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
+      SYSTEM_DOCS_ROOT: /app/system-docs
       # 开发栈优先使用宿主机 speech-api（scripts/start_speech_local.sh），避免容器内重复下载/损坏模型
       SPEECH_SERVICE_URL: http://host.docker.internal:8765
       KNOWFLOW_UI_UPSTREAM_URL: http://ragflow:80

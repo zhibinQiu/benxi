@@ -5,12 +5,14 @@ import uuid
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.core.document_upload_limits import (
+    document_upload_max_bytes,
+    document_upload_max_label,
+)
 from app.core.permissions import PermissionLevel, can_access_document
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.org import User
 from app.storage.object_store import get_object_store
-
-MAX_DOCUMENT_UPLOAD_BYTES = 30 * 1024 * 1024
 
 
 def get_document(db: Session, document_id: uuid.UUID) -> Document | None:
@@ -238,6 +240,10 @@ def save_upload_blob(
         from app.core.exceptions import forbidden
 
         raise forbidden("No permission to upload new version")
+    if len(data) > document_upload_max_bytes():
+        from app.core.exceptions import bad_request
+
+        raise bad_request(f"单文件大小不能超过 {document_upload_max_label()}")
     mime = (content_type or version.mime_type or "application/octet-stream").strip()
     store = get_object_store()
     store.put_object_bytes(version.file_key, data, mime)
@@ -251,18 +257,20 @@ def complete_upload(
     *,
     file_size: int,
     checksum: str | None,
+    change_description: str = "",
 ) -> Document:
     if not can_access_document(db, user, document, PermissionLevel.edit.value):
         from app.core.exceptions import forbidden
 
         raise forbidden("No permission to complete upload")
-    if file_size > MAX_DOCUMENT_UPLOAD_BYTES:
+    if file_size > document_upload_max_bytes():
         from app.core.exceptions import bad_request
 
-        raise bad_request("单文件大小不能超过 30MB")
+        raise bad_request(f"单文件大小不能超过 {document_upload_max_label()}")
 
     version.file_size = file_size
     version.checksum = checksum
+    version.change_description = (change_description or "").strip()
     document.current_version_id = version.id
     db.commit()
     db.refresh(document)
@@ -335,10 +343,9 @@ def publish_document_scope(
     scope: str,
     dept_id: uuid.UUID | None = None,
 ) -> Document:
-    """将文档发布到公司/部门文库（改 scope，在对应 Tab 展示，不进「分享」）。"""
+    """将文档发布到公司/部门/小组文库（改 scope，在对应 Tab 展示，不进「分享」）。"""
     from app.core.document_scope import (
-        SCOPE_COMPANY,
-        SCOPE_DEPARTMENT,
+        ORG_SCOPES,
         SCOPE_PERSONAL,
         resolve_create_params,
     )
@@ -350,10 +357,10 @@ def publish_document_scope(
     if scope == SCOPE_PERSONAL:
         raise bad_request("请使用文档库「我的」分级存放个人文档")
     if document.owner_id != user.id and not user_is_superuser(db, user):
-        raise forbidden("仅文档创建人可发布到部门/公司文库")
+        raise forbidden("仅文档创建人可发布到组织文库")
     norm_scope, norm_dept = resolve_create_params(db, user, scope=scope, dept_id=dept_id)
     document.scope = norm_scope
-    document.dept_id = norm_dept if norm_scope == SCOPE_DEPARTMENT else None
+    document.dept_id = norm_dept if norm_scope in ORG_SCOPES else None
     document.folder_id = None
     db.flush()
     return document

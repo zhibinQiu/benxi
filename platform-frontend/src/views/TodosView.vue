@@ -473,10 +473,10 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .todo-column--pending {
-  border-top: 2px solid #38bdf8;
+  border-top: 2px solid var(--platform-accent);
 }
 .todo-column--done {
-  border-top: 2px solid #14b8a6;
+  border-top: 2px solid var(--platform-accent);
 }
 .column-head {
   display: flex;

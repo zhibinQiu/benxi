@@ -221,7 +221,7 @@ onMounted(load);
   padding: 4px 8px;
   border-radius: 4px;
   color: #fff;
-  background: linear-gradient(135deg, #07c160 0%, #06ad56 100%);
+  background: var(--platform-accent-gradient);
 }
 
 .article-title {

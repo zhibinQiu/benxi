@@ -1,44 +1,46 @@
-# 脚本说明（v3.4+ 统一栈）
+# 脚本说明（v3.9.3）
 
-## 推荐入口
+## 入口一览
 
 | 脚本 | 用途 |
 |------|------|
-| **`stack.sh`** | 根目录 `compose.yaml`：build / up / dev-up / save / load / backup |
-| **`zhitan.sh`** | 包装：`start`→`stack up`，`dev`→`dev-up`，`stop`→`down` |
-| **`deploy.sh stack`** | 远程：rsync 镜像包 + 编排，**不 rsync 源码** |
+| **`zhitan.sh`** | 日常开发入口：start / dev / stop / remote-dev |
+| **`stack.sh`** | Docker 编排：build / up / dev-up / down / save / load / backup |
+| **`deploy.sh`** | 生产部署：镜像导出 + rsync + 远程 up |
+| `setup-stack-env.sh` | 合并 `platform/.env` → 根目录 `.env` |
+| `setup-remote-dev-env.sh` | 本机前端 + 远程依赖的 `platform/.env` |
+| `setup_speech.sh` | 构建并启动 speech profile |
+| `start_speech_local.sh` | 宿主机 FunASR（非 Docker） |
+| `server-deps.sh` | 远程服务器仅跑依赖栈 |
+| `verify-remote-deps.sh` | 探测远程端口与健康检查 |
+| `download_babeldoc_assets.sh` | PDF 翻译 BabelDOC 资源 |
+| `download_knowflow_deps_light.sh` | KnowFlow 源码构建依赖 |
+
+## 常用命令
 
 ```bash
+# 首次
 cp .env.stack.example .env
-bash scripts/stack.sh dev-up --profile knowflow --profile speech
+cp platform/.env.example platform/.env   # 编辑密钥与 KnowFlow 地址
 
+# 全栈开发（推荐）
+bash scripts/zhitan.sh dev --profile knowflow --profile speech
+# 或
+bash scripts/stack.sh dev-up --profile knowflow
+
+# 生产式本机
+bash scripts/stack.sh build --profile knowflow
+bash scripts/stack.sh up --profile knowflow
+
+# 本机 UI + 远程 Postgres/KnowFlow
+REMOTE_HOST=172.19.134.45 bash scripts/zhitan.sh remote-dev
+bash scripts/zhitan.sh dev
+
+# 部署到服务器
 bash scripts/stack.sh build && bash scripts/stack.sh save
-bash scripts/deploy.sh stack push    # 需 platform/deploy.target
+bash scripts/deploy.sh stack push
 ```
 
-文档：**[docs/zh/operations/README.md](../docs/zh/operations/README.md)**
+版本号以仓库根 **`VERSION`** 为唯一来源；镜像 tag 为 `zhitan-*:${ZHITAN_VERSION}`。
 
-## 辅助脚本
-
-| 脚本 | 说明 |
-|------|------|
-| `setup-stack-env.sh` | 生成/合并根目录 `.env` |
-| `download_babeldoc_assets.sh` | pdf2zh 模型与字体 |
-| `download_knowflow_deps_light.sh` | KnowFlow 源码构建依赖 |
-| `setup_speech.sh` | `stack.sh build/up --profile speech` |
-| `start_speech_local.sh` | 宿主机 FunASR（compose.dev 可选） |
-
-## 已移除
-
-- `merge-stack-env.sh` → 使用 `setup-stack-env.sh`
-- `platform/docker-compose*.yml` → 使用根目录 `compose.yaml`
-- `deploy.sh full/app` → 使用 `deploy.sh stack push`
-- `pack_deploy_bundle.sh`（legacy 离线包）
-
-## 配置模板
-
-| 文件 | 说明 |
-|------|------|
-| `.env.stack.example` | → 仓库根 `.env` |
-| `platform/.env.example` | 业务密钥模板 |
-| `platform/deploy.target.example` | → `deploy.target`（SSH 部署） |
+详见 [运维手册](../docs/zh/operations/README.md)。

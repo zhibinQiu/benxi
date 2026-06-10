@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   NAlert,
@@ -18,6 +18,8 @@ import {
 } from "naive-ui";
 import {
   ArrowBackOutline,
+  ChevronDownOutline,
+  ChevronUpOutline,
   GitCompareOutline,
   SearchOutline,
   FolderOpenOutline,
@@ -49,6 +51,7 @@ const syncKnowflow = ref(true);
 const fieldMatch = ref(true);
 const activeDiffId = ref(null);
 const activeHitIndex = ref(-1);
+const hitListRef = ref(null);
 const leftPdfBaseUrl = ref(null);
 const rightPdfBaseUrl = ref(null);
 const rightPdfPage = ref(1);
@@ -97,6 +100,7 @@ function revokeBlobUrl(url) {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onCompareKeydown);
   revokeBlobUrl(leftContent.value?.preview_url);
   revokeBlobUrl(rightContent.value?.preview_url);
   leftPdfBaseUrl.value = null;
@@ -110,6 +114,21 @@ const rightPdfSrc = computed(() =>
 
 const activeHit = computed(() =>
   activeHitIndex.value >= 0 ? searchHits.value[activeHitIndex.value] : null
+);
+
+const hitNavLabel = computed(() => {
+  if (!searchHits.value.length || activeHitIndex.value < 0) return "";
+  return `${activeHitIndex.value + 1} / ${searchHits.value.length}`;
+});
+
+const canHitPrev = computed(
+  () => searchHits.value.length > 0 && activeHitIndex.value > 0
+);
+const canHitNext = computed(
+  () =>
+    searchHits.value.length > 0 &&
+    activeHitIndex.value >= 0 &&
+    activeHitIndex.value < searchHits.value.length - 1
 );
 
 function pdfSrcWithPage(base, page) {
@@ -177,10 +196,12 @@ const leftHasPdf = computed(() => isPdfFileName(leftContent.value?.file_name));
 const rightHasPdf = computed(() => isPdfFileName(rightContent.value?.file_name));
 const leftPlainPreview = computed(() => {
   if (!leftContent.value || leftHasPdf.value) return "";
+  if (leftParagraphs.value.length) return "";
   return leftContent.value.full_text?.trim() || "";
 });
 const rightPlainPreview = computed(() => {
   if (!rightContent.value || rightHasPdf.value) return "";
+  if (rightParagraphs.value.length) return "";
   return rightContent.value.full_text?.trim() || "";
 });
 
@@ -206,16 +227,42 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
-function highlightHtml(text, { diffClass, searchActive }) {
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function snippetHighlightParts(snippet) {
+  const sn = (snippet || "").trim();
+  if (!sn) return [];
+  if (sn.length <= 120) return [sn];
+  return [sn.slice(0, 120), sn.slice(0, 60)];
+}
+
+function highlightHtml(text, { diffClass, searchActive, hitSnippet } = {}) {
   let html = escapeHtml(text || "");
   if (!html) return "<span class='para-empty'>（空段落）</span>";
   if (diffClass) {
     html = `<span class="${diffClass}">${html}</span>`;
   }
-  if (searchActive && searchTerms.value.length) {
-    for (const term of searchTerms.value) {
-      const re = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
-      html = html.replace(re, '<mark class="hl-search">$1</mark>');
+  if (searchActive) {
+    let marked = false;
+    if (hitSnippet) {
+      for (const part of snippetHighlightParts(hitSnippet)) {
+        if (!part || part.length < 4) continue;
+        const idx = (text || "").indexOf(part);
+        if (idx >= 0) {
+          const re = new RegExp(escapeRegExp(part));
+          html = html.replace(re, '<mark class="hl-search hl-search--active">$&</mark>');
+          marked = true;
+          break;
+        }
+      }
+    }
+    if (!marked && searchTerms.value.length) {
+      for (const term of searchTerms.value) {
+        const re = new RegExp(`(${escapeRegExp(term)})`, "gi");
+        html = html.replace(re, '<mark class="hl-search">$1</mark>');
+      }
     }
   }
   return html;
@@ -448,6 +495,7 @@ async function jumpToHit(hit, index) {
   if (!hit) return;
   activeHitIndex.value = index;
   await nextTick();
+  scrollActiveHitIntoAside();
 
   if (rightHasPdf.value) {
     rightPdfPage.value = hitPage(hit);
@@ -464,6 +512,57 @@ async function jumpToHit(hit, index) {
     window.setTimeout(() => target.classList.remove("para-flash"), 2200);
   }
 }
+
+function scrollActiveHitIntoAside() {
+  const root = hitListRef.value;
+  if (!root || activeHitIndex.value < 0) return;
+  const el = root.querySelectorAll(".hit-item")[activeHitIndex.value];
+  el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function goPrevHit() {
+  if (!searchHits.value.length) return;
+  const idx =
+    activeHitIndex.value <= 0
+      ? 0
+      : activeHitIndex.value - 1;
+  jumpToHit(searchHits.value[idx], idx);
+}
+
+function goNextHit() {
+  if (!searchHits.value.length) return;
+  const idx =
+    activeHitIndex.value < 0
+      ? 0
+      : Math.min(activeHitIndex.value + 1, searchHits.value.length - 1);
+  jumpToHit(searchHits.value[idx], idx);
+}
+
+function onSearchKeydown(e) {
+  if (!searchHits.value.length) return;
+  if (e.key === "ArrowDown" || (e.key === "Enter" && e.shiftKey)) {
+    e.preventDefault();
+    goNextHit();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    goPrevHit();
+  }
+}
+
+function onCompareKeydown(e) {
+  if (e.target?.closest?.("input, textarea, [contenteditable=true]")) {
+    if (e.key !== "F3") return;
+  }
+  if (e.key === "F3") {
+    e.preventDefault();
+    if (e.shiftKey) goPrevHit();
+    else goNextHit();
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", onCompareKeydown);
+});
 
 async function runSearch() {
   if (!rightDoc.value?.id || !searchQuery.value.trim()) return;
@@ -502,7 +601,7 @@ function onDiffClick(d) {
   <FeatureSubsystemShell fill>
     <template #extra>
       <n-space :size="8" align="center" wrap>
-        <n-checkbox v-model:checked="syncKnowflow" size="small">知识库检索</n-checkbox>
+        <n-checkbox v-model:checked="syncKnowflow" size="small">向量检索</n-checkbox>
         <n-button
           size="small"
           secondary
@@ -614,10 +713,11 @@ function onDiffClick(d) {
             <n-input
               v-model:value="searchQuery"
               size="small"
-              placeholder="检索：违约金、条款:责任"
+              placeholder="检索关键词，如：违约金、条款:责任"
               clearable
               :disabled="!rightDoc"
               @keyup.enter="runSearch"
+              @keydown="onSearchKeydown"
             >
               <template #prefix>
                 <n-icon :component="SearchOutline" />
@@ -632,6 +732,31 @@ function onDiffClick(d) {
             >
               检索
             </n-button>
+            <div v-if="searchHits.length" class="hit-nav">
+              <n-button
+                size="tiny"
+                quaternary
+                :disabled="!canHitPrev"
+                title="上一个（↑）"
+                @click="goPrevHit"
+              >
+                <template #icon>
+                  <n-icon :component="ChevronUpOutline" />
+                </template>
+              </n-button>
+              <n-text depth="2" class="hit-nav-label">{{ hitNavLabel }}</n-text>
+              <n-button
+                size="tiny"
+                quaternary
+                :disabled="!canHitNext"
+                title="下一个（↓ / F3）"
+                @click="goNextHit"
+              >
+                <template #icon>
+                  <n-icon :component="ChevronDownOutline" />
+                </template>
+              </n-button>
+            </div>
             <n-checkbox v-model:checked="fieldMatch" size="small">字段匹配</n-checkbox>
           </div>
           <div class="doc-panel-preview">
@@ -645,6 +770,19 @@ function onDiffClick(d) {
                     title="右侧文档预览"
                   />
                   <div v-if="activeHit && searchHits.length" class="pdf-hit-bar">
+                    <n-space align="center" :size="6" class="pdf-hit-nav">
+                      <n-button size="tiny" quaternary :disabled="!canHitPrev" @click="goPrevHit">
+                        <template #icon>
+                          <n-icon :component="ChevronUpOutline" />
+                        </template>
+                      </n-button>
+                      <n-text depth="3">{{ hitNavLabel }}</n-text>
+                      <n-button size="tiny" quaternary :disabled="!canHitNext" @click="goNextHit">
+                        <template #icon>
+                          <n-icon :component="ChevronDownOutline" />
+                        </template>
+                      </n-button>
+                    </n-space>
                     <n-tag size="small" type="warning" :bordered="false">
                       第 {{ hitPage(activeHit) }} 页
                     </n-tag>
@@ -680,6 +818,10 @@ function onDiffClick(d) {
                             diffClass: diffClassForPara('right', p.text),
                             searchActive:
                               paraHitState(p.text).isHit || paraHitState(p.text).isActive,
+                            hitSnippet:
+                              paraHitState(p.text).isActive && activeHit
+                                ? activeHit.snippet
+                                : null,
                           })
                         "
                       />
@@ -726,20 +868,30 @@ function onDiffClick(d) {
           </div>
         </n-card>
 
-        <n-card v-if="searchHits.length" size="small" title="检索命中" class="aside-card">
-          <div
-            v-for="(h, i) in searchHits"
-            :key="h.id || i"
-            class="hit-item"
-            :class="{ active: activeHitIndex === i }"
-            @click="onHitClick(h, i)"
-          >
-            <n-space align="center" :size="6">
-              <n-tag size="tiny" type="info">{{ h.source === 'knowflow' ? '知识库' : '关键词' }}</n-tag>
-              <n-tag v-if="hitPage(h) > 0" size="tiny" :bordered="false">P{{ hitPage(h) }}</n-tag>
-              <n-text depth="3">得分 {{ h.score?.toFixed?.(1) ?? h.score }}</n-text>
+        <n-card v-if="searchHits.length" size="small" class="aside-card">
+          <template #header>
+            <n-space align="center" justify="space-between" style="width: 100%">
+              <span>检索命中</span>
+              <n-text v-if="hitNavLabel" depth="3" style="font-size: 12px">{{ hitNavLabel }}</n-text>
             </n-space>
-            <div class="hit-snippet" v-html="highlightSnippet(h.snippet)" />
+          </template>
+          <div ref="hitListRef" class="hit-list">
+            <div
+              v-for="(h, i) in searchHits"
+              :key="h.id || `${h.document_id}-${i}`"
+              class="hit-item"
+              :class="{ active: activeHitIndex === i }"
+              @click="onHitClick(h, i)"
+            >
+              <n-space align="center" :size="6">
+                <n-tag size="tiny" type="info">{{
+                  h.source === "knowflow" ? "向量" : "关键词"
+                }}</n-tag>
+                <n-tag v-if="hitPage(h) > 0" size="tiny" :bordered="false">P{{ hitPage(h) }}</n-tag>
+                <n-text depth="3">得分 {{ h.score?.toFixed?.(2) ?? h.score }}</n-text>
+              </n-space>
+              <div class="hit-snippet" v-html="highlightSnippet(h.snippet)" />
+            </div>
           </div>
         </n-card>
       </aside>
@@ -807,7 +959,7 @@ function onDiffClick(d) {
   border-top: 2px solid #60a5fa;
 }
 .doc-panel--right {
-  border-top: 2px solid #14b8a6;
+  border-top: 2px solid var(--platform-accent);
 }
 .doc-panel-head {
   flex-shrink: 0;
@@ -836,8 +988,8 @@ function onDiffClick(d) {
   color: #2563eb;
 }
 .doc-panel-badge--target {
-  background: rgba(20, 184, 166, 0.12);
-  color: #0f766e;
+  background: var(--platform-accent-muted);
+  color: var(--platform-accent-pressed);
 }
 .doc-panel-name {
   font-size: 13px;
@@ -853,9 +1005,31 @@ function onDiffClick(d) {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--platform-border, rgba(15, 23, 42, 0.06));
+}
+.hit-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(139, 92, 246, 0.06);
+}
+.hit-nav-label {
+  font-size: 12px;
+  min-width: 3.2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.hit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
 }
 .doc-panel-search :deep(.n-input) {
   flex: 1;
@@ -914,10 +1088,13 @@ function onDiffClick(d) {
   padding: 6px 10px;
   font-size: 12px;
   line-height: 1.45;
-  max-height: 64px;
+  max-height: 72px;
   overflow-y: auto;
   background: #fff;
   border-top: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+}
+.pdf-hit-nav {
+  flex-shrink: 0;
 }
 .pdf-hit-snippet {
   flex: 1;
@@ -1010,6 +1187,10 @@ function onDiffClick(d) {
   padding: 0 2px;
   border-radius: 2px;
 }
+.para-text :deep(mark.hl-search--active) {
+  background: rgba(139, 92, 246, 0.62);
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.45);
+}
 .compare-aside {
   width: 260px;
   flex-shrink: 0;
@@ -1045,7 +1226,7 @@ function onDiffClick(d) {
 .diff-item:hover,
 .diff-item.active {
   border-color: var(--n-primary-color);
-  background: rgba(24, 160, 88, 0.06);
+  background: var(--platform-accent-muted);
 }
 .diff-snippet,
 .hit-snippet {

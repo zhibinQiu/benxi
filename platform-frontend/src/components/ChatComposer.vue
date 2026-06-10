@@ -116,8 +116,8 @@ function onKeydown(e) {
   border-radius: 50%;
   cursor: pointer;
   color: #fff;
-  background: linear-gradient(160deg, #14b8a6 0%, #0d9488 100%);
-  box-shadow: 0 2px 6px rgba(13, 148, 136, 0.24);
+  background: var(--platform-accent-gradient);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--platform-accent) 24%, transparent);
   transition:
     transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.18s ease,
@@ -136,7 +136,7 @@ function onKeydown(e) {
 
 .chat-composer--single .chat-composer__send:hover {
   transform: translateY(calc(-50% - 1px));
-  box-shadow: 0 3px 10px rgba(13, 148, 136, 0.3);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--platform-accent) 30%, transparent);
 }
 
 .chat-composer--single .chat-composer__send:active {
@@ -145,7 +145,7 @@ function onKeydown(e) {
 
 .chat-composer:not(.chat-composer--single) .chat-composer__send:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.32);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--platform-accent) 32%, transparent);
 }
 
 .chat-composer:not(.chat-composer--single) .chat-composer__send:active:not(:disabled) {
@@ -159,12 +159,12 @@ function onKeydown(e) {
 }
 
 .chat-composer__send--stop {
-  background: linear-gradient(160deg, #14b8a6 0%, #0d9488 100%);
-  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.28);
+  background: var(--platform-accent-gradient);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 28%, transparent);
 }
 
 .chat-composer__send--stop:hover {
-  background: linear-gradient(160deg, #2dd4bf 0%, #14b8a6 100%);
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.32);
+  background: var(--platform-accent-gradient-hover);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--platform-accent) 32%, transparent);
 }
 </style>

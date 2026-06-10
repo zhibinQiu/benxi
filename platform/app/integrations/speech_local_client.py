@@ -7,10 +7,11 @@ import httpx
 from app.config import get_settings
 from app.core.exceptions import bad_request
 from app.integrations.whisper_client import validate_audio_filename
+from app.services.model_settings_service import get_speech_service_url
 
 
 def speech_service_url() -> str:
-    return get_settings().speech_service_url.rstrip("/")
+    return get_speech_service_url().rstrip("/")
 
 
 def local_configured() -> bool:

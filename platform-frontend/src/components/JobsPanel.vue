@@ -4,21 +4,27 @@ import { useRouter } from "vue-router";
 import {
   NButton,
   NDataTable,
+  NDropdown,
   NEmpty,
+  NIcon,
   NPopconfirm,
   NSpace,
   NSpin,
   NTag,
-  NText,
+  NTooltip,
 } from "naive-ui";
 import { cancelJob, clearJobs, fetchJobs } from "../api/client";
-import BatchTableToolbar from "./BatchTableToolbar.vue";
-import IconAction from "./IconAction.vue";
 import { useBatchTableSelection } from "../composables/useBatchTableSelection";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { deleteSequentially } from "../utils/batchActions";
-import { RefreshOutline, TrashOutline } from "@vicons/ionicons5";
+import {
+  ChevronDownOutline,
+  ListOutline,
+  RefreshOutline,
+  StopCircleOutline,
+  TrashBinOutline,
+} from "@vicons/ionicons5";
 
 const props = defineProps({
   variant: {
@@ -94,6 +100,18 @@ const {
 const canBatchCancel = computed(
   () => selectedRows.value.length > 0 && selectedRows.value.every(isCancellable)
 );
+
+const clearMenuOptions = computed(() => {
+  locale.value;
+  return [
+    { label: t("jobs.clearDone"), key: "finished" },
+    {
+      label: t("jobs.clearAll"),
+      key: "all",
+      props: { class: "platform-dropdown-option--danger" },
+    },
+  ];
+});
 
 function openJob(row) {
   if (row.type === "pdf_translate") {
@@ -228,6 +246,16 @@ async function doClear(scope) {
   }
 }
 
+function handleClearMenu(key) {
+  const scope = key === "finished" ? "finished" : "all";
+  ui.confirmAction({
+    title: scope === "finished" ? t("jobs.clearDone") : t("jobs.clearAll"),
+    content: t(scope === "finished" ? "jobs.confirm.clearDone" : "jobs.confirm.clearAll"),
+    positiveText: t("common.delete"),
+    onPositive: () => doClear(scope),
+  });
+}
+
 watch(
   () => props.active,
   (visible) => {
@@ -244,18 +272,44 @@ defineExpose({ load, refresh: load });
 
 <template>
   <div :class="['jobs-panel', { 'jobs-panel--popover': variant === 'popover' }]">
-    <div v-if="variant === 'popover'" class="jobs-panel__header">
-      <n-text strong>{{ t("jobs.title") }}</n-text>
-      <n-space :size="4">
-        <IconAction :label="t('common.refresh')" :icon="RefreshOutline" size="tiny" @click="load" />
-        <n-button text type="primary" size="small" @click="goJobsPage">
+    <header v-if="variant === 'popover'" class="jobs-panel__header">
+      <strong class="platform-text-gradient jobs-panel__title">
+        {{ t("jobs.title") }}
+      </strong>
+      <div class="jobs-panel__actions">
+        <n-tooltip placement="bottom">
+          <template #trigger>
+            <button
+              type="button"
+              class="jobs-header-btn jobs-header-btn--refresh"
+              :aria-label="t('common.refresh')"
+              :disabled="loading"
+              @click="load"
+            >
+              <n-icon :size="16" :component="RefreshOutline" />
+            </button>
+          </template>
+          {{ t("common.refresh") }}
+        </n-tooltip>
+        <n-tooltip placement="bottom">
+          <template #trigger>
+            <button
+              type="button"
+              class="jobs-header-btn jobs-header-btn--view-all"
+              :aria-label="t('jobs.viewAll')"
+              @click="goJobsPage"
+            >
+              <n-icon :size="16" :component="ListOutline" />
+            </button>
+          </template>
           {{ t("jobs.viewAll") }}
-        </n-button>
-      </n-space>
-    </div>
+        </n-tooltip>
+      </div>
+    </header>
 
     <n-spin :show="loading">
       <template v-if="variant === 'popover'">
+        <div class="jobs-panel__body">
         <div v-if="items.length" class="jobs-panel__list">
           <div v-for="row in items" :key="row.id" class="jobs-panel__item">
             <div class="jobs-panel__item-main">
@@ -293,31 +347,57 @@ defineExpose({ load, refresh: load });
           </div>
         </div>
         <n-empty v-else size="small" :description="t('common.empty')" />
+        </div>
       </template>
 
       <template v-else>
         <div class="jobs-panel__toolbar">
-          <n-space :size="8" align="center" wrap>
-            <BatchTableToolbar
-              :count="selectedCount"
+          <div class="jobs-panel__toolbar-group">
+            <button
+              type="button"
+              class="jobs-toolbar-btn jobs-toolbar-btn--cancel"
               :disabled="!canBatchCancel"
-              label-key="batch.cancel"
-              action-type="warning"
-              @action="handleBatchCancel"
-            />
-            <n-popconfirm @positive-click="doClear('finished')">
-              <template #trigger>
-                <IconAction :label="t('jobs.clearDone')" :icon="TrashOutline" />
-              </template>
-              {{ t("jobs.confirm.clearDone") }}
-            </n-popconfirm>
-            <n-popconfirm @positive-click="doClear('all')">
-              <template #trigger>
-                <IconAction :label="t('notifications.clearAll')" :icon="TrashOutline" type="default" />
-              </template>
-              {{ t("jobs.confirm.clearAll") }}
-            </n-popconfirm>
-          </n-space>
+              :aria-label="t('batch.cancel')"
+              @click="handleBatchCancel"
+            >
+              <n-icon :size="16" :component="StopCircleOutline" />
+              <span>{{ t("batch.cancel") }}</span>
+              <span v-if="selectedCount > 0" class="jobs-toolbar-btn__badge">
+                {{ selectedCount }}
+              </span>
+            </button>
+            <span class="jobs-panel__toolbar-divider" aria-hidden="true" />
+            <n-dropdown
+              trigger="click"
+              placement="bottom-start"
+              :options="clearMenuOptions"
+              @select="handleClearMenu"
+            >
+              <button type="button" class="jobs-toolbar-btn jobs-toolbar-btn--clear">
+                <n-icon :size="16" :component="TrashBinOutline" />
+                <span>{{ t("jobs.clearRecords") }}</span>
+                <n-icon
+                  :size="14"
+                  :component="ChevronDownOutline"
+                  class="jobs-toolbar-btn__caret"
+                />
+              </button>
+            </n-dropdown>
+          </div>
+          <n-tooltip placement="bottom">
+            <template #trigger>
+              <button
+                type="button"
+                class="jobs-toolbar-btn jobs-toolbar-btn--icon"
+                :aria-label="t('common.refresh')"
+                :disabled="loading"
+                @click="load"
+              >
+                <n-icon :size="16" :component="RefreshOutline" />
+              </button>
+            </template>
+            {{ t("common.refresh") }}
+          </n-tooltip>
         </div>
         <n-data-table
           :columns="pageColumns"
@@ -340,40 +420,197 @@ defineExpose({ load, refresh: load });
 
 <style scoped>
 .jobs-panel--popover {
-  width: min(420px, calc(100vw - 32px));
-  padding: 12px 14px;
-  background: var(--platform-bg-elevated);
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-radius);
+  width: 100%;
   box-sizing: border-box;
-  box-shadow: var(--platform-shadow-lg);
 }
 
 .jobs-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
+  gap: 10px;
+  padding: 12px 14px 10px;
   border-bottom: 1px solid var(--platform-border);
+  background: linear-gradient(
+    180deg,
+    var(--platform-toolbar-bg) 0%,
+    transparent 100%
+  );
+}
+
+.jobs-panel__title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: var(--platform-tracking-tight);
+}
+
+.jobs-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--platform-radius-sm);
+  background: var(--platform-bg-elevated-solid);
+  border: 1px solid var(--platform-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.jobs-header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--platform-radius-sm) - 2px);
+  cursor: pointer;
+  transition:
+    transform 0.15s var(--platform-ease-smooth),
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.jobs-header-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.jobs-header-btn:not(:disabled):active {
+  transform: translateY(0);
+}
+
+.jobs-header-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.jobs-header-btn--refresh,
+.jobs-header-btn--view-all {
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+}
+
+.jobs-header-btn--refresh:not(:disabled):hover,
+.jobs-header-btn--view-all:not(:disabled):hover {
+  color: var(--platform-accent-hover, var(--platform-accent));
+  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 22%, transparent);
+}
+
+.jobs-panel__body {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 10px 14px 14px;
 }
 
 .jobs-panel__toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
-.jobs-panel__toolbar :deep(.batch-table-toolbar) {
-  margin-bottom: 0;
+.jobs-panel__toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 3px;
+  border-radius: var(--platform-radius-sm);
+  background: var(--platform-bg-elevated-solid);
+  border: 1px solid var(--platform-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.jobs-panel__list {
-  max-height: 360px;
-  overflow-y: auto;
+.jobs-panel__toolbar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--platform-border);
+  flex-shrink: 0;
+}
+
+.jobs-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: calc(var(--platform-radius-sm) - 2px);
+  background: transparent;
+  color: var(--platform-text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.15s var(--platform-ease-smooth),
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.jobs-toolbar-btn:not(:disabled):hover {
+  background: var(--platform-toolbar-bg);
+  color: var(--platform-text);
+}
+
+.jobs-toolbar-btn:not(:disabled):active {
+  transform: translateY(0);
+}
+
+.jobs-toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.jobs-toolbar-btn--cancel:not(:disabled) {
+  color: var(--platform-caution);
+}
+
+.jobs-toolbar-btn--cancel:not(:disabled):hover {
+  color: var(--platform-caution);
+  background: var(--platform-caution-soft);
+}
+
+.jobs-toolbar-btn--clear:not(:disabled):hover {
+  color: var(--platform-text);
+}
+
+.jobs-toolbar-btn--icon {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  color: var(--platform-accent);
+  background: var(--platform-bg-elevated-solid);
+  border: 1px solid var(--platform-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.jobs-toolbar-btn--icon:not(:disabled):hover {
+  color: var(--platform-accent-hover, var(--platform-accent));
+  background: var(--platform-accent-soft);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 18%, transparent);
+}
+
+.jobs-toolbar-btn__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  background: color-mix(in srgb, var(--platform-caution-soft) 88%, var(--platform-caution) 12%);
+  color: var(--platform-caution);
+}
+
+.jobs-toolbar-btn__caret {
+  opacity: 0.55;
+  margin-left: -2px;
 }
 
 .jobs-panel__item {

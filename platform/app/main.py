@@ -27,6 +27,7 @@ from app.api import (
     notifications,
     roles,
     system,
+    system_docs,
     todos,
     users,
 )
@@ -46,9 +47,11 @@ from app.schema_migrate import (
     ensure_todo_schema,
     ensure_wechat_mp_schema,
     ensure_feed_subscription_schema,
+    ensure_platform_model_settings_schema,
     ensure_user_single_department_schema,
     ensure_user_phone_schema,
     backfill_user_phones,
+    drop_legacy_ragflow_account_dataset_columns,
     migrate_legacy_admin_roles,
 )
 from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
@@ -70,6 +73,7 @@ from app.models import (  # noqa: F401 — register ORM models
     carbon_market,
     meeting_record,
     platform_chat,
+    platform_model_settings,
     todo,
     wechat_mp,
     feed_subscription,
@@ -85,12 +89,14 @@ async def lifespan(_app: FastAPI):
     ensure_document_scope_tier_v2(engine)
     ensure_document_scope_org_depth(engine)
     ensure_ragflow_schema(engine)
+    drop_legacy_ragflow_account_dataset_columns(engine)
     ensure_carbon_market_schema(engine)
     ensure_meeting_record_schema(engine)
     ensure_todo_schema(engine)
     ensure_wechat_mp_schema(engine)
     ensure_feed_subscription_schema(engine)
     ensure_platform_chat_schema(engine)
+    ensure_platform_model_settings_schema(engine)
     ensure_user_single_department_schema(engine)
     ensure_user_phone_schema(engine)
     ensure_permission_level_migration(engine)
@@ -196,6 +202,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix=prefix)
     app.include_router(knowledge_embed.router, prefix=prefix)
     app.include_router(system.router, prefix=prefix)
+    app.include_router(system_docs.router, prefix=prefix)
     app.include_router(embed_proxy_api.public_router, prefix=prefix)
     app.include_router(embed_proxy_api.router, prefix=prefix)
     if settings.knowflow_enabled:

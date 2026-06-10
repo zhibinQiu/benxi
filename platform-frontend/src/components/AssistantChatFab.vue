@@ -277,16 +277,16 @@ onMounted(() => {
 .assistant-fab {
   width: 42px;
   height: 42px;
-  border: 1px solid rgba(13, 148, 136, 0.22);
+  border: 1px solid var(--platform-accent-border);
   border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #0d9488;
-  background: linear-gradient(160deg, #f0fdfa 0%, #ccfbf1 100%);
+  color: var(--platform-accent);
+  background: var(--platform-accent-gradient-soft);
   box-shadow:
-    0 2px 8px rgba(13, 148, 136, 0.12),
+    0 2px 8px color-mix(in srgb, var(--platform-accent) 12%, transparent),
     0 1px 3px rgba(15, 23, 42, 0.06);
   transition:
     transform 0.2s ease,
@@ -296,9 +296,9 @@ onMounted(() => {
 
 .assistant-fab:hover {
   transform: translateY(-1px);
-  background: linear-gradient(160deg, #ecfdf5 0%, #99f6e4 100%);
+  background: var(--platform-accent-gradient-soft);
   box-shadow:
-    0 4px 12px rgba(13, 148, 136, 0.16),
+    0 4px 12px color-mix(in srgb, var(--platform-accent) 16%, transparent),
     0 2px 6px rgba(15, 23, 42, 0.06);
 }
 
@@ -348,7 +348,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  background: linear-gradient(135deg, rgba(13, 148, 136, 0.12) 0%, rgba(241, 245, 249, 0.9) 100%);
+  background: linear-gradient(135deg, var(--platform-accent-soft) 0%, rgba(241, 245, 249, 0.9) 100%);
   border-bottom: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
 }
 
@@ -365,9 +365,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #0d9488;
+  color: var(--platform-accent);
   background: #fff;
-  box-shadow: 0 1px 4px rgba(13, 148, 136, 0.2);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--platform-accent) 20%, transparent);
 }
 
 .assistant-title {
@@ -415,7 +415,7 @@ onMounted(() => {
 }
 
 .assistant-bubble--user {
-  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  background: var(--platform-accent-gradient);
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -473,15 +473,15 @@ onMounted(() => {
   font-size: 11px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(13, 148, 136, 0.35);
-  background: rgba(13, 148, 136, 0.06);
-  color: #0f766e;
+  border: 1px solid var(--platform-accent-border);
+  background: var(--platform-accent-muted);
+  color: var(--platform-accent-pressed);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .assistant-chip:hover {
-  background: rgba(13, 148, 136, 0.14);
+  background: var(--platform-accent-soft);
 }
 
 .assistant-footer {

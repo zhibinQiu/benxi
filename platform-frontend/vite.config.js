@@ -33,6 +33,8 @@ export default defineConfig({
         target: API_TARGET,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/ai/, ""),
+        timeout: 0,
+        proxyTimeout: 0,
       },
       // 须在宽泛 /api 之前，避免 KnowFlow 管理 API 被平台路由吞掉
       "/api/knowflow": {
@@ -45,6 +47,8 @@ export default defineConfig({
       "/api": {
         target: API_TARGET,
         changeOrigin: true,
+        timeout: 0,
+        proxyTimeout: 0,
       },
       // 同源代理 KnowFlow Web UI（阶段 2 SSO），见 docs/zh/development/doc-platform.md
       // 同源反代 KnowFlow，并在 HTML 注入 platform-branding（见 embed-proxy/knowflow）

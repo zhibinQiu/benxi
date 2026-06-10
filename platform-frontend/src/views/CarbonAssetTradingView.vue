@@ -73,7 +73,7 @@ const holdingColumns = [
       const pos = row.pnl_cny >= 0;
       return h(
         "span",
-        { style: { color: pos ? "#0d9488" : "#dc2626" } },
+        { style: { color: pos ? "#5b9cf5" : "#dc2626" } },
         `${pos ? "+" : ""}${row.pnl_cny} (${row.pnl_pct}%)`
       );
     },

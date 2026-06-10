@@ -25,8 +25,6 @@ class RagflowAccountLink(Base):
     ragflow_email: Mapped[str] = mapped_column(String(255), index=True)
     ragflow_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     ragflow_password: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    dataset_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    dept_dataset_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

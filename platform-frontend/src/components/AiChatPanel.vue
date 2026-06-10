@@ -27,6 +27,10 @@ const props = defineProps({
   showWorkflowProgress: { type: Boolean, default: false },
   showCitations: { type: Boolean, default: false },
   chatHeaderSub: { type: String, default: "" },
+  /** 对话中顶栏是否展示图标、标题与小标题（false 时仅保留操作按钮） */
+  showChatHeaderBrand: { type: Boolean, default: true },
+  /** 标题使用系统渐变色 */
+  titleGradient: { type: Boolean, default: false },
   /** 进入对话后输入框占位文案 */
   replyPlaceholder: { type: String, default: "继续提问" },
   /** 对话历史 scope：ai-home | carbon-qa | smart-data-query */
@@ -390,7 +394,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="ai-home" :class="{ 'ai-home--active': started }">
+  <div
+    class="ai-home"
+    :class="{ 'ai-home--active': started }"
+  >
     <div v-if="!started && chatScope" class="ai-home-landing-topbar">
       <IconAction
         label="查看历史对话"
@@ -401,8 +408,12 @@ onBeforeUnmount(() => {
     </div>
 
     <Transition name="ai-chat-header">
-      <header v-if="started" class="ai-home-chat-header">
-        <div class="ai-home-chat-brand">
+      <header
+        v-if="started"
+        class="ai-home-chat-header"
+        :class="{ 'ai-home-chat-header--minimal': !showChatHeaderBrand }"
+      >
+        <div v-if="showChatHeaderBrand" class="ai-home-chat-brand">
           <div class="ai-home-icon ai-home-icon--sm">
             <n-icon :size="20" :component="icon" />
           </div>
@@ -431,7 +442,9 @@ onBeforeUnmount(() => {
             <div class="ai-home-icon">
               <n-icon :size="36" :component="icon" />
             </div>
-            <h1 class="ai-home-title">{{ title }}</h1>
+            <h1 class="ai-home-title" :class="{ 'platform-text-gradient': titleGradient }">
+              {{ title }}
+            </h1>
             <p v-if="description" class="ai-home-desc">{{ description }}</p>
             <p class="ai-home-sub">{{ displaySubtitle }}</p>
           </div>
@@ -557,7 +570,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #f8fafc 0%, #f0fdfa 40%, #ffffff 100%);
+  background: var(--platform-chat-gradient);
   border-radius: var(--platform-radius);
   overflow: hidden;
 }
@@ -565,7 +578,8 @@ onBeforeUnmount(() => {
 .ai-home-landing-topbar {
   position: absolute;
   top: 12px;
-  left: 16px;
+  right: 16px;
+  left: auto;
   z-index: 3;
 }
 
@@ -575,6 +589,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   position: relative;
+  z-index: 1;
   overflow: hidden;
 }
 
@@ -618,10 +633,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #0d9488;
-  background: linear-gradient(160deg, #f0fdfa 0%, #ccfbf1 100%);
-  border: 1px solid rgba(13, 148, 136, 0.18);
-  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.1);
+  color: var(--platform-accent);
+  background: var(--platform-accent-gradient-soft);
+  border: 1px solid var(--platform-accent-border-soft);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--platform-accent) 10%, transparent);
 }
 
 .ai-home-icon--sm {
@@ -635,8 +650,18 @@ onBeforeUnmount(() => {
   margin: 0 0 12px;
   font-size: 28px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--platform-text);
   letter-spacing: 0.02em;
+}
+
+.ai-home-title.platform-text-gradient {
+  background-image: var(--platform-accent-gradient);
+  background-size: 120% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .ai-home-desc {
@@ -703,10 +728,10 @@ onBeforeUnmount(() => {
   padding: 3px 10px;
   font-size: 12px;
   line-height: 1.4;
-  color: #0f766e;
+  color: var(--platform-accent-pressed);
   text-decoration: none;
   border-radius: 999px;
-  border: 1px solid rgba(13, 148, 136, 0.2);
+  border: 1px solid var(--platform-accent-border);
   background: rgba(255, 255, 255, 0.85);
   transition:
     background 0.15s ease,
@@ -714,8 +739,8 @@ onBeforeUnmount(() => {
 }
 
 .ai-home-tool-link:hover {
-  background: rgba(13, 148, 136, 0.1);
-  border-color: rgba(13, 148, 136, 0.35);
+  background: var(--platform-accent-soft);
+  border-color: var(--platform-accent-border);
 }
 
 .ai-home-suggestions {
@@ -731,17 +756,17 @@ onBeforeUnmount(() => {
 .ai-home-chip {
   padding: 6px 12px;
   font-size: 12px;
-  color: #0f766e;
-  background: rgba(13, 148, 136, 0.08);
-  border: 1px solid rgba(13, 148, 136, 0.16);
+  color: var(--platform-accent-pressed);
+  background: var(--platform-accent-muted);
+  border: 1px solid var(--platform-accent-border-soft);
   border-radius: 999px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 
 .ai-home-chip:hover:not(:disabled) {
-  background: rgba(13, 148, 136, 0.14);
-  border-color: rgba(13, 148, 136, 0.28);
+  background: var(--platform-accent-soft);
+  border-color: var(--platform-accent-border);
 }
 
 .ai-home-chip:disabled {
@@ -782,6 +807,15 @@ onBeforeUnmount(() => {
   padding: 12px 16px;
   border-bottom: 1px solid var(--platform-border);
   background: var(--platform-surface);
+  position: relative;
+  z-index: 2;
+}
+
+.ai-home-chat-header--minimal {
+  justify-content: flex-end;
+  padding: 10px 16px 4px;
+  background: transparent;
+  border-bottom: none;
 }
 
 .ai-home-chat-actions {
@@ -856,7 +890,7 @@ onBeforeUnmount(() => {
 }
 
 .ai-home-bubble--user {
-  background: linear-gradient(160deg, #0d9488 0%, #0f766e 100%);
+  background: var(--platform-accent-gradient);
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -881,7 +915,7 @@ onBeforeUnmount(() => {
 
 .ai-home-cursor {
   display: inline-block;
-  color: #0d9488;
+  color: var(--platform-accent);
   animation: ai-home-blink 1s step-end infinite;
   margin-left: 1px;
 }
@@ -923,10 +957,10 @@ onBeforeUnmount(() => {
   gap: 8px;
   font-size: 13px;
   font-weight: 500;
-  color: #0f766e;
+  color: var(--platform-accent-pressed);
   margin-bottom: 10px;
   padding-bottom: 10px;
-  border-bottom: 1px dashed rgba(13, 148, 136, 0.2);
+  border-bottom: 1px dashed var(--platform-accent-border);
 }
 
 .ai-workflow-current--failed {
@@ -937,8 +971,8 @@ onBeforeUnmount(() => {
 .ai-workflow-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(13, 148, 136, 0.25);
-  border-top-color: #0d9488;
+  border: 2px solid var(--platform-accent-border-soft);
+  border-top-color: var(--platform-accent);
   border-radius: 50%;
   animation: ai-workflow-spin 0.8s linear infinite;
   flex-shrink: 0;

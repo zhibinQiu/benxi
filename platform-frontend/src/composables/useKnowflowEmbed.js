@@ -1,11 +1,11 @@
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { fetchRagEmbedSession } from "../api/client";
 import { knowflowUnavailableHint } from "../utils/uiMessage";
 import { useAuth } from "./useAuth";
 import {
+  installKnowflowEmbedSsoListener,
   loadKnowflowEmbedResources,
-  tryApplyCachedKnowflowEmbed,
 } from "../utils/knowflowEmbedBootstrap";
 
 /**
@@ -122,20 +122,18 @@ export function useKnowflowEmbed({
     () => bootstrapping.value || (Boolean(iframeSrc.value) && !iframeReady.value)
   );
 
+  let removeSsoListener = () => {};
+
   async function loadMeta() {
     iframeReady.value = false;
-    const cachedApplied = tryApplyCachedKnowflowEmbed({
-      metaRef: meta,
-      sessionRef: embedSession,
-      applySession: applyIframeSession,
-    });
-    bootstrapping.value = !cachedApplied;
-    if (!cachedApplied) {
-      iframeSrc.value = "";
-    }
+    bootstrapping.value = true;
+    iframeSrc.value = "";
 
     try {
-      const { meta: m, session } = await loadKnowflowEmbedResources({ sync: false });
+      const { meta: m, session } = await loadKnowflowEmbedResources({
+        sync: false,
+        freshSession: true,
+      });
       meta.value = m;
       embedSession.value = session;
       applyIframeSession(session);
@@ -162,7 +160,9 @@ export function useKnowflowEmbed({
     postSsoToIframe();
     postThemeToIframe();
     postEmbedChromeToIframe();
+    window.setTimeout(postSsoToIframe, 300);
     window.setTimeout(postEmbedChromeToIframe, 400);
+    window.setTimeout(postSsoToIframe, 1200);
     window.setTimeout(postEmbedChromeToIframe, 1500);
   }
 
@@ -192,7 +192,14 @@ export function useKnowflowEmbed({
     }
   );
 
-  onMounted(loadMeta);
+  onMounted(() => {
+    removeSsoListener = installKnowflowEmbedSsoListener(reloadForUser);
+    loadMeta();
+  });
+
+  onUnmounted(() => {
+    removeSsoListener();
+  });
 
   return {
     bootstrapping,

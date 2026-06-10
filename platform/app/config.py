@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "智碳平台AI系统"
-    platform_version: str = "3.4.0"
+    platform_version: str = "3.9.3"
     debug: bool = False
     api_prefix: str = "/api/v1"
 
@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     allow_public_register: bool = True
 
     cors_origins: str = "*"
+    # 系统说明文档根目录（默认：仓库根或容器内 /app/system-docs）
+    system_docs_root: str = ""
     # 经网关对外暴露时的路径前缀（如 http://<IP>/ai/api/v1）；后端仍注册 /api/v1
     api_public_path_prefix: str = "/ai"
 
@@ -113,6 +115,14 @@ class Settings(BaseSettings):
     stt_language: str = "zh"
     stt_max_file_mb: int = 100
 
+    # 文档中心单文件上传上限（MB）
+    document_upload_max_file_mb: int = 1024
+
+    # 知识库默认解析配置（上传同步 / 重新索引）
+    knowledge_default_parser_id: str = "smart"
+    knowledge_default_layout_recognize: str = "DeepDOC"
+    knowledge_default_chunk_token_num: int = 512
+
     # 录音总结（DeepSeek 在线 API，可与 pdf2zh 翻译共用密钥）
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
@@ -125,8 +135,15 @@ class Settings(BaseSettings):
     platform_llm_model: str = ""
     platform_embedding_base_url: str = ""
     platform_embedding_api_key: str = ""
+    platform_embedding_model: str = ""
+    platform_embedding_factory: str = ""
     platform_rerank_base_url: str = ""
     platform_rerank_api_key: str = ""
+    platform_rerank_model: str = ""
+    platform_paddleocr_url: str = ""
+    platform_api_base_url: str = ""
+    frontend_app_title: str = ""
+    frontend_default_theme: str = "system"
 
     # 智能问数（设计系统 iframe）
     # 设计系统（智能问数）— 经同源 Nginx/Vite 代理，避免 iframe 跨域

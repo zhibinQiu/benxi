@@ -137,7 +137,7 @@ onBeforeUnmount(revokePreview);
     <template #extra>
       <n-tag size="small" round type="warning">界面预览</n-tag>
     </template>
-    <header class="page-subheader">
+    <header class="page-subheader feature-local-nav">
       <n-steps :current="currentStep" size="small" class="header-steps">
         <n-step title="上传" />
         <n-step title="识别" />
@@ -283,7 +283,6 @@ onBeforeUnmount(revokePreview);
 }
 .page-subheader {
   flex-shrink: 0;
-  margin-bottom: 12px;
 }
 .header-steps {
   width: 100%;
@@ -368,7 +367,7 @@ onBeforeUnmount(revokePreview);
   font-size: 12px;
 }
 .panel-result-active {
-  border-color: rgba(24, 160, 88, 0.22);
+  border-color: var(--platform-accent-border-soft);
 }
 .result-idle,
 .result-processing {

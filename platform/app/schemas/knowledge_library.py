@@ -23,6 +23,7 @@ class KnowledgeLibraryDocumentOut(BaseModel):
     scope: str | None = None
     file_name: str = ""
     ragflow_document_id: str | None = None
+    knowledge_synced: bool = False
     synced_at: str | None = None
     chunk_count: int | None = None
     parse_status: str | None = None
@@ -35,7 +36,14 @@ class KnowledgeScopeTreeNodeOut(BaseModel):
     scope: str | None = None
     dataset_id: str | None = None
     document_id: str | None = None
+    folder_id: str | None = None
+    virtual_folder_id: str | None = None
+    kind: str | None = None
     document_count: int | None = None
+    index_ready_count: int | None = None
+    index_ready: bool | None = None
+    knowledge_synced: bool | None = None
+    parse_status: str | None = None
     is_leaf: bool = False
     children: list["KnowledgeScopeTreeNodeOut"] = Field(default_factory=list)
 
@@ -77,8 +85,14 @@ class KnowledgeQaAskRequest(BaseModel):
     document_ids: list[str] | None = Field(default=None, max_length=20)
 
 
+class KnowledgeQaChatStreamRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    conversation_id: str | None = None
+    document_ids: list[str] | None = Field(default=None, max_length=20)
+
+
 class KnowledgeReindexRequest(BaseModel):
-    parser_id: str = Field(default="smart", min_length=1, max_length=32)
+    parser_id: str = Field(default="naive", min_length=1, max_length=32)
     layout_recognize: str | None = Field(
         default=None,
         description="PDF 版面识别 / OCR 引擎",

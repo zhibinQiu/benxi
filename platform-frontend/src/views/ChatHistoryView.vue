@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -8,23 +9,20 @@ import {
   NIcon,
   NSpin,
   NText,
-  useDialog,
-  useMessage,
-} from "naive-ui";
+  useDialog } from "naive-ui";
 import { ArrowBackOutline, ChatbubblesOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import {
   clearChatConversations,
   deleteChatConversation,
-  fetchChatConversations,
-} from "../api/client";
+  fetchChatConversations } from "../api/client";
 import { CHAT_SCOPES, chatScopeTitle } from "../constants/chatScopes";
 import { resolveReturnTarget } from "../utils/navigationReturn";
 import { deleteSequentially } from "../utils/batchActions";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 const dialog = useDialog();
 
 const scope = computed(() => String(route.params.scope || ""));
@@ -63,7 +61,7 @@ function toggleSelected(id, checked) {
 
 async function loadList() {
   if (!CHAT_SCOPES[scope.value]) {
-    message.error("不支持的对话类型");
+    ui.error("不支持的对话类型");
     router.replace({ name: "ai-home" });
     return;
   }
@@ -72,7 +70,7 @@ async function loadList() {
     items.value = (await fetchChatConversations(scope.value)) || [];
     selectedIds.value = [];
   } catch (e) {
-    message.error(e.message || "加载历史对话失败");
+    ui.error(e.message || "加载历史对话失败");
     items.value = [];
     selectedIds.value = [];
   } finally {
@@ -87,16 +85,14 @@ function openConversation(item) {
   if (scope.value === "assistant") {
     router.push({
       path: typeof route.query.from === "string" ? route.query.from : "/",
-      query: { assistantConversation: item.id },
-    });
+      query: { assistantConversation: item.id }});
     return;
   }
 
   if (meta.routeName) {
     router.push({
       name: meta.routeName,
-      query: { conversationId: item.id },
-    });
+      query: { conversationId: item.id }});
   }
 }
 
@@ -118,21 +114,20 @@ function handleBatchDelete() {
         items.value = items.value.filter((row) => !selectedIds.value.includes(row.id));
         selectedIds.value = [];
         if (failed.length) {
-          message.warning(
+          ui.warning(
             `已删除 ${deleted} 条，${failed.length} 条失败：${failed[0].message || "未知错误"}`
           );
         } else {
-          message.success(deleted > 1 ? `已永久删除 ${deleted} 条对话` : "已永久删除该对话");
+          ui.success(deleted > 1 ? `已永久删除 ${deleted} 条对话` : "已永久删除该对话");
         }
       } catch (e) {
-        message.error(e.message || "删除失败");
+        ui.error(e.message || "删除失败");
         return false;
       } finally {
         batchDeleting.value = false;
       }
       return true;
-    },
-  });
+    }});
 }
 
 function onClearAll() {
@@ -148,16 +143,15 @@ function onClearAll() {
         items.value = [];
         selectedIds.value = [];
         const n = res?.deleted ?? 0;
-        message.success(n > 0 ? `已永久删除 ${n} 条对话` : "已清空");
+        ui.success(n > 0 ? `已永久删除 ${n} 条对话` : "已清空");
       } catch (e) {
-        message.error(e.message || "清空失败");
+        ui.error(e.message || "清空失败");
         return false;
       } finally {
         clearing.value = false;
       }
       return true;
-    },
-  });
+    }});
 }
 
 function formatTime(value) {
@@ -176,8 +170,7 @@ function formatTime(value) {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
-    minute: "2-digit",
-  });
+    minute: "2-digit"});
 }
 
 onMounted(loadList);

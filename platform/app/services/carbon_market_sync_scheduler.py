@@ -31,8 +31,9 @@ def _seconds_until_next_run() -> float:
 
 
 def _ran_sync_today(model) -> bool:
-    from app.database import SessionLocal
     from sqlalchemy import func, select
+
+    from app.database import SessionLocal
 
     today = date.today()
     db = SessionLocal()
@@ -54,7 +55,7 @@ def _sync_all_market_history() -> None:
 
 
 async def _market_history_sync_loop() -> None:
-    from app.models.carbon_market import CeaDailyQuote, CcerDailyQuote
+    from app.models.carbon_market import CcerDailyQuote, CeaDailyQuote
 
     await asyncio.sleep(3)
     if not _ran_sync_today(CeaDailyQuote) or not _ran_sync_today(CcerDailyQuote):

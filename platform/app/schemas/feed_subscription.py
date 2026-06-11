@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -57,7 +56,7 @@ class FeedEntryDetailOut(FeedEntryOut):
 
 
 class FeedImportIn(BaseModel):
-    """导入文档库；分级固定为「我的」(personal)，dept_id 无效。"""
+    """导入文档库；分级固定为「个人级」(personal)，dept_id 无效。"""
     scope: str = "personal"
     dept_id: uuid.UUID | None = None
     sync_knowflow: bool = True

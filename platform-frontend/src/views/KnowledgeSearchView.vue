@@ -1,13 +1,13 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+defineOptions({ name: "KnowledgeSearchView" });
+import { computed, ref } from "vue";
 import { NIcon } from "naive-ui";
 import { SearchOutline } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
-import { knowledgeQaChatSend } from "../api/knowledge.js";
+import { knowledgeQaChatStream } from "../api/knowledge.js";
 
-const selectedKey = ref("");
 const selection = ref(null);
 const sessionId = ref(null);
 
@@ -18,72 +18,80 @@ const suggestions = [
 ];
 
 const selectionHint = computed(() => {
-  if (!selection.value) {
-    return "请从左侧选择知识库、分级目录或具体文档后开始提问";
+  if (!selection.value?.documentIds?.length) return "";
+  const {
+    documentIds = [],
+    totalSelected = 0,
+    indexReadyCount = 0,
+    label,
+    type} = selection.value;
+
+  if (indexReadyCount === 0) {
+    return `已选 ${totalSelected} 份，无已索引文档`;
   }
-  const count = selection.value.documentIds?.length || 0;
-  if (count === 0) {
-    return `已选「${selection.value.label}」，该范围内暂无可问答文档`;
+
+  if (type === "document") {
+    return label;
   }
-  if (selection.value.type === "document") {
-    return `当前文档：${selection.value.label}`;
+
+  if (totalSelected !== indexReadyCount) {
+    return `${indexReadyCount}/${totalSelected} 份可问答`;
   }
-  return `当前范围：${selection.value.label}（${count} 份文档，最多 20 份参与问答）`;
+
+  return `${indexReadyCount} 份文档`;
 });
 
 const canAsk = computed(() => (selection.value?.documentIds?.length || 0) > 0);
 
-async function handleChatSend({ message, conversationId }) {
+async function handleChatStream(params, callbacks) {
   if (!canAsk.value) {
-    throw new Error("请从左侧选择包含文档的知识库或具体文档");
+    throw new Error("请从左侧勾选已成功索引的文档");
   }
-  const result = await knowledgeQaChatSend({
-    message,
-    conversationId: conversationId || sessionId.value,
-    documentIds: selection.value.documentIds,
-  });
-  sessionId.value = result.conversation_id;
-  return result;
+  return knowledgeQaChatStream(
+    {
+      ...params,
+      documentIds: selection.value.documentIds,
+    },
+    callbacks
+  );
 }
 
 function onSelectionChange(next) {
+  const prevIds = [...(selection.value?.documentIds || [])].sort().join(",");
+  const nextIds = [...(next?.documentIds || [])].sort().join(",");
+  if (sessionId.value && prevIds !== nextIds) {
+    sessionId.value = null;
+  }
   selection.value = next;
-  sessionId.value = null;
 }
-
-watch(selectedKey, (key) => {
-  if (!key) onSelectionChange(null);
-});
 </script>
 
 <template>
   <FeatureSubsystemShell fill :show-intro="false">
     <div class="knowledge-search-page">
       <aside class="knowledge-search-page__sider">
-        <KnowledgeScopeTree
-          v-model:selected-key="selectedKey"
-          @selection-change="onSelectionChange"
-        />
+        <KnowledgeScopeTree @selection-change="onSelectionChange" />
       </aside>
 
       <main class="knowledge-search-page__main">
         <div class="knowledge-search-page__scope-bar feature-local-nav">
           <n-icon :size="16" :component="SearchOutline" class="knowledge-search-page__scope-icon" />
-          <span>{{ selectionHint }}</span>
+          <span v-if="selectionHint">{{ selectionHint }}</span>
         </div>
 
         <AiChatPanel
           class="knowledge-search-page__chat"
           chat-scope="knowledge-search"
           title="知识检索"
-          description="基于企业知识库文档进行语义检索与问答，支持按分级库或单篇文档限定范围，并展示引用来源。"
-          subtitle="选择左侧文档范围后开始提问"
           reply-placeholder="基于所选文档继续提问…"
           :suggestions="canAsk ? suggestions : []"
           :icon="SearchOutline"
-          :streaming="false"
+          :streaming="true"
+          :show-workflow-progress="true"
+          :rich-markdown="true"
           :show-citations="true"
-          :chat-send="handleChatSend"
+          :linkify-citations="true"
+          :stream-chat="handleChatStream"
           v-model:conversation-id="sessionId"
           title-gradient
           :show-chat-header-brand="false"
@@ -109,8 +117,8 @@ watch(selectedKey, (key) => {
 
 .knowledge-search-page__sider {
   flex-shrink: 0;
-  width: min(280px, 34vw);
-  min-width: 220px;
+  width: min(320px, 38vw);
+  min-width: 240px;
   border-right: 1px solid var(--platform-border);
   background: var(--platform-bg-secondary);
   display: flex;
@@ -148,11 +156,6 @@ watch(selectedKey, (key) => {
   border-radius: 0;
 }
 
-.knowledge-search-page__chat :deep(.ai-home) {
-  border-radius: 0;
-  height: 100%;
-}
-
 @media (max-width: 900px) {
   .knowledge-search-page {
     flex-direction: column;
@@ -160,7 +163,7 @@ watch(selectedKey, (key) => {
 
   .knowledge-search-page__sider {
     width: 100%;
-    max-height: 38vh;
+    max-height: 40vh;
     border-right: none;
     border-bottom: 1px solid var(--platform-border);
   }

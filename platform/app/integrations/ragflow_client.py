@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -384,6 +385,20 @@ class RagflowClient:
         doc_meta = data.get("doc") if isinstance(data.get("doc"), dict) else None
         return list(chunks), int(total or 0), doc_meta
 
+    def get_document_meta(
+        self,
+        dataset_id: str,
+        document_id: str,
+    ) -> dict | None:
+        """单文档 run/progress：session API 下 /v1/document/list 可能不可用，走 chunk/list。"""
+        _, _, doc_meta = self.list_document_chunks(
+            dataset_id,
+            document_id,
+            page=1,
+            page_size=1,
+        )
+        return doc_meta if isinstance(doc_meta, dict) else None
+
     def change_document_parser(
         self,
         document_id: str,
@@ -407,6 +422,41 @@ class RagflowClient:
             json={"parser_id": parser, "parser_config": parser_config or {}},
         )
 
+    @staticmethod
+    def _parse_chunk_positions(positions: Any) -> dict[str, Any]:
+        anchor: dict[str, Any] = {"kind": "chunk"}
+        if not positions:
+            return anchor
+        item = positions[0] if isinstance(positions, list) else positions
+        if isinstance(item, str) and item.strip():
+            try:
+                item = json.loads(item)
+            except json.JSONDecodeError:
+                return anchor
+        if isinstance(item, (list, tuple)) and len(item) >= 5:
+            try:
+                anchor["page"] = int(item[0])
+                anchor["bbox"] = [float(x) for x in item[1:5]]
+            except (TypeError, ValueError):
+                pass
+        return anchor
+
+    def get_chunk_image(self, image_id: str) -> tuple[bytes, str]:
+        image_id = (image_id or "").strip()
+        if not image_id:
+            raise RagflowError("缺少 image_id")
+        url = f"{self.base_url}/api/v1/documents/images/{image_id}"
+        headers = self._headers()
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                r = client.get(url, headers=headers)
+        except httpx.HTTPError as e:
+            raise RagflowError(f"无法获取引用截图: {e}") from e
+        if r.status_code >= 400:
+            raise RagflowError(f"引用截图 HTTP {r.status_code}")
+        content_type = (r.headers.get("content-type") or "image/jpeg").split(";")[0]
+        return r.content, content_type
+
     def retrieval(
         self,
         *,
@@ -414,13 +464,19 @@ class RagflowClient:
         dataset_ids: list[str],
         document_ids: list[str] | None = None,
         top_k: int = 8,
+        keyword: bool = True,
+        highlight: bool = True,
+        vector_similarity_weight: float = 0.3,
+        similarity_threshold: float = 0.2,
     ) -> list[dict]:
         payload: dict[str, Any] = {
             "question": question,
             "dataset_ids": dataset_ids,
             "top_k": top_k,
-            "keyword": True,
-            "highlight": True,
+            "keyword": keyword,
+            "highlight": highlight,
+            "vector_similarity_weight": vector_similarity_weight,
+            "similarity_threshold": similarity_threshold,
         }
         if document_ids:
             payload["document_ids"] = document_ids
@@ -435,16 +491,24 @@ class RagflowClient:
             content = ch.get("content") or ch.get("content_with_weight") or ""
             doc_id = ch.get("document_id") or ch.get("doc_id")
             meta = ch.get("meta_fields") or {}
+            anchor = self._parse_chunk_positions(ch.get("positions"))
+            page = anchor.get("page") or ch.get("page_num") or ch.get("page")
+            if page is not None:
+                anchor["page"] = page
             hits.append(
                 {
                     "snippet": content,
+                    "highlight": ch.get("highlight") or content,
                     "score": ch.get("similarity") or ch.get("score") or 0,
+                    "term_similarity": ch.get("term_similarity"),
+                    "vector_similarity": ch.get("vector_similarity"),
                     "document_id": meta.get("platform_document_id") or doc_id,
                     "ragflow_document_id": doc_id,
-                    "anchor_json": {
-                        "page": ch.get("page_num") or ch.get("page"),
-                        "bbox": ch.get("bbox"),
-                    },
+                    "chunk_id": ch.get("id") or ch.get("chunk_id"),
+                    "dataset_id": ch.get("kb_id") or ch.get("dataset_id"),
+                    "image_id": ch.get("image_id"),
+                    "anchor_json": anchor,
+                    "source": "knowflow",
                 }
             )
         return hits

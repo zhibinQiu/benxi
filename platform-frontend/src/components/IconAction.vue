@@ -11,13 +11,25 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   type: { type: String, default: "default" },
   size: { type: String, default: "small" },
+  /** 表格内嵌操作：仅悬浮时显示选中衬底，与文档列表操作列一致 */
+  variant: { type: String, default: "toolbar" },
 });
 
 const tooltipText = computed(() => props.tooltip || props.label);
 
 defineEmits(["click"]);
 
+const isTableVariant = computed(() => props.variant === "table");
+
+const iconSize = computed(() => (isTableVariant.value ? 16 : 18));
+
 const actionClass = computed(() => {
+  if (isTableVariant.value) {
+    if (props.type === "primary") return "table-icon-action table-icon-action--accent";
+    if (props.type === "error") return "table-icon-action table-icon-action--danger";
+    if (props.type === "warning") return "table-icon-action table-icon-action--caution";
+    return "table-icon-action";
+  }
   if (props.active || props.type === "primary") return "icon-action--active";
   if (props.type === "warning") return "icon-action--caution";
   if (props.type === "error") return "icon-action--danger";
@@ -34,12 +46,11 @@ const actionClass = computed(() => {
         :size="size"
         type="default"
         :disabled="disabled"
-        class="icon-action"
-        :class="actionClass"
+        :class="isTableVariant ? actionClass : ['icon-action', actionClass]"
         :aria-label="label"
         @click="$emit('click', $event)"
       >
-        <n-icon :size="18" :component="icon" />
+        <n-icon :size="iconSize" :component="icon" />
       </n-button>
     </template>
     {{ tooltipText }}

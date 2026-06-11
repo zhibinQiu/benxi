@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getToken } from "../api/client";
 import { useAuth } from "../composables/useAuth";
+import { warmupKnowflowForRoute } from "../composables/useKnowflowWarmup";
 
 const routes = [
   {
@@ -17,13 +18,13 @@ const routes = [
       {
         path: "ai-home",
         name: "ai-home",
-        meta: { title: "双碳智能体", fullHeight: true, featureIcon: "sparkles" },
+        meta: { title: "双碳智能体", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
         component: () => import("../views/AiHomeView.vue"),
       },
       {
         path: "chat-history/:scope",
         name: "chat-history",
-        meta: { title: "历史对话", featureIcon: "chatbubbles" },
+        meta: { title: "历史对话", featureIcon: "chatbubbles", videoBg: true },
         component: () => import("../views/ChatHistoryView.vue"),
       },
       {
@@ -45,26 +46,15 @@ const routes = [
         component: () => import("../views/TranslateView.vue"),
       },
       {
-        path: "system/rag",
-        name: "rag",
-        meta: {
-          title: "编码管理",
-          fullHeight: true,
-          featureIcon: "chatbubbles",
-          perm: "feature.rag_qa",
-        },
-        component: () => import("../views/RagQaView.vue"),
-      },
-      {
         path: "system/smart-data-query",
         name: "smart-data-query",
-        meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart" },
+        meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart", videoBg: true, keepAlive: true },
         component: () => import("../views/SmartDataQueryV2View.vue"),
       },
       {
         path: "system/data-analysis",
         name: "data-analysis",
-        meta: { title: "数据分析", fullHeight: true, featureIcon: "stats-chart" },
+        meta: { title: "数据分析", fullHeight: true, featureIcon: "stats-chart", keepAlive: true },
         component: () => import("../views/DataAnalysisView.vue"),
       },
       {
@@ -74,7 +64,7 @@ const routes = [
       {
         path: "system/carbon-qa",
         name: "carbon-qa",
-        meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles" },
+        meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles", videoBg: true, keepAlive: true },
         component: () => import("../views/CarbonQaV2View.vue"),
       },
       {
@@ -194,6 +184,8 @@ const routes = [
           featureIcon: "search",
           backTo: "ai-home",
           perm: "feature.knowledge_search",
+          videoBg: true,
+          keepAlive: true,
         },
         component: () => import("../views/KnowledgeSearchView.vue"),
       },
@@ -205,7 +197,7 @@ const routes = [
       },
       {
         path: "documents/recycle",
-        redirect: { name: "documents", query: { view: "recycle" } },
+        redirect: { name: "documents" },
       },
       {
         path: "documents/:id",
@@ -222,7 +214,7 @@ const routes = [
             /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
           if (!uuid.test(id)) {
             if (id === "recycle") {
-              return { name: "documents", query: { view: "recycle" } };
+              return { name: "documents" };
             }
             return { name: "documents" };
           }
@@ -301,6 +293,10 @@ router.beforeEach(async (to) => {
     return { name: "ai-home" };
   }
   return true;
+});
+
+router.afterEach((to) => {
+  warmupKnowflowForRoute(to);
 });
 
 export default router;

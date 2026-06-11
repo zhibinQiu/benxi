@@ -6,8 +6,7 @@ const show = defineModel("show", { type: Boolean, default: false });
 const props = defineProps({
   width: { type: String, default: "min(420px, calc(100vw - 32px))" },
   ariaLabel: { type: String, default: "" },
-  anchorEl: { type: Object, default: null },
-});
+  anchorEl: { type: Object, default: null }});
 
 const panelRef = ref(null);
 const position = ref({ top: "58px", right: "16px" });
@@ -33,20 +32,31 @@ function updatePosition() {
   const rect = anchor.getBoundingClientRect();
   position.value = {
     top: `${Math.max(56, rect.bottom + 8)}px`,
-    right: `${Math.max(12, window.innerWidth - rect.right)}px`,
-  };
+    right: `${Math.max(12, window.innerWidth - rect.right)}px`};
 }
 
 const panelStyle = computed(() => ({
   width: props.width,
   top: position.value.top,
-  right: position.value.right,
-}));
+  right: position.value.right}));
 
 function onKeydown(event) {
   if (show.value && event.key === "Escape") {
     show.value = false;
   }
+}
+
+const OUTSIDE_CLOSE_IGNORE_SELECTOR =
+  ".n-dialog, .n-modal, .n-popover, .n-dropdown, .n-tooltip, .platform-confirm-dialog";
+
+function onOutsidePointerDown(event) {
+  if (!show.value) return;
+  const target = event.target;
+  if (!(target instanceof Node)) return;
+  if (panelRef.value?.contains(target)) return;
+  if (resolveAnchorNode()?.contains(target)) return;
+  if (target instanceof Element && target.closest(OUTSIDE_CLOSE_IGNORE_SELECTOR)) return;
+  show.value = false;
 }
 
 watch(show, async (visible) => {
@@ -55,8 +65,10 @@ watch(show, async (visible) => {
     await nextTick();
     updatePosition();
     document.addEventListener("keydown", onKeydown);
+    document.addEventListener("pointerdown", onOutsidePointerDown, true);
   } else {
     document.removeEventListener("keydown", onKeydown);
+    document.removeEventListener("pointerdown", onOutsidePointerDown, true);
   }
 });
 
@@ -80,6 +92,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKeydown);
+  document.removeEventListener("pointerdown", onOutsidePointerDown, true);
   window.removeEventListener("resize", onViewportChange);
 });
 </script>

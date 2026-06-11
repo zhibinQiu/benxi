@@ -5,8 +5,7 @@ import { useTypewriter } from "../composables/useTypewriter";
 const props = defineProps({
   lines: { type: Array, default: () => [] },
   tag: { type: String, default: "p" },
-  options: { type: Object, default: () => ({}) },
-});
+  options: { type: Object, default: () => ({}) }});
 
 const linesRef = toRef(props, "lines");
 const { displayedText, showCursor } = useTypewriter(linesRef, props.options);

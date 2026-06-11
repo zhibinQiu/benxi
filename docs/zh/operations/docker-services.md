@@ -2,6 +2,8 @@
 
 统一栈项目名 **`zhitan`**，网络 **`zhitan`**（bridge）。除 `frontend` 外，**默认不映射主机端口**。
 
+> 各数据库存储内容与连接方式见 **[组件位置与数据存储](components-and-storage.md)**。
+
 ## 核心服务（始终启动）
 
 | 容器名 | Compose 服务 | 镜像 | 容器端口 | 职责 |
@@ -33,18 +35,19 @@
 | 容器 | 镜像 | 端口 | 职责 |
 |------|------|------|------|
 | `ragflow-mysql` | mysql:8.0.39 | 3306 | RAGFlow / KnowFlow 元数据 |
-| `ragflow-es-01` | elasticsearch:8.11.3 | 9200 | 向量与全文索引 |
+| `ragflow-infinity` | infiniflow/infinity | 23820 | Infinity 向量与全文索引 |
 | `knowflow-gotenberg` | gotenberg/gotenberg:8 | 3000 | 文档格式转换 |
 | `ragflow-server` | knowflow-ragflow:source 或预构建 | **80**（内 nginx） | RAGFlow Web UI + API（内网 9380） |
 | `knowflow-backend` | knowflow-server:source | 5000 | KnowFlow 管理 API、RBAC 扩展 |
 
-**依赖顺序：** mysql/es healthy → ragflow → knowflow-backend。
+**依赖顺序：** mysql / infinity healthy → ragflow → knowflow-backend。
 
-**数据卷：** `${DATA_ROOT}/knowflow-mysql`、`knowflow-es`、`knowflow-logs`。
+**数据卷：** `${DATA_ROOT}/knowflow-mysql`、`knowflow-infinity`、`knowflow-logs`。
 
 **配置挂载：**
 
 - `deploy/knowflow/nginx/*` → ragflow 容器 nginx
+- `deploy/knowflow/infinity_conf.toml` → infinity 容器
 - `deploy/knowflow/theme/*` → RAGFlow 静态白标
 - `deploy/knowflow/settings.yaml` → knowflow-backend
 

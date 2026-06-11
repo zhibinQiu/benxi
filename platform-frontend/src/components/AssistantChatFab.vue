@@ -5,13 +5,20 @@ import { NButton, NIcon, NSpin } from "naive-ui";
 import {
   CloseOutline,
   SparklesOutline,
-  TimeOutline,
-} from "@vicons/ionicons5";
+  TimeOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
 import { marked } from "marked";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { navigateWithReturn } from "../utils/navigationReturn";
+import {
+  clearChatSession,
+  loadChatSession,
+  saveChatSession,
+  serializeChatMessages,
+} from "../utils/chatSessionPersist";
+
+const ASSISTANT_SCOPE = "assistant";
 
 const open = defineModel("open", { type: Boolean, default: false });
 
@@ -22,8 +29,7 @@ marked.setOptions({ gfm: true, breaks: true });
 
 const WELCOME_MESSAGE = {
   role: "assistant",
-  content: `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与后台任务等问题。`,
-};
+  content: `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与后台任务等问题。`};
 
 const sending = ref(false);
 const loadingHistory = ref(false);
@@ -86,8 +92,7 @@ async function sendMessage(text) {
       message: msg,
       history,
       page_hint: pageHint.value || null,
-      conversationId: conversationId.value,
-    });
+      conversationId: conversationId.value});
     if (data?.conversation_id) {
       conversationId.value = data.conversation_id;
     }
@@ -95,11 +100,11 @@ async function sendMessage(text) {
   } catch (e) {
     messages.value.push({
       role: "assistant",
-      content: `抱歉，暂时无法回答：${e.message || "服务异常"}。请稍后重试或联系管理员。`,
-    });
+      content: `抱歉，暂时无法回答：${e.message || "服务异常"}。请稍后重试或联系管理员。`});
   } finally {
     sending.value = false;
     scrollToBottom();
+    persistAssistantSession();
   }
 }
 
@@ -118,10 +123,24 @@ function goToHistory() {
   );
 }
 
+function persistAssistantSession() {
+  const serialized = serializeChatMessages(messages.value);
+  if (!conversationId.value && serialized.length <= 1 && !input.value.trim()) {
+    clearChatSession(ASSISTANT_SCOPE);
+    return;
+  }
+  saveChatSession(ASSISTANT_SCOPE, {
+    conversationId: conversationId.value,
+    messages: serialized,
+    input: input.value,
+  });
+}
+
 function startNewChat() {
   conversationId.value = null;
   messages.value = [{ ...WELCOME_MESSAGE }];
   input.value = "";
+  clearChatSession(ASSISTANT_SCOPE);
   if (route.query.assistantConversation) {
     const { assistantConversation: _id, ...rest } = route.query;
     router.replace({ ...route, query: rest });
@@ -140,11 +159,11 @@ async function loadConversationFromId(id) {
         ? rows.map((m) => ({ role: m.role, content: m.content }))
         : [{ ...WELCOME_MESSAGE }];
     await scrollToBottom();
+    persistAssistantSession();
   } catch (e) {
     messages.value.push({
       role: "assistant",
-      content: `加载历史对话失败：${e.message || "请稍后重试"}`,
-    });
+      content: `加载历史对话失败：${e.message || "请稍后重试"}`});
   } finally {
     loadingHistory.value = false;
   }
@@ -163,7 +182,23 @@ onMounted(() => {
     typeof route.query.assistantConversation === "string"
       ? route.query.assistantConversation
       : "";
-  if (cid) loadConversationFromId(cid);
+  if (cid) {
+    loadConversationFromId(cid);
+    return;
+  }
+  const saved = loadChatSession(ASSISTANT_SCOPE);
+  if (!saved) return;
+  if (saved.input) input.value = saved.input;
+  if (saved.conversationId) {
+    loadConversationFromId(saved.conversationId);
+    return;
+  }
+  if (Array.isArray(saved.messages) && saved.messages.length) {
+    messages.value = saved.messages.map((m) => ({
+      role: m.role,
+      content: m.content || "",
+    }));
+  }
 });
 </script>
 

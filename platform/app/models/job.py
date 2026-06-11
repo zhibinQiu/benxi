@@ -21,6 +21,7 @@ class JobType(str, enum.Enum):
     delete_document = "delete_document"
     maintenance = "maintenance"
     pdf_translate = "pdf_translate"
+    document_index = "document_index"
 
 
 class Job(Base):

@@ -82,19 +82,6 @@ export function prefetchKnowflowSession() {
   return prefetchInflight;
 }
 
-export function waitForKnowflowPrefetch() {
-  return prefetchInflight || Promise.resolve(null);
-}
-
-export async function searchKnowledge({ query, scope, limit = 20 } = {}) {
-  const body = { query, limit };
-  if (scope) body.scope = scope;
-  return api("/api/v1/rag/search", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
 export async function fetchRagEmbedSession({ sync = false, force = false } = {}) {
   const now = Date.now();
   if (
@@ -118,16 +105,6 @@ export async function fetchRagEmbedSession({ sync = false, force = false } = {})
     embedSessionCacheAt = Date.now();
   }
   return data;
-}
-
-/** 编码管理（仅管理员）：KnowFlow 模型配置页 SSO */
-export async function fetchEncodingMeta() {
-  return api("/api/v1/rag/meta");
-}
-
-export async function fetchEncodingEmbedSession({ sync = false } = {}) {
-  const q = sync ? "?sync=true" : "?sync=false";
-  return api(`/api/v1/rag/embed-session${q}`);
 }
 
 export function createPlatformChatStream(path) {

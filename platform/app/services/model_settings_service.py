@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
-
 from app.config import Settings, get_settings
 from app.integrations.ragflow_model_apply import (
     apply_embedding_to_template_tenant,

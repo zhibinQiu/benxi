@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import PermissionLevel, can_access_document
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.org import User
-from app.storage.object_store import get_object_store
-
-from app.services.documents.crud import document_has_uploaded_version
 from app.services.documents.acl import _subject_user_label
+from app.services.documents.content import _is_compareable_version, _is_pdf_version
+from app.services.documents.crud import document_has_uploaded_version, is_version_uploaded
 
 
 def _user_share_meta(

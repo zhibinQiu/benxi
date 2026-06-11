@@ -2,8 +2,7 @@
 import { platformCopyrightText } from "../constants/platform";
 
 defineProps({
-  compact: { type: Boolean, default: false },
-});
+  compact: { type: Boolean, default: false }});
 </script>
 
 <template>

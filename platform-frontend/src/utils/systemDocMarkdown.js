@@ -11,13 +11,20 @@ marked.setOptions({ gfm: true, breaks: true });
 let mermaidSeq = 0;
 let mermaidLoader = null;
 
+function normalizeMermaidSource(source) {
+  return String(source || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .trim();
+}
+
 async function loadMermaid() {
   if (!mermaidLoader) {
     mermaidLoader = import("mermaid").then((mod) => {
       mod.default.initialize({
         startOnLoad: false,
         theme: document.documentElement.dataset.theme === "dark" ? "dark" : "default",
-        securityLevel: "strict",
+        // strict 会拒绝节点标签中的 HTML（如 br），导致系统说明文档中架构图无法渲染
+        securityLevel: "antiscript",
         fontFamily: "var(--platform-font)",
       });
       return mod.default;
@@ -62,13 +69,13 @@ export async function mountMermaidInElement(root) {
     if (!encoded) continue;
     let source = "";
     try {
-      source = decodeURIComponent(encoded);
+      source = normalizeMermaidSource(decodeURIComponent(encoded));
     } catch {
       continue;
     }
-    const id = el.id || `md-mermaid-${mermaidSeq++}`;
+    const renderId = `md-mermaid-render-${mermaidSeq++}`;
     try {
-      const { svg } = await mermaid.render(id, source);
+      const { svg } = await mermaid.render(renderId, source);
       const wrap = el.closest(".md-mermaid-wrap") || el.parentElement;
       if (wrap) {
         wrap.innerHTML = `<div class="md-mermaid-svg" aria-hidden="true">${svg}</div>`;

@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: "SmartDataQueryV2View" });
 import { ref } from "vue";
 import { StatsChartOutline } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";

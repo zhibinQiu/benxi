@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -19,11 +20,12 @@ import {
   NDivider,
   NRadio,
   NRadioGroup,
-  useMessage,
-  useDialog,
+  NSelect,
 } from "naive-ui";
-import { DownloadOutline, TrashOutline } from "@vicons/ionicons5";
+import { DownloadOutline, EyeOutline, LayersOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
+import AdminFormModal from "../components/AdminFormModal.vue";
+import DocumentVersionPreviewModal from "../components/DocumentVersionPreviewModal.vue";
 import {
   fetchDocument,
   updateDocument,
@@ -33,8 +35,6 @@ import {
   downloadDocumentFile,
   deleteDocumentVersion,
   patchDocumentStatus,
-  restoreDocument,
-  permanentlyDeleteDocument,
   fetchDocumentAccessControl,
   fetchDocumentAclCandidates,
   fetchDocumentShares,
@@ -42,25 +42,29 @@ import {
   revokeDocumentShare,
   fetchDocumentDenials,
   denyDocumentAccess,
-  liftDocumentDenial,
-} from "../api/client";
+  liftDocumentDenial } from "../api/client";
 import { useAuth } from "../composables/useAuth";
 import OrgUserPickerTree from "../components/OrgUserPickerTree.vue";
 import OrgDeptPickerTree from "../components/OrgDeptPickerTree.vue";
-import DocumentKnowledgePanel from "../components/DocumentKnowledgePanel.vue";
+import { useDocumentReindex } from "../composables/useDocumentReindex.js";
 import { knowledgeIndexTagProps } from "../utils/knowledgeIndex.js";
 import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
 import { ORG_SCOPES, SCOPE_LABELS, SCOPE_PERM } from "../constants/documentScope";
+import {
+  DOCUMENT_UPLOAD_MAX_MB,
+  validateUploadFiles,
+  validateVersionFormatMatch,
+} from "../constants/documentUpload";
 const LEVEL_LABELS = {
   visible: "可见",
-  query: "可查询",
-  edit: "可编辑",
-  full: "完全",
+  query: "可查",
+  modify: "可修改",
+  edit: "可修改",
+  full: "可修改",
   read: "可见",
-  use: "可编辑",
-  delete: "完全",
-};
+  use: "可修改",
+  delete: "可修改"};
 
 const route = useRoute();
 const router = useRouter();
@@ -69,8 +73,7 @@ function goBack() {
   goBackToEntry(router, route, { name: "documents" });
 }
 
-const message = useMessage();
-const dialog = useDialog();
+const ui = usePlatformUi();
 
 const { user, hasPerm } = useAuth();
 
@@ -82,22 +85,28 @@ const titleEditing = ref(false);
 const titleSaving = ref(false);
 const titleInputRef = ref(null);
 
-const canEditDoc = computed(() => aclCaps.value.can_edit === true);
+const canModifyDoc = computed(
+  () =>
+    aclCaps.value.can_modify === true ||
+    aclCaps.value.can_edit === true ||
+    aclCaps.value.can_manage === true
+);
 
-const canDeleteDoc = computed(() => aclCaps.value.can_delete === true);
+const canDeleteDoc = computed(
+  () => canModifyDoc.value || aclCaps.value.can_delete === true
+);
 
-const canManageDoc = computed(() => aclCaps.value.can_manage === true);
+const canEditDoc = canModifyDoc;
 
-const canRestoreDoc = computed(() => aclCaps.value.can_restore === true);
+const canManageDoc = canModifyDoc;
+
+const canReindexDoc = canModifyDoc;
 
 const canViewDoc = computed(() => aclCaps.value.can_view !== false);
 
-const isInRecycle = computed(() => Boolean(doc.value?.deleted_at));
-
 const statusEnabled = computed({
   get: () => doc.value?.status === "active",
-  set: () => {},
-});
+  set: () => {}});
 
 const isOwner = computed(
   () => user.value?.id && doc.value?.owner_id === user.value.id
@@ -111,6 +120,97 @@ const uploadedAtLabel = computed(() => {
 });
 
 const displayVersions = computed(() => doc.value?.versions || []);
+
+const {
+  reindexModalShow,
+  reindexTargetVersion,
+  parserId,
+  layoutRecognize,
+  chunkMethodOptions,
+  layoutOptions,
+  reparsing,
+  indexPolling,
+  loadParserOptions,
+  openReindexModal,
+  submitReindex,
+} = useDocumentReindex(docId, () => load({ notifyOnError: false }));
+
+const showVersionActions = computed(
+  () => canViewDoc.value || canDeleteDoc.value || canReindexDoc.value
+);
+
+const versionChangeDesc = ref("");
+const versionUploadFile = ref(null);
+const versionUploadFileList = ref([]);
+const versionUploading = ref(false);
+const showVersionPreview = ref(false);
+const previewVersion = ref(null);
+
+function onVersionFileChange({ fileList }) {
+  const file = fileList[0]?.file ?? null;
+  if (file) {
+    const sizeCheck = validateUploadFiles([file], { maxFiles: 1 });
+    if (!sizeCheck.ok) {
+      ui.warning(sizeCheck.message);
+      versionUploadFile.value = null;
+      versionUploadFileList.value = [];
+      return;
+    }
+    const formatCheck = validateVersionFormatMatch(displayVersions.value, file);
+    if (!formatCheck.ok) {
+      ui.warning(formatCheck.message);
+      versionUploadFile.value = null;
+      versionUploadFileList.value = [];
+      return;
+    }
+  }
+  versionUploadFile.value = file;
+  versionUploadFileList.value = fileList;
+}
+
+async function submitVersionUpload() {
+  if (!versionUploadFile.value) {
+    ui.warning("请选择文件");
+    return;
+  }
+  const sizeCheck = validateUploadFiles([versionUploadFile.value], { maxFiles: 1 });
+  if (!sizeCheck.ok) {
+    ui.warning(sizeCheck.message);
+    return;
+  }
+  const formatCheck = validateVersionFormatMatch(
+    displayVersions.value,
+    versionUploadFile.value
+  );
+  if (!formatCheck.ok) {
+    ui.warning(formatCheck.message);
+    return;
+  }
+  const raw = versionUploadFile.value;
+  versionUploading.value = true;
+  try {
+    const prep = await prepareUpload(
+      docId,
+      raw.name,
+      raw.type || "application/octet-stream"
+    );
+    await uploadDocumentBlob(prep.upload_url, raw);
+    await completeUpload(docId, {
+      version_id: prep.version_id,
+      file_size: raw.size,
+      change_description: versionChangeDesc.value.trim(),
+    });
+    ui.success("新版本已上传，知识库正在后台同步");
+    versionChangeDesc.value = "";
+    versionUploadFile.value = null;
+    versionUploadFileList.value = [];
+    await load({ notifyOnError: false });
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    versionUploading.value = false;
+  }
+}
 
 function versionFileLabel(v) {
   return v.file_name || "—";
@@ -131,8 +231,7 @@ const aclCaps = ref({
   can_delete: false,
   can_manage: false,
   can_restore: false,
-  effective_level: null,
-});
+  effective_level: null});
 
 const canGrantAcl = computed(() => aclCaps.value.can_grant);
 const canDenyAcl = computed(() => aclCaps.value.can_deny);
@@ -144,8 +243,7 @@ const showDeny = ref(false);
 const aclPicker = ref({
   company_label: "公司",
   departments: [],
-  users: [],
-});
+  users: []});
 const aclCandidates = computed(() => aclPicker.value.users || []);
 const aclDepartments = computed(() => aclPicker.value.departments || []);
 const denyUserId = ref(null);
@@ -157,18 +255,39 @@ const publishDeptIds = ref([]);
 const publishLoading = ref(false);
 const accessMode = ref("publish");
 
-const canPublishCompany = computed(
+const canPublishCompanyPerm = computed(
   () => isOwner.value && hasPerm("doc.company.create")
 );
-const canPublishDept = computed(() => isOwner.value && hasPerm("doc.dept.create"));
-const canPublishTeam = computed(() => isOwner.value && hasPerm("doc.team.create"));
+const canPublishDeptPerm = computed(
+  () => isOwner.value && hasPerm("doc.dept.create")
+);
+const canPublishTeamPerm = computed(
+  () => isOwner.value && hasPerm("doc.team.create")
+);
+const canPublishCompany = computed(() => {
+  if (!isOwner.value) return false;
+  if (canPublishCompanyPerm.value) return true;
+  return doc.value?.scope === "company";
+});
+const canPublishDept = computed(() => {
+  if (!isOwner.value) return false;
+  if (canPublishDeptPerm.value) return true;
+  return doc.value?.scope === "department" || doc.value?.scope === "company";
+});
+/** 部门/公司/小组级文档的创建人仍可调整至小组级 */
+const showTeamPublish = computed(() => {
+  if (!isOwner.value) return false;
+  if (canPublishTeamPerm.value) return true;
+  return ORG_SCOPES.includes(doc.value?.scope ?? "");
+});
 const showPublishCard = computed(
   () =>
-    !isInRecycle.value &&
-    (canPublishCompany.value || canPublishDept.value || canPublishTeam.value)
+    canPublishCompany.value ||
+    canPublishDept.value ||
+    showTeamPublish.value
 );
 const showAccessCard = computed(
-  () => !isInRecycle.value && (showPublishCard.value || canGrantAcl.value)
+  () => showPublishCard.value || canGrantAcl.value
 );
 
 function syncAccessModeDefault() {
@@ -184,12 +303,20 @@ function syncAccessModeDefault() {
 }
 const currentScopeLabel = computed(() => {
   const s = doc.value?.scope || "personal";
-  if (ORG_SCOPES.includes(s) && doc.value?.dept_id) {
-    const d = aclDepartments.value.find((x) => x.id === doc.value.dept_id);
+  if (ORG_SCOPES.includes(s)) {
     const tier = SCOPE_LABELS[s] || s;
-    return `${tier} · ${d?.name || "已选组织"}`;
+    const deptName =
+      doc.value?.dept_name ||
+      aclDepartments.value.find((x) => x.id === doc.value?.dept_id)?.name;
+    return deptName ? `${tier} · ${deptName}` : tier;
   }
   return SCOPE_LABELS[s] || s;
+});
+
+const versionUploadFileLabel = computed(() => {
+  const name = versionUploadFile.value?.name;
+  if (!name) return "选择文件";
+  return name.length > 28 ? `${name.slice(0, 25)}…` : name;
 });
 
 const supportsKbFolder = computed(() =>
@@ -198,9 +325,8 @@ const supportsKbFolder = computed(() =>
 
 const sharePermissionActions = [
   { level: "visible", label: "可见", desc: "下载、预览" },
-  { level: "query", label: "可查询", desc: "知识问答" },
-  { level: "edit", label: "可编辑", desc: "上传/翻译/对比" },
-  { level: "full", label: "完全", desc: "含删除" },
+  { level: "query", label: "可查", desc: "问答、检索" },
+  { level: "modify", label: "可修改", desc: "上传、分享、重建索引、删除" },
 ];
 
 const userNameById = computed(() => {
@@ -232,7 +358,7 @@ async function ensureCandidates() {
 }
 
 function startEditTitle() {
-  if (!doc.value || !canEditDoc.value || isInRecycle.value) return;
+  if (!doc.value || !canEditDoc.value) return;
   editTitle.value = doc.value.title || "";
   titleEditing.value = true;
   nextTick(() => titleInputRef.value?.focus());
@@ -244,10 +370,10 @@ function cancelEditTitle() {
 }
 
 async function saveTitle() {
-  if (!doc.value || !canEditDoc.value || isInRecycle.value) return;
+  if (!doc.value || !canEditDoc.value) return;
   const next = editTitle.value.trim();
   if (!next) {
-    message.warning("标题不能为空");
+    ui.warning("标题不能为空");
     editTitle.value = doc.value.title;
     return;
   }
@@ -260,10 +386,10 @@ async function saveTitle() {
     doc.value = await updateDocument(docId, { title: next });
     editTitle.value = doc.value.title;
     titleEditing.value = false;
-    message.success("标题已保存");
+    ui.success("标题已保存");
   } catch (e) {
     editTitle.value = doc.value.title;
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     titleSaving.value = false;
   }
@@ -274,16 +400,6 @@ async function load({ notifyOnError = true } = {}) {
   try {
     doc.value = await fetchDocument(docId);
     editTitle.value = doc.value.title || "";
-    syncAccessModeDefault();
-    if (doc.value.scope === "company") {
-      publishTarget.value = "company";
-    } else if (doc.value.scope === "department" && doc.value.dept_id) {
-      publishTarget.value = "department";
-      publishDeptIds.value = [doc.value.dept_id];
-    } else {
-      publishTarget.value = "department";
-      publishDeptIds.value = [];
-    }
     try {
       aclCaps.value = await fetchDocumentAccessControl(docId);
     } catch {
@@ -293,18 +409,28 @@ async function load({ notifyOnError = true } = {}) {
         is_owner: false,
         can_view: true,
         can_query: false,
+        can_modify: false,
         can_edit: false,
         can_delete: false,
         can_manage: false,
-        can_restore: false,
-      };
+        can_restore: false};
     }
-    shares.value = [];
-    denials.value = [];
     const docOwner =
       user.value?.id && doc.value?.owner_id === user.value.id;
     if (canGrantAcl.value || docOwner) {
       await loadAclCandidates();
+    }
+    if (ORG_SCOPES.includes(doc.value.scope)) {
+      publishTarget.value = doc.value.scope;
+      publishDeptIds.value = doc.value.dept_id ? [doc.value.dept_id] : [];
+    } else {
+      publishTarget.value = "department";
+      publishDeptIds.value = [];
+    }
+    syncAccessModeDefault();
+    shares.value = [];
+    denials.value = [];
+    if (canGrantAcl.value || docOwner) {
       try {
         shares.value = await fetchDocumentShares(docId);
       } catch {
@@ -322,35 +448,9 @@ async function load({ notifyOnError = true } = {}) {
       }
     }
   } catch (e) {
-    if (notifyOnError) message.error(e.message);
+    if (notifyOnError) ui.error(e.message);
   } finally {
     loading.value = false;
-  }
-}
-
-async function uploadVersion({ file, onFinish, onError }) {
-  const raw = file?.file;
-  if (!raw) {
-    onError?.();
-    return;
-  }
-  try {
-    const prep = await prepareUpload(
-      docId,
-      raw.name,
-      raw.type || "application/octet-stream"
-    );
-    await uploadDocumentBlob(prep.upload_url, raw);
-    await completeUpload(docId, {
-      version_id: prep.version_id,
-      file_size: raw.size,
-    });
-    message.success("新版本已上传，知识库正在后台同步");
-    await load({ notifyOnError: false });
-    onFinish?.();
-  } catch (e) {
-    message.error(e.message);
-    onError?.();
   }
 }
 
@@ -360,10 +460,21 @@ async function downloadVersion(v) {
     const fallback =
       v.file_name || `${doc.value?.title || "document"}.pdf`;
     await downloadDocumentFile(docId, fallback, v.id);
-    message.success("已开始下载");
+    ui.success("已开始下载");
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
+}
+
+function openVersionPreview(v) {
+  if (!v?.uploaded) return;
+  previewVersion.value = v;
+  showVersionPreview.value = true;
+}
+
+function onPreviewDownload(v) {
+  showVersionPreview.value = false;
+  downloadVersion(v);
 }
 
 async function onStatusChange(enabled) {
@@ -371,92 +482,51 @@ async function onStatusChange(enabled) {
   const next = enabled ? "active" : "disabled";
   try {
     doc.value = await patchDocumentStatus(docId, next);
-    message.success(enabled ? "已启用" : "已关闭");
+    ui.success(enabled ? "已启用" : "已关闭");
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
     await load({ notifyOnError: false });
   }
 }
 
 function confirmDeleteVersion(v) {
   const label = `v${v.version_no}`;
-  const hint = displayVersions.value.length <= 1
-    ? "这是最后一个版本，删除后整份文档将移入回收站。"
-    : "仅删除该版本文件，其他版本保留。";
-  dialog.warning({
+  const hint =
+    displayVersions.value.length <= 1
+      ? "这是最后一个版本，删除后整份文档及知识库索引将被永久删除。"
+      : "仅删除该版本文件，其他版本保留。";
+  ui.confirmDelete({
     title: `删除版本 ${label}`,
     content: `${hint} 确定继续？`,
-    positiveText: "删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
-      try {
-        const res = await deleteDocumentVersion(docId, v.id);
-        if (res.document_deleted) {
-          message.success(res.message || "文档已移入回收站");
-          goBack();
-          return;
-        }
-        message.success(res.message || "版本已删除");
-        await load({ notifyOnError: false });
-      } catch (e) {
-        message.error(e.message);
-      }
-    },
-  });
-}
-
-function handlePermanentDelete() {
-  if (!doc.value) return;
-  dialog.warning({
-    title: "彻底删除",
-    content: `确定彻底删除「${doc.value.title}」？删除后无法恢复。`,
-    positiveText: "彻底删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
-      try {
-        await permanentlyDeleteDocument(docId);
-        message.success("已彻底删除");
+    onPositive: async () => {
+      const res = await deleteDocumentVersion(docId, v.id);
+      if (res.document_deleted) {
+        ui.success(res.message || "文档已删除");
         goBack();
-      } catch (e) {
-        message.error(e.message);
-        return false;
+        return;
       }
-      return true;
+      ui.success(res.message || "版本已删除");
+      await load({ notifyOnError: false });
     },
   });
-}
-
-async function handleRestore() {
-  try {
-    doc.value = await restoreDocument(docId);
-    message.success("已恢复");
-    navigateWithReturn(
-      router,
-      { name: "document-detail", params: { id: docId } },
-      route
-    );
-    await load({ notifyOnError: false });
-  } catch (e) {
-    message.error(e.message);
-  }
 }
 
 async function publishToLibrary() {
   if (ORG_SCOPES.includes(publishTarget.value)) {
     if (!publishDeptIds.value.length) {
-      message.warning("请选择要发布到的组织单元");
+      ui.warning("请选择要发布到的组织单元");
       return;
     }
-    if (publishTarget.value === "team" && !canPublishTeam.value) {
-      message.warning("无权发布到小组级文库");
+    if (publishTarget.value === "team" && !showTeamPublish.value) {
+      ui.warning("无权发布到小组级文库");
       return;
     }
     if (publishTarget.value === "department" && !canPublishDept.value) {
-      message.warning("无权发布到部门级文库");
+      ui.warning("无权发布到部门级文库");
       return;
     }
   } else if (!canPublishCompany.value) {
-    message.warning("无权发布到公司级文库");
+    ui.warning("无权发布到公司级文库");
     return;
   }
   publishLoading.value = true;
@@ -466,10 +536,10 @@ async function publishToLibrary() {
       payload.dept_id = publishDeptIds.value[0];
     }
     doc.value = await updateDocument(docId, payload);
-    message.success("已发布到文库，可在文档库对应分级中查看");
+    ui.success("已发布到文库，可在文档库对应分级中查看");
     await load({ notifyOnError: false });
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     publishLoading.value = false;
   }
@@ -477,21 +547,20 @@ async function publishToLibrary() {
 
 async function grantShareLevel(level) {
   if (!shareSelectedKeys.value.length) {
-    message.warning("请先勾选要分享的用户");
+    ui.warning("请先勾选要分享的用户");
     return;
   }
   shareGranting.value = true;
   try {
     shares.value = await grantDocumentShares(docId, {
       userIds: shareSelectedKeys.value,
-      level,
-    });
+      level});
     const label = LEVEL_LABELS[level] || level;
-    message.success(
+    ui.success(
       `已为 ${shareSelectedKeys.value.length} 人授予「${label}」权限`
     );
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     shareGranting.value = false;
   }
@@ -503,51 +572,53 @@ async function openDenyModal() {
     denyUserId.value = null;
     showDeny.value = true;
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
 async function removeShare(userId) {
   try {
     await revokeDocumentShare(docId, userId);
-    message.success("已取消该用户的分享");
+    ui.success("已取消该用户的分享");
     shares.value = await fetchDocumentShares(docId);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
 async function submitDeny() {
   if (!denyUserId.value) {
-    message.warning("请选择要禁止访问的用户");
+    ui.warning("请选择要禁止访问的用户");
     return;
   }
   try {
     await denyDocumentAccess(docId, {
       user_id: denyUserId.value,
-      reason: denyReason.value,
-    });
-    message.success("已禁止该用户访问（部门/公司默认可见规则不再生效）");
+      reason: denyReason.value});
+    ui.success("已禁止该用户访问（部门/公司默认可见规则不再生效）");
     showDeny.value = false;
     denyUserId.value = null;
     denyReason.value = "";
     denials.value = await fetchDocumentDenials(docId);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
 async function removeDenial(uid) {
   try {
     await liftDocumentDenial(docId, uid);
-    message.success("已恢复访问");
+    ui.success("已恢复访问");
     denials.value = await fetchDocumentDenials(docId);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  load();
+  loadParserOptions();
+});
 </script>
 
 <template>
@@ -555,7 +626,7 @@ onMounted(load);
     <n-card :loading="loading">
       <template #header>
         <n-space align="center" :size="12" style="flex-wrap: wrap">
-          <template v-if="titleEditing && canEditDoc && !isInRecycle">
+          <template v-if="titleEditing && canEditDoc">
             <n-input
               ref="titleInputRef"
               v-model:value="editTitle"
@@ -581,7 +652,7 @@ onMounted(load);
           <template v-else>
             <n-text strong style="font-size: 16px">{{ doc.title }}</n-text>
             <n-button
-              v-if="canEditDoc && !isInRecycle"
+              v-if="canEditDoc"
               text
               type="primary"
               size="small"
@@ -595,7 +666,7 @@ onMounted(load);
       <n-descriptions :column="2" label-placement="left">
         <n-descriptions-item label="ID">{{ doc.id }}</n-descriptions-item>
         <n-descriptions-item label="文档状态">
-          <n-space v-if="!isInRecycle" align="center" :size="8">
+          <n-space align="center" :size="8">
             <n-switch
               :value="statusEnabled"
               :disabled="!canManageDoc"
@@ -603,7 +674,6 @@ onMounted(load);
             />
             <span>{{ statusEnabled ? "启用" : "关闭" }}</span>
           </n-space>
-          <n-tag v-else size="small" type="warning">回收站</n-tag>
         </n-descriptions-item>
         <n-descriptions-item label="分级">
           <n-tag size="small">{{ SCOPE_LABELS[doc.scope] || doc.scope }}</n-tag>
@@ -612,8 +682,8 @@ onMounted(load);
           {{ doc.folder_name || "未分类" }}
         </n-descriptions-item>
         <n-descriptions-item
-          v-if="doc.scope === 'department' && (doc.dept_name || doc.dept_id)"
-          label="所属部门"
+          v-if="ORG_SCOPES.includes(doc.scope) && (doc.dept_name || doc.dept_id)"
+          label="所属组织"
         >
           {{ doc.dept_name || "—" }}
         </n-descriptions-item>
@@ -629,50 +699,17 @@ onMounted(load);
       </n-descriptions>
     </n-card>
 
-    <n-card v-if="canEditDoc && !isInRecycle" title="上传新版本">
-      <n-upload :max="1" :custom-request="uploadVersion">
-        <n-button>选择文件并上传</n-button>
-      </n-upload>
-    </n-card>
-
-    <DocumentKnowledgePanel
-      v-if="canViewDoc && !isInRecycle"
-      :document-id="docId"
-      :title="doc.title"
-      :versions="doc.versions || []"
-      :current-version-id="doc.current_version_id"
-      :can-manage="canEditDoc"
-      @updated="load({ notifyOnError: false })"
-    />
-
     <n-card title="版本历史">
-      <template #header-extra>
-        <n-space v-if="isInRecycle" :size="8">
-          <n-button
-            v-if="canRestoreDoc"
-            type="primary"
-            size="small"
-            @click="handleRestore"
-          >
-            恢复文档
-          </n-button>
-          <n-button size="small" secondary @click="handlePermanentDelete">
-            彻底删除
-          </n-button>
-        </n-space>
-        <n-text v-else-if="!isInRecycle" depth="3" style="font-size: 13px">
-          每个文档至少保留一个已上传版本；删光全部版本后文档进入回收站
-        </n-text>
-      </template>
       <n-table :single-line="false">
         <thead>
           <tr>
             <th>版本</th>
             <th>文件名</th>
+            <th>版本说明</th>
             <th>大小</th>
             <th>时间</th>
-            <th v-if="!isInRecycle">索引</th>
-            <th v-if="!isInRecycle && (canViewDoc || canDeleteDoc)">操作</th>
+            <th>索引</th>
+            <th v-if="showVersionActions">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -684,9 +721,10 @@ onMounted(load);
               </n-space>
             </td>
             <td>{{ versionFileLabel(v) }}</td>
+            <td>{{ v.change_description || "—" }}</td>
             <td>{{ versionSizeLabel(v) }}</td>
             <td>{{ new Date(v.created_at).toLocaleString() }}</td>
-            <td v-if="!isInRecycle">
+            <td>
               <n-tag
                 v-if="v.uploaded"
                 size="small"
@@ -697,10 +735,26 @@ onMounted(load);
               </n-tag>
               <span v-else>—</span>
             </td>
-            <td v-if="!isInRecycle && (canViewDoc || canDeleteDoc)">
+            <td v-if="showVersionActions">
               <div class="table-icon-actions">
                 <IconAction
+                  v-if="v.uploaded && canReindexDoc"
+                  variant="table"
+                  label="重新索引"
+                  :icon="LayersOutline"
+                  :disabled="indexPolling || reparsing"
+                  @click="openReindexModal(v)"
+                />
+                <IconAction
                   v-if="v.uploaded && canViewDoc"
+                  variant="table"
+                  label="预览"
+                  :icon="EyeOutline"
+                  @click="openVersionPreview(v)"
+                />
+                <IconAction
+                  v-if="v.uploaded && canViewDoc"
+                  variant="table"
                   label="下载"
                   :icon="DownloadOutline"
                   type="primary"
@@ -708,6 +762,7 @@ onMounted(load);
                 />
                 <IconAction
                   v-if="canDeleteDoc"
+                  variant="table"
                   label="删除"
                   :icon="TrashOutline"
                   type="error"
@@ -718,10 +773,45 @@ onMounted(load);
           </tr>
         </tbody>
       </n-table>
+
+      <div v-if="canEditDoc" class="version-upload-bar">
+        <n-input
+          v-model:value="versionChangeDesc"
+          class="version-upload-bar__desc"
+          size="small"
+          placeholder="版本说明（可选）"
+          clearable
+        />
+        <n-upload
+          class="version-upload-bar__pick"
+          :max="1"
+          :default-upload="false"
+          :show-file-list="false"
+          v-model:file-list="versionUploadFileList"
+          @change="onVersionFileChange"
+        >
+          <n-button size="small" secondary>{{ versionUploadFileLabel }}</n-button>
+        </n-upload>
+        <n-button
+          class="version-upload-bar__submit"
+          size="small"
+          type="primary"
+          :loading="versionUploading"
+          :disabled="!versionUploadFile || versionUploading"
+          @click="submitVersionUpload"
+        >
+          上传新版本
+        </n-button>
+      </div>
     </n-card>
 
     <n-card v-if="showAccessCard" title="发布与分享">
-      <n-radio-group v-model:value="accessMode" style="margin-bottom: 14px">
+      <div class="access-current-loc">
+        <span class="access-current-loc__label">当前位置</span>
+        <n-tag type="info" size="small" :bordered="false">{{ currentScopeLabel }}</n-tag>
+      </div>
+
+      <n-radio-group v-model:value="accessMode" class="access-mode-group">
         <n-space>
           <n-radio v-if="showPublishCard" value="publish">发布到文库</n-radio>
           <n-radio v-if="canGrantAcl" value="share">分享给个人</n-radio>
@@ -729,15 +819,14 @@ onMounted(load);
       </n-radio-group>
 
       <template v-if="accessMode === 'publish' && showPublishCard">
-        <p style="margin: 0 0 12px; color: #666; font-size: 13px">
-          发布后文档出现在文档库「部门级」或「公司级」中，按分级默认可见；不会进入「分享」Tab。
-          当前：{{ currentScopeLabel }}。
+        <p class="access-card-hint">
+          可选择小组级 / 部门级 / 公司级发布位置；发布后按分级默认可见，不会进入「分享」Tab。
         </p>
-        <n-radio-group v-model:value="publishTarget" style="margin-bottom: 12px">
+        <n-radio-group v-model:value="publishTarget" class="access-publish-target">
           <n-space>
             <n-radio v-if="canPublishCompany" value="company">公司级</n-radio>
             <n-radio v-if="canPublishDept" value="department">部门级</n-radio>
-            <n-radio v-if="canPublishTeam" value="team">小组级</n-radio>
+            <n-radio v-if="showTeamPublish" value="team">小组级</n-radio>
           </n-space>
         </n-radio-group>
         <OrgDeptPickerTree
@@ -758,8 +847,8 @@ onMounted(load);
       </template>
 
       <template v-else-if="accessMode === 'share' && canGrantAcl">
-        <p style="margin: 0 0 12px; color: #666; font-size: 13px">
-          仅用于个人文档的例外协作：被分享者可在「分享」中查看，不会进入部门/公司文库。
+        <p class="access-card-hint">
+          按用户授予可见 / 可查 / 可修改权限；被分享者可在「分享」中查看。
           勾选部门将展开为该部门全部用户；也可单独勾选用户。
         </p>
         <OrgUserPickerTree
@@ -810,7 +899,7 @@ onMounted(load);
       </template>
     </n-card>
 
-    <n-card v-if="canDenyAcl && !isInRecycle" title="访问限制">
+    <n-card v-if="canDenyAcl" title="访问限制">
       <p style="margin: 0 0 12px; color: #666; font-size: 13px">
         屏蔽在部门/公司分级下本应可见的成员；仅文档创建人或系统管理员可操作。
       </p>
@@ -865,6 +954,49 @@ onMounted(load);
     </template>
   </n-modal>
 
+  <DocumentVersionPreviewModal
+    v-model:show="showVersionPreview"
+    :document-id="docId"
+    :version="previewVersion"
+    @download="onPreviewDownload"
+  />
+
+  <AdminFormModal
+    v-model:show="reindexModalShow"
+    :title="reindexTargetVersion ? `重新索引 v${reindexTargetVersion.version_no}` : '重新索引'"
+    subtitle="将全量同步到知识库并按所选解析器重新索引"
+    width="420px"
+  >
+    <n-form label-placement="top" :show-require-mark="false">
+      <n-form-item label="PDF 解析器">
+        <n-select
+          v-model:value="layoutRecognize"
+          :options="layoutOptions"
+          :disabled="indexPolling || reparsing"
+        />
+      </n-form-item>
+      <n-form-item label="分块方法">
+        <n-select
+          v-model:value="parserId"
+          :options="chunkMethodOptions"
+          :disabled="indexPolling || reparsing"
+        />
+      </n-form-item>
+    </n-form>
+    <template #footer>
+      <n-space justify="end">
+        <n-button @click="reindexModalShow = false">取消</n-button>
+        <n-button
+          type="primary"
+          :loading="reparsing || indexPolling"
+          @click="submitReindex"
+        >
+          开始索引
+        </n-button>
+      </n-space>
+    </template>
+  </AdminFormModal>
+
 </template>
 
 <style scoped>
@@ -872,5 +1004,70 @@ onMounted(load);
   min-width: 240px;
   max-width: min(560px, 100%);
   font-weight: 600;
+}
+
+.version-upload-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--platform-border, #e2e8f0);
+}
+
+.version-upload-bar__desc {
+  min-width: 0;
+}
+
+.version-upload-bar__pick {
+  flex-shrink: 0;
+}
+
+.version-upload-bar__pick :deep(.n-upload-trigger) {
+  display: inline-flex;
+}
+
+.version-upload-bar__submit {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .version-upload-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
+.access-current-loc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--platform-accent-muted, #f1f5f9);
+  border: 1px solid var(--platform-border, #e2e8f0);
+}
+
+.access-current-loc__label {
+  font-size: 13px;
+  color: var(--platform-text-secondary, #64748b);
+  flex-shrink: 0;
+}
+
+.access-mode-group {
+  margin-bottom: 14px;
+}
+
+.access-publish-target {
+  margin-bottom: 12px;
+}
+
+.access-card-hint {
+  margin: 0 0 12px;
+  color: var(--platform-text-secondary, #666);
+  font-size: 13px;
+  line-height: 1.55;
 }
 </style>

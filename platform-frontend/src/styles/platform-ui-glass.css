@@ -1,5 +1,6 @@
-/* 平台 UI 统一：紫白蓝渐变玻璃层 + 视频背景穿透 */
+/* 平台 UI 统一：紫白蓝渐变玻璃层 */
 
+/* —— 视频场景：略透底 + 壳层透明 —— */
 .app-shell--video-bg {
   --platform-ui-glass-fill: rgba(255, 255, 255, 0.42);
   --platform-ui-glass-fill-strong: rgba(255, 255, 255, 0.56);
@@ -36,7 +37,6 @@ html[data-theme="dark"] .app-shell--video-bg {
   --platform-toolbar-bg: var(--platform-ui-glass-fill-subtle);
 }
 
-/* —— 视频穿透：壳层与内容区透明 —— */
 .app-shell--video-bg .main-layout,
 .app-shell--video-bg .main-layout :deep(.n-layout),
 .app-shell--video-bg .main-layout :deep(.n-layout-scroll-container),
@@ -54,21 +54,16 @@ html[data-theme="dark"] .app-shell--video-bg {
 }
 
 .app-shell--video-bg .app-ambient {
-  z-index: 1;
   opacity: 0.28;
   mix-blend-mode: soft-light;
 }
 
-.app-shell--video-bg > :not(.app-ambient):not(.page-video-bg) {
-  z-index: 2;
-}
-
 /* —— 通用玻璃面板（卡片 / 表格 / 列表） —— */
-.app-shell--video-bg .n-card:not(.feature-local-nav),
-.app-shell--video-bg .n-data-table,
-.app-shell--video-bg .n-list,
-.app-shell--video-bg .glass-float-panel,
-.app-shell--video-bg .system-docs-layout {
+.app-shell .n-card:not(.feature-local-nav),
+.app-shell .n-data-table,
+.app-shell .n-list,
+.app-shell .glass-float-panel,
+.app-shell .system-docs-layout {
   background: var(--platform-ui-glass-fill-strong) !important;
   border: 1px solid var(--platform-ui-glass-border) !important;
   box-shadow: var(--platform-ui-layer-shadow) !important;
@@ -76,18 +71,18 @@ html[data-theme="dark"] .app-shell--video-bg {
   -webkit-backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
 }
 
-.app-shell--video-bg .n-data-table .n-data-table-th {
+.app-shell .n-data-table .n-data-table-th {
   background: var(--platform-ui-glass-fill-subtle) !important;
 }
 
-.app-shell--video-bg .n-data-table .n-data-table-tr:not(.n-data-table-tr--summary):hover .n-data-table-td {
+.app-shell .n-data-table .n-data-table-tr:not(.n-data-table-tr--summary):hover .n-data-table-td {
   background: var(--platform-accent-soft) !important;
 }
 
-/* —— 搜索 / 输入 / 选择器（视频模式下略强一点对比） —— */
-.app-shell--video-bg .n-input .n-input-wrapper,
-.app-shell--video-bg .n-input.n-input--textarea,
-.app-shell--video-bg .n-base-selection .n-base-selection-label {
+/* —— 搜索 / 输入 / 选择器 —— */
+.app-shell .n-input .n-input-wrapper,
+.app-shell .n-input.n-input--textarea,
+.app-shell .n-base-selection .n-base-selection-label {
   background: var(--platform-ui-glass-fill) !important;
 }
 
@@ -161,44 +156,44 @@ html[data-theme="dark"] .app-shell--video-bg {
 }
 
 /* 分页 / 列表层间距 */
-.app-shell--video-bg .feature-page > .n-card + .n-card,
-.app-shell--video-bg .admin-page + .n-card {
+.app-shell .feature-page > .n-card + .n-card,
+.app-shell .admin-page + .n-card {
   margin-top: 12px;
 }
 
-.app-shell--video-bg .n-pagination .n-pagination-item:not(.n-pagination-item--disabled) {
+.app-shell .n-pagination .n-pagination-item:not(.n-pagination-item--disabled) {
   background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle)) !important;
   border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
 }
 
-.app-shell--video-bg .n-pagination .n-pagination-item:not(.n-pagination-item--disabled):hover {
+.app-shell .n-pagination .n-pagination-item:not(.n-pagination-item--disabled):hover {
   border-color: var(--platform-accent-border) !important;
   color: var(--platform-accent) !important;
 }
 
-.app-shell--video-bg .n-pagination .n-pagination-item--active {
+.app-shell .n-pagination .n-pagination-item--active {
   background: var(--platform-accent-soft) !important;
   border-color: var(--platform-accent-border) !important;
   color: var(--platform-accent) !important;
 }
 
 /* 常见页面容器 — 玻璃面板 */
-.app-shell--video-bg .knowledge-search-page,
-.app-shell--video-bg .admin-page,
-.app-shell--video-bg .documents-list-card,
-.app-shell--video-bg .subscriptions-ingest,
-.app-shell--video-bg .subsystem-shell .n-card:not(.feature-local-nav) {
+.app-shell .knowledge-search-page,
+.app-shell .admin-page,
+.app-shell .documents-list-card,
+.app-shell .subscriptions-ingest,
+.app-shell .subsystem-shell .n-card:not(.feature-local-nav) {
   background: var(--platform-ui-glass-fill-strong) !important;
   border-color: var(--platform-ui-glass-border) !important;
   box-shadow: var(--platform-ui-layer-shadow) !important;
 }
 
-.app-shell--video-bg .knowledge-search-page__sider,
-.app-shell--video-bg .system-docs-sider {
+.app-shell .knowledge-search-page__sider,
+.app-shell .system-docs-sider {
   background: var(--platform-ui-glass-fill-subtle) !important;
 }
 
-/* 全局输入框玻璃（无视频时也生效） */
+/* 全局输入框玻璃 */
 .n-input .n-input-wrapper,
 .n-input.n-input--textarea,
 .n-base-selection .n-base-selection-label {

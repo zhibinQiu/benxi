@@ -1,5 +1,7 @@
 # 数据库迁移
 
+各库存什么、如何 `psql` / `mysql` / `redis-cli` 连接查看，见 **[组件位置与数据存储](components-and-storage.md)**。
+
 ## 平台 PostgreSQL
 
 ### 机制
@@ -29,19 +31,13 @@ bash scripts/stack.sh backup     # 默认 postgres + minio
 bash scripts/stack.sh restore <备份目录>
 ```
 
-## KnowFlow MySQL / Elasticsearch
+## KnowFlow MySQL / Infinity
 
-- 数据在 `${DATA_ROOT}/knowflow-mysql`、`knowflow-es`
-- **大版本升级 ES** 需按 Elastic 官方迁移；建议先 backup 卷
+- MySQL 元数据：`${DATA_ROOT}/knowflow-mysql`
+- Infinity 向量索引：`${DATA_ROOT}/knowflow-infinity`（配置 `deploy/knowflow/infinity_conf.toml`）
 - 初始化 SQL：`deploy/knowflow/init.sql`（仅首次空库）
 
-## 从旧栈迁移
-
-若曾使用 `platform/docker-compose` 独立 postgres：
-
-1. 导出旧库：`pg_dump`
-2. 导入新 `zhitan` postgres 卷或改 `DATA_ROOT/postgres`
-3. 确认 PG 版本一致（统一栈为 **16**）
+升级 KnowFlow 前建议 `bash scripts/stack.sh backup`，并保留上述数据卷。
 
 ## 开发注意
 

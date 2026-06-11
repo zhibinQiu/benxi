@@ -26,7 +26,7 @@ SCOPE_TEAM = "team"
 SCOPE_PERSONAL = "personal"
 
 VALID_SCOPES = (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM, SCOPE_PERSONAL)
-# 文档库 Tab：我的 → 小组级 → 部门级 → 公司级（分享另列）
+# 文档库 Tab：个人级 → 小组级 → 部门级 → 公司级（分享另列）
 LIBRARY_TAB_SCOPES = (
     SCOPE_PERSONAL,
     SCOPE_TEAM,
@@ -38,7 +38,7 @@ SCOPE_LABELS = {
     SCOPE_COMPANY: "公司级",
     SCOPE_DEPARTMENT: "部门级",
     SCOPE_TEAM: "小组级",
-    SCOPE_PERSONAL: "我的",
+    SCOPE_PERSONAL: "个人级",
 }
 
 # 绑定组织节点的分级（根=公司，二级=部门，三级=小组）
@@ -47,7 +47,7 @@ DEPT_SCOPES = ORG_SCOPES
 
 
 def content_subscription_import_scope() -> str:
-    """公众号 / RSS / 网站资讯导入文档库时固定为「我的」分级。"""
+    """公众号 / RSS / 网站资讯导入文档库时固定为「个人级」分级。"""
     return SCOPE_PERSONAL
 
 _SCOPE_PERM_PREFIX = {
@@ -259,13 +259,26 @@ def is_access_denied(db: Session, user: User, document: Document) -> bool:
     return row is not None
 
 
-def can_manage_document(db: Session, user: User, document: Document) -> bool:
-    """管理文档状态、删除、恢复（上传者、系统管理员、分级管理员）。"""
+def _scope_default_grants_modify(
+    db: Session, user: User, document: Document
+) -> bool:
+    """组织分级默认：团队成员默认可修改（上传/分享/重建索引/删除）。"""
+    return readable_by_scope_default(db, user, document)
+
+
+def can_modify_document(db: Session, user: User, document: Document) -> bool:
+    """可修改：上传、分享、重建索引、删除、管理状态等。"""
+    if document.deleted_at is not None:
+        return False
+    if is_access_denied(db, user, document):
+        return False
     if user_is_superuser(db, user):
         return True
     if document.owner_id == user.id:
         return True
-    if _has_explicit_permission(db, user, document, PermissionLevel.full.value):
+    if _has_explicit_permission(db, user, document, PermissionLevel.modify.value):
+        return True
+    if _scope_default_grants_modify(db, user, document):
         return True
     scope = _document_scope(db, document)
     if scope in (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM):
@@ -273,13 +286,20 @@ def can_manage_document(db: Session, user: User, document: Document) -> bool:
     return False
 
 
+def can_manage_document(db: Session, user: User, document: Document) -> bool:
+    """兼容：等同 can_modify_document。"""
+    return can_modify_document(db, user, document)
+
+
 def can_grant_document_permissions(db: Session, user: User, document: Document) -> bool:
-    """显式文档授权：仅创建人与系统管理员（无需审核，即时生效）。"""
+    """显式文档授权：创建人、系统管理员、或被授予可修改的用户。"""
     if document.deleted_at is not None:
         return False
     if user_is_superuser(db, user):
         return True
-    return document.owner_id == user.id
+    if document.owner_id == user.id:
+        return True
+    return _has_explicit_permission(db, user, document, PermissionLevel.modify.value)
 
 
 def can_manage_document_denials(db: Session, user: User, document: Document) -> bool:
@@ -311,7 +331,7 @@ def can_read_document(db: Session, user: User, document: Document) -> bool:
         return True
 
     if document.status == DocumentStatus.disabled.value:
-        if not can_manage_document(db, user, document):
+        if not can_modify_document(db, user, document):
             return False
 
     scope = _document_scope(db, document)
@@ -363,42 +383,28 @@ def can_query_document(db: Session, user: User, document: Document) -> bool:
         return False
     if user_is_superuser(db, user):
         return True
+    if document.owner_id == user.id:
+        return True
     if _has_explicit_permission(db, user, document, PermissionLevel.query.value):
         return True
-    if document.owner_id == user.id:
+    if can_modify_document(db, user, document):
         return True
-    if readable_by_scope_default(db, user, document):
-        return True
-    return can_edit_document(db, user, document)
-
-
-def can_edit_document(db: Session, user: User, document: Document) -> bool:
-    """可上传新版本、翻译、对比等（不含删除）。"""
-    if not can_read_document(db, user, document):
-        return False
-    if user_is_superuser(db, user):
-        return True
-    if document.owner_id == user.id:
-        return True
-    if _has_explicit_permission(db, user, document, PermissionLevel.edit.value):
-        return True
-
-    scope = _document_scope(db, document)
-    if scope in (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM):
-        return can_edit_in_scope(db, user, scope)
     return False
 
 
+def can_edit_document(db: Session, user: User, document: Document) -> bool:
+    """兼容旧名：等同 can_modify_document。"""
+    return can_modify_document(db, user, document)
+
+
 def can_use_document(db: Session, user: User, document: Document) -> bool:
-    """兼容旧名：等同 can_edit_document。"""
-    return can_edit_document(db, user, document)
+    """兼容旧名：等同 can_modify_document。"""
+    return can_modify_document(db, user, document)
 
 
 def can_delete_document(db: Session, user: User, document: Document) -> bool:
-    """移入回收站：与 can_manage_document 一致（需文档未在回收站）。"""
-    if document.deleted_at is not None:
-        return False
-    return can_manage_document(db, user, document)
+    """删除文档（含知识库索引）：等同 can_modify_document。"""
+    return can_modify_document(db, user, document)
 
 
 def can_restore_document(db: Session, user: User, document: Document) -> bool:
@@ -412,10 +418,8 @@ def can_restore_document(db: Session, user: User, document: Document) -> bool:
 
 def effective_permission_level(db: Session, user: User, document: Document) -> str | None:
     """当前用户对该文档的综合能力档位（用于界面展示）。"""
-    if can_delete_document(db, user, document):
-        return PermissionLevel.full.value
-    if can_edit_document(db, user, document):
-        return PermissionLevel.edit.value
+    if can_modify_document(db, user, document):
+        return PermissionLevel.modify.value
     if can_query_document(db, user, document):
         return PermissionLevel.query.value
     if can_read_document(db, user, document):
@@ -434,10 +438,8 @@ def can_access_document(
         return can_read_document(db, user, document)
     if level == PermissionLevel.query.value:
         return can_query_document(db, user, document)
-    if level == PermissionLevel.edit.value:
-        return can_edit_document(db, user, document)
-    if level == PermissionLevel.full.value:
-        return can_delete_document(db, user, document)
+    if level == PermissionLevel.modify.value:
+        return can_modify_document(db, user, document)
     return False
 
 
@@ -548,7 +550,7 @@ def library_teams_for_user(db: Session, user: User) -> list[dict]:
 
 
 def library_folders(db: Session, user: User) -> list[dict]:
-    """前端文档库分级 Tab：我的 / 小组级 / 部门级 / 公司级 / 分享。"""
+    """前端文档库分级 Tab：个人级 / 小组级 / 部门级 / 公司级 / 分享。"""
     folders = []
     for scope in LIBRARY_TAB_SCOPES:
         dept_for_perm = None

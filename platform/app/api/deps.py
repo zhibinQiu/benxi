@@ -8,10 +8,14 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import forbidden, unauthorized
-from app.core.permissions import user_dept_ids, user_has_permission, user_permission_codes
+from app.core.permissions import user_has_permission
 from app.core.security import safe_decode_token
 from app.database import get_db
 from app.models.org import User
+from app.services.auth_session_service import (
+    touch_user_last_seen_async,
+    validate_token_version,
+)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -46,6 +50,8 @@ def get_current_user(
     user = db.get(User, user_id)
     if not user or user.status != "active":
         raise unauthorized("User disabled or not found")
+    validate_token_version(user, payload)
+    touch_user_last_seen_async(user.id)
     return user
 
 

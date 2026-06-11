@@ -3,35 +3,36 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.document import Document, DocumentPermission, PermissionLevel
+from app.models.document import Document, PermissionLevel
 from app.models.org import Permission, RolePermission, User, UserRole
 
 LEVEL_ALIASES: dict[str, str] = {
     PermissionLevel.read.value: PermissionLevel.visible.value,
-    PermissionLevel.use.value: PermissionLevel.edit.value,
-    PermissionLevel.delete.value: PermissionLevel.full.value,
+    PermissionLevel.use.value: PermissionLevel.modify.value,
+    PermissionLevel.edit.value: PermissionLevel.modify.value,
+    PermissionLevel.full.value: PermissionLevel.modify.value,
+    PermissionLevel.delete.value: PermissionLevel.modify.value,
 }
 
 LEVEL_ORDER: dict[str, int] = {
-    PermissionLevel.visible.value: 1,
-    PermissionLevel.query.value: 2,
-    PermissionLevel.edit.value: 3,
-    PermissionLevel.full.value: 4,
+    PermissionLevel.visible.value: 0,
+    PermissionLevel.query.value: 1,
+    PermissionLevel.modify.value: 2,
 }
 
 LEVEL_LABELS: dict[str, str] = {
     PermissionLevel.visible.value: "可见",
-    PermissionLevel.query.value: "可查询",
-    PermissionLevel.edit.value: "可编辑",
-    PermissionLevel.full.value: "完全",
+    PermissionLevel.query.value: "可查",
+    PermissionLevel.modify.value: "可修改",
     PermissionLevel.read.value: "可见",
-    PermissionLevel.use.value: "可编辑",
-    PermissionLevel.delete.value: "完全",
+    PermissionLevel.use.value: "可修改",
+    PermissionLevel.edit.value: "可修改",
+    PermissionLevel.full.value: "可修改",
+    PermissionLevel.delete.value: "可修改",
 }
 
 
@@ -98,14 +99,18 @@ DEFAULT_ROLES = {
 
 
 def user_role_codes(db: Session, user_id: uuid.UUID) -> set[str]:
+    from app.core.request_user_cache import cached_per_request
     from app.models.org import Role
 
-    stmt = (
-        select(Role.code)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .where(UserRole.user_id == user_id)
-    )
-    return set(db.scalars(stmt).all())
+    def _load() -> set[str]:
+        stmt = (
+            select(Role.code)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id)
+        )
+        return set(db.scalars(stmt).all())
+
+    return cached_per_request(f"role_codes:{user_id}", _load)
 
 
 def user_is_system_admin(db: Session, user: User) -> bool:
@@ -123,13 +128,18 @@ def describe_user_tier(db: Session, user: User) -> str:
 
 
 def user_permission_codes(db: Session, user_id: uuid.UUID) -> set[str]:
-    stmt = (
-        select(Permission.code)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(UserRole, UserRole.role_id == RolePermission.role_id)
-        .where(UserRole.user_id == user_id)
-    )
-    return set(db.scalars(stmt).all())
+    from app.core.request_user_cache import cached_per_request
+
+    def _load() -> set[str]:
+        stmt = (
+            select(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .where(UserRole.user_id == user_id)
+        )
+        return set(db.scalars(stmt).all())
+
+    return cached_per_request(f"perm_codes:{user_id}", _load)
 
 
 def user_is_superuser(db: Session, user: User) -> bool:
@@ -154,14 +164,23 @@ def user_has_permission(db: Session, user: User, code: str) -> bool:
 
 
 def user_dept_ids(db: Session, user_id: uuid.UUID) -> list[uuid.UUID]:
+    from app.core.request_user_cache import cached_per_request
     from app.core.user_department import user_dept_ids as _user_dept_ids
 
-    return _user_dept_ids(db, user_id)
+    return cached_per_request(
+        f"dept_ids:{user_id}",
+        lambda: _user_dept_ids(db, user_id),
+    )
 
 
 def user_role_ids(db: Session, user_id: uuid.UUID) -> list[uuid.UUID]:
-    stmt = select(UserRole.role_id).where(UserRole.user_id == user_id)
-    return list(db.scalars(stmt).all())
+    from app.core.request_user_cache import cached_per_request
+
+    def _load() -> list[uuid.UUID]:
+        stmt = select(UserRole.role_id).where(UserRole.user_id == user_id)
+        return list(db.scalars(stmt).all())
+
+    return cached_per_request(f"role_ids:{user_id}", _load)
 
 
 def can_access_document(

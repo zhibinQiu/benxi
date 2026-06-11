@@ -6,8 +6,6 @@ import logging
 import uuid
 from typing import Protocol
 
-import httpx
-
 from app.config import get_settings
 from app.integrations.ragflow_client import RagflowClient, RagflowError
 from app.integrations.text_extract import ParsedDocument, local_search

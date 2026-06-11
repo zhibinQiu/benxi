@@ -15,10 +15,9 @@ from app.core.document_scope import (
     can_manage_library_folders,
     resolve_create_params,
 )
-from app.core.permissions import user_is_superuser
 from app.core.exceptions import bad_request, forbidden, not_found
-from app.models.document import Document, DocumentLibraryFolder
-from app.models.document import DocumentStatus
+from app.core.permissions import user_is_superuser
+from app.models.document import Document, DocumentLibraryFolder, DocumentStatus
 from app.models.org import User
 
 FOLDER_KIND_UNCATEGORIZED = "uncategorized"
@@ -95,6 +94,36 @@ def _resolve_folder_params(
     return norm_scope, norm_dept, owner_id
 
 
+def _doc_count_filters(
+    stmt,
+    *,
+    scope: str,
+    dept_id: uuid.UUID | None,
+    owner_id: uuid.UUID | None,
+):
+    from sqlalchemy import exists
+
+    from app.models.document import DocumentVersion
+
+    has_file = exists(
+        select(1).where(
+            DocumentVersion.document_id == Document.id,
+            DocumentVersion.file_size > 0,
+        )
+    )
+    stmt = stmt.where(
+        Document.deleted_at.is_(None),
+        Document.status == DocumentStatus.active.value,
+        Document.scope == scope,
+        has_file,
+    )
+    if scope == SCOPE_PERSONAL and owner_id:
+        stmt = stmt.where(Document.owner_id == owner_id)
+    if scope in ORG_SCOPES and dept_id:
+        stmt = stmt.where(Document.dept_id == dept_id)
+    return stmt
+
+
 def _count_docs_in_folder(
     db: Session,
     *,
@@ -103,43 +132,51 @@ def _count_docs_in_folder(
     dept_id: uuid.UUID | None,
     owner_id: uuid.UUID | None,
 ) -> int:
-    from app.models.document import DocumentVersion
-    from sqlalchemy import exists
-
-    has_file = exists(
-        select(1).where(
-            DocumentVersion.document_id == Document.id,
-            DocumentVersion.file_size > 0,
-        )
-    )
-    stmt = select(func.count()).select_from(Document).where(
-        Document.deleted_at.is_(None),
-        Document.status == DocumentStatus.active.value,
-        Document.scope == scope,
-        has_file,
+    stmt = select(func.count()).select_from(Document)
+    stmt = _doc_count_filters(
+        stmt, scope=scope, dept_id=dept_id, owner_id=owner_id
     )
     if folder_id is None:
         stmt = stmt.where(Document.folder_id.is_(None))
     else:
         stmt = stmt.where(Document.folder_id == folder_id)
-    if scope == SCOPE_PERSONAL and owner_id:
-        stmt = stmt.where(Document.owner_id == owner_id)
-    if scope in ORG_SCOPES and dept_id:
-        stmt = stmt.where(Document.dept_id == dept_id)
     return int(db.scalar(stmt) or 0)
 
 
-def list_kb_folders(
+def _count_docs_grouped_by_folder(
+    db: Session,
+    *,
+    scope: str,
+    folder_ids: list[uuid.UUID],
+    dept_id: uuid.UUID | None,
+    owner_id: uuid.UUID | None,
+) -> dict[uuid.UUID | None, int]:
+    """批量统计各文件夹（含未分类 folder_id=None）文档数。"""
+    stmt = select(Document.folder_id, func.count()).select_from(Document)
+    stmt = _doc_count_filters(
+        stmt, scope=scope, dept_id=dept_id, owner_id=owner_id
+    )
+    if folder_ids:
+        from sqlalchemy import or_
+
+        stmt = stmt.where(
+            or_(
+                Document.folder_id.is_(None),
+                Document.folder_id.in_(folder_ids),
+            )
+        )
+    stmt = stmt.group_by(Document.folder_id)
+    return {row[0]: int(row[1]) for row in db.execute(stmt).all()}
+
+
+def _build_kb_folders_payload(
     db: Session,
     user: User,
     *,
-    scope: str,
-    dept_id: uuid.UUID | None = None,
+    norm_scope: str,
+    norm_dept: uuid.UUID | None,
+    owner_id: uuid.UUID | None,
 ) -> dict:
-    norm_scope, norm_dept, owner_id = _normalize_folder_scope(
-        db, user, scope=scope, dept_id=dept_id
-    )
-
     stmt = select(DocumentLibraryFolder).where(
         DocumentLibraryFolder.scope == norm_scope
     )
@@ -160,15 +197,18 @@ def list_kb_folders(
     can_manage = can_manage_library_folders(
         db, user, norm_scope, dept_id=norm_dept
     )
-    items: list[dict] = []
-
-    uncategorized_count = _count_docs_in_folder(
+    visible_rows = [f for f in rows if _folder_visible_to_user(db, user, f)]
+    folder_ids = [f.id for f in visible_rows]
+    counts = _count_docs_grouped_by_folder(
         db,
         scope=norm_scope,
-        folder_id=None,
+        folder_ids=folder_ids,
         dept_id=norm_dept,
         owner_id=owner_id if norm_scope == SCOPE_PERSONAL else None,
     )
+    items: list[dict] = []
+
+    uncategorized_count = counts.get(None, 0)
     items.append(
         {
             "id": None,
@@ -207,9 +247,7 @@ def list_kb_folders(
             }
         )
 
-    for folder in rows:
-        if not _folder_visible_to_user(db, user, folder):
-            continue
+    for folder in visible_rows:
         items.append(
             {
                 "id": folder.id,
@@ -221,13 +259,7 @@ def list_kb_folders(
                 "kind": "normal",
                 "is_system": False,
                 "system_hint": None,
-                "document_count": _count_docs_in_folder(
-                    db,
-                    scope=norm_scope,
-                    folder_id=folder.id,
-                    dept_id=norm_dept,
-                    owner_id=owner_id if norm_scope == SCOPE_PERSONAL else None,
-                ),
+                "document_count": counts.get(folder.id, 0),
                 "can_manage": can_manage,
             }
         )
@@ -238,6 +270,36 @@ def list_kb_folders(
         "can_manage_folders": can_manage,
         "items": items,
     }
+
+
+def list_kb_folders(
+    db: Session,
+    user: User,
+    *,
+    scope: str,
+    dept_id: uuid.UUID | None = None,
+) -> dict:
+    norm_scope, norm_dept, owner_id = _normalize_folder_scope(
+        db, user, scope=scope, dept_id=dept_id
+    )
+    from app.config import get_settings
+    from app.core.platform_cache import cache_get_or_set, kb_folders_cache_key
+
+    dept_key = str(norm_dept) if norm_dept else None
+    cache_key = kb_folders_cache_key(str(user.id), norm_scope, dept_key)
+    ttl = max(5, int(get_settings().kb_folders_cache_ttl_sec))
+
+    return cache_get_or_set(
+        cache_key,
+        lambda: _build_kb_folders_payload(
+            db,
+            user,
+            norm_scope=norm_scope,
+            norm_dept=norm_dept,
+            owner_id=owner_id,
+        ),
+        ttl=ttl,
+    )
 
 
 def create_kb_folder(

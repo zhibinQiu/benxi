@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
-import uuid
 
 import httpx
 from sqlalchemy import select
@@ -178,6 +176,8 @@ def warm_ragflow_on_login(db: Session, user: User) -> RagflowAccountLink:
 
 def ensure_ragflow_account(db: Session, user: User) -> RagflowAccountLink:
     """平台登录后对齐 KnowFlow 账号；重同步仅在配置开启时执行。"""
+    settings = get_settings()
+    link = get_or_create_link(db, user)
     if settings.knowflow_enabled and settings.ragflow_sync_on_login:
         from app.services.knowflow_catalog_service import reconcile_user_knowflow_catalog
 
@@ -285,7 +285,6 @@ def build_embed_session(
 ) -> dict:
     """开通账号、返回 SSO token；目录同步由 sync_catalog / 配置控制。"""
     from app.core.permissions import user_is_system_admin
-    from app.integrations.knowflow_client import get_knowflow_client_for_user
     from app.services.ragflow_scope_service import (
         dept_suffix_labels_for_theme,
         knowflow_kb_labels_for_user,
@@ -353,12 +352,12 @@ def build_embed_session(
 
             try:
                 if link.ragflow_user_id:
+                    from app.core.platform_admin import is_bootstrap_admin
                     from app.integrations.ragflow_llm_template import (
                         ensure_shared_llm_config,
                         sync_all_tenant_llm_configs,
                     )
                     from app.integrations.ragflow_rbac import ensure_ragflow_global_admin
-                    from app.core.platform_admin import is_bootstrap_admin
 
                     try:
                         ensure_shared_llm_config(link.ragflow_user_id, db=db)

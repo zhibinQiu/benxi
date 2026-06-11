@@ -146,10 +146,17 @@ class KnowledgeGateway:
         background_tasks,
         document_id: uuid.UUID,
         user_id: uuid.UUID,
-    ) -> None:
+        *,
+        version_id: uuid.UUID | None = None,
+    ) -> uuid.UUID | None:
         from app.domains.knowledge.background_sync import schedule_sync_after_ingest
 
-        schedule_sync_after_ingest(background_tasks, document_id, user_id)
+        return schedule_sync_after_ingest(
+            background_tasks,
+            document_id,
+            user_id,
+            version_id=version_id,
+        )
 
     @staticmethod
     def enqueue_sync_after_ingest(

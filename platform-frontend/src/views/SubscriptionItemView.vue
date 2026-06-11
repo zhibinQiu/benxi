@@ -1,20 +1,20 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { NButton, NSpace, NSpin, NTag, NText, useMessage } from "naive-ui";
+import { NButton, NSpace, NSpin, NTag, NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   DOCUMENT_SCOPE_PERSONAL,
   deleteSubscriptionItem,
   fetchSubscriptionItem,
-  importSubscriptionItem,
-} from "../api/client";
+  importSubscriptionItem } from "../api/client";
 import { resolveArticleBody } from "../utils/articleContent";
 import { goBackToEntry } from "../utils/navigationReturn";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 
 const loading = ref(true);
 const importing = ref(false);
@@ -37,7 +37,7 @@ async function load({ notifyOnError = true } = {}) {
   try {
     item.value = await fetchSubscriptionItem(route.params.ref);
   } catch (e) {
-    if (notifyOnError) message.error(e.message);
+    if (notifyOnError) ui.error(e.message);
     if (notifyOnError) {
       goBackToEntry(router, route, { name: "knowledge-subscriptions" });
     }
@@ -50,14 +50,14 @@ async function onImport() {
   importing.value = true;
   try {
     const res = await importSubscriptionItem(route.params.ref);
-    message.success(
+    ui.success(
       res.knowflow_synced
-        ? "已入「我的」文档库并同步知识库"
-        : "已入「我的」文档库",
+        ? "已入「个人级」文档库并同步知识库"
+        : "已入「个人级」文档库",
     );
     await load({ notifyOnError: false });
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     importing.value = false;
   }
@@ -72,10 +72,10 @@ async function onDelete() {
   deleting.value = true;
   try {
     await deleteSubscriptionItem(route.params.ref);
-    message.success("已删除");
+    ui.success("已删除");
     goBackToEntry(router, route, { name: "knowledge-subscriptions" });
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     deleting.value = false;
   }
@@ -113,11 +113,10 @@ onMounted(load);
                   @click="
                     router.push({
                       name: 'documents',
-                      query: { scope: DOCUMENT_SCOPE_PERSONAL },
-                    })
+                      query: { scope: DOCUMENT_SCOPE_PERSONAL }})
                   "
                 >
-                  打开「我的」文档库
+                  打开「个人级」文档库
                 </NButton>
                 <NButton @click="openOriginal">查看原文</NButton>
                 <NButton type="error" secondary :loading="deleting" @click="onDelete">

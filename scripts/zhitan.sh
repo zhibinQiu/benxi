@@ -7,6 +7,8 @@
 #   bash scripts/zhitan.sh stack …      # 透传 stack.sh（build / save / logs …）
 #   bash scripts/zhitan.sh env            # 修正 platform/.env 为本机地址
 #   bash scripts/zhitan.sh remote-dev     # 生成本机 + 远程依赖的 platform/.env
+#   bash scripts/zhitan.sh local-dev      # 本机 venv API + Vite（REMOTE_DEPS=1，推荐）
+#   bash scripts/zhitan.sh local-status   # 检查本机 dev 进程与健康
 #   bash scripts/zhitan.sh knowflow setup|build
 #   bash scripts/zhitan.sh deploy stack push
 #
@@ -87,7 +89,10 @@ EOF
 
 zhitan_stop() {
   bash "$SCRIPT_DIR/stack.sh" down 2>/dev/null || true
-  info "已停止"
+  # shellcheck source=lib/local-dev.sh
+  source "$SCRIPT_DIR/lib/local-dev.sh"
+  local_dev_stop 2>/dev/null || true
+  info "已停止 Docker 栈与本机 dev 进程（API/Vite/Worker）"
 }
 
 zhitan_fix_local_env() {
@@ -98,7 +103,22 @@ zhitan_fix_local_env() {
 
 zhitan_remote_dev() {
   bash "$SCRIPT_DIR/setup-remote-dev-env.sh"
-  info "已生成本机 remote-dev 用 platform/.env，请执行: bash scripts/zhitan.sh dev"
+  info "已生成本机 remote-dev 用 platform/.env"
+  info "验证远程: bash scripts/verify-remote-deps.sh"
+  info "启动本机: bash scripts/zhitan.sh local-dev"
+  info "（全 Docker 开发栈可选: bash scripts/zhitan.sh dev）"
+}
+
+zhitan_local_dev() {
+  # shellcheck source=lib/local-dev.sh
+  source "$SCRIPT_DIR/lib/local-dev.sh"
+  local_dev_start
+}
+
+zhitan_local_status() {
+  # shellcheck source=lib/local-dev.sh
+  source "$SCRIPT_DIR/lib/local-dev.sh"
+  local_dev_status
 }
 
 zhitan_knowflow_setup() {
@@ -122,6 +142,28 @@ zhitan_knowflow_build() {
   info "请使用 stack profile knowflow 或参阅 docs/zh/operations/deployment.md 构建镜像"
 }
 
+zhitan_speech_setup() {
+  require_cmd docker
+  local models_dir="${SPEECH_MODELS_DIR:-$ROOT/data/speech-models}"
+  mkdir -p "$models_dir"
+  export DATA_ROOT="${DATA_ROOT:-$ROOT/data}"
+  info "模型目录: $models_dir"
+  info "构建并启动 speech-api profile …"
+  bash "$SCRIPT_DIR/stack.sh" build --profile speech
+  bash "$SCRIPT_DIR/stack.sh" up --profile speech
+  info "等待 speech-api（首次下载 ModelScope 模型，约 5–15 分钟）…"
+  local i
+  for i in $(seq 1 90); do
+    if docker compose -p zhitan exec -T speech-api python -c \
+      "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')" 2>/dev/null; then
+      info "speech-api 已就绪（容器内网 http://speech-api:8765）"
+      return 0
+    fi
+    sleep 10
+  done
+  warn "speech-api 健康检查超时，请: bash scripts/stack.sh logs speech-api"
+}
+
 usage() {
   cat <<EOF
 用法: bash scripts/zhitan.sh <命令> [参数]
@@ -129,11 +171,14 @@ usage() {
 命令:
   start [stack|dev|knowflow|speech]   默认 stack；dev=热重载
   dev                               同 start dev
-  stop                              stack.sh down
+  stop                              停止 Docker 栈 + 本机 dev 进程
   stack …                           透传 scripts/stack.sh
   env                               本机 platform/.env
-  remote-dev                        本机前端 + 远程依赖（见 setup-remote-dev-env.sh）
+  remote-dev                        生成 REMOTE_DEPS platform/.env
+  local-dev                         本机 API(:8000)+Vite(:40005)+按需 Worker（推荐）
+  local-status                      检查本机 dev 与健康
   knowflow setup | build            KnowFlow 源码
+  speech setup                      构建并启动 speech profile（首次含模型下载）
   deploy stack push                 远程镜像部署
 
 文档: docs/zh/operations/README.md
@@ -160,11 +205,19 @@ main() {
     stop) zhitan_stop ;;
     env|fix-env) zhitan_fix_local_env ;;
     remote-dev) zhitan_remote_dev ;;
+    local-dev|local-up) zhitan_local_dev ;;
+    local-status|local-st) zhitan_local_status ;;
     knowflow)
       case "${1:-}" in
         setup) zhitan_knowflow_setup ;;
         build) zhitan_knowflow_build ;;
         *) error "用法: zhitan.sh knowflow setup|build"; exit 1 ;;
+      esac
+      ;;
+    speech)
+      case "${1:-}" in
+        setup) zhitan_speech_setup ;;
+        *) error "用法: zhitan.sh speech setup"; exit 1 ;;
       esac
       ;;
     deploy) exec bash "$SCRIPT_DIR/deploy.sh" "$@" ;;

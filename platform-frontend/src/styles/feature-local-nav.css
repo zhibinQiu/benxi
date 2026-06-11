@@ -1,5 +1,15 @@
 /* 功能页局部顶栏：与系统 .header 无缝衔接，共用渐变底 */
 
+/* 壳层（顶栏 / 侧栏 / 主区 / 局部顶栏）共用视口固定渐变，避免分块重绘色差 */
+.main-layout .header,
+.main-layout .app-sider.n-layout-sider,
+.main-layout .app-main,
+.feature-local-nav,
+.feature-top-strip {
+  background: var(--platform-shell-gradient) !important;
+  background-attachment: fixed;
+}
+
 .main-layout:has(.app-content .feature-local-nav),
 .main-layout:has(.app-content .feature-top-strip) {
   --feature-nav-inset-x: 20px;
@@ -19,7 +29,6 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  background: var(--platform-chat-gradient);
   margin-left: calc(-1 * var(--feature-nav-inset-x, 20px));
   margin-right: calc(-1 * var(--feature-nav-inset-x, 20px));
 }
@@ -35,7 +44,6 @@
   position: relative;
   flex-shrink: 0;
   box-sizing: border-box;
-  background: var(--platform-chat-gradient) !important;
   border: none !important;
   border-top: none !important;
   border-bottom: none !important;

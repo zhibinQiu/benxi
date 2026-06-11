@@ -1,4 +1,6 @@
 <script setup>
+defineOptions({ name: "DataAnalysisView" });
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   NAlert,
@@ -8,9 +10,7 @@ import {
   NSpin,
   NTag,
   NUpload,
-  NUploadDragger,
-  useMessage,
-} from "naive-ui";
+  NUploadDragger } from "naive-ui";
 import { CloudUploadOutline, SendOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import AnalysisNotebookPanel from "../components/AnalysisNotebookPanel.vue";
@@ -19,11 +19,10 @@ import {
   dataAnalysisChat,
   fetchDataAnalysisMeta,
   fetchDataAnalysisSession,
-  uploadDataAnalysisDataset,
-} from "../api/dataAnalysis";
+  uploadDataAnalysisDataset } from "../api/dataAnalysis";
 
 const STORAGE_KEY = "data-analysis-session";
-const message = useMessage();
+const ui = usePlatformUi();
 
 const meta = ref(null);
 const loadingMeta = ref(true);
@@ -52,8 +51,7 @@ function persistSession() {
     STORAGE_KEY,
     JSON.stringify({
       sessionId: sessionId.value,
-      datasetId: datasetId.value,
-    })
+      datasetId: datasetId.value})
   );
 }
 
@@ -125,9 +123,9 @@ async function onUploadChange({ file }) {
     datasetId.value = data.dataset_id;
     profile.value = data.profile;
     await startSessionWithDataset(data);
-    message.success("数据文件已上传，可开始连续对话分析");
+    ui.success("数据文件已上传，可开始连续对话分析");
   } catch (e) {
-    message.error(e.message || "上传失败");
+    ui.error(e.message || "上传失败");
   } finally {
     uploading.value = false;
   }
@@ -137,11 +135,11 @@ async function sendChat() {
   const text = chatInput.value.trim();
   if (!text) return;
   if (!datasetId.value || !sessionId.value) {
-    message.warning("请先上传 Excel 或 CSV 文件");
+    ui.warning("请先上传 Excel 或 CSV 文件");
     return;
   }
   if (!meta.value?.configured) {
-    message.warning(meta.value?.service_hint || "AI 未配置");
+    ui.warning(meta.value?.service_hint || "AI 未配置");
     return;
   }
   chatting.value = true;
@@ -150,8 +148,7 @@ async function sendChat() {
   try {
     const data = await dataAnalysisChat(sessionId.value, {
       message: text,
-      datasetId: datasetId.value,
-    });
+      datasetId: datasetId.value});
     if (data.session) {
       applySession(data.session);
     } else {
@@ -162,7 +159,7 @@ async function sendChat() {
     }
   } catch (e) {
     appendMessage("assistant", e.message || "分析失败");
-    message.error(e.message || "分析失败");
+    ui.error(e.message || "分析失败");
   } finally {
     chatting.value = false;
   }

@@ -8,32 +8,42 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.document_scope import (
     SCOPE_COMPANY,
     SCOPE_DEPARTMENT,
-    SCOPE_TEAM,
     SCOPE_PERSONAL,
+    SCOPE_TEAM,
     _document_scope,
-    can_delete_document,
-    can_edit_document,
     can_edit_in_scope,
+    can_modify_document,
     can_query_document,
-    can_read_document,
 )
-from app.core.permissions import PermissionLevel, user_dept_ids, user_is_superuser
-from app.config import get_settings
+from app.core.permissions import user_dept_ids, user_is_superuser
 from app.core.user_department import user_department_id
 from app.integrations.ragflow_client import RagflowClient
-from app.integrations.ragflow_kb_acl import grant_kb_user_permission, revoke_kb_user_permission
+from app.integrations.ragflow_kb_acl import (
+    KbPermissionLevel,
+    grant_kb_user_permission,
+    revoke_kb_user_permission,
+)
 from app.integrations.ragflow_rbac import sync_ragflow_global_admin_role
 from app.models.document import Document
 from app.models.org import Department, User, UserDepartment
 from app.models.ragflow_link import RagflowAccountLink
 from app.models.ragflow_scope_dataset import (
     SCOPE_COMPANY as REG_COMPANY,
+)
+from app.models.ragflow_scope_dataset import (
     SCOPE_DEPARTMENT as REG_DEPARTMENT,
-    SCOPE_TEAM as REG_TEAM,
+)
+from app.models.ragflow_scope_dataset import (
     SCOPE_PERSONAL as REG_PERSONAL,
+)
+from app.models.ragflow_scope_dataset import (
+    SCOPE_TEAM as REG_TEAM,
+)
+from app.models.ragflow_scope_dataset import (
     RagflowScopeDataset,
 )
 from app.services.ragflow_identity_service import get_or_create_link
@@ -47,7 +57,6 @@ from app.services.ragflow_naming import (
     dataset_name_for_personal,
     dept_id_from_dataset_name,
     legacy_dataset_name_for_company,
-    legacy_dataset_name_for_dept,
     legacy_dataset_name_for_personal,
     legacy_dataset_name_for_platform_user,
     legacy_scope_dataset_names,
@@ -124,9 +133,9 @@ def _privileged_rag_client(db: Session) -> RagflowClient | None:
     return RagflowClient(session_auth=auth)
 
 
-def _all_knowflow_dataset_ids(db: Session) -> set[str]:
-    """KnowFlow 侧已存在的全部知识库 id（注册表 + 特权列举）。"""
-    ids = _all_registered_dataset_ids(db)
+def _live_knowflow_dataset_ids(db: Session) -> set[str]:
+    """KnowFlow 侧当前真实存在的知识库 id（仅特权列举，不含已删但仍登记的注册表项）。"""
+    ids: set[str] = set()
     priv = _privileged_rag_client(db)
     if not priv:
         return ids
@@ -137,6 +146,31 @@ def _all_knowflow_dataset_ids(db: Session) -> set[str]:
                 ids.add(ds_id)
     except Exception as e:
         logger.warning("特权列举 KnowFlow 知识库失败: %s", e)
+    return ids
+
+
+def _dataset_exists_in_knowflow(db: Session, dataset_id: str) -> bool:
+    """知识库在 KnowFlow 中是否仍存在（个人库走租户可见性，其余走特权列举）。"""
+    ds_id = (dataset_id or "").strip()
+    if not ds_id:
+        return False
+    reg = _registry_for_dataset_id(db, ds_id)
+    if reg and reg.scope == REG_PERSONAL:
+        try:
+            owner_uid = uuid.UUID(reg.scope_key)
+        except ValueError:
+            owner_uid = None
+        if owner_uid:
+            owner = db.get(User, owner_uid)
+            if owner:
+                return _personal_dataset_in_user_tenant(db, owner, ds_id)
+    return ds_id in _live_knowflow_dataset_ids(db)
+
+
+def _all_knowflow_dataset_ids(db: Session) -> set[str]:
+    """KnowFlow 侧已存在的全部知识库 id（注册表 + 特权列举）。"""
+    ids = _all_registered_dataset_ids(db)
+    ids.update(_live_knowflow_dataset_ids(db))
     return ids
 
 
@@ -556,12 +590,25 @@ def _provision_rag_for_scope(db: Session, actor: User, scope: str, kf) -> Ragflo
 
 def repair_stale_scope_registries(db: Session, kf) -> int:
     """删除 KnowFlow 中已不存在、但注册表仍指向的旧知识库记录。"""
-    existing_ids = _all_knowflow_dataset_ids(db)
+    existing_ids = _live_knowflow_dataset_ids(db)
     if not existing_ids:
         return 0
     removed = 0
     for reg in list(db.scalars(select(RagflowScopeDataset)).all()):
-        if reg.ragflow_dataset_id in existing_ids:
+        ds_id = (reg.ragflow_dataset_id or "").strip()
+        if not ds_id:
+            db.delete(reg)
+            removed += 1
+            continue
+        if reg.scope == REG_PERSONAL:
+            try:
+                owner_uid = uuid.UUID(reg.scope_key)
+            except ValueError:
+                owner_uid = None
+            owner = db.get(User, owner_uid) if owner_uid else None
+            if owner and _personal_dataset_in_user_tenant(db, owner, ds_id):
+                continue
+        elif ds_id in existing_ids:
             continue
         db.delete(reg)
         removed += 1
@@ -933,7 +980,7 @@ def ensure_scope_dataset(
                         db, actor, ds_id, owner_ragflow_user_id, rag
                     )
                 return ds_id
-        elif ds_id in _all_knowflow_dataset_ids(db):
+        elif _dataset_exists_in_knowflow(db, ds_id):
             rag = _provision_rag_for_scope(db, actor, scope, kf) or kf._rag
             _align_dataset_display_name(rag, ds_id, name)
             return ds_id
@@ -1066,10 +1113,8 @@ def kb_level_for_user_on_document(db: Session, user: User, document: Document) -
     """平台文档权限 → KnowFlow 知识库权限（仅「可查询」及以上可检索）。"""
     if not can_query_document(db, user, document):
         return None
-    if can_delete_document(db, user, document):
+    if can_modify_document(db, user, document):
         return "admin"
-    if can_edit_document(db, user, document):
-        return "write"
     return "read"
 
 
@@ -1130,6 +1175,70 @@ def _revoke_explicit_share_kb_grants_on_canonical(
         if rid and revoke_kb_user_permission(dataset_id, rid):
             revoked += 1
     return revoked
+
+
+def prepare_dataset_for_upload(
+    db: Session,
+    document: Document,
+    dataset_id: str,
+    *,
+    actor: User,
+    provision_user: User,
+) -> None:
+    """上传/重同步前对齐 KnowFlow 知识库 ACL，避免会话上传触发「权限检查」失败。"""
+    ds_id = (dataset_id or "").strip()
+    if not ds_id:
+        return
+
+    from app.models.ragflow_document_link import RagflowDocumentLink
+
+    link = db.scalar(
+        select(RagflowDocumentLink).where(
+            RagflowDocumentLink.platform_document_id == document.id
+        )
+    )
+    if link and (link.dataset_id or "").strip() == ds_id:
+        sync_document_kb_grants(db, document)
+    else:
+        scope = _document_scope(db, document)
+        if scope == SCOPE_PERSONAL:
+            owner = db.get(User, document.owner_id)
+            if owner:
+                rid = _ragflow_user_id(db, owner.id)
+                if rid:
+                    grant_kb_user_permission(ds_id, rid, "admin")
+        elif scope in (SCOPE_DEPARTMENT, SCOPE_TEAM) and document.dept_id:
+            _sync_dept_kb_grants(db, document.dept_id, ds_id, doc_scope=scope)
+        elif scope == SCOPE_COMPANY:
+            _sync_company_kb_grants(db, ds_id)
+
+    if _is_mapped_account_mode():
+        from app.core.phone import bootstrap_login_id
+        from app.integrations.ragflow_rbac import ensure_ragflow_global_admin
+
+        bootstrap = db.scalar(select(User).where(User.phone == bootstrap_login_id()))
+        if bootstrap:
+            rid = _ragflow_user_id(db, bootstrap.id)
+            if rid:
+                ensure_ragflow_global_admin(rid)
+
+    seen: set[uuid.UUID] = set()
+    for uid in (provision_user.id, actor.id):
+        if uid in seen:
+            continue
+        seen.add(uid)
+        u = db.get(User, uid)
+        if not u:
+            continue
+        level = kb_level_for_user_on_document(db, u, document)
+        if not level:
+            continue
+        kb_level: KbPermissionLevel = (
+            level if level in ("write", "admin") else "write"
+        )
+        rid = _ragflow_user_id(db, u.id)
+        if rid:
+            grant_kb_user_permission(ds_id, rid, kb_level)
 
 
 def sync_document_kb_grants(db: Session, document: Document) -> int:

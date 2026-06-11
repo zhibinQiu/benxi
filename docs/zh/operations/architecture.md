@@ -10,28 +10,28 @@
 
 ```mermaid
 flowchart TB
-  subgraph client [浏览器]
-    SPA[Vue 3 SPA /ai/]
+  subgraph client["浏览器"]
+    SPA["Vue 3 SPA /ai/"]
   end
-  subgraph edge [frontend 容器 Nginx :80 → :40005]
-    NGX[Nginx 反代]
+  subgraph edge["frontend Nginx :40005"]
+    NGX["Nginx 反代"]
   end
-  subgraph app [应用层]
-    API[FastAPI api :8000]
-    WRK[Celery worker]
+  subgraph app["应用层"]
+    API["FastAPI api :8000"]
+    WRK["Celery worker"]
   end
-  subgraph data [数据与对象]
-    PG[(PostgreSQL)]
-    RD[(Redis)]
-    MN[MinIO]
+  subgraph data["数据与对象"]
+    PG[("PostgreSQL")]
+    RD[("Redis")]
+    MN["MinIO"]
   end
-  subgraph ai [AI 与翻译]
-    P2Z[pdf2zh-api :7861]
-    SP[speech-api :8765]
-    KF[KnowFlow / RAGFlow]
+  subgraph ai["AI 与翻译"]
+    P2Z["pdf2zh-api :7861"]
+    SP["speech-api :8765"]
+    KF["KnowFlow RAGFlow"]
   end
   SPA --> NGX
-  NGX -->|/ai/api/*| API
+  NGX -->|/ai/api| API
   NGX -->|/ragflow-ui /v1| API
   API --> PG
   API --> RD
@@ -55,7 +55,7 @@ flowchart TB
 | **MinIO** | S3 兼容 | 文档二进制、版本文件 | 与 KnowFlow 共用，减少重复对象存储 |
 | **KnowFlow + RAGFlow** | profile knowflow | 向量库、切片、RAG UI iframe | **保留原厂 UI 与溯源**；平台做 SSO、分级 dataset、文档同步，不重写 RAG 前端 |
 | **FunASR** | profile speech | 语音转写、说话人分离 | 可离线部署模型；与 DeepSeek 总结解耦 |
-| **Elasticsearch 8** | KnowFlow 专用 | RAGFlow 检索索引 | KnowFlow 栈内隔离，不暴露公网 |
+| **Infinity** | infiniflow/infinity | RAGFlow 向量与全文检索 | KnowFlow 栈内隔离，不暴露公网；`DOC_ENGINE=infinity` |
 | **Gotenberg** | KnowFlow | Office → PDF 转换 | 容器化文档预处理 |
 
 ## 功能插件模型
@@ -82,9 +82,9 @@ flowchart TB
 | 项 | 说明 |
 |----|------|
 | 版本源 | 仓库根 `VERSION`（当前 3.9.3）→ `ZHITAN_VERSION` 镜像 tag |
-| 开发入口 | `bash scripts/zhitan.sh dev [--profile knowflow]` |
+| 开发入口 | `bash scripts/zhitan.sh dev`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
-| 远程依赖 | `bash scripts/zhitan.sh remote-dev` + `dev` |
+| 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |
 | 应用配置 | `platform/.env`；栈级 `/.env` 由 `setup-stack-env.sh` 合并 |
 
 新增 **资源管理**（系统设置）：在线配置 LLM / KnowFlow / OCR 等，`GET /api/v1/system/client-config` 供前端启动拉取主题与 API 根地址。

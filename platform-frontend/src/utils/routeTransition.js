@@ -5,7 +5,6 @@ let skipAfterLoginMotion = false;
 export const SUBSYSTEM_PAGE_ROUTES = new Set([
   "ai-tools",
   "translate",
-  "rag",
   "smart-data-query",
   "data-analysis",
   "carbon-qa",
@@ -15,7 +14,8 @@ export const SUBSYSTEM_PAGE_ROUTES = new Set([
   "ocr",
   "compare",
   "assist-writing",
-  "knowledge-qa",
+  "knowledge-search",
+  "knowledge-graph",
   "subscription-item",
   "wechat-mp",
   "wechat-mp-article",

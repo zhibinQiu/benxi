@@ -1,8 +1,10 @@
-# KnowFlow / RAGFlow（profile: knowflow）
+# KnowFlow / RAGFlow profile（由 stack.sh 与 compose.yaml 合并加载）
 #
-# 并入根 compose: bash scripts/stack.sh up --profile knowflow
-# 共用栈内 minio、redis；不单独暴露端口
-# 配置: deploy/knowflow/settings.yaml、theme/、nginx/
+# 启动: bash scripts/stack.sh up --profile knowflow
+# 共用栈内 minio、redis；默认不映射主机端口
+# 向量库: Infinity（DOC_ENGINE=infinity，非 Elasticsearch）
+# 配置: settings.yaml、infinity_conf.toml、theme/、nginx/
+# 文档: docs/zh/operations/config-and-scripts.md
 
 services:
   knowflow-mysql:
@@ -44,44 +46,38 @@ services:
         aliases:
           - mysql
 
-  knowflow-es:
+  knowflow-infinity:
     profiles: ["knowflow"]
-    image: elasticsearch:${STACK_VERSION:-8.11.3}
-    container_name: ragflow-es-01
+    image: ${INFINITY_IMAGE:-infiniflow/infinity:${INFINITY_VERSION:-v0.6.0-dev5}}
+    container_name: ragflow-infinity
     restart: unless-stopped
+    command: ["-f", "/infinity_conf.toml"]
     environment:
-      node.name: es01
-      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-infini_rag_flow}
-      bootstrap.memory_lock: "false"
-      discovery.type: single-node
-      xpack.security.enabled: "true"
-      xpack.security.http.ssl.enabled: "false"
-      xpack.security.transport.ssl.enabled: "false"
-      cluster.routing.allocation.disk.watermark.low: 5gb
-      cluster.routing.allocation.disk.watermark.high: 3gb
-      cluster.routing.allocation.disk.watermark.flood_stage: 2gb
       TZ: ${TIMEZONE:-Asia/Shanghai}
     mem_limit: ${MEM_LIMIT:-8073741824}
     ulimits:
-      memlock:
-        soft: -1
-        hard: -1
+      nofile:
+        soft: 500000
+        hard: 500000
     volumes:
-      - ${DATA_ROOT:-./data}/knowflow-es:/usr/share/elasticsearch/data
+      - ${DATA_ROOT:-./data}/knowflow-infinity:/var/infinity
+      - ./deploy/knowflow/infinity_conf.toml:/infinity_conf.toml:ro
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "curl -fsS -u elastic:${ELASTIC_PASSWORD:-infini_rag_flow} http://127.0.0.1:9200 >/dev/null || curl -fsS http://127.0.0.1:9200 >/dev/null",
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:23820/admin/node/current",
         ]
       interval: 15s
       timeout: 10s
       retries: 30
-      start_period: 60s
+      start_period: 45s
     networks:
       zhitan:
         aliases:
-          - es01
+          - infinity
 
   knowflow-gotenberg:
     profiles: ["knowflow"]
@@ -108,7 +104,7 @@ services:
     depends_on:
       knowflow-mysql:
         condition: service_healthy
-      knowflow-es:
+      knowflow-infinity:
         condition: service_healthy
       minio:
         condition: service_started
@@ -117,6 +113,8 @@ services:
       HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
       MACOS: ${MACOS:-0}
       LIGHTEN: ${KNOWFLOW_LIGHTEN:-1}
+      DOC_ENGINE: ${DOC_ENGINE:-infinity}
+      INFINITY_HOST: knowflow-infinity
       KNOWFLOW_API_URL: http://knowflow-backend:5000
       GOTENBERG_URL: http://knowflow-gotenberg:3000
       MINIO_HOST: minio
@@ -176,8 +174,8 @@ services:
       MYSQL_PORT: "3306"
       MINIO_HOST: minio
       MINIO_PORT: "9000"
-      ES_HOST: knowflow-es
-      ES_PORT: "9200"
+      DOC_ENGINE: ${DOC_ENGINE:-infinity}
+      INFINITY_HOST: knowflow-infinity
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       GOTENBERG_URL: http://knowflow-gotenberg:3000

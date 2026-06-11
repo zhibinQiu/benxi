@@ -17,13 +17,14 @@ class DocumentStatus(str, enum.Enum):
 
 
 class PermissionLevel(str, enum.Enum):
-    """文档显式授权级别（由低到高：可见 < 可查询 < 可编辑 < 完全）。"""
+    """文档显式授权级别（由低到高：0 可见 < 1 可查 < 2 可修改）。"""
 
     visible = "visible"
     query = "query"
+    modify = "modify"
+    # 兼容旧数据与 API
     edit = "edit"
     full = "full"
-    # 兼容旧数据与 API
     read = "read"
     use = "use"
     delete = "delete"
@@ -92,7 +93,7 @@ class Document(Base):
 
 
 class DocumentLibraryFolder(Base):
-    """文档库知识库文件夹（公司 / 部门 / 我的）。"""
+    """文档库知识库文件夹（公司 / 部门 / 个人级）。"""
 
     __tablename__ = "document_library_folders"
     __table_args__ = (
@@ -150,6 +151,7 @@ class DocumentVersion(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    change_description: Mapped[str] = mapped_column(Text, default="", server_default="")
 
     document: Mapped[Document] = relationship(
         back_populates="versions",

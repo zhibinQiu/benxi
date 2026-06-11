@@ -26,9 +26,9 @@ from app.services.documents.crud import (
     list_document_versions,
     move_document_to_folder,
     prepare_upload,
-    save_upload_blob,
     publish_document_scope,
     resolve_current_version,
+    save_upload_blob,
     update_document,
     update_document_status,
 )

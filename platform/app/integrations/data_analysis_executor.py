@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import base64
 import json
 import os
 import re
@@ -11,7 +10,6 @@ import subprocess
 import sys
 import tempfile
 import textwrap
-import warnings
 from pathlib import Path
 
 from app.config import get_settings

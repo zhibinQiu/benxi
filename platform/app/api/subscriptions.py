@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_any_permission
 from app.database import get_db
@@ -19,7 +20,6 @@ from app.schemas.subscription import (
     SubscriptionItemOut,
 )
 from app.services import subscription_service as svc
-from sqlalchemy.orm import Session
 
 router = APIRouter(
     prefix="/subscriptions",

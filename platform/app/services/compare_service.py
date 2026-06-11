@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.permissions import PermissionLevel, can_access_document
+from app.integrations.knowflow_client import get_knowflow_client_for_user
 from app.integrations.text_extract import (
     ParsedDocument,
     extract_text_from_bytes,
@@ -19,10 +21,7 @@ from app.integrations.text_extract import (
 from app.models.compare import CompareDiffItem, CompareJob, CompareSearchHit, CompareStatus
 from app.models.document import Document, DocumentVersion
 from app.models.org import User
-from app.config import get_settings
-from app.integrations.knowflow_client import get_knowflow_client_for_user
 from app.services.document_service import get_document, list_compareable_documents
-from app.services.ragflow_sync_service import sync_document_to_knowflow
 from app.storage.object_store import get_object_store
 
 
@@ -135,6 +134,70 @@ def list_compare_documents(
     return items, total
 
 
+def compute_paragraph_diffs(
+    base: ParsedDocument,
+    other: ParsedDocument,
+) -> list[dict]:
+    """段落级 diff（左=base，右=other）。"""
+    return _diff_pair(base, other)
+
+
+def load_parsed_version(db: Session, version: DocumentVersion) -> ParsedDocument:
+    store = get_object_store()
+    data = store.get_object_bytes(version.file_key)
+    return extract_text_from_bytes(
+        data,
+        document_id=version.document_id,
+        file_name=version.file_name,
+        mime_type=version.mime_type,
+    )
+
+
+def get_document_content_for_version(
+    db: Session,
+    user: User,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+) -> dict:
+    docs = validate_document_scope(db, user, [document_id], min_count=1, max_count=1)
+    doc = docs[0]
+    version = db.get(DocumentVersion, version_id)
+    if not version or version.document_id != doc.id or version.file_size <= 0:
+        from app.core.exceptions import bad_request
+
+        raise bad_request("版本不存在或未上传")
+
+    from app.services.document_version_block_service import (
+        blocks_to_content_dict,
+        ensure_version_blocks,
+    )
+
+    blocks = ensure_version_blocks(db, version)
+    if blocks:
+        payload = blocks_to_content_dict(blocks)
+    else:
+        parsed = load_parsed_version(db, version)
+        payload = {
+            "pages": parsed.pages,
+            "full_text": parsed.full_text,
+            "parse_quality": parsed.parse_quality,
+            "blocks": [],
+        }
+
+    return {
+        "document_id": str(document_id),
+        "version_id": str(version_id),
+        "version_no": version.version_no,
+        "file_name": version.file_name,
+        "full_text": payload["full_text"],
+        "pages": payload["pages"],
+        "blocks": payload.get("blocks") or [],
+        "parse_quality": payload.get("parse_quality"),
+        "warning": None,
+        "char_count": len(payload.get("full_text") or ""),
+    }
+
+
 def load_parsed_documents(db: Session, docs: list[Document]) -> list[ParsedDocument]:
     store = get_object_store()
     parsed: list[ParsedDocument] = []
@@ -186,6 +249,39 @@ def _diff_pair(
             }
         )
     return items
+
+
+def _diff_pair_git_style(
+    base: ParsedDocument,
+    other: ParsedDocument,
+) -> list[dict]:
+    """跨文档全文 unified diff（与单文档 Git diff 解析一致）。"""
+    from app.services.document_git_service import parse_git_unified_diff
+
+    left_lines = (base.full_text or "").splitlines()
+    right_lines = (other.full_text or "").splitlines()
+    diff_lines = difflib.unified_diff(
+        left_lines,
+        right_lines,
+        fromfile=base.file_name or "参照",
+        tofile=other.file_name or "对比",
+        lineterm="",
+    )
+    items = parse_git_unified_diff("\n".join(diff_lines))
+    if items:
+        return [
+            {
+                "diff_type": it["diff_type"],
+                "text_left": it.get("text_left"),
+                "text_right": it.get("text_right"),
+                "anchor_json": {
+                    **(it.get("anchor_json") or {}),
+                    "kind": "git_hunk",
+                },
+            }
+            for it in items
+        ]
+    return _diff_pair(base, other)
 
 
 def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
@@ -244,7 +340,7 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
             if not other:
                 continue
             pair_key = f"{base_id}:{did}"
-            for item in _diff_pair(base_parsed, other):
+            for item in _diff_pair_git_style(base_parsed, other):
                 db.add(
                     CompareDiffItem(
                         job_id=job.id,
@@ -281,13 +377,32 @@ def _sync_ragflow_map(
     *,
     sync_knowflow: bool,
 ) -> dict[str, str]:
+    """返回已有索引映射，并为每份文档提交后台索引任务（不阻塞对比流程）。"""
     if not sync_knowflow:
         return {}
-    ragflow_map: dict[str, str] = {}
+    from app.domains.knowledge.gateway import knowledge
+    from app.services.document_service import resolve_current_version
+    from app.services.knowledge_sync_job_service import enqueue_document_knowledge_index
+    from app.services.ragflow_sync_service import allowed_ragflow_doc_map
+
+    ids = [str(d.id) for d in docs]
+    ragflow_map = allowed_ragflow_doc_map(db, user, ids)
+    if not knowledge.enabled():
+        return ragflow_map
+
     for doc in docs:
-        rid = sync_document_to_knowflow(db, user, doc)
-        if rid:
-            ragflow_map[str(doc.id)] = rid
+        version_id = None
+        version = resolve_current_version(db, doc)
+        if version:
+            version_id = version.id
+        enqueue_document_knowledge_index(
+            db,
+            user_id=user.id,
+            document_id=doc.id,
+            version_id=version_id,
+            force=True,
+            document_title=doc.title,
+        )
     return ragflow_map
 
 
@@ -485,11 +600,7 @@ def create_compare_job(
         docs = validate_compare_documents(
             db, user, [left_document_id, right_document_id], min_count=2, max_count=2
         )
-        ragflow_map: dict[str, str] = {}
-        for doc in docs:
-            rid = sync_document_to_knowflow(db, user, doc)
-            if rid:
-                ragflow_map[str(doc.id)] = rid
+        ragflow_map = _sync_ragflow_map(db, user, docs, sync_knowflow=True)
         payload = dict(job.payload or {})
         knowflow = payload.get("knowflow") or {}
         knowflow["ragflow_doc_map"] = ragflow_map

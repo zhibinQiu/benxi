@@ -1,17 +1,24 @@
 # 配置说明
 
+> Compose 文件合并顺序、脚本职责、Mermaid 文档配置见 **[配置文件与脚本](config-and-scripts.md)**。
+
 ## 配置文件一览
 
 | 文件 | 用途 | 提交 Git |
 |------|------|----------|
 | **`.env`**（仓库根） | 统一栈运行时；compose `env_file` | 否 |
 | **`.env.stack.example`** | 栈模板：端口、镜像、profile | 是 |
+| **`.env.server.deps.example`** | 远程依赖服务器模板（`EXPOSE_DEPS=1`） | 是 |
 | **`platform/.env.example`** | 业务密钥与功能开关模板 | 是 |
+| **`platform/.env.remote.example`** | remote-dev 本机模板 | 是 |
 | **`platform/.env`** | 本地密钥源；可被 merge 进根 `.env` | 通常否 |
 | **`platform/deploy.target`** | SSH 部署目标 | 否 |
 | **`deploy/knowflow/settings.yaml`** | knowflow-backend 业务配置 | 是 |
-| **`compose.yaml`** | 核心服务与环境默认值 | 是 |
-| **`compose.dev.yaml`** | 开发覆盖 | 是 |
+| **`compose.yaml`** | 核心服务（基础编排） | 是 |
+| **`compose.dev.yaml`** | 开发热重载覆盖 | 是 |
+| **`compose.mirror.yaml`** | 国内镜像加速 | 是 |
+| **`compose.expose-deps.yaml`** | 远程依赖端口映射 | 是 |
+| **`deploy/knowflow.yml`** | KnowFlow profile 服务 | 是 |
 
 ## 根 `.env` 关键变量
 
@@ -43,7 +50,9 @@
 | `KNOWFLOW_UI_PROXY_PREFIX` | HTML 静态资源前缀；与 PUBLIC_URL 路径一致（见 `knowflow_ui_asset_prefix`） |
 | `RAGFLOW_API_URL` | 平台后端调 RAGFlow API：`http://ragflow:9380` |
 | `RAGFLOW_ACCOUNT_MODE` | `mapped`（每用户独立）或 `shared` |
-| `MYSQL_PASSWORD` / `ELASTIC_PASSWORD` | KnowFlow 栈密码 |
+| `MYSQL_PASSWORD` | KnowFlow MySQL 密码 |
+| `DOC_ENGINE` | 向量库引擎，固定 `infinity` |
+| `INFINITY_VERSION` | Infinity 镜像版本（默认 `v0.6.0-dev5`） |
 
 ### 业务（见 platform/.env.example）
 

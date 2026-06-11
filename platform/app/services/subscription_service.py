@@ -9,10 +9,9 @@ from datetime import datetime
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.integrations.html_markdown import html_to_markdown
-
 from app.core.document_scope import content_subscription_import_scope
 from app.core.exceptions import bad_request
+from app.integrations.html_markdown import html_to_markdown
 from app.integrations.web_article_fetcher import (
     WebArticleFetchError,
     fetch_web_article,

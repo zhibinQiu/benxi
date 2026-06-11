@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# 服务器依赖栈：仅 postgres/redis/minio/pdf2zh/speech/knowflow(Infinity)
-# 路径默认 /root/qzb/lvye；本机前后端用 bash scripts/zhitan.sh remote-dev 连接
+# 远程依赖栈：服务器跑 Postgres/Redis/MinIO/KnowFlow 等，本机跑 API+前端
 #
 #   bash scripts/server-deps.sh sync
 #   bash scripts/server-deps.sh up
@@ -8,6 +7,7 @@
 #   bash scripts/server-deps.sh status
 #   bash scripts/server-deps.sh cleanup
 #
+# 编排统一走 scripts/stack.sh（EXPOSE_DEPS=1 + compose.expose-deps.yaml）
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,7 +57,6 @@ cmd_push_images() {
   info "镜像导入完成"
 }
 
-# 在 amd64 服务器上复用 /root/qzb/zhitanAI 源码 + 语音模型缓存重新构建（勿从 M1 推镜像）
 cmd_rebuild_amd64() {
   info "服务器 amd64 重建 pdf2zh / speech（复用 zhitanAI 源码与模型）"
   cmd_sync
@@ -67,10 +66,9 @@ cmd_rebuild_amd64() {
   remote_shell <<'REMOTE'
 set -euo pipefail
 cd "${DEPLOY_PATH:-/root/qzb/lvye}"
-ver="${ZHITAN_VERSION:-${DEFAULT_VER}}"
+ver="${ZHITAN_VERSION:-3.9.3}"
 mkdir -p data/speech-models data/pdf2zh-config
 
-# 移除 M1 误推的 arm64 镜像
 docker rmi -f "zhitan-pdf2zh:${ver}" "zhitan-speech:${ver}" 2>/dev/null || true
 
 if [[ -d /root/qzb/zhitanAI/.run/speech-models ]]; then
@@ -87,20 +85,18 @@ docker build -t "zhitan-speech:${ver}-amd64" \
   build/speech-service
 
 echo "[server-deps] 构建 pdf2zh (amd64，首次约 20–40 分钟) …"
-cd /root/qzb/zhitanAI
-docker compose -p zhitanai-build -f platform/docker-compose.yml -f platform/docker-compose.prod.yml \
-  -f platform/docker-compose.mirror.yml build pdf2zh-api
-img="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'pdf2zh-api|pdf2zh' | head -1)"
-docker tag "$img" "zhitan-pdf2zh:${ver}-amd64"
+cd "${DEPLOY_PATH}"
+bash scripts/stack.sh build pdf2zh-api
+docker tag "zhitan-pdf2zh:${ver}" "zhitan-pdf2zh:${ver}-amd64" 2>/dev/null || \
+  docker tag "$(docker images --format '{{.Repository}}:{{.Tag}}' | grep zhitan-pdf2zh | head -1)" "zhitan-pdf2zh:${ver}-amd64"
 
-grep -q '^PDF2ZH_IMAGE=' "${DEPLOY_PATH}/.env" && sed -i "s|^PDF2ZH_IMAGE=.*|PDF2ZH_IMAGE=zhitan-pdf2zh:${ver}-amd64|" "${DEPLOY_PATH}/.env" || echo "PDF2ZH_IMAGE=zhitan-pdf2zh:${ver}-amd64" >> "${DEPLOY_PATH}/.env"
-grep -q '^SPEECH_IMAGE=' "${DEPLOY_PATH}/.env" && sed -i "s|^SPEECH_IMAGE=.*|SPEECH_IMAGE=zhitan-speech:${ver}-amd64|" "${DEPLOY_PATH}/.env" || echo "SPEECH_IMAGE=zhitan-speech:${ver}-amd64" >> "${DEPLOY_PATH}/.env"
+grep -q '^PDF2ZH_IMAGE=' .env && sed -i "s|^PDF2ZH_IMAGE=.*|PDF2ZH_IMAGE=zhitan-pdf2zh:${ver}-amd64|" .env || echo "PDF2ZH_IMAGE=zhitan-pdf2zh:${ver}-amd64" >> .env
+grep -q '^SPEECH_IMAGE=' .env && sed -i "s|^SPEECH_IMAGE=.*|SPEECH_IMAGE=zhitan-speech:${ver}-amd64|" .env || echo "SPEECH_IMAGE=zhitan-speech:${ver}-amd64" >> .env
 echo "[server-deps] amd64 镜像就绪"
 REMOTE
   info "重建完成，执行: bash scripts/server-deps.sh up"
 }
 
-# 在 amd64 服务器上构建（同步 speech-service + pdf2zh Dockerfile）
 cmd_build_images() {
   info "同步构建上下文 → ${DEPLOY_HOST}:${DEPLOY_PATH}/build"
   ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/build/speech-service' '${DEPLOY_PATH}/build/pdf2zh'"
@@ -114,7 +110,7 @@ cmd_build_images() {
   remote_shell <<'REMOTE'
 set -euo pipefail
 cd "${DEPLOY_PATH:-/root/qzb/lvye}"
-ver="${ZHITAN_VERSION:-${DEFAULT_VER}}"
+ver="${ZHITAN_VERSION:-3.9.3}"
 mkdir -p data/speech-models data/pdf2zh-config
 if [[ -d /root/qzb/zhitanAI/.run/speech-models ]] && [[ -z "$(ls -A data/speech-models 2>/dev/null)" ]]; then
   cp -a /root/qzb/zhitanAI/.run/speech-models/. data/speech-models/
@@ -122,7 +118,7 @@ fi
 echo "[server-deps] 构建 zhitan-speech:${ver} (amd64) …"
 docker build -t "zhitan-speech:${ver}" build/speech-service
 echo "[server-deps] 构建 zhitan-pdf2zh:${ver} (amd64，首次较慢) …"
-docker build -t "zhitan-pdf2zh:${ver}" build/pdf2zh
+bash scripts/stack.sh build pdf2zh-api
 echo "[server-deps] amd64 镜像构建完成"
 REMOTE
   info "构建完成，执行: bash scripts/server-deps.sh up"
@@ -135,7 +131,6 @@ cmd_sync() {
     "$ROOT/compose.yaml" \
     "$ROOT/compose.mirror.yaml" \
     "$ROOT/compose.expose-deps.yaml" \
-    "$ROOT/compose.server-deps.yaml" \
     "$ROOT/.env.server.deps.example" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
   rsync -avz "$ROOT/deploy/" "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/deploy/"
@@ -144,6 +139,8 @@ cmd_sync() {
     "$ROOT/scripts/stack.sh" \
     "$ROOT/scripts/setup-stack-env.sh" \
     "$ROOT/scripts/setup-remote-dev-env.sh" \
+    "$ROOT/scripts/verify-remote-deps.sh" \
+    "$ROOT/scripts/lib/" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/scripts/"
   rsync -avz "$ROOT/docs/zh/operations/server-deps.md" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/README.md"
@@ -165,53 +162,40 @@ cd "${DEPLOY_PATH:-/root/qzb/lvye}"
 set -a
 source .env
 set +a
-export EXPOSE_DEPS="${EXPOSE_DEPS:-1}"
+export EXPOSE_DEPS=1
 mkdir -p "${DATA_ROOT:-./data}"
 
-compose() {
-  local -a args=(docker compose -p "${COMPOSE_PROJECT_NAME:-lvye}" -f compose.yaml)
-  [[ -f compose.mirror.yaml && "${STACK_USE_MIRROR:-1}" == 1 ]] && args+=(-f compose.mirror.yaml)
-  args+=(-f deploy/knowflow.yml)
-  [[ -f deploy/knowflow.mirror.yaml && "${STACK_USE_MIRROR:-1}" == 1 ]] && args+=(-f deploy/knowflow.mirror.yaml)
-  args+=(-f compose.server-deps.yaml)
-  [[ -f compose.expose-deps.yaml && "${EXPOSE_DEPS:-1}" == 1 ]] && args+=(-f compose.expose-deps.yaml)
-  args+=(--profile knowflow --profile speech)
-  "${args[@]}" "$@"
-}
-
-compose pull postgres redis minio knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend \
-  2>/dev/null || true
-
 optional_services=()
-if docker image inspect "${PDF2ZH_IMAGE:-zhitan-pdf2zh:${DEFAULT_VER}}" >/dev/null 2>&1; then
+if docker image inspect "${PDF2ZH_IMAGE:-zhitan-pdf2zh:3.9.3}" >/dev/null 2>&1; then
   optional_services+=(pdf2zh-api)
 else
-  echo "[server-deps] 跳过 pdf2zh-api（镜像不存在，请本机执行: bash scripts/server-deps.sh push-images）"
+  echo "[server-deps] 跳过 pdf2zh-api（镜像不存在，请: bash scripts/server-deps.sh build-images）"
 fi
-if docker image inspect "${SPEECH_IMAGE:-zhitan-speech:${DEFAULT_VER}}" >/dev/null 2>&1; then
+if docker image inspect "${SPEECH_IMAGE:-zhitan-speech:3.9.3}" >/dev/null 2>&1; then
   optional_services+=(speech-api)
 else
-  echo "[server-deps] 跳过 speech-api（镜像不存在，请本机执行: bash scripts/server-deps.sh push-images）"
+  echo "[server-deps] 跳过 speech-api（镜像不存在，请: bash scripts/server-deps.sh build-images）"
 fi
 
-compose up -d --no-build \
+bash scripts/stack.sh pull 2>/dev/null || true
+bash scripts/stack.sh up --profile knowflow --profile speech \
   postgres redis minio \
   knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend \
   "${optional_services[@]}"
 
 echo "等待健康检查 …"
 for i in $(seq 1 72); do
-  if compose exec -T postgres pg_isready -U "${POSTGRES_USER:-platform}" >/dev/null 2>&1 \
+  if docker compose -p "${COMPOSE_PROJECT_NAME:-lvye}" exec -T postgres pg_isready -U "${POSTGRES_USER:-platform}" >/dev/null 2>&1 \
     && curl -fsS "http://127.0.0.1:${REMOTE_RAGFLOW_PORT:-40007}/v1/system/config" 2>/dev/null | grep -q '"code":0'; then
     echo "[server-deps] 依赖栈就绪"
-    compose ps
+    bash scripts/stack.sh ps
     exit 0
   fi
   sleep 5
 done
 echo "[server-deps] 健康检查超时" >&2
-compose ps
-compose logs --tail=30 knowflow-infinity ragflow 2>/dev/null || true
+bash scripts/stack.sh ps
+bash scripts/stack.sh logs ragflow --tail 30 2>/dev/null || true
 exit 1
 REMOTE
 }
@@ -222,21 +206,9 @@ cmd_down() {
 set -euo pipefail
 cd "${DEPLOY_PATH:-/root/qzb/lvye}"
 [[ -f .env ]] && source .env
-compose() {
-  local -a args=(docker compose -p "${COMPOSE_PROJECT_NAME:-lvye}" -f compose.yaml)
-  [[ -f compose.mirror.yaml && "${STACK_USE_MIRROR:-1}" == 1 ]] && args+=(-f compose.mirror.yaml)
-  args+=(-f deploy/knowflow.yml)
-  [[ -f deploy/knowflow.mirror.yaml && "${STACK_USE_MIRROR:-1}" == 1 ]] && args+=(-f deploy/knowflow.mirror.yaml)
-  args+=(-f compose.server-deps.yaml)
-  [[ -f compose.expose-deps.yaml && "${EXPOSE_DEPS:-1}" == 1 ]] && args+=(-f compose.expose-deps.yaml)
-  args+=(--profile knowflow --profile speech)
-  "${args[@]}" "$@"
-}
-compose stop postgres redis minio pdf2zh-api speech-api \
-  knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend 2>/dev/null || true
-compose rm -f postgres redis minio pdf2zh-api speech-api \
-  knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend 2>/dev/null || true
-echo "[server-deps] 已停止 lvye 依赖容器"
+export EXPOSE_DEPS=1
+bash scripts/stack.sh down
+echo "[server-deps] 已停止依赖容器"
 REMOTE
 }
 
@@ -252,7 +224,6 @@ docker ps --filter label=com.docker.compose.project=docker --format 'table {{.Na
 REMOTE
 }
 
-# 服务器本地执行；删除 zhitanAI 旧栈残留与 ES 等过时镜像，不影响 Dify
 cmd_cleanup_local() {
   echo "[server-deps] 清理过时容器与镜像（保留 Dify 与 lvye 所需）"
 
@@ -294,18 +265,17 @@ usage() {
   cat <<EOF
 用法: bash scripts/server-deps.sh <sync|push-images|up|down|status|cleanup|cleanup-local>
 
-  sync           同步编排/脚本/使用说明到 ${DEPLOY_PATH}
-  rebuild-amd64  服务器上用 zhitanAI 源码重建 amd64 镜像（M1 勿 push-images）
+  sync           同步编排/脚本到 ${DEPLOY_PATH}
+  rebuild-amd64  服务器上用 stack.sh 重建 amd64 镜像
   build-images   在 amd64 服务器上构建 pdf2zh / speech 镜像
   push-images    本机导入镜像（仅同架构可用）
-  up             启动远程依赖（Infinity 向量库）
+  up             启动远程依赖（EXPOSE_DEPS=1，Infinity 向量库）
   down           停止远程依赖（不影响 Dify）
   status         查看远程状态
   cleanup        远程清理过时 zhitanAI 容器与 ES 等镜像
-  cleanup-local  在服务器本机执行 cleanup（由 cleanup 远程调用）
 
 环境: DEPLOY_HOST=${DEPLOY_HOST} DEPLOY_PATH=${DEPLOY_PATH}
-说明: ${DEPLOY_PATH}/README.md
+编排: scripts/stack.sh + compose.expose-deps.yaml
 EOF
 }
 

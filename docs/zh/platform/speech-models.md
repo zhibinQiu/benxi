@@ -16,7 +16,7 @@ pdf_trans/.run/speech-models/
 | `MODELSCOPE_CACHE` | 与上项等价，FunASR 官方环境变量 |
 
 - **宿主机启动**：`scripts/start_speech_local.sh` 自动使用 `$ROOT/.run/speech-models`
-- **Docker 启动**：`docker-compose.speech.yml` 将宿主机 `../.run/speech-models` 挂载到容器 `/models`
+- **Docker 启动**：`compose.yaml` 的 `speech-api`（`--profile speech`）将 `${DATA_ROOT}/speech-models` 挂载到容器 `/models`；开发时 `compose.dev.yaml` 可将 API 指向 `host.docker.internal:8765`
 
 ## 迁移
 

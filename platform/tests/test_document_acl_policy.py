@@ -12,6 +12,7 @@ from app.core.document_scope import (
     can_grant_document_permissions,
     can_manage_document_denials,
 )
+from app.core.permissions import PermissionLevel
 
 
 def _doc(*, scope: str, owner_id: uuid.UUID | None = None, dept_id: uuid.UUID | None = None):
@@ -19,15 +20,23 @@ def _doc(*, scope: str, owner_id: uuid.UUID | None = None, dept_id: uuid.UUID | 
     return d
 
 
-def test_only_owner_or_sysadmin_can_grant():
+def test_only_owner_sysadmin_or_modify_grant_can_grant():
     db = MagicMock()
     owner = uuid.uuid4()
     other = uuid.uuid4()
+    modify_holder = uuid.uuid4()
     doc = _doc(scope=SCOPE_PERSONAL, owner_id=owner)
 
     with patch("app.core.document_scope.user_is_superuser", return_value=False):
         assert can_grant_document_permissions(db, MagicMock(id=owner), doc)
         assert not can_grant_document_permissions(db, MagicMock(id=other), doc)
+        with patch(
+            "app.core.document_scope._has_explicit_permission",
+            side_effect=lambda _db, user, _doc, level: (
+                user.id == modify_holder and level == PermissionLevel.modify.value
+            ),
+        ):
+            assert can_grant_document_permissions(db, MagicMock(id=modify_holder), doc)
 
     with patch("app.core.document_scope.user_is_superuser", return_value=True):
         assert can_grant_document_permissions(db, MagicMock(id=other), doc)

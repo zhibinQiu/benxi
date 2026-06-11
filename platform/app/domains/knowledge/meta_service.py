@@ -7,14 +7,14 @@ import time
 import httpx
 
 from app.config import get_settings
-from app.integrations.knowflow_client import get_knowflow_client, knowflow_stack_reachable
-from app.services.ragflow_identity_service import resolve_ui_embed_base
-from app.services.ragflow_naming import dataset_display_label_personal
 from app.core.user_messages import (
     KNOWLEDGE_NOT_ENABLED,
     KNOWLEDGE_SERVICE_UNAVAILABLE,
     KNOWLEDGE_WEB_UNAVAILABLE,
 )
+from app.integrations.knowflow_client import get_knowflow_client, knowflow_stack_reachable
+from app.services.ragflow_identity_service import resolve_ui_embed_base
+from app.services.ragflow_naming import dataset_display_label_personal
 from app.services.ragflow_scope_service import (
     dept_suffix_labels_for_theme,
     knowflow_kb_labels_for_user,

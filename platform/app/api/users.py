@@ -9,21 +9,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
-from app.config import get_settings
 from app.core.exceptions import bad_request, not_found
 from app.core.permissions import user_dept_ids
 from app.core.phone import is_bootstrap_login_id
-from app.core.user_identity import email_taken, phone_taken, username_taken
 from app.core.platform_admin import (
     SYSTEM_ADMIN_ROLE_CODE,
     ensure_bootstrap_has_system_admin_role,
     is_bootstrap_admin,
 )
+from app.core.security import hash_password
 from app.core.user_department import (
     set_user_departments_or_bad_request,
     user_department_id,
 )
-from app.core.security import hash_password
+from app.core.user_identity import email_taken, phone_taken, username_taken
 from app.database import get_db
 from app.models.org import Role, User, UserRole
 from app.schemas.common import ApiResponse
@@ -99,7 +98,6 @@ def create_user(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_permission("admin.user"))],
 ) -> ApiResponse[UserOut]:
-    settings = get_settings()
     if is_bootstrap_login_id(body.phone):
         raise bad_request("该登录号为系统保留")
     if phone_taken(db, body.phone):

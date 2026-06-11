@@ -32,7 +32,7 @@ def test_sync_document_uses_resolve_current_version(client, admin_token):
         "app.services.ragflow_sync_service.sync_document_kb_grants"
     ), patch(
         "app.services.ragflow_sync_service._upload_with_fallback",
-        return_value="rag-doc-1",
+        return_value=("rag-doc-1", None),
     ):
         kf = MagicMock()
         kf.enabled.return_value = True

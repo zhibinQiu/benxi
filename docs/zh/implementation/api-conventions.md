@@ -128,4 +128,4 @@ export async function api(path, options) { ... }
 
 - [应用服务与域](backend-implementation.md)
 - [权限模型](../platform/permission-model.md)
-- [平台架构与运维](../development/platform-architecture.md) §9
+- [配置说明](../operations/configuration.md)

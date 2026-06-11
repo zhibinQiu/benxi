@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { navigateWithReturn } from "../utils/navigationReturn";
@@ -22,9 +23,7 @@ import {
   NSpin,
   NTag,
   NText,
-  useDialog,
-  useMessage,
-} from "naive-ui";
+  useDialog } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   createFeedSubscription,
@@ -33,13 +32,12 @@ import {
   fetchFeedPresets,
   fetchFeedSources,
   subscribeFeedPreset,
-  syncFeedSubscription,
-} from "../api/client";
+  syncFeedSubscription } from "../api/client";
 import { deleteSequentially } from "../utils/batchActions";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 const dialog = useDialog();
 
 const pageTitle = computed(() => {
@@ -69,8 +67,7 @@ const sourceOptions = computed(() => [
   { label: "全部订阅源", value: null },
   ...sources.value.map((s) => ({
     label: `${s.name} (${s.entry_count || 0})`,
-    value: s.id,
-  })),
+    value: s.id})),
 ]);
 
 /** 按 category 分组展示内置源（国际双碳 / 国内政策） */
@@ -116,12 +113,11 @@ async function loadArticles() {
       page: page.value,
       page_size: pageSize,
       source_id: filterSourceId.value || undefined,
-      kind: filterKind.value || undefined,
-    });
+      kind: filterKind.value || undefined});
     articles.value = data.items || [];
     total.value = data.total || 0;
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     articlesLoading.value = false;
   }
@@ -132,7 +128,7 @@ async function reload() {
   try {
     await Promise.all([loadSources(), loadPresets(), loadArticles()]);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -142,7 +138,7 @@ async function submitAdd() {
   const name = addForm.value.name?.trim();
   const url = addForm.value.feed_url?.trim();
   if (!name || !url) {
-    message.warning("请填写名称与订阅地址");
+    ui.warning("请填写名称与订阅地址");
     return;
   }
   submitting.value = true;
@@ -151,19 +147,17 @@ async function submitAdd() {
       name,
       feed_url: url,
       kind: addForm.value.kind,
-      category: addForm.value.category?.trim() || "双碳",
-    });
-    message.success("已添加订阅");
+      category: addForm.value.category?.trim() || "双碳"});
+    ui.success("已添加订阅");
     showAdd.value = false;
     addForm.value = {
       name: "",
       feed_url: "",
       kind: filterKind.value === "website" ? "website" : "rss",
-      category: "双碳",
-    };
+      category: "双碳"};
     await reload();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     submitting.value = false;
   }
@@ -172,20 +166,20 @@ async function submitAdd() {
 async function addPreset(index) {
   try {
     await subscribeFeedPreset(index);
-    message.success("已添加推荐订阅");
+    ui.success("已添加推荐订阅");
     await reload();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
 async function onSyncSource(source) {
   try {
     const res = await syncFeedSubscription(source.id);
-    message.info(res.message || "同步完成");
+    ui.info(res.message || "同步完成");
     await reload();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
@@ -227,16 +221,15 @@ function handleBatchRemoveSources() {
       }
       selectedSourceIds.value = [];
       if (failed.length) {
-        message.warning(
+        ui.warning(
           `已移除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
         );
       } else {
-        message.success(deleted > 1 ? `已移除 ${deleted} 个订阅` : "已取消订阅");
+        ui.success(deleted > 1 ? `已移除 ${deleted} 个订阅` : "已取消订阅");
       }
       await reload();
       return !failed.length;
-    },
-  });
+    }});
 }
 
 function openEntry(id) {
@@ -245,8 +238,7 @@ function openEntry(id) {
     {
       name: "feed-entry",
       params: { id },
-      query: filterKind.value ? { kind: filterKind.value } : {},
-    },
+      query: filterKind.value ? { kind: filterKind.value } : {}},
     route
   );
 }

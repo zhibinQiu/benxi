@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.permissions import PermissionLevel, can_access_document
-from app.models.document import Document, DocumentPermission, DocumentVersion
+from app.models.document import Document, DocumentPermission
 from app.models.org import User
-from app.storage.object_store import get_object_store
-
 
 
 def grant_permission(
@@ -27,15 +24,15 @@ def grant_permission(
     if not can_grant_document_permissions(db, user, document):
         from app.core.exceptions import forbidden
 
-        raise forbidden("仅文档创建人或系统管理员可授权")
+        raise forbidden("仅文档创建人、系统管理员或被授予可修改权限的用户可授权")
 
-    from app.core.permissions import LEVEL_ORDER, normalize_permission_level
     from app.core.exceptions import bad_request
+    from app.core.permissions import LEVEL_ORDER, normalize_permission_level
 
     norm = normalize_permission_level(level)
     if norm not in LEVEL_ORDER:
         raise bad_request(
-            "无效的授权级别，可选：visible、query、edit、full"
+            "无效的授权级别，可选：visible、query、modify"
         )
     if subject_type != "user":
         raise bad_request("文档分享仅支持按用户授权，请勾选具体用户")
@@ -53,6 +50,7 @@ def grant_permission(
         existing.expires_at = expires_at
         db.commit()
         db.refresh(existing)
+        _invalidate_share_caches(user, subject_id)
         return existing
 
     perm = DocumentPermission(
@@ -66,10 +64,19 @@ def grant_permission(
     db.add(perm)
     db.commit()
     db.refresh(perm)
+    _invalidate_share_caches(user, subject_id)
     return perm
+
+
+def _invalidate_share_caches(granter: User, grantee_id: uuid.UUID) -> None:
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(granter.id))
+    if grantee_id != granter.id:
+        invalidate_document_caches(str(grantee_id))
 def list_acl_user_candidates(db: Session, document: Document) -> list[dict]:
     """授权/禁止访问时可选的用户列表（不含文档创建人）。"""
-    from app.core.document_scope import SCOPE_COMPANY, DEPT_SCOPES
+    from app.core.document_scope import DEPT_SCOPES, SCOPE_COMPANY
     from app.core.permissions import user_has_permission
     from app.models.org import Department, User, UserDepartment
 
@@ -240,6 +247,7 @@ def revoke_document_share(
     ).all():
         db.delete(perm)
     db.commit()
+    _invalidate_share_caches(actor, user_id)
 def revoke_permission(
     db: Session, actor: User, document: Document, perm_id: uuid.UUID
 ) -> None:

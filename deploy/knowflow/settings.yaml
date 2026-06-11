@@ -20,6 +20,6 @@ dots:
     top_p: 1.0
     max_completion_tokens: 16384
 paddleocr:
-  url: http://172.20.32.127:7071/ocr
+  url: http://172.20.32.127:7071
   timeout: 30000
   max_file_size: 5000

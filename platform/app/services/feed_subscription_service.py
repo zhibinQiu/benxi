@@ -17,7 +17,6 @@ from app.integrations.feed_fetcher import (
     fetch_feed,
     resolve_feed_url,
 )
-from app.models.document import DocumentVersion
 from app.models.feed_subscription import (
     SOURCE_KIND_RSS,
     SOURCE_KIND_WEBSITE,

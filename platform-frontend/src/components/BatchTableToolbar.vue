@@ -10,8 +10,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: true },
   labelKey: { type: String, default: "batch.delete" },
   actionType: { type: String, default: "error" },
-  icon: { type: [Object, Function], default: () => TrashOutline },
-});
+  icon: { type: [Object, Function], default: () => TrashOutline }});
 
 defineEmits(["action"]);
 

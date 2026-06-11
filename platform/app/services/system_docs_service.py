@@ -70,6 +70,9 @@ def _catalog_raw() -> list[dict[str, Any]]:
                 {"key": "ops-docker", "title": "Docker 容器说明", "path": "docs/zh/operations/docker-services.md"},
                 {"key": "ops-network", "title": "网络与反代拓扑", "path": "docs/zh/operations/network-topology.md"},
                 {"key": "ops-deploy", "title": "部署指南", "path": "docs/zh/operations/deployment.md"},
+                {"key": "ops-server-deps", "title": "远程依赖开发", "path": "docs/zh/operations/server-deps.md"},
+                {"key": "ops-single-server", "title": "单机迁移与热重载", "path": "docs/zh/operations/single-server-migration.md"},
+                {"key": "ops-features", "title": "功能实现说明", "path": "docs/zh/operations/feature-implementation.md"},
                 {"key": "ops-config", "title": "配置说明", "path": "docs/zh/operations/configuration.md"},
                 {"key": "ops-db", "title": "数据库迁移", "path": "docs/zh/operations/database-migration.md"},
                 {"key": "ops-perm", "title": "权限与账户", "path": "docs/zh/operations/permissions.md"},
@@ -77,7 +80,6 @@ def _catalog_raw() -> list[dict[str, Any]]:
                 {"key": "ops-upgrade", "title": "升级", "path": "docs/zh/operations/upgrade.md"},
                 {"key": "ops-security", "title": "安全", "path": "docs/zh/operations/security.md"},
                 {"key": "ops-manual", "title": "日常操作手册", "path": "docs/zh/operations/operations-manual.md"},
-                {"key": "ops-server-deps", "title": "远程依赖开发", "path": "docs/zh/operations/server-deps.md"},
             ],
         },
         {
@@ -85,7 +87,7 @@ def _catalog_raw() -> list[dict[str, Any]]:
             "title": "平台说明",
             "children": [
                 {"key": "plat-plugins", "title": "功能插件", "path": "docs/zh/platform/feature-plugins.md"},
-                {"key": "plat-perm", "title": "权限模型", "path": "docs/zh/platform/permission-model.md"},
+                {"key": "plat-perm", "title": "权限模型与文档分级", "path": "docs/zh/platform/permission-model.md"},
                 {"key": "plat-speech", "title": "语音模型", "path": "docs/zh/platform/speech-models.md"},
                 {"key": "plat-compare", "title": "文档对比产品设计", "path": "docs/zh/platform/doc-compare-product-design.md"},
             ],
@@ -95,9 +97,9 @@ def _catalog_raw() -> list[dict[str, Any]]:
             "title": "架构与开发",
             "children": [
                 {"key": "dev-arch", "title": "系统架构概览", "path": "docs/zh/development/system-architecture-overview.md"},
-                {"key": "dev-stack", "title": "Stack 部署开发", "path": "docs/zh/development/stack-deployment.md"},
+                {"key": "dev-stack", "title": "Stack 命令速查", "path": "docs/zh/development/stack-deployment.md"},
                 {"key": "dev-layer", "title": "分层架构", "path": "docs/zh/development/layered-architecture.md"},
-                {"key": "dev-platform", "title": "平台架构", "path": "docs/zh/development/platform-architecture.md"},
+                {"key": "dev-platform", "title": "平台架构索引", "path": "docs/zh/development/platform-architecture.md"},
                 {"key": "dev-api", "title": "REST API", "path": "docs/zh/development/rest-api.md"},
                 {"key": "impl-api", "title": "API 约定", "path": "docs/zh/implementation/api-conventions.md"},
                 {"key": "impl-jobs", "title": "异步与任务", "path": "docs/zh/implementation/async-and-jobs.md"},

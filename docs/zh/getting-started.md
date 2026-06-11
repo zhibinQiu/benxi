@@ -1,6 +1,6 @@
 # 快速开始
 
-智碳平台 AI 系统 v3.4+ 使用 **统一 Docker 栈**。完整说明见 [运维手册](operations/README.md)。
+智碳平台 AI 系统 v3.9.3 使用 **统一 Docker 栈**。完整说明见 [运维手册](operations/README.md) 与 [根目录运维部署指南](../../运维部署指南.md)。
 
 ## 1. 环境
 
@@ -24,10 +24,11 @@ STACK_PROFILES="knowflow speech"
 
 ## 3. 启动
 
-**开发（推荐，支持热重载）：**
+**开发（热重载，推荐）：**
 
 ```bash
-bash scripts/stack.sh dev-up --profile knowflow --profile speech
+bash scripts/zhitan.sh dev
+# 等价：bash scripts/stack.sh dev-up --profile knowflow --profile speech
 ```
 
 **生产式本机：**
@@ -37,22 +38,21 @@ bash scripts/stack.sh build --profile knowflow
 bash scripts/stack.sh up --profile knowflow
 ```
 
-等价入口：`bash scripts/zhitan.sh`（默认 stack up）、`bash scripts/zhitan.sh dev`（dev-up）。
-
 ## 4. 访问
 
 | 服务 | 地址 |
 |------|------|
 | Web | http://127.0.0.1:40005/ai/ |
 | API（开发） | http://127.0.0.1:18000 |
-| API 文档 | http://127.0.0.1:18000/docs |
+
+组件与数据库说明见 [组件位置与数据存储](operations/components-and-storage.md)。
 
 默认管理员见 `.env` 中 `BOOTSTRAP_ADMIN_PHONE` / `BOOTSTRAP_ADMIN_PASSWORD`（模板在 `platform/.env.example`）。
 
 ## 5. 停止
 
 ```bash
-bash scripts/stack.sh down
+bash scripts/zhitan.sh stop
 ```
 
 ## 6. 服务器部署

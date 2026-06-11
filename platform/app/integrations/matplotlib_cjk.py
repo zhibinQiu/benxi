@@ -77,8 +77,8 @@ def resolve_cjk_font(prefer: Iterable[str] | None = None) -> str | None:
 
 def apply_matplotlib_cjk_rcparams() -> str | None:
     """配置 matplotlib 使用可用的中文字体，避免中文标题/标签乱码与 Glyph missing 警告。"""
-    from matplotlib import font_manager
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
 
     chosen = resolve_cjk_font()
     if chosen is None:

@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   NButton,
@@ -6,22 +7,18 @@ import {
   NInput,
   NSelect,
   NSpace,
-  NSpin,
-  useMessage,
-} from "naive-ui";
+  NSpin } from "naive-ui";
 import {
   ArrowUndoOutline,
   ArrowRedoOutline,
-  SendOutline,
-} from "@vicons/ionicons5";
+  SendOutline } from "@vicons/ionicons5";
 import { marked } from "marked";
 import {
   assistWritingCompose,
-  fetchAssistWritingPresets,
-} from "../api/client";
+  fetchAssistWritingPresets } from "../api/client";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
-const message = useMessage();
+const ui = usePlatformUi();
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -40,8 +37,7 @@ const canRedo = computed(() => historyIndex.value < history.value.length - 1);
 const presetOptions = computed(() =>
   presets.value.map((p) => ({
     label: p.label,
-    value: p.id,
-  }))
+    value: p.id}))
 );
 
 const previewHtml = computed(() => {
@@ -87,14 +83,14 @@ async function loadPresets() {
   try {
     presets.value = (await fetchAssistWritingPresets()) || [];
   } catch (e) {
-    message.warning(e.message || "无法加载提示词模板");
+    ui.warning(e.message || "无法加载提示词模板");
   }
 }
 
 async function runCompose() {
   const extra = instruction.value.trim();
   if (!presetId.value && !extra) {
-    message.warning("请选择提示词模板或输入补充说明");
+    ui.warning("请选择提示词模板或输入补充说明");
     return;
   }
   composing.value = true;
@@ -103,13 +99,12 @@ async function runCompose() {
     const data = await assistWritingCompose({
       markdown: before,
       instruction: extra,
-      preset_id: presetId.value || null,
-    });
+      preset_id: presetId.value || null});
     pushHistory(before);
     applyMarkdown(data.markdown || "");
-    message.success("已写入左侧编辑器");
+    ui.success("已写入左侧编辑器");
   } catch (e) {
-    message.error(e.message || "AI 处理失败");
+    ui.error(e.message || "AI 处理失败");
   } finally {
     composing.value = false;
   }

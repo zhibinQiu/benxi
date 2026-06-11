@@ -1,16 +1,35 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { usePlatformUi } from "../composables/usePlatformUi";
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { TimeOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
-import { NButton, NIcon, NSpin, useMessage } from "naive-ui";
+import { NButton, NIcon, NSpin } from "naive-ui";
 import { marked } from "marked";
 import ChatComposer from "./ChatComposer.vue";
 import IconAction from "./IconAction.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
+import KnowledgeChatContent from "./KnowledgeChatContent.vue";
+import KnowledgeCitationPreviewModal from "./KnowledgeCitationPreviewModal.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { navigateWithReturn } from "../utils/navigationReturn";
+import {
+  clearChatSession,
+  loadChatSession,
+  saveChatSession,
+  serializeChatMessages,
+  SERVER_HISTORY_SCOPES,
+} from "../utils/chatSessionPersist";
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -26,6 +45,8 @@ const props = defineProps({
   richMarkdown: { type: Boolean, default: false },
   showWorkflowProgress: { type: Boolean, default: false },
   showCitations: { type: Boolean, default: false },
+  /** 将回答中的 [1][2] 与引用列表联动，并支持溯源弹窗 */
+  linkifyCitations: { type: Boolean, default: false },
   chatHeaderSub: { type: String, default: "" },
   /** 对话中顶栏是否展示图标、标题与小标题（false 时仅保留操作按钮） */
   showChatHeaderBrand: { type: Boolean, default: true },
@@ -34,14 +55,13 @@ const props = defineProps({
   /** 进入对话后输入框占位文案 */
   replyPlaceholder: { type: String, default: "继续提问" },
   /** 对话历史 scope：ai-home | carbon-qa | smart-data-query */
-  chatScope: { type: String, default: "" },
-});
+  chatScope: { type: String, default: "" }});
 
 const conversationId = defineModel("conversationId", { type: String, default: null });
 
 const emit = defineEmits(["new-chat"]);
 
-const message = useMessage();
+const ui = usePlatformUi();
 const route = useRoute();
 const router = useRouter();
 
@@ -53,7 +73,19 @@ const input = ref("");
 const sending = ref(false);
 const messages = ref([]);
 const messagesRef = ref(null);
+const citationPreviewShow = ref(false);
+const citationPreviewTarget = ref(null);
 let streamAbort = null;
+
+function openCitationPreview(citationOrIndex, citations = []) {
+  let citation = citationOrIndex;
+  if (typeof citationOrIndex === "number") {
+    citation = (citations || []).find((c) => Number(c.index) === citationOrIndex);
+  }
+  if (!citation) return;
+  citationPreviewTarget.value = citation;
+  citationPreviewShow.value = true;
+}
 
 const displaySubtitle = computed(
   () => props.subtitle || `${PLATFORM_APP_NAME} · 智能对话`
@@ -138,8 +170,7 @@ async function sendMessageStreaming(content, assistantIdx) {
       {
         message: content,
         history,
-        conversationId: conversationId.value,
-      },
+        conversationId: conversationId.value},
       {
         signal: streamAbort.signal,
         onWorkflow: (ev) => {
@@ -150,6 +181,11 @@ async function sendMessageStreaming(content, assistantIdx) {
           applyWorkflowEvent(row.workflow, ev);
           scrollTick += 1;
           if (scrollTick % 2 === 0) scrollToBottom();
+        },
+        onCitations: (citations) => {
+          if (!props.showCitations || !Array.isArray(citations)) return;
+          const row = messages.value[assistantIdx];
+          if (row) row.citations = citations;
         },
         onReplace: (text) => {
           const row = messages.value[assistantIdx];
@@ -183,12 +219,10 @@ async function sendMessageStreaming(content, assistantIdx) {
           if (payload?.conversation_id) {
             conversationId.value = payload.conversation_id;
           }
-        },
-      }
+        }}
     );
     const row = messages.value[assistantIdx];
     if (row && !row.content.trim()) {
-      row.content = "（未收到回复内容）";
       row.streaming = false;
     }
   } catch (e) {
@@ -219,29 +253,53 @@ function stopGeneration() {
   streamAbort = null;
 }
 
+async function revealContentTypewriter(row, fullText) {
+  const text = (fullText || "").trim();
+  if (!text) {
+    row.streaming = false;
+    row.content = "";
+    return;
+  }
+  row.content = "";
+  row.streaming = true;
+  const step = Math.max(1, Math.floor(text.length / 100));
+  for (let i = 0; i < text.length; i += step) {
+    row.content = text.slice(0, Math.min(i + step, text.length));
+    if (i % (step * 4) === 0) await scrollToBottom();
+    await new Promise((r) => setTimeout(r, 14));
+  }
+  row.content = text;
+  row.streaming = false;
+}
+
 async function sendMessageBlocking(content, assistantIdx) {
   const history = messages.value
     .slice(0, assistantIdx)
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => ({ role: m.role, content: m.content }));
 
-  messages.value.push({ role: "assistant", content: "", streaming: false });
+  messages.value.push({ role: "assistant", content: "", streaming: true });
   await scrollToBottom();
 
   const data = await props.chatSend({
     message: content,
     history,
-    conversationId: conversationId.value,
-  });
+    conversationId: conversationId.value});
 
   const row = messages.value[assistantIdx];
   if (row) {
-    row.content = (data?.reply || "").trim() || "（未收到回复内容）";
+    const reply = (data?.reply || "").trim();
     if (props.showCitations && Array.isArray(data?.citations)) {
       row.citations = data.citations;
     }
     if (data?.conversation_id) {
       conversationId.value = data.conversation_id;
+    }
+    if (reply) {
+      await revealContentTypewriter(row, reply);
+    } else {
+      row.streaming = false;
+      row.content = "";
     }
   }
 }
@@ -251,11 +309,11 @@ async function sendMessage(text) {
   if (!content || sending.value) return;
 
   if (props.streaming && !props.streamChat) {
-    message.error("未配置流式对话");
+    ui.error("未配置流式对话");
     return;
   }
   if (!props.streaming && !props.chatSend) {
-    message.error("未配置对话接口");
+    ui.error("未配置对话接口");
     return;
   }
 
@@ -280,8 +338,7 @@ async function sendMessage(text) {
         role: "assistant",
         content: "",
         streaming: true,
-        workflow: props.showWorkflowProgress ? emptyWorkflow() : null,
-      });
+        workflow: props.showWorkflowProgress ? emptyWorkflow() : null});
       await scrollToBottom();
       await sendMessageStreaming(content, assistantIdx);
     } else {
@@ -292,7 +349,7 @@ async function sendMessage(text) {
       finalizeStoppedAssistant(assistantIdx);
       return;
     }
-    message.error(e.message || "发送失败");
+    ui.error(e.message || "发送失败");
     const row = messages.value[assistantIdx];
     if (row) {
       row.streaming = false;
@@ -304,13 +361,13 @@ async function sendMessage(text) {
       messages.value.push({
         role: "assistant",
         content: "抱歉，暂时无法回复，请稍后重试。",
-        error: true,
-      });
+        error: true});
     }
   } finally {
     sending.value = false;
     streamAbort = null;
     await scrollToBottom();
+    persistSessionState();
   }
 }
 
@@ -326,6 +383,21 @@ function useSuggestion(text) {
   sendMessage(text);
 }
 
+function persistSessionState() {
+  if (!props.chatScope) return;
+  const serialized = serializeChatMessages(messages.value);
+  if (!serialized.length && !conversationId.value && !input.value.trim()) {
+    clearChatSession(props.chatScope);
+    return;
+  }
+  saveChatSession(props.chatScope, {
+    conversationId: conversationId.value,
+    messages: serialized,
+    started: started.value,
+    input: input.value,
+  });
+}
+
 function newChat() {
   streamAbort?.abort();
   streamAbort = null;
@@ -334,6 +406,7 @@ function newChat() {
   messages.value = [];
   input.value = "";
   conversationId.value = null;
+  if (props.chatScope) clearChatSession(props.chatScope);
   emit("new-chat");
   if (route.query.conversationId) {
     const { conversationId: _cid, ...rest } = route.query;
@@ -352,6 +425,7 @@ function goToHistory() {
 
 async function loadConversationFromId(id) {
   if (!props.chatScope || !id) return;
+  if (!SERVER_HISTORY_SCOPES.has(props.chatScope)) return;
   loadingHistory.value = true;
   try {
     const rows = (await fetchChatConversationMessages(props.chatScope, id)) || [];
@@ -361,17 +435,44 @@ async function loadConversationFromId(id) {
     messages.value = rows.map((m) => ({
       role: m.role,
       content: m.content,
-      streaming: false,
-    }));
+      streaming: false}));
     conversationId.value = id;
     started.value = messages.value.length > 0;
     input.value = "";
     await scrollToBottom();
+    persistSessionState();
   } catch (e) {
-    message.error(e.message || "加载对话失败");
+    ui.error(e.message || "加载对话失败");
   } finally {
     loadingHistory.value = false;
   }
+}
+
+async function restorePersistedSession() {
+  if (!props.chatScope) return;
+  const saved = loadChatSession(props.chatScope);
+  if (!saved) return;
+
+  if (saved.input) input.value = saved.input;
+
+  if (SERVER_HISTORY_SCOPES.has(props.chatScope) && saved.conversationId) {
+    await loadConversationFromId(saved.conversationId);
+    return;
+  }
+
+  const rows = Array.isArray(saved.messages) ? saved.messages : [];
+  if (!rows.length) return;
+
+  messages.value = rows.map((m) => ({
+    role: m.role,
+    content: m.content || "",
+    streaming: false,
+    citations: m.citations,
+    error: m.error,
+  }));
+  conversationId.value = saved.conversationId || null;
+  started.value = Boolean(saved.started ?? messages.value.length > 0);
+  await scrollToBottom();
 }
 
 watch(
@@ -382,14 +483,27 @@ watch(
   }
 );
 
-onMounted(() => {
+onMounted(async () => {
   const cid = typeof route.query.conversationId === "string" ? route.query.conversationId : "";
-  if (cid) loadConversationFromId(cid);
+  if (cid) {
+    await loadConversationFromId(cid);
+    return;
+  }
+  await restorePersistedSession();
+});
+
+onDeactivated(() => {
+  persistSessionState();
+  streamAbort?.abort();
+});
+
+onActivated(() => {
+  if (started.value) scrollToBottom();
 });
 
 onBeforeUnmount(() => {
+  persistSessionState();
   streamAbort?.abort();
-  messages.value = [];
 });
 </script>
 
@@ -475,13 +589,13 @@ onBeforeUnmount(() => {
               class="ai-home-bubble ai-home-bubble--bot"
               :class="{
                 'ai-home-bubble--error': m.error,
-                'ai-home-bubble--streaming': m.streaming,
-              }"
+                'ai-home-bubble--streaming': m.streaming}"
             >
               <div
                 v-if="
                   showWorkflowProgress &&
                   m.streaming &&
+                  !m.content &&
                   m.workflow?.running &&
                   m.workflow.currentTitle
                 "
@@ -489,27 +603,34 @@ onBeforeUnmount(() => {
                 :class="{ 'ai-workflow-current--failed': m.workflow.failed }"
               >
                 <span v-if="!m.workflow.failed" class="ai-workflow-spinner" aria-hidden="true" />
-                正在执行：{{ m.workflow.currentTitle }}
+                {{ m.workflow.currentTitle }}
               </div>
-              <div
-                v-else-if="m.streaming && richMarkdown && showWorkflowProgress"
-                class="ai-workflow-wait"
-              >
-                {{ m.content ? "正在整理回答…" : "正在生成回答…" }}
+              <div v-else-if="m.streaming && !m.content" class="ai-thinking">
+                <span class="ai-workflow-spinner" aria-hidden="true" />
+                正在思考…
               </div>
               <div v-else-if="m.streaming" class="ai-home-stream-text">
                 {{ m.content }}<span class="ai-home-cursor">▍</span>
               </div>
+              <KnowledgeChatContent
+                v-else-if="linkifyCitations && m.content"
+                :key="`kc-${i}`"
+                :content="m.content"
+                :citations="m.citations || []"
+                @open-citation="openCitationPreview($event, m.citations)"
+              />
               <MarkdownRichContent
                 v-else-if="richMarkdown && m.content"
                 :key="`md-${i}`"
                 :content="m.content"
               />
               <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
-              <div v-else class="ai-workflow-wait">（未收到回复内容）</div>
+              <div v-else class="ai-workflow-wait ai-workflow-wait--empty">未能生成回答</div>
               <ChatMessageCitations
                 v-if="showCitations && !m.streaming && m.citations?.length"
                 :citations="m.citations"
+                :preview-on-click="linkifyCitations"
+                @open-citation="openCitationPreview($event, m.citations)"
               />
             </div>
             <div v-else class="ai-home-bubble ai-home-bubble--user">
@@ -558,9 +679,15 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+        </div>
       </div>
     </div>
-  </div>
+
+    <KnowledgeCitationPreviewModal
+      v-if="linkifyCitations"
+      v-model:show="citationPreviewShow"
+      :citation="citationPreviewTarget"
+    />
 </template>
 
 <style scoped>
@@ -988,5 +1115,18 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: #94a3b8;
   padding: 4px 0;
+}
+
+.ai-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--platform-accent-pressed);
+  padding: 4px 0;
+}
+
+.ai-workflow-wait--empty {
+  color: #94a3b8;
 }
 </style>

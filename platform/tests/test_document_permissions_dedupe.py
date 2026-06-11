@@ -27,7 +27,7 @@ def test_list_permissions_merges_user_rows_to_highest_level():
         document_id=doc_id,
         subject_type="user",
         subject_id=uid,
-        level=PermissionLevel.full.value,
+        level=PermissionLevel.modify.value,
         granted_by=uuid.uuid4(),
     )
     db.scalars.return_value.all.return_value = [low, high]
@@ -39,7 +39,7 @@ def test_list_permissions_merges_user_rows_to_highest_level():
     result = document_service.list_document_permissions(db, doc_id)
     user_rows = [p for p in result if p.subject_type == "user"]
     assert len(user_rows) == 1
-    assert user_rows[0].level == PermissionLevel.full.value
+    assert user_rows[0].level == PermissionLevel.modify.value
     assert db.delete.called
 
 
@@ -60,7 +60,7 @@ def test_list_document_shares_one_row_per_user():
         document_id=doc_id,
         subject_type="user",
         subject_id=uid,
-        level=PermissionLevel.full.value,
+        level=PermissionLevel.modify.value,
         granted_by=uuid.uuid4(),
     )
     user_mock = MagicMock()
@@ -77,5 +77,5 @@ def test_list_document_shares_one_row_per_user():
     shares = document_service.list_document_shares(db, doc_id)
     assert len(shares) == 1
     assert shares[0]["user_id"] == uid
-    assert shares[0]["level"] == PermissionLevel.full.value
+    assert shares[0]["level"] == PermissionLevel.modify.value
     assert shares[0]["user_name"] == "张三"

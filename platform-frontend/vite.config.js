@@ -26,6 +26,7 @@ export default defineConfig({
   },
   plugins: [vue()],
   server: {
+    host: "0.0.0.0",
     port: 40005,
     proxy: {
       // 平台 API（网关统一 /ai/api → 后端 /api）
@@ -50,7 +51,7 @@ export default defineConfig({
         timeout: 0,
         proxyTimeout: 0,
       },
-      // 同源代理 KnowFlow Web UI（阶段 2 SSO），见 docs/zh/development/doc-platform.md
+      // 同源代理 KnowFlow Web UI（embed-proxy SSO），见 docs/zh/operations/network-topology.md
       // 同源反代 KnowFlow，并在 HTML 注入 platform-branding（见 embed-proxy/knowflow）
       "/ragflow-ui": {
         target: API_TARGET,

@@ -9,24 +9,20 @@ import {
   NSpace,
   NSpin,
   NThing,
-  NTooltip,
-} from "naive-ui";
+  NTooltip } from "naive-ui";
 import { RefreshOutline, TrashOutline, CheckmarkDoneOutline } from "@vicons/ionicons5";
 import {
   clearNotifications,
   fetchNotifications,
   markAllNotificationsRead,
-  markNotificationRead,
-} from "../api/client";
+  markNotificationRead } from "../api/client";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 
 const props = defineProps({
   active: {
     type: Boolean,
-    default: true,
-  },
-});
+    default: true}});
 
 const emit = defineEmits(["updated", "navigate"]);
 
@@ -62,8 +58,7 @@ async function markAllRead() {
   try {
     const { updated } = await markAllNotificationsRead();
     ui.success(updated ? "notifications.messages.markedRead" : "notifications.messages.noneUnread", {
-      count: updated || 0,
-    });
+      count: updated || 0});
     await load({ notifyOnError: false });
   } catch (e) {
     ui.error(e);

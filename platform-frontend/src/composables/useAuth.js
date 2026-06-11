@@ -7,7 +7,7 @@ import {
   registerUser,
   setTokens,
 } from "../api/client";
-import { invalidateRagCaches, prefetchKnowflowSession } from "../api/rag.js";
+import { invalidateRagCaches } from "../api/rag.js";
 
 const user = ref(null);
 const loading = ref(false);
@@ -39,7 +39,6 @@ export function useAuth() {
     loading.value = true;
     try {
       user.value = await fetchMe();
-      prefetchKnowflowSession();
       return user.value;
     } catch (e) {
       const msg = String(e?.message || "");

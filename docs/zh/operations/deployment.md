@@ -23,20 +23,21 @@ KNOWFLOW_ENABLED=true
 STACK_PROFILES="knowflow speech"   # 或 up 时 --profile knowflow
 ```
 
-## 2. 本地开发（推荐）
+## 2. 本地开发
+
+**开发（热重载，推荐）：**
 
 ```bash
-bash scripts/stack.sh dev-up --profile knowflow --profile speech
+bash scripts/zhitan.sh dev
 ```
 
-| 项 | 值 |
-|----|-----|
-| Web | http://127.0.0.1:40005/ai/ |
-| API | http://127.0.0.1:18000 |
-| 热重载 | 改 `platform/app`、`platform-frontend` 自动生效 |
-| Worker 改代码 | `docker compose -p zhitan restart worker` |
+| 模式 | Web | API |
+|------|-----|-----|
+| `zhitan.sh dev` | :40005 | :18000 |
 
-KnowFlow 首次启动：ES/MySQL 就绪后 ragflow API 约 **1–2 分钟** 可用；若 502：`docker restart ragflow-server`。
+KnowFlow 首次启动：Infinity/MySQL 就绪后 ragflow API 约 **1–2 分钟** 可用；若 502：`docker restart ragflow-server`。
+
+> 远程依赖 + 本机 venv 仅为过渡，见 [server-deps.md](server-deps.md)；目标形态为单机 `dev`。
 
 ## 3. 本机生产式
 
@@ -101,3 +102,9 @@ bash scripts/stack.sh build --profile knowflow
 ```
 
 服务器 **无需** third_party 目录，仅需 `deploy/knowflow/` + 已 save 的镜像。
+
+## 8. 单机迁移与部署后热重载
+
+- **迁到同一台服务器**（含从 remote-dev 过渡）：见 [单机迁移与热重载](single-server-migration.md)  
+- **改代码即生效**：在目标机使用 `bash scripts/zhitan.sh dev`（`stack dev-up`），勿用生产 `stack up`  
+- **功能实现细节**（无代码）：见 [功能实现说明](feature-implementation.md)

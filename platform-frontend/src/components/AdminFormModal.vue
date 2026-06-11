@@ -1,9 +1,14 @@
 <script setup>
+/**
+ * 统一管理/表单弹窗：白底实板、轻盈遮罩、弹簧入场动效。
+ * 所有管理类弹窗应优先使用本组件，避免原生 n-modal 样式不一致。
+ */
 import { NModal } from "naive-ui";
 
 defineProps({
   show: { type: Boolean, default: false },
   title: { type: String, required: true },
+  /** 副标题；较长说明请改用表单项旁的 HintTooltip */
   subtitle: { type: String, default: "" },
   width: { type: [Number, String], default: 520 },
 });
@@ -19,9 +24,10 @@ function onUpdateShow(value) {
   <n-modal
     :show="show"
     preset="card"
-    class="admin-form-modal"
+    class="admin-form-modal platform-glass-modal"
     :style="{ width: typeof width === 'number' ? `${width}px` : width }"
     :mask-closable="false"
+    transform-origin="center"
     @update:show="onUpdateShow"
     @after-leave="emit('after-leave')"
   >

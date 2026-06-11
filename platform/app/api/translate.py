@@ -6,23 +6,27 @@ import uuid
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi import Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, get_current_user, require_feature
 from app.core.exceptions import bad_request, forbidden, not_found
-from app.services import document_service
-from app.schemas.translate import TranslatableDocumentOut
 from app.database import get_db
 from app.integrations.pdf2zh_client import pdf2zh_base_url
 from app.models.org import User
 from app.schemas.common import ApiResponse, PageResult
+from app.schemas.translate import (
+    TranslatableDocumentOut,
+    TranslateImportLibraryOut,
+    TranslateImportLibraryRequest,
+)
+from app.services import document_service
 from app.services.audit_service import write_audit
 from app.services.translate_service import (
     create_translate_job,
     get_user_job,
+    import_job_to_library,
     job_to_dict,
     list_translate_jobs,
     pdf2zh_job_id,
@@ -209,6 +213,43 @@ async def get_job(
     if job.status not in ("done", "failed", "cancelled"):
         job = sync_job_from_pdf2zh(db, job)
     return ApiResponse(data=job_to_dict(job))
+
+
+@router.post(
+    "/jobs/{job_id}/import-library",
+    response_model=ApiResponse[TranslateImportLibraryOut],
+)
+def import_translate_to_library(
+    job_id: str,
+    body: TranslateImportLibraryRequest,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[TranslateImportLibraryOut]:
+    job = _require_job(db, job_id, user)
+    if job.status != "done":
+        job = sync_job_from_pdf2zh(db, job)
+    data = import_job_to_library(
+        db,
+        user,
+        job,
+        variant=body.variant,
+        sync_knowflow=body.sync_knowflow,
+    )
+    write_audit(
+        db,
+        user_id=user.id,
+        action="translate.import_library",
+        resource_type="translate_job",
+        resource_id=str(job.id),
+        ip_address=get_client_ip(request),
+        detail={
+            "document_id": str(data["document_id"]),
+            "variant": data.get("variant"),
+            "already_imported": data.get("already_imported"),
+        },
+    )
+    return ApiResponse(data=TranslateImportLibraryOut.model_validate(data))
 
 
 @router.get("/jobs/{job_id}/events")

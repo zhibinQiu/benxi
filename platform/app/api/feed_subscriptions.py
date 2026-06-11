@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_feature
 from app.database import get_db
@@ -22,7 +23,6 @@ from app.schemas.feed_subscription import (
     FeedSyncOut,
 )
 from app.services import feed_subscription_service as svc
-from sqlalchemy.orm import Session
 
 router = APIRouter(
     prefix="/feed-subscriptions",

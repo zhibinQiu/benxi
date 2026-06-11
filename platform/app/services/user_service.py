@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-import uuid
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
 from app.models.compare import CompareJob
-from app.models.document import Document, DocumentPermission, DocumentVersion
+from app.models.document import Document, DocumentPermission, DocumentVersion, SubjectType
 from app.models.document_workflow import DocumentAccessDenial, DocumentPublishRequest
 from app.models.job import Job, JobEvent
 from app.models.meeting_record import MeetingRecord
@@ -20,8 +19,6 @@ from app.models.rag import RagMessage, RagSession
 from app.models.ragflow_document_link import RagflowDocumentLink
 from app.models.ragflow_document_mirror_link import RagflowDocumentMirrorLink
 from app.models.ragflow_link import RagflowAccountLink
-from app.models.document import SubjectType
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 

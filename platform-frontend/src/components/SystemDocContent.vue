@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NSpin } from "naive-ui";
 import { getApiBase } from "../api/http.js";
 import {
@@ -7,14 +7,12 @@ import {
   mountSystemDocContent,
   renderSystemDocMarkdown,
   resolveDocLink,
-  unbindSystemDocContent,
-} from "../utils/systemDocMarkdown";
+  unbindSystemDocContent } from "../utils/systemDocMarkdown";
 
 const props = defineProps({
   content: { type: String, default: "" },
   docPath: { type: String, default: "" },
-  loading: { type: Boolean, default: false },
-});
+  loading: { type: Boolean, default: false }});
 
 const emit = defineEmits(["navigate"]);
 
@@ -68,12 +66,15 @@ watch(
   { flush: "post" }
 );
 
+onMounted(() => {
+  refreshMounts();
+});
+
 defineExpose({
   scrollToHash: (hash) => {
     targetHash.value = hash;
     scrollToHash(hash);
-  },
-});
+  }});
 
 onBeforeUnmount(() => {
   disposeSystemDocContent(bodyRef.value);

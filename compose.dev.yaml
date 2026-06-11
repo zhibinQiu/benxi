@@ -1,7 +1,12 @@
-# 开发覆盖：挂载 platform 源码、API --reload、Vite 前端
-# 用法: bash scripts/stack.sh dev-up [--profile knowflow] [--profile speech]
+# 开发覆盖（stack.sh dev-up / zhitan.sh dev 时自动叠加）
 #
-# 浏览器: 40005/ai/（SPA） + 18000（API 与 KnowFlow iframe，见 KNOWFLOW_UI_PUBLIC_URL）
+# 作用:
+#   - api: 挂载 platform/app、uvicorn --reload、映射 127.0.0.1:18000
+#   - worker: 挂载源码
+#   - frontend: Node + Vite HMR（替代生产 Nginx 镜像）
+#
+# 浏览器: http://127.0.0.1:40005/ai/（SPA）
+#         http://127.0.0.1:18000（API 与 KnowFlow iframe）
 
 services:
   api:

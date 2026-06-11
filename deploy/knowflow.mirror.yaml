@@ -4,8 +4,8 @@ services:
   knowflow-mysql:
     image: docker.1ms.run/library/mysql:8.0.39
 
-  knowflow-es:
-    image: docker.1ms.run/library/elasticsearch:${STACK_VERSION:-8.11.3}
+  knowflow-infinity:
+    image: ${INFINITY_IMAGE:-docker.m.daocloud.io/infiniflow/infinity:${INFINITY_VERSION:-v0.6.0-dev5}}
 
   knowflow-gotenberg:
     image: docker.1ms.run/gotenberg/gotenberg:8

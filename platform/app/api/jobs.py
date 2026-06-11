@@ -15,7 +15,7 @@ from app.database import get_db
 from app.models.job import Job
 from app.models.org import User
 from app.schemas.common import ApiResponse, PageResult
-from app.schemas.job import JobOut
+from app.schemas.job import JobBatchDeleteIn, JobOut
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -53,6 +53,18 @@ def clear_jobs(
 
     deleted = job_service.clear_jobs(db, user.id, scope=scope)
     return ApiResponse(data={"deleted": deleted, "scope": scope})
+
+
+@router.post("/batch-delete", response_model=ApiResponse[dict])
+def batch_delete_jobs(
+    body: JobBatchDeleteIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    from app.services import job_service
+
+    deleted = job_service.delete_jobs_by_ids(db, user.id, body.job_ids)
+    return ApiResponse(data={"deleted": deleted, "requested": len(body.job_ids)})
 
 
 @router.post("/{job_id}/cancel", response_model=ApiResponse[JobOut])

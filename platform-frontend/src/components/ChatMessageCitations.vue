@@ -1,9 +1,13 @@
 <script setup>
 import { ref } from "vue";
 
-const props = defineProps({
+defineProps({
   citations: { type: Array, default: () => [] },
+  /** 点击引用编号/标题时打开溯源弹窗（知识检索） */
+  previewOnClick: { type: Boolean, default: false },
 });
+
+const emit = defineEmits(["open-citation", "open-document"]);
 
 const expanded = ref({});
 
@@ -17,6 +21,18 @@ function formatScore(score) {
   if (n <= 1) return `${Math.round(n * 100)}%`;
   return `${n.toFixed(1)}`;
 }
+
+function openCitation(citation, event) {
+  event?.stopPropagation?.();
+  if (!citation) return;
+  emit("open-citation", citation);
+}
+
+function openDocument(citation, event) {
+  event?.stopPropagation?.();
+  if (!citation?.document_id) return;
+  emit("open-document", citation);
+}
 </script>
 
 <template>
@@ -27,17 +43,47 @@ function formatScore(score) {
       :key="`${c.index}-${c.document_id || c.title}`"
       class="chat-citation-item"
     >
-      <button type="button" class="chat-citation-head" @click="toggle(c.index)">
-        <span class="chat-citation-num">[{{ c.index }}]</span>
-        <span class="chat-citation-doc">{{ c.title }}</span>
-        <span v-if="formatScore(c.score)" class="chat-citation-score">
+      <div class="chat-citation-head">
+        <button
+          type="button"
+          class="chat-citation-toggle"
+          :class="{ 'chat-citation-toggle--preview': previewOnClick }"
+          @click="previewOnClick ? openCitation(c, $event) : toggle(c.index)"
+        >
+          <span class="chat-citation-num">[{{ c.index }}]</span>
+          <span v-if="!previewOnClick && formatScore(c.score)" class="chat-citation-score">
+            相关度 {{ formatScore(c.score) }}
+          </span>
+          <span v-if="!previewOnClick" class="chat-citation-chevron">
+            {{ expanded[c.index] ? "▾" : "▸" }}
+          </span>
+        </button>
+        <button
+          v-if="previewOnClick"
+          type="button"
+          class="chat-citation-doc chat-citation-doc--link"
+          @click="openCitation(c, $event)"
+        >
+          {{ c.title }}
+        </button>
+        <button
+          v-else-if="c.document_id"
+          type="button"
+          class="chat-citation-doc chat-citation-doc--link"
+          @click="openDocument(c, $event)"
+        >
+          {{ c.title }}
+        </button>
+        <span v-else class="chat-citation-doc">{{ c.title }}</span>
+        <span v-if="previewOnClick && formatScore(c.score)" class="chat-citation-score">
           相关度 {{ formatScore(c.score) }}
         </span>
-        <span class="chat-citation-chevron">{{ expanded[c.index] ? "▾" : "▸" }}</span>
-      </button>
-      <p v-if="c.snippet && expanded[c.index]" class="chat-citation-snippet">
-        {{ c.snippet }}
-      </p>
+      </div>
+      <p
+        v-if="!previewOnClick && c.snippet && expanded[c.index]"
+        class="chat-citation-snippet"
+        v-html="c.snippet"
+      />
     </div>
   </div>
 </template>
@@ -71,18 +117,26 @@ function formatScore(score) {
   gap: 6px;
   width: 100%;
   padding: 6px 8px;
-  text-align: left;
   font-size: 12px;
   color: #334155;
   background: var(--platform-accent-muted);
   border: 1px solid var(--platform-accent-border-soft);
   border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s;
 }
 
-.chat-citation-head:hover {
-  background: var(--platform-accent-soft);
+.chat-citation-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-citation-toggle--preview:hover .chat-citation-num {
+  text-decoration: underline;
 }
 
 .chat-citation-num {
@@ -94,6 +148,19 @@ function formatScore(score) {
   flex: 1;
   min-width: 0;
   font-weight: 500;
+  text-align: left;
+}
+
+.chat-citation-doc--link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--platform-accent);
+  cursor: pointer;
+}
+
+.chat-citation-doc--link:hover {
+  text-decoration: underline;
 }
 
 .chat-citation-score {
@@ -116,5 +183,11 @@ function formatScore(score) {
   border-radius: 6px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.chat-citation-snippet :deep(em) {
+  font-style: normal;
+  background: rgba(250, 204, 21, 0.45);
+  padding: 0 1px;
 }
 </style>

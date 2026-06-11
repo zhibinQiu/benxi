@@ -75,3 +75,65 @@ def test_knowledge_document_chunks_requires_sync(client, admin_token, monkeypatc
         headers=headers,
     )
     assert r.status_code == 400
+
+
+def test_knowledge_document_reindex_enqueues_job(
+    client, admin_token, monkeypatch
+):
+    """重新索引须创建 document_index 后台任务并立即返回。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    doc_id = uuid.uuid4()
+    version_id = uuid.uuid4()
+    job_id = uuid.uuid4()
+
+    mock_doc = MagicMock(id=doc_id, deleted_at=None, title="reindex-test")
+    mock_version = MagicMock(id=version_id, document_id=doc_id, version_no=1)
+    mock_job = MagicMock(id=job_id)
+
+    monkeypatch.setattr(
+        "app.services.knowledge_library_service.get_document",
+        lambda db, did: mock_doc,
+    )
+    monkeypatch.setattr(
+        "app.services.knowledge_library_service.can_query_document",
+        lambda db, user, doc: True,
+    )
+    monkeypatch.setattr(
+        "app.domains.knowledge.gateway.knowledge.enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.domains.knowledge.gateway.knowledge.stack_reachable",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.ragflow_version_link_service.resolve_index_link",
+        lambda db, doc, version_id=None: (None, mock_version),
+    )
+
+    enqueue_kwargs: dict = {}
+
+    def fake_enqueue(db, **kwargs):
+        enqueue_kwargs.update(kwargs)
+        return mock_job
+
+    monkeypatch.setattr(
+        "app.services.knowledge_sync_job_service.enqueue_document_reindex",
+        fake_enqueue,
+    )
+
+    r = client.post(
+        f"/api/v1/knowledge/documents/{doc_id}/reindex",
+        headers=headers,
+        json={
+            "version_id": str(version_id),
+            "resync": True,
+            "parser_id": "smart",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()["data"]
+    assert body["queued"] is True
+    assert body["knowledge_job_id"] == str(job_id)
+    assert enqueue_kwargs.get("version_id") == version_id
+    assert enqueue_kwargs.get("resync") is True

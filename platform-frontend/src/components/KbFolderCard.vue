@@ -6,8 +6,7 @@ import { EllipsisHorizontal } from "@vicons/ionicons5";
 const props = defineProps({
   folder: { type: Object, required: true },
   cardKey: { type: String, default: "folder" },
-  menuOptions: { type: Array, default: () => [] },
-});
+  menuOptions: { type: Array, default: () => [] }});
 
 const emit = defineEmits(["open", "menu-select"]);
 

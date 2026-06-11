@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onBeforeUnmount, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
@@ -16,22 +17,19 @@ import {
   NSteps,
   NStep,
   NTag,
-  NText,
-  useMessage,
-} from "naive-ui";
+  NText } from "naive-ui";
 import {
   ArrowBackOutline,
   ScanOutline,
   CopyOutline,
   DownloadOutline,
   ImageOutline,
-  DocumentTextOutline,
-} from "@vicons/ionicons5";
+  DocumentTextOutline } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 
 const sourceMode = ref("image");
 const selectedFile = ref(null);
@@ -110,23 +108,23 @@ function startRecognize() {
   window.setTimeout(() => {
     processing.value = false;
     currentStep.value = 1;
-    message.info("OCR 识别能力尚未接入，当前仅提供界面预览");
+    ui.info("OCR 识别能力尚未接入，当前仅提供界面预览");
   }, 600);
 }
 
 function copyResult() {
   if (!resultText.value) {
-    message.warning("暂无识别结果");
+    ui.warning("暂无识别结果");
     return;
   }
   navigator.clipboard?.writeText(resultText.value).then(
-    () => message.success("已复制到剪贴板"),
-    () => message.error("复制失败")
+    () => ui.success("已复制到剪贴板"),
+    () => ui.error("复制失败")
   );
 }
 
 function downloadResult() {
-  message.info("导出功能开发中");
+  ui.info("导出功能开发中");
 }
 
 onBeforeUnmount(revokePreview);

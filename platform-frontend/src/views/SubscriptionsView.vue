@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -10,20 +11,17 @@ import {
   NSpace,
   NSpin,
   NTag,
-  NText,
-  useMessage,
-} from "naive-ui";
+  NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import { useBoundedScrollHeight } from "../composables/useBoundedScrollHeight";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import {
   fetchSubscriptionItems,
-  ingestSubscriptionUrl,
-} from "../api/client";
+  ingestSubscriptionUrl } from "../api/client";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 
 const loading = ref(true);
 const itemsLoading = ref(false);
@@ -50,8 +48,7 @@ function fmtSerpDate(iso) {
     return d.toLocaleDateString("zh-CN", {
       year: "numeric",
       month: "long",
-      day: "numeric",
-    });
+      day: "numeric"});
   } catch {
     return "";
   }
@@ -101,8 +98,7 @@ function rangeToQuery(range) {
   const [from, to] = range;
   return {
     created_from: from ? new Date(from).toISOString() : undefined,
-    created_to: to ? new Date(to).toISOString() : undefined,
-  };
+    created_to: to ? new Date(to).toISOString() : undefined};
 }
 
 async function loadItems() {
@@ -114,12 +110,11 @@ async function loadItems() {
       page_size: pageSize,
       keyword: searchKeyword.value.trim() || undefined,
       created_from,
-      created_to,
-    });
+      created_to});
     items.value = data.items || [];
     total.value = data.total || 0;
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     itemsLoading.value = false;
     remeasure();
@@ -131,7 +126,7 @@ async function reload() {
   try {
     await loadItems();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     loading.value = false;
     remeasure();
@@ -155,18 +150,18 @@ watch(createdRange, () => {
 async function onIngest() {
   const url = ingestUrl.value.trim();
   if (!url) {
-    message.warning("请粘贴文章链接");
+    ui.warning("请粘贴文章链接");
     return;
   }
   ingesting.value = true;
   try {
     const detail = await ingestSubscriptionUrl(url);
-    message.success(detail.summary ? "已收录并生成摘要" : "已收录");
+    ui.success(detail.summary ? "已收录并生成摘要" : "已收录");
     ingestUrl.value = "";
     await loadItems();
     openItem(detail.ref);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     ingesting.value = false;
   }

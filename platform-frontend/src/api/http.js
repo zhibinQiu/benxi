@@ -73,7 +73,7 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_KEY);
 }
 
-/** 文档库「我的」分级（与后端 scope=personal 一致） */
+/** 文档库「个人级」分级（与后端 scope=personal 一致） */
 export const DOCUMENT_SCOPE_PERSONAL = "personal";
 
 /** 公众号 / RSS / 网站资讯导入文档库的默认请求体 */
@@ -111,11 +111,18 @@ export function formatApiDetail(detail) {
 }
 
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
+import { dispatchSessionReplaced, isSessionReplacedError } from "../utils/sessionGuard.js";
 
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
+    if (res.status === 401 && isSessionReplacedError(json, msg)) {
+      dispatchSessionReplaced(msg);
+    }
+    if (res.status === 503) {
+      throw new Error(sanitizeUserFacingMessage(msg, "系统繁忙，请稍后重试"));
+    }
     throw new Error(sanitizeUserFacingMessage(msg, "请求失败"));
   }
   if (json.code !== undefined && json.code !== 0) {

@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.phone import is_bootstrap_login_id, normalize_phone
+from app.core.phone import normalize_phone
 from app.core.user_identity import normalize_email, normalize_username
 
 

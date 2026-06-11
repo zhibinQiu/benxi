@@ -1,19 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
-
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.exceptions import AppError
-
 from app import __version__
-from app.api import embed_proxy as embed_proxy_api
 from app.api import (
     assistant,
     auth,
@@ -31,54 +27,65 @@ from app.api import (
     todos,
     users,
 )
-from app.features.registry import ensure_plugins_loaded, mount_routers
+from app.api import embed_proxy as embed_proxy_api
 from app.bootstrap import bootstrap_db
+from app.config import get_settings
 from app.core.bootstrap_user import enforce_unique_bootstrap_admin
+from app.core.exceptions import AppError, service_unavailable
+from app.database import Base, SessionLocal, engine
+from app.features.registry import ensure_plugins_loaded, mount_routers
+from app.models import (  # noqa: F401 — register ORM models
+    audit,
+    carbon_market,
+    compare,
+    document,
+    document_version_compare,
+    document_workflow,
+    feed_subscription,
+    job,
+    meeting_record,
+    notification,
+    org,
+    platform_chat,
+    platform_model_settings,
+    rag,
+    ragflow_document_link,
+    ragflow_document_mirror_link,
+    ragflow_link,
+    ragflow_scope_dataset,
+    todo,
+    wechat_mp,
+)
 from app.schema_migrate import (
+    backfill_user_phones,
+    drop_legacy_ragflow_account_dataset_columns,
     ensure_carbon_market_schema,
-    ensure_document_schema,
     ensure_document_library_folder_schema,
-    ensure_document_scope_tier_v2,
+    ensure_document_schema,
     ensure_document_scope_org_depth,
+    ensure_document_library_align_v1,
+    ensure_document_scope_tier_v2,
+    ensure_document_version_blocks_schema,
+    ensure_document_version_change_description,
+    ensure_feed_subscription_schema,
     ensure_meeting_record_schema,
     ensure_permission_level_migration,
     ensure_platform_chat_schema,
-    ensure_ragflow_schema,
-    ensure_todo_schema,
-    ensure_wechat_mp_schema,
-    ensure_feed_subscription_schema,
     ensure_platform_model_settings_schema,
-    ensure_user_single_department_schema,
+    ensure_ragflow_schema,
+    ensure_ragflow_version_index_completed_schema,
+    ensure_todo_schema,
+    ensure_user_auth_token_version_schema,
+    ensure_user_last_seen_schema,
     ensure_user_phone_schema,
-    backfill_user_phones,
-    drop_legacy_ragflow_account_dataset_columns,
+    ensure_user_single_department_schema,
+    ensure_version_compare_llm_summary_schema,
+    ensure_version_compare_schema,
+    ensure_wechat_mp_schema,
     migrate_legacy_admin_roles,
 )
-from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
-from app.config import get_settings
-from app.database import Base, SessionLocal, engine
-from app.models import (  # noqa: F401 — register ORM models
-    audit,
-    compare,
-    document,
-    job,
-    notification,
-    org,
-    rag,
-    ragflow_link,
-    ragflow_document_link,
-    ragflow_document_mirror_link,
-    ragflow_scope_dataset,
-    document_workflow,
-    carbon_market,
-    meeting_record,
-    platform_chat,
-    platform_model_settings,
-    todo,
-    wechat_mp,
-    feed_subscription,
-)
 from app.schemas.common import ApiResponse
+from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
 
 
 @asynccontextmanager
@@ -88,6 +95,7 @@ async def lifespan(_app: FastAPI):
     ensure_document_library_folder_schema(engine)
     ensure_document_scope_tier_v2(engine)
     ensure_document_scope_org_depth(engine)
+    ensure_document_library_align_v1(engine)
     ensure_ragflow_schema(engine)
     drop_legacy_ragflow_account_dataset_columns(engine)
     ensure_carbon_market_schema(engine)
@@ -99,6 +107,13 @@ async def lifespan(_app: FastAPI):
     ensure_platform_model_settings_schema(engine)
     ensure_user_single_department_schema(engine)
     ensure_user_phone_schema(engine)
+    ensure_user_last_seen_schema(engine)
+    ensure_user_auth_token_version_schema(engine)
+    ensure_ragflow_version_index_completed_schema(engine)
+    ensure_document_version_change_description(engine)
+    ensure_version_compare_schema(engine)
+    ensure_version_compare_llm_summary_schema(engine)
+    ensure_document_version_blocks_schema(engine)
     ensure_permission_level_migration(engine)
     migrate_legacy_admin_roles(engine)
     db = SessionLocal()
@@ -145,16 +160,42 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def clear_user_request_cache(request: Request, call_next):
+        from app.core.request_user_cache import clear_request_user_cache
+
+        clear_request_user_cache()
+        return await call_next(request)
+
     @app.exception_handler(AppError)
     async def handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "code": detail.get("code", exc.status_code),
-                "message": detail.get("message", "请求失败"),
-            },
-        )
+        body = {
+            "code": detail.get("code", exc.status_code),
+            "message": detail.get("message", "请求失败"),
+        }
+        for key in ("reason",):
+            if key in detail:
+                body[key] = detail[key]
+        return JSONResponse(status_code=exc.status_code, content=body)
+
+    try:
+        from sqlalchemy.exc import TimeoutError as SATimeoutError
+
+        @app.exception_handler(SATimeoutError)
+        async def handle_pool_timeout(_request: Request, _exc: Exception) -> JSONResponse:
+            logging.getLogger(__name__).warning("数据库连接池已耗尽，请求排队超时")
+            err = service_unavailable("系统繁忙，请稍后重试")
+            detail = err.detail if isinstance(err.detail, dict) else {}
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "code": detail.get("code", 503),
+                    "message": detail.get("message", "系统繁忙，请稍后重试"),
+                },
+            )
+    except ImportError:
+        pass
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(
@@ -177,6 +218,18 @@ def create_app() -> FastAPI:
     async def handle_unexpected_error(
         _request: Request, exc: Exception
     ) -> JSONResponse:
+        msg = str(exc)
+        if "QueuePool limit" in msg or "connection timed out" in msg.lower():
+            logging.getLogger(__name__).warning("数据库连接异常: %s", msg)
+            err = service_unavailable("系统繁忙，请稍后重试")
+            detail = err.detail if isinstance(err.detail, dict) else {}
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "code": detail.get("code", 503),
+                    "message": detail.get("message", "系统繁忙，请稍后重试"),
+                },
+            )
         logging.getLogger(__name__).exception("未处理异常: %s", exc)
         return JSONResponse(
             status_code=500,

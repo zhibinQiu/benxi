@@ -57,6 +57,7 @@ class DocumentVersionOut(BaseModel):
     parse_message: str | None = None
     chunk_count: int | None = None
     ragflow_document_id: str | None = None
+    change_description: str = ""
 
     model_config = {"from_attributes": True}
 
@@ -138,6 +139,7 @@ class DocumentListItem(BaseModel):
     share_to_summary: str | None = None
     share_count: int | None = None
     effective_level: str | None = None
+    can_modify: bool = False
     can_edit: bool = False
     can_delete: bool = False
     knowledge_synced: bool = False
@@ -146,6 +148,8 @@ class DocumentListItem(BaseModel):
     parse_message: str | None = None
     chunk_count: int | None = None
     ragflow_document_id: str | None = None
+    indexed_version_id: uuid.UUID | None = None
+    indexed_version_no: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -230,6 +234,7 @@ class DocumentAccessControlOut(BaseModel):
     is_owner: bool
     can_view: bool = False
     can_query: bool = False
+    can_modify: bool = False
     can_edit: bool = False
     can_delete: bool = False
     can_manage: bool = False

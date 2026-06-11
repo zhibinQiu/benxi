@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import {
   NConfigProvider,
   NMessageProvider,
@@ -9,16 +9,17 @@ import {
   zhCN,
   enUS,
   dateZhCN,
-  dateEnUS,
-} from "naive-ui";
+  dateEnUS } from "naive-ui";
 import { useAppPreferences } from "./composables/useAppPreferences";
 import { usePlatformBranding } from "./composables/usePlatformBranding";
 import { useLiquidGlassMotion } from "./composables/useLiquidGlassMotion";
 import { useI18n } from "./composables/useI18n";
 import { createThemeOverrides } from "./utils/platformTheme";
 import { shouldSkipAppRouteMotion, shellRouteKey, consumeSkipAfterLoginMotion } from "./utils/routeTransition";
+import { routeUsesVideoBackground } from "./utils/shellBackground";
+import { onSessionReplaced } from "./utils/sessionGuard";
 import PageVideoBackground from "./components/PageVideoBackground.vue";
-
+import AppSessionGuard from "./components/AppSessionGuard.vue";
 const { isDark } = useAppPreferences();
 const { locale, t } = useI18n();
 const { platformAppTitle } = usePlatformBranding();
@@ -30,7 +31,9 @@ const naiveLocale = computed(() => (locale.value === "en" ? enUS : zhCN));
 const naiveDateLocale = computed(() => (locale.value === "en" ? dateEnUS : dateZhCN));
 
 const router = useRouter();
+const route = useRoute();
 const appRouteTransition = ref("app-route");
+const shellVideoBg = computed(() => routeUsesVideoBackground(route));
 
 router.beforeEach((to, from) => {
   appRouteTransition.value = shouldSkipAppRouteMotion(from.name)
@@ -62,9 +65,10 @@ watch(
   >
     <n-message-provider>
       <n-dialog-provider>
-        <div class="app-shell app-shell--video-bg">
-          <PageVideoBackground fixed />
-          <div class="app-ambient" aria-hidden="true">
+        <AppSessionGuard />
+        <div class="app-shell" :class="{ 'app-shell--video-bg': shellVideoBg }">
+          <PageVideoBackground v-if="shellVideoBg" fixed />
+          <div v-if="!shellVideoBg" class="app-ambient" aria-hidden="true">
             <span class="app-ambient__orb app-ambient__orb--1" />
             <span class="app-ambient__orb app-ambient__orb--2" />
             <span class="app-ambient__orb app-ambient__orb--3" />
@@ -124,6 +128,12 @@ h4,
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+  background: var(--platform-bg);
+  background-attachment: fixed;
+}
+
+.app-shell--video-bg {
+  background: transparent;
 }
 
 .app-ambient {
@@ -176,6 +186,10 @@ h4,
 }
 
 .app-shell > .app-ambient {
+  z-index: 0;
+}
+
+.app-shell--video-bg > .app-ambient {
   z-index: 1;
 }
 

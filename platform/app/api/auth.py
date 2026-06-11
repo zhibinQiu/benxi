@@ -11,21 +11,19 @@ from app.api.deps import get_client_ip, get_current_user
 from app.config import get_settings
 from app.core.exceptions import bad_request, forbidden, unauthorized
 from app.core.permissions import user_is_system_admin, user_permission_codes
+from app.core.phone import is_bootstrap_login_id
 from app.core.platform_admin import is_bootstrap_admin
+from app.core.security import (
+    hash_password,
+    safe_decode_token,
+    verify_password,
+)
+from app.core.user_department import user_department_id, user_dept_ids
 from app.core.user_identity import (
     email_taken,
     find_user_by_login_account,
     phone_taken,
     username_taken,
-)
-from app.core.phone import is_bootstrap_login_id
-from app.core.user_department import user_department_id, user_dept_ids
-from app.core.security import (
-    create_access_token,
-    create_refresh_token,
-    hash_password,
-    safe_decode_token,
-    verify_password,
 )
 from app.database import get_db
 from app.models.org import Department, Role, User, UserRole
@@ -38,6 +36,11 @@ from app.schemas.auth import (
 )
 from app.schemas.common import ApiResponse
 from app.services.audit_service import write_audit
+from app.services.auth_session_service import (
+    build_token_response,
+    bump_auth_token_version,
+    validate_token_version,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,8 +50,7 @@ def _display_name(user: User) -> str:
 
 
 def _issue_tokens(db: Session, user: User, request: Request) -> TokenResponse:
-    access = create_access_token(str(user.id))
-    refresh = create_refresh_token(str(user.id))
+    token_version = bump_auth_token_version(db, user)
     write_audit(
         db,
         user_id=user.id,
@@ -57,15 +59,12 @@ def _issue_tokens(db: Session, user: User, request: Request) -> TokenResponse:
         resource_id=str(user.id),
         ip_address=get_client_ip(request),
     )
+    db.commit()
     if get_settings().knowflow_enabled:
-        try:
-            from app.domains.knowledge import knowledge
+        from app.domains.knowledge.background_sync import enqueue_warm_on_login
 
-            knowledge.warm_on_login(db, user)
-            db.flush()
-        except Exception:
-            pass
-    return TokenResponse(access_token=access, refresh_token=refresh)
+        enqueue_warm_on_login(user.id)
+    return build_token_response(user.id, token_version)
 
 
 @router.post("/login", response_model=ApiResponse[TokenResponse])
@@ -145,12 +144,9 @@ def refresh_token(
     user = db.get(User, uuid.UUID(payload["sub"]))
     if not user or user.status != "active":
         raise unauthorized()
-    return ApiResponse(
-        data=TokenResponse(
-            access_token=create_access_token(str(user.id)),
-            refresh_token=create_refresh_token(str(user.id)),
-        )
-    )
+    validate_token_version(user, payload)
+    ver = user.auth_token_version or 0
+    return ApiResponse(data=build_token_response(user.id, ver))
 
 
 def _me_response(db: Session, user: User) -> MeResponse:
@@ -215,6 +211,7 @@ def update_me(
         user.email = body.email
     if body.password is not None:
         user.password_hash = hash_password(body.password)
+        bump_auth_token_version(db, user)
     db.commit()
     db.refresh(user)
     return ApiResponse(data=_me_response(db, user))

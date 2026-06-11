@@ -11,12 +11,12 @@
 
 | 实体 | 说明 |
 |------|------|
-| User | 用户；可属多部门 |
-| Role | 角色：`sys_admin`、`member` 等 |
-| Permission | 权限码，如 `admin.users`、`feature.rag_qa` |
+| User | 用户；**至多归属一个**部门（见 `user_departments`） |
+| Role | 角色：`sys_admin`（系统管理员）、`member`（普通用户）等 |
+| Permission | 权限码，如 `admin.user`、`doc.company.create` |
 | UserRole / RolePermission | 多对多 |
 
-**超级用户：** 拥有 `sys_admin` 角色的用户跳过权限检查。
+**系统管理员：** 持有 `sys_admin` 角色的用户跳过权限检查，并对所有文档分级具备完整 ACL bypass。历史上独立的分级管理员角色已废弃。
 
 ### 功能权限
 
@@ -28,31 +28,31 @@
 
 | 权限码 | 能力 |
 |--------|------|
-| `admin.users` | 用户管理 |
-| `admin.departments` | 部门 |
-| `admin.roles` | 角色 |
+| `admin.user` | 用户管理 |
+| `admin.dept` | 部门管理 |
+| `admin.role` | 角色管理 |
 | `admin.audit` | 审计日志 |
-| `admin.settings` | 模型配置等 |
+| `admin.settings` | 系统设置 |
 
 ## 文档分级（Scope）
 
-| Scope | 含义 | RBAC 前缀 |
-|-------|------|-----------|
-| company | 全公司 | `doc.company.*` |
-| department | 本部门 | `doc.department.*` |
-| team | 团队 | `doc.team.*` |
-| personal | 个人 | `doc.personal.*` |
+| Scope | 界面 Tab | 组织树深度 | RBAC 前缀 |
+|-------|----------|------------|-----------|
+| `company` | 公司级 | 0（根） | `doc.company.*` |
+| `department` | 部门级 | 1 | `doc.dept.*` |
+| `team` | 小组级 | 2 | `doc.team.*` |
+| `personal` | 个人级 | 不绑定 | `doc.personal.*` |
 
-文档另有 **ACL**（用户/部门/角色级 `visible/query/edit/full`）与 **deny** 规则。
+另需 **`doc.read`** 才能默认访问组织文库文档。单文档另有 **ACL**（用户级 grant，档位 `visible` / `query` / `modify`）与 **deny** 规则；组织分级成员默认 **可修改**。deny 优先于 grant 与分级默认。
+
+**完整说明（组织树映射、用户部门、分享 Tab、KnowFlow 对应）：** [权限模型与文档分级](../platform/permission-model.md)
 
 ## KnowFlow 账号映射
 
-- 模式 `ragflow_account_mode=mapped`：每平台用户独立 RAGFlow 账号与 dataset
-- 命名：`zt-platform-{user_id}`、`zt-personal-*`、`zt-dept-*` 等
+- 模式 `ragflow_account_mode=mapped`：每平台用户独立 RAGFlow 账号与 personal dataset
+- 命名：`zt-platform-{user_id}`、`zt-personal-*`、组织 scope_key 对应共享 dataset 等
 - SSO：`rag/embed-session` 自动 provision + 返回 `auth` query
 - 系统管理员可配置 `ragflow_grant_global_admin`
-
-详见 [权限模型](../platform/permission-model.md)（细节不变，路径仍有效）。
 
 ## 审计
 

@@ -54,7 +54,7 @@ Vite 亦配置 `/ragflow-ui`、`/v1` 反代（供不走 18000 直链的场景）
 | `speech-api` | 语音（profile） |
 | `ragflow` | RAGFlow nginx（profile） |
 | `knowflow-backend` | KnowFlow server |
-| `mysql` / `es01` | KnowFlow 栈 alias |
+| `mysql` / `infinity` | KnowFlow 栈 alias |
 
 环境变量中 **必须使用服务名**，勿写 `127.0.0.1`（除 `KNOWFLOW_UI_PUBLIC_URL` 等浏览器地址）。
 

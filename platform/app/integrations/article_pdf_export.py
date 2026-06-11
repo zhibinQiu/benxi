@@ -79,7 +79,7 @@ def markdown_text_to_pdf_bytes(title: str, markdown_text: str) -> bytes:
         spaceAfter=5,
         leftIndent=8 * mm,
     )
-    meta_style = ParagraphStyle(
+    ParagraphStyle(
         "ArticleMeta",
         fontName=font,
         fontSize=9,

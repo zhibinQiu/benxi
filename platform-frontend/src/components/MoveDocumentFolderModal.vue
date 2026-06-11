@@ -1,7 +1,9 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, ref, watch } from "vue";
-import { NModal, NForm, NFormItem, NSelect, NButton, NSpace, useMessage } from "naive-ui";
+import { NForm, NFormItem, NSelect, NButton, NSpace } from "naive-ui";
 import { fetchKbFolders, moveDocument } from "../api/client";
+import AdminFormModal from "./AdminFormModal.vue";
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -28,7 +30,13 @@ const moveIds = computed(() => {
 
 const isBatch = computed(() => moveIds.value.length > 1);
 
-const message = useMessage();
+const modalTitle = computed(() => {
+  if (isBatch.value) return `批量移动 · ${moveIds.value.length} 份文档`;
+  if (props.documentTitle) return `移动文档 · ${props.documentTitle}`;
+  return "移动文档";
+});
+
+const ui = usePlatformUi();
 const loading = ref(false);
 const saving = ref(false);
 const targetFolder = ref(null);
@@ -76,7 +84,7 @@ async function loadOptions() {
       targetFolder.value = UNCATEGORIZED;
     }
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
     folderOptions.value = [];
   } finally {
     loading.value = false;
@@ -106,13 +114,13 @@ async function submit() {
     for (const id of moveIds.value) {
       lastDoc = await moveDocument(id, { folder_id });
     }
-    message.success(
+    ui.success(
       isBatch.value ? `已移动 ${moveIds.value.length} 份文档` : "文档已移动"
     );
     emit("update:show", false);
     emit("moved", lastDoc);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -120,24 +128,16 @@ async function submit() {
 </script>
 
 <template>
-  <n-modal
+  <AdminFormModal
     :show="show"
-    preset="card"
-    :title="
-      isBatch
-        ? `批量移动 · ${moveIds.length} 份文档`
-        : documentTitle
-          ? `移动文档 · ${documentTitle}`
-          : '移动文档'
-    "
-    style="width: 420px"
-    :mask-closable="false"
+    :title="modalTitle"
+    :width="420"
     @update:show="(v) => emit('update:show', v)"
   >
-    <p v-if="!supportsFolders" style="margin: 0; color: #666; font-size: 13px">
+    <p v-if="!supportsFolders" class="admin-form-modal__hint">
       该文档分级不支持文件夹。
     </p>
-    <n-form v-else>
+    <n-form v-else class="admin-form-modal__form" label-placement="top">
       <n-form-item label="目标文件夹" required>
         <n-select
           v-model:value="targetFolder"
@@ -148,7 +148,7 @@ async function submit() {
       </n-form-item>
     </n-form>
     <template #footer>
-      <n-space justify="end">
+      <n-space justify="end" :size="10">
         <n-button @click="emit('update:show', false)">取消</n-button>
         <n-button
           type="primary"
@@ -160,5 +160,5 @@ async function submit() {
         </n-button>
       </n-space>
     </template>
-  </n-modal>
+  </AdminFormModal>
 </template>

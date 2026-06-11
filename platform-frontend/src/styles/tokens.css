@@ -75,6 +75,12 @@ html[data-theme="light"] {
     var(--platform-bg-base);
   --platform-bg-elevated: var(--platform-bg-glass-strong);
   --platform-bg-elevated-solid: rgba(255, 255, 255, 0.92);
+  /* 弹窗：浅色雾面遮罩 + 纯白内容背板（管理弹窗、确认框等） */
+  --platform-modal-mask: rgba(15, 23, 42, 0.18);
+  --platform-modal-bg: #ffffff;
+  --platform-modal-shadow:
+    0 24px 48px rgba(91, 120, 200, 0.12),
+    0 8px 20px rgba(15, 23, 42, 0.06);
   --platform-bg-secondary: rgba(238, 242, 255, 0.82);
   --platform-bg-tertiary: rgba(224, 231, 255, 0.88);
   --platform-text: #1c1c1e;
@@ -104,7 +110,14 @@ html[data-theme="light"] {
   --platform-accent-border: rgba(91, 156, 245, 0.22);
   --platform-accent-border-soft: rgba(91, 156, 245, 0.14);
 
-  --platform-header-bg: var(--platform-chat-gradient);
+  --platform-shell-gradient: linear-gradient(
+    135deg,
+    rgba(239, 246, 255, 0.88) 0%,
+    rgba(237, 233, 254, 0.86) 48%,
+    rgba(241, 238, 252, 0.88) 100%
+  );
+  --platform-chat-gradient: var(--platform-shell-gradient);
+  --platform-header-bg: var(--platform-shell-gradient);
   --platform-sider-bg: var(--platform-bg-glass);
   --platform-toolbar-bg: var(--platform-bg-glass-subtle);
 
@@ -139,13 +152,6 @@ html[data-theme="light"] {
   --platform-green-soft: #93c5fd;
   --platform-green-surface: var(--platform-accent-soft);
   --platform-green-surface-2: var(--platform-accent-soft-2);
-
-  --platform-chat-gradient: linear-gradient(
-    135deg,
-    rgba(239, 246, 255, 0.94) 0%,
-    rgba(237, 233, 254, 0.9) 42%,
-    rgba(224, 242, 254, 0.92) 100%
-  );
 }
 
 html[data-theme="dark"] {
@@ -201,6 +207,11 @@ html[data-theme="dark"] {
     var(--platform-bg-base);
   --platform-bg-elevated: var(--platform-bg-glass-strong);
   --platform-bg-elevated-solid: rgba(22, 22, 32, 0.94);
+  --platform-modal-mask: rgba(0, 0, 0, 0.38);
+  --platform-modal-bg: #ffffff;
+  --platform-modal-shadow:
+    0 28px 56px rgba(0, 0, 0, 0.28),
+    0 12px 24px rgba(0, 0, 0, 0.18);
   --platform-bg-secondary: rgba(36, 36, 52, 0.72);
   --platform-bg-tertiary: rgba(48, 48, 68, 0.82);
   --platform-text: #f5f5f7;
@@ -230,7 +241,14 @@ html[data-theme="dark"] {
   --platform-accent-border: rgba(124, 179, 255, 0.28);
   --platform-accent-border-soft: rgba(124, 179, 255, 0.18);
 
-  --platform-header-bg: var(--platform-chat-gradient);
+  --platform-shell-gradient: linear-gradient(
+    135deg,
+    rgba(22, 22, 36, 0.92) 0%,
+    rgba(30, 24, 48, 0.88) 50%,
+    rgba(26, 22, 40, 0.92) 100%
+  );
+  --platform-chat-gradient: var(--platform-shell-gradient);
+  --platform-header-bg: var(--platform-shell-gradient);
   --platform-sider-bg: var(--platform-bg-glass);
   --platform-toolbar-bg: var(--platform-bg-glass-subtle);
 
@@ -259,11 +277,4 @@ html[data-theme="dark"] {
   --platform-green-soft: #93c5fd;
   --platform-green-surface: var(--platform-accent-soft);
   --platform-green-surface-2: var(--platform-accent-soft-2);
-
-  --platform-chat-gradient: linear-gradient(
-    135deg,
-    rgba(22, 22, 36, 0.94) 0%,
-    rgba(30, 24, 48, 0.9) 48%,
-    rgba(15, 18, 32, 0.96) 100%
-  );
 }

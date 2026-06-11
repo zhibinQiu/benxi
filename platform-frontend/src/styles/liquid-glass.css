@@ -15,7 +15,7 @@
 .n-data-table,
 .n-list.n-list--bordered,
 .n-layout-sider,
-.n-dialog,
+.n-dialog:not(.platform-confirm-dialog),
 .page-toolbar:not(.feature-local-nav),
 .feature-card:not(.feature-card--disabled):not(.feature-card--locked),
 .login-card {
@@ -30,10 +30,9 @@
 
 .header {
   background: var(--platform-header-bg) !important;
+  background-attachment: fixed;
   border-bottom: 1px solid var(--platform-glass-outline);
-  box-shadow:
-    var(--platform-glass-highlight),
-    0 0 0 1px var(--platform-glass-outline);
+  box-shadow: none;
 }
 
 .n-card:not(.feature-local-nav) > *,
@@ -41,7 +40,7 @@
 .n-data-table > *,
 .n-list.n-list--bordered > *,
 .n-layout-sider > *,
-.n-dialog > *,
+.n-dialog:not(.platform-confirm-dialog) > *,
 .page-toolbar:not(.feature-local-nav) > *,
 .feature-card:not(.feature-card--disabled):not(.feature-card--locked) > *,
 .login-card > * {
@@ -92,7 +91,7 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   .n-data-table,
   .n-list.n-list--bordered,
   .n-layout-sider,
-  .n-dialog,
+  .n-dialog:not(.platform-confirm-dialog),
   .page-toolbar:not(.feature-local-nav),
   .feature-card:not(.feature-card--disabled):not(.feature-card--locked),
   .login-card {
@@ -269,8 +268,9 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   border: 1px solid rgba(255, 255, 255, 0.42) !important;
 }
 
-.login-page .login-glass-btn--pref.n-button--circle:not(.n-button--disabled) {
+.login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) {
   width: 42px;
+  height: 42px;
   min-height: 42px;
   padding: 0 !important;
   display: inline-flex !important;
@@ -278,9 +278,27 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   justify-content: center !important;
 }
 
-.login-page .login-glass-btn--pref.n-button--circle:not(.n-button--disabled) .n-button__icon,
-.login-page .login-glass-btn--pref.n-button--circle:not(.n-button--disabled) .n-icon {
+.login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) .n-button__border,
+.login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) .n-button__state-border {
+  inset: 0 !important;
+}
+
+.login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) .n-button__content {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100%;
+  height: 100%;
+  padding: 0 !important;
   margin: 0 !important;
+}
+
+.login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) .n-button__icon,
+.login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) .n-icon {
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-button--disabled) {

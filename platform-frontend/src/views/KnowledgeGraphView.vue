@@ -7,14 +7,12 @@ import { fetchRagEmbedSession } from "../api/client";
 import {
   KNOWLEDGE_UNAVAILABLE,
   knowflowUnavailableHint,
-  sanitizeUserFacingMessage,
-} from "../utils/uiMessage";
+  sanitizeUserFacingMessage } from "../utils/uiMessage";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
 import {
   loadKnowflowEmbedResources,
-  tryApplyCachedKnowflowEmbed,
-} from "../utils/knowflowEmbedBootstrap";
+  tryApplyCachedKnowflowEmbed } from "../utils/knowflowEmbedBootstrap";
 
 const route = useRoute();
 const { user, isSystemAdmin } = useAuth();
@@ -28,8 +26,7 @@ const meta = ref({
   ui_available: false,
   ui_hint: "",
   ui_embed_mode: "iframe",
-  knowflow_enabled: false,
-});
+  knowflow_enabled: false});
 const embedSession = ref(null);
 const iframeSrc = ref("");
 
@@ -83,14 +80,12 @@ function buildKnowflowThemePayload(session, user, { isSystemAdmin } = {}) {
     is_system_admin:
       isSystemAdmin === true ||
       base.is_system_admin === true ||
-      user?.is_system_admin === true,
-  };
+      user?.is_system_admin === true};
 }
 
 function themePayload() {
   return buildKnowflowThemePayload(embedSession.value, user.value, {
-    isSystemAdmin: isSystemAdmin.value,
-  });
+    isSystemAdmin: isSystemAdmin.value});
 }
 
 function postToIframe(payload) {
@@ -136,8 +131,7 @@ async function loadMeta() {
   const cachedApplied = tryApplyCachedKnowflowEmbed({
     metaRef: meta,
     sessionRef: embedSession,
-    applySession: applyIframeSession,
-  });
+    applySession: applyIframeSession});
   bootstrapping.value = !cachedApplied;
   if (!cachedApplied) {
     iframeSrc.value = "";
@@ -145,8 +139,7 @@ async function loadMeta() {
 
   try {
     const { meta: m, session } = await loadKnowflowEmbedResources({
-      sync: false,
-    });
+      sync: false});
     meta.value = m;
     embedSession.value = session;
     applyIframeSession(session);
@@ -155,8 +148,7 @@ async function loadMeta() {
       ...meta.value,
       ui_available: false,
       knowflow_enabled: false,
-      ui_hint: knowflowUnavailableHint(e),
-    };
+      ui_hint: knowflowUnavailableHint(e)};
   } finally {
     bootstrapping.value = false;
   }

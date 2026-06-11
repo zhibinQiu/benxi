@@ -115,7 +115,7 @@ def plan_knowledge_query(
     if "version_compare" in intents:
         reasoning_parts.append("将结合版本变更说明与切片内容辅助对比")
     if knowflow_available:
-        reasoning_parts.append("优先从知识库向量切片检索")
+        reasoning_parts.append("使用知识库混合检索（语义 + 关键词）并由 LLM 组织回答")
     else:
         reasoning_parts.append("知识服务未就绪，回退本地全文检索")
     return {
@@ -143,13 +143,69 @@ def format_changelog_context(
     return "\n".join(lines)
 
 
+def load_version_diff_summaries(
+    db: Session, document_ids: list[uuid.UUID]
+) -> dict[str, list[dict[str, Any]]]:
+    """按文档返回已入库的相邻版本 diff 摘要（含 LLM 总结）。"""
+    if not document_ids:
+        return {}
+    from app.models.document_version_compare import DocumentVersionCompareRelation
+
+    rows = db.scalars(
+        select(DocumentVersionCompareRelation)
+        .where(
+            DocumentVersionCompareRelation.document_id.in_(document_ids),
+            DocumentVersionCompareRelation.status == "done",
+        )
+        .order_by(
+            DocumentVersionCompareRelation.document_id,
+            DocumentVersionCompareRelation.created_at.asc(),
+        )
+    ).all()
+    out: dict[str, list[dict[str, Any]]] = {}
+    for rel in rows:
+        key = str(rel.document_id)
+        payload = rel.payload or {}
+        out.setdefault(key, []).append(
+            {
+                "from_version_no": payload.get("from_version_no"),
+                "to_version_no": payload.get("to_version_no"),
+                "diff_count": rel.diff_count,
+                "llm_summary": (rel.llm_summary or "").strip(),
+                "relation_type": rel.relation_type,
+            }
+        )
+    return out
+
+
+def format_diff_summary_context(
+    summaries: dict[str, list[dict[str, Any]]],
+    doc_titles: dict[str, str],
+) -> str:
+    if not summaries:
+        return ""
+    lines = ["【版本差异摘要（Git diff 入库）】"]
+    for did, rows in summaries.items():
+        title = doc_titles.get(did, did)
+        for row in rows:
+            fno = row.get("from_version_no")
+            tno = row.get("to_version_no")
+            summary = row.get("llm_summary") or f"共 {row.get('diff_count', 0)} 处差异"
+            lines.append(f"- {title} v{fno}→v{tno}：{summary}")
+    return "\n".join(lines)
+
+
 def enrich_answer_with_plan(
     answer: str,
     *,
     plan: dict[str, Any],
     changelog_block: str,
+    diff_summary_block: str = "",
 ) -> str:
     parts: list[str] = []
+    if diff_summary_block and "version_compare" in plan.get("intents", []):
+        parts.append(diff_summary_block)
+        parts.append("")
     if changelog_block and "version_compare" in plan.get("intents", []):
         parts.append(changelog_block)
         parts.append("")

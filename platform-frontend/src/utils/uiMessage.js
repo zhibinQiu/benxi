@@ -17,7 +17,9 @@ export function sanitizeUserFacingMessage(text, fallback = KNOWLEDGE_UNAVAILABLE
     m.includes("服务器内部") ||
     m.includes("Internal Server") ||
     m.includes("Connection refused") ||
-    m.includes("ECONNREFUSED")
+    m.includes("ECONNREFUSED") ||
+    m.includes("QueuePool") ||
+    m.includes("连接池")
   ) {
     return fallback;
   }

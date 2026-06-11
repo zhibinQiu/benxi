@@ -1,12 +1,12 @@
 <script setup>
+defineOptions({ name: "AiHomeView" });
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 import {
   ChatbubblesOutline,
   LeafOutline,
   SearchOutline,
-  StatsChartOutline,
-} from "@vicons/ionicons5";
+  StatsChartOutline } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import { aiHomeChatStream } from "../api/client";
 import { encodeReturnLocation } from "../utils/navigationReturn";
@@ -27,13 +27,11 @@ const toolLinks = computed(() => {
     {
       title: "智能问数",
       route: { name: "smart-data-query", query: returnQuery },
-      icon: StatsChartOutline,
-    },
+      icon: StatsChartOutline},
     {
       title: "知识检索",
       route: { name: "knowledge-search", query: returnQuery },
-      icon: SearchOutline,
-    },
+      icon: SearchOutline},
   ];
 });
 </script>

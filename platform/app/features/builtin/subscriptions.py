@@ -10,7 +10,7 @@ register(
     FeaturePlugin(
         id="subscriptions",
         title="网站收藏",
-        description="粘贴文章链接收录资讯，统一浏览并导入「我的」文档库",
+        description="粘贴文章链接收录资讯，统一浏览并导入「个人级」文档库",
         icon="newspaper",
         route="/knowledge/subscriptions",
         router=subscriptions_api.router,

@@ -10,8 +10,7 @@ import {
   NButton,
   NSpace,
   NText,
-  NIcon,
-} from "naive-ui";
+  NIcon } from "naive-ui";
 import {
   DocumentTextOutline,
   PeopleOutline,
@@ -23,17 +22,13 @@ import {
   SparklesOutline,
   ArrowBackOutline,
   NewspaperOutline,
-  ChatbubbleEllipsesOutline,
-  BookOutline,
-} from "@vicons/ionicons5";
+  BookOutline } from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { getPageHeaderOverride } from "../composables/usePageHeader";
 import { resolveFeatureIcon } from "../constants/featureIcons";
-import { PLATFORM_APP_NAME } from "../constants/platform";
-import { usePlatformBranding } from "../composables/usePlatformBranding";
+import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { fetchSystemFeatures } from "../api/client";
-import { prefetchKnowflowSession } from "../api/rag.js";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
@@ -43,6 +38,19 @@ import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { publicAsset } from "../utils/appBase";
 import { goBackToEntry } from "../utils/navigationReturn";
+
+/** 智能体 / 问答页：路由切换时保留组件实例 */
+const KEEP_ALIVE_VIEWS = [
+  "AiHomeView",
+  "CarbonQaV2View",
+  "SmartDataQueryV2View",
+  "KnowledgeSearchView",
+  "DataAnalysisView",
+];
+
+function routeViewKey(viewRoute) {
+  return viewRoute.meta?.keepAlive ? String(viewRoute.name || viewRoute.path) : viewRoute.path;
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -92,7 +100,6 @@ async function loadSystemFeatures() {
 
 onMounted(async () => {
   await loadUser();
-  prefetchKnowflowSession();
   loadSystemFeatures();
 });
 
@@ -100,15 +107,13 @@ const showUserAdmin = computed(() => hasPerm("admin.user"));
 const showDeptAdmin = computed(() => hasPerm("admin.dept"));
 const showMonitor = computed(() => hasPerm("admin.audit"));
 const showModelSettings = computed(() => hasPerm("admin.settings"));
-const showRagEncoding = computed(() => hasPerm("feature.rag_qa"));
 
 const showSystemSettings = computed(
   () =>
     showUserAdmin.value ||
     showDeptAdmin.value ||
     showMonitor.value ||
-    showModelSettings.value ||
-    showRagEncoding.value
+    showModelSettings.value
 );
 
 const settingsChildren = computed(() => {
@@ -117,43 +122,31 @@ const settingsChildren = computed(() => {
     children.push({
       label: t("menu.users"),
       key: "admin-users",
-      icon: () => h(NIcon, null, { default: () => h(PeopleOutline) }),
-    });
+      icon: () => h(NIcon, null, { default: () => h(PeopleOutline) })});
   }
   if (showDeptAdmin.value) {
     children.push({
       label: t("menu.departments"),
       key: "admin-departments",
-      icon: () => h(NIcon, null, { default: () => h(BusinessOutline) }),
-    });
+      icon: () => h(NIcon, null, { default: () => h(BusinessOutline) })});
   }
   if (showMonitor.value) {
     children.push({
       label: t("menu.monitor"),
       key: "admin-monitor",
-      icon: () => h(NIcon, null, { default: () => h(PulseOutline) }),
-    });
+      icon: () => h(NIcon, null, { default: () => h(PulseOutline) })});
   }
   if (showModelSettings.value) {
     children.push({
       label: t("menu.modelSettings"),
       key: "admin-model-settings",
-      icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) }),
-    });
-  }
-  if (showRagEncoding.value) {
-    children.push({
-      label: t("menu.encodingManagement"),
-      key: "rag",
-      icon: () => h(NIcon, null, { default: () => h(ChatbubbleEllipsesOutline) }),
-    });
+      icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) })});
   }
   if (showSystemSettings.value) {
     children.push({
       label: t("menu.systemDocs"),
       key: "admin-docs",
-      icon: () => h(NIcon, null, { default: () => h(BookOutline) }),
-    });
+      icon: () => h(NIcon, null, { default: () => h(BookOutline) })});
   }
   return children;
 });
@@ -163,13 +156,11 @@ const menuOptions = computed(() => {
     {
       label: t("menu.aiHome"),
       key: "ai-home",
-      icon: () => h(NIcon, null, { default: () => h(SparklesOutline) }),
-    },
+      icon: () => h(NIcon, null, { default: () => h(SparklesOutline) })},
     {
       label: t("menu.systemFunctions"),
       key: "system-functions",
-      icon: () => h(NIcon, null, { default: () => h(GridOutline) }),
-    },
+      icon: () => h(NIcon, null, { default: () => h(GridOutline) })},
   ];
 
   for (const feature of favoriteMenuFeatures.value) {
@@ -177,21 +168,18 @@ const menuOptions = computed(() => {
     items.push({
       label: feature.title,
       key: favoriteMenuKey(feature),
-      icon: () => h(NIcon, null, { default: () => h(Icon) }),
-    });
+      icon: () => h(NIcon, null, { default: () => h(Icon) })});
   }
 
   items.push(
     {
       label: t("menu.documents"),
       key: "documents",
-      icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
-    },
+      icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) })},
     {
       label: t("menu.knowledgeSubscriptions"),
       key: "knowledge-subscriptions",
-      icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) }),
-    }
+      icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) })}
   );
 
   if (showSystemSettings.value && settingsChildren.value.length) {
@@ -199,8 +187,7 @@ const menuOptions = computed(() => {
       label: t("menu.systemSettings"),
       key: SETTINGS_KEY,
       icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
-      children: settingsChildren.value,
-    });
+      children: settingsChildren.value});
   }
   return items;
 });
@@ -247,8 +234,7 @@ const activeKey = computed(() => {
     route.name === "admin-departments" ||
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
-    route.name === "admin-docs" ||
-    route.name === "rag"
+    route.name === "admin-docs"
   ) {
     return String(route.name);
   }
@@ -266,11 +252,7 @@ const headerTitle = computed(() => {
   return routeTitle(String(route.name || ""), String(route.meta?.title || "").trim());
 });
 
-const { platformAppTitle } = usePlatformBranding();
-
-const appDisplayName = computed(
-  () => platformAppTitle.value || t("app.name") || PLATFORM_APP_NAME
-);
+const appDisplayName = useAppDisplayName();
 
 const menuOptionKeys = computed(() => {
   const keys = new Set();
@@ -296,8 +278,7 @@ const resolvedActiveKey = computed(() => {
 const { indicatorStyle: menuIndicatorStyle } = useSiderMenuIndicator(siderMenuWrapRef, {
   activeKey: resolvedActiveKey,
   collapsed: siderCollapsed,
-  expandedKeys,
-});
+  expandedKeys});
 
 const showSubsystemNav = computed(
   () => isSubsystemPage.value && Boolean(headerTitle.value)
@@ -333,22 +314,9 @@ const contentStyle = computed(() => {
   return "padding: 12px 20px";
 });
 
-function ensureMenuExpanded() {
-  const keys = [...expandedKeys.value];
-  if (
-    route.name === "admin-users" ||
-    route.name === "admin-departments" ||
-    route.name === "admin-monitor" ||
-    route.name === "admin-model-settings" ||
-    route.name === "admin-docs" ||
-    route.name === "rag"
-  ) {
-    if (!keys.includes(SETTINGS_KEY)) keys.push(SETTINGS_KEY);
-  }
+function onExpandedKeysUpdate(keys) {
   expandedKeys.value = keys;
 }
-
-watch(() => route.name, ensureMenuExpanded, { immediate: true });
 
 watch(
   () => route.name,
@@ -359,10 +327,6 @@ watch(
     }
   },
 );
-
-function onExpandedKeysUpdate(keys) {
-  expandedKeys.value = keys;
-}
 
 function onMenuSelect(key) {
   if (key === SETTINGS_KEY) return;
@@ -487,26 +451,27 @@ function onMenuSelect(key) {
               v-if="innerRouteTransition !== 'route-instant'"
               :name="innerRouteTransition"
             >
-              <div
-                :key="viewRoute.path"
+              <KeepAlive :max="10" :include="KEEP_ALIVE_VIEWS">
+                <component
+                  :is="Component"
+                  :key="routeViewKey(viewRoute)"
+                  :class="[
+                    'app-route-page',
+                    { 'app-route-page--full': viewRoute.meta?.fullHeight },
+                  ]"
+                />
+              </KeepAlive>
+            </Transition>
+            <KeepAlive v-else :max="10" :include="KEEP_ALIVE_VIEWS">
+              <component
+                :is="Component"
+                :key="routeViewKey(viewRoute)"
                 :class="[
                   'app-route-page',
-                  { 'app-route-page--full': fullHeightPage },
+                  { 'app-route-page--full': viewRoute.meta?.fullHeight },
                 ]"
-              >
-                <component :is="Component" />
-              </div>
-            </Transition>
-            <div
-              v-else
-              :key="viewRoute.path"
-              :class="[
-                'app-route-page',
-                { 'app-route-page--full': fullHeightPage },
-              ]"
-            >
-              <component :is="Component" />
-            </div>
+              />
+            </KeepAlive>
           </router-view>
         </div>
       </n-layout-content>
@@ -525,9 +490,8 @@ function onMenuSelect(key) {
   overflow: hidden;
 }
 
-/* 系统壳层：与智能体页相同的渐变底 */
+/* 系统壳层：与智能体页相同的渐变底（底色见 feature-local-nav.css 壳层规则） */
 .main-layout :deep(.app-sider.n-layout-sider) {
-  background: var(--platform-chat-gradient) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
@@ -539,7 +503,6 @@ function onMenuSelect(key) {
 }
 
 .main-layout .header {
-  background: var(--platform-chat-gradient) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
@@ -643,7 +606,6 @@ function onMenuSelect(key) {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--platform-chat-gradient);
 }
 .app-main :deep(.n-layout-scroll-container) {
   display: flex;

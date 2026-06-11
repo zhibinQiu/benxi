@@ -82,6 +82,9 @@ compose_cmd() {
   if [[ "$COMPOSE_DEV" == 1 ]]; then
     args+=(-f compose.dev.yaml)
   fi
+  if [[ "${EXPOSE_DEPS:-0}" == 1 ]] && [[ -f compose.expose-deps.yaml ]]; then
+    args+=(-f compose.expose-deps.yaml)
+  fi
   if [[ ${#COMPOSE_PROFILES_EXTRA[@]} -gt 0 ]]; then
     local p
     for p in "${COMPOSE_PROFILES_EXTRA[@]}"; do
@@ -133,7 +136,7 @@ image_list() {
     if [[ "$has_kf" == 1 ]]; then
       imgs+=(
         "mysql:8.0.39"
-        "elasticsearch:${STACK_VERSION:-8.11.3}"
+        "infiniflow/infinity:${INFINITY_VERSION:-v0.6.0-dev5}"
         "gotenberg/gotenberg:8"
       )
     fi
@@ -172,7 +175,7 @@ cmd_pull() {
   info "拉取基础镜像（postgres/redis/minio 等）..."
   compose_cmd pull postgres redis minio 2>/dev/null || true
   if [[ " ${COMPOSE_PROFILES_EXTRA[*]} " == *" knowflow "* ]]; then
-    compose_cmd pull knowflow-mysql knowflow-es knowflow-gotenberg 2>/dev/null || true
+    compose_cmd pull knowflow-mysql knowflow-infinity knowflow-gotenberg 2>/dev/null || true
   fi
 }
 
@@ -315,6 +318,11 @@ usage() {
   ps                    查看状态
   logs [服务名]         查看日志
   init-env              生成 .env（合并 platform/.env）
+
+环境变量:
+  EXPOSE_DEPS=1         叠加 compose.expose-deps.yaml（远程依赖开发）
+  STACK_USE_MIRROR=1    叠加 compose.mirror.yaml（默认开启）
+  COMPOSE_PROJECT_NAME  默认 zhitan；远程依赖栈可用 lvye
 
 示例:
   bash scripts/stack.sh build --profile speech

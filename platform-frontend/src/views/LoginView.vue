@@ -8,12 +8,12 @@ import {
   NFormItem,
   NInput,
   NSpace,
-  NText,
-  useMessage,
-} from "naive-ui";
+  NText } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
 import { useAppPreferences } from "../composables/useAppPreferences";
 import { useI18n } from "../composables/useI18n";
+import { usePlatformUi } from "../composables/usePlatformUi";
+import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { markSkipMotionAfterLogin } from "../utils/routeTransition";
 import { publicAsset } from "../utils/appBase";
 import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
@@ -24,10 +24,11 @@ import TypewriterText from "../components/TypewriterText.vue";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 const { login, register } = useAuth();
 const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
 const { t, localeLabel } = useI18n();
+const appDisplayName = useAppDisplayName();
 
 const showcaseTaglines = computed(() => [t("login.showcaseTagline")]);
 
@@ -36,8 +37,7 @@ const showcaseTypewriterOptions = {
   pauseAfterLine: 2800,
   eraseDelay: 22,
   pauseBetweenLines: 400,
-  loopSingle: true,
-};
+  loopSingle: true};
 
 const account = ref("15963564658");
 const password = ref("admin123");
@@ -65,8 +65,7 @@ function resolveHeaderAvatarPoint() {
   const fromRight = 20 + 52 + 8 + 56 + 8 + 88 + 8 + 14;
   return {
     x: Math.max(window.innerWidth * 0.55, window.innerWidth - fromRight),
-    y: headerH / 2,
-  };
+    y: headerH / 2};
 }
 
 function resolveCardElement() {
@@ -109,8 +108,7 @@ async function flyLoginCardToHeader() {
     pointerEvents: "none",
     transformOrigin: "center center",
     transition: "none",
-    overflow: "hidden",
-  });
+    overflow: "hidden"});
   document.body.appendChild(clone);
   card.style.visibility = "hidden";
   exiting.value = true;
@@ -139,10 +137,10 @@ async function onSubmit() {
   loading.value = true;
   try {
     await login(account.value.trim(), password.value);
-    message.success("登录成功");
+    ui.success("登录成功");
     await navigateAfterAuth();
   } catch (e) {
-    message.error(e.message || "登录失败");
+    ui.error(e.message || "登录失败");
     exiting.value = false;
   } finally {
     loading.value = false;
@@ -158,24 +156,24 @@ async function onRegister() {
   const mobile = regPhone.value.trim();
   const name = regDisplayName.value.trim();
   if (!isValidPhone(mobile)) {
-    message.warning("请输入有效的 11 位手机号");
+    ui.warning("请输入有效的 11 位手机号");
     return;
   }
   if (name.length < 2) {
-    message.warning("姓名至少 2 个字符");
+    ui.warning("姓名至少 2 个字符");
     return;
   }
   if (regPassword.value.length < 6) {
-    message.warning("密码至少 6 个字符");
+    ui.warning("密码至少 6 个字符");
     return;
   }
   if (regPassword.value !== regPassword2.value) {
-    message.warning("两次输入的密码不一致");
+    ui.warning("两次输入的密码不一致");
     return;
   }
   const email = regEmail.value.trim();
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    message.warning("请输入有效的邮箱");
+    ui.warning("请输入有效的邮箱");
     return;
   }
   registering.value = true;
@@ -184,12 +182,11 @@ async function onRegister() {
       phone: mobile,
       email,
       displayName: name,
-      password: regPassword.value,
-    });
-    message.success("注册成功，已自动登录");
+      password: regPassword.value});
+    ui.success("注册成功，已自动登录");
     await navigateAfterAuth();
   } catch (e) {
-    message.error(e.message || "注册失败");
+    ui.error(e.message || "注册失败");
   } finally {
     registering.value = false;
   }
@@ -218,11 +215,13 @@ function flipToLogin() {
         quaternary
         circle
         size="small"
-        class="login-glass-btn login-glass-btn--pref"
+        class="login-glass-btn login-glass-btn--pref login-glass-btn--pref-circle"
         :aria-label="isDark ? t('userMenu.lightMode') : t('userMenu.darkMode')"
         @click="toggleTheme"
       >
-        <n-icon :size="18" :component="isDark ? SunnyOutline : MoonOutline" />
+        <template #icon>
+          <n-icon :size="18" :component="isDark ? SunnyOutline : MoonOutline" />
+        </template>
       </n-button>
       <n-button quaternary size="small" class="login-glass-btn login-glass-btn--pref" @click="toggleLocale">
         <template #icon>
@@ -241,12 +240,12 @@ function flipToLogin() {
       <aside class="login-showcase">
         <div class="login-showcase__inner">
           <div class="login-showcase__brand">
-            <img :src="publicAsset('logo.svg')" :alt="t('app.name')" class="login-showcase__logo" />
+            <img :src="publicAsset('logo.svg')" :alt="appDisplayName" class="login-showcase__logo" />
             <PlatformBrandTitle
               tag="h1"
               class="login-showcase__title"
               strong
-              :title="t('login.showcaseTitle')"
+              :title="appDisplayName"
             />
           </div>
           <TypewriterText
@@ -389,7 +388,7 @@ function flipToLogin() {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  background: var(--platform-bg-base);
+  background: transparent;
 }
 
 .login-page__copyright {

@@ -47,3 +47,71 @@ export function validateUploadFiles(fileList, { maxFiles = DOCUMENT_UPLOAD_MAX_F
   }
   return { ok: true, files };
 }
+
+const _EXT_LABELS = {
+  pdf: "pdf",
+  doc: "word",
+  docx: "word",
+  dot: "word",
+  dotx: "word",
+  txt: "txt",
+  md: "md",
+  markdown: "md",
+  rtf: "rtf",
+  xls: "excel",
+  xlsx: "excel",
+  csv: "csv",
+  ppt: "ppt",
+  pptx: "ppt",
+  html: "html",
+  htm: "html",
+  png: "image",
+  jpg: "image",
+  jpeg: "image",
+  gif: "image",
+  webp: "image",
+};
+
+const _MIME_LABELS = {
+  "application/pdf": "pdf",
+  "application/msword": "word",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "word",
+  "text/plain": "txt",
+  "text/markdown": "md",
+};
+
+/** 从文件名 / MIME 推断格式标签（与后端 document_format 对齐） */
+export function fileFormatLabel(fileName, mimeType = "") {
+  const name = String(fileName || "");
+  if (name.includes(".")) {
+    const ext = name.split(".").pop().toLowerCase().trim();
+    if (_EXT_LABELS[ext]) return _EXT_LABELS[ext];
+  }
+  const mt = String(mimeType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (_MIME_LABELS[mt]) return _MIME_LABELS[mt];
+  if (mt.startsWith("image/")) return "image";
+  if (name.includes(".")) {
+    const ext = name.split(".").pop().toLowerCase().trim();
+    if (ext && /^[a-z0-9]{1,8}$/i.test(ext)) return ext;
+  }
+  return null;
+}
+
+/** 新版本须与已有已上传版本格式一致 */
+export function validateVersionFormatMatch(versions, file) {
+  const uploaded = (versions || []).filter((v) => v.uploaded);
+  if (!uploaded.length || !file) return { ok: true };
+  const baseline = uploaded.find((v) => v.is_current) || uploaded[0];
+  const expected = fileFormatLabel(baseline.file_name, baseline.mime_type);
+  const incoming = fileFormatLabel(file.name, file.type);
+  if (expected && incoming && expected !== incoming) {
+    return {
+      ok: false,
+      message: `新版本须与已有版本格式一致（当前 ${formatDocumentFormatLabel(expected)}，上传 ${formatDocumentFormatLabel(incoming)}）`,
+    };
+  }
+  return { ok: true };
+}

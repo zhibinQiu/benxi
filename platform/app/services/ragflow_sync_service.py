@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +25,7 @@ from app.models.ragflow_document_mirror_link import RagflowDocumentMirrorLink
 from app.services.document_service import list_queryable_documents, resolve_current_version
 from app.services.ragflow_scope_service import (
     ensure_scope_dataset,
+    prepare_dataset_for_upload,
     resolve_dataset_for_document,
     sync_document_kb_grants,
 )
@@ -49,7 +52,121 @@ def _sync_context_for_document(
     return actor, get_knowflow_client_for_user(db, actor)
 
 
+def _configure_and_parse_uploaded_document(
+    kf,
+    *,
+    dataset_id: str,
+    ragflow_document_id: str,
+    file_name: str,
+    mime_type: str,
+) -> str | None:
+    """上传后按文件类型设置解析器并重新提交解析（覆盖 upload 时的默认 DeepDOC）。"""
+    from app.integrations.ragflow_client import RagflowError
+    from app.services.knowledge_parser_service import (
+        build_parser_config,
+        infer_parser_for_upload_file,
+    )
+    from app.services.ragflow_scope_service import _admin_rag_client
+
+    parser_id, layout = infer_parser_for_upload_file(file_name, mime_type)
+    parser, parser_config = build_parser_config(parser_id, layout)
+    clients = [getattr(kf, "_rag", None)]
+    admin = _admin_rag_client()
+    if admin and admin not in clients:
+        clients.append(admin)
+    last_err: Exception | None = None
+    for rag in clients:
+        if rag is None:
+            continue
+        try:
+            if rag.health_ok():
+                rag.change_document_parser(
+                    ragflow_document_id, parser, parser_config=parser_config
+                )
+                rag.parse_documents(dataset_id, [ragflow_document_id])
+                return parser
+        except RagflowError as e:
+            last_err = e
+            logger.warning(
+                "KnowFlow 配置解析器失败 doc=%s parser=%s: %s",
+                ragflow_document_id,
+                parser,
+                e,
+            )
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "KnowFlow 提交解析失败 doc=%s: %s", ragflow_document_id, e
+            )
+    if last_err:
+        logger.warning(
+            "KnowFlow 未能为 doc=%s 应用解析器 %s: %s",
+            ragflow_document_id,
+            parser,
+            last_err,
+        )
+    return parser
+
+
+def _upload_rag_clients(
+    db: Session,
+    *,
+    actor: User,
+    document: Document,
+    kf,
+) -> list[RagflowClient]:
+    """上传客户端顺序与分级库建库一致：mapped 下优先 bootstrap 特权会话。"""
+    from app.services.ragflow_scope_service import (
+        _admin_rag_client,
+        _is_mapped_account_mode,
+        _privileged_rag_client,
+        _provision_rag_for_scope,
+    )
+
+    scope = _document_scope(db, document)
+    clients: list[RagflowClient] = []
+    seen: set[str] = set()
+
+    def _add(client: RagflowClient | None) -> None:
+        if client is None:
+            return
+        key = (client.session_auth or "") + "|" + (client.api_key or "")
+        if key in seen:
+            return
+        seen.add(key)
+        clients.append(client)
+
+    if _is_mapped_account_mode():
+        priv = _privileged_rag_client(db)
+        admin = _admin_rag_client()
+        if priv or admin:
+            mapped_clients: list[RagflowClient] = []
+            mapped_seen: set[str] = set()
+
+            def _add_mapped(client: RagflowClient | None) -> None:
+                if client is None:
+                    return
+                key = (client.session_auth or "") + "|" + (client.api_key or "")
+                if key in mapped_seen:
+                    return
+                mapped_seen.add(key)
+                mapped_clients.append(client)
+
+            _add_mapped(priv)
+            _add_mapped(admin)
+            return mapped_clients
+
+    _add(_provision_rag_for_scope(db, actor, scope, kf))
+    _add(getattr(kf, "_rag", None))
+    _add(_privileged_rag_client(db))
+    _add(_admin_rag_client())
+    return clients
+
+
 def _upload_with_fallback(
+    db: Session,
+    actor: User,
+    document: Document,
     kf,
     *,
     dataset_id: str,
@@ -59,16 +176,9 @@ def _upload_with_fallback(
     platform_document_id: uuid.UUID,
     platform_user_id: uuid.UUID | None,
 ) -> str | None:
-    from app.services.ragflow_scope_service import _admin_rag_client
-
-    clients = [getattr(kf, "_rag", None)]
-    admin = _admin_rag_client()
-    if admin and admin not in clients:
-        clients.append(admin)
+    clients = _upload_rag_clients(db, actor=actor, document=document, kf=kf)
     last_err: Exception | None = None
     for rag in clients:
-        if rag is None:
-            continue
         try:
             doc = rag.upload_document(
                 dataset_id,
@@ -82,7 +192,7 @@ def _upload_with_fallback(
             )
             rag_doc_id = doc.get("id") or doc.get("doc_id")
             if rag_doc_id:
-                return str(rag_doc_id)
+                return str(rag_doc_id), None
         except Exception as e:
             last_err = e
             logger.warning(
@@ -92,7 +202,28 @@ def _upload_with_fallback(
             )
     if last_err:
         logger.warning("KnowFlow 上传全部失败 doc=%s: %s", platform_document_id, last_err)
-    return None
+    return None, _last_upload_error(last_err)
+
+
+def _last_upload_error(err: Exception | None) -> str | None:
+    if err is None:
+        return None
+    raw = str(err).strip()
+    if "Unknown filter" in raw or "FOPN_foweb" in raw:
+        return "PDF 使用了不支持的加密/压缩格式，请另存为标准 PDF 后再索引。"
+    if "Tenant not found" in raw:
+        return "知识库账号未就绪，请重新登录或联系管理员完成知识服务开户。"
+    if "权限检查服务异常" in raw:
+        return (
+            "目标知识库在 KnowFlow 中不存在或权限服务异常，"
+            "请打开「切片管理」同步知识库目录后重试。"
+        )
+    if "权限检查" in raw:
+        return "知识库权限校验失败，请稍后重试或联系管理员。"
+    from app.core.user_messages import sanitize_user_message
+
+    msg = sanitize_user_message(raw, fallback="")
+    return msg or None
 
 
 def _get_link(db: Session, document_id: uuid.UUID) -> RagflowDocumentLink | None:
@@ -126,6 +257,128 @@ def _should_mirror_shared_document(db: Session, user: User, document: Document) 
     if not can_access_document(db, user, document, PermissionLevel.query.value):
         return False
     return has_explicit_user_query_share(db, user, document)
+
+
+@dataclass(frozen=True)
+class KnowflowDeleteTarget:
+    dataset_id: str
+    ragflow_document_id: str
+
+
+def _append_knowflow_target(
+    targets: list[KnowflowDeleteTarget],
+    seen: set[tuple[str, str]],
+    dataset_id: str | None,
+    ragflow_document_id: str | None,
+) -> None:
+    if not dataset_id or not ragflow_document_id:
+        return
+    key = (dataset_id, ragflow_document_id)
+    if key in seen:
+        return
+    seen.add(key)
+    targets.append(
+        KnowflowDeleteTarget(
+            dataset_id=dataset_id, ragflow_document_id=ragflow_document_id
+        )
+    )
+
+
+def _execute_knowflow_deletes(
+    db: Session,
+    document: Document,
+    targets: list[KnowflowDeleteTarget],
+) -> None:
+    for target in targets:
+        deleted = False
+        for client in _ragflow_clients_for_document(db, document):
+            try:
+                if client.health_ok():
+                    client.delete_documents(
+                        target.dataset_id, [target.ragflow_document_id]
+                    )
+                    deleted = True
+                    break
+            except Exception as e:
+                logger.debug(
+                    "KnowFlow 删除文档重试 platform_doc=%s: %s",
+                    document.id,
+                    e,
+                )
+        if not deleted:
+            _delete_ragflow_documents_mysql([target.ragflow_document_id])
+
+
+def schedule_knowflow_deletes(targets: list[KnowflowDeleteTarget]) -> None:
+    """后台异步清理 KnowFlow 远端索引，避免批量删除阻塞请求。"""
+    if not targets:
+        return
+    unique: dict[tuple[str, str], KnowflowDeleteTarget] = {}
+    for target in targets:
+        unique[(target.dataset_id, target.ragflow_document_id)] = target
+    pending = list(unique.values())
+
+    def run() -> None:
+        client = RagflowClient()
+        for target in pending:
+            try:
+                if client.health_ok():
+                    client.delete_documents(
+                        target.dataset_id, [target.ragflow_document_id]
+                    )
+                    continue
+            except Exception as e:
+                logger.debug("后台 KnowFlow 删除跳过: %s", e)
+            _delete_ragflow_documents_mysql([target.ragflow_document_id])
+
+    threading.Thread(
+        target=run, daemon=True, name="knowflow-batch-delete"
+    ).start()
+
+
+def detach_platform_document_knowflow(
+    db: Session,
+    document: Document,
+    *,
+    sync_remote: bool = True,
+) -> list[KnowflowDeleteTarget]:
+    """删除本地 KnowFlow 映射；可选同步远端或返回待删目标供后台处理。"""
+    from app.services.ragflow_version_link_service import (
+        list_version_links_for_document,
+    )
+
+    targets: list[KnowflowDeleteTarget] = []
+    seen: set[tuple[str, str]] = set()
+
+    for mirror in list(
+        db.scalars(
+            select(RagflowDocumentMirrorLink).where(
+                RagflowDocumentMirrorLink.platform_document_id == document.id
+            )
+        ).all()
+    ):
+        _append_knowflow_target(
+            targets, seen, mirror.dataset_id, mirror.ragflow_document_id
+        )
+        db.delete(mirror)
+
+    for vl in list_version_links_for_document(db, document.id):
+        _append_knowflow_target(
+            targets, seen, vl.dataset_id, vl.ragflow_document_id
+        )
+        db.delete(vl)
+
+    link = _get_link(db, document.id)
+    if link:
+        _append_knowflow_target(
+            targets, seen, link.dataset_id, link.ragflow_document_id
+        )
+        db.delete(link)
+
+    db.flush()
+    if sync_remote and targets:
+        _execute_knowflow_deletes(db, document, targets)
+    return targets
 
 
 def remove_document_mirror(
@@ -331,48 +584,33 @@ def _ragflow_clients_for_document(db: Session, document: Document) -> list[Ragfl
 
 def remove_platform_document_from_knowflow(db: Session, document: Document) -> bool:
     """平台文档删除/关闭时，从 KnowFlow 知识库移除索引并删除映射。"""
-    remove_all_document_mirrors(db, document)
-    link = _get_link(db, document.id)
-    if not link:
-        return False
-    deleted = False
-    if link.dataset_id and link.ragflow_document_id:
-        for client in _ragflow_clients_for_document(db, document):
-            try:
-                if client.health_ok():
-                    client.delete_documents(
-                        link.dataset_id, [link.ragflow_document_id]
-                    )
-                    deleted = True
-                    break
-            except Exception as e:
-                logger.debug(
-                    "KnowFlow 删除文档重试 platform_doc=%s: %s",
-                    document.id,
-                    e,
-                )
-        if not deleted:
-            deleted = _delete_ragflow_documents_mysql([link.ragflow_document_id])
-            if not deleted:
-                logger.warning(
-                    "从 KnowFlow 删除文档失败 platform_doc=%s",
-                    document.id,
-                )
-    db.delete(link)
-    db.flush()
-    return True
+    targets = detach_platform_document_knowflow(db, document, sync_remote=True)
+    return bool(targets)
 
 
 def sync_document_to_knowflow(
-    db: Session, user: User, document: Document, *, force: bool = False
+    db: Session,
+    user: User,
+    document: Document,
+    *,
+    force: bool = False,
+    version_id: uuid.UUID | None = None,
 ) -> str | None:
     """将文档同步到对应分级知识库（公司/部门/个人仅一份），并同步 KB 授权。"""
+    from app.services.ragflow_version_link_service import (
+        get_version_link_by_version_id,
+        upsert_version_link,
+    )
+
     if document.deleted_at is not None:
         return None
     if not can_access_document(db, user, document, PermissionLevel.query.value):
         return None
 
-    if _should_mirror_shared_document(db, user, document):
+    if version_id is not None:
+        force = True
+
+    if _should_mirror_shared_document(db, user, document) and version_id is None:
         rid = sync_shared_document_mirror(db, user, document, force=force)
         if rid:
             sync_document_kb_grants(db, document)
@@ -391,26 +629,114 @@ def sync_document_to_knowflow(
         raise KnowflowSyncError(KNOWLEDGE_SYNC_NO_KB)
 
     existing = _get_link(db, document.id)
+    version_link = (
+        get_version_link_by_version_id(db, version_id) if version_id else None
+    )
+
+    if version_id:
+        version = db.get(DocumentVersion, version_id)
+        if not version or version.document_id != document.id:
+            from app.core.user_messages import KNOWLEDGE_SYNC_NO_FILE
+
+            raise KnowflowSyncError(KNOWLEDGE_SYNC_NO_FILE)
+    else:
+        version = resolve_current_version(db, document)
+
+    if not version:
+        from app.core.user_messages import KNOWLEDGE_SYNC_NO_FILE
+
+        logger.warning("KnowFlow 同步跳过：无已上传版本 platform_doc=%s", document.id)
+        raise KnowflowSyncError(KNOWLEDGE_SYNC_NO_FILE)
+
+    from app.services.document_checksum_service import ensure_version_checksum
+    from app.services.ragflow_version_link_service import (
+        find_reusable_knowflow_version_link,
+        upsert_canonical_link,
+    )
+
+    content_checksum = ensure_version_checksum(db, version)
+    if content_checksum:
+        reusable = find_reusable_knowflow_version_link(
+            db,
+            dataset_id=target_ds,
+            file_name=version.file_name,
+            checksum=content_checksum,
+            exclude_version_id=version.id,
+        )
+        reusable_id = (reusable.ragflow_document_id if reusable else "") or ""
+        if reusable_id:
+            vl = upsert_version_link(
+                db,
+                document=document,
+                version=version,
+                ragflow_document_id=reusable_id,
+                dataset_id=target_ds,
+                file_name=reusable.file_name or version.file_name,
+                platform_user_id=provision_user.id,
+                parser_id=reusable.parser_id,
+            )
+            if reusable.index_completed_at and vl.index_completed_at is None:
+                vl.index_completed_at = reusable.index_completed_at
+            upsert_canonical_link(
+                db,
+                document=document,
+                ragflow_document_id=reusable_id,
+                dataset_id=target_ds,
+                file_name=vl.file_name,
+                platform_user_id=provision_user.id,
+            )
+            db.flush()
+            sync_document_kb_grants(db, document)
+            source_doc = db.get(Document, reusable.platform_document_id)
+            if source_doc and source_doc.id != document.id:
+                sync_document_kb_grants(db, source_doc)
+            logger.info(
+                "KnowFlow 复用已有索引 doc=%s version=%s ragflow=%s source_doc=%s",
+                document.id,
+                version.id,
+                reusable_id,
+                reusable.platform_document_id,
+            )
+            return reusable_id
+
     if existing and not force:
         if existing.dataset_id == target_ds:
             sync_document_kb_grants(db, document)
             return existing.ragflow_document_id
         force = True
 
-    if existing and force and existing.ragflow_document_id and existing.dataset_id:
-        try:
-            RagflowClient().delete_documents(
-                existing.dataset_id, [existing.ragflow_document_id]
+    if force:
+        stale_ids: list[tuple[str, str]] = []
+        if version_link and version_link.ragflow_document_id and version_link.dataset_id:
+            stale_ids.append(
+                (version_link.dataset_id, version_link.ragflow_document_id)
             )
-        except Exception as e:
-            logger.debug("强制重同步前删除旧索引跳过: %s", e)
-
-    version = resolve_current_version(db, document)
-    if not version:
-        from app.core.user_messages import KNOWLEDGE_SYNC_NO_FILE
-
-        logger.warning("KnowFlow 同步跳过：无已上传版本 platform_doc=%s", document.id)
-        raise KnowflowSyncError(KNOWLEDGE_SYNC_NO_FILE)
+        elif (
+            existing
+            and existing.ragflow_document_id
+            and existing.dataset_id
+            and version_id is None
+        ):
+            stale_ids.append((existing.dataset_id, existing.ragflow_document_id))
+        reuse_ids: set[str] = set()
+        if content_checksum:
+            reuse = find_reusable_knowflow_version_link(
+                db,
+                dataset_id=target_ds,
+                file_name=version.file_name,
+                checksum=content_checksum,
+                exclude_version_id=version.id,
+            )
+            rid = (reuse.ragflow_document_id if reuse else "") or ""
+            if rid:
+                reuse_ids.add(rid)
+        for ds_id, rag_id in stale_ids:
+            if rag_id in reuse_ids:
+                continue
+            try:
+                RagflowClient().delete_documents(ds_id, [rag_id])
+            except Exception as e:
+                logger.debug("强制重同步前删除旧索引跳过: %s", e)
 
     from app.storage.object_store import get_object_store
 
@@ -425,7 +751,17 @@ def sync_document_to_knowflow(
         title=document.title or "",
         description=document.description or "",
     )
-    rag_doc_id = _upload_with_fallback(
+    prepare_dataset_for_upload(
+        db,
+        document,
+        target_ds,
+        actor=user,
+        provision_user=provision_user,
+    )
+    rag_doc_id, upload_err = _upload_with_fallback(
+        db,
+        provision_user,
+        document,
         kf,
         dataset_id=target_ds,
         file_name=upload_name,
@@ -437,23 +773,26 @@ def sync_document_to_knowflow(
     if not rag_doc_id:
         from app.core.user_messages import KNOWLEDGE_SYNC_UPLOAD_FAILED
 
-        raise KnowflowSyncError(KNOWLEDGE_SYNC_UPLOAD_FAILED)
+        raise KnowflowSyncError(upload_err or KNOWLEDGE_SYNC_UPLOAD_FAILED)
 
-    if existing:
-        existing.ragflow_document_id = rag_doc_id
-        existing.dataset_id = target_ds
-        existing.platform_user_id = user.id
-        existing.file_name = upload_name
-    else:
-        db.add(
-            RagflowDocumentLink(
-                platform_document_id=document.id,
-                platform_user_id=user.id,
-                ragflow_document_id=rag_doc_id,
-                dataset_id=target_ds,
-                file_name=upload_name,
-            )
-        )
+    applied_parser = _configure_and_parse_uploaded_document(
+        kf,
+        dataset_id=target_ds,
+        ragflow_document_id=rag_doc_id,
+        file_name=upload_name,
+        mime_type=upload_mime,
+    )
+
+    upsert_version_link(
+        db,
+        document=document,
+        version=version,
+        ragflow_document_id=rag_doc_id,
+        dataset_id=target_ds,
+        file_name=upload_name,
+        platform_user_id=provision_user.id,
+        parser_id=applied_parser,
+    )
     db.flush()
     sync_document_kb_grants(db, document)
     return rag_doc_id
@@ -540,7 +879,9 @@ def sync_accessible_documents(
 def allowed_ragflow_doc_map(
     db: Session, user: User, platform_document_ids: list[str]
 ) -> dict[str, str]:
-    """平台文档 ID → RAGFlow 文档 ID（仅含当前用户具备「可查询」权限的文档）。"""
+    """平台文档 ID → RAGFlow 文档 ID（最后索引成功版本的切片，可查询权限）。"""
+    from app.services.ragflow_version_link_service import resolve_index_link
+
     if not get_knowflow_client_for_user(db, user).enabled():
         return {}
     out: dict[str, str] = {}
@@ -557,6 +898,10 @@ def allowed_ragflow_doc_map(
         mirror = get_document_mirror_link(db, did, user.id)
         if mirror:
             out[pid] = mirror.ragflow_document_id
+            continue
+        vl, _version = resolve_index_link(db, doc)
+        if vl and vl.ragflow_document_id:
+            out[pid] = vl.ragflow_document_id
             continue
         link = _get_link(db, did)
         if link:

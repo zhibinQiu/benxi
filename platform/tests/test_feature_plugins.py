@@ -10,7 +10,6 @@ def test_builtin_plugins_registered():
     plugins = all_plugins()
     ids = {p.id for p in plugins}
     assert "pdf_translate" in ids
-    assert "rag_qa" in ids
     assert "speech_to_text" in ids
     assert "ocr" in ids
     assert "doc_compare" in ids
@@ -23,14 +22,6 @@ def test_builtin_plugins_registered():
     assert "ai_digital_robot" in ids
     assert "emission_reduction_strategy" in ids
     assert "carbon_reduction_strategy" not in ids
-
-
-def test_rag_plugin_admin_only():
-    p = get_plugin("rag_qa")
-    assert p is not None
-    assert p.title == "编码管理"
-    assert p.permission_code == "feature.rag_qa"
-    assert p.grant_to_roles == ("sys_admin",)
 
 
 def test_translate_plugin_has_router_and_permission():

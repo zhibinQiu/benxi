@@ -122,7 +122,7 @@ flowchart TB
   API_C -.-> KF
 ```
 
-详见 [amd64 部署](./deploy-amd64.md)。Apple Silicon 上 KnowFlow 需从 `third_party/KnowFlow` **源码构建** arm64 镜像。
+详见 [部署指南](../operations/deployment.md)。Apple Silicon 上 KnowFlow 需从 `third_party/KnowFlow` **源码构建** arm64 镜像。
 
 ### 3.3 服务端口一览
 
@@ -431,7 +431,7 @@ sequenceDiagram
   loop 轮询
     FE->>API: GET /compare/jobs/{id}
   end
-  Note over FE,KF: NL 检索可走 POST /compare/search<br/>先算白名单再 retrieval
+  Note over FE,KF: NL 检索 POST /compare/search 先白名单再 retrieval
 ```
 
 **实现要点**：v2.0 起 diff **不阻塞** HTTP；语义检索与 diff 色系分离，权限仍由平台过滤 `platform_document_id`。
@@ -535,7 +535,7 @@ erDiagram
 |------|------|
 | **问题** | 开发机 arm64 无法直接用 amd64 预构建 KnowFlow 镜像；生产需全 Docker 与 `.env.docker` 改写。 |
 | **实现** | ① `scripts/zhitan.sh` 统一子命令；② `docker-compose.knowflow.yml` 源码构建 + `docker-compose.knowflow.amd64.yml` 预构建；③ `scripts/deploy.sh` 生成 `knowflow.env.docker`、不改密钥只改服务名。 |
-| **文档** | [deploy-amd64.md](./deploy-amd64.md)、`scripts/README.md` |
+| **文档** | [部署指南](../operations/deployment.md)、`scripts/README.md` |
 
 ### 8.8 文档对比：异步 diff + 可选语义检索
 
@@ -595,13 +595,13 @@ erDiagram
 
 | 主题 | 文档 |
 |------|------|
-| 运维与端口 | [平台架构手册](./platform-architecture.md) |
+| 运维与端口 | [系统架构](../operations/architecture.md) · [配置说明](../operations/configuration.md) |
 | 分层与迁移 | [分层架构](./layered-architecture.md) |
 | RBAC 与文档 ACL | [权限模型](../platform/permission-model.md) |
 | 功能插件开发 | [功能插件](../platform/feature-plugins.md) |
 | 文档对比产品 | [文档对比](../platform/doc-compare-product-design.md) |
 | 快速上手 | [getting-started.md](../getting-started.md) |
-| 部署 | [deploy-amd64.md](./deploy-amd64.md) |
+| 部署 | [部署指南](../operations/deployment.md) |
 
 ---
 

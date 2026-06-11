@@ -82,15 +82,15 @@ _PARSER_DEFAULTS: dict[str, dict] = {
 
 def normalize_parser_id(parser_id: str | None) -> str:
     settings = get_settings()
-    raw = (parser_id or settings.knowledge_default_parser_id or "smart").strip().lower()
-    return raw if raw in _ALLOWED_PARSERS else "smart"
+    raw = (parser_id or settings.knowledge_default_parser_id or "naive").strip().lower()
+    return raw if raw in _ALLOWED_PARSERS else "naive"
 
 
 def normalize_layout_recognize(layout: str | None) -> str:
     settings = get_settings()
-    raw = (layout or settings.knowledge_default_layout_recognize or "DeepDOC").strip()
+    raw = (layout or settings.knowledge_default_layout_recognize or "Plain Text").strip()
     allowed = {item["id"] for item in LAYOUT_RECOGNIZERS}
-    return raw if raw in allowed else "DeepDOC"
+    return raw if raw in allowed else "Plain Text"
 
 
 def coerce_parser_layout(parser_id: str, layout_recognize: str) -> tuple[str, str]:
@@ -100,6 +100,32 @@ def coerce_parser_layout(parser_id: str, layout_recognize: str) -> tuple[str, st
     if layout in _MODERN_LAYOUTS and parser not in _MODERN_PARSERS:
         parser = "smart"
     return parser, layout
+
+
+def infer_parser_for_upload_file(
+    file_name: str,
+    mime_type: str = "",
+) -> tuple[str, str]:
+    """按文件类型选择 KnowFlow 解析器；纯文本避免 DeepDOC。"""
+    lower = (file_name or "").lower()
+    mime = (mime_type or "").lower()
+
+    if lower.endswith(".md") or "markdown" in mime:
+        return "naive", "Plain Text"
+    if lower.endswith((".txt", ".csv", ".log", ".json", ".xml", ".yaml", ".yml")):
+        return "naive", "Plain Text"
+    if mime.startswith("text/") or mime in ("application/json", "application/xml"):
+        return "naive", "Plain Text"
+    if lower.endswith((".doc", ".docx")) or "word" in mime:
+        return "naive", "Plain Text"
+    if lower.endswith((".xlsx", ".xls")) or "spreadsheet" in mime or "excel" in mime:
+        return "table", "Plain Text"
+
+    settings = get_settings()
+    return (
+        normalize_parser_id(settings.knowledge_default_parser_id),
+        normalize_layout_recognize(settings.knowledge_default_layout_recognize),
+    )
 
 
 def build_parser_config(
@@ -140,6 +166,6 @@ def list_parser_options() -> dict:
         "config_hints": [
             "PDF 解析器（MinerU/PaddleOCR/DOTS）地址在 deploy/knowflow/settings.yaml 配置",
             "嵌入向量模型在「系统设置 → 模型配置」或 KnowFlow 管理后台配置",
-            "解析失败常见原因：OCR 服务未启动、嵌入模型未启用、Elasticsearch 分片异常",
+            "解析失败常见原因：OCR 服务未启动、嵌入模型未启用、Infinity 向量库异常",
         ],
     }

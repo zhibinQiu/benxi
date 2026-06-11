@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class JobOut(BaseModel):
@@ -17,6 +17,10 @@ class JobOut(BaseModel):
     finished_at: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class JobBatchDeleteIn(BaseModel):
+    job_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=100)
 
 
 class NotificationOut(BaseModel):

@@ -1,7 +1,8 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { NButton, NCard, NSelect, NSpin, NText, NSpace, useMessage } from "naive-ui";
+import { NButton, NCard, NSelect, NSpin, NText, NSpace } from "naive-ui";
 import * as echarts from "echarts";
 import { fetchCarbonAssetHistory } from "../api/client";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
@@ -9,7 +10,7 @@ import { goBackToEntry } from "../utils/navigationReturn";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 
 const loading = ref(true);
 const series = ref(null);
@@ -74,18 +75,15 @@ function renderChart() {
     grid: { left: 48, right: 24, top: 32, bottom: 48 },
     tooltip: {
       trigger: "axis",
-      valueFormatter: (v) => (v != null ? `¥${v}/t` : "—"),
-    },
+      valueFormatter: (v) => (v != null ? `¥${v}/t` : "—")},
     xAxis: {
       type: "category",
       data: pts.map((p) => p.trade_date),
-      axisLabel: { rotate: 35, fontSize: 11 },
-    },
+      axisLabel: { rotate: 35, fontSize: 11 }},
     yAxis: {
       type: "value",
       name: "收盘价 (元/吨)",
-      scale: true,
-    },
+      scale: true},
     series: [
       {
         name: "收盘价",
@@ -93,10 +91,8 @@ function renderChart() {
         smooth: true,
         showSymbol: pts.length < 40,
         data: pts.map((p) => p.close_cny),
-        areaStyle: { color: "rgba(91, 156, 245, 0.08)" },
-      },
-    ],
-  });
+        areaStyle: { color: "rgba(91, 156, 245, 0.08)" }},
+    ]});
 }
 
 async function loadHistory() {
@@ -108,7 +104,7 @@ async function loadHistory() {
     await nextTick();
     renderChart();
   } catch (e) {
-    message.error(e.message || "加载历史走势失败");
+    ui.error(e.message || "加载历史走势失败");
   } finally {
     loading.value = false;
   }

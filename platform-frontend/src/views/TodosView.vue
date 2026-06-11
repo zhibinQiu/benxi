@@ -14,13 +14,12 @@ import {
   NSpin,
   NTag,
   NText,
-  useDialog,
-  useMessage,
-} from "naive-ui";
+  useDialog } from "naive-ui";
 import { ReorderThreeOutline, SparklesOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import HintTooltip from "../components/HintTooltip.vue";
 import { useI18n } from "../composables/useI18n";
+import { usePlatformUi } from "../composables/usePlatformUi";
 import {
   batchCreateTodos,
   createTodo,
@@ -29,12 +28,11 @@ import {
   reorderTodos,
   replacePendingTodos,
   todoLlmPreview,
-  updateTodo,
-} from "../api/client";
+  updateTodo } from "../api/client";
 import { deleteSequentially } from "../utils/batchActions";
 
 const { t } = useI18n();
-const message = useMessage();
+const ui = usePlatformUi();
 const dialog = useDialog();
 
 const loading = ref(false);
@@ -88,7 +86,7 @@ async function load() {
     selectedDoneIds.value = [];
   } catch (e) {
     if (seq !== loadSeq) return;
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     if (seq === loadSeq) {
       loading.value = false;
@@ -101,7 +99,7 @@ async function load() {
 async function addTodo() {
   const title = newTitle.value.trim();
   if (!title) {
-    message.warning("请输入待办内容");
+    ui.warning("请输入待办内容");
     return;
   }
   adding.value = true;
@@ -109,9 +107,9 @@ async function addTodo() {
     await createTodo({ title, note: "" });
     newTitle.value = "";
     await load();
-    message.success("已添加");
+    ui.success("已添加");
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     adding.value = false;
   }
@@ -122,7 +120,7 @@ async function toggleDone(item, checked) {
     await updateTodo(item.id, { status: checked ? "done" : "pending" });
     await load();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
@@ -151,16 +149,15 @@ function handleBatchDelete(status) {
       if (status === "pending") selectedPendingIds.value = [];
       else selectedDoneIds.value = [];
       if (failed.length) {
-        message.warning(
+        ui.warning(
           `已删除 ${deleted} 条，${failed.length} 条失败：${failed[0].message || "未知错误"}`
         );
       } else {
-        message.success(deleted > 1 ? `已删除 ${deleted} 条待办` : "已删除");
+        ui.success(deleted > 1 ? `已删除 ${deleted} 条待办` : "已删除");
       }
       await load();
       return !failed.length;
-    },
-  });
+    }});
 }
 
 function onDragStart(index, status) {
@@ -189,7 +186,7 @@ async function onDrop(toIndex, status) {
     else done.value = arr;
     await reorderTodos(status, arr.map((x) => x.id));
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
     await load();
   }
 }
@@ -201,14 +198,14 @@ function openLlm() {
 
 async function runLlmPreview() {
   if (!llmText.value.trim()) {
-    message.warning("请输入描述或调整指令");
+    ui.warning("请输入描述或调整指令");
     return;
   }
   llmLoading.value = true;
   try {
     llmPreview.value = await todoLlmPreview(llmText.value.trim(), llmMode.value);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     llmLoading.value = false;
   }
@@ -216,28 +213,27 @@ async function runLlmPreview() {
 
 async function applyLlm() {
   if (!llmPreview.value?.items?.length) {
-    message.warning("请先预览并确认有待办项");
+    ui.warning("请先预览并确认有待办项");
     return;
   }
   llmLoading.value = true;
   try {
     const items = llmPreview.value.items.map((x) => ({
       title: x.title,
-      note: x.note || "",
-    }));
+      note: x.note || ""}));
     if (llmPreview.value.mode === "adjust") {
       await replacePendingTodos(items);
-      message.success("已按 AI 建议更新待办列表");
+      ui.success("已按 AI 建议更新待办列表");
     } else {
       await batchCreateTodos(items);
-      message.success(`已添加 ${items.length} 条待办`);
+      ui.success(`已添加 ${items.length} 条待办`);
     }
     showLlmModal.value = false;
     llmText.value = "";
     llmPreview.value = null;
     await load();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     llmLoading.value = false;
   }

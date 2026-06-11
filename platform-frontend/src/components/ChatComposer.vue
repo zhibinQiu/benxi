@@ -10,8 +10,7 @@ const props = defineProps({
   /** 智能体正在流式回复 */
   loading: { type: Boolean, default: false },
   minRows: { type: Number, default: 2 },
-  maxRows: { type: Number, default: 6 },
-});
+  maxRows: { type: Number, default: 6 }});
 
 const emit = defineEmits(["update:modelValue", "send", "stop", "keydown"]);
 
@@ -21,8 +20,7 @@ const canSend = computed(
 
 const autosize = computed(() => ({
   minRows: props.minRows,
-  maxRows: props.maxRows,
-}));
+  maxRows: props.maxRows}));
 
 const isSingleLine = computed(() => props.minRows <= 1 && props.maxRows <= 1);
 

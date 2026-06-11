@@ -12,30 +12,25 @@ from app.domains.knowledge.background_sync import (
 )
 
 
-def test_run_sync_after_ingest_delegates_to_gateway():
+def test_run_sync_after_ingest_runs_job():
     doc_id = uuid.uuid4()
     user_id = uuid.uuid4()
-    db = MagicMock()
-    user = MagicMock()
-    doc = MagicMock(deleted_at=None)
+    job_id = uuid.uuid4()
 
     with patch(
-        "app.database.SessionLocal",
-        return_value=db,
-    ), patch(
-        "app.services.document_service.get_document",
-        return_value=doc,
-    ), patch(
-        "app.domains.knowledge.gateway.knowledge.sync_document_after_ingest",
-        return_value="rag-1",
-    ) as sync_after_ingest:
-        db.get.return_value = user
+        "app.services.knowledge_sync_job_service.create_document_knowledge_index_job",
+        return_value=MagicMock(id=job_id),
+    ) as create_job, patch(
+        "app.services.knowledge_sync_job_service.run_document_knowledge_index_job"
+    ) as run_job, patch(
+        "app.domains.knowledge.gateway.knowledge.document_link",
+        return_value=MagicMock(ragflow_document_id="rag-1"),
+    ):
         rid = run_sync_after_ingest(doc_id, user_id)
 
     assert rid == "rag-1"
-    sync_after_ingest.assert_called_once()
-    db.commit.assert_called_once()
-    db.close.assert_called_once()
+    create_job.assert_called_once()
+    run_job.assert_called_once_with(job_id)
 
 
 def test_schedule_sync_after_ingest_creates_job():
@@ -66,12 +61,12 @@ def test_enqueue_sync_after_ingest_starts_thread_when_enabled():
         "app.domains.knowledge.background_sync._should_enqueue",
         return_value=True,
     ), patch(
-        "app.domains.knowledge.background_sync.threading.Thread"
-    ) as thread_cls:
+        "app.services.knowledge_sync_job_service.enqueue_document_knowledge_index",
+        return_value=MagicMock(id=uuid.uuid4()),
+    ) as enqueue:
         enqueue_sync_after_ingest(doc_id, user_id)
 
-    thread_cls.assert_called_once()
-    thread_cls.return_value.start.assert_called_once()
+    enqueue.assert_called_once()
 
 
 def test_enqueue_catalog_reconcile_starts_thread():

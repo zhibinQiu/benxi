@@ -1,12 +1,14 @@
 # 日常操作手册
 
+查看各组件位置、数据库表含义与连接命令，见 **[组件位置与数据存储](components-and-storage.md)**。
+
 ## 启停
 
 ```bash
 bash scripts/stack.sh up --profile knowflow speech   # 启动
 bash scripts/stack.sh dev-up                         # 开发
 bash scripts/stack.sh down                           # 停止
-bash scripts/zhitan.sh stop                          # 同 down + 清理旧进程
+bash scripts/zhitan.sh stop                          # Docker down + 本机 API/Vite/Worker
 ```
 
 ## 日志
@@ -19,10 +21,22 @@ docker compose -p zhitan logs -f speech-api
 
 ## 常见故障
 
+### 查看数据库数据
+
+```bash
+# 平台业务库
+docker compose -p zhitan exec -it postgres psql -U platform -d platform
+
+# KnowFlow 元数据（密码见 .env MYSQL_PASSWORD）
+docker compose -p zhitan exec -it knowflow-mysql mysql -uroot -p'infini_rag_flow' rag_flow
+```
+
+详见 [组件位置与数据存储](components-and-storage.md)。
+
 ### KnowFlow 页面一直转圈
 
 1. `curl http://127.0.0.1:18000/v1/system/config` → 应 `code:0`
-2. 若 502：`docker restart ragflow-server`，等 ES 就绪（1–2 分钟）
+2. 若 502：`docker restart ragflow-server`，等 Infinity/MySQL 就绪（约 1–2 分钟）
 3. 检查 `.env`：`KNOWFLOW_ENABLED=true`，`KNOWFLOW_UI_PUBLIC_URL` 与开发/生产一致
 4. 浏览器强刷；重新登录以刷新 embed-session
 
@@ -50,7 +64,7 @@ curl http://127.0.0.1:7861/api/health   # 需 exec 进网或 port-forward
 
 ### 磁盘满
 
-- 清理 `${DATA_ROOT}/knowflow-es` 旧索引（谨慎）
+- 清理 `${DATA_ROOT}/knowflow-infinity` 旧索引（谨慎，会丢失向量数据）
 - MinIO 生命周期策略
 - `docker system prune`（勿删在用卷）
 

@@ -62,4 +62,4 @@ fi
 echo "已生成 ${OUT}（REMOTE_HOST=${REMOTE_HOST}）"
 echo "验证远程依赖: bash scripts/verify-remote-deps.sh"
 echo "同步资源配置菜单: cd platform && python scripts/sync_resource_settings_from_env.py --force"
-echo "启动: bash scripts/zhitan.sh remote-dev"
+echo "启动本机 dev: bash scripts/zhitan.sh local-dev"

@@ -1,19 +1,23 @@
 # 脚本说明（v3.9.3）
 
+每个脚本职责单一；日常开发优先 **`zhitan.sh`**，Docker 编排见 **`stack.sh`**。  
+完整说明（Compose 合并顺序、`.env`、Mermaid 配置）见 [配置文件与脚本](../docs/zh/operations/config-and-scripts.md)。
+
 ## 入口一览
 
-| 脚本 | 用途 |
+| 脚本 | 职责 |
 |------|------|
-| **`zhitan.sh`** | 日常开发入口：start / dev / stop / remote-dev |
-| **`stack.sh`** | Docker 编排：build / up / dev-up / down / save / load / backup |
-| **`deploy.sh`** | 生产部署：镜像导出 + rsync + 远程 up |
-| `setup-stack-env.sh` | 合并 `platform/.env` → 根目录 `.env` |
-| `setup-remote-dev-env.sh` | 本机前端 + 远程依赖的 `platform/.env` |
-| `setup_speech.sh` | 构建并启动 speech profile |
-| `start_speech_local.sh` | 宿主机 FunASR（非 Docker） |
-| `server-deps.sh` | 远程服务器仅跑依赖栈 |
-| `verify-remote-deps.sh` | 探测远程端口与健康检查 |
-| `download_babeldoc_assets.sh` | PDF 翻译 BabelDOC 资源 |
+| **`zhitan.sh`** | 开发运维统一入口：dev / stop / remote-dev / local-dev / knowflow / deploy |
+| **`stack.sh`** | Compose 编排唯一实现：build / up / dev-up / down / save / load / backup |
+| **`deploy.sh`** | 生产镜像推送：`stack push`、`local stack`（**仅** stack 模式） |
+| `setup-stack-env.sh` | 合并 `platform/.env` → 根 `.env` |
+| `setup-remote-dev-env.sh` | 生成 `REMOTE_DEPS=1` 的 `platform/.env` |
+| `verify-remote-deps.sh` | 探测远程依赖端口 40002–40009 |
+| `server-deps.sh` | 远程服务器同步并启动依赖栈（`EXPOSE_DEPS=1`） |
+| `lib/local-dev.sh` | 本机 venv API + Vite + Celery |
+| `lib/version.sh` | 读取根 `VERSION` |
+| `start_speech_local.sh` | 宿主机 FunASR（dev 可选） |
+| `download_babeldoc_assets.sh` | BabelDOC 资源下载 |
 | `download_knowflow_deps_light.sh` | KnowFlow 源码构建依赖 |
 
 ## 常用命令
@@ -21,26 +25,28 @@
 ```bash
 # 首次
 cp .env.stack.example .env
-cp platform/.env.example platform/.env   # 编辑密钥与 KnowFlow 地址
+cp platform/.env.example platform/.env
 
-# 全栈开发（推荐）
-bash scripts/zhitan.sh dev --profile knowflow --profile speech
-# 或
-bash scripts/stack.sh dev-up --profile knowflow
-
-# 生产式本机
-bash scripts/stack.sh build --profile knowflow
-bash scripts/stack.sh up --profile knowflow
-
-# 本机 UI + 远程 Postgres/KnowFlow
-REMOTE_HOST=172.19.134.45 bash scripts/zhitan.sh remote-dev
+# 开发（推荐）
 bash scripts/zhitan.sh dev
 
-# 部署到服务器
-bash scripts/stack.sh build && bash scripts/stack.sh save
-bash scripts/deploy.sh stack push
+# 生产式
+bash scripts/stack.sh build --profile knowflow --profile speech
+bash scripts/stack.sh up --profile knowflow --profile speech
+
+# 生产部署
+bash scripts/stack.sh save && bash scripts/deploy.sh stack push
 ```
 
-版本号以仓库根 **`VERSION`** 为唯一来源；镜像 tag 为 `zhitan-*:${ZHITAN_VERSION}`。
+## 已废弃
 
-详见 [运维手册](../docs/zh/operations/README.md)。
+| 废弃 | 替代 |
+|------|------|
+| `deploy.sh app/full/core` | `deploy.sh stack push` |
+| `zhitan.sh legacy` | `zhitan.sh dev` |
+| `merge-stack-env.sh` | `setup-stack-env.sh` |
+| `platform/docker-compose*.yml` | 根目录 `compose.yaml` |
+
+版本号以仓库根 **`VERSION`** 为唯一来源。
+
+详见 [运维手册](../docs/zh/operations/README.md) 与 [运维部署指南](../运维部署指南.md)。

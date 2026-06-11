@@ -1,5 +1,18 @@
 # 发布说明
 
+## 4.0.0（v4.0.0）— 文档权限三档重构、知识库索引修复与全栈升级
+
+**大版本**：权限体系重置、KnowFlow 登记可靠性、知识检索与部署架构全面升级。
+
+- **文档权限三档**：统一为 **可见 / 可查 / 可修改**（`visible` / `query` / `modify`）；旧 `edit` / `full` / `use` / `delete` 别名归并至 `modify`；组织分级成员（公司/部门/小组/团队）默认可修改；上传人、管理员与显式授权用户为最高权限
+- **知识库索引修复**：修复失效 KnowFlow 知识库 ID 登记导致的重新索引失败（「权限检查服务异常」）；新增实时存在性校验与 `repair_stale_scope_registries` 自动清理
+- **知识检索**：问答整合为原生页（`KnowledgeSearchView` + `KnowledgeChatContent`），会话持久化、引用预览；移除旧 `RagQaView` / `rag` 内置特性
+- **文档 API**：拆分为 `platform/app/api/documents/` 子模块（listing、upload、versions、folders、acl、sync 等）
+- **后端架构**：Redis 客户端、请求级用户缓存、平台缓存层；`ragflow_scope_service` 与知识库同步增强
+- **前端体验**：会话守卫、文档对比、版本预览、知识引用弹窗、Liquid Glass UI 与主题系统优化
+- **部署运维**：合并 `compose.server-deps` 至主栈；`compose.expose-deps.yaml` 与 `setup-remote-dev-env.sh` 支持远程依赖开发；运维文档扩充（单服务器迁移、组件与存储等）
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.0.0）
+
 ## 3.9.3（v3.9.3）— 知识检索原生页、文档索引与 UI 体验
 
 - **知识检索**：独立原生页（左分级文档树 + 右问答），与 KnowFlow 嵌入解耦；统一「知识检索」命名
@@ -29,7 +42,7 @@
 
 ## 3.4.0（v3.4.0）— 统一容器栈
 
-> 操作指南：[统一栈部署](docs/zh/development/stack-deployment.md)
+> 操作指南：[运维手册](docs/zh/operations/README.md) · [部署指南](docs/zh/operations/deployment.md)
 
 - 仓库根 `compose.yaml` + `deploy/knowflow.yml`（profile），对外仅 `FRONTEND_PORT`
 - `scripts/stack.sh`：build / up / dev-up / save / load / backup

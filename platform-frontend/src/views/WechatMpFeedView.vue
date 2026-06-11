@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -17,9 +18,7 @@ import {
   NSpace,
   NSpin,
   NTag,
-  NText,
-  useMessage,
-} from "naive-ui";
+  NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import {
@@ -29,12 +28,11 @@ import {
   fetchWechatMpSources,
   ingestWechatMpUrl,
   parseWechatMpUrl,
-  syncWechatMpSource,
-} from "../api/client";
+  syncWechatMpSource } from "../api/client";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 
 const loading = ref(true);
 const articlesLoading = ref(false);
@@ -56,8 +54,7 @@ const sourceOptions = computed(() => [
   { label: "全部跟踪号", value: null },
   ...sources.value.map((s) => ({
     label: `${s.name} (${s.article_count || 0})`,
-    value: s.id,
-  })),
+    value: s.id})),
 ]);
 
 function fmtTime(iso) {
@@ -79,12 +76,11 @@ async function loadArticles() {
     const data = await fetchWechatMpArticles({
       page: page.value,
       page_size: pageSize,
-      source_id: filterSourceId.value || undefined,
-    });
+      source_id: filterSourceId.value || undefined});
     articles.value = data.items || [];
     total.value = data.total || 0;
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     articlesLoading.value = false;
   }
@@ -96,7 +92,7 @@ async function reload() {
     await loadSources();
     await loadArticles();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -113,7 +109,7 @@ async function onPreviewUrl() {
       addForm.value.biz = parsePreview.value.biz;
     }
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
@@ -122,7 +118,7 @@ async function submitAdd() {
   const url = addForm.value.sample_url?.trim();
   const biz = addForm.value.biz?.trim();
   if (!name || (!url && !biz)) {
-    message.warning("请填写公众号名称，并提供文章链接或 Biz 标识");
+    ui.warning("请填写公众号名称，并提供文章链接或 Biz 标识");
     return;
   }
   submitting.value = true;
@@ -130,15 +126,14 @@ async function submitAdd() {
     await createWechatMpSource({
       name,
       sample_url: url || undefined,
-      biz: biz || undefined,
-    });
-    message.success("已添加跟踪");
+      biz: biz || undefined});
+    ui.success("已添加跟踪");
     showAdd.value = false;
     addForm.value = { name: "", sample_url: "", biz: "" };
     parsePreview.value = null;
     await reload();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     submitting.value = false;
   }
@@ -150,7 +145,7 @@ async function submitIngest() {
   submitting.value = true;
   try {
     const art = await ingestWechatMpUrl(url);
-    message.success("已收录");
+    ui.success("已收录");
     showIngest.value = false;
     ingestUrl.value = "";
     await reload();
@@ -160,7 +155,7 @@ async function submitIngest() {
       route
     );
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     submitting.value = false;
   }
@@ -169,21 +164,21 @@ async function submitIngest() {
 async function onSyncSource(source) {
   try {
     const res = await syncWechatMpSource(source.id);
-    message.info(res.message || "同步完成");
+    ui.info(res.message || "同步完成");
     await reload();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 
 async function onRemoveSource(source) {
   try {
     await deleteWechatMpSource(source.id);
-    message.success("已取消跟踪");
+    ui.success("已取消跟踪");
     if (filterSourceId.value === source.id) filterSourceId.value = null;
     await reload();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 

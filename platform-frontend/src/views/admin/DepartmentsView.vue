@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../../composables/usePlatformUi";
 import { computed, h, onMounted, ref } from "vue";
 import {
   NCard,
@@ -8,23 +9,19 @@ import {
   NFormItem,
   NInput,
   NSelect,
-  NSpace,
-  useDialog,
-  useMessage,
-} from "naive-ui";
+  NSpace } from "naive-ui";
 import {
   fetchDepartments,
   createDepartment,
   updateDepartment,
-  deleteDepartment,
-} from "../../api/client";
+  deleteDepartment } from "../../api/client";
 import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
 import AdminFormModal from "../../components/AdminFormModal.vue";
+import HintTooltip from "../../components/HintTooltip.vue";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
 
-const message = useMessage();
-const dialog = useDialog();
+const ui = usePlatformUi();
 const loading = ref(false);
 const items = ref([]);
 const showModal = ref(false);
@@ -33,8 +30,7 @@ const saving = ref(false);
 
 const emptyForm = () => ({
   name: "",
-  parent_id: null,
-});
+  parent_id: null});
 
 const form = ref(emptyForm());
 const isEdit = computed(() => Boolean(editingId.value));
@@ -45,8 +41,7 @@ const {
   selectedCount,
   onCheckedRowKeysChange,
   clearSelection,
-  selectionColumn,
-} = useBatchTableSelection(items);
+  selectionColumn} = useBatchTableSelection(items);
 
 const canBatchDelete = computed(() => selectedRows.value.length > 0);
 
@@ -71,8 +66,7 @@ const columns = computed(() => [
   {
     title: "上级部门",
     key: "parent_id",
-    render: (r) => deptName(r.parent_id),
-  },
+    render: (r) => deptName(r.parent_id)},
   {
     title: "操作",
     key: "actions",
@@ -83,8 +77,7 @@ const columns = computed(() => [
         { size: "small", quaternary: true, type: "primary", onClick: () => openEdit(row) },
         { default: () => "编辑" }
       );
-    },
-  },
+    }},
 ]);
 
 async function load() {
@@ -93,7 +86,7 @@ async function load() {
     items.value = await fetchDepartments();
     clearSelection();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -109,8 +102,7 @@ function openEdit(row) {
   editingId.value = row.id;
   form.value = {
     name: row.name,
-    parent_id: row.parent_id ?? null,
-  };
+    parent_id: row.parent_id ?? null};
   showModal.value = true;
 }
 
@@ -125,21 +117,19 @@ function handleBatchDelete() {
   if (!rows.length) return;
   const summary =
     rows.length === 1 ? `「${rows[0].name}」` : `选中的 ${rows.length} 个部门`;
-  dialog.warning({
+  ui.confirmDelete({
     title: "批量删除部门",
     content: `确定删除${summary}？`,
-    positiveText: "删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
+    onPositive: async () => {
       const { deleted, failed } = await deleteSequentially(rows, (row) =>
         deleteDepartment(row.id)
       );
       if (failed.length) {
-        message.warning(
+        ui.warning(
           `已删除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
         );
       } else {
-        message.success(deleted > 1 ? `已删除 ${deleted} 个部门` : "部门已删除");
+        ui.success(deleted > 1 ? `已删除 ${deleted} 个部门` : "部门已删除");
       }
       clearSelection();
       await load();
@@ -150,26 +140,25 @@ function handleBatchDelete() {
 
 async function submit() {
   if (!form.value.name?.trim()) {
-    message.warning("请输入部门名称");
+    ui.warning("请输入部门名称");
     return;
   }
   saving.value = true;
   const payload = {
     name: form.value.name.trim(),
-    parent_id: form.value.parent_id ?? null,
-  };
+    parent_id: form.value.parent_id ?? null};
   try {
     if (isEdit.value) {
       await updateDepartment(editingId.value, payload);
-      message.success("部门已更新");
+      ui.success("部门已更新");
     } else {
       await createDepartment(payload);
-      message.success("部门已创建");
+      ui.success("部门已创建");
     }
     closeModal();
     await load();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -201,23 +190,36 @@ onMounted(load);
   <AdminFormModal
     v-model:show="showModal"
     :title="isEdit ? '编辑部门' : '新建部门'"
-    :subtitle="isEdit ? '修改部门名称与层级关系' : '在组织架构中新增部门节点'"
     :width="460"
     @after-leave="closeModal"
   >
-    <n-form class="admin-form-modal__form" label-placement="top">
-      <n-form-item label="部门名称" required>
-        <n-input v-model:value="form.name" placeholder="请输入部门名称" />
-      </n-form-item>
-      <n-form-item label="上级部门">
-        <p class="admin-form-modal__hint">不选择上级时，该部门将作为根部门。</p>
-        <n-select
-          v-model:value="form.parent_id"
-          :options="parentOptions"
-          clearable
-          placeholder="选择上级部门（可选）"
-        />
-      </n-form-item>
+    <n-form
+      class="admin-form-modal__form admin-form-modal__form--compact"
+      label-placement="top"
+    >
+      <div class="admin-form-modal__form-grid">
+        <n-form-item label="部门名称" required>
+          <n-input v-model:value="form.name" placeholder="部门名称" />
+        </n-form-item>
+        <n-form-item>
+          <template #label>
+            <span class="admin-form-modal__label-row">
+              上级部门
+              <HintTooltip
+                variant="inline"
+                placement="top"
+                text="不选择上级时，该部门将作为根部门。"
+              />
+            </span>
+          </template>
+          <n-select
+            v-model:value="form.parent_id"
+            :options="parentOptions"
+            clearable
+            placeholder="可选"
+          />
+        </n-form-item>
+      </div>
     </n-form>
     <template #footer>
       <n-space :size="10">

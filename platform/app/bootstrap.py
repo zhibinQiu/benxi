@@ -10,7 +10,6 @@ from app.core.permissions import CORE_PERMISSIONS, DEFAULT_ROLES
 from app.core.security import hash_password
 from app.features.registry import all_plugins, ensure_plugins_loaded, feature_permission_codes
 from app.models.org import (
-    Department,
     Permission,
     Role,
     RolePermission,

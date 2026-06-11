@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_feature
@@ -19,6 +20,7 @@ from app.schemas.knowledge_library import (
     KnowledgeLibraryListOut,
     KnowledgeLibraryOut,
     KnowledgeQaAskRequest,
+    KnowledgeQaChatStreamRequest,
     KnowledgeQaSessionCreate,
     KnowledgeReindexRequest,
     KnowledgeScopeTreeOut,
@@ -32,6 +34,10 @@ from app.services.knowledge_library_service import (
     reindex_document,
 )
 from app.services.knowledge_parser_service import list_parser_options
+from app.services.knowledge_qa_service import (
+    fetch_citation_image_bytes,
+    iter_knowledge_qa_stream,
+)
 from app.services.knowledge_scope_tree_service import build_knowledge_scope_tree
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -104,6 +110,8 @@ def knowledge_library_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     keyword: str | None = None,
+    folder_id: uuid.UUID | None = None,
+    virtual_folder: str | None = None,
 ) -> ApiResponse[PageResult[KnowledgeLibraryDocumentOut]]:
     rows, total = list_library_documents(
         db,
@@ -112,6 +120,8 @@ def knowledge_library_documents(
         page=page,
         page_size=page_size,
         keyword=keyword,
+        folder_id=folder_id,
+        virtual_folder=virtual_folder,
     )
     return ApiResponse(
         data=PageResult(
@@ -180,6 +190,24 @@ def knowledge_document_reindex(
     return ApiResponse(data=data)
 
 
+@router.get(
+    "/citations/images/{image_id:path}",
+    dependencies=[_knowledge_search],
+)
+def knowledge_citation_image(
+    image_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    from app.core.exceptions import not_found
+
+    result = fetch_citation_image_bytes(db, user, image_id)
+    if not result:
+        raise not_found("引用截图不可用")
+    data, content_type = result
+    return Response(content=data, media_type=content_type)
+
+
 @router.post(
     "/qa/sessions",
     response_model=ApiResponse[RagSessionOut],
@@ -228,4 +256,34 @@ def ask_knowledge_qa_session(
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,
             },
         }
+    )
+
+
+@router.post(
+    "/qa/chat/stream",
+    dependencies=[_knowledge_search],
+)
+async def knowledge_qa_chat_stream(
+    body: KnowledgeQaChatStreamRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> StreamingResponse:
+    async def sse_body():
+        async for payload in iter_knowledge_qa_stream(
+            db,
+            user,
+            question=body.message,
+            session_id=body.conversation_id,
+            document_ids=body.document_ids,
+        ):
+            yield f"data: {payload}\n\n"
+
+    return StreamingResponse(
+        sse_body(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

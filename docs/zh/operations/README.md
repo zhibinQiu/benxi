@@ -3,18 +3,23 @@
 本目录为 **当前唯一推荐** 的部署与运维文档，基于根目录统一容器栈（`compose.yaml` + `scripts/stack.sh`）。
 
 !!! warning "旧文档说明"
-    `development/deploy-amd64.md`、`development/v3.4-baseline.md`、`development/docker-unified-deployment-proposal.md` 等保留作历史参考，**操作请以本目录为准**。  
+    历史文档 `deploy-amd64.md`、`local-development.md`、`doc-platform.md` 等已删除或合并，**操作请以本目录与根目录 [运维部署指南](../../运维部署指南.md) 为准**。  
     已废弃：`platform/docker-compose*.yml` 宿主机混合模式、`merge-stack-env.sh`。
 
 ## 文档索引
 
 | 文档 | 内容 |
 |------|------|
-| [**运维部署指南（根目录）**](../../运维部署指南.md) | 启动 / 部署 / 迁移、架构图、网络图、端口、组件速查 |
-| [系统架构](architecture.md) | 分层、开源组件、数据流、与同类产品对比 |
+| [**运维部署指南（根目录）**](../../运维部署指南.md) | 启动 / 部署 / 迁移、架构图、端口速查 |
+| [**组件位置与数据存储**](components-and-storage.md) | **各服务在哪、各库存什么、如何连接查看** |
+| [**配置文件与脚本**](config-and-scripts.md) | **Compose 文件、.env、脚本职责、Mermaid 说明** |
+| [系统架构](architecture.md) | 分层、开源组件、数据流 |
 | [Docker 容器说明](docker-services.md) | 每个容器的职责、镜像、端口、依赖 |
-| [网络与反代拓扑](network-topology.md) | 40005/18000、Nginx、KnowFlow iframe 转发 |
+| [网络与反代拓扑](network-topology.md) | 40005/18000、Nginx、KnowFlow iframe |
 | [部署指南](deployment.md) | 本地 dev、生产 up、amd64/arm64 镜像推送 |
+| [远程依赖开发](server-deps.md) | 过渡：本机 API + 远程 40002–40009 |
+| [**单机迁移与热重载**](single-server-migration.md) | **迁到同一台服务器 + 部署后 dev-up 热重载** |
+| [**功能实现说明**](feature-implementation.md) | **当前各功能实现方式（无代码）** |
 | [配置说明](configuration.md) | `.env`、`.env.stack.example`、`platform/.env` |
 | [数据库迁移](database-migration.md) | schema_migrate、升级注意 |
 | [权限与账户](permissions.md) | RBAC、文档分级、KnowFlow 账号映射 |
@@ -26,15 +31,18 @@
 ## 一分钟速查
 
 ```bash
-# 开发（热重载 + KnowFlow + 语音）
-cp .env.stack.example .env    # 首次；密钥见 platform/.env.example
-bash scripts/stack.sh dev-up --profile knowflow --profile speech
+# 全 Docker 开发（本机或服务器，热重载）
+bash scripts/zhitan.sh dev
+
+# 远程依赖 + 本机 venv（过渡，目标改为单机 dev）
+# REMOTE_HOST=服务器IP bash scripts/zhitan.sh remote-dev && bash scripts/zhitan.sh local-dev
+# 见 single-server-migration.md
 
 # 生产式本机
 bash scripts/stack.sh build --profile knowflow
 bash scripts/stack.sh up --profile knowflow
 
-# 远程 amd64（仅镜像，不 rsync 源码）
+# 远程 amd64（仅镜像）
 bash scripts/stack.sh build && bash scripts/stack.sh save
 bash scripts/deploy.sh stack push
 ```
@@ -42,15 +50,16 @@ bash scripts/deploy.sh stack push
 | 入口 | 地址 |
 |------|------|
 | Web | http://127.0.0.1:40005/ai/ |
-| API（开发直连） | http://127.0.0.1:18000 |
-| 健康检查 | http://127.0.0.1:18000/health |
+| API（Docker dev） | http://127.0.0.1:18000 |
+| API（本机 venv） | http://127.0.0.1:8000 |
+
+脚本职责见 [scripts/README.md](../../scripts/README.md)。
 
 本地预览文档站：
 
 ```bash
 pip install -r docs/requirements-docs.txt
 mkdocs serve -a 127.0.0.1:8765
-# 浏览器打开 http://127.0.0.1:8765
 ```
 
 默认管理员见 `platform/.env.example` 中 `BOOTSTRAP_ADMIN_*`（开发常用手机号登录）。

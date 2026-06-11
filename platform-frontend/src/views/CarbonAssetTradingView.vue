@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, h, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { navigateWithReturn } from "../utils/navigationReturn";
@@ -19,9 +20,7 @@ import {
   NTabPane,
   NTabs,
   NTag,
-  NText,
-  useMessage,
-} from "naive-ui";
+  NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   createCarbonAssetTrade,
@@ -29,10 +28,9 @@ import {
   fetchCarbonAssetMarket,
   fetchCarbonAssetOverview,
   fetchCarbonAssetTrades,
-  resetCarbonAssetDemo,
-} from "../api/client";
+  resetCarbonAssetDemo } from "../api/client";
 
-const message = useMessage();
+const ui = usePlatformUi();
 const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
@@ -46,8 +44,7 @@ const tradeForm = ref({
   side: "buy",
   asset_code: "CEA",
   quantity_tco2: 100,
-  price_cny: null,
-});
+  price_cny: null});
 
 const sideOptions = [
   { label: "买入", value: "buy" },
@@ -76,8 +73,7 @@ const holdingColumns = [
         { style: { color: pos ? "#5b9cf5" : "#dc2626" } },
         `${pos ? "+" : ""}${row.pnl_cny} (${row.pnl_pct}%)`
       );
-    },
-  },
+    }},
 ];
 
 function sourceLabel(row) {
@@ -85,8 +81,7 @@ function sourceLabel(row) {
     cneeex: "上证环交所",
     custom: "自定义",
     estimated: "参考估算",
-    demo: "演示",
-  };
+    demo: "演示"};
   return map[row.source] || row.source;
 }
 
@@ -102,11 +97,9 @@ const marketColumns = [
         {
           size: "small",
           type: row.live ? "success" : row.source === "estimated" ? "warning" : "default",
-          bordered: false,
-        },
+          bordered: false},
         { default: () => sourceLabel(row) }
-      ),
-  },
+      )},
   { title: "交易日", key: "trade_date", width: 108, render: (row) => row.trade_date || "—" },
   { title: "最新价 (¥/t)", key: "last_price_cny", width: 110 },
   {
@@ -120,8 +113,7 @@ const marketColumns = [
         { size: "small", type: pos ? "success" : "error", bordered: false },
         { default: () => `${pos ? "+" : ""}${row.change_pct}%` }
       );
-    },
-  },
+    }},
   { title: "成交量 (t)", key: "volume_tco2", width: 110 },
   {
     title: "",
@@ -137,11 +129,9 @@ const marketColumns = [
           onClick: (e) => {
             e.stopPropagation();
             openHistory(row);
-          },
-        },
+          }},
         { default: () => "走势" }
-      ),
-  },
+      )},
 ];
 
 function openHistory(row) {
@@ -150,8 +140,7 @@ function openHistory(row) {
       router,
       {
         name: "carbon-assets-history",
-        query: { asset: row.asset_code },
-      },
+        query: { asset: row.asset_code }},
       route
     );
   }
@@ -160,8 +149,7 @@ function openHistory(row) {
 function marketRowProps(row) {
   return {
     style: "cursor: pointer",
-    onClick: () => openHistory(row),
-  };
+    onClick: () => openHistory(row)};
 }
 
 const tradeColumns = [
@@ -174,8 +162,7 @@ const tradeColumns = [
         NTag,
         { size: "small", type: row.side === "buy" ? "success" : "warning", bordered: false },
         { default: () => (row.side === "buy" ? "买入" : "卖出") }
-      ),
-  },
+      )},
   { title: "品种", key: "asset_code", width: 72 },
   { title: "数量 (t)", key: "quantity_tco2", width: 100 },
   { title: "价格 (¥/t)", key: "price_cny", width: 100 },
@@ -184,8 +171,7 @@ const tradeColumns = [
     title: "时间",
     key: "created_at",
     ellipsis: { tooltip: true },
-    render: (row) => formatTime(row.created_at),
-  },
+    render: (row) => formatTime(row.created_at)},
 ];
 
 function formatTime(iso) {
@@ -215,7 +201,7 @@ async function loadAll({ refreshMarket = false } = {}) {
     marketSnap.value = m;
     trades.value = t;
   } catch (e) {
-    message.error(e.message || "加载失败");
+    ui.error(e.message || "加载失败");
   } finally {
     loading.value = false;
   }
@@ -227,15 +213,14 @@ async function submitTrade() {
     const payload = {
       side: tradeForm.value.side,
       asset_code: tradeForm.value.asset_code,
-      quantity_tco2: tradeForm.value.quantity_tco2,
-    };
+      quantity_tco2: tradeForm.value.quantity_tco2};
     if (tradeForm.value.price_cny) payload.price_cny = tradeForm.value.price_cny;
     const res = await createCarbonAssetTrade(payload);
-    message.success(res.message || "成交成功");
+    ui.success(res.message || "成交成功");
     tradeForm.value.price_cny = null;
     await loadAll();
   } catch (e) {
-    message.error(e.message || "下单失败");
+    ui.error(e.message || "下单失败");
   } finally {
     submitting.value = false;
   }
@@ -244,10 +229,10 @@ async function submitTrade() {
 async function onResetDemo() {
   try {
     await resetCarbonAssetDemo();
-    message.success("已恢复演示初始数据");
+    ui.success("已恢复演示初始数据");
     await loadAll();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   }
 }
 

@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../../composables/usePlatformUi";
 import { computed, h, onMounted, ref } from "vue";
 import {
   NCard,
@@ -8,28 +9,23 @@ import {
   NFormItem,
   NInput,
   NSelect,
-  NSpace,
-  NText,
-  useDialog,
-  useMessage,
-} from "naive-ui";
+  NSpace } from "naive-ui";
 import {
   fetchUsers,
   createUser,
   updateUser,
   deleteUser,
   fetchDepartments,
-  fetchRoles,
-} from "../../api/client";
+  fetchRoles } from "../../api/client";
 import OrgDeptPickerTree from "../../components/OrgDeptPickerTree.vue";
 import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
 import AdminFormModal from "../../components/AdminFormModal.vue";
+import HintTooltip from "../../components/HintTooltip.vue";
 import { useAuth } from "../../composables/useAuth";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
 
-const message = useMessage();
-const dialog = useDialog();
+const ui = usePlatformUi();
 const { user: currentUser } = useAuth();
 const loading = ref(false);
 const users = ref([]);
@@ -50,8 +46,8 @@ const emptyForm = () => ({
   email: "",
   status: "active",
   department_ids: [],
-  role_ids: [],
-});
+  /** 单选：普通成员或系统管理员 */
+  role_id: null });
 
 const form = ref(emptyForm());
 
@@ -63,10 +59,21 @@ const roleOptions = computed(() =>
   roles.value
     .filter((r) => ASSIGNABLE_ROLE_CODES.includes(r.code))
     .map((r) => ({
-      label: r.name || (r.code === "sys_admin" ? "系统管理员" : "普通用户"),
+      label: r.name || (r.code === "sys_admin" ? "系统管理员" : "普通成员"),
       value: r.id,
     }))
 );
+
+function memberRoleId() {
+  return roles.value.find((r) => r.code === "member")?.id ?? null;
+}
+
+function resolveRoleId(roleIds) {
+  const ids = roleIds || [];
+  const assignable = roles.value.filter((r) => ASSIGNABLE_ROLE_CODES.includes(r.code));
+  const hit = assignable.find((r) => ids.includes(r.id));
+  return hit?.id ?? memberRoleId();
+}
 
 const statusOptions = [
   { label: "正常", value: "active" },
@@ -116,8 +123,7 @@ const {
   selectedCount,
   onCheckedRowKeysChange,
   clearSelection,
-  selectionColumn,
-} = useBatchTableSelection(users, { canSelect: canSelectUser });
+  selectionColumn} = useBatchTableSelection(users, { canSelect: canSelectUser });
 
 const canBatchDelete = computed(
   () => selectedRows.value.length > 0 && selectedRows.value.every(canSelectUser)
@@ -130,27 +136,23 @@ const columns = computed(() => [
     title: "姓名",
     key: "display_name",
     width: 120,
-    render: (r) => r.display_name || r.username || "—",
-  },
+    render: (r) => r.display_name || r.username || "—"},
   { title: "邮箱", key: "email", render: (r) => r.email || "—" },
   {
     title: "状态",
     key: "status",
     width: 80,
-    render: (r) => (r.status === "active" ? "正常" : "禁用"),
-  },
+    render: (r) => (r.status === "active" ? "正常" : "禁用")},
   {
     title: "部门",
     key: "department_ids",
     ellipsis: { tooltip: true },
-    render: (r) => deptLabel(r),
-  },
+    render: (r) => deptLabel(r)},
   {
     title: "角色",
     key: "role_ids",
     ellipsis: { tooltip: true },
-    render: (r) => roleLabel(r),
-  },
+    render: (r) => roleLabel(r)},
   {
     title: "操作",
     key: "actions",
@@ -161,8 +163,7 @@ const columns = computed(() => [
         { size: "small", quaternary: true, type: "primary", onClick: () => openEdit(row) },
         { default: () => "编辑" }
       );
-    },
-  },
+    }},
 ]);
 
 async function loadMeta() {
@@ -174,7 +175,7 @@ async function loadMeta() {
     departments.value = depts;
     roles.value = roleList.filter((r) => ASSIGNABLE_ROLE_CODES.includes(r.code));
   } catch (e) {
-    message.warning(e.message || "加载部门/角色失败");
+    ui.warning(e.message || "加载部门/角色失败");
   }
 }
 
@@ -184,7 +185,7 @@ async function load() {
     users.value = await fetchUsers();
     clearSelection();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -197,6 +198,7 @@ function normalizeDepartmentIds(ids) {
 function openCreate() {
   editingId.value = null;
   form.value = emptyForm();
+  form.value.role_id = memberRoleId();
   showModal.value = true;
 }
 
@@ -210,7 +212,7 @@ function openEdit(row) {
     email: row.email || "",
     status: row.status || "active",
     department_ids: normalizeDepartmentIds(userDeptIds(row)),
-    role_ids: [...(row.role_ids || [])],
+    role_id: resolveRoleId(row.role_ids),
   };
   showModal.value = true;
 }
@@ -233,28 +235,32 @@ function isValidPhone(value) {
 
 function validateForm() {
   if (!isEdit.value && !isValidPhone(form.value.phone)) {
-    message.warning("请输入有效的 11 位手机号");
+    ui.warning("请输入有效的 11 位手机号");
     return false;
   }
   if (!form.value.display_name?.trim()) {
-    message.warning("姓名必填");
+    ui.warning("姓名必填");
     return false;
   }
   if (!form.value.email?.trim()) {
-    message.warning("邮箱必填");
+    ui.warning("邮箱必填");
     return false;
   }
   if (form.value.display_name.trim().length < 2) {
-    message.warning("姓名至少 2 个字符");
+    ui.warning("姓名至少 2 个字符");
     return false;
   }
   if (!isEdit.value) {
     if (!form.value.password || form.value.password.length < 6) {
-      message.warning("密码至少 6 个字符");
+      ui.warning("密码至少 6 个字符");
       return false;
     }
   } else if (form.value.password && form.value.password.length < 6) {
-    message.warning("新密码至少 6 个字符，留空则不修改");
+    ui.warning("新密码至少 6 个字符，留空则不修改");
+    return false;
+  }
+  if (!editingBootstrap.value && !form.value.role_id) {
+    ui.warning("请选择角色");
     return false;
   }
   return true;
@@ -271,7 +277,7 @@ async function submit() {
     department_ids: editingBootstrap.value
       ? []
       : normalizeDepartmentIds(form.value.department_ids),
-    role_ids: form.value.role_ids,
+    role_ids: form.value.role_id ? [form.value.role_id] : [],
   };
   if (!isEdit.value) {
     payload.phone = String(form.value.phone).replace(/\D/g, "");
@@ -281,15 +287,15 @@ async function submit() {
       const patch = { ...payload };
       if (form.value.password) patch.password = form.value.password;
       await updateUser(editingId.value, patch);
-      message.success("用户已更新");
+      ui.success("用户已更新");
     } else {
       await createUser({ ...payload, password: form.value.password });
-      message.success("用户已创建");
+      ui.success("用户已创建");
     }
     closeModal();
     await load();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -302,19 +308,17 @@ function handleBatchDelete() {
     rows.length === 1
       ? `「${rows[0].display_name || rows[0].username || rows[0].phone}」`
       : `选中的 ${rows.length} 个用户`;
-  dialog.warning({
+  ui.confirmDelete({
     title: "批量删除用户",
     content: `确定删除${summary}？此操作不可恢复。`,
-    positiveText: "删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
+    onPositive: async () => {
       const { deleted, failed } = await deleteSequentially(rows, (row) => deleteUser(row.id));
       if (failed.length) {
-        message.warning(
+        ui.warning(
           `已删除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
         );
       } else {
-        message.success(deleted > 1 ? `已删除 ${deleted} 个用户` : "用户已删除");
+        ui.success(deleted > 1 ? `已删除 ${deleted} 个用户` : "用户已删除");
       }
       clearSelection();
       await load();
@@ -353,17 +357,18 @@ onMounted(async () => {
   <AdminFormModal
     v-model:show="showModal"
     :title="isEdit ? '编辑用户' : '新建用户'"
-    :subtitle="isEdit ? '修改账号信息、部门与角色' : '创建可登录平台的用户账号'"
-    :width="580"
+    :width="520"
     @after-leave="closeModal"
   >
-    <n-form class="admin-form-modal__form" label-placement="top">
-      <div class="admin-form-modal__group">
-        <p class="admin-form-modal__group-title">基本信息</p>
+    <n-form
+      class="admin-form-modal__form admin-form-modal__form--compact"
+      label-placement="top"
+    >
+      <div class="admin-form-modal__form-grid">
         <n-form-item v-if="!isEdit" label="手机号" required>
           <n-input
             v-model:value="form.phone"
-            placeholder="11 位手机号，用于登录"
+            placeholder="11 位手机号"
             maxlength="11"
           />
         </n-form-item>
@@ -373,7 +378,7 @@ onMounted(async () => {
         <n-form-item label="姓名" required>
           <n-input
             v-model:value="form.display_name"
-            placeholder="登录与界面均显示此名称，不可与他人重复"
+            placeholder="不可与他人重复"
           />
         </n-form-item>
         <n-form-item label="邮箱" required>
@@ -387,49 +392,51 @@ onMounted(async () => {
             :placeholder="isEdit ? '留空则不修改' : '至少 6 位'"
           />
         </n-form-item>
-        <n-form-item label="状态">
-          <n-select v-model:value="form.status" :options="statusOptions" />
-        </n-form-item>
+        <template v-if="!editingBootstrap">
+          <n-form-item label="状态">
+            <n-select v-model:value="form.status" :options="statusOptions" />
+          </n-form-item>
+          <n-form-item>
+            <template #label>
+              <span class="admin-form-modal__label-row">
+                角色
+                <HintTooltip
+                  variant="inline"
+                  placement="top"
+                  text="普通成员与系统管理员二选一，不可同时持有多个角色。"
+                />
+              </span>
+            </template>
+            <n-select
+              v-model:value="form.role_id"
+              placeholder="选择角色"
+              :options="roleOptions"
+            />
+          </n-form-item>
+        </template>
       </div>
 
-      <div v-if="!editingBootstrap" class="admin-form-modal__group">
-        <p class="admin-form-modal__group-title">组织与权限</p>
-        <n-form-item label="部门">
-          <p class="admin-form-modal__hint">
-            每人只能归属一个部门；在树中勾选目标部门即可（勾选新部门会自动取消原选择）。
-          </p>
-          <OrgDeptPickerTree
-            v-model:department-ids="form.department_ids"
-            :departments="departments"
-            :max-height="240"
-          />
-        </n-form-item>
-        <n-form-item label="角色">
-          <p class="admin-form-modal__hint">
-            可分配「普通用户」或「系统管理员」权限；内置管理员账号仅 {{ BOOTSTRAP_PHONE }} 一个。
-          </p>
-          <n-select
-            v-model:value="form.role_ids"
-            multiple
-            filterable
-            clearable
-            placeholder="选择角色"
-            :options="roleOptions"
-          />
-        </n-form-item>
-      </div>
+      <n-form-item v-if="!editingBootstrap">
+        <template #label>
+          <span class="admin-form-modal__label-row">
+            部门
+            <HintTooltip
+              variant="inline"
+              placement="top"
+              text="每人只能归属一个部门；勾选新部门会自动取消原选择。"
+            />
+          </span>
+        </template>
+        <OrgDeptPickerTree
+          v-model:department-ids="form.department_ids"
+          :departments="departments"
+          :max-height="140"
+        />
+      </n-form-item>
 
-      <div v-else class="admin-form-modal__group">
-        <p class="admin-form-modal__group-title">组织与权限</p>
-        <n-form-item label="部门">
-          <n-text depth="3">系统默认管理员不归属任何部门</n-text>
-        </n-form-item>
-        <n-form-item label="角色">
-          <n-text depth="3">
-            唯一内置管理员账号（手机号 {{ BOOTSTRAP_PHONE }}），始终为系统管理员，不可在此修改
-          </n-text>
-        </n-form-item>
-      </div>
+      <p v-else class="admin-form-modal__hint">
+        内置管理员（{{ BOOTSTRAP_PHONE }}）不归属部门，角色不可修改。
+      </p>
     </n-form>
     <template #footer>
       <n-space :size="10">

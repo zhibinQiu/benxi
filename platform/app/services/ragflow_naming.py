@@ -145,7 +145,6 @@ def dataset_display_label_dept(db: Session, dept_id: uuid.UUID) -> str:
 
 def dataset_name_for_dept(dept_id: uuid.UUID, db: Session | None = None) -> str:
     if db is not None:
-        from app.models.org import Department
 
         base = _slug_token(dataset_display_label_dept(db, dept_id), max_len=40)
         if _needs_global_unique_dataset_name():

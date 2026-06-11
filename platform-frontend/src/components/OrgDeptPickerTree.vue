@@ -1,20 +1,19 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { NEmpty, NTree } from "naive-ui";
 import {
   buildOrgDeptTree,
-  defaultExpandedDeptKeys,
-  isDeptTreeKey,
-} from "../utils/orgUserTree";
+  isDeptTreeKey } from "../utils/orgUserTree";
 
 const props = defineProps({
   departments: { type: Array, default: () => [] },
   /** 部门 UUID（0 或 1 个） */
   departmentIds: { type: Array, default: () => [] },
-  maxHeight: { type: Number, default: 280 },
-});
+  maxHeight: { type: Number, default: 280 }});
 
 const emit = defineEmits(["update:departmentIds"]);
+
+const expandedKeys = ref([]);
 
 const treeData = computed(() => buildOrgDeptTree({ departments: props.departments }));
 
@@ -24,8 +23,6 @@ const displayCheckedKeys = computed(() => {
   const id = (props.departmentIds || [])[0];
   return id ? [`dept:${id}`] : [];
 });
-
-const expandedKeys = computed(() => defaultExpandedDeptKeys(props.departments));
 
 /** 单选部门：仅保留本次勾选的节点，不级联上级/下级。 */
 function onUpdateCheckedKeys(nextKeys, _option, meta) {
@@ -61,9 +58,10 @@ function onUpdateCheckedKeys(nextKeys, _option, meta) {
     checkable
     :cascade="false"
     :data="treeData"
-    :default-expanded-keys="expandedKeys"
     :checked-keys="displayCheckedKeys"
+    :expanded-keys="expandedKeys"
     :style="{ maxHeight: `${maxHeight}px`, overflow: 'auto' }"
     @update:checked-keys="onUpdateCheckedKeys"
+    @update:expanded-keys="expandedKeys = $event"
   />
 </template>

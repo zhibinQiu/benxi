@@ -1,8 +1,13 @@
-# 远程本地开发：在服务器上暴露依赖端口，供本机 API/Worker 通过 URL 连接
-# 用法（服务器）:
-#   EXPOSE_DEPS=1 bash scripts/stack.sh up --profile knowflow --profile speech
+# 远程依赖开发：暴露数据库/中间件端口（EXPOSE_DEPS=1 时由 stack.sh 自动叠加）
 #
-# 端口约定 40002–40009（40001 保留给同机 Dify 设计系统）；见 .env.server.deps.example
+# 场景: 服务器跑依赖栈，本机跑 API+Vite（remote-dev 过渡方案）
+# 用法:
+#   cp .env.server.deps.example .env
+#   EXPOSE_DEPS=1 bash scripts/stack.sh up --profile knowflow --profile speech \
+#     postgres redis minio pdf2zh-api speech-api \
+#     knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend
+#
+# 端口 40002–40009（40001 保留给同机 Dify）；变量见 .env.server.deps.example
 
 services:
   postgres:

@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, get_current_user, require_feature
 from app.database import get_db
@@ -22,7 +23,6 @@ from app.schemas.speech import (
 )
 from app.services import speech_service
 from app.services.audit_service import write_audit
-from sqlalchemy.orm import Session
 
 router = APIRouter(
     prefix="/speech",

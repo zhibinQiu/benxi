@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from app.core.phone import bootstrap_login_id
 from app.database import SessionLocal
 from app.models.org import User
 from app.services.job_service import cancel_job, create_job
+
+
+def _bootstrap_user(db):
+    return db.scalar(select(User).where(User.phone == bootstrap_login_id()))
 
 
 def test_clear_jobs_endpoint(client, admin_token):
@@ -20,10 +25,39 @@ def test_clear_jobs_endpoint(client, admin_token):
     assert "deleted" in data
 
 
+def test_batch_delete_jobs_endpoint(client, admin_token):
+    import uuid
+
+    from app.models.job import JobStatus
+
+    db = SessionLocal()
+    try:
+        admin = _bootstrap_user(db)
+        assert admin is not None
+        job = create_job(
+            db,
+            job_type="maintenance",
+            created_by=admin.id,
+        )
+        job.status = JobStatus.done.value
+        db.commit()
+        job_id = str(job.id)
+    finally:
+        db.close()
+
+    r = client.post(
+        "/api/v1/jobs/batch-delete",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"job_ids": [job_id]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["deleted"] == 1
+
+
 def test_cancel_job_endpoint(client, admin_token):
     db = SessionLocal()
     try:
-        admin = db.scalar(select(User).where(User.username == "admin"))
+        admin = _bootstrap_user(db)
         assert admin is not None
         job = create_job(db, job_type="maintenance", created_by=admin.id)
         job_id = str(job.id)
@@ -48,7 +82,7 @@ def test_cancel_job_endpoint(client, admin_token):
 def test_cancel_job_service():
     db = SessionLocal()
     try:
-        admin = db.scalar(select(User).where(User.username == "admin"))
+        admin = _bootstrap_user(db)
         job = create_job(db, job_type="maintenance", created_by=admin.id)
         out = cancel_job(db, job)
         assert out.status == "cancelled"

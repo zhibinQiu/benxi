@@ -5,12 +5,10 @@ import {
   disposeEchartsInElement,
   mountEchartsInElement,
   renderRichMarkdown,
-  unbindEchartsResize,
-} from "../utils/richMarkdown";
+  unbindEchartsResize } from "../utils/richMarkdown";
 
 const props = defineProps({
-  content: { type: String, default: "" },
-});
+  content: { type: String, default: "" }});
 
 const rootRef = ref(null);
 const html = computed(() => renderRichMarkdown(props.content));

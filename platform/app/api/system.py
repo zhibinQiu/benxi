@@ -7,21 +7,23 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app import __version__
 from app.api.deps import get_current_user
+from app.config import get_settings
 from app.core.exceptions import not_found
 from app.core.permissions import user_has_permission
 from app.database import get_db
 from app.features.registry import all_plugins, ensure_plugins_loaded, get_plugin
 from app.models.org import User
-from app.config import get_settings
 from app.schemas.common import ApiResponse
+from app.schemas.dashboard import PlatformDashboardStatsOut
 from app.schemas.model_settings import ClientConfigOut
 from app.services.model_settings_service import (
     get_frontend_app_title,
     get_frontend_default_theme,
     get_platform_api_base_url,
 )
-from app import __version__
+from app.services.platform_dashboard_service import collect_platform_dashboard_stats
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -72,6 +74,17 @@ async def list_features(
         allowed = user_has_permission(db, user, plugin.permission_code)
         items.append(plugin.catalog_dict(accessible=allowed))
     return ApiResponse(data=items)
+
+
+@router.get("/dashboard-stats", response_model=ApiResponse[PlatformDashboardStatsOut])
+def get_dashboard_stats(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[PlatformDashboardStatsOut]:
+    """运行大屏：平台级文档、功能与用户统计。"""
+    return ApiResponse(
+        data=PlatformDashboardStatsOut.model_validate(collect_platform_dashboard_stats(db))
+    )
 
 
 def _resolve_embed_url(feature_id: str) -> str:

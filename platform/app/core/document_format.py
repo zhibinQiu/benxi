@@ -64,3 +64,63 @@ def version_file_format_label(
         if ext and ext.isalnum() and len(ext) <= 8:
             return ext
     return None
+
+
+_FORMAT_DISPLAY: dict[str, str] = {
+    "pdf": "PDF",
+    "word": "Word",
+    "txt": "TXT",
+    "md": "Markdown",
+    "excel": "Excel",
+    "csv": "CSV",
+    "ppt": "PPT",
+    "html": "HTML",
+    "image": "图片",
+    "zip": "ZIP",
+    "rar": "RAR",
+    "archive": "压缩包",
+}
+
+
+def format_label_display(label: str | None) -> str:
+    if not label:
+        return "未知格式"
+    key = label.lower().strip()
+    return _FORMAT_DISPLAY.get(key, key.upper())
+
+
+def assert_compatible_version_format(
+    *,
+    existing_file_name: str | None,
+    existing_mime: str | None,
+    new_file_name: str,
+    new_mime: str,
+) -> None:
+    """新版本须与已有版本文件格式一致，否则抛出 bad_request。"""
+    expected = version_file_format_label(existing_file_name, existing_mime)
+    incoming = version_file_format_label(new_file_name, new_mime)
+    if not expected or not incoming:
+        ext_old = (
+            existing_file_name.rsplit(".", 1)[-1].lower()
+            if existing_file_name and "." in existing_file_name
+            else None
+        )
+        ext_new = (
+            new_file_name.rsplit(".", 1)[-1].lower()
+            if new_file_name and "." in new_file_name
+            else None
+        )
+        if ext_old and ext_new and ext_old != ext_new:
+            from app.core.exceptions import bad_request
+
+            raise bad_request(
+                f"新版本文件扩展名须与已有版本一致（当前 .{ext_old}，上传 .{ext_new}）"
+            )
+        return
+    if expected != incoming:
+        from app.core.exceptions import bad_request
+
+        raise bad_request(
+            "新版本文件格式须与已有版本一致"
+            f"（当前 {format_label_display(expected)}，上传 {format_label_display(incoming)}）"
+        )

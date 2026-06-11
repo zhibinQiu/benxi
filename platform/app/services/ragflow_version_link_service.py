@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,6 +22,46 @@ def get_version_link_by_version_id(
             RagflowDocumentVersionLink.platform_version_id == version_id
         )
     )
+
+
+def find_reusable_knowflow_version_link(
+    db: Session,
+    *,
+    dataset_id: str,
+    file_name: str,
+    checksum: str,
+    exclude_version_id: uuid.UUID | None = None,
+) -> RagflowDocumentVersionLink | None:
+    """同知识库内按 MD5 + 文件名查找已成功索引的版本，用于复用 RAGFlow 文档。"""
+    ds_id = (dataset_id or "").strip()
+    name = (file_name or "").strip()
+    digest = (checksum or "").strip().lower()
+    if not ds_id or not name or len(digest) != 32:
+        return None
+
+    stmt = (
+        select(RagflowDocumentVersionLink)
+        .join(
+            DocumentVersion,
+            DocumentVersion.id == RagflowDocumentVersionLink.platform_version_id,
+        )
+        .join(Document, Document.id == DocumentVersion.document_id)
+        .where(
+            RagflowDocumentVersionLink.dataset_id == ds_id,
+            DocumentVersion.file_name == name,
+            DocumentVersion.checksum == digest,
+            RagflowDocumentVersionLink.ragflow_document_id.is_not(None),
+            RagflowDocumentVersionLink.ragflow_document_id != "",
+            RagflowDocumentVersionLink.index_completed_at.is_not(None),
+            Document.deleted_at.is_(None),
+        )
+        .order_by(RagflowDocumentVersionLink.index_completed_at.desc())
+        .limit(1)
+    )
+    if exclude_version_id is not None:
+        stmt = stmt.where(DocumentVersion.id != exclude_version_id)
+
+    return db.scalar(stmt)
 
 
 def get_version_link_by_ragflow_id(
@@ -48,20 +89,76 @@ def list_version_links_for_document(
     )
 
 
+def resolve_latest_indexed_version(
+    db: Session, document: Document
+) -> DocumentVersion | None:
+    """问答/检索与文档展示：已索引成功的最高版本号。"""
+    from app.services.documents.crud import is_version_uploaded
+
+    for link in list_version_links_for_document(db, document.id):
+        if not (link.ragflow_document_id or "").strip():
+            continue
+        if link.index_completed_at is None:
+            continue
+        ver = db.get(DocumentVersion, link.platform_version_id)
+        if ver and is_version_uploaded(ver):
+            return ver
+    return None
+
+
+def mark_version_index_completed(
+    db: Session, version_id: uuid.UUID
+) -> RagflowDocumentVersionLink | None:
+    vl = get_version_link_by_version_id(db, version_id)
+    if not vl:
+        return None
+    if vl.index_completed_at is None:
+        vl.index_completed_at = datetime.now(timezone.utc)
+        db.flush()
+    return vl
+
+
+def clear_version_index_completed(db: Session, version_id: uuid.UUID) -> None:
+    vl = get_version_link_by_version_id(db, version_id)
+    if vl and vl.index_completed_at is not None:
+        vl.index_completed_at = None
+        db.flush()
+
+
+def bind_document_to_indexed_version(
+    db: Session,
+    *,
+    document: Document,
+    version: DocumentVersion,
+    version_link: RagflowDocumentVersionLink,
+) -> RagflowDocumentLink:
+    """索引成功后，将文档 canonical 映射指向该成功版本。"""
+    return upsert_canonical_link(
+        db,
+        document=document,
+        ragflow_document_id=version_link.ragflow_document_id,
+        dataset_id=version_link.dataset_id,
+        file_name=version_link.file_name,
+        platform_user_id=version_link.platform_user_id,
+    )
+
+
 def resolve_index_link(
     db: Session,
     document: Document,
     *,
     version_id: uuid.UUID | None = None,
 ) -> tuple[RagflowDocumentVersionLink | None, DocumentVersion | None]:
-    """解析用于读切片/检索的版本索引；默认当前版本。"""
+    """解析用于读切片/检索的版本索引；默认最后索引成功的版本。"""
     version: DocumentVersion | None = None
     if version_id:
         version = db.get(DocumentVersion, version_id)
         if not version or version.document_id != document.id:
             return None, None
     else:
-        version = resolve_current_version(db, document)
+        version = resolve_latest_indexed_version(db, document)
+        if not version:
+            version = resolve_current_version(db, document)
     if not version:
         return None, None
     vl = get_version_link_by_version_id(db, version.id)
@@ -80,7 +177,10 @@ def upsert_version_link(
     parser_id: str | None = None,
 ) -> RagflowDocumentVersionLink:
     vl = get_version_link_by_version_id(db, version.id)
+    prev_ragflow_id = (vl.ragflow_document_id if vl else None) or None
     if vl:
+        if prev_ragflow_id != ragflow_document_id:
+            vl.index_completed_at = None
         vl.ragflow_document_id = ragflow_document_id
         vl.dataset_id = dataset_id
         vl.file_name = file_name

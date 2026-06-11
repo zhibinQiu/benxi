@@ -4,10 +4,9 @@ import FeatureSubsystemHeader from "./FeatureSubsystemHeader.vue";
 defineProps({
   description: { type: String, default: "" },
   fill: { type: Boolean, default: false },
-  showIntro: { type: Boolean, default: true },
+  showIntro: { type: Boolean, default: false },
   /** 与全局顶栏配合：默认不在页面内重复标题/返回 */
-  hideTitleRow: { type: Boolean, default: true },
-});
+  hideTitleRow: { type: Boolean, default: true }});
 </script>
 
 <template>

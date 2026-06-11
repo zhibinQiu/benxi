@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, ref, watch } from "vue";
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
   NButton,
@@ -7,13 +7,11 @@ import {
   NDropdown,
   NEmpty,
   NIcon,
-  NPopconfirm,
   NSpace,
   NSpin,
   NTag,
-  NTooltip,
-} from "naive-ui";
-import { cancelJob, clearJobs, fetchJobs } from "../api/client";
+  NTooltip } from "naive-ui";
+import { batchDeleteJobs, cancelJob, clearJobs, fetchJobs } from "../api/client";
 import { useBatchTableSelection } from "../composables/useBatchTableSelection";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
@@ -23,20 +21,16 @@ import {
   ListOutline,
   RefreshOutline,
   StopCircleOutline,
-  TrashBinOutline,
-} from "@vicons/ionicons5";
+  TrashBinOutline } from "@vicons/ionicons5";
 
 const props = defineProps({
   variant: {
     type: String,
     default: "page",
-    validator: (v) => v === "page" || v === "popover",
-  },
+    validator: (v) => v === "page" || v === "popover"},
   active: {
     type: Boolean,
-    default: true,
-  },
-});
+    default: true}});
 
 const emit = defineEmits(["updated", "navigate"]);
 
@@ -53,16 +47,14 @@ const TYPE_LABELS = {
   delete_document: "jobs.types.delete_document",
   document_index: "jobs.types.document_index",
   document_parse: "jobs.types.document_parse",
-  maintenance: "jobs.types.maintenance",
-};
+  maintenance: "jobs.types.maintenance"};
 
 const STATUS_LABELS = {
   pending: "jobs.status.pending",
   running: "jobs.status.running",
   done: "jobs.status.done",
   failed: "jobs.status.failed",
-  cancelled: "jobs.status.cancelled",
-};
+  cancelled: "jobs.status.cancelled"};
 
 function jobTypeLabel(type) {
   const key = TYPE_LABELS[type];
@@ -79,13 +71,21 @@ const statusType = {
   running: "info",
   done: "success",
   failed: "error",
-  cancelled: "warning",
-};
+  cancelled: "warning"};
 
 const CANCELLABLE = new Set(["pending", "running"]);
+const CLEARABLE = new Set(["done", "failed", "cancelled"]);
 
 function isCancellable(row) {
   return CANCELLABLE.has(row.status);
+}
+
+function isClearable(row) {
+  return CLEARABLE.has(row.status);
+}
+
+function canSelectJob(row) {
+  return isCancellable(row) || isClearable(row);
 }
 
 const {
@@ -94,12 +94,14 @@ const {
   selectedCount,
   onCheckedRowKeysChange,
   clearSelection,
-  selectionColumn,
-} = useBatchTableSelection(items, { canSelect: isCancellable });
+  selectionColumn} = useBatchTableSelection(items, { canSelect: canSelectJob });
 
-const canBatchCancel = computed(
-  () => selectedRows.value.length > 0 && selectedRows.value.every(isCancellable)
-);
+const cancellableSelectedRows = computed(() => selectedRows.value.filter(isCancellable));
+const clearableSelectedRows = computed(() => selectedRows.value.filter(isClearable));
+
+const canBatchCancel = computed(() => cancellableSelectedRows.value.length > 0);
+
+const canBatchDelete = computed(() => clearableSelectedRows.value.length > 0);
 
 const clearMenuOptions = computed(() => {
   locale.value;
@@ -108,15 +110,25 @@ const clearMenuOptions = computed(() => {
     {
       label: t("jobs.clearAll"),
       key: "all",
-      props: { class: "platform-dropdown-option--danger" },
-    },
+      props: { class: "platform-dropdown-option--danger" }},
   ];
 });
+
+function documentTitle(row) {
+  const title = row?.payload?.document_title;
+  if (title) return title;
+  return row.document_id || "—";
+}
 
 function openJob(row) {
   if (row.type === "pdf_translate") {
     emit("navigate");
     router.push({ name: "translate", query: { job: row.id } });
+    return;
+  }
+  if (row.type === "document_index" && row.document_id) {
+    emit("navigate");
+    router.push({ name: "document-detail", params: { id: row.document_id } });
   }
 }
 
@@ -133,8 +145,7 @@ const pageColumns = computed(() => {
     title: t("jobs.columns.type"),
     key: "type",
     width: 120,
-    render: (row) => jobTypeLabel(row.type),
-  },
+    render: (row) => jobTypeLabel(row.type)},
   {
     title: t("jobs.columns.status"),
     key: "status",
@@ -144,34 +155,30 @@ const pageColumns = computed(() => {
         NTag,
         { type: statusType[row.status] || "default", size: "small" },
         () => jobStatusLabel(row.status)
-      ),
-  },
+      )},
   { title: t("jobs.columns.progress"), key: "progress", width: 80, render: (row) => `${row.progress}%` },
   {
     title: t("jobs.columns.document"),
     key: "document_id",
     ellipsis: { tooltip: true },
-    render: (row) => row.document_id || "—",
-  },
+    render: (row) => documentTitle(row)},
   {
     title: t("jobs.columns.createdAt"),
     key: "created_at",
     width: 180,
-    render: (row) => new Date(row.created_at).toLocaleString(),
-  },
+    render: (row) => new Date(row.created_at).toLocaleString()},
   {
     title: t("jobs.columns.actions"),
     key: "actions",
     width: 80,
     render: (row) => {
-      if (row.type !== "pdf_translate") return "—";
+      if (!["pdf_translate", "document_index"].includes(row.type)) return "—";
       return h(
         NButton,
         { text: true, type: "primary", size: "small", onClick: () => openJob(row) },
         () => t("common.view")
       );
-    },
-  },
+    }},
 ];
 });
 
@@ -206,8 +213,43 @@ async function doCancel(jobId) {
   }
 }
 
+function confirmCancelJob(jobId) {
+  ui.confirmAction({
+    title: t("batch.cancel"),
+    content: t("jobs.confirm.cancelOne"),
+    positiveText: t("batch.cancel"),
+    onPositive: () => doCancel(jobId)});
+}
+
+function handleBatchDelete() {
+  const rows = clearableSelectedRows.value;
+  if (!rows.length) return;
+  const skipped = selectedRows.value.length - rows.length;
+  ui.confirmDelete({
+    title: t("common.batchDelete"),
+    content:
+      skipped > 0
+        ? t("jobs.confirm.deleteBatchPartial", { count: rows.length, skipped })
+        : t("jobs.confirm.deleteBatch", { count: rows.length }),
+    onPositive: async () => {
+      const { deleted, requested } = await batchDeleteJobs(rows.map((row) => row.id));
+      if (!deleted) {
+        ui.warning("jobs.messages.nothingToClear");
+        return;
+      }
+      ui.success("jobs.messages.cleared", { count: deleted });
+      if (deleted < requested) {
+        ui.warning("messages.batchDeletedPartial", {
+          success: deleted,
+          failed: requested - deleted});
+      }
+      clearSelection();
+      await load();
+    }});
+}
+
 function handleBatchCancel() {
-  const rows = selectedRows.value;
+  const rows = cancellableSelectedRows.value;
   if (!rows.length) return;
   ui.confirmAction({
     title: t("batch.cancel"),
@@ -218,8 +260,7 @@ function handleBatchCancel() {
       if (failed.length) {
         ui.warning("messages.batchDeletedPartial", {
           success: deleted,
-          failed: failed.length,
-        });
+          failed: failed.length});
       } else {
         ui.success(
           deleted > 1 ? "jobs.messages.cancelledBatch" : "jobs.messages.cancelled",
@@ -228,8 +269,7 @@ function handleBatchCancel() {
       }
       clearSelection();
       await load();
-    },
-  });
+    }});
 }
 
 async function doClear(scope) {
@@ -248,24 +288,61 @@ async function doClear(scope) {
 
 function handleClearMenu(key) {
   const scope = key === "finished" ? "finished" : "all";
+  confirmClear(scope);
+}
+
+function confirmClear(scope) {
   ui.confirmAction({
     title: scope === "finished" ? t("jobs.clearDone") : t("jobs.clearAll"),
     content: t(scope === "finished" ? "jobs.confirm.clearDone" : "jobs.confirm.clearAll"),
     positiveText: t("common.delete"),
-    onPositive: () => doClear(scope),
-  });
+    onPositive: () => doClear(scope)});
+}
+
+let progressPollTimer = null;
+
+function stopProgressPoll() {
+  if (progressPollTimer) {
+    clearInterval(progressPollTimer);
+    progressPollTimer = null;
+  }
+}
+
+function maybeStartProgressPoll() {
+  stopProgressPoll();
+  if (!props.active) return;
+  const hasActive = items.value.some((j) =>
+    ["pending", "running"].includes(j.status)
+  );
+  if (!hasActive) return;
+  progressPollTimer = setInterval(() => {
+    if (!props.active || document.hidden) {
+      return;
+    }
+    load();
+  }, 5000);
 }
 
 watch(
   () => props.active,
   (visible) => {
-    if (visible) load();
+    if (visible) {
+      load().then(maybeStartProgressPoll);
+    } else {
+      stopProgressPoll();
+    }
   }
 );
+
+watch(items, () => {
+  if (props.active) maybeStartProgressPoll();
+});
 
 onMounted(() => {
   if (props.variant === "page" || props.active) load();
 });
+
+onBeforeUnmount(stopProgressPoll);
 
 defineExpose({ load, refresh: load });
 </script>
@@ -290,6 +367,19 @@ defineExpose({ load, refresh: load });
             </button>
           </template>
           {{ t("common.refresh") }}
+        </n-tooltip>
+        <n-tooltip placement="bottom">
+          <template #trigger>
+            <button
+              type="button"
+              class="jobs-header-btn jobs-header-btn--clear-done"
+              :aria-label="t('jobs.clearDone')"
+              @click="confirmClear('finished')"
+            >
+              <n-icon :size="16" :component="TrashBinOutline" />
+            </button>
+          </template>
+          {{ t("jobs.clearDone") }}
         </n-tooltip>
         <n-tooltip placement="bottom">
           <template #trigger>
@@ -321,12 +411,12 @@ defineExpose({ load, refresh: load });
                 <span class="jobs-panel__progress">{{ row.progress }}%</span>
               </n-space>
               <div class="jobs-panel__meta">
-                {{ new Date(row.created_at).toLocaleString() }}
+                {{ documentTitle(row) }} · {{ new Date(row.created_at).toLocaleString() }}
               </div>
             </div>
             <n-space :size="4" class="jobs-panel__item-actions">
               <n-button
-                v-if="row.type === 'pdf_translate'"
+                v-if="['pdf_translate', 'document_index'].includes(row.type)"
                 text
                 type="primary"
                 size="tiny"
@@ -334,15 +424,15 @@ defineExpose({ load, refresh: load });
               >
                 {{ t("common.view") }}
               </n-button>
-              <n-popconfirm
+              <n-button
                 v-if="CANCELLABLE.has(row.status)"
-                @positive-click="doCancel(row.id)"
+                text
+                type="warning"
+                size="tiny"
+                @click="confirmCancelJob(row.id)"
               >
-                <template #trigger>
-                  <n-button text type="warning" size="tiny">{{ t("batch.cancel") }}</n-button>
-                </template>
-                {{ t("jobs.confirm.cancelOne") }}
-              </n-popconfirm>
+                {{ t("batch.cancel") }}
+              </n-button>
             </n-space>
           </div>
         </div>
@@ -362,8 +452,21 @@ defineExpose({ load, refresh: load });
             >
               <n-icon :size="16" :component="StopCircleOutline" />
               <span>{{ t("batch.cancel") }}</span>
-              <span v-if="selectedCount > 0" class="jobs-toolbar-btn__badge">
-                {{ selectedCount }}
+              <span v-if="cancellableSelectedRows.length > 0 && canBatchCancel" class="jobs-toolbar-btn__badge">
+                {{ cancellableSelectedRows.length }}
+              </span>
+            </button>
+            <button
+              type="button"
+              class="jobs-toolbar-btn jobs-toolbar-btn--clear"
+              :disabled="!canBatchDelete"
+              :aria-label="t('common.delete')"
+              @click="handleBatchDelete"
+            >
+              <n-icon :size="16" :component="TrashBinOutline" />
+              <span>{{ t("common.delete") }}</span>
+              <span v-if="clearableSelectedRows.length > 0 && canBatchDelete" class="jobs-toolbar-btn__badge">
+                {{ clearableSelectedRows.length }}
               </span>
             </button>
             <span class="jobs-panel__toolbar-divider" aria-hidden="true" />
@@ -410,8 +513,7 @@ defineExpose({ load, refresh: load });
             page,
             pageSize: 20,
             itemCount: total,
-            onUpdatePage: onPageChange,
-          }"
+            onUpdatePage: onPageChange}"
         />
       </template>
     </n-spin>
@@ -496,6 +598,16 @@ defineExpose({ load, refresh: load });
   color: var(--platform-accent-hover, var(--platform-accent));
   background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 22%, transparent);
+}
+
+.jobs-header-btn--clear-done {
+  color: var(--platform-danger, #d03050);
+  background: var(--platform-danger-soft, color-mix(in srgb, #d03050 12%, transparent));
+}
+
+.jobs-header-btn--clear-done:not(:disabled):hover {
+  background: color-mix(in srgb, var(--platform-danger, #d03050) 22%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-danger, #d03050) 16%, transparent);
 }
 
 .jobs-panel__body {

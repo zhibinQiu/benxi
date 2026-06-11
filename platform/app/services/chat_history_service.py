@@ -14,8 +14,8 @@ from app.integrations.agent_chat_client import (
     list_agent_conversation_messages,
     list_agent_conversations,
 )
-from app.services import platform_chat_store
 from app.integrations.dify_chat_client import resolve_dify_credentials
+from app.services import platform_chat_store
 from app.services.carbon_qa_v2_service import _credentials as carbon_credentials
 
 CHAT_SCOPES = frozenset({"ai-home", "assistant", "carbon-qa", "smart-data-query"})

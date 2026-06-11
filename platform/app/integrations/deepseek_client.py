@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
 import httpx
+import tomllib
 
 from app.config import get_settings
 from app.core.exceptions import bad_request
@@ -179,7 +179,7 @@ async def summarize_speaker_timeline(
     merged_blocks: list[dict], style: str = "minutes"
 ) -> dict:
     """Summarize each merged speaker block; return JSON array string in summary field."""
-    settings = get_settings()
+    get_settings()
     api_key, base_url, model = resolve_credentials()
     if not merged_blocks:
         raise bad_request("没有可总结的说话人片段")

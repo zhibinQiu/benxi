@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.phone import bootstrap_login_id, login_ids_equal
 from app.core.platform_admin import (
-    SYSTEM_ADMIN_ROLE_CODE,
     ensure_bootstrap_has_system_admin_role,
 )
 from app.core.security import hash_password

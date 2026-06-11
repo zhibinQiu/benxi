@@ -137,8 +137,8 @@ def ensure_document_scope_tier_v2(engine: Engine) -> None:
 
 def ensure_document_scope_org_depth(engine: Engine) -> None:
     """按组织树深度重算 scope：根=company，二级=department，三级=team。"""
-    from app.database import SessionLocal
     from app.core.document_scope import scope_for_department
+    from app.database import SessionLocal
     from app.models.document import Document, DocumentLibraryFolder
 
     with engine.begin() as conn:
@@ -176,6 +176,51 @@ def ensure_document_scope_org_depth(engine: Engine) -> None:
         conn.execute(
             text(
                 "INSERT INTO schema_patches (name) VALUES ('document_scope_org_depth')"
+            )
+        )
+
+
+def ensure_document_library_align_v1(engine: Engine) -> None:
+    """对齐文档中心与知识检索树：修复 scope/folder/知识库映射错位。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS schema_patches (
+                    name VARCHAR(64) PRIMARY KEY,
+                    applied_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        )
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = 'document_library_align_v1'")
+        ).first()
+        if done:
+            return
+
+    from app.database import SessionLocal
+    from app.models.org import Role, User, UserRole
+    from app.services.document_library_align_service import repair_document_library_alignment
+    from sqlalchemy import select
+
+    db = SessionLocal()
+    try:
+        actor = db.scalar(
+            select(User)
+            .join(UserRole, UserRole.user_id == User.id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(Role.code == "sys_admin")
+            .limit(1)
+        )
+        repair_document_library_alignment(db, actor=actor)
+    finally:
+        db.close()
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO schema_patches (name) VALUES ('document_library_align_v1')"
             )
         )
 
@@ -612,6 +657,114 @@ def ensure_document_version_change_description(engine: Engine) -> None:
         )
 
 
+def ensure_version_compare_schema(engine: Engine) -> None:
+    """版本对比关系表与差异表。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS document_version_compare_relations (
+            id UUID PRIMARY KEY,
+            document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            from_version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
+            to_version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
+            relation_type VARCHAR(32) NOT NULL DEFAULT 'on_demand',
+            status VARCHAR(16) NOT NULL DEFAULT 'pending',
+            progress INTEGER NOT NULL DEFAULT 0,
+            diff_count INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT,
+            payload JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            CONSTRAINT uq_doc_version_compare_pair
+                UNIQUE (document_id, from_version_id, to_version_id)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_doc_ver_cmp_rel_document_id
+            ON document_version_compare_relations (document_id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_doc_ver_cmp_rel_status
+            ON document_version_compare_relations (status)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS document_version_diff_items (
+            id UUID PRIMARY KEY,
+            relation_id UUID NOT NULL
+                REFERENCES document_version_compare_relations(id) ON DELETE CASCADE,
+            document_id UUID NOT NULL,
+            from_version_id UUID NOT NULL,
+            to_version_id UUID NOT NULL,
+            diff_type VARCHAR(16) NOT NULL,
+            text_left TEXT,
+            text_right TEXT,
+            anchor_json JSONB
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_doc_ver_diff_relation_id
+            ON document_version_diff_items (relation_id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_doc_ver_diff_document_id
+            ON document_version_diff_items (document_id)
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_version_compare_llm_summary_schema(engine: Engine) -> None:
+    """版本对比 LLM 总结字段。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE document_version_compare_relations "
+                "ADD COLUMN IF NOT EXISTS llm_summary TEXT"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE document_version_compare_relations "
+                "ADD COLUMN IF NOT EXISTS llm_summary_status VARCHAR(16) "
+                "NOT NULL DEFAULT 'pending'"
+            )
+        )
+
+
+def ensure_document_version_blocks_schema(engine: Engine) -> None:
+    """文档版本 OCR/结构化分块表。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS document_version_blocks (
+            id UUID PRIMARY KEY,
+            document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
+            block_index INTEGER NOT NULL,
+            page INTEGER NOT NULL DEFAULT 1,
+            block_type VARCHAR(32) NOT NULL DEFAULT 'text',
+            text TEXT NOT NULL DEFAULT '',
+            bbox JSONB,
+            meta_json JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_doc_version_block_index UNIQUE (version_id, block_index)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_doc_ver_blocks_version_id
+            ON document_version_blocks (version_id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_doc_ver_blocks_document_id
+            ON document_version_blocks (document_id)
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def ensure_platform_model_settings_schema(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -640,5 +793,41 @@ def drop_legacy_ragflow_account_dataset_columns(engine: Engine) -> None:
             text(
                 "ALTER TABLE ragflow_account_links "
                 "DROP COLUMN IF EXISTS dept_dataset_id"
+            )
+        )
+
+
+def ensure_user_last_seen_schema(engine: Engine) -> None:
+    """用户最近活跃时间，用于运行大屏在线人数统计。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_users_last_seen_at "
+                "ON users (last_seen_at) WHERE last_seen_at IS NOT NULL"
+            )
+        )
+
+
+def ensure_user_auth_token_version_schema(engine: Engine) -> None:
+    """单账号单会话：登录时递增 auth_token_version，JWT 携带 ver。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_token_version "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+
+
+def ensure_ragflow_version_index_completed_schema(engine: Engine) -> None:
+    """版本索引完成时间：文档检索绑定「最后索引成功」的版本。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE ragflow_document_version_links "
+                "ADD COLUMN IF NOT EXISTS index_completed_at TIMESTAMPTZ"
             )
         )

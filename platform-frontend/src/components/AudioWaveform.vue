@@ -5,8 +5,7 @@ import { NText } from "naive-ui";
 const props = defineProps({
   stream: { type: Object, default: null },
   active: { type: Boolean, default: false },
-  height: { type: Number, default: 72 },
-});
+  height: { type: Number, default: 72 }});
 
 const emit = defineEmits(["level"]);
 

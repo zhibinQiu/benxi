@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
-# 智碳平台统一部署：本机推送（rsync）或目标机本地部署
+# 智碳平台生产部署：镜像 save/load 推送到远程（不 rsync 源码）
 #
 # 配置: platform/deploy.target（由 deploy.target.example 复制）
-# 架构: DEPLOY_ARCH=auto|amd64|arm64（auto 时推送前 SSH 检测 uname -m）
 #
-# 本机推送到远程（默认，需 deploy.target）:
-#   bash scripts/deploy.sh                 # rsync + 远程 app
-#   bash scripts/deploy.sh full            # 首次 / 大改
-#   bash scripts/deploy.sh --push-only
-#   bash scripts/deploy.sh --deploy-only
-#   bash scripts/deploy.sh --status
+# 用法:
+#   bash scripts/stack.sh build --profile knowflow --profile speech
+#   bash scripts/stack.sh save
+#   bash scripts/deploy.sh stack push      # 推送到 deploy.target 中的服务器
+#   bash scripts/deploy.sh local stack     # 目标机本地 load + up
 #
-# 在目标机本地执行:
-#   bash scripts/deploy.sh local app
-#   bash scripts/deploy.sh local full
-#   bash scripts/deploy.sh local down
-#
-# 统一栈（镜像 save/load，不 rsync 源码）:
-#   bash scripts/stack.sh build && bash scripts/stack.sh save
-#   bash scripts/deploy.sh stack push
-#   bash scripts/deploy.sh local stack
+# 已废弃: deploy.sh app/full/core/knowflow/speech/down（请用 stack.sh）
 #
 set -euo pipefail
 
@@ -289,7 +279,7 @@ _job_knowflow() {
   # shellcheck disable=SC1091
   source knowflow.env
   set +a
-  export COMPOSE_PROFILES="${COMPOSE_PROFILES:-elasticsearch}"
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:-infinity}"
   local -a kf_profile_args=() kf_compose=(-f "$KF_COMPOSE_FILE")
   local p
   IFS=',' read -ra _kf_prof <<< "${COMPOSE_PROFILES}"

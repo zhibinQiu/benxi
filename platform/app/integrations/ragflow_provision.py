@@ -11,9 +11,9 @@ import httpx
 
 from app.config import get_settings
 from app.integrations.ragflow_crypto import rsa_encrypt_password
+from app.integrations.ragflow_llm_template import ensure_shared_llm_config
 from app.models.org import User
 from app.models.ragflow_link import RagflowAccountLink
-from app.integrations.ragflow_llm_template import ensure_shared_llm_config
 from app.services.ragflow_naming import platform_email_for_user
 
 logger = logging.getLogger(__name__)
@@ -179,7 +179,7 @@ def _run_ragflow_mysql(sql: str) -> tuple[bool, str]:
                 "exec",
                 container,
                 "mysql",
-                f"-uroot",
+                "-uroot",
                 f"-p{mysql_pwd}",
                 db,
                 "--default-character-set=utf8mb4",

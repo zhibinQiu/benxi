@@ -1,5 +1,7 @@
-# 国内 Docker 镜像前缀：DOCKER_MIRROR 默认 docker.1ms.run
-# 若 1ms 限流/缺层，可在 .env 设置：DOCKER_MIRROR=docker.m.daocloud.io
+# 国内镜像加速覆盖（STACK_USE_MIRROR=1 时由 stack.sh 自动叠加）
+#
+# 覆盖 compose.yaml 中 postgres/redis/minio 等基础镜像及 build args。
+# 若 1ms 限流/缺层: .env 设置 DOCKER_MIRROR=docker.m.daocloud.io
 
 services:
   postgres:

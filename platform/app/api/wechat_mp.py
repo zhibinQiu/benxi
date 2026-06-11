@@ -6,6 +6,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_feature
 from app.database import get_db
@@ -23,7 +24,6 @@ from app.schemas.wechat_mp import (
     WechatMpSyncOut,
 )
 from app.services import wechat_mp_service as svc
-from sqlalchemy.orm import Session
 
 router = APIRouter(
     prefix="/wechat-mp",

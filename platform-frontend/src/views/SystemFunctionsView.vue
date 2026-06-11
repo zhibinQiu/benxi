@@ -1,8 +1,9 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { encodeReturnLocation } from "../utils/navigationReturn";
-import { NCard, NGrid, NGi, NTag, NIcon, useMessage } from "naive-ui";
+import { NCard, NGrid, NGi, NTag, NIcon } from "naive-ui";
 import {
   LanguageOutline,
   ChatbubblesOutline,
@@ -21,15 +22,14 @@ import {
   NewspaperOutline,
   SearchOutline,
   StarOutline,
-  Star,
-} from "@vicons/ionicons5";
+  Star } from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
 import { fetchSystemFeatures } from "../api/client";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 const { isFavorite, toggleFavorite } = useFeatureFavorites();
 const features = ref([]);
 const loading = ref(true);
@@ -48,8 +48,7 @@ const iconMap = {
   create: CreateOutline,
   wallet: WalletOutline,
   newspaper: NewspaperOutline,
-  search: SearchOutline,
-};
+  search: SearchOutline};
 
 const CATEGORY_ORDER = ["document", "tools", "carbon"];
 
@@ -57,19 +56,15 @@ const categoryMeta = {
   document: {
     title: "文档",
     hint: "翻译、对比、辅助写作、知识检索与文档生成",
-    icon: DocumentTextOutline,
-  },
+    icon: DocumentTextOutline},
   tools: {
     title: "工具",
     hint: "会议助手、OCR、数据分析、在线 AI 工具等",
-    icon: GridOutline,
-  },
+    icon: GridOutline},
   carbon: {
     title: "双碳",
     hint: "双碳业务应用与智碳平台等外链入口",
-    icon: LeafOutline,
-  },
-};
+    icon: LeafOutline}};
 
 const DEFAULT_CATEGORY = "tools";
 
@@ -94,15 +89,14 @@ const groupedCategories = computed(() => {
   return CATEGORY_ORDER.map((id) => ({
     id,
     ...categoryMeta[id],
-    features: buckets[id],
-  })).filter((c) => c.features.length > 0);
+    features: buckets[id]})).filter((c) => c.features.length > 0);
 });
 
 onMounted(async () => {
   try {
     features.value = await fetchSystemFeatures();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -115,26 +109,25 @@ function onFavoriteClick(event, featureId) {
 
 function openFeature(f) {
   if (!f.enabled) {
-    message.info(`「${f.title}」${f.tag || "即将推出"}，敬请期待`);
+    ui.info(`「${f.title}」${f.tag || "即将推出"}，敬请期待`);
     return;
   }
   if (!f.accessible) {
-    message.warning("暂无权限，请联系管理员在角色管理中开通");
+    ui.warning("暂无权限，请联系管理员在角色管理中开通");
     return;
   }
   if (f.route) {
     const encoded = encodeReturnLocation(route);
     router.push({
       path: f.route,
-      query: encoded ? { return: encoded } : {},
-    });
+      query: encoded ? { return: encoded } : {}});
     return;
   }
   if (f.external_url) {
     window.open(f.external_url, "_blank", "noopener,noreferrer");
     return;
   }
-  message.warning("该功能暂未配置入口");
+  ui.warning("该功能暂未配置入口");
 }
 </script>
 
@@ -179,8 +172,7 @@ function openFeature(f) {
               class="feature-card"
               :class="{
                 'feature-card--disabled': !f.enabled,
-                'feature-card--locked': f.enabled && !f.accessible,
-              }"
+                'feature-card--locked': f.enabled && !f.accessible}"
               role="button"
               tabindex="0"
               @click="openFeature(f)"

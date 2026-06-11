@@ -494,7 +494,7 @@ def import_article_to_document(
     dept_id: uuid.UUID | None = None,
     sync_knowflow: bool = True,
 ) -> dict:
-    # 资讯导入文档库固定「我的」，忽略请求中的其它分级
+    # 资讯导入文档库固定「个人级」，忽略请求中的其它分级
     _ = scope
     scope = content_subscription_import_scope()
     dept_id = None

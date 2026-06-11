@@ -24,8 +24,8 @@ from app.services.ragflow_scope_service import (
     ensure_user_scope_datasets,
     purge_orphan_kbs_for_user_tenant,
     purge_unregistered_knowledge_bases,
-    repair_stale_scope_registries,
     repair_orphan_scope_registries,
+    repair_stale_scope_registries,
     sync_all_kb_display_names,
     sync_user_kb_grants,
 )

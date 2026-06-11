@@ -1,18 +1,38 @@
 from __future__ import annotations
 
+import logging
 import uuid
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.content_checksum import compute_md5_hex, normalize_checksum
 from app.core.document_upload_limits import (
     document_upload_max_bytes,
     document_upload_max_label,
 )
 from app.core.permissions import PermissionLevel, can_access_document
-from app.models.document import Document, DocumentPermission, DocumentVersion
+from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.storage.object_store import get_object_store
+
+logger = logging.getLogger(__name__)
+
+
+def _try_sync_version_git(db: Session, version: DocumentVersion) -> None:
+    try:
+        from app.services.document_git_service import sync_version_to_git
+        from app.services.document_version_block_service import ensure_version_blocks
+
+        ensure_version_blocks(db, version)
+        sync_version_to_git(db, version)
+    except Exception:
+        logger.warning(
+            "版本 Git 同步失败 document=%s version=%s",
+            version.document_id,
+            version.id,
+            exc_info=True,
+        )
 
 
 def get_document(db: Session, document_id: uuid.UUID) -> Document | None:
@@ -41,6 +61,7 @@ def create_initial_uploaded_version(
 ) -> DocumentVersion:
     """创建并落库首版文件（用于导入、订阅等服务端直传场景）。"""
     store = get_object_store()
+    resolved_checksum = normalize_checksum(checksum) or compute_md5_hex(content)
     version = DocumentVersion(
         document_id=document.id,
         version_no=1,
@@ -48,7 +69,7 @@ def create_initial_uploaded_version(
         file_name=file_name,
         mime_type=mime_type or "application/octet-stream",
         file_size=len(content),
-        checksum=checksum,
+        checksum=resolved_checksum,
         created_by=user.id,
     )
     store.put_object_bytes(version.file_key, content, mime_type)
@@ -57,6 +78,7 @@ def create_initial_uploaded_version(
     db.commit()
     db.refresh(version)
     db.refresh(document)
+    _try_sync_version_git(db, version)
     return version
 def list_document_versions(db: Session, document_id: uuid.UUID) -> list[DocumentVersion]:
     rows = list(
@@ -67,6 +89,27 @@ def list_document_versions(db: Session, document_id: uuid.UUID) -> list[Document
         ).all()
     )
     return [v for v in rows if is_version_uploaded(v)]
+
+
+def get_baseline_uploaded_version(
+    db: Session, document: Document
+) -> DocumentVersion | None:
+    """用于新版本格式校验：优先当前版本，否则取最早已上传版本。"""
+    if document.current_version_id:
+        cur = db.get(DocumentVersion, document.current_version_id)
+        if cur and is_version_uploaded(cur):
+            return cur
+    return db.scalar(
+        select(DocumentVersion)
+        .where(
+            DocumentVersion.document_id == document.id,
+            DocumentVersion.file_size > 0,
+        )
+        .order_by(DocumentVersion.version_no.asc())
+        .limit(1)
+    )
+
+
 def resolve_current_version(
     db: Session, document: Document, *, repair: bool = True
 ) -> DocumentVersion | None:
@@ -142,13 +185,18 @@ def delete_document_version(
         }
 
     document.current_version_id = None
-    from app.services.documents.lifecycle import soft_delete_document
+    from app.services.documents.lifecycle import (
+        purge_document_completely,
+    )
+    from app.services.ragflow_sync_service import schedule_knowflow_deletes
 
-    soft_delete_document(db, document, deleted_by=deleted_by)
+    targets = purge_document_completely(db, document, defer_knowflow=True)
+    db.commit()
+    schedule_knowflow_deletes(targets)
     return {
         "ok": True,
         "document_deleted": True,
-        "message": "已无版本，文档已移入回收站",
+        "message": "已无版本，文档已删除",
         "current_version_id": None,
     }
 def create_document(
@@ -185,6 +233,9 @@ def create_document(
     db.add(doc)
     db.commit()
     db.refresh(doc)
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
     return doc
 def prepare_upload(
     db: Session,
@@ -194,10 +245,21 @@ def prepare_upload(
     file_name: str,
     mime_type: str,
 ) -> tuple[DocumentVersion, str]:
-    if not can_access_document(db, user, document, PermissionLevel.edit.value):
+    if not can_access_document(db, user, document, PermissionLevel.modify.value):
         from app.core.exceptions import forbidden
 
         raise forbidden("No permission to upload new version")
+
+    from app.core.document_format import assert_compatible_version_format
+
+    baseline = get_baseline_uploaded_version(db, document)
+    if baseline:
+        assert_compatible_version_format(
+            existing_file_name=baseline.file_name,
+            existing_mime=baseline.mime_type,
+            new_file_name=file_name,
+            new_mime=mime_type,
+        )
 
     store = get_object_store()
     max_ver = db.scalar(
@@ -236,7 +298,7 @@ def save_upload_blob(
         from app.core.exceptions import not_found
 
         raise not_found("Version not found")
-    if not can_access_document(db, user, document, PermissionLevel.edit.value):
+    if not can_access_document(db, user, document, PermissionLevel.modify.value):
         from app.core.exceptions import forbidden
 
         raise forbidden("No permission to upload new version")
@@ -247,6 +309,7 @@ def save_upload_blob(
     mime = (content_type or version.mime_type or "application/octet-stream").strip()
     store = get_object_store()
     store.put_object_bytes(version.file_key, data, mime)
+    version.checksum = compute_md5_hex(data)
 
 
 def complete_upload(
@@ -259,7 +322,7 @@ def complete_upload(
     checksum: str | None,
     change_description: str = "",
 ) -> Document:
-    if not can_access_document(db, user, document, PermissionLevel.edit.value):
+    if not can_access_document(db, user, document, PermissionLevel.modify.value):
         from app.core.exceptions import forbidden
 
         raise forbidden("No permission to complete upload")
@@ -268,12 +331,32 @@ def complete_upload(
 
         raise bad_request(f"单文件大小不能超过 {document_upload_max_label()}")
 
+    from app.core.document_format import assert_compatible_version_format
+
+    baseline = get_baseline_uploaded_version(db, document)
+    if baseline and baseline.id != version.id:
+        assert_compatible_version_format(
+            existing_file_name=baseline.file_name,
+            existing_mime=baseline.mime_type,
+            new_file_name=version.file_name or "",
+            new_mime=version.mime_type or "",
+        )
+
     version.file_size = file_size
-    version.checksum = checksum
+    if checksum:
+        version.checksum = normalize_checksum(checksum)
+    elif not version.checksum:
+        content = get_object_store().get_object_bytes(version.file_key)
+        version.checksum = compute_md5_hex(content)
     version.change_description = (change_description or "").strip()
     document.current_version_id = version.id
     db.commit()
     db.refresh(document)
+    db.refresh(version)
+    _try_sync_version_git(db, version)
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
     return document
 def move_document_to_folder(
     db: Session,
@@ -282,13 +365,13 @@ def move_document_to_folder(
     *,
     folder_id: uuid.UUID | None,
 ) -> Document:
-    from app.core.document_scope import VALID_SCOPES, can_edit_document
+    from app.core.document_scope import VALID_SCOPES, can_modify_document
     from app.core.exceptions import bad_request, forbidden
     from app.services.library_folder_service import resolve_document_folder_id
 
     if document.deleted_at is not None:
         raise bad_request("回收站中的文档不可移动")
-    if not can_edit_document(db, user, document):
+    if not can_modify_document(db, user, document):
         raise forbidden("无权移动该文档")
     scope = (document.scope or "personal").strip()
     if scope not in VALID_SCOPES:
@@ -304,6 +387,9 @@ def move_document_to_folder(
     document.folder_id = norm_folder_id
     db.commit()
     db.refresh(document)
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
     return document
 def update_document(
     db: Session,
@@ -315,7 +401,7 @@ def update_document(
     scope: str | None = None,
     dept_id: uuid.UUID | None = None,
 ) -> Document:
-    from app.core.document_scope import can_edit_document
+    from app.core.document_scope import can_modify_document
     from app.core.exceptions import bad_request, forbidden
 
     if document.deleted_at is not None:
@@ -323,7 +409,7 @@ def update_document(
     if scope is not None:
         publish_document_scope(db, user, document, scope=scope, dept_id=dept_id)
     if title is not None or description is not None:
-        if not can_edit_document(db, user, document):
+        if not can_modify_document(db, user, document):
             raise forbidden("无权编辑该文档")
         if title is not None:
             t = title.strip()
@@ -334,7 +420,12 @@ def update_document(
             document.description = description
     db.commit()
     db.refresh(document)
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
     return document
+
+
 def publish_document_scope(
     db: Session,
     user: User,
@@ -355,7 +446,7 @@ def publish_document_scope(
     if document.deleted_at is not None:
         raise bad_request("回收站中的文档不可发布")
     if scope == SCOPE_PERSONAL:
-        raise bad_request("请使用文档库「我的」分级存放个人文档")
+        raise bad_request("请使用文档库「个人级」分级存放个人文档")
     if document.owner_id != user.id and not user_is_superuser(db, user):
         raise forbidden("仅文档创建人可发布到组织文库")
     norm_scope, norm_dept = resolve_create_params(db, user, scope=scope, dept_id=dept_id)

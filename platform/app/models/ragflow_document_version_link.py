@@ -36,6 +36,9 @@ class RagflowDocumentVersionLink(Base):
     dataset_id: Mapped[str] = mapped_column(String(64), index=True)
     file_name: Mapped[str] = mapped_column(String(512), default="")
     parser_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    index_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

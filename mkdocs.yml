@@ -27,9 +27,6 @@ theme:
 
 plugins:
   - search
-  # Mermaid 图表渲染（与 Material 主题配合，见 mermaid2.fence_mermaid_custom）
-  - mermaid2:
-      version: 10.9.0
 
 markdown_extensions:
   - admonition
@@ -38,18 +35,23 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:mermaid2.fence_mermaid_custom
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
 
 nav:
   - 主页: index.md
-  - 运维与部署（v3.4+ 最新）:
+  - 运维与部署:
     - 手册索引: operations/README.md
+    - 组件与数据存储: operations/components-and-storage.md
+    - 配置与脚本: operations/config-and-scripts.md
     - 系统架构: operations/architecture.md
     - Docker 容器: operations/docker-services.md
     - 网络拓扑: operations/network-topology.md
     - 部署指南: operations/deployment.md
+    - 远程依赖开发: operations/server-deps.md
+    - 单机迁移与热重载: operations/single-server-migration.md
+    - 功能实现说明: operations/feature-implementation.md
     - 配置说明: operations/configuration.md
     - 数据库迁移: operations/database-migration.md
     - 权限与账户: operations/permissions.md
@@ -61,15 +63,15 @@ nav:
     - 说明书总览: development/implementation-manual.md
     - 第一篇 总览与架构:
       - 项目总体架构: development/system-architecture-overview.md
-      - 平台架构与运维: development/platform-architecture.md
+      - 平台架构索引: development/platform-architecture.md
       - 分层与代码组织: development/layered-architecture.md
     - 第二篇 环境与部署:
       - 快速开始: getting-started.md
-      - 统一栈操作: development/stack-deployment.md
+      - Stack 命令速查: development/stack-deployment.md
     - 第三篇 后端实现:
       - API 与约定: implementation/api-conventions.md
       - 应用服务与域: implementation/backend-implementation.md
-      - 权限模型: platform/permission-model.md
+      - 权限模型与文档分级: platform/permission-model.md
       - 文档库实现: implementation/documents-implementation.md
       - 知识服务实现: implementation/knowledge-implementation.md
       - 异步任务: implementation/async-and-jobs.md

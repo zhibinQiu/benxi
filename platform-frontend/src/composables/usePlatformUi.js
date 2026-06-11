@@ -47,30 +47,7 @@ export function usePlatformUi() {
     toast("info", keyOrText, params);
   }
 
-  function confirmDelete(options) {
-    const {
-      title = t("common.delete"),
-      content,
-      onPositive,
-      positiveText = t("common.delete"),
-      negativeText = t("common.cancel"),
-    } = options;
-    dialog.warning({
-      title,
-      content: resolveText(content),
-      positiveText,
-      negativeText,
-      onPositiveClick: async () => {
-        try {
-          await onPositive?.();
-        } catch (e) {
-          error(e);
-        }
-      },
-    });
-  }
-
-  function confirmAction(options) {
+  function confirmDialog(type, options) {
     const {
       title = t("common.confirm"),
       content,
@@ -78,7 +55,8 @@ export function usePlatformUi() {
       positiveText = t("common.confirm"),
       negativeText = t("common.cancel"),
     } = options;
-    dialog.info({
+    dialog[type]({
+      class: "platform-confirm-dialog",
       title,
       content: resolveText(content),
       positiveText,
@@ -86,10 +64,32 @@ export function usePlatformUi() {
       onPositiveClick: async () => {
         try {
           await onPositive?.();
+          return true;
         } catch (e) {
           error(e);
+          return false;
         }
       },
+    });
+  }
+
+  function confirmDelete(options) {
+    confirmDialog("warning", {
+      title: options.title ?? t("common.delete"),
+      content: options.content,
+      onPositive: options.onPositive,
+      positiveText: options.positiveText ?? t("common.delete"),
+      negativeText: options.negativeText ?? t("common.cancel"),
+    });
+  }
+
+  function confirmAction(options) {
+    confirmDialog("info", {
+      title: options.title ?? t("common.confirm"),
+      content: options.content,
+      onPositive: options.onPositive,
+      positiveText: options.positiveText ?? t("common.confirm"),
+      negativeText: options.negativeText ?? t("common.cancel"),
     });
   }
 

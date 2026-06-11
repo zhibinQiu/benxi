@@ -54,7 +54,7 @@ flowchart TB
 | 章 | 文档 | 你将学到 |
 |----|------|----------|
 | 1.1 | [项目总体架构](system-architecture-overview.md) | 上下文图、部署图、核心流程、10 项难点与实现 |
-| 1.2 | [平台架构与运维](platform-architecture.md) | 仓库结构、端口、配置项、API 错误格式、启动命令 |
+| 1.2 | [平台架构索引](platform-architecture.md) | 指向运维专题：端口、配置、启动命令 |
 | 1.3 | [分层与代码组织](layered-architecture.md) | API / domains / services / integrations 职责与调用约定 |
 
 ### 第二篇 · 环境与部署
@@ -62,11 +62,11 @@ flowchart TB
 | 章 | 文档 | 你将学到 |
 |----|------|----------|
 | 2.1 | [快速开始](../getting-started.md) | 一键 `zhitan.sh`、默认账号、可选 KnowFlow/语音 |
-| 2.2 | [本地开发](local-development.md) | 双 venv、BabelDOC 资源、故障排查 |
-| 2.3 | [amd64 部署](deploy-amd64.md) | `deploy.sh`、full/core/app、KnowFlow amd64/arm64 |
-| 2.4 | [智碳平台说明](doc-platform.md) | 模块划分、上传五步、KnowFlow 构建要点 |
-| 2.5 | [统一栈操作指南](stack-deployment.md) | **推荐** 根目录 compose、save/load、无代码 rsync |
-| — | [脚本索引](../../scripts/README.md) | `stack.sh` / `deploy.sh stack` |
+| 2.2 | [运维部署指南](../../../运维部署指南.md) §6 | 全 Docker dev、remote-dev + `local-dev` |
+| 2.3 | [部署指南](../operations/deployment.md) | 生产 up、amd64/arm64 镜像 push |
+| 2.4 | [知识库实现](../implementation/knowledge-implementation.md) | KnowFlow 集成、上传同步、构建要点 |
+| 2.5 | [Stack 命令速查](stack-deployment.md) | `stack.sh` save/load、备份 |
+| — | [脚本索引](../../scripts/README.md) | `zhitan.sh` / `stack.sh` / `deploy.sh` |
 
 ### 第三篇 · 后端实现
 
@@ -117,7 +117,7 @@ flowchart TB
 
 | 天 | 任务 | 文档 |
 |----|------|------|
-| D1 | 跑通环境 | [快速开始](../getting-started.md) → [本地开发](local-development.md) |
+| D1 | 跑通环境 | [快速开始](../getting-started.md) → [运维部署指南](../../../运维部署指南.md) §6 |
 | D2 | 理解架构 | [项目总体架构](system-architecture-overview.md) → [分层架构](layered-architecture.md) |
 | D3 | 改一个小需求 | [API 与约定](../implementation/api-conventions.md) + [功能插件](../platform/feature-plugins.md) |
 
@@ -131,7 +131,7 @@ flowchart TB
 
 ### 3.4 运维 / 发布
 
-[amd64 部署](deploy-amd64.md) → [平台架构与运维](platform-architecture.md) §配置 → `platform/.env.example`
+[部署指南](../operations/deployment.md) → [配置说明](../operations/configuration.md) → `platform/.env.example`
 
 ---
 
@@ -176,7 +176,7 @@ pdf_trans/
 
 ## 6. 配置与环境变量索引
 
-完整列表见 `platform/.env.example` 与 [平台架构与运维](platform-architecture.md) §8。高频项：
+完整列表见 `platform/.env.example` 与 [配置说明](../operations/configuration.md)。高频项：
 
 | 变量 | 用途 |
 |------|------|
@@ -200,8 +200,8 @@ pdf_trans/
 | 新 API 约定或错误码 | [API 与约定](../implementation/api-conventions.md) |
 | 文档库/权限行为变更 | [文档库实现](../implementation/documents-implementation.md)、[权限模型](../platform/permission-model.md) |
 | 新功能插件 | [功能插件](../platform/feature-plugins.md) + 插件内 docstring |
-| 部署/compose 变更 | [amd64 部署](deploy-amd64.md)、[脚本索引](../../scripts/README.md) |
-| 仅改端口/版本号 | [平台架构与运维](platform-architecture.md) |
+| 部署/compose 变更 | [部署指南](../operations/deployment.md)、[脚本索引](../../scripts/README.md) |
+| 仅改端口/版本号 | [配置说明](../operations/configuration.md)、[运维部署指南](../../../运维部署指南.md) |
 
 **不要删除** `platform/third_party/KnowFlow/`（Docker 构建依赖）。
 
@@ -220,10 +220,11 @@ pdf_trans/
 
 | 原独立文档 | 说明书位置 |
 |------------|------------|
-| platform-architecture.md | 第一篇 1.2 |
+| platform-architecture.md | 第一篇 1.2（索引 → operations/） |
 | system-architecture-overview.md | 第一篇 1.1 |
 | layered-architecture.md | 第一篇 1.3 |
-| doc-platform / local-development / deploy-amd64 | 第二篇 |
+| stack-deployment.md | 第二篇 2.5（stack 命令速查） |
+| 已删除的 local-development / deploy-amd64 / doc-platform | 合并至 [运维部署指南](../../../运维部署指南.md) 与 [operations/](../operations/README.md) |
 | permission-model / feature-plugins 等 | 第三、五篇 |
 
 若 MkDocs 侧边栏与本文目录不一致，以 **`mkdocs.yml` 中「开发实现说明书」节点** 为准。

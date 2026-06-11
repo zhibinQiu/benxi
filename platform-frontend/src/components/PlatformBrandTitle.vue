@@ -7,8 +7,7 @@ defineOptions({ inheritAttrs: false });
 const props = defineProps({
   title: { type: String, default: "" },
   tag: { type: String, default: "span" },
-  strong: { type: Boolean, default: false },
-});
+  strong: { type: Boolean, default: false }});
 
 const parts = computed(() => splitPlatformBrandTitle(props.title));
 </script>

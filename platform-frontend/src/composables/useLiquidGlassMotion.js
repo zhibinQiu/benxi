@@ -39,6 +39,10 @@ export function useLiquidGlassMotion() {
   }
 
   function tick() {
+    if (document.hidden) {
+      raf = requestAnimationFrame(tick);
+      return;
+    }
     currentX = lerp(currentX, targetX, 0.065);
     currentY = lerp(currentY, targetY, 0.065);
     applyVars();

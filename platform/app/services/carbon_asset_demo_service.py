@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from copy import deepcopy
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
@@ -16,7 +15,6 @@ from app.schemas.carbon_asset import (
     CarbonTradeCreate,
     CarbonTradeCreateResult,
     CarbonTradeRecord,
-    TradeSide,
 )
 from app.services.carbon_market_live_service import get_live_price, get_market_snapshot
 

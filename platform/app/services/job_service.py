@@ -136,6 +136,23 @@ def clear_jobs(db: Session, user_id: uuid.UUID, *, scope: str) -> int:
     return int(result.rowcount or 0)
 
 
+def delete_jobs_by_ids(
+    db: Session, user_id: uuid.UUID, job_ids: list[uuid.UUID]
+) -> int:
+    """删除指定任务记录（仅已完成/失败/已取消，且归属当前用户）。"""
+    if not job_ids:
+        return 0
+    stmt = (
+        delete(Job)
+        .where(Job.created_by == user_id)
+        .where(Job.id.in_(job_ids))
+        .where(Job.status.in_(_FINISHED_STATUSES))
+    )
+    result = db.execute(stmt)
+    db.commit()
+    return int(result.rowcount or 0)
+
+
 def enqueue_delete_document(db: Session, document_id: uuid.UUID, user_id: uuid.UUID) -> Job:
     job = create_job(
         db,

@@ -1,16 +1,16 @@
 <script setup>
-import { NCard, NGrid, NGi, NText, NTag, NIcon, useMessage } from "naive-ui";
+import { usePlatformUi } from "../composables/usePlatformUi";
+import { NCard, NGrid, NGi, NText, NTag, NIcon } from "naive-ui";
 import {
   ChatbubblesOutline,
   OpenOutline,
   ConstructOutline,
   ImagesOutline,
   ExtensionPuzzleOutline,
-  GridOutline,
-} from "@vicons/ionicons5";
+  GridOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
-const message = useMessage();
+const ui = usePlatformUi();
 
 /** @typedef {{ id: string, title: string, description: string, url?: string, pending?: boolean }} AiTool */
 /** @typedef {{ id: string, title: string, hint?: string, icon: object, tools: AiTool[] }} AiToolCategory */
@@ -33,8 +33,7 @@ const categories = [
       { id: "gemini", title: "Gemini", description: "Google AI 助手", url: "https://gemini.google.com/" },
       { id: "chatgpt", title: "ChatGPT", description: "OpenAI 对话（含免费额度）", url: "https://chatgpt.com/" },
       { id: "claude", title: "Claude", description: "Anthropic 对话（含免费额度）", url: "https://claude.ai/" },
-    ],
-  },
+    ]},
   {
     id: "agent",
     title: "Agent",
@@ -48,10 +47,8 @@ const categories = [
         id: "dify",
         title: "Dify",
         description: "LLM 应用与 Agent 平台（设计系统）",
-        url: "http://172.19.134.45:40001/apps",
-      },
-    ],
-  },
+        url: "http://172.19.134.45:40001/apps"},
+    ]},
   {
     id: "media",
     title: "生图 / 视频类",
@@ -67,8 +64,7 @@ const categories = [
       { id: "ideogram", title: "Ideogram", description: "英文提示词友好生图", url: "https://ideogram.ai/" },
       { id: "leonardo", title: "Leonardo.Ai", description: "游戏与概念美术生图", url: "https://leonardo.ai/" },
       { id: "pika", title: "Pika", description: "短视频 AI 生成", url: "https://pika.art/" },
-    ],
-  },
+    ]},
   {
     id: "misc",
     title: "其他工具",
@@ -86,8 +82,7 @@ const categories = [
       { id: "fishaudio", title: "Fish Audio", description: "AI 语音合成与克隆", url: "https://fish.audio/" },
       { id: "azure-tts", title: "Azure 语音试听", description: "微软神经网络语音合成演示", url: "https://azure.microsoft.com/zh-cn/products/ai-services/text-to-speech" },
       { id: "excalidraw", title: "Excalidraw", description: "手绘风格白板与示意图", url: "https://excalidraw.com/" },
-    ],
-  },
+    ]},
 ];
 
 /**
@@ -95,11 +90,11 @@ const categories = [
  */
 function openTool(tool) {
   if (tool.pending) {
-    message.info("该工具待开发，敬请期待");
+    ui.info("该工具待开发，敬请期待");
     return;
   }
   if (!tool.url) {
-    message.warning("暂未配置访问地址");
+    ui.warning("暂未配置访问地址");
     return;
   }
   window.open(tool.url, "_blank", "noopener,noreferrer");

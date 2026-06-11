@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import PermissionLevel, can_access_document
-from app.models.document import Document, DocumentPermission, DocumentVersion
+from app.models.document import Document, DocumentVersion
 from app.models.org import User
-from app.storage.object_store import get_object_store
-
 from app.services.documents.crud import get_document, resolve_current_version
+from app.storage.object_store import get_object_store
 
 
 def _is_compareable_version(version: DocumentVersion) -> bool:

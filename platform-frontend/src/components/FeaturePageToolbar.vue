@@ -3,8 +3,7 @@ import FeatureSubsystemHeader from "./FeatureSubsystemHeader.vue";
 
 defineProps({
   description: { type: String, default: "" },
-  showIntro: { type: Boolean, default: true },
-});
+  showIntro: { type: Boolean, default: false }});
 </script>
 
 <template>

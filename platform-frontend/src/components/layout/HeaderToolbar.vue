@@ -1,13 +1,12 @@
 <script setup>
-import { computed, h, onMounted, ref } from "vue";
+import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NAvatar,
   NBadge,
   NButton,
   NDropdown,
-  NIcon,
-} from "naive-ui";
+  NIcon } from "naive-ui";
 import {
   ChatbubbleEllipsesOutline,
   ChevronDownOutline,
@@ -18,8 +17,7 @@ import {
   NotificationsOutline,
   PersonOutline,
   SunnyOutline,
-  TimeOutline,
-} from "@vicons/ionicons5";
+  TimeOutline } from "@vicons/ionicons5";
 import { useAuth } from "../../composables/useAuth";
 import { useAppPreferences } from "../../composables/useAppPreferences";
 import { useI18n } from "../../composables/useI18n";
@@ -44,10 +42,19 @@ const jobsTriggerRef = ref(null);
 const notificationsTriggerRef = ref(null);
 const assistantTriggerRef = ref(null);
 const flyoutsReady = ref(false);
+let badgeTimer = null;
 
 onMounted(() => {
   flyoutsReady.value = true;
   refreshHeaderBadges();
+  badgeTimer = setInterval(() => {
+    if (document.hidden) return;
+    refreshHeaderBadges();
+  }, 60_000);
+});
+
+onUnmounted(() => {
+  if (badgeTimer) clearInterval(badgeTimer);
 });
 
 async function refreshUnreadCount() {
@@ -110,28 +117,23 @@ const userMenuOptions = computed(() => [
   {
     label: t("userMenu.profile"),
     key: "profile",
-    icon: () => h(NIcon, null, { default: () => h(PersonOutline) }),
-  },
+    icon: () => h(NIcon, null, { default: () => h(PersonOutline) })},
   { type: "divider", key: "divider-prefs" },
   {
     label: isDark.value ? t("userMenu.lightMode") : t("userMenu.darkMode"),
     key: "theme",
     icon: () =>
       h(NIcon, null, {
-        default: () => h(isDark.value ? SunnyOutline : MoonOutline),
-      }),
-  },
+        default: () => h(isDark.value ? SunnyOutline : MoonOutline)})},
   {
     label: localeLabel.value,
     key: "locale",
-    icon: () => h(NIcon, null, { default: () => h(LanguageOutline) }),
-  },
+    icon: () => h(NIcon, null, { default: () => h(LanguageOutline) })},
   { type: "divider", key: "divider-logout" },
   {
     label: t("userMenu.logout"),
     key: "logout",
-    icon: () => h(NIcon, null, { default: () => h(LogOutOutline) }),
-  },
+    icon: () => h(NIcon, null, { default: () => h(LogOutOutline) })},
 ]);
 
 function headerShellMenuProps() {
@@ -208,8 +210,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
           size="small"
           class="header-icon-btn"
           :class="{
-            'header-icon-btn--active': notificationsPopoverOpen,
-          }"
+            'header-icon-btn--active': notificationsPopoverOpen}"
           :aria-label="t('header.notifications')"
           @click.stop="toggleNotificationsPopover"
         >

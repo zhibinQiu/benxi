@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
@@ -17,9 +18,7 @@ import {
   NSpin,
   NTag,
   NText,
-  useDialog,
-  useMessage,
-} from "naive-ui";
+  useDialog } from "naive-ui";
 import {
   ArrowBackOutline,
   MicOutline,
@@ -30,8 +29,7 @@ import {
   RadioOutline,
   SaveOutline,
   FolderOpenOutline,
-  TrashOutline,
-} from "@vicons/ionicons5";
+  TrashOutline } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import AudioWaveform from "../components/AudioWaveform.vue";
@@ -42,11 +40,10 @@ import {
   listMeetingRecords,
   saveMeetingRecord,
   summarizeSpeech,
-  transcribeSpeech,
-} from "../api/client";
+  transcribeSpeech } from "../api/client";
 
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 const dialog = useDialog();
 
 const meta = ref(null);
@@ -231,21 +228,18 @@ async function transcribeSegmentBlob(blob, chunkTime) {
     id,
     status: "transcribing",
     text: "",
-    timeLabel: formatDuration(chunkTime),
-  });
+    timeLabel: formatDuration(chunkTime)});
   try {
     const file = new File([blob], `chunk-${id}.webm`, { type: blob.type });
     const result = await transcribeSpeech({
       file,
       language: language.value || undefined,
-      diarize: diarize.value && meta.value?.diarization_available,
-    });
+      diarize: diarize.value && meta.value?.diarization_available});
     const idx = liveSegments.value.findIndex((s) => s.id === id);
     const newSegs = (result.segments || []).length
       ? result.segments.map((s) => ({
           ...s,
-          start: (s.start ?? 0) + chunkTime,
-        }))
+          start: (s.start ?? 0) + chunkTime}))
       : result.text
         ? [{ speaker: "SPEAKER_00", start: chunkTime, text: result.text }]
         : [];
@@ -257,8 +251,7 @@ async function transcribeSegmentBlob(blob, chunkTime) {
       liveSegments.value[idx] = {
         ...liveSegments.value[idx],
         status: "done",
-        text: newSegs.map((s) => s.text).join(" ") || "（无识别内容）",
-      };
+        text: newSegs.map((s) => s.text).join(" ") || "（无识别内容）"};
     }
   } catch (e) {
     const idx = liveSegments.value.findIndex((s) => s.id === id);
@@ -266,10 +259,9 @@ async function transcribeSegmentBlob(blob, chunkTime) {
       liveSegments.value[idx] = {
         ...liveSegments.value[idx],
         status: "error",
-        text: e.message || "转写失败",
-      };
+        text: e.message || "转写失败"};
     }
-    message.error(e.message || "片段转写失败");
+    ui.error(e.message || "片段转写失败");
   }
 }
 
@@ -322,7 +314,7 @@ async function startRecording() {
   try {
     recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch {
-    message.error("无法访问麦克风，请检查浏览器权限");
+    ui.error("无法访问麦克风，请检查浏览器权限");
     return;
   }
 
@@ -340,7 +332,7 @@ async function startRecording() {
   try {
     fullRecorder = new MediaRecorder(recordStream, { mimeType: recordMime });
   } catch (e) {
-    message.error(`无法启动录音：${e.message || "浏览器不支持该音频格式"}`);
+    ui.error(`无法启动录音：${e.message || "浏览器不支持该音频格式"}`);
     recordStream.getTracks().forEach((t) => t.stop());
     recordStream = null;
     return;
@@ -369,12 +361,12 @@ async function startRecording() {
       recordTimer = null;
     }
     clearRecording();
-    message.error(`录音启动失败：${e.message || "未知错误"}`);
+    ui.error(`录音启动失败：${e.message || "未知错误"}`);
     return;
   }
 
   if (streamRecognize.value && !startSegmentRecorder()) {
-    message.warning("当前浏览器不支持双路录音，已关闭实时识别，录完后请手动转写");
+    ui.warning("当前浏览器不支持双路录音，已关闭实时识别，录完后请手动转写");
     streamRecognize.value = false;
   }
 }
@@ -437,19 +429,17 @@ async function confirmSave() {
       speaker: s.speaker,
       start: s.start ?? 0,
       end: s.end ?? s.start ?? 0,
-      text: s.text || "",
-    }));
+      text: s.text || ""}));
     await saveMeetingRecord({
       title: saveTitle.value.trim(),
       segments: segs,
       summary: summary.value || null,
       summary_blocks: summaryBlocks.value.length ? summaryBlocks.value : null,
-      meta: { style: summaryStyle.value, language: language.value || null },
-    });
+      meta: { style: summaryStyle.value, language: language.value || null }});
     saveModalOpen.value = false;
-    message.success("会议记录已保存");
+    ui.success("会议记录已保存");
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -462,7 +452,7 @@ async function loadRecords() {
     records.value = res.items || [];
     recordsTotal.value = res.total || 0;
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     recordsLoading.value = false;
   }
@@ -480,7 +470,7 @@ async function viewRecord(item) {
   try {
     viewingRecord.value = await fetchMeetingRecord(item.id);
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     recordDetailLoading.value = false;
   }
@@ -492,7 +482,7 @@ function applyRecordToEditor(rec) {
   summary.value = rec.summary || "";
   summaryBlocks.value = rec.summary_blocks || [];
   recordsDrawerOpen.value = false;
-  message.success("已载入会议记录");
+  ui.success("已载入会议记录");
 }
 
 function confirmDeleteRecord(rec) {
@@ -504,14 +494,13 @@ function confirmDeleteRecord(rec) {
     onPositiveClick: async () => {
       try {
         await deleteMeetingRecord(rec.id);
-        message.success("已删除");
+        ui.success("已删除");
         if (viewingRecord.value?.id === rec.id) viewingRecord.value = null;
         await loadRecords();
       } catch (e) {
-        message.error(e.message);
+        ui.error(e.message);
       }
-    },
-  });
+    }});
 }
 
 function formatRecordTime(iso) {
@@ -528,18 +517,16 @@ async function runSummarize() {
       speaker: s.speaker,
       start: s.start ?? 0,
       end: s.end ?? s.start ?? 0,
-      text: s.text || "",
-    }));
+      text: s.text || ""}));
     const res = await summarizeSpeech({
       text: transcript.value,
       style: summaryStyle.value,
-      segments: segs,
-    });
+      segments: segs});
     summary.value = res.summary || "";
     summaryBlocks.value = res.blocks || [];
-    message.success("总结已生成");
+    ui.success("总结已生成");
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     summarizing.value = false;
   }
@@ -547,7 +534,7 @@ async function runSummarize() {
 
 async function runTranscribe() {
   if (!audioFile.value) {
-    message.warning("请先录音或选择音频文件");
+    ui.warning("请先录音或选择音频文件");
     return;
   }
   transcribing.value = true;
@@ -562,20 +549,19 @@ async function runTranscribe() {
     const result = await transcribeSpeech({
       file: audioFile.value,
       language: language.value || undefined,
-      diarize: diarize.value && meta.value?.diarization_available,
-    });
+      diarize: diarize.value && meta.value?.diarization_available});
     segments.value = result.segments || [];
     transcript.value =
       segments.value.length > 0
         ? segmentsToText(segments.value)
         : result.text || "";
-    message.success("转写完成");
+    ui.success("转写完成");
     if (autoSummarize.value && meta.value?.summarize_available) {
       await runSummarize();
     }
   } catch (e) {
     error.value = e.message;
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     transcribing.value = false;
   }
@@ -585,9 +571,9 @@ async function copyText(text) {
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
-    message.success("已复制到剪贴板");
+    ui.success("已复制到剪贴板");
   } catch {
-    message.error("复制失败");
+    ui.error("复制失败");
   }
 }
 

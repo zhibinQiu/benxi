@@ -1,8 +1,5 @@
 /** 平台原生知识库 / 知识检索 API */
-import { api } from "./http.js";
-import { searchKnowledge } from "./rag.js";
-
-export { searchKnowledge };
+import { api, formatApiDetail, getApiBase, getToken } from "./http.js";
 
 export async function fetchKnowledgeScopeTree() {
   return api("/api/v1/knowledge/scope-tree");
@@ -12,12 +9,17 @@ export async function fetchKnowledgeLibraries() {
   return api("/api/v1/knowledge/libraries");
 }
 
-export async function fetchLibraryDocuments(datasetId, { page = 1, pageSize = 50, keyword } = {}) {
+export async function fetchLibraryDocuments(
+  datasetId,
+  { page = 1, pageSize = 50, keyword, folderId, virtualFolderId } = {}
+) {
   const q = new URLSearchParams({
     page: String(page),
     page_size: String(pageSize),
   });
   if (keyword) q.set("keyword", keyword);
+  if (folderId) q.set("folder_id", folderId);
+  if (virtualFolderId) q.set("virtual_folder", virtualFolderId);
   return api(`/api/v1/knowledge/libraries/${encodeURIComponent(datasetId)}/documents?${q}`);
 }
 
@@ -40,7 +42,7 @@ export async function fetchParserOptions() {
 
 export async function reindexDocument(
   documentId,
-  { versionId, parserId = "smart", layoutRecognize, resync = false } = {}
+  { versionId, parserId = "naive", layoutRecognize, resync = false } = {}
 ) {
   const body = { parser_id: parserId, resync };
   if (versionId) body.version_id = versionId;
@@ -82,4 +84,71 @@ export async function knowledgeQaChatSend({ message, conversationId, documentIds
     citations: msg.citations || [],
     conversation_id: sessionId,
   };
+}
+
+/** 流式问答，供知识检索 AiChatPanel 使用 */
+export async function knowledgeQaChatStream(
+  { message, history = [], conversationId = null, documentIds = null },
+  { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
+) {
+  const headers = { "Content-Type": "application/json" };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const body = { message, history };
+  if (conversationId) body.conversation_id = conversationId;
+  if (documentIds?.length) body.document_ids = documentIds;
+
+  const res = await fetch(`${getApiBase()}/api/v1/knowledge/qa/chat/stream`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
+    throw new Error(msg);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("浏览器不支持流式响应");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+    for (const block of parts) {
+      const line = block
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      let payload;
+      try {
+        payload = JSON.parse(line.slice(5).trim());
+      } catch {
+        continue;
+      }
+      if (payload.error) {
+        onError?.(new Error(payload.error));
+        return;
+      }
+      if (payload.workflow) onWorkflow?.(payload.workflow);
+      if (payload.citations) onCitations?.(payload.citations);
+      if (payload.replace != null) onReplace?.(payload.replace);
+      if (payload.delta) onDelta?.(payload.delta);
+      if (payload.done) {
+        onDone?.(payload);
+        return;
+      }
+    }
+  }
+  onDone?.({});
 }

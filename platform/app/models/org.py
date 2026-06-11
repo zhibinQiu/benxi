@@ -42,6 +42,11 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # 每次登录递增；JWT 携带 ver，用于单账号单会话（新登录顶掉旧会话）
+    auth_token_version: Mapped[int] = mapped_column(default=0)
 
     departments: Mapped[list["UserDepartment"]] = relationship(back_populates="user")
     roles: Mapped[list["UserRole"]] = relationship(back_populates="user")

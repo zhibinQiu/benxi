@@ -5,7 +5,6 @@ export const FEATURE_DESCRIPTIONS = {
   "ai-tools": "聚合常用在线 AI 工具外链，快速跳转至翻译、绘图、办公等能力。",
   translate:
     "智能排版保留 PDF 版式，支持双语对照与术语表；翻译任务可在后台持续进行。",
-  rag: "KnowFlow 知识库编码与配置，支持引用溯源与文档定位。",
   "knowledge-search": "在企业知识库中检索与问答，左侧选文档范围、右侧对话，支持分级库筛选与引用溯源。",
   "smart-data-query":
     "用自然语言查询业务数据，自动生成统计图表与分析洞察，支持多轮追问。",
@@ -24,12 +23,12 @@ export const FEATURE_DESCRIPTIONS = {
   "smart-forecast": "基于历史数据进行趋势预测与情景分析（内嵌预测子系统）。",
   speech: "会议录音转写、说话人区分、时间线总结与会议记录管理。",
   ocr: "上传图片或 PDF 进行文字识别，支持批量处理（接入后端后可用）。",
-  compare: "左右文档对照与语义检索，支持字段匹配与段落级差异分析。",
+  compare: "文档版本或跨文档左右对照，支持段落差异与自然语言检索。",
   "assist-writing":
     "Markdown 双栏编辑，预设提示词由 AI 润色、扩写与续写；发送快捷键 Ctrl/Cmd + Enter。",
   "knowledge-subscriptions":
     "粘贴链接收录资讯，支持按标题/正文搜索与收录时间筛选；微信文章带角标，正文以 Markdown 排版展示。",
-  "subscription-item": "查看已收录资讯正文，导入「我的」文档库或打开原文。",
+  "subscription-item": "查看已收录资讯正文，导入「个人级」文档库或打开原文。",
   documents: "按公司、部门、个人分级管理文档，支持分享授权与个人回收站。",
   "document-detail": "查看文档版本、权限分享与翻译/对比等关联操作。",
   jobs: "查看翻译、对比等后台异步任务的进度与结果。",

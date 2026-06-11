@@ -18,7 +18,7 @@ def test_repair_stale_keeps_bootstrap_dept_registry():
     db.scalars.return_value.all.return_value = [dept_reg]
 
     with patch(
-        "app.services.ragflow_scope_service._all_knowflow_dataset_ids",
+        "app.services.ragflow_scope_service._live_knowflow_dataset_ids",
         return_value={"ds-dept-bootstrap", "ds-other"},
     ):
         removed = repair_stale_scope_registries(db, MagicMock())
@@ -33,7 +33,7 @@ def test_repair_stale_removes_truly_missing_registry():
     db.scalars.return_value.all.return_value = [stale]
 
     with patch(
-        "app.services.ragflow_scope_service._all_knowflow_dataset_ids",
+        "app.services.ragflow_scope_service._live_knowflow_dataset_ids",
         return_value={"ds-live"},
     ):
         removed = repair_stale_scope_registries(db, MagicMock())

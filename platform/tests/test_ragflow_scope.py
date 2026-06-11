@@ -42,7 +42,7 @@ def test_scope_key_for_document():
     assert scope_key_for_document(db, personal) == str(owner)
 
 
-def test_kb_level_maps_delete_to_admin():
+def test_kb_level_maps_modify_to_admin():
     from app.services.ragflow_scope_service import kb_level_for_user_on_document
 
     db = MagicMock()
@@ -51,6 +51,6 @@ def test_kb_level_maps_delete_to_admin():
     with patch(
         "app.services.ragflow_scope_service.can_query_document", return_value=True
     ), patch(
-        "app.services.ragflow_scope_service.can_delete_document", return_value=True
+        "app.services.ragflow_scope_service.can_modify_document", return_value=True
     ):
         assert kb_level_for_user_on_document(db, user, doc) == "admin"

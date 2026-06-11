@@ -18,12 +18,14 @@
 
 ## 2. 分级 scope
 
-| scope | 文档库 Tab | 默认可见性 |
-|-------|------------|------------|
-| `personal` | 我的 | 仅 owner；管理员可见全部 |
-| `department` | 部门级 | 组织树二级节点 + `doc.read` |
-| `team` | 小组级 | 组织树三级节点 |
-| `company` | 公司级 | 组织根及下级 + `doc.read` |
+| scope | 文档库 Tab | 组织绑定 | 默认可见性 |
+|-------|------------|----------|------------|
+| `personal` | 个人级 | 不绑定组织（`dept_id` 为空） | 仅 owner；系统管理员可见全部 |
+| `team` | 小组级 | 组织树 depth=2 | 绑定节点及其子孙子树内用户 + `doc.read` |
+| `department` | 部门级 | 组织树 depth=1 | 同上 |
+| `company` | 公司级 | 组织树 depth=0（根） | 同上 |
+
+组织树深度与 scope 映射、用户部门归属、系统管理员 bypass、ACL 档位等完整说明见 [权限模型与文档分级](../platform/permission-model.md)。
 
 判定入口：`app/core/document_scope.py`、`app/core/permissions.py` → `can_access_document`。
 
@@ -68,8 +70,8 @@ sequenceDiagram
 
 - `can_read_document` → visible  
 - `can_query_document` → query（检索、对比选文档）  
-- `can_edit_document` → edit  
-- `can_delete_document` → full  
+- `can_modify_document` → modify（含上传、分享、重建索引、删除）  
+- `can_edit_document` / `can_delete_document` → 兼容别名，等同 `can_modify_document`
 
 ---
 

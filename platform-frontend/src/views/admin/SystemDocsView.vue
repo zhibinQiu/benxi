@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../../composables/usePlatformUi";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -8,16 +9,14 @@ import {
   NLayoutSider,
   NLayoutContent,
   NMenu,
-  NSpin,
-  useMessage,
-} from "naive-ui";
+  NSpin } from "naive-ui";
 import { BookOutline } from "@vicons/ionicons5";
 import SystemDocContent from "../../components/SystemDocContent.vue";
 import { fetchSystemDocCatalog, fetchSystemDocContent } from "../../api/systemDocs.js";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 
 const catalogLoading = ref(true);
 const contentLoading = ref(false);
@@ -35,9 +34,7 @@ const menuOptions = computed(() =>
     children: (group.children || []).map((item) => ({
       label: item.title,
       key: item.path,
-      disabled: !item.available,
-    })),
-  }))
+      disabled: !item.available}))}))
 );
 
 const defaultPath = computed(() => {
@@ -53,7 +50,7 @@ async function loadCatalog() {
   try {
     catalog.value = await fetchSystemDocCatalog();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     catalogLoading.value = false;
   }
@@ -75,7 +72,7 @@ async function loadDoc(path, hash = "") {
       contentRef.value?.scrollToHash?.(hash);
     }
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     contentLoading.value = false;
   }

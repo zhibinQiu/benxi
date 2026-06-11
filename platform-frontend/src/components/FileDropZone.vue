@@ -11,8 +11,7 @@ const props = defineProps({
   hint: { type: String, default: "" },
   fileName: { type: String, default: "" },
   icon: { type: String, default: "upload" },
-  compact: { type: Boolean, default: false },
-});
+  compact: { type: Boolean, default: false }});
 
 const emit = defineEmits(["change"]);
 const inputRef = ref(null);

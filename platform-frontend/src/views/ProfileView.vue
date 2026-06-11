@@ -7,8 +7,7 @@ import {
   NFormItem,
   NInput,
   NSpace,
-  NText,
-} from "naive-ui";
+  NText } from "naive-ui";
 import { updateMe } from "../api/client";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
@@ -23,8 +22,7 @@ const saving = ref(false);
 const form = ref({
   display_name: "",
   email: "",
-  password: "",
-});
+  password: ""});
 
 const showAdminGrantFields = computed(() => hasPerm("admin.user"));
 
@@ -41,8 +39,7 @@ function syncFormFromUser() {
   form.value = {
     display_name: user.value?.display_name || user.value?.username || "",
     email: user.value?.email || "",
-    password: "",
-  };
+    password: ""};
 }
 
 function validateForm() {
@@ -70,8 +67,7 @@ async function submit() {
   saving.value = true;
   const payload = {
     display_name: form.value.display_name.trim(),
-    email: form.value.email.trim(),
-  };
+    email: form.value.email.trim()};
   if (form.value.password) payload.password = form.value.password;
   try {
     await updateMe(payload);

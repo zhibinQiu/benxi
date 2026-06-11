@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.phone import bootstrap_login_id, is_bootstrap_login_id, login_ids_equal
+from app.core.phone import bootstrap_login_id, login_ids_equal
 from app.models.org import Role, User, UserRole
 
 SYSTEM_ADMIN_ROLE_CODE = "sys_admin"

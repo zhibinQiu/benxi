@@ -1,4 +1,4 @@
-/* 全局视频背景：壳层半透明，弹窗保持不透底 */
+/* 视频背景：登录 / 智能体问答 / 知识检索等对话场景 */
 
 html:has(.app-shell--video-bg),
 html:has(.app-shell--video-bg) body,
@@ -10,14 +10,14 @@ html:has(.app-shell--video-bg) #app {
   --platform-shell-gradient-video: linear-gradient(
     135deg,
     rgba(239, 246, 255, 0.38) 0%,
-    rgba(237, 233, 254, 0.32) 42%,
-    rgba(224, 242, 254, 0.36) 100%
+    rgba(237, 233, 254, 0.34) 48%,
+    rgba(241, 238, 252, 0.36) 100%
   );
   --platform-shell-gradient-video-subtle: linear-gradient(
     135deg,
     rgba(239, 246, 255, 0.28) 0%,
-    rgba(237, 233, 254, 0.22) 42%,
-    rgba(224, 242, 254, 0.26) 100%
+    rgba(237, 233, 254, 0.24) 48%,
+    rgba(241, 238, 252, 0.26) 100%
   );
 }
 
@@ -25,21 +25,22 @@ html[data-theme="dark"] .app-shell--video-bg {
   --platform-shell-gradient-video: linear-gradient(
     135deg,
     rgba(22, 22, 36, 0.52) 0%,
-    rgba(30, 24, 48, 0.46) 48%,
-    rgba(15, 18, 32, 0.56) 100%
+    rgba(30, 24, 48, 0.46) 50%,
+    rgba(26, 22, 40, 0.5) 100%
   );
   --platform-shell-gradient-video-subtle: linear-gradient(
     135deg,
     rgba(22, 22, 36, 0.4) 0%,
-    rgba(30, 24, 48, 0.34) 48%,
-    rgba(15, 18, 32, 0.44) 100%
+    rgba(30, 24, 48, 0.34) 50%,
+    rgba(26, 22, 40, 0.38) 100%
   );
 }
 
-.app-shell--video-bg .main-layout :deep(.app-main),
-.app-shell--video-bg .main-layout :deep(.app-sider.n-layout-sider),
+.app-shell--video-bg .main-layout .app-main,
+.app-shell--video-bg .main-layout .app-sider.n-layout-sider,
 .app-shell--video-bg .main-layout .header {
   background: var(--platform-shell-gradient-video) !important;
+  background-attachment: fixed;
   backdrop-filter: saturate(160%) blur(14px);
   -webkit-backdrop-filter: saturate(160%) blur(14px);
 }
@@ -47,9 +48,11 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell--video-bg .feature-local-nav,
 .app-shell--video-bg .feature-top-strip {
   background: var(--platform-shell-gradient-video-subtle) !important;
+  background-attachment: fixed;
 }
 
-.app-shell--video-bg .ai-home {
+.app-shell--video-bg .ai-home,
+.app-shell--video-bg .chat-history-page {
   background: transparent !important;
 }
 
@@ -61,20 +64,22 @@ html[data-theme="dark"] .app-shell--video-bg {
   background: transparent;
 }
 
-/* 弹窗 / 模态框：不透视频，遮罩加深 */
-.n-dialog .n-dialog__content,
-.n-modal .n-card {
-  background: var(--platform-bg-elevated-solid) !important;
+/* 弹窗 / 模态框：浅色雾面遮罩 + 白色实底（platform-glass-modal 有更具体规则） */
+.n-dialog:not(.platform-confirm-dialog) .n-dialog__content,
+.n-modal:not(.platform-glass-modal):not(.admin-form-modal) .n-card {
+  background: var(--platform-modal-bg, #ffffff) !important;
+}
+
+.n-dialog.platform-confirm-dialog .n-dialog__content,
+.n-dialog.platform-confirm-dialog .n-dialog-body {
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .n-dialog-mask,
 .n-modal-mask {
-  background-color: rgba(12, 14, 24, 0.52) !important;
-  backdrop-filter: blur(6px) saturate(120%);
-  -webkit-backdrop-filter: blur(6px) saturate(120%);
-}
-
-html[data-theme="dark"] .n-dialog-mask,
-html[data-theme="dark"] .n-modal-mask {
-  background-color: rgba(0, 0, 0, 0.62) !important;
+  background-color: var(--platform-modal-mask, rgba(15, 23, 42, 0.18)) !important;
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  transition: background-color 0.28s var(--platform-ease-smooth);
 }

@@ -6,8 +6,7 @@ import { runDataAnalysisCell, updateDataAnalysisCell } from "../api/dataAnalysis
 
 const props = defineProps({
   sessionId: { type: String, required: true },
-  cells: { type: Array, default: () => [] },
-});
+  cells: { type: Array, default: () => [] }});
 
 const emit = defineEmits(["update:cells"]);
 
@@ -33,8 +32,7 @@ async function onCodeBlur(cell) {
   try {
     const data = await updateDataAnalysisCell(props.sessionId, cell.id, {
       code: cell.code,
-      title: cell.title,
-    });
+      title: cell.title});
     const idx = localCells.value.findIndex((c) => c.id === cell.id);
     if (idx >= 0 && data?.cell) {
       localCells.value[idx] = { ...localCells.value[idx], ...data.cell };
@@ -65,8 +63,7 @@ async function runCell(cell) {
       localCells.value[idx] = {
         ...localCells.value[idx],
         status: "error",
-        stderr: e.message || "执行失败",
-      };
+        stderr: e.message || "执行失败"};
       emitCells();
     }
   } finally {

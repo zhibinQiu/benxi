@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: "CarbonQaV2View" });
 import { ref } from "vue";
 import { ChatbubblesOutline } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";

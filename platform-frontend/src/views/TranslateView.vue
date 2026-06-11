@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -19,9 +20,7 @@ import {
   NStep,
   NSteps,
   NTag,
-  NText,
-  useMessage,
-} from "naive-ui";
+  NText } from "naive-ui";
 import {
   BookOutline,
   DownloadOutline,
@@ -34,8 +33,7 @@ import {
   TimeOutline,
   DocumentTextOutline,
   SettingsOutline,
-  CloudDownloadOutline,
-} from "@vicons/ionicons5";
+  CloudDownloadOutline } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
@@ -44,12 +42,12 @@ import {
   fetchTranslateDocuments,
   fetchTranslateJob,
   fetchTranslateMeta,
-  subscribeTranslateEvents,
-} from "../api/client";
+  importTranslateToLibrary,
+  subscribeTranslateEvents } from "../api/client";
 
 const route = useRoute();
 const router = useRouter();
-const message = useMessage();
+const ui = usePlatformUi();
 
 const meta = ref(null);
 const sourceMode = ref("upload");
@@ -76,8 +74,9 @@ const files = ref({
   dual: null,
   glossary: null,
   extracted_json: null,
-  extracted_md: null,
-});
+  extracted_md: null});
+const importedDocumentId = ref(null);
+const importLoading = ref(false);
 let closeEvents = null;
 let pollTimer = null;
 
@@ -97,20 +96,17 @@ const LANG_LABEL_ZH = {
   fr: "法语",
   es: "西班牙语",
   ru: "俄语",
-  auto: "自动检测",
-};
+  auto: "自动检测"};
 
 const langOptions = computed(() =>
   (meta.value?.languages || []).map((l) => ({
     label: LANG_LABEL_ZH[l.code] || l.label,
-    value: l.code,
-  }))
+    value: l.code}))
 );
 const engineOptions = computed(() =>
   (meta.value?.engines || []).map((e) => ({
     label: e.label || e.model || e.id,
-    value: e.id,
-  }))
+    value: e.id}))
 );
 const hasPdfSource = computed(
   () =>
@@ -143,8 +139,7 @@ const statusLabel = computed(() => {
     submitting: "提交中",
     running: "翻译中",
     done: "已完成",
-    error: "失败",
-  };
+    error: "失败"};
   return map[status.value] || status.value;
 });
 const showProgressPanel = computed(() => status.value !== "idle");
@@ -170,6 +165,7 @@ function applyJob(job) {
   if (job.lang_in) langIn.value = job.lang_in;
   if (job.lang_out) langOut.value = job.lang_out;
   if (job.service) service.value = job.service;
+  importedDocumentId.value = job.imported_document_id || null;
 }
 
 async function refreshJob() {
@@ -209,8 +205,7 @@ function subscribeLive(jobId) {
           ...files.value,
           mono: r.mono_pdf_path ?? files.value.mono,
           dual: r.dual_pdf_path ?? files.value.dual,
-          glossary: r.auto_extracted_glossary_path ?? files.value.glossary,
-        };
+          glossary: r.auto_extracted_glossary_path ?? files.value.glossary};
       }
       if (ev.type === "error") {
         error.value = ev.error || "翻译失败";
@@ -219,7 +214,7 @@ function subscribeLive(jobId) {
       }
     },
     onError() {
-      /* 离开页面或网络中断时依赖轮询 */
+      startPoll();
     },
     async onComplete(data) {
       status.value = data.status === "done" ? "done" : data.status;
@@ -228,8 +223,7 @@ function subscribeLive(jobId) {
       progress.value = 100;
       await refreshJob();
       stopPoll();
-    },
-  });
+    }});
 }
 
 onMounted(async () => {
@@ -248,7 +242,6 @@ onMounted(async () => {
     await refreshJob();
     if (status.value === "running") {
       subscribeLive(qid);
-      startPoll();
     }
   }
 });
@@ -267,7 +260,7 @@ onBeforeUnmount(() => {
   if (closeEvents) closeEvents();
   stopPoll();
   if (status.value === "running") {
-    message.info("翻译将在后台继续，可在后台任务或消息中查看结果", { duration: 5000 });
+    ui.info("翻译将在后台继续，可在后台任务或消息中查看结果", { duration: 5000 });
   }
 });
 
@@ -291,8 +284,7 @@ const libraryColumns = [
     render: (row) => {
       const mb = row.file_size / (1024 * 1024);
       return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(row.file_size / 1024).toFixed(0)} KB`;
-    },
-  },
+    }},
   {
     title: "操作",
     key: "actions",
@@ -304,11 +296,9 @@ const libraryColumns = [
           text: true,
           type: "primary",
           size: "small",
-          onClick: () => selectLibraryDoc(row),
-        },
+          onClick: () => selectLibraryDoc(row)},
         () => "选择"
-      ),
-  },
+      )},
 ];
 
 async function loadLibraryDocs() {
@@ -316,12 +306,11 @@ async function loadLibraryDocs() {
   try {
     const data = await fetchTranslateDocuments({
       page: libraryPage.value,
-      keyword: libraryKeyword.value || undefined,
-    });
+      keyword: libraryKeyword.value || undefined});
     libraryItems.value = data.items;
     libraryTotal.value = data.total;
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     libraryLoading.value = false;
   }
@@ -366,8 +355,7 @@ async function startTranslation() {
     dual: null,
     glossary: null,
     extracted_json: null,
-    extracted_md: null,
-  };
+    extracted_md: null};
   if (closeEvents) closeEvents();
 
   try {
@@ -377,14 +365,12 @@ async function startTranslation() {
       langIn: langIn.value,
       langOut: langOut.value,
       service: service.value,
-      glossaries: glossaryFiles.value,
-    });
+      glossaries: glossaryFiles.value});
     applyJob(job);
-    message.success(job.message || "已提交，后台翻译中");
+    ui.success(job.message || "已提交，后台翻译中");
     status.value = "running";
     router.replace({ query: { job: job.platform_job_id } });
     subscribeLive(job.platform_job_id);
-    startPoll();
   } catch (e) {
     error.value = e.message;
     status.value = "error";
@@ -400,6 +386,26 @@ async function dl(kind, name) {
   } catch (e) {
     error.value = e.message;
   }
+}
+
+async function importToLibrary(variant = "mono") {
+  if (!platformJobId.value || importLoading.value) return;
+  importLoading.value = true;
+  try {
+    const res = await importTranslateToLibrary(platformJobId.value, { variant });
+    importedDocumentId.value = res.document_id;
+    ui.success(res.message || "已添加到知识库");
+    await refreshJob();
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    importLoading.value = false;
+  }
+}
+
+function openImportedDocument() {
+  if (!importedDocumentId.value) return;
+  router.push({ name: "document-detail", params: { id: importedDocumentId.value } });
 }
 </script>
 
@@ -578,7 +584,6 @@ async function dl(kind, name) {
                 :options="engineOptions"
                 :disabled="status === 'running'"
               />
-              <n-text v-if="engineLabel" depth="3" class="engine-hint">{{ engineLabel }}</n-text>
             </section>
 
             <section class="config-block config-block--glossary">
@@ -622,9 +627,6 @@ async function dl(kind, name) {
               >
                 {{ status === "running" || status === "submitting" ? "翻译进行中…" : "开始翻译" }}
               </n-button>
-              <n-text v-if="!hasPdfSource" depth="3" class="start-hint">
-                请先在左侧选择或上传 PDF
-              </n-text>
             </div>
           </n-card>
         </n-gi>
@@ -636,8 +638,7 @@ async function dl(kind, name) {
             :bordered="false"
             :class="{
               'panel-side-active': showProgressPanel,
-              'panel-side-done': status === 'done',
-            }"
+              'panel-side-done': status === 'done'}"
           >
             <template #header>
               <div class="panel-header">
@@ -652,9 +653,6 @@ async function dl(kind, name) {
                 </span>
                 <div class="panel-header-text">
                   <span class="panel-header-title">进度与下载</span>
-                  <span class="panel-header-desc">
-                    {{ status === "done" ? "翻译已完成，可下载成果文件" : "提交后在此查看状态" }}
-                  </span>
                 </div>
               </div>
             </template>
@@ -664,9 +662,6 @@ async function dl(kind, name) {
                 <n-icon :size="36" :depth="3"><time-outline /></n-icon>
               </div>
               <n-text strong class="side-idle-title">等待开始翻译</n-text>
-              <n-text depth="3" class="side-idle-desc">
-                配置语言与模型后点击「开始翻译」，进度与下载链接将显示在此处
-              </n-text>
             </div>
 
             <div v-else class="side-body">
@@ -772,6 +767,38 @@ async function dl(kind, name) {
                     Markdown
                   </n-button>
                 </div>
+
+                <n-text class="download-section-label download-section-label--sub">
+                  知识库
+                </n-text>
+                <div class="library-import-block">
+                  <n-space :size="8" wrap>
+                    <template v-if="importedDocumentId">
+                      <n-tag type="success" :bordered="false" size="small">已入库</n-tag>
+                      <n-button size="small" type="primary" @click="openImportedDocument">
+                        查看文档
+                      </n-button>
+                    </template>
+                    <template v-else>
+                      <n-button
+                        size="small"
+                        type="primary"
+                        :loading="importLoading"
+                        @click="importToLibrary('mono')"
+                      >
+                        单语译文入库
+                      </n-button>
+                      <n-button
+                        size="small"
+                        secondary
+                        :loading="importLoading"
+                        @click="importToLibrary('dual')"
+                      >
+                        双语 PDF 入库
+                      </n-button>
+                    </template>
+                  </n-space>
+                </div>
               </template>
             </div>
           </n-card>
@@ -808,8 +835,7 @@ async function dl(kind, name) {
           page: libraryPage,
           pageSize: 20,
           itemCount: libraryTotal,
-          onUpdatePage: onLibraryPageChange,
-        }"
+          onUpdatePage: onLibraryPageChange}"
         size="small"
       />
     </n-modal>
@@ -1264,6 +1290,21 @@ async function dl(kind, name) {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 500;
+}
+
+.library-import-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--platform-border, rgba(15, 23, 42, 0.12));
+  background: var(--platform-bg-secondary, rgba(248, 250, 252, 0.6));
+}
+
+.library-import-hint {
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .download-grid {

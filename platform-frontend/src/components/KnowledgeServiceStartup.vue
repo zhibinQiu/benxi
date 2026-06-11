@@ -1,7 +1,6 @@
 <script setup>
 defineProps({
-  message: { type: String, default: "正在启动知识服务系统" },
-});
+  message: { type: String, default: "正在启动知识服务系统" }});
 </script>
 
 <template>

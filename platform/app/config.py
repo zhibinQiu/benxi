@@ -1,6 +1,6 @@
 from functools import lru_cache
-from urllib.parse import urlparse
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,13 +16,18 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "智碳平台AI系统"
-    platform_version: str = "3.9.3"
+    platform_version: str = "4.0.0"
     debug: bool = False
     api_prefix: str = "/api/v1"
 
     database_url: str = (
         "postgresql+psycopg2://platform:platform@127.0.0.1:5432/platform"
     )
+    # SQLAlchemy 连接池（多人并发时避免默认小池耗尽；可通过环境变量按部署规模调整）
+    db_pool_size: int = 20
+    db_max_overflow: int = 40
+    db_pool_timeout: int = 30
+    db_pool_recycle: int = 1800
 
     redis_url: str = "redis://127.0.0.1:6379/0"
     celery_broker_url: str | None = None
@@ -118,10 +123,24 @@ class Settings(BaseSettings):
     # 文档中心单文件上传上限（MB）
     document_upload_max_file_mb: int = 1024
 
+    # 单文档版本 Git 仓库存储根目录（每文档一个 repo，用于 git diff 版本对比）
+    document_git_repos_root: str = ""
+
     # 知识库默认解析配置（上传同步 / 重新索引）
-    knowledge_default_parser_id: str = "smart"
-    knowledge_default_layout_recognize: str = "DeepDOC"
+    knowledge_default_parser_id: str = "naive"
+    knowledge_default_layout_recognize: str = "Plain Text"
     knowledge_default_chunk_token_num: int = 512
+    # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，显著加快列表）
+    knowledge_list_live_index_meta: bool = False
+    knowledge_ragflow_meta_cache_ttl_sec: int = 60
+    # 知识检索混合检索：向量相似度权重（其余为关键词权重，默认 0.3 / 0.7）
+    knowledge_retrieval_vector_weight: float = 0.3
+
+    # 平台 Redis/内存缓存（文档库分级、文件夹列表等；Redis 不可用时自动降级为进程内 TTL）
+    platform_cache_enabled: bool = True
+    platform_cache_ttl_sec: int = 60
+    document_library_cache_ttl_sec: int = 120
+    kb_folders_cache_ttl_sec: int = 45
 
     # 录音总结（DeepSeek 在线 API，可与 pdf2zh 翻译共用密钥）
     deepseek_api_key: str = ""
@@ -242,6 +261,13 @@ class Settings(BaseSettings):
         if proxy:
             return proxy
         return (self.knowflow_ui_url or "http://127.0.0.1:9380").strip().rstrip("/")
+
+    @property
+    def resolved_document_git_repos_root(self) -> Path:
+        explicit = (self.document_git_repos_root or "").strip()
+        if explicit:
+            return Path(explicit)
+        return _PLATFORM_DIR / "data" / "document-git-repos"
 
 
 @lru_cache

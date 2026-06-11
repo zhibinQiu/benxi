@@ -46,6 +46,7 @@ def run_sync_after_ingest(document_id: uuid.UUID, user_id: uuid.UUID) -> str | N
 def enqueue_sync_after_ingest(document_id: uuid.UUID, user_id: uuid.UUID) -> None:
     """服务层/导入场景：创建后台任务（daemon 线程）。"""
     from app.database import SessionLocal
+    from app.services.document_service import get_document, resolve_current_version
     from app.services.knowledge_sync_job_service import enqueue_document_knowledge_index
 
     if not _should_enqueue():
@@ -54,10 +55,17 @@ def enqueue_sync_after_ingest(document_id: uuid.UUID, user_id: uuid.UUID) -> Non
 
     db = SessionLocal()
     try:
+        version_id = None
+        doc = get_document(db, document_id)
+        if doc:
+            version = resolve_current_version(db, doc)
+            if version:
+                version_id = version.id
         enqueue_document_knowledge_index(
             db,
             user_id=user_id,
             document_id=document_id,
+            version_id=version_id,
             force=True,
         )
     finally:

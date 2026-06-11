@@ -2,13 +2,13 @@
 
 基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及智碳平台 AI 企业应用（文档、权限、知识库、双碳工具等）。
 
-**当前版本：v3.9.3**（见根目录 `VERSION`）
+**当前版本：v4.0.0**（见根目录 `VERSION`）
 
 ## 项目结构
 
 ```
 pdf_trans/
-├── VERSION                   # 单一版本源（3.9.3）
+├── VERSION                   # 单一版本源（4.0.0）
 ├── compose.yaml              # 统一 Docker 栈
 ├── compose.dev.yaml          # 开发：热重载、API :18000
 ├── deploy/knowflow.yml       # KnowFlow profile
@@ -56,8 +56,12 @@ bash scripts/zhitan.sh dev --profile knowflow
 
 ```bash
 REMOTE_HOST=你的服务器IP bash scripts/zhitan.sh remote-dev
-bash scripts/zhitan.sh dev
+bash scripts/verify-remote-deps.sh
+bash scripts/zhitan.sh local-dev      # 推荐：本机 venv + Vite
+bash scripts/zhitan.sh local-status
 ```
+
+全 Docker 开发栈（API :18000）：`bash scripts/zhitan.sh dev`
 
 ## 服务器部署
 

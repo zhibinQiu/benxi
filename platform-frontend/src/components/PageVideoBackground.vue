@@ -1,25 +1,53 @@
 <script setup>
+import { onMounted, onUnmounted, ref, computed } from "vue";
 import { publicAsset } from "../utils/appBase";
 
-defineProps({
+const props = defineProps({
   src: { type: String, default: () => publicAsset("main.mp4") },
   /** 固定铺满视口（App 壳层）；否则相对父容器 absolute */
-  fixed: { type: Boolean, default: false },
+  fixed: { type: Boolean, default: false }});
+
+const videoRef = ref(null);
+const reducedMotion = computed(
+  () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false
+);
+
+function syncPlayback() {
+  const el = videoRef.value;
+  if (!el || reducedMotion.value) return;
+  if (document.hidden) {
+    el.pause();
+  } else {
+    el.play().catch(() => {});
+  }
+}
+
+onMounted(() => {
+  if (reducedMotion.value) return;
+  document.addEventListener("visibilitychange", syncPlayback);
+  syncPlayback();
+});
+
+onUnmounted(() => {
+  document.removeEventListener("visibilitychange", syncPlayback);
 });
 </script>
 
 <template>
   <div
     class="page-video-bg"
-    :class="{ 'page-video-bg--fixed': fixed }"
+    :class="{ 'page-video-bg--fixed': fixed, 'page-video-bg--static': reducedMotion }"
     aria-hidden="true"
   >
     <video
+      v-if="!reducedMotion"
+      ref="videoRef"
       class="page-video-bg__video"
       autoplay
       muted
       loop
       playsinline
+      preload="metadata"
       :src="src"
     />
     <div class="page-video-bg__overlay" />
@@ -39,6 +67,16 @@ defineProps({
   position: fixed;
   inset: 0;
   z-index: 0;
+}
+
+.page-video-bg--static .page-video-bg__overlay {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(248, 250, 255, 0.72) 0%,
+      rgba(236, 242, 255, 0.82) 100%
+    ),
+    radial-gradient(ellipse 70% 55% at 18% 12%, rgba(91, 156, 245, 0.14) 0%, transparent 58%);
 }
 
 .page-video-bg__video {

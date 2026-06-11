@@ -1,4 +1,5 @@
 <script setup>
+import { usePlatformUi } from "../../composables/usePlatformUi";
 import { computed, onMounted, reactive, ref } from "vue";
 import {
   NAlert,
@@ -15,9 +16,7 @@ import {
   NSelect,
   NSpace,
   NTag,
-  NText,
-  useMessage,
-} from "naive-ui";
+  NText } from "naive-ui";
 import {
   GlobeOutline,
   ColorPaletteOutline,
@@ -29,14 +28,12 @@ import {
   LanguageOutline,
   ServerOutline,
   LibraryOutline,
-  ServerSharp,
-} from "@vicons/ionicons5";
+  ServerSharp } from "@vicons/ionicons5";
 import {
   fetchModelSettings,
   fetchResourceHealth,
   testResourceHealth,
-  updateModelSettings,
-} from "../../api/client";
+  updateModelSettings } from "../../api/client";
 import { setApiBase } from "../../api/http";
 import { applyClientBranding } from "../../composables/usePlatformBranding";
 import { initAppFromServerConfig } from "../../composables/useAppPreferences";
@@ -47,7 +44,7 @@ const THEME_OPTIONS = [
   { label: "默认夜间模式", value: "dark" },
 ];
 
-const message = useMessage();
+const ui = usePlatformUi();
 const loading = ref(false);
 const healthLoading = ref(false);
 const saving = ref(false);
@@ -85,8 +82,7 @@ const form = reactive({
   ragflow_mysql_port: 3306,
   ragflow_mysql_db: "",
   ragflow_mysql_password: "",
-  ragflow_mysql_container: "",
-});
+  ragflow_mysql_container: ""});
 
 const RESOURCE_DEFS = [
   {
@@ -94,86 +90,74 @@ const RESOURCE_DEFS = [
     title: "系统后台地址（前端）",
     hint: "浏览器请求智碳平台后端的 API 根路径",
     icon: GlobeOutline,
-    category: "platform",
-  },
+    category: "platform"},
   {
     id: "frontend",
     title: "前台配置",
     hint: "系统大标题与默认日/夜主题",
     icon: ColorPaletteOutline,
-    category: "platform",
-  },
+    category: "platform"},
   {
     id: "llm",
     title: "语言模型（LLM）",
     hint: "知识问答、会议摘要等",
     icon: ChatbubblesOutline,
-    category: "model",
-  },
+    category: "model"},
   {
     id: "embedding",
     title: "Embedding 模型",
     hint: "文档向量与知识检索",
     icon: HardwareChipOutline,
-    category: "model",
-  },
+    category: "model"},
   {
     id: "rerank",
     title: "Reranker 模型",
     hint: "检索重排序（可选）",
     icon: StatsChartOutline,
-    category: "model",
-  },
+    category: "model"},
   {
     id: "paddleocr",
     title: "PaddleOCR 服务",
     hint: "文档 OCR 与 PDF 解析",
     icon: ScanOutline,
-    category: "service",
-  },
+    category: "service"},
   {
     id: "speech",
     title: "语音识别服务",
     hint: "会议助手语音转写",
     icon: MicOutline,
-    category: "service",
-  },
+    category: "service"},
   {
     id: "pdf2zh",
     title: "PDF 翻译服务",
     hint: "pdf2zh 文档翻译 API",
     icon: LanguageOutline,
-    category: "service",
-  },
+    category: "service"},
   {
     id: "ragflow_api",
     title: "RAGFlow API",
     hint: "知识库检索、文档同步 HTTP API",
     icon: LibraryOutline,
-    category: "knowledge",
-  },
+    category: "knowledge"},
   {
     id: "knowflow_backend",
     title: "KnowFlow 知识库后台",
     hint: "KnowFlow API、Web UI 与 iframe 基址",
     icon: ServerOutline,
-    category: "knowledge",
-  },
+    category: "knowledge"},
   {
     id: "ragflow_mysql",
     title: "RAGFlow MySQL",
     hint: "知识库元数据与用户模型配置库",
     icon: ServerSharp,
-    category: "knowledge",
-  },
+    category: "knowledge"},
 ];
 
 const CATEGORY_META = {
   platform: { title: "平台", hint: "前端访问地址与展示配置" },
   model: { title: "AI 模型", hint: "语言、嵌入与重排序模型 API" },
   service: { title: "外部服务", hint: "OCR、语音与翻译等 HTTP 服务" },
-  knowledge: { title: "知识库基础设施", hint: "RAGFlow / KnowFlow 后台与 MySQL 数据库" },
-};
+  knowledge: { title: "知识库基础设施", hint: "RAGFlow / KnowFlow 后台与 MySQL 数据库" }};
 
 const activeResource = computed(() =>
   RESOURCE_DEFS.find((item) => item.id === activeId.value) || null
@@ -183,8 +167,7 @@ const groupedResources = computed(() =>
   ["platform", "model", "knowledge", "service"].map((id) => ({
     id,
     ...CATEGORY_META[id],
-    items: RESOURCE_DEFS.filter((item) => item.category === id),
-  }))
+    items: RESOURCE_DEFS.filter((item) => item.category === id)}))
 );
 
 function fillForm(data) {
@@ -337,7 +320,7 @@ async function loadSettings() {
   try {
     fillForm(await fetchModelSettings());
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -349,7 +332,7 @@ async function loadHealth() {
     const data = await fetchResourceHealth();
     health.value = data?.items || {};
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     healthLoading.value = false;
   }
@@ -369,21 +352,18 @@ function buildPayloadFor(id) {
   switch (id) {
     case "platform_api":
       return {
-        platform_api_base_url: form.platform_api_base_url.trim(),
-      };
+        platform_api_base_url: form.platform_api_base_url.trim()};
     case "frontend":
       return {
         frontend_app_title: form.frontend_app_title.trim(),
-        frontend_default_theme: form.frontend_default_theme || "system",
-      };
+        frontend_default_theme: form.frontend_default_theme || "system"};
     case "llm":
       return {
         llm_base_url: form.llm_base_url.trim(),
         llm_model: form.llm_model.trim(),
         ...(form.llm_api_key && !form.llm_api_key.includes("••••")
           ? { llm_api_key: form.llm_api_key.trim() }
-          : {}),
-      };
+          : {})};
     case "embedding":
       return {
         embedding_base_url: form.embedding_base_url.trim(),
@@ -391,16 +371,14 @@ function buildPayloadFor(id) {
         embedding_factory: form.embedding_factory.trim(),
         ...(form.embedding_api_key && !form.embedding_api_key.includes("••••")
           ? { embedding_api_key: form.embedding_api_key.trim() }
-          : {}),
-      };
+          : {})};
     case "rerank":
       return {
         rerank_base_url: form.rerank_base_url.trim(),
         rerank_model: form.rerank_model.trim(),
         ...(form.rerank_api_key && !form.rerank_api_key.includes("••••")
           ? { rerank_api_key: form.rerank_api_key.trim() }
-          : {}),
-      };
+          : {})};
     case "paddleocr":
       return { paddleocr_url: form.paddleocr_url.trim() };
     case "speech":
@@ -412,15 +390,13 @@ function buildPayloadFor(id) {
         ragflow_api_url: form.ragflow_api_url.trim(),
         ...(form.ragflow_api_key && !form.ragflow_api_key.includes("••••")
           ? { ragflow_api_key: form.ragflow_api_key.trim() }
-          : {}),
-      };
+          : {})};
     case "knowflow_backend":
       return {
         knowflow_backend_url: form.knowflow_backend_url.trim(),
         knowflow_ui_url: form.knowflow_ui_url.trim(),
         knowflow_ui_public_url: form.knowflow_ui_public_url.trim(),
-        knowflow_ui_proxy_prefix: form.knowflow_ui_proxy_prefix.trim(),
-      };
+        knowflow_ui_proxy_prefix: form.knowflow_ui_proxy_prefix.trim()};
     case "ragflow_mysql":
       return {
         ragflow_mysql_host: form.ragflow_mysql_host.trim(),
@@ -429,8 +405,7 @@ function buildPayloadFor(id) {
         ragflow_mysql_container: form.ragflow_mysql_container.trim(),
         ...(form.ragflow_mysql_password && !form.ragflow_mysql_password.includes("••••")
           ? { ragflow_mysql_password: form.ragflow_mysql_password.trim() }
-          : {}),
-      };
+          : {})};
     default:
       return {};
   }
@@ -444,14 +419,14 @@ async function testActive() {
     const result = await testResourceHealth(activeId.value, buildPayloadFor(activeId.value));
     drawerTestResult.value = result;
     if (result?.healthy) {
-      message.success(result.message || "连接正常");
+      ui.success(result.message || "连接正常");
     } else if (result?.healthy === false) {
-      message.warning(result.message || "连接失败");
+      ui.warning(result.message || "连接失败");
     } else {
-      message.info(result?.message || "当前配置无需测试或未填写完整");
+      ui.info(result?.message || "当前配置无需测试或未填写完整");
     }
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     testing.value = false;
   }
@@ -464,22 +439,21 @@ async function saveActive() {
     fillForm(await updateModelSettings(buildPayloadFor(activeId.value)));
     if (activeId.value === "platform_api") {
       setApiBase(form.platform_api_base_url.trim() || "/ai");
-      message.success("资源配置已保存；若 API 地址与当前访问方式不一致，请刷新页面");
+      ui.success("资源配置已保存；若 API 地址与当前访问方式不一致，请刷新页面");
     } else if (activeId.value === "frontend") {
       applyClientBranding({
         app_title: form.frontend_app_title.trim(),
-        default_theme: form.frontend_default_theme,
-      });
+        default_theme: form.frontend_default_theme});
       initAppFromServerConfig({ default_theme: form.frontend_default_theme });
-      message.success("前台配置已保存；标题已更新，主题策略在用户未手动切换时生效");
+      ui.success("前台配置已保存；标题已更新，主题策略在用户未手动切换时生效");
     } else {
-      message.success("资源配置已保存并同步");
+      ui.success("资源配置已保存并同步");
     }
     drawerOpen.value = false;
     drawerTestResult.value = null;
     await loadHealth();
   } catch (e) {
-    message.error(e.message);
+    ui.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -522,8 +496,7 @@ onMounted(loadAll);
               ? 'rgba(99, 102, 241, 0.1)'
               : group.id === 'knowledge'
                 ? 'rgba(124, 58, 237, 0.1)'
-                : 'rgba(91, 156, 245, 0.1)',
-      }"
+                : 'rgba(91, 156, 245, 0.1)'}"
     >
       <div class="category-block__head">
         <div class="category-block__text">

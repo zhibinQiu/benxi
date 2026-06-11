@@ -1,17 +1,13 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { NEmpty, NTree } from "naive-ui";
 import {
   applyUserPickerCheckChange,
   applyUserPickerKeysDiff,
   buildOrgUserTree,
-  defaultExpandedDeptKeys,
   isUserTreeKey,
   treeCheckedKeysFromUserIds,
-  treeIndeterminateKeysFromUserIds,
-  UNASSIGNED_KEY,
-  userPrimaryDeptId,
-} from "../utils/orgUserTree";
+  treeIndeterminateKeysFromUserIds } from "../utils/orgUserTree";
 
 const props = defineProps({
   departments: { type: Array, default: () => [] },
@@ -20,16 +16,16 @@ const props = defineProps({
   mode: { type: String, default: "multi" },
   checkedKeys: { type: Array, default: () => [] },
   selectedKey: { type: String, default: null },
-  maxHeight: { type: Number, default: 320 },
-});
+  maxHeight: { type: Number, default: 320 }});
 
 const emit = defineEmits(["update:checkedKeys", "update:selectedKey"]);
+
+const expandedKeys = ref([]);
 
 const treeData = computed(() =>
   buildOrgUserTree({
     departments: props.departments,
-    users: props.users,
-  })
+    users: props.users})
 );
 
 const hasUsers = computed(() => (props.users || []).length > 0);
@@ -67,14 +63,6 @@ function onUpdateSelectedKeys(keys) {
   const picked = (keys || []).find(isUserTreeKey);
   emit("update:selectedKey", picked || null);
 }
-
-const expandedKeys = computed(() => {
-  const keys = defaultExpandedDeptKeys(props.departments);
-  if ((props.users || []).some((u) => !userPrimaryDeptId(u))) {
-    keys.push(UNASSIGNED_KEY);
-  }
-  return keys;
-});
 </script>
 
 <template>
@@ -86,20 +74,22 @@ const expandedKeys = computed(() => {
     :cascade="false"
     selectable
     :data="treeData"
-    :default-expanded-keys="expandedKeys"
     :checked-keys="displayCheckedKeys"
     :indeterminate-keys="indeterminateKeys"
+    :expanded-keys="expandedKeys"
     :style="{ maxHeight: `${maxHeight}px`, overflow: 'auto' }"
     @update:checked-keys="onUpdateCheckedKeys"
+    @update:expanded-keys="expandedKeys = $event"
   />
   <n-tree
     v-else
     block-line
     selectable
     :data="treeData"
-    :default-expanded-keys="expandedKeys"
     :selected-keys="selectedKey ? [selectedKey] : []"
+    :expanded-keys="expandedKeys"
     :style="{ maxHeight: `${maxHeight}px`, overflow: 'auto' }"
     @update:selected-keys="onUpdateSelectedKeys"
+    @update:expanded-keys="expandedKeys = $event"
   />
 </template>

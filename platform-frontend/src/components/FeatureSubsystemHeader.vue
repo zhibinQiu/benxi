@@ -6,10 +6,9 @@ import HintTooltip from "./HintTooltip.vue";
 
 const props = defineProps({
   description: { type: String, default: "" },
-  showIntro: { type: Boolean, default: true },
+  showIntro: { type: Boolean, default: false },
   /** 标题与返回已放在全局顶栏时，本区仅保留说明与操作 */
-  hideTitleRow: { type: Boolean, default: true },
-});
+  hideTitleRow: { type: Boolean, default: true }});
 
 const route = useRoute();
 const slots = useSlots();

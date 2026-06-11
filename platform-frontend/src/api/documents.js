@@ -163,6 +163,26 @@ export async function downloadDocumentFile(
   URL.revokeObjectURL(a.href);
 }
 
+/** 拉取文档文件 blob（可选指定版本），供预览等场景 */
+export async function fetchDocumentFileBlob(documentId, versionId = null) {
+  const qs = versionId ? `?version_id=${encodeURIComponent(versionId)}` : "";
+  const res = await fetch(`${getApiBase()}/api/v1/documents/${documentId}/file${qs}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const json = await res.json();
+      msg = json?.message || formatApiDetail(json?.detail) || msg;
+    } catch {
+      const text = await res.text().catch(() => "");
+      if (text) msg = text;
+    }
+    throw new Error(msg);
+  }
+  return res.blob();
+}
+
 export async function deleteDocument(documentId) {
   return api(`/api/v1/documents/${documentId}`, { method: "DELETE" });
 }

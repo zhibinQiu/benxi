@@ -7,7 +7,8 @@ import {
   registerUser,
   setTokens,
 } from "../api/client";
-import { invalidateRagCaches } from "../api/rag.js";
+import { resetClientSessionState } from "../utils/resetClientSessionState.js";
+import { bumpSessionEpoch } from "../utils/sessionEpoch.js";
 
 const user = ref(null);
 const loading = ref(false);
@@ -55,12 +56,16 @@ export function useAuth() {
   }
 
   async function login(account, password) {
+    resetClientSessionState();
+    bumpSessionEpoch();
     const tokens = await apiLogin(account, password);
     setTokens(tokens.access_token, tokens.refresh_token);
     return loadUser();
   }
 
   async function register({ phone, email, displayName, password }) {
+    resetClientSessionState();
+    bumpSessionEpoch();
     const tokens = await registerUser({ phone, email, displayName, password });
     setTokens(tokens.access_token, tokens.refresh_token);
     return loadUser();
@@ -68,7 +73,8 @@ export function useAuth() {
 
   function logout() {
     clearTokens();
-    invalidateRagCaches();
+    resetClientSessionState();
+    bumpSessionEpoch();
     user.value = null;
   }
 

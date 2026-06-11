@@ -261,9 +261,13 @@ bash scripts/server-deps.sh cleanup-local
 REMOTE
 }
 
+cmd_add_swap() {
+  bash "$ROOT/scripts/server-add-swap.sh"
+}
+
 usage() {
   cat <<EOF
-用法: bash scripts/server-deps.sh <sync|push-images|up|down|status|cleanup|cleanup-local>
+用法: bash scripts/server-deps.sh <sync|push-images|up|down|status|cleanup|cleanup-local|add-swap>
 
   sync           同步编排/脚本到 ${DEPLOY_PATH}
   rebuild-amd64  服务器上用 stack.sh 重建 amd64 镜像
@@ -272,6 +276,7 @@ usage() {
   up             启动远程依赖（EXPOSE_DEPS=1，Infinity 向量库）
   down           停止远程依赖（不影响 Dify）
   status         查看远程状态
+  add-swap       远程创建 ${SWAP_SIZE_GB:-8}GB Swap（见 scripts/server-add-swap.sh）
   cleanup        远程清理过时 zhitanAI 容器与 ES 等镜像
 
 环境: DEPLOY_HOST=${DEPLOY_HOST} DEPLOY_PATH=${DEPLOY_PATH}
@@ -288,6 +293,7 @@ main() {
     up) cmd_sync; cmd_up ;;
     down) cmd_down ;;
     status) cmd_status ;;
+    add-swap) cmd_add_swap ;;
     cleanup) cmd_sync; cmd_cleanup ;;
     cleanup-local) cmd_cleanup_local ;;
     -h|--help|help|"") usage ;;

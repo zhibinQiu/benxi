@@ -184,7 +184,6 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
 
 .feature-card:not(.feature-card--disabled):not(.feature-card--locked) > *,
 .header-user-trigger > *,
-.n-button:not(.n-button--disabled):not(.header-icon-btn) > *,
 .kb-folder-create-card > *,
 .kb-folder-card > *,
 .assistant-chip > *,
@@ -193,6 +192,22 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
 .page-toolbar .icon-action:not(:disabled) > * {
   position: relative;
   z-index: 1;
+}
+
+/* 仅提升可见内容层；勿作用于 __border/__state-border，否则会跟在文字后显示为小点 */
+.n-button:not(.n-button--disabled):not(.header-icon-btn) > .n-button__content,
+.n-button:not(.n-button--disabled):not(.header-icon-btn) > .n-button__icon {
+  position: relative;
+  z-index: 1;
+}
+
+.n-button > .n-button__border,
+.n-button > .n-button__state-border,
+.n-button > .n-base-wave {
+  position: absolute !important;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .n-button:not(.n-button--disabled) {
@@ -353,7 +368,8 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
   filter: brightness(1.06);
 }
 
-.login-page .login-glass-btn.n-button:not(.n-button--disabled) > * {
+.login-page .login-glass-btn.n-button:not(.n-button--disabled) > .n-button__content,
+.login-page .login-glass-btn.n-button:not(.n-button--disabled) > .n-button__icon {
   position: relative;
   z-index: 1;
 }

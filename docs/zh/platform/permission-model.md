@@ -230,6 +230,8 @@ flowchart TB
 
 账号映射：每平台用户在 RAGFlow 侧有 mapped 账号（如 `zt-platform-{user_id}`）。详见 [功能实现说明 · KnowFlow](../operations/feature-implementation.md#4-knowflow--知识库)。
 
+**索引与存储原则**：平台通过 **KB grant 赋权** 让用户访问已有 dataset 中的切片，**不重复上传**；同 MD5 内容通过 version link **复用** 已有 `ragflow_document_id`。孤儿 link、未登记 KB、MinIO 无绑定对象由 [知识库数据一致性](../operations/knowledge-data-consistency.md) 对账清理。
+
 ---
 
 ## 10. 常见场景速查

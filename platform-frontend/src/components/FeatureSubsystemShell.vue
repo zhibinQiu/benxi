@@ -1,28 +1,47 @@
 <script setup>
 import FeatureSubsystemHeader from "./FeatureSubsystemHeader.vue";
+import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 
 defineProps({
   description: { type: String, default: "" },
   fill: { type: Boolean, default: false },
   showIntro: { type: Boolean, default: false },
   /** 与全局顶栏配合：默认不在页面内重复标题/返回 */
-  hideTitleRow: { type: Boolean, default: true }});
+  hideTitleRow: { type: Boolean, default: true },
+  /** 内容区左侧贴齐主布局（如知识检索文档树贴侧栏） */
+  flushStart: { type: Boolean, default: false },
+});
+
+const { headerExtensionActive } = usePageHeaderExtension();
 </script>
 
 <template>
   <div
     class="subsystem-shell feature-page"
-    :class="{ 'subsystem-shell--fill': fill, 'feature-page--fill': fill }"
+    :class="{
+      'subsystem-shell--fill': fill,
+      'feature-page--fill': fill,
+      'subsystem-shell--flush-start': flushStart,
+    }"
   >
+    <Teleport
+      v-if="$slots.extra"
+      to="#page-header-extension"
+      :disabled="!headerExtensionActive"
+    >
+      <div class="subsystem-extra-bar">
+        <div class="subsystem-extra-row">
+          <slot name="extra" />
+        </div>
+      </div>
+    </Teleport>
+
     <FeatureSubsystemHeader
       :description="description"
       :show-intro="showIntro"
       :hide-title-row="hideTitleRow"
-    >
-      <template v-if="$slots.extra" #extra>
-        <slot name="extra" />
-      </template>
-    </FeatureSubsystemHeader>
+    />
+
     <div class="subsystem-body">
       <slot />
     </div>
@@ -47,6 +66,14 @@ defineProps({
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.subsystem-shell--fill .subsystem-body {
+  padding: 0 20px 12px;
+}
+
+.subsystem-shell--flush-start.subsystem-shell--fill .subsystem-body {
+  padding-left: 0;
 }
 
 .subsystem-shell:not(.subsystem-shell--fill) .subsystem-body {

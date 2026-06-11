@@ -2,7 +2,7 @@
 
 ## 总体定位
 
-智碳平台 AI 系统 = **企业文档与权限控制面** + **PDF 翻译引擎** + **可插拔 AI 能力**（知识库、问数、会议转写、双碳工具等）。
+绿叶 AI 办公系统 = **企业文档与权限控制面** + **PDF 翻译引擎** + **可插拔 AI 能力**（知识库、问数、会议转写、双碳工具等）。
 
 设计目标：**稳定**、**多架构可迁移**（arm64 开发 / amd64 生产）、**UI 一致**（Vue 3 + Naive UI）、**对外单端口**（生产仅暴露 Nginx）。
 
@@ -82,7 +82,7 @@ flowchart TB
 | 项 | 说明 |
 |----|------|
 | 版本源 | 仓库根 `VERSION`（当前 3.9.3）→ `ZHITAN_VERSION` 镜像 tag |
-| 开发入口 | `bash scripts/zhitan.sh dev`（全 Docker 热重载） |
+| 开发入口 | `./dev.sh docker`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
 | 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |
 | 应用配置 | `platform/.env`；栈级 `/.env` 由 `setup-stack-env.sh` 合并 |

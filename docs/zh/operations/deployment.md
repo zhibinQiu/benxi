@@ -28,12 +28,12 @@ STACK_PROFILES="knowflow speech"   # 或 up 时 --profile knowflow
 **开发（热重载，推荐）：**
 
 ```bash
-bash scripts/zhitan.sh dev
+./dev.sh docker
 ```
 
 | 模式 | Web | API |
 |------|-----|-----|
-| `zhitan.sh dev` | :40005 | :18000 |
+| `dev.sh docker` | :40005 | :18000 |
 
 KnowFlow 首次启动：Infinity/MySQL 就绪后 ragflow API 约 **1–2 分钟** 可用；若 502：`docker restart ragflow-server`。
 
@@ -88,7 +88,7 @@ bash scripts/deploy.sh stack push
 
 - `platform/docker-compose*.yml` 多文件组合
 - `bash scripts/deploy.sh full`（rsync 全仓库 + 远程 build）
-- `bash scripts/zhitan.sh legacy`（宿主机进程 + 部分 Docker）
+- `./dev.sh legacy`（宿主机进程 + 部分 Docker）
 - `bash scripts/merge-stack-env.sh`（请用 `setup-stack-env.sh`）
 
 若文档仍引用上述路径，以本页为准。
@@ -96,8 +96,8 @@ bash scripts/deploy.sh stack push
 ## 7. KnowFlow 镜像构建（arm64 源码）
 
 ```bash
-bash scripts/zhitan.sh knowflow setup   # 克隆 third_party/KnowFlow
-bash scripts/zhitan.sh knowflow build   # 30–90 分钟
+./dev.sh knowflow setup   # 克隆 third_party/KnowFlow
+./dev.sh knowflow build   # 30–90 分钟
 bash scripts/stack.sh build --profile knowflow
 ```
 
@@ -106,5 +106,5 @@ bash scripts/stack.sh build --profile knowflow
 ## 8. 单机迁移与部署后热重载
 
 - **迁到同一台服务器**（含从 remote-dev 过渡）：见 [单机迁移与热重载](single-server-migration.md)  
-- **改代码即生效**：在目标机使用 `bash scripts/zhitan.sh dev`（`stack dev-up`），勿用生产 `stack up`  
+- **改代码即生效**：在目标机使用 `./dev.sh docker`（`stack dev-up`），勿用生产 `stack up`  
 - **功能实现细节**（无代码）：见 [功能实现说明](feature-implementation.md)

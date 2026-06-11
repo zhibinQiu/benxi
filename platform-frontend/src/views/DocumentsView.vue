@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: "DocumentsView" });
 import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -30,27 +31,39 @@ import {
   SearchOutline,
   ShareSocialOutline,
   CloudUploadOutline,
-  EyeOutline } from "@vicons/ionicons5";
+  EyeOutline,
+  RefreshOutline } from "@vicons/ionicons5";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
 import KbFolderCard from "../components/KbFolderCard.vue";
 import KbFolderCreateCard from "../components/KbFolderCreateCard.vue";
 import IconAction from "../components/IconAction.vue";
 import BatchTableToolbar from "../components/BatchTableToolbar.vue";
 import AdminFormModal from "../components/AdminFormModal.vue";
+import FileDropZone from "../components/FileDropZone.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { usePageHeader } from "../composables/usePageHeader";
+import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 import {
   ORG_SCOPES,
   LIBRARY_FOLDER_ORDER } from "../constants/documentScope";
 import {
   DOCUMENT_UPLOAD_MAX_FILES,
-  DOCUMENT_UPLOAD_MAX_MB,
+  applyUploadLimitsFromLibrary,
   formatDocumentFormatLabel,
+  getDocumentUploadMaxMb,
   titleFromFileName,
   validateUploadFiles } from "../constants/documentUpload";
+import {
+  clearDocumentsViewCache,
+  readDocumentsKbFoldersCache,
+  readDocumentsLibraryCache,
+  readDocumentsListCache,
+  writeDocumentsKbFoldersCache,
+  writeDocumentsLibraryCache,
+  writeDocumentsListCache } from "../utils/documentsViewCache.js";
 import { renderIconAction, renderIconActionGroup } from "../utils/tableIconActions";
 import { renderKnowledgeIndexTag } from "../utils/knowledgeIndex.js";
 import {
@@ -69,7 +82,7 @@ import {
   updateKbFolder } from "../api/documents.js";
 
 const route = useRoute();
-const { isSystemAdmin } = useAuth();
+const { isSystemAdmin, user } = useAuth();
 const router = useRouter();
 const { t, scopeLabel, locale } = useI18n();
 const ui = usePlatformUi();
@@ -87,8 +100,15 @@ const activeScope = ref("personal");
 /** null | __uncategorized__ | __shared__ | folder-uuid */
 const activeKbFolderKey = ref(null);
 const kbFolders = ref([]);
+const kbFoldersLoading = ref(false);
 const kbCanManageFolders = ref(false);
+const refreshing = ref(false);
+const { headerExtensionActive } = usePageHeaderExtension();
+const uploadMaxMb = computed(() => getDocumentUploadMaxMb());
 const activeDeptId = ref(null);
+/** 系统管理员在个人级 Tab 下切换查看的账户 */
+const activeOwnerId = ref(null);
+const personalOwners = ref([]);
 /** main | my-shares */
 const libraryView = ref("main");
 const companies = ref([]);
@@ -109,6 +129,17 @@ const showOrgPicker = computed(
   () =>
     ORG_SCOPES.includes(activeScope.value) &&
     orgUnits.value.length > (isSystemAdmin.value ? 0 : 1)
+);
+
+const showOwnerPicker = computed(
+  () =>
+    activeScope.value === "personal" &&
+    isSystemAdmin.value &&
+    personalOwners.value.length > 1
+);
+
+const ownerOptions = computed(() =>
+  personalOwners.value.map((o) => ({ label: o.name, value: o.id }))
 );
 
 const showCreateFolder = ref(false);
@@ -137,7 +168,7 @@ const batchUploadFiles = ref([]);
 const batchUploadFileList = ref([]);
 const batchUploading = ref(false);
 const batchProgress = ref({ done: 0, total: 0 });
-const createUploadFileList = ref([]);
+const batchUploadKey = ref(0);
 
 const batchUploadStats = computed(() => {
   const files = batchUploadFiles.value;
@@ -171,6 +202,28 @@ const canCreateInActive = computed(() => activeFolder.value?.can_create ?? false
 const deptOptions = computed(() =>
   orgUnits.value.map((d) => ({ label: d.name, value: d.id }))
 );
+
+function personalOwnerParam() {
+  if (activeScope.value !== "personal" || !isSystemAdmin.value) return null;
+  return activeOwnerId.value || null;
+}
+
+function ensureActivePersonalOwner() {
+  if (!isSystemAdmin.value || activeScope.value !== "personal") return;
+  const owners = personalOwners.value;
+  if (!owners.length) {
+    activeOwnerId.value = user.value?.id || null;
+    return;
+  }
+  if (
+    activeOwnerId.value &&
+    owners.some((o) => String(o.id) === String(activeOwnerId.value))
+  ) {
+    return;
+  }
+  const self = owners.find((o) => String(o.id) === String(user.value?.id));
+  activeOwnerId.value = self?.id || owners[0].id;
+}
 
 const scopeTagType = {
   company: "info",
@@ -516,8 +569,8 @@ async function handleBatchDelete() {
         ui.success("documents.messages.deletedBatch", { count });
       }
       checkedRowKeys.value = [];
-      await loadKbFolders();
-      await load();
+      await loadKbFolders({ force: true });
+      await load({ force: true });
     }});
 }
 
@@ -570,6 +623,11 @@ function applyRouteFromQuery() {
   } else if (!ORG_SCOPES.includes(activeScope.value)) {
     activeDeptId.value = null;
   }
+  if (route.query.owner_id) {
+    activeOwnerId.value = route.query.owner_id;
+  } else if (activeScope.value !== "personal") {
+    activeOwnerId.value = null;
+  }
   const fk = route.query.folder;
   activeKbFolderKey.value =
     typeof fk === "string" && fk ? fk : null;
@@ -584,54 +642,138 @@ async function syncLegacySharedScopeRoute() {
       folder: activeKbFolderKey.value || VIRTUAL_SHARED}});
 }
 
-async function loadFolders() {
+async function loadFolders({ force = false } = {}) {
+  if (!force) {
+    const cached = readDocumentsLibraryCache();
+    if (cached) {
+      applyLibraryData(cached);
+      await syncLegacySharedScopeRoute();
+      return;
+    }
+  }
   try {
     const lib = await fetchDocumentLibrary();
-    folders.value = normalizeFolders(lib.folders);
-    companies.value = lib.companies || [];
-    departments.value = lib.departments || [];
-    teams.value = lib.teams || [];
-    const units = orgUnits.value;
-    if (
-      ORG_SCOPES.includes(activeScope.value) &&
-      units.length &&
-      !activeDeptId.value
-    ) {
-      activeDeptId.value = units[0].id;
-    }
-    applyRouteFromQuery();
+    writeDocumentsLibraryCache(lib);
+    applyLibraryData(lib);
     await syncLegacySharedScopeRoute();
-    if (
-      libraryView.value === "main" &&
-      folders.value.length &&
-      !folders.value.find((f) => f.scope === activeScope.value)
-    ) {
-      activeScope.value = folders.value[0].scope;
-    }
   } catch (e) {
+    if (!folders.value.length) {
+      folders.value = [];
+      companies.value = [];
+      departments.value = [];
+      teams.value = [];
+    }
     ui.error(e);
   }
 }
 
-async function loadKbFolders() {
+function applyLibraryData(lib) {
+  applyUploadLimitsFromLibrary(lib);
+  folders.value = normalizeFolders(lib.folders);
+  companies.value = lib.companies || [];
+  departments.value = lib.departments || [];
+  teams.value = lib.teams || [];
+  personalOwners.value = lib.personal_owners || [];
+  ensureActivePersonalOwner();
+  const units = orgUnits.value;
+  if (
+    ORG_SCOPES.includes(activeScope.value) &&
+    units.length &&
+    !activeDeptId.value
+  ) {
+    activeDeptId.value = units[0].id;
+  }
+  applyRouteFromQuery();
+  if (
+    libraryView.value === "main" &&
+    folders.value.length &&
+    !folders.value.find((f) => f.scope === activeScope.value)
+  ) {
+    activeScope.value = folders.value[0].scope;
+  }
+}
+
+async function loadKbFolders({ force = false } = {}) {
   const seq = ++kbFoldersLoadSeq;
   if (!usesKbFolders.value) {
+    kbFoldersLoading.value = false;
     kbFolders.value = [];
     return;
   }
+  const deptId =
+    ORG_SCOPES.includes(activeScope.value) && activeDeptId.value
+      ? activeDeptId.value
+      : null;
+  const ownerId = personalOwnerParam();
+  if (!force) {
+    const cached = readDocumentsKbFoldersCache(activeScope.value, deptId, ownerId);
+    if (cached) {
+      if (seq !== kbFoldersLoadSeq) return;
+      kbFolders.value = sortKbFoldersForDisplay(cached.items || []);
+      kbCanManageFolders.value = !!cached.can_manage_folders;
+      kbFoldersLoading.value = false;
+      return;
+    }
+  }
+  const hadFolders = kbFolders.value.length > 0;
+  if (!hadFolders) kbFoldersLoading.value = true;
   try {
     const params = { scope: activeScope.value };
-    if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
-      params.dept_id = activeDeptId.value;
-    }
+    if (deptId) params.dept_id = deptId;
+    if (ownerId) params.owner_id = ownerId;
     const data = await fetchKbFolders(params);
     if (seq !== kbFoldersLoadSeq) return;
+    writeDocumentsKbFoldersCache(activeScope.value, deptId, ownerId, data);
     kbFolders.value = sortKbFoldersForDisplay(data.items || []);
     kbCanManageFolders.value = !!data.can_manage_folders;
   } catch (e) {
     if (seq !== kbFoldersLoadSeq) return;
-    kbFolders.value = [];
+    if (!kbFolders.value.length) kbFolders.value = [];
     ui.error(e);
+  } finally {
+    if (seq === kbFoldersLoadSeq) kbFoldersLoading.value = false;
+  }
+}
+
+function buildListCacheKey() {
+  if (isSearchMode.value) {
+    return `search:${appliedSearch.value.trim()}:${page.value}:${pageSize.value}`;
+  }
+  if (isMySharesView.value) {
+    return `my-shares:${page.value}:${pageSize.value}`;
+  }
+  if (isSharedScopeTab.value || isSharedFolderView.value) {
+    return `shared:${page.value}:${pageSize.value}`;
+  }
+  if (usesKbFolders.value && !activeKbFolderKey.value) {
+    return "folder-list";
+  }
+  const parts = [
+    activeScope.value,
+    activeDeptId.value || "",
+    activeOwnerId.value || "",
+    activeKbFolderKey.value || "",
+    page.value,
+    pageSize.value,
+    keyword.value.trim() || "",
+  ];
+  return parts.join(":");
+}
+
+async function refreshDocumentsView() {
+  if (refreshing.value) return;
+  refreshing.value = true;
+  clearDocumentsViewCache();
+  try {
+    await Promise.all([
+      loadFolders({ force: true }),
+      loadKbFolders({ force: true }),
+    ]);
+    await load({ force: true });
+  } catch (e) {
+    ui.error(e);
+  } finally {
+    refreshing.value = false;
   }
 }
 
@@ -643,7 +785,7 @@ function runSearch() {
   }
   appliedSearch.value = q;
   page.value = 1;
-  load();
+  load({ force: true });
 }
 
 function clearSearch() {
@@ -654,10 +796,24 @@ function clearSearch() {
   if (hadSearch && isMainView.value) load();
 }
 
-async function load() {
+async function load({ force = false } = {}) {
   const seq = ++documentsLoadSeq;
-  loading.value = true;
-  checkedRowKeys.value = [];
+  const listCacheKey = buildListCacheKey();
+  if (!force) {
+    const cached = readDocumentsListCache(listCacheKey);
+    if (cached) {
+      if (seq !== documentsLoadSeq) return;
+      items.value = cached.items || [];
+      total.value = cached.total ?? 0;
+      loading.value = false;
+      return;
+    }
+  }
+  const hadItems = items.value.length > 0;
+  if (!hadItems) {
+    loading.value = true;
+    checkedRowKeys.value = [];
+  }
   try {
     if (isSearchMode.value) {
       const data = await fetchDocuments({
@@ -668,6 +824,7 @@ async function load() {
       if (seq !== documentsLoadSeq) return;
       items.value = data.items || [];
       total.value = data.total ?? 0;
+      writeDocumentsListCache(listCacheKey, data);
       return;
     }
     if (usesKbFolders.value && !activeKbFolderKey.value) {
@@ -690,6 +847,8 @@ async function load() {
       if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
         docParams.dept_id = activeDeptId.value;
       }
+      const ownerId = personalOwnerParam();
+      if (ownerId) docParams.owner_id = ownerId;
       if (activeKbFolderKey.value === VIRTUAL_UNCATEGORIZED) {
         docParams.uncategorized = true;
       } else {
@@ -701,15 +860,20 @@ async function load() {
       if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
         docParams.dept_id = activeDeptId.value;
       }
+      const ownerId = personalOwnerParam();
+      if (ownerId) docParams.owner_id = ownerId;
       data = await fetchDocuments(docParams);
     }
     if (seq !== documentsLoadSeq) return;
     items.value = data.items || [];
     total.value = data.total ?? 0;
+    writeDocumentsListCache(listCacheKey, data);
   } catch (e) {
     if (seq !== documentsLoadSeq) return;
-    items.value = [];
-    total.value = 0;
+    if (!items.value.length) {
+      items.value = [];
+      total.value = 0;
+    }
     ui.error(e);
   } finally {
     if (seq === documentsLoadSeq) {
@@ -727,6 +891,9 @@ function buildLibraryQuery() {
   const query = { scope: activeScope.value };
   if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
     query.dept_id = activeDeptId.value;
+  }
+  if (activeScope.value === "personal" && activeOwnerId.value) {
+    query.owner_id = activeOwnerId.value;
   }
   if (activeKbFolderKey.value) query.folder = activeKbFolderKey.value;
   return query;
@@ -754,6 +921,11 @@ async function onTabChange(scope) {
   } else {
     activeDeptId.value = null;
   }
+  if (scope === "personal") {
+    ensureActivePersonalOwner();
+  } else {
+    activeOwnerId.value = null;
+  }
   await router.replace({ name: "documents", query: buildLibraryQuery() });
 }
 
@@ -777,6 +949,13 @@ function backToKbFolders() {
 
 function onDeptChange(deptId) {
   activeDeptId.value = deptId;
+  activeKbFolderKey.value = null;
+  page.value = 1;
+  router.replace({ name: "documents", query: buildLibraryQuery() });
+}
+
+function onOwnerChange(ownerId) {
+  activeOwnerId.value = ownerId;
   activeKbFolderKey.value = null;
   page.value = 1;
   router.replace({ name: "documents", query: buildLibraryQuery() });
@@ -810,7 +989,7 @@ async function submitCreateFolder() {
     await createKbFolder(payload);
     ui.success("documents.messages.folderCreated");
     showCreateFolder.value = false;
-    await loadKbFolders();
+    await loadKbFolders({ force: true });
   } catch (e) {
     ui.error(e);
   } finally {
@@ -840,7 +1019,7 @@ async function submitEditFolder() {
       description: editFolderDesc.value.trim()});
     ui.success("documents.messages.folderUpdated");
     editFolderTarget.value = null;
-    await loadKbFolders();
+    await loadKbFolders({ force: true });
   } catch (e) {
     ui.error(e);
   } finally {
@@ -856,7 +1035,7 @@ async function onDeleteKbFolder(folder) {
     if (activeKbFolderKey.value === String(folder.id)) {
       backToKbFolders();
     } else {
-      await loadKbFolders();
+      await loadKbFolders({ force: true });
     }
   } catch (e) {
     ui.error(e);
@@ -897,8 +1076,8 @@ function onDocumentMoved() {
   moveDocTarget.value = null;
   batchMoveDocIds.value = [];
   checkedRowKeys.value = [];
-  loadKbFolders();
-  load();
+  loadKbFolders({ force: true });
+  load({ force: true });
 }
 
 function onFolderMenuSelect(key, folder) {
@@ -953,43 +1132,40 @@ async function uploadFileToDocument(docId, file) {
     file_size: file.size});
 }
 
-function onCreateFileChange(opts) {
-  const file = opts.fileList[0]?.file ?? null;
-  createUploadFileList.value = opts.fileList.slice(0, 1);
-  if (file) {
-    const check = validateUploadFiles([file], { maxFiles: 1 });
-    if (!check.ok) {
-      ui.warning(check.message);
-      uploadFile.value = null;
-      createUploadFileList.value = [];
-      return;
-    }
+function onSingleFileDropChange(e) {
+  const file = e.target?.files?.[0] ?? null;
+  if (!file) return;
+  const check = validateUploadFiles([file], { maxFiles: 1 });
+  if (!check.ok) {
+    ui.warning(check.message);
+    return;
   }
   uploadFile.value = file;
-  if (file && !createTitle.value.trim()) {
+  if (!createTitle.value.trim()) {
     createTitle.value = titleFromFileName(file.name);
   }
-}
-
-function clearSingleUploadSelection() {
-  uploadFile.value = null;
-  createUploadFileList.value = [];
-  createTitle.value = "";
 }
 
 function clearBatchUploadSelection() {
   batchUploadFiles.value = [];
   batchUploadFileList.value = [];
+  batchUploadKey.value += 1;
 }
 
 function onBatchFileChange(opts) {
-  const files = opts.fileList.map((f) => f.file).filter(Boolean);
+  let fileList = opts.fileList;
+  const files = fileList.map((f) => f.file).filter(Boolean);
   const check = validateUploadFiles(files);
   if (!check.ok) {
     ui.warning(check.message);
-    batchUploadFiles.value = check.ok ? check.files : files.slice(0, DOCUMENT_UPLOAD_MAX_FILES);
+    if (files.length > DOCUMENT_UPLOAD_MAX_FILES) {
+      fileList = fileList.slice(0, DOCUMENT_UPLOAD_MAX_FILES);
+    }
+    batchUploadFileList.value = fileList;
+    batchUploadFiles.value = fileList.map((f) => f.file).filter(Boolean);
     return;
   }
+  batchUploadFileList.value = fileList;
   batchUploadFiles.value = check.files;
 }
 
@@ -1025,9 +1201,9 @@ function openUploadModal(mode = "single") {
   createTitle.value = "";
   createDesc.value = "";
   uploadFile.value = null;
-  createUploadFileList.value = [];
   batchUploadFiles.value = [];
   batchUploadFileList.value = [];
+  batchUploadKey.value += 1;
   batchProgress.value = { done: 0, total: 0 };
   showUploadModal.value = true;
 }
@@ -1068,9 +1244,8 @@ async function submitCreate() {
     createTitle.value = "";
     createDesc.value = "";
     uploadFile.value = null;
-    createUploadFileList.value = [];
-    await loadKbFolders();
-    await load();
+    await loadKbFolders({ force: true });
+    await load({ force: true });
     openDocumentDetail(doc.id);
   } catch (e) {
     if (createdId && !uploadCompleted) {
@@ -1136,8 +1311,8 @@ async function submitBatchUpload() {
     } else {
       ui.error("documents.messages.batchUploadFailed");
     }
-    await loadKbFolders();
-    await load();
+    await loadKbFolders({ force: true });
+    await load({ force: true });
   } finally {
     batchUploading.value = false;
   }
@@ -1155,28 +1330,37 @@ watch(libraryView, () => {
   }
 });
 
-onMounted(async () => {
+onMounted(() => {
   applyRouteFromQuery();
-  await syncLegacySharedScopeRoute();
-  await Promise.all([loadFolders(), loadKbFolders()]);
-  await load();
+  void syncLegacySharedScopeRoute().then(() => {
+    void loadFolders();
+    void loadKbFolders();
+    void load();
+  });
 });
 
 watch(
-  () => [route.query.view, route.query.scope, route.query.folder, route.query.dept_id],
-  async () => {
+  () => [
+    route.query.view,
+    route.query.scope,
+    route.query.folder,
+    route.query.dept_id,
+    route.query.owner_id,
+  ],
+  () => {
     applyRouteFromQuery();
-    await syncLegacySharedScopeRoute();
     page.value = 1;
-    await loadKbFolders();
-    load();
+    void syncLegacySharedScopeRoute().then(() => {
+      void loadKbFolders();
+      void load();
+    });
   }
 );
 </script>
 
 <template>
   <div class="documents-page feature-page">
-    <Teleport to="#page-header-extension">
+    <Teleport to="#page-header-extension" :disabled="!headerExtensionActive">
       <div class="documents-actions-bar">
         <div class="documents-actions-toolbar">
         <n-space align="center" :size="4" class="documents-toolbar documents-toolbar--primary">
@@ -1237,6 +1421,15 @@ watch(
         </n-space>
         <n-space align="center" :size="8" class="documents-toolbar documents-toolbar--secondary">
           <n-select
+            v-if="isMainView && showOwnerPicker && !isSearchMode"
+            :value="activeOwnerId"
+            :options="ownerOptions"
+            size="small"
+            :placeholder="t('documents.ownerSelectPlaceholder')"
+            class="documents-org-picker__select"
+            @update:value="onOwnerChange"
+          />
+          <n-select
             v-if="isMainView && showOrgPicker && !isSearchMode"
             :value="activeDeptId"
             :options="deptOptions"
@@ -1258,6 +1451,12 @@ watch(
             :label="t('common.search')"
             :icon="SearchOutline"
             @click="runSearch"
+          />
+          <IconAction
+            :label="t('common.refresh')"
+            :icon="RefreshOutline"
+            :disabled="refreshing"
+            @click="refreshDocumentsView"
           />
           <IconAction
             v-if="isMainView && usesKbFolders && activeKbFolderKey && !isSharedFolderView"
@@ -1306,7 +1505,7 @@ watch(
       </button>
     </div>
 
-    <div v-if="showKbFolderList" v-loading="loading">
+    <div v-if="showKbFolderList" v-loading="kbFoldersLoading">
       <n-empty
         v-if="!kbFolders.length && !canManageKbFolders"
         description="暂无文件夹"
@@ -1425,47 +1624,14 @@ watch(
 
       <template v-if="uploadMode === 'single'">
         <n-form-item :label="t('documents.uploadFileLabel')" required>
-          <n-upload
-            v-model:file-list="createUploadFileList"
-            :max="1"
-            :default-upload="false"
-            :show-file-list="false"
-            @change="onCreateFileChange"
-          >
-            <n-upload-dragger
-              class="documents-upload-modal__dropzone"
-              :class="{ 'documents-upload-modal__dropzone--ready': uploadFile }"
-            >
-              <div class="documents-upload-modal__dropzone-inner">
-                <n-icon :size="34" :component="CloudUploadOutline" class="documents-upload-modal__dropzone-icon" />
-                <span class="documents-upload-modal__dropzone-title">
-                  {{
-                    uploadFile
-                      ? uploadFile.name
-                      : t("documents.uploadDropHint")
-                  }}
-                </span>
-                <span class="documents-upload-modal__dropzone-meta">
-                  <template v-if="uploadFile">
-                    {{ formatUploadFileSize(uploadFile.size) }}
-                    ·
-                    <n-button
-                      text
-                      type="primary"
-                      size="tiny"
-                      :disabled="creating"
-                      @click.stop="clearSingleUploadSelection"
-                    >
-                      {{ t("documents.uploadReselect") }}
-                    </n-button>
-                  </template>
-                  <template v-else>
-                    {{ t("documents.uploadSizeHint", { mb: DOCUMENT_UPLOAD_MAX_MB }) }}
-                  </template>
-                </span>
-              </div>
-            </n-upload-dragger>
-          </n-upload>
+          <file-drop-zone
+            class="documents-upload-modal__file-picker"
+            :title="t('documents.uploadDropHint')"
+            :hint="t('documents.uploadSizeHint', { mb: uploadMaxMb })"
+            :file-name="uploadFile?.name || ''"
+            :disabled="creating"
+            @change="onSingleFileDropChange"
+          />
         </n-form-item>
 
         <n-form-item :label="t('documents.uploadTitleLabel')" required>
@@ -1488,9 +1654,9 @@ watch(
       <template v-else>
         <n-form-item :label="t('documents.uploadFileLabel')" required>
           <n-upload
+            :key="batchUploadKey"
             v-model:file-list="batchUploadFileList"
             multiple
-            :max="DOCUMENT_UPLOAD_MAX_FILES"
             :default-upload="false"
             :show-file-list="false"
             @change="onBatchFileChange"
@@ -1527,7 +1693,7 @@ watch(
                     </n-button>
                   </template>
                   <template v-else>
-                    {{ t("documents.uploadBatchMeta", { mb: DOCUMENT_UPLOAD_MAX_MB }) }}
+                    {{ t("documents.uploadBatchMeta", { mb: uploadMaxMb }) }}
                   </template>
                 </span>
               </div>

@@ -52,10 +52,24 @@ check_http() {
   fi
 }
 
+uses_local_pg=0
+if [[ -f "$ENV_FILE" ]] && grep -qE '^DATABASE_URL=.*@127\.0\.0\.1:' "$ENV_FILE"; then
+  uses_local_pg=1
+  local_pg_port="${LOCAL_POSTGRES_PORT:-5432}"
+  if grep -qE '^LOCAL_POSTGRES_PORT=' "$ENV_FILE"; then
+    local_pg_port="$(grep -E '^LOCAL_POSTGRES_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '\r')"
+  fi
+fi
+
 echo "远程依赖探测: ${HOST}（配置: ${ENV_FILE}）"
 echo
 
-check_tcp "PostgreSQL" "$HOST" "$POSTGRES_PORT"
+if [[ "$uses_local_pg" -eq 1 ]]; then
+  echo -e "${YELLOW}SKIP${NC}  PostgreSQL（已使用本机 127.0.0.1:${local_pg_port}）"
+  check_tcp "PostgreSQL (local)" "127.0.0.1" "$local_pg_port"
+else
+  check_tcp "PostgreSQL" "$HOST" "$POSTGRES_PORT"
+fi
 check_tcp "Redis" "$HOST" "$REDIS_PORT"
 check_tcp "MinIO" "$HOST" "$MINIO_PORT"
 check_tcp "RAGFlow MySQL" "$HOST" "$MYSQL_PORT"

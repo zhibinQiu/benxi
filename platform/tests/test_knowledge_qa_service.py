@@ -33,7 +33,7 @@ def test_build_citations_includes_image_and_chunk():
             "score": 0.88,
             "chunk_id": "chunk-1",
             "dataset_id": "ds-1",
-            "image_id": "kb-abc123",
+            "img_id": "kb-abc123",
             "anchor_json": {"page": 2, "bbox": [10, 20, 30, 40]},
         }
     ]

@@ -166,3 +166,48 @@ def test_delete_item_after_import_keeps_document(client, admin_token):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert doc.status_code == 200, doc.text
+
+
+def test_web_search_status_disabled(client, admin_token):
+    with patch("app.api.subscriptions.is_enabled", return_value=False):
+        r = client.get(
+            "/api/v1/subscriptions/web-search/status",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["enabled"] is False
+
+
+def test_web_search_requires_config(client, admin_token):
+    with patch("app.api.subscriptions.is_enabled", return_value=False):
+        r = client.get(
+            "/api/v1/subscriptions/web-search",
+            params={"q": "双碳"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    assert r.status_code == 503
+
+
+def test_web_search_ok(client, admin_token):
+    fake_items = [
+        {
+            "title": "搜索结果",
+            "url": "https://example.com/a",
+            "snippet": "摘要",
+            "engine": "google",
+        }
+    ]
+    with patch("app.api.subscriptions.is_enabled", return_value=True), patch(
+        "app.api.subscriptions.search_web",
+        return_value=(fake_items, True),
+    ):
+        r = client.get(
+            "/api/v1/subscriptions/web-search",
+            params={"q": "双碳", "page": 1},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["query"] == "双碳"
+    assert data["has_more"] is True
+    assert data["items"][0]["title"] == "搜索结果"

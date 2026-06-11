@@ -8,7 +8,7 @@
 bash scripts/stack.sh up --profile knowflow speech   # 启动
 bash scripts/stack.sh dev-up                         # 开发
 bash scripts/stack.sh down                           # 停止
-bash scripts/zhitan.sh stop                          # Docker down + 本机 API/Vite/Worker
+./dev.sh stop                          # Docker down + 本机 API/Vite/Worker
 ```
 
 ## 日志

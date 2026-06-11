@@ -42,13 +42,31 @@ EXPOSE_DEPS=1 bash scripts/stack.sh up --profile knowflow --profile speech
 ## 3. 本机侧
 
 ```bash
-REMOTE_HOST=172.19.134.45 bash scripts/zhitan.sh remote-dev
+REMOTE_HOST=172.19.134.45 ./dev.sh remote-dev
 bash scripts/verify-remote-deps.sh
-bash scripts/zhitan.sh local-dev
-bash scripts/zhitan.sh local-status
+./dev.sh local
+./dev.sh local status
 ```
 
 `setup-remote-dev-env.sh` 根据 `platform/.env.remote.example` 生成 `platform/.env`（`REMOTE_DEPS=1`）。
+
+### 3.1 混合模式：本机 PostgreSQL + 远程其余依赖
+
+远程 `40002` 不稳定时，可将**平台业务库**迁到本机，Redis / MinIO / KnowFlow 仍走远程：
+
+```bash
+# 远程可用时先迁数据（可选；失败可沿用本机 data/postgres 已有快照）
+bash scripts/migrate-postgres-to-local.sh
+
+# 改 platform/.env 的 DATABASE_URL → 127.0.0.1:5432，保留 REMOTE_DEPS=1
+bash scripts/setup-local-db-env.sh
+
+docker compose -f compose.yaml -f compose.local-db.yaml up -d postgres
+./dev.sh local restart
+curl -s http://127.0.0.1:8000/health   # 期望 {"ok":true,"db":true,...}
+```
+
+文档二进制仍在远程 MinIO；`ragflow_*_links` 等映射在 PG 中，从 dump 恢复后与远程 KnowFlow 实例 ID 一致。
 
 ---
 
@@ -72,7 +90,7 @@ bash scripts/zhitan.sh local-status
 2. 目标机 `stack up`（无 EXPOSE_DEPS）  
 3. `stack restore`  
 4. `platform/.env` 改为 Docker 服务名  
-5. 服务器上使用 `zhitan.sh dev` 继续热重载  
+5. 服务器上使用 `dev.sh docker` 继续热重载  
 
 ---
 

@@ -31,7 +31,7 @@ export function useDocumentReindex(documentId, onUpdated) {
   const reindexModalShow = ref(false);
   const reindexTargetVersion = ref(null);
   const parserId = ref("naive");
-  const layoutRecognize = ref("Plain Text");
+  const layoutRecognize = ref("DeepDOC");
   const chunkMethodOptions = ref([]);
   const layoutOptions = ref([]);
   const reparsing = ref(false);
@@ -43,6 +43,9 @@ export function useDocumentReindex(documentId, onUpdated) {
 
   function notifyUpdated() {
     onUpdated?.();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("platform:knowledge-index-updated"));
+    }
   }
 
   function stopPoll() {
@@ -100,8 +103,8 @@ export function useDocumentReindex(documentId, onUpdated) {
         { label: "智能分块", value: "smart" },
       ];
       layoutOptions.value = [
-        { label: "纯文本", value: "Plain Text" },
         { label: "DeepDOC", value: "DeepDOC" },
+        { label: "纯文本", value: "Plain Text" },
       ];
     }
   }

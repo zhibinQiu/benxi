@@ -19,7 +19,7 @@
 
 ## 2. 从「远程依赖开发」迁到单机
 
-当前常见状态：服务器 `EXPOSE_DEPS=1` 暴露 40002–40009；本机 `REMOTE_DEPS=1` + `zhitan.sh local-dev`。
+当前常见状态：服务器 `EXPOSE_DEPS=1` 暴露 40002–40009；本机 `REMOTE_DEPS=1` + `./dev.sh local`。
 
 ### 2.1 迁移前准备
 
@@ -108,8 +108,8 @@ docker compose -p zhitan exec api curl -s localhost:8000/health
 在服务器仓库目录执行：
 
 ```bash
-bash scripts/zhitan.sh stop          # 停旧进程
-bash scripts/zhitan.sh dev         # 等同 stack dev-up
+./dev.sh stop          # 停旧进程
+./dev.sh docker         # 等同 stack dev-up
 ```
 
 **机制**（`compose.dev.yaml`）：
@@ -145,7 +145,7 @@ docker compose -p zhitan exec api pip install ...            # 一般 dev 镜像
 docker compose -p zhitan restart worker
 
 # 4. 改 compose / .env 后
-bash scripts/zhitan.sh dev
+./dev.sh docker
 ```
 
 **所见即所得范围**：
@@ -162,7 +162,7 @@ bash scripts/zhitan.sh dev
 
 ```bash
 # platform/.env 中 DATABASE_URL 等指向 127.0.0.1 映射端口或 host.docker.internal
-bash scripts/zhitan.sh local-dev
+./dev.sh local
 ```
 
 需自行映射 postgres/redis 或使用 `EXPOSE_DEPS` 连本机 Docker 端口；**不如 dev-up 一体化**，仅作补充。
@@ -189,7 +189,7 @@ git clone <仓库> /opt/zhitan
 cd /opt/zhitan
 # 复制原 .env、platform/.env
 bash scripts/stack.sh load images/zhitan-3.9.3-amd64.tar.gz   # 可选，加速首次 build
-bash scripts/zhitan.sh dev --profile knowflow --profile speech
+./dev.sh docker --profile knowflow --profile speech
 ```
 
 数据卷 `data/` 若已在目标机，直接挂载；无需重复 restore。

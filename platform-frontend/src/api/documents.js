@@ -1,5 +1,5 @@
 /** 文档库 REST API */
-import { getApiBase, api, formatApiDetail, getToken } from "./http.js";
+import { getApiBase, api, formatApiDetail, getToken, fetchWithTimeout, UPLOAD_API_TIMEOUT_MS } from "./http.js";
 
 export async function fetchDocumentLibrary() {
   return api("/api/v1/documents/library");
@@ -13,6 +13,7 @@ export async function fetchDocuments({
   folder_id,
   uncategorized,
   dept_id,
+  owner_id,
 } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (keyword) q.set("keyword", keyword);
@@ -20,12 +21,14 @@ export async function fetchDocuments({
   if (folder_id) q.set("folder_id", folder_id);
   if (uncategorized) q.set("uncategorized", "true");
   if (dept_id) q.set("dept_id", dept_id);
+  if (owner_id) q.set("owner_id", owner_id);
   return api(`/api/v1/documents?${q}`);
 }
 
-export async function fetchKbFolders({ scope, dept_id } = {}) {
+export async function fetchKbFolders({ scope, dept_id, owner_id } = {}) {
   const q = new URLSearchParams({ scope });
   if (dept_id) q.set("dept_id", dept_id);
+  if (owner_id) q.set("owner_id", owner_id);
   return api(`/api/v1/documents/kb-folders?${q}`);
 }
 
@@ -94,7 +97,11 @@ export async function uploadDocumentBlob(uploadUrl, file) {
   };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, { method: "PUT", body: file, headers });
+  const res = await fetchWithTimeout(
+    url,
+    { method: "PUT", body: file, headers },
+    UPLOAD_API_TIMEOUT_MS
+  );
   if (!res.ok) {
     let msg = res.statusText;
     try {

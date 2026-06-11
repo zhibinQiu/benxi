@@ -181,7 +181,7 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell .knowledge-search-page,
 .app-shell .admin-page,
 .app-shell .documents-list-card,
-.app-shell .subscriptions-ingest,
+.app-shell .subscriptions-search-hub__bar,
 .app-shell .subsystem-shell .n-card:not(.feature-local-nav) {
   background: var(--platform-ui-glass-fill-strong) !important;
   border-color: var(--platform-ui-glass-border) !important;

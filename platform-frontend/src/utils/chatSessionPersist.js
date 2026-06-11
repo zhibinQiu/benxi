@@ -46,6 +46,19 @@ export function clearChatSession(scope) {
   }
 }
 
+export function clearAllChatSessions() {
+  try {
+    const keys = [];
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith(PREFIX)) keys.push(key);
+    }
+    keys.forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 持久化前去掉流式 / 工作流等临时字段 */
 export function serializeChatMessages(messages) {
   return (messages || [])

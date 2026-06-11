@@ -26,6 +26,7 @@ import {
   ScanOutline,
   MicOutline,
   LanguageOutline,
+  SearchOutline,
   ServerOutline,
   LibraryOutline,
   ServerSharp } from "@vicons/ionicons5";
@@ -72,6 +73,8 @@ const form = reactive({
   paddleocr_url: "",
   speech_service_url: "",
   pdf2zh_api_url: "",
+  searxng_url: "",
+  searxng_timeout_seconds: 15,
   ragflow_api_url: "",
   ragflow_api_key: "",
   knowflow_backend_url: "",
@@ -134,6 +137,12 @@ const RESOURCE_DEFS = [
     icon: LanguageOutline,
     category: "service"},
   {
+    id: "searxng",
+    title: "SearXNG 联网搜索",
+    hint: "网站收藏在线搜索",
+    icon: SearchOutline,
+    category: "service"},
+  {
     id: "ragflow_api",
     title: "RAGFlow API",
     hint: "知识库检索、文档同步 HTTP API",
@@ -156,7 +165,7 @@ const RESOURCE_DEFS = [
 const CATEGORY_META = {
   platform: { title: "平台", hint: "前端访问地址与展示配置" },
   model: { title: "AI 模型", hint: "语言、嵌入与重排序模型 API" },
-  service: { title: "外部服务", hint: "OCR、语音与翻译等 HTTP 服务" },
+  service: { title: "外部服务", hint: "OCR、语音、翻译、联网搜索等 HTTP 服务" },
   knowledge: { title: "知识库基础设施", hint: "RAGFlow / KnowFlow 后台与 MySQL 数据库" }};
 
 const activeResource = computed(() =>
@@ -188,6 +197,8 @@ function fillForm(data) {
   form.paddleocr_url = data?.paddleocr_url || "";
   form.speech_service_url = data?.speech_service_url || "";
   form.pdf2zh_api_url = data?.pdf2zh_api_url || "";
+  form.searxng_url = data?.searxng_url || "";
+  form.searxng_timeout_seconds = data?.searxng_timeout_seconds || 15;
   const kb = data?.knowledge || {};
   form.ragflow_api_url = kb.ragflow_api_url || "";
   form.ragflow_api_key = kb.ragflow_api_key_masked || "";
@@ -235,6 +246,10 @@ function resourceSummary(id) {
       return data.speech_service_url ? truncate(data.speech_service_url) : "未配置";
     case "pdf2zh":
       return data.pdf2zh_api_url ? truncate(data.pdf2zh_api_url) : "未配置";
+    case "searxng":
+      return data.searxng_url
+        ? `${truncate(data.searxng_url)} · ${data.searxng_timeout_seconds || 15}s`
+        : "未配置";
     case "ragflow_api":
       return data.knowledge?.ragflow_api_url
         ? truncate(data.knowledge.ragflow_api_url)
@@ -385,6 +400,11 @@ function buildPayloadFor(id) {
       return { speech_service_url: form.speech_service_url.trim() };
     case "pdf2zh":
       return { pdf2zh_api_url: form.pdf2zh_api_url.trim() };
+    case "searxng":
+      return {
+        searxng_url: form.searxng_url.trim(),
+        searxng_timeout_seconds: Number(form.searxng_timeout_seconds) || 15,
+      };
     case "ragflow_api":
       return {
         ragflow_api_url: form.ragflow_api_url.trim(),
@@ -678,6 +698,29 @@ onMounted(loadAll);
             <n-text depth="3" class="drawer-hint">
               文档翻译任务调用 pdf2zh API（对应 .env 中的
               <code>PDF2ZH_API_URL</code>）。保存后立即生效。
+            </n-text>
+          </template>
+
+          <template v-else-if="activeId === 'searxng'">
+            <n-form-item label="服务地址">
+              <n-input
+                v-model:value="form.searxng_url"
+                placeholder="http://172.19.134.45:40000"
+              />
+            </n-form-item>
+            <n-form-item label="请求超时">
+              <n-input-number
+                v-model:value="form.searxng_timeout_seconds"
+                :min="3"
+                :max="120"
+                style="width: 100%"
+              >
+                <template #suffix>秒</template>
+              </n-input-number>
+            </n-form-item>
+            <n-text depth="3" class="drawer-hint">
+              网站收藏「联网搜索」通过此 SearXNG 实例的 JSON API（<code>/search?format=json</code>）检索。
+              对应 .env 中 <code>SEARXNG_URL</code>、<code>SEARXNG_TIMEOUT_SECONDS</code>。保存后立即生效。
             </n-text>
           </template>
 

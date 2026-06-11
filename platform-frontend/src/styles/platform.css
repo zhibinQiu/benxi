@@ -764,6 +764,10 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
   color: var(--platform-text-secondary);
 }
 
+.documents-upload-modal__file-picker {
+  width: 100%;
+}
+
 .documents-upload-modal__dropzone {
   padding: 0 !important;
 }

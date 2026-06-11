@@ -22,6 +22,7 @@ from app.core.document_scope import (
     library_departments_for_user,
     library_folders,
     library_teams_for_user,
+    personal_library_owners_for_user,
 )
 from app.core.document_upload_limits import document_upload_max_label
 from app.database import get_db
@@ -66,11 +67,16 @@ def document_library(
             {"id": str(d["id"]), "name": d["name"]}
             for d in library_companies_for_user(db, user)
         ]
+        personal_owner_rows = [
+            {"id": str(d["id"]), "name": d["name"]}
+            for d in personal_library_owners_for_user(db, user)
+        ]
         return {
             "folders": folders,
             "companies": company_rows,
             "departments": dept_rows,
             "teams": team_rows,
+            "personal_owners": personal_owner_rows,
             "upload_max_file_mb": settings.document_upload_max_file_mb,
             "upload_max_size_label": document_upload_max_label(),
         }
@@ -82,6 +88,7 @@ def document_library(
             companies=data["companies"],
             departments=data["departments"],
             teams=data["teams"],
+            personal_owners=data.get("personal_owners") or [],
             upload_max_file_mb=data["upload_max_file_mb"],
             upload_max_size_label=data["upload_max_size_label"],
         )
@@ -100,6 +107,7 @@ def list_documents(
     folder_id: uuid.UUID | None = None,
     uncategorized: bool = Query(False, description="仅未归入文件夹的文档"),
     dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
 ) -> ApiResponse[PageResult[DocumentListItem]]:
     if scope in ("company", "department", "team") and dept_id is not None:
         from app.core.document_scope import user_can_access_org_unit
@@ -146,6 +154,7 @@ def list_documents(
             folder_id=folder_id,
             uncategorized_only=uncategorized,
             dept_id=dept_id,
+            owner_id=owner_id,
         )
         list_items = _list_items_with_owners(
             db,

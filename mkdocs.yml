@@ -1,5 +1,5 @@
-site_name: PDF 翻译与智碳平台AI系统
-site_description: PDF 科学文献翻译与智碳平台AI系统（中文文档）
+site_name: PDF 翻译与绿叶 AI 办公系统
+site_description: PDF 科学文献翻译与绿叶 AI 办公系统（中文文档）
 repo_url: https://github.com/PDFMathTranslate-next/PDFMathTranslate-next
 edit_uri: edit/main/docs/zh/
 
@@ -44,6 +44,7 @@ nav:
   - 运维与部署:
     - 手册索引: operations/README.md
     - 组件与数据存储: operations/components-and-storage.md
+    - 知识库数据一致性: operations/knowledge-data-consistency.md
     - 配置与脚本: operations/config-and-scripts.md
     - 系统架构: operations/architecture.md
     - Docker 容器: operations/docker-services.md

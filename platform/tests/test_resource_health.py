@@ -5,6 +5,8 @@ from __future__ import annotations
 from app.services.resource_health_service import (
     _normalize_openai_base,
     _probe_embedding,
+    _probe_searxng_url,
+    _searxng_timeout_from_cfg,
     check_resource_health,
     check_single_resource_health,
     merge_health_test_config,
@@ -211,3 +213,65 @@ def test_check_single_resource_llm(monkeypatch):
     }
     out = check_single_resource_health("llm", cfg, None)
     assert out["healthy"] is True
+
+
+def test_searxng_timeout_from_cfg_prefers_draft():
+    cfg = {"searxng_timeout_seconds": "20"}
+    assert _searxng_timeout_from_cfg(cfg, None) == 20.0
+
+
+def test_probe_searxng_uses_configured_timeout(monkeypatch):
+    captured: dict = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"results": []}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, params=None, headers=None):
+            captured["url"] = url
+            captured["params"] = params
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.resource_health_service.httpx.Client", FakeClient)
+    ok, msg = _probe_searxng_url("http://searxng.test", timeout=18)
+    assert ok is True
+    assert msg == "连接正常"
+    assert captured["timeout"] == 18
+    assert captured["url"] == "http://searxng.test/search"
+    assert captured["params"]["format"] == "json"
+    assert captured["headers"]["User-Agent"] == "pdf-trans-platform/1.0"
+
+
+def test_check_single_resource_searxng_passes_timeout(monkeypatch):
+    captured: dict = {}
+
+    def fake_probe(url: str, *, timeout: float | None = None):
+        captured["url"] = url
+        captured["timeout"] = timeout
+        return True, "连接正常"
+
+    monkeypatch.setattr(
+        "app.services.resource_health_service._probe_searxng_url",
+        fake_probe,
+    )
+    cfg = {
+        "searxng_url": "http://172.19.134.45:40000",
+        "searxng_timeout_seconds": "15",
+    }
+    out = check_single_resource_health("searxng", cfg, None)
+    assert out["healthy"] is True
+    assert captured["timeout"] == 15.0

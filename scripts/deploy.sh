@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 智碳平台生产部署：镜像 save/load 推送到远程（不 rsync 源码）
+# 绿叶 AI 办公系统 — 生产部署：镜像 save/load 推送到远程（不 rsync 源码）
 #
 # 配置: platform/deploy.target（由 deploy.target.example 复制）
 #
@@ -17,6 +17,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM="$ROOT/platform"
 # shellcheck source=lib/version.sh
 source "$ROOT/scripts/lib/version.sh"
+# shellcheck source=lib/branding.sh
+source "$ROOT/scripts/lib/branding.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -272,7 +274,7 @@ warn_deepseek_key() {
 
 _job_knowflow() {
   cd "$PLATFORM"
-  bash "$ROOT/scripts/zhitan.sh" knowflow setup
+  bash "$ROOT/scripts/dev.sh" knowflow setup
   [[ -f knowflow.env ]] || cp -f knowflow.env.docker knowflow.env 2>/dev/null \
     || cp -f knowflow.env.example knowflow.env
   set -a
@@ -386,12 +388,13 @@ read_frontend_port() {
 }
 
 print_urls() {
-  local host port
+  local host port app_name
   host="$(detect_host_ip)"
   port="$(read_frontend_port)"
+  app_name="$(read_platform_app_name "$ROOT")"
   cat <<EOF
 
-${GREEN}=== 部署已提交 (${DEPLOY_ARCH}) ===${NC}
+${GREEN}=== ${app_name} 部署已提交 (${DEPLOY_ARCH}) ===${NC}
   平台 Web:     http://${host}:${port}/ai/
   平台 API:     http://${host}:8000/docs
   pdf2zh API:   http://${host}:7861

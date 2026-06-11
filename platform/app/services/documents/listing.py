@@ -98,12 +98,22 @@ def list_accessible_documents(
     folder_id: uuid.UUID | None = None,
     uncategorized_only: bool = False,
     dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
 ) -> tuple[list[Document], int]:
-    from app.core.document_scope import VALID_SCOPES
+    from app.core.document_scope import SCOPE_PERSONAL, VALID_SCOPES
     from app.core.permissions import user_dept_ids, user_is_superuser
     from app.models.document import DocumentStatus
 
     required = min_permission_level or PermissionLevel.visible.value
+    is_super = user_is_superuser(db, user)
+    if (
+        owner_id is not None
+        and owner_id != user.id
+        and not is_super
+    ):
+        from app.core.exceptions import forbidden
+
+        raise forbidden("无权查看他人个人文档库")
     stmt = select(Document).where(
         Document.deleted_at.is_(None),
         Document.status == DocumentStatus.active.value,
@@ -114,6 +124,10 @@ def list_accessible_documents(
 
             raise bad_request("无效的分级 scope")
         stmt = stmt.where(Document.scope == scope)
+        if scope == SCOPE_PERSONAL:
+            target_owner = owner_id if is_super and owner_id is not None else user.id
+            if not is_super or owner_id is not None:
+                stmt = stmt.where(Document.owner_id == target_owner)
         if scope in ("company", "department", "team"):
             if dept_id is not None:
                 stmt = stmt.where(Document.dept_id == dept_id)

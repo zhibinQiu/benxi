@@ -1,7 +1,7 @@
 # 平台架构与运维（索引）
 
 > **本文已合并至运维专题文档**，请勿在此维护重复内容。  
-> 操作命令以 `bash scripts/zhitan.sh --help` 与 [脚本说明](../../scripts/README.md) 为准。
+> 操作命令以 `./dev.sh --help` 与 [脚本说明](../../scripts/README.md) 为准。
 
 ## 推荐阅读
 
@@ -12,17 +12,17 @@
 | 容器与镜像 | [Docker 容器说明](../operations/docker-services.md) |
 | 环境变量 | [配置说明](../operations/configuration.md) |
 | 启动与部署 | [部署指南](../operations/deployment.md) · [根目录运维部署指南](../../../运维部署指南.md) |
-| 远程依赖开发 | [server-deps](../operations/server-deps.md) · `zhitan.sh remote-dev` → `local-dev` |
+| 远程依赖开发 | [server-deps](../operations/server-deps.md) · `dev.sh remote-dev` → `./dev.sh local` |
 
 ## 一分钟速查
 
 | 场景 | 命令 |
 |------|------|
-| 全 Docker 开发 | `bash scripts/zhitan.sh dev` |
-| 远程依赖 + 本机 venv | `bash scripts/zhitan.sh remote-dev` → `local-dev` |
+| 全 Docker 开发 | `./dev.sh docker` |
+| 远程依赖 + 本机 venv | `./dev.sh remote-dev` → `./dev.sh local` |
 | 生产式本机 | `bash scripts/stack.sh build && bash scripts/stack.sh up --profile knowflow` |
 | 服务器交付 | `bash scripts/stack.sh save` → `bash scripts/deploy.sh stack push` |
-| 停止 | `bash scripts/zhitan.sh stop` |
+| 停止 | `./dev.sh stop` |
 
 | 入口 | 地址 |
 |------|------|

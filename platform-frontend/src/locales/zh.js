@@ -1,6 +1,6 @@
 export default {
   app: {
-    name: "智碳平台AI系统",
+    name: "绿叶AI办公系统",
     tagline: "企业级双碳知识与应用控制面",
   },
   menu: {
@@ -194,6 +194,7 @@ export default {
     editFolder: "编辑文件夹",
     dept: "部门",
     deptSelectPlaceholder: "选择组织",
+    ownerSelectPlaceholder: "选择账户",
     hints: {
       recycle: "此处显示您删除的文档，可点击「恢复」还原到删除前的位置。",
       myShares:

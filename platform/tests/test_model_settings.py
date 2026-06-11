@@ -13,6 +13,8 @@ from app.services.model_settings_service import (
     get_model_settings,
     get_pdf2zh_api_url,
     get_platform_api_base_url,
+    get_searxng_timeout_seconds,
+    get_searxng_url,
     get_speech_service_url,
     mask_secret,
 )
@@ -103,6 +105,8 @@ def test_service_urls_from_env_defaults(monkeypatch):
     settings = Settings(
         speech_service_url="http://speech:8765",
         pdf2zh_api_url="http://pdf2zh:7861",
+        searxng_url="http://172.19.134.45:40000",
+        searxng_timeout_seconds=12.0,
         ragflow_api_url="http://127.0.0.1:9380",
         knowflow_backend_url="http://127.0.0.1:5001",
         knowflow_ui_url="http://127.0.0.1:9380",
@@ -123,6 +127,8 @@ def test_service_urls_from_env_defaults(monkeypatch):
     out = get_model_settings(None)
     assert out.speech_service_url == "http://speech:8765"
     assert out.pdf2zh_api_url == "http://pdf2zh:7861"
+    assert out.searxng_url == "http://172.19.134.45:40000"
+    assert out.searxng_timeout_seconds == 12.0
     assert out.knowledge.ragflow_api_url == "http://127.0.0.1:9380"
     assert out.knowledge.knowflow_backend_url == "http://127.0.0.1:5001"
     assert out.knowledge.knowflow_ui_url == "http://127.0.0.1:9380"
@@ -133,6 +139,8 @@ def test_service_urls_from_env_defaults(monkeypatch):
     assert out.knowledge.ragflow_mysql_password_configured is True
     assert get_speech_service_url(None) == "http://speech:8765"
     assert get_pdf2zh_api_url(None) == "http://pdf2zh:7861"
+    assert get_searxng_url(None) == "http://172.19.134.45:40000"
+    assert get_searxng_timeout_seconds(None) == 12.0
 
 
 def test_platform_api_base_url_defaults_to_public_prefix(monkeypatch):
@@ -217,3 +225,28 @@ def test_resolve_ragflow_api_base_docker(monkeypatch):
     assert resolve_ragflow_api_base("http://127.0.0.1:9380", knowflow_enabled=True) == (
         "http://127.0.0.1:9380"
     )
+
+
+def test_searxng_health_test_supported(client, admin_token, monkeypatch):
+    from app.services.resource_health_service import TESTABLE_RESOURCE_IDS
+
+    assert "searxng" in TESTABLE_RESOURCE_IDS
+
+    def fake_probe(url: str) -> tuple[bool, str]:
+        assert url == "http://searxng.test"
+        return True, "连接正常"
+
+    monkeypatch.setattr(
+        "app.services.resource_health_service._probe_searxng_url",
+        fake_probe,
+    )
+    r = client.post(
+        "/api/v1/admin/model-settings/health/test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "resource_id": "searxng",
+            "draft": {"searxng_url": "http://searxng.test"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["healthy"] is True

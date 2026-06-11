@@ -1,4 +1,4 @@
-# 开发覆盖（stack.sh dev-up / zhitan.sh dev 时自动叠加）
+# 开发覆盖（stack.sh dev-up / dev.sh docker 时自动叠加）
 #
 # 作用:
 #   - api: 挂载 platform/app、uvicorn --reload、映射 127.0.0.1:18000

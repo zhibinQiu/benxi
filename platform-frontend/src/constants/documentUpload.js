@@ -1,7 +1,36 @@
-/** 文档中心上传限制（与后端 complete_upload 30MB 一致） */
+/** 文档中心上传限制（默认与后端 document_upload_max_file_mb 一致，可由 library API 覆盖） */
 export const DOCUMENT_UPLOAD_MAX_FILES = 10;
-export const DOCUMENT_UPLOAD_MAX_BYTES = 30 * 1024 * 1024;
-export const DOCUMENT_UPLOAD_MAX_MB = 30;
+export const DOCUMENT_UPLOAD_MAX_MB_DEFAULT = 200;
+
+let _uploadMaxMb = DOCUMENT_UPLOAD_MAX_MB_DEFAULT;
+
+/** @deprecated 请使用 getDocumentUploadMaxMb() */
+export const DOCUMENT_UPLOAD_MAX_MB = DOCUMENT_UPLOAD_MAX_MB_DEFAULT;
+
+/** @deprecated 请使用 getDocumentUploadMaxBytes() */
+export const DOCUMENT_UPLOAD_MAX_BYTES =
+  DOCUMENT_UPLOAD_MAX_MB_DEFAULT * 1024 * 1024;
+
+export function setDocumentUploadMaxMb(mb) {
+  const n = Number(mb);
+  if (Number.isFinite(n) && n > 0) {
+    _uploadMaxMb = Math.floor(n);
+  }
+}
+
+export function getDocumentUploadMaxMb() {
+  return _uploadMaxMb;
+}
+
+export function getDocumentUploadMaxBytes() {
+  return _uploadMaxMb * 1024 * 1024;
+}
+
+export function applyUploadLimitsFromLibrary(lib) {
+  if (lib?.upload_max_file_mb) {
+    setDocumentUploadMaxMb(lib.upload_max_file_mb);
+  }
+}
 
 export const DOCUMENT_FORMAT_LABELS = {
   pdf: "PDF",
@@ -31,17 +60,22 @@ export function titleFromFileName(fileName) {
   return dot > 0 ? base.slice(0, dot) : base;
 }
 
-export function validateUploadFiles(fileList, { maxFiles = DOCUMENT_UPLOAD_MAX_FILES } = {}) {
+export function validateUploadFiles(
+  fileList,
+  { maxFiles = DOCUMENT_UPLOAD_MAX_FILES, maxBytes, maxMb } = {},
+) {
+  const limitBytes = maxBytes ?? getDocumentUploadMaxBytes();
+  const limitMb = maxMb ?? getDocumentUploadMaxMb();
   const files = fileList.filter(Boolean);
   if (!files.length) return { ok: false, message: "请选择要上传的文件" };
   if (files.length > maxFiles) {
     return { ok: false, message: `最多一次上传 ${maxFiles} 个文件` };
   }
   for (const file of files) {
-    if (file.size > DOCUMENT_UPLOAD_MAX_BYTES) {
+    if (file.size > limitBytes) {
       return {
         ok: false,
-        message: `「${file.name}」超过 ${DOCUMENT_UPLOAD_MAX_MB}MB 限制`,
+        message: `「${file.name}」超过 ${limitMb}MB 限制`,
       };
     }
   }

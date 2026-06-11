@@ -54,6 +54,7 @@ def _normalize_folder_scope(
     *,
     scope: str,
     dept_id: uuid.UUID | None,
+    owner_id: uuid.UUID | None = None,
 ) -> tuple[str, uuid.UUID | None, uuid.UUID | None]:
     """规范化文件夹分级（列表、移动等，不校验新建权限）。"""
     if scope not in VALID_SCOPES:
@@ -74,6 +75,14 @@ def _normalize_folder_scope(
         if not user_can_access_org_unit(db, user, dept_id):
             raise forbidden("只能选择本人可访问的组织节点")
         return scope, dept_id, None
+    if (
+        owner_id is not None
+        and owner_id != user.id
+        and not user_is_superuser(db, user)
+    ):
+        raise forbidden("无权查看他人个人文档库")
+    if user_is_superuser(db, user) and owner_id is not None:
+        return SCOPE_PERSONAL, None, owner_id
     return SCOPE_PERSONAL, None, user.id
 
 
@@ -181,7 +190,8 @@ def _build_kb_folders_payload(
         DocumentLibraryFolder.scope == norm_scope
     )
     if norm_scope == SCOPE_PERSONAL:
-        stmt = stmt.where(DocumentLibraryFolder.owner_id == user.id)
+        target_owner = owner_id or user.id
+        stmt = stmt.where(DocumentLibraryFolder.owner_id == target_owner)
     elif norm_scope in ORG_SCOPES:
         stmt = stmt.where(DocumentLibraryFolder.dept_id == norm_dept)
 
@@ -278,15 +288,17 @@ def list_kb_folders(
     *,
     scope: str,
     dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
 ) -> dict:
-    norm_scope, norm_dept, owner_id = _normalize_folder_scope(
-        db, user, scope=scope, dept_id=dept_id
+    norm_scope, norm_dept, norm_owner_id = _normalize_folder_scope(
+        db, user, scope=scope, dept_id=dept_id, owner_id=owner_id
     )
     from app.config import get_settings
     from app.core.platform_cache import cache_get_or_set, kb_folders_cache_key
 
     dept_key = str(norm_dept) if norm_dept else None
-    cache_key = kb_folders_cache_key(str(user.id), norm_scope, dept_key)
+    owner_key = str(norm_owner_id) if norm_owner_id else None
+    cache_key = kb_folders_cache_key(str(user.id), norm_scope, dept_key, owner_key)
     ttl = max(5, int(get_settings().kb_folders_cache_ttl_sec))
 
     return cache_get_or_set(
@@ -296,7 +308,7 @@ def list_kb_folders(
             user,
             norm_scope=norm_scope,
             norm_dept=norm_dept,
-            owner_id=owner_id,
+            owner_id=norm_owner_id,
         ),
         ttl=ttl,
     )

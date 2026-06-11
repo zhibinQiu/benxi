@@ -11,8 +11,17 @@ import {
 
 const props = defineProps({
   show: { type: Boolean, default: false },
-  documentId: { type: String, required: true },
+  /** 文档中心：documentId + version */
+  documentId: { type: String, default: "" },
   version: { type: Object, default: null },
+  /** 通用：外部提供 Blob 加载器（如翻译结果 PDF） */
+  blobLoader: { type: Function, default: null },
+  previewTitle: { type: String, default: "" },
+  previewSubtitle: { type: String, default: "" },
+  previewFileName: { type: String, default: "" },
+  showDownloadAction: { type: Boolean, default: null },
+  width: { type: [Number, String], default: "min(920px, 96vw)" },
+  viewportHeight: { type: String, default: "min(68vh, 720px)" },
 });
 
 const emit = defineEmits(["update:show", "download"]);
@@ -29,12 +38,24 @@ const visible = computed({
 });
 
 const modalTitle = computed(() => {
+  if (props.previewTitle) return props.previewTitle;
   const ver = props.version;
   if (!ver) return "文件预览";
   return `预览 v${ver.version_no}`;
 });
 
-const modalSubtitle = computed(() => props.version?.file_name || "");
+const modalSubtitle = computed(
+  () => props.previewSubtitle || props.version?.file_name || props.previewFileName || ""
+);
+
+const useDocumentSource = computed(
+  () => Boolean(props.documentId && props.version?.id && !props.blobLoader)
+);
+
+const downloadVisible = computed(() => {
+  if (props.showDownloadAction != null) return props.showDownloadAction;
+  return Boolean(props.version?.uploaded);
+});
 
 const kindLabel = computed(() => previewKindLabel(previewKind.value));
 
@@ -50,15 +71,27 @@ function cleanupPreview() {
 }
 
 async function loadPreview() {
-  const ver = props.version;
-  if (!props.documentId || !ver?.id || !ver.uploaded) return;
-
   cleanupPreview();
   loading.value = true;
-  previewKind.value = resolveDocumentPreviewKind(ver.file_name, ver.mime_type);
+
+  let blob;
+  let fileName = "";
+  let mimeType = "";
 
   try {
-    const blob = await fetchDocumentFileBlob(props.documentId, ver.id);
+    if (props.blobLoader) {
+      fileName = props.previewFileName || props.previewSubtitle || "file.pdf";
+      mimeType = "application/pdf";
+      blob = await props.blobLoader();
+    } else {
+      const ver = props.version;
+      if (!props.documentId || !ver?.id || !ver.uploaded) return;
+      fileName = ver.file_name || "";
+      mimeType = ver.mime_type || "";
+      blob = await fetchDocumentFileBlob(props.documentId, ver.id);
+    }
+
+    previewKind.value = resolveDocumentPreviewKind(fileName, mimeType);
 
     if (previewKind.value === PREVIEW_KIND.TEXT) {
       textContent.value = await blob.text();
@@ -78,7 +111,7 @@ async function loadPreview() {
 }
 
 watch(
-  () => [props.show, props.version?.id],
+  () => [props.show, props.version?.id, props.blobLoader, props.previewFileName],
   ([open]) => {
     if (open) loadPreview();
   }
@@ -95,7 +128,7 @@ function onAfterLeave() {
     class="document-preview-modal"
     :title="modalTitle"
     :subtitle="modalSubtitle"
-    width="min(920px, 96vw)"
+    :width="width"
     @after-leave="onAfterLeave"
   >
     <div class="document-preview-modal__toolbar">
@@ -152,7 +185,11 @@ function onAfterLeave() {
     <template #footer>
       <n-space justify="end" :size="10">
         <n-button @click="visible = false">关闭</n-button>
-        <n-button v-if="version?.uploaded" type="primary" @click="emit('download', version)">
+        <n-button
+          v-if="downloadVisible && useDocumentSource"
+          type="primary"
+          @click="emit('download', version)"
+        >
           下载
         </n-button>
       </n-space>
@@ -170,14 +207,14 @@ function onAfterLeave() {
 }
 
 .document-preview-modal__spin :deep(.n-spin-content) {
-  min-height: min(68vh, 720px);
+  min-height: v-bind(viewportHeight);
 }
 
 .document-preview-modal__viewport {
   display: flex;
   align-items: stretch;
   justify-content: center;
-  min-height: min(68vh, 720px);
+  min-height: v-bind(viewportHeight);
   border-radius: calc(var(--platform-radius-sm) + 4px);
   border: 1px solid var(--platform-border);
   background: color-mix(in srgb, var(--platform-text) 3%, transparent);
@@ -186,14 +223,14 @@ function onAfterLeave() {
 
 .document-preview-modal__frame {
   width: 100%;
-  min-height: min(68vh, 720px);
+  min-height: v-bind(viewportHeight);
   border: 0;
   background: #fff;
 }
 
 .document-preview-modal__image {
   max-width: 100%;
-  max-height: min(68vh, 720px);
+  max-height: v-bind(viewportHeight);
   object-fit: contain;
   margin: auto;
   padding: 16px;

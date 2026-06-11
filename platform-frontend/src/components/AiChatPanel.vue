@@ -55,7 +55,10 @@ const props = defineProps({
   /** 进入对话后输入框占位文案 */
   replyPlaceholder: { type: String, default: "继续提问" },
   /** 对话历史 scope：ai-home | carbon-qa | smart-data-query */
-  chatScope: { type: String, default: "" }});
+  chatScope: { type: String, default: "" },
+  /** 是否展示历史对话 / 新对话（知识检索等单次会话场景设为 false） */
+  showSessionActions: { type: Boolean, default: true },
+});
 
 const conversationId = defineModel("conversationId", { type: String, default: null });
 
@@ -505,6 +508,8 @@ onBeforeUnmount(() => {
   persistSessionState();
   streamAbort?.abort();
 });
+
+defineExpose({ newChat });
 </script>
 
 <template>
@@ -512,7 +517,7 @@ onBeforeUnmount(() => {
     class="ai-home"
     :class="{ 'ai-home--active': started }"
   >
-    <div v-if="!started && chatScope" class="ai-home-landing-topbar">
+    <div v-if="!started && chatScope && showSessionActions" class="ai-home-landing-topbar">
       <IconAction
         label="查看历史对话"
         :icon="TimeOutline"
@@ -523,7 +528,7 @@ onBeforeUnmount(() => {
 
     <Transition name="ai-chat-header">
       <header
-        v-if="started"
+        v-if="started && (showChatHeaderBrand || showSessionActions)"
         class="ai-home-chat-header"
         :class="{ 'ai-home-chat-header--minimal': !showChatHeaderBrand }"
       >
@@ -536,7 +541,7 @@ onBeforeUnmount(() => {
             <div class="ai-home-chat-sub">{{ headerSub }}</div>
           </div>
         </div>
-        <div class="ai-home-chat-actions">
+        <div v-if="showSessionActions" class="ai-home-chat-actions">
           <IconAction
             v-if="chatScope"
             label="历史对话"

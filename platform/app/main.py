@@ -28,11 +28,10 @@ from app.api import (
     users,
 )
 from app.api import embed_proxy as embed_proxy_api
-from app.bootstrap import bootstrap_db
 from app.config import get_settings
-from app.core.bootstrap_user import enforce_unique_bootstrap_admin
 from app.core.exceptions import AppError, service_unavailable
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal, engine
+from app.db_bootstrap import bootstrap_database
 from app.features.registry import ensure_plugins_loaded, mount_routers
 from app.models import (  # noqa: F401 — register ORM models
     audit,
@@ -56,77 +55,61 @@ from app.models import (  # noqa: F401 — register ORM models
     todo,
     wechat_mp,
 )
-from app.schema_migrate import (
-    backfill_user_phones,
-    drop_legacy_ragflow_account_dataset_columns,
-    ensure_carbon_market_schema,
-    ensure_document_library_folder_schema,
-    ensure_document_schema,
-    ensure_document_scope_org_depth,
-    ensure_document_library_align_v1,
-    ensure_document_scope_tier_v2,
-    ensure_document_version_blocks_schema,
-    ensure_document_version_change_description,
-    ensure_feed_subscription_schema,
-    ensure_meeting_record_schema,
-    ensure_permission_level_migration,
-    ensure_platform_chat_schema,
-    ensure_platform_model_settings_schema,
-    ensure_ragflow_schema,
-    ensure_ragflow_version_index_completed_schema,
-    ensure_todo_schema,
-    ensure_user_auth_token_version_schema,
-    ensure_user_last_seen_schema,
-    ensure_user_phone_schema,
-    ensure_user_single_department_schema,
-    ensure_version_compare_llm_summary_schema,
-    ensure_version_compare_schema,
-    ensure_wechat_mp_schema,
-    migrate_legacy_admin_roles,
-)
 from app.schemas.common import ApiResponse
 from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
+
+_logger = logging.getLogger(__name__)
+
+
+def _bootstrap_database_with_retry() -> None:
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    settings = get_settings()
+    attempts = 5 if settings.remote_deps else 2
+    delay = 4.0 if settings.remote_deps else 2.0
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            bootstrap_database(engine)
+            return
+        except OperationalError as exc:
+            last_exc = exc
+            _logger.warning(
+                "数据库启动第 %s/%s 次失败（remote=%s）: %s",
+                attempt,
+                attempts,
+                settings.remote_deps,
+                exc,
+            )
+            if attempt < attempts:
+                time.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
+
+
+def _check_database() -> bool:
+    from app.database import check_database_health
+
+    return check_database_health()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    ensure_document_schema(engine)
-    ensure_document_library_folder_schema(engine)
-    ensure_document_scope_tier_v2(engine)
-    ensure_document_scope_org_depth(engine)
-    ensure_document_library_align_v1(engine)
-    ensure_ragflow_schema(engine)
-    drop_legacy_ragflow_account_dataset_columns(engine)
-    ensure_carbon_market_schema(engine)
-    ensure_meeting_record_schema(engine)
-    ensure_todo_schema(engine)
-    ensure_wechat_mp_schema(engine)
-    ensure_feed_subscription_schema(engine)
-    ensure_platform_chat_schema(engine)
-    ensure_platform_model_settings_schema(engine)
-    ensure_user_single_department_schema(engine)
-    ensure_user_phone_schema(engine)
-    ensure_user_last_seen_schema(engine)
-    ensure_user_auth_token_version_schema(engine)
-    ensure_ragflow_version_index_completed_schema(engine)
-    ensure_document_version_change_description(engine)
-    ensure_version_compare_schema(engine)
-    ensure_version_compare_llm_summary_schema(engine)
-    ensure_document_version_blocks_schema(engine)
-    ensure_permission_level_migration(engine)
-    migrate_legacy_admin_roles(engine)
-    db = SessionLocal()
-    try:
-        backfill_user_phones(db)
-        bootstrap_db(db)
-        enforce_unique_bootstrap_admin(db)
-        db.commit()
-    finally:
-        db.close()
+    _bootstrap_database_with_retry()
     from app.services.data_analysis_profile import warn_if_data_analysis_deps_missing
 
     warn_if_data_analysis_deps_missing()
+    # 启动时探测 Redis，避免首个用户请求在 cache 层等待连接超时
+    from app.core.redis_client import get_redis_client
+
+    await asyncio.to_thread(get_redis_client)
+    from app.services.knowledge_sync_job_service import (
+        recover_interrupted_document_index_jobs,
+    )
+
+    await asyncio.to_thread(recover_interrupted_document_index_jobs)
     sync_task = start_cea_history_scheduler()
     try:
         yield
@@ -239,8 +222,12 @@ def create_app() -> FastAPI:
     prefix = settings.api_prefix
 
     @app.get("/health")
-    def health() -> dict:
-        return {"ok": True, "version": __version__}
+    def health():
+        db_ok = _check_database()
+        body = {"ok": db_ok, "db": db_ok, "version": __version__}
+        if not db_ok:
+            return JSONResponse(status_code=503, content=body)
+        return body
 
     @app.get("/")
     def root() -> ApiResponse[dict]:

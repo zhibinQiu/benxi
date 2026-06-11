@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, ref, watch } from "vue";
+import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NEmpty, NIcon, NInput, NSpin, NTag, NTree } from "naive-ui";
 import {
@@ -7,18 +7,21 @@ import {
   DocumentTextOutline,
   FolderOpenOutline,
   PeopleOutline,
-  PersonOutline } from "@vicons/ionicons5";
+  PersonOutline,
+  RefreshOutline } from "@vicons/ionicons5";
+import IconAction from "./IconAction.vue";
 import { fetchKnowledgeScopeTree } from "../api/knowledge.js";
 import {
   isDocumentIndexReady,
   knowledgeIndexTagProps,
   knowledgeScopeIndexSummary } from "../utils/knowledgeIndex.js";
 import {
+  clearKnowledgeScopeTreeCache,
   readKnowledgeScopeTreeCache,
   writeKnowledgeScopeTreeCache } from "../utils/knowledgeScopeTreeCache.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
 
-const CHECKED_KEYS_STORAGE = "platform:knowledge-search-checked-keys";
+const CHECKED_KEYS_STORAGE = "platform:knowledge-search-checked-keys:v2";
 
 const QA_DOC_LIMIT = 20;
 
@@ -260,16 +263,24 @@ function applyTreeData(data, { resetSelection = false } = {}) {
   }
 }
 
-async function fetchTree({ background = false, resetSelection = false } = {}) {
+async function fetchTree({
+  background = false,
+  resetSelection = false,
+  refresh = false,
+} = {}) {
+  const hadTree = treeData.value.length > 0;
   if (background) {
     refreshing.value = true;
-  } else {
+  } else if (!hadTree) {
     loading.value = true;
   }
   try {
-    const data = await fetchKnowledgeScopeTree();
+    const data = await fetchKnowledgeScopeTree({ refresh: refresh || background });
     applyTreeData(data, { resetSelection });
     writeKnowledgeScopeTreeCache(data);
+    if (!resetSelection && checkedKeys.value.length) {
+      await onCheckedKeysChange(checkedKeys.value);
+    }
   } catch {
     if (!background && !treeData.value.length) {
       applyTreeData({ items: [] }, { resetSelection: true });
@@ -286,7 +297,6 @@ async function loadTree() {
     applyTreeData(cached, { resetSelection: false });
     loading.value = false;
     await restoreCheckedSelection();
-    await fetchTree({ background: true });
     return;
   }
   await fetchTree({ resetSelection: false });
@@ -294,7 +304,17 @@ async function loadTree() {
 }
 
 async function reloadTree() {
-  await fetchTree({ resetSelection: true });
+  await fetchTree({ resetSelection: true, refresh: true });
+}
+
+async function refreshTree() {
+  if (loading.value || refreshing.value) return;
+  clearKnowledgeScopeTreeCache();
+  await fetchTree({ background: true, refresh: true });
+}
+
+function onKnowledgeIndexUpdated() {
+  fetchTree({ background: true, refresh: true });
 }
 
 async function onCheckedKeysChange(keys) {
@@ -310,7 +330,14 @@ async function onCheckedKeysChange(keys) {
   }
 }
 
-onMounted(loadTree);
+onMounted(() => {
+  loadTree();
+  window.addEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
+});
 
 defineExpose({ reload: reloadTree });
 </script>
@@ -318,7 +345,16 @@ defineExpose({ reload: reloadTree });
 <template>
   <div class="knowledge-scope-tree">
     <div class="knowledge-scope-tree__head">
-      <h2 class="knowledge-scope-tree__title">文档库</h2>
+      <div class="knowledge-scope-tree__title-row">
+        <h2 class="knowledge-scope-tree__title">文档库</h2>
+        <IconAction
+          label="刷新"
+          tooltip="同步最新文档与索引状态"
+          :icon="RefreshOutline"
+          :disabled="loading || refreshing"
+          @click="refreshTree"
+        />
+      </div>
       <n-input
         v-model:value="filter"
         size="small"
@@ -328,7 +364,10 @@ defineExpose({ reload: reloadTree });
       />
     </div>
 
-    <n-spin :show="loading || resolving" class="knowledge-scope-tree__spin">
+    <n-spin
+      :show="(loading && !displayTree.length) || resolving"
+      class="knowledge-scope-tree__spin"
+    >
       <n-tree
         v-if="displayTree.length"
         block-line
@@ -368,8 +407,16 @@ defineExpose({ reload: reloadTree });
   border-bottom: 1px solid var(--platform-border);
 }
 
+.knowledge-scope-tree__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .knowledge-scope-tree__title {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--platform-text);

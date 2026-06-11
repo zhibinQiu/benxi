@@ -55,7 +55,7 @@ flowchart LR
 | `worker` | 挂载 `platform/app`、`workers` |
 | `frontend` | 换用 `node:22` + Vite；`VITE_API_BASE=http://127.0.0.1:18000` |
 
-入口：`bash scripts/zhitan.sh dev`
+入口：`./dev.sh docker`
 
 #### `compose.mirror.yaml` — 国内镜像
 
@@ -127,60 +127,25 @@ bash scripts/setup-stack-env.sh   # 合并 platform/.env → 根 .env
 
 ## 3. 脚本说明
 
-日常开发优先 **`zhitan.sh`**；Docker 编排实现为 **`stack.sh`**。
-
-### 3.1 入口脚本
-
-| 脚本 | 职责 | 常用命令 |
-|------|------|----------|
-| **`scripts/zhitan.sh`** | 开发运维统一入口（薄包装） | `dev`、`stop`、`remote-dev`、`local-dev`、`knowflow setup` |
-| **`scripts/stack.sh`** | Compose 编排唯一实现 | `build`、`up`、`dev-up`、`down`、`save`、`load`、`backup` |
-| **`scripts/deploy.sh`** | 生产镜像推送（仅 stack 模式） | `stack push`、`local stack` |
-
-### 3.2 配置与环境
+开发与运维**仅一个入口**：**`./dev.sh`**。完整命令表见 [scripts/README.md](../../../scripts/README.md)。
 
 | 脚本 | 职责 |
 |------|------|
-| **`setup-stack-env.sh`** | 将 `platform/.env` 合并到根 `.env`；缺 `.env` 时从模板创建 |
-| **`setup-remote-dev-env.sh`** | 根据 `platform/.env.remote.example` 生成 `REMOTE_DEPS=1` 的 `platform/.env` |
-| **`verify-remote-deps.sh`** | 探测远程服务器 40002–40009 端口与健康 |
-
-### 3.3 远程依赖（过渡）
-
-| 脚本 | 职责 |
-|------|------|
-| **`server-deps.sh`** | 同步编排到远程服务器；`EXPOSE_DEPS=1` + `stack.sh up` 启动依赖栈 |
-
-### 3.4 辅助脚本
-
-| 脚本 | 职责 |
-|------|------|
-| **`lib/version.sh`** | 读取根 `VERSION` |
-| **`lib/local-dev.sh`** | 本机 venv API + Vite + Celery（`zhitan.sh local-dev` 调用） |
-| **`start_speech_local.sh`** | 宿主机 FunASR（dev 时 API 指向 `host.docker.internal:8765`） |
-| **`download_babeldoc_assets.sh`** | 下载 BabelDOC 翻译资源 |
-| **`download_knowflow_deps_light.sh`** | KnowFlow 源码构建依赖（`zhitan knowflow build`） |
-
-### 3.3 命令对照
+| **`dev.sh`** | 统一入口：`local` / `docker` / `stop` / `remote-dev` / `stack` / `deploy` |
+| **`scripts/local-dev.sh`** | 本机 venv API + Vite（由 `dev.sh local` 调用） |
+| **`scripts/stack.sh`** | Compose 编排 |
+| **`scripts/deploy.sh`** | 生产镜像推送 |
 
 ```bash
-# 开发（推荐）
-bash scripts/zhitan.sh dev
-# ≡ bash scripts/stack.sh dev-up --profile knowflow --profile speech
+# 本机 venv 开发
+./dev.sh local
 
-# 生产式本机
-bash scripts/stack.sh build --profile knowflow --profile speech
-bash scripts/stack.sh up --profile knowflow --profile speech
+# 全 Docker 热重载
+./dev.sh docker
 
-# 远程依赖服务器
-cp .env.server.deps.example .env
-EXPOSE_DEPS=1 bash scripts/stack.sh up --profile knowflow --profile speech \
-  postgres redis minio knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend
-
-# 生产部署
-bash scripts/stack.sh build --profile knowflow --profile speech
-bash scripts/stack.sh save
-bash scripts/deploy.sh stack push
+# 生产
+./dev.sh stack build --profile knowflow --profile speech
+./dev.sh stack up --profile knowflow --profile speech
 ```
 
 ---

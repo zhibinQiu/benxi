@@ -12,7 +12,23 @@ logger = logging.getLogger(__name__)
 # RAGFlow naive 分块需要足够正文，否则解析后知识库中几乎不可见
 MIN_ARTICLE_PLAIN_CHARS = 200
 
-_INDEXABLE_SUFFIXES = (".pdf", ".docx", ".doc", ".txt", ".md", ".csv", ".xlsx", ".pptx")
+_INDEXABLE_SUFFIXES = (
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".txt",
+    ".md",
+    ".csv",
+    ".xlsx",
+    ".xls",
+    ".ppt",
+    ".pptx",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+)
 
 _LINK_IN_DESC_RE = re.compile(
     r"(?:链接|原文)[：:]\s*(https?://\S+)",

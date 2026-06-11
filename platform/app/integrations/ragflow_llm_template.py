@@ -31,9 +31,19 @@ def _sql_literal(value: str) -> str:
     return (value or "").replace("\\", "\\\\").replace("'", "''")
 
 
+def _mysql_tcp_timeouts() -> tuple[int, int, int]:
+    settings = get_settings()
+    return (
+        settings.ragflow_mysql_connect_timeout,
+        settings.ragflow_mysql_read_timeout,
+        settings.ragflow_mysql_write_timeout,
+    )
+
+
 def _mysql_query_tcp(host: str, port: int, password: str, db: str, sql: str) -> list[str]:
     import pymysql
 
+    connect_timeout, read_timeout, write_timeout = _mysql_tcp_timeouts()
     conn = pymysql.connect(
         host=host,
         port=port,
@@ -41,9 +51,9 @@ def _mysql_query_tcp(host: str, port: int, password: str, db: str, sql: str) -> 
         password=password,
         database=db,
         charset="utf8mb4",
-        connect_timeout=10,
-        read_timeout=20,
-        write_timeout=30,
+        connect_timeout=connect_timeout,
+        read_timeout=read_timeout,
+        write_timeout=write_timeout,
     )
     try:
         with conn.cursor() as cur:
@@ -57,6 +67,7 @@ def _mysql_query_tcp(host: str, port: int, password: str, db: str, sql: str) -> 
 def _mysql_exec_tcp(host: str, port: int, password: str, db: str, sql: str) -> bool:
     import pymysql
 
+    connect_timeout, read_timeout, write_timeout = _mysql_tcp_timeouts()
     conn = pymysql.connect(
         host=host,
         port=port,
@@ -64,9 +75,9 @@ def _mysql_exec_tcp(host: str, port: int, password: str, db: str, sql: str) -> b
         password=password,
         database=db,
         charset="utf8mb4",
-        connect_timeout=10,
-        read_timeout=20,
-        write_timeout=30,
+        connect_timeout=connect_timeout,
+        read_timeout=read_timeout,
+        write_timeout=write_timeout,
     )
     try:
         with conn.cursor() as cur:
@@ -95,10 +106,7 @@ def _mysql_query(sql: str) -> list[str]:
 
     container, password, db, host, port = _mysql_settings()
     if host:
-        try:
-            return _mysql_query_tcp(host, port, password, db, sql)
-        except Exception as e:
-            logger.warning("RAGFlow MySQL TCP 查询失败，尝试 docker exec: %s", e)
+        return _mysql_query_tcp(host, port, password, db, sql)
     proc = subprocess.run(
         [
             "docker",
@@ -128,9 +136,7 @@ def _mysql_exec(sql: str) -> bool:
 
     container, password, db, host, port = _mysql_settings()
     if host:
-        if _mysql_exec_tcp(host, port, password, db, sql):
-            return True
-        logger.warning("RAGFlow MySQL TCP 执行失败，尝试 docker exec")
+        return _mysql_exec_tcp(host, port, password, db, sql)
     try:
         proc = subprocess.run(
             [

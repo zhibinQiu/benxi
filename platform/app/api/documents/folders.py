@@ -27,9 +27,10 @@ def list_kb_folders(
     db: Annotated[Session, Depends(get_db)],
     scope: str = Query(..., pattern="^(company|department|team|personal)$"),
     dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
 ) -> ApiResponse[KbFolderListOut]:
     data = library_folder_service.list_kb_folders(
-        db, user, scope=scope, dept_id=dept_id
+        db, user, scope=scope, dept_id=dept_id, owner_id=owner_id
     )
     return ApiResponse(
         data=KbFolderListOut(

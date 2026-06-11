@@ -129,7 +129,9 @@ def document_matches_library_unit(
     if scope in ORG_SCOPES:
         return bool(dept_id and document.dept_id == dept_id)
     if scope == SCOPE_PERSONAL:
-        return bool(owner_id and document.owner_id == owner_id)
+        if owner_id is None:
+            return True
+        return document.owner_id == owner_id
     return True
 
 

@@ -3,8 +3,10 @@ import { computed, ref, watch } from "vue";
 import { NButton, NEmpty, NSpace, NSpin, NTag, NText } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
 import {
+  citationCanPreviewImage,
   citationPageLabel,
-  fetchKnowledgeCitationImageBlob } from "../utils/knowledgeCitation.js";
+  fetchKnowledgeCitationPreviewBlob,
+} from "../utils/knowledgeCitation.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
 import { useRoute, useRouter } from "vue-router";
 
@@ -30,13 +32,11 @@ const visible = computed({
 
 const modalTitle = computed(() => {
   const c = props.citation;
-  if (!c) return "引用溯源";
-  return `引用 [${c.index}]`;
+  if (!c) return "原文定位";
+  return `原文定位 [${c.index}]`;
 });
 
 const pageLabel = computed(() => citationPageLabel(props.citation));
-
-const hasImageId = computed(() => Boolean(props.citation?.image_id));
 
 const snippetHtml = computed(() => {
   const raw = props.citation?.snippet || "";
@@ -55,31 +55,38 @@ function resetImageState() {
   imageOk.value = false;
 }
 
-async function loadCitationImage(imageId) {
+async function loadCitationPreview(citation) {
   resetImageState();
-  if (!imageId) return;
+  if (!citation || !citationCanPreviewImage(citation)) {
+    imageError.value =
+      "暂无原文截图。请确认文档已通过 KnowFlow 成功索引（PDF 解析后会生成切片快照）。";
+    return;
+  }
   imageLoading.value = true;
   try {
-    const blob = await fetchKnowledgeCitationImageBlob(imageId);
+    const blob = await fetchKnowledgeCitationPreviewBlob(citation);
     imageObjectUrl.value = URL.createObjectURL(blob);
     imageOk.value = true;
   } catch (e) {
-    imageError.value = e?.message || "无法加载原文截图，请查看下方片段或打开文档详情";
+    imageError.value =
+      e?.message ||
+      "无法加载原文截图。请确认文档已索引，或在 KnowFlow 中重新解析该 PDF。";
   } finally {
     imageLoading.value = false;
   }
 }
 
 watch(
-  () => [props.show, props.citation?.image_id],
-  ([open, imageId]) => {
+  () => [props.show, props.citation],
+  ([open, citation]) => {
     if (!open) {
       resetImageState();
       return;
     }
-    if (imageId) loadCitationImage(imageId);
+    if (citation) loadCitationPreview(citation);
     else resetImageState();
-  }
+  },
+  { deep: true }
 );
 
 function openDocument() {
@@ -95,35 +102,41 @@ function openDocument() {
     v-model:show="visible"
     :title="modalTitle"
     :subtitle="citation?.title || ''"
-    width="min(920px, 96vw)"
+    width="min(960px, 96vw)"
     :show-footer="false"
   >
     <div v-if="citation" class="knowledge-citation-preview">
       <div class="knowledge-citation-preview__meta">
         <n-tag v-if="pageLabel" size="small" type="info" :bordered="false">{{ pageLabel }}</n-tag>
+        <n-text depth="3" class="knowledge-citation-preview__hint">
+          以下为源 PDF 中的引用区域（KnowFlow 切片快照，高亮为检索命中内容）
+        </n-text>
         <n-text v-if="citation.score != null" depth="3" class="knowledge-citation-preview__score">
           相关度 {{ Math.round(Number(citation.score) <= 1 ? Number(citation.score) * 100 : Number(citation.score)) }}%
         </n-text>
       </div>
 
-      <div v-if="hasImageId" class="knowledge-citation-preview__image-wrap">
+      <div class="knowledge-citation-preview__image-wrap">
         <n-spin :show="imageLoading">
           <img
             v-if="imageObjectUrl"
             :src="imageObjectUrl"
             class="knowledge-citation-preview__image"
-            alt="引用原文截图"
+            alt="源 PDF 引用区域截图"
           />
         </n-spin>
         <n-empty
-          v-if="imageError && !imageOk"
+          v-if="!imageLoading && !imageOk"
           size="small"
-          :description="imageError"
+          :description="imageError || '暂无原文截图'"
           class="knowledge-citation-preview__image-fallback"
         />
       </div>
 
-      <div v-if="snippetHtml" class="knowledge-citation-preview__snippet" v-html="snippetHtml" />
+      <details v-if="snippetHtml && !imageOk" class="knowledge-citation-preview__text-fallback">
+        <summary>查看提取文本片段</summary>
+        <div class="knowledge-citation-preview__snippet" v-html="snippetHtml" />
+      </details>
 
       <n-space justify="end" class="knowledge-citation-preview__actions">
         <n-button v-if="citation.document_id" size="small" @click="openDocument">
@@ -148,6 +161,12 @@ function openDocument() {
   flex-wrap: wrap;
 }
 
+.knowledge-citation-preview__hint {
+  font-size: 12px;
+  flex: 1;
+  min-width: 200px;
+}
+
 .knowledge-citation-preview__score {
   font-size: 12px;
 }
@@ -155,9 +174,13 @@ function openDocument() {
 .knowledge-citation-preview__image-wrap {
   border: 1px solid var(--platform-border);
   border-radius: 8px;
-  background: #f8fafc;
+  background: #f1f5f9;
   overflow: auto;
-  max-height: min(52vh, 520px);
+  max-height: min(58vh, 560px);
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .knowledge-citation-preview__image {
@@ -168,10 +191,21 @@ function openDocument() {
 }
 
 .knowledge-citation-preview__image-fallback {
-  padding: 16px 0;
+  padding: 24px 16px;
+}
+
+.knowledge-citation-preview__text-fallback {
+  font-size: 12px;
+  color: var(--platform-text-secondary);
+}
+
+.knowledge-citation-preview__text-fallback summary {
+  cursor: pointer;
+  user-select: none;
 }
 
 .knowledge-citation-preview__snippet {
+  margin-top: 8px;
   padding: 10px 12px;
   border-radius: 8px;
   background: var(--platform-accent-muted);
@@ -179,7 +213,7 @@ function openDocument() {
   font-size: 13px;
   line-height: 1.6;
   color: var(--platform-text);
-  max-height: 180px;
+  max-height: 160px;
   overflow: auto;
 }
 

@@ -1,52 +1,44 @@
-# 脚本说明（v3.9.3）
+# 脚本说明
 
-每个脚本职责单一；日常开发优先 **`zhitan.sh`**，Docker 编排见 **`stack.sh`**。  
-完整说明（Compose 合并顺序、`.env`、Mermaid 配置）见 [配置文件与脚本](../docs/zh/operations/config-and-scripts.md)。
+**唯一入口：`./dev.sh`**（仓库根目录，实现位于 `scripts/dev.sh`）。
 
-## 入口一览
+## 命令
+
+| 命令 | 说明 |
+|------|------|
+| `./dev.sh local` | 本机 venv API :8000 + Vite :40005 |
+| `./dev.sh local status` | 检查 API / 前端 / Worker |
+| `./dev.sh local restart` | 重启本机 dev |
+| `./dev.sh docker` | 全 Docker 热重载（compose dev-up） |
+| `./dev.sh stop` | 停止 Docker 栈 + 本机 dev |
+| `./dev.sh remote-dev` | 生成 `REMOTE_DEPS=1` 的 `platform/.env` |
+| `./dev.sh stack …` | Compose 编排（build / up / logs …） |
+| `./dev.sh deploy …` | 生产镜像部署 |
+| `./dev.sh knowflow setup` | 克隆 KnowFlow 源码 |
+
+## 实现脚本（由 dev.sh 调用，勿记）
 
 | 脚本 | 职责 |
 |------|------|
-| **`zhitan.sh`** | 开发运维统一入口：dev / stop / remote-dev / local-dev / knowflow / deploy |
-| **`stack.sh`** | Compose 编排唯一实现：build / up / dev-up / down / save / load / backup |
-| **`deploy.sh`** | 生产镜像推送：`stack push`、`local stack`（**仅** stack 模式） |
-| `setup-stack-env.sh` | 合并 `platform/.env` → 根 `.env` |
-| `setup-remote-dev-env.sh` | 生成 `REMOTE_DEPS=1` 的 `platform/.env` |
-| `verify-remote-deps.sh` | 探测远程依赖端口 40002–40009 |
-| `server-deps.sh` | 远程服务器同步并启动依赖栈（`EXPOSE_DEPS=1`） |
-| `lib/local-dev.sh` | 本机 venv API + Vite + Celery |
-| `lib/version.sh` | 读取根 `VERSION` |
-| `start_speech_local.sh` | 宿主机 FunASR（dev 可选） |
-| `download_babeldoc_assets.sh` | BabelDOC 资源下载 |
-| `download_knowflow_deps_light.sh` | KnowFlow 源码构建依赖 |
+| `scripts/local-dev.sh` | 本机 API / Vite / Worker 启停 |
+| `scripts/stack.sh` | Docker Compose 编排 |
+| `scripts/deploy.sh` | 远程镜像部署 |
+| `scripts/setup-remote-dev-env.sh` | remote-dev 用 `.env` |
+| `scripts/setup-stack-env.sh` | 合并 `platform/.env` → 根 `.env` |
+| `scripts/verify-remote-deps.sh` | 探测远程依赖端口 |
+| `scripts/server-deps.sh` | 远程服务器同步依赖栈 |
+| `scripts/server-add-swap.sh` | 远程服务器添加 Swap |
 
-## 常用命令
+## 典型流程
 
 ```bash
-# 首次
-cp .env.stack.example .env
-cp platform/.env.example platform/.env
+# 本机开发 + 远程 Redis/MinIO/KnowFlow
+REMOTE_HOST=172.19.134.45 ./dev.sh remote-dev
+bash scripts/verify-remote-deps.sh
+./dev.sh local
 
-# 开发（推荐）
-bash scripts/zhitan.sh dev
-
-# 生产式
-bash scripts/stack.sh build --profile knowflow --profile speech
-bash scripts/stack.sh up --profile knowflow --profile speech
-
-# 生产部署
-bash scripts/stack.sh save && bash scripts/deploy.sh stack push
+# 单机全 Docker
+./dev.sh docker --profile knowflow --profile speech
 ```
 
-## 已废弃
-
-| 废弃 | 替代 |
-|------|------|
-| `deploy.sh app/full/core` | `deploy.sh stack push` |
-| `zhitan.sh legacy` | `zhitan.sh dev` |
-| `merge-stack-env.sh` | `setup-stack-env.sh` |
-| `platform/docker-compose*.yml` | 根目录 `compose.yaml` |
-
-版本号以仓库根 **`VERSION`** 为唯一来源。
-
-详见 [运维手册](../docs/zh/operations/README.md) 与 [运维部署指南](../运维部署指南.md)。
+版本号以根目录 **`VERSION`** 为准。Docker 项目名默认为 `zhitan`（镜像 tag 前缀，非产品名）。

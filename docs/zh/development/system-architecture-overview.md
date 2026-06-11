@@ -1,4 +1,4 @@
-# 智碳平台 AI 系统 — 项目总体架构
+# 绿叶 AI 办公系统 — 项目总体架构
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
 > **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
@@ -29,7 +29,7 @@ flowchart TB
     U2[系统管理员]
   end
 
-  subgraph system [智碳平台 AI 系统]
+  subgraph system [绿叶 AI 办公系统]
     FE[Web 前端 Vue3]
     API[控制面 FastAPI]
     WRK[Celery Worker]
@@ -95,7 +95,7 @@ flowchart LR
   API -.-> SP_OPT
 ```
 
-启动入口：`bash scripts/zhitan.sh`（基础设施 Docker + 应用宿主机）；KnowFlow / 语音为附加 profile。
+启动入口：`./dev.sh`（基础设施 Docker + 应用宿主机）；KnowFlow / 语音为附加 profile。
 
 ### 3.2 生产（amd64 全 Docker）
 
@@ -534,7 +534,7 @@ erDiagram
 | 难点 | 说明 |
 |------|------|
 | **问题** | 开发机 arm64 无法直接用 amd64 预构建 KnowFlow 镜像；生产需全 Docker 与 `.env.docker` 改写。 |
-| **实现** | ① `scripts/zhitan.sh` 统一子命令；② `docker-compose.knowflow.yml` 源码构建 + `docker-compose.knowflow.amd64.yml` 预构建；③ `scripts/deploy.sh` 生成 `knowflow.env.docker`、不改密钥只改服务名。 |
+| **实现** | ① `dev.sh` 统一子命令；② `docker-compose.knowflow.yml` 源码构建 + `docker-compose.knowflow.amd64.yml` 预构建；③ `scripts/deploy.sh` 生成 `knowflow.env.docker`、不改密钥只改服务名。 |
 | **文档** | [部署指南](../operations/deployment.md)、`scripts/README.md` |
 
 ### 8.8 文档对比：异步 diff + 可选语义检索

@@ -113,6 +113,24 @@ export function formatApiDetail(detail) {
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
 import { dispatchSessionReplaced, isSessionReplacedError } from "../utils/sessionGuard.js";
 
+export const DEFAULT_API_TIMEOUT_MS = 20_000;
+export const UPLOAD_API_TIMEOUT_MS = 120_000;
+
+export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("请求超时，请稍后重试");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -140,21 +158,23 @@ export async function api(path, options = {}) {
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
+  const timeoutMs = options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
+  const { timeoutMs: _omit, ...fetchOptions } = options;
   let res;
   const base = getApiBase();
   try {
-    res = await fetch(`${base}${path}`, { ...options, headers });
+    res = await fetchWithTimeout(`${base}${path}`, { ...fetchOptions, headers }, timeoutMs);
   } catch (err) {
     const msg = String(err?.message || "");
     if (/failed to fetch|networkerror|load failed/i.test(msg)) {
       if (base === "/ai" || base.endsWith("/ai")) {
         throw new Error(
-          "无法连接 API。请确认已执行 bash scripts/stack.sh dev-up，并通过 http://127.0.0.1:40005/ai/ 访问前端（勿混用其它端口或旧标签页）"
+          "无法连接 API（本机 :8000 未响应）。请先执行 ./dev.sh local 启动本机 API，并通过 http://127.0.0.1:40005/ai/ 访问（勿混用其它端口或旧标签页）。全 Docker 开发可用 ./dev.sh docker"
         );
       }
       if (/127\.0\.0\.1:18000|localhost:18000/.test(base)) {
         throw new Error(
-          "无法连接开发 API（127.0.0.1:18000）。请执行 bash scripts/stack.sh dev-up 启动完整开发栈，或确认 api 容器已映射 18000 端口"
+          "无法连接开发 API（127.0.0.1:18000）。请执行 ./dev.sh docker 启动 Docker 开发栈"
         );
       }
       throw new Error("无法连接服务器，请确认 API 服务已启动并可访问");

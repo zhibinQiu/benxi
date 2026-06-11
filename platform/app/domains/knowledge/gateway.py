@@ -211,5 +211,26 @@ class KnowledgeGateway:
 
         return purge_stale_knowflow_links(db)
 
+    @staticmethod
+    def reconcile_data(
+        db: Session,
+        *,
+        dry_run: bool = True,
+        purge_minio: bool = False,
+        repair_library: bool = True,
+        purge_unregistered_kbs: bool = False,
+        actor: User | None = None,
+    ) -> dict:
+        from app.services.knowledge_data_reconcile_service import run_full_reconcile
+
+        return run_full_reconcile(
+            db,
+            dry_run=dry_run,
+            purge_minio=purge_minio,
+            repair_library=repair_library,
+            purge_unregistered_kbs=purge_unregistered_kbs,
+            actor=actor,
+        ).to_dict()
+
 
 knowledge = KnowledgeGateway()

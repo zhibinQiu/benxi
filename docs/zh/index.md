@@ -1,4 +1,4 @@
-# 智碳平台 AI 文档
+# 绿叶 AI 办公系统 文档
 
 **当前版本 v3.9.3** · 运维与开发文档入口。
 
@@ -21,8 +21,8 @@
 |------|------|
 | [快速开始](getting-started.md) | 5 分钟上手 |
 | [实现说明书总览](development/implementation-manual.md) | 开发导航 |
-| [脚本说明](../../scripts/README.md) | `zhitan.sh` / `stack.sh` 职责 |
+| [脚本说明](../../scripts/README.md) | `dev.sh` / `stack.sh` 职责 |
 
 ```bash
-bash scripts/zhitan.sh dev              # 全 Docker 开发（推荐）
+./dev.sh docker              # 全 Docker 开发（推荐）
 ```

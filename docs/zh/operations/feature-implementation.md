@@ -205,7 +205,7 @@
 | KnowFlow catalog reconcile | 登录后后台 / 定时 | 对齐 dataset 与文档 |
 
 **Redis** 作 Celery broker；Worker 与 API 共用 `platform/.env`。  
-远程开发时：若 Redis 上已有 Worker 则不再本地启动；否则本机 Worker 连远程 Redis（见 `zhitan.sh local-dev`）。
+远程开发时：若 Redis 上已有 Worker 则不再本地启动；否则本机 Worker 连远程 Redis（见 `./dev.sh local`）。
 
 Job 统一模型：`Job` 表存 type、status、progress、payload、error_message；前端 **JobsPanel** 与 SSE 事件推送进度。
 

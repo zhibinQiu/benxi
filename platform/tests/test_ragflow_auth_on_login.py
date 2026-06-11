@@ -10,7 +10,10 @@ from app.models.ragflow_link import RagflowAccountLink
 
 
 def test_cached_auth_finalizes_llm_config():
+    from app.integrations.ragflow_http import reset_ragflow_http_circuit_for_tests
     from app.services.ragflow_identity_service import get_user_ragflow_auth
+
+    reset_ragflow_http_circuit_for_tests()
 
     user = User(
         id=uuid.uuid4(),
@@ -40,8 +43,9 @@ def test_cached_auth_finalizes_llm_config():
         token = get_user_ragflow_auth(db, user)
 
     assert token == "cached-jwt"
-    finalize.assert_called_once_with(link, "cached-jwt", user)
+    finalize.assert_called_once_with(link, "cached-jwt", user, db=db)
     db.flush.assert_called()
+    db.commit.assert_called()
 
 
 def test_get_user_ragflow_auth_swallows_connect_error():

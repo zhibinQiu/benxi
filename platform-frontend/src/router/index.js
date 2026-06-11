@@ -185,7 +185,6 @@ const routes = [
           backTo: "ai-home",
           perm: "feature.knowledge_search",
           videoBg: true,
-          keepAlive: true,
         },
         component: () => import("../views/KnowledgeSearchView.vue"),
       },

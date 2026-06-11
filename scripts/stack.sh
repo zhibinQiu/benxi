@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 智碳平台 — 统一 Docker 栈（仓库根 compose.yaml）
+# 绿叶 AI 办公系统 — 统一 Docker 栈（仓库根 compose.yaml）
 #
 #   bash scripts/stack.sh build              # 构建自有镜像（core）
 #   bash scripts/stack.sh build --profile knowflow --profile speech
@@ -26,6 +26,8 @@ error() { echo -e "${RED}[stack]${NC} $*" >&2; }
 
 # shellcheck source=lib/version.sh
 source "$ROOT/scripts/lib/version.sh"
+# shellcheck source=lib/branding.sh
+source "$ROOT/scripts/lib/branding.sh"
 ZHITAN_VERSION="${ZHITAN_VERSION:-$(read_repo_version "$ROOT")}"
 DATA_ROOT="${DATA_ROOT:-./data}"
 IMAGES_DIR="${IMAGES_DIR:-./images}"
@@ -186,9 +188,11 @@ cmd_up() {
   compose_cmd up -d --no-build "$@"
   local port="${FRONTEND_PORT:-40005}"
   local host="${DEPLOY_HOST:-127.0.0.1}"
+  local app_name
+  app_name="$(read_platform_app_name "$ROOT")"
   cat <<EOF
 
-${GREEN}=== 栈已启动 ===${NC}
+${GREEN}=== ${app_name} 栈已启动 ===${NC}
   Web（唯一推荐入口）: http://${host}:${port}/ai/
   容器内 API:          http://api:8000
   数据目录:            ${DATA_ROOT}
@@ -204,9 +208,11 @@ cmd_dev_up() {
   info "开发模式：API --reload + 前端 Vite（挂载源码）"
   compose_cmd up -d --no-build "$@"
   local port="${FRONTEND_PORT:-40005}"
+  local app_name
+  app_name="$(read_platform_app_name "$ROOT")"
   cat <<EOF
 
-${GREEN}=== 开发栈已启动 ===${NC}
+${GREEN}=== ${app_name} 开发栈已启动 ===${NC}
   Web:     http://127.0.0.1:${port}/ai/
   API:     http://127.0.0.1:${STACK_DEV_API_PORT:-18000}（开发模式浏览器直连）
   热更新:  改 platform/app、platform-frontend → 自动生效

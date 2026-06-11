@@ -126,9 +126,15 @@ def document_library_cache_key(user_id: str) -> str:
     return f"doc:library:{user_id}"
 
 
-def kb_folders_cache_key(user_id: str, scope: str, dept_id: str | None) -> str:
+def kb_folders_cache_key(
+    user_id: str,
+    scope: str,
+    dept_id: str | None,
+    owner_id: str | None = None,
+) -> str:
     dept = dept_id or "_"
-    return f"doc:kb-folders:{user_id}:{scope}:{dept}"
+    owner = owner_id or "_"
+    return f"doc:kb-folders:{user_id}:{scope}:{dept}:{owner}"
 
 
 def invalidate_document_library_cache(user_id: str | None = None) -> None:

@@ -7,9 +7,8 @@ import re
 import secrets
 import subprocess
 
-import httpx
-
 from app.config import get_settings
+from app.integrations.ragflow_http import ragflow_http_client, ragflow_http_timeout
 from app.integrations.ragflow_crypto import rsa_encrypt_password
 from app.integrations.ragflow_llm_template import ensure_shared_llm_config
 from app.models.org import User
@@ -30,7 +29,7 @@ def _base_url() -> str:
 def _register_user(email: str, nickname: str, password: str) -> str | None:
     """注册并返回 Authorization（code=0 时注册接口常直接返回 token）。"""
     enc = rsa_encrypt_password(password)
-    with httpx.Client(timeout=30.0) as client:
+    with ragflow_http_client() as client:
         r = client.post(
             f"{_base_url()}/v1/user/register",
             json={"email": email, "nickname": nickname, "password": enc},
@@ -59,7 +58,7 @@ def _register_user(email: str, nickname: str, password: str) -> str | None:
 
 def _login_user(email: str, password: str) -> str:
     enc = rsa_encrypt_password(password)
-    with httpx.Client(timeout=30.0) as client:
+    with ragflow_http_client() as client:
         r = client.post(
             f"{_base_url()}/v1/user/login",
             json={"email": email, "password": enc},
@@ -105,6 +104,11 @@ def finalize_ragflow_link(
     if not token:
         return
     link.ragflow_access_token = token
+    if db is not None:
+        from app.database import release_db_connection
+
+        db.flush()
+        release_db_connection(db)
     uid = _fetch_ragflow_user_id(token) or (link.ragflow_user_id or "").strip()
     if not uid:
         return
@@ -115,6 +119,11 @@ def finalize_ragflow_link(
             uid,
         )
     link.ragflow_user_id = uid
+    if db is not None:
+        db.flush()
+        from app.database import release_db_connection
+
+        release_db_connection(db)
     ensure_shared_llm_config(uid, db=db)
 
 
@@ -168,6 +177,7 @@ def _run_ragflow_mysql(sql: str) -> tuple[bool, str]:
     if host:
         if _mysql_exec(sql):
             return True, ""
+        return False, "remote mysql exec failed"
     settings = get_settings()
     container = (settings.ragflow_mysql_container or "ragflow-mysql").strip()
     mysql_pwd = (settings.ragflow_mysql_password or "infini_rag_flow").strip()
@@ -298,7 +308,7 @@ def provision_and_login(link: RagflowAccountLink, user: User, db=None) -> str:
 
 def _fetch_ragflow_user_id(authorization: str) -> str | None:
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with ragflow_http_client(timeout=min(ragflow_http_timeout(), 10.0)) as client:
             r = client.get(
                 f"{_base_url()}/v1/user/info",
                 headers={"Authorization": authorization},

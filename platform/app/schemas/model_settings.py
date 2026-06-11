@@ -54,6 +54,8 @@ class ModelSettingsOut(BaseModel):
     speech_service_url: str = ""
     pdf2zh_api_url: str = ""
     embedding_factory: str | None = None
+    searxng_url: str = ""
+    searxng_timeout_seconds: float = 15.0
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -84,6 +86,8 @@ class ModelSettingsUpdate(BaseModel):
     ragflow_mysql_db: str | None = None
     ragflow_mysql_password: str | None = None
     ragflow_mysql_container: str | None = None
+    searxng_url: str | None = None
+    searxng_timeout_seconds: float | None = None
 
 
 class ResourceHealthItemOut(BaseModel):

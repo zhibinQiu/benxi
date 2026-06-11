@@ -52,10 +52,12 @@ import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
 import { ORG_SCOPES, SCOPE_LABELS, SCOPE_PERM } from "../constants/documentScope";
 import {
-  DOCUMENT_UPLOAD_MAX_MB,
+  applyUploadLimitsFromLibrary,
   validateUploadFiles,
   validateVersionFormatMatch,
 } from "../constants/documentUpload";
+import { readDocumentsLibraryCache } from "../utils/documentsViewCache.js";
+import { fetchDocumentLibrary } from "../api/documents.js";
 const LEVEL_LABELS = {
   visible: "可见",
   query: "可查",
@@ -616,6 +618,14 @@ async function removeDenial(uid) {
 }
 
 onMounted(() => {
+  const cached = readDocumentsLibraryCache();
+  if (cached) {
+    applyUploadLimitsFromLibrary(cached);
+  } else {
+    fetchDocumentLibrary()
+      .then(applyUploadLimitsFromLibrary)
+      .catch(() => {});
+  }
   load();
   loadParserOptions();
 });

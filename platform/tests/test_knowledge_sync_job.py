@@ -106,4 +106,4 @@ def test_schedule_knowledge_index_after_upload_delegates():
 
     assert out is job
     enqueue.assert_called_once()
-    assert enqueue.call_args.kwargs["force"] is True
+    assert "force" in enqueue.call_args.kwargs

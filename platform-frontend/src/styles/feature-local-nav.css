@@ -73,11 +73,26 @@
   display: none !important;
 }
 
-/* 文档中心操作条（Teleport 至系统顶栏 extension 槽） */
+/* 子功能操作条（Teleport 至系统顶栏 extension 槽） */
+.header-extension .subsystem-extra-bar,
 .header-extension .documents-actions-bar {
   padding: 4px 20px 10px;
   width: 100%;
   box-sizing: border-box;
+}
+
+.header-extension .subsystem-extra-bar .subsystem-extra-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+}
+
+.header-extension .subsystem-extra-bar {
+  background: transparent;
 }
 
 .header-extension .documents-actions-toolbar {
@@ -98,11 +113,11 @@
   padding: 10px var(--feature-nav-inset-x, 20px);
 }
 
-/* 子系统壳：顶栏操作区 + 步骤条连续渐变 */
+/* 子系统壳：仅保留页内说明条（操作区已 Teleport 至顶栏 extension） */
 .subsystem-shell > .subsystem-header.feature-local-nav {
   margin-bottom: 0 !important;
   padding: 8px 20px;
-  min-height: 44px;
+  min-height: 0;
   align-items: center;
 }
 
@@ -111,7 +126,8 @@
 }
 
 .subsystem-shell--fill .subsystem-body > .feature-local-nav:first-child {
-  padding: 10px 20px 12px;
+  padding: 4px 0 8px;
+  min-height: 0;
 }
 
 /* 通用工具条 / 步骤条 */
@@ -121,7 +137,7 @@
   display: flex;
   align-items: center;
   margin-bottom: 0 !important;
-  padding: 10px var(--feature-nav-inset-x, 20px) 12px;
+  padding: 6px 0 8px;
 }
 
 .page-toolbar.feature-local-nav {
@@ -131,37 +147,42 @@
 
 .page-subheader.feature-local-nav,
 .translate-steps-bar.feature-local-nav {
-  min-height: 52px;
+  min-height: 0;
 }
 
-/* 网站收藏：收录 + 筛选条 */
-.feature-top-strip .subscriptions-ingest.feature-local-nav :deep(.n-card__content),
-.feature-top-strip .subscriptions-ingest.feature-local-nav {
-  padding-bottom: 0;
-}
-
-.feature-top-strip .subscriptions-toolbar.feature-local-nav {
-  padding-top: 8px;
+/* 网站收藏：浏览器式搜索顶栏 + 列表共用水平内边距（与系统顶栏 20px 对齐） */
+.feature-top-strip .subscriptions-search-hub.feature-local-nav {
+  padding-top: 12px;
   padding-bottom: 12px;
   margin-bottom: 0 !important;
+  border-bottom: 1px solid var(--platform-divider);
 }
 
-/* 知识检索范围提示条 */
-.knowledge-search-page__scope-bar.feature-local-nav {
-  padding: 10px 16px;
-  min-height: 44px;
-  border-bottom: 1px solid var(--platform-border);
+.main-layout .app-content--full .subscriptions-page > .feature-top-strip,
+.main-layout .app-content--full .subscriptions-page > .subscriptions-body,
+.main-layout .app-content--full .subscriptions-page > .subscriptions-footer {
+  margin-inline: calc(-1 * var(--feature-nav-inset-x, 20px));
 }
 
-.knowledge-search-page:has(.feature-local-nav) {
-  border-top: none;
-  border-radius: 0;
+.main-layout .app-content--full .feature-top-strip .subscriptions-search-hub.feature-local-nav,
+.main-layout .app-content--full .subscriptions-page > .subscriptions-body .subscriptions-list-scroll,
+.main-layout .app-content--full .subscriptions-page > .subscriptions-footer .subscriptions-footer__inner {
+  padding-inline: var(--feature-nav-inset-x, 20px);
 }
 
-.subsystem-shell--fill .knowledge-search-page {
+.main-layout .app-content--full .subscriptions-page > .subscriptions-body .subscriptions-list-scroll {
+  scrollbar-gutter: stable;
+}
+
+/* 知识检索：范围提示与「新检索」在顶栏 extension */
+.header-extension .knowledge-search-toolbar {
+  padding: 0;
+}
+
+.subsystem-shell--flush-start.subsystem-shell--fill .knowledge-search-page {
   border-left: none;
-  border-right: none;
   border-bottom: none;
+  border-radius: 0;
 }
 
 /* 局部顶栏与正文之间仅保留内容区内边距，不再重复顶部分割 */
@@ -170,11 +191,17 @@
 .subsystem-body > .feature-local-nav + .page-alert,
 .subsystem-body > .feature-local-nav + .page-alerts,
 .subsystem-body > .feature-local-nav + .ocr-workspace,
-.subsystem-body > .feature-local-nav + .translate-workspace {
-  margin-top: 12px;
+.subsystem-body > .feature-local-nav + .translate-workspace,
+.subsystem-body > .feature-local-nav + .assist-workspace,
+.subsystem-body > .assist-workspace:first-child {
+  margin-top: 0;
 }
 
-.subscriptions-page > .feature-top-strip + .list-spin {
+.subsystem-body > .feature-local-nav + .page-alerts {
+  margin-top: 8px;
+}
+
+.subscriptions-page > .feature-top-strip + .subscriptions-body {
   margin-top: 12px;
 }
 

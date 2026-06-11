@@ -7,11 +7,8 @@ import {
   NButton,
   NCard,
   NDataTable,
-  NGi,
-  NGrid,
   NIcon,
   NInput,
-  NModal,
   NProgress,
   NRadioButton,
   NRadioGroup,
@@ -22,24 +19,24 @@ import {
   NTag,
   NText } from "naive-ui";
 import {
-  BookOutline,
   DownloadOutline,
   FolderOpenOutline,
   RocketOutline,
   SearchOutline,
-  LanguageOutline,
   SwapHorizontalOutline,
   CheckmarkCircleOutline,
   TimeOutline,
-  DocumentTextOutline,
-  SettingsOutline,
-  CloudDownloadOutline } from "@vicons/ionicons5";
+  CloudDownloadOutline,
+  EyeOutline } from "@vicons/ionicons5";
+import AdminFormModal from "../components/AdminFormModal.vue";
 import FileDropZone from "../components/FileDropZone.vue";
+import DocumentVersionPreviewModal from "../components/DocumentVersionPreviewModal.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   createTranslateJob,
   downloadTranslateFile,
   fetchTranslateDocuments,
+  fetchTranslateFileBlob,
   fetchTranslateJob,
   fetchTranslateMeta,
   importTranslateToLibrary,
@@ -77,6 +74,8 @@ const files = ref({
   extracted_md: null});
 const importedDocumentId = ref(null);
 const importLoading = ref(false);
+const previewShow = ref(false);
+const previewKind = ref("dual");
 let closeEvents = null;
 let pollTimer = null;
 
@@ -143,6 +142,7 @@ const statusLabel = computed(() => {
   return map[status.value] || status.value;
 });
 const showProgressPanel = computed(() => status.value !== "idle");
+const resultsReady = computed(() => status.value === "done");
 
 const langPairLabel = computed(() => {
   const inL = LANG_LABEL_ZH[langIn.value] || langIn.value;
@@ -341,6 +341,13 @@ function onGlossaryChange(e) {
   glossaryFiles.value = Array.from(e.target.files || []);
 }
 
+function swapLanguages() {
+  if (status.value === "running") return;
+  const from = langIn.value;
+  langIn.value = langOut.value;
+  langOut.value = from;
+}
+
 async function startTranslation() {
   if (!hasPdfSource.value) return;
   if (glossaryFiles.value.length && !glossarySupported.value) {
@@ -389,7 +396,7 @@ async function dl(kind, name) {
 }
 
 async function importToLibrary(variant = "mono") {
-  if (!platformJobId.value || importLoading.value) return;
+  if (!platformJobId.value || importLoading.value || status.value !== "done") return;
   importLoading.value = true;
   try {
     const res = await importTranslateToLibrary(platformJobId.value, { variant });
@@ -407,6 +414,27 @@ function openImportedDocument() {
   if (!importedDocumentId.value) return;
   router.push({ name: "document-detail", params: { id: importedDocumentId.value } });
 }
+
+const previewTitle = computed(() =>
+  previewKind.value === "dual" ? "预览双语 PDF" : "预览单语 PDF"
+);
+
+const previewFileName = computed(() =>
+  previewKind.value === "dual" ? "dual.pdf" : "mono.pdf"
+);
+
+function openPreview(kind) {
+  if (!platformJobId.value || status.value !== "done") return;
+  previewKind.value = kind;
+  previewShow.value = true;
+}
+
+function loadPreviewBlob() {
+  if (!platformJobId.value) {
+    return Promise.reject(new Error("任务不存在"));
+  }
+  return fetchTranslateFileBlob(platformJobId.value, previewKind.value);
+}
 </script>
 
 <template>
@@ -417,6 +445,7 @@ function openImportedDocument() {
       </n-tag>
     </template>
 
+    <div class="translate-page">
     <header class="translate-steps-bar feature-local-nav">
       <n-steps :current="currentStep" size="small" class="translate-steps">
         <n-step title="文档" description="上传或选取" />
@@ -445,180 +474,175 @@ function openImportedDocument() {
     </div>
 
     <div class="translate-workspace">
-      <n-grid
-        cols="1 m:2 xl:3"
-        responsive="screen"
-        item-responsive
-        :x-gap="20"
-        :y-gap="20"
-        class="translate-grid"
-      >
-        <n-gi span="1 m:1 xl:1">
-          <n-card class="panel panel-fill" size="small" :bordered="false">
-            <template #header>
-              <div class="panel-header">
-                <span class="panel-header-icon panel-header-icon--doc">
-                  <n-icon :size="18" :component="DocumentTextOutline" />
-                </span>
-                <div class="panel-header-text">
-                  <span class="panel-header-title">选择文档</span>
-                  <span class="panel-header-desc">本地上传或从文档库选取 PDF</span>
+      <div class="translate-layout">
+        <section class="translate-main">
+          <n-card class="workflow-card" size="small">
+            <div class="wf-section">
+              <div class="wf-section-head">
+                <span class="wf-step-badge">1</span>
+                <div class="wf-section-titles">
+                  <span class="wf-section-title">选择文档</span>
+                  <span class="wf-section-desc">本地上传或从文档库选取</span>
                 </div>
               </div>
-            </template>
 
-            <n-radio-group
-              v-model:value="sourceMode"
-              size="small"
-              class="source-toggle"
-              :disabled="status === 'running'"
-              @update:value="onSourceModeChange"
-            >
-              <n-radio-button value="upload">本地上传</n-radio-button>
-              <n-radio-button value="library">文档库</n-radio-button>
-            </n-radio-group>
-
-            <div v-if="sourceMode === 'upload'" class="upload-fill">
-              <file-drop-zone
-                accept=".pdf"
-                title="拖拽 PDF 到此处"
-                hint="支持标准 PDF，建议单文件不超过平台限制"
-                :file-name="displayFileName"
-                icon="doc"
+              <n-radio-group
+                v-model:value="sourceMode"
+                size="small"
+                class="source-toggle"
                 :disabled="status === 'running'"
-                @change="onPdfChange"
-              />
+                @update:value="onSourceModeChange"
+              >
+                <n-radio-button value="upload">本地上传</n-radio-button>
+                <n-radio-button value="library">文档库</n-radio-button>
+              </n-radio-group>
+
+              <div v-if="sourceMode === 'upload'" class="upload-fill">
+                <file-drop-zone
+                  accept=".pdf"
+                  compact
+                  title="拖拽 PDF 到此处"
+                  hint="支持标准 PDF"
+                  :file-name="displayFileName"
+                  icon="doc"
+                  :disabled="status === 'running'"
+                  @change="onPdfChange"
+                />
+              </div>
+
+              <div v-else class="library-pick">
+                <div v-if="libraryDoc" class="library-selected">
+                  <n-icon :size="18" class="library-selected-icon">
+                    <checkmark-circle-outline />
+                  </n-icon>
+                  <div class="library-selected-body">
+                    <n-text strong>{{ libraryDoc.title }}</n-text>
+                    <n-text depth="3" class="library-file-name">{{ libraryDoc.file_name }}</n-text>
+                  </div>
+                </div>
+                <div v-else class="library-empty">
+                  <n-icon :size="22" :depth="3" :component="FolderOpenOutline" />
+                  <n-text depth="2">从文档库选择 PDF</n-text>
+                </div>
+                <n-space :size="8" class="library-actions">
+                  <n-button
+                    size="small"
+                    type="primary"
+                    :disabled="status === 'running'"
+                    @click="openLibraryPicker"
+                  >
+                    <template #icon>
+                      <n-icon :component="FolderOpenOutline" />
+                    </template>
+                    {{ libraryDoc ? "更换" : "浏览文档库" }}
+                  </n-button>
+                  <n-button
+                    v-if="libraryDoc"
+                    size="small"
+                    quaternary
+                    :disabled="status === 'running'"
+                    @click="libraryDoc = null"
+                  >
+                    清除
+                  </n-button>
+                </n-space>
+              </div>
             </div>
 
-            <div v-else class="library-pick">
-              <div v-if="libraryDoc" class="library-selected">
-                <n-icon :size="20" class="library-selected-icon">
-                  <checkmark-circle-outline />
-                </n-icon>
-                <div class="library-selected-body">
-                  <n-text strong>{{ libraryDoc.title }}</n-text>
-                  <n-text depth="3" class="library-file-name">{{ libraryDoc.file_name }}</n-text>
+            <div class="wf-divider" />
+
+            <div class="wf-section">
+              <div class="wf-section-head">
+                <span class="wf-step-badge">2</span>
+                <div class="wf-section-titles">
+                  <span class="wf-section-title">翻译配置</span>
+                  <span class="wf-section-desc">语言、模型与术语表</span>
                 </div>
               </div>
-              <div v-else class="library-empty">
-                <n-icon :size="28" :depth="3" :component="FolderOpenOutline" />
-                <n-text depth="2">从文档库选择已上传的 PDF</n-text>
+
+              <div class="config-grid">
+                <section class="config-block">
+                  <n-text class="block-label">语言方向</n-text>
+                  <div class="lang-row">
+                    <div class="lang-field">
+                      <n-text depth="3" class="field-label">源</n-text>
+                      <n-select
+                        v-model:value="langIn"
+                        size="small"
+                        :options="langOptions"
+                        filterable
+                        :disabled="status === 'running'"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      class="lang-swap-btn"
+                      aria-label="交换语言方向"
+                      :disabled="status === 'running'"
+                      @click="swapLanguages"
+                    >
+                      <n-icon :size="16"><swap-horizontal-outline /></n-icon>
+                    </button>
+                    <div class="lang-field">
+                      <n-text depth="3" class="field-label">目标</n-text>
+                      <n-select
+                        v-model:value="langOut"
+                        size="small"
+                        :options="langOptions"
+                        filterable
+                        :disabled="status === 'running'"
+                      />
+                    </div>
+                  </div>
+                  <n-tag size="tiny" :bordered="false" class="lang-pair-tag">
+                    {{ langPairLabel }}
+                  </n-tag>
+                </section>
+
+                <section class="config-block">
+                  <n-text class="block-label">翻译模型</n-text>
+                  <n-select
+                    v-model:value="service"
+                    size="small"
+                    :options="engineOptions"
+                    :disabled="status === 'running'"
+                  />
+                </section>
               </div>
-              <n-space :size="8" class="library-actions">
-                <n-button
-                  type="primary"
-                  :disabled="status === 'running'"
-                  @click="openLibraryPicker"
-                >
-                  <template #icon>
-                    <n-icon :component="FolderOpenOutline" />
-                  </template>
-                  {{ libraryDoc ? "更换文档" : "浏览文档库" }}
-                </n-button>
-                <n-button
-                  v-if="libraryDoc"
-                  quaternary
-                  :disabled="status === 'running'"
-                  @click="libraryDoc = null"
-                >
-                  清除
-                </n-button>
-              </n-space>
+
+              <section class="config-block config-block--glossary">
+                <div class="block-label-row">
+                  <n-text class="block-label">术语表（可选）</n-text>
+                  <n-tag
+                    size="tiny"
+                    round
+                    :type="glossarySupported ? 'success' : 'warning'"
+                    :bordered="false"
+                  >
+                    {{ glossarySupported ? "支持" : "需换模型" }}
+                  </n-tag>
+                </div>
+                <file-drop-zone
+                  accept=".csv"
+                  multiple
+                  compact
+                  :disabled="!glossarySupported || status === 'running'"
+                  title="上传 CSV 术语表"
+                  hint="source, target, tgt_lng"
+                  :file-name="
+                    glossaryFiles.length
+                      ? `已选 ${glossaryFiles.length} 个文件`
+                      : ''
+                  "
+                  @change="onGlossaryChange"
+                />
+              </section>
             </div>
-          </n-card>
-        </n-gi>
 
-        <n-gi span="1 m:1 xl:1">
-          <n-card class="panel panel-fill panel-config" size="small" :bordered="false">
-            <template #header>
-              <div class="panel-header">
-                <span class="panel-header-icon panel-header-icon--config">
-                  <n-icon :size="18" :component="SettingsOutline" />
-                </span>
-                <div class="panel-header-text">
-                  <span class="panel-header-title">翻译配置</span>
-                  <span class="panel-header-desc">语言方向、模型与可选术语表</span>
-                </div>
-              </div>
-            </template>
-
-            <section class="config-block">
-              <n-text class="block-label">语言方向</n-text>
-              <div class="lang-row">
-                <div class="lang-field">
-                  <n-text depth="3" class="field-label">源语言</n-text>
-                  <n-select
-                    v-model:value="langIn"
-                    :options="langOptions"
-                    filterable
-                    :disabled="status === 'running'"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="lang-swap-btn"
-                  aria-label="语言方向"
-                  :disabled="status === 'running'"
-                >
-                  <n-icon :size="18"><swap-horizontal-outline /></n-icon>
-                </button>
-                <div class="lang-field">
-                  <n-text depth="3" class="field-label">目标语言</n-text>
-                  <n-select
-                    v-model:value="langOut"
-                    :options="langOptions"
-                    filterable
-                    :disabled="status === 'running'"
-                  />
-                </div>
-              </div>
-              <n-tag size="small" :bordered="false" class="lang-pair-tag">
-                {{ langPairLabel }}
-              </n-tag>
-            </section>
-
-            <section class="config-block">
-              <n-text class="block-label">翻译模型</n-text>
-              <n-select
-                v-model:value="service"
-                :options="engineOptions"
-                :disabled="status === 'running'"
-              />
-            </section>
-
-            <section class="config-block config-block--glossary">
-              <div class="block-label-row">
-                <n-text class="block-label">术语表（可选）</n-text>
-                <n-tag
-                  size="tiny"
-                  round
-                  :type="glossarySupported ? 'success' : 'warning'"
-                  :bordered="false"
-                >
-                  {{ glossarySupported ? "当前模型支持" : "需支持术语表的模型" }}
-                </n-tag>
-              </div>
-              <file-drop-zone
-                accept=".csv"
-                multiple
-                compact
-                :disabled="!glossarySupported || status === 'running'"
-                title="上传 CSV 术语表"
-                hint="表头：source, target, tgt_lng"
-                :file-name="
-                  glossaryFiles.length
-                    ? `已选 ${glossaryFiles.length} 个文件`
-                    : ''
-                "
-                @change="onGlossaryChange"
-              />
-            </section>
-
-            <div class="start-wrap">
+            <div class="wf-actions">
               <n-button
                 type="primary"
-                size="large"
-                block
+                size="medium"
                 class="start-btn"
                 :disabled="!canStart"
                 :loading="status === 'running' || status === 'submitting'"
@@ -629,45 +653,36 @@ function openImportedDocument() {
               </n-button>
             </div>
           </n-card>
-        </n-gi>
+        </section>
 
-        <n-gi span="1 m:2 xl:1">
-          <n-card
-            class="panel panel-fill panel-side"
-            size="small"
-            :bordered="false"
-            :class="{
-              'panel-side-active': showProgressPanel,
-              'panel-side-done': status === 'done'}"
-          >
+        <aside
+          class="translate-aside"
+          :class="{
+            'translate-aside--active': showProgressPanel,
+            'translate-aside--done': status === 'done',
+          }"
+        >
+          <n-card class="result-card" size="small">
             <template #header>
-              <div class="panel-header">
-                <span
-                  class="panel-header-icon"
-                  :class="status === 'done' ? 'panel-header-icon--done' : 'panel-header-icon--result'"
-                >
-                  <n-icon
-                    :size="18"
-                    :component="status === 'done' ? CheckmarkCircleOutline : CloudDownloadOutline"
-                  />
-                </span>
-                <div class="panel-header-text">
-                  <span class="panel-header-title">进度与下载</span>
-                </div>
+              <div class="result-head">
+                <n-icon
+                  :size="16"
+                  :component="status === 'done' ? CheckmarkCircleOutline : CloudDownloadOutline"
+                />
+                <span>进度与结果</span>
               </div>
             </template>
 
-            <div v-if="!showProgressPanel" class="side-idle">
-              <div class="side-idle-visual">
-                <n-icon :size="36" :depth="3"><time-outline /></n-icon>
+            <div class="result-body">
+              <div v-if="!showProgressPanel" class="result-idle">
+                <n-icon :size="24" :depth="3"><time-outline /></n-icon>
+                <n-text depth="2">配置完成后点击「开始翻译」</n-text>
               </div>
-              <n-text strong class="side-idle-title">等待开始翻译</n-text>
-            </div>
 
-            <div v-else class="side-body">
-              <div class="status-card" :class="`status-card--${status}`">
+              <template v-else>
+              <div class="status-strip" :class="`status-strip--${status}`">
                 <div class="status-row">
-                  <n-tag :type="statusType" round size="medium">{{ statusLabel }}</n-tag>
+                  <n-tag :type="statusType" round size="small">{{ statusLabel }}</n-tag>
                   <span
                     v-if="status === 'running'"
                     class="status-pulse"
@@ -688,7 +703,7 @@ function openImportedDocument() {
                 class="progress-block"
               >
                 <div class="progress-head">
-                  <n-text depth="3">整体进度</n-text>
+                  <n-text depth="3">进度</n-text>
                   <n-text strong class="progress-pct">{{ Math.round(progress) }}%</n-text>
                 </div>
                 <n-progress
@@ -697,166 +712,213 @@ function openImportedDocument() {
                   indicator-placement="inside"
                   :processing="status === 'running'"
                   :status="status === 'done' ? 'success' : 'default'"
-                  :height="10"
-                  :border-radius="6"
+                  :height="8"
+                  :border-radius="4"
                 />
                 <n-text v-if="stage" depth="2" class="stage-text">{{ stage }}</n-text>
               </div>
 
-              <template v-if="status === 'done'">
-                <n-text class="download-section-label">下载译文</n-text>
-                <div class="download-grid">
-                  <button
-                    type="button"
-                    class="download-card download-card--primary"
-                    @click="dl('dual', 'dual.pdf')"
+              </template>
+
+              <div class="dl-group">
+                <n-text class="dl-group-label">译文</n-text>
+                <div class="dl-list">
+                  <div
+                    class="dl-item dl-item--primary"
+                    :class="{ 'dl-item--disabled': !resultsReady }"
                   >
-                    <span class="download-card-icon">
-                      <n-icon :size="22" :component="DownloadOutline" />
-                    </span>
-                    <span class="download-card-body">
-                      <strong>双语 PDF</strong>
-                      <span>左原文 · 右译文对照</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    class="download-card"
-                    @click="dl('mono', 'mono.pdf')"
-                  >
-                    <span class="download-card-icon">
-                      <n-icon :size="22" :component="DownloadOutline" />
-                    </span>
-                    <span class="download-card-body">
-                      <strong>单语 PDF</strong>
-                      <span>仅保留译文排版</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    class="download-card"
+                    <button
+                      type="button"
+                      class="dl-item-main"
+                      :disabled="!resultsReady"
+                      @click="dl('dual', 'dual.pdf')"
+                    >
+                      <n-icon :size="16" :component="DownloadOutline" />
+                      <span class="dl-item-text">
+                        <strong>双语 PDF</strong>
+                        <small>对照版</small>
+                      </span>
+                    </button>
+                    <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('dual')">
+                      <template #icon>
+                        <n-icon :component="EyeOutline" />
+                      </template>
+                      预览
+                    </n-button>
+                  </div>
+                  <div class="dl-item" :class="{ 'dl-item--disabled': !resultsReady }">
+                    <button
+                      type="button"
+                      class="dl-item-main"
+                      :disabled="!resultsReady"
+                      @click="dl('mono', 'mono.pdf')"
+                    >
+                      <n-icon :size="16" :component="DownloadOutline" />
+                      <span class="dl-item-text">
+                        <strong>单语 PDF</strong>
+                        <small>仅译文</small>
+                      </span>
+                    </button>
+                    <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('mono')">
+                      <template #icon>
+                        <n-icon :component="EyeOutline" />
+                      </template>
+                      预览
+                    </n-button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="dl-group">
+                <n-text class="dl-group-label">更多导出</n-text>
+                <n-space :size="6" wrap class="dl-chips">
+                  <n-button
+                    size="tiny"
+                    secondary
+                    :disabled="!resultsReady"
                     @click="dl('glossary', 'glossary.csv')"
                   >
-                    <span class="download-card-icon download-card-icon--muted">
-                      <n-icon :size="22" :component="BookOutline" />
-                    </span>
-                    <span class="download-card-body">
-                      <strong>术语表</strong>
-                      <span>自动提取的 CSV</span>
-                    </span>
-                  </button>
-                </div>
-                <n-text class="download-section-label download-section-label--sub">
-                  结构化导出
-                </n-text>
-                <div class="download-chips">
+                    术语表
+                  </n-button>
                   <n-button
-                    size="small"
-                    round
+                    size="tiny"
                     secondary
+                    :disabled="!resultsReady"
                     @click="dl('extracted-json', 'extracted.json')"
                   >
                     JSON
                   </n-button>
                   <n-button
-                    size="small"
-                    round
+                    size="tiny"
                     secondary
+                    :disabled="!resultsReady"
                     @click="dl('extracted-md', 'extracted.md')"
                   >
                     Markdown
                   </n-button>
-                </div>
+                </n-space>
+              </div>
 
-                <n-text class="download-section-label download-section-label--sub">
-                  知识库
+              <div class="dl-group">
+                <n-text class="dl-group-label">知识库</n-text>
+                <n-space :size="6" wrap align="center">
+                  <template v-if="importedDocumentId">
+                    <n-tag type="success" :bordered="false" size="small">已入库</n-tag>
+                    <n-button size="tiny" type="primary" @click="openImportedDocument">
+                      查看文档
+                    </n-button>
+                  </template>
+                  <template v-else>
+                    <n-button
+                      size="tiny"
+                      type="primary"
+                      :disabled="!resultsReady"
+                      :loading="importLoading"
+                      @click="importToLibrary('mono')"
+                    >
+                      单语入库
+                    </n-button>
+                    <n-button
+                      size="tiny"
+                      secondary
+                      :disabled="!resultsReady"
+                      :loading="importLoading"
+                      @click="importToLibrary('dual')"
+                    >
+                      双语入库
+                    </n-button>
+                  </template>
+                </n-space>
+                <n-text
+                  v-if="showProgressPanel && !resultsReady"
+                  depth="3"
+                  class="dl-group-hint"
+                >
+                  翻译完成后可下载或导入文档库
                 </n-text>
-                <div class="library-import-block">
-                  <n-space :size="8" wrap>
-                    <template v-if="importedDocumentId">
-                      <n-tag type="success" :bordered="false" size="small">已入库</n-tag>
-                      <n-button size="small" type="primary" @click="openImportedDocument">
-                        查看文档
-                      </n-button>
-                    </template>
-                    <template v-else>
-                      <n-button
-                        size="small"
-                        type="primary"
-                        :loading="importLoading"
-                        @click="importToLibrary('mono')"
-                      >
-                        单语译文入库
-                      </n-button>
-                      <n-button
-                        size="small"
-                        secondary
-                        :loading="importLoading"
-                        @click="importToLibrary('dual')"
-                      >
-                        双语 PDF 入库
-                      </n-button>
-                    </template>
-                  </n-space>
-                </div>
-              </template>
+              </div>
             </div>
           </n-card>
-        </n-gi>
-      </n-grid>
+        </aside>
+      </div>
+    </div>
     </div>
 
-    <n-modal
+    <AdminFormModal
       v-model:show="showLibraryModal"
-      preset="card"
       title="选择文档库 PDF"
-      class="library-modal"
-      style="width: min(720px, 92vw)"
+      subtitle="从已上传的 PDF 中选取"
+      width="min(560px, 92vw)"
     >
-      <n-space align="center" :size="10" style="margin-bottom: 12px">
+      <n-space align="center" :size="8" class="library-search">
         <n-input
           v-model:value="libraryKeyword"
-          placeholder="搜索文档标题"
+          size="small"
+          placeholder="搜索标题"
           clearable
-          style="flex: 1"
           @keyup.enter="libraryPage = 1; loadLibraryDocs()"
         >
           <template #prefix>
             <n-icon :component="SearchOutline" />
           </template>
         </n-input>
-        <n-button type="primary" @click="libraryPage = 1; loadLibraryDocs()">搜索</n-button>
+        <n-button size="small" type="primary" @click="libraryPage = 1; loadLibraryDocs()">
+          搜索
+        </n-button>
       </n-space>
       <n-data-table
         :columns="libraryColumns"
         :data="libraryItems"
         :loading="libraryLoading"
+        :max-height="320"
         :pagination="{
           page: libraryPage,
-          pageSize: 20,
+          pageSize: 10,
           itemCount: libraryTotal,
           onUpdatePage: onLibraryPageChange}"
         size="small"
       />
-    </n-modal>
+    </AdminFormModal>
+
+    <DocumentVersionPreviewModal
+      v-model:show="previewShow"
+      :blob-loader="loadPreviewBlob"
+      :preview-title="previewTitle"
+      :preview-subtitle="displayFileName"
+      :preview-file-name="previewFileName"
+      :show-download-action="false"
+      width="min(760px, 94vw)"
+      viewport-height="min(58vh, 560px)"
+    />
   </FeatureSubsystemShell>
 </template>
 
 <style scoped>
+.translate-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
 .translate-steps-bar {
   flex-shrink: 0;
 }
 
 .translate-steps {
-  max-width: 520px;
+  max-width: 420px;
 }
 
 .page-alerts {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .page-alert {
@@ -866,109 +928,99 @@ function openImportedDocument() {
 .translate-workspace {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  max-width: none;
-  --translate-accent: #3b82f6;
-  --translate-accent-soft: rgba(59, 130, 246, 0.08);
-  --translate-success-soft: var(--platform-accent-soft);
+  overflow-y: auto;
 }
 
-.translate-grid {
-  width: 100%;
-  flex: 1;
+.translate-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (min-width: 880px) {
+  .translate-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+    gap: 14px;
+  }
+
+  .translate-aside {
+    position: sticky;
+    top: 6px;
+  }
+}
+
+.translate-main,
+.translate-aside,
+.workflow-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.workflow-card :deep(.n-card__content) {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 14px 16px 16px;
+}
+
+.workflow-card :deep(.n-card-header) {
+  padding: 10px 16px 0;
   min-height: 0;
 }
 
-.translate-grid :deep(> div) {
-  height: 100%;
-}
-
-.translate-grid :deep(.n-grid-item) {
-  display: flex;
-  min-height: 0;
-}
-
-.panel {
-  height: 100%;
-  width: 100%;
+.wf-section {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
-  overflow: hidden;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.panel :deep(.n-card-header) {
-  padding: 14px 18px 10px;
-  border-bottom: 1px solid var(--platform-border, rgba(15, 23, 42, 0.06));
-}
-
-.panel :deep(.n-card__content) {
-  padding: 14px 18px 18px;
-}
-
-.panel-fill :deep(.n-card__content) {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  flex: 1;
-  min-height: 0;
-}
-
-.panel-header {
+.wf-section-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.panel-header-icon {
+.wf-step-badge {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.panel-header-icon--doc {
+  font-size: 12px;
+  font-weight: 700;
   color: var(--platform-accent);
   background: var(--platform-accent-soft);
 }
 
-.panel-header-icon--config {
-  color: var(--translate-accent);
-  background: var(--translate-accent-soft);
-}
-
-.panel-header-icon--result {
-  color: #6366f1;
-  background: rgba(99, 102, 241, 0.1);
-}
-
-.panel-header-icon--done {
-  color: var(--platform-accent);
-  background: var(--translate-success-soft);
-}
-
-.panel-header-text {
+.wf-section-titles {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
-.panel-header-title {
-  font-size: 15px;
+.wf-section-title {
+  font-size: 13px;
   font-weight: 600;
   color: var(--n-text-color);
   line-height: 1.3;
 }
 
-.panel-header-desc {
+.wf-section-desc {
   font-size: 12px;
-  color: var(--platform-muted, #64748b);
-  line-height: 1.4;
+  color: var(--platform-muted);
+  line-height: 1.35;
+}
+
+.wf-divider {
+  height: 1px;
+  margin: 14px 0;
+  background: var(--platform-divider, var(--platform-border));
 }
 
 .source-toggle {
@@ -986,30 +1038,104 @@ function openImportedDocument() {
 }
 
 .upload-fill {
-  flex: 1;
-  min-height: 200px;
-  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .upload-fill :deep(.drop-zone) {
-  flex: 1;
   width: 100%;
-  min-height: 200px;
-  border-radius: 12px;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  border-radius: var(--platform-radius-sm, 8px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-items: center;
+  gap: 1px 8px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.upload-fill :deep(.drop-zone .drop-icon-wrap) {
+  grid-row: 1 / 3;
+  width: 24px;
+  height: 24px;
+  margin-bottom: 0;
+}
+
+.upload-fill :deep(.drop-zone .drop-icon-wrap .n-icon) {
+  font-size: 16px !important;
+}
+
+.upload-fill :deep(.drop-zone .drop-title) {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 12px;
+  margin-bottom: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-fill :deep(.drop-zone .drop-hint) {
+  grid-column: 2;
+  grid-row: 2;
+  font-size: 11px;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-fill :deep(.drop-zone .drop-btn) {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  margin-top: 4px;
+  justify-self: start;
+  max-width: 100%;
+}
+
+.upload-fill :deep(.drop-zone .drop-btn.n-button) {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 520px) {
+  .config-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .config-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .config-block--glossary {
   margin-top: 2px;
 }
 
+.config-block--glossary :deep(.drop-zone) {
+  min-height: 72px;
+  padding: 0.55rem 0.7rem;
+}
+
 .block-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--n-text-color);
 }
@@ -1025,7 +1151,7 @@ function openImportedDocument() {
 .lang-row {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 .lang-field {
@@ -1035,92 +1161,84 @@ function openImportedDocument() {
 
 .lang-swap-btn {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  margin-bottom: 2px;
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.1));
+  width: 30px;
+  height: 30px;
+  margin-bottom: 1px;
+  border: 1px solid var(--platform-border);
   border-radius: 50%;
-  background: var(--n-color);
-  color: var(--platform-muted, #64748b);
+  background: var(--platform-bg-glass-subtle, var(--n-color));
+  color: var(--platform-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: default;
-  transition: background 0.2s, border-color 0.2s;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.lang-swap-btn:hover:not(:disabled) {
+  color: var(--platform-accent);
+  border-color: var(--platform-accent-border-soft);
+  background: var(--platform-accent-soft);
+}
+
+.lang-swap-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .lang-pair-tag {
   align-self: flex-start;
-  font-size: 12px;
-  background: var(--translate-accent-soft) !important;
-  color: var(--translate-accent) !important;
+  background: var(--platform-accent-soft) !important;
+  color: var(--platform-accent) !important;
 }
 
 .field-label {
   display: block;
-  font-size: 12px;
-  margin-bottom: 6px;
+  font-size: 11px;
+  margin-bottom: 4px;
 }
 
-.engine-hint {
-  font-size: 12px;
-  margin-top: -2px;
-}
-
-.start-wrap {
-  margin-top: auto;
-  padding-top: 8px;
+.wf-actions {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--platform-divider, var(--platform-border));
 }
 
 .start-btn {
+  width: 100%;
   font-weight: 600;
-  height: 44px;
-  border-radius: 10px;
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.28);
-}
-
-.start-btn:not(:disabled):hover {
-  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.34);
-}
-
-.start-hint {
-  display: block;
-  text-align: center;
-  font-size: 12px;
-  margin-top: 8px;
+  height: 36px;
 }
 
 .library-pick {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  flex: 1;
-  min-height: 200px;
+  gap: 8px;
 }
 
 .library-empty {
-  flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 24px 16px;
-  border-radius: 12px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 0;
+  border-radius: var(--platform-radius-sm, 8px);
   border: 1.5px dashed var(--n-border-color);
-  background: rgba(15, 23, 42, 0.02);
-  text-align: center;
-  font-size: 13px;
+  background: color-mix(in srgb, var(--platform-text) 2%, transparent);
+  text-align: left;
+  font-size: 12px;
 }
 
 .library-selected {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--platform-accent-border);
-  background: var(--translate-success-soft);
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--platform-radius-sm, 8px);
+  border: 1px solid var(--platform-accent-border-soft);
+  background: var(--platform-accent-soft);
 }
 
 .library-selected-icon {
@@ -1136,95 +1254,86 @@ function openImportedDocument() {
 
 .library-file-name {
   display: block;
-  font-size: 12px;
-  margin-top: 4px;
+  font-size: 11px;
+  margin-top: 2px;
 }
 
-.library-actions {
-  margin-top: auto;
+.result-card :deep(.n-card-header) {
+  padding: 10px 14px 6px;
+  min-height: 0;
 }
 
-.panel-side-active {
-  border-color: rgba(59, 130, 246, 0.28);
-  box-shadow:
-    var(--platform-shadow),
-    0 0 0 1px rgba(59, 130, 246, 0.08);
+.result-card :deep(.n-card__content) {
+  padding: 8px 14px 14px;
 }
 
-.panel-side-done {
-  border-color: var(--platform-accent-border);
-}
-
-.side-idle {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 260px;
-  text-align: center;
-  padding: 16px;
-}
-
-.side-idle-visual {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
+.result-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
-  background: rgba(15, 23, 42, 0.04);
-}
-
-.side-idle-title {
-  font-size: 15px;
-}
-
-.side-idle-desc {
+  gap: 6px;
   font-size: 13px;
-  line-height: 1.55;
-  max-width: 260px;
+  font-weight: 600;
+  color: var(--n-text-color);
 }
 
-.side-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  flex: 1;
+.result-head .n-icon {
+  color: var(--platform-accent);
 }
 
-.status-card {
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.03);
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.06));
+.translate-aside--active .result-card {
+  border-color: color-mix(in srgb, var(--platform-accent) 22%, transparent);
 }
 
-.status-card--done {
-  background: var(--translate-success-soft);
+.translate-aside--done .result-card {
   border-color: var(--platform-accent-border-soft);
 }
 
-.status-card--running {
-  background: var(--translate-accent-soft);
-  border-color: rgba(59, 130, 246, 0.18);
+.result-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px 4px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.result-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-strip {
+  padding: 10px 12px;
+  border-radius: var(--platform-radius-sm, 8px);
+  background: color-mix(in srgb, var(--platform-text) 3%, transparent);
+  border: 1px solid var(--platform-border);
+}
+
+.status-strip--done {
+  background: var(--platform-accent-soft);
+  border-color: var(--platform-accent-border-soft);
+}
+
+.status-strip--running {
+  background: color-mix(in srgb, var(--platform-accent) 6%, transparent);
+  border-color: var(--platform-accent-border-soft);
 }
 
 .status-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .status-pulse {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--translate-accent);
+  background: var(--platform-accent);
   animation: translate-pulse 1.4s ease-in-out infinite;
 }
 
@@ -1242,178 +1351,154 @@ function openImportedDocument() {
 
 .status-file {
   display: block;
-  font-size: 13px;
-  margin-top: 8px;
+  font-size: 12px;
+  margin-top: 6px;
   word-break: break-all;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 .status-meta {
   display: block;
-  font-size: 12px;
-  margin-top: 4px;
+  font-size: 11px;
+  margin-top: 3px;
 }
 
 .progress-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .progress-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .progress-pct {
-  font-size: 14px;
-  color: var(--translate-accent);
+  font-size: 13px;
+  color: var(--platform-accent);
 }
 
 .stage-text {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
-.download-section-label {
-  font-size: 12px;
+.dl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dl-group-label {
+  font-size: 11px;
   font-weight: 600;
-  color: var(--platform-muted, #64748b);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--platform-muted);
 }
 
-.download-section-label--sub {
-  margin-top: 4px;
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
+.dl-group-hint {
+  font-size: 11px;
+  line-height: 1.4;
 }
 
-.library-import-block {
+.dl-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px dashed var(--platform-border, rgba(15, 23, 42, 0.12));
-  background: var(--platform-bg-secondary, rgba(248, 250, 252, 0.6));
+  gap: 6px;
 }
 
-.library-import-hint {
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.download-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.download-card {
+.dl-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.1));
-  background: var(--n-color);
+  gap: 4px;
+  padding: 4px 6px 4px 8px;
+  border-radius: var(--platform-radius-sm, 8px);
+  border: 1px solid var(--platform-border);
+  background: var(--platform-bg-glass-subtle, transparent);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dl-item:hover:not(.dl-item--disabled) {
+  border-color: var(--platform-accent-border-soft);
+  background: var(--platform-accent-soft);
+}
+
+.dl-item--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dl-item--disabled .dl-item-main {
+  cursor: not-allowed;
+}
+
+.dl-item--disabled .dl-item-main:disabled {
+  opacity: 1;
+}
+
+.dl-item--primary {
+  border-color: var(--platform-accent-border-soft);
+  background: color-mix(in srgb, var(--platform-accent) 5%, transparent);
+}
+
+.dl-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 0.2s,
-    background 0.2s,
-    transform 0.15s,
-    box-shadow 0.2s;
+  color: inherit;
 }
 
-.download-card:hover {
-  border-color: rgba(59, 130, 246, 0.35);
-  background: var(--translate-accent-soft);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-}
-
-.download-card:active {
-  transform: scale(0.99);
-}
-
-.download-card--primary {
-  border-color: rgba(59, 130, 246, 0.35);
-  background: linear-gradient(
-    135deg,
-    rgba(59, 130, 246, 0.1) 0%,
-    rgba(59, 130, 246, 0.04) 100%
-  );
-}
-
-.download-card--primary:hover {
-  border-color: rgba(59, 130, 246, 0.5);
-}
-
-.download-card-icon {
+.dl-item-main .n-icon {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--translate-accent);
-  background: var(--translate-accent-soft);
+  color: var(--platform-accent);
 }
 
-.download-card-icon--muted {
-  color: var(--platform-muted, #64748b);
-  background: rgba(15, 23, 42, 0.05);
-}
-
-.download-card-body {
+.dl-item-text {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 
-.download-card-body strong {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--n-text-color);
-}
-
-.download-card-body span {
+.dl-item-text strong {
   font-size: 12px;
-  color: var(--platform-muted, #64748b);
+  font-weight: 600;
+  line-height: 1.3;
 }
 
-.download-chips {
+.dl-item-text small {
+  font-size: 11px;
+  color: var(--platform-muted);
+  line-height: 1.3;
+}
+
+.library-search {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  width: 100%;
+  margin-bottom: 10px;
 }
 
-@media (max-width: 1279px) {
-  .translate-workspace {
-    overflow-y: auto;
-  }
-
-  .translate-grid {
-    flex: none;
-    min-height: min(72vh, 760px);
-  }
-
-  .translate-steps {
-    max-width: none;
-    width: 100%;
-  }
+.library-search :deep(.n-input) {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 639px) {
   .lang-swap-btn {
     display: none;
+  }
+
+  .config-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

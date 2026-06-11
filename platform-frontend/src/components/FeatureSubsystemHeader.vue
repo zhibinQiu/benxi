@@ -1,5 +1,5 @@
 <script setup>
-import { computed, useSlots } from "vue";
+import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { getFeatureDescription } from "../constants/featureDescriptions";
 import HintTooltip from "./HintTooltip.vue";
@@ -7,11 +7,11 @@ import HintTooltip from "./HintTooltip.vue";
 const props = defineProps({
   description: { type: String, default: "" },
   showIntro: { type: Boolean, default: false },
-  /** 标题与返回已放在全局顶栏时，本区仅保留说明与操作 */
-  hideTitleRow: { type: Boolean, default: true }});
+  /** 标题与返回已放在全局顶栏时，本区仅保留说明 */
+  hideTitleRow: { type: Boolean, default: true },
+});
 
 const route = useRoute();
-const slots = useSlots();
 
 const introText = computed(
   () => props.description || getFeatureDescription(route.name) || ""
@@ -19,16 +19,13 @@ const introText = computed(
 
 const showIntroBlock = computed(() => props.showIntro && Boolean(introText.value));
 
-const showHeader = computed(
-  () => !props.hideTitleRow || showIntroBlock.value || Boolean(slots.extra)
-);
+const showHeader = computed(() => !props.hideTitleRow || showIntroBlock.value);
 </script>
 
 <template>
   <header v-if="showHeader" class="subsystem-header feature-local-nav">
-    <div v-if="showIntroBlock || $slots.extra" class="subsystem-extra-row">
-      <slot name="extra" />
-      <HintTooltip v-if="showIntroBlock" :text="introText" />
+    <div v-if="showIntroBlock" class="subsystem-extra-row">
+      <HintTooltip :text="introText" />
     </div>
   </header>
 </template>

@@ -1,75 +1,55 @@
 # 快速开始
 
-智碳平台 AI 系统 v3.9.3 使用 **统一 Docker 栈**。完整说明见 [运维手册](operations/README.md) 与 [根目录运维部署指南](../../运维部署指南.md)。
+绿叶 AI 办公系统（版本见根目录 `VERSION`）。完整说明见 [运维部署指南](../../运维部署指南.md) 与 [脚本说明](../../scripts/README.md)。
 
-## 1. 环境
+## 开发方式（二选一）
 
-- Docker 24+、Docker Compose v2
-- 可选：8GB+ 内存（KnowFlow / 语音）
-
-## 2. 配置
+### 本机 venv + 远程/本机依赖（常用）
 
 ```bash
-cp .env.stack.example .env
-# 从 platform/.env.example 复制 JWT_SECRET、BOOTSTRAP_ADMIN_* 等到 .env
+cp platform/.env.example platform/.env
+# 远程依赖时：
+REMOTE_HOST=服务器IP ./dev.sh remote-dev
+bash scripts/verify-remote-deps.sh
+
+./dev.sh local
 ```
-
-启用知识库与语音（可选）：
-
-```bash
-# .env
-KNOWFLOW_ENABLED=true
-STACK_PROFILES="knowflow speech"
-```
-
-## 3. 启动
-
-**开发（热重载，推荐）：**
-
-```bash
-bash scripts/zhitan.sh dev
-# 等价：bash scripts/stack.sh dev-up --profile knowflow --profile speech
-```
-
-**生产式本机：**
-
-```bash
-bash scripts/stack.sh build --profile knowflow
-bash scripts/stack.sh up --profile knowflow
-```
-
-## 4. 访问
 
 | 服务 | 地址 |
 |------|------|
 | Web | http://127.0.0.1:40005/ai/ |
-| API（开发） | http://127.0.0.1:18000 |
+| API | http://127.0.0.1:8000 |
 
-组件与数据库说明见 [组件位置与数据存储](operations/components-and-storage.md)。
-
-默认管理员见 `.env` 中 `BOOTSTRAP_ADMIN_PHONE` / `BOOTSTRAP_ADMIN_PASSWORD`（模板在 `platform/.env.example`）。
-
-## 5. 停止
+### 全 Docker 热重载
 
 ```bash
-bash scripts/zhitan.sh stop
+cp .env.stack.example .env
+cp platform/.env.example platform/.env
+./dev.sh docker --profile knowflow
 ```
 
-## 6. 服务器部署
+| 服务 | 地址 |
+|------|------|
+| Web | http://127.0.0.1:40005/ai/ |
+| API | http://127.0.0.1:18000 |
+
+## 常用命令
 
 ```bash
-bash scripts/stack.sh build && bash scripts/stack.sh save
-bash scripts/deploy.sh stack push   # 需 platform/deploy.target
+./dev.sh local status    # 状态
+./dev.sh local restart   # 重启
+./dev.sh stop            # 停止全部
+./dev.sh --help
+```
+
+默认管理员见 `platform/.env` 中 `BOOTSTRAP_ADMIN_PHONE` / `BOOTSTRAP_ADMIN_PASSWORD`。
+
+## 生产部署
+
+```bash
+./dev.sh stack build --profile knowflow --profile speech
+./dev.sh stack save
+./dev.sh deploy stack push
 ```
 
 详见 [部署指南](operations/deployment.md)。
-
-## 仅使用 PDF 翻译
-
-```bash
-pip install -e .
-bash scripts/download_babeldoc_assets.sh
-pdf2zh_next document.pdf
-```
-
-更多：[REST API](development/rest-api.md)

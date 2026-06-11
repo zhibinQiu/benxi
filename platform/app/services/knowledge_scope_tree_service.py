@@ -20,12 +20,12 @@ from app.core.document_scope import (
     library_teams_for_user,
 )
 from app.core.permissions import user_is_superuser
-from app.models.document import DocumentLibraryFolder
+from app.models.document import Document, DocumentLibraryFolder
 from app.models.org import User
-from app.models.ragflow_document_link import RagflowDocumentLink
 from app.services.document_library_align_service import (
     collect_aligned_library_documents,
     dataset_id_for_library_unit,
+    document_matches_dataset_link,
     folder_matches_document,
 )
 from app.services.knowledge_library_service import (
@@ -43,7 +43,7 @@ from app.services.library_folder_service import (
 logger = logging.getLogger(__name__)
 
 _SCOPE_TREE_CACHE_TTL_SEC = 120
-_SCOPE_TREE_CACHE_VERSION = 2
+_SCOPE_TREE_CACHE_VERSION = 3
 _local_scope_tree_cache: dict[str, tuple[float, dict]] = {}
 
 _ORG_UNIT_LOADERS = {
@@ -113,6 +113,22 @@ def invalidate_scope_tree_cache(user_id: uuid.UUID | None = None) -> None:
     _local_scope_tree_cache.clear()
 
 
+def notify_knowledge_index_state_changed(
+    *,
+    user_id: uuid.UUID,
+    dataset_id: str | None = None,
+) -> None:
+    """索引任务完成或重新解析后，使知识检索树与文档中心状态一致。"""
+    from app.core.platform_cache import (
+        invalidate_document_library_cache,
+        invalidate_ragflow_doc_meta_cache,
+    )
+
+    invalidate_scope_tree_cache(user_id)
+    invalidate_ragflow_doc_meta_cache(dataset_id)
+    invalidate_document_library_cache(str(user_id))
+
+
 def _sum_folder_stats(folder_nodes: list[dict]) -> tuple[int, int]:
     total = 0
     ready = 0
@@ -123,34 +139,56 @@ def _sum_folder_stats(folder_nodes: list[dict]) -> tuple[int, int]:
 
 
 def _ragflow_row_for_document(
-    db: Session, document_id: uuid.UUID, dataset_id: str | None
+    db: Session, document: Document, dataset_id: str | None
 ) -> dict | None:
+    """按文档中心同一套分级规则 + canonical 索引映射解析行。"""
     if not dataset_id:
         return None
-    link = db.scalar(
-        select(RagflowDocumentLink).where(
-            RagflowDocumentLink.platform_document_id == document_id,
-            RagflowDocumentLink.dataset_id == dataset_id,
-        )
-    )
-    if not link or not (link.ragflow_document_id or "").strip():
+    if not document_matches_dataset_link(db, document, dataset_id):
+        return None
+    from app.services.ragflow_sync_service import get_document_link
+    from app.services.ragflow_version_link_service import resolve_index_link
+
+    link = get_document_link(db, document.id)
+    version_link, _ = resolve_index_link(db, document)
+    ragflow_id = ""
+    if version_link and (version_link.ragflow_document_id or "").strip():
+        ragflow_id = str(version_link.ragflow_document_id).strip()
+    elif link and (link.ragflow_document_id or "").strip():
+        ragflow_id = str(link.ragflow_document_id).strip()
+    if not ragflow_id:
         return None
     return {
-        "document_id": str(document_id),
-        "ragflow_document_id": link.ragflow_document_id,
+        "document_id": str(document.id),
+        "ragflow_document_id": ragflow_id,
         "knowledge_synced": True,
         "parse_status": None,
     }
 
 
 def _enrich_doc_rows_meta(
-    db: Session, user: User, dataset_id: str | None, rows: list[dict]
+    db: Session,
+    user: User,
+    dataset_id: str | None,
+    rows: list[dict],
+    *,
+    documents: list[Document] | None = None,
 ) -> None:
-    if not dataset_id or not rows:
+    if not rows or not documents:
         return
-    from app.services.knowledge_library_service import _enrich_ragflow_doc_meta
+    from app.services.document_index_service import enrich_knowledge_document_rows
 
-    _enrich_ragflow_doc_meta(db, user, dataset_id, rows)
+    enrich_knowledge_document_rows(db, user, rows, documents)
+
+
+def _map_scope_document_tree_node(
+    doc: dict, dataset_id: str, *, folder_key: str
+) -> dict:
+    from app.services.knowledge_library_service import _map_document_tree_node
+
+    node = _map_document_tree_node(doc, dataset_id)
+    node["key"] = f"doc:{folder_key}:{doc['document_id']}"
+    return node
 
 
 def _folder_group_key(
@@ -189,10 +227,17 @@ def _build_folder_nodes_for_unit(
     )
 
     rows: list[dict] = []
+    doc_by_id: dict[str, Document] = {}
+    seen_doc_ids: set[str] = set()
     for doc in docs:
-        rag_row = _ragflow_row_for_document(db, doc.id, dataset_id)
+        did = str(doc.id)
+        if did in seen_doc_ids:
+            continue
+        rag_row = _ragflow_row_for_document(db, doc, dataset_id)
         if not rag_row:
             continue
+        seen_doc_ids.add(did)
+        doc_by_id[did] = doc
         folder_id_str: str | None = None
         if doc.folder_id:
             folder = db.get(DocumentLibraryFolder, doc.folder_id)
@@ -207,7 +252,13 @@ def _build_folder_nodes_for_unit(
             }
         )
         rows.append(rag_row)
-    _enrich_doc_rows_meta(db, user, dataset_id, rows)
+    _enrich_doc_rows_meta(
+        db,
+        user,
+        dataset_id,
+        rows,
+        documents=list(doc_by_id.values()),
+    )
 
     grouped: dict[str, list[dict]] = {}
     for row in rows:
@@ -216,7 +267,10 @@ def _build_folder_nodes_for_unit(
             row.get("folder_id"),
             shared_doc_ids=shared_doc_ids,
         )
-        grouped.setdefault(key, []).append(row)
+        bucket = grouped.setdefault(key, [])
+        if any(existing["document_id"] == row["document_id"] for existing in bucket):
+            continue
+        bucket.append(row)
 
     ds_key = dataset_id or f"scope:{scope}"
     items: list[dict] = [
@@ -287,8 +341,12 @@ def _build_folder_nodes_for_unit(
     for folder_node in items:
         group_key = folder_node.get("virtual_folder_id") or folder_node.get("folder_id")
         doc_rows = grouped.get(group_key or "", [])
+        folder_key = f"{ds_key}:{group_key or 'root'}"
         children = [
-            _map_document_tree_node(doc, dataset_id or "") for doc in doc_rows
+            _map_scope_document_tree_node(
+                doc, dataset_id or "", folder_key=folder_key
+            )
+            for doc in doc_rows
         ]
         folder_node["children"] = children
         folder_node["document_count"] = len(children)
@@ -496,10 +554,13 @@ def _build_knowledge_scope_tree(db: Session, user: User) -> dict:
     }
 
 
-def build_knowledge_scope_tree(db: Session, user: User) -> dict:
-    cached = _read_scope_tree_cache(user_id=user.id)
-    if cached is not None:
-        return cached
+def build_knowledge_scope_tree(
+    db: Session, user: User, *, force_refresh: bool = False
+) -> dict:
+    if not force_refresh:
+        cached = _read_scope_tree_cache(user_id=user.id)
+        if cached is not None:
+            return cached
     data = _build_knowledge_scope_tree(db, user)
     _write_scope_tree_cache(user.id, data)
     return data

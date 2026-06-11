@@ -1,4 +1,4 @@
-# 智碳平台 AI 系统 — 开发实现说明书
+# 绿叶 AI 办公系统 — 开发实现说明书
 
 > **文档体系**：本说明书是 Monorepo `pdf_trans` 的**官方开发文档总索引**。  
 > **部署与运维（v3.4+ 最新）**：请先阅读 **[运维手册](../operations/README.md)**，再查阅下文实现细节。
@@ -61,12 +61,12 @@ flowchart TB
 
 | 章 | 文档 | 你将学到 |
 |----|------|----------|
-| 2.1 | [快速开始](../getting-started.md) | 一键 `zhitan.sh`、默认账号、可选 KnowFlow/语音 |
+| 2.1 | [快速开始](../getting-started.md) | 一键 `dev.sh`、默认账号、可选 KnowFlow/语音 |
 | 2.2 | [运维部署指南](../../../运维部署指南.md) §6 | 全 Docker dev、remote-dev + `local-dev` |
 | 2.3 | [部署指南](../operations/deployment.md) | 生产 up、amd64/arm64 镜像 push |
 | 2.4 | [知识库实现](../implementation/knowledge-implementation.md) | KnowFlow 集成、上传同步、构建要点 |
 | 2.5 | [Stack 命令速查](stack-deployment.md) | `stack.sh` save/load、备份 |
-| — | [脚本索引](../../scripts/README.md) | `zhitan.sh` / `stack.sh` / `deploy.sh` |
+| — | [脚本索引](../../scripts/README.md) | `dev.sh` / `stack.sh` / `deploy.sh` |
 
 ### 第三篇 · 后端实现
 
@@ -148,7 +148,7 @@ pdf_trans/
 │   └── workers/              # Celery
 ├── platform-frontend/        # Vue 3 管理端
 ├── pdf2zh_next/              # PDF 翻译引擎
-├── scripts/                  # zhitan.sh / deploy.sh
+├── scripts/                  # dev.sh / deploy.sh
 └── docs/zh/                  # 本文档体系
 ```
 

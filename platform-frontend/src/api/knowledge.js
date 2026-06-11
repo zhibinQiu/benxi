@@ -1,8 +1,9 @@
 /** 平台原生知识库 / 知识检索 API */
 import { api, formatApiDetail, getApiBase, getToken } from "./http.js";
 
-export async function fetchKnowledgeScopeTree() {
-  return api("/api/v1/knowledge/scope-tree");
+export async function fetchKnowledgeScopeTree({ refresh = false } = {}) {
+  const q = refresh ? "?refresh=1" : "";
+  return api(`/api/v1/knowledge/scope-tree${q}`);
 }
 
 export async function fetchKnowledgeLibraries() {

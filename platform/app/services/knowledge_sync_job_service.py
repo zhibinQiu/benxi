@@ -6,10 +6,13 @@ import logging
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domains.knowledge.gateway import knowledge
+from app.models.document import Document
 from app.models.job import Job, JobStatus, JobType
 from app.models.org import User
 from app.services.document_service import get_document
@@ -20,6 +23,89 @@ logger = logging.getLogger(__name__)
 
 _PARSE_DONE = {"3", "DONE", "done"}
 _PARSE_FAILED = {"2", "4", "FAIL", "fail", "CANCEL", "cancel"}
+_PARSE_RUNNING = {"1", "RUNNING", "running"}
+
+
+@dataclass(frozen=True)
+class KnowledgeIndexResumeResult:
+    ragflow_document_id: str
+    dataset_id: str
+    already_completed: bool
+
+
+def try_resume_incomplete_knowledge_index(
+    db: Session,
+    user: User,
+    document: Document,
+    *,
+    version_id: uuid.UUID | None,
+) -> KnowledgeIndexResumeResult | None:
+    """版本已同步 KnowFlow 但索引未完成时，跳过重复上传并继续或重试解析。"""
+    from app.models.document import DocumentVersion
+    from app.services.document_service import resolve_current_version
+    from app.services.ragflow_version_link_service import (
+        bind_document_to_indexed_version,
+        get_version_link_by_version_id,
+        mark_version_index_completed,
+    )
+
+    version = (
+        db.get(DocumentVersion, version_id)
+        if version_id
+        else resolve_current_version(db, document)
+    )
+    if not version:
+        return None
+
+    vl = get_version_link_by_version_id(db, version.id)
+    rid = (vl.ragflow_document_id if vl else "") or ""
+    ds = (vl.dataset_id if vl else "") or ""
+    if not rid or not ds:
+        return None
+
+    if vl and vl.index_completed_at is not None:
+        return KnowledgeIndexResumeResult(rid, ds, already_completed=True)
+
+    status, _chunks, _progress, _detail = _parse_run_status(
+        db, user, dataset_id=ds, ragflow_document_id=rid
+    )
+    run_done = status in ("已完成", "已索引") or (
+        status and str(status).lower() in _PARSE_DONE
+    )
+    if run_done:
+        marked = mark_version_index_completed(db, version.id)
+        if marked:
+            bind_document_to_indexed_version(
+                db, document=document, version=version, version_link=marked
+            )
+        db.flush()
+        return KnowledgeIndexResumeResult(rid, ds, already_completed=True)
+
+    if status == "解析中" or (status and str(status).upper() in _PARSE_RUNNING):
+        return KnowledgeIndexResumeResult(rid, ds, already_completed=False)
+
+    from app.services.ragflow_sync_service import (
+        _configure_and_parse_uploaded_document,
+        _sync_context_for_document,
+    )
+
+    _, kf = _sync_context_for_document(db, user, document)
+    upload_name = (vl.file_name if vl else "") or version.file_name or "document"
+    _configure_and_parse_uploaded_document(
+        kf,
+        dataset_id=ds,
+        ragflow_document_id=rid,
+        file_name=upload_name,
+        mime_type=version.mime_type or "",
+    )
+    logger.info(
+        "KnowFlow 续跑解析 doc=%s version=%s ragflow=%s status=%s",
+        document.id,
+        version.id,
+        rid,
+        status or "unknown",
+    )
+    return KnowledgeIndexResumeResult(rid, ds, already_completed=False)
 
 
 def _parse_run_status(
@@ -213,39 +299,78 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
             rid = result.get("ragflow_document_id")
         else:
             update_job_status(db, job_id, JobStatus.running.value, progress=32)
-            rid = sync_document_to_knowflow(
-                db,
-                user,
-                doc,
-                force=force,
-                version_id=version_id,
+            resume = try_resume_incomplete_knowledge_index(
+                db, user, doc, version_id=version_id
             )
-            db.commit()
+            if resume:
+                rid = resume.ragflow_document_id
+                dataset_id = resume.dataset_id
+                db.commit()
+                if resume.already_completed:
+                    update_job_status(db, job_id, JobStatus.done.value, progress=100)
+                    from app.models.document import DocumentVersion
+                    from app.services.document_service import resolve_current_version
+                    from app.services.ragflow_version_link_service import (
+                        bind_document_to_indexed_version,
+                        get_version_link_by_version_id,
+                    )
 
-            if not rid:
-                update_job_status(
+                    indexed_version_id = version_id
+                    if not indexed_version_id:
+                        current = resolve_current_version(db, doc)
+                        indexed_version_id = current.id if current else None
+                    if indexed_version_id:
+                        vl = get_version_link_by_version_id(db, indexed_version_id)
+                        ver = db.get(DocumentVersion, indexed_version_id)
+                        if vl and ver:
+                            bind_document_to_indexed_version(
+                                db, document=doc, version=ver, version_link=vl
+                            )
+                    create_notification(
+                        db,
+                        user_id=user.id,
+                        title="文档索引完成",
+                        body=(
+                            f"「{doc.title or '未命名文档'}」已同步到知识库并完成解析，可用于问答检索。"
+                        ),
+                        link=f"/documents/{doc.id}",
+                    )
+                    db.commit()
+                    return
+            else:
+                rid = sync_document_to_knowflow(
                     db,
-                    job_id,
-                    JobStatus.failed.value,
-                    error_message="知识库同步失败（文档已保存，可在详情页重新索引）",
+                    user,
+                    doc,
+                    force=force,
+                    version_id=version_id,
                 )
-                return
+                db.commit()
 
-            from app.services.ragflow_version_link_service import (
-                get_version_link_by_version_id,
-            )
+                if not rid:
+                    update_job_status(
+                        db,
+                        job_id,
+                        JobStatus.failed.value,
+                        error_message="知识库同步失败（文档已保存，可在详情页重新索引）",
+                    )
+                    return
 
-            vl = (
-                get_version_link_by_version_id(db, version_id)
-                if version_id
-                else None
-            )
-            link = knowledge.document_link(db, doc.id)
-            dataset_id = (
-                (vl.dataset_id if vl else None)
-                or (link.dataset_id if link else None)
-                or payload.get("dataset_id")
-            )
+                from app.services.ragflow_version_link_service import (
+                    get_version_link_by_version_id,
+                )
+
+                vl = (
+                    get_version_link_by_version_id(db, version_id)
+                    if version_id
+                    else None
+                )
+                link = knowledge.document_link(db, doc.id)
+                dataset_id = (
+                    (vl.dataset_id if vl else None)
+                    or (link.dataset_id if link else None)
+                    or payload.get("dataset_id")
+                )
 
         update_job_status(db, job_id, JobStatus.running.value, progress=68)
 
@@ -312,6 +437,17 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
             link=f"/documents/{doc.id}",
         )
         db.commit()
+        try:
+            from app.services.knowledge_scope_tree_service import (
+                notify_knowledge_index_state_changed,
+            )
+
+            notify_knowledge_index_state_changed(
+                user_id=user.id,
+                dataset_id=str(dataset_id) if dataset_id else None,
+            )
+        except Exception as exc:
+            logger.debug("知识检索树缓存刷新跳过 job=%s: %s", job_id, exc)
     except KnowflowSyncError as e:
         db.rollback()
         try:
@@ -409,12 +545,19 @@ def schedule_knowledge_index_after_upload(
     document_id: uuid.UUID,
     version_id: uuid.UUID | None = None,
 ) -> Job | None:
+    from app.services.knowledge_data_reconcile_service import (
+        should_force_knowledge_index_after_upload,
+    )
+
+    force = should_force_knowledge_index_after_upload(
+        db, document_id=document_id, version_id=version_id
+    )
     return enqueue_document_knowledge_index(
         db,
         user_id=user_id,
         document_id=document_id,
         version_id=version_id,
-        force=True,
+        force=force,
     )
 
 
@@ -477,3 +620,41 @@ def enqueue_document_reindex(
     if job:
         _start_job_thread(job.id)
     return job
+
+
+def recover_interrupted_document_index_jobs() -> int:
+    """服务启动时恢复中断的文档索引任务（pending / running）。"""
+    from app.config import get_settings
+    from app.database import SessionLocal
+
+    if not get_settings().knowflow_enabled:
+        return 0
+
+    db = SessionLocal()
+    recovered = 0
+    try:
+        jobs = db.scalars(
+            select(Job).where(
+                Job.type == JobType.document_index.value,
+                Job.status.in_(
+                    (JobStatus.pending.value, JobStatus.running.value)
+                ),
+            )
+        ).all()
+        for job in jobs:
+            if job.status == JobStatus.running.value:
+                update_job_status(
+                    db,
+                    job.id,
+                    JobStatus.pending.value,
+                    progress=max(0, min(job.progress or 0, 67)),
+                )
+            _start_job_thread(job.id)
+            recovered += 1
+        if recovered:
+            logger.info("已恢复 %s 个中断的文档索引任务", recovered)
+    except Exception:
+        logger.exception("恢复文档索引任务失败")
+    finally:
+        db.close()
+    return recovered

@@ -52,7 +52,7 @@ if [[ -n "$OLD_BACKUP" ]]; then
     PLATFORM_RERANK_API_KEY PLATFORM_RERANK_BASE_URL PLATFORM_RERANK_MODEL \
     PLATFORM_PADDLEOCR_URL RAGFLOW_API_KEY \
     RAGFLOW_SHARED_EMAIL RAGFLOW_SHARED_PASSWORD \
-    RAGFLOW_LLM_TEMPLATE_EMAIL KNOWFLOW_THEME_APP_NAME SMART_DATA_QUERY_PATH CARBON_QA_PATH \
+    RAGFLOW_LLM_TEMPLATE_EMAIL SMART_DATA_QUERY_PATH CARBON_QA_PATH \
     SMART_FORECAST_PROXY_PREFIX; do
     merge_key "$key" "$OLD_BACKUP"
   done
@@ -62,4 +62,4 @@ fi
 echo "已生成 ${OUT}（REMOTE_HOST=${REMOTE_HOST}）"
 echo "验证远程依赖: bash scripts/verify-remote-deps.sh"
 echo "同步资源配置菜单: cd platform && python scripts/sync_resource_settings_from_env.py --force"
-echo "启动本机 dev: bash scripts/zhitan.sh local-dev"
+echo "启动本机 dev: ./dev.sh local"

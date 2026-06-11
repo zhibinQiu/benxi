@@ -68,6 +68,32 @@ def test_document_matches_library_unit_team():
         )
 
 
+def test_document_matches_library_unit_personal_without_owner():
+    from app.core.document_scope import SCOPE_PERSONAL
+
+    db = MagicMock()
+    owner = uuid.uuid4()
+    other = uuid.uuid4()
+    doc = MagicMock(
+        deleted_at=None,
+        status="active",
+        dept_id=None,
+        scope=SCOPE_PERSONAL,
+        owner_id=owner,
+    )
+    with patch(
+        "app.services.document_library_align_service.expected_scope_for_document",
+        return_value=SCOPE_PERSONAL,
+    ):
+        assert document_matches_library_unit(db, doc, scope=SCOPE_PERSONAL)
+        assert document_matches_library_unit(
+            db, doc, scope=SCOPE_PERSONAL, owner_id=owner
+        )
+        assert not document_matches_library_unit(
+            db, doc, scope=SCOPE_PERSONAL, owner_id=other
+        )
+
+
 def test_document_matches_dataset_link_checks_registry_scope():
     db = MagicMock()
     doc = MagicMock(

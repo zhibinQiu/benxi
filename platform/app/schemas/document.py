@@ -115,6 +115,7 @@ class DocumentLibraryOut(BaseModel):
     companies: list[dict] = []
     departments: list[dict] = []
     teams: list[dict] = []
+    personal_owners: list[dict] = []
 
 
 class DocumentListItem(BaseModel):

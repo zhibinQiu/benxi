@@ -36,6 +36,7 @@ from app.services.knowledge_library_service import (
 from app.services.knowledge_parser_service import list_parser_options
 from app.services.knowledge_qa_service import (
     fetch_citation_image_bytes,
+    fetch_citation_preview_bytes,
     iter_knowledge_qa_stream,
 )
 from app.services.knowledge_scope_tree_service import build_knowledge_scope_tree
@@ -93,8 +94,9 @@ def knowledge_libraries(
 def knowledge_scope_tree(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    refresh: bool = Query(False, description="跳过服务端缓存，拉取最新索引状态"),
 ) -> ApiResponse[KnowledgeScopeTreeOut]:
-    data = build_knowledge_scope_tree(db, user)
+    data = build_knowledge_scope_tree(db, user, force_refresh=refresh)
     return ApiResponse(data=KnowledgeScopeTreeOut.model_validate(data))
 
 
@@ -191,6 +193,35 @@ def knowledge_document_reindex(
 
 
 @router.get(
+    "/citations/preview",
+    dependencies=[_knowledge_search],
+)
+def knowledge_citation_preview(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    image_id: str | None = Query(None),
+    chunk_id: str | None = Query(None),
+    dataset_id: str | None = Query(None),
+    ragflow_document_id: str | None = Query(None),
+) -> Response:
+    """返回引用在源 PDF 中的 KnowFlow 切片截图（非提取文本）。"""
+    from app.core.exceptions import not_found
+
+    result = fetch_citation_preview_bytes(
+        db,
+        user,
+        image_id=image_id,
+        chunk_id=chunk_id,
+        dataset_id=dataset_id,
+        ragflow_document_id=ragflow_document_id,
+    )
+    if not result:
+        raise not_found("引用原文截图不可用，请确认文档已成功索引")
+    data, content_type = result
+    return Response(content=data, media_type=content_type)
+
+
+@router.get(
     "/citations/images/{image_id:path}",
     dependencies=[_knowledge_search],
 )
@@ -203,7 +234,7 @@ def knowledge_citation_image(
 
     result = fetch_citation_image_bytes(db, user, image_id)
     if not result:
-        raise not_found("引用截图不可用")
+        raise not_found("引用原文截图不可用，请确认文档已成功索引")
     data, content_type = result
     return Response(content=data, media_type=content_type)
 

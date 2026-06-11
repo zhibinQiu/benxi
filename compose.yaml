@@ -1,6 +1,6 @@
-# 智碳平台 AI — 统一容器栈（基础编排文件）
+# 绿叶 AI 办公系统 — 统一容器栈（基础编排文件）
 #
-# 编排入口: bash scripts/stack.sh  或  bash scripts/zhitan.sh dev
+# 编排入口: bash scripts/stack.sh  或  ./dev.sh docker
 # 文档: docs/zh/operations/config-and-scripts.md
 #
 # 文件合并顺序（后者覆盖前者）:

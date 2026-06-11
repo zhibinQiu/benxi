@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocumentVersion
 from app.models.ragflow_document_link import RagflowDocumentLink
+from app.models.ragflow_document_mirror_link import RagflowDocumentMirrorLink
 from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
 from app.services.document_service import resolve_current_version
 
@@ -62,6 +63,29 @@ def find_reusable_knowflow_version_link(
         stmt = stmt.where(DocumentVersion.id != exclude_version_id)
 
     return db.scalar(stmt)
+
+
+def count_ragflow_document_references(
+    db: Session,
+    ragflow_document_id: str,
+    *,
+    exclude_document_id: uuid.UUID | None = None,
+) -> int:
+    """统计仍引用该 RAGFlow 文档的平台映射数（用于安全删除共享索引）。"""
+    rid = (ragflow_document_id or "").strip()
+    if not rid:
+        return 0
+    n = 0
+    for model in (
+        RagflowDocumentVersionLink,
+        RagflowDocumentMirrorLink,
+        RagflowDocumentLink,
+    ):
+        stmt = select(model).where(model.ragflow_document_id == rid)
+        if exclude_document_id is not None and hasattr(model, "platform_document_id"):
+            stmt = stmt.where(model.platform_document_id != exclude_document_id)
+        n += len(list(db.scalars(stmt).all()))
+    return n
 
 
 def get_version_link_by_ragflow_id(

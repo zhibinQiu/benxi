@@ -23,6 +23,7 @@ function pick() {
 
 function onChange(e) {
   emit("change", e);
+  if (e.target) e.target.value = "";
 }
 
 function onDrop(e) {

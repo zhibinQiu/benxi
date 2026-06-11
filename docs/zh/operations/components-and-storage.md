@@ -7,12 +7,12 @@
 
 ## 1. 当前系统是什么
 
-智碳平台 AI 使用 **单一 Docker Compose 栈**（项目名 `zhitan`），所有服务在同一 Docker 网络 `zhitan` 内通信。
+绿叶 AI 办公系统 使用 **单一 Docker Compose 栈**（项目名 `zhitan`），所有服务在同一 Docker 网络 `zhitan` 内通信。
 
 | 项 | 当前做法 |
 |----|----------|
 | 编排入口 | `bash scripts/stack.sh`（build / up / dev-up / backup） |
-| 日常开发 | `bash scripts/zhitan.sh dev`（全 Docker 热重载） |
+| 日常开发 | `./dev.sh docker`（全 Docker 热重载） |
 | 对外 Web | 仅 **40005**（Nginx 或 Vite） |
 | 知识库向量引擎 | **Infinity**（`DOC_ENGINE=infinity`），**不是** Elasticsearch |
 | 对象存储 | 栈内 **MinIO**，平台与 KnowFlow **共用** |
@@ -25,11 +25,11 @@
 |----------|------|
 | `platform/docker-compose*.yml` 多文件组合 | 根目录 `compose.yaml` + `deploy/knowflow.yml` |
 | `bash scripts/merge-stack-env.sh` | `bash scripts/setup-stack-env.sh` |
-| `bash scripts/zhitan.sh legacy` | `bash scripts/zhitan.sh dev` |
+| `./dev.sh legacy` | `./dev.sh docker` |
 | `bash scripts/deploy.sh full`（rsync 全仓库远程 build） | `stack build` + `stack save` + `deploy.sh stack push` |
 | 独立 Elasticsearch 向量库 | Infinity（`knowflow-infinity` 容器） |
 
-远程依赖开发（`remote-dev` + `local-dev`）仅为**过渡方案**，目标形态是单机 `zhitan.sh dev`；见 [单机迁移与热重载](single-server-migration.md)。
+远程依赖开发（`remote-dev` + `./dev.sh local`）仅为**过渡方案**，目标形态是单机 `dev.sh docker`；见 [单机迁移与热重载](single-server-migration.md)。
 
 ---
 
@@ -100,7 +100,7 @@ data/
 | 用户与组织 | `users`、`departments`、`user_departments`、`roles`、`permissions`、`role_permissions`、`user_roles` | 账号、部门树、RBAC |
 | 文档元数据 | `documents`、`document_library_folders`、`document_versions`、`document_permissions`、`document_version_blocks` | 文档记录、文件夹、版本、ACL、对比块 |
 | 文档流程 | `document_access_denials`、`document_publish_requests` | 拒绝访问、发布申请 |
-| KnowFlow 映射（平台侧） | `ragflow_account_links`、`ragflow_scope_datasets`、`ragflow_document_links`、`ragflow_document_version_links`、`ragflow_document_mirror_links` | 平台用户 ↔ RAGFlow 账号、scope dataset、文档同步状态 |
+| KnowFlow 映射（平台侧） | `ragflow_account_links`、`ragflow_scope_datasets`、`ragflow_document_links`、`ragflow_document_version_links`、`ragflow_document_mirror_links` | 平台用户 ↔ RAGFlow 账号、scope dataset、文档同步状态；**存在即复用、孤儿清理**见 [知识库数据一致性](knowledge-data-consistency.md) |
 | 后台任务 | `jobs`、`job_events` | 翻译、对比、同步等任务及事件流 |
 | 文档对比 | `compare_jobs`、`compare_diff_items`、`compare_search_hits`、`document_version_compare_relations`、`document_version_diff_items` | 对比任务与 diff 结果 |
 | 对话 | `rag_sessions`、`rag_messages`、`platform_chat_conversations`、`platform_chat_messages` | RAG 问答与平台助手会话 |

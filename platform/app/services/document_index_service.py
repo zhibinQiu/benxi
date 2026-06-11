@@ -16,6 +16,39 @@ from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
 from app.services.knowledge_library_service import _enrich_ragflow_doc_meta
 
 _INDEX_DONE_LABELS = frozenset({"已完成", "已索引"})
+INDEX_READY_STATUSES = _INDEX_DONE_LABELS
+
+
+def is_index_ready_meta(meta: dict | None) -> bool:
+    """文档是否已成功索引、可用于知识检索（全平台统一判据）。"""
+    if not meta or not meta.get("knowledge_synced"):
+        return False
+    return (meta.get("parse_status") or "") in INDEX_READY_STATUSES
+
+
+def _apply_db_ready_override(
+    meta_by_doc: dict[str, dict],
+    db_only_meta: dict[str, dict],
+) -> None:
+    """库内 index_completed_at 已就绪时，覆盖 KnowFlow 元数据缓存的滞后状态。"""
+    for did, db_meta in db_only_meta.items():
+        if not is_index_ready_meta(db_meta):
+            continue
+        live = meta_by_doc.get(did)
+        if live is None:
+            meta_by_doc[did] = dict(db_meta)
+            continue
+        live["parse_status"] = db_meta.get("parse_status")
+        live["knowledge_synced"] = True
+        for key in (
+            "indexed_version_id",
+            "indexed_version_no",
+            "ragflow_document_id",
+            "parse_progress",
+            "chunk_count",
+        ):
+            if db_meta.get(key) is not None:
+                live[key] = db_meta[key]
 
 
 def _default_index_meta() -> dict:
@@ -271,6 +304,13 @@ def enrich_document_index_meta(
                 db, version_link_by_doc.get(did), meta_by_doc[did].get("parse_status")
             )
 
+    db_only = _enrich_document_index_meta_db_only(
+        db,
+        documents,
+        link_by_doc=link_by_doc,
+        version_links_by_doc=version_links_by_doc,
+    )
+    _apply_db_ready_override(meta_by_doc, db_only)
     return meta_by_doc
 
 
@@ -327,8 +367,37 @@ def enrich_version_index_meta(
             _maybe_mark_version_index_completed(
                 db, link_by_ver.get(vid), meta_by_ver[vid].get("parse_status")
             )
+            link = link_by_ver.get(vid)
+            if link and link.index_completed_at:
+                meta_by_ver[vid]["parse_status"] = "已索引"
+                meta_by_ver[vid]["knowledge_synced"] = True
 
     return meta_by_ver
+
+
+def apply_index_meta_to_knowledge_row(row: dict, meta: dict | None) -> None:
+    """将统一索引元数据写入知识检索树 / 库列表行（就地更新）。"""
+    m = meta or _default_index_meta()
+    row["knowledge_synced"] = bool(m.get("knowledge_synced"))
+    row["parse_status"] = m.get("parse_status")
+    row["index_ready"] = is_index_ready_meta(m)
+    if m.get("ragflow_document_id") and not row.get("ragflow_document_id"):
+        row["ragflow_document_id"] = m.get("ragflow_document_id")
+
+
+def enrich_knowledge_document_rows(
+    db: Session,
+    user: User,
+    rows: list[dict],
+    documents: list[Document],
+) -> None:
+    """知识检索相关 UI 的唯一索引状态读取入口。"""
+    if not rows or not documents:
+        return
+    meta_by_doc = enrich_document_index_meta(db, user, list(documents), live_ragflow=True)
+    for row in rows:
+        did = str(row.get("document_id") or "")
+        apply_index_meta_to_knowledge_row(row, meta_by_doc.get(did))
 
 
 def apply_index_meta_to_item(item, meta: dict | None):

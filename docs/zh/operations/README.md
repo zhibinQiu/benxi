@@ -12,6 +12,7 @@
 |------|------|
 | [**运维部署指南（根目录）**](../../运维部署指南.md) | 启动 / 部署 / 迁移、架构图、端口速查 |
 | [**组件位置与数据存储**](components-and-storage.md) | **各服务在哪、各库存什么、如何连接查看** |
+| [**知识库数据一致性**](knowledge-data-consistency.md) | **存在即复用、孤儿清理、分层与权限、对账脚本** |
 | [**配置文件与脚本**](config-and-scripts.md) | **Compose 文件、.env、脚本职责、Mermaid 说明** |
 | [系统架构](architecture.md) | 分层、开源组件、数据流 |
 | [Docker 容器说明](docker-services.md) | 每个容器的职责、镜像、端口、依赖 |
@@ -32,10 +33,10 @@
 
 ```bash
 # 全 Docker 开发（本机或服务器，热重载）
-bash scripts/zhitan.sh dev
+./dev.sh docker
 
 # 远程依赖 + 本机 venv（过渡，目标改为单机 dev）
-# REMOTE_HOST=服务器IP bash scripts/zhitan.sh remote-dev && bash scripts/zhitan.sh local-dev
+# REMOTE_HOST=服务器IP ./dev.sh remote-dev && ./dev.sh local
 # 见 single-server-migration.md
 
 # 生产式本机

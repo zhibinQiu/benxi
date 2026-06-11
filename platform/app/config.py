@@ -15,9 +15,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "智碳平台AI系统"
-    platform_version: str = "4.0.0"
+    app_name: str = "绿叶AI办公系统"
+    platform_version: str = "4.0.1"
     debug: bool = False
+    debug_sql: bool = False
+    remote_deps: bool = False
     api_prefix: str = "/api/v1"
 
     database_url: str = (
@@ -28,6 +30,9 @@ class Settings(BaseSettings):
     db_max_overflow: int = 40
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
+    db_connect_timeout: int = 10
+    # auto：schema 版本已对齐则仅同步种子数据；full/light/off 强制全量/轻量/跳过
+    db_startup_bootstrap: str = "auto"
 
     redis_url: str = "redis://127.0.0.1:6379/0"
     celery_broker_url: str | None = None
@@ -72,6 +77,14 @@ class Settings(BaseSettings):
     knowflow_ui_embed_mode: str = "iframe"
     ragflow_api_url: str = "http://127.0.0.1:9380"
     ragflow_api_key: str = ""
+    # RAGFlow HTTP：remote-dev 默认 12s；0 表示按环境自动（远程 12 / 本地 30）
+    ragflow_http_timeout: float = 0
+    # 连续失败后熔断秒数（逐次递增，上限 120s）
+    ragflow_http_cooldown_sec: int = 20
+    # 远程 RAGFlow MySQL（TCP）超时，避免拖垮 API
+    ragflow_mysql_connect_timeout: int = 5
+    ragflow_mysql_read_timeout: int = 8
+    ragflow_mysql_write_timeout: int = 10
     # mapped：每平台用户独立 RAGFlow 账号（推荐，文档权限可隔离）
     # shared：全员共用管理员（仅开发/演示，无法隔离文档）
     ragflow_account_mode: str = "mapped"
@@ -108,7 +121,7 @@ class Settings(BaseSettings):
     knowflow_theme_primary: str = "#18a058"
     knowflow_theme_primary_hover: str = "#36ad6a"
     knowflow_theme_primary_pressed: str = "#0c7a43"
-    knowflow_theme_app_name: str = "智碳平台AI系统"
+    knowflow_theme_app_name: str = "绿叶AI办公系统"
     knowflow_theme_logo_url: str = "/logo.svg"
     knowflow_theme_favicon_url: str = "/favicon.svg"
     knowflow_hide_file_manager: bool = True
@@ -121,20 +134,23 @@ class Settings(BaseSettings):
     stt_max_file_mb: int = 100
 
     # 文档中心单文件上传上限（MB）
-    document_upload_max_file_mb: int = 1024
+    document_upload_max_file_mb: int = 200
 
     # 单文档版本 Git 仓库存储根目录（每文档一个 repo，用于 git diff 版本对比）
     document_git_repos_root: str = ""
 
     # 知识库默认解析配置（上传同步 / 重新索引）
     knowledge_default_parser_id: str = "naive"
-    knowledge_default_layout_recognize: str = "Plain Text"
+    knowledge_default_layout_recognize: str = "DeepDOC"
     knowledge_default_chunk_token_num: int = 512
     # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，显著加快列表）
     knowledge_list_live_index_meta: bool = False
     knowledge_ragflow_meta_cache_ttl_sec: int = 60
     # 知识检索混合检索：向量相似度权重（其余为关键词权重，默认 0.3 / 0.7）
     knowledge_retrieval_vector_weight: float = 0.3
+
+    # Redis 连接超时（秒）；远程不可达时尽快降级为进程内缓存，避免首请求阻塞数秒
+    redis_socket_timeout_sec: float = 0.5
 
     # 平台 Redis/内存缓存（文档库分级、文件夹列表等；Redis 不可用时自动降级为进程内 TTL）
     platform_cache_enabled: bool = True
@@ -207,6 +223,10 @@ class Settings(BaseSettings):
     data_analysis_storage_dir: str = ""
     data_analysis_max_file_mb: int = 50
     data_analysis_exec_timeout_seconds: int = 60
+
+    # 网站收藏 · 在线搜索（SearXNG JSON API 基址，如 http://host:8080）
+    searxng_url: str = ""
+    searxng_timeout_seconds: float = 15.0
 
     @property
     def broker(self) -> str:

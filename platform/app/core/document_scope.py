@@ -549,6 +549,40 @@ def library_teams_for_user(db: Session, user: User) -> list[dict]:
     return _library_org_units_for_user(db, user, depth=2)
 
 
+def personal_library_owners_for_user(db: Session, user: User) -> list[dict]:
+    """系统管理员浏览个人级文档库时可切换的账户列表。"""
+    if not user_is_superuser(db, user):
+        return []
+    from app.core.user_display import user_display_name
+    from app.models.document import DocumentLibraryFolder
+
+    owner_ids: set[uuid.UUID] = {user.id}
+    doc_owner_stmt = select(Document.owner_id).where(
+        Document.deleted_at.is_(None),
+        Document.status == DocumentStatus.active.value,
+        Document.scope == SCOPE_PERSONAL,
+    )
+    for owner_id in db.scalars(doc_owner_stmt).all():
+        if owner_id:
+            owner_ids.add(owner_id)
+    folder_owner_stmt = select(DocumentLibraryFolder.owner_id).where(
+        DocumentLibraryFolder.scope == SCOPE_PERSONAL,
+        DocumentLibraryFolder.owner_id.is_not(None),
+    )
+    for owner_id in db.scalars(folder_owner_stmt).all():
+        if owner_id:
+            owner_ids.add(owner_id)
+
+    out: list[dict] = []
+    for owner_id in sorted(owner_ids, key=str):
+        owner = db.get(User, owner_id)
+        if not owner:
+            continue
+        out.append({"id": owner.id, "name": user_display_name(owner)})
+    out.sort(key=lambda row: row["name"])
+    return out
+
+
 def library_folders(db: Session, user: User) -> list[dict]:
     """前端文档库分级 Tab：个人级 / 小组级 / 部门级 / 公司级 / 分享。"""
     folders = []

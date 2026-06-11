@@ -88,9 +88,9 @@ def normalize_parser_id(parser_id: str | None) -> str:
 
 def normalize_layout_recognize(layout: str | None) -> str:
     settings = get_settings()
-    raw = (layout or settings.knowledge_default_layout_recognize or "Plain Text").strip()
+    raw = (layout or settings.knowledge_default_layout_recognize or "DeepDOC").strip()
     allowed = {item["id"] for item in LAYOUT_RECOGNIZERS}
-    return raw if raw in allowed else "Plain Text"
+    return raw if raw in allowed else "DeepDOC"
 
 
 def coerce_parser_layout(parser_id: str, layout_recognize: str) -> tuple[str, str]:
@@ -106,9 +106,13 @@ def infer_parser_for_upload_file(
     file_name: str,
     mime_type: str = "",
 ) -> tuple[str, str]:
-    """按文件类型选择 KnowFlow 解析器；纯文本避免 DeepDOC。"""
+    """按文件类型自动选择 KnowFlow 切片方法与版面识别（与 DocumentParserType 对齐）。"""
     lower = (file_name or "").lower()
     mime = (mime_type or "").lower()
+    settings = get_settings()
+    default_layout = normalize_layout_recognize(
+        settings.knowledge_default_layout_recognize
+    )
 
     if lower.endswith(".md") or "markdown" in mime:
         return "naive", "Plain Text"
@@ -116,15 +120,29 @@ def infer_parser_for_upload_file(
         return "naive", "Plain Text"
     if mime.startswith("text/") or mime in ("application/json", "application/xml"):
         return "naive", "Plain Text"
-    if lower.endswith((".doc", ".docx")) or "word" in mime:
+    if lower.endswith((".doc", ".docx", ".rtf")) or "word" in mime:
         return "naive", "Plain Text"
     if lower.endswith((".xlsx", ".xls")) or "spreadsheet" in mime or "excel" in mime:
         return "table", "Plain Text"
+    if (
+        lower.endswith((".ppt", ".pptx"))
+        or "presentation" in mime
+        or "powerpoint" in mime
+    ):
+        return "presentation", default_layout
+    if lower.endswith(
+        (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff")
+    ) or mime.startswith("image/"):
+        return "picture", default_layout
+    if lower.endswith(".pdf") or mime == "application/pdf":
+        return (
+            normalize_parser_id(settings.knowledge_default_parser_id),
+            default_layout,
+        )
 
-    settings = get_settings()
     return (
         normalize_parser_id(settings.knowledge_default_parser_id),
-        normalize_layout_recognize(settings.knowledge_default_layout_recognize),
+        default_layout,
     )
 
 

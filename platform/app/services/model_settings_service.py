@@ -31,6 +31,7 @@ NOTICE_EFFECTIVE = (
     "嵌入/语言模型写入 KnowFlow 模板租户并同步已开户用户；"
     "PaddleOCR 地址写入 deploy/knowflow/settings.yaml 并尝试重启 knowflow-backend；"
     "语音识别与 PDF 翻译地址供平台 API/Worker 调用；"
+    "SearXNG 地址供网站收藏联网搜索；"
     "知识库 API / KnowFlow 后台与 Web UI / RAGFlow MySQL 供文档同步、iframe 嵌入与模型复制"
     "（默认来自 .env 中 PLATFORM_API_BASE_URL、RAGFLOW_*、KNOWFLOW_*）。"
 )
@@ -99,6 +100,8 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "ragflow_mysql_db": (settings.ragflow_mysql_db or "rag_flow").strip(),
         "ragflow_mysql_password": (settings.ragflow_mysql_password or "").strip(),
         "ragflow_mysql_container": (settings.ragflow_mysql_container or "ragflow-mysql").strip(),
+        "searxng_url": (settings.searxng_url or "").strip(),
+        "searxng_timeout_seconds": str(float(settings.searxng_timeout_seconds or 15.0)),
     }
 
 
@@ -291,6 +294,22 @@ def get_pdf2zh_api_url(db: Session | None = None) -> str:
     return merged.get("pdf2zh_api_url") or ""
 
 
+def get_searxng_url(db: Session | None = None) -> str:
+    merged = _effective_config(db, fill_embedding_from_ragflow=False)
+    return (merged.get("searxng_url") or get_settings().searxng_url or "").strip()
+
+
+def get_searxng_timeout_seconds(db: Session | None = None) -> float:
+    merged = _effective_config(db, fill_embedding_from_ragflow=False)
+    raw = merged.get("searxng_timeout_seconds")
+    if raw is None or raw == "":
+        return max(3.0, float(get_settings().searxng_timeout_seconds or 15.0))
+    try:
+        return max(3.0, float(raw))
+    except (TypeError, ValueError):
+        return 15.0
+
+
 def get_platform_api_base_url(db: Session | None = None) -> str:
     """浏览器请求平台后端的根地址（相对 /ai 或完整 URL）。"""
     merged = _effective_config(db, fill_embedding_from_ragflow=False)
@@ -343,6 +362,8 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
         speech_service_url=effective.get("speech_service_url") or "",
         pdf2zh_api_url=effective.get("pdf2zh_api_url") or "",
         embedding_factory=effective.get("embedding_factory") or None,
+        searxng_url=effective.get("searxng_url") or "",
+        searxng_timeout_seconds=float(effective.get("searxng_timeout_seconds") or 15.0),
         knowledge=_knowledge_infra_out(effective),
     )
 
@@ -465,6 +486,16 @@ def save_model_settings(
             body.ragflow_mysql_container
             if body.ragflow_mysql_container is not None
             else current["ragflow_mysql_container"]
+        ),
+        "searxng_url": (
+            (body.searxng_url or "").strip()
+            if body.searxng_url is not None
+            else current.get("searxng_url", "")
+        ),
+        "searxng_timeout_seconds": (
+            str(max(3.0, float(body.searxng_timeout_seconds)))
+            if body.searxng_timeout_seconds is not None
+            else current.get("searxng_timeout_seconds", "15.0")
         ),
     }
 

@@ -194,6 +194,7 @@ export default {
     editFolder: "Edit folder",
     dept: "Department",
     deptSelectPlaceholder: "Select unit",
+    ownerSelectPlaceholder: "Select account",
     hints: {
       recycle: "Deleted documents appear here. Use Restore to bring them back.",
       myShares:

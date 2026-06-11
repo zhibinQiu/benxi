@@ -344,11 +344,29 @@ def detach_platform_document_knowflow(
 ) -> list[KnowflowDeleteTarget]:
     """删除本地 KnowFlow 映射；可选同步远端或返回待删目标供后台处理。"""
     from app.services.ragflow_version_link_service import (
+        count_ragflow_document_references,
         list_version_links_for_document,
     )
 
     targets: list[KnowflowDeleteTarget] = []
     seen: set[tuple[str, str]] = set()
+    preserved = 0
+
+    def _maybe_append(ds_id: str | None, rag_id: str | None) -> None:
+        nonlocal preserved
+        if not ds_id or not rag_id:
+            return
+        if count_ragflow_document_references(
+            db, rag_id, exclude_document_id=document.id
+        ):
+            preserved += 1
+            logger.info(
+                "保留共享 KnowFlow 索引 doc=%s rag=%s（其他文档仍引用）",
+                document.id,
+                rag_id,
+            )
+            return
+        _append_knowflow_target(targets, seen, ds_id, rag_id)
 
     for mirror in list(
         db.scalars(
@@ -357,27 +375,27 @@ def detach_platform_document_knowflow(
             )
         ).all()
     ):
-        _append_knowflow_target(
-            targets, seen, mirror.dataset_id, mirror.ragflow_document_id
-        )
+        _maybe_append(mirror.dataset_id, mirror.ragflow_document_id)
         db.delete(mirror)
 
     for vl in list_version_links_for_document(db, document.id):
-        _append_knowflow_target(
-            targets, seen, vl.dataset_id, vl.ragflow_document_id
-        )
+        _maybe_append(vl.dataset_id, vl.ragflow_document_id)
         db.delete(vl)
 
     link = _get_link(db, document.id)
     if link:
-        _append_knowflow_target(
-            targets, seen, link.dataset_id, link.ragflow_document_id
-        )
+        _maybe_append(link.dataset_id, link.ragflow_document_id)
         db.delete(link)
 
     db.flush()
     if sync_remote and targets:
         _execute_knowflow_deletes(db, document, targets)
+    if preserved:
+        logger.info(
+            "detach doc=%s 保留 %s 个共享 KnowFlow 索引",
+            document.id,
+            preserved,
+        )
     return targets
 
 

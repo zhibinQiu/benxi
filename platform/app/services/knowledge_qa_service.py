@@ -49,6 +49,7 @@ def _parse_ids(ids: list[str]) -> list[uuid.UUID]:
 
 def _rag_clients_for_qa(db: Session, user: User) -> list[RagflowClient]:
     from app.integrations.knowflow_client import get_knowflow_client_for_user
+    from app.services.model_settings_service import get_ragflow_api_key
     from app.services.ragflow_identity_service import get_user_ragflow_auth
     from app.services.ragflow_scope_service import _privileged_rag_client
 
@@ -64,6 +65,9 @@ def _rag_clients_for_qa(db: Session, user: User) -> list[RagflowClient]:
         seen.add(key)
         clients.append(client)
 
+    api_key = (get_ragflow_api_key(db) or "").strip()
+    if api_key:
+        _add(RagflowClient(api_key=api_key))
     kf = get_knowflow_client_for_user(db, user)
     if hasattr(kf, "_rag"):
         _add(kf._rag)
@@ -73,7 +77,7 @@ def _rag_clients_for_qa(db: Session, user: User) -> list[RagflowClient]:
     priv = _privileged_rag_client(db)
     _add(priv)
     settings = get_settings()
-    if settings.ragflow_api_key:
+    if settings.ragflow_api_key and settings.ragflow_api_key != api_key:
         _add(RagflowClient(api_key=settings.ragflow_api_key))
     return clients
 
@@ -309,7 +313,11 @@ def build_citations(hits: list[dict], doc_titles: dict[str, str]) -> list[dict]:
                 "anchor_json": h.get("anchor_json"),
                 "chunk_id": h.get("chunk_id"),
                 "dataset_id": h.get("dataset_id"),
-                "image_id": (h.get("image_id") or "").strip() or None,
+                "image_id": (
+                    RagflowClient.extract_chunk_image_id(h)
+                    or (h.get("image_id") or "").strip()
+                    or None
+                ),
                 "ragflow_document_id": h.get("ragflow_document_id"),
                 "source": h.get("source") or "knowflow",
             }
@@ -477,20 +485,74 @@ def generate_answer(
     return _fallback_answer(question, hits, doc_titles)
 
 
-def fetch_citation_image_bytes(
-    db: Session, user: User, image_id: str
-) -> tuple[bytes, str] | None:
-    image_id = (image_id or "").strip()
-    if not image_id:
+def resolve_citation_image_id(
+    db: Session,
+    user: User,
+    *,
+    image_id: str | None = None,
+    chunk_id: str | None = None,
+    dataset_id: str | None = None,
+    ragflow_document_id: str | None = None,
+) -> str | None:
+    """解析 KnowFlow 切片截图 ID（优先检索带回的 image_id，否则按 chunk 查询）。"""
+    iid = (image_id or "").strip()
+    if iid:
+        return iid
+    cid = (chunk_id or "").strip()
+    ds_id = (dataset_id or "").strip()
+    rid = (ragflow_document_id or "").strip()
+    if not cid or not ds_id or not rid:
         return None
     for rag in _rag_clients_for_qa(db, user):
         if not rag.health_ok():
             continue
         try:
-            return rag.get_chunk_image(image_id)
+            resolved = rag.resolve_chunk_image_id(
+                dataset_id=ds_id,
+                ragflow_document_id=rid,
+                chunk_id=cid,
+            )
+            if resolved:
+                return resolved
         except RagflowError as exc:
-            logger.debug("获取引用截图失败 image=%s: %s", image_id, exc)
+            logger.debug("按 chunk 解析截图 ID 失败 chunk=%s: %s", cid, exc)
     return None
+
+
+def fetch_citation_preview_bytes(
+    db: Session,
+    user: User,
+    *,
+    image_id: str | None = None,
+    chunk_id: str | None = None,
+    dataset_id: str | None = None,
+    ragflow_document_id: str | None = None,
+) -> tuple[bytes, str] | None:
+    """获取引用在源 PDF 中的截图（KnowFlow 切片快照，含高亮区域）。"""
+    resolved = resolve_citation_image_id(
+        db,
+        user,
+        image_id=image_id,
+        chunk_id=chunk_id,
+        dataset_id=dataset_id,
+        ragflow_document_id=ragflow_document_id,
+    )
+    if not resolved:
+        return None
+    for rag in _rag_clients_for_qa(db, user):
+        if not rag.health_ok():
+            continue
+        try:
+            return rag.get_chunk_image(resolved)
+        except RagflowError as exc:
+            logger.debug("获取引用截图失败 image=%s: %s", resolved, exc)
+    return None
+
+
+def fetch_citation_image_bytes(
+    db: Session, user: User, image_id: str
+) -> tuple[bytes, str] | None:
+    return fetch_citation_preview_bytes(db, user, image_id=image_id)
 
 
 def _resolve_qa_session(

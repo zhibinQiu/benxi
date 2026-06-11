@@ -19,14 +19,14 @@ bash scripts/stack.sh backup
 bash scripts/stack.sh restore backups/…
 ```
 
-等价入口：`bash scripts/zhitan.sh`（up）、`bash scripts/zhitan.sh dev`（dev-up）、`bash scripts/zhitan.sh stack …`（透传）。
+等价入口：`./dev.sh`（up）、`./dev.sh docker`（dev-up）、`./dev.sh stack …`（透传）。
 
 ## 远程依赖 + 本机开发
 
 ```bash
-REMOTE_HOST=服务器IP bash scripts/zhitan.sh remote-dev
+REMOTE_HOST=服务器IP ./dev.sh remote-dev
 bash scripts/verify-remote-deps.sh
-bash scripts/zhitan.sh local-dev
+./dev.sh local
 ```
 
 详见 [server-deps](../operations/server-deps.md) 与 [根目录运维部署指南](../../../运维部署指南.md) §6.5。

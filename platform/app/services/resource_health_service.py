@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 
@@ -11,6 +12,7 @@ from app.integrations.paddleocr_client import paddleocr_request_url
 from app.integrations.ragflow_client import RagflowClient
 from app.services.model_settings_service import (
     get_effective_model_config,
+    get_searxng_timeout_seconds,
     mask_secret,
     resolve_ragflow_api_base,
 )
@@ -26,6 +28,7 @@ TESTABLE_RESOURCE_IDS = frozenset(
         "paddleocr",
         "speech",
         "pdf2zh",
+        "searxng",
         "ragflow_api",
         "knowflow_backend",
         "ragflow_mysql",
@@ -301,6 +304,47 @@ def _probe_speech_url(speech_url: str) -> tuple[bool, str]:
     return healthy, "连接正常" if healthy else "无法访问 /health"
 
 
+def _searxng_timeout_from_cfg(cfg: dict[str, str], db) -> float:
+    """与联网搜索使用同一超时配置，避免探测 5s 过短而业务请求仍成功。"""
+    raw = (cfg.get("searxng_timeout_seconds") or "").strip()
+    if raw:
+        try:
+            return max(3.0, float(raw))
+        except (TypeError, ValueError):
+            pass
+    return get_searxng_timeout_seconds(db)
+
+
+def _probe_searxng_url(searxng_url: str, *, timeout: float | None = None) -> tuple[bool, str]:
+    base = (searxng_url or "").strip().rstrip("/")
+    if not base:
+        return False, "未填写服务地址"
+    probe_timeout = max(3.0, float(timeout or get_settings().searxng_timeout_seconds or 15.0))
+    url = urljoin(f"{base}/", "search")
+    try:
+        with httpx.Client(timeout=probe_timeout, follow_redirects=True) as client:
+            r = client.get(
+                url,
+                params={"q": "ping", "format": "json", "pageno": 1},
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "pdf-trans-platform/1.0",
+                },
+            )
+            if r.status_code >= 400:
+                return False, f"HTTP {r.status_code}"
+            payload = r.json()
+            if isinstance(payload, dict) and "results" in payload:
+                return True, "连接正常"
+            return False, "返回格式异常"
+    except httpx.TimeoutException:
+        return False, f"连接超时（>{probe_timeout:g}s）"
+    except httpx.HTTPError as exc:
+        return False, f"无法连接：{exc}"
+    except ValueError:
+        return False, "返回非 JSON"
+
+
 def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> dict[str, Any]:
     """按给定配置探测单项资源（用于保存前测试）。"""
     _ = db
@@ -376,6 +420,14 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
         if not pdf2zh_url:
             return _item(configured=False, healthy=False, message="未填写服务地址")
         healthy, msg = _probe_pdf2zh_url(pdf2zh_url)
+        return _item(configured=True, healthy=healthy, message=msg)
+
+    if rid == "searxng":
+        searxng_url = (cfg.get("searxng_url") or "").strip()
+        if not searxng_url:
+            return _item(configured=False, healthy=False, message="未填写 SearXNG 地址")
+        timeout = _searxng_timeout_from_cfg(cfg, db)
+        healthy, msg = _probe_searxng_url(searxng_url, timeout=timeout)
         return _item(configured=True, healthy=healthy, message=msg)
 
     if rid == "ragflow_api":

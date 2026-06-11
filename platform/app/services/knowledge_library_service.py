@@ -138,13 +138,10 @@ def _shared_document_ids_for_user(db: Session, user: User) -> set[str]:
     return {str(doc.id) for doc, _meta in rows}
 
 
-_INDEX_READY_STATUSES = frozenset({"已完成", "已索引"})
-
-
 def _row_index_ready(row: dict) -> bool:
-    if not row.get("knowledge_synced"):
-        return False
-    return (row.get("parse_status") or "") in _INDEX_READY_STATUSES
+    from app.services.document_index_service import is_index_ready_meta
+
+    return is_index_ready_meta(row)
 
 
 def _folder_group_key(
@@ -220,7 +217,7 @@ def _collect_dataset_document_rows(
             }
         )
 
-    _enrich_ragflow_doc_meta(db, user, dataset_id, rows)
+    _apply_unified_index_meta_to_rows(db, user, rows)
     rows.sort(key=lambda r: (r.get("synced_at") or ""), reverse=True)
     return rows
 
@@ -483,13 +480,36 @@ def list_library_documents(
             }
         )
 
-    _enrich_ragflow_doc_meta(db, user, dataset_id, rows)
+    _apply_unified_index_meta_to_rows(db, user, rows)
 
     rows.sort(key=lambda r: (r.get("synced_at") or ""), reverse=True)
     total = len(rows)
     start = (page - 1) * page_size
     page_rows = rows[start : start + page_size]
     return page_rows, total
+
+
+def _apply_unified_index_meta_to_rows(
+    db: Session, user: User, rows: list[dict]
+) -> None:
+    """库列表与检索树共用 document_index_service 读取层。"""
+    if not rows:
+        return
+    from app.services.document_index_service import enrich_knowledge_document_rows
+    from app.services.document_service import get_document
+
+    documents = []
+    for row in rows:
+        raw_id = row.get("document_id")
+        if not raw_id:
+            continue
+        try:
+            doc = get_document(db, uuid.UUID(str(raw_id)))
+        except (TypeError, ValueError):
+            continue
+        if doc and doc.deleted_at is None:
+            documents.append(doc)
+    enrich_knowledge_document_rows(db, user, rows, documents)
 
 
 def _enrich_ragflow_doc_meta(

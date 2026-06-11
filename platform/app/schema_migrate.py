@@ -831,3 +831,83 @@ def ensure_ragflow_version_index_completed_schema(engine: Engine) -> None:
                 "ADD COLUMN IF NOT EXISTS index_completed_at TIMESTAMPTZ"
             )
         )
+
+
+# 新增 ensure_* 补丁时递增；启动时若库中无对应记录则自动跑全量 schema 迁移。
+PLATFORM_SCHEMA_REVISION = 1
+
+
+def platform_schema_revision_patch() -> str:
+    return f"platform_schema_rev_{PLATFORM_SCHEMA_REVISION}"
+
+
+def _ensure_schema_patches_table(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS schema_patches (
+                name VARCHAR(64) PRIMARY KEY,
+                applied_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
+    )
+
+
+def is_platform_schema_current(engine: Engine) -> bool:
+    patch = platform_schema_revision_patch()
+    with engine.connect() as conn:
+        _ensure_schema_patches_table(conn)
+        return (
+            conn.execute(
+                text("SELECT 1 FROM schema_patches WHERE name = :name"),
+                {"name": patch},
+            ).first()
+            is not None
+        )
+
+
+def mark_platform_schema_current(engine: Engine) -> None:
+    patch = platform_schema_revision_patch()
+    with engine.begin() as conn:
+        _ensure_schema_patches_table(conn)
+        conn.execute(
+            text(
+                "INSERT INTO schema_patches (name) VALUES (:name) "
+                "ON CONFLICT (name) DO NOTHING"
+            ),
+            {"name": patch},
+        )
+
+
+def run_all_schema_migrations(engine: Engine) -> None:
+    """全量 DDL/数据补丁（与 app.main 启动顺序一致）。"""
+    from app.database import Base
+
+    Base.metadata.create_all(bind=engine)
+    ensure_document_schema(engine)
+    ensure_document_library_folder_schema(engine)
+    ensure_document_scope_tier_v2(engine)
+    ensure_document_scope_org_depth(engine)
+    ensure_ragflow_schema(engine)
+    drop_legacy_ragflow_account_dataset_columns(engine)
+    ensure_carbon_market_schema(engine)
+    ensure_meeting_record_schema(engine)
+    ensure_todo_schema(engine)
+    ensure_wechat_mp_schema(engine)
+    ensure_feed_subscription_schema(engine)
+    ensure_platform_chat_schema(engine)
+    ensure_platform_model_settings_schema(engine)
+    ensure_user_single_department_schema(engine)
+    ensure_user_phone_schema(engine)
+    ensure_user_last_seen_schema(engine)
+    ensure_user_auth_token_version_schema(engine)
+    ensure_ragflow_version_index_completed_schema(engine)
+    ensure_document_version_change_description(engine)
+    ensure_version_compare_schema(engine)
+    ensure_version_compare_llm_summary_schema(engine)
+    ensure_document_version_blocks_schema(engine)
+    ensure_permission_level_migration(engine)
+    ensure_document_library_align_v1(engine)
+    migrate_legacy_admin_roles(engine)
+    mark_platform_schema_current(engine)

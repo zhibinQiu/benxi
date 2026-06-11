@@ -18,4 +18,28 @@ def test_md_uses_naive_plain_text():
 def test_pdf_uses_default_parser():
     parser, layout = infer_parser_for_upload_file("report.pdf", "application/pdf")
     assert parser == "naive"
+    assert layout == "DeepDOC"
+
+
+def test_ppt_uses_presentation_parser():
+    parser, layout = infer_parser_for_upload_file(
+        "slides.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    )
+    assert parser == "presentation"
+    assert layout == "DeepDOC"
+
+
+def test_png_uses_picture_parser():
+    parser, layout = infer_parser_for_upload_file("scan.png", "image/png")
+    assert parser == "picture"
+    assert layout == "DeepDOC"
+
+
+def test_xlsx_uses_table_parser():
+    parser, layout = infer_parser_for_upload_file(
+        "data.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    assert parser == "table"
     assert layout == "Plain Text"

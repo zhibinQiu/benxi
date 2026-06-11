@@ -96,10 +96,21 @@ def get_user_ragflow_auth(db: Session, user: User) -> str | None:
     settings = get_settings()
     if not settings.knowflow_enabled:
         return None
+    from app.database import release_db_connection
+    from app.integrations.ragflow_http import (
+        mark_ragflow_http_failure,
+        mark_ragflow_http_success,
+        should_attempt_ragflow_http,
+    )
+
     link = get_or_create_link(db, user)
     cached = (link.ragflow_access_token or "").strip()
     if cached:
+        release_db_connection(db)
+        if not should_attempt_ragflow_http():
+            return cached
         if _ragflow_auth_valid(cached):
+            mark_ragflow_http_success()
             from app.integrations.ragflow_provision import finalize_ragflow_link
 
             finalize_ragflow_link(link, cached, user, db=db)
@@ -107,12 +118,24 @@ def get_user_ragflow_auth(db: Session, user: User) -> str | None:
             return cached
         link.ragflow_access_token = None
         db.flush()
+        release_db_connection(db)
+
+    if not should_attempt_ragflow_http():
+        logger.warning("RAGFlow 处于冷却期，跳过开户/登录 %s", user.username)
+        return None
+
+    release_db_connection(db)
     try:
-        return provision_and_login(link, user, db=db)
+        token = provision_and_login(link, user, db=db)
+        mark_ragflow_http_success()
+        db.flush()
+        return token
     except RagflowProvisionError as e:
+        mark_ragflow_http_failure()
         logger.warning("RAGFlow 开户/登录失败 %s: %s", user.username, e)
         return None
     except httpx.HTTPError as e:
+        mark_ragflow_http_failure()
         logger.warning("RAGFlow 不可达，跳过开户/登录 %s: %s", user.username, e)
         return None
 
@@ -154,8 +177,10 @@ def warm_ragflow_on_login(db: Session, user: User) -> RagflowAccountLink:
             logger.warning("登录后 KnowFlow 建库权限授予跳过: %s", e)
     if link.ragflow_user_id:
         try:
+            from app.database import release_db_connection
             from app.integrations.ragflow_llm_template import ensure_shared_llm_config
 
+            release_db_connection(db)
             ensure_shared_llm_config(link.ragflow_user_id, db=db)
         except Exception as e:
             logger.warning("登录后 KnowFlow 模型配置同步跳过: %s", e)
@@ -203,9 +228,13 @@ def _ragflow_user_info(authorization: str | None) -> tuple[bool, dict | None]:
     token = (authorization or "").strip()
     if not token:
         return False, None
+    from app.integrations.ragflow_http import ragflow_http_client, should_attempt_ragflow_http
+
+    if not should_attempt_ragflow_http():
+        return True, None
     settings = get_settings()
     try:
-        with httpx.Client(timeout=5.0) as client:
+        with ragflow_http_client(timeout=5.0) as client:
             r = client.get(
                 f"{settings.ragflow_api_url.rstrip('/')}/v1/user/info",
                 headers={"Authorization": token},
@@ -312,19 +341,26 @@ def build_embed_session(
         else sync_catalog
     )
     if settings.knowflow_enabled:
+        from app.integrations.ragflow_http import should_attempt_ragflow_http
+
         try:
             cached = (link.ragflow_access_token or "").strip()
             valid, profile = _ragflow_user_info(cached)
-            if valid:
+            if valid and cached:
                 authorization = cached
                 sso_message = "知识服务已就绪"
-            else:
+            elif should_attempt_ragflow_http():
                 link.ragflow_access_token = None
                 db.flush()
+                from app.database import release_db_connection
+
+                release_db_connection(db)
                 authorization = provision_and_login(link, user)
                 sso_message = "知识服务已就绪"
                 if authorization:
                     _, profile = _ragflow_user_info(authorization)
+            else:
+                sso_message = KNOWLEDGE_SERVICE_UNAVAILABLE
         except (RagflowProvisionError, httpx.HTTPError) as e:
             logger.warning("RAGFlow SSO 失败 %s: %s", user.username, e)
             try:

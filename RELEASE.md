@@ -1,5 +1,15 @@
 # 发布说明
 
+## 4.0.1（v4.0.1）— 品牌统一、开发入口精简与知识库一致性
+
+- **品牌统一**：产品名统一为「绿叶 AI 办公系统」（前端标题、KnowFlow 白标、运维文档）
+- **开发入口**：`./dev.sh` 为唯一入口（`local` / `docker` / `remote-dev` / `stack` / `deploy`）；移除 `zhitan.sh`、`start-local.sh` 等旧脚本
+- **知识库一致性**：新增 `knowledge_data_reconcile_service`（孤儿链接清理、MinIO 对账、增量复用）；文档库对齐修复个人级 `owner_id` 筛选
+- **文档中心**：上传弹窗支持选错文件后重新选择（`FileDropZone` 替换受限 `n-upload`）；批量上传移除 max 禁用问题
+- **模型与订阅**：模型设置与资源健康检测增强；订阅 API 与前端迭代
+- **部署运维**：Compose 与远程依赖脚本更新；运维/架构文档同步现状
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.0.1）
+
 ## 4.0.0（v4.0.0）— 文档权限三档重构、知识库索引修复与全栈升级
 
 **大版本**：权限体系重置、KnowFlow 登记可靠性、知识检索与部署架构全面升级。
@@ -25,7 +35,7 @@
 ## 3.9.2（v3.9.2）— 启动脚本整理、架构文档与稳定性
 
 - **版本统一**：`VERSION` 为单一来源，同步 API / 前端 / Docker 镜像 tag（3.9.2）
-- **启动脚本**：精简 `zhitan.sh`（移除废弃宿主机混合模式）；`stack.sh` 自动读取 `VERSION`；新增 `scripts/README.md`
+- **启动脚本**：精简 `dev.sh`（移除废弃宿主机混合模式）；`stack.sh` 自动读取 `VERSION`；新增 `scripts/README.md`
 - **文档**：恢复并更新运维手册、架构说明；根 `README.md` 重写；KnowFlow 白标脚本恢复
 - **稳定性**：修复 `RagflowAccountLink` 与数据库 schema 不一致导致知识检索/嵌入 meta 500；资源管理支持保存前连通性测试
 - **清理**：删除空占位运维脚本（`sync_resource_settings_from_env.py`、`reconcile_knowledge_data.py`）
@@ -47,7 +57,7 @@
 - 仓库根 `compose.yaml` + `deploy/knowflow.yml`（profile），对外仅 `FRONTEND_PORT`
 - `scripts/stack.sh`：build / up / dev-up / save / load / backup
 - `scripts/deploy.sh stack`：rsync 镜像包+编排，**不 rsync 源码**
-- `scripts/zhitan.sh` 默认走容器栈；`legacy` 保留宿主机开发模式
+- `dev.sh` 默认走容器栈；`legacy` 保留宿主机开发模式
 - `deploy/knowflow/` 打包 init.sql、settings、主题（服务器无需 third_party）
 - 数据目录 `./data/` 绑定挂载，便于迁移
 
@@ -68,7 +78,7 @@
 - 文档中心：文件夹网格首位新建；「分享」改由「我的」下文件夹进入，Tab 栏移除「分享」
 - 订阅中心：订阅 API 与前端页面
 - 后端：文档服务分层、用户/部门核心模块、HTML/PDF 导出与格式识别
-- 脚本：`zhitan.sh` / `deploy.sh` 统一本地启动与部署，精简旧脚本
+- 脚本：`dev.sh` / `deploy.sh` 统一本地启动与部署，精简旧脚本
 
 ## 3.0.0（v3.0.0）
 
@@ -110,4 +120,4 @@
 
 ## 2.0.0（v2.0.0）
 
-- 智碳平台 AI 系统基线：文档库、PDF 翻译、对比、KnowFlow 知识问答等
+- 绿叶 AI 办公系统基线：文档库、PDF 翻译、对比、KnowFlow 知识问答等

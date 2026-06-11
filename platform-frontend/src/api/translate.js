@@ -86,11 +86,21 @@ export function subscribeTranslateEvents(platformJobId, { onEvent, onError, onCo
   return () => es.close();
 }
 
-export async function downloadTranslateFile(jobId, kind, fallbackName = "download") {
+async function fetchTranslateFileResponse(jobId, kind) {
   const res = await fetch(`${getApiBase()}/api/v1/translate/jobs/${jobId}/download/${kind}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new Error(await res.text());
+  return res;
+}
+
+export async function fetchTranslateFileBlob(jobId, kind) {
+  const res = await fetchTranslateFileResponse(jobId, kind);
+  return res.blob();
+}
+
+export async function downloadTranslateFile(jobId, kind, fallbackName = "download") {
+  const res = await fetchTranslateFileResponse(jobId, kind);
   const blob = await res.blob();
   const disp = res.headers.get("Content-Disposition") || "";
   const match = disp.match(/filename="?([^";]+)"?/);

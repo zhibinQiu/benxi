@@ -38,18 +38,23 @@ import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { publicAsset } from "../utils/appBase";
 import { goBackToEntry } from "../utils/navigationReturn";
+import { sessionEpoch } from "../utils/sessionEpoch.js";
 
 /** 智能体 / 问答页：路由切换时保留组件实例 */
 const KEEP_ALIVE_VIEWS = [
   "AiHomeView",
   "CarbonQaV2View",
   "SmartDataQueryV2View",
-  "KnowledgeSearchView",
   "DataAnalysisView",
+  "KnowledgeSearchView",
+  "DocumentsView",
 ];
 
 function routeViewKey(viewRoute) {
-  return viewRoute.meta?.keepAlive ? String(viewRoute.name || viewRoute.path) : viewRoute.path;
+  const base = viewRoute.meta?.keepAlive
+    ? String(viewRoute.name || viewRoute.path)
+    : viewRoute.path;
+  return `${sessionEpoch.value}:${base}`;
 }
 
 const route = useRoute();
@@ -303,7 +308,7 @@ const contentStyle = computed(() => {
     return "padding: 0; height: 100vh; overflow: hidden";
   }
   if (fullHeightPage.value) {
-    return "padding: 0; height: calc(100vh - 56px); overflow: hidden; box-sizing: border-box";
+    return "padding: 0; flex: 1; min-height: 0; overflow: hidden; box-sizing: border-box";
   }
   if (route.name === "system-functions") {
     return "padding: 0";

@@ -181,6 +181,24 @@ def _enrich_doc_rows_meta(
     enrich_knowledge_document_rows(db, user, rows, documents)
 
 
+def _scope_document_row(
+    db: Session,
+    document: Document,
+    dataset_id: str | None,
+) -> dict:
+    """与文档中心对齐：无 KnowFlow 映射的文档也展示（标记为未同步）。"""
+    rag_row = _ragflow_row_for_document(db, document, dataset_id)
+    if rag_row:
+        return rag_row
+    return {
+        "document_id": str(document.id),
+        "ragflow_document_id": None,
+        "knowledge_synced": False,
+        "parse_status": "未同步",
+        "chunk_count": None,
+    }
+
+
 def _map_scope_document_tree_node(
     doc: dict, dataset_id: str, *, folder_key: str
 ) -> dict:
@@ -233,9 +251,7 @@ def _build_folder_nodes_for_unit(
         did = str(doc.id)
         if did in seen_doc_ids:
             continue
-        rag_row = _ragflow_row_for_document(db, doc, dataset_id)
-        if not rag_row:
-            continue
+        rag_row = _scope_document_row(db, doc, dataset_id)
         seen_doc_ids.add(did)
         doc_by_id[did] = doc
         folder_id_str: str | None = None

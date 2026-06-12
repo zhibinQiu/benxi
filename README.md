@@ -2,7 +2,7 @@
 
 基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及企业 AI 办公应用（文档、权限、知识库、智能工具等）。
 
-**当前版本：v4.0.1**（见根目录 `VERSION`）
+**当前版本：v4.0.2**（见根目录 `VERSION`）
 
 ## 项目结构
 

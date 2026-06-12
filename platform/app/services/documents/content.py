@@ -12,13 +12,9 @@ from app.storage.object_store import get_object_store
 
 
 def _is_compareable_version(version: DocumentVersion) -> bool:
-    name = (version.file_name or "").lower()
-    mime = (version.mime_type or "").lower()
-    if name.endswith(".pdf") or mime == "application/pdf":
-        return True
-    if name.endswith((".doc", ".docx")) or "word" in mime:
-        return True
-    return False
+    from app.core.document_format import is_compareable_file
+
+    return is_compareable_file(version.file_name, version.mime_type)
 def _is_pdf_version(version: DocumentVersion) -> bool:
     mime = (version.mime_type or "").lower()
     if "pdf" in mime:

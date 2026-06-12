@@ -1,4 +1,4 @@
-"""DeepSeek 在线 API（OpenAI 兼容）— 用于录音转写总结。"""
+"""平台语言模型调用（OpenAI 兼容 chat/completions）— 用于纪要、摘要、问答等。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _clean_key(value: str | None) -> str | None:
 
 
 def _load_from_pdf2zh_config() -> tuple[str | None, str, str]:
-    """从 pdf2zh 配置文件读取 DeepSeek（与翻译引擎共用）。"""
+    """从 pdf2zh 配置文件读取密钥（与翻译引擎共用时的兜底）。"""
     if not _PDF2ZH_CONFIG.is_file():
         return None, "https://api.deepseek.com/v1", "deepseek-chat"
     try:
@@ -43,26 +43,40 @@ def _load_from_pdf2zh_config() -> tuple[str | None, str, str]:
     return key, "https://api.deepseek.com/v1", model
 
 
+def _platform_llm_credentials() -> tuple[str, str, str]:
+    from app.database import SessionLocal
+    from app.services.model_settings_service import get_llm_credentials
+
+    with SessionLocal() as db:
+        return get_llm_credentials(db)
+
+
 def resolve_credentials() -> tuple[str, str, str]:
-    """返回 (api_key, base_url, model)，优先 platform/.env。"""
-    settings = get_settings()
-    key = _clean_key(settings.deepseek_api_key)
-    base = settings.deepseek_base_url.rstrip("/")
-    model = settings.deepseek_model.strip() or "deepseek-chat"
-    if not key:
+    """返回 (api_key, base_url, model)；优先资源管理中的语言模型配置。"""
+    base, key, model = _platform_llm_credentials()
+    key_clean = _clean_key(key)
+    base_clean = (base or "").strip().rstrip("/")
+    model_clean = (model or "").strip()
+
+    if not key_clean:
         fk, fb, fm = _load_from_pdf2zh_config()
         if fk:
-            return fk, fb, model if settings.deepseek_model.strip() else fm
-    if not key:
-        raise bad_request(
-            "总结服务未配置，请联系管理员"
-        )
-    return key, base, model
+            return fk, base_clean or fb, model_clean or fm
+
+    if not key_clean:
+        raise bad_request("语言模型未配置，请在资源管理中配置 LLM（API URL、模型名与 Key）")
+
+    if not base_clean:
+        raise bad_request("语言模型未配置 API 地址，请在资源管理中填写")
+    if not model_clean:
+        raise bad_request("语言模型未配置模型名，请在资源管理中填写")
+
+    return key_clean, base_clean, model_clean
 
 
 def is_configured() -> bool:
-    settings = get_settings()
-    if _clean_key(settings.deepseek_api_key):
+    base, key, model = _platform_llm_credentials()
+    if _clean_key(key) and (base or "").strip() and (model or "").strip():
         return True
     fk, _, _ = _load_from_pdf2zh_config()
     return bool(fk)
@@ -179,7 +193,6 @@ async def summarize_speaker_timeline(
     merged_blocks: list[dict], style: str = "minutes"
 ) -> dict:
     """Summarize each merged speaker block; return JSON array string in summary field."""
-    get_settings()
     api_key, base_url, model = resolve_credentials()
     if not merged_blocks:
         raise bad_request("没有可总结的说话人片段")
@@ -187,20 +200,15 @@ async def summarize_speaker_timeline(
     instruction = STYLE_PROMPTS.get(style, STYLE_PROMPTS["minutes"])
     blocks_text = _format_merged_blocks(merged_blocks)
     system = (
-        "你是专业的中文会议与录音纪要助手。输入已按时间顺序合并了同一说话人的连续发言。"
-        f"{instruction}"
-        "请为每一段发言分别写简短总结，严格只输出 JSON 数组，不要 markdown 代码块或寒暄。"
-        '每项格式：{"speaker":"说话人名","start":秒数,"end":秒数,"time_range":"m:ss–m:ss","summary":"该段要点"}。'
-        "数组顺序与输入片段编号一致，speaker/time 与输入保持一致。"
+        "你是专业的中文会议与录音纪要助手。根据带说话人与时间戳的转写片段，"
+        f"为每个片段生成简短摘要。{instruction}"
+        "以 JSON 数组字符串输出，每项含 index（从 1 起）、speaker、summary 字段。"
     )
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": f"以下是需要按说话人时间线总结的会议片段：\n\n{blocks_text}",
-            },
+            {"role": "user", "content": blocks_text},
         ],
         "temperature": 0.3,
     }

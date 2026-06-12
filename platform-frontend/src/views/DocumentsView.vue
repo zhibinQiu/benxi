@@ -796,21 +796,22 @@ function clearSearch() {
   if (hadSearch && isMainView.value) load();
 }
 
-async function load({ force = false } = {}) {
+async function load({ force = false, background = false } = {}) {
   const seq = ++documentsLoadSeq;
   const listCacheKey = buildListCacheKey();
-  if (!force) {
+  if (!force && !background) {
     const cached = readDocumentsListCache(listCacheKey);
     if (cached) {
       if (seq !== documentsLoadSeq) return;
       items.value = cached.items || [];
       total.value = cached.total ?? 0;
       loading.value = false;
+      void load({ force: true, background: true });
       return;
     }
   }
   const hadItems = items.value.length > 0;
-  if (!hadItems) {
+  if (!background && !hadItems) {
     loading.value = true;
     checkedRowKeys.value = [];
   }

@@ -280,7 +280,7 @@ const resolvedActiveKey = computed(() => {
   return key || "ai-home";
 });
 
-const { indicatorStyle: menuIndicatorStyle } = useSiderMenuIndicator(siderMenuWrapRef, {
+const { indicatorStyle: menuIndicatorStyle, moveIndicatorToContent } = useSiderMenuIndicator(siderMenuWrapRef, {
   activeKey: resolvedActiveKey,
   collapsed: siderCollapsed,
   expandedKeys});
@@ -308,7 +308,7 @@ const contentStyle = computed(() => {
     return "padding: 0; height: 100vh; overflow: hidden";
   }
   if (fullHeightPage.value) {
-    return "padding: 0; flex: 1; min-height: 0; overflow: hidden; box-sizing: border-box";
+    return "flex: 1; min-height: 0; overflow: hidden; box-sizing: border-box";
   }
   if (route.name === "system-functions") {
     return "padding: 0";
@@ -332,6 +332,21 @@ watch(
     }
   },
 );
+
+function onSiderMenuWrapClick(e) {
+  const content = e.target?.closest?.(".n-menu-item-content");
+  if (!content || content.classList.contains("n-menu-item-content--disabled")) return;
+  moveIndicatorToContent(content);
+
+  // 子功能页侧栏仍高亮「功能列表」，再点同一项时 Naive Menu 不会触发 update:value
+  if (
+    isSubsystemPage.value &&
+    resolvedActiveKey.value === "system-functions" &&
+    content.classList.contains("n-menu-item-content--selected")
+  ) {
+    router.push({ name: "system-functions" });
+  }
+}
 
 function onMenuSelect(key) {
   if (key === SETTINGS_KEY) return;
@@ -377,7 +392,7 @@ function onMenuSelect(key) {
             <PlatformBrandTitle :title="appDisplayName" />
           </span>
         </div>
-        <div ref="siderMenuWrapRef" class="sider-menu-wrap">
+        <div ref="siderMenuWrapRef" class="sider-menu-wrap" @click="onSiderMenuWrapClick">
           <div
             class="sider-menu-indicator"
             aria-hidden="true"
@@ -442,7 +457,13 @@ function onMenuSelect(key) {
         </div>
       </n-layout-header>
       <n-layout-content
-        :class="['app-content', { 'app-content--full': fullHeightPage }]"
+        :class="[
+          'app-content',
+          {
+            'app-content--full': fullHeightPage,
+            'app-content--flush-start': fullHeightPage && route.meta?.flushStart,
+          },
+        ]"
         :content-style="contentStyle"
       >
         <div
@@ -490,6 +511,7 @@ function onMenuSelect(key) {
 }
 
 .main-layout {
+  --feature-content-inset-x: 20px;
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
@@ -581,17 +603,13 @@ function onMenuSelect(key) {
   z-index: 0;
   border-radius: var(--platform-radius-sm);
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    var(--menu-glass-bg-active) 0%,
-    var(--menu-glass-bg-active-bottom) 100%
-  );
-  box-shadow: inset 0 1px 0 var(--liquid-edge-highlight);
+  background: var(--sider-menu-glass-fill-active, var(--platform-glass-fill-active));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  will-change: transform;
   transition:
-    transform 0.45s var(--platform-ease-spring-soft),
-    height 0.4s var(--platform-ease-spring-soft),
-    opacity 0.3s var(--platform-ease-smooth),
-    box-shadow 0.3s var(--platform-ease-smooth);
+    transform 0.24s cubic-bezier(0.22, 0.95, 0.32, 1),
+    height 0.2s cubic-bezier(0.22, 0.95, 0.32, 1),
+    opacity 0.12s ease;
 }
 
 .sider-menu {
@@ -714,6 +732,11 @@ function onMenuSelect(key) {
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
+  padding: 0 var(--feature-content-inset-x, 20px) 12px;
+}
+
+.app-content--full.app-content--flush-start {
+  padding-left: 0;
 }
 .app-view-host {
   position: relative;
@@ -746,8 +769,11 @@ function onMenuSelect(key) {
 .app-route-page--full {
   min-height: 100%;
   height: 100%;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 
 .app-route-page--full > :deep(*) {

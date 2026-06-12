@@ -22,7 +22,13 @@ import {
   NRadioGroup,
   NSelect,
 } from "naive-ui";
-import { DownloadOutline, EyeOutline, LayersOutline, TrashOutline } from "@vicons/ionicons5";
+import {
+  DownloadOutline,
+  EyeOutline,
+  LayersOutline,
+  RefreshOutline,
+  TrashOutline,
+} from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import AdminFormModal from "../components/AdminFormModal.vue";
 import DocumentVersionPreviewModal from "../components/DocumentVersionPreviewModal.vue";
@@ -145,6 +151,7 @@ const versionChangeDesc = ref("");
 const versionUploadFile = ref(null);
 const versionUploadFileList = ref([]);
 const versionUploading = ref(false);
+const versionRefreshing = ref(false);
 const showVersionPreview = ref(false);
 const previewVersion = ref(null);
 
@@ -394,6 +401,17 @@ async function saveTitle() {
     ui.error(e.message);
   } finally {
     titleSaving.value = false;
+  }
+}
+
+async function refreshVersionHistory() {
+  versionRefreshing.value = true;
+  try {
+    await load({ notifyOnError: false });
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    versionRefreshing.value = false;
   }
 }
 
@@ -710,6 +728,14 @@ onMounted(() => {
     </n-card>
 
     <n-card title="版本历史">
+      <template #header-extra>
+        <IconAction
+          label="刷新"
+          :icon="RefreshOutline"
+          :disabled="versionRefreshing || loading"
+          @click="refreshVersionHistory"
+        />
+      </template>
       <n-table :single-line="false">
         <thead>
           <tr>

@@ -7,13 +7,34 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.compare_service import search_compare_documents
+from app.services.compare_service import _existing_ragflow_doc_map, search_compare_documents
 from app.integrations.text_extract import ParsedDocument
 
 
 @pytest.fixture
 def mock_db():
     return MagicMock()
+
+
+def test_existing_ragflow_doc_map_returns_library_index(mock_db):
+    user = MagicMock()
+    doc_id = uuid.uuid4()
+    doc = MagicMock(id=doc_id, title="合同")
+
+    with (
+        patch(
+            "app.services.ragflow_sync_service.allowed_ragflow_doc_map",
+            return_value={str(doc_id): "rag-doc-1"},
+        ) as allowed_map,
+        patch(
+            "app.services.knowledge_sync_job_service.enqueue_document_knowledge_index"
+        ) as enqueue,
+    ):
+        result = _existing_ragflow_doc_map(mock_db, user, [doc])
+
+    assert result == {str(doc_id): "rag-doc-1"}
+    allowed_map.assert_called_once()
+    enqueue.assert_not_called()
 
 
 def test_search_compare_documents_local_fallback(mock_db):
@@ -37,7 +58,7 @@ def test_search_compare_documents_local_fallback(mock_db):
             return_value=[parsed],
         ),
         patch(
-            "app.services.compare_service._sync_ragflow_map",
+            "app.services.compare_service._existing_ragflow_doc_map",
             return_value={},
         ),
         patch(
@@ -55,7 +76,6 @@ def test_search_compare_documents_local_fallback(mock_db):
             user,
             right_document_id=doc_id,
             query="违约金",
-            sync_knowflow=False,
         )
 
     assert hits

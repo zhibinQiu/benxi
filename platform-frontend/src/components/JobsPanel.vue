@@ -76,8 +76,12 @@ const statusType = {
 const CANCELLABLE = new Set(["pending", "running"]);
 const CLEARABLE = new Set(["done", "failed", "cancelled"]);
 
+function isParsingDocumentIndex(row) {
+  return row.type === "document_index" && Boolean(row.payload?.awaiting_parse);
+}
+
 function isCancellable(row) {
-  return CANCELLABLE.has(row.status);
+  return CANCELLABLE.has(row.status) || isParsingDocumentIndex(row);
 }
 
 function isClearable(row) {
@@ -311,8 +315,8 @@ function stopProgressPoll() {
 function maybeStartProgressPoll() {
   stopProgressPoll();
   if (!props.active) return;
-  const hasActive = items.value.some((j) =>
-    ["pending", "running"].includes(j.status)
+  const hasActive = items.value.some(
+    (j) => ["pending", "running"].includes(j.status) || isParsingDocumentIndex(j)
   );
   if (!hasActive) return;
   progressPollTimer = setInterval(() => {
@@ -425,7 +429,7 @@ defineExpose({ load, refresh: load });
                 {{ t("common.view") }}
               </n-button>
               <n-button
-                v-if="CANCELLABLE.has(row.status)"
+                v-if="isCancellable(row)"
                 text
                 type="warning"
                 size="tiny"

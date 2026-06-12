@@ -24,6 +24,7 @@ import {
   HardwareChipOutline,
   StatsChartOutline,
   ScanOutline,
+  ImageOutline,
   MicOutline,
   LanguageOutline,
   SearchOutline,
@@ -70,6 +71,12 @@ const form = reactive({
   rerank_base_url: "",
   rerank_model: "",
   rerank_api_key: "",
+  vl_base_url: "",
+  vl_model: "",
+  vl_api_key: "",
+  paddleocr_base_url: "",
+  paddleocr_model: "",
+  paddleocr_api_key: "",
   paddleocr_url: "",
   speech_service_url: "",
   pdf2zh_api_url: "",
@@ -113,6 +120,12 @@ const RESOURCE_DEFS = [
     icon: HardwareChipOutline,
     category: "model"},
   {
+    id: "vl",
+    title: "VL 模型",
+    hint: "PDF 图表增强（IMAGE2TEXT）",
+    icon: ImageOutline,
+    category: "model"},
+  {
     id: "rerank",
     title: "Reranker 模型",
     hint: "检索重排序（可选）",
@@ -120,8 +133,8 @@ const RESOURCE_DEFS = [
     category: "model"},
   {
     id: "paddleocr",
-    title: "PaddleOCR 服务",
-    hint: "文档 OCR 与 PDF 解析",
+    title: "PaddleOCR-VL",
+    hint: "硅基流动 API 或自建 OCR 服务",
     icon: ScanOutline,
     category: "service"},
   {
@@ -164,8 +177,8 @@ const RESOURCE_DEFS = [
 
 const CATEGORY_META = {
   platform: { title: "平台", hint: "前端访问地址与展示配置" },
-  model: { title: "AI 模型", hint: "语言、嵌入与重排序模型 API" },
-  service: { title: "外部服务", hint: "OCR、语音、翻译、联网搜索等 HTTP 服务" },
+  model: { title: "AI 模型", hint: "语言、嵌入、VL 与重排序；改 URL/模型名可切换本地或在线" },
+  service: { title: "外部服务", hint: "OCR-VL、语音、翻译等；OCR 支持在线 API 或本地 layout-parsing" },
   knowledge: { title: "知识库基础设施", hint: "RAGFlow / KnowFlow 后台与 MySQL 数据库" }};
 
 const activeResource = computed(() =>
@@ -178,6 +191,10 @@ const groupedResources = computed(() =>
     ...CATEGORY_META[id],
     items: RESOURCE_DEFS.filter((item) => item.category === id)}))
 );
+
+function modelEndpoint(data, key, legacyKey) {
+  return data?.[key] || data?.[legacyKey] || null;
+}
 
 function fillForm(data) {
   settings.value = data;
@@ -194,6 +211,13 @@ function fillForm(data) {
   form.rerank_base_url = data?.rerank?.base_url || "";
   form.rerank_model = data?.rerank?.model_name || "";
   form.rerank_api_key = data?.rerank?.api_key_masked || "";
+  const vl = modelEndpoint(data, "vl", "vision");
+  form.vl_base_url = vl?.base_url || "";
+  form.vl_model = vl?.model_name || "";
+  form.vl_api_key = vl?.api_key_masked || "";
+  form.paddleocr_base_url = data?.paddleocr?.base_url || data?.paddleocr_url || "";
+  form.paddleocr_model = data?.paddleocr?.model_name || "";
+  form.paddleocr_api_key = data?.paddleocr?.api_key_masked || "";
   form.paddleocr_url = data?.paddleocr_url || "";
   form.speech_service_url = data?.speech_service_url || "";
   form.pdf2zh_api_url = data?.pdf2zh_api_url || "";
@@ -236,12 +260,23 @@ function resourceSummary(id) {
       return data.embedding?.model_name
         ? `${data.embedding.model_name} · ${truncate(data.embedding.base_url)}`
         : "未配置";
+    case "vl": {
+      const vl = modelEndpoint(data, "vl", "vision");
+      if (!vl?.model_name) return "未配置";
+      if (!vl.base_url) return `${vl.model_name}（未填 API 地址）`;
+      if (!vl.api_key_configured) return `${vl.model_name}（未配置 Key）`;
+      return `${vl.model_name} · ${truncate(vl.base_url)}`;
+    }
     case "rerank":
       return data.rerank?.model_name
         ? `${data.rerank.model_name} · ${truncate(data.rerank.base_url)}`
         : "可选，未配置";
     case "paddleocr":
-      return data.paddleocr_url ? truncate(data.paddleocr_url) : "未配置";
+      return data.paddleocr?.model_name
+        ? `${data.paddleocr.model_name} · ${truncate(data.paddleocr.base_url)}`
+        : data.paddleocr_url
+          ? truncate(data.paddleocr_url)
+          : "未配置";
     case "speech":
       return data.speech_service_url ? truncate(data.speech_service_url) : "未配置";
     case "pdf2zh":
@@ -282,9 +317,8 @@ function truncate(value) {
 }
 
 function healthState(id) {
-  if (healthLoading.value && !health.value[id]) return "checking";
   const item = health.value[id];
-  if (!item) return "checking";
+  if (!item) return healthLoading.value ? "checking" : "neutral";
   if (item.healthy === true) return "ok";
   if (item.healthy === false) return "bad";
   return "neutral";
@@ -394,8 +428,20 @@ function buildPayloadFor(id) {
         ...(form.rerank_api_key && !form.rerank_api_key.includes("••••")
           ? { rerank_api_key: form.rerank_api_key.trim() }
           : {})};
+    case "vl":
+      return {
+        vl_base_url: form.vl_base_url.trim(),
+        vl_model: form.vl_model.trim(),
+        ...(form.vl_api_key && !form.vl_api_key.includes("••••")
+          ? { vl_api_key: form.vl_api_key.trim() }
+          : {})};
     case "paddleocr":
-      return { paddleocr_url: form.paddleocr_url.trim() };
+      return {
+        paddleocr_base_url: form.paddleocr_base_url.trim(),
+        paddleocr_model: form.paddleocr_model.trim(),
+        ...(form.paddleocr_api_key && !form.paddleocr_api_key.includes("••••")
+          ? { paddleocr_api_key: form.paddleocr_api_key.trim() }
+          : {})};
     case "speech":
       return { speech_service_url: form.speech_service_url.trim() };
     case "pdf2zh":
@@ -436,7 +482,12 @@ async function testActive() {
   testing.value = true;
   drawerTestResult.value = null;
   try {
-    const result = await testResourceHealth(activeId.value, buildPayloadFor(activeId.value));
+    const probeTimeoutMs = ["vl", "llm", "embedding"].includes(activeId.value) ? 60000 : undefined;
+    const result = await testResourceHealth(
+      activeId.value,
+      buildPayloadFor(activeId.value),
+      probeTimeoutMs
+    );
     drawerTestResult.value = result;
     if (result?.healthy) {
       ui.success(result.message || "连接正常");
@@ -490,11 +541,6 @@ onMounted(loadAll);
         <n-tag v-if="settings?.editable" type="success" :bordered="false">在线配置已启用</n-tag>
       </n-space>
     </div>
-
-    <n-alert type="info" :bordered="false" class="page-alert">
-      {{ settings?.notice || "点击卡片进入配置；圆点绿色表示服务可用，红色表示未配置或不可达。" }}
-      <template #header>配置说明</template>
-    </n-alert>
 
     <section
       v-for="group in groupedResources"
@@ -609,10 +655,10 @@ onMounted(loadAll);
 
           <template v-else-if="activeId === 'llm'">
             <n-form-item label="API URL">
-              <n-input v-model:value="form.llm_base_url" placeholder="https://api.deepseek.com/v1" />
+              <n-input v-model:value="form.llm_base_url" placeholder="https://host/v1 或本地 vLLM 地址" />
             </n-form-item>
             <n-form-item label="模型名称">
-              <n-input v-model:value="form.llm_model" placeholder="deepseek-chat" />
+              <n-input v-model:value="form.llm_model" placeholder="模型名称" />
             </n-form-item>
             <n-form-item label="SK / API Key">
               <n-input
@@ -647,6 +693,33 @@ onMounted(loadAll);
             </n-form-item>
           </template>
 
+          <template v-else-if="activeId === 'vl'">
+            <n-form-item label="API URL">
+              <n-input
+                v-model:value="form.vl_base_url"
+                placeholder="https://host/v1 或本地推理服务"
+              />
+            </n-form-item>
+            <n-form-item label="模型名称">
+              <n-input
+                v-model:value="form.vl_model"
+                placeholder="VL 模型名称"
+              />
+            </n-form-item>
+            <n-form-item label="SK / API Key">
+              <n-input
+                v-model:value="form.vl_api_key"
+                type="password"
+                show-password-on="click"
+                placeholder="留空或掩码表示不修改"
+              />
+            </n-form-item>
+            <n-text depth="3" class="drawer-hint">
+              KnowFlow PDF 图表增强（IMAGE2TEXT）。保存后立即生效并写入 RAGFlow；
+              切换本地模型时仅改 API URL 与模型名即可。
+            </n-text>
+          </template>
+
           <template v-else-if="activeId === 'rerank'">
             <n-form-item label="API URL">
               <n-input v-model:value="form.rerank_base_url" placeholder="可选" />
@@ -665,16 +738,29 @@ onMounted(loadAll);
           </template>
 
           <template v-else-if="activeId === 'paddleocr'">
-            <n-form-item label="服务地址">
+            <n-form-item label="API URL">
               <n-input
-                v-model:value="form.paddleocr_url"
-                placeholder="http://172.20.32.127:7071/ocr"
+                v-model:value="form.paddleocr_base_url"
+                placeholder="https://host/v1 或自建 OCR 根地址"
+              />
+            </n-form-item>
+            <n-form-item label="模型名称">
+              <n-input
+                v-model:value="form.paddleocr_model"
+                placeholder="OCR-VL 模型名称"
+              />
+            </n-form-item>
+            <n-form-item label="SK / API Key">
+              <n-input
+                v-model:value="form.paddleocr_api_key"
+                type="password"
+                show-password-on="click"
+                placeholder="留空或掩码表示不修改"
               />
             </n-form-item>
             <n-text depth="3" class="drawer-hint">
-              文档知识库切片会由 KnowFlow 调用此地址。若服务只有
-              <code>/ocr</code> 接口，请填写完整路径；官方 KnowFlow PaddleOCR 镜像则填根地址。保存后需重启
-              knowflow-backend。
+              OpenAI 兼容 API（<code>/v1</code>）或自建 layout-parsing 根地址。
+              保存后立即写入 KnowFlow <code>settings.yaml</code>；本地部署时改 URL 与模型名即可。
             </n-text>
           </template>
 
@@ -851,10 +937,6 @@ onMounted(loadAll);
 .resource-settings-page {
   width: 100%;
   max-width: 1280px;
-}
-
-.page-alert {
-  margin-bottom: 0;
 }
 
 .page-toolbar {

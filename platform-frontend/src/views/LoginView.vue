@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -14,6 +14,7 @@ import { useAppPreferences } from "../composables/useAppPreferences";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { useAppDisplayName } from "../composables/usePlatformBranding";
+import { loggingOut } from "../utils/sessionEpoch.js";
 import { markSkipMotionAfterLogin } from "../utils/routeTransition";
 import { publicAsset } from "../utils/appBase";
 import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
@@ -29,6 +30,10 @@ const { login, register } = useAuth();
 const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
 const { t, localeLabel } = useI18n();
 const appDisplayName = useAppDisplayName();
+
+onMounted(() => {
+  loggingOut.value = false;
+});
 
 const showcaseTaglines = computed(() => [t("login.showcaseTagline")]);
 

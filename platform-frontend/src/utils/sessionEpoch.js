@@ -3,6 +3,8 @@
 import { ref } from "vue";
 
 export const sessionEpoch = ref(0);
+/** 主动退出中为 true，用于抑制飞行中请求的鉴权错误提示 */
+export const loggingOut = ref(false);
 
 export function bumpSessionEpoch() {
   sessionEpoch.value += 1;

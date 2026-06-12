@@ -22,7 +22,7 @@ export const FEATURE_DESCRIPTIONS = {
   "feed-entry": "查看订阅资讯详情，导入文档库或打开原文链接。",
   "smart-forecast": "基于历史数据进行趋势预测与情景分析（内嵌预测子系统）。",
   speech: "会议录音转写、说话人区分、时间线总结与会议记录管理。",
-  ocr: "上传图片或 PDF 进行文字识别，支持批量处理（接入后端后可用）。",
+  ocr: "上传图片或 PDF，提取文件内容，支持批量导出 Markdown / JSON。",
   compare: "文档版本或跨文档左右对照，支持段落差异与自然语言检索。",
   "assist-writing":
     "Markdown 双栏编辑，预设提示词由 AI 润色、扩写与续写；发送快捷键 Ctrl/Cmd + Enter。",

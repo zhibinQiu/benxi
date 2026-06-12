@@ -1,7 +1,9 @@
 <script setup>
 import { ref } from "vue";
+import { useI18n } from "../composables/useI18n.js";
+import { formatCitationSnippet } from "../utils/knowledgeCitation.js";
 
-defineProps({
+const props = defineProps({
   citations: { type: Array, default: () => [] },
   /** 点击引用编号/标题时打开溯源弹窗（知识检索） */
   previewOnClick: { type: Boolean, default: false },
@@ -9,10 +11,17 @@ defineProps({
 
 const emit = defineEmits(["open-citation", "open-document"]);
 
+const { t } = useI18n();
 const expanded = ref({});
 
 function toggle(index) {
+  if (props.previewOnClick) return;
   expanded.value[index] = !expanded.value[index];
+}
+
+function isExpanded(citation) {
+  if (props.previewOnClick) return Boolean(citation?.snippet);
+  return Boolean(expanded.value[citation.index]);
 }
 
 function formatScore(score) {
@@ -20,6 +29,10 @@ function formatScore(score) {
   const n = Number(score);
   if (n <= 1) return `${Math.round(n * 100)}%`;
   return `${n.toFixed(1)}`;
+}
+
+function snippetHtml(citation) {
+  return formatCitationSnippet(citation?.snippet || "");
 }
 
 function openCitation(citation, event) {
@@ -37,7 +50,7 @@ function openDocument(citation, event) {
 
 <template>
   <div v-if="citations.length" class="chat-citations">
-    <div class="chat-citations-title">引用来源</div>
+    <div class="chat-citations-title">{{ t("knowledgeSearch.citations.title") }}</div>
     <div
       v-for="c in citations"
       :key="`${c.index}-${c.document_id || c.title}`"
@@ -52,10 +65,10 @@ function openDocument(citation, event) {
         >
           <span class="chat-citation-num">[{{ c.index }}]</span>
           <span v-if="!previewOnClick && formatScore(c.score)" class="chat-citation-score">
-            相关度 {{ formatScore(c.score) }}
+            {{ t("knowledgeSearch.citations.relevance", { score: formatScore(c.score) }) }}
           </span>
           <span v-if="!previewOnClick" class="chat-citation-chevron">
-            {{ expanded[c.index] ? "▾" : "▸" }}
+            {{ isExpanded(c) ? "▾" : "▸" }}
           </span>
         </button>
         <button
@@ -76,13 +89,13 @@ function openDocument(citation, event) {
         </button>
         <span v-else class="chat-citation-doc">{{ c.title }}</span>
         <span v-if="previewOnClick && formatScore(c.score)" class="chat-citation-score">
-          相关度 {{ formatScore(c.score) }}
+          {{ t("knowledgeSearch.citations.relevance", { score: formatScore(c.score) }) }}
         </span>
       </div>
-      <p
-        v-if="!previewOnClick && c.snippet && expanded[c.index]"
+      <div
+        v-if="snippetHtml(c) && isExpanded(c)"
         class="chat-citation-snippet"
-        v-html="c.snippet"
+        v-html="snippetHtml(c)"
       />
     </div>
   </div>
@@ -98,96 +111,89 @@ function openDocument(citation, event) {
 .chat-citations-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--platform-accent-pressed);
+  color: var(--platform-text-secondary);
   margin-bottom: 8px;
 }
 
-.chat-citation-item {
-  margin-bottom: 6px;
-}
-
-.chat-citation-item:last-child {
-  margin-bottom: 0;
+.chat-citation-item + .chat-citation-item {
+  margin-top: 8px;
 }
 
 .chat-citation-head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
-  width: 100%;
-  padding: 6px 8px;
-  font-size: 12px;
-  color: #334155;
-  background: var(--platform-accent-muted);
-  border: 1px solid var(--platform-accent-border-soft);
-  border-radius: 8px;
+  flex-wrap: wrap;
 }
 
 .chat-citation-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   padding: 0;
   border: none;
-  background: transparent;
-  color: inherit;
+  background: none;
+  color: var(--platform-accent);
+  font-size: 12px;
   cursor: pointer;
 }
 
-.chat-citation-toggle--preview:hover .chat-citation-num {
-  text-decoration: underline;
+.chat-citation-toggle--preview {
+  cursor: pointer;
 }
 
 .chat-citation-num {
   font-weight: 600;
-  color: var(--platform-accent);
+}
+
+.chat-citation-score {
+  font-size: 11px;
+  color: var(--platform-text-tertiary);
+}
+
+.chat-citation-chevron {
+  font-size: 10px;
+  color: var(--platform-text-tertiary);
 }
 
 .chat-citation-doc {
-  flex: 1;
-  min-width: 0;
-  font-weight: 500;
-  text-align: left;
+  font-size: 12px;
+  color: var(--platform-text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-citation-doc--link {
   padding: 0;
   border: none;
-  background: transparent;
+  background: none;
   color: var(--platform-accent);
   cursor: pointer;
+  text-align: left;
 }
 
 .chat-citation-doc--link:hover {
   text-decoration: underline;
 }
 
-.chat-citation-score {
-  font-size: 11px;
-  color: #64748b;
-}
-
-.chat-citation-chevron {
-  color: #94a3b8;
-  font-size: 10px;
-}
-
 .chat-citation-snippet {
-  margin: 6px 0 0;
+  margin-top: 6px;
   padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--platform-accent-muted);
+  border: 1px solid var(--platform-accent-border-soft);
   font-size: 12px;
-  line-height: 1.55;
-  color: #64748b;
-  background: #f8fafc;
-  border-radius: 6px;
-  white-space: pre-wrap;
-  word-break: break-word;
+  line-height: 1.6;
+  color: var(--platform-text);
 }
 
 .chat-citation-snippet :deep(em) {
   font-style: normal;
-  background: rgba(250, 204, 21, 0.45);
-  padding: 0 1px;
+  background: rgba(250, 204, 21, 0.5);
+  padding: 0 2px;
+  border-radius: 2px;
+  font-weight: 600;
 }
 </style>

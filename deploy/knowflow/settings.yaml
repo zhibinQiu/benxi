@@ -20,6 +20,9 @@ dots:
     top_p: 1.0
     max_completion_tokens: 16384
 paddleocr:
-  url: http://172.20.32.127:7071
+  url: https://api.siliconflow.cn/v1
   timeout: 30000
   max_file_size: 5000
+  api_key: sk-olrivjcewqruavxuupsirdvxpihkvluslhiaucfghwzoqddc
+  model: PaddlePaddle/PaddleOCR-VL-1.5
+  algorithm: PaddleOCR-VL

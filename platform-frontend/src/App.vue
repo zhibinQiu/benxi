@@ -204,6 +204,7 @@ h4,
 <style src="./styles/liquid-glass.css"></style>
 <style src="./styles/feature-local-nav.css"></style>
 <style src="./styles/menu-liquid-glass.css"></style>
+<style src="./styles/selectable-glass.css"></style>
 <style src="./styles/subsystem-embed.css"></style>
 <style src="./styles/motion.css"></style>
 <style src="./styles/video-background.css"></style>

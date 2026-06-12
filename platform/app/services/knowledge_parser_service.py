@@ -25,8 +25,8 @@ CHUNK_METHODS: list[dict[str, str]] = [
 ]
 
 LAYOUT_RECOGNIZERS: list[dict[str, str]] = [
-    {"id": "DeepDOC", "label": "DeepDOC", "hint": "RAGFlow 内置（推荐默认）"},
-    {"id": "PaddleOCR", "label": "PaddleOCR", "hint": "版面 OCR（需部署 PaddleOCR 服务）"},
+    {"id": "PaddleOCR", "label": "PaddleOCR", "hint": "版面 OCR（默认；使用资源管理中的 PaddleOCR-VL 服务）"},
+    {"id": "DeepDOC", "label": "DeepDOC", "hint": "RAGFlow 内置版面分析"},
     {"id": "MinerU", "label": "MinerU", "hint": "高精度 PDF 解析（需部署 MinerU 服务）"},
     {"id": "DOTS", "label": "DOTS", "hint": "视觉理解 OCR（需部署 DOTS 服务）"},
     {"id": "Plain Text", "label": "纯文本", "hint": "跳过复杂版面分析，适合已提取文本"},
@@ -88,9 +88,9 @@ def normalize_parser_id(parser_id: str | None) -> str:
 
 def normalize_layout_recognize(layout: str | None) -> str:
     settings = get_settings()
-    raw = (layout or settings.knowledge_default_layout_recognize or "DeepDOC").strip()
+    raw = (layout or settings.knowledge_default_layout_recognize or "PaddleOCR").strip()
     allowed = {item["id"] for item in LAYOUT_RECOGNIZERS}
-    return raw if raw in allowed else "DeepDOC"
+    return raw if raw in allowed else "PaddleOCR"
 
 
 def coerce_parser_layout(parser_id: str, layout_recognize: str) -> tuple[str, str]:
@@ -182,8 +182,9 @@ def list_parser_options() -> dict:
         "items": [m for m in CHUNK_METHODS if m["group"] == "classic"]
         + [m for m in CHUNK_METHODS if m["group"] == "modern"],
         "config_hints": [
-            "PDF 解析器（MinerU/PaddleOCR/DOTS）地址在 deploy/knowflow/settings.yaml 配置",
+            "PDF 版面 OCR 地址在资源管理 PaddleOCR-VL 或 deploy/knowflow/settings.yaml 配置",
             "嵌入向量模型在「系统设置 → 模型配置」或 KnowFlow 管理后台配置",
             "解析失败常见原因：OCR 服务未启动、嵌入模型未启用、Infinity 向量库异常",
+            "图表增强失败（403 Model disabled）：在资源管理配置视觉模型（IMAGE2TEXT）并保存同步",
         ],
     }

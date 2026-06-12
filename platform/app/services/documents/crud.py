@@ -78,7 +78,9 @@ def create_initial_uploaded_version(
     db.commit()
     db.refresh(version)
     db.refresh(document)
-    _try_sync_version_git(db, version)
+    from app.services.documents.post_upload import schedule_post_upload_processing
+
+    schedule_post_upload_processing(document.id, version.id, user.id)
     return version
 def list_document_versions(db: Session, document_id: uuid.UUID) -> list[DocumentVersion]:
     rows = list(
@@ -161,6 +163,13 @@ def delete_document_version(
 
         raise not_found("版本不存在")
 
+    from app.services.documents.lifecycle import purge_version_knowledge_artifacts
+    from app.services.ragflow_sync_service import schedule_knowflow_deletes
+
+    knowflow_targets = purge_version_knowledge_artifacts(
+        db, document, version, defer_knowflow=True
+    )
+
     store = get_object_store()
     key = (version.file_key or "").strip()
     if key and is_version_uploaded(version):
@@ -176,6 +185,10 @@ def delete_document_version(
     if remaining:
         document.current_version_id = _pick_current_version_id(db, document, remaining)
         db.commit()
+        schedule_knowflow_deletes(knowflow_targets)
+        from app.core.platform_cache import invalidate_document_caches
+
+        invalidate_document_caches(str(deleted_by))
         db.refresh(document)
         return {
             "ok": True,
@@ -185,14 +198,11 @@ def delete_document_version(
         }
 
     document.current_version_id = None
-    from app.services.documents.lifecycle import (
-        purge_document_completely,
-    )
-    from app.services.ragflow_sync_service import schedule_knowflow_deletes
+    from app.services.documents.lifecycle import purge_document_completely
 
     targets = purge_document_completely(db, document, defer_knowflow=True)
     db.commit()
-    schedule_knowflow_deletes(targets)
+    schedule_knowflow_deletes(knowflow_targets + targets)
     return {
         "ok": True,
         "document_deleted": True,
@@ -309,7 +319,9 @@ def save_upload_blob(
     mime = (content_type or version.mime_type or "application/octet-stream").strip()
     store = get_object_store()
     store.put_object_bytes(version.file_key, data, mime)
+    version.file_size = len(data)
     version.checksum = compute_md5_hex(data)
+    db.commit()
 
 
 def complete_upload(
@@ -342,18 +354,32 @@ def complete_upload(
             new_mime=version.mime_type or "",
         )
 
+    store = get_object_store()
+    stored_size = store.head_object_size(version.file_key)
+    if stored_size is None:
+        from app.core.exceptions import bad_request
+
+        raise bad_request(
+            "文件尚未写入对象存储或已被清理，请重新上传后再完成。"
+        )
+    if stored_size != file_size:
+        from app.core.exceptions import bad_request
+
+        raise bad_request(
+            f"上传文件大小不一致（声明 {file_size} 字节，存储 {stored_size} 字节），请重新上传。"
+        )
+
     version.file_size = file_size
     if checksum:
         version.checksum = normalize_checksum(checksum)
     elif not version.checksum:
-        content = get_object_store().get_object_bytes(version.file_key)
+        content = store.get_object_bytes(version.file_key)
         version.checksum = compute_md5_hex(content)
     version.change_description = (change_description or "").strip()
     document.current_version_id = version.id
     db.commit()
     db.refresh(document)
     db.refresh(version)
-    _try_sync_version_git(db, version)
     from app.core.platform_cache import invalidate_document_caches
 
     invalidate_document_caches(str(user.id))

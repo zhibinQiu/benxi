@@ -1,5 +1,31 @@
 /* 功能页局部顶栏：与系统 .header 无缝衔接，共用渐变底 */
 
+/* 全高功能页：双栏网格不撑破主内容区水平内边距（与顶栏 20px 对齐） */
+.app-content--full .subsystem-shell--fill,
+.app-content--full .feature-page--fill {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-content--full .subsystem-body {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.subsystem-shell--fill [class$="-layout"],
+.subsystem-shell--fill [class$="-workspace"],
+.subsystem-shell--fill .assist-columns,
+.subsystem-shell--fill .assist-workspace,
+.subsystem-shell--fill .compare-workspace,
+.subsystem-shell--fill .compare-workspace-body,
+.subsystem-shell--fill .data-analysis-layout,
+.subsystem-shell--fill .speech-layout,
+.subsystem-shell--fill .ocr-layout {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 /* 壳层（顶栏 / 侧栏 / 主区 / 局部顶栏）共用视口固定渐变，避免分块重绘色差 */
 .main-layout .header,
 .main-layout .app-sider.n-layout-sider,

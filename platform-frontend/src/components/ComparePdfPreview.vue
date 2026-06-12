@@ -1,0 +1,320 @@
+<script setup>
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { NSpin, NText } from "naive-ui";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import {
+  bboxToViewportBox,
+  buildTextLayerHighlightBoxes,
+} from "../utils/comparePdfHighlights.js";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+const props = defineProps({
+  src: { type: String, default: "" },
+  page: { type: Number, default: 1 },
+  highlights: { type: Array, default: () => [] },
+  diffItems: { type: Array, default: () => [] },
+  diffSide: { type: String, default: "none" },
+  activeDiffId: { type: [String, Number], default: null },
+  caption: { type: String, default: "" },
+});
+
+const canvasRef = ref(null);
+const wrapRef = ref(null);
+const loading = ref(false);
+const error = ref("");
+const overlayBoxes = ref([]);
+const canvasSize = ref({ width: 0, height: 0 });
+
+let pdfDoc = null;
+let renderTask = null;
+let loadToken = 0;
+let resizeObserver = null;
+
+function diffBoxClass(diffType, active) {
+  const base = `pdf-diff-box pdf-diff-box--${diffType || "modify"}`;
+  return active ? `${base} pdf-diff-box--active` : base;
+}
+
+function resetDoc() {
+  if (renderTask) {
+    renderTask.cancel();
+    renderTask = null;
+  }
+  pdfDoc = null;
+  overlayBoxes.value = [];
+  canvasSize.value = { width: 0, height: 0 };
+}
+
+async function ensurePdf() {
+  const src = String(props.src || "").trim();
+  if (!src) {
+    resetDoc();
+    return null;
+  }
+  if (pdfDoc && pdfDoc._src === src) return pdfDoc;
+  resetDoc();
+  loading.value = true;
+  error.value = "";
+  const token = ++loadToken;
+  try {
+    const task = pdfjsLib.getDocument(src);
+    const doc = await task.promise;
+    if (token !== loadToken) {
+      await doc.destroy();
+      return null;
+    }
+    doc._src = src;
+    pdfDoc = doc;
+    return doc;
+  } catch (e) {
+    if (token === loadToken) {
+      error.value = e?.message || "PDF 加载失败";
+      pdfDoc = null;
+    }
+    return null;
+  } finally {
+    if (token === loadToken) loading.value = false;
+  }
+}
+
+async function buildOverlayBoxes(page, viewport) {
+  const pageNo = props.page;
+  const boxes = [];
+  const bboxCovered = new Set();
+
+  for (const hit of props.highlights || []) {
+    if (!Array.isArray(hit.bbox) || hit.bbox.length < 4) continue;
+    const box = bboxToViewportBox(hit.bbox, viewport, page);
+    if (!box) continue;
+    const key = `bbox-${hit.id}-${Math.round(box.left)}-${Math.round(box.top)}`;
+    bboxCovered.add(String(hit.id));
+    boxes.push({
+      key,
+      ...box,
+      diffType: hit.diffType,
+      active: Boolean(hit.active),
+    });
+  }
+
+  const needTextFallback =
+    props.diffItems.length > 0 &&
+    (boxes.length === 0 ||
+      props.diffItems.some((d) => {
+        const id = String(d.id);
+        return !bboxCovered.has(id);
+      }));
+
+  if (needTextFallback) {
+    const textBoxes = await buildTextLayerHighlightBoxes(page, viewport, pdfjsLib, {
+      diffItems: props.diffItems,
+      side: props.diffSide,
+      pageNo,
+      activeDiffId: props.activeDiffId,
+    });
+    for (const box of textBoxes) {
+      if (!boxes.some((b) => b.key === box.key)) boxes.push(box);
+    }
+  }
+
+  return boxes;
+}
+
+async function renderPage() {
+  const doc = await ensurePdf();
+  const canvas = canvasRef.value;
+  const wrap = wrapRef.value;
+  if (!doc || !canvas || !wrap) return;
+
+  const pageNo = Math.min(Math.max(Number(props.page) || 1, 1), doc.numPages);
+  loading.value = true;
+  error.value = "";
+  const token = ++loadToken;
+  try {
+    const page = await doc.getPage(pageNo);
+    if (token !== loadToken) return;
+
+    const wrapWidth = Math.max(wrap.clientWidth - 16, 280);
+    const baseViewport = page.getViewport({ scale: 1 });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const cssScale = wrapWidth / baseViewport.width;
+    const layoutViewport = page.getViewport({ scale: cssScale });
+    const renderViewport = page.getViewport({ scale: cssScale * dpr });
+
+    const ctx = canvas.getContext("2d");
+    const cssWidth = Math.floor(layoutViewport.width);
+    const cssHeight = Math.floor(layoutViewport.height);
+    canvas.width = Math.floor(renderViewport.width);
+    canvas.height = Math.floor(renderViewport.height);
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
+    canvasSize.value = { width: cssWidth, height: cssHeight };
+
+    if (renderTask) {
+      renderTask.cancel();
+      renderTask = null;
+    }
+    renderTask = page.render({ canvasContext: ctx, viewport: renderViewport });
+    await renderTask.promise;
+    if (token !== loadToken) return;
+
+    overlayBoxes.value = await buildOverlayBoxes(page, layoutViewport);
+  } catch (e) {
+    if (token === loadToken && e?.name !== "RenderingCancelledException") {
+      error.value = e?.message || "PDF 渲染失败";
+    }
+  } finally {
+    if (token === loadToken) {
+      loading.value = false;
+      renderTask = null;
+    }
+  }
+}
+
+function scheduleRender() {
+  nextTick(() => renderPage());
+}
+
+watch(
+  () => [
+    props.src,
+    props.page,
+    props.highlights,
+    props.diffItems,
+    props.diffSide,
+    props.activeDiffId,
+  ],
+  scheduleRender,
+  { deep: true, immediate: true }
+);
+
+onMounted(() => {
+  if (typeof ResizeObserver !== "undefined" && wrapRef.value) {
+    resizeObserver = new ResizeObserver(() => scheduleRender());
+    resizeObserver.observe(wrapRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  loadToken += 1;
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  resetDoc();
+});
+</script>
+
+<template>
+  <div ref="wrapRef" class="compare-pdf-preview">
+    <n-spin :show="loading" class="compare-pdf-preview__spin">
+      <div v-if="error" class="compare-pdf-preview__error">
+        <n-text depth="3">{{ error }}</n-text>
+      </div>
+      <div v-else-if="src" class="compare-pdf-preview__scroll">
+        <div
+          class="compare-pdf-preview__stage"
+          :style="{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px` }"
+        >
+          <canvas ref="canvasRef" class="compare-pdf-preview__canvas" />
+          <div
+            v-for="box in overlayBoxes"
+            :key="box.key"
+            class="pdf-diff-overlay"
+            :class="diffBoxClass(box.diffType, box.active)"
+            :style="{
+              left: `${box.left}px`,
+              top: `${box.top}px`,
+              width: `${box.width}px`,
+              height: `${box.height}px`,
+            }"
+          />
+        </div>
+      </div>
+      <div v-if="caption" class="compare-pdf-preview__caption">
+        <n-text depth="3">{{ caption }}</n-text>
+      </div>
+    </n-spin>
+  </div>
+</template>
+
+<style scoped>
+.compare-pdf-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #525659;
+}
+.compare-pdf-preview__spin {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.compare-pdf-preview__spin :deep(.n-spin-container),
+.compare-pdf-preview__spin :deep(.n-spin-content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.compare-pdf-preview__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.compare-pdf-preview__stage {
+  position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+.compare-pdf-preview__canvas {
+  display: block;
+}
+.pdf-diff-overlay {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.pdf-diff-box--delete {
+  background: rgba(239, 68, 68, 0.32);
+  border: 2px solid rgba(239, 68, 68, 0.75);
+}
+.pdf-diff-box--add {
+  background: rgba(34, 197, 94, 0.32);
+  border: 2px solid rgba(34, 197, 94, 0.75);
+}
+.pdf-diff-box--modify {
+  background: rgba(234, 179, 8, 0.34);
+  border: 2px solid rgba(234, 179, 8, 0.8);
+}
+.pdf-diff-box--active {
+  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.5);
+  z-index: 2;
+}
+.compare-pdf-preview__caption {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  max-height: 72px;
+  overflow-y: auto;
+  background: #fff;
+  border-top: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+  word-break: break-word;
+}
+.compare-pdf-preview__error {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #fff;
+}
+</style>

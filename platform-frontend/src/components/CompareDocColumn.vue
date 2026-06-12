@@ -12,6 +12,8 @@ import {
   ChevronUpOutline,
   FolderOpenOutline,
   OpenOutline } from "@vicons/ionicons5";
+import ComparePdfPreview from "./ComparePdfPreview.vue";
+import { PREVIEW_KIND } from "../utils/documentPreview.js";
 
 const props = defineProps({
   columnIndex: { type: Number, required: true },
@@ -20,6 +22,7 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   comparing: { type: Boolean, default: false },
   pdfSrc: { type: String, default: "" },
+  pdfPage: { type: Number, default: 1 },
   roleLabel: { type: String, default: "" },
   isBaseline: { type: Boolean, default: false },
   isSearchTarget: { type: Boolean, default: false },
@@ -32,7 +35,12 @@ const props = defineProps({
   hitNavLabel: { type: String, default: "" },
   canHitPrev: { type: Boolean, default: false },
   canHitNext: { type: Boolean, default: false },
-  hasPdf: { type: Boolean, default: false },
+  previewKind: { type: String, default: "" },
+  pdfHighlights: { type: Array, default: () => [] },
+  diffItems: { type: Array, default: () => [] },
+  activeDiffId: { type: [String, Number], default: null },
+  pdfCaption: { type: String, default: "" },
+  imageSrc: { type: String, default: "" },
   highlightHtml: { type: Function, required: true },
   diffClassForSide: { type: Function, required: true },
   diffActiveForPara: { type: Function, default: () => false },
@@ -51,6 +59,25 @@ const panelClass = computed(() =>
     : props.isSearchTarget
       ? "doc-panel--target"
       : "doc-panel--extra"
+);
+
+const showsPdfPreview = computed(
+  () => props.previewKind === PREVIEW_KIND.PDF && Boolean(props.pdfSrc)
+);
+
+const showsImagePreview = computed(
+  () => props.previewKind === PREVIEW_KIND.IMAGE && Boolean(props.imageSrc)
+);
+
+const showsHtmlPreview = computed(
+  () => props.previewKind === PREVIEW_KIND.HTML && Boolean(props.imageSrc)
+);
+
+const showsExtractedText = computed(
+  () =>
+    !showsPdfPreview.value &&
+    !showsImagePreview.value &&
+    !showsHtmlPreview.value
 );
 </script>
 
@@ -86,42 +113,52 @@ const panelClass = computed(() =>
     </header>
     <div class="doc-panel-preview">
       <n-spin :show="loading || comparing" class="preview-spin">
-        <template v-if="hasPdf">
-          <div v-if="pdfSrc" class="pdf-preview-wrap">
-            <iframe
-              :key="`pdf-col-${columnIndex}-${pdfSrc}`"
-              :src="pdfSrc"
-              class="pdf-frame"
-              :title="`${roleLabel}预览`"
-            />
-            <div
-              v-if="isSearchTarget && activeHit && searchHits.length"
-              class="pdf-hit-bar"
-            >
-              <n-space align="center" :size="6" class="pdf-hit-nav">
-                <n-button size="tiny" quaternary :disabled="!canHitPrev" @click="$emit('prev-hit')">
-                  <template #icon>
-                    <n-icon :component="ChevronUpOutline" />
-                  </template>
-                </n-button>
-                <n-text depth="3">{{ hitNavLabel }}</n-text>
-                <n-button size="tiny" quaternary :disabled="!canHitNext" @click="$emit('next-hit')">
-                  <template #icon>
-                    <n-icon :component="ChevronDownOutline" />
-                  </template>
-                </n-button>
-              </n-space>
-              <n-tag size="small" type="warning" :bordered="false">
-                第 {{ hitPage(activeHit) }} 页
-              </n-tag>
-              <span class="pdf-hit-snippet" v-html="highlightSnippet(activeHit.snippet)" />
-            </div>
+        <div v-if="showsPdfPreview" class="pdf-preview-wrap">
+          <ComparePdfPreview
+            :key="`pdf-col-${columnIndex}-${pdfSrc}-${pdfPage}`"
+            :src="pdfSrc.split('#')[0]"
+            :page="pdfPage"
+            :highlights="pdfHighlights"
+            :diff-items="diffItems"
+            :diff-side="diffSide"
+            :active-diff-id="activeDiffId"
+            :caption="pdfCaption"
+          />
+          <div
+            v-if="isSearchTarget && activeHit && searchHits.length"
+            class="pdf-hit-bar"
+          >
+            <n-space align="center" :size="6" class="pdf-hit-nav">
+              <n-button size="tiny" quaternary :disabled="!canHitPrev" @click="$emit('prev-hit')">
+                <template #icon>
+                  <n-icon :component="ChevronUpOutline" />
+                </template>
+              </n-button>
+              <n-text depth="3">{{ hitNavLabel }}</n-text>
+              <n-button size="tiny" quaternary :disabled="!canHitNext" @click="$emit('next-hit')">
+                <template #icon>
+                  <n-icon :component="ChevronDownOutline" />
+                </template>
+              </n-button>
+            </n-space>
+            <n-tag size="small" type="warning" :bordered="false">
+              第 {{ hitPage(activeHit) }} 页
+            </n-tag>
+            <span class="pdf-hit-snippet" v-html="highlightSnippet(activeHit.snippet)" />
           </div>
-          <n-text v-else-if="doc && !loading" depth="3" class="empty-hint">
-            预览加载失败，请点击「原文」
-          </n-text>
-        </template>
-        <template v-else>
+        </div>
+        <div v-else-if="showsImagePreview" class="image-preview-wrap">
+          <img :src="imageSrc" :alt="docDisplayTitle(doc)" class="image-preview" />
+        </div>
+        <iframe
+          v-else-if="showsHtmlPreview"
+          :key="`html-col-${columnIndex}-${imageSrc}`"
+          :src="imageSrc"
+          class="pdf-frame"
+          sandbox="allow-same-origin"
+          :title="`${roleLabel}预览`"
+        />
+        <template v-else-if="showsExtractedText">
           <pre v-if="plainPreview" class="plain-preview">{{ plainPreview }}</pre>
           <div
             v-else-if="doc && !loading"
@@ -272,6 +309,21 @@ const panelClass = computed(() =>
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.image-preview-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 8px;
+  background: #fff;
+}
+.image-preview {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 .pdf-frame {
   flex: 1;

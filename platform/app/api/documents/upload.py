@@ -116,16 +116,9 @@ def complete_upload(
             user.id,
             version_id=version.id,
         )
-    from app.services.version_compare_service import schedule_precompare_for_version
+    from app.services.documents.post_upload import schedule_post_upload_processing
 
-    try:
-        schedule_precompare_for_version(db, doc.id, version.id)
-    except Exception:
-        import logging
-
-        logging.getLogger(__name__).exception(
-            "版本预对比调度失败 doc=%s version=%s", doc.id, version.id
-        )
+    schedule_post_upload_processing(doc.id, version.id, user.id)
     return ApiResponse(
         data=DocumentUploadCompleteOut(
             document=_detail(db, doc, user=user),

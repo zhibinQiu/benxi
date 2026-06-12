@@ -289,15 +289,20 @@ onMounted(async () => {
 
 .data-analysis-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 38%) 1fr;
+  grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   background: #fff;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .chat-pane,
 .notebook-pane {
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }

@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING
 from app.config import Settings, get_settings
 from app.integrations.ragflow_model_apply import (
     apply_embedding_to_template_tenant,
+    apply_image2text_to_template_tenant,
     apply_llm_to_template_tenant,
     fetch_template_embedding_defaults,
-    patch_knowflow_paddleocr_url,
+    infer_llm_factory,
+    patch_knowflow_paddleocr_config,
     try_restart_knowflow_services,
 )
 from app.models.platform_model_settings import SINGLETON_ID, PlatformModelSettings
@@ -27,14 +29,46 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 NOTICE_EFFECTIVE = (
-    "保存后立即生效：平台 API 根地址供浏览器请求后端；"
-    "嵌入/语言模型写入 KnowFlow 模板租户并同步已开户用户；"
-    "PaddleOCR 地址写入 deploy/knowflow/settings.yaml 并尝试重启 knowflow-backend；"
-    "语音识别与 PDF 翻译地址供平台 API/Worker 调用；"
-    "SearXNG 地址供网站收藏联网搜索；"
-    "知识库 API / KnowFlow 后台与 Web UI / RAGFlow MySQL 供文档同步、iframe 嵌入与模型复制"
-    "（默认来自 .env 中 PLATFORM_API_BASE_URL、RAGFLOW_*、KNOWFLOW_*）。"
+    "所有模型（语言 / 嵌入 / VL / Rerank / OCR-VL）均在资源管理配置「API URL + 模型名 + Key」，"
+    "保存后立即生效，无需改代码或重启；上线后仅改 URL 与模型名即可切换本地 vLLM/Ollama 等。"
+    "嵌入与 VL 保存后写入 RAGFlow 模板租户并同步用户；OCR-VL 写入 KnowFlow settings.yaml。"
+    ".env 中 PLATFORM_* 仅作首次部署引导，运行中以本页保存为准。"
 )
+
+def _endpoint_fields(merged: dict[str, str], prefix: str) -> tuple[str, str, str]:
+    return (
+        (merged.get(f"{prefix}_base_url") or "").strip(),
+        (merged.get(f"{prefix}_api_key") or "").strip(),
+        (merged.get(f"{prefix}_model") or "").strip(),
+    )
+
+
+def _migrate_legacy_model_keys(payload: dict[str, str]) -> dict[str, str]:
+    """资源管理曾用 vision_* 字段，统一为 vl_*。"""
+    out = dict(payload)
+    for old, new in (
+        ("vision_base_url", "vl_base_url"),
+        ("vision_api_key", "vl_api_key"),
+        ("vision_model", "vl_model"),
+    ):
+        if (out.get(old) or "").strip() and not (out.get(new) or "").strip():
+            out[new] = out[old]
+    return out
+
+
+def _vl_fields_from_update(body: ModelSettingsUpdate) -> tuple[str | None, str | None, str | None]:
+    """合并 vl_* 与旧 vision_* 更新字段。"""
+    base = body.vl_base_url if body.vl_base_url is not None else body.vision_base_url
+    key = body.vl_api_key if body.vl_api_key is not None else body.vision_api_key
+    model = body.vl_model if body.vl_model is not None else body.vision_model
+    return base, key, model
+
+
+def _legacy_paddleocr_base_url(merged: dict[str, str]) -> str:
+    explicit = (merged.get("paddleocr_base_url") or "").strip()
+    if explicit:
+        return explicit
+    return (merged.get("paddleocr_url") or "").strip()
 
 
 def mask_secret(value: str) -> str:
@@ -83,6 +117,12 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "rerank_base_url": (settings.platform_rerank_base_url or "").strip(),
         "rerank_api_key": (settings.platform_rerank_api_key or "").strip(),
         "rerank_model": (settings.platform_rerank_model or "").strip(),
+        "vl_base_url": (settings.platform_vl_base_url or "").strip(),
+        "vl_api_key": (settings.platform_vl_api_key or "").strip(),
+        "vl_model": (settings.platform_vl_model or "").strip(),
+        "paddleocr_base_url": (settings.platform_paddleocr_base_url or "").strip(),
+        "paddleocr_api_key": (settings.platform_paddleocr_api_key or "").strip(),
+        "paddleocr_model": (settings.platform_paddleocr_model or "").strip(),
         "paddleocr_url": (settings.platform_paddleocr_url or "").strip(),
         "speech_service_url": (settings.speech_service_url or "").strip(),
         "pdf2zh_api_url": (settings.pdf2zh_api_url or "").strip(),
@@ -111,7 +151,8 @@ def _load_db_payload(db: Session | None) -> dict[str, str]:
     row = db.get(PlatformModelSettings, SINGLETON_ID)
     if not row or not isinstance(row.payload, dict):
         return {}
-    return {str(k): str(v) if v is not None else "" for k, v in row.payload.items()}
+    raw = {str(k): str(v) if v is not None else "" for k, v in row.payload.items()}
+    return _migrate_legacy_model_keys(raw)
 
 
 def _merge_effective(
@@ -134,9 +175,54 @@ def get_effective_model_config(db: Session | None = None) -> dict[str, str]:
     return _merge_effective(get_settings(), db)
 
 
-def get_paddleocr_url(db: Session | None = None) -> str:
+def get_llm_credentials(db: Session | None = None) -> tuple[str, str, str]:
+    """语言模型凭证（资源管理 / .env 合并，每次调用读库）。"""
     merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
-    return merged.get("paddleocr_url") or ""
+    return _endpoint_fields(merged, "llm")
+
+
+def get_embedding_credentials(db: Session | None = None) -> tuple[str, str, str]:
+    merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
+    return _endpoint_fields(merged, "embedding")
+
+
+def get_vl_credentials(db: Session | None = None) -> tuple[str, str, str]:
+    merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
+    return _endpoint_fields(merged, "vl")
+
+
+def get_rerank_credentials(db: Session | None = None) -> tuple[str, str, str]:
+    merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
+    return _endpoint_fields(merged, "rerank")
+
+
+def get_paddleocr_url(db: Session | None = None) -> str:
+    base, _, _ = get_paddleocr_credentials(db)
+    return base
+
+
+def get_paddleocr_credentials(db: Session | None = None) -> tuple[str, str, str]:
+    merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
+    base, key, model = _endpoint_fields(merged, "paddleocr")
+    if not base:
+        base = _legacy_paddleocr_base_url(merged)
+    return base, key, model
+
+
+def sync_paddleocr_to_knowflow(db: Session | None = None) -> bool:
+    """将平台 PaddleOCR 配置写入 KnowFlow settings.yaml（PDF layout=PaddleOCR 时由 KnowFlow 读取）。"""
+    base, key, model = get_paddleocr_credentials(db)
+    if not base:
+        logger.info("未配置 PaddleOCR，跳过 KnowFlow settings 同步")
+        return False
+    ok = patch_knowflow_paddleocr_config(
+        base_url=base,
+        api_key=key,
+        model_name=model,
+    )
+    if ok:
+        logger.info("已同步 PaddleOCR 配置到 KnowFlow settings.yaml")
+    return ok
 
 
 def get_speech_service_url(db: Session | None = None) -> str:
@@ -326,7 +412,7 @@ def get_frontend_app_title(db: Session | None = None) -> str:
     title = (merged.get("frontend_app_title") or "").strip()
     if title:
         return title
-    return (get_settings().app_name or "").strip() or "AI原型演示系统"
+    return (get_settings().app_name or "").strip() or "AI办公系统"
 
 
 def get_frontend_default_theme(db: Session | None = None) -> str:
@@ -336,6 +422,10 @@ def get_frontend_default_theme(db: Session | None = None) -> str:
 
 def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
     effective = _merge_effective(get_settings(), db)
+    vl_base, vl_key, vl_model = _endpoint_fields(effective, "vl")
+    paddle_base, paddle_key, paddle_model = _endpoint_fields(effective, "paddleocr")
+    if not paddle_base:
+        paddle_base = _legacy_paddleocr_base_url(effective)
     return ModelSettingsOut(
         effective_source="platform_model_settings",
         editable=True,
@@ -353,12 +443,22 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
             api_key=effective["embedding_api_key"],
             model_name=effective["embedding_model"] or None,
         ),
+        vl=_endpoint(
+            base_url=vl_base,
+            api_key=vl_key,
+            model_name=vl_model or None,
+        ),
         rerank=_endpoint(
             base_url=effective["rerank_base_url"],
             api_key=effective["rerank_api_key"],
             model_name=effective["rerank_model"] or None,
         ),
-        paddleocr_url=effective.get("paddleocr_url") or "",
+        paddleocr=_endpoint(
+            base_url=paddle_base,
+            api_key=paddle_key,
+            model_name=paddle_model or None,
+        ),
+        paddleocr_url=paddle_base or effective.get("paddleocr_url") or "",
         speech_service_url=effective.get("speech_service_url") or "",
         pdf2zh_api_url=effective.get("pdf2zh_api_url") or "",
         embedding_factory=effective.get("embedding_factory") or None,
@@ -382,6 +482,7 @@ def save_model_settings(
     body: ModelSettingsUpdate,
 ) -> ModelSettingsOut:
     current = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
+    vl_base_in, vl_key_in, vl_model_in = _vl_fields_from_update(body)
 
     payload = {
         "llm_base_url": (body.llm_base_url if body.llm_base_url is not None else current["llm_base_url"]),
@@ -412,6 +513,26 @@ def save_model_settings(
             body.rerank_model if body.rerank_model is not None else current["rerank_model"]
         ),
         "rerank_api_key": _keep_secret(body.rerank_api_key, current["rerank_api_key"]),
+        "vl_base_url": (
+            vl_base_in if vl_base_in is not None else current.get("vl_base_url", "")
+        ),
+        "vl_model": (
+            vl_model_in if vl_model_in is not None else current.get("vl_model", "")
+        ),
+        "vl_api_key": _keep_secret(vl_key_in, current.get("vl_api_key", "")),
+        "paddleocr_base_url": (
+            body.paddleocr_base_url
+            if body.paddleocr_base_url is not None
+            else current.get("paddleocr_base_url", "")
+        ),
+        "paddleocr_model": (
+            body.paddleocr_model
+            if body.paddleocr_model is not None
+            else current.get("paddleocr_model", "")
+        ),
+        "paddleocr_api_key": _keep_secret(
+            body.paddleocr_api_key, current.get("paddleocr_api_key", "")
+        ),
         "paddleocr_url": (
             body.paddleocr_url if body.paddleocr_url is not None else current["paddleocr_url"]
         ),
@@ -528,6 +649,22 @@ def apply_saved_settings(db: Session, payload: dict[str, str]) -> None:
             api_key=payload.get("llm_api_key", ""),
             model_name=payload.get("llm_model", ""),
         )
-    if payload.get("paddleocr_url"):
-        if patch_knowflow_paddleocr_url(payload["paddleocr_url"]):
+    vl_base, vl_key, vl_model = _endpoint_fields(payload, "vl")
+    if vl_key and vl_model:
+        apply_image2text_to_template_tenant(
+            db,
+            base_url=vl_base,
+            api_key=vl_key,
+            model_name=vl_model,
+            factory=infer_llm_factory(vl_base, payload.get("embedding_factory", "")),
+        )
+    paddle_base, paddle_key, paddle_model = _endpoint_fields(payload, "paddleocr")
+    if not paddle_base:
+        paddle_base = _legacy_paddleocr_base_url(payload)
+    if paddle_base:
+        if patch_knowflow_paddleocr_config(
+            base_url=paddle_base,
+            api_key=paddle_key,
+            model_name=paddle_model,
+        ):
             try_restart_knowflow_services()

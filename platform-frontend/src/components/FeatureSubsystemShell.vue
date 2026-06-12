@@ -69,11 +69,10 @@ const { headerExtensionActive } = usePageHeaderExtension();
 }
 
 .subsystem-shell--fill .subsystem-body {
-  padding: 0 20px 12px;
-}
-
-.subsystem-shell--flush-start.subsystem-shell--fill .subsystem-body {
-  padding-left: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .subsystem-shell:not(.subsystem-shell--fill) .subsystem-body {

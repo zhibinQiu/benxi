@@ -37,6 +37,7 @@ class ReconcileReport:
     unregistered_kbs_removed: int = 0
     library_alignment: dict[str, Any] = field(default_factory=dict)
     zero_byte_versions: list[str] = field(default_factory=list)
+    missing_storage_versions: list[str] = field(default_factory=list)
     minio_orphan_doc_ids: list[str] = field(default_factory=list)
     minio_orphan_keys_deleted: int = 0
     shared_rag_refs_preserved: int = 0
@@ -50,6 +51,8 @@ class ReconcileReport:
             "unregistered_kbs_removed": self.unregistered_kbs_removed,
             "library_alignment": self.library_alignment,
             "zero_byte_versions": self.zero_byte_versions,
+            "missing_storage_versions": self.missing_storage_versions,
+            "missing_storage_version_count": len(self.missing_storage_versions),
             "minio_orphan_doc_ids": self.minio_orphan_doc_ids,
             "minio_orphan_keys_deleted": self.minio_orphan_keys_deleted,
             "shared_rag_refs_preserved": self.shared_rag_refs_preserved,
@@ -89,6 +92,30 @@ def scan_zero_byte_versions(db: Session) -> list[str]:
         select(DocumentVersion.id).where(DocumentVersion.file_size <= 0)
     ).all()
     return [str(v) for v in rows]
+
+
+def scan_missing_storage_versions(db: Session, *, limit: int = 500) -> list[str]:
+    """DB 已标记 file_size>0 但 MinIO 无对应对象的 version_id。"""
+    from app.storage.object_store import get_object_store
+
+    store = get_object_store()
+    rows = db.scalars(
+        select(DocumentVersion)
+        .join(Document, Document.id == DocumentVersion.document_id)
+        .where(
+            DocumentVersion.file_size > 0,
+            Document.deleted_at.is_(None),
+        )
+        .order_by(DocumentVersion.created_at.desc())
+    ).all()
+    missing: list[str] = []
+    for ver in rows:
+        key = (ver.file_key or "").strip()
+        if not key or store.head_object_size(key) is None:
+            missing.append(str(ver.id))
+        if len(missing) >= limit:
+            break
+    return missing
 
 
 def scan_minio_orphan_document_ids(db: Session) -> list[str]:
@@ -176,6 +203,7 @@ def run_full_reconcile(
     if not settings.knowflow_enabled:
         report.errors.append("KNOWFLOW_ENABLED=false，跳过 KnowFlow 对账")
         report.zero_byte_versions = scan_zero_byte_versions(db)
+        report.missing_storage_versions = scan_missing_storage_versions(db)
         report.minio_orphan_doc_ids = scan_minio_orphan_document_ids(db)
         return report
 
@@ -256,6 +284,7 @@ def run_full_reconcile(
         logger.exception("知识库对账异常")
 
     report.zero_byte_versions = scan_zero_byte_versions(db)
+    report.missing_storage_versions = scan_missing_storage_versions(db)
     report.minio_orphan_doc_ids = scan_minio_orphan_document_ids(db)
 
     if purge_minio and report.minio_orphan_doc_ids:

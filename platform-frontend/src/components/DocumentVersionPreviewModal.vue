@@ -20,8 +20,8 @@ const props = defineProps({
   previewSubtitle: { type: String, default: "" },
   previewFileName: { type: String, default: "" },
   showDownloadAction: { type: Boolean, default: null },
-  width: { type: [Number, String], default: "min(920px, 96vw)" },
-  viewportHeight: { type: String, default: "min(68vh, 720px)" },
+  width: { type: [Number, String], default: "min(1200px, 96vw)" },
+  viewportHeight: { type: String, default: "min(82vh, 900px)" },
 });
 
 const emit = defineEmits(["update:show", "download"]);
@@ -238,7 +238,7 @@ function onAfterLeave() {
 
 .document-preview-modal__text {
   width: 100%;
-  max-height: min(68vh, 720px);
+  max-height: v-bind(viewportHeight);
   margin: 0;
   padding: 16px 18px;
   overflow: auto;

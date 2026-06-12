@@ -7,16 +7,18 @@ import AiChatPanel from "../components/AiChatPanel.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
 import { knowledgeQaChatStream } from "../api/knowledge.js";
+import { useI18n } from "../composables/useI18n.js";
+import { messages } from "../locales";
 import { clearChatSession } from "../utils/chatSessionPersist.js";
+
+const { t, locale } = useI18n();
 
 const selection = ref(null);
 const chatResetKey = ref(0);
 
-const suggestions = [
-  "这份文档的核心结论是什么？",
-  "有哪些与碳排放核算相关的要点？",
-  "请列出文档中的关键数据指标",
-];
+const suggestions = computed(
+  () => messages[locale.value]?.knowledgeSearch?.suggestions || []
+);
 
 const selectionDocKey = computed(() =>
   [...(selection.value?.documentIds || [])].sort().join(",")
@@ -28,7 +30,7 @@ const chatPanelKey = computed(
 
 const selectionHint = computed(() => {
   if (!selection.value?.documentIds?.length) {
-    return "请从左侧勾选已成功索引的文档";
+    return t("knowledgeSearch.selectIndexedDocs");
   }
   const {
     documentIds = [],
@@ -39,7 +41,7 @@ const selectionHint = computed(() => {
   } = selection.value;
 
   if (indexReadyCount === 0) {
-    return `已选 ${totalSelected} 份，无已索引文档`;
+    return t("knowledgeSearch.selectedNoneIndexed", { total: totalSelected });
   }
 
   if (type === "document") {
@@ -47,17 +49,20 @@ const selectionHint = computed(() => {
   }
 
   if (totalSelected !== indexReadyCount) {
-    return `${indexReadyCount}/${totalSelected} 份可问答`;
+    return t("knowledgeSearch.selectedPartial", {
+      ready: indexReadyCount,
+      total: totalSelected,
+    });
   }
 
-  return `${indexReadyCount} 份文档`;
+  return t("knowledgeSearch.selectedCount", { count: indexReadyCount });
 });
 
 const canAsk = computed(() => (selection.value?.documentIds?.length || 0) > 0);
 
 async function handleChatStream(params, callbacks) {
   if (!canAsk.value) {
-    throw new Error("请从左侧勾选已成功索引的文档");
+    throw new Error(t("knowledgeSearch.selectIndexedDocs"));
   }
   return knowledgeQaChatStream(
     {
@@ -97,7 +102,7 @@ onMounted(() => {
           <template #icon>
             <n-icon :component="AddOutline" />
           </template>
-          新检索
+          {{ t("knowledgeSearch.newSearch") }}
         </n-button>
       </div>
     </template>
@@ -111,8 +116,8 @@ onMounted(() => {
         <AiChatPanel
           :key="chatPanelKey"
           class="knowledge-search-page__chat"
-          title="知识检索"
-          reply-placeholder="基于所选文档继续提问…"
+          :title="t('knowledgeSearch.title')"
+          :reply-placeholder="t('knowledgeSearch.replyPlaceholder')"
           :suggestions="canAsk ? suggestions : []"
           :icon="SearchOutline"
           :streaming="true"

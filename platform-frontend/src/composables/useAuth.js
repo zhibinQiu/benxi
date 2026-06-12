@@ -4,11 +4,12 @@ import {
   fetchMe,
   getToken,
   login as apiLogin,
+  logout as apiLogout,
   registerUser,
   setTokens,
 } from "../api/client";
 import { resetClientSessionState } from "../utils/resetClientSessionState.js";
-import { bumpSessionEpoch } from "../utils/sessionEpoch.js";
+import { bumpSessionEpoch, loggingOut } from "../utils/sessionEpoch.js";
 
 const user = ref(null);
 const loading = ref(false);
@@ -56,6 +57,7 @@ export function useAuth() {
   }
 
   async function login(account, password) {
+    loggingOut.value = false;
     resetClientSessionState();
     bumpSessionEpoch();
     const tokens = await apiLogin(account, password);
@@ -64,6 +66,7 @@ export function useAuth() {
   }
 
   async function register({ phone, email, displayName, password }) {
+    loggingOut.value = false;
     resetClientSessionState();
     bumpSessionEpoch();
     const tokens = await registerUser({ phone, email, displayName, password });
@@ -72,6 +75,8 @@ export function useAuth() {
   }
 
   function logout() {
+    loggingOut.value = true;
+    apiLogout();
     clearTokens();
     resetClientSessionState();
     bumpSessionEpoch();

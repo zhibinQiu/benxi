@@ -24,14 +24,14 @@ function mapSelectOptions(items = []) {
   }));
 }
 
-/** 文档版本重新索引：解析器选择 + 后台任务/轮询（默认全量同步） */
+/** 文档版本重新索引：切换解析器并重新解析（沿用 KnowFlow 已有副本，不强制从 MinIO 重传） */
 export function useDocumentReindex(documentId, onUpdated) {
   const ui = usePlatformUi();
 
   const reindexModalShow = ref(false);
   const reindexTargetVersion = ref(null);
   const parserId = ref("naive");
-  const layoutRecognize = ref("DeepDOC");
+  const layoutRecognize = ref("PaddleOCR");
   const chunkMethodOptions = ref([]);
   const layoutOptions = ref([]);
   const reparsing = ref(false);
@@ -103,7 +103,7 @@ export function useDocumentReindex(documentId, onUpdated) {
         { label: "智能分块", value: "smart" },
       ];
       layoutOptions.value = [
-        { label: "DeepDOC", value: "DeepDOC" },
+        { label: "PaddleOCR", value: "PaddleOCR" },
         { label: "纯文本", value: "Plain Text" },
       ];
     }
@@ -240,7 +240,6 @@ export function useDocumentReindex(documentId, onUpdated) {
         versionId: version.id,
         parserId: parserId.value,
         layoutRecognize: layoutRecognize.value,
-        resync: true,
       });
       ui.success(res?.message || "已提交重新索引");
       reindexModalShow.value = false;

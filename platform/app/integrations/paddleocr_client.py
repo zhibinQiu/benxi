@@ -19,6 +19,16 @@ def normalize_paddleocr_service_url(url: str) -> str:
     return raw
 
 
+def is_openai_compatible_ocr_base(base_url: str) -> bool:
+    """OpenAI 兼容推理根地址（硅基流动等）；非自建 layout-parsing /ocr。"""
+    base = (base_url or "").strip().lower().rstrip("/")
+    if not base:
+        return False
+    if base.endswith("/ocr") or "layout-parsing" in base:
+        return False
+    return base.endswith("/v1") or "/v1/" in base
+
+
 def paddleocr_request_url(url: str) -> str:
     """平台 OCR 请求地址：保留用户配置的 /ocr 或回退 layout-parsing。"""
     raw = (url or "").strip().rstrip("/")
@@ -158,15 +168,122 @@ def extract_layout_blocks(data: Any) -> list[dict]:
     return blocks
 
 
+def _chat_completions_url(base_url: str) -> str:
+    root = (base_url or "").strip().rstrip("/")
+    if root.endswith("/v1"):
+        return f"{root}/chat/completions"
+    return f"{root}/v1/chat/completions"
+
+
+def _recognize_openai_compatible(
+    content: bytes,
+    *,
+    base_url: str,
+    api_key: str,
+    model_name: str,
+    file_name: str,
+    mime_type: str,
+    timeout_sec: float,
+    language: str = "",
+) -> dict[str, Any]:
+    mime = (mime_type or "application/octet-stream").lower()
+    if mime == "application/pdf":
+        import io
+
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(content))
+        text = "\n\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        if text:
+            block = {"text": text, "page": 1, "bbox": None, "block_type": "text"}
+            return {
+                "text": text,
+                "blocks": [block],
+                "raw": {"source": "pdf_text_layer"},
+            }
+        raise ValueError(
+            "PDF 无文本层；在线 OCR 请上传图片，或配置本地 PaddleOCR layout-parsing 服务"
+        )
+
+    if not model_name.strip():
+        raise ValueError("未配置 PaddleOCR 模型名")
+
+    b64 = base64.b64encode(content).decode("ascii")
+    data_url = f"data:{mime_type or 'application/octet-stream'};base64,{b64}"
+    lang_hint = f"识别语言偏好：{language}。" if language else ""
+    prompt = (
+        f"请识别图像中的全部文字，按自然阅读顺序输出。{lang_hint}"
+        "保留段落换行，不要添加解释或 Markdown 标题。"
+    )
+    payload: dict[str, Any] = {
+        "model": model_name.strip(),
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            }
+        ],
+        "temperature": 0,
+    }
+    headers: dict[str, str] = {}
+    if api_key.strip():
+        headers["Authorization"] = f"Bearer {api_key.strip()}"
+
+    url = _chat_completions_url(base_url)
+    try:
+        with httpx.Client(timeout=timeout_sec) as client:
+            res = client.post(url, json=payload, headers=headers)
+    except httpx.RequestError as e:
+        raise ConnectionError(f"无法连接 OCR 服务：{e}") from e
+
+    if res.status_code >= 400:
+        raise RuntimeError(f"OCR 请求失败 HTTP {res.status_code}: {res.text[:500]}")
+
+    data = res.json()
+    choices = data.get("choices") if isinstance(data, dict) else None
+    text = ""
+    if isinstance(choices, list) and choices:
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if isinstance(message, dict):
+            text = str(message.get("content") or "").strip()
+    if not text:
+        raise RuntimeError("OCR 服务未返回识别文本")
+
+    block = {"text": text, "page": 1, "bbox": None, "block_type": "text"}
+    return {"text": text, "blocks": [block], "raw": data}
+
+
 def recognize_bytes(
     content: bytes,
     *,
     service_url: str,
+    api_key: str = "",
+    model_name: str = "",
     file_name: str = "upload.bin",
     mime_type: str = "application/octet-stream",
     timeout_sec: float = 120,
+    language: str = "",
 ) -> dict[str, Any]:
-    endpoint = paddleocr_request_url(service_url)
+    base = (service_url or "").strip()
+    if not base:
+        raise ValueError("未配置 PaddleOCR 服务地址")
+
+    if is_openai_compatible_ocr_base(base):
+        return _recognize_openai_compatible(
+            content,
+            base_url=base,
+            api_key=api_key,
+            model_name=model_name,
+            file_name=file_name,
+            mime_type=mime_type,
+            timeout_sec=timeout_sec,
+            language=language,
+        )
+
+    endpoint = paddleocr_request_url(base)
     if not endpoint:
         raise ValueError("未配置 PaddleOCR 服务地址")
 

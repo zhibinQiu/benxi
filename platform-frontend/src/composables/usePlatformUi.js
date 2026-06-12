@@ -1,5 +1,9 @@
 import { useMessage, useDialog } from "naive-ui";
 import { useI18n } from "./useI18n";
+import {
+  isAuthSilentError,
+  shouldSuppressAuthFeedback,
+} from "../utils/authError.js";
 import { notifyDeduped, sanitizeUserFacingMessage } from "../utils/uiMessage";
 
 /** 统一 toast / 确认框：去重、友好错误、i18n */
@@ -32,10 +36,12 @@ export function usePlatformUi() {
   }
 
   function error(keyOrText, params) {
+    if (isAuthSilentError(keyOrText)) return;
     const text =
       typeof keyOrText === "object" && keyOrText?.message
         ? sanitizeUserFacingMessage(keyOrText.message, t("messages.operationFailed"))
         : resolveText(keyOrText, params);
+    if (shouldSuppressAuthFeedback(text)) return;
     notifyDeduped(message, "error", text, t("messages.operationFailed"));
   }
 

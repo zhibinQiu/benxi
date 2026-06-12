@@ -65,6 +65,17 @@ html[data-theme="light"] {
   --menu-glass-hover-opacity: 0.52;
   --menu-glass-active-opacity: 0.58;
 
+  --platform-glass-fill-hover: linear-gradient(
+    180deg,
+    var(--menu-glass-bg) 0%,
+    var(--menu-glass-bg-bottom) 100%
+  );
+  --platform-glass-fill-active: linear-gradient(
+    180deg,
+    var(--menu-glass-bg-active) 0%,
+    var(--menu-glass-bg-active-bottom) 100%
+  );
+
   --platform-bg-base: #eef2ff;
   --platform-bg:
     radial-gradient(ellipse 85% 65% at 8% 10%, rgba(91, 156, 245, 0.24) 0%, transparent 58%),
@@ -197,6 +208,17 @@ html[data-theme="dark"] {
   --menu-glass-accent-glow: rgba(96, 165, 250, 0.12);
   --menu-glass-hover-opacity: 0.48;
   --menu-glass-active-opacity: 0.56;
+
+  --platform-glass-fill-hover: linear-gradient(
+    180deg,
+    var(--menu-glass-bg) 0%,
+    var(--menu-glass-bg-bottom) 100%
+  );
+  --platform-glass-fill-active: linear-gradient(
+    180deg,
+    var(--menu-glass-bg-active) 0%,
+    var(--menu-glass-bg-active-bottom) 100%
+  );
 
   --platform-bg-base: #0a0a12;
   --platform-bg:

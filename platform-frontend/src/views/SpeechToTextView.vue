@@ -955,14 +955,20 @@ onBeforeUnmount(() => {
 .speech-spin {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 .speech-spin :deep(.n-spin-container) {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 .speech-alerts {
   flex-shrink: 0;
@@ -970,10 +976,14 @@ onBeforeUnmount(() => {
 .speech-layout {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(340px, 1.15fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
   gap: 16px;
   align-items: stretch;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .speech-output-column {
   display: flex;
@@ -984,6 +994,8 @@ onBeforeUnmount(() => {
 .panel {
   border-radius: 10px;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
 }

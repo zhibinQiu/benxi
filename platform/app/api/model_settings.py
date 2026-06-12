@@ -24,6 +24,7 @@ from app.services.resource_health_service import (
     check_resource_health,
     check_single_resource_health,
     merge_health_test_config,
+    _normalize_resource_id,
 )
 
 router = APIRouter(prefix="/admin/model-settings", tags=["admin"])
@@ -63,11 +64,19 @@ def test_resource_health(
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[ResourceHealthItemOut]:
     """保存前按表单草稿探测单项连通性。"""
-    rid = (body.resource_id or "").strip()
+    rid = _normalize_resource_id(body.resource_id)
     if rid not in TESTABLE_RESOURCE_IDS:
         from app.core.exceptions import bad_request
 
         raise bad_request(f"不支持测试的资源项：{body.resource_id}")
-    cfg = merge_health_test_config(db, body.draft.model_dump(exclude_unset=True))
+    draft = body.draft.model_dump(exclude_unset=True)
+    for old, new in (
+        ("vision_base_url", "vl_base_url"),
+        ("vision_api_key", "vl_api_key"),
+        ("vision_model", "vl_model"),
+    ):
+        if old in draft and new not in draft:
+            draft[new] = draft[old]
+    cfg = merge_health_test_config(db, draft)
     item = check_single_resource_health(rid, cfg, db)
     return ApiResponse(data=ResourceHealthItemOut(**item))

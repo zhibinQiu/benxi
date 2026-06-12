@@ -110,6 +110,17 @@ async def lifespan(_app: FastAPI):
     )
 
     await asyncio.to_thread(recover_interrupted_document_index_jobs)
+    from app.database import SessionLocal
+    from app.services.model_settings_service import sync_paddleocr_to_knowflow
+
+    def _sync_paddleocr_on_startup() -> None:
+        db = SessionLocal()
+        try:
+            sync_paddleocr_to_knowflow(db)
+        finally:
+            db.close()
+
+    await asyncio.to_thread(_sync_paddleocr_on_startup)
     sync_task = start_cea_history_scheduler()
     try:
         yield

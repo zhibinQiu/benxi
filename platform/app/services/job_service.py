@@ -114,6 +114,11 @@ def cancel_job(db: Session, job: Job) -> Job:
         if zid:
             _cancel_pdf2zh_remote(zid)
 
+    if job.type == JobType.document_index.value:
+        from app.services.knowledge_sync_job_service import cancel_document_index_job
+
+        return cancel_document_index_job(db, job)
+
     return update_job_status(
         db,
         job.id,

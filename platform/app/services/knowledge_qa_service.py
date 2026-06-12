@@ -298,11 +298,35 @@ def _doc_titles(db: Session, doc_ids: list[uuid.UUID]) -> dict[str, str]:
     return titles
 
 
+def _normalize_highlight_snippet(text: str) -> str:
+    """将检索高亮统一为 <em>…</em>，供前端溯源展示。"""
+    import re
+
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    if re.search(r"</?em\b", raw, flags=re.I):
+        return raw
+    patterns = (
+        (r"<mark\b[^>]*>(.*?)</mark>", r"<em>\1</em>"),
+        (
+            r"<font\b[^>]*\bclass=['\"]highlight['\"][^>]*>(.*?)</font>",
+            r"<em>\1</em>",
+        ),
+        (r"\*\*(.+?)\*\*", r"<em>\1</em>"),
+    )
+    for pattern, repl in patterns:
+        raw = re.sub(pattern, repl, raw, flags=re.I | re.S)
+    return raw
+
+
 def build_citations(hits: list[dict], doc_titles: dict[str, str]) -> list[dict]:
     citations: list[dict] = []
     for i, h in enumerate(hits, start=1):
         did = str(h.get("document_id") or "")
-        snippet = (h.get("highlight") or h.get("snippet") or "").strip()
+        snippet = _normalize_highlight_snippet(
+            (h.get("highlight") or h.get("snippet") or "").strip()
+        )
         citations.append(
             {
                 "index": i,

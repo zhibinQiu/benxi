@@ -25,6 +25,156 @@ _PARSE_DONE = {"3", "DONE", "done"}
 _PARSE_FAILED = {"2", "4", "FAIL", "fail", "CANCEL", "cancel"}
 _PARSE_RUNNING = {"1", "RUNNING", "running"}
 
+_parse_watch_lock = threading.Lock()
+_active_parse_watches: set[uuid.UUID] = set()
+
+_INDEX_JOB_TERMINAL = frozenset(
+    {
+        JobStatus.done.value,
+        JobStatus.failed.value,
+        JobStatus.cancelled.value,
+    }
+)
+
+
+def _index_target_exists(
+    db: Session,
+    document_id: uuid.UUID | None,
+    version_id: uuid.UUID | None = None,
+) -> bool:
+    """文档/版本仍存在且未软删时，索引任务才可继续。"""
+    if not document_id:
+        return False
+    doc = db.get(Document, document_id)
+    if not doc or doc.deleted_at is not None:
+        return False
+    if version_id is None:
+        return True
+    from app.models.document import DocumentVersion
+
+    ver = db.get(DocumentVersion, version_id)
+    return ver is not None and ver.document_id == document_id
+
+
+def _collect_document_index_jobs(
+    db: Session,
+    document_id: uuid.UUID,
+    *,
+    version_id: uuid.UUID | None = None,
+) -> list[Job]:
+    from app.services.ragflow_version_link_service import get_version_link_by_version_id
+
+    doc_str = str(document_id)
+    version_str = str(version_id) if version_id else None
+    ragflow_ids: set[str] = set()
+    if version_id is not None:
+        vl = get_version_link_by_version_id(db, version_id)
+        if vl and (vl.ragflow_document_id or "").strip():
+            ragflow_ids.add(vl.ragflow_document_id.strip())
+
+    matched: list[Job] = []
+    for job in db.scalars(
+        select(Job).where(Job.type == JobType.document_index.value)
+    ).all():
+        payload = job.payload or {}
+        payload_doc = (payload.get("document_id") or "").strip()
+        if job.document_id != document_id and payload_doc != doc_str:
+            continue
+        if version_id is None:
+            matched.append(job)
+            continue
+        job_version = (payload.get("version_id") or "").strip()
+        job_rid = (payload.get("ragflow_document_id") or "").strip()
+        if job_version == version_str or job_rid in ragflow_ids:
+            matched.append(job)
+    return matched
+
+
+def stop_document_index_work(
+    db: Session,
+    document_id: uuid.UUID,
+    *,
+    version_id: uuid.UUID | None = None,
+) -> int:
+    """终止与文档/版本关联的后台索引与解析续跑（用户删除文件时调用）。"""
+    stopped = 0
+    for job in _collect_document_index_jobs(db, document_id, version_id=version_id):
+        payload = dict(job.payload or {})
+        had_watch = bool(payload.get("awaiting_parse"))
+        payload.pop("awaiting_parse", None)
+        payload.pop("parse_watch_started_at", None)
+        job.payload = payload
+        if job.status in (JobStatus.pending.value, JobStatus.running.value):
+            update_job_status(
+                db,
+                job.id,
+                JobStatus.cancelled.value,
+                error_message="文档或版本已删除",
+            )
+            stopped += 1
+        elif had_watch:
+            db.add(job)
+            db.flush()
+            stopped += 1
+        with _parse_watch_lock:
+            _active_parse_watches.discard(job.id)
+    if stopped:
+        logger.info(
+            "已终止文档索引任务 doc=%s version=%s count=%s",
+            document_id,
+            version_id,
+            stopped,
+        )
+    return stopped
+
+
+def cancel_document_index_job(db: Session, job: Job) -> Job:
+    """用户从后台任务面板终止文档索引/解析（含解析续跑）。"""
+    from app.core.exceptions import bad_request
+
+    payload = dict(job.payload or {})
+    awaiting_parse = bool(payload.get("awaiting_parse"))
+    if job.status not in (JobStatus.pending.value, JobStatus.running.value) and not awaiting_parse:
+        raise bad_request("仅「等待中」或「运行中」的任务可终止")
+
+    payload.pop("awaiting_parse", None)
+    payload.pop("parse_watch_started_at", None)
+    job.payload = payload
+    with _parse_watch_lock:
+        _active_parse_watches.discard(job.id)
+
+    return update_job_status(
+        db,
+        job.id,
+        JobStatus.cancelled.value,
+        error_message="用户已终止",
+    )
+
+
+def _index_job_should_abort(db: Session, job: Job) -> bool:
+    fresh = db.get(Job, job.id)
+    if fresh is None:
+        return True
+    job.status = fresh.status
+    if fresh.status == JobStatus.cancelled.value:
+        return True
+    payload = fresh.payload or {}
+    doc_id = fresh.document_id
+    if doc_id is None and payload.get("document_id"):
+        try:
+            doc_id = uuid.UUID(str(payload["document_id"]))
+        except (TypeError, ValueError):
+            doc_id = None
+    version_id: uuid.UUID | None = None
+    if payload.get("version_id"):
+        try:
+            version_id = uuid.UUID(str(payload["version_id"]))
+        except (TypeError, ValueError):
+            version_id = None
+    if not _index_target_exists(db, doc_id, version_id):
+        return True
+    return False
+
 
 @dataclass(frozen=True)
 class KnowledgeIndexResumeResult:
@@ -67,7 +217,12 @@ def try_resume_incomplete_knowledge_index(
         return KnowledgeIndexResumeResult(rid, ds, already_completed=True)
 
     status, _chunks, _progress, _detail = _parse_run_status(
-        db, user, dataset_id=ds, ragflow_document_id=rid
+        db,
+        user,
+        dataset_id=ds,
+        ragflow_document_id=rid,
+        document=document,
+        background=True,
     )
     run_done = status in ("已完成", "已索引") or (
         status and str(status).lower() in _PARSE_DONE
@@ -84,37 +239,86 @@ def try_resume_incomplete_knowledge_index(
     if status == "解析中" or (status and str(status).upper() in _PARSE_RUNNING):
         return KnowledgeIndexResumeResult(rid, ds, already_completed=False)
 
+    if _retrigger_ragflow_parse(db, user, document, version.id):
+        logger.info(
+            "KnowFlow 续跑解析 doc=%s version=%s ragflow=%s status=%s",
+            document.id,
+            version.id,
+            rid,
+            status or "unknown",
+        )
+    return KnowledgeIndexResumeResult(rid, ds, already_completed=False)
+
+
+def _background_actor(db: Session, document: Document, fallback: User) -> User:
+    if document.owner_id:
+        owner = db.get(User, document.owner_id)
+        if owner and owner.status == "active":
+            return owner
+    return fallback
+
+
+def _retrigger_ragflow_parse(
+    db: Session,
+    actor: User,
+    document: Document,
+    version_id: uuid.UUID | None,
+) -> bool:
+    """已上传文档仅重新提交解析，不重复上传文件。"""
+    from app.models.document import DocumentVersion
+    from app.services.document_service import resolve_current_version
     from app.services.ragflow_sync_service import (
         _configure_and_parse_uploaded_document,
         _sync_context_for_document,
     )
+    from app.services.ragflow_version_link_service import get_version_link_by_version_id
 
-    _, kf = _sync_context_for_document(db, user, document)
-    upload_name = (vl.file_name if vl else "") or version.file_name or "document"
+    version = (
+        db.get(DocumentVersion, version_id)
+        if version_id
+        else resolve_current_version(db, document)
+    )
+    if not version:
+        return False
+    vl = get_version_link_by_version_id(db, version.id)
+    if not vl or not vl.ragflow_document_id or not vl.dataset_id:
+        return False
+    from app.services.ragflow_version_link_service import clear_version_index_completed
+
+    clear_version_index_completed(db, version.id)
+    from app.core.platform_cache import invalidate_ragflow_doc_meta_cache
+
+    invalidate_ragflow_doc_meta_cache(vl.dataset_id)
+    _, kf = _sync_context_for_document(db, actor, document)
+    upload_name = vl.file_name or version.file_name or "document"
     _configure_and_parse_uploaded_document(
         kf,
-        dataset_id=ds,
-        ragflow_document_id=rid,
+        dataset_id=vl.dataset_id,
+        ragflow_document_id=vl.ragflow_document_id,
         file_name=upload_name,
         mime_type=version.mime_type or "",
     )
-    logger.info(
-        "KnowFlow 续跑解析 doc=%s version=%s ragflow=%s status=%s",
-        document.id,
-        version.id,
-        rid,
-        status or "unknown",
-    )
-    return KnowledgeIndexResumeResult(rid, ds, already_completed=False)
+    return True
 
 
 def _parse_run_status(
-    db: Session, user: User, *, dataset_id: str, ragflow_document_id: str
+    db: Session,
+    user: User,
+    *,
+    dataset_id: str,
+    ragflow_document_id: str,
+    document: Document | None = None,
+    background: bool = False,
 ) -> tuple[str | None, int | None, int | None, str | None]:
     from app.services.knowledge_library_service import fetch_ragflow_doc_meta_map
 
     meta_by_id, fetch_ok = fetch_ragflow_doc_meta_map(
-        db, user, dataset_id, [ragflow_document_id]
+        db,
+        user,
+        dataset_id,
+        [ragflow_document_id],
+        document=document,
+        background=background or document is not None,
     )
     if not fetch_ok:
         return None, None, None, None
@@ -145,7 +349,9 @@ def _parse_run_status(
         or item.get("message")
         or ""
     )
-    detail = str(msg).strip()[:500] if msg else None
+    from app.services.knowledge_library_service import summarize_ragflow_progress_msg
+
+    detail = summarize_ragflow_progress_msg(msg) if msg else None
     return label, chunks, progress_pct, detail
 
 
@@ -156,6 +362,110 @@ def _format_parse_failure(status: str | None, detail: str | None) -> str:
     return base
 
 
+def _is_parse_done(status: str | None) -> bool:
+    return status in ("已完成", "已索引") or (
+        status and str(status).lower() in _PARSE_DONE
+    )
+
+
+def _is_parse_failed(status: str | None) -> bool:
+    return status in ("解析失败", "已取消") or (
+        status and str(status).upper() in _PARSE_FAILED
+    )
+
+
+def _is_parse_running(status: str | None) -> bool:
+    return status == "解析中" or (
+        status and str(status).upper() in _PARSE_RUNNING
+    )
+
+
+def _is_retriable_parse_failure(detail: str | None) -> bool:
+    text = (detail or "").lower()
+    if not text:
+        return True
+    non_retriable = (
+        "model disabled",
+        "invalid api",
+        "unauthorized",
+        "未配置",
+        "api key",
+        "permission denied",
+    )
+    if any(m in text for m in non_retriable):
+        return False
+    if "403" in text and ("disabled" in text or "forbidden" in text):
+        return False
+    retriable = (
+        "timeout",
+        "timed out",
+        "time out",
+        "busy",
+        "429",
+        "503",
+        "502",
+        "504",
+        "connection",
+        "temporarily",
+        "network",
+        "unavailable",
+        "ocr timeout",
+        "rate limit",
+        "overloaded",
+        "服务繁忙",
+        "超时",
+        "繁忙",
+    )
+    return any(m in text for m in retriable)
+
+
+def _record_parse_progress(job: Job, *, progress_pct: int | None, detail: str | None) -> None:
+    payload = dict(job.payload or {})
+    if progress_pct is not None and progress_pct >= 0:
+        payload["last_parse_progress"] = progress_pct
+    if detail:
+        payload["last_parse_detail"] = str(detail)[:500]
+    job.payload = payload
+
+
+def _maybe_retry_parse_failure(
+    db: Session,
+    job: Job,
+    actor: User,
+    document: Document,
+    version_id: uuid.UUID | None,
+    *,
+    detail: str | None,
+) -> bool:
+    from app.config import get_settings
+
+    if _index_job_should_abort(db, job):
+        return False
+
+    settings = get_settings()
+    payload = dict(job.payload or {})
+    retries = int(payload.get("parse_retry_count") or 0)
+    max_retries = max(1, int(settings.knowledge_parse_max_retries))
+    if retries >= max_retries or not _is_retriable_parse_failure(detail):
+        return False
+    if not _retrigger_ragflow_parse(db, actor, document, version_id):
+        return False
+    payload["parse_retry_count"] = retries + 1
+    payload["last_parse_retry_at"] = time.time()
+    job.payload = payload
+    db.commit()
+    delay = max(15, int(settings.knowledge_parse_retry_delay_sec))
+    logger.info(
+        "知识库解析自动重试 doc=%s job=%s attempt=%s detail=%s",
+        document.id,
+        job.id,
+        payload["parse_retry_count"],
+        (detail or "")[:120],
+    )
+    time.sleep(delay)
+    return True
+
+
 def _wait_for_parse(
     db: Session,
     user: User,
@@ -163,42 +473,358 @@ def _wait_for_parse(
     *,
     dataset_id: str,
     ragflow_document_id: str,
-    timeout_sec: int = 600,
-) -> None:
-    deadline = time.time() + timeout_sec
+    document: Document,
+    version_id: uuid.UUID | None = None,
+    max_wait_sec: int | None = None,
+    update_progress: bool = True,
+) -> bool:
+    """等待 RAGFlow 解析完成。返回 True 表示已索引；False 表示仍在解析（需后台续跑）。"""
+    from app.config import get_settings
+
+    settings = get_settings()
+    interval = max(2, int(settings.knowledge_parse_poll_interval_sec))
+    soft_extend = max(60, int(settings.knowledge_parse_soft_extend_sec))
+    if max_wait_sec is None:
+        max_wait_sec = int(settings.knowledge_parse_initial_wait_sec)
+    absolute_deadline = time.time() + max(1, int(max_wait_sec))
+    soft_deadline = min(absolute_deadline, time.time() + min(soft_extend, int(max_wait_sec)))
     progress = 68
-    while time.time() < deadline:
+    last_status: str | None = None
+    actor = _background_actor(db, document, user)
+
+    while time.time() < absolute_deadline:
+        if _index_job_should_abort(db, job):
+            return False
+        now = time.time()
+        if now > soft_deadline:
+            if _is_parse_running(last_status) or last_status is None:
+                soft_deadline = min(now + soft_extend, absolute_deadline)
+                if update_progress:
+                    update_job_status(
+                        db,
+                        job.id,
+                        JobStatus.running.value,
+                        progress=min(progress, 84),
+                    )
+            else:
+                soft_deadline = min(now + 60, absolute_deadline)
+
         status, _chunks, rag_progress, detail = _parse_run_status(
             db,
-            user,
+            actor,
             dataset_id=dataset_id,
             ragflow_document_id=ragflow_document_id,
+            document=document,
+            background=True,
         )
-        if status in ("已完成", "已索引") or (
-            status and str(status).lower() in _PARSE_DONE
-        ):
-            update_job_status(db, job.id, JobStatus.running.value, progress=95)
-            return
-        if status in ("解析失败", "已取消") or (
-            status and str(status).upper() in _PARSE_FAILED
-        ):
+        last_status = status
+        _record_parse_progress(job, progress_pct=rag_progress, detail=detail)
+        if _is_parse_done(status):
+            if update_progress:
+                update_job_status(db, job.id, JobStatus.running.value, progress=95)
+            return True
+        if _is_parse_failed(status):
+            if _maybe_retry_parse_failure(
+                db,
+                job,
+                actor,
+                document,
+                version_id,
+                detail=detail,
+            ):
+                last_status = "解析中"
+                continue
             raise RuntimeError(_format_parse_failure(status, detail))
         if status == "索引失效":
             raise RuntimeError("文档解析失败：索引失效")
         if status is None:
-            # 无法读取状态时略等后重试，不虚增到 90%
-            update_job_status(db, job.id, JobStatus.running.value, progress=min(progress, 75))
-            time.sleep(3)
+            if update_progress:
+                update_job_status(
+                    db,
+                    job.id,
+                    JobStatus.running.value,
+                    progress=min(progress, 75),
+                )
+            time.sleep(interval)
             continue
         if rag_progress is not None and rag_progress >= 0:
             progress = max(68, min(94, rag_progress))
-        elif status == "解析中":
+        elif _is_parse_running(status):
             progress = min(94, progress + 1)
-        update_job_status(db, job.id, JobStatus.running.value, progress=progress)
-        time.sleep(2)
-    raise RuntimeError(
-        "文档解析等待超时（可能文件较大或解析服务繁忙），请稍后在文档详情查看索引状态"
+        if update_progress:
+            update_job_status(db, job.id, JobStatus.running.value, progress=progress)
+        time.sleep(interval)
+
+    if _is_parse_done(last_status):
+        return True
+    if _is_parse_failed(last_status):
+        raise RuntimeError(_format_parse_failure(last_status, None))
+    if _is_parse_running(last_status) or last_status is None:
+        return False
+    return False
+
+
+def _notify_parse_in_progress(
+    db: Session,
+    user: User,
+    doc: Document,
+    *,
+    mode: str,
+) -> None:
+    title = (
+        "文档已保存，重新索引解析进行中"
+        if mode == "reindex"
+        else "文档已保存，知识库解析进行中"
     )
+    body = (
+        f"「{doc.title or '未命名文档'}」已上传成功，解析仍在后台进行"
+        "（大文件或解析队列繁忙时可能需较长时间），完成后将自动通知。"
+        "也可在文档详情 → 知识索引查看进度。"
+    )
+    create_notification(
+        db,
+        user_id=user.id,
+        title=title,
+        body=body,
+        link=f"/documents/{doc.id}",
+    )
+
+
+def _fail_parse_job(
+    db: Session,
+    job: Job,
+    user: User,
+    doc: Document,
+    error_text: str,
+    *,
+    mode: str,
+) -> None:
+    payload = dict(job.payload or {})
+    payload.pop("awaiting_parse", None)
+    job.payload = payload
+    update_job_status(
+        db,
+        job.id,
+        JobStatus.failed.value,
+        error_message=error_text[:500],
+    )
+    fail_title = "文档重新索引失败" if mode == "reindex" else "文档索引未完成"
+    create_notification(
+        db,
+        user_id=user.id,
+        title=fail_title,
+        body=(
+            f"「{doc.title or '未命名文档'}」知识库解析失败：{error_text}。"
+            "可在文档详情 → 知识索引中重试。"
+        ),
+        link=f"/documents/{doc.id}",
+    )
+    dataset_id = str(payload.get("dataset_id") or "").strip() or None
+    try:
+        from app.services.knowledge_scope_tree_service import (
+            notify_knowledge_index_state_changed,
+        )
+
+        notify_knowledge_index_state_changed(
+            user_id=user.id,
+            dataset_id=dataset_id,
+        )
+    except Exception as exc:
+        logger.debug("解析失败后刷新索引缓存跳过 job=%s: %s", job.id, exc)
+
+
+def _complete_knowledge_index_job(
+    db: Session,
+    job: Job,
+    user: User,
+    doc: Document,
+    *,
+    dataset_id: str | None,
+    version_id_raw: str | None,
+    mode: str,
+) -> None:
+    from app.models.document import DocumentVersion
+    from app.services.document_service import resolve_current_version
+    from app.services.ragflow_version_link_service import (
+        bind_document_to_indexed_version,
+        mark_version_index_completed,
+    )
+
+    payload = dict(job.payload or {})
+    payload.pop("awaiting_parse", None)
+    payload.pop("parse_watch_started_at", None)
+    job.payload = payload
+    update_job_status(db, job.id, JobStatus.done.value, progress=100)
+
+    version_id = uuid.UUID(str(version_id_raw)) if version_id_raw else None
+    current = resolve_current_version(db, doc)
+    indexed_version_id = version_id or (current.id if current else None)
+    if indexed_version_id:
+        vl = mark_version_index_completed(db, indexed_version_id)
+        ver = db.get(DocumentVersion, indexed_version_id)
+        if vl and ver:
+            bind_document_to_indexed_version(
+                db, document=doc, version=ver, version_link=vl
+            )
+
+    done_title = "文档重新索引完成" if mode == "reindex" else "文档索引完成"
+    done_body = (
+        f"「{doc.title or '未命名文档'}」已应用新解析配置并完成索引，可用于问答检索。"
+        if mode == "reindex"
+        else f"「{doc.title or '未命名文档'}」已同步到知识库并完成解析，可用于问答检索。"
+    )
+    create_notification(
+        db,
+        user_id=user.id,
+        title=done_title,
+        body=done_body,
+        link=f"/documents/{doc.id}",
+    )
+    try:
+        from app.services.knowledge_scope_tree_service import (
+            notify_knowledge_index_state_changed,
+        )
+
+        notify_knowledge_index_state_changed(
+            user_id=user.id,
+            dataset_id=str(dataset_id) if dataset_id else None,
+        )
+    except Exception as exc:
+        logger.debug("知识检索树缓存刷新跳过 job=%s: %s", job.id, exc)
+
+
+def _schedule_parse_watch(job_id: uuid.UUID) -> None:
+    with _parse_watch_lock:
+        if job_id in _active_parse_watches:
+            return
+        _active_parse_watches.add(job_id)
+    threading.Thread(
+        target=_run_parse_watch,
+        args=(job_id,),
+        daemon=True,
+        name=f"knowledge-parse-watch-{job_id}",
+    ).start()
+
+
+def _run_parse_watch(job_id: uuid.UUID) -> None:
+    from app.config import get_settings
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if not job:
+            return
+        if _index_job_should_abort(db, job):
+            return
+        payload = dict(job.payload or {})
+        if not payload.get("awaiting_parse"):
+            return
+        user = db.get(User, job.created_by)
+        doc = get_document(db, job.document_id) if job.document_id else None
+        if not user or not doc:
+            return
+
+        dataset_id = str(payload.get("dataset_id") or "")
+        rid = str(payload.get("ragflow_document_id") or "")
+        if not dataset_id or not rid:
+            return
+
+        settings = get_settings()
+        max_total = int(settings.knowledge_parse_max_wait_sec)
+        started_raw = payload.get("parse_watch_started_at")
+        started_at = time.time()
+        if started_raw is not None:
+            try:
+                started_at = float(started_raw)
+            except (TypeError, ValueError):
+                started_at = time.time()
+        remaining = max(60, int(max_total - (time.time() - started_at)))
+        mode = str(payload.get("mode") or "index")
+        version_id_raw = payload.get("version_id")
+        version_uuid = uuid.UUID(str(version_id_raw)) if version_id_raw else None
+
+        try:
+            completed = _wait_for_parse(
+                db,
+                user,
+                job,
+                dataset_id=dataset_id,
+                ragflow_document_id=rid,
+                document=doc,
+                version_id=version_uuid,
+                max_wait_sec=remaining,
+                update_progress=False,
+            )
+        except RuntimeError as exc:
+            _fail_parse_job(db, job, user, doc, str(exc), mode=mode)
+            db.commit()
+            return
+
+        if completed:
+            _complete_knowledge_index_job(
+                db,
+                job,
+                user,
+                doc,
+                dataset_id=dataset_id,
+                version_id_raw=payload.get("version_id"),
+                mode=mode,
+            )
+            db.commit()
+            return
+
+        if _index_job_should_abort(db, job):
+            return
+
+        elapsed = time.time() - started_at
+        if elapsed < max_total - 60:
+            payload["parse_watch_started_at"] = started_at
+            payload["awaiting_parse"] = True
+            job.payload = payload
+            update_job_status(db, job.id, JobStatus.done.value, progress=90)
+            db.commit()
+            delay = max(60, int(settings.knowledge_parse_poll_interval_sec) * 6)
+            threading.Timer(
+                delay,
+                lambda: _schedule_parse_watch(job_id),
+            ).start()
+            return
+
+        _notify_parse_in_progress(db, user, doc, mode=mode)
+        db.commit()
+    except Exception:
+        logger.exception("知识库解析后台续跑失败 job=%s", job_id)
+    finally:
+        with _parse_watch_lock:
+            _active_parse_watches.discard(job_id)
+        db.close()
+
+
+def _defer_parse_watch(
+    db: Session,
+    job: Job,
+    user: User,
+    doc: Document,
+    *,
+    dataset_id: str,
+    ragflow_document_id: str,
+    mode: str,
+    version_id_raw: str | None,
+) -> None:
+    payload = dict(job.payload or {})
+    payload["awaiting_parse"] = True
+    payload["dataset_id"] = dataset_id
+    payload["ragflow_document_id"] = ragflow_document_id
+    payload["mode"] = mode
+    if version_id_raw:
+        payload["version_id"] = version_id_raw
+    if not payload.get("parse_watch_started_at"):
+        payload["parse_watch_started_at"] = time.time()
+    job.payload = payload
+    update_job_status(db, job.id, JobStatus.done.value, progress=90, error_message=None)
+    _notify_parse_in_progress(db, user, doc, mode=mode)
+    _schedule_parse_watch(job.id)
 
 
 def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
@@ -215,19 +841,23 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
 
         payload = job.payload or {}
         user = db.get(User, job.created_by)
+        version_id_raw = payload.get("version_id")
+        version_id = uuid.UUID(str(version_id_raw)) if version_id_raw else None
         doc = get_document(db, job.document_id) if job.document_id else None
-        if not user or not doc or doc.deleted_at is not None:
+        if (
+            not user
+            or not doc
+            or not _index_target_exists(db, job.document_id, version_id)
+        ):
             update_job_status(
                 db,
                 job_id,
-                JobStatus.failed.value,
+                JobStatus.cancelled.value,
                 progress=0,
-                error_message="文档或用户不存在",
+                error_message="文档或版本已删除",
             )
+            db.commit()
             return
-
-        version_id_raw = payload.get("version_id")
-        version_id = uuid.UUID(str(version_id_raw)) if version_id_raw else None
         force = bool(payload.get("force", True))
         mode = str(payload.get("mode") or "index")
 
@@ -292,6 +922,16 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                     ),
                     link=f"/documents/{doc.id}",
                 )
+                try:
+                    from app.services.knowledge_scope_tree_service import (
+                        notify_knowledge_index_state_changed,
+                    )
+
+                    notify_knowledge_index_state_changed(user_id=user.id)
+                except Exception as exc:
+                    logger.debug(
+                        "重新索引失败后刷新索引缓存跳过 job=%s: %s", job_id, exc
+                    )
                 db.commit()
                 return
 
@@ -376,78 +1016,46 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
 
         if dataset_id and rid:
             try:
-                _wait_for_parse(
+                parse_done = _wait_for_parse(
                     db,
                     user,
                     job,
                     dataset_id=str(dataset_id),
                     ragflow_document_id=str(rid),
+                    document=doc,
+                    version_id=version_id,
                 )
             except RuntimeError as e:
-                update_job_status(
+                _fail_parse_job(db, job, user, doc, str(e), mode=mode)
+                db.commit()
+                return
+            if not parse_done:
+                if _index_job_should_abort(db, job):
+                    db.commit()
+                    return
+                _defer_parse_watch(
                     db,
-                    job_id,
-                    JobStatus.failed.value,
-                    error_message=str(e),
-                )
-                fail_title = (
-                    "文档重新索引失败" if mode == "reindex" else "文档索引未完成"
-                )
-                create_notification(
-                    db,
-                    user_id=user.id,
-                    title=fail_title,
-                    body=(
-                        f"「{doc.title or '未命名文档'}」已上传保存，但知识库解析未完成：{e}。"
-                        "可在文档详情 → 知识索引中重试。"
-                    ),
-                    link=f"/documents/{doc.id}",
+                    job,
+                    user,
+                    doc,
+                    dataset_id=str(dataset_id),
+                    ragflow_document_id=str(rid),
+                    mode=mode,
+                    version_id_raw=version_id_raw,
                 )
                 db.commit()
                 return
 
-        update_job_status(db, job_id, JobStatus.done.value, progress=100)
-        from app.models.document import DocumentVersion
-        from app.services.document_service import resolve_current_version
-        from app.services.ragflow_version_link_service import (
-            bind_document_to_indexed_version,
-            mark_version_index_completed,
-        )
-
-        current = resolve_current_version(db, doc)
-        indexed_version_id = version_id or (current.id if current else None)
-        if indexed_version_id:
-            vl = mark_version_index_completed(db, indexed_version_id)
-            ver = db.get(DocumentVersion, indexed_version_id)
-            if vl and ver:
-                bind_document_to_indexed_version(
-                    db, document=doc, version=ver, version_link=vl
-                )
-        done_title = "文档重新索引完成" if mode == "reindex" else "文档索引完成"
-        done_body = (
-            f"「{doc.title or '未命名文档'}」已应用新解析配置并完成索引，可用于问答检索。"
-            if mode == "reindex"
-            else f"「{doc.title or '未命名文档'}」已同步到知识库并完成解析，可用于问答检索。"
-        )
-        create_notification(
+        _complete_knowledge_index_job(
             db,
-            user_id=user.id,
-            title=done_title,
-            body=done_body,
-            link=f"/documents/{doc.id}",
+            job,
+            user,
+            doc,
+            dataset_id=str(dataset_id) if dataset_id else None,
+            version_id_raw=version_id_raw,
+            mode=mode,
         )
         db.commit()
-        try:
-            from app.services.knowledge_scope_tree_service import (
-                notify_knowledge_index_state_changed,
-            )
-
-            notify_knowledge_index_state_changed(
-                user_id=user.id,
-                dataset_id=str(dataset_id) if dataset_id else None,
-            )
-        except Exception as exc:
-            logger.debug("知识检索树缓存刷新跳过 job=%s: %s", job_id, exc)
     except KnowflowSyncError as e:
         db.rollback()
         try:
@@ -642,6 +1250,13 @@ def recover_interrupted_document_index_jobs() -> int:
             )
         ).all()
         for job in jobs:
+            payload = job.payload or {}
+            if payload.get("awaiting_parse"):
+                if _index_job_should_abort(db, job):
+                    continue
+                _schedule_parse_watch(job.id)
+                recovered += 1
+                continue
             if job.status == JobStatus.running.value:
                 update_job_status(
                     db,
@@ -649,10 +1264,27 @@ def recover_interrupted_document_index_jobs() -> int:
                     JobStatus.pending.value,
                     progress=max(0, min(job.progress or 0, 67)),
                 )
+            if _index_job_should_abort(db, job):
+                continue
             _start_job_thread(job.id)
             recovered += 1
+
+        done_jobs = db.scalars(
+            select(Job).where(
+                Job.type == JobType.document_index.value,
+                Job.status == JobStatus.done.value,
+            )
+        ).all()
+        for job in done_jobs:
+            if (job.payload or {}).get("awaiting_parse"):
+                if _index_job_should_abort(db, job):
+                    continue
+                _schedule_parse_watch(job.id)
+                recovered += 1
+
+        db.commit()
         if recovered:
-            logger.info("已恢复 %s 个中断的文档索引任务", recovered)
+            logger.info("已恢复 %s 个文档索引/解析续跑任务", recovered)
     except Exception:
         logger.exception("恢复文档索引任务失败")
     finally:

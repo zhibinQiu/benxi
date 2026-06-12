@@ -66,6 +66,58 @@ def version_file_format_label(
     return None
 
 
+# 文档对比可选取的格式（与 text_extract 解析能力对齐；图片等可走 OCR）
+_COMPAREABLE_FORMAT_LABELS = frozenset(_EXT_LABELS.values()) - {
+    "zip",
+    "rar",
+    "archive",
+}
+
+_COMPAREABLE_MIME_PREFIXES = ("text/",)
+_COMPAREABLE_MIMES = frozenset(
+    {
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/json",
+        "application/xml",
+        "text/plain",
+        "text/markdown",
+        "text/csv",
+        "text/html",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }
+)
+
+
+def is_compareable_file(
+    file_name: str | None, mime_type: str | None = None
+) -> bool:
+    """当前版本是否可用于文档对比（跨文档 / 版本对比选文档）。"""
+    label = version_file_format_label(file_name, mime_type)
+    if label in ("zip", "rar", "archive"):
+        return False
+    if label and label in _COMPAREABLE_FORMAT_LABELS:
+        return True
+    mime = (mime_type or "").split(";")[0].strip().lower()
+    if any(mime.startswith(p) for p in _COMPAREABLE_MIME_PREFIXES):
+        return True
+    if mime in _COMPAREABLE_MIMES:
+        return True
+    if "word" in mime or "excel" in mime or "spreadsheet" in mime:
+        return True
+    if "powerpoint" in mime or "presentation" in mime:
+        return True
+    if file_name and "." in file_name:
+        ext = file_name.rsplit(".", 1)[-1].lower().strip()
+        if ext and ext.isalnum() and len(ext) <= 8 and ext not in ("zip", "rar", "7z"):
+            return True
+    return False
+
+
 _FORMAT_DISPLAY: dict[str, str] = {
     "pdf": "PDF",
     "word": "Word",

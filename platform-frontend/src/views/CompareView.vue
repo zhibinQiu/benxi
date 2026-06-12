@@ -14,18 +14,16 @@ import {
   NCheckbox,
   NCheckboxGroup,
   NEmpty,
+  NModal,
   NSelect } from "naive-ui";
 import {
-  AddOutline,
   ArrowBackOutline,
-  CloseOutline,
   ChevronDownOutline,
   ChevronUpOutline,
   DocumentsOutline,
   GitCompareOutline,
   LayersOutline,
   SearchOutline,
-  FolderOpenOutline,
   OpenOutline,
   RefreshOutline } from "@vicons/ionicons5";
 import {
@@ -42,6 +40,7 @@ import {
 import { fetchDocument, fetchDocumentFileBlob } from "../api/documents.js";
 import CompareDocColumn from "../components/CompareDocColumn.vue";
 import CompareDocPicker from "../components/CompareDocPicker.vue";
+import MarkdownRichContent from "../components/MarkdownRichContent.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   MIN_COMPARE_COLS,
@@ -53,18 +52,21 @@ import {
   docDisplayTitle,
   buildCompareDoc,
   formatTimelineDate,
-  isPdfFileName,
-  pdfSrcWithPage,
+  comparePreviewKind,
+  usesOriginalFilePreview,
+  buildPdfDiffHighlights,
+  diffCaptionForSide,
   buildParagraphsFromContent,
   hitPage,
   paraMatchesHit,
   diffAnchorBlocks,
   diffMatchesPara,
 } from "../utils/compareDocument.js";
+import { PREVIEW_KIND } from "../utils/documentPreview.js";
 
 const ui = usePlatformUi();
 
-/** entry | version-setup | cross-setup | workspace */
+/** entry | workspace */
 const phase = ref("entry");
 /** version | cross */
 const compareMode = ref(null);
@@ -85,7 +87,6 @@ const comparing = ref(false);
 const searchQuery = ref("");
 const searchHits = ref([]);
 const searching = ref(false);
-const syncKnowflow = ref(true);
 const fieldMatch = ref(true);
 const activeDiffId = ref(null);
 const activeHitIndex = ref(-1);
@@ -99,6 +100,7 @@ const versionList = ref([]);
 const versionLoading = ref(false);
 const checkedVersionIds = ref([]);
 const showVersionDocPicker = ref(false);
+const showVersionSelectModal = ref(false);
 
 const crossDocs = ref([]);
 const showCrossAddPicker = ref(false);
@@ -115,17 +117,17 @@ const canCompare = computed(() => {
   return new Set(keys).size === keys.length;
 });
 
+const canStartCrossCompare = computed(
+  () =>
+    crossDocs.value.length >= MIN_COMPARE_COLS &&
+    crossDocs.value.length <= MAX_CROSS_COLS
+);
+
 const canStartVersionCompare = computed(
   () =>
     versionBaseDoc.value &&
     checkedVersionIds.value.length >= MIN_COMPARE_COLS &&
     checkedVersionIds.value.length <= MAX_VERSION_COLS
-);
-
-const canStartCrossCompare = computed(
-  () =>
-    crossDocs.value.length >= MIN_COMPARE_COLS &&
-    crossDocs.value.length <= MAX_CROSS_COLS
 );
 
 const targetColumnOptions = computed(() =>
@@ -182,14 +184,48 @@ function columnDiffSide(index) {
   return "none";
 }
 
-function colHasPdf(col) {
-  if (compareMode.value === "version") return false;
-  return isPdfFileName(col?.content?.file_name);
+function colPreviewKind(col) {
+  return (
+    col?.content?.preview_kind ||
+    comparePreviewKind(col?.content?.file_name || col?.doc?.file_name)
+  );
 }
 
-function colPdfSrc(col, index) {
-  const page = index === activeTargetIndex.value ? col.pdfPage : 1;
-  return pdfSrcWithPage(col.pdfBaseUrl, page);
+function colUsesOriginalPreview(col) {
+  return usesOriginalFilePreview(colPreviewKind(col));
+}
+
+function colPdfSrc(col) {
+  return col.pdfBaseUrl || col.content?.preview_url || "";
+}
+
+function colPdfPage(col, index) {
+  return col.pdfPage || 1;
+}
+
+function colImageSrc(col) {
+  return col.content?.preview_url || "";
+}
+
+function colPdfHighlights(col, index) {
+  return buildPdfDiffHighlights(
+    diffItems.value,
+    columnDiffSide(index),
+    col.pdfPage || 1,
+    activeDiffId.value
+  );
+}
+
+function colPdfCaption(col, index) {
+  if (!activeDiffId.value) return "";
+  const side = columnDiffSide(index);
+  if (side === "none") return "";
+  const d = diffItems.value.find((x) => x.id === activeDiffId.value);
+  if (!d) return "";
+  const text = diffCaptionForSide(d, side);
+  if (!text) return "";
+  const label = diffTypeLabel[d.diff_type] || "差异";
+  return `${label}：${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
 }
 
 function colParagraphs(col) {
@@ -197,7 +233,7 @@ function colParagraphs(col) {
 }
 
 function colPlainPreview(col) {
-  if (!col.content || colHasPdf(col)) return "";
+  if (!col.content || colUsesOriginalPreview(col)) return "";
   if (colParagraphs(col).length) return "";
   return col.content.full_text?.trim() || "";
 }
@@ -239,6 +275,26 @@ const versionCompareRunning = computed(
 const activeVersionPair = computed(
   () => versionPairRows.value[activePairIndex.value] || null
 );
+
+/** 版本对比：仅 2 个版本时左右双栏 + 右侧提问 */
+const isVersionPairLayout = computed(
+  () => compareMode.value === "version" && columns.value.length === 2
+);
+/** 版本对比：3 个及以上版本时网格分行，每行最多 2 栏 */
+const isVersionGridLayout = computed(
+  () => compareMode.value === "version" && columns.value.length > 2
+);
+
+const showCompareAside = computed(() => {
+  if (compareMode.value === "version" && columns.value.length >= 2) {
+    return true;
+  }
+  return (
+    searchHits.value.length > 0 ||
+    showDiffAside.value ||
+    versionCompareRunning.value
+  );
+});
 
 const activeHit = computed(() =>
   activeHitIndex.value >= 0 ? searchHits.value[activeHitIndex.value] : null
@@ -375,12 +431,25 @@ function syncContentFromJob() {
   const docs = job.value?.payload?.documents || {};
   columns.value.forEach((col) => {
     const docId = col.doc?.id;
-    if (!docId || !docs[docId] || colHasPdf(col)) return;
+    if (!docId || !docs[docId] || colUsesOriginalPreview(col)) return;
     col.content = {
       ...(col.content || {}),
       ...docs[docId],
       preview_url: col.content?.preview_url || null};
   });
+}
+
+async function loadOriginalPreviewUrl(doc) {
+  const fileName = doc.file_name || "";
+  try {
+    const blob = doc.version_id
+      ? await fetchDocumentFileBlob(doc.id, doc.version_id)
+      : await fetchCompareDocumentFileBlob(doc.id);
+    return URL.createObjectURL(blob);
+  } catch {
+    const dl = await getCompareDocumentDownload(doc.id).catch(() => null);
+    return dl?.download_url || null;
+  }
 }
 
 async function hydrateColumn(index) {
@@ -391,37 +460,24 @@ async function hydrateColumn(index) {
   col.loading = true;
   try {
     const fileName = doc.file_name || "";
-    const versionCompare = compareMode.value === "version" && doc.version_id;
-    if (isPdfFileName(fileName) && !versionCompare) {
-      let preview_url = null;
-      try {
-        const blob = doc.version_id
-          ? await fetchDocumentFileBlob(doc.id, doc.version_id)
-          : await fetchCompareDocumentFileBlob(doc.id);
-        preview_url = URL.createObjectURL(blob);
-      } catch {
-        const dl = await getCompareDocumentDownload(doc.id).catch(() => null);
-        preview_url = dl?.download_url || null;
-      }
-      col.pdfBaseUrl = preview_url ? String(preview_url).split("#")[0] : null;
-      col.pdfPage = 1;
+    const previewKind = comparePreviewKind(fileName);
+    col.pdfBaseUrl = null;
+    col.pdfPage = 1;
+
+    if (usesOriginalFilePreview(previewKind)) {
+      const preview_url = await loadOriginalPreviewUrl(doc);
+      const rootUrl = preview_url ? String(preview_url).split("#")[0] : null;
+      col.pdfBaseUrl = previewKind === PREVIEW_KIND.PDF ? rootUrl : null;
       col.content = {
         file_name: fileName,
-        preview_url: col.pdfBaseUrl,
+        preview_kind: previewKind,
+        preview_url: rootUrl,
         pages: [],
+        blocks: [],
         full_text: ""};
       return;
     }
-    col.pdfBaseUrl = null;
-    col.pdfPage = 1;
-    if (isPdfFileName(fileName) && versionCompare) {
-      try {
-        const blob = await fetchDocumentFileBlob(doc.id, doc.version_id);
-        col.pdfBaseUrl = URL.createObjectURL(blob);
-      } catch {
-        col.pdfBaseUrl = null;
-      }
-    }
+
     const content = await fetchCompareDocumentContent(
       doc.id,
       doc.version_id || null
@@ -431,9 +487,10 @@ async function hydrateColumn(index) {
       blocks: content.blocks || [],
       full_text: content.full_text || "",
       file_name: content.file_name || fileName,
+      preview_kind: previewKind,
       parse_quality: content.parse_quality,
       warning: content.warning,
-      preview_url: col.pdfBaseUrl};
+      preview_url: null};
   } catch (e) {
     ui.error(e.message);
     col.content = null;
@@ -602,18 +659,18 @@ async function loadVersionDiff({ silent = false } = {}) {
   await loadPrecomputedVersionTimeline({ silent });
 }
 
-function openVersionSetup() {
+function openVersionDocPickerFlow() {
   compareMode.value = "version";
-  phase.value = "version-setup";
   versionBaseDoc.value = null;
   versionList.value = [];
   checkedVersionIds.value = [];
+  showVersionDocPicker.value = true;
 }
 
-function openCrossSetup() {
+function openCrossDocPickerFlow() {
   compareMode.value = "cross";
-  phase.value = "cross-setup";
   crossDocs.value = [];
+  showCrossAddPicker.value = true;
 }
 
 function goEntry() {
@@ -628,7 +685,11 @@ function goEntry() {
 
 function goSetupFromWorkspace() {
   resetWorkspaceState();
-  phase.value = compareMode.value === "version" ? "version-setup" : "cross-setup";
+  if (compareMode.value === "version") {
+    openVersionDocPickerFlow();
+  } else {
+    openCrossDocPickerFlow();
+  }
 }
 
 async function onVersionBaseSelected(row) {
@@ -638,11 +699,13 @@ async function onVersionBaseSelected(row) {
   try {
     const doc = await fetchDocument(row.id);
     versionList.value = (doc.versions || []).filter((v) => v.uploaded);
-    if (!versionList.value.length) {
-      ui.warning("该文档暂无已上传的历史版本");
-    } else if (versionList.value.length >= MIN_COMPARE_COLS) {
-      checkedVersionIds.value = versionList.value.map((v) => v.id);
+    if (versionList.value.length < MIN_COMPARE_COLS) {
+      ui.warning("该文档至少需要 2 个已上传版本");
+      versionBaseDoc.value = null;
+      versionList.value = [];
+      return;
     }
+    showVersionSelectModal.value = true;
   } catch (e) {
     ui.error(e.message);
     versionBaseDoc.value = null;
@@ -658,6 +721,18 @@ function onVersionCheckUpdate(ids) {
     return;
   }
   checkedVersionIds.value = ids;
+}
+
+function confirmVersionCompare() {
+  startVersionCompare();
+  showVersionSelectModal.value = false;
+}
+
+function cancelVersionSelect() {
+  showVersionSelectModal.value = false;
+  versionBaseDoc.value = null;
+  versionList.value = [];
+  checkedVersionIds.value = [];
 }
 
 function startVersionCompare() {
@@ -721,10 +796,12 @@ function onCrossDocAdd(row) {
     return;
   }
   crossDocs.value.push(row);
-}
-
-function removeCrossDoc(index) {
-  crossDocs.value.splice(index, 1);
+  if (crossDocs.value.length < MIN_COMPARE_COLS) {
+    ui.info(`请再选择 ${MIN_COMPARE_COLS - crossDocs.value.length} 份文档`);
+    showCrossAddPicker.value = true;
+    return;
+  }
+  startCrossCompare();
 }
 
 function setColumnScrollRef({ el, index }) {
@@ -762,7 +839,7 @@ async function runCompare() {
     const created = await createCompareJob({
       leftDocumentId: baselineDoc.value.id,
       rightDocumentId: targetDoc.value.id,
-      syncKnowflow: syncKnowflow.value});
+    });
     job.value =
       created?.status === "pending" || created?.status === "running"
         ? await waitCompareJob(created.id)
@@ -819,7 +896,7 @@ async function jumpToHit(hit, index) {
   const col = targetColumn.value;
   if (!col) return;
 
-  if (colHasPdf(col)) {
+  if (colUsesOriginalPreview(col) && colPreviewKind(col) === PREVIEW_KIND.PDF) {
     col.pdfPage = hitPage(hit);
     return;
   }
@@ -895,8 +972,8 @@ async function runSearch() {
     searchHits.value = await searchCompareDocuments({
       rightDocumentId: targetDoc.value.id,
       query: searchQuery.value.trim(),
-      syncKnowflow: syncKnowflow.value,
-      fieldMatch: fieldMatch.value});
+      fieldMatch: fieldMatch.value,
+    });
     if (!searchHits.value.length) {
       ui.info("未找到匹配内容，可换关键词或关闭字段匹配");
       return;
@@ -920,18 +997,20 @@ function onDiffClick(d) {
 
 async function scrollToDiffItem(d) {
   await nextTick();
-  const anchor = d?.anchor_json || {};
-  const page =
-    anchor.right?.page ||
-    anchor.left?.page ||
-    (anchor.right_blocks?.[0]?.page ?? anchor.left_blocks?.[0]?.page);
-  if (page && targetColumn.value) {
-    targetColumn.value.pdfPage = Number(page) || 1;
-  }
   for (let i = 0; i < columns.value.length; i += 1) {
     const side = columnDiffSide(i);
     if (side === "none") continue;
+    const col = columns.value[i];
     const blocks = diffAnchorBlocks(d, side);
+    const page = blocks[0]?.page;
+    if (
+      page &&
+      colUsesOriginalPreview(col) &&
+      colPreviewKind(col) === PREVIEW_KIND.PDF
+    ) {
+      col.pdfPage = Number(page) || 1;
+      continue;
+    }
     const blockIndex = blocks[0]?.block_index;
     if (blockIndex == null) continue;
     const root = columnScrollRefs.value[i];
@@ -985,7 +1064,6 @@ async function scrollToDiffItem(d) {
           检索
         </n-button>
         <n-checkbox v-model:checked="fieldMatch" size="small">字段匹配</n-checkbox>
-        <n-checkbox v-model:checked="syncKnowflow" size="small">向量检索</n-checkbox>
         <n-button
           v-if="compareMode === 'cross'"
           size="small"
@@ -1017,13 +1095,13 @@ async function scrollToDiffItem(d) {
     <!-- 入口：选择对比模式 -->
     <div v-if="phase === 'entry'" class="compare-entry">
       <div class="compare-mode-grid">
-        <n-card class="compare-mode-card" hoverable @click="openVersionSetup">
+        <n-card class="compare-mode-card" hoverable @click="openVersionDocPickerFlow">
           <div class="compare-mode-icon compare-mode-icon--version">
             <n-icon :component="LayersOutline" :size="28" />
           </div>
           <n-text class="compare-mode-title">文档版本对比</n-text>
         </n-card>
-        <n-card class="compare-mode-card" hoverable @click="openCrossSetup">
+        <n-card class="compare-mode-card" hoverable @click="openCrossDocPickerFlow">
           <div class="compare-mode-icon compare-mode-icon--cross">
             <n-icon :component="DocumentsOutline" :size="28" />
           </div>
@@ -1032,139 +1110,10 @@ async function scrollToDiffItem(d) {
       </div>
     </div>
 
-    <!-- 文档版本对比：选文档 + 勾选版本 -->
-    <div v-else-if="phase === 'version-setup'" class="compare-setup">
-      <n-button size="small" quaternary class="compare-setup-back" @click="goEntry">
-        <template #icon>
-          <n-icon :component="ArrowBackOutline" />
-        </template>
-        返回
-      </n-button>
-      <n-card title="文档版本对比" class="compare-setup-card">
-        <n-space vertical :size="16">
-          <div>
-            <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
-              1. 选择文档
-            </n-text>
-            <n-space align="center" :size="10" wrap>
-              <n-text v-if="versionBaseDoc" class="compare-selected-doc">
-                {{ versionBaseDoc.title }}
-                <n-text depth="3">（{{ versionBaseDoc.file_name }}）</n-text>
-              </n-text>
-              <n-text v-else depth="3">尚未选择</n-text>
-              <n-button size="small" secondary @click="showVersionDocPicker = true">
-                <template #icon>
-                  <n-icon :component="FolderOpenOutline" />
-                </template>
-                {{ versionBaseDoc ? "更换文档" : "从文档库选择" }}
-              </n-button>
-            </n-space>
-          </div>
-
-          <div v-if="versionBaseDoc">
-            <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
-              2. 选择版本（已选 {{ checkedVersionIds.length }} / {{ MAX_VERSION_COLS }}）
-            </n-text>
-            <n-spin :show="versionLoading">
-              <n-checkbox-group
-                v-if="uploadedVersionOptions.length"
-                :value="checkedVersionIds"
-                @update:value="onVersionCheckUpdate"
-              >
-                <n-space vertical :size="8">
-                  <n-checkbox
-                    v-for="v in uploadedVersionOptions"
-                    :key="v.id"
-                    :value="v.id"
-                    :label="v.label"
-                  />
-                </n-space>
-              </n-checkbox-group>
-              <n-empty v-else description="该文档暂无已上传版本" size="small" />
-            </n-spin>
-          </div>
-
-          <n-space>
-            <n-button
-              type="primary"
-              :disabled="!canStartVersionCompare"
-              @click="startVersionCompare"
-            >
-              <template #icon>
-                <n-icon :component="GitCompareOutline" />
-              </template>
-              查看版本变化
-            </n-button>
-          </n-space>
-        </n-space>
-      </n-card>
-    </div>
-
-    <!-- 不同文档对比：选参照 + 目标 -->
-    <div v-else-if="phase === 'cross-setup'" class="compare-setup">
-      <n-button size="small" quaternary class="compare-setup-back" @click="goEntry">
-        <template #icon>
-          <n-icon :component="ArrowBackOutline" />
-        </template>
-        返回
-      </n-button>
-      <n-card title="不同文档对比" class="compare-setup-card">
-        <n-space vertical :size="16">
-          <n-text depth="3" style="font-size: 12px">
-            从文档库添加 2–4 份文档；第一栏为参照，其余栏从左到右排列。
-          </n-text>
-          <div v-if="crossDocs.length" class="compare-doc-list">
-            <div
-              v-for="(doc, index) in crossDocs"
-              :key="doc.id"
-              class="compare-doc-list-item"
-            >
-              <n-tag size="small" :bordered="false" :type="index === 0 ? 'info' : 'default'">
-                {{ index === 0 ? "参照" : `对比 ${index}` }}
-              </n-tag>
-              <n-text class="compare-selected-doc">{{ doc.title }}</n-text>
-              <n-text depth="3" style="font-size: 12px">{{ doc.file_name }}</n-text>
-              <n-button
-                size="tiny"
-                quaternary
-                circle
-                :disabled="crossDocs.length <= MIN_COMPARE_COLS"
-                @click="removeCrossDoc(index)"
-              >
-                <template #icon>
-                  <n-icon :component="CloseOutline" />
-                </template>
-              </n-button>
-            </div>
-          </div>
-          <n-empty v-else description="尚未添加文档" size="small" />
-          <n-space>
-            <n-button
-              size="small"
-              secondary
-              :disabled="crossDocs.length >= MAX_CROSS_COLS"
-              @click="showCrossAddPicker = true"
-            >
-              <template #icon>
-                <n-icon :component="AddOutline" />
-              </template>
-              添加文档（{{ crossDocs.length }}/{{ MAX_CROSS_COLS }}）
-            </n-button>
-            <n-button type="primary" :disabled="!canStartCrossCompare" @click="startCrossCompare">
-              <template #icon>
-                <n-icon :component="GitCompareOutline" />
-              </template>
-              开始对比
-            </n-button>
-          </n-space>
-        </n-space>
-      </n-card>
-    </div>
-
     <!-- 对比工作台 -->
     <div v-else class="compare-workspace">
       <n-card
-        v-if="compareMode === 'version' && columns.length >= 2"
+        v-if="compareMode === 'version' && columns.length > 2"
         size="small"
         class="version-timeline-card"
         title="版本时间线"
@@ -1225,8 +1174,23 @@ async function scrollToDiffItem(d) {
         </div>
       </n-card>
 
-      <div class="compare-workspace-body">
-      <div class="compare-columns" :class="`compare-columns--${columns.length}`">
+      <div
+        class="compare-workspace-body"
+        :class="{
+          'compare-workspace-body--version-pair': isVersionPairLayout,
+          'compare-workspace-body--version-grid': isVersionGridLayout,
+        }"
+      >
+      <div
+        class="compare-columns"
+        :class="[
+          `compare-columns--${columns.length}`,
+          {
+            'compare-columns--version-pair': isVersionPairLayout,
+            'compare-columns--version-grid': isVersionGridLayout,
+          },
+        ]"
+      >
         <CompareDocColumn
           v-for="(col, index) in columns"
           :key="docSideKey(col.doc)"
@@ -1235,14 +1199,20 @@ async function scrollToDiffItem(d) {
           :content="col.content"
           :loading="col.loading"
           :comparing="comparing"
-          :pdf-src="colPdfSrc(col, index)"
+          :pdf-src="colPdfSrc(col)"
+          :pdf-page="colPdfPage(col, index)"
+          :preview-kind="colPreviewKind(col)"
+          :pdf-highlights="colPdfHighlights(col, index)"
+          :diff-items="diffItems"
+          :active-diff-id="activeDiffId"
+          :pdf-caption="colPdfCaption(col, index)"
+          :image-src="colImageSrc(col)"
           :role-label="columnRoleLabel(index)"
           :is-baseline="index === 0"
           :is-search-target="index === activeTargetIndex"
           :diff-side="columnDiffSide(index)"
           :paragraphs="colParagraphs(col)"
           :plain-preview="colPlainPreview(col)"
-          :has-pdf="colHasPdf(col)"
           :search-hits="searchHits"
           :active-hit-index="activeHitIndex"
           :active-hit="activeHit"
@@ -1267,9 +1237,41 @@ async function scrollToDiffItem(d) {
       </div>
 
       <aside
-        v-if="searchHits.length || showDiffAside || versionCompareRunning"
+        v-if="showCompareAside"
         class="compare-aside"
+        :class="{ 'compare-aside--version-pair': isVersionPairLayout }"
       >
+        <n-card
+          v-if="compareMode === 'version' && versionCompareRelation?.status === 'done'"
+          size="small"
+          title="差异问答"
+          class="aside-card aside-card--version-ask"
+        >
+          <n-space vertical :size="8">
+            <n-input
+              v-model:value="versionAskQuery"
+              type="textarea"
+              placeholder="例如：第二版相对第一版改了哪些关键数据？"
+              :autosize="{ minRows: 2, maxRows: 4 }"
+              @keyup.enter.exact="runVersionAsk"
+            />
+            <n-button
+              size="small"
+              type="primary"
+              :loading="versionAskLoading"
+              :disabled="!versionAskQuery.trim()"
+              @click="runVersionAsk"
+            >
+              提问
+            </n-button>
+            <MarkdownRichContent
+              v-if="versionAskAnswer"
+              class="version-ask-answer"
+              :content="versionAskAnswer"
+            />
+          </n-space>
+        </n-card>
+
         <n-card
           v-if="compareMode === 'version' && activeVersionPair?.status === 'done'"
           size="small"
@@ -1279,11 +1281,17 @@ async function scrollToDiffItem(d) {
           <n-space vertical :size="10">
             <div v-if="activeVersionPair.to_change_description">
               <n-text depth="3" class="version-summary-label">新版本说明</n-text>
-              <n-text class="version-summary-body">{{ activeVersionPair.to_change_description }}</n-text>
+              <MarkdownRichContent
+                class="version-summary-body"
+                :content="activeVersionPair.to_change_description"
+              />
             </div>
             <div v-if="activeVersionPair.llm_summary">
               <n-text depth="3" class="version-summary-label">AI 差异总结</n-text>
-              <n-text class="version-summary-body">{{ activeVersionPair.llm_summary }}</n-text>
+              <MarkdownRichContent
+                class="version-summary-body"
+                :content="activeVersionPair.llm_summary"
+              />
             </div>
             <n-text
               v-if="!activeVersionPair.to_change_description && !activeVersionPair.llm_summary"
@@ -1295,10 +1303,10 @@ async function scrollToDiffItem(d) {
         </n-card>
 
         <n-card
-          v-if="compareMode === 'version' && versionPairRows.length"
+          v-if="compareMode === 'version' && versionPairRows.length && columns.length > 2"
           size="small"
           title="时间线变化"
-          class="aside-card"
+          class="aside-card aside-card--version-timeline"
         >
           <div class="version-pair-list">
             <div
@@ -1327,37 +1335,10 @@ async function scrollToDiffItem(d) {
         </n-card>
 
         <n-card
-          v-if="compareMode === 'version' && versionCompareRelation?.status === 'done'"
-          size="small"
-          title="差异问答"
-          class="aside-card"
-        >
-          <n-space vertical :size="8">
-            <n-input
-              v-model:value="versionAskQuery"
-              type="textarea"
-              placeholder="例如：第二版相对第一版改了哪些关键数据？"
-              :autosize="{ minRows: 2, maxRows: 4 }"
-              @keyup.enter.exact="runVersionAsk"
-            />
-            <n-button
-              size="small"
-              type="primary"
-              :loading="versionAskLoading"
-              :disabled="!versionAskQuery.trim()"
-              @click="runVersionAsk"
-            >
-              提问
-            </n-button>
-            <n-text v-if="versionAskAnswer" class="version-ask-answer">{{ versionAskAnswer }}</n-text>
-          </n-space>
-        </n-card>
-
-        <n-card
           v-if="versionCompareRunning"
           size="small"
           title="版本对比"
-          class="aside-card"
+          class="aside-card aside-card--version-running"
         >
           <n-text depth="3">正在等待上传时预计算的版本差异…</n-text>
         </n-card>
@@ -1366,7 +1347,7 @@ async function scrollToDiffItem(d) {
           v-if="showDiffAside"
           size="small"
           title="差异列表"
-          class="aside-card"
+          class="aside-card aside-card--diff-list"
         >
           <n-text depth="3" class="aside-hint">
             <template v-if="compareMode === 'version' && versionCompareRelation">
@@ -1429,6 +1410,62 @@ async function scrollToDiffItem(d) {
       title="选择要比对的文档"
       @select="onVersionBaseSelected"
     />
+    <n-modal
+      v-model:show="showVersionSelectModal"
+      preset="card"
+      title="选择要比对的版本"
+      style="width: min(520px, 92vw)"
+      :mask-closable="false"
+    >
+      <n-space vertical :size="14">
+        <div v-if="versionBaseDoc">
+          <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 6px">
+            已选文档
+          </n-text>
+          <n-text class="compare-version-doc">
+            {{ versionBaseDoc.title }}
+            <n-text depth="3">（{{ versionBaseDoc.file_name }}）</n-text>
+          </n-text>
+        </div>
+        <div>
+          <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
+            勾选版本（已选 {{ checkedVersionIds.length }} / {{ MAX_VERSION_COLS }}）
+          </n-text>
+          <n-spin :show="versionLoading">
+            <n-checkbox-group
+              v-if="uploadedVersionOptions.length"
+              :value="checkedVersionIds"
+              @update:value="onVersionCheckUpdate"
+            >
+              <n-space vertical :size="8">
+                <n-checkbox
+                  v-for="v in uploadedVersionOptions"
+                  :key="v.id"
+                  :value="v.id"
+                  :label="v.label"
+                />
+              </n-space>
+            </n-checkbox-group>
+            <n-empty v-else description="该文档暂无已上传版本" size="small" />
+          </n-spin>
+        </div>
+      </n-space>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="cancelVersionSelect">取消</n-button>
+          <n-button
+            type="primary"
+            :disabled="!canStartVersionCompare"
+            @click="confirmVersionCompare"
+          >
+            <template #icon>
+              <n-icon :component="GitCompareOutline" />
+            </template>
+            查看版本变化
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
     <CompareDocPicker
       v-model:show="showCrossAddPicker"
       title="添加对比文档"
@@ -1508,47 +1545,9 @@ async function scrollToDiffItem(d) {
   font-size: 12px;
   line-height: 1.55;
 }
-.compare-setup {
-  flex: 1;
-  min-height: 0;
-  padding: 8px 0 16px;
-  max-width: 640px;
-}
-.compare-setup-back {
-  margin-bottom: 10px;
-}
-.compare-setup-card {
-  box-shadow: var(--platform-shadow);
-}
-.compare-selected-doc {
+.compare-version-doc {
   font-size: 14px;
   font-weight: 500;
-}
-.compare-pick-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.compare-pick-label {
-  font-size: 12px;
-}
-.compare-doc-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.compare-doc-list-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
-  background: rgba(248, 250, 252, 0.6);
-}
-.compare-doc-list-item .compare-selected-doc {
-  flex: 1;
-  min-width: 0;
 }
 .compare-workspace {
   flex: 1;
@@ -1557,14 +1556,22 @@ async function scrollToDiffItem(d) {
   flex-direction: column;
   gap: 10px;
   overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  --compare-aside-width: min(300px, 28vw);
+  --compare-body-gap: 14px;
 }
 .compare-workspace-body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: row;
-  gap: 10px;
+  gap: var(--compare-body-gap);
   overflow: hidden;
+  box-sizing: border-box;
 }
 .version-timeline-card {
   flex-shrink: 0;
@@ -1640,7 +1647,7 @@ async function scrollToDiffItem(d) {
   white-space: nowrap;
 }
 .compare-columns {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -1651,16 +1658,90 @@ async function scrollToDiffItem(d) {
 }
 .compare-columns > :deep(.doc-panel) {
   flex: 1 1 0;
-  min-width: min(300px, 78vw);
+  min-width: min(260px, 38vw);
 }
+
+/* 版本对比 · 2 版：左两栏文档 + 右侧提问 */
+.compare-workspace-body--version-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--compare-aside-width);
+  gap: var(--compare-body-gap);
+  align-items: stretch;
+}
+
+.compare-workspace-body--version-pair .compare-columns--version-pair {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+.compare-workspace-body--version-pair .compare-columns--version-pair > :deep(.doc-panel) {
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.compare-aside--version-pair {
+  width: 100%;
+  max-width: var(--compare-aside-width);
+  flex-shrink: 0;
+}
+
+.compare-aside--version-pair .aside-card--version-ask {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.compare-aside--version-pair .aside-card--version-ask :deep(.n-card__content) {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 版本对比 · 3+ 版：主区网格 + 右侧栏 */
+.compare-workspace-body--version-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--compare-aside-width);
+  gap: var(--compare-body-gap);
+  align-items: stretch;
+}
+
+.compare-workspace-body--version-grid .compare-columns--version-grid {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(280px, 1fr);
+  gap: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: start;
+  align-items: stretch;
+}
+
+.compare-workspace-body--version-grid .compare-columns--version-grid > :deep(.doc-panel) {
+  flex: none;
+  min-width: 0;
+  min-height: 280px;
+  height: auto;
+}
+
 .compare-aside {
-  width: 260px;
+  width: var(--compare-aside-width);
+  max-width: var(--compare-aside-width);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
   overflow-y: auto;
+  box-sizing: border-box;
 }
 .aside-card {
   box-shadow: var(--platform-shadow);
@@ -1708,12 +1789,21 @@ async function scrollToDiffItem(d) {
   display: block;
   font-size: 13px;
   line-height: 1.55;
-  white-space: pre-wrap;
+}
+.version-summary-body :deep(.md-rich p) {
+  margin: 0 0 0.45em;
+}
+.version-summary-body :deep(.md-rich ul),
+.version-summary-body :deep(.md-rich ol) {
+  margin: 0.35em 0;
+  padding-left: 1.2em;
 }
 .version-ask-answer {
   font-size: 13px;
   line-height: 1.55;
-  white-space: pre-wrap;
+}
+.version-ask-answer :deep(.md-rich p) {
+  margin: 0 0 0.45em;
 }
 .diff-list,
 .hit-item {
@@ -1771,7 +1861,21 @@ async function scrollToDiffItem(d) {
     max-width: 360px;
   }
   .compare-workspace {
+    --compare-aside-width: 100%;
+  }
+  .compare-workspace-body {
     flex-direction: column;
+  }
+  .compare-workspace-body--version-pair,
+  .compare-workspace-body--version-grid {
+    display: flex;
+    flex-direction: column;
+  }
+  .compare-workspace-body--version-pair .compare-columns--version-pair,
+  .compare-workspace-body--version-grid .compare-columns--version-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: minmax(260px, auto);
+    overflow-y: auto;
   }
   .compare-columns {
     flex-direction: column;
@@ -1782,15 +1886,20 @@ async function scrollToDiffItem(d) {
     min-width: 0;
     min-height: 280px;
   }
-  .compare-aside {
+  .compare-aside,
+  .compare-aside--version-pair {
     width: 100%;
-    max-height: none;
-    flex-direction: row;
-    flex-wrap: wrap;
+    max-width: 100%;
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+  .compare-aside--version-pair .aside-card--version-ask {
+    flex: none;
   }
   .aside-card {
-    flex: 1;
-    min-width: 260px;
+    flex: none;
+    min-width: 0;
+    width: 100%;
   }
 }
 </style>

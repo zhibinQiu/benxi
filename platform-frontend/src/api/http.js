@@ -110,6 +110,10 @@ export function formatApiDetail(detail) {
     .join("；");
 }
 
+import {
+  createAuthSilentError,
+  shouldSuppressAuthFeedback,
+} from "../utils/authError.js";
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
 import { dispatchSessionReplaced, isSessionReplacedError } from "../utils/sessionGuard.js";
 
@@ -137,6 +141,12 @@ async function parseResponse(res) {
     const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
     if (res.status === 401 && isSessionReplacedError(json, msg)) {
       dispatchSessionReplaced(msg);
+    }
+    if (
+      (res.status === 401 || res.status === 403) &&
+      shouldSuppressAuthFeedback(msg)
+    ) {
+      throw createAuthSilentError(msg);
     }
     if (res.status === 503) {
       throw new Error(sanitizeUserFacingMessage(msg, "系统繁忙，请稍后重试"));

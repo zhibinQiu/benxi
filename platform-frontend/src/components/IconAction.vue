@@ -69,12 +69,10 @@ const actionClass = computed(() => {
 
 .icon-action:not(:disabled):hover {
   color: var(--platform-text);
-  background: var(--platform-toolbar-bg);
 }
 
 .icon-action.icon-action--active {
   color: var(--platform-accent);
-  background: var(--platform-accent-soft);
 }
 
 .icon-action.icon-action--caution:not(:disabled) {

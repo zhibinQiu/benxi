@@ -2,6 +2,9 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
+import os
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PLATFORM_DIR = Path(__file__).resolve().parent.parent
@@ -15,8 +18,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "绿叶AI办公系统"
-    platform_version: str = "4.0.1"
+    app_name: str = "AI办公系统"
+    platform_version: str = "4.0.2"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -121,7 +124,7 @@ class Settings(BaseSettings):
     knowflow_theme_primary: str = "#18a058"
     knowflow_theme_primary_hover: str = "#36ad6a"
     knowflow_theme_primary_pressed: str = "#0c7a43"
-    knowflow_theme_app_name: str = "绿叶AI办公系统"
+    knowflow_theme_app_name: str = "AI办公系统"
     knowflow_theme_logo_url: str = "/logo.svg"
     knowflow_theme_favicon_url: str = "/favicon.svg"
     knowflow_hide_file_manager: bool = True
@@ -141,11 +144,23 @@ class Settings(BaseSettings):
 
     # 知识库默认解析配置（上传同步 / 重新索引）
     knowledge_default_parser_id: str = "naive"
-    knowledge_default_layout_recognize: str = "DeepDOC"
+    knowledge_default_layout_recognize: str = "PaddleOCR"
     knowledge_default_chunk_token_num: int = 512
     # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，显著加快列表）
-    knowledge_list_live_index_meta: bool = False
+    knowledge_list_live_index_meta: bool = True
     knowledge_ragflow_meta_cache_ttl_sec: int = 60
+    # 知识库解析等待：主任务线程内最长阻塞（秒），超时后转后台续跑，不判失败
+    knowledge_parse_initial_wait_sec: int = 1800
+    # 后台续跑最长总时长（秒），大文件 / 繁忙队列下自动延长等待
+    knowledge_parse_max_wait_sec: int = 86400
+    # 解析仍进行中时，每次软延长等待（秒）
+    knowledge_parse_soft_extend_sec: int = 600
+    # 轮询 RAGFlow 解析状态间隔（秒）
+    knowledge_parse_poll_interval_sec: int = 5
+    # 解析中途失败（超时、繁忙等）时自动重新提交解析的最大次数
+    knowledge_parse_max_retries: int = 12
+    # 每次自动重试解析前的等待（秒）
+    knowledge_parse_retry_delay_sec: int = 90
     # 知识检索混合检索：向量相似度权重（其余为关键词权重，默认 0.3 / 0.7）
     knowledge_retrieval_vector_weight: float = 0.3
 
@@ -175,7 +190,28 @@ class Settings(BaseSettings):
     platform_rerank_base_url: str = ""
     platform_rerank_api_key: str = ""
     platform_rerank_model: str = ""
+    # VL 模型（KnowFlow IMAGE2TEXT / PDF 图表增强）
+    platform_vl_base_url: str = ""
+    platform_vl_api_key: str = ""
+    platform_vl_model: str = ""
+
+    @model_validator(mode="after")
+    def _apply_legacy_vl_env_aliases(self) -> "Settings":
+        """兼容旧环境变量 PLATFORM_VISION_*（曾用 vision 命名）。"""
+        if not (self.platform_vl_base_url or "").strip():
+            self.platform_vl_base_url = os.environ.get("PLATFORM_VISION_BASE_URL", "").strip()
+        if not (self.platform_vl_api_key or "").strip():
+            self.platform_vl_api_key = os.environ.get("PLATFORM_VISION_API_KEY", "").strip()
+        if not os.environ.get("PLATFORM_VL_MODEL", "").strip():
+            legacy_model = os.environ.get("PLATFORM_VISION_MODEL", "").strip()
+            if legacy_model:
+                self.platform_vl_model = legacy_model
+        return self
     platform_paddleocr_url: str = ""
+    # PaddleOCR-VL：OpenAI 兼容推理地址或自建 layout-parsing 根地址
+    platform_paddleocr_base_url: str = ""
+    platform_paddleocr_api_key: str = ""
+    platform_paddleocr_model: str = ""
     platform_api_base_url: str = ""
     frontend_app_title: str = ""
     frontend_default_theme: str = "system"

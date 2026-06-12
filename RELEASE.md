@@ -1,5 +1,15 @@
 # 发布说明
 
+## 4.0.2（v4.0.2）— 文档存储一致性、OCR 与对比体验
+
+- **文档存储**：上传完成前校验 MinIO 对象存在与大小；对账脚本新增 `missing_storage_versions` 扫描；`stack.sh restore` 在缺少 MinIO 备份时告警
+- **重新索引**：默认不再全量 `resync`，在 KnowFlow 已有副本时仅切换解析器；MinIO 缺失时返回中文可读错误
+- **OCR**：平台 OCR 服务与前端 `OcrView`、模型设置联动
+- **文档对比**：PDF 预览与高亮（`ComparePdfPreview`）；对比检索与文本提取增强
+- **知识库**：索引任务取消、解析等待与 scope 树缓存优化；系统功能开关（`useSystemFeatures`）
+- **体验**：Liquid Glass 可选态样式、登录/鉴权错误提示、后台任务与文档中心 UI 迭代
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.0.2）
+
 ## 4.0.1（v4.0.1）— 品牌统一、开发入口精简与知识库一致性
 
 - **品牌统一**：产品名统一为「绿叶 AI 办公系统」（前端标题、KnowFlow 白标、运维文档）

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from app.services.knowledge_data_reconcile_service import (
+    scan_missing_storage_versions,
     should_force_knowledge_index_after_upload,
 )
 from app.services.knowledge_sync_job_service import schedule_knowledge_index_after_upload
@@ -88,3 +89,25 @@ def test_schedule_upload_uses_force_false_when_indexed():
 
     assert out is job
     assert enqueue.call_args.kwargs["force"] is False
+
+
+def test_scan_missing_storage_versions():
+    db = MagicMock()
+    ver_ok = MagicMock(
+        id=uuid.uuid4(), file_key="docs/a/v1/f.pdf", file_size=10
+    )
+    ver_bad = MagicMock(
+        id=uuid.uuid4(), file_key="docs/b/v1/f.pdf", file_size=10
+    )
+    db.scalars.return_value.all.return_value = [ver_ok, ver_bad]
+
+    with patch(
+        "app.storage.object_store.get_object_store"
+    ) as get_store:
+        get_store.return_value.head_object_size.side_effect = lambda key: (
+            10 if key == ver_ok.file_key else None
+        )
+        missing = scan_missing_storage_versions(db)
+
+    assert str(ver_bad.id) in missing
+    assert str(ver_ok.id) not in missing

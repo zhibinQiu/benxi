@@ -540,6 +540,37 @@ _RUN_STATUS_LABELS = {
 }
 
 
+def summarize_ragflow_progress_msg(msg: str | None, *, max_len: int = 500) -> str | None:
+    """从 RAGFlow 累积 progress_msg 中提取可读失败原因（优先 ERROR 行）。"""
+    raw = str(msg or "").strip()
+    if not raw:
+        return None
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    error_lines = [
+        ln
+        for ln in lines
+        if "[ERROR]" in ln
+        or "Visual model error" in ln
+        or "Model disabled" in ln
+    ]
+    if error_lines:
+        detail = error_lines[-1]
+        if "Model disabled" in detail or (
+            "403" in detail and "Error code" in detail
+        ):
+            return (
+                "图表增强（视觉模型 IMAGE2TEXT）调用失败：API 返回 403，"
+                "模型已停用或未开通（Model disabled）。"
+                "请在「资源管理」配置视觉模型（IMAGE2TEXT）并保存同步，"
+                "或在 KnowFlow 模型配置中更换可用的视觉模型。"
+            )[:max_len]
+        return detail[:max_len]
+    tail = "\n".join(lines[-3:])
+    if len(tail) <= max_len:
+        return tail
+    return tail[-max_len:]
+
+
 def _rag_clients_for_user(db: Session, user: User) -> list[RagflowClient]:
     from app.services.ragflow_identity_service import get_user_ragflow_auth
     from app.services.ragflow_scope_service import _privileged_rag_client
@@ -560,6 +591,11 @@ def _ragflow_meta_cache_key(dataset_id: str, ragflow_id: str) -> str:
     return ragflow_doc_meta_cache_key(dataset_id, ragflow_id)
 
 
+def _is_transient_ragflow_run(run: str | int | None) -> bool:
+    """解析中（run=1）状态会变化，不可长期缓存。"""
+    return str(run or "").strip() == "1"
+
+
 def _read_ragflow_meta_cache(dataset_id: str, ragflow_id: str) -> dict | None:
     from app.config import get_settings
     from app.core.platform_cache import cache_get_json
@@ -567,16 +603,91 @@ def _read_ragflow_meta_cache(dataset_id: str, ragflow_id: str) -> dict | None:
     ttl = max(5, int(get_settings().knowledge_ragflow_meta_cache_ttl_sec))
     key = _ragflow_meta_cache_key(dataset_id, ragflow_id)
     hit = cache_get_json(key, ttl=ttl)
-    return hit if isinstance(hit, dict) else None
+    if not isinstance(hit, dict):
+        return None
+    if _is_transient_ragflow_run(hit.get("run")):
+        return None
+    return hit
 
 
 def _write_ragflow_meta_cache(dataset_id: str, ragflow_id: str, meta: dict) -> None:
+    if _is_transient_ragflow_run(meta.get("run")):
+        return
     from app.config import get_settings
     from app.core.platform_cache import cache_set_json
 
     ttl = max(5, int(get_settings().knowledge_ragflow_meta_cache_ttl_sec))
     key = _ragflow_meta_cache_key(dataset_id, ragflow_id)
     cache_set_json(key, meta, ttl=ttl)
+
+
+def _fetch_document_run_map_from_mysql(
+    db: Session | None, ragflow_ids: list[str]
+) -> dict[str, dict]:
+    """从 RAGFlow MySQL document 表批量读取 run/progress（比 API 缓存更权威）。"""
+    ids = list({str(x).strip() for x in ragflow_ids if str(x or "").strip()})
+    if not ids:
+        return {}
+    from app.services.model_settings_service import get_ragflow_mysql_settings
+
+    _, password, db_name, host, port = get_ragflow_mysql_settings(db)
+    if not password or not host:
+        return {}
+    try:
+        import pymysql
+
+        from app.config import get_settings
+
+        settings = get_settings()
+        conn = pymysql.connect(
+            host=host,
+            port=port,
+            user="root",
+            password=password,
+            database=db_name,
+            charset="utf8mb4",
+            connect_timeout=settings.ragflow_mysql_connect_timeout,
+            read_timeout=settings.ragflow_mysql_read_timeout,
+            write_timeout=settings.ragflow_mysql_write_timeout,
+        )
+        placeholders = ",".join(["%s"] * len(ids))
+        sql = (
+            f"SELECT id, run, progress, progress_msg, chunk_num "
+            f"FROM document WHERE id IN ({placeholders})"
+        )
+        with conn.cursor() as cur:
+            cur.execute(sql, ids)
+            rows = cur.fetchall()
+        conn.close()
+        out: dict[str, dict] = {}
+        for rid, run, progress, msg, chunk_num in rows:
+            out[str(rid)] = {
+                "run": str(run) if run is not None else "",
+                "progress": progress,
+                "progress_msg": msg or "",
+                "chunk_num": chunk_num,
+            }
+        return out
+    except Exception as exc:
+        logger.debug("RAGFlow MySQL document.run 批量查询失败: %s", exc)
+        return {}
+
+
+def _overlay_mysql_document_run_meta(
+    db: Session | None,
+    dataset_id: str,
+    meta: dict[str, dict],
+    ragflow_ids: list[str],
+) -> None:
+    """用 MySQL 中的 run 覆盖 API/缓存元数据，避免「解析中」陈旧缓存。"""
+    mysql_map = _fetch_document_run_map_from_mysql(db, ragflow_ids)
+    if not mysql_map:
+        return
+    for rid, row in mysql_map.items():
+        merged = {**(meta.get(rid) or {}), **row}
+        meta[rid] = merged
+        if not _is_transient_ragflow_run(merged.get("run")):
+            _write_ragflow_meta_cache(dataset_id, rid, merged)
 
 
 _ragflow_health_cache: dict[str, tuple[float, bool]] = {}
@@ -594,11 +705,41 @@ def _ragflow_health_ok_cached(rag: RagflowClient) -> bool:
     return ok
 
 
+def _rag_clients_for_background(db: Session, document: Document) -> list[RagflowClient]:
+    """后台任务用：优先特权/管理员会话，不依赖用户是否仍在线登录。"""
+    from app.services.ragflow_scope_service import _admin_rag_client, _privileged_rag_client
+
+    rags: list[RagflowClient] = []
+    seen: set[str] = set()
+
+    def _add(client: RagflowClient | None) -> None:
+        if client is None:
+            return
+        key = (client.session_auth or "") + "|" + (client.api_key or "")
+        if key in seen:
+            return
+        seen.add(key)
+        rags.append(client)
+
+    _add(_privileged_rag_client(db))
+    _add(_admin_rag_client())
+    owner_id = document.owner_id
+    if owner_id:
+        owner = db.get(User, owner_id)
+        if owner and owner.status == "active":
+            for rag in _rag_clients_for_user(db, owner):
+                _add(rag)
+    return rags
+
+
 def fetch_ragflow_doc_meta_map(
     db: Session,
     user: User,
     dataset_id: str,
     ragflow_ids: list[str],
+    *,
+    document: Document | None = None,
+    background: bool = False,
 ) -> tuple[dict[str, dict], bool]:
     """按 ragflow 文档 id 拉取 run/chunk 元数据（按 id 直查 + 短 TTL 缓存）。"""
     wanted = {str(x).strip() for x in ragflow_ids if x}
@@ -614,9 +755,15 @@ def fetch_ragflow_doc_meta_map(
             meta[rid] = cached
             missing.discard(rid)
     if not missing:
+        _overlay_mysql_document_run_meta(db, dataset_id, meta, list(wanted))
         return meta, True
 
-    for rag in _rag_clients_for_user(db, user):
+    if background and document is not None:
+        rag_iter = _rag_clients_for_background(db, document)
+    else:
+        rag_iter = _rag_clients_for_user(db, user)
+
+    for rag in rag_iter:
         if not _ragflow_health_ok_cached(rag) or not _dataset_visible(rag, dataset_id):
             continue
         fetched: dict[str, dict] = {}
@@ -639,7 +786,9 @@ def fetch_ragflow_doc_meta_map(
             meta.update(fetched)
             missing -= set(fetched.keys())
         if not missing:
+            _overlay_mysql_document_run_meta(db, dataset_id, meta, list(wanted))
             return meta, True
+    _overlay_mysql_document_run_meta(db, dataset_id, meta, list(wanted))
     return meta, bool(meta)
 
 
@@ -648,6 +797,18 @@ def _apply_row_ragflow_meta(row: dict, item: dict | None, *, fetch_ok: bool) -> 
     if not item:
         return
     run = str(item.get("run", ""))
+    msg = (
+        item.get("progress_msg")
+        or item.get("process_msg")
+        or item.get("message")
+        or ""
+    )
+    if _is_transient_ragflow_run(run) and msg and (
+        "[ERROR]" in str(msg)
+        or "Model disabled" in str(msg)
+        or "Visual model error" in str(msg)
+    ):
+        run = "4"
     row["parse_status"] = _RUN_STATUS_LABELS.get(run, run or None)
     chunk_num = item.get("chunk_num")
     try:
@@ -663,14 +824,8 @@ def _apply_row_ragflow_meta(row: dict, item: dict | None, *, fetch_ok: bool) -> 
             )
         except (TypeError, ValueError):
             row["parse_progress"] = None
-    msg = (
-        item.get("progress_msg")
-        or item.get("process_msg")
-        or item.get("message")
-        or ""
-    )
     if msg and str(msg).strip():
-        row["parse_message"] = str(msg).strip()[:500]
+        row["parse_message"] = summarize_ragflow_progress_msg(msg) or str(msg).strip()[:500]
 
 
 def _rag_clients_for_chunks(
@@ -927,6 +1082,10 @@ def execute_document_reindex(
     if not version_link or not version_link.ragflow_document_id:
         raise bad_request("该版本尚未同步到知识库")
 
+    from app.services.ragflow_version_link_service import clear_version_index_completed
+
+    clear_version_index_completed(db, version.id)
+
     _require_dataset_access(db, user, version_link.dataset_id)
 
     from app.services.ragflow_scope_service import prepare_dataset_for_upload
@@ -957,6 +1116,9 @@ def execute_document_reindex(
                 parser,
                 parser_config=parser_config,
             )
+            from app.core.platform_cache import invalidate_ragflow_doc_meta_cache
+
+            invalidate_ragflow_doc_meta_cache(version_link.dataset_id)
             rag.parse_documents(
                 version_link.dataset_id, [version_link.ragflow_document_id]
             )

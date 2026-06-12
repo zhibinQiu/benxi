@@ -51,12 +51,13 @@ def test_compare_plugin_has_router():
     assert p.router is not None
 
 
-def test_ocr_plugin_ui_only():
+def test_ocr_plugin_has_router_and_permission():
     p = get_plugin("ocr")
     assert p is not None
+    assert p.title == "文件内容提取"
     assert p.permission_code == "feature.ocr"
     assert p.category == "tools"
-    assert p.router is None
+    assert p.router is not None
     assert p.route == "/system/ocr"
     assert p.enabled is True
 

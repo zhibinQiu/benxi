@@ -48,8 +48,10 @@ class ModelSettingsOut(BaseModel):
     frontend_default_theme: str = "system"
     llm: ModelEndpointOut
     embedding: ModelEndpointOut
+    vl: ModelEndpointOut
     rerank: ModelEndpointOut
     knowledge: KnowledgeInfraOut
+    paddleocr: ModelEndpointOut
     paddleocr_url: str = ""
     speech_service_url: str = ""
     pdf2zh_api_url: str = ""
@@ -72,6 +74,16 @@ class ModelSettingsUpdate(BaseModel):
     rerank_base_url: str | None = None
     rerank_api_key: str | None = None
     rerank_model: str | None = None
+    vl_base_url: str | None = None
+    vl_api_key: str | None = None
+    vl_model: str | None = None
+    # 兼容旧字段名 vision_*（与 vl_* 等价）
+    vision_base_url: str | None = None
+    vision_api_key: str | None = None
+    vision_model: str | None = None
+    paddleocr_base_url: str | None = None
+    paddleocr_api_key: str | None = None
+    paddleocr_model: str | None = None
     paddleocr_url: str | None = None
     speech_service_url: str | None = None
     pdf2zh_api_url: str | None = None

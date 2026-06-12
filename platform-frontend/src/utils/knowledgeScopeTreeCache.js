@@ -1,6 +1,6 @@
 /** 知识检索左侧树：sessionStorage 缓存，进入页面时先展示缓存再后台刷新 */
 
-const CACHE_KEY = "platform:knowledge-scope-tree:v3";
+const CACHE_KEY = "platform:knowledge-scope-tree:v4";
 const CACHE_TTL_MS = 120 * 1000;
 
 function readRaw() {

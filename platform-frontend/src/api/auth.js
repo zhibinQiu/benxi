@@ -21,6 +21,14 @@ export async function registerUser({ phone, email, displayName, password }) {
   });
 }
 
+export async function logout() {
+  try {
+    await api("/api/v1/auth/logout", { method: "POST" });
+  } catch {
+    /* 退出以清本地 Token 为主；后台任务不依赖会话 */
+  }
+}
+
 export async function fetchMe() {
   return api("/api/v1/auth/me");
 }

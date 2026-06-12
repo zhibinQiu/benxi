@@ -1,44 +1,45 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, onBeforeUnmount, ref } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   NAlert,
   NButton,
   NCard,
-  NGi,
-  NGrid,
   NIcon,
   NInput,
-  NRadioButton,
-  NRadioGroup,
   NSelect,
   NSpace,
-  NSteps,
-  NStep,
+  NSpin,
   NTag,
-  NText } from "naive-ui";
+  NText,
+} from "naive-ui";
 import {
-  ArrowBackOutline,
-  ScanOutline,
   CopyOutline,
   DownloadOutline,
+  DocumentTextOutline,
   ImageOutline,
-  DocumentTextOutline } from "@vicons/ionicons5";
+  ScanOutline,
+  TrashOutline,
+} from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import {
+  downloadOcrExportZip,
+  fetchOcrMeta,
+  recognizeOcr,
+} from "../api/client";
 
-const router = useRouter();
 const ui = usePlatformUi();
 
-const sourceMode = ref("image");
-const selectedFile = ref(null);
-const previewUrl = ref("");
+const meta = ref(null);
+const loadingMeta = ref(true);
+const error = ref("");
 const language = ref("");
-const outputFormat = ref("text");
+const displayFormat = ref("text");
 const processing = ref(false);
-const resultText = ref("");
-const currentStep = ref(1);
+const exporting = ref(false);
+const fileItems = ref([]);
+const selectedId = ref(null);
 
 const languageOptions = [
   { label: "自动检测", value: "" },
@@ -48,270 +49,477 @@ const languageOptions = [
   { label: "韩语", value: "ko" },
 ];
 
-const outputFormatOptions = [
+const displayFormatOptions = [
   { label: "纯文本", value: "text" },
   { label: "Markdown", value: "markdown" },
-  { label: "JSON（含坐标）", value: "json" },
+  { label: "JSON", value: "json" },
 ];
 
-const acceptByMode = computed(() =>
-  sourceMode.value === "image"
-    ? ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff"
-    : ".pdf,.png,.jpg,.jpeg,.webp"
+const acceptTypes = ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf";
+
+const configured = computed(() => meta.value?.configured ?? false);
+
+const selectedItem = computed(() =>
+  fileItems.value.find((item) => item.id === selectedId.value) || null
 );
 
-const dropTitle = computed(() =>
-  sourceMode.value === "image" ? "拖拽图像到此处" : "拖拽文档到此处"
+const doneItems = computed(() => fileItems.value.filter((item) => item.status === "done"));
+
+const pendingCount = computed(() =>
+  fileItems.value.filter((item) => item.status === "pending").length
 );
 
-const dropHint = computed(() =>
-  sourceMode.value === "image"
-    ? "支持 PNG、JPG、WEBP、BMP、TIFF"
-    : "支持 PDF 及常见图像格式"
+const processingCount = computed(() =>
+  fileItems.value.filter((item) => item.status === "processing").length
 );
 
-const displayFileName = computed(() => selectedFile.value?.name || "");
+const dropSummary = computed(() => {
+  const n = fileItems.value.length;
+  if (!n) return "";
+  return `已添加 ${n} 个文件`;
+});
 
-const canRecognize = computed(() => !!selectedFile.value && !processing.value);
+const canRecognize = computed(
+  () =>
+    configured.value &&
+    pendingCount.value > 0 &&
+    !processing.value &&
+    processingCount.value === 0
+);
 
-const hasResult = computed(() => !!resultText.value.trim());
+const canExport = computed(() => doneItems.value.length > 0 && !exporting.value);
 
-function revokePreview() {
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value);
-    previewUrl.value = "";
+const hasResultPanel = computed(
+  () => selectedItem.value?.status === "done" || selectedItem.value?.status === "processing"
+);
+
+const resultDisplayText = computed(() => {
+  const item = selectedItem.value;
+  if (!item?.result) return "";
+  if (displayFormat.value === "markdown") return item.result.markdown || item.result.text || "";
+  if (displayFormat.value === "json") {
+    return JSON.stringify(
+      {
+        file_name: item.result.file_name,
+        text: item.result.text,
+        pages: item.result.pages,
+        blocks: item.result.blocks,
+      },
+      null,
+      2
+    );
+  }
+  return item.result.text || "";
+});
+
+const progressLabel = computed(() => {
+  const total = fileItems.value.length;
+  const done = doneItems.value.length;
+  const failed = fileItems.value.filter((item) => item.status === "error").length;
+  if (!total) return "";
+  if (processing.value || processingCount.value) {
+    return `识别中 ${done + failed}/${total}`;
+  }
+  if (done || failed) return `已完成 ${done}，失败 ${failed}`;
+  return `${total} 个文件待识别`;
+});
+
+function makeId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function revokePreview(item) {
+  if (item?.previewUrl) {
+    URL.revokeObjectURL(item.previewUrl);
+    item.previewUrl = "";
   }
 }
 
-function onSourceModeChange() {
-  selectedFile.value = null;
-  resultText.value = "";
-  currentStep.value = 1;
-  revokePreview();
-}
-
-function onFileChange(e) {
-  const file = e.target.files?.[0] || null;
-  selectedFile.value = file;
-  resultText.value = "";
-  currentStep.value = file ? 1 : 1;
-  revokePreview();
-  if (file && sourceMode.value === "image" && file.type.startsWith("image/")) {
-    previewUrl.value = URL.createObjectURL(file);
+async function loadMeta() {
+  loadingMeta.value = true;
+  try {
+    meta.value = await fetchOcrMeta();
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    loadingMeta.value = false;
   }
 }
 
-function startRecognize() {
-  if (!selectedFile.value) return;
+function onFilesChange(e) {
+  const files = Array.from(e.target?.files || []);
+  if (!files.length) return;
+  const next = [...fileItems.value];
+  for (const file of files) {
+    const previewUrl =
+      file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+    next.push({
+      id: makeId(),
+      file,
+      previewUrl,
+      status: "pending",
+      error: "",
+      result: null,
+    });
+  }
+  fileItems.value = next;
+  if (!selectedId.value && next.length) {
+    selectedId.value = next[0].id;
+  }
+}
+
+function selectItem(id) {
+  selectedId.value = id;
+}
+
+function removeItem(id) {
+  const idx = fileItems.value.findIndex((item) => item.id === id);
+  if (idx < 0) return;
+  const item = fileItems.value[idx];
+  revokePreview(item);
+  fileItems.value = fileItems.value.filter((entry) => entry.id !== id);
+  if (selectedId.value === id) {
+    selectedId.value = fileItems.value[0]?.id || null;
+  }
+}
+
+function clearAll() {
+  fileItems.value.forEach(revokePreview);
+  fileItems.value = [];
+  selectedId.value = null;
+  error.value = "";
+}
+
+function statusTagType(status) {
+  if (status === "done") return "success";
+  if (status === "error") return "error";
+  if (status === "processing") return "info";
+  return "default";
+}
+
+function statusLabel(status) {
+  const map = {
+    pending: "待识别",
+    processing: "识别中",
+    done: "完成",
+    error: "失败",
+  };
+  return map[status] || status;
+}
+
+async function startRecognize() {
+  if (!canRecognize.value) return;
   processing.value = true;
-  currentStep.value = 2;
-  window.setTimeout(() => {
-    processing.value = false;
-    currentStep.value = 1;
-    ui.info("OCR 识别能力尚未接入，当前仅提供界面预览");
-  }, 600);
+  error.value = "";
+  const queue = fileItems.value.filter((item) => item.status === "pending");
+  for (const item of queue) {
+    item.status = "processing";
+    item.error = "";
+    selectedId.value = item.id;
+    try {
+      const result = await recognizeOcr({ file: item.file, language: language.value });
+      item.result = result;
+      item.status = "done";
+    } catch (e) {
+      item.status = "error";
+      item.error = e.message || "识别失败";
+      error.value = `${item.file.name}：${item.error}`;
+    }
+  }
+  processing.value = false;
 }
 
 function copyResult() {
-  if (!resultText.value) {
+  const text = resultDisplayText.value;
+  if (!text.trim()) {
     ui.warning("暂无识别结果");
     return;
   }
-  navigator.clipboard?.writeText(resultText.value).then(
+  navigator.clipboard?.writeText(text).then(
     () => ui.success("已复制到剪贴板"),
     () => ui.error("复制失败")
   );
 }
 
-function downloadResult() {
-  ui.info("导出功能开发中");
+function buildExportItems(items) {
+  return items.map((item) => ({
+    file_name: item.result.file_name || item.file.name,
+    text: item.result.text || "",
+    markdown: item.result.markdown || "",
+    blocks: item.result.blocks || [],
+    pages: item.result.pages || [],
+  }));
 }
 
-onBeforeUnmount(revokePreview);
+async function exportBatch(format) {
+  if (!canExport.value) return;
+  exporting.value = true;
+  try {
+    await downloadOcrExportZip({
+      format,
+      items: buildExportItems(doneItems.value),
+    });
+    ui.success(format === "markdown" ? "已导出 Markdown 压缩包" : "已导出 JSON 压缩包");
+  } catch (e) {
+    ui.error(e.message || "导出失败");
+  } finally {
+    exporting.value = false;
+  }
+}
+
+async function exportCurrent(format) {
+  const item = selectedItem.value;
+  if (!item?.result) {
+    ui.warning("请先选择已完成的文件");
+    return;
+  }
+  exporting.value = true;
+  try {
+    await downloadOcrExportZip({
+      format,
+      items: buildExportItems([item]),
+    });
+    ui.success("已导出当前文件");
+  } catch (e) {
+    ui.error(e.message || "导出失败");
+  } finally {
+    exporting.value = false;
+  }
+}
+
+onMounted(loadMeta);
+onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
 </script>
 
 <template>
   <FeatureSubsystemShell fill>
     <template #extra>
-      <n-tag size="small" round type="warning">界面预览</n-tag>
+      <n-space v-if="progressLabel" align="center" :size="8">
+        <n-tag size="small" round :bordered="false">{{ progressLabel }}</n-tag>
+        <n-tag v-if="meta?.model" size="small" round type="info" :bordered="false">
+          {{ meta.provider || "文件内容提取" }} · {{ meta.model }}
+        </n-tag>
+      </n-space>
     </template>
-    <header class="page-subheader feature-local-nav">
-      <n-steps :current="currentStep" size="small" class="header-steps">
-        <n-step title="上传" />
-        <n-step title="识别" />
-        <n-step title="结果" />
-      </n-steps>
-    </header>
 
-    <n-alert type="info" class="page-alert" :show-icon="false">
-      当前为界面原型：可上传文件并配置选项，识别与导出将在后续版本接入。
-    </n-alert>
+    <n-spin :show="loadingMeta" class="ocr-spin">
+      <div class="ocr-alerts">
+        <n-alert
+          v-if="!loadingMeta && !configured"
+          type="warning"
+          title="文件内容提取服务未配置"
+          class="page-alert"
+        >
+          <p>{{ meta?.service_hint || "请在资源管理中配置 PaddleOCR-VL。" }}</p>
+          <template #action>
+            <n-button size="small" :loading="loadingMeta" @click="loadMeta">重新检测</n-button>
+          </template>
+        </n-alert>
 
-    <div class="ocr-workspace">
-      <n-grid
-        cols="1 m:2 xl:3"
-        responsive="screen"
-        item-responsive
-        :x-gap="20"
-        :y-gap="20"
-        class="ocr-grid"
-      >
-        <n-gi span="1 m:1 xl:1">
-          <n-card class="panel panel-fill" size="small" title="上传与配置">
-            <n-radio-group
-              v-model:value="sourceMode"
-              size="small"
-              class="source-toggle"
-              @update:value="onSourceModeChange"
-            >
-              <n-radio-button value="image">
-                <n-space align="center" :size="4">
-                  <n-icon :component="ImageOutline" />
-                  <span>图像</span>
-                </n-space>
-              </n-radio-button>
-              <n-radio-button value="document">
-                <n-space align="center" :size="4">
-                  <n-icon :component="DocumentTextOutline" />
-                  <span>文档</span>
-                </n-space>
-              </n-radio-button>
-            </n-radio-group>
+        <n-alert
+          v-if="error"
+          type="error"
+          :title="error"
+          class="page-alert"
+          closable
+          @close="error = ''"
+        />
+      </div>
 
-            <div class="upload-fill">
-              <file-drop-zone
-                :accept="acceptByMode"
-                :title="dropTitle"
-                :hint="dropHint"
-                :file-name="displayFileName"
-                icon="upload"
-                @change="onFileChange"
+      <div class="ocr-layout">
+        <n-card title="文件与选项" class="panel panel-source" size="small">
+          <div class="panel-body">
+            <file-drop-zone
+              :accept="acceptTypes"
+              multiple
+              title="拖拽文件到此处"
+              hint="支持 PNG、JPG、WEBP、BMP、TIFF、PDF，可多选"
+              :file-name="dropSummary"
+              icon="upload"
+              :disabled="!configured || processing"
+              @change="onFilesChange"
+            />
+
+            <div v-if="fileItems.length" class="file-list">
+              <div class="file-list-head">
+                <n-text depth="3">文件列表</n-text>
+                <n-button size="tiny" quaternary @click="clearAll">清空</n-button>
+              </div>
+              <div
+                v-for="item in fileItems"
+                :key="item.id"
+                class="file-row"
+                :class="{ active: item.id === selectedId }"
+                @click="selectItem(item.id)"
+              >
+                <n-icon
+                  :component="item.file.type.startsWith('image/') ? ImageOutline : DocumentTextOutline"
+                  :size="16"
+                />
+                <div class="file-row-main">
+                  <n-text class="file-name">{{ item.file.name }}</n-text>
+                  <n-text v-if="item.error" depth="3" class="file-error">{{ item.error }}</n-text>
+                </div>
+                <n-tag size="tiny" :type="statusTagType(item.status)" :bordered="false">
+                  {{ statusLabel(item.status) }}
+                </n-tag>
+                <n-button
+                  size="tiny"
+                  quaternary
+                  :disabled="processing"
+                  @click.stop="removeItem(item.id)"
+                >
+                  <template #icon><n-icon :component="TrashOutline" /></template>
+                </n-button>
+              </div>
+            </div>
+
+            <div v-if="selectedItem?.previewUrl" class="preview-box">
+              <n-text depth="3" class="field-label">预览</n-text>
+              <img :src="selectedItem.previewUrl" alt="预览" class="preview-img" />
+            </div>
+
+            <div>
+              <n-text depth="3" class="field-label">识别语言</n-text>
+              <n-select
+                v-model:value="language"
+                :options="languageOptions"
+                :disabled="!configured"
               />
             </div>
 
-            <div v-if="previewUrl" class="preview-box">
-              <n-text depth="3" class="field-label">预览</n-text>
-              <img :src="previewUrl" alt="预览" class="preview-img" />
-            </div>
-
-            <n-text depth="3" class="field-label">识别语言</n-text>
-            <n-select
-              v-model:value="language"
-              :options="languageOptions"
-              placeholder="自动检测"
-            />
-
-            <n-text depth="3" class="field-label">输出格式</n-text>
-            <n-select v-model:value="outputFormat" :options="outputFormatOptions" />
-
-            <n-button
-              type="primary"
-              size="large"
-              block
-              class="start-btn"
-              :disabled="!canRecognize"
-              :loading="processing"
-              @click="startRecognize"
-            >
-              {{ processing ? "识别中…" : "开始识别" }}
-            </n-button>
-            <n-text v-if="!selectedFile" depth="3" class="start-hint">
-              请先上传{{ sourceMode === "image" ? "图像" : "文档" }}
+            <n-space :size="8" class="source-actions">
+              <n-button
+                type="primary"
+                :disabled="!canRecognize"
+                :loading="processing"
+                @click="startRecognize"
+              >
+                {{ processing ? "批量识别中…" : `开始识别${pendingCount ? `（${pendingCount}）` : ""}` }}
+              </n-button>
+              <n-button
+                secondary
+                :disabled="!canExport"
+                :loading="exporting"
+                @click="exportBatch('markdown')"
+              >
+                <template #icon><n-icon :component="DownloadOutline" /></template>
+                导出全部 MD
+              </n-button>
+              <n-button
+                secondary
+                :disabled="!canExport"
+                :loading="exporting"
+                @click="exportBatch('json')"
+              >
+                <template #icon><n-icon :component="DownloadOutline" /></template>
+                导出全部 JSON
+              </n-button>
+            </n-space>
+            <n-text depth="3" class="hint-text">
+              使用资源管理中的 PaddleOCR-VL 服务；JSON 含页码与坐标（版面解析可用时）。
             </n-text>
-          </n-card>
-        </n-gi>
+          </div>
+        </n-card>
 
-        <n-gi span="1 m:1 xl:2">
-          <n-card
-            class="panel panel-fill panel-result"
-            size="small"
-            title="识别结果"
-            :class="{ 'panel-result-active': hasResult || processing }"
-          >
-            <div v-if="!hasResult && !processing" class="result-idle">
+        <n-card title="识别结果" class="panel panel-result" size="small">
+          <div class="panel-body">
+            <div v-if="!hasResultPanel" class="result-idle">
               <n-icon :size="40" :depth="3" :component="ScanOutline" />
-              <n-text depth="2">上传文件并点击「开始识别」后，文字将显示在此处</n-text>
+              <n-text depth="2">添加文件并开始识别后，结果将显示在此处</n-text>
               <n-text depth="3" class="result-idle-hint">
-                文档模式将按页输出；JSON 格式可包含文本框坐标（规划中）
+                支持批量识别，并可一键导出 Markdown / JSON 压缩包
               </n-text>
             </div>
 
-            <div v-else-if="processing" class="result-processing">
-              <n-text>正在识别…</n-text>
-              <n-text depth="3">后端接入后将在此流式返回识别进度</n-text>
+            <div v-else-if="selectedItem?.status === 'processing'" class="result-processing">
+              <n-text>正在识别 {{ selectedItem.file.name }}…</n-text>
+              <n-text depth="3">大文件或 PDF 可能需要数十秒</n-text>
             </div>
 
-            <template v-else>
+            <template v-else-if="selectedItem?.status === 'done'">
+              <div class="result-toolbar">
+                <n-select
+                  v-model:value="displayFormat"
+                  :options="displayFormatOptions"
+                  size="small"
+                  class="format-select"
+                />
+                <n-space :size="8" wrap>
+                  <n-button size="small" @click="copyResult">
+                    <template #icon><n-icon :component="CopyOutline" /></template>
+                    复制
+                  </n-button>
+                  <n-button size="small" secondary @click="exportCurrent('markdown')">
+                    导出 MD
+                  </n-button>
+                  <n-button size="small" secondary @click="exportCurrent('json')">
+                    导出 JSON
+                  </n-button>
+                </n-space>
+              </div>
               <n-input
-                v-model:value="resultText"
+                :value="resultDisplayText"
                 type="textarea"
-                placeholder="识别结果将显示在这里"
-                :autosize="{ minRows: 14, maxRows: 24 }"
-                class="result-textarea"
+                readonly
+                placeholder="识别结果"
+                class="result-textarea textarea-fill"
               />
-              <n-space :size="10" class="result-actions">
-                <n-button @click="copyResult">
-                  <template #icon>
-                    <n-icon :component="CopyOutline" />
-                  </template>
-                  复制
-                </n-button>
-                <n-button secondary @click="downloadResult">
-                  <template #icon>
-                    <n-icon :component="DownloadOutline" />
-                  </template>
-                  导出
-                </n-button>
-              </n-space>
             </template>
-          </n-card>
-        </n-gi>
-      </n-grid>
-    </div>
+
+            <div v-else-if="selectedItem?.status === 'error'" class="result-idle">
+              <n-text type="error">{{ selectedItem.error || "识别失败" }}</n-text>
+            </div>
+          </div>
+        </n-card>
+      </div>
+    </n-spin>
   </FeatureSubsystemShell>
 </template>
 
 <style scoped>
-.ocr-page {
+.ocr-spin {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
+  box-sizing: border-box;
+}
+.ocr-spin :deep(.n-spin-container) {
+  flex: 1;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
-.page-subheader {
+.ocr-alerts {
   flex-shrink: 0;
-}
-.header-steps {
-  width: 100%;
-  max-width: 420px;
 }
 .page-alert {
-  flex-shrink: 0;
   margin-bottom: 12px;
 }
-.ocr-workspace {
+.ocr-layout {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ocr-grid {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 16px;
+  align-items: stretch;
   width: 100%;
-  flex: 1;
-  min-height: 0;
-}
-.ocr-grid :deep(> div) {
-  height: 100%;
-}
-.ocr-grid :deep(.n-grid-item) {
-  display: flex;
-  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .panel {
   border-radius: 10px;
-  height: 100%;
-  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -320,25 +528,68 @@ onBeforeUnmount(revokePreview);
   display: flex;
   flex-direction: column;
 }
-.panel-fill :deep(.n-card__content) {
+.panel :deep(.n-card__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.panel-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1;
-  min-height: 0;
 }
-.source-toggle {
+.panel-source :deep(.drop-zone) {
+  min-height: 140px;
+}
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--n-border-color);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.02);
+}
+.file-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 4px;
 }
-.upload-fill {
-  flex: 1;
-  min-height: 160px;
+.file-row {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
-.upload-fill :deep(.drop-zone) {
+.file-row:hover,
+.file-row.active {
+  background: var(--platform-accent-bg-soft, rgba(32, 128, 240, 0.08));
+}
+.file-row-main {
   flex: 1;
-  width: 100%;
-  min-height: 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.file-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-error {
+  font-size: 11px;
+  line-height: 1.3;
 }
 .preview-box {
   display: flex;
@@ -356,21 +607,19 @@ onBeforeUnmount(revokePreview);
 .field-label {
   font-size: 12px;
   display: block;
+  margin-bottom: 4px;
 }
-.start-btn {
-  margin-top: 4px;
+.source-actions {
+  flex-wrap: wrap;
 }
-.start-hint {
-  text-align: center;
+.hint-text {
   font-size: 12px;
-}
-.panel-result-active {
-  border-color: var(--platform-accent-border-soft);
+  line-height: 1.45;
 }
 .result-idle,
 .result-processing {
   flex: 1;
-  min-height: 280px;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -383,17 +632,35 @@ onBeforeUnmount(revokePreview);
   font-size: 12px;
   max-width: 320px;
 }
-.result-textarea {
+.result-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.format-select {
+  width: 140px;
+}
+.textarea-fill {
   flex: 1;
   min-height: 0;
+  display: flex;
+}
+.textarea-fill :deep(.n-input) {
+  height: 100%;
 }
 .result-textarea :deep(textarea) {
+  height: 100% !important;
+  min-height: 240px;
+  resize: none;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   line-height: 1.55;
 }
-.result-actions {
-  flex-shrink: 0;
-  justify-content: flex-end;
+@media (max-width: 960px) {
+  .ocr-layout {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

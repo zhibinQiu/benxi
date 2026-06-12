@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from app.services.resource_health_service import (
     _normalize_openai_base,
+    _normalize_resource_id,
     _probe_embedding,
     _probe_searxng_url,
+    _probe_vl,
     _searxng_timeout_from_cfg,
     check_resource_health,
     check_single_resource_health,
@@ -27,6 +29,11 @@ def test_llm_unconfigured(monkeypatch):
             "rerank_api_key": "",
             "rerank_model": "",
             "paddleocr_url": "",
+            "paddleocr_base_url": "",
+            "paddleocr_model": "",
+            "vl_base_url": "",
+            "vl_model": "",
+            "vl_api_key": "",
             "speech_service_url": "",
             "pdf2zh_api_url": "",
         },
@@ -50,6 +57,11 @@ def test_rerank_optional_unconfigured(monkeypatch):
             "rerank_api_key": "",
             "rerank_model": "",
             "paddleocr_url": "",
+            "paddleocr_base_url": "",
+            "paddleocr_model": "",
+            "vl_base_url": "",
+            "vl_model": "",
+            "vl_api_key": "",
             "speech_service_url": "",
             "pdf2zh_api_url": "",
         },
@@ -77,10 +89,95 @@ def test_rerank_optional_unconfigured(monkeypatch):
     assert out["llm"]["healthy"] is True
 
 
+def test_openai_compatible_inference_base_detection():
+    from app.services.resource_health_service import _is_openai_compatible_inference_base
+
+    assert _is_openai_compatible_inference_base("https://api.siliconflow.cn/v1")
+    assert _is_openai_compatible_inference_base("http://127.0.0.1:8000/v1")
+    assert not _is_openai_compatible_inference_base("http://127.0.0.1:8080/layout-parsing")
+    assert not _is_openai_compatible_inference_base("http://127.0.0.1:7071/ocr")
+
+
 def test_normalize_openai_base_strips_embeddings_suffix():
     assert _normalize_openai_base("https://api.siliconflow.cn/v1/embeddings") == (
         "https://api.siliconflow.cn/v1"
     )
+
+
+def test_vl_resource_id_alias():
+    assert _normalize_resource_id("vision") == "vl"
+    assert _normalize_resource_id("Vision") == "vl"
+    assert _normalize_resource_id("vl") == "vl"
+    assert _normalize_resource_id("VL") == "vl"
+
+
+def test_vl_probe_uses_post_chat_completions(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class FakeResponse:
+        status_code = 200
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            calls.append(("post", url))
+            assert json["model"] == "Qwen/Qwen3-VL-8B-Instruct"
+            return FakeResponse()
+
+        def get(self, url, headers=None):
+            calls.append(("get", url))
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.resource_health_service.httpx.Client", FakeClient)
+    ok, msg = _probe_vl(
+        "https://api.siliconflow.cn/v1",
+        "sk-test",
+        "Qwen/Qwen3-VL-8B-Instruct",
+    )
+    assert ok is True
+    assert msg == "连接正常"
+    assert calls == [
+        ("post", "https://api.siliconflow.cn/v1/chat/completions"),
+    ]
+
+
+def test_vl_health_via_check(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            return FakeResponse()
+
+        def get(self, url, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.resource_health_service.httpx.Client", FakeClient)
+    cfg = {
+        "vl_base_url": "https://api.siliconflow.cn/v1",
+        "vl_api_key": "sk-test",
+        "vl_model": "Qwen/Qwen3-VL-8B-Instruct",
+    }
+    out = check_single_resource_health("vision", cfg, None)
+    assert out["configured"] is True
+    assert out["healthy"] is True
 
 
 def test_embedding_probe_uses_post_embeddings(monkeypatch):
@@ -132,6 +229,11 @@ def test_embedding_health_via_check(monkeypatch):
             "rerank_api_key": "",
             "rerank_model": "",
             "paddleocr_url": "",
+            "paddleocr_base_url": "",
+            "paddleocr_model": "",
+            "vl_base_url": "",
+            "vl_model": "",
+            "vl_api_key": "",
             "speech_service_url": "",
             "pdf2zh_api_url": "",
         },

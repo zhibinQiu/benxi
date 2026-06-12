@@ -370,40 +370,16 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
         raise
 
 
-def _sync_ragflow_map(
+def _existing_ragflow_doc_map(
     db: Session,
     user: User,
     docs: list[Document],
-    *,
-    sync_knowflow: bool,
 ) -> dict[str, str]:
-    """返回已有索引映射，并为每份文档提交后台索引任务（不阻塞对比流程）。"""
-    if not sync_knowflow:
-        return {}
-    from app.domains.knowledge.gateway import knowledge
-    from app.services.document_service import resolve_current_version
-    from app.services.knowledge_sync_job_service import enqueue_document_knowledge_index
+    """返回文档库已有索引映射；对比功能不触发建索引（文档须先入文档库并完成解析）。"""
     from app.services.ragflow_sync_service import allowed_ragflow_doc_map
 
     ids = [str(d.id) for d in docs]
-    ragflow_map = allowed_ragflow_doc_map(db, user, ids)
-    if not knowledge.enabled():
-        return ragflow_map
-
-    for doc in docs:
-        version_id = None
-        version = resolve_current_version(db, doc)
-        if version:
-            version_id = version.id
-        enqueue_document_knowledge_index(
-            db,
-            user_id=user.id,
-            document_id=doc.id,
-            version_id=version_id,
-            force=True,
-            document_title=doc.title,
-        )
-    return ragflow_map
+    return allowed_ragflow_doc_map(db, user, ids)
 
 
 def _retrieve_compare_hits(
@@ -451,7 +427,7 @@ def search_compare_documents(
     *,
     right_document_id: uuid.UUID,
     query: str,
-    sync_knowflow: bool = True,
+    sync_knowflow: bool = True,  # noqa: ARG001 — 保留兼容，对比检索不触发建索引
     field_match: bool = True,
     limit: int = 20,
 ) -> list[dict]:
@@ -461,7 +437,7 @@ def search_compare_documents(
     )
     parsed = load_parsed_documents(db, docs)
     scope_ids = [str(right_document_id)]
-    ragflow_map = _sync_ragflow_map(db, user, docs, sync_knowflow=sync_knowflow)
+    ragflow_map = _existing_ragflow_doc_map(db, user, docs)
     hits = _retrieve_compare_hits(
         db,
         user,
@@ -512,13 +488,11 @@ def search_compare_job(
         scope_ids = [right_id] if right_id else [str(d) for d in doc_ids]
 
     ragflow_map = (job.payload or {}).get("knowflow", {}).get("ragflow_doc_map") or {}
-    if not ragflow_map and job.options.get("sync_knowflow", True):
+    if not ragflow_map:
         sync_docs = docs
         if scope == "right" and right_id:
             sync_docs = [d for d in docs if str(d.id) == right_id] or docs
-        ragflow_map = _sync_ragflow_map(
-            db, user, sync_docs, sync_knowflow=True
-        )
+        ragflow_map = _existing_ragflow_doc_map(db, user, sync_docs)
 
     hits = _retrieve_compare_hits(
         db,
@@ -572,13 +546,13 @@ def create_compare_job(
     *,
     left_document_id: uuid.UUID,
     right_document_id: uuid.UUID,
-    sync_knowflow: bool = True,
+    sync_knowflow: bool = True,  # noqa: ARG001 — 保留兼容，对比不触发建索引
 ) -> CompareJob:
     if left_document_id == right_document_id:
         from app.core.exceptions import bad_request
 
         raise bad_request("左右两侧请选择不同文档")
-    validate_compare_documents(
+    docs = validate_compare_documents(
         db, user, [left_document_id, right_document_id], min_count=2, max_count=2
     )
     job = CompareJob(
@@ -589,24 +563,19 @@ def create_compare_job(
         options={
             "left_document_id": str(left_document_id),
             "right_document_id": str(right_document_id),
-            "sync_knowflow": sync_knowflow,
         },
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
-    if sync_knowflow:
-        docs = validate_compare_documents(
-            db, user, [left_document_id, right_document_id], min_count=2, max_count=2
-        )
-        ragflow_map = _sync_ragflow_map(db, user, docs, sync_knowflow=True)
-        payload = dict(job.payload or {})
-        knowflow = payload.get("knowflow") or {}
-        knowflow["ragflow_doc_map"] = ragflow_map
-        payload["knowflow"] = knowflow
-        job.payload = payload
-        db.commit()
+    ragflow_map = _existing_ragflow_doc_map(db, user, docs)
+    payload = dict(job.payload or {})
+    knowflow = payload.get("knowflow") or {}
+    knowflow["ragflow_doc_map"] = ragflow_map
+    payload["knowflow"] = knowflow
+    job.payload = payload
+    db.commit()
 
     return job
 

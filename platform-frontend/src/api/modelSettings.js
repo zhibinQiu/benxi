@@ -16,9 +16,10 @@ export async function fetchResourceHealth() {
   return api("/api/v1/admin/model-settings/health");
 }
 
-export async function testResourceHealth(resourceId, draft = {}) {
+export async function testResourceHealth(resourceId, draft = {}, timeoutMs) {
   return api("/api/v1/admin/model-settings/health/test", {
     method: "POST",
     body: JSON.stringify({ resource_id: resourceId, draft }),
+    ...(timeoutMs != null ? { timeoutMs } : {}),
   });
 }

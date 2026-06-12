@@ -54,7 +54,20 @@ export function consumeSkipInnerRouteMotion() {
   return consumeSkipAfterLoginMotion();
 }
 
-/** 主布局内页过渡：功能页 PPT 推入，侧栏一级菜单切换轻交叉淡入 */
+/** 侧栏一级菜单路由 — 切换时不做过场，避免与指示条动画叠加发「卡」 */
+export const SIDEBAR_PRIMARY_ROUTES = new Set([
+  "ai-home",
+  "system-functions",
+  "documents",
+  "knowledge-subscriptions",
+  "admin-users",
+  "admin-departments",
+  "admin-monitor",
+  "admin-model-settings",
+  "admin-docs",
+]);
+
+/** 主布局内页过渡：功能页 PPT 推入，侧栏一级菜单切换无过场 */
 export function resolveInnerRouteTransition(from, to) {
   if (!from?.name) return "route-push";
   if (from.name === "login") return "route-instant";
@@ -64,6 +77,13 @@ export function resolveInnerRouteTransition(from, to) {
   const toSub = SUBSYSTEM_PAGE_ROUTES.has(toName);
   const fromSub = SUBSYSTEM_PAGE_ROUTES.has(fromName);
   const fromHub = FEATURE_HUB_ROUTES.has(fromName);
+
+  if (
+    SIDEBAR_PRIMARY_ROUTES.has(fromName) &&
+    SIDEBAR_PRIMARY_ROUTES.has(toName)
+  ) {
+    return "route-instant";
+  }
 
   if (toSub && (fromHub || fromSub)) return "route-push";
   if (fromSub && !toSub) return "route-push";

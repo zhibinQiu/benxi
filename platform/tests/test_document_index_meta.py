@@ -5,10 +5,15 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.integrations.ragflow_client import RagflowError
-from app.services.document_index_service import _merge_enriched_row
+from app.services.document_index_service import (
+    _apply_cached_ragflow_meta,
+    _meta_from_version_link,
+    _merge_enriched_row,
+)
 from app.services.knowledge_library_service import (
     _apply_row_ragflow_meta,
     fetch_ragflow_doc_meta_map,
+    summarize_ragflow_progress_msg,
 )
 
 
@@ -28,6 +33,105 @@ def test_merge_enriched_row_marks_stale_when_synced_but_missing_in_ragflow():
         {"_meta_fetch_ok": True, "parse_status": None},
     )
     assert meta["parse_status"] == "索引失效"
+
+
+def test_summarize_ragflow_progress_msg_extracts_model_disabled():
+    msg = (
+        "08:56:40 Page(1~13): Basic parsing complete. Proceeding with figure enhancement...\n"
+        "08:56:26 Page(1~4): [ERROR]Error code: 403 - "
+        "{'code': 30003, 'message': 'Model disabled.', 'data': None}"
+    )
+    out = summarize_ragflow_progress_msg(msg)
+    assert out is not None
+    assert "Model disabled" in out or "403" in out
+
+
+def test_transient_run_not_cached(monkeypatch):
+    from app.services.knowledge_library_service import (
+        _read_ragflow_meta_cache,
+        _write_ragflow_meta_cache,
+    )
+
+    writes: list[dict] = []
+    monkeypatch.setattr(
+        "app.core.platform_cache.cache_set_json",
+        lambda key, val, ttl: writes.append(val),
+    )
+    monkeypatch.setattr(
+        "app.core.platform_cache.cache_get_json",
+        lambda key, ttl: writes[-1] if writes else None,
+    )
+    _write_ragflow_meta_cache("ds-1", "doc-a", {"run": "1", "progress": 0.5})
+    assert writes == []
+    _write_ragflow_meta_cache("ds-1", "doc-b", {"run": "4", "progress": -1})
+    assert len(writes) == 1
+    assert _read_ragflow_meta_cache("ds-1", "doc-b") is not None
+    monkeypatch.setattr(
+        "app.core.platform_cache.cache_get_json",
+        lambda key, ttl: {"run": "1", "progress": 0.2},
+    )
+    assert _read_ragflow_meta_cache("ds-1", "doc-c") is None
+
+
+def test_fetch_meta_overlays_mysql_run_when_cache_stale(monkeypatch):
+    from app.services.knowledge_library_service import (
+        _write_ragflow_meta_cache,
+        fetch_ragflow_doc_meta_map,
+        _apply_row_ragflow_meta,
+    )
+
+    monkeypatch.setattr(
+        "app.services.knowledge_library_service._knowflow_ready",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.knowledge_library_service._rag_clients_for_user",
+        lambda _db, _user: [],
+    )
+    _write_ragflow_meta_cache(
+        "ds-1",
+        "doc-a",
+        {"run": "1", "progress": 0.5, "chunk_num": 0},
+    )
+    monkeypatch.setattr(
+        "app.services.knowledge_library_service._fetch_document_run_map_from_mysql",
+        lambda _db, ids: {
+            "doc-a": {
+                "run": "4",
+                "progress": -1.0,
+                "progress_msg": "Visual model failed",
+                "chunk_num": 11,
+            }
+        },
+    )
+    db = MagicMock()
+    user = MagicMock()
+    meta, ok = fetch_ragflow_doc_meta_map(db, user, "ds-1", ["doc-a"])
+    row = {}
+    _apply_row_ragflow_meta(row, meta.get("doc-a"), fetch_ok=ok)
+    assert row["parse_status"] == "解析失败"
+
+
+def test_apply_cached_ragflow_meta_overrides_unparsed_db_label(monkeypatch):
+    from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
+
+    link = RagflowDocumentVersionLink(
+        ragflow_document_id="rag-doc-1",
+        dataset_id="ds-1",
+        version_no=1,
+    )
+    meta = _meta_from_version_link(link)
+    assert meta["parse_status"] == "未解析"
+
+    def fake_read(_ds, _rid):
+        return {"run": "4", "progress_msg": "Visual model failed", "chunk_num": 0}
+
+    monkeypatch.setattr(
+        "app.services.knowledge_library_service._read_ragflow_meta_cache",
+        fake_read,
+    )
+    _apply_cached_ragflow_meta(meta, "ds-1", "rag-doc-1")
+    assert meta["parse_status"] == "解析失败"
 
 
 def test_apply_row_ragflow_meta_maps_failed_run():
@@ -60,6 +164,9 @@ def test_fetch_ragflow_doc_meta_map_falls_back_to_chunk_list():
     with patch(
         "app.services.knowledge_library_service._knowflow_ready",
         return_value=True,
+    ), patch(
+        "app.services.knowledge_library_service._read_ragflow_meta_cache",
+        return_value=None,
     ), patch(
         "app.services.knowledge_library_service._rag_clients_for_user",
         return_value=[rag],

@@ -45,6 +45,8 @@ def _seed_permissions_and_roles(db: Session) -> None:
             perm = Permission(code=code, name=name)
             db.add(perm)
             db.flush()
+        elif perm.name != name:
+            perm.name = name
         code_to_perm[code] = perm
 
     for role_code, spec in DEFAULT_ROLES.items():

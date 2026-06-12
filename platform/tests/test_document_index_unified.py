@@ -19,12 +19,31 @@ def test_is_index_ready_meta_requires_synced_and_done_status():
     assert not is_index_ready_meta({"knowledge_synced": False, "parse_status": "已索引"})
 
 
-def test_apply_db_ready_override_wins_over_stale_live():
+def test_apply_db_ready_override_skips_active_parsing():
     did = str(uuid.uuid4())
     meta_by_doc = {
         did: {
             "knowledge_synced": True,
             "parse_status": "解析中",
+        }
+    }
+    db_only = {
+        did: {
+            "knowledge_synced": True,
+            "parse_status": "已索引",
+            "indexed_version_id": "ver-1",
+        }
+    }
+    _apply_db_ready_override(meta_by_doc, db_only)
+    assert meta_by_doc[did]["parse_status"] == "解析中"
+
+
+def test_apply_db_ready_override_wins_over_stale_live():
+    did = str(uuid.uuid4())
+    meta_by_doc = {
+        did: {
+            "knowledge_synced": True,
+            "parse_status": None,
         }
     }
     db_only = {

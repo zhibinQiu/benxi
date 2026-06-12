@@ -14,6 +14,7 @@ from app.database import SessionLocal, engine
 from app.schema_migrate import (
     backfill_user_phones,
     is_platform_schema_current,
+    migrate_legacy_platform_branding,
     run_all_schema_migrations,
 )
 
@@ -35,6 +36,7 @@ def resolve_bootstrap_mode(db_engine: Engine | None = None) -> BootstrapMode:
 
 def run_seed_bootstrap(db: Session) -> None:
     backfill_user_phones(db)
+    migrate_legacy_platform_branding(db)
     bootstrap_db(db)
     enforce_unique_bootstrap_admin(db)
     db.commit()

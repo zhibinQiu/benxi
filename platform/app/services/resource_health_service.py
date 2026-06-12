@@ -11,6 +11,8 @@ from app.config import get_settings
 from app.integrations.paddleocr_client import paddleocr_request_url
 from app.integrations.ragflow_client import RagflowClient
 from app.services.model_settings_service import (
+    _endpoint_fields,
+    _legacy_paddleocr_base_url,
     get_effective_model_config,
     get_searxng_timeout_seconds,
     mask_secret,
@@ -19,11 +21,15 @@ from app.services.model_settings_service import (
 
 PROBE_TIMEOUT = 5.0
 
+RESOURCE_ID_ALIASES = {"vision": "vl"}
+
 TESTABLE_RESOURCE_IDS = frozenset(
     {
         "platform_api",
         "llm",
         "embedding",
+        "vl",
+        "vision",
         "rerank",
         "paddleocr",
         "speech",
@@ -114,6 +120,51 @@ def _probe_openai_compatible(base_url: str, api_key: str) -> tuple[bool, str]:
         return False, f"无法连接：{exc}"
 
 
+def _normalize_resource_id(resource_id: str) -> str:
+    rid = (resource_id or "").strip().lower()
+    return RESOURCE_ID_ALIASES.get(rid, rid)
+
+
+def _probe_vl(base_url: str, api_key: str, model_name: str) -> tuple[bool, str]:
+    """VL 走 POST /chat/completions，验证指定模型可用（非仅 GET /models）。"""
+    root = _normalize_openai_base(base_url)
+    if not root:
+        return False, "未填写 API 地址"
+    model = (model_name or "").strip()
+    if not model:
+        return False, "未填写模型名称"
+    url = f"{root}/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "health-check"}],
+        "max_tokens": 5,
+    }
+    try:
+        with httpx.Client(timeout=PROBE_TIMEOUT) as client:
+            r = client.post(url, headers=_auth_headers(api_key), json=payload)
+            if r.status_code == 200:
+                return True, "连接正常"
+            if r.status_code in (401, 403):
+                detail = ""
+                try:
+                    body = r.json()
+                    err = body.get("error")
+                    if isinstance(err, dict):
+                        detail = str(err.get("message") or "")
+                    detail = detail or str(body.get("message") or "")
+                except ValueError:
+                    detail = r.text[:160]
+                lowered = detail.lower()
+                if "disabled" in lowered or "30003" in detail:
+                    return False, "模型已停用或未开通（Model disabled）"
+                return False, f"Key 无效或无权 (HTTP {r.status_code})"
+            if r.status_code == 404:
+                return False, "模型不存在或服务路径错误 (HTTP 404)"
+            return False, f"HTTP {r.status_code}"
+    except httpx.HTTPError as exc:
+        return False, f"无法连接：{exc}"
+
+
 def _probe_embedding(base_url: str, api_key: str, model_name: str) -> tuple[bool, str]:
     """嵌入模型走 POST /embeddings；多数供应商不支持 GET /models。"""
     root = _normalize_openai_base(base_url)
@@ -173,8 +224,23 @@ def _probe_http_get(url: str, *, accept_405: bool = True) -> tuple[bool, str]:
         return False, f"无法连接：{exc}"
 
 
-def _probe_paddleocr(service_url: str) -> tuple[bool, str]:
-    endpoint = paddleocr_request_url(service_url)
+def _is_openai_compatible_inference_base(base_url: str) -> bool:
+    """OpenAI 兼容推理根地址（在线 API / 本地 vLLM 等）；非自建 layout-parsing OCR。"""
+    base = (base_url or "").strip().lower().rstrip("/")
+    if not base:
+        return False
+    if base.endswith("/ocr") or "layout-parsing" in base:
+        return False
+    return base.endswith("/v1") or "/v1/" in base
+
+
+def _probe_paddleocr(service_url: str, *, api_key: str = "") -> tuple[bool, str]:
+    base = (service_url or "").strip().rstrip("/")
+    if not base:
+        return False, "未填写服务地址"
+    if _is_openai_compatible_inference_base(base):
+        return _probe_openai_compatible(base, api_key)
+    endpoint = paddleocr_request_url(base)
     if not endpoint:
         return False, "未填写服务地址"
     return _probe_http_get(endpoint)
@@ -348,7 +414,7 @@ def _probe_searxng_url(searxng_url: str, *, timeout: float | None = None) -> tup
 def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> dict[str, Any]:
     """按给定配置探测单项资源（用于保存前测试）。"""
     _ = db
-    rid = (resource_id or "").strip()
+    rid = _normalize_resource_id(resource_id)
     if rid not in TESTABLE_RESOURCE_IDS:
         raise ValueError(f"unsupported resource_id: {resource_id}")
 
@@ -389,6 +455,19 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
         )
         return _item(configured=True, healthy=healthy, message=msg)
 
+    if rid == "vl":
+        vl_base, vl_key, vl_model = _endpoint_fields(cfg, "vl")
+        if not _endpoint_configured(
+            base_url=vl_base, api_key=vl_key, model_name=vl_model
+        ):
+            return _item(
+                configured=False,
+                healthy=False,
+                message="请填写 VL 模型 API 地址、模型名与 Key",
+            )
+        healthy, msg = _probe_vl(vl_base, vl_key, vl_model)
+        return _item(configured=True, healthy=healthy, message=msg)
+
     if rid == "rerank":
         rerank_url = (cfg.get("rerank_base_url") or "").strip()
         rerank_model = (cfg.get("rerank_model") or "").strip()
@@ -403,10 +482,14 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
         return _item(configured=True, healthy=healthy, message=msg)
 
     if rid == "paddleocr":
-        paddle_url = (cfg.get("paddleocr_url") or "").strip()
-        if not paddle_url:
-            return _item(configured=False, healthy=False, message="未填写服务地址")
-        healthy, msg = _probe_paddleocr(paddle_url)
+        paddle_base, paddle_key, paddle_model = _endpoint_fields(cfg, "paddleocr")
+        if not paddle_base:
+            paddle_base = _legacy_paddleocr_base_url(cfg)
+        if not paddle_base:
+            return _item(configured=False, healthy=False, message="未填写 API 地址")
+        if not paddle_model and not _is_openai_compatible_inference_base(paddle_base):
+            return _item(configured=False, healthy=False, message="请填写模型名称")
+        healthy, msg = _probe_paddleocr(paddle_base, api_key=paddle_key)
         return _item(configured=True, healthy=healthy, message=msg)
 
     if rid == "speech":
@@ -470,5 +553,8 @@ def check_resource_health(db) -> dict[str, dict[str, Any]]:
     cfg = get_effective_model_config(db)
     out: dict[str, dict[str, Any]] = {}
     for rid in TESTABLE_RESOURCE_IDS:
-        out[rid] = check_single_resource_health(rid, cfg, db)
+        canonical = _normalize_resource_id(rid)
+        if canonical in out:
+            continue
+        out[canonical] = check_single_resource_health(canonical, cfg, db)
     return out

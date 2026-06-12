@@ -21,6 +21,7 @@ export * from "./wechatMp.js";
 export * from "./feedSubscriptions.js";
 export * from "./subscriptions.js";
 export * from "./speech.js";
+export * from "./ocr.js";
 export * from "./chat.js";
 
 export { formatApiDetail, getApiBase, getToken } from "./http.js";

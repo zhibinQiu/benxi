@@ -10,6 +10,8 @@ from app.integrations.paddleocr_client import (
     recognize_bytes,
 )
 from app.services.model_settings_service import (
+    _endpoint_fields,
+    get_llm_credentials,
     get_model_settings,
     get_pdf2zh_api_url,
     get_platform_api_base_url,
@@ -18,6 +20,43 @@ from app.services.model_settings_service import (
     get_speech_service_url,
     mask_secret,
 )
+
+
+def test_get_llm_credentials_reads_merged_config(monkeypatch):
+    settings = Settings(
+        platform_llm_base_url="http://local-llm/v1",
+        platform_llm_api_key="sk-platform",
+        platform_llm_model="local-chat",
+        deepseek_api_key="",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_model="deepseek-chat",
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.fetch_template_embedding_defaults",
+        lambda _db: {},
+    )
+    base, key, model = get_llm_credentials(None)
+    assert base == "http://local-llm/v1"
+    assert key == "sk-platform"
+    assert model == "local-chat"
+
+
+def test_endpoint_fields_reads_explicit_config():
+    merged = {
+        "vl_base_url": "https://api.siliconflow.cn/v1",
+        "vl_api_key": "sk-test1234567890",
+        "vl_model": "Qwen/Qwen3-VL-8B-Instruct",
+        "embedding_base_url": "https://api.siliconflow.cn/v1",
+        "embedding_api_key": "other-key",
+    }
+    base, key, model = _endpoint_fields(merged, "vl")
+    assert base == "https://api.siliconflow.cn/v1"
+    assert key == "sk-test1234567890"
+    assert model == "Qwen/Qwen3-VL-8B-Instruct"
 
 
 def test_mask_secret():
@@ -232,7 +271,7 @@ def test_searxng_health_test_supported(client, admin_token, monkeypatch):
 
     assert "searxng" in TESTABLE_RESOURCE_IDS
 
-    def fake_probe(url: str) -> tuple[bool, str]:
+    def fake_probe(url: str, timeout: float | None = None) -> tuple[bool, str]:
         assert url == "http://searxng.test"
         return True, "连接正常"
 
@@ -246,6 +285,37 @@ def test_searxng_health_test_supported(client, admin_token, monkeypatch):
         json={
             "resource_id": "searxng",
             "draft": {"searxng_url": "http://searxng.test"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["healthy"] is True
+
+
+def test_vl_health_test_supported(client, admin_token, monkeypatch):
+    from app.services.resource_health_service import TESTABLE_RESOURCE_IDS
+
+    assert "vl" in TESTABLE_RESOURCE_IDS
+
+    def fake_probe(base_url: str, api_key: str, model_name: str) -> tuple[bool, str]:
+        assert base_url == "https://api.siliconflow.cn/v1"
+        assert api_key == "sk-test"
+        assert model_name == "Qwen/Qwen3-VL-8B-Instruct"
+        return True, "连接正常"
+
+    monkeypatch.setattr(
+        "app.services.resource_health_service._probe_vl",
+        fake_probe,
+    )
+    r = client.post(
+        "/api/v1/admin/model-settings/health/test",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "resource_id": "vl",
+            "draft": {
+                "vl_base_url": "https://api.siliconflow.cn/v1",
+                "vl_api_key": "sk-test",
+                "vl_model": "Qwen/Qwen3-VL-8B-Instruct",
+            },
         },
     )
     assert r.status_code == 200, r.text

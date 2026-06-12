@@ -41,6 +41,22 @@ class KnowflowSyncError(Exception):
         super().__init__(message)
 
 
+def _read_version_object_bytes(document: Document, version: DocumentVersion) -> bytes:
+    from app.core.user_messages import STORAGE_FILE_MISSING
+    from app.storage.object_store import StorageObjectNotFoundError, get_object_store
+
+    store = get_object_store()
+    try:
+        return store.get_object_bytes(version.file_key)
+    except StorageObjectNotFoundError as e:
+        logger.warning(
+            "KnowFlow 同步失败：MinIO 对象不存在 doc=%s key=%s",
+            document.id,
+            e.file_key,
+        )
+        raise KnowflowSyncError(STORAGE_FILE_MISSING) from e
+
+
 def _sync_context_for_document(
     db: Session, actor: User, document: Document
 ) -> tuple[User, object]:
@@ -399,6 +415,58 @@ def detach_platform_document_knowflow(
     return targets
 
 
+def detach_platform_version_knowflow(
+    db: Session,
+    document: Document,
+    version: DocumentVersion,
+    *,
+    sync_remote: bool = True,
+) -> list[KnowflowDeleteTarget]:
+    """删除版本级 KnowFlow 映射；无其他引用时清理远端 RAGFlow 文档与切片。"""
+    from app.services.ragflow_version_link_service import (
+        bind_document_to_indexed_version,
+        count_ragflow_document_references,
+        get_version_link_by_version_id,
+        resolve_latest_indexed_version,
+    )
+
+    targets: list[KnowflowDeleteTarget] = []
+    seen: set[tuple[str, str]] = set()
+    vl = get_version_link_by_version_id(db, version.id)
+    rag_id = (vl.ragflow_document_id if vl else "") or ""
+    ds_id = (vl.dataset_id if vl else "") or ""
+
+    doc_link = _get_link(db, document.id)
+    if doc_link and rag_id and doc_link.ragflow_document_id == rag_id:
+        latest = resolve_latest_indexed_version(db, document)
+        if latest and latest.id != version.id:
+            new_vl = get_version_link_by_version_id(db, latest.id)
+            if new_vl:
+                bind_document_to_indexed_version(
+                    db,
+                    document=document,
+                    version=latest,
+                    version_link=new_vl,
+                )
+            else:
+                db.delete(doc_link)
+        else:
+            db.delete(doc_link)
+
+    if vl:
+        if ds_id and rag_id:
+            if not count_ragflow_document_references(
+                db, rag_id, exclude_document_id=document.id
+            ):
+                _append_knowflow_target(targets, seen, ds_id, rag_id)
+        db.delete(vl)
+
+    db.flush()
+    if sync_remote and targets:
+        _execute_knowflow_deletes(db, document, targets)
+    return targets
+
+
 def remove_document_mirror(
     db: Session, document: Document, user: User, *, commit_client: bool = True
 ) -> bool:
@@ -477,10 +545,7 @@ def sync_shared_document_mirror(
     if not version:
         return None
 
-    from app.storage.object_store import get_object_store
-
-    store = get_object_store()
-    content = store.get_object_bytes(version.file_key)
+    content = _read_version_object_bytes(document, version)
     from app.integrations.html_document_export import normalize_file_for_knowflow_upload
 
     upload_name, upload_content, upload_mime = normalize_file_for_knowflow_upload(
@@ -756,10 +821,7 @@ def sync_document_to_knowflow(
             except Exception as e:
                 logger.debug("强制重同步前删除旧索引跳过: %s", e)
 
-    from app.storage.object_store import get_object_store
-
-    store = get_object_store()
-    content = store.get_object_bytes(version.file_key)
+    content = _read_version_object_bytes(document, version)
     from app.integrations.html_document_export import normalize_file_for_knowflow_upload
 
     upload_name, upload_content, upload_mime = normalize_file_for_knowflow_upload(

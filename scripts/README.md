@@ -26,6 +26,9 @@
 | `scripts/setup-remote-dev-env.sh` | remote-dev 用 `.env` |
 | `scripts/setup-stack-env.sh` | 合并 `platform/.env` → 根 `.env` |
 | `scripts/verify-remote-deps.sh` | 探测远程依赖端口 |
+| `scripts/migrate-postgres-to-remote.sh` | 本机 PG 数据导入远程 40002 |
+| `scripts/migrate-postgres-to-local.sh` | 远程 PG 数据导入本机 |
+| `scripts/setup-local-db-env.sh` | 切换为本机 PostgreSQL |
 | `scripts/server-deps.sh` | 远程服务器同步依赖栈 |
 | `scripts/server-add-swap.sh` | 远程服务器添加 Swap |
 

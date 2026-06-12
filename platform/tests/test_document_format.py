@@ -31,3 +31,17 @@ def test_assert_compatible_version_format():
             new_file_name="b.docx",
             new_mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
+
+
+def test_is_compareable_file():
+    from app.core.document_format import is_compareable_file
+
+    assert is_compareable_file("报告.pdf", "application/pdf")
+    assert is_compareable_file("说明.docx")
+    assert is_compareable_file("notes.txt", "text/plain")
+    assert is_compareable_file("data.csv", "text/csv")
+    assert is_compareable_file("sheet.xlsx")
+    assert is_compareable_file("page.html", "text/html")
+    assert is_compareable_file("scan.png", "image/png")
+    assert not is_compareable_file("bundle.zip")
+    assert not is_compareable_file("archive.rar")

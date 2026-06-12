@@ -27,3 +27,8 @@ def test_build_parser_config_merges_layout():
     assert parser == "smart"
     assert cfg["layout_recognize"] == "PaddleOCR"
     assert cfg["chunk_token_num"] >= 128
+
+
+def test_list_parser_options_default_layout_is_paddleocr():
+    defaults = list_parser_options()["defaults"]
+    assert defaults["layout_recognize"] == "PaddleOCR"

@@ -149,7 +149,7 @@ const routes = [
       {
         path: "system/ocr",
         name: "ocr",
-        meta: { title: "OCR 识别", fullHeight: true, featureIcon: "scan" },
+        meta: { title: "文件内容提取", fullHeight: true, featureIcon: "scan" },
         component: () => import("../views/OcrView.vue"),
       },
       {
@@ -181,6 +181,7 @@ const routes = [
         meta: {
           title: "知识检索",
           fullHeight: true,
+          flushStart: true,
           featureIcon: "search",
           backTo: "ai-home",
           perm: "feature.knowledge_search",

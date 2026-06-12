@@ -194,4 +194,4 @@ CLAUDE.md
 /data/
 /images/
 /backups/
-.env
+.envplatform/.env.local-backup-*

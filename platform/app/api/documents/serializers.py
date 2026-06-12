@@ -260,7 +260,7 @@ def list_items_with_owners(
     dept_ids = {d.dept_id for d in docs if d.dept_id}
     dept_names = batch_dept_names(db, dept_ids) if dept_ids else {}
     index_meta = (
-        enrich_document_index_meta(db, user, docs, live_ragflow=False) if user else {}
+        enrich_document_index_meta(db, user, docs, live_ragflow=True) if user else {}
     )
     out: list[DocumentListItem] = []
     for d in docs:

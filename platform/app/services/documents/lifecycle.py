@@ -45,9 +45,43 @@ def can_permanently_delete_document(db: Session, user: User, document: Document)
     return can_delete_document(db, user, document)
 
 
+def purge_version_knowledge_artifacts(
+    db: Session,
+    document: Document,
+    version: DocumentVersion,
+    *,
+    defer_knowflow: bool = True,
+) -> list:
+    """终止版本索引任务并清理 KnowFlow 产出（删除单个版本前调用）。"""
+    from app.services.knowledge_sync_job_service import stop_document_index_work
+    from app.services.ragflow_sync_service import (
+        KnowflowDeleteTarget,
+        detach_platform_version_knowflow,
+    )
+
+    stop_document_index_work(db, document.id, version_id=version.id)
+    targets: list[KnowflowDeleteTarget] = detach_platform_version_knowflow(
+        db,
+        document,
+        version,
+        sync_remote=not defer_knowflow,
+    )
+    try:
+        from app.services.knowledge_scope_tree_service import (
+            notify_knowledge_index_state_changed,
+        )
+
+        notify_knowledge_index_state_changed()
+    except Exception:
+        pass
+    return targets
+
+
 def _purge_jobs_for_document(db: Session, document_id: uuid.UUID) -> None:
     from app.models.job import Job, JobEvent
+    from app.services.knowledge_sync_job_service import stop_document_index_work
 
+    stop_document_index_work(db, document_id)
     doc_str = str(document_id)
     job_ids: set[uuid.UUID] = set(
         db.scalars(select(Job.id).where(Job.document_id == document_id)).all()

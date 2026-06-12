@@ -52,8 +52,14 @@ def get_meta() -> DataAnalysisMetaOut:
     configured = is_configured()
     hint = None
     if not configured:
-        hint = "未配置 DeepSeek API，无法生成分析代码。请在系统设置或 .env 中配置。"
-    _, _, model = resolve_credentials() if configured else (None, None, settings.deepseek_model)
+        hint = "未配置语言模型，无法生成分析代码。请在资源管理中配置 LLM。"
+    if configured:
+        _, _, model = resolve_credentials()
+    else:
+        from app.services.model_settings_service import get_llm_credentials
+
+        _, _, model = get_llm_credentials(None)
+        model = (model or "").strip() or None
     return DataAnalysisMetaOut(
         configured=configured,
         llm_model=model if configured else None,

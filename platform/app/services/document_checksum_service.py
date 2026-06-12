@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.content_checksum import compute_md5_hex, normalize_checksum
 from app.models.document import DocumentVersion
 from app.services.documents.crud import is_version_uploaded
-from app.storage.object_store import get_object_store
+from app.storage.object_store import StorageObjectNotFoundError, get_object_store
 
 
 def ensure_version_checksum(db: Session, version: DocumentVersion) -> str | None:
@@ -20,7 +20,10 @@ def ensure_version_checksum(db: Session, version: DocumentVersion) -> str | None
         return existing
     if not is_version_uploaded(version):
         return None
-    content = get_object_store().get_object_bytes(version.file_key)
+    try:
+        content = get_object_store().get_object_bytes(version.file_key)
+    except StorageObjectNotFoundError:
+        return None
     checksum = compute_md5_hex(content)
     version.checksum = checksum
     db.flush()

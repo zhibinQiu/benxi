@@ -38,6 +38,7 @@ export function useFeatureFavorites() {
     } else {
       favoriteIds.value = [...favoriteIds.value, next];
     }
+
   }
 
   return { favoriteIds, isFavorite, toggleFavorite };

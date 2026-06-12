@@ -18,7 +18,7 @@ def test_md_uses_naive_plain_text():
 def test_pdf_uses_default_parser():
     parser, layout = infer_parser_for_upload_file("report.pdf", "application/pdf")
     assert parser == "naive"
-    assert layout == "DeepDOC"
+    assert layout == "PaddleOCR"
 
 
 def test_ppt_uses_presentation_parser():
@@ -27,13 +27,13 @@ def test_ppt_uses_presentation_parser():
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
     assert parser == "presentation"
-    assert layout == "DeepDOC"
+    assert layout == "PaddleOCR"
 
 
 def test_png_uses_picture_parser():
     parser, layout = infer_parser_for_upload_file("scan.png", "image/png")
     assert parser == "picture"
-    assert layout == "DeepDOC"
+    assert layout == "PaddleOCR"
 
 
 def test_xlsx_uses_table_parser():

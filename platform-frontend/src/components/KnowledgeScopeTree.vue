@@ -11,6 +11,7 @@ import {
   RefreshOutline } from "@vicons/ionicons5";
 import IconAction from "./IconAction.vue";
 import { fetchKnowledgeScopeTree } from "../api/knowledge.js";
+import { useI18n } from "../composables/useI18n.js";
 import {
   isDocumentIndexReady,
   knowledgeIndexTagProps,
@@ -29,6 +30,7 @@ const emit = defineEmits(["selection-change"]);
 
 const route = useRoute();
 const router = useRouter();
+const { t, scopeLabel } = useI18n();
 
 const loading = ref(true);
 const refreshing = ref(false);
@@ -69,8 +71,21 @@ function openDocumentDetail(documentId, event) {
   );
 }
 
+function displayNodeLabel(option) {
+  if (option.virtual_folder_id === "__uncategorized__") {
+    return t("knowledgeSearch.tree.uncategorized");
+  }
+  if (option.virtual_folder_id === "__shared__") {
+    return t("scope.shared");
+  }
+  if (option.type === "scope" && option.scope) {
+    return scopeLabel(option.scope);
+  }
+  return option.label;
+}
+
 function renderScopeIndexTag(node) {
-  const summary = knowledgeScopeIndexSummary(node);
+  const summary = knowledgeScopeIndexSummary(node, t);
   if (!summary) return null;
   return h(
     NTag,
@@ -86,7 +101,7 @@ function renderScopeIndexTag(node) {
 
 function renderLabel({ option }) {
   if (option.type === "document") {
-    const tag = knowledgeIndexTagProps(option, { forSearch: true });
+    const tag = knowledgeIndexTagProps(option, { forSearch: true, t });
     const title = option.label;
     return h("span", { class: "knowledge-scope-tree__node-label" }, [
       h(
@@ -114,7 +129,14 @@ function renderLabel({ option }) {
 
   if (option.type === "folder" || option.type === "library" || option.type === "scope") {
     return h("span", { class: "knowledge-scope-tree__node-label" }, [
-      h("span", { class: "knowledge-scope-tree__node-title", title: option.label }, option.label),
+      h(
+        "span",
+        {
+          class: "knowledge-scope-tree__node-title",
+          title: displayNodeLabel(option),
+        },
+        displayNodeLabel(option)
+      ),
       renderScopeIndexTag(option),
     ]);
   }
@@ -242,7 +264,7 @@ function buildSelectionPayload(docNodes) {
   if (totalSelected === 1) {
     label = docNodes[0].label;
   } else if (totalSelected > 1) {
-    label = `${totalSelected} 份文档`;
+    label = t("knowledgeSearch.selectedMulti", { count: totalSelected });
   }
 
   return {
@@ -346,10 +368,10 @@ defineExpose({ reload: reloadTree });
   <div class="knowledge-scope-tree">
     <div class="knowledge-scope-tree__head">
       <div class="knowledge-scope-tree__title-row">
-        <h2 class="knowledge-scope-tree__title">文档库</h2>
+        <h2 class="knowledge-scope-tree__title">{{ t("knowledgeSearch.tree.title") }}</h2>
         <IconAction
-          label="刷新"
-          tooltip="同步最新文档与索引状态"
+          :label="t('knowledgeSearch.tree.refresh')"
+          :tooltip="t('knowledgeSearch.tree.refreshTooltip')"
           :icon="RefreshOutline"
           :disabled="loading || refreshing"
           @click="refreshTree"
@@ -359,7 +381,7 @@ defineExpose({ reload: reloadTree });
         v-model:value="filter"
         size="small"
         clearable
-        placeholder="筛选文档或知识库"
+        :placeholder="t('knowledgeSearch.tree.filterPlaceholder')"
         class="knowledge-scope-tree__filter"
       />
     </div>
@@ -384,11 +406,11 @@ defineExpose({ reload: reloadTree });
       <n-empty
         v-else-if="!loading"
         size="small"
-        description="暂无可检索的知识库，请先在文档中心同步文档"
+        :description="t('knowledgeSearch.tree.empty')"
       />
     </n-spin>
 
-    <p v-if="refreshing" class="knowledge-scope-tree__hint">正在刷新文档树…</p>
+    <p v-if="refreshing" class="knowledge-scope-tree__hint">{{ t("knowledgeSearch.tree.refreshing") }}</p>
   </div>
 </template>
 

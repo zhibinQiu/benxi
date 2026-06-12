@@ -880,6 +880,32 @@ def mark_platform_schema_current(engine: Engine) -> None:
         )
 
 
+_LEGACY_PLATFORM_APP_TITLES = frozenset(
+    {
+        "绿叶AI办公系统",
+        "绿叶 AI 办公系统",
+        "AI原型演示系统",
+        "智碳平台",
+    }
+)
+_CURRENT_PLATFORM_APP_TITLE = "AI办公系统"
+
+
+def migrate_legacy_platform_branding(db) -> None:
+    """将库内旧版前台标题统一为当前产品名。"""
+    from app.models.platform_model_settings import SINGLETON_ID, PlatformModelSettings
+
+    row = db.get(PlatformModelSettings, SINGLETON_ID)
+    if not row or not isinstance(row.payload, dict):
+        return
+    title = str(row.payload.get("frontend_app_title") or "").strip()
+    if title not in _LEGACY_PLATFORM_APP_TITLES:
+        return
+    payload = dict(row.payload)
+    payload["frontend_app_title"] = _CURRENT_PLATFORM_APP_TITLE
+    row.payload = payload
+
+
 def run_all_schema_migrations(engine: Engine) -> None:
     """全量 DDL/数据补丁（与 app.main 启动顺序一致）。"""
     from app.database import Base

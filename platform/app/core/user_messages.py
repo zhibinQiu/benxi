@@ -12,6 +12,10 @@ KNOWLEDGE_NOT_READY = "知识服务未就绪，请稍后重试。"
 KNOWLEDGE_SYNC_FAILED = "同步到知识库失败，请稍后重试或联系管理员。"
 KNOWLEDGE_SYNC_NO_KB = "无法创建或访问目标知识库，请先打开「切片管理」完成知识库开户。"
 KNOWLEDGE_SYNC_NO_FILE = "文档尚未上传文件，无法同步知识库。"
+STORAGE_FILE_MISSING = (
+    "文档原始文件在对象存储中不存在，可能已被清理或未上传成功。"
+    "请重新上传文件后再试；若仅需更换解析方式且知识库中仍有副本，可取消「全量同步」后重试。"
+)
 KNOWLEDGE_SYNC_UPLOAD_FAILED = "文档上传到知识库失败，请确认知识服务正常运行。"
 KNOWLEDGE_SYNC_OK = "已同步到知识库。"
 

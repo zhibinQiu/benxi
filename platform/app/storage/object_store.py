@@ -9,6 +9,14 @@ from botocore.exceptions import ClientError
 from app.config import get_settings
 
 
+class StorageObjectNotFoundError(FileNotFoundError):
+    """对象存储中不存在指定 key。"""
+
+    def __init__(self, file_key: str) -> None:
+        self.file_key = file_key
+        super().__init__(file_key)
+
+
 class ObjectStore:
     def __init__(self) -> None:
         settings = get_settings()
@@ -72,8 +80,25 @@ class ObjectStore:
     def delete_object(self, file_key: str) -> None:
         self._client.delete_object(Bucket=self.bucket, Key=file_key)
 
+    def head_object_size(self, file_key: str) -> int | None:
+        """返回对象字节数；不存在时返回 None。"""
+        try:
+            resp = self._client.head_object(Bucket=self.bucket, Key=file_key)
+            return int(resp.get("ContentLength") or 0)
+        except ClientError as e:
+            code = (e.response.get("Error") or {}).get("Code", "")
+            if code in ("NoSuchKey", "404", "NotFound"):
+                return None
+            raise
+
     def get_object_bytes(self, file_key: str) -> bytes:
-        resp = self._client.get_object(Bucket=self.bucket, Key=file_key)
+        try:
+            resp = self._client.get_object(Bucket=self.bucket, Key=file_key)
+        except ClientError as e:
+            code = (e.response.get("Error") or {}).get("Code", "")
+            if code in ("NoSuchKey", "404", "NotFound"):
+                raise StorageObjectNotFoundError(file_key) from e
+            raise
         try:
             return resp["Body"].read()
         finally:

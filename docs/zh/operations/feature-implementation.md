@@ -221,7 +221,7 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 | doc_compare | 文档对比 |
 | knowledge_search | 知识检索（原生） |
 | rag_qa | RAG 问答（若启用） |
-| ocr | OCR 识别 |
+| ocr | 文本内容提取 |
 | speech_to_text | 语音转写 |
 | assist_writing | 辅助写作 |
 | data_analysis | 数据分析 Notebook |

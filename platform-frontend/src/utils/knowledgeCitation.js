@@ -47,9 +47,26 @@ export async function fetchKnowledgeCitationImageBlob(imageId) {
   return fetchCitationBlob(path);
 }
 
-export function citationPageLabel(citation) {
+export function formatCitationSnippet(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  if (/<em\b|<\/em>/i.test(text)) {
+    return text.replace(/\n/g, "<br/>");
+  }
+  let html = text
+    .replace(/<mark\b[^>]*>(.*?)<\/mark>/gi, "<em>$1</em>")
+    .replace(
+      /<font\b[^>]*\bclass=['"]highlight['"][^>]*>(.*?)<\/font>/gi,
+      "<em>$1</em>"
+    )
+    .replace(/\*\*(.+?)\*\*/g, "<em>$1</em>");
+  return html.replace(/\n/g, "<br/>");
+}
+
+export function citationPageLabel(citation, t) {
   const page = citation?.anchor_json?.page;
   if (page == null || page === "") return "";
+  if (t) return t("knowledgeSearch.citations.page", { page });
   return `第 ${page} 页`;
 }
 

@@ -1,6 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { encodeReturnLocation } from "../utils/navigationReturn";
 import { NCard, NGrid, NGi, NTag, NIcon } from "naive-ui";
@@ -24,15 +24,15 @@ import {
   StarOutline,
   Star } from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
-import { fetchSystemFeatures } from "../api/client";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
+import { useSystemFeatures } from "../composables/useSystemFeatures";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
 const { isFavorite, toggleFavorite } = useFeatureFavorites();
-const features = ref([]);
-const loading = ref(true);
+const { features, loading, loaded, loadSystemFeatures } = useSystemFeatures();
+const showLoading = computed(() => loading.value || !loaded.value);
 
 const iconMap = {
   language: LanguageOutline,
@@ -59,7 +59,7 @@ const categoryMeta = {
     icon: DocumentTextOutline},
   tools: {
     title: "工具",
-    hint: "会议助手、OCR、数据分析、在线 AI 工具等",
+    hint: "会议助手、文件内容提取、数据分析、在线 AI 工具等",
     icon: GridOutline},
   carbon: {
     title: "双碳",
@@ -94,17 +94,15 @@ const groupedCategories = computed(() => {
 
 onMounted(async () => {
   try {
-    features.value = await fetchSystemFeatures();
+    await loadSystemFeatures();
   } catch (e) {
     ui.error(e.message);
-  } finally {
-    loading.value = false;
   }
 });
 
-function onFavoriteClick(event, featureId) {
+function onFavoriteClick(event, feature) {
   event.stopPropagation();
-  toggleFavorite(featureId);
+  toggleFavorite(feature.id, feature);
 }
 
 function openFeature(f) {
@@ -140,7 +138,7 @@ function openFeature(f) {
       />
     </header>
 
-    <template v-if="!loading">
+    <template v-if="!showLoading">
       <section v-for="cat in groupedCategories" :key="cat.id" class="category-block">
         <header class="category-block__head">
           <div class="category-block__icon">
@@ -191,7 +189,7 @@ function openFeature(f) {
                   :class="{ 'feature-card__star--active': isFavorite(f.id) }"
                   :aria-label="isFavorite(f.id) ? '取消收藏' : '收藏到侧栏'"
                   :aria-pressed="isFavorite(f.id)"
-                  @click="onFavoriteClick($event, f.id)"
+                  @click="onFavoriteClick($event, f)"
                 >
                   <n-icon :size="15">
                     <component :is="isFavorite(f.id) ? Star : StarOutline" />

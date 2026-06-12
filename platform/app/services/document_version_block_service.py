@@ -58,15 +58,18 @@ def parse_version_document(
 
     ocr_url = ""
     if need_ocr and db is not None:
-        from app.services.model_settings_service import get_paddleocr_url
+        from app.services.model_settings_service import get_paddleocr_credentials
 
-        ocr_url = (get_paddleocr_url(db) or "").strip()
+        ocr_url, ocr_key, ocr_model = get_paddleocr_credentials(db)
+        ocr_url = (ocr_url or "").strip()
 
     if need_ocr and ocr_url:
         try:
             ocr = recognize_bytes(
                 data,
                 service_url=ocr_url,
+                api_key=ocr_key,
+                model_name=ocr_model,
                 file_name=version.file_name,
                 mime_type=version.mime_type or "application/octet-stream",
             )
@@ -105,7 +108,7 @@ def parse_version_document(
                 exc_info=True,
             )
             if not parsed.full_text:
-                parsed.warning = (parsed.warning or "") + " OCR 识别失败"
+                parsed.warning = (parsed.warning or "") + " 文件内容提取失败"
 
     return parsed
 

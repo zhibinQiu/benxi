@@ -291,6 +291,9 @@ cmd_restore() {
   warn "将覆盖 ${DATA_ROOT} 中部分数据，10 秒内 Ctrl+C 取消"
   sleep 3
   if [[ -f "${dest}/postgres.sql.gz" ]]; then
+    if [[ ! -f "${dest}/minio.tar.gz" ]]; then
+      warn "备份含 PostgreSQL 但缺少 minio.tar.gz，恢复后文档元数据将与对象存储不一致"
+    fi
     info "恢复 PostgreSQL"
     gzip -dc "${dest}/postgres.sql.gz" | compose_cmd exec -T postgres psql -U "${POSTGRES_USER:-platform}" -d "${POSTGRES_DB:-platform}"
   fi

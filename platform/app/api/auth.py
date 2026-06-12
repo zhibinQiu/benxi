@@ -183,6 +183,25 @@ def _me_response(db: Session, user: User) -> MeResponse:
     )
 
 
+@router.post("/logout", response_model=ApiResponse[dict])
+def logout(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    request: Request,
+) -> ApiResponse[dict]:
+    """退出登录：仅记审计，不递增 token_version，不影响后台索引/解析任务。"""
+    write_audit(
+        db,
+        user_id=user.id,
+        action="auth.logout",
+        resource_type="user",
+        resource_id=str(user.id),
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+    return ApiResponse(data={"ok": True})
+
+
 @router.get("/me", response_model=ApiResponse[MeResponse])
 def me(
     user: Annotated[User, Depends(get_current_user)],

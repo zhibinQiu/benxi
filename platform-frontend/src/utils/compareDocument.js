@@ -1,5 +1,7 @@
 /** 文档对比页纯函数与常量（无 Vue 依赖） */
 
+import { PREVIEW_KIND, resolveDocumentPreviewKind } from "./documentPreview.js";
+
 export const MIN_COMPARE_COLS = 2;
 export const MAX_CROSS_COLS = 4;
 export const MAX_VERSION_COLS = 12;
@@ -51,7 +53,51 @@ export function formatTimelineDate(value) {
 }
 
 export function isPdfFileName(name) {
-  return String(name || "").toLowerCase().endsWith(".pdf");
+  return resolveDocumentPreviewKind(name) === PREVIEW_KIND.PDF;
+}
+
+export function comparePreviewKind(fileName, mimeType = "") {
+  return resolveDocumentPreviewKind(fileName, mimeType);
+}
+
+export function usesOriginalFilePreview(kind) {
+  return (
+    kind === PREVIEW_KIND.PDF ||
+    kind === PREVIEW_KIND.IMAGE ||
+    kind === PREVIEW_KIND.HTML
+  );
+}
+
+/** 从差异列表提取当前页 PDF 高亮框（需 block diff 含 bbox） */
+export function buildPdfDiffHighlights(diffItems, side, page, activeDiffId = null) {
+  if (!side || side === "none" || !Array.isArray(diffItems)) return [];
+  const pageNo = Number(page) > 0 ? Number(page) : 1;
+  const highlights = [];
+  for (const d of diffItems) {
+    let diffType = null;
+    if (d.diff_type === "delete" && side === "baseline") diffType = "delete";
+    else if (d.diff_type === "add" && side === "target") diffType = "add";
+    else if (d.diff_type === "modify") diffType = "modify";
+    else continue;
+
+    for (const block of diffAnchorBlocks(d, side)) {
+      if ((block.page || 1) !== pageNo) continue;
+      if (!Array.isArray(block.bbox) || block.bbox.length < 4) continue;
+      highlights.push({
+        id: d.id,
+        bbox: block.bbox.map(Number),
+        diffType,
+        active: d.id === activeDiffId,
+      });
+    }
+  }
+  return highlights;
+}
+
+export function diffCaptionForSide(d, side) {
+  if (!d || !side || side === "none") return "";
+  if (side === "baseline") return (d.text_left || d.text_right || "").trim();
+  return (d.text_right || d.text_left || "").trim();
 }
 
 export function pdfSrcWithPage(base, page) {

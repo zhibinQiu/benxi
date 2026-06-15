@@ -1,6 +1,6 @@
 # 快速开始
 
-绿叶 AI 办公系统（版本见根目录 `VERSION`）。完整说明见 [运维部署指南](../../运维部署指南.md) 与 [脚本说明](../../scripts/README.md)。
+AI 办公系统（版本见根目录 `VERSION`）。完整说明见 [运维部署指南](../../运维部署指南.md) 与 [脚本说明](../../scripts/README.md)。
 
 ## 开发方式（二选一）
 
@@ -19,6 +19,13 @@ bash scripts/verify-remote-deps.sh
 |------|------|
 | Web | http://127.0.0.1:40005/ai/ |
 | API | http://127.0.0.1:8000 |
+
+**经 frp 给他人访问本机 dev**：
+
+```bash
+# 见 deploy/frp/frpc.toml.example（无 token）
+# http://<服务器IP>:40010/ai/
+```
 
 ### 全 Docker 热重载
 
@@ -42,7 +49,7 @@ cp platform/.env.example platform/.env
 ./dev.sh --help
 ```
 
-默认管理员见 `platform/.env` 中 `BOOTSTRAP_ADMIN_PHONE` / `BOOTSTRAP_ADMIN_PASSWORD`。
+默认管理员：**账号 `admin`，密码 `admin123`**（可在 `platform/.env` 中通过 `BOOTSTRAP_ADMIN_PHONE` / `BOOTSTRAP_ADMIN_PASSWORD` 修改）。
 
 ## 生产部署
 

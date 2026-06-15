@@ -554,7 +554,14 @@ def summarize_ragflow_progress_msg(msg: str | None, *, max_len: int = 500) -> st
         or "Model disabled" in ln
     ]
     if error_lines:
-        detail = error_lines[-1]
+        informative = [
+            ln
+            for ln in error_lines
+            if "embedding model" in ln.lower()
+            or "fail to bind" in ln.lower()
+            or "embd" in ln.lower()
+        ]
+        detail = informative[-1] if informative else error_lines[-1]
         if "Model disabled" in detail or (
             "403" in detail and "Error code" in detail
         ):
@@ -563,6 +570,21 @@ def summarize_ragflow_progress_msg(msg: str | None, *, max_len: int = 500) -> st
                 "模型已停用或未开通（Model disabled）。"
                 "请在「资源管理」配置视觉模型（IMAGE2TEXT）并保存同步，"
                 "或在 KnowFlow 模型配置中更换可用的视觉模型。"
+            )[:max_len]
+        if "embedding model" in detail.lower() or "fail to bind" in detail.lower():
+            return (
+                "向量嵌入模型未绑定或不可用（Fail to bind embedding model）。"
+                "请在「资源管理 → 模型配置」保存 Embedding 模型并同步到 KnowFlow；"
+                "若已配置仍失败，请确认 KnowFlow/RAGFlow 容器可访问 Embedding API（如 api.siliconflow.cn）。"
+                "然后在文档详情 → 知识索引中重试。"
+            )[:max_len]
+        if detail.strip().endswith("Not Found") and any(
+            "fail to bind" in ln.lower() for ln in error_lines
+        ):
+            return (
+                "向量嵌入 API 返回 404（Not Found），多为 KnowFlow 内 api_base 配置不兼容"
+                "或解析容器无法访问外网 Embedding 服务。"
+                "请在「资源管理 → 模型配置」重新保存并同步，或检查服务器出站网络。"
             )[:max_len]
         return detail[:max_len]
     tail = "\n".join(lines[-3:])
@@ -1053,7 +1075,14 @@ def execute_document_reindex(
     if not version:
         raise bad_request("未找到可索引的文档版本")
 
-    from app.services.knowledge_parser_service import build_parser_config
+    from app.services.knowledge_parser_service import build_parser_config, normalize_parser_id
+
+    if normalize_parser_id(parser_id) == "pageindex":
+        from app.services.pageindex_service import execute_pageindex_reindex
+
+        return execute_pageindex_reindex(
+            db, user, document_id, version_id=version.id
+        )
 
     parser, parser_config = build_parser_config(parser_id, layout_recognize)
 
@@ -1065,7 +1094,32 @@ def execute_document_reindex(
             db, version_link.dataset_id
         )
 
-    if resync or not version_link or dataset_missing:
+    has_knowflow_copy = bool(
+        version_link and (version_link.ragflow_document_id or "").strip()
+    )
+    md_indexed = bool(
+        version_link
+        and (version_link.file_name or "").lower().endswith(".md")
+    )
+    from app.integrations.html_document_export import knowflow_copy_lacks_page_snapshots
+
+    block_derived = bool(
+        version_link
+        and knowflow_copy_lacks_page_snapshots(
+            version.file_name or "",
+            version.mime_type or "",
+            version_link.file_name or "",
+        )
+    )
+    # 已有 KnowFlow 副本时默认只切换解析器；Markdown 分块索引无页级截图，需重传原文件
+    needs_full_sync = (
+        resync
+        or md_indexed
+        or block_derived
+        or not version_link
+        or (dataset_missing and not has_knowflow_copy)
+    )
+    if needs_full_sync:
         from app.services.ragflow_sync_service import KnowflowSyncError
 
         try:

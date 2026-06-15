@@ -1663,6 +1663,7 @@ async function scrollToDiffItem(d) {
 
 /* 版本对比 · 2 版：左两栏文档 + 右侧提问 */
 .compare-workspace-body--version-pair {
+  --compare-aside-width: min(260px, 22vw);
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--compare-aside-width);
   gap: var(--compare-body-gap);

@@ -254,6 +254,7 @@ class RagflowClient:
         file_name: str,
         content: bytes,
         meta_fields: dict | None = None,
+        skip_auto_parse: bool = False,
     ) -> dict:
         if self._use_session_api:
             files = {"file": (file_name, content)}
@@ -266,7 +267,7 @@ class RagflowClient:
             )
             doc = _extract_uploaded_doc(data)
             doc_id = doc.get("id") or doc.get("doc_id")
-            if doc_id:
+            if doc_id and not skip_auto_parse:
                 self.parse_documents(dataset_id, [str(doc_id)])
             return doc
         files = {"file": (file_name, content)}
@@ -283,7 +284,7 @@ class RagflowClient:
                 f"/api/v1/datasets/{dataset_id}/documents/{doc_id}",
                 json={"meta_fields": meta_fields},
             )
-        if doc_id:
+        if doc_id and not skip_auto_parse:
             self.parse_documents(dataset_id, [str(doc_id)])
         return doc
 
@@ -439,6 +440,24 @@ class RagflowClient:
         )
 
     @staticmethod
+    def synthesize_chunk_image_id(
+        chunk: dict | None,
+        *,
+        dataset_id: str | None = None,
+    ) -> str | None:
+        """KnowFlow 常见格式 ``{kb_id}-{chunk_id}``（检索未带 image_id 时的兜底）。"""
+        if not isinstance(chunk, dict):
+            return None
+        extracted = RagflowClient.extract_chunk_image_id(chunk)
+        if extracted:
+            return extracted
+        cid = str(chunk.get("chunk_id") or chunk.get("id") or "").strip()
+        ds_id = (dataset_id or chunk.get("kb_id") or chunk.get("dataset_id") or "").strip()
+        if ds_id and cid:
+            return f"{ds_id}-{cid}"
+        return None
+
+    @staticmethod
     def extract_chunk_image_id(chunk: dict | None) -> str | None:
         """KnowFlow/RAGFlow 切片截图 ID（检索返回 image_id 或 img_id）。"""
         if not isinstance(chunk, dict):
@@ -454,16 +473,35 @@ class RagflowClient:
         anchor: dict[str, Any] = {"kind": "chunk"}
         if not positions:
             return anchor
-        item = positions[0] if isinstance(positions, list) else positions
+        item = positions[0] if isinstance(positions, list) and positions else positions
         if isinstance(item, str) and item.strip():
             try:
                 item = json.loads(item)
             except json.JSONDecodeError:
                 return anchor
+        if isinstance(item, dict):
+            page = item.get("page") or item.get("page_num") or item.get("page_number")
+            bbox = item.get("bbox") or item.get("box")
+            if not bbox and all(k in item for k in ("left", "right", "top", "bottom")):
+                bbox = [item["left"], item["right"], item["top"], item["bottom"]]
+            if page is not None:
+                try:
+                    anchor["page"] = int(page)
+                except (TypeError, ValueError):
+                    pass
+            if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                try:
+                    anchor["bbox"] = [float(x) for x in bbox[:4]]
+                    anchor["bbox_format"] = "ragflow_lrtb"
+                except (TypeError, ValueError):
+                    pass
+            if anchor.get("bbox"):
+                return anchor
         if isinstance(item, (list, tuple)) and len(item) >= 5:
             try:
                 anchor["page"] = int(item[0])
                 anchor["bbox"] = [float(x) for x in item[1:5]]
+                anchor["bbox_format"] = "ragflow_lrtb"
             except (TypeError, ValueError):
                 pass
         return anchor
@@ -492,7 +530,16 @@ class RagflowClient:
                 last_error = RagflowError(f"引用截图 HTTP {r.status_code}")
                 continue
             content_type = (r.headers.get("content-type") or "image/jpeg").split(";")[0]
-            return r.content, content_type
+            body = r.content or b""
+            if content_type.startswith("application/json") or (
+                body[:1] == b"{" and b'"code"' in body[:256]
+            ):
+                last_error = RagflowError(f"引用截图不可用: {body[:240]!r}")
+                continue
+            if not content_type.startswith("image/"):
+                last_error = RagflowError(f"引用截图类型异常: {content_type}")
+                continue
+            return body, content_type
         raise RagflowError(f"无法获取引用截图: {last_error}") from last_error
 
     def resolve_chunk_image_id(
@@ -518,25 +565,38 @@ class RagflowClient:
                 page_size=page_size,
             )
             for ch in chunks:
-                ch_id = str(ch.get("id") or ch.get("chunk_id") or "").strip()
+                ch_id = str(ch.get("chunk_id") or ch.get("id") or "").strip()
                 if ch_id == cid:
-                    return self.extract_chunk_image_id(ch)
+                    return self.synthesize_chunk_image_id(ch, dataset_id=ds_id)
             if page * page_size >= total:
                 break
             page += 1
         return None
 
-    def _chunk_to_retrieval_hit(self, ch: dict) -> dict:
+    def _chunk_to_retrieval_hit(
+        self, ch: dict, *, question: str | None = None
+    ) -> dict:
+        from app.integrations.citation_snippet import format_citation_snippet
+
         content = ch.get("content") or ch.get("content_with_weight") or ""
+        highlight_raw = (ch.get("highlight") or "").strip()
         doc_id = ch.get("document_id") or ch.get("doc_id")
         meta = ch.get("meta_fields") or {}
         anchor = self._parse_chunk_positions(ch.get("positions"))
         page = anchor.get("page") or ch.get("page_num") or ch.get("page")
         if page is not None:
             anchor["page"] = page
+        display_snippet = format_citation_snippet(
+            highlight=highlight_raw or None,
+            content=content,
+            question=question,
+        )
+        real_image_id = self.extract_chunk_image_id(ch)
+        has_bbox = isinstance(anchor.get("bbox"), list) and len(anchor["bbox"]) >= 4
         return {
-            "snippet": content,
-            "highlight": ch.get("highlight") or content,
+            "snippet": display_snippet,
+            "highlight": highlight_raw or content,
+            "content": content,
             "score": ch.get("similarity") or ch.get("score") or 0,
             "term_similarity": ch.get("term_similarity"),
             "vector_similarity": ch.get("vector_similarity"),
@@ -544,15 +604,22 @@ class RagflowClient:
             "ragflow_document_id": doc_id,
             "chunk_id": ch.get("id") or ch.get("chunk_id"),
             "dataset_id": ch.get("kb_id") or ch.get("dataset_id"),
-            "image_id": self.extract_chunk_image_id(ch),
+            "image_id": real_image_id,
+            "preview_available": bool(real_image_id or has_bbox),
             "anchor_json": anchor,
             "source": "knowflow",
         }
 
-    def _retrieval_chunks_to_hits(self, chunks: Any) -> list[dict]:
+    def _retrieval_chunks_to_hits(
+        self, chunks: Any, *, question: str | None = None
+    ) -> list[dict]:
         if not isinstance(chunks, list):
             return []
-        return [self._chunk_to_retrieval_hit(ch) for ch in chunks if isinstance(ch, dict)]
+        return [
+            self._chunk_to_retrieval_hit(ch, question=question)
+            for ch in chunks
+            if isinstance(ch, dict)
+        ]
 
     def _retrieval_via_session(
         self,
@@ -562,6 +629,7 @@ class RagflowClient:
         document_ids: list[str] | None,
         top_k: int,
         keyword: bool,
+        highlight: bool,
         vector_similarity_weight: float,
         similarity_threshold: float,
     ) -> list[dict]:
@@ -576,6 +644,7 @@ class RagflowClient:
                 "kb_id": kb_id,
                 "top_k": top_k,
                 "keyword": keyword,
+                "highlight": highlight,
                 "similarity_threshold": similarity_threshold,
                 "vector_similarity_weight": vector_similarity_weight,
             }
@@ -586,7 +655,7 @@ class RagflowClient:
                 chunks = data.get("chunks")
             else:
                 chunks = data
-            hits.extend(self._retrieval_chunks_to_hits(chunks))
+            hits.extend(self._retrieval_chunks_to_hits(chunks, question=question))
         hits.sort(key=lambda h: h.get("score") or 0, reverse=True)
         return hits[:top_k]
 
@@ -609,6 +678,7 @@ class RagflowClient:
                 document_ids=document_ids,
                 top_k=top_k,
                 keyword=keyword,
+                highlight=highlight,
                 vector_similarity_weight=vector_similarity_weight,
                 similarity_threshold=similarity_threshold,
             )
@@ -628,4 +698,4 @@ class RagflowClient:
         if not data:
             return []
         chunks = data.get("chunks") if isinstance(data, dict) else data
-        return self._retrieval_chunks_to_hits(chunks)
+        return self._retrieval_chunks_to_hits(chunks, question=question)

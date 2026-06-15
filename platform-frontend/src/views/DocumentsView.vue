@@ -46,31 +46,34 @@ import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { usePageHeader } from "../composables/usePageHeader";
 import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
+import { useDocumentLibrary } from "../composables/useDocumentLibrary.js";
 import {
   ORG_SCOPES,
   LIBRARY_FOLDER_ORDER } from "../constants/documentScope";
 import {
   DOCUMENT_UPLOAD_MAX_FILES,
-  applyUploadLimitsFromLibrary,
   formatDocumentFormatLabel,
   getDocumentUploadMaxMb,
   titleFromFileName,
   validateUploadFiles } from "../constants/documentUpload";
 import {
+  canBatchSelectDocument,
+  canDeleteDocument,
+  canModifyDocument,
+} from "../utils/documentCaps.js";
+import {
   clearDocumentsViewCache,
   readDocumentsKbFoldersCache,
-  readDocumentsLibraryCache,
   readDocumentsListCache,
   writeDocumentsKbFoldersCache,
-  writeDocumentsLibraryCache,
   writeDocumentsListCache } from "../utils/documentsViewCache.js";
 import { renderIconAction, renderIconActionGroup } from "../utils/tableIconActions";
 import { renderKnowledgeIndexTag } from "../utils/knowledgeIndex.js";
+import { notifyKnowledgeScopeTreeStale } from "../utils/knowledgeScopeRefresh.js";
 import {
   createDocument,
   createKbFolder,
   deleteKbFolder,
-  fetchDocumentLibrary,
   fetchDocuments,
   fetchKbFolders,
   fetchMySharedDocuments,
@@ -84,9 +87,10 @@ import {
 const route = useRoute();
 const { isSystemAdmin, user } = useAuth();
 const router = useRouter();
-const { t, scopeLabel, locale } = useI18n();
+const { t, scopeLabel, locale, docStatusLabel, docLevelLabel } = useI18n();
 const ui = usePlatformUi();
 const { setHeaderTitle, clearHeaderTitle } = usePageHeader();
+const { loadDocumentLibrary, invalidateDocumentLibrary } = useDocumentLibrary();
 
 const loading = ref(false);
 const keyword = ref("");
@@ -117,6 +121,9 @@ const teams = ref([]);
 /** 忽略过期的 load / loadKbFolders 结果，避免切换分级时串数据 */
 let kbFoldersLoadSeq = 0;
 let documentsLoadSeq = 0;
+/** openKbFolder 已主动 load 时，跳过 route watch 的重复请求 */
+let skipNextRouteLoad = false;
+const prefetchingFolderKeys = new Set();
 
 const orgUnits = computed(() => {
   if (activeScope.value === "company") return companies.value;
@@ -253,16 +260,6 @@ function sortKbFoldersForDisplay(items) {
     .map(({ item }) => item);
 }
 
-function docStatusLabel(key) {
-  const label = t(`documents.status.${key}`);
-  return label === `documents.status.${key}` ? key : label;
-}
-
-function docLevelLabel(key) {
-  const label = t(`documents.level.${key}`);
-  return label === `documents.level.${key}` ? key : label;
-}
-
 const isMainView = computed(() => libraryView.value === "main");
 const isMySharesView = computed(() => libraryView.value === "my-shares");
 const isSearchMode = computed(
@@ -362,7 +359,7 @@ const selectedRows = computed(() =>
 );
 
 const deletableSelectedRows = computed(() =>
-  selectedRows.value.filter((row) => row.can_modify || row.can_delete)
+  selectedRows.value.filter((row) => canDeleteDocument(row))
 );
 
 const canBatchMove = computed(
@@ -370,7 +367,7 @@ const canBatchMove = computed(
     showBatchDocActions.value &&
     canShowMoveInList.value &&
     selectedRows.value.length > 0 &&
-    selectedRows.value.every((row) => row.can_modify || row.can_edit)
+    selectedRows.value.every((row) => canModifyDocument(row))
 );
 
 const canBatchDelete = computed(
@@ -397,7 +394,7 @@ const columns = computed(() => {
   if (showBatchDocActions.value) {
     base.push({
       type: "selection",
-      disabled: (row) => !(row.can_modify || row.can_edit || row.can_delete)});
+      disabled: (row) => !canBatchSelectDocument(row)});
   }
   base.push({ title: t("documents.columns.title"), key: "title", ellipsis: { tooltip: true } });
   base.push({
@@ -569,8 +566,16 @@ async function handleBatchDelete() {
         ui.success("documents.messages.deletedBatch", { count });
       }
       checkedRowKeys.value = [];
-      await loadKbFolders({ force: true });
-      await load({ force: true });
+      const deletedIds = new Set(res.deleted || []);
+      if (deletedIds.size) {
+        items.value = items.value.filter((row) => !deletedIds.has(row.id));
+        total.value = Math.max(0, total.value - deletedIds.size);
+        clearDocumentsViewCache();
+        invalidateDocumentLibrary();
+        notifyKnowledgeScopeTreeStale();
+      }
+      void loadKbFolders({ force: true });
+      void load({ force: true, background: true });
     }});
 }
 
@@ -643,17 +648,8 @@ async function syncLegacySharedScopeRoute() {
 }
 
 async function loadFolders({ force = false } = {}) {
-  if (!force) {
-    const cached = readDocumentsLibraryCache();
-    if (cached) {
-      applyLibraryData(cached);
-      await syncLegacySharedScopeRoute();
-      return;
-    }
-  }
   try {
-    const lib = await fetchDocumentLibrary();
-    writeDocumentsLibraryCache(lib);
+    const lib = await loadDocumentLibrary({ force });
     applyLibraryData(lib);
     await syncLegacySharedScopeRoute();
   } catch (e) {
@@ -668,7 +664,7 @@ async function loadFolders({ force = false } = {}) {
 }
 
 function applyLibraryData(lib) {
-  applyUploadLimitsFromLibrary(lib);
+  if (!lib) return;
   folders.value = normalizeFolders(lib.folders);
   companies.value = lib.companies || [];
   departments.value = lib.departments || [];
@@ -712,6 +708,7 @@ async function loadKbFolders({ force = false } = {}) {
       kbFolders.value = sortKbFoldersForDisplay(cached.items || []);
       kbCanManageFolders.value = !!cached.can_manage_folders;
       kbFoldersLoading.value = false;
+      void loadKbFolders({ force: true });
       return;
     }
   }
@@ -735,35 +732,92 @@ async function loadKbFolders({ force = false } = {}) {
   }
 }
 
-function buildListCacheKey() {
+function buildListCacheKey({ folderKey = activeKbFolderKey.value, pageNum = page.value } = {}) {
   if (isSearchMode.value) {
-    return `search:${appliedSearch.value.trim()}:${page.value}:${pageSize.value}`;
+    return `search:${appliedSearch.value.trim()}:${pageNum}:${pageSize.value}`;
   }
   if (isMySharesView.value) {
-    return `my-shares:${page.value}:${pageSize.value}`;
+    return `my-shares:${pageNum}:${pageSize.value}`;
   }
-  if (isSharedScopeTab.value || isSharedFolderView.value) {
-    return `shared:${page.value}:${pageSize.value}`;
+  if (isSharedScopeTab.value || folderKey === VIRTUAL_SHARED) {
+    return `shared:${pageNum}:${pageSize.value}`;
   }
-  if (usesKbFolders.value && !activeKbFolderKey.value) {
+  if (usesKbFolders.value && !folderKey) {
     return "folder-list";
   }
   const parts = [
     activeScope.value,
     activeDeptId.value || "",
     activeOwnerId.value || "",
-    activeKbFolderKey.value || "",
-    page.value,
+    folderKey || "",
+    pageNum,
     pageSize.value,
     keyword.value.trim() || "",
   ];
   return parts.join(":");
 }
 
+function buildFolderDocParams(folderKey, pageNum = 1) {
+  const docParams = {
+    page: pageNum,
+    page_size: pageSize.value,
+    keyword: keyword.value.trim() || undefined,
+    scope: activeScope.value,
+  };
+  if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
+    docParams.dept_id = activeDeptId.value;
+  }
+  const ownerId = personalOwnerParam();
+  if (ownerId) docParams.owner_id = ownerId;
+  if (folderKey === VIRTUAL_UNCATEGORIZED) {
+    docParams.uncategorized = true;
+  } else {
+    docParams.folder_id = folderKey;
+  }
+  return docParams;
+}
+
+async function prefetchFolderDocuments(folder) {
+  if (!usesKbFolders.value || isSearchMode.value) return;
+  const key = folder.virtual_id || (folder.id ? String(folder.id) : null);
+  if (!key) return;
+  const cacheKey = buildListCacheKey({ folderKey: key, pageNum: 1 });
+  if (readDocumentsListCache(cacheKey) || prefetchingFolderKeys.has(cacheKey)) return;
+  prefetchingFolderKeys.add(cacheKey);
+  try {
+    const data =
+      key === VIRTUAL_SHARED
+        ? await fetchDocuments({ page: 1, page_size: pageSize.value, scope: "shared" })
+        : await fetchDocuments(buildFolderDocParams(key, 1));
+    writeDocumentsListCache(cacheKey, data);
+  } catch {
+    /* 预取失败不影响交互 */
+  } finally {
+    prefetchingFolderKeys.delete(cacheKey);
+  }
+}
+
+function applyCachedListForActiveFolder() {
+  const listCacheKey = buildListCacheKey();
+  const cached = readDocumentsListCache(listCacheKey);
+  if (cached) {
+    items.value = cached.items || [];
+    total.value = cached.total ?? 0;
+    loading.value = false;
+    return true;
+  }
+  items.value = [];
+  total.value = 0;
+  loading.value = true;
+  return false;
+}
+
 async function refreshDocumentsView() {
   if (refreshing.value) return;
   refreshing.value = true;
+  invalidateDocumentLibrary();
   clearDocumentsViewCache();
+  notifyKnowledgeScopeTreeStale();
   try {
     await Promise.all([
       loadFolders({ force: true }),
@@ -844,18 +898,7 @@ async function load({ force = false, background = false } = {}) {
     } else if (isSharedScopeTab.value || isSharedFolderView.value) {
       data = await fetchDocuments({ ...params, scope: "shared" });
     } else if (usesKbFolders.value && activeKbFolderKey.value) {
-      const docParams = { ...params, scope: activeScope.value };
-      if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
-        docParams.dept_id = activeDeptId.value;
-      }
-      const ownerId = personalOwnerParam();
-      if (ownerId) docParams.owner_id = ownerId;
-      if (activeKbFolderKey.value === VIRTUAL_UNCATEGORIZED) {
-        docParams.uncategorized = true;
-      } else {
-        docParams.folder_id = activeKbFolderKey.value;
-      }
-      data = await fetchDocuments(docParams);
+      data = await fetchDocuments(buildFolderDocParams(activeKbFolderKey.value, page.value));
     } else {
       const docParams = { ...params, scope: activeScope.value };
       if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
@@ -937,12 +980,20 @@ function openKbFolder(folder) {
   appliedSearch.value = "";
   activeKbFolderKey.value = key;
   page.value = 1;
+  checkedRowKeys.value = [];
+  applyCachedListForActiveFolder();
+  skipNextRouteLoad = true;
+  void load();
   router.replace({ name: "documents", query: buildLibraryQuery() });
 }
 
 function backToKbFolders() {
   activeKbFolderKey.value = null;
   page.value = 1;
+  items.value = [];
+  total.value = 0;
+  loading.value = false;
+  checkedRowKeys.value = [];
   const query = { ...buildLibraryQuery() };
   delete query.folder;
   router.replace({ name: "documents", query });
@@ -1245,6 +1296,7 @@ async function submitCreate() {
     createTitle.value = "";
     createDesc.value = "";
     uploadFile.value = null;
+    notifyKnowledgeScopeTreeStale();
     await loadKbFolders({ force: true });
     await load({ force: true });
     openDocumentDetail(doc.id);
@@ -1314,6 +1366,7 @@ async function submitBatchUpload() {
     }
     await loadKbFolders({ force: true });
     await load({ force: true });
+    if (success) notifyKnowledgeScopeTreeStale();
   } finally {
     batchUploading.value = false;
   }
@@ -1350,6 +1403,10 @@ watch(
   ],
   () => {
     applyRouteFromQuery();
+    if (skipNextRouteLoad) {
+      skipNextRouteLoad = false;
+      return;
+    }
     page.value = 1;
     void syncLegacySharedScopeRoute().then(() => {
       void loadKbFolders();
@@ -1506,7 +1563,8 @@ watch(
       </button>
     </div>
 
-    <div v-if="showKbFolderList" v-loading="kbFoldersLoading">
+    <Transition name="doc-view" mode="out-in">
+    <div v-if="showKbFolderList" key="folder-grid" v-loading="kbFoldersLoading">
       <n-empty
         v-if="!kbFolders.length && !canManageKbFolders"
         description="暂无文件夹"
@@ -1517,6 +1575,7 @@ watch(
           :key="folder.virtual_id || folder.id"
           class="kb-folder-explorer__cell"
           :style="{ '--folder-i': folderIdx }"
+          @mouseenter="prefetchFolderDocuments(folder)"
         >
           <n-tooltip trigger="hover" :delay="400">
             <template #trigger>
@@ -1541,7 +1600,7 @@ watch(
       </div>
     </div>
 
-    <template v-else>
+    <div v-else key="doc-list" class="documents-list-panel">
     <div v-if="showBottomBatchToolbar" class="doc-list-toolbar page-toolbar">
       <n-space align="center" :size="6">
         <IconAction
@@ -1563,7 +1622,7 @@ watch(
     <n-data-table
       :columns="columns"
       :data="items"
-      :loading="loading"
+      :loading="loading && !items.length"
       :row-key="(row) => row.id"
       :checked-row-keys="showBatchDocActions ? checkedRowKeys : undefined"
       @update:checked-row-keys="onCheckedRowKeysChange"
@@ -1573,7 +1632,8 @@ watch(
         itemCount: total,
         onUpdatePage: onPageChange}"
     />
-    </template>
+    </div>
+    </Transition>
     </n-card>
   </div>
 

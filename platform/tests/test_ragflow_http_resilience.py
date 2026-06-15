@@ -133,3 +133,23 @@ def test_hybrid_remote_dev_uses_full_db_pool():
     kw = _engine_kwargs(S())
     assert kw["pool_size"] == 20
     assert kw["max_overflow"] == 40
+    assert kw["connect_args"]["connect_timeout"] == 10
+
+
+def test_remote_dev_remote_db_respects_pool_settings():
+    from app.database import _engine_kwargs
+
+    class S:
+        remote_deps = True
+        database_url = "postgresql+psycopg2://platform:platform@172.19.134.45:40002/platform"
+        db_pool_size = 12
+        db_max_overflow = 18
+        db_pool_timeout = 30
+        db_pool_recycle = 1800
+        db_connect_timeout = 10
+        debug_sql = False
+
+    kw = _engine_kwargs(S())
+    assert kw["pool_size"] == 12
+    assert kw["max_overflow"] == 18
+    assert kw["connect_args"]["connect_timeout"] == 25

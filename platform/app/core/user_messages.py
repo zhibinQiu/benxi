@@ -12,6 +12,8 @@ KNOWLEDGE_NOT_READY = "知识服务未就绪，请稍后重试。"
 KNOWLEDGE_SYNC_FAILED = "同步到知识库失败，请稍后重试或联系管理员。"
 KNOWLEDGE_SYNC_NO_KB = "无法创建或访问目标知识库，请先打开「切片管理」完成知识库开户。"
 KNOWLEDGE_SYNC_NO_FILE = "文档尚未上传文件，无法同步知识库。"
+KNOWLEDGE_QA_DOC_UNAVAILABLE = "《{title}》暂不可检索，请确认已上传文件并完成索引。"
+DOCUMENT_COMPARE_NO_FILE = "《{title}》尚未上传文件，无法参与比对。"
 STORAGE_FILE_MISSING = (
     "文档原始文件在对象存储中不存在，可能已被清理或未上传成功。"
     "请重新上传文件后再试；若仅需更换解析方式且知识库中仍有副本，可取消「全量同步」后重试。"
@@ -29,6 +31,13 @@ def sanitize_user_message(message: str | None, *, fallback: str = "") -> str:
     lower = text.lower()
     if "password" in lower and ("match" in lower or "不匹配" in text):
         return fallback or KNOWLEDGE_SERVICE_UNAVAILABLE
+    if (
+        "nosuchkey" in lower
+        or "getobject" in lower
+        or "specified key does not exist" in lower
+        or text.startswith("docs/")
+    ):
+        return STORAGE_FILE_MISSING
     if _VENDOR_RE.search(text) or "服务器内部" in text or "Internal Server" in text:
         return fallback or KNOWLEDGE_SERVICE_UNAVAILABLE
     return text

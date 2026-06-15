@@ -100,3 +100,50 @@ def test_normalize_keeps_pdf_unchanged():
     assert name == "doc.pdf"
     assert content == raw
     assert mime == "application/pdf"
+
+
+def test_normalize_converts_plain_text_to_pdf():
+    text = ("员工体检通知正文。" * 30).encode("utf-8")
+    name, content, mime = normalize_file_for_knowflow_upload(
+        "notice.txt", text, "text/plain", title="体检通知"
+    )
+    assert name.endswith(".pdf")
+    assert mime == "application/pdf"
+    assert content.startswith(b"%PDF")
+    assert len(content) > 500
+
+
+def test_normalize_converts_docx_to_pdf(monkeypatch):
+    docx_text = "Word 文档正文内容。" * 40
+
+    class _Parsed:
+        full_text = docx_text
+
+    monkeypatch.setattr(
+        "app.integrations.text_extract.extract_text_from_bytes",
+        lambda *a, **k: _Parsed(),
+    )
+    name, content, mime = normalize_file_for_knowflow_upload(
+        "report.docx",
+        b"PK fake",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        title="报告",
+    )
+    assert name.endswith(".pdf")
+    assert mime == "application/pdf"
+    assert content.startswith(b"%PDF")
+
+
+def test_knowflow_copy_lacks_page_snapshots_for_block_pdf():
+    from app.integrations.html_document_export import knowflow_copy_lacks_page_snapshots
+
+    assert knowflow_copy_lacks_page_snapshots(
+        "report.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "report.pdf",
+    )
+    assert not knowflow_copy_lacks_page_snapshots(
+        "report.pdf",
+        "application/pdf",
+        "report.pdf",
+    )

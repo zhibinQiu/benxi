@@ -14,15 +14,11 @@ def test_schedule_post_upload_processing_starts_thread():
     user_id = uuid.uuid4()
 
     with patch(
-        "app.services.documents.post_upload.threading.Thread"
-    ) as thread_cls:
-        thread_cls.return_value = MagicMock()
+        "app.services.background_job_dispatch.dispatch_post_upload_processing"
+    ) as dispatch:
         schedule_post_upload_processing(doc_id, ver_id, user_id)
 
-    thread_cls.assert_called_once()
-    kwargs = thread_cls.call_args.kwargs
-    assert kwargs["daemon"] is True
-    assert kwargs["args"] == (doc_id, ver_id, user_id)
+    dispatch.assert_called_once_with(doc_id, ver_id, user_id)
 
 
 def test_complete_upload_does_not_sync_git(monkeypatch):

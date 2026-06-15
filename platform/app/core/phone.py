@@ -1,4 +1,4 @@
-"""登录标识：普通用户与唯一系统管理员均为 11 位手机号（管理员号见 bootstrap_admin_phone）。"""
+"""登录标识：普通用户为 11 位手机号；系统管理员账号见 bootstrap_admin_phone（默认 admin）。"""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ _PHONE_RE = re.compile(r"^1\d{10}$")
 
 
 def bootstrap_login_id() -> str:
-    """唯一系统管理员登录手机号（存于 users.phone）。"""
+    """唯一系统管理员登录账号（存于 users.phone）。"""
     raw = (get_settings().bootstrap_admin_phone or "").strip()
     if _PHONE_RE.match(raw):
         return raw
-    return raw or "15963564658"
+    return raw or "admin"
 
 
 def is_bootstrap_login_id(value: str) -> bool:

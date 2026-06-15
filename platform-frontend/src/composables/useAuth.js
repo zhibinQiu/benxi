@@ -8,11 +8,14 @@ import {
   registerUser,
   setTokens,
 } from "../api/client";
+import { isAuthSilentError } from "../utils/authError.js";
 import { resetClientSessionState } from "../utils/resetClientSessionState.js";
+import { redirectToLoginAfterLogout } from "../utils/sessionGuard.js";
 import { bumpSessionEpoch, loggingOut } from "../utils/sessionEpoch.js";
 
 const user = ref(null);
 const loading = ref(false);
+let loadUserPromise = null;
 
 export function useAuth() {
   const isLoggedIn = computed(() => !!getToken());
@@ -33,27 +36,39 @@ export function useAuth() {
     return user.value?.display_name || user.value?.username || user.value?.phone || "";
   }
 
-  async function loadUser() {
+  async function loadUser({ force = false } = {}) {
     if (!getToken()) {
       user.value = null;
+      loadUserPromise = null;
       return null;
     }
+    if (user.value && !force) return user.value;
+    if (loadUserPromise && !force) return loadUserPromise;
+
     loading.value = true;
-    try {
-      user.value = await fetchMe();
-      return user.value;
-    } catch (e) {
-      const msg = String(e?.message || "");
-      const authFailed =
-        /401|403|未授权|Unauthorized|Invalid access token|token/i.test(msg);
-      if (authFailed) {
-        clearTokens();
-        user.value = null;
+    loadUserPromise = (async () => {
+      try {
+        user.value = await fetchMe();
+        return user.value;
+      } catch (e) {
+        if (isAuthSilentError(e)) {
+          user.value = null;
+          return null;
+        }
+        const msg = String(e?.message || "");
+        const authFailed =
+          /401|403|未授权|Unauthorized|Invalid access token|token/i.test(msg);
+        if (authFailed) {
+          clearTokens();
+          user.value = null;
+        }
+        return null;
+      } finally {
+        loading.value = false;
+        loadUserPromise = null;
       }
-      return null;
-    } finally {
-      loading.value = false;
-    }
+    })();
+    return loadUserPromise;
   }
 
   async function login(account, password) {
@@ -81,6 +96,8 @@ export function useAuth() {
     resetClientSessionState();
     bumpSessionEpoch();
     user.value = null;
+    loadUserPromise = null;
+    redirectToLoginAfterLogout();
   }
 
   return {

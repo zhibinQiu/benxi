@@ -7,6 +7,7 @@ import {
   SparklesOutline,
   TimeOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
+import ChatBubbleRetry from "./ChatBubbleRetry.vue";
 import { marked } from "marked";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
@@ -113,6 +114,33 @@ function onKeydown(e) {
     e.preventDefault();
     sendMessage();
   }
+}
+
+function findUserIndexBefore(index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (messages.value[i]?.role === "user") return i;
+  }
+  return -1;
+}
+
+function canRetryMessage(index, message) {
+  if (sending.value || loadingHistory.value) return false;
+  if (message?.role !== "assistant") return false;
+  return findUserIndexBefore(index) >= 0;
+}
+
+async function retryMessage(index) {
+  const message = messages.value[index];
+  if (!message || !canRetryMessage(index, message)) return;
+
+  const userIndex = findUserIndexBefore(index);
+  if (userIndex < 0) return;
+
+  const content = (messages.value[userIndex]?.content || "").trim();
+  if (!content) return;
+
+  messages.value = messages.value.slice(0, userIndex);
+  await sendMessage(content);
 }
 
 function goToHistory() {
@@ -246,12 +274,22 @@ onMounted(() => {
             :class="m.role === 'user' ? 'assistant-msg--user' : 'assistant-msg--bot'"
           >
             <div
-              v-if="m.role === 'assistant'"
-              class="assistant-bubble assistant-bubble--bot"
-              v-html="renderMarkdown(m.content)"
-            />
-            <div v-else class="assistant-bubble assistant-bubble--user">
-              {{ m.content }}
+              class="assistant-msg-stack"
+              :class="m.role === 'user' ? 'assistant-msg-stack--user' : 'assistant-msg-stack--bot'"
+            >
+              <div
+                v-if="m.role === 'assistant'"
+                class="assistant-bubble assistant-bubble--bot"
+                v-html="renderMarkdown(m.content)"
+              />
+              <div v-else class="assistant-bubble assistant-bubble--user">
+                {{ m.content }}
+              </div>
+              <ChatBubbleRetry
+                v-if="m.role === 'assistant' && canRetryMessage(i, m)"
+                align="start"
+                @retry="retryMessage(i)"
+              />
             </div>
           </div>
           <div v-if="sending" class="assistant-msg assistant-msg--bot">
@@ -440,8 +478,23 @@ onMounted(() => {
   justify-content: flex-start;
 }
 
-.assistant-bubble {
+.assistant-msg-stack {
+  display: flex;
+  flex-direction: column;
   max-width: 92%;
+}
+
+.assistant-msg-stack--user {
+  align-items: flex-end;
+}
+
+.assistant-msg-stack--bot {
+  align-items: flex-start;
+}
+
+.assistant-bubble {
+  width: 100%;
+  max-width: 100%;
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.55;

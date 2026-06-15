@@ -46,6 +46,17 @@ def test_summarize_ragflow_progress_msg_extracts_model_disabled():
     assert "Model disabled" in out or "403" in out
 
 
+def test_summarize_ragflow_progress_msg_prefers_embedding_bind_error():
+    msg = (
+        "17:30:42 Task has been received.\n"
+        "17:30:47 Page(1~100000001): [ERROR]Fail to bind embedding model: Not Found\n"
+        "17:30:47 [ERROR][Exception]: Not Found"
+    )
+    out = summarize_ragflow_progress_msg(msg)
+    assert out is not None
+    assert "embedding" in out.lower() or "嵌入" in out
+
+
 def test_transient_run_not_cached(monkeypatch):
     from app.services.knowledge_library_service import (
         _read_ragflow_meta_cache,

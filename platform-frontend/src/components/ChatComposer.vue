@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { NIcon, NInput } from "naive-ui";
 import { ArrowUpOutline, StopOutline } from "@vicons/ionicons5";
 
@@ -9,10 +9,16 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   /** 智能体正在流式回复 */
   loading: { type: Boolean, default: false },
+  /** 流式回复时是否禁用输入（false 时可边生成边编辑下一条） */
+  disableInputWhileLoading: { type: Boolean, default: true },
   minRows: { type: Number, default: 2 },
   maxRows: { type: Number, default: 6 }});
 
 const emit = defineEmits(["update:modelValue", "send", "stop", "keydown"]);
+
+const inputDisabled = computed(
+  () => props.disabled || (props.disableInputWhileLoading && props.loading)
+);
 
 const canSend = computed(
   () => Boolean(props.modelValue?.trim()) && !props.disabled && !props.loading
@@ -27,6 +33,14 @@ const isSingleLine = computed(() => props.minRows <= 1 && props.maxRows <= 1);
 function onKeydown(e) {
   emit("keydown", e);
 }
+
+const inputRef = ref(null);
+
+function focus() {
+  inputRef.value?.focus?.();
+}
+
+defineExpose({ focus });
 </script>
 
 <template>
@@ -35,12 +49,13 @@ function onKeydown(e) {
     :class="{ 'chat-composer--generating': loading, 'chat-composer--single': isSingleLine }"
   >
     <n-input
+      ref="inputRef"
       :value="modelValue"
       class="chat-composer__input ai-chat-textarea"
       type="textarea"
       :autosize="autosize"
       :placeholder="placeholder"
-      :disabled="disabled || loading"
+      :disabled="inputDisabled"
       @update:value="emit('update:modelValue', $event)"
       @keydown="onKeydown"
     />

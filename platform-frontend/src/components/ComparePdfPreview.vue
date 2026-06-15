@@ -10,6 +10,11 @@ import {
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
+/** 双栏对比时列宽较窄，需高于布局倍率渲染以避免文字发糊 */
+const MIN_PDF_RENDER_SCALE = 2;
+const MAX_PDF_RENDER_SCALE = 4;
+const MAX_DEVICE_PIXEL_RATIO = 3;
+
 const props = defineProps({
   src: { type: String, default: "" },
   page: { type: Number, default: 1 },
@@ -18,6 +23,8 @@ const props = defineProps({
   diffSide: { type: String, default: "none" },
   activeDiffId: { type: [String, Number], default: null },
   caption: { type: String, default: "" },
+  /** width：按宽度铺满；page：整页缩放进视口（文档详情预览） */
+  fitMode: { type: String, default: "width" },
 });
 
 const canvasRef = ref(null);
@@ -136,13 +143,27 @@ async function renderPage() {
     if (token !== loadToken) return;
 
     const wrapWidth = Math.max(wrap.clientWidth - 16, 280);
+    const wrapHeight = Math.max(wrap.clientHeight - 16, 240);
     const baseViewport = page.getViewport({ scale: 1 });
-    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-    const cssScale = wrapWidth / baseViewport.width;
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
+    const scaleW = wrapWidth / baseViewport.width;
+    const scaleH = wrapHeight / baseViewport.height;
+    const cssScale =
+      props.fitMode === "page"
+        ? Math.min(scaleW, scaleH)
+        : scaleW;
     const layoutViewport = page.getViewport({ scale: cssScale });
-    const renderViewport = page.getViewport({ scale: cssScale * dpr });
+    const renderScale = Math.min(
+      Math.max(cssScale * dpr, MIN_PDF_RENDER_SCALE),
+      MAX_PDF_RENDER_SCALE
+    );
+    const renderViewport = page.getViewport({ scale: renderScale });
 
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (ctx) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+    }
     const cssWidth = Math.floor(layoutViewport.width);
     const cssHeight = Math.floor(layoutViewport.height);
     canvas.width = Math.floor(renderViewport.width);
@@ -155,7 +176,11 @@ async function renderPage() {
       renderTask.cancel();
       renderTask = null;
     }
-    renderTask = page.render({ canvasContext: ctx, viewport: renderViewport });
+    renderTask = page.render({
+      canvasContext: ctx,
+      viewport: renderViewport,
+      intent: "display",
+    });
     await renderTask.promise;
     if (token !== loadToken) return;
 
@@ -184,6 +209,7 @@ watch(
     props.diffItems,
     props.diffSide,
     props.activeDiffId,
+    props.fitMode,
   ],
   scheduleRender,
   { deep: true, immediate: true }
@@ -265,6 +291,7 @@ onBeforeUnmount(() => {
   overflow: auto;
   display: flex;
   justify-content: center;
+  align-items: center;
   padding: 8px;
   box-sizing: border-box;
 }
@@ -275,6 +302,8 @@ onBeforeUnmount(() => {
 }
 .compare-pdf-preview__canvas {
   display: block;
+  image-rendering: high-quality;
+  image-rendering: -webkit-optimize-contrast;
 }
 .pdf-diff-overlay {
   position: absolute;

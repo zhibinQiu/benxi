@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 绿叶 AI 办公系统 — 开发与运维统一入口
+# AI 办公系统 — 开发与运维统一入口
 #
 # 日常只需记住本脚本（或仓库根目录 ./dev.sh）：
 #
@@ -103,7 +103,9 @@ EOF
 dev_stop() {
   bash "$SCRIPT_DIR/stack.sh" down 2>/dev/null || true
   bash "$SCRIPT_DIR/local-dev.sh" stop 2>/dev/null || true
-  info "已停止 Docker 栈与本机 dev 进程（API / Vite / Worker）"
+  bash "$SCRIPT_DIR/dev-frpc.sh" stop 2>/dev/null || true
+  bash "$SCRIPT_DIR/dev-tunnel.sh" stop 2>/dev/null || true
+  info "已停止 Docker 栈与本机 dev 进程（API / Vite / Worker / frpc）"
 }
 
 dev_fix_local_env() {
@@ -167,6 +169,18 @@ dev_local() {
   exec bash "$SCRIPT_DIR/local-dev.sh" "$@"
 }
 
+dev_frp() {
+  case "${1:-}" in
+    install-server)
+      shift || true
+      exec bash "$SCRIPT_DIR/frp-server-install.sh" "$@"
+      ;;
+    *)
+      exec bash "$SCRIPT_DIR/dev-frpc.sh" "$@"
+      ;;
+  esac
+}
+
 usage() {
   cat <<EOF
 用法: ./dev.sh <命令> [参数]
@@ -179,6 +193,8 @@ usage() {
 环境与运维:
   stop                                     停止 Docker 栈 + 本机 dev 进程
   remote-dev                               生成 REMOTE_DEPS platform/.env
+  frp [setup|start|stop|status|install-server]  frp 暴露本机 dev（local 启动时自动）
+  tunnel …                               已弃用，请用 frp
   env                                      检查/初始化 platform/.env
   stack …                                  透传 scripts/stack.sh（build / logs …）
   deploy …                                 透传 scripts/deploy.sh
@@ -214,6 +230,8 @@ main() {
     stop|down) dev_stop ;;
     env|fix-env) dev_fix_local_env ;;
     remote-dev) dev_remote_dev ;;
+    frp) dev_frp "$@" ;;
+    tunnel) dev_frp "$@" ;;
     stack) exec bash "$SCRIPT_DIR/stack.sh" "$@" ;;
     deploy) exec bash "$SCRIPT_DIR/deploy.sh" "$@" ;;
     knowflow)

@@ -10,6 +10,8 @@ defineProps({
   hideTitleRow: { type: Boolean, default: true },
   /** 内容区左侧贴齐主布局（如知识检索文档树贴侧栏） */
   flushStart: { type: Boolean, default: false },
+  /** 内容区右侧贴齐主布局窗口 */
+  flushEnd: { type: Boolean, default: false },
 });
 
 const { headerExtensionActive } = usePageHeaderExtension();
@@ -22,6 +24,7 @@ const { headerExtensionActive } = usePageHeaderExtension();
       'subsystem-shell--fill': fill,
       'feature-page--fill': fill,
       'subsystem-shell--flush-start': flushStart,
+      'subsystem-shell--flush-end': flushEnd,
     }"
   >
     <Teleport

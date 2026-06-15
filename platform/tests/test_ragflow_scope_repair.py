@@ -7,9 +7,34 @@ from unittest.mock import MagicMock, patch
 
 from app.services.ragflow_scope_service import (
     _provision_rag_for_scope,
+    ensure_dataset_embedding_model,
     repair_stale_scope_registries,
 )
 from app.core.document_scope import SCOPE_DEPARTMENT
+
+
+def test_ensure_dataset_embedding_model_skips_when_kb_already_configured():
+    with patch(
+        "app.integrations.ragflow_llm_template._mysql_query",
+        return_value=["BAAI/bge-m3@SILICONFLOW\tBAAI/bge-m3@SILICONFLOW"],
+    ), patch(
+        "app.integrations.ragflow_llm_template._mysql_exec",
+    ) as exec_mock:
+        assert ensure_dataset_embedding_model("ds-1") is False
+        exec_mock.assert_not_called()
+
+
+def test_ensure_dataset_embedding_model_copies_from_tenant():
+    with patch(
+        "app.integrations.ragflow_llm_template._mysql_query",
+        return_value=["\tBAAI/bge-m3@SILICONFLOW"],
+    ), patch(
+        "app.integrations.ragflow_llm_template._mysql_exec",
+        return_value=True,
+    ) as exec_mock:
+        assert ensure_dataset_embedding_model("ds-1") is True
+        exec_mock.assert_called_once()
+        assert "BAAI/bge-m3@SILICONFLOW" in exec_mock.call_args[0][0]
 
 
 def test_repair_stale_keeps_bootstrap_dept_registry():

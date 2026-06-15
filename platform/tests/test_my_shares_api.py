@@ -14,7 +14,7 @@ from app.models.org import User
 def test_my_shares_lists_shared_documents(client, admin_token):
     db = SessionLocal()
     try:
-        owner = db.scalar(select(User).where(User.phone == "15963564658"))
+        owner = db.scalar(select(User).where(User.phone == "admin"))
         assert owner is not None
         other = User(
             id=uuid.uuid4(),

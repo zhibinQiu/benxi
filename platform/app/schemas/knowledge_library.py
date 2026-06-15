@@ -91,6 +91,16 @@ class KnowledgeQaChatStreamRequest(BaseModel):
     document_ids: list[str] | None = Field(default=None, max_length=20)
 
 
+class KnowledgeQaMindmapRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    answer: str = Field(..., min_length=1, max_length=12000)
+
+
+class KnowledgeQaMindmapOut(BaseModel):
+    mermaid: str
+    source: str = "llm"
+
+
 class KnowledgeReindexRequest(BaseModel):
     parser_id: str = Field(default="naive", min_length=1, max_length=32)
     layout_recognize: str | None = Field(

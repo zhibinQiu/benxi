@@ -1,4 +1,4 @@
-# 绿叶 AI 办公系统 — 统一容器栈（基础编排文件）
+# AI 办公系统 — 统一容器栈（基础编排文件）
 #
 # 编排入口: bash scripts/stack.sh  或  ./dev.sh docker
 # 文档: docs/zh/operations/config-and-scripts.md
@@ -9,7 +9,9 @@
 #   3. deploy/knowflow.yml       ← --profile knowflow
 #   4. deploy/knowflow.mirror.yaml ← 镜像加速
 #   5. compose.dev.yaml          ← stack.sh dev-up（热重载）
-#   6. compose.expose-deps.yaml  ← EXPOSE_DEPS=1（远程依赖开发）
+#   6. compose.expose-deps.yaml  ← EXPOSE_DEPS=1（远程依赖开发，每服务独立端口）
+#   7. compose.gateway.yaml      ← GATEWAY_MODE=1（HTTP 统一 :40005）
+#   8. compose.expose-deps.gateway.yaml ← GATEWAY_MODE+EXPOSE_DEPS（TCP 仅 40002-40004/40006）
 #
 # 对外: 仅 frontend:${FRONTEND_PORT}（默认 40005）
 # profile: knowflow（MySQL/Infinity/RAGFlow）· speech（FunASR）
@@ -141,9 +143,6 @@ services:
       KNOWFLOW_ENABLED: ${KNOWFLOW_ENABLED:-false}
       KNOWFLOW_BACKEND_URL: http://knowflow-backend:5000
       RAGFLOW_API_URL: http://ragflow:80
-      KNOWFLOW_UI_UPSTREAM_URL: http://ragflow:80
-      KNOWFLOW_UI_PUBLIC_URL: ${KNOWFLOW_UI_PUBLIC_URL:-http://127.0.0.1:40005}
-      KNOWFLOW_UI_PROXY_PREFIX: ${KNOWFLOW_UI_PROXY_PREFIX:-/ragflow-ui}
       RAGFLOW_MYSQL_HOST: knowflow-mysql
     depends_on:
       postgres:
@@ -185,7 +184,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
-    command: celery -A workers.celery_app worker --loglevel=info
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=4
     networks:
       - zhitan
 

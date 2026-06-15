@@ -22,18 +22,19 @@ import {
   SparklesOutline,
   ArrowBackOutline,
   NewspaperOutline,
+  ListOutline,
   BookOutline } from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
+import { useSystemFeatures } from "../composables/useSystemFeatures";
+import { useMenuSettings } from "../composables/useMenuSettings";
 import { getPageHeaderOverride } from "../composables/usePageHeader";
 import { resolveFeatureIcon } from "../constants/featureIcons";
 import { useAppDisplayName } from "../composables/usePlatformBranding";
-import { fetchSystemFeatures } from "../api/client";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
-import { useMainLayoutRouteMotion } from "../composables/useMainLayoutRouteMotion";
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { publicAsset } from "../utils/appBase";
@@ -59,10 +60,10 @@ function routeViewKey(viewRoute) {
 
 const route = useRoute();
 const router = useRouter();
-const { loadUser, hasPerm } = useAuth();
+const { loadUser, hasPerm, isSystemAdmin } = useAuth();
 const { t, routeTitle } = useI18n();
+const { loadMenuSettings, isMenuVisible } = useMenuSettings();
 const pageHeaderOverride = getPageHeaderOverride();
-const { innerRouteTransition } = useMainLayoutRouteMotion();
 const headerToolbarRef = ref(null);
 
 const SETTINGS_KEY = "system-settings";
@@ -70,7 +71,7 @@ const expandedKeys = ref([]);
 const siderMenuWrapRef = ref(null);
 
 const siderCollapsed = ref(false);
-const systemFeatures = ref([]);
+const { features: systemFeatures, loadSystemFeatures } = useSystemFeatures();
 const { favoriteIds } = useFeatureFavorites();
 
 function favoriteMenuKey(feature) {
@@ -95,39 +96,28 @@ const favoriteActiveKey = computed(() => {
   return null;
 });
 
-async function loadSystemFeatures() {
-  try {
-    systemFeatures.value = (await fetchSystemFeatures()) || [];
-  } catch {
-    systemFeatures.value = [];
-  }
-}
-
 onMounted(async () => {
   await loadUser();
   loadSystemFeatures();
+  loadMenuSettings();
 });
 
 const showUserAdmin = computed(() => hasPerm("admin.user"));
 const showDeptAdmin = computed(() => hasPerm("admin.dept"));
-const showMonitor = computed(() => hasPerm("admin.audit"));
-const showModelSettings = computed(() => hasPerm("admin.settings"));
-
-const showSystemSettings = computed(
-  () =>
-    showUserAdmin.value ||
-    showDeptAdmin.value ||
-    showMonitor.value ||
-    showModelSettings.value
-);
 
 const settingsChildren = computed(() => {
   const children = [];
   if (showUserAdmin.value) {
-    children.push({
-      label: t("menu.users"),
-      key: "admin-users",
-      icon: () => h(NIcon, null, { default: () => h(PeopleOutline) })});
+    children.push(
+      {
+        label: t("menu.users"),
+        key: "admin-users",
+        icon: () => h(NIcon, null, { default: () => h(PeopleOutline) })},
+      {
+        label: t("menu.menuSettings"),
+        key: "admin-menu-settings",
+        icon: () => h(NIcon, null, { default: () => h(ListOutline) })}
+    );
   }
   if (showDeptAdmin.value) {
     children.push({
@@ -135,38 +125,43 @@ const settingsChildren = computed(() => {
       key: "admin-departments",
       icon: () => h(NIcon, null, { default: () => h(BusinessOutline) })});
   }
-  if (showMonitor.value) {
-    children.push({
+  const memberSettingsMenus = [
+    {
       label: t("menu.monitor"),
       key: "admin-monitor",
-      icon: () => h(NIcon, null, { default: () => h(PulseOutline) })});
-  }
-  if (showModelSettings.value) {
-    children.push({
+      icon: () => h(NIcon, null, { default: () => h(PulseOutline) })},
+    {
       label: t("menu.modelSettings"),
       key: "admin-model-settings",
-      icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) })});
-  }
-  if (showSystemSettings.value) {
-    children.push({
+      icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) })},
+    {
       label: t("menu.systemDocs"),
       key: "admin-docs",
-      icon: () => h(NIcon, null, { default: () => h(BookOutline) })});
+      icon: () => h(NIcon, null, { default: () => h(BookOutline) })},
+  ];
+  for (const item of memberSettingsMenus) {
+    if (isSystemAdmin.value || isMenuVisible(item.key)) {
+      children.push(item);
+    }
   }
   return children;
 });
 
 const menuOptions = computed(() => {
-  const items = [
-    {
+  const items = [];
+
+  if (isSystemAdmin.value || isMenuVisible("ai-home")) {
+    items.push({
       label: t("menu.aiHome"),
       key: "ai-home",
-      icon: () => h(NIcon, null, { default: () => h(SparklesOutline) })},
-    {
+      icon: () => h(NIcon, null, { default: () => h(SparklesOutline) })});
+  }
+  if (isSystemAdmin.value || isMenuVisible("system-functions")) {
+    items.push({
       label: t("menu.systemFunctions"),
       key: "system-functions",
-      icon: () => h(NIcon, null, { default: () => h(GridOutline) })},
-  ];
+      icon: () => h(NIcon, null, { default: () => h(GridOutline) })});
+  }
 
   for (const feature of favoriteMenuFeatures.value) {
     const Icon = resolveFeatureIcon(feature.icon) || GridOutline;
@@ -176,18 +171,20 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(Icon) })});
   }
 
-  items.push(
-    {
+  if (isSystemAdmin.value || isMenuVisible("documents")) {
+    items.push({
       label: t("menu.documents"),
       key: "documents",
-      icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) })},
-    {
+      icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) })});
+  }
+  if (isSystemAdmin.value || isMenuVisible("knowledge-subscriptions")) {
+    items.push({
       label: t("menu.knowledgeSubscriptions"),
       key: "knowledge-subscriptions",
-      icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) })}
-  );
+      icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) })});
+  }
 
-  if (showSystemSettings.value && settingsChildren.value.length) {
+  if (settingsChildren.value.length) {
     items.push({
       label: t("menu.systemSettings"),
       key: SETTINGS_KEY,
@@ -226,6 +223,7 @@ const activeKey = computed(() => {
     route.name === "ocr" ||
     route.name === "compare" ||
     route.name === "assist-writing" ||
+    route.name === "report-generation" ||
     route.name === "ai-tools" ||
     route.name === "smart-data-query" ||
     route.name === "data-analysis" ||
@@ -239,6 +237,7 @@ const activeKey = computed(() => {
     route.name === "admin-departments" ||
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
+    route.name === "admin-menu-settings" ||
     route.name === "admin-docs"
   ) {
     return String(route.name);
@@ -462,6 +461,7 @@ function onMenuSelect(key) {
           {
             'app-content--full': fullHeightPage,
             'app-content--flush-start': fullHeightPage && route.meta?.flushStart,
+            'app-content--flush-end': fullHeightPage && route.meta?.flushEnd,
           },
         ]"
         :content-style="contentStyle"
@@ -473,22 +473,7 @@ function onMenuSelect(key) {
           ]"
         >
           <router-view v-slot="{ Component, route: viewRoute }">
-            <Transition
-              v-if="innerRouteTransition !== 'route-instant'"
-              :name="innerRouteTransition"
-            >
-              <KeepAlive :max="10" :include="KEEP_ALIVE_VIEWS">
-                <component
-                  :is="Component"
-                  :key="routeViewKey(viewRoute)"
-                  :class="[
-                    'app-route-page',
-                    { 'app-route-page--full': viewRoute.meta?.fullHeight },
-                  ]"
-                />
-              </KeepAlive>
-            </Transition>
-            <KeepAlive v-else :max="10" :include="KEEP_ALIVE_VIEWS">
+            <KeepAlive :max="10" :include="KEEP_ALIVE_VIEWS">
               <component
                 :is="Component"
                 :key="routeViewKey(viewRoute)"
@@ -738,6 +723,10 @@ function onMenuSelect(key) {
 .app-content--full.app-content--flush-start {
   padding-left: 0;
 }
+
+.app-content--full.app-content--flush-end {
+  padding-right: 0;
+}
 .app-view-host {
   position: relative;
   flex: 1;
@@ -745,6 +734,7 @@ function onMenuSelect(key) {
   overflow: hidden;
   background: transparent;
   transform: translateZ(0);
+  isolation: isolate;
 }
 
 .app-content:not(.app-content--full) .app-view-host {

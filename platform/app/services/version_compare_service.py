@@ -187,13 +187,13 @@ def _run_relation_in_background(relation_id: uuid.UUID) -> None:
 
 
 def enqueue_version_compare(relation_id: uuid.UUID) -> None:
-    thread = threading.Thread(
-        target=_run_relation_in_background,
-        args=(relation_id,),
-        name=f"version-compare-{relation_id}",
-        daemon=True,
+    from app.core.background_executor import submit_background
+
+    submit_background(
+        f"version-compare-{relation_id}",
+        _run_relation_in_background,
+        relation_id,
     )
-    thread.start()
 
 
 def schedule_precompare_for_version(

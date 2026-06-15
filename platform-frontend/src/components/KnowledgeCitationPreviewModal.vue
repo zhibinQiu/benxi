@@ -15,6 +15,7 @@ import { useRoute, useRouter } from "vue-router";
 const props = defineProps({
   show: { type: Boolean, default: false },
   citation: { type: Object, default: null },
+  question: { type: String, default: "" },
 });
 
 const emit = defineEmits(["update:show"]);
@@ -41,7 +42,15 @@ const modalTitle = computed(() => {
 
 const pageLabel = computed(() => citationPageLabel(props.citation, t));
 
-const snippetHtml = computed(() => formatCitationSnippet(props.citation?.snippet || ""));
+const snippetHtml = computed(() =>
+  formatCitationSnippet(
+    props.citation?.snippet || "",
+    props.question,
+    props.citation?.highlight_terms
+  )
+);
+
+const canPreviewImage = computed(() => citationCanPreviewImage(props.citation));
 
 const relevanceLabel = computed(() => {
   const score = props.citation?.score;
@@ -64,7 +73,6 @@ function resetImageState() {
 async function loadCitationPreview(citation) {
   resetImageState();
   if (!citation || !citationCanPreviewImage(citation)) {
-    imageError.value = t("knowledgeSearch.citations.noScreenshot");
     return;
   }
   imageLoading.value = true;
@@ -124,9 +132,12 @@ function openDocument() {
           {{ t("knowledgeSearch.citations.snippetTitle") }}
         </div>
         <div class="knowledge-citation-preview__snippet" v-html="snippetHtml" />
+        <n-text v-if="!canPreviewImage" depth="3" class="knowledge-citation-preview__text-only">
+          {{ t("knowledgeSearch.citations.textOnlyHint") }}
+        </n-text>
       </div>
 
-      <div class="knowledge-citation-preview__image-wrap">
+      <div v-if="canPreviewImage" class="knowledge-citation-preview__image-wrap">
         <n-spin :show="imageLoading">
           <img
             v-if="imageObjectUrl"
@@ -138,7 +149,7 @@ function openDocument() {
         <n-empty
           v-if="!imageLoading && !imageOk"
           size="small"
-          :description="imageError || t('knowledgeSearch.citations.noScreenshot')"
+          :description="imageError || t('knowledgeSearch.citations.loadFailed')"
           class="knowledge-citation-preview__image-fallback"
         />
       </div>
@@ -194,30 +205,40 @@ function openDocument() {
   background: var(--platform-accent-muted);
   border: 1px solid var(--platform-accent-border-soft);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--platform-text);
-  max-height: 180px;
+  max-height: 120px;
   overflow: auto;
 }
 
+.knowledge-citation-preview__snippet :deep(mark.cite-hl),
 .knowledge-citation-preview__snippet :deep(em) {
   font-style: normal;
-  background: rgba(250, 204, 21, 0.5);
-  padding: 0 2px;
-  border-radius: 2px;
-  font-weight: 600;
+  color: #713f12;
+  background: rgba(234, 179, 8, 0.55);
+  padding: 0 3px;
+  border-radius: 3px;
+  font-weight: 700;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.knowledge-citation-preview__text-only {
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .knowledge-citation-preview__image-wrap {
   border: 1px solid var(--platform-border);
   border-radius: 8px;
-  background: #f1f5f9;
+  background: #eef2f7;
   overflow: auto;
-  max-height: min(58vh, 560px);
-  min-height: 200px;
+  max-height: min(68vh, 640px);
+  min-height: 240px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
 }
 
 .knowledge-citation-preview__image {
@@ -225,6 +246,10 @@ function openDocument() {
   max-width: 100%;
   height: auto;
   margin: 0 auto;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.1);
+  outline: 3px solid #eab308;
+  outline-offset: 2px;
 }
 
 .knowledge-citation-preview__image-fallback {

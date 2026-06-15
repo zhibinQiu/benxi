@@ -13,6 +13,7 @@ export * from "./departments.js";
 export * from "./monitor.js";
 export * from "./todos.js";
 export * from "./modelSettings.js";
+export * from "./menuSettings.js";
 export * from "./compare.js";
 export * from "./system.js";
 export * from "./translate.js";

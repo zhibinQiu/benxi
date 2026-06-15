@@ -1,5 +1,5 @@
 /** OCR 识别 REST API */
-import { api, getApiBase, getToken } from "./http.js";
+import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
 
 export async function fetchOcrMeta() {
   return api("/api/v1/ocr/meta");
@@ -28,7 +28,7 @@ async function fetchOcrExportResponse({ format, items }) {
   });
   if (!res.ok) {
     const json = await res.json().catch(() => ({}));
-    throw new Error(json?.message || json?.detail || res.statusText || "导出失败");
+    rejectHttpFailure(res, json);
   }
   return res;
 }

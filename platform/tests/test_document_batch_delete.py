@@ -63,7 +63,7 @@ def test_batch_delete_with_related_job(client, admin_token):
     assert gone.status_code == 404
 
 
-def test_batch_delete_multiple_documents_uses_parallel_external_purge(
+def test_batch_delete_multiple_documents_schedules_async_external_purge(
     client, admin_token, monkeypatch,
 ):
     headers = {"Authorization": f"Bearer {admin_token}"}
@@ -77,18 +77,14 @@ def test_batch_delete_multiple_documents_uses_parallel_external_purge(
         assert r.status_code == 200, r.text
         doc_ids.append(r.json()["data"]["id"])
 
-    parallel_calls: list[int] = []
+    scheduled: list[list[str]] = []
 
-    def _track_parallel(documents):
-        parallel_calls.append(len(documents))
-        from app.services.documents.lifecycle import _purge_document_external_resources
-
-        for doc in documents:
-            _purge_document_external_resources(doc)
+    def _track_schedule(document_ids):
+        scheduled.append([str(doc_id) for doc_id in document_ids])
 
     monkeypatch.setattr(
-        "app.services.documents.lifecycle._purge_documents_external_parallel",
-        _track_parallel,
+        "app.services.documents.lifecycle.schedule_documents_external_purge",
+        _track_schedule,
     )
 
     with patch(
@@ -104,7 +100,8 @@ def test_batch_delete_multiple_documents_uses_parallel_external_purge(
     assert br.status_code == 200, br.text
     data = br.json()["data"]
     assert data["deleted_count"] == 3
-    assert parallel_calls == [3]
+    assert len(scheduled) == 1
+    assert set(scheduled[0]) == set(doc_ids)
     for doc_id in doc_ids:
         gone = client.get(f"/api/v1/documents/{doc_id}", headers=headers)
         assert gone.status_code == 404

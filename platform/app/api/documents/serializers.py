@@ -157,18 +157,34 @@ def folder_name(db: Session, folder_id: uuid.UUID | None) -> str | None:
     return (folder.name or "").strip() or None if folder else None
 
 
-def document_detail(db: Session, doc: Document, *, user: User | None = None) -> DocumentDetail:
+def document_detail(
+    db: Session,
+    doc: Document,
+    *,
+    user: User | None = None,
+    live_index: bool | None = None,
+) -> DocumentDetail:
+    from app.config import get_settings
     from app.services.document_index_service import (
         apply_index_meta_to_item,
         enrich_document_index_meta,
         enrich_version_index_meta,
     )
 
+    if live_index is None:
+        live_index = get_settings().knowledge_detail_live_index_meta
+
     document_service.resolve_current_version(db, doc)
     db.refresh(doc)
     can_modify = can_modify_document(db, user, doc) if user else False
     version_rows = document_service.list_document_versions(db, doc.id)
-    version_meta = enrich_version_index_meta(db, user, version_rows) if user else {}
+    version_meta = (
+        enrich_version_index_meta(
+            db, user, version_rows, live_ragflow=live_index
+        )
+        if user
+        else {}
+    )
     detail = DocumentDetail(
         id=doc.id,
         title=doc.title,
@@ -196,7 +212,7 @@ def document_detail(db: Session, doc: Document, *, user: User | None = None) -> 
     )
     if user is not None:
         meta = enrich_document_index_meta(
-            db, user, [doc], live_ragflow=True
+            db, user, [doc], live_ragflow=live_index
         ).get(str(doc.id))
         detail = apply_index_meta_to_item(detail, meta)
     return detail

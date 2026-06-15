@@ -99,8 +99,8 @@ def scan_missing_storage_versions(db: Session, *, limit: int = 500) -> list[str]
     from app.storage.object_store import get_object_store
 
     store = get_object_store()
-    rows = db.scalars(
-        select(DocumentVersion)
+    rows = db.execute(
+        select(DocumentVersion.id, DocumentVersion.file_key)
         .join(Document, Document.id == DocumentVersion.document_id)
         .where(
             DocumentVersion.file_size > 0,
@@ -109,10 +109,10 @@ def scan_missing_storage_versions(db: Session, *, limit: int = 500) -> list[str]
         .order_by(DocumentVersion.created_at.desc())
     ).all()
     missing: list[str] = []
-    for ver in rows:
-        key = (ver.file_key or "").strip()
+    for ver_id, file_key in rows:
+        key = (file_key or "").strip()
         if not key or store.head_object_size(key) is None:
-            missing.append(str(ver.id))
+            missing.append(str(ver_id))
         if len(missing) >= limit:
             break
     return missing

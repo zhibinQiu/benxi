@@ -423,7 +423,11 @@ def import_entry_to_document(
         synced = False
         if sync_knowflow:
             synced = _try_sync_knowflow(db, user, existing.document_id)
-        return {"document_id": existing.document_id, "knowflow_synced": synced}
+        return {
+            "document_id": existing.document_id,
+            "knowflow_synced": synced,
+            "queued": False,
+        }
 
     entry = db.get(FeedEntry, entry_id)
     if not entry:
@@ -452,6 +456,7 @@ def import_entry_to_document(
         entry.content_html or "",
         summary=entry.summary or "",
         link=link,
+        allow_refetch=False,
     )
     if html_body and html_body != (entry.content_html or ""):
         entry.content_html = html_body
@@ -475,6 +480,7 @@ def import_entry_to_document(
         file_name=file_name,
         mime_type=mime_type,
         content=content,
+        schedule_post_upload=False,
     )
     db.refresh(doc)
 
@@ -482,8 +488,34 @@ def import_entry_to_document(
         FeedEntryImport(entry_id=entry_id, user_id=user.id, document_id=doc.id)
     )
     db.flush()
-    synced = _try_sync_knowflow(db, user, doc.id) if sync_knowflow else False
-    return {"document_id": doc.id, "knowflow_synced": synced}
+
+    from app.services.subscription_import_service import (
+        enqueue_subscription_import_finalize,
+    )
+
+    job = enqueue_subscription_import_finalize(
+        db,
+        user,
+        doc.id,
+        sync_knowflow=sync_knowflow,
+        source="feed_entry",
+        source_id=entry_id,
+        title=doc.title,
+        link=link,
+        source_label=source_label,
+        html_body=html_body or f"<p>{entry.summary}</p>",
+        summary=summary_text or entry.summary or "",
+        fallback_stem="subscription-article",
+    )
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
+    return {
+        "document_id": doc.id,
+        "knowflow_synced": False,
+        "queued": True,
+        "job_id": job.id,
+    }
 
 
 def _try_sync_knowflow(db: Session, user: User, document_id: uuid.UUID) -> bool:

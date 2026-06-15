@@ -14,7 +14,7 @@ from app.models.org import User
 def test_admin_lists_other_user_personal_documents(client, admin_token):
     db = SessionLocal()
     try:
-        admin = db.scalar(select(User).where(User.phone == "15963564658"))
+        admin = db.scalar(select(User).where(User.phone == "admin"))
         assert admin is not None
         other = User(
             id=uuid.uuid4(),

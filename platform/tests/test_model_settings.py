@@ -9,6 +9,7 @@ from app.integrations.paddleocr_client import (
     paddleocr_request_url,
     recognize_bytes,
 )
+from app.integrations.ragflow_model_apply import normalize_ragflow_embedding_api_base
 from app.services.model_settings_service import (
     _endpoint_fields,
     get_llm_credentials,
@@ -63,6 +64,34 @@ def test_mask_secret():
     assert mask_secret("") == ""
     assert mask_secret("short") == "••••••••"
     assert mask_secret("sk-abcdefghijklmnop") == "sk-a••••mnop"
+
+
+def test_paddleocr_falls_back_to_vl(monkeypatch):
+    settings = Settings(
+        platform_paddleocr_base_url="",
+        platform_paddleocr_api_key="",
+        platform_paddleocr_model="",
+        platform_paddleocr_url="",
+        platform_vl_base_url="https://api.siliconflow.cn/v1",
+        platform_vl_api_key="sk-vl-key",
+        platform_vl_model="Qwen/Qwen3-VL-8B-Instruct",
+        platform_embedding_base_url="https://api.siliconflow.cn/v1",
+        platform_embedding_api_key="sk-emb-key",
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.fetch_template_embedding_defaults",
+        lambda _db: {},
+    )
+    from app.services.model_settings_service import get_paddleocr_credentials
+
+    base, key, model = get_paddleocr_credentials(None)
+    assert base == "https://api.siliconflow.cn/v1"
+    assert key == "sk-vl-key"
+    assert model == "PaddlePaddle/PaddleOCR-VL-1.5"
 
 
 def test_llm_falls_back_to_deepseek(monkeypatch):
@@ -223,7 +252,7 @@ def test_frontend_client_config_from_env(monkeypatch):
 
     settings = Settings(
         app_name="默认系统名",
-        frontend_app_title="智碳平台",
+        frontend_app_title="AI 办公系统",
         frontend_default_theme="light",
     )
     monkeypatch.setattr(
@@ -235,9 +264,9 @@ def test_frontend_client_config_from_env(monkeypatch):
         lambda _db: {},
     )
     out = get_model_settings(None)
-    assert out.frontend_app_title == "智碳平台"
+    assert out.frontend_app_title == "AI 办公系统"
     assert out.frontend_default_theme == "light"
-    assert get_frontend_app_title(None) == "智碳平台"
+    assert get_frontend_app_title(None) == "AI 办公系统"
 
 
 def test_frontend_app_title_falls_back_to_app_name(monkeypatch):
@@ -320,3 +349,21 @@ def test_vl_health_test_supported(client, admin_token, monkeypatch):
     )
     assert r.status_code == 200, r.text
     assert r.json()["data"]["healthy"] is True
+
+
+def test_normalize_ragflow_embedding_api_base_for_siliconflow():
+    assert (
+        normalize_ragflow_embedding_api_base("https://api.siliconflow.cn/v1", "SILICONFLOW")
+        == "https://api.siliconflow.cn/v1/embeddings"
+    )
+    assert (
+        normalize_ragflow_embedding_api_base("https://api.siliconflow.cn/v1/embeddings", "SILICONFLOW")
+        == "https://api.siliconflow.cn/v1/embeddings"
+    )
+
+
+def test_normalize_ragflow_embedding_api_base_strips_v1_for_openai_compatible():
+    assert (
+        normalize_ragflow_embedding_api_base("https://example.com/v1", "OpenAI-API-Compatible")
+        == "https://example.com"
+    )

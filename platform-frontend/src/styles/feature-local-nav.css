@@ -205,8 +205,10 @@
   padding: 0;
 }
 
-.subsystem-shell--flush-start.subsystem-shell--fill .knowledge-search-page {
+.subsystem-shell--flush-start.subsystem-shell--fill .knowledge-search-page,
+.subsystem-shell--flush-end.subsystem-shell--fill .knowledge-search-page {
   border-left: none;
+  border-right: none;
   border-bottom: none;
   border-radius: 0;
 }

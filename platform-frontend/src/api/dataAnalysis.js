@@ -31,6 +31,13 @@ export async function dataAnalysisChat(sessionId, { message, datasetId } = {}) {
   });
 }
 
+export async function createDataAnalysisCell(sessionId, { title, code } = {}) {
+  return api(`/api/v1/data-analysis/sessions/${sessionId}/cells`, {
+    method: "POST",
+    body: JSON.stringify({ title, code }),
+  });
+}
+
 export async function updateDataAnalysisCell(sessionId, cellId, { code, title } = {}) {
   return api(`/api/v1/data-analysis/sessions/${sessionId}/cells/${cellId}`, {
     method: "PUT",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocumentVersion
@@ -29,15 +29,14 @@ def find_reusable_knowflow_version_link(
     db: Session,
     *,
     dataset_id: str,
-    file_name: str,
     checksum: str,
+    file_name: str = "",
     exclude_version_id: uuid.UUID | None = None,
 ) -> RagflowDocumentVersionLink | None:
-    """同知识库内按 MD5 + 文件名查找已成功索引的版本，用于复用 RAGFlow 文档。"""
+    """同知识库内按内容 MD5 查找已成功索引的版本，用于复用 RAGFlow 文档（文件名可不同）。"""
     ds_id = (dataset_id or "").strip()
-    name = (file_name or "").strip()
     digest = (checksum or "").strip().lower()
-    if not ds_id or not name or len(digest) != 32:
+    if not ds_id or len(digest) != 32:
         return None
 
     stmt = (
@@ -49,7 +48,6 @@ def find_reusable_knowflow_version_link(
         .join(Document, Document.id == DocumentVersion.document_id)
         .where(
             RagflowDocumentVersionLink.dataset_id == ds_id,
-            DocumentVersion.file_name == name,
             DocumentVersion.checksum == digest,
             RagflowDocumentVersionLink.ragflow_document_id.is_not(None),
             RagflowDocumentVersionLink.ragflow_document_id != "",
@@ -81,10 +79,11 @@ def count_ragflow_document_references(
         RagflowDocumentMirrorLink,
         RagflowDocumentLink,
     ):
-        stmt = select(model).where(model.ragflow_document_id == rid)
+        col = model.ragflow_document_id
+        stmt = select(func.count()).where(col == rid)
         if exclude_document_id is not None and hasattr(model, "platform_document_id"):
             stmt = stmt.where(model.platform_document_id != exclude_document_id)
-        n += len(list(db.scalars(stmt).all()))
+        n += int(db.scalar(stmt) or 0)
     return n
 
 

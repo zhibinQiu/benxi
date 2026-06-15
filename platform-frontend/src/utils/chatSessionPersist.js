@@ -8,6 +8,7 @@ export const SERVER_HISTORY_SCOPES = new Set([
   "assistant",
   "carbon-qa",
   "smart-data-query",
+  "report-generation",
 ]);
 
 function storageKey(scope) {

@@ -22,6 +22,12 @@ CHUNK_METHODS: list[dict[str, str]] = [
     {"id": "picture", "label": "图片", "hint": "扫描件/图片 PDF", "group": "classic"},
     {"id": "one", "label": "单页", "hint": "整篇一个切片", "group": "classic"},
     {"id": "email", "label": "邮件", "hint": "邮件正文结构", "group": "classic"},
+    {
+        "id": "pageindex",
+        "label": "PageIndex（实验）",
+        "hint": "无向量库树形索引；支持 PDF/Markdown/Word/TXT，检索走推理树搜索",
+        "group": "experimental",
+    },
 ]
 
 LAYOUT_RECOGNIZERS: list[dict[str, str]] = [
@@ -83,14 +89,16 @@ _PARSER_DEFAULTS: dict[str, dict] = {
 def normalize_parser_id(parser_id: str | None) -> str:
     settings = get_settings()
     raw = (parser_id or settings.knowledge_default_parser_id or "naive").strip().lower()
+    if raw == "pageindex":
+        return "pageindex"
     return raw if raw in _ALLOWED_PARSERS else "naive"
 
 
 def normalize_layout_recognize(layout: str | None) -> str:
     settings = get_settings()
-    raw = (layout or settings.knowledge_default_layout_recognize or "PaddleOCR").strip()
+    raw = (layout or settings.knowledge_default_layout_recognize or "DeepDOC").strip()
     allowed = {item["id"] for item in LAYOUT_RECOGNIZERS}
-    return raw if raw in allowed else "PaddleOCR"
+    return raw if raw in allowed else "DeepDOC"
 
 
 def coerce_parser_layout(parser_id: str, layout_recognize: str) -> tuple[str, str]:
@@ -105,6 +113,8 @@ def coerce_parser_layout(parser_id: str, layout_recognize: str) -> tuple[str, st
 def infer_parser_for_upload_file(
     file_name: str,
     mime_type: str = "",
+    *,
+    file_content: bytes | None = None,
 ) -> tuple[str, str]:
     """按文件类型自动选择 KnowFlow 切片方法与版面识别（与 DocumentParserType 对齐）。"""
     lower = (file_name or "").lower()
@@ -115,15 +125,27 @@ def infer_parser_for_upload_file(
     )
 
     if lower.endswith(".md") or "markdown" in mime:
-        return "naive", "Plain Text"
+        return (
+            normalize_parser_id(settings.knowledge_default_parser_id),
+            default_layout,
+        )
     if lower.endswith((".txt", ".csv", ".log", ".json", ".xml", ".yaml", ".yml")):
-        return "naive", "Plain Text"
+        return (
+            normalize_parser_id(settings.knowledge_default_parser_id),
+            default_layout,
+        )
     if mime.startswith("text/") or mime in ("application/json", "application/xml"):
-        return "naive", "Plain Text"
+        return (
+            normalize_parser_id(settings.knowledge_default_parser_id),
+            default_layout,
+        )
     if lower.endswith((".doc", ".docx", ".rtf")) or "word" in mime:
-        return "naive", "Plain Text"
+        return (
+            normalize_parser_id(settings.knowledge_default_parser_id),
+            default_layout,
+        )
     if lower.endswith((".xlsx", ".xls")) or "spreadsheet" in mime or "excel" in mime:
-        return "table", "Plain Text"
+        return "table", default_layout
     if (
         lower.endswith((".ppt", ".pptx"))
         or "presentation" in mime
@@ -152,6 +174,9 @@ def build_parser_config(
     *,
     chunk_token_num: int | None = None,
 ) -> tuple[str, dict]:
+    parser = normalize_parser_id(parser_id)
+    if parser == "pageindex":
+        return "pageindex", {"index_engine": "pageindex"}
     settings = get_settings()
     parser, layout = coerce_parser_layout(
         normalize_parser_id(parser_id),
@@ -180,7 +205,8 @@ def list_parser_options() -> dict:
         "layout_recognizers": LAYOUT_RECOGNIZERS,
         "defaults": defaults,
         "items": [m for m in CHUNK_METHODS if m["group"] == "classic"]
-        + [m for m in CHUNK_METHODS if m["group"] == "modern"],
+        + [m for m in CHUNK_METHODS if m["group"] == "modern"]
+        + [m for m in CHUNK_METHODS if m["group"] == "experimental"],
         "config_hints": [
             "PDF 版面 OCR 地址在资源管理 PaddleOCR-VL 或 deploy/knowflow/settings.yaml 配置",
             "嵌入向量模型在「系统设置 → 模型配置」或 KnowFlow 管理后台配置",

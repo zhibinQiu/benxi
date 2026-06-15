@@ -16,6 +16,7 @@ from app.schema_migrate import (
     is_platform_schema_current,
     migrate_legacy_platform_branding,
     run_all_schema_migrations,
+    run_light_schema_patches,
 )
 
 _logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ def bootstrap_database(db_engine: Engine | None = None) -> BootstrapMode:
     if mode == "off":
         _logger.info("跳过数据库启动引导（DB_STARTUP_BOOTSTRAP=off）")
         return mode
+    run_light_schema_patches(db_engine)
     if mode == "full":
         _logger.info("执行全量 schema 迁移与种子数据同步")
         run_all_schema_migrations(db_engine)

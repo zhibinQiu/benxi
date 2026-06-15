@@ -18,13 +18,16 @@ from app.integrations.dify_chat_client import resolve_dify_credentials
 from app.services import platform_chat_store
 from app.services.carbon_qa_v2_service import _credentials as carbon_credentials
 
-CHAT_SCOPES = frozenset({"ai-home", "assistant", "carbon-qa", "smart-data-query"})
+CHAT_SCOPES = frozenset(
+    {"ai-home", "assistant", "carbon-qa", "smart-data-query", "report-generation"}
+)
 
 _SCOPE_LABELS = {
-    "ai-home": "双碳智能体",
+    "ai-home": "AI 助理",
     "assistant": "智能助手",
     "carbon-qa": "双碳问答",
     "smart-data-query": "智能问数",
+    "report-generation": "报告生成",
 }
 
 

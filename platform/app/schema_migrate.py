@@ -765,6 +765,87 @@ def ensure_document_version_blocks_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_kg_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS kg_entity_types (
+            id UUID PRIMARY KEY,
+            code VARCHAR(64) NOT NULL UNIQUE,
+            label VARCHAR(128) NOT NULL,
+            color VARCHAR(32) NOT NULL DEFAULT 'blue',
+            description TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS kg_relation_types (
+            id UUID PRIMARY KEY,
+            code VARCHAR(64) NOT NULL UNIQUE,
+            label VARCHAR(128) NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS kg_entities (
+            id UUID PRIMARY KEY,
+            type_id UUID NOT NULL REFERENCES kg_entity_types(id),
+            name VARCHAR(256) NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+            owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            scope VARCHAR(16) NOT NULL DEFAULT 'personal',
+            created_by UUID REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_kg_entities_owner ON kg_entities (owner_id)",
+        "CREATE INDEX IF NOT EXISTS ix_kg_entities_type ON kg_entities (type_id)",
+        "CREATE INDEX IF NOT EXISTS ix_kg_entities_name ON kg_entities (name)",
+        """
+        CREATE TABLE IF NOT EXISTS kg_relations (
+            id UUID PRIMARY KEY,
+            relation_type_id UUID NOT NULL REFERENCES kg_relation_types(id),
+            from_entity_id UUID NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
+            to_entity_id UUID NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
+            description TEXT NOT NULL DEFAULT '',
+            owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_by UUID REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_kg_relation_owner_edge UNIQUE (
+                owner_id, relation_type_id, from_entity_id, to_entity_id
+            )
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_kg_relations_owner ON kg_relations (owner_id)",
+        "CREATE INDEX IF NOT EXISTS ix_kg_relations_from ON kg_relations (from_entity_id)",
+        "CREATE INDEX IF NOT EXISTS ix_kg_relations_to ON kg_relations (to_entity_id)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_platform_menu_settings_schema(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS platform_menu_settings (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        )
+
+
 def ensure_platform_model_settings_schema(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -884,11 +965,12 @@ _LEGACY_PLATFORM_APP_TITLES = frozenset(
     {
         "绿叶AI办公系统",
         "绿叶 AI 办公系统",
+        "AI办公系统",
         "AI原型演示系统",
         "智碳平台",
     }
 )
-_CURRENT_PLATFORM_APP_TITLE = "AI办公系统"
+_CURRENT_PLATFORM_APP_TITLE = "AI 办公系统"
 
 
 def migrate_legacy_platform_branding(db) -> None:
@@ -904,6 +986,39 @@ def migrate_legacy_platform_branding(db) -> None:
     payload = dict(row.payload)
     payload["frontend_app_title"] = _CURRENT_PLATFORM_APP_TITLE
     row.payload = payload
+
+
+def ensure_pageindex_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS pageindex_version_links (
+            id UUID PRIMARY KEY,
+            platform_document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            platform_version_id UUID UNIQUE REFERENCES document_versions(id) ON DELETE SET NULL,
+            version_no INTEGER NOT NULL DEFAULT 1,
+            platform_user_id UUID NOT NULL REFERENCES users(id),
+            pageindex_doc_id VARCHAR(64) NOT NULL DEFAULT '',
+            file_name VARCHAR(512) NOT NULL DEFAULT '',
+            node_count INTEGER,
+            index_completed_at TIMESTAMPTZ,
+            error_message TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_pageindex_ver_doc "
+        "ON pageindex_version_links (platform_document_id)",
+        "CREATE INDEX IF NOT EXISTS ix_pageindex_ver_pi_doc "
+        "ON pageindex_version_links (pageindex_doc_id)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def run_light_schema_patches(engine: Engine) -> None:
+    """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
+    ensure_pageindex_schema(engine)
 
 
 def run_all_schema_migrations(engine: Engine) -> None:
@@ -923,7 +1038,9 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_wechat_mp_schema(engine)
     ensure_feed_subscription_schema(engine)
     ensure_platform_chat_schema(engine)
+    ensure_kg_schema(engine)
     ensure_platform_model_settings_schema(engine)
+    ensure_platform_menu_settings_schema(engine)
     ensure_user_single_department_schema(engine)
     ensure_user_phone_schema(engine)
     ensure_user_last_seen_schema(engine)
@@ -933,6 +1050,7 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_version_compare_schema(engine)
     ensure_version_compare_llm_summary_schema(engine)
     ensure_document_version_blocks_schema(engine)
+    ensure_pageindex_schema(engine)
     ensure_permission_level_migration(engine)
     ensure_document_library_align_v1(engine)
     migrate_legacy_admin_roles(engine)

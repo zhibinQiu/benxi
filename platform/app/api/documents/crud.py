@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, get_current_user
@@ -30,6 +30,10 @@ def get_document(
     document_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    live_index: bool = Query(
+        False,
+        description="为 true 时实时拉取 RAGFlow 索引进度（较慢，适合手动刷新）",
+    ),
 ) -> ApiResponse[DocumentDetail]:
     doc = document_service.get_document(db, document_id)
     if not doc:
@@ -39,7 +43,7 @@ def get_document(
             raise not_found("Document not found")
     elif not can_read_document(db, user, doc):
         raise forbidden()
-    return ApiResponse(data=_detail(db, doc, user=user))
+    return ApiResponse(data=_detail(db, doc, user=user, live_index=live_index))
 
 
 @router.patch("/{document_id}", response_model=ApiResponse[DocumentDetail])

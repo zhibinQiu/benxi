@@ -4,7 +4,7 @@
 def test_login_replaces_previous_session(client):
     login_a = client.post(
         "/api/v1/auth/login",
-        json={"account": "15963564658", "password": "admin123"},
+        json={"account": "admin", "password": "admin123"},
     )
     assert login_a.status_code == 200, login_a.text
     token_a = login_a.json()["data"]["access_token"]
@@ -17,7 +17,7 @@ def test_login_replaces_previous_session(client):
 
     login_b = client.post(
         "/api/v1/auth/login",
-        json={"account": "15963564658", "password": "admin123"},
+        json={"account": "admin", "password": "admin123"},
     )
     assert login_b.status_code == 200, login_b.text
     token_b = login_b.json()["data"]["access_token"]

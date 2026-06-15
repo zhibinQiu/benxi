@@ -7,6 +7,10 @@ const DOC_LIST_PREFIX = "platform:documents-list:v1:";
 const LIBRARY_TTL_MS = 120 * 1000;
 const KB_FOLDERS_TTL_MS = 45 * 1000;
 const DOC_LIST_TTL_MS = 60 * 1000;
+const DOC_LIST_MEM_TTL_MS = 5 * 60 * 1000;
+
+/** 同会话内存缓存，避免 sessionStorage 读写与 TTL 导致的二次打开延迟 */
+const memListCache = new Map();
 
 function readEntry(key, ttlMs) {
   try {
@@ -60,14 +64,24 @@ export function writeDocumentsKbFoldersCache(scope, deptId, ownerId, data) {
 }
 
 export function readDocumentsListCache(cacheKey) {
-  return readEntry(`${DOC_LIST_PREFIX}${cacheKey}`, DOC_LIST_TTL_MS);
+  const mem = memListCache.get(cacheKey);
+  if (mem?.data !== undefined && Date.now() - mem.savedAt <= DOC_LIST_MEM_TTL_MS) {
+    return mem.data;
+  }
+  const data = readEntry(`${DOC_LIST_PREFIX}${cacheKey}`, DOC_LIST_TTL_MS);
+  if (data !== null) {
+    memListCache.set(cacheKey, { savedAt: Date.now(), data });
+  }
+  return data;
 }
 
 export function writeDocumentsListCache(cacheKey, data) {
+  memListCache.set(cacheKey, { savedAt: Date.now(), data });
   writeEntry(`${DOC_LIST_PREFIX}${cacheKey}`, data);
 }
 
 export function clearDocumentsViewCache() {
+  memListCache.clear();
   try {
     const keys = [];
     for (let i = 0; i < sessionStorage.length; i += 1) {

@@ -8,6 +8,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.bootstrap_user import LEGACY_BOOTSTRAP_PHONES
 from app.core.phone import bootstrap_login_id, is_bootstrap_login_id, normalize_phone
 from app.models.org import User
 
@@ -42,7 +43,43 @@ def find_user_by_login_account(db: Session, account: str) -> User | None:
     if not raw:
         return None
     if is_bootstrap_login_id(raw):
-        return db.scalar(select(User).where(User.phone == bootstrap_login_id()))
+        boot = bootstrap_login_id()
+        user = db.scalar(select(User).where(User.phone == boot))
+        if user:
+            return user
+        for legacy in LEGACY_BOOTSTRAP_PHONES:
+            if legacy == boot:
+                continue
+            user = db.scalar(select(User).where(User.phone == legacy))
+            if user:
+                return user
+        from app.config import get_settings
+
+        settings = get_settings()
+        for key in (
+            settings.bootstrap_admin_username,
+            settings.bootstrap_admin_email,
+            settings.bootstrap_admin_display_name,
+            boot,
+        ):
+            if not key:
+                continue
+            user = db.scalar(
+                select(User).where(func.lower(User.username) == key.lower())
+            )
+            if user:
+                return user
+            user = db.scalar(
+                select(User).where(func.lower(User.email) == key.lower())
+            )
+            if user:
+                return user
+            user = db.scalar(
+                select(User).where(func.lower(User.display_name) == key.lower())
+            )
+            if user:
+                return user
+        return None
     try:
         phone = normalize_phone(raw)
         user = db.scalar(select(User).where(User.phone == phone))

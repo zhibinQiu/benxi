@@ -212,10 +212,18 @@
 }
 
 /* 夜间模式：输入框 / 选择器使用深色玻璃底，避免白底 */
+html[data-theme="dark"] .n-input,
+html[data-theme="dark"] .n-input.n-input--textarea,
+html[data-theme="dark"] .n-base-selection {
+  background: transparent !important;
+}
+
 html[data-theme="dark"] .n-input .n-input-wrapper,
 html[data-theme="dark"] .n-input.n-input--textarea,
-html[data-theme="dark"] .n-base-selection .n-base-selection-label {
+html[data-theme="dark"] .n-base-selection .n-base-selection-label,
+html[data-theme="dark"] .n-base-selection .n-base-selection-tags {
   background-color: rgba(36, 36, 38, 0.82) !important;
+  border-radius: inherit;
 }
 
 html[data-theme="dark"] .n-input .n-input__input-el,
@@ -353,8 +361,15 @@ body > .v-binder-follower-container .n-dropdown-menu {
 }
 
 .n-dropdown-option-body {
+  display: flex;
+  align-items: center;
   border-radius: var(--platform-radius-xs) !important;
   font-weight: 500;
+}
+
+.n-dropdown-option-body__label {
+  flex: 1;
+  min-width: 0;
 }
 
 .n-dropdown-option-body .n-dropdown-option-body__prefix {
@@ -420,8 +435,8 @@ body > .v-binder-follower-container .n-dropdown-menu {
 }
 
 .kb-folder-explorer {
-  --kb-folder-icon-max: 120px;
-  --kb-folder-icon-width: 92%;
+  --kb-folder-icon-max: 104px;
+  --kb-folder-icon-width: 84%;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 12px 14px;
@@ -895,8 +910,8 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 
 .kb-folder-create-card__art {
   position: relative;
-  width: var(--kb-folder-icon-width, 92%);
-  max-width: var(--kb-folder-icon-max, 120px);
+  width: var(--kb-folder-icon-width, 84%);
+  max-width: var(--kb-folder-icon-max, 104px);
   margin: 0 auto;
 }
 
@@ -1010,6 +1025,10 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
   width: 100%;
 }
 
+.documents-list-panel {
+  min-height: 240px;
+}
+
 .documents-actions-card :deep(.n-card-header),
 .documents-list-card :deep(.n-card-header) {
   display: none;
@@ -1070,6 +1089,41 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 
 .documents-search {
   width: min(220px, 42vw);
+}
+
+/* 顶栏操作区：搜索/选择器与透明 header-extension 背景融合，避免白框 */
+.documents-actions-bar .documents-search :deep(.n-input),
+.documents-actions-bar .documents-search :deep(.n-input-wrapper),
+.documents-actions-bar .documents-org-picker__select :deep(.n-base-selection-label) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.documents-actions-bar .documents-search :deep(.n-input__border),
+.documents-actions-bar .documents-search :deep(.n-input__state-border),
+.documents-actions-bar .documents-org-picker__select :deep(.n-base-selection__border),
+.documents-actions-bar .documents-org-picker__select :deep(.n-base-selection__state-border) {
+  border-color: color-mix(in srgb, var(--platform-border) 88%, transparent) !important;
+  box-shadow: none !important;
+}
+
+.documents-actions-bar .documents-search :deep(.n-input:not(.n-input--disabled):hover .n-input__state-border),
+.documents-actions-bar .documents-org-picker__select :deep(.n-base-selection:not(.n-base-selection--disabled):hover .n-base-selection__state-border) {
+  border-color: color-mix(in srgb, var(--platform-accent) 28%, var(--platform-border)) !important;
+}
+
+.documents-actions-bar .documents-search :deep(.n-input.n-input--focus .n-input__state-border),
+.documents-actions-bar .documents-org-picker__select :deep(.n-base-selection.n-base-selection--focus .n-base-selection__state-border),
+.documents-actions-bar .documents-org-picker__select :deep(.n-base-selection.n-base-selection--active .n-base-selection__state-border) {
+  border-color: var(--platform-accent) !important;
+  box-shadow: 0 0 0 2px var(--platform-accent-soft) !important;
+}
+
+html[data-theme="dark"] .documents-actions-bar .documents-search :deep(.n-input__border),
+html[data-theme="dark"] .documents-actions-bar .documents-search :deep(.n-input__state-border),
+html[data-theme="dark"] .documents-actions-bar .documents-org-picker__select :deep(.n-base-selection__border),
+html[data-theme="dark"] .documents-actions-bar .documents-org-picker__select :deep(.n-base-selection__state-border) {
+  border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 .table-icon-actions {

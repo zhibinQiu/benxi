@@ -63,4 +63,4 @@ pip install -r docs/requirements-docs.txt
 mkdocs serve -a 127.0.0.1:8765
 ```
 
-默认管理员见 `platform/.env.example` 中 `BOOTSTRAP_ADMIN_*`（开发常用手机号登录）。
+默认管理员：**账号 `admin`，密码 `admin123`**（见 `platform/.env.example` 中 `BOOTSTRAP_ADMIN_*`）。

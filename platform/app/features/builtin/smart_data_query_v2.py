@@ -17,7 +17,7 @@ register(
         permission_code="feature.smart_data_query",
         permission_name="智能问数",
         enabled=True,
-        category="carbon",
+        category="ai",
         sort_order=45,
         grant_to_roles=("sys_admin", "member", "member"),
     )

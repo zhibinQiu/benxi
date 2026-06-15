@@ -6,7 +6,7 @@
 #   - frontend: Node + Vite HMR（替代生产 Nginx 镜像）
 #
 # 浏览器: http://127.0.0.1:40005/ai/（SPA）
-#         http://127.0.0.1:18000（API 与 KnowFlow iframe）
+#         http://127.0.0.1:18000（API）
 
 services:
   api:
@@ -19,7 +19,6 @@ services:
     volumes:
       - ./platform/app:/app/app:ro
       - ./platform/workers:/app/workers:ro
-      - ./platform/knowflow-theme:/app/knowflow-theme:ro
       - ./docs:/app/system-docs/docs:ro
       - ./运维部署指南.md:/app/system-docs/运维部署指南.md:ro
       - ./RELEASE.md:/app/system-docs/RELEASE.md:ro
@@ -29,10 +28,6 @@ services:
       SYSTEM_DOCS_ROOT: /app/system-docs
       # 开发栈优先使用宿主机 speech-api（scripts/start_speech_local.sh），避免容器内重复下载/损坏模型
       SPEECH_SERVICE_URL: http://host.docker.internal:8765
-      KNOWFLOW_UI_UPSTREAM_URL: http://ragflow:80
-      # iframe 直链 /knowledge（umi 根路由）；静态资源前缀见 KNOWFLOW_UI_PROXY_PREFIX
-      KNOWFLOW_UI_PUBLIC_URL: http://127.0.0.1:${STACK_DEV_API_PORT:-18000}
-      KNOWFLOW_UI_PROXY_PREFIX: ""
       RAGFLOW_MYSQL_HOST: knowflow-mysql
 
   worker:

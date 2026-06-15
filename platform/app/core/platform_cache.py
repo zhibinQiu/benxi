@@ -162,3 +162,12 @@ def invalidate_document_caches(user_id: str | None = None) -> None:
     """文档/文件夹变更后清理相关缓存。"""
     invalidate_document_library_cache(user_id)
     invalidate_kb_folders_cache(user_id)
+    try:
+        from app.services.knowledge_scope_tree_service import invalidate_scope_tree_cache
+
+        if user_id:
+            invalidate_scope_tree_cache(uuid.UUID(str(user_id)))
+        else:
+            invalidate_scope_tree_cache()
+    except Exception:
+        pass

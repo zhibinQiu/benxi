@@ -59,6 +59,13 @@ export function renderSystemDocMarkdown(text) {
   }
 }
 
+export async function renderMermaidSvg(source) {
+  const mermaid = await loadMermaid();
+  const renderId = `md-mermaid-render-${mermaidSeq++}`;
+  const { svg } = await mermaid.render(renderId, normalizeMermaidSource(source));
+  return svg;
+}
+
 export async function mountMermaidInElement(root) {
   if (!root?.querySelectorAll) return;
   const nodes = root.querySelectorAll(".md-mermaid[data-mermaid]");

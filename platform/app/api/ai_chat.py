@@ -32,7 +32,7 @@ async def ai_home_chat(
         message=body.message,
         history=body.history,
         db=db,
-        user_id=user.id,
+        user=user,
         conversation_id=body.conversation_id,
     )
     return ApiResponse(data=AiChatResponse.model_validate(result))
@@ -49,7 +49,7 @@ async def ai_home_chat_stream(
             message=body.message,
             history=body.history,
             db=db,
-            user_id=user.id,
+            user=user,
             conversation_id=body.conversation_id,
         ):
             yield f"data: {payload}\n\n"

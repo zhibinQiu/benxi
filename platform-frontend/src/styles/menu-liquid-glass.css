@@ -70,6 +70,7 @@ html[data-theme="dark"] .sider-menu {
 /* 悬浮：轻玻璃衬底；仅 opacity 过渡 */
 .sider-menu .n-menu-item-content::before {
   z-index: 0 !important;
+  pointer-events: none;
   left: var(--sider-menu-glass-inset-left) !important;
   right: var(--sider-menu-glass-inset-right) !important;
   top: var(--sider-menu-glass-inset-top) !important;
@@ -117,9 +118,25 @@ html[data-theme="dark"] .sider-menu {
 /* 用户下拉 */
 .n-dropdown-menu .n-dropdown-option-body {
   position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
   border-radius: var(--platform-radius-xs) !important;
   font-size: 14px;
   font-weight: 500;
+}
+
+.n-dropdown-menu .n-dropdown-option-body__prefix {
+  flex-shrink: 0;
+}
+
+.n-dropdown-menu .n-dropdown-option-body__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.n-dropdown-menu .n-dropdown-option-body__suffix {
+  flex-shrink: 0;
 }
 
 .n-dropdown-menu .n-dropdown-option-body::before {

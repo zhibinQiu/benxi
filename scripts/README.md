@@ -12,6 +12,7 @@
 | `./dev.sh docker` | 全 Docker 热重载（compose dev-up） |
 | `./dev.sh stop` | 停止 Docker 栈 + 本机 dev |
 | `./dev.sh remote-dev` | 生成 `REMOTE_DEPS=1` 的 `platform/.env` |
+| 网关模式 | 服务器 `GATEWAY_MODE=1`，见 `deploy/gateway/README.md` |
 | `./dev.sh stack …` | Compose 编排（build / up / logs …） |
 | `./dev.sh deploy …` | 生产镜像部署 |
 | `./dev.sh knowflow setup` | 克隆 KnowFlow 源码 |
@@ -21,6 +22,7 @@
 | 脚本 | 职责 |
 |------|------|
 | `scripts/local-dev.sh` | 本机 API / Vite / Worker 启停 |
+| `scripts/dev-tunnel.sh` | SSH 反向隧道（经服务器暴露本机 :40005） |
 | `scripts/stack.sh` | Docker Compose 编排 |
 | `scripts/deploy.sh` | 远程镜像部署 |
 | `scripts/setup-remote-dev-env.sh` | remote-dev 用 `.env` |
@@ -35,10 +37,11 @@
 ## 典型流程
 
 ```bash
-# 本机开发 + 远程 Redis/MinIO/KnowFlow
+# 本机开发 + 远程 Redis/MinIO/KnowFlow（网关模式）
 REMOTE_HOST=172.19.134.45 ./dev.sh remote-dev
 bash scripts/verify-remote-deps.sh
 ./dev.sh local
+# frpc 见 deploy/frp/frpc.toml.example
 
 # 单机全 Docker
 ./dev.sh docker --profile knowflow --profile speech

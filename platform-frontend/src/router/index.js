@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getToken } from "../api/client";
 import { useAuth } from "../composables/useAuth";
+import { routeMenuKey, useMenuSettings } from "../composables/useMenuSettings";
 import { warmupKnowflowForRoute } from "../composables/useKnowflowWarmup";
 
 const routes = [
@@ -18,7 +19,7 @@ const routes = [
       {
         path: "ai-home",
         name: "ai-home",
-        meta: { title: "双碳智能体", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
+        meta: { title: "AI 助理", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
         component: () => import("../views/AiHomeView.vue"),
       },
       {
@@ -153,6 +154,18 @@ const routes = [
         component: () => import("../views/OcrView.vue"),
       },
       {
+        path: "system/kg-palantir",
+        name: "kg-palantir",
+        meta: {
+          title: "Palantir与知识图谱",
+          fullHeight: true,
+          featureIcon: "git-network",
+          perm: "feature.kg_palantir",
+          keepAlive: true,
+        },
+        component: () => import("../views/KgPalantirView.vue"),
+      },
+      {
         path: "system/compare",
         name: "compare",
         meta: { title: "文档对比", fullHeight: true, featureIcon: "git-compare" },
@@ -165,15 +178,26 @@ const routes = [
         component: () => import("../views/AssistWritingView.vue"),
       },
       {
-        path: "knowledge-graph",
-        name: "knowledge-graph",
+        path: "system/pageindex",
+        redirect: { name: "knowledge-search" },
+      },
+      {
+        path: "system/report-generation",
+        name: "report-generation",
         meta: {
-          title: "切片管理",
+          title: "报告生成",
           fullHeight: true,
-          featureIcon: "git-network",
-          backTo: "ai-home",
+          flushStart: true,
+          flushEnd: true,
+          featureIcon: "document-text",
+          keepAlive: true,
+          videoBg: true,
         },
-        component: () => import("../views/KnowledgeGraphView.vue"),
+        component: () => import("../views/ReportGenerationView.vue"),
+      },
+      {
+        path: "knowledge-graph",
+        redirect: { name: "documents" },
       },
       {
         path: "knowledge/search",
@@ -182,6 +206,7 @@ const routes = [
           title: "知识检索",
           fullHeight: true,
           flushStart: true,
+          flushEnd: true,
           featureIcon: "search",
           backTo: "ai-home",
           perm: "feature.knowledge_search",
@@ -260,14 +285,20 @@ const routes = [
       {
         path: "admin/monitor",
         name: "admin-monitor",
-        meta: { title: "系统监控", perm: "admin.audit" },
+        meta: { title: "系统监控" },
         component: () => import("../views/admin/SystemMonitorView.vue"),
       },
       {
         path: "admin/model-settings",
         name: "admin-model-settings",
-        meta: { title: "模型配置", perm: "admin.settings", featureLocalNav: true },
+        meta: { title: "模型配置", featureLocalNav: true },
         component: () => import("../views/admin/ModelSettingsView.vue"),
+      },
+      {
+        path: "admin/menu-settings",
+        name: "admin-menu-settings",
+        meta: { title: "菜单管理", perm: "admin.user" },
+        component: () => import("../views/admin/MenuSettingsView.vue"),
       },
       {
         path: "admin/docs",
@@ -289,8 +320,17 @@ router.beforeEach(async (to) => {
   if (!getToken()) return { name: "login", query: { redirect: to.fullPath } };
   const { loadUser, hasPerm, user } = useAuth();
   if (!user.value) await loadUser();
+  if (!getToken()) return { name: "login", query: { redirect: to.fullPath } };
   if (to.meta.perm && !hasPerm(to.meta.perm)) {
     return { name: "ai-home" };
+  }
+  if (user.value && !user.value.is_system_admin) {
+    const { loadMenuSettings, isMenuVisible, firstVisibleRouteName } = useMenuSettings();
+    await loadMenuSettings();
+    const menuKey = routeMenuKey(String(to.name || ""));
+    if (menuKey && !isMenuVisible(menuKey)) {
+      return { name: firstVisibleRouteName() };
+    }
   }
   return true;
 });

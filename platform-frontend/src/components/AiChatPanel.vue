@@ -11,16 +11,21 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { TimeOutline } from "@vicons/ionicons5";
+import { TimeOutline, DocumentTextOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
 import { NButton, NIcon, NSpin } from "naive-ui";
 import { marked } from "marked";
 import ChatComposer from "./ChatComposer.vue";
+import ChatBubbleRetry from "./ChatBubbleRetry.vue";
 import IconAction from "./IconAction.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
 import KnowledgeChatContent from "./KnowledgeChatContent.vue";
+import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 import KnowledgeCitationPreviewModal from "./KnowledgeCitationPreviewModal.vue";
+import KnowledgeMindMap from "./KnowledgeMindMap.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
+import { useI18n } from "../composables/useI18n.js";
+import { splitCitedCitations } from "../utils/reportCitations.js";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import {
@@ -58,6 +63,14 @@ const props = defineProps({
   chatScope: { type: String, default: "" },
   /** 是否展示历史对话 / 新对话（知识检索等单次会话场景设为 false） */
   showSessionActions: { type: Boolean, default: true },
+  /** 报告生成：最新报告支持思维导图与 Word 导出 */
+  showReportTools: { type: Boolean, default: false },
+  reportMindmapFetch: { type: Function, default: null },
+  reportWordExport: { type: Function, default: null },
+  /** { id, label, description?, prompt } */
+  reportOptimizePresets: { type: Array, default: () => [] },
+  /** 流式回复期间仍允许编辑输入框（Enter 发送会先停止当前生成） */
+  composerInputWhileLoading: { type: Boolean, default: false },
 });
 
 const conversationId = defineModel("conversationId", { type: String, default: null });
@@ -65,6 +78,7 @@ const conversationId = defineModel("conversationId", { type: String, default: nu
 const emit = defineEmits(["new-chat"]);
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -76,9 +90,106 @@ const input = ref("");
 const sending = ref(false);
 const messages = ref([]);
 const messagesRef = ref(null);
+const composerRef = ref(null);
 const citationPreviewShow = ref(false);
 const citationPreviewTarget = ref(null);
+const reportViewMode = ref("answer");
+const reportMindmapRef = ref(null);
+const exportingWord = ref(false);
 let streamAbort = null;
+let streamGeneration = 0;
+
+const lastAssistantIndex = computed(() => {
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    const m = messages.value[i];
+    if (m.role === "assistant" && (m.content || "").trim() && !m.streaming) {
+      return i;
+    }
+  }
+  return -1;
+});
+
+const lastReportQuestion = computed(() => {
+  const idx = lastAssistantIndex.value;
+  if (idx < 0) return "";
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    if (messages.value[i].role === "user") {
+      return messages.value[i].content || "";
+    }
+  }
+  return "";
+});
+
+const lastReportTitle = computed(() => {
+  const q = lastReportQuestion.value.trim();
+  if (!q) return "研究报告";
+  return q.length > 48 ? `${q.slice(0, 47)}…` : q;
+});
+
+watch(lastAssistantIndex, () => {
+  reportViewMode.value = "answer";
+});
+
+function isReportMessage(index, message) {
+  return (
+    props.showReportTools &&
+    index === lastAssistantIndex.value &&
+    message.role === "assistant" &&
+    !message.streaming &&
+    (message.content || "").trim()
+  );
+}
+
+async function showReportMindmap() {
+  reportViewMode.value = "mindmap";
+  await nextTick();
+  reportMindmapRef.value?.loadMindmap?.();
+}
+
+async function exportReportWord(content) {
+  if (!props.reportWordExport) return;
+  exportingWord.value = true;
+  try {
+    await props.reportWordExport({
+      title: lastReportTitle.value,
+      markdown: content,
+    });
+    ui.success(t("reportGeneration.exportWordSuccess"));
+  } catch (e) {
+    ui.error(e.message || t("reportGeneration.exportWordFailed"));
+  } finally {
+    exportingWord.value = false;
+  }
+}
+
+function reportCitationGroups(message) {
+  return splitCitedCitations(message?.content, message?.citations || []);
+}
+
+function reportQuestionForMessage(index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (messages.value[i]?.role === "user") {
+      return messages.value[i].content || "";
+    }
+  }
+  return "";
+}
+
+function onReportCitationClick(index) {
+  const el = document.getElementById(`report-cite-card-${index}`);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  openCitationPreview(index);
+}
+
+function useReportOptimizePreset(preset) {
+  const prompt = (preset?.prompt || preset?.description || preset?.label || "").trim();
+  if (!prompt) return;
+  input.value = prompt;
+  nextTick(() => composerRef.value?.focus?.());
+}
 
 function openCitationPreview(citationOrIndex, citations = []) {
   let citation = citationOrIndex;
@@ -86,6 +197,17 @@ function openCitationPreview(citationOrIndex, citations = []) {
     citation = (citations || []).find((c) => Number(c.index) === citationOrIndex);
   }
   if (!citation) return;
+  if (citation.source === "kg" && citation.entity_id) {
+    router.push({
+      name: "kg-palantir",
+      query: { focusEntityId: citation.entity_id },
+    });
+    return;
+  }
+  if (citation.source === "web" && citation.url) {
+    window.open(citation.url, "_blank", "noopener,noreferrer");
+    return;
+  }
   citationPreviewTarget.value = citation;
   citationPreviewShow.value = true;
 }
@@ -158,12 +280,13 @@ async function scrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-async function sendMessageStreaming(content, assistantIdx) {
-  const history = messages.value
-    .slice(0, assistantIdx)
+function buildChatHistory() {
+  return messages.value
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => ({ role: m.role, content: m.content }));
+}
 
+async function sendMessageStreaming(content, assistantIdx, history) {
   streamAbort?.abort();
   streamAbort = new AbortController();
 
@@ -185,16 +308,16 @@ async function sendMessageStreaming(content, assistantIdx) {
           scrollTick += 1;
           if (scrollTick % 2 === 0) scrollToBottom();
         },
-        onCitations: (citations) => {
-          if (!props.showCitations || !Array.isArray(citations)) return;
-          const row = messages.value[assistantIdx];
-          if (row) row.citations = citations;
-        },
         onReplace: (text) => {
           const row = messages.value[assistantIdx];
           if (!row) return;
           row.content = text;
           scrollToBottom();
+        },
+        onCitations: (citations) => {
+          if ((!props.showCitations && !props.showReportTools) || !Array.isArray(citations)) return;
+          const row = messages.value[assistantIdx];
+          if (row) row.citations = citations;
         },
         onDelta: (delta) => {
           const row = messages.value[assistantIdx];
@@ -210,13 +333,15 @@ async function sendMessageStreaming(content, assistantIdx) {
           const row = messages.value[assistantIdx];
           if (row) {
             const full = (payload?.reply || "").trim();
-            if (full && full.length >= (row.content || "").length) {
+            if (full) {
               row.content = full;
             }
             row.streaming = false;
             if (row.workflow) row.workflow.running = false;
-            if (props.showCitations && Array.isArray(payload?.citations)) {
-              row.citations = payload.citations;
+            if (props.showCitations || props.showReportTools) {
+              if (Array.isArray(payload?.citations)) {
+                row.citations = payload.citations;
+              }
             }
           }
           if (payload?.conversation_id) {
@@ -249,6 +374,7 @@ function finalizeStoppedAssistant(assistantIdx) {
 
 function stopGeneration() {
   if (!sending.value) return;
+  streamGeneration += 1;
   const assistantIdx = messages.value.length - 1;
   streamAbort?.abort();
   finalizeStoppedAssistant(assistantIdx);
@@ -275,12 +401,7 @@ async function revealContentTypewriter(row, fullText) {
   row.streaming = false;
 }
 
-async function sendMessageBlocking(content, assistantIdx) {
-  const history = messages.value
-    .slice(0, assistantIdx)
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ role: m.role, content: m.content }));
-
+async function sendMessageBlocking(content, assistantIdx, history) {
   messages.value.push({ role: "assistant", content: "", streaming: true });
   await scrollToBottom();
 
@@ -309,7 +430,14 @@ async function sendMessageBlocking(content, assistantIdx) {
 
 async function sendMessage(text) {
   const content = (text ?? input.value).trim();
-  if (!content || sending.value) return;
+  if (!content) return;
+
+  if (sending.value) {
+    if (!props.composerInputWhileLoading) return;
+    streamGeneration += 1;
+    streamAbort?.abort();
+    finalizeStoppedAssistant(messages.value.length - 1);
+  }
 
   if (props.streaming && !props.streamChat) {
     ui.error("未配置流式对话");
@@ -320,9 +448,11 @@ async function sendMessage(text) {
     return;
   }
 
+  const generation = ++streamGeneration;
   const firstTurn = !started.value;
   if (firstTurn) started.value = true;
 
+  const history = buildChatHistory();
   messages.value.push({ role: "user", content });
   input.value = "";
   sending.value = true;
@@ -343,9 +473,9 @@ async function sendMessage(text) {
         streaming: true,
         workflow: props.showWorkflowProgress ? emptyWorkflow() : null});
       await scrollToBottom();
-      await sendMessageStreaming(content, assistantIdx);
+      await sendMessageStreaming(content, assistantIdx, history);
     } else {
-      await sendMessageBlocking(content, assistantIdx);
+      await sendMessageBlocking(content, assistantIdx, history);
     }
   } catch (e) {
     if (e?.name === "AbortError") {
@@ -367,8 +497,10 @@ async function sendMessage(text) {
         error: true});
     }
   } finally {
-    sending.value = false;
-    streamAbort = null;
+    if (generation === streamGeneration) {
+      sending.value = false;
+      streamAbort = null;
+    }
     await scrollToBottom();
     persistSessionState();
   }
@@ -379,6 +511,42 @@ function onComposerKeydown(e) {
     e.preventDefault();
     sendMessage();
   }
+}
+
+function findUserIndexBefore(index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (messages.value[i]?.role === "user") return i;
+  }
+  return -1;
+}
+
+function canRetryMessage(index, message) {
+  if (sending.value || loadingHistory.value || message?.streaming) return false;
+  if (message?.role !== "assistant") return false;
+  return findUserIndexBefore(index) >= 0;
+}
+
+async function retryMessage(index) {
+  const message = messages.value[index];
+  if (!message || !canRetryMessage(index, message)) return;
+
+  const userIndex = findUserIndexBefore(index);
+  if (userIndex < 0) return;
+
+  const content = (messages.value[userIndex]?.content || "").trim();
+  if (!content) return;
+
+  streamAbort?.abort();
+  streamGeneration += 1;
+  sending.value = false;
+  streamAbort = null;
+
+  messages.value = messages.value.slice(0, userIndex);
+  if (!messages.value.length) {
+    started.value = false;
+  }
+
+  await sendMessage(content);
 }
 
 function useSuggestion(text) {
@@ -590,6 +758,10 @@ defineExpose({ newChat });
             :class="m.role === 'user' ? 'ai-home-msg--user' : 'ai-home-msg--bot'"
           >
             <div
+              class="ai-home-msg-stack"
+              :class="m.role === 'user' ? 'ai-home-msg-stack--user' : 'ai-home-msg-stack--bot'"
+            >
+            <div
               v-if="m.role === 'assistant'"
               class="ai-home-bubble ai-home-bubble--bot"
               :class="{
@@ -617,6 +789,109 @@ defineExpose({ newChat });
               <div v-else-if="m.streaming" class="ai-home-stream-text">
                 {{ m.content }}<span class="ai-home-cursor">▍</span>
               </div>
+              <template v-else-if="isReportMessage(i, m)">
+                <div class="ai-report-tools">
+                  <div class="ai-report-tools__tabs" role="tablist">
+                    <button
+                      type="button"
+                      class="ai-report-tools__tab"
+                      :class="{ 'ai-report-tools__tab--active': reportViewMode === 'answer' }"
+                      role="tab"
+                      :aria-selected="reportViewMode === 'answer'"
+                      @click="reportViewMode = 'answer'"
+                    >
+                      {{ t("reportGeneration.reportTab") }}
+                    </button>
+                    <button
+                      type="button"
+                      class="ai-report-tools__tab"
+                      :class="{ 'ai-report-tools__tab--active': reportViewMode === 'mindmap' }"
+                      role="tab"
+                      :aria-selected="reportViewMode === 'mindmap'"
+                      @click="showReportMindmap"
+                    >
+                      {{ t("reportGeneration.mindmapTab") }}
+                    </button>
+                  </div>
+                </div>
+                <KnowledgeMindMap
+                  v-show="reportViewMode === 'mindmap'"
+                  ref="reportMindmapRef"
+                  :question="reportQuestionForMessage(i)"
+                  :answer="m.content"
+                  :fetch-mindmap="reportMindmapFetch"
+                  :auto-load="true"
+                  :active="reportViewMode === 'mindmap'"
+                />
+                <template v-if="reportViewMode !== 'mindmap'">
+                  <KnowledgeChatContent
+                    v-if="linkifyCitations && m.content"
+                    :key="`kc-report-${i}`"
+                    :content="m.content"
+                    :citations="reportCitationGroups(m).cited"
+                    @open-citation="onReportCitationClick"
+                  />
+                  <MarkdownRichContent
+                    v-else-if="richMarkdown && m.content"
+                    :key="`md-report-${i}`"
+                    :content="m.content"
+                  />
+                  <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
+                  <section
+                    v-if="reportCitationGroups(m).local.length"
+                    class="ai-report-citations"
+                  >
+                    <div class="ai-report-citations__head">
+                      <span class="ai-report-citations__icon" aria-hidden="true">📎</span>
+                      <span>{{ t("knowledgeSearch.citationsSection") }}</span>
+                    </div>
+                    <div class="ai-report-citations__list">
+                      <KnowledgeCitationCard
+                        v-for="c in reportCitationGroups(m).local"
+                        :id="`report-cite-card-${c.index}`"
+                        :key="`${c.index}-${c.chunk_id || c.document_id}`"
+                        :citation="c"
+                        :question="reportQuestionForMessage(i)"
+                      />
+                    </div>
+                  </section>
+                  <section
+                    v-if="reportCitationGroups(m).web.length"
+                    class="ai-report-web-cites"
+                  >
+                    <div class="ai-report-citations__head">
+                      <span>{{ t("reportGeneration.webCitations") }}</span>
+                    </div>
+                    <ul class="ai-report-web-cites__list">
+                      <li v-for="c in reportCitationGroups(m).web" :key="`web-${c.index}`">
+                        <span class="ai-report-web-cites__num">[{{ c.index }}]</span>
+                        <a
+                          v-if="c.url"
+                          :href="c.url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="ai-report-web-cites__link"
+                        >
+                          {{ c.title }}
+                        </a>
+                        <span v-else>{{ c.title }}</span>
+                      </li>
+                    </ul>
+                  </section>
+                </template>
+                <div v-if="reportWordExport" class="ai-report-export">
+                  <button
+                    type="button"
+                    class="ai-report-export__btn"
+                    :disabled="exportingWord"
+                    @click="exportReportWord(m.content)"
+                  >
+                    <n-spin v-if="exportingWord" :size="14" />
+                    <n-icon v-else :size="15" :component="DocumentTextOutline" />
+                    <span>{{ t("reportGeneration.exportWord") }}</span>
+                  </button>
+                </div>
+              </template>
               <KnowledgeChatContent
                 v-else-if="linkifyCitations && m.content"
                 :key="`kc-${i}`"
@@ -632,7 +907,12 @@ defineExpose({ newChat });
               <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
               <div v-else class="ai-workflow-wait ai-workflow-wait--empty">未能生成回答</div>
               <ChatMessageCitations
-                v-if="showCitations && !m.streaming && m.citations?.length"
+                v-if="
+                  showCitations &&
+                  !showReportTools &&
+                  !m.streaming &&
+                  m.citations?.length
+                "
                 :citations="m.citations"
                 :preview-on-click="linkifyCitations"
                 @open-citation="openCitationPreview($event, m.citations)"
@@ -640,6 +920,12 @@ defineExpose({ newChat });
             </div>
             <div v-else class="ai-home-bubble ai-home-bubble--user">
               {{ m.content }}
+            </div>
+            <ChatBubbleRetry
+              v-if="m.role === 'assistant' && canRetryMessage(i, m)"
+              align="start"
+              @retry="retryMessage(i)"
+            />
             </div>
           </div>
         </TransitionGroup>
@@ -660,16 +946,39 @@ defineExpose({ newChat });
           </div>
           <div class="ai-home-composer">
             <ChatComposer
+              ref="composerRef"
               v-model="input"
               :placeholder="composerPlaceholder"
-              :disabled="sending"
+              :disabled="!composerInputWhileLoading && sending"
               :loading="sending"
+              :disable-input-while-loading="!composerInputWhileLoading"
               :min-rows="started ? chatComposerRows.minRows : landingComposerRows.minRows"
               :max-rows="started ? chatComposerRows.maxRows : landingComposerRows.maxRows"
               @keydown="onComposerKeydown"
               @send="sendMessage()"
               @stop="stopGeneration"
             />
+          </div>
+          <div
+            v-if="showReportTools && started && reportOptimizePresets.length"
+            class="ai-report-presets"
+          >
+            <div class="ai-report-presets__head">
+              <span class="ai-report-presets__label">{{ t("reportGeneration.optimizePresets") }}</span>
+            </div>
+            <div class="ai-report-presets__list">
+              <button
+                v-for="p in reportOptimizePresets"
+                :key="p.id"
+                type="button"
+                class="ai-report-presets__chip"
+                :disabled="!composerInputWhileLoading && sending"
+                :title="p.description || p.label"
+                @click="useReportOptimizePreset(p)"
+              >
+                {{ p.label }}
+              </button>
+            </div>
           </div>
           <div v-if="!started && suggestions.length" class="ai-home-suggestions">
             <button
@@ -1012,8 +1321,23 @@ defineExpose({ newChat });
   justify-content: flex-start;
 }
 
-.ai-home-bubble {
+.ai-home-msg-stack {
+  display: flex;
+  flex-direction: column;
   max-width: min(720px, 88%);
+}
+
+.ai-home-msg-stack--user {
+  align-items: flex-end;
+}
+
+.ai-home-msg-stack--bot {
+  align-items: flex-start;
+}
+
+.ai-home-bubble {
+  width: 100%;
+  max-width: 100%;
   padding: 12px 16px;
   border-radius: 14px;
   font-size: 14px;
@@ -1133,5 +1457,206 @@ defineExpose({ newChat });
 
 .ai-workflow-wait--empty {
   color: #94a3b8;
+}
+
+.ai-report-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--platform-accent-border-soft);
+}
+
+.ai-report-tools__tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--platform-bg) 70%, transparent);
+  border: 1px solid var(--platform-accent-border-soft);
+}
+
+.ai-report-tools__tab {
+  border: none;
+  background: transparent;
+  color: var(--platform-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ai-report-tools__tab--active {
+  color: var(--platform-accent-pressed);
+  background: var(--platform-accent-muted);
+}
+
+.ai-report-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--platform-bg) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--platform-glass-outline, var(--platform-accent-border-soft)) 75%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent);
+}
+
+.ai-report-presets__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-report-presets__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--platform-text-secondary);
+}
+
+.ai-report-presets__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-report-presets__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--platform-accent-border-soft) 85%, transparent);
+  background: color-mix(in srgb, var(--platform-surface, #fff) 88%, transparent);
+  color: var(--platform-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.ai-report-presets__chip:hover:not(:disabled) {
+  border-color: var(--platform-accent-border);
+  color: var(--platform-accent-pressed);
+  background: var(--platform-accent-muted);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 12%, transparent);
+  transform: translateY(-1px);
+}
+
+.ai-report-presets__chip:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ai-report-presets__chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-report-export {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--platform-accent-border-soft);
+}
+
+.ai-report-export__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--platform-accent-border);
+  border-radius: 10px;
+  background: var(--platform-accent-muted);
+  color: var(--platform-accent-pressed);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.ai-report-export__btn:hover:not(:disabled) {
+  background: var(--platform-accent-soft);
+  border-color: var(--platform-accent);
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--platform-accent) 16%, transparent);
+  transform: translateY(-1px);
+}
+
+.ai-report-export__btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ai-report-export__btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.ai-report-citations {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--platform-accent-border-soft);
+}
+
+.ai-report-citations__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--platform-text-secondary);
+  margin-bottom: 10px;
+}
+
+.ai-report-citations__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-report-web-cites {
+  margin-top: 12px;
+}
+
+.ai-report-web-cites__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-report-web-cites__num {
+  color: var(--platform-accent);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.ai-report-web-cites__link {
+  color: var(--platform-accent);
+  text-decoration: none;
+}
+
+.ai-report-web-cites__link:hover {
+  text-decoration: underline;
 }
 </style>

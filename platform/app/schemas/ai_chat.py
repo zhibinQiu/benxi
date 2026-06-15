@@ -20,6 +20,9 @@ class ChatCitation(BaseModel):
     document_id: str | None = None
     dataset_id: str | None = None
     segment_id: str | None = None
+    source: str | None = None
+    entity_id: str | None = None
+    type_label: str | None = None
 
 
 class AiChatResponse(BaseModel):

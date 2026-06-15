@@ -1,5 +1,5 @@
 /** 统一资讯订阅 REST API */
-import { api } from "./http.js";
+import { api, IMPORT_API_TIMEOUT_MS } from "./http.js";
 
 export async function ingestSubscriptionUrl(url) {
   return api("/api/v1/subscriptions/ingest-url", {
@@ -29,6 +29,7 @@ export async function fetchSubscriptionItem(ref) {
 export async function importSubscriptionItem(ref, body = {}) {
   return api(`/api/v1/subscriptions/items/${encodeURIComponent(ref)}/import`, {
     method: "POST",
+    timeoutMs: IMPORT_API_TIMEOUT_MS,
     body: JSON.stringify({
       sync_knowflow: body.sync_knowflow !== false,
       ...body,

@@ -5,6 +5,7 @@ import { NAlert, NButton, NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
 import { fetchFeatureEmbedMeta, getToken } from "../api/client";
+import { FEATURE_UNAVAILABLE, sanitizeUserFacingMessage } from "../utils/uiMessage";
 
 const route = useRoute();
 
@@ -55,9 +56,7 @@ function onIframeLoad() {
 
 function onIframeError() {
   iframeReady.value = false;
-  error.value =
-    error.value ||
-    "内嵌页面加载失败，请确认上游服务可访问且已配置反向代理。";
+  error.value = error.value || FEATURE_UNAVAILABLE;
 }
 
 function clearSlowTimer() {
@@ -88,12 +87,12 @@ async function loadEmbed() {
   try {
     meta.value = await fetchFeatureEmbedMeta(featureId.value);
     if (!meta.value?.available) {
-      error.value = "未配置内嵌地址";
+      error.value = FEATURE_UNAVAILABLE;
       return;
     }
     startSlowTimer();
   } catch (e) {
-    error.value = e.message || "加载失败";
+    error.value = sanitizeUserFacingMessage(e.message, FEATURE_UNAVAILABLE);
   } finally {
     bootstrapping.value = false;
   }
@@ -127,7 +126,7 @@ onBeforeUnmount(clearSlowTimer);
         @error="onIframeError"
       />
       <p v-if="loadSlow && showStartupHint" class="embed-slow-hint">
-        <n-text depth="3">若长时间无响应，请检查上游服务或网络连接。</n-text>
+        <n-text depth="3">若长时间无响应，请稍后重试或联系管理员。</n-text>
       </p>
     </div>
   </FeatureSubsystemShell>

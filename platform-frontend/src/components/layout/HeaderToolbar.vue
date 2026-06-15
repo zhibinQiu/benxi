@@ -155,7 +155,6 @@ function onUserMenuSelect(key) {
   }
   if (key === "logout") {
     logout();
-    router.push({ name: "login" });
   }
 }
 

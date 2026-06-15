@@ -14,7 +14,7 @@ register(
         permission_code="feature.smart_forecast",
         permission_name="智能预测",
         enabled=True,
-        category="carbon",
+        category="ai",
         sort_order=48,
         grant_to_roles=("sys_admin", "member", "member"),
     )

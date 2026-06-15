@@ -112,13 +112,19 @@ export function formatApiDetail(detail) {
 
 import {
   createAuthSilentError,
-  shouldSuppressAuthFeedback,
+  isSessionUnauthorized,
 } from "../utils/authError.js";
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
-import { dispatchSessionReplaced, isSessionReplacedError } from "../utils/sessionGuard.js";
+import {
+  dispatchSessionReplaced,
+  isSessionReplacedError,
+  redirectToLoginAfterAuthFailure,
+} from "../utils/sessionGuard.js";
 
 export const DEFAULT_API_TIMEOUT_MS = 20_000;
 export const UPLOAD_API_TIMEOUT_MS = 120_000;
+/** 收藏/订阅导入文档库（抓取 + PDF 生成 + 上传） */
+export const IMPORT_API_TIMEOUT_MS = 120_000;
 
 export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_API_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -135,23 +141,25 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_AP
   }
 }
 
+export function rejectHttpFailure(res, json = {}) {
+  const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
+  if (res.status === 401 && isSessionReplacedError(json, msg)) {
+    dispatchSessionReplaced(msg);
+  }
+  if (isSessionUnauthorized(res.status, msg)) {
+    redirectToLoginAfterAuthFailure();
+    throw createAuthSilentError(msg);
+  }
+  if (res.status === 503) {
+    throw new Error(sanitizeUserFacingMessage(msg, "系统繁忙，请稍后重试"));
+  }
+  throw new Error(sanitizeUserFacingMessage(msg, "请求失败"));
+}
+
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
-    if (res.status === 401 && isSessionReplacedError(json, msg)) {
-      dispatchSessionReplaced(msg);
-    }
-    if (
-      (res.status === 401 || res.status === 403) &&
-      shouldSuppressAuthFeedback(msg)
-    ) {
-      throw createAuthSilentError(msg);
-    }
-    if (res.status === 503) {
-      throw new Error(sanitizeUserFacingMessage(msg, "系统繁忙，请稍后重试"));
-    }
-    throw new Error(sanitizeUserFacingMessage(msg, "请求失败"));
+    rejectHttpFailure(res, json);
   }
   if (json.code !== undefined && json.code !== 0) {
     throw new Error(

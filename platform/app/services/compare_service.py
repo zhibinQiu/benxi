@@ -37,11 +37,40 @@ def validate_document_scope(
     min_count: int = 1,
     max_count: int = 4,
     required_level: str | None = None,
+    allow_index_only: bool = False,
 ) -> list[Document]:
     if len(document_ids) < min_count or len(document_ids) > max_count:
         from app.core.exceptions import bad_request
 
         raise bad_request(f"请选择 {min_count}–{max_count} 份文档")
+
+    from app.core.user_messages import (
+        DOCUMENT_COMPARE_NO_FILE,
+        KNOWLEDGE_QA_DOC_UNAVAILABLE,
+    )
+    from app.services.document_index_service import (
+        enrich_document_index_meta,
+        is_index_ready_meta,
+    )
+    from app.services.document_service import resolve_current_version
+
+    index_ready_ids: set[str] = set()
+    if allow_index_only:
+        candidates: list[Document] = []
+        for did in document_ids:
+            doc = get_document(db, did)
+            if doc and not doc.deleted_at:
+                candidates.append(doc)
+        if candidates:
+            meta_by_doc = enrich_document_index_meta(
+                db, user, candidates, live_ragflow=False
+            )
+            index_ready_ids = {
+                did
+                for did, meta in meta_by_doc.items()
+                if is_index_ready_meta(meta)
+            }
+
     docs: list[Document] = []
     for did in document_ids:
         doc = get_document(db, did)
@@ -54,11 +83,21 @@ def validate_document_scope(
             from app.core.exceptions import forbidden
 
             raise forbidden(f"无权使用文档: {doc.title}")
-        if not doc.current_version_id:
-            from app.core.exceptions import bad_request
+        title = (doc.title or "未命名文档").strip() or "未命名文档"
+        if resolve_current_version(db, doc, repair=True):
+            docs.append(doc)
+            continue
+        if allow_index_only and str(doc.id) in index_ready_ids:
+            docs.append(doc)
+            continue
+        from app.core.exceptions import bad_request
 
-            raise bad_request(f"文档未上传文件: {doc.title}")
-        docs.append(doc)
+        message = (
+            KNOWLEDGE_QA_DOC_UNAVAILABLE.format(title=title)
+            if allow_index_only
+            else DOCUMENT_COMPARE_NO_FILE.format(title=title)
+        )
+        raise bad_request(message)
     return docs
 
 
@@ -81,9 +120,11 @@ def get_document_file_bytes(
     db: Session, user: User, document_id: uuid.UUID
 ) -> tuple[bytes, str, str]:
     """返回文档原始字节，供对比页内嵌预览（同源 + Bearer）。"""
+    from app.services.document_service import resolve_current_version
+
     docs = validate_document_scope(db, user, [document_id], min_count=1, max_count=1)
     doc = docs[0]
-    version = db.get(DocumentVersion, doc.current_version_id)
+    version = resolve_current_version(db, doc)
     if not version:
         from app.core.exceptions import bad_request
 
@@ -199,10 +240,12 @@ def get_document_content_for_version(
 
 
 def load_parsed_documents(db: Session, docs: list[Document]) -> list[ParsedDocument]:
+    from app.services.document_service import resolve_current_version
+
     store = get_object_store()
     parsed: list[ParsedDocument] = []
     for doc in docs:
-        version = db.get(DocumentVersion, doc.current_version_id)
+        version = resolve_current_version(db, doc)
         if not version:
             continue
         data = store.get_object_bytes(version.file_key)

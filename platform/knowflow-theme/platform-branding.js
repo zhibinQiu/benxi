@@ -57,7 +57,7 @@
       });
   }
 
-  var APP_NAME = window.__ZT_PLATFORM_APP_NAME__ || "AI办公系统";
+  var APP_NAME = window.__ZT_PLATFORM_APP_NAME__ || "AI 办公系统";
   var PRIMARY = "#18a058";
   var PRIMARY_HOVER = "#36ad6a";
   var PRIMARY_PRESSED = "#0c7a43";

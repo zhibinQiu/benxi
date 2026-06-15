@@ -29,6 +29,22 @@ from app.services.data_analysis_profile import (
 )
 
 _ACCEPTED_EXTENSIONS = (".xlsx", ".xls", ".csv")
+_BUILTIN_LIBRARIES = ("pandas", "numpy", "matplotlib", "seaborn")
+_BUILTIN_VARIABLES = ("df", "pd", "np", "plt", "sns", "display", "display_image")
+_DEFAULT_CELL_CODE = """\
+# 内置: df, pd, np, plt, sns, display, display_image
+# 绘图无需 plt.show()，运行后图表自动展示
+
+print("数据预览:")
+print(df.head())
+print()
+print(df.describe())
+
+# 示例图表（按需取消注释）
+# fig, ax = plt.subplots(figsize=(8, 4))
+# sns.histplot(df.select_dtypes(include="number").iloc[:, 0], ax=ax)
+# ax.set_title("数值分布")
+"""
 
 _SYSTEM_PROMPT = (
     "你是企业数据分析助手。用户已上传 Excel 或 CSV，你只能看到数据结构画像（字段、类型、"
@@ -37,10 +53,10 @@ _SYSTEM_PROMPT = (
     "在同一数据集上递进分析，避免重复已完成的工作。\n"
     "请根据用户问题生成可执行的 pandas / matplotlib / seaborn 分析代码。\n"
     "约束：\n"
-    "1. 已有变量 df（已加载数据）、DATA_PATH、FILE_TYPE、pd、np、plt、sns；"
+    "1. 已有变量 df（已加载数据）、DATA_PATH、FILE_TYPE、pd、np、plt、sns、display、display_image；"
     "Excel 另有 ACTIVE_SHEET\n"
     "2. 禁止文件读写、网络、系统调用\n"
-    "3. 统计用 df 聚合；绘图用 plt 或 sns，无需 plt.show()\n"
+    "3. 统计用 df 聚合；绘图用 plt 或 sns，无需 plt.show()，运行后自动展示图表\n"
     "4. 输出必须是 JSON 对象，不要 Markdown 围栏，格式：\n"
     '{"reply":"自然语言说明","cells":[{"title":"单元标题","code":"python代码"}]}\n'
     "若仅需解释无需代码，cells 可为空数组。"
@@ -67,6 +83,8 @@ def get_meta() -> DataAnalysisMetaOut:
         accepted_extensions=list(_ACCEPTED_EXTENSIONS),
         exec_timeout_seconds=settings.data_analysis_exec_timeout_seconds,
         service_hint=hint,
+        builtin_libraries=list(_BUILTIN_LIBRARIES),
+        builtin_variables=list(_BUILTIN_VARIABLES),
     )
 
 
@@ -302,6 +320,31 @@ def update_cell(
         target["title"] = title.strip() or target.get("title") or "分析单元"
     store.save_session(user_id, session_id, state)
     return NotebookCellOut.model_validate(target)
+
+
+def create_cell(
+    *,
+    user_id: int,
+    session_id: str,
+    title: str | None = None,
+    code: str | None = None,
+) -> NotebookCellOut:
+    state = _load_owned_session(user_id, session_id)
+    if not state.get("dataset_id"):
+        raise bad_request("请先上传数据文件并绑定数据集")
+
+    cell = {
+        "id": store.new_cell_id(),
+        "title": (title or "").strip() or "手动分析",
+        "code": (code or "").strip() or _DEFAULT_CELL_CODE,
+        "status": "idle",
+        "stdout": "",
+        "stderr": "",
+        "images": [],
+    }
+    state.setdefault("cells", []).append(cell)
+    store.save_session(user_id, session_id, state)
+    return NotebookCellOut.model_validate(cell)
 
 
 def run_cell(*, user_id: int, session_id: str, cell_id: str) -> NotebookCellOut:

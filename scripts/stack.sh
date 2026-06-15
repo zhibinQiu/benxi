@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 绿叶 AI 办公系统 — 统一 Docker 栈（仓库根 compose.yaml）
+# AI 办公系统 — 统一 Docker 栈（仓库根 compose.yaml）
 #
 #   bash scripts/stack.sh build              # 构建自有镜像（core）
 #   bash scripts/stack.sh build --profile knowflow --profile speech
@@ -84,8 +84,15 @@ compose_cmd() {
   if [[ "$COMPOSE_DEV" == 1 ]]; then
     args+=(-f compose.dev.yaml)
   fi
-  if [[ "${EXPOSE_DEPS:-0}" == 1 ]] && [[ -f compose.expose-deps.yaml ]]; then
-    args+=(-f compose.expose-deps.yaml)
+  if [[ "${EXPOSE_DEPS:-0}" == 1 ]]; then
+    if [[ "${GATEWAY_MODE:-0}" == 1 ]] && [[ -f compose.expose-deps.gateway.yaml ]]; then
+      args+=(-f compose.expose-deps.gateway.yaml)
+    elif [[ -f compose.expose-deps.yaml ]]; then
+      args+=(-f compose.expose-deps.yaml)
+    fi
+  fi
+  if [[ "${GATEWAY_MODE:-0}" == 1 ]] && [[ -f compose.gateway.yaml ]]; then
+    args+=(-f compose.gateway.yaml)
   fi
   if [[ ${#COMPOSE_PROFILES_EXTRA[@]} -gt 0 ]]; then
     local p

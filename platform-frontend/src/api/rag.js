@@ -1,5 +1,5 @@
 /** 知识问答 / KnowFlow 嵌入 API */
-import { api, formatApiDetail, getApiBase, getToken } from "./http.js";
+import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
 
 let ragMetaCache = null;
 let ragMetaCacheAt = 0;
@@ -128,8 +128,7 @@ export function createPlatformChatStream(path) {
 
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
-      const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
-      throw new Error(msg);
+      rejectHttpFailure(res, json);
     }
 
     const reader = res.body?.getReader();
@@ -162,6 +161,7 @@ export function createPlatformChatStream(path) {
         }
         if (payload.workflow) onWorkflow?.(payload.workflow);
         if (payload.replace != null) onReplace?.(payload.replace);
+        if (payload.citations) onCitations?.(payload.citations);
         if (payload.delta) onDelta?.(payload.delta);
         if (payload.done) {
           onDone?.(payload);

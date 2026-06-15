@@ -13,8 +13,7 @@ import {
   NSpace,
   NSpin,
   NTag,
-  NText,
-  useDialog } from "naive-ui";
+  NText } from "naive-ui";
 import { ReorderThreeOutline, SparklesOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import HintTooltip from "../components/HintTooltip.vue";
@@ -33,7 +32,6 @@ import { deleteSequentially } from "../utils/batchActions";
 
 const { t } = useI18n();
 const ui = usePlatformUi();
-const dialog = useDialog();
 
 const loading = ref(false);
 const pending = ref([]);
@@ -139,12 +137,10 @@ function handleBatchDelete(status) {
       : done.value.filter((item) => ids.includes(item.id));
   if (!rows.length) return;
   const summary = rows.length === 1 ? "该待办" : `选中的 ${rows.length} 条待办`;
-  dialog.warning({
+  ui.confirmDelete({
     title: "批量删除待办",
     content: `确定删除${summary}？`,
-    positiveText: "删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
+    onPositive: async () => {
       const { deleted, failed } = await deleteSequentially(rows, (row) => deleteTodo(row.id));
       if (status === "pending") selectedPendingIds.value = [];
       else selectedDoneIds.value = [];
@@ -156,7 +152,6 @@ function handleBatchDelete(status) {
         ui.success(deleted > 1 ? `已删除 ${deleted} 条待办` : "已删除");
       }
       await load();
-      return !failed.length;
     }});
 }
 

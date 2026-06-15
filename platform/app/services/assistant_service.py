@@ -10,6 +10,7 @@ from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.assistant import AssistantChatMessage
 from app.services import platform_chat_store
+from app.config import get_settings
 from app.services.assistant_knowledge import build_platform_knowledge
 
 _MAX_HISTORY = 10
@@ -28,8 +29,9 @@ async def chat_with_assistant(
         raise bad_request("智能客服未配置，请联系管理员配置 DeepSeek API")
 
     knowledge = build_platform_knowledge(db, user, page_hint=page_hint)
+    app_name = (get_settings().app_name or "AI 办公系统").strip()
     system = (
-        "你是「智碳平台AI系统」内置智能客服助手，专门帮助用户理解和使用本平台。\n\n"
+        f"你是「{app_name}」内置智能客服助手，专门帮助用户理解和使用本平台。\n\n"
         "【平台知识库】\n"
         f"{knowledge}\n\n"
         "请严格依据知识库回答。若问题超出平台使用范围，礼貌说明并建议联系系统管理员。"

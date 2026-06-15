@@ -6,20 +6,29 @@ let lastAt = 0;
 export const KNOWLEDGE_UNAVAILABLE =
   "知识服务暂不可用，请稍后重试或联系管理员。";
 
-const VENDOR_RE = /ragflow|knowflow/i;
+/** 功能页统一提示：不暴露 PaddleOCR / FunASR / SearXNG 等依赖细节 */
+export const FEATURE_UNAVAILABLE =
+  "该功能暂不可用，请联系管理员。";
 
-/** 去掉内部产品名，统一为对用户友好的提示 */
+const VENDOR_RE = /ragflow|knowflow/i;
+const ADMIN_SETUP_RE =
+  /资源管理|PaddleOCR|FunASR|SearXNG|DeepSeek|layout-parsing|未配置.*(?:服务|模型|LLM|API)/i;
+
+/** 去掉内部产品名与运维配置指引，统一为对用户友好的提示 */
 export function sanitizeUserFacingMessage(text, fallback = KNOWLEDGE_UNAVAILABLE) {
   const m = String(text || "").trim();
   if (!m) return fallback;
   if (
     VENDOR_RE.test(m) ||
+    ADMIN_SETUP_RE.test(m) ||
     m.includes("服务器内部") ||
     m.includes("Internal Server") ||
     m.includes("Connection refused") ||
     m.includes("ECONNREFUSED") ||
     m.includes("QueuePool") ||
-    m.includes("连接池")
+    m.includes("连接池") ||
+    m.includes("上游服务") ||
+    m.includes("反向代理")
   ) {
     return fallback;
   }

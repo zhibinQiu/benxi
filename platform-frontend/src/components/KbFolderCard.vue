@@ -219,8 +219,8 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 }
 
 .kb-folder-card__art-wrap {
-  width: var(--kb-folder-icon-width, 92%);
-  max-width: var(--kb-folder-icon-max, 120px);
+  width: var(--kb-folder-icon-width, 84%);
+  max-width: var(--kb-folder-icon-max, 104px);
   margin: 0 auto;
   transition: transform 0.32s cubic-bezier(0.34, 1.25, 0.64, 1);
 }

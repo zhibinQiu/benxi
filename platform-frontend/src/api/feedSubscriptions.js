@@ -1,5 +1,5 @@
 /** 资讯订阅（Feed）REST API */
-import { api, buildImportToPersonalLibraryBody } from "./http.js";
+import { api, buildImportToPersonalLibraryBody, IMPORT_API_TIMEOUT_MS } from "./http.js";
 
 export async function fetchFeedPresets() {
   return api("/api/v1/feed-subscriptions/presets");
@@ -43,6 +43,7 @@ export async function fetchFeedEntry(entryId) {
 export async function importFeedEntry(entryId, body = {}) {
   return api(`/api/v1/feed-subscriptions/entries/${entryId}/import`, {
     method: "POST",
+    timeoutMs: IMPORT_API_TIMEOUT_MS,
     body: JSON.stringify(buildImportToPersonalLibraryBody(body)),
   });
 }

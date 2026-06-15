@@ -3,31 +3,16 @@
 from __future__ import annotations
 
 
-def test_carbon_asset_feature_listed(client, admin_token):
+def test_carbon_asset_feature_listed_but_disabled(client, admin_token):
     r = client.get("/api/v1/system/features", headers={"Authorization": f"Bearer {admin_token}"})
     assert r.status_code == 200
-    items = r.json()["data"]
-    ids = [x["id"] for x in items]
-    assert "carbon_asset_trading" in ids
+    item = next(x for x in r.json()["data"] if x["id"] == "carbon_asset_trading")
+    assert item["enabled"] is False
+    assert item["accessible"] is False
+    assert item["route"] is None
 
 
-def test_carbon_asset_overview_and_trade(client, admin_token):
+def test_carbon_asset_api_unavailable_when_disabled(client, admin_token):
     h = {"Authorization": f"Bearer {admin_token}"}
     r = client.get("/api/v1/carbon-assets/overview", headers=h)
-    assert r.status_code == 200
-    assert r.json()["data"]["demo"] is True
-
-    r = client.post(
-        "/api/v1/carbon-assets/trades",
-        headers=h,
-        json={"side": "buy", "asset_code": "CEA", "quantity_tco2": 10},
-    )
-    assert r.status_code == 200
-    assert r.json()["data"]["trade"]["side"] == "buy"
-
-    r = client.post(
-        "/api/v1/carbon-assets/trades",
-        headers=h,
-        json={"side": "sell", "asset_code": "CEA", "quantity_tco2": 50_000},
-    )
-    assert r.status_code == 400
+    assert r.status_code == 404

@@ -8,8 +8,7 @@ import {
   NEmpty,
   NIcon,
   NSpin,
-  NText,
-  useDialog } from "naive-ui";
+  NText } from "naive-ui";
 import { ArrowBackOutline, ChatbubblesOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import {
@@ -23,7 +22,6 @@ import { deleteSequentially } from "../utils/batchActions";
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
-const dialog = useDialog();
 
 const scope = computed(() => String(route.params.scope || ""));
 const pageTitle = computed(() => chatScopeTitle(scope.value));
@@ -100,12 +98,11 @@ function handleBatchDelete() {
   const rows = items.value.filter((row) => selectedIds.value.includes(row.id));
   if (!rows.length) return;
   const summary = rows.length === 1 ? "该对话" : `选中的 ${rows.length} 条对话`;
-  dialog.warning({
+  ui.confirmDelete({
     title: "批量删除对话",
     content: `确定永久删除${summary}？删除后无法恢复。`,
     positiveText: "永久删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
+    onPositive: async () => {
       batchDeleting.value = true;
       try {
         const { deleted, failed } = await deleteSequentially(rows, (row) =>
@@ -120,23 +117,18 @@ function handleBatchDelete() {
         } else {
           ui.success(deleted > 1 ? `已永久删除 ${deleted} 条对话` : "已永久删除该对话");
         }
-      } catch (e) {
-        ui.error(e.message || "删除失败");
-        return false;
       } finally {
         batchDeleting.value = false;
       }
-      return true;
     }});
 }
 
 function onClearAll() {
-  dialog.warning({
+  ui.confirmDelete({
     title: "清空全部历史对话",
     content: "将永久删除当前场景下的全部历史对话，且无法恢复。确定继续？",
     positiveText: "永久删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
+    onPositive: async () => {
       clearing.value = true;
       try {
         const res = await clearChatConversations(scope.value);
@@ -144,13 +136,9 @@ function onClearAll() {
         selectedIds.value = [];
         const n = res?.deleted ?? 0;
         ui.success(n > 0 ? `已永久删除 ${n} 条对话` : "已清空");
-      } catch (e) {
-        ui.error(e.message || "清空失败");
-        return false;
       } finally {
         clearing.value = false;
       }
-      return true;
     }});
 }
 

@@ -20,20 +20,3 @@ register(
         grant_to_roles=("sys_admin", "member"),
     )
 )
-
-register(
-    FeaturePlugin(
-        id="emission_reduction_strategy",
-        title="智慧减排",
-        description="基于行业与业务数据生成减排路径、措施清单与效益评估",
-        icon="leaf",
-        permission_code="feature.emission_reduction_strategy",
-        permission_name="智慧减排",
-        enabled=False,
-        tag="待集成",
-        category="carbon",
-        sort_order=49,
-        grant_to_roles=("sys_admin", "member"),
-    )
-)
-

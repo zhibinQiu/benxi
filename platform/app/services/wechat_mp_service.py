@@ -513,6 +513,7 @@ def import_article_to_document(
         return {
             "document_id": existing.document_id,
             "knowflow_synced": knowflow_synced,
+            "queued": False,
         }
 
     article = db.get(WechatMpArticle, article_id)
@@ -542,6 +543,7 @@ def import_article_to_document(
         article.content_html or "",
         summary=article.summary or "",
         link=link,
+        allow_refetch=False,
     )
     if html_body and html_body != (article.content_html or ""):
         article.content_html = html_body
@@ -565,6 +567,7 @@ def import_article_to_document(
         file_name=file_name,
         mime_type=mime_type,
         content=content,
+        schedule_post_upload=False,
     )
     db.refresh(doc)
 
@@ -577,11 +580,33 @@ def import_article_to_document(
     )
     db.flush()
 
-    knowflow_synced = False
-    if sync_knowflow:
-        knowflow_synced = _try_sync_knowflow(db, user, doc.id)
+    from app.services.subscription_import_service import (
+        enqueue_subscription_import_finalize,
+    )
 
-    return {"document_id": doc.id, "knowflow_synced": knowflow_synced}
+    job = enqueue_subscription_import_finalize(
+        db,
+        user,
+        doc.id,
+        sync_knowflow=sync_knowflow,
+        source="wechat_article",
+        source_id=article_id,
+        title=doc.title,
+        link=link,
+        source_label=detail.get("source_name") or "微信公众号",
+        html_body=html_body or f"<p>{article.summary}</p>",
+        summary=summary_text or article.summary or "",
+        fallback_stem="wechat-article",
+    )
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
+    return {
+        "document_id": doc.id,
+        "knowflow_synced": False,
+        "queued": True,
+        "job_id": job.id,
+    }
 
 
 def _try_sync_knowflow(db: Session, user: User, document_id: uuid.UUID) -> bool:

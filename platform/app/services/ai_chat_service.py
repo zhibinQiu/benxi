@@ -1,42 +1,83 @@
-"""AI 首页 — 双碳智能体对话（内置 DeepSeek LLM）。"""
+"""AI 首页 — AI 助理对话（内置 DeepSeek LLM）。"""
 
 from __future__ import annotations
 
 import json
 import uuid
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
+from app.core.permissions import user_has_permission
 from app.integrations.deepseek_client import is_configured, resolve_credentials
+from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services import platform_chat_store
+from app.services.kg_service import KgQaContext, retrieve_kg_context_for_question
 
 _MAX_HISTORY = 20
 
-_SYSTEM_PROMPT = """你是「双碳智能体」，面向企业碳管理、碳核算、碳减排路径、碳市场与 ESG 披露等领域的专业 AI 助手。
+_SYSTEM_PROMPT = """你是「AI 助理」，企业 AI 办公系统的内置智能助手。
 
 你的能力包括：
-- 解读双碳政策、标准与行业实践（如碳排放核算边界、范围一/二/三、碳足迹等）
-- 协助梳理减排思路、能源结构优化与数据治理建议
-- 用清晰、可执行的语言回答，必要时给出分点说明
+- 解答文档管理、权限分享、PDF 翻译、知识检索等平台使用问题
+- 协助梳理办公场景下的信息整理、写作润色与数据分析思路
+- 结合知识图谱上下文回答业务相关问题，引用时标注来源编号
 
 回答要求：
-- 使用简体中文
-- 结构清晰，可使用简短 Markdown（标题、列表、加粗）
-- 对不确定的数据或政策细节应说明需以最新官方文件为准，勿编造具体数值或文号
-- 若问题与双碳主题无关，可简要回应并友好引导回双碳相关话题"""
+- 使用简体中文，结构清晰，可使用简短 Markdown
+- 对不确定的政策或数据应说明需以官方来源为准，勿编造具体数值或文号
+- 超出平台或办公场景的问题可简要回应并引导回相关能力"""
+
+_KG_CONTEXT_INSTRUCTION = """以下是从用户问题中解析出的知识图谱实体与关系上下文。
+请在回答中优先参考这些结构化关联；引用图谱事实时在句末标注编号，格式为 [1]、[2]。
+若图谱未覆盖问题所需信息，可结合专业知识补充，并说明图谱中未涉及的部分。"""
 
 
-def _build_chat_messages(*, message: str, history: list[AiChatMessage]) -> list[dict]:
-    messages: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+def _kg_enabled_for_user(db: Session, user: User) -> bool:
+    return user_has_permission(db, user, "feature.kg_palantir")
+
+
+def _resolve_kg_context(
+    db: Session | None,
+    user: User | None,
+    message: str,
+) -> KgQaContext | None:
+    if db is None or user is None or not _kg_enabled_for_user(db, user):
+        return None
+    return retrieve_kg_context_for_question(db, user, message)
+
+
+def _build_chat_messages(
+    *,
+    message: str,
+    history: list[AiChatMessage],
+    kg_context: KgQaContext | None = None,
+) -> list[dict]:
+    system = _SYSTEM_PROMPT
+    if kg_context and kg_context.context_text:
+        system = (
+            f"{system}\n\n{_KG_CONTEXT_INSTRUCTION}\n\n{kg_context.context_text.strip()}"
+        )
+    messages: list[dict] = [{"role": "system", "content": system}]
     tail = history[-_MAX_HISTORY:] if history else []
     for item in tail:
         messages.append({"role": item.role, "content": item.content.strip()})
     messages.append({"role": "user", "content": message.strip()})
     return messages
+
+
+def _kg_meta_payload(kg_context: KgQaContext | None) -> dict[str, Any]:
+    if not kg_context:
+        return {}
+    return {
+        "kg_matched_entities": len(kg_context.matched_entity_ids),
+        "kg_entity_count": kg_context.entity_count,
+        "kg_relation_count": kg_context.relation_count,
+    }
 
 
 def _persist_turn(
@@ -70,7 +111,7 @@ async def iter_chat_with_ai_agent_stream(
     message: str,
     history: list[AiChatMessage],
     db: Session | None = None,
-    user_id: uuid.UUID | None = None,
+    user: User | None = None,
     conversation_id: str | None = None,
 ) -> AsyncIterator[str]:
     """逐块产出 SSE data 行（不含 event: 前缀，由 API 层包装）。"""
@@ -78,8 +119,12 @@ async def iter_chat_with_ai_agent_stream(
         yield json.dumps({"error": "AI 对话未配置，请联系管理员配置 DeepSeek API"}, ensure_ascii=False)
         return
 
+    kg_context = _resolve_kg_context(db, user, message)
+    if kg_context and kg_context.citations:
+        yield json.dumps({"citations": kg_context.citations}, ensure_ascii=False)
+
     accumulated = ""
-    messages = _build_chat_messages(message=message, history=history)
+    messages = _build_chat_messages(message=message, history=history, kg_context=kg_context)
     api_key, base_url, model = resolve_credentials()
     payload = {
         "model": model,
@@ -116,20 +161,21 @@ async def iter_chat_with_ai_agent_stream(
                         yield json.dumps({"delta": text}, ensure_ascii=False)
         out_conv_id = _persist_turn(
             db,
-            user_id=user_id,
+            user_id=user.id if user else None,
             conversation_id=conversation_id,
             message=message,
             reply=accumulated,
         )
-        yield json.dumps(
-            {
-                "done": True,
-                "model": model,
-                "reply": accumulated,
-                "conversation_id": out_conv_id,
-            },
-            ensure_ascii=False,
-        )
+        done_payload: dict[str, Any] = {
+            "done": True,
+            "model": model,
+            "reply": accumulated,
+            "conversation_id": out_conv_id,
+            **_kg_meta_payload(kg_context),
+        }
+        if kg_context and kg_context.citations:
+            done_payload["citations"] = kg_context.citations
+        yield json.dumps(done_payload, ensure_ascii=False)
     except httpx.HTTPError as e:
         yield json.dumps({"error": f"无法连接 AI 服务: {e}"}, ensure_ascii=False)
 
@@ -139,13 +185,14 @@ async def chat_with_ai_agent(
     message: str,
     history: list[AiChatMessage],
     db: Session | None = None,
-    user_id: uuid.UUID | None = None,
+    user: User | None = None,
     conversation_id: str | None = None,
 ) -> dict:
     if not is_configured():
         raise bad_request("AI 对话未配置，请联系管理员配置 DeepSeek API")
 
-    messages = _build_chat_messages(message=message, history=history)
+    kg_context = _resolve_kg_context(db, user, message)
+    messages = _build_chat_messages(message=message, history=history, kg_context=kg_context)
     api_key, base_url, model = resolve_credentials()
     payload = {
         "model": model,
@@ -174,9 +221,17 @@ async def chat_with_ai_agent(
         raise bad_request("AI 返回为空")
     out_conv_id = _persist_turn(
         db,
-        user_id=user_id,
+        user_id=user.id if user else None,
         conversation_id=conversation_id,
         message=message,
         reply=reply,
     )
-    return {"reply": reply, "model": model, "conversation_id": out_conv_id}
+    result: dict[str, Any] = {
+        "reply": reply,
+        "model": model,
+        "conversation_id": out_conv_id,
+        **_kg_meta_payload(kg_context),
+    }
+    if kg_context and kg_context.citations:
+        result["citations"] = kg_context.citations
+    return result

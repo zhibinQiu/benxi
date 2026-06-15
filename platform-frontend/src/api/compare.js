@@ -1,7 +1,7 @@
 /** 文档对比 REST API */
-import { api, getApiBase, getToken } from "./http.js";
+import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
 
-export async function fetchCompareDocuments({ page = 1, page_size = 20, keyword } = {}) {
+export async function fetchCompareDocuments({ page = 1, page_size = 10, keyword } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (keyword) q.set("keyword", keyword);
   return api(`/api/v1/compare/documents?${q}`);
@@ -182,7 +182,7 @@ export async function fetchCompareDocumentFileBlob(documentId) {
   });
   if (!res.ok) {
     const json = await res.json().catch(() => ({}));
-    throw new Error(json?.message || res.statusText || "加载文档失败");
+    rejectHttpFailure(res, json);
   }
   return res.blob();
 }

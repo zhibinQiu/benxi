@@ -70,17 +70,13 @@ def _seed_cea_rows(count: int = 10) -> None:
         db.close()
 
 
-def test_market_history_api_reads_db(client, admin_token):
+def test_market_history_api_unavailable_when_feature_disabled(client, admin_token):
     _seed_cea_rows(12)
     r = client.get(
         "/api/v1/carbon-assets/market/CEA/history?days=30",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
-    assert r.status_code == 200
-    body = r.json()["data"]
-    assert body["asset_code"] == "CEA"
-    assert len(body["points"]) >= 7
-    assert body.get("data_through")
+    assert r.status_code == 404
 
 
 def test_get_history_series_no_network(monkeypatch):
@@ -94,9 +90,6 @@ def test_get_history_series_no_network(monkeypatch):
     assert series.source == "cneeex"
 
 
-def test_market_api_returns_snapshot(client, admin_token):
+def test_market_api_unavailable_when_feature_disabled(client, admin_token):
     r = client.get("/api/v1/carbon-assets/market", headers={"Authorization": f"Bearer {admin_token}"})
-    assert r.status_code == 200
-    body = r.json()["data"]
-    assert "quotes" in body
-    assert len(body["quotes"]) == 2
+    assert r.status_code == 404

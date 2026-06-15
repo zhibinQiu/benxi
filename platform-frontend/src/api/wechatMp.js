@@ -1,5 +1,5 @@
 /** 微信公众号资讯 REST API */
-import { api, buildImportToPersonalLibraryBody } from "./http.js";
+import { api, buildImportToPersonalLibraryBody, IMPORT_API_TIMEOUT_MS } from "./http.js";
 
 export async function parseWechatMpUrl(url) {
   return api("/api/v1/wechat-mp/parse-url", {
@@ -47,6 +47,7 @@ export async function ingestWechatMpUrl(url) {
 export async function importWechatMpArticle(articleId, body = {}) {
   return api(`/api/v1/wechat-mp/articles/${articleId}/import`, {
     method: "POST",
+    timeoutMs: IMPORT_API_TIMEOUT_MS,
     body: JSON.stringify(buildImportToPersonalLibraryBody(body)),
   });
 }

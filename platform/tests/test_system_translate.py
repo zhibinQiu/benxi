@@ -29,6 +29,17 @@ def test_system_features_lists_ai_tools(client, admin_token):
     assert ai.get("tag") == "需联网"
 
 
+def test_system_features_enabled_before_disabled(client, admin_token):
+    r = client.get("/api/v1/system/features", headers=_auth(admin_token))
+    assert r.status_code == 200
+    items = r.json()["data"]
+    assert items, "功能列表不应为空"
+    first_disabled = next((i for i, x in enumerate(items) if not x["enabled"]), len(items))
+    assert all(x["enabled"] for x in items[:first_disabled])
+    if first_disabled < len(items):
+        assert all(not x["enabled"] for x in items[first_disabled:])
+
+
 def test_translate_jobs_requires_auth(client):
     r = client.get("/api/v1/translate/jobs")
     assert r.status_code == 401

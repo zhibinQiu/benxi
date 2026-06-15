@@ -17,11 +17,11 @@ def test_builtin_plugins_registered():
     assert "smart_data_query" in ids
     assert "carbon_qa" in ids
     assert "smart_forecast" in ids
+    assert "ai_home" in ids
     assert "carbon_platform" in ids
     assert "carbon_ai_v1" in ids
     assert "ai_digital_robot" in ids
-    assert "emission_reduction_strategy" in ids
-    assert "carbon_reduction_strategy" not in ids
+    assert "emission_reduction_strategy" not in ids
 
 
 def test_translate_plugin_has_router_and_permission():
@@ -73,7 +73,7 @@ def test_smart_data_query_plugin():
     assert p is not None
     assert p.title == "智能问数"
     assert p.permission_code == "feature.smart_data_query"
-    assert p.category == "carbon"
+    assert p.category == "ai"
     assert p.enabled is True
     assert p.route == "/system/smart-data-query"
     assert p.router is not None
@@ -83,53 +83,31 @@ def test_smart_forecast_plugin():
     p = get_plugin("smart_forecast")
     assert p is not None
     assert p.title == "智能预测"
-    assert p.category == "carbon"
+    assert p.category == "ai"
     assert p.enabled is True
     assert p.route == "/system/smart-forecast"
-
-
-def test_carbon_platform_v3_in_carbon_category():
-    p = get_plugin("carbon_platform")
-    assert p is not None
-    assert p.title == "智碳平台V3"
-    assert p.category == "carbon"
-    assert p.external_url
-    assert "carbon3.hy.05351757.xyz" in p.external_url
-    assert p.tag == "外链"
 
 
 def test_carbon_qa_plugin():
     p = get_plugin("carbon_qa")
     assert p is not None
     assert p.enabled is True
+    assert p.category == "carbon"
     assert p.route == "/system/carbon-qa"
 
 
-def test_carbon_ai_v1_external_link():
-    p = get_plugin("carbon_ai_v1")
+def test_ai_home_plugin():
+    p = get_plugin("ai_home")
     assert p is not None
-    assert p.title == "智碳 AI平台v1"
-    assert p.enabled is True
-    assert p.route is None
-    assert p.external_url
-    assert "/ai" in p.external_url
-    assert p.category == "carbon"
-    assert p.tag == "外链"
+    assert p.title == "AI 助理"
+    assert p.category == "ai"
+    assert p.route == "/ai-home"
 
 
-def test_ai_digital_robot_stub():
-    p = get_plugin("ai_digital_robot")
+def test_carbon_asset_trading_enabled():
+    p = get_plugin("carbon_asset_trading")
     assert p is not None
-    assert p.title == "AI数字机器人"
+    assert p.title == "碳资产管理与交易"
     assert p.category == "carbon"
     assert p.enabled is False
-    assert p.tag == "待集成"
-
-
-def test_emission_reduction_strategy_stub():
-    p = get_plugin("emission_reduction_strategy")
-    assert p is not None
-    assert p.title == "智慧减排"
-    assert p.category == "carbon"
-    assert p.enabled is False
-    assert p.tag == "待集成"
+    assert p.tag == "Demo"

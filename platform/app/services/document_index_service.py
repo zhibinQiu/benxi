@@ -174,6 +174,38 @@ def _pick_document_version_link(
     return None
 
 
+def _overlay_pageindex_meta(
+    db: Session,
+    documents: list[Document],
+    meta_by_doc: dict[str, dict],
+) -> None:
+    from app.services.pageindex_service import (
+        batch_pageindex_links_by_document,
+        pageindex_index_meta,
+    )
+
+    try:
+        links = batch_pageindex_links_by_document(db, [d.id for d in documents])
+    except Exception as exc:
+        # 表尚未迁移时勿阻断文档列表（轻量启动漏跑 DDL 等）
+        if "pageindex_version_links" in str(exc):
+            import logging
+
+            logging.getLogger(__name__).debug(
+                "PageIndex 表未就绪，跳过索引元数据叠加: %s", exc
+            )
+            return
+        raise
+    for doc in documents:
+        did = str(doc.id)
+        pi_meta = pageindex_index_meta(links.get(did))
+        if not pi_meta:
+            continue
+        current = meta_by_doc.get(did) or _default_index_meta()
+        if pi_meta.get("knowledge_synced") or not current.get("knowledge_synced"):
+            meta_by_doc[did] = {**current, **pi_meta}
+
+
 def _enrich_document_index_meta_db_only(
     db: Session,
     documents: list[Document],
@@ -210,6 +242,7 @@ def _enrich_document_index_meta_db_only(
             )
         else:
             meta_by_doc[did] = _default_index_meta()
+    _overlay_pageindex_meta(db, documents, meta_by_doc)
     return meta_by_doc
 
 
@@ -313,10 +346,18 @@ def enrich_version_index_meta(
     db: Session,
     user: User,
     versions: list[DocumentVersion],
+    *,
+    live_ragflow: bool | None = None,
 ) -> dict[str, dict]:
     """按版本 id 返回索引元数据（历史版本切片独立保留）。"""
     if not versions:
         return {}
+
+    from app.config import get_settings
+
+    if live_ragflow is None:
+        live_ragflow = get_settings().knowledge_detail_live_index_meta
+
     version_ids = [v.id for v in versions]
     links = list(
         db.scalars(
@@ -327,7 +368,19 @@ def enrich_version_index_meta(
     )
     link_by_ver = {str(l.platform_version_id): l for l in links if l.platform_version_id}
 
-    meta_by_ver: dict[str, dict] = {}
+    if not live_ragflow:
+        meta_by_ver: dict[str, dict] = {}
+        for ver in versions:
+            vid = str(ver.id)
+            link = link_by_ver.get(vid)
+            meta_by_ver[vid] = _meta_from_version_link(link)
+            if link and link.ragflow_document_id:
+                _apply_cached_ragflow_meta(
+                    meta_by_ver[vid], link.dataset_id, link.ragflow_document_id
+                )
+        return meta_by_ver
+
+    meta_by_ver = {}
     rows_by_dataset: dict[str, list[dict]] = defaultdict(list)
 
     for ver in versions:

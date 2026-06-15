@@ -16,7 +16,7 @@ register(
         router=carbon_asset_api.router,
         permission_code="feature.carbon_asset_trading",
         permission_name="碳资产管理与交易",
-        enabled=True,
+        enabled=False,
         tag="Demo",
         category="carbon",
         sort_order=47,

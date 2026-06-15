@@ -3,7 +3,7 @@ import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { encodeReturnLocation } from "../utils/navigationReturn";
-import { NCard, NGrid, NGi, NTag, NIcon } from "naive-ui";
+import { NButton, NCard, NEmpty, NGrid, NGi, NTag, NIcon } from "naive-ui";
 import {
   LanguageOutline,
   ChatbubblesOutline,
@@ -21,6 +21,7 @@ import {
   WalletOutline,
   NewspaperOutline,
   SearchOutline,
+  GitNetworkOutline,
   StarOutline,
   Star } from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
@@ -31,8 +32,13 @@ const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
 const { isFavorite, toggleFavorite } = useFeatureFavorites();
-const { features, loading, loaded, loadSystemFeatures } = useSystemFeatures();
-const showLoading = computed(() => loading.value || !loaded.value);
+const { features, loading, loaded, loadError, loadSystemFeatures } = useSystemFeatures();
+const showLoading = computed(
+  () => loading.value || (!loaded.value && !loadError.value)
+);
+const showEmpty = computed(
+  () => !loading.value && loaded.value && groupedCategories.value.length === 0
+);
 
 const iconMap = {
   language: LanguageOutline,
@@ -48,23 +54,24 @@ const iconMap = {
   create: CreateOutline,
   wallet: WalletOutline,
   newspaper: NewspaperOutline,
-  search: SearchOutline};
+  search: SearchOutline,
+  "git-network": GitNetworkOutline};
 
-const CATEGORY_ORDER = ["document", "tools", "carbon"];
+const CATEGORY_ORDER = ["document", "tools", "ai"];
 
 const categoryMeta = {
   document: {
     title: "文档",
-    hint: "翻译、对比、辅助写作、知识检索与文档生成",
+    hint: "翻译、对比、辅助写作、知识检索",
     icon: DocumentTextOutline},
   tools: {
     title: "工具",
-    hint: "会议助手、文件内容提取、数据分析、在线 AI 工具等",
+    hint: "会议助手、内容提取、数据分析、在线 AI 工具",
     icon: GridOutline},
-  carbon: {
-    title: "双碳",
-    hint: "双碳业务应用与智碳平台等外链入口",
-    icon: LeafOutline}};
+  ai: {
+    title: "智能",
+    hint: "AI 助理、问数、问答与预测等智能应用",
+    icon: SparklesOutline}};
 
 const DEFAULT_CATEGORY = "tools";
 
@@ -83,21 +90,27 @@ const groupedCategories = computed(() => {
   const buckets = Object.fromEntries(CATEGORY_ORDER.map((k) => [k, []]));
   for (const f of features.value) {
     const raw = f.category || DEFAULT_CATEGORY;
-    const cat = raw === "external" ? "carbon" : raw;
-    if (buckets[cat]) buckets[cat].push(f);
+    let cat = raw === "external" || raw === "carbon" || raw === "ai" ? "ai" : raw;
+    if (!buckets[cat]) cat = DEFAULT_CATEGORY;
+    buckets[cat].push(f);
   }
   return CATEGORY_ORDER.map((id) => ({
     id,
     ...categoryMeta[id],
-    features: buckets[id]})).filter((c) => c.features.length > 0);
+    features: buckets[id].sort((a, b) => Number(b.enabled) - Number(a.enabled)),
+  })).filter((c) => c.features.length > 0);
 });
 
-onMounted(async () => {
+async function refreshFeatures() {
   try {
-    await loadSystemFeatures();
+    await loadSystemFeatures(true);
   } catch (e) {
-    ui.error(e.message);
+    ui.error(e.message || loadError.value || "加载功能列表失败");
   }
+}
+
+onMounted(() => {
+  refreshFeatures();
 });
 
 function onFavoriteClick(event, feature) {
@@ -138,7 +151,27 @@ function openFeature(f) {
       />
     </header>
 
-    <template v-if="!showLoading">
+    <n-empty
+      v-if="showEmpty && !loadError"
+      class="functions-page__empty"
+      description="暂无可用功能，请确认账号权限或稍后重试"
+    >
+      <template #extra>
+        <n-button size="small" @click="refreshFeatures">重新加载</n-button>
+      </template>
+    </n-empty>
+
+    <n-empty
+      v-else-if="loadError && !showLoading"
+      class="functions-page__empty"
+      :description="loadError"
+    >
+      <template #extra>
+        <n-button size="small" type="primary" @click="refreshFeatures">重新加载</n-button>
+      </template>
+    </n-empty>
+
+    <template v-else-if="!showLoading">
       <section v-for="cat in groupedCategories" :key="cat.id" class="category-block">
         <header class="category-block__head">
           <div class="category-block__icon">
@@ -263,6 +296,11 @@ function openFeature(f) {
   margin-bottom: 0;
 }
 
+.functions-page__empty {
+  margin: 48px auto;
+  max-width: 420px;
+}
+
 .category-block {
   margin-top: 12px;
 }
@@ -343,36 +381,50 @@ function openFeature(f) {
   flex-direction: column;
   padding: 12px 14px;
   border-radius: var(--platform-radius-sm, 10px);
-  background: var(--platform-bg-elevated);
-  border: 1px solid var(--platform-border);
-  box-shadow: var(--platform-shadow-sm);
   cursor: pointer;
   outline: none;
+  overflow: hidden;
   transition:
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
+    transform 0.22s var(--platform-ease-smooth, cubic-bezier(0.22, 1, 0.36, 1)),
+    box-shadow 0.22s var(--platform-ease-smooth, ease),
+    border-color 0.22s var(--platform-ease-smooth, ease);
+}
+
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked) {
+  background: var(--platform-ui-glass-fill, var(--platform-bg-glass)) !important;
+  border: 1px solid var(--platform-ui-glass-border, var(--platform-glass-border)) !important;
+  box-shadow: var(--platform-ui-layer-shadow, var(--platform-glass-shadow)) !important;
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
 }
 
 .feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--cat-accent) 35%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--cat-accent) 38%,
+    var(--platform-ui-glass-border, var(--platform-glass-border))
+  ) !important;
   box-shadow:
-    var(--platform-shadow),
-    0 0 0 1px color-mix(in srgb, var(--cat-accent) 10%, transparent);
+    var(--platform-ui-layer-shadow, var(--platform-glass-shadow)),
+    0 10px 28px color-mix(in srgb, var(--cat-accent) 10%, transparent) !important;
 }
 
 .feature-card:focus-visible {
   box-shadow:
-    0 0 0 2px var(--platform-bg-elevated),
-    0 0 0 4px var(--cat-accent);
+    0 0 0 2px color-mix(in srgb, var(--platform-bg) 72%, transparent),
+    0 0 0 4px var(--cat-accent) !important;
 }
 
 .feature-card--disabled,
 .feature-card--locked {
   cursor: not-allowed;
-  opacity: 0.62;
-  background: var(--platform-bg-secondary);
+  opacity: 0.55;
+  background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle)) !important;
+  border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
+  box-shadow: none !important;
+  backdrop-filter: saturate(120%) blur(calc(var(--platform-glass-blur) * 0.65));
+  -webkit-backdrop-filter: saturate(120%) blur(calc(var(--platform-glass-blur) * 0.65));
 }
 
 .feature-card__top {
@@ -399,11 +451,13 @@ function openFeature(f) {
   cursor: pointer;
   transition:
     color 0.18s ease,
+    background 0.18s ease,
     transform 0.18s var(--platform-ease-smooth, ease);
 }
 
 .feature-card__star:hover {
   color: var(--platform-text-secondary);
+  background: var(--platform-ui-glass-fill-subtle, rgba(255, 255, 255, 0.22));
   transform: scale(1.08);
 }
 
@@ -439,7 +493,10 @@ function openFeature(f) {
   justify-content: center;
   border-radius: 8px;
   color: var(--cat-accent, var(--platform-accent));
-  background: var(--cat-accent-soft, var(--platform-accent-soft));
+  background: color-mix(in srgb, var(--cat-accent-soft, var(--platform-accent-soft)) 68%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 2px 8px color-mix(in srgb, var(--cat-accent) 14%, transparent);
   transition: transform 0.2s ease;
 }
 
@@ -491,6 +548,10 @@ function openFeature(f) {
 .feature-card--skeleton {
   min-height: 112px;
   pointer-events: none;
+  background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle)) !important;
+  border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
 }
 
 .skeleton-block {

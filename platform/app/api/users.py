@@ -225,15 +225,6 @@ def delete_user(
         raise bad_request("不能删除当前登录用户")
     if is_bootstrap_admin(user):
         raise bad_request("不能删除系统默认管理员")
-    from app.domains.knowledge import knowledge
-
-    if knowledge.enabled():
-        try:
-            knowledge.revoke_all_dept_kb_grants(db, user)
-        except Exception as e:
-            logger.warning(
-                "删除用户 KnowFlow 部门库回收失败 %s: %s", _display_name(user), e
-            )
     delete_user_account(db, user)
     db.commit()
     return ApiResponse(data={"deleted": True, "id": str(user_id)})

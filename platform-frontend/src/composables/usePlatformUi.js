@@ -80,12 +80,42 @@ export function usePlatformUi() {
   }
 
   function confirmDelete(options) {
-    confirmDialog("warning", {
-      title: options.title ?? t("common.delete"),
-      content: options.content,
-      onPositive: options.onPositive,
-      positiveText: options.positiveText ?? t("common.delete"),
-      negativeText: options.negativeText ?? t("common.cancel"),
+    const {
+      title = t("common.delete"),
+      content,
+      onPositive,
+      positiveText = t("common.delete"),
+      negativeText = t("common.cancel"),
+      pendingMessage = "messages.deleting",
+      blocking = false,
+    } = options;
+    if (blocking) {
+      confirmDialog("warning", {
+        title,
+        content,
+        onPositive,
+        positiveText,
+        negativeText,
+      });
+      return;
+    }
+    dialog.warning({
+      class: "platform-confirm-dialog",
+      title,
+      content: resolveText(content),
+      positiveText,
+      negativeText,
+      onPositiveClick: () => {
+        info(pendingMessage);
+        void (async () => {
+          try {
+            await onPositive?.();
+          } catch (e) {
+            error(e);
+          }
+        })();
+        return true;
+      },
     });
   }
 

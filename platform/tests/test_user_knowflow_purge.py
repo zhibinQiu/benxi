@@ -22,25 +22,27 @@ def test_purge_user_owned_documents_and_mirrors():
     db = MagicMock()
     db.scalars.side_effect = [
         MagicMock(all=MagicMock(return_value=[mirror])),
-        MagicMock(all=MagicMock(return_value=[doc.id])),
         MagicMock(all=MagicMock(return_value=[doc])),
     ]
-    db.get.return_value = doc
     db.scalar.return_value = None
 
     with patch(
         "app.services.user_knowflow_purge.get_settings",
     ) as gs, patch(
-        "app.services.ragflow_sync_service.remove_document_mirror",
-        return_value=True,
-    ) as rm_mirror, patch(
         "app.services.user_knowflow_purge.purge_document_completely",
+        return_value=[],
     ) as purge_doc, patch(
         "app.services.user_knowflow_purge.delete",
-    ):
+    ), patch(
+        "app.services.user_knowflow_purge.schedule_documents_external_purge",
+    ) as sched_ext, patch(
+        "app.services.user_knowflow_purge.schedule_knowflow_deletes",
+    ) as sched_kf:
         gs.return_value.knowflow_enabled = False
         out = purge_user_knowledge_resources(db, user)
 
     assert out["documents_purged"] == 1
-    rm_mirror.assert_called_once()
-    purge_doc.assert_called_once_with(db, doc)
+    purge_doc.assert_called_once_with(db, doc, defer_knowflow=True, skip_external=True)
+    db.delete.assert_any_call(mirror)
+    sched_ext.assert_called_once_with([doc.id])
+    sched_kf.assert_called_once()

@@ -3,7 +3,6 @@ import { prefetchKnowflowSession } from "../api/rag.js";
 
 const KNOWFLOW_ROUTE_NAMES = new Set([
   "knowledge-search",
-  "knowledge-graph",
   "documents",
   "document-detail",
 ]);

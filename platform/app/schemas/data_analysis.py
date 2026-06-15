@@ -48,6 +48,12 @@ class DataAnalysisMetaOut(BaseModel):
     )
     exec_timeout_seconds: int
     service_hint: str | None = None
+    builtin_libraries: list[str] = Field(
+        default_factory=lambda: ["pandas", "numpy", "matplotlib", "seaborn"]
+    )
+    builtin_variables: list[str] = Field(
+        default_factory=lambda: ["df", "pd", "np", "plt", "sns", "display", "display_image"]
+    )
 
 
 class ChatMessageOut(BaseModel):
@@ -92,6 +98,11 @@ class ChatOut(BaseModel):
 class CellUpdateIn(BaseModel):
     code: str = Field(min_length=1, max_length=32000)
     title: str | None = Field(default=None, max_length=200)
+
+
+class CellCreateIn(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    code: str | None = Field(default=None, max_length=32000)
 
 
 class CellRunOut(BaseModel):

@@ -8,7 +8,11 @@ celery_app = Celery(
     "doc_platform",
     broker=settings.broker,
     backend=settings.result_backend,
-    include=["workers.tasks.maintenance", "workers.tasks.translate"],
+    include=[
+        "workers.tasks.maintenance",
+        "workers.tasks.translate",
+        "workers.tasks.platform_jobs",
+    ],
 )
 
 celery_app.conf.update(
@@ -18,4 +22,6 @@ celery_app.conf.update(
     timezone="Asia/Shanghai",
     enable_utc=True,
     task_track_started=True,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
 )

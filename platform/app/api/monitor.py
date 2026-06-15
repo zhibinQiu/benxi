@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_permission
+from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.audit import AuditLog
 from app.models.org import User
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/monitor", tags=["monitor"])
 
 @router.get("/metrics", response_model=ApiResponse[SystemMetricsOut])
 def get_system_metrics(
-    _: Annotated[User, Depends(require_permission("admin.audit"))],
+    _: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[SystemMetricsOut]:
     return ApiResponse(data=SystemMetricsOut.model_validate(collect_system_metrics()))
 
@@ -27,7 +27,7 @@ def get_system_metrics(
 @router.get("/audit-logs", response_model=ApiResponse[list[AuditLogItemOut]])
 def list_audit_logs(
     db: Annotated[Session, Depends(get_db)],
-    _: Annotated[User, Depends(require_permission("admin.audit"))],
+    _: Annotated[User, Depends(get_current_user)],
     limit: int = Query(100, ge=1, le=500),
 ) -> ApiResponse[list[AuditLogItemOut]]:
     logs = db.scalars(

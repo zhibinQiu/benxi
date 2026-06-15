@@ -18,8 +18,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "AI办公系统"
-    platform_version: str = "4.0.2"
+    app_name: str = "AI 办公系统"
+    platform_version: str = "4.0.3"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -29,11 +29,15 @@ class Settings(BaseSettings):
         "postgresql+psycopg2://platform:platform@127.0.0.1:5432/platform"
     )
     # SQLAlchemy 连接池（多人并发时避免默认小池耗尽；可通过环境变量按部署规模调整）
-    db_pool_size: int = 20
-    db_max_overflow: int = 40
+    db_pool_size: int = 10
+    db_max_overflow: int = 10
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
     db_connect_timeout: int = 10
+    # 进程内有界后台池（Celery 不可用时的兜底；登录预热等轻任务）
+    background_job_max_workers: int = 4
+    # 重任务（文档索引/导入/上传后处理）优先走 Celery 队列
+    background_jobs_use_celery: bool = True
     # auto：schema 版本已对齐则仅同步种子数据；full/light/off 强制全量/轻量/跳过
     db_startup_bootstrap: str = "auto"
 
@@ -53,7 +57,7 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     minio_region: str = "us-east-1"
 
-    bootstrap_admin_phone: str = "15963564658"  # 唯一系统管理员登录手机号（存 users.phone）
+    bootstrap_admin_phone: str = "admin"  # 唯一系统管理员登录账号（存 users.phone）
     bootstrap_admin_display_name: str = "系统管理员"
     bootstrap_admin_username: str = "admin"  # 兼容旧配置，等同显示名
     bootstrap_admin_password: str = "admin123"
@@ -102,7 +106,7 @@ class Settings(BaseSettings):
     ragflow_mysql_host: str = ""
     ragflow_mysql_port: int = 3306
     # 已废弃全局单库；每用户使用 zt-platform-{user_id}
-    ragflow_dataset_name: str = "智碳平台知识库"
+    ragflow_dataset_name: str = "平台知识库"
     ragflow_dataset_prefix: str = "zt-platform"
     ragflow_personal_dataset_prefix: str = "zt-personal"
     ragflow_company_dataset_name: str = "zt-company"
@@ -124,7 +128,7 @@ class Settings(BaseSettings):
     knowflow_theme_primary: str = "#18a058"
     knowflow_theme_primary_hover: str = "#36ad6a"
     knowflow_theme_primary_pressed: str = "#0c7a43"
-    knowflow_theme_app_name: str = "AI办公系统"
+    knowflow_theme_app_name: str = "AI 办公系统"
     knowflow_theme_logo_url: str = "/logo.svg"
     knowflow_theme_favicon_url: str = "/favicon.svg"
     knowflow_hide_file_manager: bool = True
@@ -144,10 +148,12 @@ class Settings(BaseSettings):
 
     # 知识库默认解析配置（上传同步 / 重新索引）
     knowledge_default_parser_id: str = "naive"
-    knowledge_default_layout_recognize: str = "PaddleOCR"
+    knowledge_default_layout_recognize: str = "DeepDOC"
     knowledge_default_chunk_token_num: int = 512
     # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，显著加快列表）
     knowledge_list_live_index_meta: bool = True
+    # 文档详情是否实时拉 RAGFlow 解析进度（默认关闭，显著加快详情首屏；刷新可传 live_index=1）
+    knowledge_detail_live_index_meta: bool = False
     knowledge_ragflow_meta_cache_ttl_sec: int = 60
     # 知识库解析等待：主任务线程内最长阻塞（秒），超时后转后台续跑，不判失败
     knowledge_parse_initial_wait_sec: int = 1800
@@ -163,8 +169,16 @@ class Settings(BaseSettings):
     knowledge_parse_retry_delay_sec: int = 90
     # 知识检索混合检索：向量相似度权重（其余为关键词权重，默认 0.3 / 0.7）
     knowledge_retrieval_vector_weight: float = 0.3
+    # 知识检索召回条数（与 KnowFlow 对话默认可视引用接近，默认 5）
+    knowledge_retrieval_top_k: int = 5
+    # 向量相似度下限，低于此的 chunk 不进入引用（KnowFlow 默认约 0.2，略提高以减少弱相关引用）
+    knowledge_retrieval_similarity_threshold: float = 0.32
 
-    # Redis 连接超时（秒）；远程不可达时尽快降级为进程内缓存，避免首请求阻塞数秒
+    # PageIndex 实验性树形索引（独立于 KnowFlow；需额外 pip 安装上游包）
+    pageindex_enabled: bool = True
+    pageindex_workspace_dir: str = ""
+    pageindex_model: str = ""
+
     redis_socket_timeout_sec: float = 0.5
 
     # 平台 Redis/内存缓存（文档库分级、文件夹列表等；Redis 不可用时自动降级为进程内 TTL）
@@ -231,13 +245,13 @@ class Settings(BaseSettings):
     carbon_qa_v2_chat_api_key: str = ""
     carbon_qa_path: str = "/ai/retrieval"
     carbon_ai_v1_path: str = "/ai"
+    carbon_platform_url: str = (
+        "http://carbon3.hy.05351757.xyz/login?redirect=/index"
+    )
     # 智能预测：direct=直连上游（无需登录）；vite=前端 /smart-forecast-ui 代理
     smart_forecast_embed_mode: str = "direct"
     smart_forecast_upstream_url: str = "http://127.0.0.1:8501"
     smart_forecast_proxy_prefix: str = "/smart-forecast-ui"
-    carbon_platform_url: str = (
-        "http://carbon3.hy.05351757.xyz/login?redirect=/index"
-    )
 
     # 碳资产行情（CEA：上海环交所官网；可选 JSON 覆盖）
     carbon_market_live_enabled: bool = True

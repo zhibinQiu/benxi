@@ -270,33 +270,17 @@ def _probe_ragflow_api_url(api_url: str, api_key: str) -> tuple[bool, str]:
         return False, f"无法连接：{exc}"
 
 
-def _probe_knowflow_backend_urls(api_base: str, ui_base: str) -> tuple[bool, str]:
+def _probe_knowflow_backend_url(api_base: str) -> tuple[bool, str]:
+    """探测 KnowFlow 扩展 API（平台不依赖 RAGFlow Web UI）。"""
     api_base = (api_base or "").rstrip("/")
-    ui_base = (ui_base or "").rstrip("/")
-    if not api_base and not ui_base:
-        return False, "未填写后台地址"
+    if not api_base:
+        return False, "未填写 KnowFlow API 地址"
 
-    messages: list[str] = []
-    ok_all = True
-
-    if api_base:
-        api_ok = False
-        api_msg = ""
-        for path in ("/health", "/api/health", "/api/v1/health"):
-            api_ok, api_msg = _probe_http_get(f"{api_base}{path}", accept_405=True)
-            if api_ok:
-                break
-        if not api_ok:
-            api_ok, api_msg = _probe_http_get(api_base, accept_405=True)
-        messages.append(f"API：{api_msg if api_ok else api_msg}")
-        ok_all = ok_all and api_ok
-
-    if ui_base:
-        ui_ok, ui_msg = _probe_http_get(ui_base, accept_405=True)
-        messages.append(f"Web UI：{ui_msg if ui_ok else ui_msg}")
-        ok_all = ok_all and ui_ok
-
-    return ok_all, "；".join(messages)
+    for path in ("/health", "/api/health", "/api/v1/health"):
+        api_ok, api_msg = _probe_http_get(f"{api_base}{path}", accept_405=True)
+        if api_ok:
+            return True, api_msg
+    return _probe_http_get(api_base, accept_405=True)
 
 
 def _resolve_mysql_from_cfg(cfg: dict[str, str]) -> tuple[str, str, str, int]:
@@ -522,14 +506,13 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
 
     if rid == "knowflow_backend":
         knowflow_url = (cfg.get("knowflow_backend_url") or "").strip()
-        knowflow_ui = (cfg.get("knowflow_ui_url") or "").strip()
-        if not knowflow_url and not knowflow_ui:
+        if not knowflow_url:
             return _item(
                 configured=False,
                 healthy=False,
-                message="未填写 KnowFlow API 或 Web UI 后台地址",
+                message="未填写 KnowFlow API 地址",
             )
-        healthy, msg = _probe_knowflow_backend_urls(knowflow_url, knowflow_ui)
+        healthy, msg = _probe_knowflow_backend_url(knowflow_url)
         return _item(configured=True, healthy=healthy, message=msg)
 
     if rid == "ragflow_mysql":

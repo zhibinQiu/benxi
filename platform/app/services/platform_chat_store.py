@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import not_found
 from app.models.platform_chat import PlatformChatConversation, PlatformChatMessage
 
-_VALID_SCOPES = frozenset({"ai-home", "assistant"})
+_VALID_SCOPES = frozenset({"ai-home", "assistant", "report-generation"})
 
 
 def _title_from_message(text: str, *, limit: int = 48) -> str:

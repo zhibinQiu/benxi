@@ -75,8 +75,11 @@ def _configure_and_parse_uploaded_document(
     ragflow_document_id: str,
     file_name: str,
     mime_type: str,
+    file_content: bytes | None = None,
+    parser_id: str | None = None,
+    layout_recognize: str | None = None,
 ) -> str | None:
-    """上传后按文件类型设置解析器并重新提交解析（覆盖 upload 时的默认 DeepDOC）。"""
+    """上传后设置解析器并提交解析（覆盖 upload 时的默认 DeepDOC）。"""
     from app.integrations.ragflow_client import RagflowError
     from app.services.knowledge_parser_service import (
         build_parser_config,
@@ -84,8 +87,13 @@ def _configure_and_parse_uploaded_document(
     )
     from app.services.ragflow_scope_service import _admin_rag_client
 
-    parser_id, layout = infer_parser_for_upload_file(file_name, mime_type)
-    parser, parser_config = build_parser_config(parser_id, layout)
+    if parser_id and layout_recognize:
+        pid, layout = parser_id, layout_recognize
+    else:
+        pid, layout = infer_parser_for_upload_file(
+            file_name, mime_type, file_content=file_content
+        )
+    parser, parser_config = build_parser_config(pid, layout)
     clients = [getattr(kf, "_rag", None)]
     admin = _admin_rag_client()
     if admin and admin not in clients:
@@ -205,6 +213,7 @@ def _upload_with_fallback(
                     "platform_user_id": str(platform_user_id or ""),
                     "mime_type": mime_type,
                 },
+                skip_auto_parse=True,
             )
             rag_doc_id = doc.get("id") or doc.get("doc_id")
             if rag_doc_id:
@@ -347,9 +356,9 @@ def schedule_knowflow_deletes(targets: list[KnowflowDeleteTarget]) -> None:
                 logger.debug("后台 KnowFlow 删除跳过: %s", e)
             _delete_ragflow_documents_mysql([target.ragflow_document_id])
 
-    threading.Thread(
-        target=run, daemon=True, name="knowflow-batch-delete"
-    ).start()
+    from app.core.background_executor import submit_background
+
+    submit_background("knowflow-batch-delete", run)
 
 
 def detach_platform_document_knowflow(
@@ -821,15 +830,17 @@ def sync_document_to_knowflow(
             except Exception as e:
                 logger.debug("强制重同步前删除旧索引跳过: %s", e)
 
-    content = _read_version_object_bytes(document, version)
-    from app.integrations.html_document_export import normalize_file_for_knowflow_upload
+    from app.services.document_version_block_service import (
+        resolve_knowflow_upload_from_version,
+    )
 
-    upload_name, upload_content, upload_mime = normalize_file_for_knowflow_upload(
-        version.file_name,
-        content,
-        version.mime_type,
-        title=document.title or "",
-        description=document.description or "",
+    upload_name, upload_content, upload_mime, _from_blocks = (
+        resolve_knowflow_upload_from_version(
+            db,
+            document,
+            version,
+            read_object_bytes=_read_version_object_bytes,
+        )
     )
     prepare_dataset_for_upload(
         db,
@@ -861,6 +872,7 @@ def sync_document_to_knowflow(
         ragflow_document_id=rag_doc_id,
         file_name=upload_name,
         mime_type=upload_mime,
+        file_content=upload_content,
     )
 
     upsert_version_link(
@@ -946,6 +958,17 @@ def sync_accessible_documents(
             except KnowflowSyncError as e:
                 logger.warning("批量 KnowFlow 同步跳过 doc=%s: %s", doc.id, e.message)
                 continue
+            except Exception as e:
+                from app.storage.object_store import StorageObjectNotFoundError
+
+                if isinstance(e, StorageObjectNotFoundError):
+                    logger.warning(
+                        "批量 KnowFlow 同步跳过 doc=%s: MinIO 对象不存在 key=%s",
+                        doc.id,
+                        e.file_key,
+                    )
+                    continue
+                raise
             if rid:
                 mapping[str(doc.id)] = rid
                 new_synced += 1

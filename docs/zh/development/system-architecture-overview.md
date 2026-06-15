@@ -1,4 +1,4 @@
-# 绿叶 AI 办公系统 — 项目总体架构
+# AI 办公系统 — 项目总体架构
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
 > **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
@@ -29,7 +29,7 @@ flowchart TB
     U2[系统管理员]
   end
 
-  subgraph system [绿叶 AI 办公系统]
+  subgraph system [AI 办公系统]
     FE[Web 前端 Vue3]
     API[控制面 FastAPI]
     WRK[Celery Worker]
@@ -229,7 +229,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-  root[智碳平台]
+  root[AI 办公系统]
   root --> IAM[IAM]
   root --> DOC[文档库]
   root --> KB[知识服务]

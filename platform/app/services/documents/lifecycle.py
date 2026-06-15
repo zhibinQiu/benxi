@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,9 +20,13 @@ def soft_delete_document(
     """兼容旧调用：等同永久删除（不再使用回收站）。"""
     from app.services.ragflow_sync_service import schedule_knowflow_deletes
 
-    targets = purge_document_completely(db, document, defer_knowflow=True)
+    doc_id = document.id
+    targets = purge_document_completely(
+        db, document, defer_knowflow=True, skip_external=True
+    )
     db.commit()
     schedule_knowflow_deletes(targets)
+    schedule_documents_external_purge([doc_id])
     return document
 
 
@@ -145,15 +150,40 @@ def _purge_rag_sessions_for_document(db: Session, document_id: uuid.UUID) -> Non
     db.execute(delete(RagSession).where(RagSession.id.in_(session_ids)))
 
 
-def _purge_document_external_resources(document: Document) -> None:
+def _purge_document_external_resources_by_id(document_id: uuid.UUID) -> None:
     """线程安全的对象存储与 Git 仓清理（不访问数据库）。"""
     from app.services.document_git_service import remove_document_git_repo
 
     try:
-        get_object_store().delete_prefix(f"docs/{document.id}/")
+        get_object_store().delete_prefix(f"docs/{document_id}/")
     except Exception:
         pass
-    remove_document_git_repo(document.id)
+    remove_document_git_repo(document_id)
+
+
+def _purge_document_external_resources(document: Document) -> None:
+    _purge_document_external_resources_by_id(document.id)
+
+
+def schedule_documents_external_purge(document_ids: list[uuid.UUID]) -> None:
+    """后台异步清理对象存储与 Git 仓，避免删除请求阻塞在远端 MinIO。"""
+    unique = list(dict.fromkeys(document_ids))
+    if not unique:
+        return
+
+    def run() -> None:
+        if len(unique) == 1:
+            _purge_document_external_resources_by_id(unique[0])
+            return
+        workers = min(_BATCH_DELETE_MAX_WORKERS, len(unique))
+        with ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="doc-purge"
+        ) as pool:
+            list(pool.map(_purge_document_external_resources_by_id, unique))
+
+    from app.core.background_executor import submit_background
+
+    submit_background("doc-external-purge", run)
 
 
 def purge_document_completely(
@@ -211,12 +241,19 @@ def permanently_delete_document(
     if not can_delete_document(db, user, document):
         raise forbidden("无权删除该文档")
 
-    targets = purge_document_completely(db, document, defer_knowflow=defer_knowflow)
+    doc_id = document.id
+    targets = purge_document_completely(
+        db,
+        document,
+        defer_knowflow=defer_knowflow,
+        skip_external=True,
+    )
     if commit:
         db.commit()
         from app.core.platform_cache import invalidate_document_caches
 
         invalidate_document_caches(str(user.id))
+        schedule_documents_external_purge([doc_id])
     if defer_knowflow and targets:
         schedule_knowflow_deletes(targets)
     return targets
@@ -268,8 +305,8 @@ def batch_delete_documents(
                 continue
             to_purge.append(doc)
 
+        purge_ids: list[uuid.UUID] = []
         if to_purge:
-            _purge_documents_external_parallel(to_purge)
             for doc in to_purge:
                 try:
                     targets = purge_document_completely(
@@ -277,6 +314,7 @@ def batch_delete_documents(
                     )
                     all_targets.extend(targets)
                     deleted.append(str(doc.id))
+                    purge_ids.append(doc.id)
                 except AppError as e:
                     detail = e.detail if isinstance(e.detail, dict) else {}
                     failed.append(
@@ -287,6 +325,7 @@ def batch_delete_documents(
                     )
         if deleted:
             db.commit()
+            schedule_documents_external_purge(purge_ids)
             schedule_knowflow_deletes(all_targets)
             from app.core.platform_cache import invalidate_document_caches
 

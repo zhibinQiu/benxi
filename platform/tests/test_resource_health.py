@@ -358,6 +358,39 @@ def test_probe_searxng_uses_configured_timeout(monkeypatch):
     assert captured["headers"]["User-Agent"] == "pdf-trans-platform/1.0"
 
 
+def test_check_single_resource_knowflow_backend_api_only(monkeypatch):
+    """KnowFlow 健康检查仅探测 API，不要求 Web UI。"""
+    calls: list[str] = []
+
+    class FakeResponse:
+        status_code = 200
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, headers=None):
+            calls.append(url)
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.resource_health_service.httpx.Client", FakeClient)
+    cfg = {
+        "knowflow_backend_url": "http://127.0.0.1:5001",
+        "knowflow_ui_url": "http://127.0.0.1:9380",
+    }
+    out = check_single_resource_health("knowflow_backend", cfg, None)
+    assert out["healthy"] is True
+    assert out["message"] == "连接正常"
+    assert all("9380" not in url for url in calls)
+    assert calls[0] == "http://127.0.0.1:5001/health"
+
+
 def test_check_single_resource_searxng_passes_timeout(monkeypatch):
     captured: dict = {}
 

@@ -25,6 +25,10 @@
   transition: none !important;
 }
 
+.app-route-instant-leave-active {
+  pointer-events: none;
+}
+
 .app-route-instant-enter-from {
   opacity: 1;
   transform: none;
@@ -40,10 +44,84 @@
   transition: none !important;
 }
 
+.route-instant-leave-active {
+  pointer-events: none;
+}
+
 .route-instant-enter-from,
 .route-instant-leave-to {
   opacity: 1;
   transform: none;
+}
+
+/* 子功能页推入（从功能入口进入翻译、问数等） */
+.route-push-enter-active {
+  transition:
+    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 1;
+}
+
+.route-push-leave-active {
+  transition:
+    opacity 0.22s cubic-bezier(0.4, 0, 0.65, 1),
+    transform 0.22s cubic-bezier(0.4, 0, 0.65, 1);
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.route-push-enter-from {
+  opacity: 0;
+  transform: translate3d(18px, 0, 0);
+}
+
+.route-push-leave-to {
+  opacity: 0;
+  transform: translate3d(-10px, 0, 0);
+}
+
+/* 侧栏一级菜单 / 同级页切换 — 轻量交叉淡入 */
+.route-crossfade-enter-active,
+.route-crossfade-leave-active {
+  transition: opacity 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.route-crossfade-leave-active {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.route-crossfade-enter-from,
+.route-crossfade-leave-to {
+  opacity: 0;
+}
+
+/* 文档中心：文件夹网格 ↔ 文档列表 */
+.doc-view-enter-active {
+  transition:
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.doc-view-leave-active {
+  transition:
+    opacity 0.18s cubic-bezier(0.4, 0, 0.65, 1),
+    transform 0.18s cubic-bezier(0.4, 0, 0.65, 1);
+}
+
+.doc-view-enter-from {
+  opacity: 0;
+  transform: translate3d(0, 8px, 0);
+}
+
+.doc-view-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
 }
 
 .route-fade-enter-active,
@@ -117,6 +195,12 @@
   .route-fade-leave-active,
   .route-instant-enter-active,
   .route-instant-leave-active,
+  .route-push-enter-active,
+  .route-push-leave-active,
+  .route-crossfade-enter-active,
+  .route-crossfade-leave-active,
+  .doc-view-enter-active,
+  .doc-view-leave-active,
   .ai-welcome-leave-active,
   .ai-chat-header-enter-active,
   .ai-msg-enter-active,
@@ -126,6 +210,12 @@
 
   .app-route-enter-from,
   .app-route-leave-to,
+  .route-push-enter-from,
+  .route-push-leave-to,
+  .route-crossfade-enter-from,
+  .route-crossfade-leave-to,
+  .doc-view-enter-from,
+  .doc-view-leave-to,
   .route-fade-enter-from,
   .route-fade-leave-to,
   .ai-welcome-leave-to,

@@ -1,13 +1,16 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { h, ref, watch } from "vue";
+import { computed, h, ref, watch } from "vue";
 import {
   NButton,
   NDataTable,
   NInput,
   NModal,
+  NPagination,
   NSpace } from "naive-ui";
 import { fetchCompareDocuments } from "../api/client";
+
+const PAGE_SIZE = 10;
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -20,8 +23,12 @@ const emit = defineEmits(["update:show", "select"]);
 const ui = usePlatformUi();
 const keyword = ref("");
 const page = ref(1);
+const total = ref(0);
 const items = ref([]);
 const loading = ref(false);
+
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
+const showPager = computed(() => total.value > PAGE_SIZE);
 
 function isRowDisabled(row) {
   if (props.excludeId && row.id === props.excludeId) return true;
@@ -53,9 +60,10 @@ async function loadDocs() {
   try {
     const data = await fetchCompareDocuments({
       page: page.value,
-      page_size: 20,
+      page_size: PAGE_SIZE,
       keyword: keyword.value || undefined});
     items.value = data.items || [];
+    total.value = data.total ?? 0;
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -71,6 +79,11 @@ function onSelect(row) {
 
 function onSearch() {
   page.value = 1;
+  loadDocs();
+}
+
+function onPageChange(nextPage) {
+  page.value = nextPage;
   loadDocs();
 }
 
@@ -110,5 +123,13 @@ watch(
       :bordered="false"
       size="small"
     />
+    <n-space v-if="showPager" justify="center" style="margin-top: 12px">
+      <n-pagination
+        :page="page"
+        :page-count="pageCount"
+        :page-slot="7"
+        @update:page="onPageChange"
+      />
+    </n-space>
   </n-modal>
 </template>

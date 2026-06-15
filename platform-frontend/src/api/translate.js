@@ -1,5 +1,5 @@
 /** PDF 翻译 REST API */
-import { api, getApiBase, getToken } from "./http.js";
+import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
 
 export async function fetchTranslateMeta() {
   return api("/api/v1/translate/meta");
@@ -90,7 +90,10 @@ async function fetchTranslateFileResponse(jobId, kind) {
   const res = await fetch(`${getApiBase()}/api/v1/translate/jobs/${jobId}/download/${kind}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    rejectHttpFailure(res, { message: text });
+  }
   return res;
 }
 

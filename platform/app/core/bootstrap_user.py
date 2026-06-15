@@ -13,7 +13,8 @@ from app.core.platform_admin import (
 from app.core.security import hash_password
 from app.models.org import Role, User, UserDepartment, UserRole
 
-_LEGACY_BOOTSTRAP_PHONES = frozenset({"admin"})
+_LEGACY_BOOTSTRAP_PHONES = frozenset({"admin", "15963564658"})
+LEGACY_BOOTSTRAP_PHONES = _LEGACY_BOOTSTRAP_PHONES
 
 
 def _find_bootstrap_user(db: Session, boot_phone: str) -> User | None:
@@ -61,8 +62,7 @@ def enforce_unique_bootstrap_admin(db: Session) -> None:
     prev_phone = (admin.phone or "").strip()
     admin.phone = boot_phone
     admin.display_name = display
-    if not (admin.username or "").strip():
-        admin.username = settings.bootstrap_admin_username or "admin"
+    admin.username = settings.bootstrap_admin_username or "admin"
     if not admin.email:
         admin.email = settings.bootstrap_admin_email
     if prev_phone in _LEGACY_BOOTSTRAP_PHONES or not login_ids_equal(

@@ -7,7 +7,7 @@ register(
     FeaturePlugin(
         id="knowledge_search",
         title="知识检索",
-        description="在企业知识库中检索文档与片段，支持分级库筛选",
+        description="在企业知识库中检索文档与片段；PageIndex 索引走树搜索，其余走向量混合检索",
         icon="search",
         route="/knowledge/search",
         permission_code="feature.knowledge_search",

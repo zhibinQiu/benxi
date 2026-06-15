@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 绿叶 AI 办公系统 — 生产部署：镜像 save/load 推送到远程（不 rsync 源码）
+# AI 办公系统 — 生产部署：镜像 save/load 推送到远程（不 rsync 源码）
 #
 # 配置: platform/deploy.target（由 deploy.target.example 复制）
 #
@@ -203,8 +203,6 @@ sync_deploy_env() {
     sed_inplace 's|^SPEECH_MODELS_DIR=.*|SPEECH_MODELS_DIR=|' "$tmp"
   fi
   set_kv "$tmp" KNOWFLOW_ENABLED true
-  set_kv "$tmp" KNOWFLOW_UI_URL "http://${host}:9380"
-  set_kv "$tmp" KNOWFLOW_UI_EMBED_MODE iframe
   set_kv "$tmp" DEPLOY_HOST "$host"
   set_kv "$tmp" FRONTEND_PORT "${FRONTEND_PORT:-40005}"
   set_kv "$tmp" DEPLOY_ARCH "$arch"

@@ -76,14 +76,13 @@ def test_enqueue_catalog_reconcile_starts_thread():
         "app.domains.knowledge.background_sync._should_enqueue",
         return_value=True,
     ), patch(
-        "app.domains.knowledge.background_sync.threading.Thread"
-    ) as thread_cls:
+        "app.services.background_job_dispatch.submit_light_background"
+    ) as submit:
         from app.domains.knowledge.background_sync import enqueue_catalog_reconcile_after_login
 
         enqueue_catalog_reconcile_after_login(user_id)
 
-    thread_cls.assert_called_once()
-    thread_cls.return_value.start.assert_called_once()
+    submit.assert_called_once()
 
 
 def test_enqueue_warm_on_login_starts_thread():
@@ -93,11 +92,10 @@ def test_enqueue_warm_on_login_starts_thread():
         "app.domains.knowledge.background_sync._should_enqueue",
         return_value=True,
     ), patch(
-        "app.domains.knowledge.background_sync.threading.Thread"
-    ) as thread_cls:
+        "app.services.background_job_dispatch.submit_light_background"
+    ) as submit:
         from app.domains.knowledge.background_sync import enqueue_warm_on_login
 
         enqueue_warm_on_login(user_id)
 
-    thread_cls.assert_called_once()
-    thread_cls.return_value.start.assert_called_once()
+    submit.assert_called_once()

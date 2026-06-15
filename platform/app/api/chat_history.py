@@ -22,6 +22,7 @@ _SCOPE_FEATURES = {
     "ai-home": "ai_home",
     "carbon-qa": "carbon_qa",
     "smart-data-query": "smart_data_query",
+    "report-generation": "report_generation",
 }
 
 

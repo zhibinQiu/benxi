@@ -1,5 +1,6 @@
 /** 平台原生知识库 / 知识检索 API */
-import { api, formatApiDetail, getApiBase, getToken } from "./http.js";
+import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
+import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
 
 export async function fetchKnowledgeScopeTree({ refresh = false } = {}) {
   const q = refresh ? "?refresh=1" : "";
@@ -109,8 +110,7 @@ export async function knowledgeQaChatStream(
 
   if (!res.ok) {
     const json = await res.json().catch(() => ({}));
-    const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
-    throw new Error(msg);
+    rejectHttpFailure(res, json);
   }
 
   const reader = res.body?.getReader();
@@ -138,7 +138,11 @@ export async function knowledgeQaChatStream(
         continue;
       }
       if (payload.error) {
-        onError?.(new Error(payload.error));
+        onError?.(
+          new Error(
+            sanitizeUserFacingMessage(payload.error, "检索失败，请稍后重试")
+          )
+        );
         return;
       }
       if (payload.workflow) onWorkflow?.(payload.workflow);
@@ -152,4 +156,11 @@ export async function knowledgeQaChatStream(
     }
   }
   onDone?.({});
+}
+
+export async function fetchKnowledgeMindmap({ question, answer }) {
+  return api("/api/v1/knowledge/qa/mindmap", {
+    method: "POST",
+    body: JSON.stringify({ question, answer }),
+  });
 }

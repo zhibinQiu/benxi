@@ -64,10 +64,15 @@ async def list_features(
 ) -> ApiResponse[list[dict]]:
     """功能清单：由插件注册表生成，按用户权限过滤可进入的路由。"""
     ensure_plugins_loaded()
+    catalog_plugins = [
+        p for p in all_plugins() if getattr(p, "show_in_catalog", True)
+    ]
+    # 已上线功能在前，待开发（enabled=False）在后；组内仍按 sort_order。
+    ordered_plugins = [
+        p for p in catalog_plugins if p.enabled
+    ] + [p for p in catalog_plugins if not p.enabled]
     items = []
-    for plugin in all_plugins():
-        if not getattr(plugin, "show_in_catalog", True):
-            continue
+    for plugin in ordered_plugins:
         if not plugin.enabled:
             items.append(plugin.catalog_dict(accessible=False))
             continue

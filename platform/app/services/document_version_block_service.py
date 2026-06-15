@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 
 from sqlalchemy import delete, select
@@ -12,9 +13,110 @@ from app.integrations.paddleocr_client import recognize_bytes
 from app.integrations.text_extract import ParsedDocument, extract_text_from_bytes
 from app.models.document import DocumentVersion
 from app.models.document_version_block import DocumentVersionBlock
-from app.storage.object_store import get_object_store
+from app.storage.object_store import StorageObjectNotFoundError, get_object_store
 
 logger = logging.getLogger(__name__)
+
+_MIN_KNOWFLOW_TEXT_CHARS = 32
+
+
+def _plain_text_char_count(text: str) -> int:
+    return len(re.sub(r"\s+", "", text or ""))
+
+
+def load_version_full_text_from_blocks(
+    db: Session,
+    version_id: uuid.UUID,
+    *,
+    min_chars: int = _MIN_KNOWFLOW_TEXT_CHARS,
+) -> str | None:
+    """仅从 DB 读取已缓存分块文本（不访问 MinIO），供 KnowFlow 复用。"""
+    parts = db.scalars(
+        select(DocumentVersionBlock.text)
+        .where(DocumentVersionBlock.version_id == version_id)
+        .order_by(DocumentVersionBlock.block_index.asc())
+    ).all()
+    if not parts:
+        return None
+    text = "\n\n".join(p for p in parts if (p or "").strip()).strip()
+    if _plain_text_char_count(text) < min_chars:
+        return None
+    return text
+
+
+def build_knowflow_upload_from_block_text(
+    version: DocumentVersion,
+    text: str,
+    *,
+    title: str = "",
+) -> tuple[str, bytes, str]:
+    """将平台分块文本打包为 PDF 上传 KnowFlow（DeepDOC 解析后可生成引用截图）。"""
+    from app.integrations.article_pdf_export import markdown_text_to_pdf_bytes
+    from app.integrations.html_document_export import _safe_base_name
+
+    stem = _safe_base_name(
+        title or (version.file_name or "").rsplit(".", 1)[0],
+        "document",
+    )
+    doc_title = (title or stem).strip()
+    pdf = markdown_text_to_pdf_bytes(doc_title, text.strip())
+    return f"{stem}.pdf", pdf, "application/pdf"
+
+
+def resolve_knowflow_upload_from_version(
+    db: Session,
+    document,
+    version: DocumentVersion,
+    *,
+    read_object_bytes,
+) -> tuple[str, bytes, str, bool]:
+    """优先复用 DB 分块；否则读取原文件。返回 (name, content, mime, from_cached_blocks)。
+
+    PDF / Office / 表格 / 纯文本等可索引原文件始终走原文件上传（必要时转为 PDF），
+    以便 KnowFlow 解析后生成引用溯源页截图；仅无法保留版式的类型才复用 Markdown 分块。
+    """
+    from app.integrations.html_document_export import (
+        file_supports_knowflow_original_upload,
+        normalize_file_for_knowflow_upload,
+    )
+
+    if not file_supports_knowflow_original_upload(
+        version.file_name, version.mime_type or ""
+    ):
+        text = load_version_full_text_from_blocks(db, version.id)
+        if not text:
+            ensure_version_blocks(db, version)
+            text = load_version_full_text_from_blocks(db, version.id)
+        if text:
+            name, body, mime = build_knowflow_upload_from_block_text(
+                version,
+                text,
+                title=getattr(document, "title", None) or "",
+            )
+            logger.info(
+                "KnowFlow 上传复用平台分块 doc=%s version=%s bytes=%s",
+                version.document_id,
+                version.id,
+                len(body),
+            )
+            return name, body, mime, True
+
+    raw = read_object_bytes(document, version)
+    name, body, mime = normalize_file_for_knowflow_upload(
+        version.file_name,
+        raw,
+        version.mime_type,
+        title=getattr(document, "title", None) or "",
+        description=getattr(document, "description", None) or "",
+    )
+    logger.info(
+        "KnowFlow 上传原文件（引用截图） doc=%s version=%s file=%s bytes=%s",
+        version.document_id,
+        version.id,
+        name,
+        len(body),
+    )
+    return name, body, mime, False
 
 
 def _blocks_to_pages(blocks: list[dict]) -> list[dict]:
@@ -179,7 +281,15 @@ def ensure_version_blocks(
         if existing:
             return existing
 
-    parsed = parse_version_document(db, version)
+    try:
+        parsed = parse_version_document(db, version)
+    except StorageObjectNotFoundError:
+        logger.warning(
+            "版本分块跳过：MinIO 对象不存在 version=%s key=%s",
+            version.id,
+            version.file_key,
+        )
+        return []
     flat = _flatten_page_blocks(parsed)
 
     db.execute(

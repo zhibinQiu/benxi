@@ -18,6 +18,7 @@ def create_job(
     created_by: uuid.UUID,
     document_id: uuid.UUID | None = None,
     payload: dict | None = None,
+    commit: bool = True,
 ) -> Job:
     job = Job(
         type=job_type,
@@ -29,8 +30,11 @@ def create_job(
     db.add(job)
     db.flush()
     db.add(JobEvent(job_id=job.id, event_type="created", data=payload))
-    db.commit()
-    db.refresh(job)
+    if commit:
+        db.commit()
+        db.refresh(job)
+    else:
+        db.flush()
     return job
 
 

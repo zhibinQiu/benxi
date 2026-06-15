@@ -50,11 +50,15 @@ async function onImport() {
   importing.value = true;
   try {
     const res = await importSubscriptionItem(route.params.ref);
-    ui.success(
-      res.knowflow_synced
-        ? "已入「个人级」文档库并同步知识库"
-        : "已入「个人级」文档库",
-    );
+    if (res?.queued) {
+      ui.success("已加入个人级文档库，PDF 生成与知识索引正在后台进行");
+    } else {
+      ui.success(
+        res.knowflow_synced
+          ? "已入「个人级」文档库并同步知识库"
+          : "已入「个人级」文档库"
+      );
+    }
     await load({ notifyOnError: false });
   } catch (e) {
     ui.error(e.message);

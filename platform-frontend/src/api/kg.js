@@ -1,0 +1,77 @@
+/** 知识图谱（Palantir）REST API */
+import { api } from "./http.js";
+
+export async function fetchKgMeta() {
+  return api("/api/v1/kg/meta");
+}
+
+export async function fetchKgEntities({ typeId, q } = {}) {
+  const params = new URLSearchParams();
+  if (typeId) params.set("type_id", typeId);
+  if (q) params.set("q", q);
+  const qs = params.toString();
+  return api(`/api/v1/kg/entities${qs ? `?${qs}` : ""}`);
+}
+
+export async function fetchKgEntity(entityId) {
+  return api(`/api/v1/kg/entities/${entityId}`);
+}
+
+export async function createKgEntity(body) {
+  return api("/api/v1/kg/entities", { method: "POST", body });
+}
+
+export async function updateKgEntity(entityId, body) {
+  return api(`/api/v1/kg/entities/${entityId}`, { method: "PATCH", body });
+}
+
+export async function deleteKgEntity(entityId) {
+  return api(`/api/v1/kg/entities/${entityId}`, { method: "DELETE" });
+}
+
+export async function fetchKgRelations({ entityId } = {}) {
+  const params = new URLSearchParams();
+  if (entityId) params.set("entity_id", entityId);
+  const qs = params.toString();
+  return api(`/api/v1/kg/relations${qs ? `?${qs}` : ""}`);
+}
+
+export async function createKgRelation(body) {
+  return api("/api/v1/kg/relations", { method: "POST", body });
+}
+
+export async function deleteKgRelation(relationId) {
+  return api(`/api/v1/kg/relations/${relationId}`, { method: "DELETE" });
+}
+
+export async function fetchKgGraph({ focusEntityId, depth = 1 } = {}) {
+  const params = new URLSearchParams();
+  if (focusEntityId) params.set("focus_entity_id", focusEntityId);
+  if (depth) params.set("depth", String(depth));
+  const qs = params.toString();
+  return api(`/api/v1/kg/graph${qs ? `?${qs}` : ""}`);
+}
+
+export async function createKgEntityType(body) {
+  return api("/api/v1/kg/entity-types", { method: "POST", body });
+}
+
+export async function updateKgEntityType(typeId, body) {
+  return api(`/api/v1/kg/entity-types/${typeId}`, { method: "PATCH", body });
+}
+
+export async function deleteKgEntityType(typeId) {
+  return api(`/api/v1/kg/entity-types/${typeId}`, { method: "DELETE" });
+}
+
+export async function createKgRelationType(body) {
+  return api("/api/v1/kg/relation-types", { method: "POST", body });
+}
+
+export async function updateKgRelationType(typeId, body) {
+  return api(`/api/v1/kg/relation-types/${typeId}`, { method: "PATCH", body });
+}
+
+export async function deleteKgRelationType(typeId) {
+  return api(`/api/v1/kg/relation-types/${typeId}`, { method: "DELETE" });
+}

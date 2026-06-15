@@ -186,7 +186,7 @@ onMounted(loadMeta);
       <n-alert
         v-if="!bootstrapping && !serviceReady"
         type="warning"
-        title="切片管理服务未就绪"
+        title="知识服务暂不可用"
         class="embed-alert"
       >
         <p>{{ meta.ui_hint || KNOWLEDGE_UNAVAILABLE }}</p>

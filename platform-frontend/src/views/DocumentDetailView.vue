@@ -1,6 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NCard,
@@ -50,6 +50,8 @@ import {
   denyDocumentAccess,
   liftDocumentDenial } from "../api/client";
 import { useAuth } from "../composables/useAuth";
+import { useI18n } from "../composables/useI18n";
+import { useDocumentLibrary } from "../composables/useDocumentLibrary.js";
 import OrgUserPickerTree from "../components/OrgUserPickerTree.vue";
 import OrgDeptPickerTree from "../components/OrgDeptPickerTree.vue";
 import { useDocumentReindex } from "../composables/useDocumentReindex.js";
@@ -58,21 +60,15 @@ import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
 import { ORG_SCOPES, SCOPE_LABELS, SCOPE_PERM } from "../constants/documentScope";
 import {
-  applyUploadLimitsFromLibrary,
   validateUploadFiles,
   validateVersionFormatMatch,
 } from "../constants/documentUpload";
-import { readDocumentsLibraryCache } from "../utils/documentsViewCache.js";
-import { fetchDocumentLibrary } from "../api/documents.js";
-const LEVEL_LABELS = {
-  visible: "可见",
-  query: "可查",
-  modify: "可修改",
-  edit: "可修改",
-  full: "可修改",
-  read: "可见",
-  use: "可修改",
-  delete: "可修改"};
+import {
+  canDeleteDocument,
+  canModifyDocument,
+  canViewDocument,
+  emptyDocumentAclCaps,
+} from "../utils/documentCaps.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -84,25 +80,21 @@ function goBack() {
 const ui = usePlatformUi();
 
 const { user, hasPerm } = useAuth();
+const { docLevelLabel } = useI18n();
+const { ensureUploadLimits } = useDocumentLibrary();
 
 const docId = route.params.id;
 const doc = ref(null);
 const loading = ref(false);
+const aclLoading = ref(false);
 const editTitle = ref("");
 const titleEditing = ref(false);
 const titleSaving = ref(false);
 const titleInputRef = ref(null);
 
-const canModifyDoc = computed(
-  () =>
-    aclCaps.value.can_modify === true ||
-    aclCaps.value.can_edit === true ||
-    aclCaps.value.can_manage === true
-);
+const canModifyDoc = computed(() => canModifyDocument(aclCaps.value));
 
-const canDeleteDoc = computed(
-  () => canModifyDoc.value || aclCaps.value.can_delete === true
-);
+const canDeleteDoc = computed(() => canDeleteDocument(aclCaps.value));
 
 const canEditDoc = canModifyDoc;
 
@@ -110,7 +102,7 @@ const canManageDoc = canModifyDoc;
 
 const canReindexDoc = canModifyDoc;
 
-const canViewDoc = computed(() => aclCaps.value.can_view !== false);
+const canViewDoc = computed(() => canViewDocument(aclCaps.value));
 
 const statusEnabled = computed({
   get: () => doc.value?.status === "active",
@@ -134,6 +126,7 @@ const {
   reindexTargetVersion,
   parserId,
   layoutRecognize,
+  reindexResync,
   chunkMethodOptions,
   layoutOptions,
   reparsing,
@@ -230,17 +223,7 @@ function versionSizeLabel(v) {
   return `${(v.file_size / 1024).toFixed(1)} KB`;
 }
 
-const aclCaps = ref({
-  can_grant: false,
-  can_deny: false,
-  is_owner: false,
-  can_view: true,
-  can_query: false,
-  can_edit: false,
-  can_delete: false,
-  can_manage: false,
-  can_restore: false,
-  effective_level: null});
+const aclCaps = ref(emptyDocumentAclCaps());
 
 const canGrantAcl = computed(() => aclCaps.value.can_grant);
 const canDenyAcl = computed(() => aclCaps.value.can_deny);
@@ -351,8 +334,15 @@ const userNameById = computed(() => {
   return m;
 });
 
+function canLoadAclCandidates() {
+  const docOwner = Boolean(
+    user.value?.id && doc.value?.owner_id === user.value.id
+  );
+  return canManageAcl.value || docOwner;
+}
+
 async function loadAclCandidates() {
-  if (!canManageAcl.value) return;
+  if (!canLoadAclCandidates()) return;
   try {
     aclPicker.value = await fetchDocumentAclCandidates(docId);
   } catch {
@@ -361,6 +351,7 @@ async function loadAclCandidates() {
 }
 
 async function ensureCandidates() {
+  if (!canLoadAclCandidates()) return;
   if (!aclPicker.value.users?.length && !aclPicker.value.departments?.length) {
     await loadAclCandidates();
   }
@@ -404,10 +395,86 @@ async function saveTitle() {
   }
 }
 
+function capsFromDoc(d) {
+  if (!d) return emptyDocumentAclCaps();
+  return {
+    ...emptyDocumentAclCaps(),
+    is_owner: Boolean(user.value?.id && d.owner_id === user.value.id),
+    can_view: true,
+    can_modify: Boolean(d.can_modify),
+    can_edit: Boolean(d.can_edit),
+    can_delete: Boolean(d.can_delete),
+    can_manage: Boolean(d.can_modify),
+    effective_level: d.effective_level ?? null,
+  };
+}
+
+function applyPublishStateFromDoc(d) {
+  if (!d) return;
+  if (ORG_SCOPES.includes(d.scope)) {
+    publishTarget.value = d.scope;
+    publishDeptIds.value = d.dept_id ? [d.dept_id] : [];
+  } else {
+    publishTarget.value = "department";
+    publishDeptIds.value = [];
+  }
+  syncAccessModeDefault();
+}
+
+async function loadAclData() {
+  if (!doc.value) return;
+  aclLoading.value = true;
+  const docOwner = Boolean(
+    user.value?.id && doc.value.owner_id === user.value.id
+  );
+  try {
+    let caps = emptyDocumentAclCaps();
+    try {
+      caps = await fetchDocumentAccessControl(docId);
+    } catch {
+      caps = capsFromDoc(doc.value);
+    }
+    aclCaps.value = caps;
+
+    const tasks = [];
+    if (canGrantAcl.value || docOwner) {
+      tasks.push(
+        fetchDocumentShares(docId)
+          .then((rows) => {
+            shares.value = rows;
+          })
+          .catch(() => {
+            shares.value = [];
+          })
+      );
+    } else {
+      shares.value = [];
+      aclPicker.value = { company_label: "公司", departments: [], users: [] };
+    }
+    if (canDenyAcl.value) {
+      tasks.push(
+        fetchDocumentDenials(docId)
+          .then((rows) => {
+            denials.value = rows;
+          })
+          .catch(() => {
+            denials.value = [];
+          })
+      );
+    } else {
+      denials.value = [];
+    }
+    await Promise.all(tasks);
+    syncAccessModeDefault();
+  } finally {
+    aclLoading.value = false;
+  }
+}
+
 async function refreshVersionHistory() {
   versionRefreshing.value = true;
   try {
-    await load({ notifyOnError: false });
+    await load({ notifyOnError: false, liveIndex: true });
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -415,62 +482,22 @@ async function refreshVersionHistory() {
   }
 }
 
-async function load({ notifyOnError = true } = {}) {
+async function load({ notifyOnError = true, liveIndex = false } = {}) {
   loading.value = true;
   try {
-    doc.value = await fetchDocument(docId);
+    doc.value = await fetchDocument(docId, { liveIndex });
     editTitle.value = doc.value.title || "";
-    try {
-      aclCaps.value = await fetchDocumentAccessControl(docId);
-    } catch {
-      aclCaps.value = {
-        can_grant: false,
-        can_deny: false,
-        is_owner: false,
-        can_view: true,
-        can_query: false,
-        can_modify: false,
-        can_edit: false,
-        can_delete: false,
-        can_manage: false,
-        can_restore: false};
-    }
-    const docOwner =
-      user.value?.id && doc.value?.owner_id === user.value.id;
-    if (canGrantAcl.value || docOwner) {
-      await loadAclCandidates();
-    }
-    if (ORG_SCOPES.includes(doc.value.scope)) {
-      publishTarget.value = doc.value.scope;
-      publishDeptIds.value = doc.value.dept_id ? [doc.value.dept_id] : [];
-    } else {
-      publishTarget.value = "department";
-      publishDeptIds.value = [];
-    }
-    syncAccessModeDefault();
+    aclCaps.value = capsFromDoc(doc.value);
+    applyPublishStateFromDoc(doc.value);
     shares.value = [];
     denials.value = [];
-    if (canGrantAcl.value || docOwner) {
-      try {
-        shares.value = await fetchDocumentShares(docId);
-      } catch {
-        shares.value = [];
-      }
-    } else {
-      aclPicker.value = { company_label: "公司", departments: [], users: [] };
-      shares.value = [];
-    }
-    if (canDenyAcl.value) {
-      try {
-        denials.value = await fetchDocumentDenials(docId);
-      } catch {
-        denials.value = [];
-      }
-    }
   } catch (e) {
     if (notifyOnError) ui.error(e.message);
   } finally {
     loading.value = false;
+  }
+  if (doc.value) {
+    void loadAclData();
   }
 }
 
@@ -575,7 +602,7 @@ async function grantShareLevel(level) {
     shares.value = await grantDocumentShares(docId, {
       userIds: shareSelectedKeys.value,
       level});
-    const label = LEVEL_LABELS[level] || level;
+    const label = docLevelLabel(level) || level;
     ui.success(
       `已为 ${shareSelectedKeys.value.length} 人授予「${label}」权限`
     );
@@ -635,22 +662,36 @@ async function removeDenial(uid) {
   }
 }
 
-onMounted(() => {
-  const cached = readDocumentsLibraryCache();
-  if (cached) {
-    applyUploadLimitsFromLibrary(cached);
-  } else {
-    fetchDocumentLibrary()
-      .then(applyUploadLimitsFromLibrary)
-      .catch(() => {});
+watch(
+  () => {
+    if (!showAccessCard.value) return false;
+    const docOwner = Boolean(
+      user.value?.id && doc.value?.owner_id === user.value.id
+    );
+    if (accessMode.value === "share" && (canGrantAcl.value || docOwner)) {
+      return true;
+    }
+    return (
+      accessMode.value === "publish" &&
+      ORG_SCOPES.includes(publishTarget.value) &&
+      (canPublishDept.value || canPublishCompany.value || showTeamPublish.value)
+    );
+  },
+  (needs) => {
+    if (needs) void ensureCandidates();
   }
+);
+
+onMounted(() => {
+  ensureUploadLimits();
   load();
   loadParserOptions();
 });
 </script>
 
 <template>
-  <n-space vertical :size="16" v-if="doc">
+  <n-card v-if="loading && !doc" title="文档详情" :loading="true" />
+  <n-space v-else-if="doc" vertical :size="16">
     <n-card :loading="loading">
       <template #header>
         <n-space align="center" :size="12" style="flex-wrap: wrap">
@@ -841,7 +882,7 @@ onMounted(() => {
       </div>
     </n-card>
 
-    <n-card v-if="showAccessCard" title="发布与分享">
+    <n-card v-if="showAccessCard" title="发布与分享" :loading="aclLoading">
       <div class="access-current-loc">
         <span class="access-current-loc__label">当前位置</span>
         <n-tag type="info" size="small" :bordered="false">{{ currentScopeLabel }}</n-tag>
@@ -922,7 +963,7 @@ onMounted(() => {
           <tbody>
             <tr v-for="s in shares" :key="s.user_id">
               <td>{{ s.user_name || userNameById[s.user_id] || "未知用户" }}</td>
-              <td>{{ LEVEL_LABELS[s.level] || s.level }}</td>
+              <td>{{ docLevelLabel(s.level) || s.level }}</td>
               <td>
                 <n-button text type="error" size="small" @click="removeShare(s.user_id)">
                   取消分享
@@ -935,7 +976,7 @@ onMounted(() => {
       </template>
     </n-card>
 
-    <n-card v-if="canDenyAcl" title="访问限制">
+    <n-card v-if="canDenyAcl" title="访问限制" :loading="aclLoading">
       <p style="margin: 0 0 12px; color: #666; font-size: 13px">
         屏蔽在部门/公司分级下本应可见的成员；仅文档创建人或系统管理员可操作。
       </p>
@@ -999,8 +1040,8 @@ onMounted(() => {
 
   <AdminFormModal
     v-model:show="reindexModalShow"
-    :title="reindexTargetVersion ? `重新索引 v${reindexTargetVersion.version_no}` : '重新索引'"
-    subtitle="将全量同步到知识库并按所选解析器重新索引"
+    title="重新索引"
+    subtitle="切换解析器与分块方法；勾选「重新同步」会从存储重新上传 PDF，以修复引用截图"
     width="420px"
   >
     <n-form label-placement="top" :show-require-mark="false">
@@ -1017,6 +1058,11 @@ onMounted(() => {
           :options="chunkMethodOptions"
           :disabled="indexPolling || reparsing"
         />
+      </n-form-item>
+      <n-form-item :show-label="false">
+        <n-checkbox v-model:checked="reindexResync" :disabled="indexPolling || reparsing">
+          重新同步（从存储重新上传，修复引用截图）
+        </n-checkbox>
       </n-form-item>
     </n-form>
     <template #footer>

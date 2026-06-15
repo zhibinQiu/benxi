@@ -321,9 +321,12 @@ const showsExtractedText = computed(
   background: #fff;
 }
 .image-preview {
-  max-width: 100%;
+  display: block;
+  width: auto;
   height: auto;
-  object-fit: contain;
+  max-width: none;
+  object-fit: none;
+  image-rendering: high-quality;
 }
 .pdf-frame {
   flex: 1;

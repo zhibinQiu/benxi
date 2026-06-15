@@ -39,6 +39,65 @@ def infer_llm_factory(base_url: str, explicit: str = "") -> str:
     return "OpenAI-API-Compatible"
 
 
+def normalize_ragflow_embedding_api_base(base_url: str, factory: str = "") -> str:
+    """RAGFlow 写入 tenant_llm.api_base 时的兼容规范化。
+
+    - SILICONFLOW：使用完整 ``.../v1/embeddings``，避免部分版本拼出 ``/v1/v1/embeddings``。
+    - OpenAI-API-Compatible：去掉末尾 ``/v1``，由 RAGFlow 自行追加 ``/v1/embeddings``。
+    """
+    url = (base_url or "").strip().rstrip("/")
+    factory_name = (factory or infer_llm_factory(url)).strip()
+    if factory_name.upper() == "SILICONFLOW":
+        if not url:
+            return "https://api.siliconflow.cn/v1/embeddings"
+        if "/embeddings" in url:
+            return url
+        if url.endswith("/v1"):
+            return f"{url}/embeddings"
+        return f"{url}/v1/embeddings"
+    if factory_name == "OpenAI-API-Compatible" and url.endswith("/v1"):
+        return url[:-3].rstrip("/")
+    return url
+
+
+def repair_ragflow_embedding_api_bases() -> int:
+    """修复 KnowFlow 租户 embedding 的 api_base（幂等）。"""
+    try:
+        rows = _mysql_query(
+            "SELECT CONCAT(tenant_id, '\t', llm_factory, '\t', IFNULL(api_base, '')) "
+            "FROM tenant_llm WHERE model_type = 'embedding'"
+        )
+    except Exception as e:
+        logger.debug("列举 tenant_llm embedding 跳过: %s", e)
+        return 0
+    repaired = 0
+    for line in rows:
+        parts = line.split("\t", 2)
+        if len(parts) < 3:
+            continue
+        tenant_id, factory, api_base = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        normalized = normalize_ragflow_embedding_api_base(api_base, factory)
+        if not normalized or normalized == api_base:
+            continue
+        safe_tid = _sql_literal(tenant_id)
+        safe_factory = _sql_literal(factory)
+        safe_url = _sql_literal(normalized)
+        if _mysql_exec(
+            "UPDATE tenant_llm SET api_base = '{url}' "
+            "WHERE tenant_id = '{tid}' AND llm_factory = '{factory}' "
+            "AND model_type = 'embedding' AND IFNULL(api_base, '') = '{old}'".format(
+                url=safe_url,
+                tid=safe_tid,
+                factory=safe_factory,
+                old=_sql_literal(api_base),
+            )
+        ):
+            repaired += 1
+    if repaired:
+        logger.info("已修复 %s 条 KnowFlow embedding api_base", repaired)
+    return repaired
+
+
 def fetch_template_embedding_defaults(db: Session | None) -> dict[str, str]:
     template_id = resolve_template_tenant_id(db)
     if not template_id:
@@ -84,6 +143,7 @@ def apply_embedding_to_template_tenant(
         return False
 
     llm_factory = infer_llm_factory(url, factory)
+    url = normalize_ragflow_embedding_api_base(url, llm_factory)
     safe_tid = _sql_literal(template_id)
     safe_factory = _sql_literal(llm_factory)
     safe_model = _sql_literal(model)

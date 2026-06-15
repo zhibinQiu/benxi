@@ -80,6 +80,7 @@ def create_session(
         min_count=1,
         max_count=20,
         required_level=PermissionLevel.query.value,
+        allow_index_only=True,
     )
     parsed = load_parsed_documents(db, docs)
     ragflow_map = _sync_docs_to_knowflow(db, user, docs)

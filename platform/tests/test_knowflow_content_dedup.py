@@ -96,6 +96,101 @@ def test_find_reusable_knowflow_version_link(client, admin_token):
         assert hit.ragflow_document_id == "rag-existing-1"
 
 
+def test_find_reusable_knowflow_version_link_ignores_file_name(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    content = b"%PDF-1.4 dedup other name"
+    digest = compute_md5_hex(content)
+
+    r1 = client.post(
+        "/api/v1/documents",
+        headers=headers,
+        json={"title": "dedup-a", "scope": "personal"},
+    )
+    r2 = client.post(
+        "/api/v1/documents",
+        headers=headers,
+        json={"title": "dedup-b", "scope": "personal"},
+    )
+    doc_a = r1.json()["data"]["id"]
+    doc_b = r2.json()["data"]["id"]
+
+    with SessionLocal() as db:
+        owner_id = db.scalar(
+            select(Document.owner_id).where(Document.id == uuid.UUID(doc_a))
+        )
+        ver_a = DocumentVersion(
+            document_id=uuid.UUID(doc_a),
+            version_no=1,
+            file_key=f"docs/{doc_a}/v1/original.pdf",
+            file_name="original.pdf",
+            file_size=len(content),
+            mime_type="application/pdf",
+            checksum=digest,
+            created_by=owner_id,
+        )
+        ver_b = DocumentVersion(
+            document_id=uuid.UUID(doc_b),
+            version_no=1,
+            file_key=f"docs/{doc_b}/v1/renamed-copy.pdf",
+            file_name="renamed-copy.pdf",
+            file_size=len(content),
+            mime_type="application/pdf",
+            checksum=digest,
+            created_by=owner_id,
+        )
+        db.add(ver_a)
+        db.add(ver_b)
+        db.flush()
+        db.add(
+            RagflowDocumentVersionLink(
+                platform_document_id=ver_a.document_id,
+                platform_version_id=ver_a.id,
+                version_no=1,
+                platform_user_id=owner_id,
+                ragflow_document_id="rag-existing-2",
+                dataset_id="ds-personal-1",
+                file_name="original.pdf",
+                index_completed_at=datetime.now(timezone.utc),
+            )
+        )
+        db.commit()
+        ver_b_id = ver_b.id
+
+    with SessionLocal() as db:
+        hit = find_reusable_knowflow_version_link(
+            db,
+            dataset_id="ds-personal-1",
+            file_name="renamed-copy.pdf",
+            checksum=digest,
+            exclude_version_id=ver_b_id,
+        )
+        assert hit is not None
+        assert hit.ragflow_document_id == "rag-existing-2"
+
+
+def test_build_knowflow_upload_from_block_text():
+    from app.services.document_version_block_service import (
+        build_knowflow_upload_from_block_text,
+    )
+
+    version = DocumentVersion(
+        id=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        version_no=1,
+        file_key="k",
+        file_name="scan.pdf",
+        file_size=100,
+        mime_type="application/pdf",
+        created_by=uuid.uuid4(),
+    )
+    name, body, mime = build_knowflow_upload_from_block_text(
+        version, "hello world from cached blocks", title="体检通知"
+    )
+    assert name.endswith(".md")
+    assert mime == "text/markdown"
+    assert b"cached blocks" in body
+
+
 def test_sync_reuses_existing_knowflow_index_without_upload(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     digest = compute_md5_hex(b"reuse-me")

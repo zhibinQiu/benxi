@@ -5,6 +5,7 @@ import { formatCitationSnippet } from "../utils/knowledgeCitation.js";
 
 const props = defineProps({
   citations: { type: Array, default: () => [] },
+  question: { type: String, default: "" },
   /** 点击引用编号/标题时打开溯源弹窗（知识检索） */
   previewOnClick: { type: Boolean, default: false },
 });
@@ -20,7 +21,7 @@ function toggle(index) {
 }
 
 function isExpanded(citation) {
-  if (props.previewOnClick) return Boolean(citation?.snippet);
+  if (props.previewOnClick) return false;
   return Boolean(expanded.value[citation.index]);
 }
 
@@ -32,7 +33,11 @@ function formatScore(score) {
 }
 
 function snippetHtml(citation) {
-  return formatCitationSnippet(citation?.snippet || "");
+  return formatCitationSnippet(
+    citation?.snippet || "",
+    props.question,
+    citation?.highlight_terms
+  );
 }
 
 function openCitation(citation, event) {
@@ -87,6 +92,16 @@ function openDocument(citation, event) {
         >
           {{ c.title }}
         </button>
+        <a
+          v-else-if="c.url"
+          class="chat-citation-doc chat-citation-doc--link"
+          :href="c.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click.stop
+        >
+          {{ c.title }}
+        </a>
         <span v-else class="chat-citation-doc">{{ c.title }}</span>
         <span v-if="previewOnClick && formatScore(c.score)" class="chat-citation-score">
           {{ t("knowledgeSearch.citations.relevance", { score: formatScore(c.score) }) }}
@@ -189,11 +204,13 @@ function openDocument(citation, event) {
   color: var(--platform-text);
 }
 
+.chat-citation-snippet :deep(mark.cite-hl),
 .chat-citation-snippet :deep(em) {
   font-style: normal;
-  background: rgba(250, 204, 21, 0.5);
-  padding: 0 2px;
-  border-radius: 2px;
-  font-weight: 600;
+  color: #713f12;
+  background: rgba(234, 179, 8, 0.55);
+  padding: 0 3px;
+  border-radius: 3px;
+  font-weight: 700;
 }
 </style>

@@ -29,6 +29,6 @@ def test_build_parser_config_merges_layout():
     assert cfg["chunk_token_num"] >= 128
 
 
-def test_list_parser_options_default_layout_is_paddleocr():
+def test_list_parser_options_default_layout_is_deepdoc():
     defaults = list_parser_options()["defaults"]
-    assert defaults["layout_recognize"] == "PaddleOCR"
+    assert defaults["layout_recognize"] == "DeepDOC"

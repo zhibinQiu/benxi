@@ -37,36 +37,11 @@ export default defineConfig({
         timeout: 0,
         proxyTimeout: 0,
       },
-      // 须在宽泛 /api 之前，避免 KnowFlow 管理 API 被平台路由吞掉
-      "/api/knowflow": {
-        target: API_TARGET,
-        changeOrigin: true,
-        timeout: 120000,
-        proxyTimeout: 120000,
-        rewrite: (path) => `/api/v1/embed-proxy/knowflow${path}`,
-      },
       "/api": {
         target: API_TARGET,
         changeOrigin: true,
         timeout: 0,
         proxyTimeout: 0,
-      },
-      // 同源代理 KnowFlow Web UI（embed-proxy SSO），见 docs/zh/operations/network-topology.md
-      // 同源反代 KnowFlow，并在 HTML 注入 platform-branding（见 embed-proxy/knowflow）
-      "/ragflow-ui": {
-        target: API_TARGET,
-        changeOrigin: true,
-        timeout: 120000,
-        proxyTimeout: 120000,
-        rewrite: (path) => path.replace(/^\/ragflow-ui/, "/api/v1/embed-proxy/knowflow"),
-      },
-      // KnowFlow SPA 内 /v1/* API（与 /ragflow-ui 静态资源同源，避免 iframe 跨端口）
-      "/v1": {
-        target: API_TARGET,
-        changeOrigin: true,
-        timeout: 120000,
-        proxyTimeout: 120000,
-        rewrite: (path) => `/api/v1/embed-proxy/knowflow${path}`,
       },
       // 设计系统内嵌子路径（勿用宽泛 /ai，否则会吞掉 /ai/api）
       "/ai/smart-data-query": {

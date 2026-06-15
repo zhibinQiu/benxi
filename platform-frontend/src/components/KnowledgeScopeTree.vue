@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, h, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NEmpty, NIcon, NInput, NSpin, NTag, NTree } from "naive-ui";
 import {
@@ -12,6 +12,7 @@ import {
 import IconAction from "./IconAction.vue";
 import { fetchKnowledgeScopeTree } from "../api/knowledge.js";
 import { useI18n } from "../composables/useI18n.js";
+import { usePlatformUi } from "../composables/usePlatformUi.js";
 import {
   isDocumentIndexReady,
   knowledgeIndexTagProps,
@@ -20,6 +21,10 @@ import {
   clearKnowledgeScopeTreeCache,
   readKnowledgeScopeTreeCache,
   writeKnowledgeScopeTreeCache } from "../utils/knowledgeScopeTreeCache.js";
+import {
+  clearKnowledgeScopeSelection,
+  writeKnowledgeScopeSelection,
+} from "../utils/knowledgeScopeSelectionCache.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
 
 const CHECKED_KEYS_STORAGE = "platform:knowledge-search-checked-keys:v2";
@@ -31,6 +36,7 @@ const emit = defineEmits(["selection-change"]);
 const route = useRoute();
 const router = useRouter();
 const { t, scopeLabel } = useI18n();
+const ui = usePlatformUi();
 
 const loading = ref(true);
 const refreshing = ref(false);
@@ -38,7 +44,6 @@ const filter = ref("");
 const treeData = ref([]);
 const expandedKeys = ref([]);
 const checkedKeys = ref([]);
-const resolving = ref(false);
 
 const scopeIcons = {
   company: BusinessOutline,
@@ -211,7 +216,10 @@ function loadSavedCheckedKeys() {
 async function restoreCheckedSelection() {
   const saved = loadSavedCheckedKeys();
   if (!saved?.length) return;
-  await onCheckedKeysChange(saved);
+  const pruned = pruneCheckedKeys(saved);
+  checkedKeys.value = pruned;
+  saveCheckedKeys(pruned);
+  emitSelectionForKeys(pruned);
 }
 
 function findNode(nodes, key) {
@@ -254,6 +262,35 @@ function collectDocumentNodesFromKeys(keys) {
   return nodes;
 }
 
+function pruneCheckedKeys(keys) {
+  const next = (keys || []).filter((key) => Boolean(findNode(treeData.value, key)));
+  return [...new Set(next)];
+}
+
+function emitSelectionForKeys(keys) {
+  const docNodes = collectDocumentNodesFromKeys(keys);
+  const payload = docNodes.length ? buildSelectionPayload(docNodes) : null;
+  writeKnowledgeScopeSelection(payload);
+  emit("selection-change", payload);
+}
+
+function syncSelectionAfterTreeUpdate() {
+  if (!checkedKeys.value.length) {
+    if (loadSavedCheckedKeys()?.length) {
+      return;
+    }
+    clearKnowledgeScopeSelection();
+    emit("selection-change", null);
+    return;
+  }
+  const pruned = pruneCheckedKeys(checkedKeys.value);
+  if (pruned.length !== checkedKeys.value.length) {
+    checkedKeys.value = pruned;
+    saveCheckedKeys(pruned);
+  }
+  emitSelectionForKeys(checkedKeys.value);
+}
+
 function buildSelectionPayload(docNodes) {
   const totalSelected = docNodes.length;
   const readyNodes = docNodes.filter((n) => n.index_ready);
@@ -281,6 +318,7 @@ function applyTreeData(data, { resetSelection = false } = {}) {
   if (resetSelection) {
     expandedKeys.value = [];
     checkedKeys.value = [];
+    clearKnowledgeScopeSelection();
     emit("selection-change", null);
   }
 }
@@ -300,12 +338,15 @@ async function fetchTree({
     const data = await fetchKnowledgeScopeTree({ refresh: refresh || background });
     applyTreeData(data, { resetSelection });
     writeKnowledgeScopeTreeCache(data);
-    if (!resetSelection && checkedKeys.value.length) {
-      await onCheckedKeysChange(checkedKeys.value);
+    if (!resetSelection) {
+      syncSelectionAfterTreeUpdate();
     }
-  } catch {
+  } catch (e) {
     if (!background && !treeData.value.length) {
       applyTreeData({ items: [] }, { resetSelection: true });
+    }
+    if (!background) {
+      ui.error(e?.message || t("knowledgeSearch.tree.loadFailed"));
     }
   } finally {
     loading.value = false;
@@ -319,6 +360,7 @@ async function loadTree() {
     applyTreeData(cached, { resetSelection: false });
     loading.value = false;
     await restoreCheckedSelection();
+    fetchTree({ background: true, refresh: true });
     return;
   }
   await fetchTree({ resetSelection: false });
@@ -332,29 +374,31 @@ async function reloadTree() {
 async function refreshTree() {
   if (loading.value || refreshing.value) return;
   clearKnowledgeScopeTreeCache();
-  await fetchTree({ background: true, refresh: true });
+  await fetchTree({ background: false, refresh: true });
 }
 
 function onKnowledgeIndexUpdated() {
   fetchTree({ background: true, refresh: true });
 }
 
-async function onCheckedKeysChange(keys) {
-  resolving.value = true;
-  try {
-    const nextKeys = Array.isArray(keys) ? keys : [];
-    checkedKeys.value = nextKeys;
-    saveCheckedKeys(nextKeys);
-    const docNodes = collectDocumentNodesFromKeys(nextKeys);
-    emit("selection-change", docNodes.length ? buildSelectionPayload(docNodes) : null);
-  } finally {
-    resolving.value = false;
-  }
+function onCheckedKeysChange(keys) {
+  const nextKeys = Array.isArray(keys) ? [...keys] : [];
+  checkedKeys.value = nextKeys;
+  saveCheckedKeys(nextKeys);
+  emitSelectionForKeys(nextKeys);
 }
 
 onMounted(() => {
   loadTree();
   window.addEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
+});
+
+onActivated(() => {
+  if (!loading.value && !refreshing.value) {
+    void fetchTree({ background: true, refresh: true });
+  } else if (checkedKeys.value.length) {
+    emitSelectionForKeys(checkedKeys.value);
+  }
 });
 
 onUnmounted(() => {
@@ -387,7 +431,7 @@ defineExpose({ reload: reloadTree });
     </div>
 
     <n-spin
-      :show="(loading && !displayTree.length) || resolving"
+      :show="loading && !displayTree.length"
       class="knowledge-scope-tree__spin"
     >
       <n-tree

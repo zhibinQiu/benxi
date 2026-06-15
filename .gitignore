@@ -144,6 +144,8 @@ assets/offline_assets_*.zip
 platform/.env.docker
 platform/knowflow.env.docker
 platform/deploy.target
+platform/tunnel.target
+platform/frp.target
 platform/third_party/
 .venv
 env/
@@ -162,6 +164,9 @@ pdf2zh-dev/
 
 # mkdocs documentation
 /site
+
+# 误放在仓库根目录的重复资源（正式路径：platform-frontend/public/main.mp4）
+/main.mp4
 
 # mypy
 .mypy_cache/

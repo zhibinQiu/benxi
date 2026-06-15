@@ -19,6 +19,7 @@ from app.api import (
     jobs,
     knowledge_embed,
     model_settings,
+    menu_settings,
     monitor,
     notifications,
     roles,
@@ -42,6 +43,7 @@ from app.models import (  # noqa: F401 — register ORM models
     document_workflow,
     feed_subscription,
     job,
+    kg,
     meeting_record,
     notification,
     org,
@@ -109,7 +111,15 @@ async def lifespan(_app: FastAPI):
         recover_interrupted_document_index_jobs,
     )
 
-    await asyncio.to_thread(recover_interrupted_document_index_jobs)
+    def _recover_index_jobs_background() -> None:
+        try:
+            recover_interrupted_document_index_jobs()
+        except Exception:
+            _logger.exception("后台恢复文档索引任务失败")
+
+    from app.core.background_executor import submit_background
+
+    submit_background("recover-index-jobs", _recover_index_jobs_background)
     from app.database import SessionLocal
     from app.services.model_settings_service import sync_paddleocr_to_knowflow
 
@@ -130,6 +140,9 @@ async def lifespan(_app: FastAPI):
             await sync_task
         except asyncio.CancelledError:
             pass
+        from app.core.background_executor import shutdown_background_executor
+
+        shutdown_background_executor(wait=False)
 
 
 def create_app() -> FastAPI:
@@ -256,14 +269,13 @@ def create_app() -> FastAPI:
     app.include_router(system_docs.router, prefix=prefix)
     app.include_router(embed_proxy_api.public_router, prefix=prefix)
     app.include_router(embed_proxy_api.router, prefix=prefix)
-    if settings.knowflow_enabled:
-        app.include_router(embed_proxy_api.knowflow_browser_router)
     mount_routers(app, prefix)
     app.include_router(jobs.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
     app.include_router(todos.router, prefix=prefix)
     app.include_router(monitor.router, prefix=prefix)
     app.include_router(model_settings.router, prefix=prefix)
+    app.include_router(menu_settings.router, prefix=prefix)
 
     return app
 

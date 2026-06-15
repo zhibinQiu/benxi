@@ -54,8 +54,8 @@ export function createThemeOverrides(isDark) {
       Input: {
         borderRadius: "8px",
         heightMedium: "34px",
-        color: "#2c2c2e",
-        colorFocus: "#2c2c2e",
+        color: "transparent",
+        colorFocus: "transparent",
         border: "1px solid rgba(255, 255, 255, 0.12)",
         borderHover: "1px solid rgba(255, 255, 255, 0.18)",
         borderFocus: "1px solid #7cb3ff",
@@ -171,8 +171,8 @@ export function createThemeOverrides(isDark) {
     Input: {
       borderRadius: "8px",
       heightMedium: "34px",
-      color: "#ffffff",
-      colorFocus: "#ffffff",
+      color: "transparent",
+      colorFocus: "transparent",
       border: "1px solid rgba(0, 0, 0, 0.12)",
       borderHover: "1px solid rgba(0, 0, 0, 0.18)",
       borderFocus: "1px solid #5b9cf5",

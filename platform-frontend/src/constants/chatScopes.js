@@ -1,7 +1,7 @@
 /** 平台对话场景：scope、展示名、返回路由 */
 export const CHAT_SCOPES = {
   "ai-home": {
-    title: "双碳智能体",
+    title: "AI 助理",
     routeName: "ai-home",
   },
   "carbon-qa": {
@@ -11,6 +11,10 @@ export const CHAT_SCOPES = {
   "smart-data-query": {
     title: "智能问数",
     routeName: "smart-data-query",
+  },
+  "report-generation": {
+    title: "报告生成",
+    routeName: "report-generation",
   },
   assistant: {
     title: "智能助手",

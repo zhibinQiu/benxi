@@ -24,7 +24,7 @@ function mapSelectOptions(items = []) {
   }));
 }
 
-/** 文档版本重新索引：切换解析器并重新解析（沿用 KnowFlow 已有副本，不强制从 MinIO 重传） */
+/** 文档版本重新索引：切换解析器；可选从存储重新上传以修复引用截图 */
 export function useDocumentReindex(documentId, onUpdated) {
   const ui = usePlatformUi();
 
@@ -32,6 +32,7 @@ export function useDocumentReindex(documentId, onUpdated) {
   const reindexTargetVersion = ref(null);
   const parserId = ref("naive");
   const layoutRecognize = ref("PaddleOCR");
+  const reindexResync = ref(true);
   const chunkMethodOptions = ref([]);
   const layoutOptions = ref([]);
   const reparsing = ref(false);
@@ -240,6 +241,7 @@ export function useDocumentReindex(documentId, onUpdated) {
         versionId: version.id,
         parserId: parserId.value,
         layoutRecognize: layoutRecognize.value,
+        resync: reindexResync.value,
       });
       ui.success(res?.message || "已提交重新索引");
       reindexModalShow.value = false;
@@ -267,6 +269,7 @@ export function useDocumentReindex(documentId, onUpdated) {
     layoutRecognize,
     chunkMethodOptions,
     layoutOptions,
+    reindexResync,
     reparsing,
     indexPolling,
     loadParserOptions,

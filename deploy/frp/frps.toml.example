@@ -1,0 +1,7 @@
+# frps（无 token）
+bindAddr = "0.0.0.0"
+bindPort = 40007
+
+log.to = "/var/log/frps.log"
+log.level = "info"
+log.maxDays = 7

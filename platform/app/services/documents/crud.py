@@ -58,6 +58,7 @@ def create_initial_uploaded_version(
     mime_type: str,
     content: bytes,
     checksum: str | None = None,
+    schedule_post_upload: bool = True,
 ) -> DocumentVersion:
     """创建并落库首版文件（用于导入、订阅等服务端直传场景）。"""
     store = get_object_store()
@@ -78,9 +79,10 @@ def create_initial_uploaded_version(
     db.commit()
     db.refresh(version)
     db.refresh(document)
-    from app.services.documents.post_upload import schedule_post_upload_processing
+    if schedule_post_upload:
+        from app.services.documents.post_upload import schedule_post_upload_processing
 
-    schedule_post_upload_processing(document.id, version.id, user.id)
+        schedule_post_upload_processing(document.id, version.id, user.id)
     return version
 def list_document_versions(db: Session, document_id: uuid.UUID) -> list[DocumentVersion]:
     rows = list(
@@ -198,10 +200,17 @@ def delete_document_version(
         }
 
     document.current_version_id = None
-    from app.services.documents.lifecycle import purge_document_completely
+    from app.services.documents.lifecycle import (
+        purge_document_completely,
+        schedule_documents_external_purge,
+    )
 
-    targets = purge_document_completely(db, document, defer_knowflow=True)
+    doc_id = document.id
+    targets = purge_document_completely(
+        db, document, defer_knowflow=True, skip_external=True
+    )
     db.commit()
+    schedule_documents_external_purge([doc_id])
     schedule_knowflow_deletes(knowflow_targets + targets)
     return {
         "ok": True,

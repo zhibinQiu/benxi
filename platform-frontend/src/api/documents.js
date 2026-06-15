@@ -1,5 +1,12 @@
 /** 文档库 REST API */
-import { getApiBase, api, formatApiDetail, getToken, fetchWithTimeout, UPLOAD_API_TIMEOUT_MS } from "./http.js";
+import {
+  getApiBase,
+  api,
+  getToken,
+  fetchWithTimeout,
+  rejectHttpFailure,
+  UPLOAD_API_TIMEOUT_MS,
+} from "./http.js";
 
 export async function fetchDocumentLibrary() {
   return api("/api/v1/documents/library");
@@ -69,8 +76,9 @@ export async function createDocument(payload) {
   });
 }
 
-export async function fetchDocument(id) {
-  return api(`/api/v1/documents/${id}`);
+export async function fetchDocument(id, { liveIndex = false } = {}) {
+  const q = liveIndex ? "?live_index=1" : "";
+  return api(`/api/v1/documents/${id}${q}`);
 }
 
 export async function prepareUpload(documentId, fileName, mimeType) {
@@ -103,14 +111,8 @@ export async function uploadDocumentBlob(uploadUrl, file) {
     UPLOAD_API_TIMEOUT_MS
   );
   if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const body = await res.json();
-      msg = formatApiDetail(body?.detail ?? body?.message ?? body) || msg;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(msg || "上传到存储失败");
+    const json = await res.json().catch(() => ({}));
+    rejectHttpFailure(res, json);
   }
 }
 
@@ -139,15 +141,8 @@ export async function downloadDocumentFile(
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const json = await res.json();
-      msg = json?.message || formatApiDetail(json?.detail) || msg;
-    } catch {
-      const text = await res.text().catch(() => "");
-      if (text) msg = text;
-    }
-    throw new Error(msg);
+    const json = await res.json().catch(() => ({}));
+    rejectHttpFailure(res, json);
   }
   const blob = await res.blob();
   const disp = res.headers.get("Content-Disposition") || "";
@@ -177,15 +172,8 @@ export async function fetchDocumentFileBlob(documentId, versionId = null) {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const json = await res.json();
-      msg = json?.message || formatApiDetail(json?.detail) || msg;
-    } catch {
-      const text = await res.text().catch(() => "");
-      if (text) msg = text;
-    }
-    throw new Error(msg);
+    const json = await res.json().catch(() => ({}));
+    rejectHttpFailure(res, json);
   }
   return res.blob();
 }

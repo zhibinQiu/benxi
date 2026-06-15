@@ -24,7 +24,7 @@ def test_sys_admin_gets_bootstrap_embed_auth():
         return_value=False,
     ), patch(
         "app.core.phone.bootstrap_login_id",
-        return_value="15963564658",
+        return_value="admin",
     ), patch(
         "app.services.ragflow_identity_service.select",
     ), patch(

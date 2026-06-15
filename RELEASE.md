@@ -1,5 +1,15 @@
 # 发布说明
 
+## 4.0.3（v4.0.3）— 品牌统一、PageIndex 实验集成与知识检索增强
+
+- **品牌与系统功能**：产品统一为「AI 办公系统」；系统功能说明精简，AI 助理与功能分类面向通用办公；移除智碳平台 V3、智碳 AI v1 等遗留外链插件
+- **PageIndex（实验）**：自托管树形索引（`pageindex_version_links` + `PAGEINDEX_WORKSPACE_DIR` JSON）；与 KnowFlow 向量检索并存、按文档自动切换；支持 PDF/Markdown/Word/TXT；知识检索引用页级整页预览
+- **知识检索**：`KnowledgeSearchPanel` 与引用卡片 UI（文件名、页码、类型标签）；智能回答与引用区宽度对齐；思维导图 Tab
+- **报告生成 / 菜单设置 / 知识图谱**：内置报告生成、菜单配置、KG Palantir 等能力迭代
+- **部署**：Gateway 模式（`compose.gateway.yaml`）；远程依赖暴露编排增强；Celery worker 并发调优
+- **文档**：运维/架构文档同步现状，去除绿叶表述
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.0.3）
+
 ## 4.0.2（v4.0.2）— 文档存储一致性、OCR 与对比体验
 
 - **文档存储**：上传完成前校验 MinIO 对象存在与大小；对账脚本新增 `missing_storage_versions` 扫描；`stack.sh restore` 在缺少 MinIO 备份时告警

@@ -69,6 +69,6 @@ Vite 亦配置 `/ragflow-ui`、`/v1` 反代（供不走 18000 直链的场景）
 ## 设计系统 / 外链
 
 - 智能问数、双碳问答：iframe 嵌入外部设计系统（`DESIGN_SYSTEM_UPSTREAM_URL`）
-- 智碳平台 V3 等：外链插件，不经 embed-proxy
+- 外链类功能插件不经 embed-proxy
 
 详见 [配置说明](configuration.md)。

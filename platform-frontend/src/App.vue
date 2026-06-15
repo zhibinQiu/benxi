@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref, watch } from "vue";
-import { useRouter, useRoute } from "vue-router";
+import { computed, watch } from "vue";
+import { useRoute } from "vue-router";
 import {
   NConfigProvider,
   NMessageProvider,
@@ -15,7 +15,7 @@ import { usePlatformBranding } from "./composables/usePlatformBranding";
 import { useLiquidGlassMotion } from "./composables/useLiquidGlassMotion";
 import { useI18n } from "./composables/useI18n";
 import { createThemeOverrides } from "./utils/platformTheme";
-import { shouldSkipAppRouteMotion, shellRouteKey, consumeSkipAfterLoginMotion } from "./utils/routeTransition";
+import { shellRouteKey } from "./utils/routeTransition";
 import { routeUsesVideoBackground } from "./utils/shellBackground";
 import { onSessionReplaced } from "./utils/sessionGuard";
 import PageVideoBackground from "./components/PageVideoBackground.vue";
@@ -30,22 +30,8 @@ const themeOverrides = computed(() => createThemeOverrides(isDark.value));
 const naiveLocale = computed(() => (locale.value === "en" ? enUS : zhCN));
 const naiveDateLocale = computed(() => (locale.value === "en" ? dateEnUS : dateZhCN));
 
-const router = useRouter();
 const route = useRoute();
-const appRouteTransition = ref("app-route");
 const shellVideoBg = computed(() => routeUsesVideoBackground(route));
-
-router.beforeEach((to, from) => {
-  appRouteTransition.value = shouldSkipAppRouteMotion(from.name)
-    ? "app-route-instant"
-    : "app-route";
-});
-
-router.afterEach((to, from) => {
-  if (from.name === "login" && to.name !== "login") {
-    consumeSkipAfterLoginMotion();
-  }
-});
 
 watch(
   [locale, platformAppTitle],
@@ -74,17 +60,7 @@ watch(
             <span class="app-ambient__orb app-ambient__orb--3" />
           </div>
           <router-view v-slot="{ Component, route }">
-            <Transition
-              v-if="appRouteTransition !== 'app-route-instant'"
-              :name="appRouteTransition"
-            >
-              <component :is="Component" :key="shellRouteKey(route)" />
-            </Transition>
-            <component
-              v-else
-              :is="Component"
-              :key="shellRouteKey(route)"
-            />
+            <component :is="Component" :key="shellRouteKey(route)" />
           </router-view>
         </div>
       </n-dialog-provider>

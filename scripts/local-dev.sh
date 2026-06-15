@@ -313,7 +313,7 @@ start_local() {
   if should_start_worker; then
     step "启动本地 Celery Worker…"
     worker_pid="$(start_detached "$LOG_DIR/platform-worker.log" \
-      .venv/bin/celery -A workers.celery_app worker --loglevel=info)"
+      .venv/bin/celery -A workers.celery_app worker --loglevel=info --concurrency=4)"
     echo "$worker_pid" >"$RUN_DIR/platform-worker.pid"
     echo "  pid=$worker_pid  日志: $LOG_DIR/platform-worker.log"
   else

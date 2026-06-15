@@ -22,6 +22,7 @@ class JobType(str, enum.Enum):
     maintenance = "maintenance"
     pdf_translate = "pdf_translate"
     document_index = "document_index"
+    subscription_import = "subscription_import"
 
 
 class Job(Base):

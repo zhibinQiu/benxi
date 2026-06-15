@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -45,9 +44,6 @@ def schedule_post_upload_processing(
     version_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> None:
-    threading.Thread(
-        target=run_post_upload_processing,
-        args=(document_id, version_id, user_id),
-        daemon=True,
-        name=f"post-upload-{version_id}",
-    ).start()
+    from app.services.background_job_dispatch import dispatch_post_upload_processing
+
+    dispatch_post_upload_processing(document_id, version_id, user_id)

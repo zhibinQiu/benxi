@@ -1177,6 +1177,45 @@ def _revoke_explicit_share_kb_grants_on_canonical(
     return revoked
 
 
+def ensure_dataset_embedding_model(dataset_id: str) -> bool:
+    """若知识库未配置 embedding 模型，从所属租户复制 embd_id。"""
+    ds_id = (dataset_id or "").strip()
+    if not ds_id:
+        return False
+    from app.integrations.ragflow_llm_template import _mysql_exec, _mysql_query, _sql_literal
+
+    safe = _sql_literal(ds_id)
+    try:
+        rows = _mysql_query(
+            "SELECT CONCAT(IFNULL(k.embd_id, ''), '\t', IFNULL(t.embd_id, '')) "
+            f"FROM knowledgebase k "
+            f"LEFT JOIN tenant t ON t.id = k.tenant_id "
+            f"WHERE k.id = '{safe}' LIMIT 1"
+        )
+    except Exception as e:
+        logger.debug("读取知识库 embedding 配置跳过 ds=%s: %s", ds_id, e)
+        return False
+    if not rows:
+        return False
+    parts = rows[0].split("\t", 1)
+    kb_embd = (parts[0] if parts else "").strip()
+    tenant_embd = (parts[1] if len(parts) > 1 else "").strip()
+    if kb_embd or not tenant_embd:
+        return False
+    safe_embd = _sql_literal(tenant_embd)
+    ok = _mysql_exec(
+        f"UPDATE knowledgebase SET embd_id = '{safe_embd}' "
+        f"WHERE id = '{safe}' AND (embd_id IS NULL OR embd_id = '');"
+    )
+    if ok:
+        logger.info(
+            "已为知识库补全 embedding 模型 ds=%s embd_id=%s",
+            ds_id,
+            tenant_embd,
+        )
+    return ok
+
+
 def prepare_dataset_for_upload(
     db: Session,
     document: Document,
@@ -1189,6 +1228,11 @@ def prepare_dataset_for_upload(
     ds_id = (dataset_id or "").strip()
     if not ds_id:
         return
+
+    ensure_dataset_embedding_model(ds_id)
+    from app.integrations.ragflow_model_apply import repair_ragflow_embedding_api_bases
+
+    repair_ragflow_embedding_api_bases()
 
     from app.models.ragflow_document_link import RagflowDocumentLink
 

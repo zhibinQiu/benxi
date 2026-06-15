@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -17,15 +18,15 @@ def _uses_local_database(database_url: str) -> bool:
 
 
 def _engine_kwargs(settings) -> dict:
-    """本机 PG + 远程依赖（hybrid remote-dev）仍用正常连接池，避免 RAGFlow 阻塞时耗尽 8 条连接。"""
+    """连接池统一走 settings（DB_POOL_SIZE / DB_MAX_OVERFLOW）；远程 PG 仅加长 connect_timeout。"""
+    connect_timeout = settings.db_connect_timeout
+    pool_size = settings.db_pool_size
+    max_overflow = settings.db_max_overflow
     if settings.remote_deps and not _uses_local_database(settings.database_url):
-        pool_size = 3
-        max_overflow = 5
-        connect_timeout = max(settings.db_connect_timeout, 25)
-    else:
-        pool_size = settings.db_pool_size
-        max_overflow = settings.db_max_overflow
-        connect_timeout = settings.db_connect_timeout
+        connect_timeout = max(connect_timeout, 25)
+        # 远程共享 Postgres max_connections 有限，避免单进程占满连接
+        pool_size = min(pool_size, 6)
+        max_overflow = min(max_overflow, 4)
     return {
         "poolclass": QueuePool,
         "pool_size": pool_size,
@@ -87,5 +88,19 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def session_scope():
+    """后台任务短生命周期会话：自动 commit/rollback 并归还连接。"""
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

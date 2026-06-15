@@ -17,8 +17,7 @@ import {
   NSpace,
   NSpin,
   NTag,
-  NText,
-  useDialog } from "naive-ui";
+  NText } from "naive-ui";
 import {
   ArrowBackOutline,
   MicOutline,
@@ -41,10 +40,10 @@ import {
   saveMeetingRecord,
   summarizeSpeech,
   transcribeSpeech } from "../api/client";
+import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const router = useRouter();
 const ui = usePlatformUi();
-const dialog = useDialog();
 
 const meta = ref(null);
 const loadingMeta = ref(true);
@@ -486,20 +485,14 @@ function applyRecordToEditor(rec) {
 }
 
 function confirmDeleteRecord(rec) {
-  dialog.warning({
+  ui.confirmDelete({
     title: "删除会议记录",
     content: `确定删除「${rec.title || "未命名"}」？此操作不可恢复。`,
-    positiveText: "删除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
-      try {
-        await deleteMeetingRecord(rec.id);
-        ui.success("已删除");
-        if (viewingRecord.value?.id === rec.id) viewingRecord.value = null;
-        await loadRecords();
-      } catch (e) {
-        ui.error(e.message);
-      }
+    onPositive: async () => {
+      await deleteMeetingRecord(rec.id);
+      ui.success("已删除");
+      if (viewingRecord.value?.id === rec.id) viewingRecord.value = null;
+      await loadRecords();
     }});
 }
 
@@ -700,10 +693,10 @@ onBeforeUnmount(() => {
         <n-alert
           v-if="!loadingMeta && !configured"
           type="warning"
-          title="语音服务未就绪"
+          title="会议录音转写暂不可用"
           class="page-alert"
         >
-          <p>{{ meta?.service_hint || "本地 FunASR 语音服务未启动，无法录音转写。" }}</p>
+          <p>{{ FEATURE_UNAVAILABLE }}</p>
           <template #action>
             <n-button size="small" :loading="loadingMeta" @click="loadMeta">重新检测</n-button>
           </template>

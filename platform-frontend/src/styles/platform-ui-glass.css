@@ -80,10 +80,18 @@ html[data-theme="dark"] .app-shell--video-bg {
 }
 
 /* —— 搜索 / 输入 / 选择器 —— */
+.app-shell .n-input,
+.app-shell .n-input.n-input--textarea,
+.app-shell .n-base-selection {
+  background: transparent !important;
+}
+
 .app-shell .n-input .n-input-wrapper,
 .app-shell .n-input.n-input--textarea,
-.app-shell .n-base-selection .n-base-selection-label {
+.app-shell .n-base-selection .n-base-selection-label,
+.app-shell .n-base-selection .n-base-selection-tags {
   background: var(--platform-ui-glass-fill) !important;
+  border-radius: inherit;
 }
 
 /* —— 文字按钮（非图标专用） —— */
@@ -193,10 +201,18 @@ html[data-theme="dark"] .app-shell--video-bg {
 }
 
 /* 全局输入框玻璃 */
+.n-input,
+.n-input.n-input--textarea,
+.n-base-selection {
+  background: transparent !important;
+}
+
 .n-input .n-input-wrapper,
 .n-input.n-input--textarea,
-.n-base-selection .n-base-selection-label {
+.n-base-selection .n-base-selection-label,
+.n-base-selection .n-base-selection-tags {
   background: var(--platform-ui-glass-fill, var(--platform-bg-glass-subtle)) !important;
+  border-radius: inherit;
   backdrop-filter: saturate(165%) blur(10px);
   -webkit-backdrop-filter: saturate(165%) blur(10px);
 }

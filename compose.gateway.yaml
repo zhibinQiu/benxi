@@ -1,0 +1,27 @@
+# 网关模式：HTTP 仅暴露 GATEWAY_PORT（默认 40005）
+
+services:
+  gateway:
+    image: ${GATEWAY_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-40005}:80"
+    volumes:
+      - ./deploy/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - zhitan
+
+  frontend:
+    ports: []
+
+  pdf2zh-api:
+    ports: []
+
+  speech-api:
+    ports: []
+
+  ragflow:
+    ports: []
+
+  knowflow-backend:
+    ports: []

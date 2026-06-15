@@ -1,18 +1,29 @@
 <script setup>
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { NButton, NIcon, NInput, NSpin, NTag } from "naive-ui";
-import { PlayOutline, RefreshOutline } from "@vicons/ionicons5";
-import { runDataAnalysisCell, updateDataAnalysisCell } from "../api/dataAnalysis";
+import { AddOutline, PlayOutline, RefreshOutline } from "@vicons/ionicons5";
+import { usePlatformUi } from "../composables/usePlatformUi";
+import {
+  createDataAnalysisCell,
+  runDataAnalysisCell,
+  updateDataAnalysisCell,
+} from "../api/dataAnalysis";
 
 const props = defineProps({
   sessionId: { type: String, required: true },
-  cells: { type: Array, default: () => [] }});
+  cells: { type: Array, default: () => [] },
+  libraries: { type: Array, default: () => ["pandas", "numpy", "matplotlib", "seaborn"] },
+});
 
 const emit = defineEmits(["update:cells"]);
 
+const ui = usePlatformUi();
 const localCells = ref([]);
 const runningId = ref("");
 const savingId = ref("");
+const creating = ref(false);
+
+const libraryHint = computed(() => props.libraries.join(" · "));
 
 watch(
   () => props.cells,
@@ -63,11 +74,28 @@ async function runCell(cell) {
       localCells.value[idx] = {
         ...localCells.value[idx],
         status: "error",
-        stderr: e.message || "执行失败"};
+        stderr: e.message || "执行失败",
+      };
       emitCells();
     }
   } finally {
     runningId.value = "";
+  }
+}
+
+async function addCell() {
+  if (creating.value) return;
+  creating.value = true;
+  try {
+    const data = await createDataAnalysisCell(props.sessionId);
+    if (data?.cell) {
+      localCells.value = [...localCells.value, { ...data.cell }];
+      emitCells();
+    }
+  } catch (e) {
+    ui.error(e.message || "添加代码单元失败");
+  } finally {
+    creating.value = false;
   }
 }
 
@@ -81,9 +109,31 @@ function statusTag(status) {
 
 <template>
   <div class="notebook-panel">
+    <div class="notebook-toolbar">
+      <div class="library-tags">
+        <n-tag
+          v-for="lib in libraries"
+          :key="lib"
+          size="small"
+          :bordered="false"
+          type="info"
+        >
+          {{ lib }}
+        </n-tag>
+        <span class="library-hint">内置 df · pd · np · plt · sns · display</span>
+      </div>
+      <n-button size="small" type="primary" :loading="creating" @click="addCell">
+        <template #icon><n-icon><AddOutline /></n-icon></template>
+        添加代码单元
+      </n-button>
+    </div>
+
     <div v-if="!localCells.length" class="notebook-empty">
       <p>Notebook 为空</p>
-      <p class="hint">在左侧描述分析需求，AI 将在此生成 Python 单元格。</p>
+      <p class="hint">
+        点击「添加代码单元」手动编写 Python，或在左侧对话让 AI 生成分析代码。
+      </p>
+      <p class="hint">支持 {{ libraryHint }}，matplotlib / seaborn 图表运行后自动展示。</p>
     </div>
 
     <article v-for="cell in localCells" :key="cell.id" class="notebook-cell">
@@ -118,7 +168,7 @@ function statusTag(status) {
         type="textarea"
         class="cell-code"
         :autosize="{ minRows: 6, maxRows: 18 }"
-        placeholder="# pandas / matplotlib / seaborn"
+        placeholder="# 可用: df, pd, np, plt, sns, display, display_image"
         @blur="onCodeBlur(cell)"
       />
 
@@ -137,7 +187,8 @@ function statusTag(status) {
           v-for="(img, i) in cell.images"
           :key="`${cell.id}-img-${i}`"
           :src="`data:image/png;base64,${img}`"
-          alt="chart"
+          :alt="`图表 ${i + 1}`"
+          loading="lazy"
         />
       </div>
     </article>
@@ -154,6 +205,28 @@ function statusTag(status) {
   overflow: auto;
   padding: 12px 14px 24px;
   background: #fafafa;
+}
+
+.notebook-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.library-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.library-hint {
+  font-size: 12px;
+  color: var(--n-text-color-3);
 }
 
 .notebook-empty {
@@ -239,9 +312,12 @@ function statusTag(status) {
 
 .cell-images img {
   max-width: 100%;
+  max-height: 480px;
+  object-fit: contain;
   border: 1px solid #eee;
   border-radius: 6px;
   background: #fff;
+  cursor: zoom-in;
 }
 
 .notebook-saving {

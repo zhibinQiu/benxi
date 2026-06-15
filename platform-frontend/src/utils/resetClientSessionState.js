@@ -4,16 +4,25 @@ import { invalidateRagCaches } from "../api/rag.js";
 import { clearAllChatSessions } from "./chatSessionPersist.js";
 import { clearDocumentsViewCache } from "./documentsViewCache.js";
 import { clearKnowledgeScopeTreeCache } from "./knowledgeScopeTreeCache.js";
+import { clearKnowledgeScopeSelection } from "./knowledgeScopeSelectionCache.js";
+
+let resetMenuSettingsFn = null;
 
 const KNOWLEDGE_SEARCH_CHECKED_KEYS = "platform:knowledge-search-checked-keys:v2";
+
+export function registerMenuSettingsReset(fn) {
+  resetMenuSettingsFn = fn;
+}
 
 export function resetClientSessionState() {
   invalidateRagCaches();
   clearDocumentsViewCache();
   clearKnowledgeScopeTreeCache();
   clearAllChatSessions();
+  resetMenuSettingsFn?.();
   try {
     sessionStorage.removeItem(KNOWLEDGE_SEARCH_CHECKED_KEYS);
+    clearKnowledgeScopeSelection();
   } catch {
     /* ignore */
   }

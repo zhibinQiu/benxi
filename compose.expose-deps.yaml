@@ -7,7 +7,7 @@
 #     postgres redis minio pdf2zh-api speech-api \
 #     knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend
 #
-# 端口 40002–40009（40001 保留给同机 Dify）；变量见 .env.server.deps.example
+# 端口 40002–40008（40001 保留给同机 Dify）；RAGFlow API 经 gateway /deps/ragflow，不单独暴露 Web UI 端口
 
 services:
   postgres:
@@ -29,10 +29,6 @@ services:
   speech-api:
     ports:
       - "${REMOTE_SPEECH_PORT:-40006}:8765"
-
-  ragflow:
-    ports:
-      - "${REMOTE_RAGFLOW_PORT:-40007}:80"
 
   knowflow-backend:
     ports:

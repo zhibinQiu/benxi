@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -12,30 +12,46 @@ import {
 import { useAuth } from "../composables/useAuth";
 import { useAppPreferences } from "../composables/useAppPreferences";
 import { useI18n } from "../composables/useI18n";
+import { messages } from "../locales";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { loggingOut } from "../utils/sessionEpoch.js";
-import { markSkipMotionAfterLogin } from "../utils/routeTransition";
 import { publicAsset } from "../utils/appBase";
 import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import TypewriterText from "../components/TypewriterText.vue";
+import LoginFeatureTicker from "../components/LoginFeatureTicker.vue";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
 const { login, register } = useAuth();
-const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
+const { isDark, toggleTheme, toggleLocale, locale } = useAppPreferences();
 const { t, localeLabel } = useI18n();
 const appDisplayName = useAppDisplayName();
 
 onMounted(() => {
   loggingOut.value = false;
+  nextTick(bindShowcaseHeightSync);
+  window.addEventListener("resize", syncShowcaseHeight);
 });
 
-const showcaseTaglines = computed(() => [t("login.showcaseTagline")]);
+onUnmounted(() => {
+  loginCardResizeObserver?.disconnect();
+  window.removeEventListener("resize", syncShowcaseHeight);
+});
+
+const showcaseTaglines = computed(() => {
+  const lines = messages[locale.value]?.login?.showcaseTaglines;
+  return Array.isArray(lines) && lines.length ? lines : [];
+});
+
+const showcaseHighlights = computed(() => {
+  const list = messages[locale.value]?.login?.showcaseHighlights;
+  return Array.isArray(list) ? list : [];
+});
 
 const showcaseTypewriterOptions = {
   charDelay: 48,
@@ -44,11 +60,13 @@ const showcaseTypewriterOptions = {
   pauseBetweenLines: 400,
   loopSingle: true};
 
-const account = ref("15963564658");
+const account = ref("admin");
 const password = ref("admin123");
 const loading = ref(false);
 const exiting = ref(false);
 const loginCardRef = ref(null);
+const showcaseHeight = ref(null);
+let loginCardResizeObserver = null;
 
 const cardFlipped = ref(false);
 const regPhone = ref("");
@@ -57,6 +75,42 @@ const regDisplayName = ref("");
 const regPassword = ref("");
 const regPassword2 = ref("");
 const registering = ref(false);
+
+function getVisibleLoginCardEl() {
+  const flip = loginCardRef.value;
+  if (!flip) return null;
+  const selector = cardFlipped.value
+    ? ".login-flip__face--back .login-card"
+    : ".login-flip__face--front .login-card";
+  return flip.querySelector(selector);
+}
+
+function syncShowcaseHeight() {
+  if (!window.matchMedia("(min-width: 900px)").matches) {
+    showcaseHeight.value = null;
+    return;
+  }
+  const cardEl = getVisibleLoginCardEl();
+  if (!cardEl) return;
+  const h = Math.round(cardEl.getBoundingClientRect().height);
+  if (h > 0) showcaseHeight.value = `${h}px`;
+}
+
+function bindShowcaseHeightSync() {
+  loginCardResizeObserver?.disconnect();
+  loginCardResizeObserver = null;
+  const flip = loginCardRef.value;
+  if (!flip) return;
+  loginCardResizeObserver = new ResizeObserver(() => syncShowcaseHeight());
+  loginCardResizeObserver.observe(flip);
+  syncShowcaseHeight();
+}
+
+watch(cardFlipped, () => nextTick(syncShowcaseHeight));
+
+const showcaseStyle = computed(() =>
+  showcaseHeight.value ? { height: showcaseHeight.value } : undefined
+);
 
 const FLY_DURATION_MS = 420;
 
@@ -134,7 +188,6 @@ async function flyLoginCardToHeader() {
 async function navigateAfterAuth() {
   await flyLoginCardToHeader();
   const redirect = route.query.redirect || { name: "ai-home" };
-  markSkipMotionAfterLogin();
   await router.push(redirect);
 }
 
@@ -242,7 +295,7 @@ function flipToLogin() {
     </div>
 
     <div class="login-page__layout">
-      <aside class="login-showcase">
+      <aside class="login-showcase" :style="showcaseStyle">
         <div class="login-showcase__inner">
           <div class="login-showcase__brand">
             <img :src="publicAsset('logo.svg')" :alt="appDisplayName" class="login-showcase__logo" />
@@ -259,12 +312,11 @@ function flipToLogin() {
             :lines="showcaseTaglines"
             :options="showcaseTypewriterOptions"
           />
-          <ul class="login-showcase__points">
-            <li>{{ t("login.point1") }}</li>
-            <li>{{ t("login.point2") }}</li>
-            <li>{{ t("login.point3") }}</li>
+          <ul v-if="showcaseHighlights.length" class="login-showcase__highlights">
+            <li v-for="(line, index) in showcaseHighlights" :key="index">{{ line }}</li>
           </ul>
         </div>
+        <LoginFeatureTicker v-if="!exiting" class="login-showcase__ticker" />
       </aside>
 
       <main class="login-main">
@@ -433,7 +485,8 @@ function flipToLogin() {
 
 .login-page--exit .login-page__layout,
 .login-page--exit .login-page__bg,
-.login-page--exit .login-preferences {
+.login-page--exit .login-preferences,
+.login-page--exit :deep(.login-feature-ticker) {
   opacity: 0;
   transition: opacity 0.28s ease;
 }
@@ -479,7 +532,7 @@ function flipToLogin() {
   justify-content: center;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 24px;
+  padding: max(128px, 20vh) 24px max(24px, 3vh);
   box-sizing: border-box;
   gap: 32px;
 }
@@ -488,10 +541,27 @@ function flipToLogin() {
   display: none;
   flex: 1;
   min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .login-showcase__inner {
+  flex-shrink: 0;
   max-width: 420px;
+}
+
+.login-showcase__ticker {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding-bottom: 4px;
 }
 
 .login-showcase__brand {
@@ -521,32 +591,31 @@ function flipToLogin() {
 }
 
 .login-showcase__tagline {
-  margin: 0 0 28px;
+  margin: 0 0 16px;
   font-size: 15px;
   color: var(--platform-text-secondary);
   line-height: 1.6;
 }
 
-.login-showcase__points {
+.login-showcase__highlights {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
-.login-showcase__points li {
+.login-showcase__highlights li {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding-left: 0;
   font-size: 14px;
   color: var(--platform-text-secondary);
   line-height: 1.5;
 }
 
-.login-showcase__points li::before {
+.login-showcase__highlights li::before {
   content: "";
   flex-shrink: 0;
   width: 6px;
@@ -664,14 +733,24 @@ html[data-theme="dark"] .login-page :deep(.login-card.n-card) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 400px;
     align-items: start;
-    align-content: center;
+    align-content: start;
     gap: 48px 64px;
-    padding: 48px 40px;
+    padding: max(168px, 22vh) 40px 48px;
   }
 
   .login-showcase {
-    display: block;
+    display: flex;
     align-self: start;
+  }
+
+  .login-showcase__ticker :deep(.login-feature-ticker) {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
   }
 
   .login-main {
@@ -687,7 +766,7 @@ html[data-theme="dark"] .login-page :deep(.login-card.n-card) {
 
 @media (max-width: 899px) {
   .login-page__layout {
-    padding: 20px 16px;
+    padding: max(120px, 18vh) 16px max(20px, 3vh);
   }
 }
 </style>

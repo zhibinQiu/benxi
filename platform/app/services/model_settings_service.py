@@ -35,6 +35,8 @@ NOTICE_EFFECTIVE = (
     ".env 中 PLATFORM_* 仅作首次部署引导，运行中以本页保存为准。"
 )
 
+_DEFAULT_PADDLEOCR_MODEL = "PaddlePaddle/PaddleOCR-VL-1.5"
+
 def _endpoint_fields(merged: dict[str, str], prefix: str) -> tuple[str, str, str]:
     return (
         (merged.get(f"{prefix}_base_url") or "").strip(),
@@ -102,10 +104,35 @@ def _normalize_frontend_theme(value: str | None) -> str:
     return "system"
 
 
+def _paddleocr_env_defaults(settings: Settings) -> tuple[str, str, str, str]:
+    """PaddleOCR-VL：显式 PLATFORM_PADDLEOCR_* 优先，否则回退 VL / 嵌入（硅基流动等在线 API）。"""
+    base = (settings.platform_paddleocr_base_url or "").strip()
+    legacy_url = (settings.platform_paddleocr_url or "").strip()
+    if not base:
+        base = legacy_url
+    key = (settings.platform_paddleocr_api_key or "").strip()
+    model = (settings.platform_paddleocr_model or "").strip()
+
+    vl_base = (settings.platform_vl_base_url or "").strip()
+    vl_key = (settings.platform_vl_api_key or "").strip()
+    emb_base = (settings.platform_embedding_base_url or "").strip()
+    emb_key = (settings.platform_embedding_api_key or "").strip()
+
+    if not base:
+        base = vl_base or emb_base
+    if not key:
+        key = vl_key or emb_key
+    if not model and base:
+        model = _DEFAULT_PADDLEOCR_MODEL
+
+    return base, key, model, legacy_url
+
+
 def _env_defaults(settings: Settings) -> dict[str, str]:
     llm_url = (settings.platform_llm_base_url or "").strip() or settings.deepseek_base_url
     llm_key = (settings.platform_llm_api_key or "").strip() or settings.deepseek_api_key
     llm_model = (settings.platform_llm_model or "").strip() or settings.deepseek_model
+    paddle_base, paddle_key, paddle_model, paddle_legacy_url = _paddleocr_env_defaults(settings)
     return {
         "llm_base_url": llm_url or "",
         "llm_api_key": llm_key or "",
@@ -120,10 +147,10 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "vl_base_url": (settings.platform_vl_base_url or "").strip(),
         "vl_api_key": (settings.platform_vl_api_key or "").strip(),
         "vl_model": (settings.platform_vl_model or "").strip(),
-        "paddleocr_base_url": (settings.platform_paddleocr_base_url or "").strip(),
-        "paddleocr_api_key": (settings.platform_paddleocr_api_key or "").strip(),
-        "paddleocr_model": (settings.platform_paddleocr_model or "").strip(),
-        "paddleocr_url": (settings.platform_paddleocr_url or "").strip(),
+        "paddleocr_base_url": paddle_base,
+        "paddleocr_api_key": paddle_key,
+        "paddleocr_model": paddle_model,
+        "paddleocr_url": paddle_legacy_url,
         "speech_service_url": (settings.speech_service_url or "").strip(),
         "pdf2zh_api_url": (settings.pdf2zh_api_url or "").strip(),
         "platform_api_base_url": (settings.platform_api_base_url or "").strip().rstrip("/"),
@@ -412,7 +439,7 @@ def get_frontend_app_title(db: Session | None = None) -> str:
     title = (merged.get("frontend_app_title") or "").strip()
     if title:
         return title
-    return (get_settings().app_name or "").strip() or "AI办公系统"
+    return (get_settings().app_name or "").strip() or "AI 办公系统"
 
 
 def get_frontend_default_theme(db: Session | None = None) -> str:

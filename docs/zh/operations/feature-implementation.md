@@ -213,19 +213,20 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 
 ## 10. 系统功能插件（前端入口）
 
-后端 `platform/app/features/builtin/` 注册插件，前端 `SystemFunctionsView` 按 **文档 / 工具 / 双碳** 分类展示。
+后端 `platform/app/features/builtin/` 注册插件，前端 `SystemFunctionsView` 按 **文档 / 工具 / 智能** 分类展示。
 
 | 功能 id | 用户可见能力 |
 |---------|----------------|
 | pdf_translate | PDF 科学翻译 |
 | doc_compare | 文档对比 |
-| knowledge_search | 知识检索（原生） |
-| rag_qa | RAG 问答（若启用） |
-| ocr | 文本内容提取 |
-| speech_to_text | 语音转写 |
+| knowledge_search | 知识检索 |
+| ai_home | AI 助理 |
+| smart_data_query | 智能问数 |
+| carbon_qa | 领域问答 |
+| ocr | 文件内容提取 |
+| speech_to_text | 会议转写 |
 | assist_writing | 辅助写作 |
 | data_analysis | 数据分析 Notebook |
-| carbon_* | 双碳相关工具（外链或 iframe） |
 | knowflow 相关 | 切片管理、编码管理等 |
 
 未授权的功能码不在列表出现；路由层 `require_feature` 与菜单双重拦截。

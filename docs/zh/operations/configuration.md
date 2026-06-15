@@ -44,11 +44,9 @@
 
 | 变量 | 说明 |
 |------|------|
-| `KNOWFLOW_ENABLED` | 是否启用集成逻辑与 browser 路由 |
-| `KNOWFLOW_UI_UPSTREAM_URL` | API 容器内反代上游，**固定** `http://ragflow:80` |
-| `KNOWFLOW_UI_PUBLIC_URL` | 浏览器 iframe 基址；生产 `http://host:40005/ragflow-ui`；开发 `http://127.0.0.1:18000/ragflow-ui` |
-| `KNOWFLOW_UI_PROXY_PREFIX` | HTML 静态资源前缀；与 PUBLIC_URL 路径一致（见 `knowflow_ui_asset_prefix`） |
-| `RAGFLOW_API_URL` | 平台后端调 RAGFlow API：`http://ragflow:9380` |
+| `KNOWFLOW_ENABLED` | 是否启用 RAGFlow API / knowflow-backend 集成 |
+| `KNOWFLOW_BACKEND_URL` | knowflow-backend 扩展 API（容器内 `http://knowflow-backend:5000`） |
+| `RAGFLOW_API_URL` | 平台后端调 RAGFlow API（容器内 `http://ragflow:80` 或 `:9380`） |
 | `RAGFLOW_ACCOUNT_MODE` | `mapped`（每用户独立）或 `shared` |
 | `MYSQL_PASSWORD` | KnowFlow MySQL 密码 |
 | `DOC_ENGINE` | 向量库引擎，固定 `infinity` |
@@ -58,7 +56,7 @@
 
 - `JWT_SECRET` — **生产必改**
 - `DEEPSEEK_API_KEY` — 会议总结、部分 LLM
-- `BOOTSTRAP_ADMIN_PHONE` / `PASSWORD` — 首次管理员
+- `BOOTSTRAP_ADMIN_PHONE` / `PASSWORD` — 首次管理员（默认 `admin` / `admin123`）
 - `DESIGN_SYSTEM_UPSTREAM_URL` — 智能问数 iframe
 - `SPEECH_SERVICE_URL` — 容器内 `http://speech-api:8765`
 

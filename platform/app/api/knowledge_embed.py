@@ -21,6 +21,8 @@ from app.schemas.knowledge_library import (
     KnowledgeLibraryOut,
     KnowledgeQaAskRequest,
     KnowledgeQaChatStreamRequest,
+    KnowledgeQaMindmapOut,
+    KnowledgeQaMindmapRequest,
     KnowledgeQaSessionCreate,
     KnowledgeReindexRequest,
     KnowledgeScopeTreeOut,
@@ -37,6 +39,7 @@ from app.services.knowledge_parser_service import list_parser_options
 from app.services.knowledge_qa_service import (
     fetch_citation_image_bytes,
     fetch_citation_preview_bytes,
+    generate_knowledge_mindmap,
     iter_knowledge_qa_stream,
 )
 from app.services.knowledge_scope_tree_service import build_knowledge_scope_tree
@@ -203,9 +206,22 @@ def knowledge_citation_preview(
     chunk_id: str | None = Query(None),
     dataset_id: str | None = Query(None),
     ragflow_document_id: str | None = Query(None),
+    document_id: str | None = Query(None, description="平台文档 ID，用于定位 PDF"),
+    page: int | None = Query(None, ge=1),
+    bbox: str | None = Query(None, description="高亮框 left,right,top,bottom（RAGFlow 格式）"),
+    bbox_format: str | None = Query(None, description="bbox 坐标格式，默认 auto"),
+    snippet: str | None = Query(None, max_length=800, description="引用片段，用于无 bbox 时文本层高亮"),
 ) -> Response:
     """返回引用在源 PDF 中的 KnowFlow 切片截图（非提取文本）。"""
     from app.core.exceptions import not_found
+    from app.services.knowledge_qa_service import parse_citation_bbox_param
+
+    doc_uuid = None
+    if document_id:
+        try:
+            doc_uuid = uuid.UUID(document_id.strip())
+        except ValueError:
+            doc_uuid = None
 
     result = fetch_citation_preview_bytes(
         db,
@@ -214,9 +230,17 @@ def knowledge_citation_preview(
         chunk_id=chunk_id,
         dataset_id=dataset_id,
         ragflow_document_id=ragflow_document_id,
+        platform_document_id=doc_uuid,
+        page=page,
+        bbox=parse_citation_bbox_param(bbox),
+        bbox_format=(bbox_format or "auto").strip() or "auto",
+        highlight_text=snippet,
     )
     if not result:
-        raise not_found("引用原文截图不可用，请确认文档已成功索引")
+        raise not_found(
+            "引用原文截图不可用：当前文档可能以 Markdown 分块方式索引，未生成页级快照。"
+            "PDF / Word / Excel / 文本等请在文档详情 → 知识索引中勾选「重新同步」后重试。"
+        )
     data, content_type = result
     return Response(content=data, media_type=content_type)
 
@@ -234,7 +258,10 @@ def knowledge_citation_image(
 
     result = fetch_citation_image_bytes(db, user, image_id)
     if not result:
-        raise not_found("引用原文截图不可用，请确认文档已成功索引")
+        raise not_found(
+            "引用原文截图不可用：当前文档可能以 Markdown 分块方式索引，未生成页级快照。"
+            "PDF / Word / Excel / 文本等请在文档详情 → 知识索引中勾选「重新同步」后重试。"
+        )
     data, content_type = result
     return Response(content=data, media_type=content_type)
 
@@ -318,3 +345,26 @@ async def knowledge_qa_chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post(
+    "/qa/mindmap",
+    response_model=ApiResponse[KnowledgeQaMindmapOut],
+    dependencies=[_knowledge_search],
+)
+def knowledge_qa_mindmap(
+    body: KnowledgeQaMindmapRequest,
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[KnowledgeQaMindmapOut]:
+    mermaid = generate_knowledge_mindmap(question=body.question, answer=body.answer)
+    source = "llm"
+    if not mermaid:
+        from app.services.knowledge_mindmap_service import build_mindmap_from_answer
+
+        mermaid = build_mindmap_from_answer(body.question, body.answer)
+        source = "local"
+    if not mermaid:
+        from app.core.exceptions import bad_request
+
+        raise bad_request("思维导图生成失败，请稍后重试")
+    return ApiResponse(data=KnowledgeQaMindmapOut(mermaid=mermaid, source=source))

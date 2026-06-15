@@ -14,12 +14,14 @@ import {
 import { CloudUploadOutline, SendOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import AnalysisNotebookPanel from "../components/AnalysisNotebookPanel.vue";
+import ChatBubbleRetry from "../components/ChatBubbleRetry.vue";
 import {
   createDataAnalysisSession,
   dataAnalysisChat,
   fetchDataAnalysisMeta,
   fetchDataAnalysisSession,
   uploadDataAnalysisDataset } from "../api/dataAnalysis";
+import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const STORAGE_KEY = "data-analysis-session";
 const ui = usePlatformUi();
@@ -134,12 +136,17 @@ async function onUploadChange({ file }) {
 async function sendChat() {
   const text = chatInput.value.trim();
   if (!text) return;
+  await sendChatText(text);
+}
+
+async function sendChatText(text) {
+  if (!text) return;
   if (!datasetId.value || !sessionId.value) {
     ui.warning("请先上传 Excel 或 CSV 文件");
     return;
   }
   if (!meta.value?.configured) {
-    ui.warning(meta.value?.service_hint || "AI 未配置");
+    ui.warning(FEATURE_UNAVAILABLE);
     return;
   }
   chatting.value = true;
@@ -163,6 +170,32 @@ async function sendChat() {
   } finally {
     chatting.value = false;
   }
+}
+
+function findUserIndexBefore(index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (messages.value[i]?.role === "user") return i;
+  }
+  return -1;
+}
+
+function canRetryMessage(index, message) {
+  if (chatting.value || message?.role !== "assistant") return false;
+  return findUserIndexBefore(index) >= 0;
+}
+
+async function retryMessage(index) {
+  const message = messages.value[index];
+  if (!message || !canRetryMessage(index, message)) return;
+
+  const userIndex = findUserIndexBefore(index);
+  if (userIndex < 0) return;
+
+  const content = (messages.value[userIndex]?.content || "").trim();
+  if (!content) return;
+
+  messages.value = messages.value.slice(0, userIndex);
+  await sendChatText(content);
 }
 
 function onChatKeydown(e) {
@@ -193,9 +226,11 @@ onMounted(async () => {
           <n-alert
             v-if="meta && !meta.configured"
             type="warning"
-            :title="meta.service_hint || 'AI 未配置'"
+            title="智能分析暂不可用"
             class="meta-alert"
-          />
+          >
+            {{ FEATURE_UNAVAILABLE }}
+          </n-alert>
 
           <n-upload
             :show-file-list="false"
@@ -229,7 +264,17 @@ onMounted(async () => {
               class="chat-item"
               :class="msg.role"
             >
-              <div class="bubble">{{ msg.content }}</div>
+              <div
+                class="chat-item-stack"
+                :class="msg.role === 'user' ? 'chat-item-stack--user' : 'chat-item-stack--bot'"
+              >
+                <div class="bubble">{{ msg.content }}</div>
+                <ChatBubbleRetry
+                  v-if="msg.role === 'assistant' && canRetryMessage(idx, msg)"
+                  align="start"
+                  @retry="retryMessage(idx)"
+                />
+              </div>
             </div>
             <div v-if="!messages.length" class="chat-placeholder">
               上传文件后连续提问，例如：<br />
@@ -261,12 +306,13 @@ onMounted(async () => {
         <section class="notebook-pane">
           <div class="pane-head notebook-head">
             <h3>Notebook</h3>
-            <p>每轮对话可追加单元格 · 点击 ▶ 运行 · pandas / numpy / matplotlib / seaborn</p>
+            <p>可手动添加代码单元，或由 AI 生成 · 点击 ▶ 运行 · 图表自动展示</p>
           </div>
           <AnalysisNotebookPanel
             v-if="sessionId"
             :session-id="sessionId"
             :cells="cells"
+            :libraries="meta?.builtin_libraries"
             @update:cells="cells = $event"
           />
           <div v-else class="notebook-wait">
@@ -374,6 +420,21 @@ onMounted(async () => {
   margin-bottom: 10px;
 }
 
+.chat-item-stack {
+  display: flex;
+  flex-direction: column;
+  max-width: 92%;
+}
+
+.chat-item-stack--user {
+  align-items: flex-end;
+  margin-left: auto;
+}
+
+.chat-item-stack--bot {
+  align-items: flex-start;
+}
+
 .chat-item.user {
   justify-content: flex-end;
 }
@@ -383,7 +444,8 @@ onMounted(async () => {
 }
 
 .chat-item .bubble {
-  max-width: 92%;
+  width: 100%;
+  max-width: 100%;
   padding: 8px 11px;
   border-radius: 10px;
   font-size: 13px;

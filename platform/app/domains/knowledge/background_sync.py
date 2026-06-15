@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -144,12 +143,13 @@ def enqueue_catalog_reconcile_after_login(user_id: uuid.UUID) -> None:
     if not _should_enqueue():
         run_catalog_reconcile_for_user(user_id)
         return
-    threading.Thread(
-        target=run_catalog_reconcile_for_user,
-        args=(user_id,),
-        daemon=True,
-        name=f"knowflow-catalog-{user_id}",
-    ).start()
+    from app.services.background_job_dispatch import submit_light_background
+
+    submit_light_background(
+        f"knowflow-catalog-{user_id}",
+        run_catalog_reconcile_for_user,
+        user_id,
+    )
 
 
 def run_warm_on_login(user_id: uuid.UUID) -> None:
@@ -178,12 +178,13 @@ def enqueue_warm_on_login(user_id: uuid.UUID) -> None:
     if not _should_enqueue():
         run_warm_on_login(user_id)
         return
-    threading.Thread(
-        target=run_warm_on_login,
-        args=(user_id,),
-        daemon=True,
-        name=f"knowflow-warm-{user_id}",
-    ).start()
+    from app.services.background_job_dispatch import submit_light_background
+
+    submit_light_background(
+        f"knowflow-warm-{user_id}",
+        run_warm_on_login,
+        user_id,
+    )
 
 
 def run_embed_warmup(user_id: uuid.UUID) -> None:
@@ -256,9 +257,10 @@ def enqueue_embed_warmup(user_id: uuid.UUID) -> None:
     if not _should_enqueue():
         run_embed_warmup(user_id)
         return
-    threading.Thread(
-        target=run_embed_warmup,
-        args=(user_id,),
-        daemon=True,
-        name=f"knowflow-embed-warm-{user_id}",
-    ).start()
+    from app.services.background_job_dispatch import submit_light_background
+
+    submit_light_background(
+        f"knowflow-embed-warm-{user_id}",
+        run_embed_warmup,
+        user_id,
+    )

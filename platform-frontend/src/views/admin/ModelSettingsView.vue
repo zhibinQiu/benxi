@@ -98,7 +98,7 @@ const RESOURCE_DEFS = [
   {
     id: "platform_api",
     title: "系统后台地址（前端）",
-    hint: "浏览器请求智碳平台后端的 API 根路径",
+    hint: "浏览器请求平台后端的 API 根路径",
     icon: GlobeOutline,
     category: "platform"},
   {
@@ -164,7 +164,7 @@ const RESOURCE_DEFS = [
   {
     id: "knowflow_backend",
     title: "KnowFlow 知识库后台",
-    hint: "KnowFlow API、Web UI 与 iframe 基址",
+    hint: "KnowFlow 扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选",
     icon: ServerOutline,
     category: "knowledge"},
   {
@@ -538,7 +538,6 @@ onMounted(loadAll);
     <div class="page-toolbar feature-local-nav">
       <n-space>
         <n-button :loading="loading || healthLoading" @click="loadAll">刷新状态</n-button>
-        <n-tag v-if="settings?.editable" type="success" :bordered="false">在线配置已启用</n-tag>
       </n-space>
     </div>
 
@@ -626,7 +625,7 @@ onMounted(loadAll);
               />
             </n-form-item>
             <n-text depth="3" class="drawer-hint">
-              浏览器请求智碳平台后端的根路径（不含 <code>/api/v1</code>）。
+              浏览器请求平台后端的根路径（不含 <code>/api/v1</code>）。
               同源部署填 <code>/ai</code>；跨域或远程开发填完整 URL。
               对应 .env 中 <code>PLATFORM_API_BASE_URL</code>，留空时使用
               <code>API_PUBLIC_PATH_PREFIX</code>（默认 <code>/ai</code>）。
@@ -1061,6 +1060,16 @@ onMounted(loadAll);
   box-shadow:
     var(--platform-shadow),
     0 0 0 1px color-mix(in srgb, var(--cat-accent) 10%, transparent);
+}
+
+.resource-card--readonly {
+  cursor: default;
+}
+
+.resource-card--readonly:hover {
+  transform: none;
+  border-color: var(--platform-border);
+  box-shadow: var(--platform-shadow-sm);
 }
 
 .feature-card:focus-visible {

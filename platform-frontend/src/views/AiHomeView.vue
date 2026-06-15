@@ -4,9 +4,10 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 import {
   ChatbubblesOutline,
-  LeafOutline,
   SearchOutline,
-  StatsChartOutline } from "@vicons/ionicons5";
+  SparklesOutline,
+  StatsChartOutline,
+} from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import { aiHomeChatStream } from "../api/client";
 import { encodeReturnLocation } from "../utils/navigationReturn";
@@ -14,24 +15,31 @@ import { encodeReturnLocation } from "../utils/navigationReturn";
 const route = useRoute();
 
 const suggestions = [
-  "请介绍企业碳盘查的一般流程",
-  "范围一、二、三温室气体排放如何划分？",
-  "制造业常见的减排路径有哪些？",
+  "如何上传文档并设置分享权限？",
+  "PDF 翻译任务提交后在哪里查看进度？",
+  "知识检索如何限定文档范围？",
+  "帮我总结一份会议纪要的结构要点",
 ];
 
 const toolLinks = computed(() => {
   const encoded = encodeReturnLocation(route);
   const returnQuery = encoded ? { return: encoded } : {};
   return [
-    { title: "双碳问答", route: { name: "carbon-qa", query: returnQuery }, icon: ChatbubblesOutline },
-    {
-      title: "智能问数",
-      route: { name: "smart-data-query", query: returnQuery },
-      icon: StatsChartOutline},
     {
       title: "知识检索",
       route: { name: "knowledge-search", query: returnQuery },
-      icon: SearchOutline},
+      icon: SearchOutline,
+    },
+    {
+      title: "智能问数",
+      route: { name: "smart-data-query", query: returnQuery },
+      icon: StatsChartOutline,
+    },
+    {
+      title: "双碳问答",
+      route: { name: "carbon-qa", query: returnQuery },
+      icon: ChatbubblesOutline,
+    },
   ];
 });
 </script>
@@ -39,13 +47,15 @@ const toolLinks = computed(() => {
 <template>
   <AiChatPanel
     chat-scope="ai-home"
-    title="双碳智能体"
-    description="面向企业碳管理、碳核算与减排路径的专业 AI 助手，助您快速理解政策标准、梳理减排思路与 ESG 实践。"
-    subtitle="内置大模型对话"
+    title="AI 助理"
+    description="企业级智能对话入口，支持多轮问答、知识解读与办公场景辅助。"
+    subtitle="内置大模型对话 · 知识增强"
     :suggestions="suggestions"
     :tool-links="toolLinks"
-    :icon="LeafOutline"
+    :icon="SparklesOutline"
     :stream-chat="aiHomeChatStream"
+    :show-citations="true"
+    :linkify-citations="true"
     title-gradient
     :show-chat-header-brand="false"
   />

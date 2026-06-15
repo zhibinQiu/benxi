@@ -58,6 +58,7 @@ _RUNNER_TEMPLATE = textwrap.dedent(
     import json
     import sys
     import traceback
+    import warnings
     import base64
 
     import matplotlib
@@ -78,6 +79,17 @@ _RUNNER_TEMPLATE = textwrap.dedent(
         message=r"Glyph .* missing from font",
         category=UserWarning,
     )
+
+    def display(fig=None):
+        if fig is None:
+            return plt.gcf()
+        return fig
+
+    def display_image(image, *, cmap=None):
+        fig, ax = plt.subplots()
+        ax.imshow(image, cmap=cmap)
+        ax.axis("off")
+        return fig
 
     DATA_PATH = {data_path!r}
     FILE_TYPE = {file_type!r}
@@ -110,6 +122,8 @@ _RUNNER_TEMPLATE = textwrap.dedent(
         "np": np,
         "plt": plt,
         "sns": sns,
+        "display": display,
+        "display_image": display_image,
     }}
 
     try:

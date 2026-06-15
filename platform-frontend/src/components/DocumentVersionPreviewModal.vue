@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { NButton, NEmpty, NSpace, NSpin, NTag, NText } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
+import ComparePdfPreview from "./ComparePdfPreview.vue";
 import { fetchDocumentFileBlob } from "../api/documents.js";
 import {
   PREVIEW_KIND,
@@ -21,7 +22,7 @@ const props = defineProps({
   previewFileName: { type: String, default: "" },
   showDownloadAction: { type: Boolean, default: null },
   width: { type: [Number, String], default: "min(1200px, 96vw)" },
-  viewportHeight: { type: String, default: "min(82vh, 900px)" },
+  viewportHeight: { type: String, default: "min(90vh, 980px)" },
 });
 
 const emit = defineEmits(["update:show", "download"]);
@@ -137,12 +138,12 @@ function onAfterLeave() {
 
     <n-spin :show="loading" class="document-preview-modal__spin">
       <div class="document-preview-modal__viewport">
-        <iframe
+        <ComparePdfPreview
           v-if="previewKind === PREVIEW_KIND.PDF && objectUrl"
           :key="objectUrl"
           :src="objectUrl"
-          class="document-preview-modal__frame"
-          title="PDF 预览"
+          fit-mode="page"
+          class="document-preview-modal__pdf"
         />
         <iframe
           v-else-if="previewKind === PREVIEW_KIND.HTML && objectUrl"
@@ -214,11 +215,19 @@ function onAfterLeave() {
   display: flex;
   align-items: stretch;
   justify-content: center;
+  height: v-bind(viewportHeight);
   min-height: v-bind(viewportHeight);
   border-radius: calc(var(--platform-radius-sm) + 4px);
   border: 1px solid var(--platform-border);
   background: color-mix(in srgb, var(--platform-text) 3%, transparent);
   overflow: hidden;
+}
+
+.document-preview-modal__pdf {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
 }
 
 .document-preview-modal__frame {

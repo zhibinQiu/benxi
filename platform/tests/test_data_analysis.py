@@ -138,3 +138,51 @@ def test_upload_and_create_session(client: TestClient, admin_token: str, tmp_pat
     body = session.json()["data"]
     assert body["dataset_id"] == dataset_id
     assert body["profile"]["filename"] == "demo.xlsx"
+
+
+def test_create_manual_cell(client: TestClient, admin_token: str, tmp_path, monkeypatch):
+    pd = pytest.importorskip("pandas")
+    monkeypatch.setattr(store, "_storage_root", lambda: tmp_path)
+
+    buf = io.BytesIO()
+    pd.DataFrame({"month": ["2024-01"], "sales": [100]}).to_excel(buf, index=False)
+    buf.seek(0)
+
+    upload = client.post(
+        "/api/v1/data-analysis/datasets/upload",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        files={"file": ("demo.xlsx", buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert upload.status_code == 200, upload.text
+    dataset_id = upload.json()["data"]["dataset_id"]
+
+    session = client.post(
+        "/api/v1/data-analysis/sessions",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"dataset_id": dataset_id},
+    )
+    assert session.status_code == 200, session.text
+    session_id = session.json()["data"]["session_id"]
+
+    created = client.post(
+        f"/api/v1/data-analysis/sessions/{session_id}/cells",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"title": "手动统计"},
+    )
+    assert created.status_code == 200, created.text
+    cell = created.json()["data"]["cell"]
+    assert cell["title"] == "手动统计"
+    assert "df.head()" in cell["code"]
+    assert cell["status"] == "idle"
+
+
+def test_data_analysis_meta_lists_builtin_libraries(client: TestClient, admin_token: str):
+    resp = client.get(
+        "/api/v1/data-analysis/meta",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert "pandas" in data["builtin_libraries"]
+    assert "seaborn" in data["builtin_libraries"]
+    assert "df" in data["builtin_variables"]

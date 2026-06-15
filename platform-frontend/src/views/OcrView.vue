@@ -28,6 +28,7 @@ import {
   fetchOcrMeta,
   recognizeOcr,
 } from "../api/client";
+import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const ui = usePlatformUi();
 
@@ -296,9 +297,6 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
     <template #extra>
       <n-space v-if="progressLabel" align="center" :size="8">
         <n-tag size="small" round :bordered="false">{{ progressLabel }}</n-tag>
-        <n-tag v-if="meta?.model" size="small" round type="info" :bordered="false">
-          {{ meta.provider || "文件内容提取" }} · {{ meta.model }}
-        </n-tag>
       </n-space>
     </template>
 
@@ -307,10 +305,10 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
         <n-alert
           v-if="!loadingMeta && !configured"
           type="warning"
-          title="文件内容提取服务未配置"
+          title="文件内容提取暂不可用"
           class="page-alert"
         >
-          <p>{{ meta?.service_hint || "请在资源管理中配置 PaddleOCR-VL。" }}</p>
+          <p>{{ FEATURE_UNAVAILABLE }}</p>
           <template #action>
             <n-button size="small" :loading="loadingMeta" @click="loadMeta">重新检测</n-button>
           </template>
@@ -417,7 +415,7 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
               </n-button>
             </n-space>
             <n-text depth="3" class="hint-text">
-              使用资源管理中的 PaddleOCR-VL 服务；JSON 含页码与坐标（版面解析可用时）。
+              JSON 导出含页码与坐标（版面解析可用时）。
             </n-text>
           </div>
         </n-card>

@@ -52,7 +52,8 @@ html[data-theme="dark"] .app-shell--video-bg {
 }
 
 .app-shell--video-bg .ai-home,
-.app-shell--video-bg .chat-history-page {
+.app-shell--video-bg .chat-history-page,
+.app-shell--video-bg .knowledge-search-panel {
   background: transparent !important;
 }
 

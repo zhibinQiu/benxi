@@ -7,7 +7,7 @@
 
 ## 1. 当前系统是什么
 
-绿叶 AI 办公系统 使用 **单一 Docker Compose 栈**（项目名 `zhitan`），所有服务在同一 Docker 网络 `zhitan` 内通信。
+AI 办公系统使用 **单一 Docker Compose 栈**（项目名 `zhitan`），所有服务在同一 Docker 网络 `zhitan` 内通信。
 
 | 项 | 当前做法 |
 |----|----------|

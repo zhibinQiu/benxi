@@ -24,6 +24,7 @@ import {
   fetchWebSearchStatus,
   ingestSubscriptionUrl,
   searchSubscriptionWeb } from "../api/client";
+import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const route = useRoute();
 const router = useRouter();
@@ -190,7 +191,7 @@ async function loadWebSearch() {
     return;
   }
   if (!webSearchEnabled.value) {
-    ui.warning("未配置在线搜索服务，请在资源管理中配置 SearXNG");
+    ui.warning(FEATURE_UNAVAILABLE);
     return;
   }
   itemsLoading.value = true;
@@ -612,7 +613,7 @@ onMounted(async () => {
                 <NEmpty description="未找到相关网页，请换关键词重试" />
               </div>
               <div v-else-if="!loading && !webSearchEnabled" class="subscriptions-empty">
-                <NEmpty description="在线搜索未启用，请在资源管理中配置 SearXNG" />
+                <NEmpty description="在线搜索暂不可用，请联系管理员" />
               </div>
               <div v-else-if="!loading" class="subscriptions-empty subscriptions-empty--hero">
                 <NIcon :size="42" :component="SearchOutline" class="subscriptions-empty__icon" />

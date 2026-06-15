@@ -40,5 +40,19 @@ export function useI18n() {
     return typeof raw === "string" ? raw : scope;
   }
 
-  return { locale, localeLabel, t, routeTitle, scopeLabel };
+  function docStatusLabel(key) {
+    if (!key) return "";
+    const i18nKey = `documents.status.${key}`;
+    const raw = resolvePath(messages[locale.value], i18nKey);
+    return typeof raw === "string" ? raw : key;
+  }
+
+  function docLevelLabel(key) {
+    if (!key) return "";
+    const i18nKey = `documents.level.${key}`;
+    const raw = resolvePath(messages[locale.value], i18nKey);
+    return typeof raw === "string" ? raw : key;
+  }
+
+  return { locale, localeLabel, t, routeTitle, scopeLabel, docStatusLabel, docLevelLabel };
 }

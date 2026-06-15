@@ -36,7 +36,7 @@ const showModal = ref(false);
 const editingId = ref(null);
 const saving = ref(false);
 
-const BOOTSTRAP_PHONE = "15963564658";
+const BOOTSTRAP_PHONE = "admin";
 
 const emptyForm = () => ({
   phone: "",

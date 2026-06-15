@@ -30,6 +30,107 @@ _INDEXABLE_SUFFIXES = (
     ".webp",
 )
 
+
+def file_supports_knowflow_original_upload(file_name: str, mime_type: str = "") -> bool:
+    """KnowFlow 应上传原文件（或由 normalize 转为 PDF），以支持引用溯源页截图。"""
+    lower = (file_name or "").lower()
+    mime = (mime_type or "").lower()
+    if any(lower.endswith(s) for s in _INDEXABLE_SUFFIXES):
+        return True
+    if mime == "application/pdf":
+        return True
+    if "word" in mime or "spreadsheet" in mime or "excel" in mime:
+        return True
+    if "presentation" in mime or "powerpoint" in mime:
+        return True
+    if mime.startswith("image/"):
+        return True
+    if mime.startswith("text/"):
+        return True
+    return False
+
+
+_OFFICE_SUFFIXES = (".doc", ".docx", ".rtf", ".xlsx", ".xls", ".ppt", ".pptx")
+
+
+def _is_office_like_file(file_name: str, mime_type: str = "") -> bool:
+    lower = (file_name or "").lower()
+    mime = (mime_type or "").lower()
+    if any(lower.endswith(s) for s in _OFFICE_SUFFIXES):
+        return True
+    return (
+        "word" in mime
+        or "spreadsheet" in mime
+        or "excel" in mime
+        or "presentation" in mime
+        or "powerpoint" in mime
+    )
+
+
+def knowflow_copy_lacks_page_snapshots(
+    version_file_name: str,
+    version_mime: str,
+    knowflow_file_name: str,
+) -> bool:
+    """KnowFlow 副本若来自 Markdown 分块导出，则无页级引用截图，需重新同步原文件。"""
+    kf = (knowflow_file_name or "").lower()
+    orig = (version_file_name or "").lower()
+    if kf.endswith(".md"):
+        return True
+    if not file_supports_knowflow_original_upload(version_file_name, version_mime):
+        return False
+    if kf.endswith(".pdf") and not orig.endswith(".pdf") and _is_office_like_file(
+        version_file_name, version_mime
+    ):
+        return True
+    return False
+
+
+def convert_file_bytes_to_pdf_for_citation(
+    file_name: str,
+    content: bytes,
+    mime_type: str,
+    *,
+    title: str = "",
+) -> tuple[str, bytes, str] | None:
+    """将 Office / 文本等转为 PDF，供引用截图兜底渲染。"""
+    name = (file_name or "").strip() or "document"
+    lower = name.lower()
+    mime = (mime_type or "").lower()
+    doc_title = title or name.rsplit(".", 1)[0]
+
+    if lower.endswith(".pdf") or mime == "application/pdf":
+        if content.startswith(b"%PDF"):
+            return name, content, mime_type or "application/pdf"
+        return None
+
+    text: str | None = None
+    if _is_office_like_file(name, mime) or any(
+        lower.endswith(s) for s in (".txt", ".csv", ".log", ".json", ".xml", ".yaml", ".yml")
+    ) or (mime.startswith("text/") and "html" not in mime and "markdown" not in mime):
+        from app.integrations.text_extract import extract_text_from_bytes
+
+        try:
+            parsed = extract_text_from_bytes(
+                content,
+                file_name=name,
+                mime_type=mime_type or "",
+            )
+            text = (parsed.full_text or "").strip()
+        except Exception as exc:
+            logger.debug("引用预览提取文本失败 file=%s: %s", name, exc)
+            text = None
+
+    if not text:
+        return None
+
+    from app.integrations.article_pdf_export import markdown_text_to_pdf_bytes
+
+    pdf = markdown_text_to_pdf_bytes(doc_title, text)
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return f"{stem}.pdf", pdf, "application/pdf"
+
+
 _LINK_IN_DESC_RE = re.compile(
     r"(?:链接|原文)[：:]\s*(https?://\S+)",
     re.IGNORECASE,
@@ -221,7 +322,7 @@ def html_body_to_indexable_bytes(
     fallback_stem: str = "article",
     allow_refetch: bool = True,
 ) -> tuple[str, bytes, str]:
-    """生成可供知识库索引的文件名、内容与 MIME（Markdown，仅测试/兼容）。"""
+    """生成可供知识库索引的文件名、内容与 MIME（Markdown，仅测试/兼容，生产入库请用 PDF）。"""
     html, summary_text = resolve_article_html_body(
         html_body,
         summary=summary,
@@ -329,6 +430,37 @@ def normalize_file_for_knowflow_upload(
         pdf = markdown_text_to_pdf_bytes(doc_title, text)
         pdf_name = name if lower.endswith(".pdf") else f"{name.rsplit('.', 1)[0]}.pdf"
         return pdf_name, pdf, "application/pdf"
+
+    text_like_suffixes = (".txt", ".csv", ".log", ".json", ".xml", ".yaml", ".yml")
+    if any(lower.endswith(s) for s in text_like_suffixes) or (
+        mime.startswith("text/")
+        and "html" not in mime
+        and "markdown" not in mime
+    ):
+        try:
+            text = content.decode("utf-8", errors="replace")
+        except Exception:
+            text = ""
+        if text.strip():
+            from app.integrations.article_pdf_export import markdown_text_to_pdf_bytes
+
+            pdf = markdown_text_to_pdf_bytes(doc_title, text)
+            stem = name.rsplit(".", 1)[0] if "." in name else name
+            return f"{stem}.pdf", pdf, "application/pdf"
+
+    if _is_office_like_file(name, mime):
+        converted = convert_file_bytes_to_pdf_for_citation(
+            name,
+            content,
+            mime_type,
+            title=doc_title,
+        )
+        if converted:
+            logger.info(
+                "KnowFlow 上传：Office 转为 PDF 以生成引用页截图 file=%s",
+                name,
+            )
+            return converted
 
     if any(lower.endswith(s) for s in _INDEXABLE_SUFFIXES):
         return name, content, mime_type or "application/octet-stream"

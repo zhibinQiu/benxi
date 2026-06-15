@@ -13,6 +13,7 @@ def _ensure_version_compare_tables():
     from app.database import engine
     from app.schema_migrate import (
         ensure_document_version_change_description,
+        ensure_kg_schema,
         ensure_user_auth_token_version_schema,
         ensure_version_compare_schema,
         ensure_version_compare_llm_summary_schema,
@@ -24,6 +25,7 @@ def _ensure_version_compare_tables():
     ensure_version_compare_llm_summary_schema(engine)
     ensure_document_version_blocks_schema(engine)
     ensure_user_auth_token_version_schema(engine)
+    ensure_kg_schema(engine)
 
 
 @pytest.fixture(scope="session")
@@ -63,7 +65,7 @@ def _skip_knowflow_sync_on_upload(monkeypatch, request):
 def admin_token(client: TestClient) -> str:
     r = client.post(
         "/api/v1/auth/login",
-        json={"account": "15963564658", "password": "admin123"},
+        json={"account": "admin", "password": "admin123"},
     )
     assert r.status_code == 200, r.text
     body = r.json()

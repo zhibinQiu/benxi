@@ -1,36 +1,33 @@
 <script setup>
 defineOptions({ name: "KnowledgeSearchView" });
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { NButton, NIcon } from "naive-ui";
 import { AddOutline, SearchOutline } from "@vicons/ionicons5";
-import AiChatPanel from "../components/AiChatPanel.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
+import KnowledgeSearchPanel from "../components/KnowledgeSearchPanel.vue";
 import { knowledgeQaChatStream } from "../api/knowledge.js";
 import { useI18n } from "../composables/useI18n.js";
 import { messages } from "../locales";
-import { clearChatSession } from "../utils/chatSessionPersist.js";
+import { readKnowledgeScopeSelection } from "../utils/knowledgeScopeSelectionCache.js";
 
 const { t, locale } = useI18n();
 
-const selection = ref(null);
-const chatResetKey = ref(0);
+const selection = ref(readKnowledgeScopeSelection());
+const panelKey = ref(0);
 
 const suggestions = computed(
   () => messages[locale.value]?.knowledgeSearch?.suggestions || []
 );
 
-const selectionDocKey = computed(() =>
-  [...(selection.value?.documentIds || [])].sort().join(",")
-);
-
-const chatPanelKey = computed(
-  () => `${selectionDocKey.value || "none"}:${chatResetKey.value}`
-);
-
 const selectionHint = computed(() => {
-  if (!selection.value?.documentIds?.length) {
+  if (!selection.value?.totalSelected) {
     return t("knowledgeSearch.selectIndexedDocs");
+  }
+  if (!selection.value?.documentIds?.length) {
+    return t("knowledgeSearch.selectedNoneIndexed", {
+      total: selection.value.totalSelected,
+    });
   }
   const {
     documentIds = [],
@@ -59,6 +56,7 @@ const selectionHint = computed(() => {
 });
 
 const canAsk = computed(() => (selection.value?.documentIds?.length || 0) > 0);
+const hasCheckedDocs = computed(() => (selection.value?.totalSelected || 0) > 0);
 
 async function handleChatStream(params, callbacks) {
   if (!canAsk.value) {
@@ -75,20 +73,15 @@ async function handleChatStream(params, callbacks) {
 
 function onSelectionChange(next) {
   selection.value = next;
-  chatResetKey.value += 1;
 }
 
-function resetChat() {
-  chatResetKey.value += 1;
+function resetSearch() {
+  panelKey.value += 1;
 }
-
-onMounted(() => {
-  clearChatSession("knowledge-search");
-});
 </script>
 
 <template>
-  <FeatureSubsystemShell fill flush-start :show-intro="false">
+  <FeatureSubsystemShell fill flush-start flush-end :show-intro="false">
     <template #extra>
       <div class="knowledge-search-toolbar">
         <n-icon :size="16" :component="SearchOutline" class="knowledge-search-toolbar__icon" />
@@ -97,7 +90,7 @@ onMounted(() => {
           size="small"
           quaternary
           class="knowledge-search-toolbar__reset"
-          @click="resetChat"
+          @click="resetSearch"
         >
           <template #icon>
             <n-icon :component="AddOutline" />
@@ -113,22 +106,16 @@ onMounted(() => {
       </aside>
 
       <main class="knowledge-search-page__main">
-        <AiChatPanel
-          :key="chatPanelKey"
-          class="knowledge-search-page__chat"
-          :title="t('knowledgeSearch.title')"
-          :reply-placeholder="t('knowledgeSearch.replyPlaceholder')"
+        <p class="knowledge-search-page__engine-hint">
+          {{ t("knowledgeSearch.indexEngineHint") }}
+        </p>
+        <KnowledgeSearchPanel
+          :key="panelKey"
+          class="knowledge-search-page__panel"
           :suggestions="canAsk ? suggestions : []"
-          :icon="SearchOutline"
-          :streaming="true"
-          :show-workflow-progress="true"
-          :rich-markdown="true"
-          :show-citations="true"
-          :linkify-citations="true"
-          :show-session-actions="false"
-          :show-chat-header-brand="false"
+          :can-search="canAsk"
+          :has-checked-docs="hasCheckedDocs"
           :stream-chat="handleChatStream"
-          title-gradient
         />
       </main>
     </div>
@@ -143,10 +130,11 @@ onMounted(() => {
   height: 100%;
   width: 100%;
   box-sizing: border-box;
-  border-radius: 0 var(--platform-radius) 0 0;
+  border-radius: 0;
   overflow: hidden;
   border: 1px solid var(--platform-border);
   border-left: none;
+  border-right: none;
   background: var(--platform-bg-elevated);
 }
 
@@ -169,7 +157,15 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.knowledge-search-page__chat {
+.knowledge-search-page__engine-hint {
+  margin: 0;
+  padding: 10px 16px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--platform-text-secondary, rgba(255, 255, 255, 0.62));
+}
+
+.knowledge-search-page__panel {
   flex: 1;
   min-height: 0;
   border-radius: 0;

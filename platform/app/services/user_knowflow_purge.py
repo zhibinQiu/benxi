@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import threading
+import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -13,15 +16,27 @@ from app.models.org import User
 from app.models.ragflow_document_mirror_link import RagflowDocumentMirrorLink
 from app.models.ragflow_link import RagflowAccountLink
 from app.models.ragflow_scope_dataset import SCOPE_PERSONAL as REG_PERSONAL
-from app.services.documents.lifecycle import purge_document_completely
+from app.services.documents.lifecycle import (
+    purge_document_completely,
+    schedule_documents_external_purge,
+)
 from app.services.ragflow_naming import (
     dataset_display_label_personal,
     dataset_name_for_personal,
     legacy_dataset_name_for_personal,
     legacy_dataset_name_for_platform_user,
 )
+from app.services.ragflow_sync_service import KnowflowDeleteTarget, schedule_knowflow_deletes
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class UserKnowflowPurgeJob:
+    dataset_ids: tuple[str, ...]
+    lookup_names: tuple[str, ...]
+    ragflow_email: str | None
+    user_id_suffix: str
 
 
 def _personal_kb_lookup_names(db: Session, user: User) -> list[str]:
@@ -41,48 +56,86 @@ def _personal_kb_lookup_names(db: Session, user: User) -> list[str]:
     )
 
 
-def _purge_user_personal_knowledge_base(db: Session, user: User) -> None:
-    from app.services.ragflow_scope_service import _get_registry, _privileged_rag_client
+def _collect_personal_kb_purge_job(db: Session, user: User) -> UserKnowflowPurgeJob | None:
+    from app.services.ragflow_scope_service import _get_registry
 
-    reg = _get_registry(db, REG_PERSONAL, str(user.id))
     ds_ids: set[str] = set()
+    reg = _get_registry(db, REG_PERSONAL, str(user.id))
     if reg and (reg.ragflow_dataset_id or "").strip():
         ds_ids.add(reg.ragflow_dataset_id.strip())
-
-    priv = _privileged_rag_client(db)
-    if priv:
-        found = priv.find_dataset_by_names(_personal_kb_lookup_names(db, user))
-        if found and found.get("id"):
-            ds_ids.add(str(found["id"]).strip())
-        for ds_id in ds_ids:
-            try:
-                priv.delete_dataset(ds_id)
-                logger.info(
-                    "已删除用户 %s 的个人知识库 KnowFlow dataset=%s",
-                    user.username,
-                    ds_id,
-                )
-            except Exception as e:
-                logger.warning(
-                    "API 删除用户 %s 个人知识库失败 dataset=%s: %s",
-                    user.username,
-                    ds_id,
-                    e,
-                )
-                from app.services.ragflow_scope_service import _delete_knowledgebase_mysql
-
-                _delete_knowledgebase_mysql(ds_id)
-
-    if reg:
         db.delete(reg)
         db.flush()
 
+    link = db.scalar(
+        select(RagflowAccountLink).where(
+            RagflowAccountLink.platform_user_id == user.id
+        )
+    )
+    email = (link.ragflow_email or "").strip() if link else None
+    suffix = str(user.id).replace("-", "")[-8:].lower()
 
-def _purge_user_document_mirrors(db: Session, user: User) -> None:
-    from app.integrations.ragflow_client import RagflowClient
-    from app.services.ragflow_sync_service import remove_document_mirror
+    lookup_names = tuple(_personal_kb_lookup_names(db, user))
+    if not ds_ids and not lookup_names and not email:
+        return None
+    return UserKnowflowPurgeJob(
+        dataset_ids=tuple(ds_ids),
+        lookup_names=lookup_names,
+        ragflow_email=email or None,
+        user_id_suffix=suffix,
+    )
 
+
+def schedule_user_knowflow_external_purge(job: UserKnowflowPurgeJob) -> None:
+    """后台清理个人向量库与 RAGFlow 账号，避免删除用户请求阻塞在远端。"""
+
+    def run() -> None:
+        from app.database import SessionLocal
+        from app.integrations.ragflow_provision import (
+            _purge_ragflow_user_by_email,
+            _purge_ragflow_user_by_uid_suffix,
+        )
+        from app.services.ragflow_scope_service import (
+            _delete_knowledgebase_mysql,
+            _privileged_rag_client,
+        )
+
+        ds_ids: set[str] = set(job.dataset_ids)
+        db = SessionLocal()
+        try:
+            priv = _privileged_rag_client(db)
+        finally:
+            db.close()
+        if priv and job.lookup_names:
+            found = priv.find_dataset_by_names(list(job.lookup_names))
+            if found and found.get("id"):
+                ds_ids.add(str(found["id"]).strip())
+        for ds_id in ds_ids:
+            deleted = False
+            if priv:
+                try:
+                    priv.delete_dataset(ds_id)
+                    deleted = True
+                    logger.info("后台已删除个人知识库 dataset=%s", ds_id)
+                except Exception as e:
+                    logger.warning("后台 API 删除个人知识库失败 dataset=%s: %s", ds_id, e)
+            if not deleted:
+                _delete_knowledgebase_mysql(ds_id)
+
+        if job.ragflow_email:
+            _purge_ragflow_user_by_email(job.ragflow_email)
+        elif job.user_id_suffix:
+            _purge_ragflow_user_by_uid_suffix(job.user_id_suffix)
+
+    from app.core.background_executor import submit_background
+
+    submit_background("user-knowflow-purge", run)
+
+
+def _purge_user_document_mirrors(
+    db: Session, user: User
+) -> list[KnowflowDeleteTarget]:
     uid = user.id
+    targets: list[KnowflowDeleteTarget] = []
     mirrors = list(
         db.scalars(
             select(RagflowDocumentMirrorLink).where(
@@ -91,34 +144,36 @@ def _purge_user_document_mirrors(db: Session, user: User) -> None:
         ).all()
     )
     for mirror in mirrors:
-        doc = db.get(Document, mirror.platform_document_id)
-        if doc:
-            remove_document_mirror(db, doc, user, commit_client=True)
-            continue
         if mirror.dataset_id and mirror.ragflow_document_id:
-            try:
-                client = RagflowClient()
-                if client.health_ok():
-                    client.delete_documents(
-                        mirror.dataset_id, [mirror.ragflow_document_id]
-                    )
-            except Exception as e:
-                logger.warning(
-                    "删除孤立分享镜像向量失败 user=%s: %s", user.username, e
+            targets.append(
+                KnowflowDeleteTarget(
+                    dataset_id=mirror.dataset_id,
+                    ragflow_document_id=mirror.ragflow_document_id,
                 )
+            )
         db.delete(mirror)
     if mirrors:
         db.flush()
+    return targets
 
 
-def _purge_user_owned_documents(db: Session, user: User) -> None:
+def _purge_user_owned_documents(
+    db: Session, user: User
+) -> tuple[int, list[uuid.UUID], list[KnowflowDeleteTarget]]:
     owned = list(
         db.scalars(select(Document).where(Document.owner_id == user.id)).all()
     )
+    purge_ids: list[uuid.UUID] = []
+    targets: list[KnowflowDeleteTarget] = []
     for doc in owned:
-        purge_document_completely(db, doc)
+        doc_targets = purge_document_completely(
+            db, doc, defer_knowflow=True, skip_external=True
+        )
+        targets.extend(doc_targets)
+        purge_ids.append(doc.id)
     if owned:
         logger.info("已物理删除用户 %s 的 %s 篇文档", user.username, len(owned))
+    return len(owned), purge_ids, targets
 
 
 def _purge_user_library_folders(db: Session, user: User) -> None:
@@ -130,38 +185,22 @@ def _purge_user_library_folders(db: Session, user: User) -> None:
     db.flush()
 
 
-def _purge_ragflow_account(db: Session, user: User) -> None:
-    link = db.scalar(
-        select(RagflowAccountLink).where(
-            RagflowAccountLink.platform_user_id == user.id
-        )
-    )
-    if not link:
-        return
-    email = (link.ragflow_email or "").strip()
-    if email:
-        from app.integrations.ragflow_provision import _purge_ragflow_user_by_email
-
-        _purge_ragflow_user_by_email(email)
-
-
 def purge_user_knowledge_resources(db: Session, user: User) -> dict[str, int]:
-    """删除用户前：文档、MinIO、分享镜像、个人库文件夹、个人向量库、RAGFlow 账号。"""
-    _purge_user_document_mirrors(db, user)
-    owned_before = len(
-        list(db.scalars(select(Document.id).where(Document.owner_id == user.id)).all())
-    )
-    _purge_user_owned_documents(db, user)
+    """删除用户前：文档、分享镜像、个人库文件夹；MinIO/KnowFlow 远端异步清理。"""
+    mirror_targets = _purge_user_document_mirrors(db, user)
+    owned_count, purge_doc_ids, doc_targets = _purge_user_owned_documents(db, user)
     _purge_user_library_folders(db, user)
 
+    knowflow_job: UserKnowflowPurgeJob | None = None
     if get_settings().knowflow_enabled:
-        try:
-            from app.services.ragflow_scope_service import revoke_all_dept_kb_grants
+        knowflow_job = _collect_personal_kb_purge_job(db, user)
 
-            revoke_all_dept_kb_grants(db, user)
-        except Exception as e:
-            logger.warning("撤销用户部门库授权失败 %s: %s", user.username, e)
-        _purge_user_personal_knowledge_base(db, user)
-        _purge_ragflow_account(db, user)
+    all_targets = mirror_targets + doc_targets
+    if purge_doc_ids:
+        schedule_documents_external_purge(purge_doc_ids)
+    if all_targets:
+        schedule_knowflow_deletes(all_targets)
+    if knowflow_job:
+        schedule_user_knowflow_external_purge(knowflow_job)
 
-    return {"documents_purged": owned_before}
+    return {"documents_purged": owned_count}

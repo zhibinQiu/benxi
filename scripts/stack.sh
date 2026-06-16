@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI 办公系统 — 统一 Docker 栈（仓库根 compose.yaml）
+# 企业 AI 知识库平台 — 统一 Docker 栈（仓库根 compose.yaml）
 #
 #   bash scripts/stack.sh build              # 构建自有镜像（core）
 #   bash scripts/stack.sh build --profile knowflow --profile speech
@@ -33,6 +33,7 @@ DATA_ROOT="${DATA_ROOT:-./data}"
 IMAGES_DIR="${IMAGES_DIR:-./images}"
 COMPOSE_PROFILES_EXTRA=()
 COMPOSE_DEV=0
+COMPOSE_SERVER=0
 
 load_env() {
   if [[ ! -f .env ]]; then
@@ -84,15 +85,13 @@ compose_cmd() {
   if [[ "$COMPOSE_DEV" == 1 ]]; then
     args+=(-f compose.dev.yaml)
   fi
+  if [[ "$COMPOSE_SERVER" == 1 ]]; then
+    args+=(-f compose.server.yaml)
+  fi
   if [[ "${EXPOSE_DEPS:-0}" == 1 ]]; then
-    if [[ "${GATEWAY_MODE:-0}" == 1 ]] && [[ -f compose.expose-deps.gateway.yaml ]]; then
-      args+=(-f compose.expose-deps.gateway.yaml)
-    elif [[ -f compose.expose-deps.yaml ]]; then
+    if [[ -f compose.expose-deps.yaml ]]; then
       args+=(-f compose.expose-deps.yaml)
     fi
-  fi
-  if [[ "${GATEWAY_MODE:-0}" == 1 ]] && [[ -f compose.gateway.yaml ]]; then
-    args+=(-f compose.gateway.yaml)
   fi
   if [[ ${#COMPOSE_PROFILES_EXTRA[@]} -gt 0 ]]; then
     local p
@@ -153,6 +152,72 @@ image_list() {
   printf '%s\n' "${imgs[@]}"
 }
 
+registry_image() {
+  local name="$1"
+  local prefix="${REGISTRY_IMAGE_PREFIX:-}"
+  echo "${prefix}${name}:${ZHITAN_VERSION}"
+}
+
+cmd_build_runtime() {
+  load_env
+  local tag local_tag
+  local_tag="zhitan-api-runtime:${ZHITAN_VERSION}"
+  tag="$(registry_image zhitan-api-runtime)"
+  info "构建 Python 运行时镜像（无业务代码）→ ${local_tag}"
+  docker build \
+    -f platform/Dockerfile \
+    --target runtime \
+    --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE:-python:3.11-slim}" \
+    --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
+    --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
+    --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
+    -t "${local_tag}" \
+    .
+  if [[ "${tag}" != "${local_tag}" ]]; then
+    docker tag "${local_tag}" "${tag}"
+    info "额外 tag: ${tag}"
+  fi
+}
+
+cmd_push_registry() {
+  load_env
+  local prefix="${REGISTRY_IMAGE_PREFIX:-}"
+  if [[ -z "$prefix" ]]; then
+    error "请设置 REGISTRY_IMAGE_PREFIX，例如 registry.cn-hangzhou.aliyuncs.com/your-namespace/"
+    error "登录: docker login registry.cn-hangzhou.aliyuncs.com"
+    exit 1
+  fi
+  local platforms="${BUILD_PLATFORMS:-linux/amd64,linux/arm64}"
+  local image
+  image="$(registry_image zhitan-api-runtime)"
+  info "buildx 多架构推送 → ${image} (${platforms})"
+  docker buildx inspect zhitan-builder >/dev/null 2>&1 || \
+    docker buildx create --name zhitan-builder --use
+  docker buildx use zhitan-builder
+  docker buildx build \
+    --platform "${platforms}" \
+    -f platform/Dockerfile \
+    --target runtime \
+    --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE:-python:3.11-slim}" \
+    --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
+    --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
+    --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
+    -t "${image}" \
+    -t "${prefix}zhitan-api-runtime:latest" \
+    --push \
+    .
+  info "已推送 ${image}"
+}
+
+cmd_pull_registry() {
+  load_env
+  local image
+  image="$(registry_image zhitan-api-runtime)"
+  info "拉取 ${image} ..."
+  docker pull "${image}"
+  docker tag "${image}" "zhitan-api-runtime:${ZHITAN_VERSION}"
+}
+
 cmd_build() {
   load_env
   # build 默认仅核心三镜像；要 knowflow/speech 请显式 --profile 或先 stack.sh build --profile knowflow
@@ -203,6 +268,24 @@ ${GREEN}=== ${app_name} 栈已启动 ===${NC}
   Web（唯一推荐入口）: http://${host}:${port}/ai/
   容器内 API:          http://api:8000
   数据目录:            ${DATA_ROOT}
+
+EOF
+}
+
+cmd_server_up() {
+  COMPOSE_SERVER=1
+  export SERVER_MOUNT_CODE=1
+  load_env
+  default_profiles
+  info "服务器模式：runtime 镜像 + 挂载 platform/app（--reload）"
+  compose_cmd up -d --no-build "$@"
+  local port="${FRONTEND_PORT:-40005}"
+  cat <<EOF
+
+${GREEN}=== 服务器挂载模式已启动 ===${NC}
+  Web:  http://127.0.0.1:${port}/ai/
+  API:  http://127.0.0.1:${STACK_DEV_API_PORT:-18000}
+  改 platform/app 后 API 自动 reload；Worker: docker compose restart worker
 
 EOF
 }
@@ -323,6 +406,10 @@ usage() {
 
 命令:
   build [服务名...]     构建镜像（可加 --profile knowflow --profile speech）
+  build-runtime         构建 zhitan-api-runtime（仅 Python 依赖，供挂载部署）
+  push-registry         buildx 推送 runtime 镜像到 REGISTRY_IMAGE_PREFIX（amd64+arm64）
+  pull-registry         从 REGISTRY_IMAGE_PREFIX 拉 runtime 镜像
+  server-up             服务器模式：runtime 镜像 + 挂载 platform/app
   up [-d]               启动栈
   dev-up                开发模式（挂载源码）
   down                  停止
@@ -336,6 +423,10 @@ usage() {
   init-env              生成 .env（合并 platform/.env）
 
 环境变量:
+  REGISTRY_IMAGE_PREFIX  阿里云 ACR 前缀，如 registry.cn-hangzhou.aliyuncs.com/ns/
+  BUILD_PLATFORMS       push-registry 用，默认 linux/amd64,linux/arm64
+  INSTALL_PAGEINDEX     构建时安装 PageIndex extra，默认 1
+  SERVER_MOUNT_CODE=1   叠加 compose.server.yaml（等同 server-up）
   EXPOSE_DEPS=1         叠加 compose.expose-deps.yaml（远程依赖开发）
   STACK_USE_MIRROR=1    叠加 compose.mirror.yaml（默认开启）
   COMPOSE_PROJECT_NAME  默认 zhitan；远程依赖栈可用 lvye
@@ -381,6 +472,10 @@ main() {
 
   case "$cmd" in
     build)   cmd_build "$@" ;;
+    build-runtime) cmd_build_runtime "$@" ;;
+    push-registry) cmd_push_registry "$@" ;;
+    pull-registry) cmd_pull_registry "$@" ;;
+    server-up) cmd_server_up "$@" ;;
     up)      cmd_up "$@" ;;
     dev-up)  cmd_dev_up "$@" ;;
     down)    cmd_down "$@" ;;

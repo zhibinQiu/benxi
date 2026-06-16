@@ -107,6 +107,17 @@ function openDocument() {
   if (!id) return;
   navigateWithReturn(router, { name: "document-detail", params: { id } }, route);
 }
+
+function openKgEntity() {
+  const entityId = props.citation?.entity_id;
+  if (!entityId) return;
+  router.push({
+    name: "kg-palantir",
+    query: { focusEntityId: entityId },
+  });
+}
+
+const isKgCitation = computed(() => props.citation?.source === "kg");
 </script>
 
 <template>
@@ -114,7 +125,15 @@ function openDocument() {
     <header class="knowledge-citation-card__head">
       <span class="knowledge-citation-card__index">[{{ citation.index }}]</span>
       <button
-        v-if="citation.document_id"
+        v-if="isKgCitation && citation.entity_id"
+        type="button"
+        class="knowledge-citation-card__title"
+        @click="openKgEntity"
+      >
+        {{ citation.title || "知识图谱实体" }}
+      </button>
+      <button
+        v-else-if="citation.document_id"
         type="button"
         class="knowledge-citation-card__title"
         @click="openDocument"

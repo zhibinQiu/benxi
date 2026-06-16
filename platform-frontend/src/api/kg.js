@@ -5,6 +5,10 @@ export async function fetchKgMeta() {
   return api("/api/v1/kg/meta");
 }
 
+export async function createKgEntityFromDocument(documentId) {
+  return api(`/api/v1/kg/entities/from-document/${documentId}`, { method: "POST" });
+}
+
 export async function fetchKgEntities({ typeId, q } = {}) {
   const params = new URLSearchParams();
   if (typeId) params.set("type_id", typeId);

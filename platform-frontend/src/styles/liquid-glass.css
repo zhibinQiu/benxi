@@ -283,6 +283,12 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   border: 1px solid rgba(255, 255, 255, 0.42) !important;
 }
 
+.login-page .login-glass-btn--sm.n-button:not(.n-button--disabled) {
+  min-height: 32px !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
+}
+
 .login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) {
   width: 42px;
   height: 42px;
@@ -376,6 +382,56 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
 
 .login-page .login-glass-btn.n-button:not(.n-button--disabled):active {
   transform: scale(0.98);
+}
+
+/* 顶栏登录 / 注册 — 与按钮同系玻璃悬浮，高度限制在顶栏内 */
+.login-page .login-glass-link {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.login-page .login-glass-link:not(:disabled)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    var(--menu-glass-bg) 0%,
+    var(--menu-glass-bg-bottom) 100%
+  );
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  box-shadow: var(--platform-glass-rim-edge);
+  transition:
+    opacity 0.22s var(--platform-ease-smooth),
+    box-shadow 0.22s var(--platform-ease-smooth);
+}
+
+.login-page .login-glass-link:not(:disabled):hover::before {
+  opacity: 0.62;
+}
+
+.login-page .login-glass-link:not(:disabled):hover {
+  border-color: rgba(255, 255, 255, 0.42) !important;
+}
+
+html[data-theme="dark"] .login-page .login-glass-link:not(:disabled):hover {
+  border-color: rgba(147, 197, 253, 0.16) !important;
+}
+
+.login-page .login-glass-link:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-page .login-glass-link:not(:disabled):active {
+    transform: none;
+  }
 }
 
 /* 列表项玻璃悬浮（网站收藏 SERP 等） */

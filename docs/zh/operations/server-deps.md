@@ -48,7 +48,7 @@ bash scripts/verify-remote-deps.sh
 ./dev.sh local status
 ```
 
-`setup-remote-dev-env.sh` 根据 `platform/.env.remote.example` 生成 `platform/.env`（`REMOTE_DEPS=1`）。
+`./dev.sh remote-dev`（或 `bash scripts/setup-env.sh remote-dev`）根据 `platform/.env.remote.example` 生成 `platform/.env`（`REMOTE_DEPS=1`）。
 
 ### 3.1 混合模式：本机 PostgreSQL + 远程其余依赖
 
@@ -56,10 +56,10 @@ bash scripts/verify-remote-deps.sh
 
 ```bash
 # 远程可用时先迁数据（可选；失败可沿用本机 data/postgres 已有快照）
-bash scripts/migrate-postgres-to-local.sh
+bash scripts/migrate-postgres.sh to-local
 
 # 改 platform/.env 的 DATABASE_URL → 127.0.0.1:5432，保留 REMOTE_DEPS=1
-bash scripts/setup-local-db-env.sh
+bash scripts/setup-env.sh local-db
 
 docker compose -f compose.yaml -f compose.local-db.yaml up -d postgres
 ./dev.sh local restart

@@ -1,4 +1,4 @@
-# 配置文件与脚本说明（v4.0.4）
+# 配置文件与脚本说明（v4.0.5）
 
 > 本文说明当前系统**仍在使用**的 Compose 编排文件、环境配置与脚本职责。  
 > 数据存储与数据库连接见 [组件位置与数据存储](components-and-storage.md)。
@@ -132,12 +132,12 @@ bash scripts/setup-stack-env.sh   # 合并 platform/.env → 根 .env
 | 脚本 | 职责 |
 |------|------|
 | **`dev.sh`** | 统一入口：`local` / `docker` / `stop` / `remote-dev` / `stack` / `deploy` |
-| **`scripts/local-dev.sh`** | 本机 venv API + Vite（由 `dev.sh local` 调用） |
+| **`scripts/local-dev.sh`** | 本机 conda `pdf2zh` API + Vite（由 `dev.sh local` 调用） |
 | **`scripts/stack.sh`** | Compose 编排 |
 | **`scripts/deploy.sh`** | 生产镜像推送 |
 
 ```bash
-# 本机 venv 开发
+# 本机 conda 开发（默认环境 pdf2zh）
 ./dev.sh local
 
 # 全 Docker 热重载

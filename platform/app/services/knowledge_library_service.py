@@ -48,7 +48,6 @@ from app.services.library_folder_service import (
     VIRTUAL_SHARED_ID,
     VIRTUAL_UNCATEGORIZED_ID,
 )
-from app.services.document_library_align_service import document_matches_dataset_link
 from app.services.document_library_align_service import document_matches_library_unit
 from app.services.ragflow_scope_service import (
     _registry_for_dataset_id,
@@ -70,8 +69,6 @@ def _require_dataset_access(db: Session, user: User, dataset_id: str) -> None:
     ds_id = (dataset_id or "").strip()
     if not ds_id:
         raise bad_request("缺少知识库 id")
-    if user_is_superuser(db, user):
-        return
     if ds_id not in allowed_dataset_ids_for_user(db, user):
         raise forbidden("无权访问该知识库")
 

@@ -552,15 +552,16 @@ function onMenuSelect(key) {
   padding-right: 0;
 }
 .brand-name {
+  flex: 1;
+  min-width: 0;
   font-family: var(--platform-font-display);
-  font-size: 1.2rem;
+  font-size: 0.8125rem;
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: 0.04em;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
 }
 .brand-logo {
   width: 30px;

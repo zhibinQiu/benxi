@@ -2,7 +2,7 @@
 defineOptions({ name: "KgPalantirView" });
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
   NEmpty,
@@ -25,6 +25,7 @@ import {
   deleteKgRelation,
   deleteKgRelationType,
   fetchKgEntity,
+  fetchKgEntities,
   fetchKgGraph,
   fetchKgMeta,
   fetchKgRelations,
@@ -35,6 +36,7 @@ import {
 
 const ui = usePlatformUi();
 const route = useRoute();
+const router = useRouter();
 
 const TYPE_COLORS = {
   blue: "#2E79B5",
@@ -75,6 +77,9 @@ const relationTypeModal = ref(false);
 const relationTypeForm = ref({ code: "", label: "", description: "" });
 const editingRelationTypeId = ref(null);
 
+const entityDetail = ref(null);
+const allEntities = ref([]);
+
 const selectedEntity = computed(() =>
   graph.value.nodes?.find((n) => n.id === selectedId.value) || null
 );
@@ -94,7 +99,7 @@ const relationTypeOptions = computed(() =>
 );
 
 const entityOptions = computed(() =>
-  (graph.value.nodes || []).map((n) => ({
+  (allEntities.value.length ? allEntities.value : graph.value.nodes || []).map((n) => ({
     label: n.name,
     value: n.id,
   }))
@@ -202,18 +207,29 @@ const graphLayout = computed(() => {
   return { nodes: positioned, edges: edgeLines, width, height };
 });
 
+async function loadEntityOptions() {
+  try {
+    allEntities.value = await fetchKgEntities();
+  } catch {
+    allEntities.value = graph.value.nodes || [];
+  }
+}
+
 async function loadAll() {
   loading.value = true;
   try {
     meta.value = await fetchKgMeta();
+    await loadEntityOptions();
     graph.value = await fetchKgGraph({
       focusEntityId: selectedId.value || undefined,
       depth: graphDepth.value,
     });
     if (selectedId.value) {
       relations.value = await fetchKgRelations({ entityId: selectedId.value });
+      entityDetail.value = await fetchKgEntity(selectedId.value);
     } else {
       relations.value = [];
+      entityDetail.value = null;
     }
   } catch (e) {
     ui.error(e.message);
@@ -230,7 +246,11 @@ async function refreshGraph() {
     });
     if (selectedId.value) {
       relations.value = await fetchKgRelations({ entityId: selectedId.value });
+      entityDetail.value = await fetchKgEntity(selectedId.value);
+    } else {
+      entityDetail.value = null;
     }
+    await loadEntityOptions();
     meta.value = await fetchKgMeta();
   } catch (e) {
     ui.error(e.message);
@@ -310,6 +330,7 @@ async function removeEntity() {
 }
 
 function openCreateRelation() {
+  loadEntityOptions();
   relationForm.value = {
     relation_type_id: relationTypeOptions.value[0]?.value || null,
     from_entity_id: selectedId.value || entityOptions.value[0]?.value || null,
@@ -445,6 +466,12 @@ async function removeRelationType(typeId) {
 
 function typeColor(code) {
   return TYPE_COLORS[code] || TYPE_COLORS.gray;
+}
+
+function openLinkedDocument() {
+  const docId = entityDetail.value?.properties?.document_id;
+  if (!docId) return;
+  router.push({ name: "document-detail", params: { id: docId } });
 }
 
 watch(graphDepth, () => refreshGraph());
@@ -608,8 +635,22 @@ onMounted(() => {
             <div class="kg-inspector__actions">
               <n-button size="small" @click="openEditEntity">编辑</n-button>
               <n-button size="small" @click="openCreateRelation">添加关系</n-button>
+              <n-button
+                v-if="entityDetail?.properties?.document_id"
+                size="small"
+                quaternary
+                @click="openLinkedDocument"
+              >
+                打开关联文档
+              </n-button>
               <n-button size="small" type="error" quaternary @click="removeEntity">删除</n-button>
             </div>
+            <p
+              v-if="entityDetail?.description"
+              class="kg-inspector__desc"
+            >
+              {{ entityDetail.description }}
+            </p>
             <div class="kg-inspector__section">
               <div class="kg-inspector__section-title">关联关系 ({{ relations.length }})</div>
               <div v-for="rel in relations" :key="rel.id" class="kg-rel-row">
@@ -981,6 +1022,13 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 6px;
   margin: 12px 0;
+}
+
+.kg-inspector__desc {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--platform-text-secondary);
 }
 
 .kg-inspector__section-title {

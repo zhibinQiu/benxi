@@ -1,0 +1,39 @@
+# 服务器部署覆盖：使用「Python 运行时镜像」+ 挂载后端源码
+#
+# 用法:
+#   export SERVER_MOUNT_CODE=1
+#   export REGISTRY_PREFIX=registry.cn-hangzhou.aliyuncs.com/your-namespace   # 可选，空则用本地 tag
+#   bash scripts/stack.sh pull-registry    # 从 ACR 拉 runtime 镜像
+#   bash scripts/stack.sh server-up        # 挂载 platform/app 启动 API
+#
+# 改 platform/app 后 API 自动 --reload；Worker 需 restart worker
+
+services:
+  api:
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.0.5}
+    build:
+      context: .
+      dockerfile: platform/Dockerfile
+      target: runtime
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+        INSTALL_PAGEINDEX: ${INSTALL_PAGEINDEX:-1}
+    ports:
+      - "127.0.0.1:${STACK_DEV_API_PORT:-18000}:8000"
+    volumes:
+      - ./platform/app:/app/app
+      - ./platform/workers:/app/workers:ro
+      - ./docs:/app/system-docs/docs:ro
+      - ./运维部署指南.md:/app/system-docs/运维部署指南.md:ro
+      - ./RELEASE.md:/app/system-docs/RELEASE.md:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+
+  worker:
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.0.5}
+    volumes:
+      - ./platform/app:/app/app:ro
+      - ./platform/workers:/app/workers:ro

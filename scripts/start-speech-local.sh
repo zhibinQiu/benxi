@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 宿主机启动 FunASR speech-api（模型缓存：项目 .run/speech-models）
+# 入口: ./dev.sh speech local
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

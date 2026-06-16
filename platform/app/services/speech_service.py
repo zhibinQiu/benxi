@@ -121,7 +121,7 @@ def _speech_service_hint(healthy: bool) -> str | None:
     url = get_speech_service_url().rstrip("/")
     return (
         f"语音转写服务未启动（{url}）。"
-        "请在项目根目录执行：bash scripts/start_speech_local.sh"
+        "请在项目根目录执行：./dev.sh speech local"
         " 或 ./dev.sh speech"
     )
 

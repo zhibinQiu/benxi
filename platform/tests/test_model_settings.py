@@ -252,7 +252,7 @@ def test_frontend_client_config_from_env(monkeypatch):
 
     settings = Settings(
         app_name="默认系统名",
-        frontend_app_title="AI 办公系统",
+        frontend_app_title="企业 AI 知识库平台",
         frontend_default_theme="light",
     )
     monkeypatch.setattr(
@@ -264,9 +264,9 @@ def test_frontend_client_config_from_env(monkeypatch):
         lambda _db: {},
     )
     out = get_model_settings(None)
-    assert out.frontend_app_title == "AI 办公系统"
+    assert out.frontend_app_title == "企业 AI 知识库平台"
     assert out.frontend_default_theme == "light"
-    assert get_frontend_app_title(None) == "AI 办公系统"
+    assert get_frontend_app_title(None) == "企业 AI 知识库平台"
 
 
 def test_frontend_app_title_falls_back_to_app_name(monkeypatch):

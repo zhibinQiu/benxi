@@ -1,4 +1,4 @@
-# AI 办公系统 — 统一容器栈（基础编排文件）
+# 企业 AI 知识库平台 — 统一容器栈（基础编排文件）
 #
 # 编排入口: bash scripts/stack.sh  或  ./dev.sh docker
 # 文档: docs/zh/operations/config-and-scripts.md
@@ -10,8 +10,6 @@
 #   4. deploy/knowflow.mirror.yaml ← 镜像加速
 #   5. compose.dev.yaml          ← stack.sh dev-up（热重载）
 #   6. compose.expose-deps.yaml  ← EXPOSE_DEPS=1（远程依赖开发，每服务独立端口）
-#   7. compose.gateway.yaml      ← GATEWAY_MODE=1（HTTP 统一 :40005）
-#   8. compose.expose-deps.gateway.yaml ← GATEWAY_MODE+EXPOSE_DEPS（TCP 仅 40002-40004/40006）
 #
 # 对外: 仅 frontend:${FRONTEND_PORT}（默认 40005）
 # profile: knowflow（MySQL/Infinity/RAGFlow）· speech（FunASR）
@@ -84,7 +82,7 @@ services:
 
   # --- PDF 翻译 API（BabelDOC / pdf2zh_next）---
   pdf2zh-api:
-    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.0.4}}
+    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.0.5}}
     build:
       context: .
       dockerfile: Dockerfile
@@ -121,13 +119,16 @@ services:
 
   # --- 平台 API（FastAPI）与 Celery Worker，共用 zhitan-api 镜像 ---
   api:
-    image: zhitan-api:${ZHITAN_VERSION:-4.0.4}
+    image: zhitan-api:${ZHITAN_VERSION:-4.0.5}
     build:
       context: .
       dockerfile: platform/Dockerfile
+      target: production
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.11-slim}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+        INSTALL_PAGEINDEX: ${INSTALL_PAGEINDEX:-1}
     restart: unless-stopped
     env_file:
       - path: .env
@@ -158,13 +159,16 @@ services:
       - zhitan
 
   worker:
-    image: zhitan-api:${ZHITAN_VERSION:-4.0.4}
+    image: zhitan-api:${ZHITAN_VERSION:-4.0.5}
     build:
       context: .
       dockerfile: platform/Dockerfile
+      target: production
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.11-slim}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+        INSTALL_PAGEINDEX: ${INSTALL_PAGEINDEX:-1}
     restart: unless-stopped
     env_file:
       - path: .env
@@ -190,7 +194,7 @@ services:
 
   # --- 唯一对外 Web 入口（生产 Nginx；dev 见 compose.dev.yaml 的 Vite）---
   frontend:
-    image: zhitan-frontend:${ZHITAN_VERSION:-4.0.4}
+    image: zhitan-frontend:${ZHITAN_VERSION:-4.0.5}
     build:
       context: platform-frontend
       dockerfile: Dockerfile
@@ -217,7 +221,7 @@ services:
   # --- profile speech: FunASR 会议转写（模型卷 data/speech-models）---
   speech-api:
     profiles: ["speech"]
-    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.0.4}}
+    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.0.5}}
     build:
       context: platform/speech-service
       dockerfile: Dockerfile

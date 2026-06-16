@@ -138,7 +138,7 @@ cmd_sync() {
     "$ROOT/scripts/server-deps.sh" \
     "$ROOT/scripts/stack.sh" \
     "$ROOT/scripts/setup-stack-env.sh" \
-    "$ROOT/scripts/setup-remote-dev-env.sh" \
+    "$ROOT/scripts/setup-env.sh" remote-dev \
     "$ROOT/scripts/verify-remote-deps.sh" \
     "$ROOT/scripts/lib/" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/scripts/"

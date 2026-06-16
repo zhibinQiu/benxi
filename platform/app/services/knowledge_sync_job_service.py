@@ -732,6 +732,9 @@ def _wait_for_parse(
             )
             _record_parse_progress(job, progress_pct=rag_progress, detail=detail)
             if _is_parse_done(status):
+                if _index_job_should_abort(db, job):
+                    db.commit()
+                    return False
                 if update_progress:
                     update_job_status(db, job.id, JobStatus.running.value, progress=95)
                 db.commit()
@@ -781,6 +784,13 @@ def _wait_for_parse(
         time.sleep(interval)
 
     if _is_parse_done(last_status):
+        db = SessionLocal()
+        try:
+            job = db.get(Job, job_id)
+            if job and _index_job_should_abort(db, job):
+                return False
+        finally:
+            db.close()
         return True
     if _is_parse_failed(last_status):
         raise RuntimeError(_format_parse_failure(last_status, None))
@@ -824,6 +834,8 @@ def _fail_parse_job(
     *,
     mode: str,
 ) -> None:
+    if _index_job_should_abort(db, job):
+        return
     payload = dict(job.payload or {})
     payload.pop("awaiting_parse", None)
     job.payload = payload
@@ -875,6 +887,9 @@ def _complete_knowledge_index_job(
         mark_version_index_completed,
     )
 
+    if _index_job_should_abort(db, job):
+        return
+
     payload = dict(job.payload or {})
     payload.pop("awaiting_parse", None)
     payload.pop("parse_watch_started_at", None)
@@ -916,6 +931,17 @@ def _complete_knowledge_index_job(
         )
     except Exception as exc:
         logger.debug("知识检索树缓存刷新跳过 job=%s: %s", job.id, exc)
+
+    try:
+        from app.services.kg_extraction_service import schedule_kg_extraction_after_index
+
+        schedule_kg_extraction_after_index(
+            document_id=doc.id,
+            user_id=user.id,
+            version_id=indexed_version_id,
+        )
+    except Exception as exc:
+        logger.debug("KG 抽取调度跳过 job=%s: %s", job.id, exc)
 
 
 def _schedule_parse_watch(job_id: uuid.UUID) -> None:
@@ -983,16 +1009,17 @@ def _run_parse_watch(job_id: uuid.UUID) -> None:
             return
 
         if completed:
-            _complete_knowledge_index_job(
-                db,
-                job,
-                user,
-                doc,
-                dataset_id=dataset_id,
-                version_id_raw=payload.get("version_id"),
-                mode=mode,
-            )
-            db.commit()
+            if not _index_job_should_abort(db, job):
+                _complete_knowledge_index_job(
+                    db,
+                    job,
+                    user,
+                    doc,
+                    dataset_id=dataset_id,
+                    version_id_raw=payload.get("version_id"),
+                    mode=mode,
+                )
+                db.commit()
             return
 
         if _index_job_should_abort(db, job):
@@ -1032,6 +1059,8 @@ def _defer_parse_watch(
     mode: str,
     version_id_raw: str | None,
 ) -> None:
+    if _index_job_should_abort(db, job):
+        return
     payload = dict(job.payload or {})
     payload["awaiting_parse"] = True
     payload["dataset_id"] = dataset_id
@@ -1183,6 +1212,18 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                     logger.debug(
                         "PageIndex 索引完成后刷新缓存跳过 job=%s: %s", job_id, exc
                     )
+                try:
+                    from app.services.kg_extraction_service import (
+                        schedule_kg_extraction_after_index,
+                    )
+
+                    schedule_kg_extraction_after_index(
+                        document_id=doc.id,
+                        user_id=user.id,
+                        version_id=version_id,
+                    )
+                except Exception as exc:
+                    logger.debug("KG 抽取调度跳过 job=%s: %s", job_id, exc)
                 db.commit()
                 return
 
@@ -1226,6 +1267,18 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                         ),
                         link=f"/documents/{doc.id}",
                     )
+                    try:
+                        from app.services.kg_extraction_service import (
+                            schedule_kg_extraction_after_index,
+                        )
+
+                        schedule_kg_extraction_after_index(
+                            document_id=doc.id,
+                            user_id=user.id,
+                            version_id=indexed_version_id,
+                        )
+                    except Exception as exc:
+                        logger.debug("KG 抽取调度跳过 job=%s: %s", job_id, exc)
                     db.commit()
                     return
             else:
@@ -1296,16 +1349,17 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                 db.commit()
                 return
 
-        _complete_knowledge_index_job(
-            db,
-            job,
-            user,
-            doc,
-            dataset_id=str(dataset_id) if dataset_id else None,
-            version_id_raw=version_id_raw,
-            mode=mode,
-        )
-        db.commit()
+        if not _index_job_should_abort(db, job):
+            _complete_knowledge_index_job(
+                db,
+                job,
+                user,
+                doc,
+                dataset_id=str(dataset_id) if dataset_id else None,
+                version_id_raw=version_id_raw,
+                mode=mode,
+            )
+            db.commit()
     except KnowflowSyncError as e:
         db.rollback()
         try:

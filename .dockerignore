@@ -1,9 +1,7 @@
 .github
-docs
 .git
-platform/
 platform-frontend/
-third_party/
+third_party/KnowFlow/
 data/
 images/
 .run/
@@ -15,12 +13,24 @@ site/
 .pre-commit-config.yaml
 uv.lock
 pdf2zh_files
-gui/pdf2zh_files
+gui/
 gradio_files
 tmp
-gui/gradio_files
-gui/tmp
-# 平台 API 镜像需打包说明文档
+.cursor/
+platform/data/
+platform/.env
+platform/.run/
+platform/logs/
+platform/tests/
+platform/.venv/
+platform/**/__pycache__/
+# 平台 API 镜像构建所需（其余 platform/ 内容排除）
+!platform/pyproject.toml
+!platform/README.md
+!platform/app/
+!platform/workers/
+!platform/third_party/pageindex-upstream/
+# 系统说明文档
 !docs/
 !docs/**
 !运维部署指南.md

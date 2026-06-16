@@ -50,15 +50,12 @@ bash scripts/stack.sh up --profile knowflow --profile speech
 
 ## 4. amd64 / arm64 服务器（镜像交付）
 
+### 4.1 离线 tar 包（同架构 save/load）
+
 **本机（与目标同架构或 buildx）：**
 
 ```bash
-export ZHITAN_VERSION=4.0.4
-# amd64 服务器示例 .env 片段：
-# RAGFLOW_PLATFORM=linux/amd64
-# RAGFLOW_IMAGE=zxwei/knowflow:v2.1.8
-# KNOWFLOW_SERVER_IMAGE=zxwei/knowflow-server:v2.1.8
-
+export ZHITAN_VERSION=4.0.5
 bash scripts/stack.sh build --profile knowflow
 bash scripts/stack.sh save      # 输出 images/zhitan-*.tar.gz
 ```
@@ -67,14 +64,51 @@ bash scripts/stack.sh save      # 输出 images/zhitan-*.tar.gz
 
 ```bash
 cp platform/deploy.target.example platform/deploy.target
-# 编辑 DEPLOY_HOST、DEPLOY_PATH、DEPLOY_ARCH=amd64
+bash scripts/deploy.sh stack push
+```
+
+### 4.2 阿里云 ACR + 挂载后端源码（推荐）
+
+Python 依赖打进 **`zhitan-api-runtime`** 镜像；`platform/app` 挂载进容器，改代码无需重建镜像。
+
+**1. 本机登录并推送多架构镜像（M1 Mac 可同时推 amd64 + arm64）：**
+
+```bash
+# .env 中设置（末尾带 /）
+REGISTRY_IMAGE_PREFIX=registry.cn-hangzhou.aliyuncs.com/your-namespace/
+INSTALL_PAGEINDEX=1
+
+docker login registry.cn-hangzhou.aliyuncs.com
+bash scripts/stack.sh push-registry
+```
+
+**2. 服务器快速部署（pull 镜像 + rsync 源码）：**
+
+```bash
+# platform/deploy.target
+DEPLOY_USE_REGISTRY=1
+REGISTRY_IMAGE_PREFIX=registry.cn-hangzhou.aliyuncs.com/your-namespace/
 
 bash scripts/deploy.sh stack push
 ```
 
-远程执行：`stack load` + `stack up`。Web：`http://<DEPLOY_HOST>:40005/ai/`。
+远程将执行：`pull-registry` → `server-up`（API `--reload`，挂载 `./platform/app`）。
 
-## 5. 架构对照
+**3. 仅本机验证挂载模式：**
+
+```bash
+bash scripts/stack.sh build-runtime
+bash scripts/stack.sh server-up --profile knowflow
+```
+
+| 镜像 | 用途 |
+|------|------|
+| `zhitan-api-runtime` | 仅 Python 依赖，运行时挂载 `platform/app` |
+| `zhitan-api`（production） | 依赖 + 代码 baked-in，用于 `stack save` 离线包 |
+
+---
+
+## 5. 架构对照（原 §4 内容保留）
 
 | 场景 | 构建 | 启动 | 对外端口 |
 |------|------|------|----------|

@@ -1,8 +1,8 @@
-# AI 办公系统
+# 企业 AI 知识库平台
 
-基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及企业 AI 办公应用（文档、权限、知识库、智能工具等）。
+基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及企业级知识库与 AI 能力（文档权限、精准检索、智能问答、报告生成等）。
 
-**当前版本：v4.0.4**（见根目录 `VERSION`）
+**当前版本：v4.0.5**（见根目录 `VERSION`）
 
 ## 项目结构
 

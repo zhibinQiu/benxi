@@ -90,6 +90,28 @@ def test_cancel_job_service():
         db.close()
 
 
+def test_update_job_status_preserves_cancelled():
+    from app.models.job import JobStatus
+    from app.services.job_service import update_job_status
+
+    db = SessionLocal()
+    try:
+        admin = _bootstrap_user(db)
+        job = create_job(db, job_type="maintenance", created_by=admin.id)
+        cancel_job(db, job)
+        out = update_job_status(
+            db,
+            job.id,
+            JobStatus.done.value,
+            progress=100,
+        )
+        assert out.status == JobStatus.cancelled.value
+        refreshed = db.get(type(job), job.id)
+        assert refreshed.status == JobStatus.cancelled.value
+    finally:
+        db.close()
+
+
 def test_clear_notifications_endpoint(client, admin_token):
     r = client.patch(
         "/api/v1/notifications/read-all",

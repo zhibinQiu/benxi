@@ -11,3 +11,6 @@ DEPLOY_ARCH=auto
 DEPLOY_USE_MIRROR=1
 DEPLOY_PARALLEL=1
 FRONTEND_PORT=40005
+# 远程 registry 部署（可选，见 docs/zh/operations/deployment.md §ACR）
+# REGISTRY_IMAGE_PREFIX=registry.cn-hangzhou.aliyuncs.com/your-namespace/
+# DEPLOY_USE_REGISTRY=1

@@ -29,7 +29,7 @@ async def chat_with_assistant(
         raise bad_request("智能客服未配置，请联系管理员配置 DeepSeek API")
 
     knowledge = build_platform_knowledge(db, user, page_hint=page_hint)
-    app_name = (get_settings().app_name or "AI 办公系统").strip()
+    app_name = (get_settings().app_name or "企业 AI 知识库平台").strip()
     system = (
         f"你是「{app_name}」内置智能客服助手，专门帮助用户理解和使用本平台。\n\n"
         "【平台知识库】\n"

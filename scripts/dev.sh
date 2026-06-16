@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI 办公系统 — 开发与运维统一入口
+# 企业 AI 知识库平台 — 开发与运维统一入口
 #
 # 日常只需记住本脚本（或仓库根目录 ./dev.sh）：
 #
@@ -104,7 +104,6 @@ dev_stop() {
   bash "$SCRIPT_DIR/stack.sh" down 2>/dev/null || true
   bash "$SCRIPT_DIR/local-dev.sh" stop 2>/dev/null || true
   bash "$SCRIPT_DIR/dev-frpc.sh" stop 2>/dev/null || true
-  bash "$SCRIPT_DIR/dev-tunnel.sh" stop 2>/dev/null || true
   info "已停止 Docker 栈与本机 dev 进程（API / Vite / Worker / frpc）"
 }
 
@@ -115,7 +114,7 @@ dev_fix_local_env() {
 }
 
 dev_remote_dev() {
-  bash "$SCRIPT_DIR/setup-remote-dev-env.sh"
+  bash "$SCRIPT_DIR/setup-env.sh" remote-dev
   info "已生成本机 remote-dev 用 platform/.env"
   info "验证远程: bash scripts/verify-remote-deps.sh"
   info "启动本机: ./dev.sh local"
@@ -165,6 +164,10 @@ dev_speech_setup() {
   warn "speech-api 健康检查超时，请: ./dev.sh stack logs speech-api"
 }
 
+dev_speech_local() {
+  exec bash "$SCRIPT_DIR/start-speech-local.sh"
+}
+
 dev_local() {
   exec bash "$SCRIPT_DIR/local-dev.sh" "$@"
 }
@@ -194,12 +197,13 @@ usage() {
   stop                                     停止 Docker 栈 + 本机 dev 进程
   remote-dev                               生成 REMOTE_DEPS platform/.env
   frp [setup|start|stop|status|install-server]  frp 暴露本机 dev（local 启动时自动）
-  tunnel …                               已弃用，请用 frp
-  env                                      检查/初始化 platform/.env
+  db migrate to-local|to-remote          平台 PostgreSQL 迁移（透传 migrate-postgres.sh）
+  env remote-dev|local-db                  生成 platform/.env（同 ./dev.sh remote-dev）
+  fix-env                                  检查/初始化 platform/.env 模板
   stack …                                  透传 scripts/stack.sh（build / logs …）
   deploy …                                 透传 scripts/deploy.sh
   knowflow setup | build                   KnowFlow 源码
-  speech setup                             构建并启动 speech profile
+  speech setup | local                     speech-api（Docker profile / 宿主机）
 
 示例:
   REMOTE_HOST=服务器IP ./dev.sh remote-dev && ./dev.sh local
@@ -228,10 +232,9 @@ main() {
       mode_stack "$@"
       ;;
     stop|down) dev_stop ;;
-    env|fix-env) dev_fix_local_env ;;
+    fix-env) dev_fix_local_env ;;
     remote-dev) dev_remote_dev ;;
     frp) dev_frp "$@" ;;
-    tunnel) dev_frp "$@" ;;
     stack) exec bash "$SCRIPT_DIR/stack.sh" "$@" ;;
     deploy) exec bash "$SCRIPT_DIR/deploy.sh" "$@" ;;
     knowflow)
@@ -244,7 +247,30 @@ main() {
     speech)
       case "${1:-}" in
         setup) dev_speech_setup ;;
-        *) error "用法: ./dev.sh speech setup"; exit 1 ;;
+        local) dev_speech_local ;;
+        *) error "用法: ./dev.sh speech setup|local"; exit 1 ;;
+      esac
+      ;;
+    db)
+      case "${1:-}" in
+        migrate)
+          shift || true
+          exec bash "$SCRIPT_DIR/migrate-postgres.sh" "$@"
+          ;;
+        *)
+          error "用法: ./dev.sh db migrate to-local|to-remote"
+          exit 1
+          ;;
+      esac
+      ;;
+    env)
+      case "${1:-}" in
+        remote-dev|local-db)
+          exec bash "$SCRIPT_DIR/setup-env.sh" "$@"
+          ;;
+        *)
+          dev_fix_local_env
+          ;;
       esac
       ;;
     -h|--help|help) usage ;;

@@ -18,8 +18,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "AI 办公系统"
-    platform_version: str = "4.0.4"
+    app_name: str = "企业 AI 知识库平台"
+    platform_version: str = "4.0.5"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -128,7 +128,7 @@ class Settings(BaseSettings):
     knowflow_theme_primary: str = "#18a058"
     knowflow_theme_primary_hover: str = "#36ad6a"
     knowflow_theme_primary_pressed: str = "#0c7a43"
-    knowflow_theme_app_name: str = "AI 办公系统"
+    knowflow_theme_app_name: str = "企业 AI 知识库平台"
     knowflow_theme_logo_url: str = "/logo.svg"
     knowflow_theme_favicon_url: str = "/favicon.svg"
     knowflow_hide_file_manager: bool = True
@@ -194,6 +194,10 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
     deepseek_max_chars: int = 12000
+
+    # 知识图谱：索引完成后 LLM 自动抽取实体/关系
+    kg_extraction_enabled: bool = True
+    kg_extraction_max_chars: int = 10000
 
     # 系统设置 · 模型配置（页面只读展示；未单独配置时语言模型回退 deepseek_*）
     platform_llm_base_url: str = ""

@@ -9,7 +9,11 @@ from app.features.registry import ensure_plugins_loaded, get_plugin
 from app.database import SessionLocal
 from app.models.org import User
 from app.services.ai_chat_service import _build_chat_messages, _resolve_kg_context
-from app.services.kg_service import match_entities_in_question, retrieve_kg_context_for_question
+from app.services.kg_service import (
+    match_entities_in_question,
+    merge_kg_qa_into_context,
+    retrieve_kg_context_for_question,
+)
 
 
 def test_kg_palantir_plugin_registered():
@@ -104,3 +108,29 @@ def test_ai_home_resolves_kg_context(client: TestClient, admin_token: str):
         assert "范围一排放量" in system
     finally:
         db.close()
+
+
+def test_merge_kg_qa_into_context_offsets_citations():
+    doc_citations = [{"index": 1, "title": "doc", "source": "knowflow"}]
+    from app.services.kg_service import KgQaContext
+
+    merged_ctx, merged_cites = merge_kg_qa_into_context(
+        "[1]\n文档片段",
+        doc_citations,
+        KgQaContext(
+            context_text="【知识图谱实体与关系】\n[1] 法规 · 测试",
+            citations=[
+                {
+                    "index": 1,
+                    "title": "法规 · 测试",
+                    "snippet": "demo",
+                    "source": "kg",
+                    "entity_id": "00000000-0000-0000-0000-000000000001",
+                }
+            ],
+        ),
+    )
+    assert "知识图谱" in merged_ctx
+    assert merged_cites[0]["index"] == 1
+    assert merged_cites[1]["index"] == 2
+    assert merged_cites[1]["source"] == "kg"

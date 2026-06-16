@@ -1,0 +1,462 @@
+"""索引完成后从文档正文 LLM 抽取实体/关系并写入知识图谱。"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.core.permissions import user_has_permission
+from app.integrations.deepseek_client import chat_completion_sync, is_configured
+from app.models.document import Document, DocumentVersion
+from app.models.kg import KgEntity, KgEntityType, KgRelation, KgRelationType
+from app.models.org import User
+from app.services.compare_service import load_parsed_version
+from app.services.kg_service import (
+    DEFAULT_ENTITY_TYPES,
+    DEFAULT_RELATION_TYPES,
+    DOC_ENTITY_PROPERTY_KEY,
+    ensure_doc_entity_for_document,
+    ensure_ontology_defaults,
+    find_entity_by_document_id,
+)
+
+logger = logging.getLogger(__name__)
+
+EXTRACTED_VERSION_KEY = "kg_extracted_version_id"
+EXTRACTED_AT_KEY = "kg_extracted_at"
+SOURCE_DOCUMENT_KEY = "source_document_id"
+SOURCE_VERSION_KEY = "source_version_id"
+
+_MAX_ENTITIES = 24
+_MAX_RELATIONS = 32
+
+_EXTRACTION_SYSTEM = """你是企业知识图谱抽取助手。根据文档正文识别关键实体与关系，输出严格 JSON。
+
+实体类型 code 仅限：{entity_codes}
+关系类型 code 仅限：{relation_codes}
+
+输出格式（不要其它字段）：
+{{
+  "entities": [
+    {{"type_code": "doc", "name": "实体名称", "description": "一句话说明"}}
+  ],
+  "relations": [
+    {{"type_code": "references", "from_name": "起点实体名", "to_name": "终点实体名", "description": ""}}
+  ]
+}}
+
+要求：
+- 仅抽取正文中明确出现或可合理推断的实体，不要编造
+- 实体名称简洁（≤40字），同一实体只出现一次
+- 关系两端实体名必须与 entities 中 name 完全一致
+- 最多 {max_entities} 个实体、{max_relations} 条关系
+- 只输出 JSON，不要 Markdown 代码块"""
+
+
+def kg_extraction_enabled() -> bool:
+    settings = get_settings()
+    return bool(settings.kg_extraction_enabled and is_configured())
+
+
+def _user_may_extract(db: Session, user: User) -> bool:
+    return user_has_permission(db, user, "feature.kg_palantir")
+
+
+def _ontology_codes() -> tuple[str, str]:
+    entity_codes = ", ".join(code for code, *_ in DEFAULT_ENTITY_TYPES)
+    relation_codes = ", ".join(code for code, *_ in DEFAULT_RELATION_TYPES)
+    return entity_codes, relation_codes
+
+
+def extract_json_payload(text: str) -> dict[str, Any]:
+    raw = (text or "").strip()
+    if not raw:
+        raise ValueError("模型未返回内容")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    if match:
+        return json.loads(match.group(1))
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        return json.loads(raw[start : end + 1])
+    raise ValueError("无法解析模型返回的 JSON")
+
+
+def _clip_document_text(text: str) -> str:
+    limit = max(2000, int(get_settings().kg_extraction_max_chars or 10000))
+    body = (text or "").strip()
+    if len(body) <= limit:
+        return body
+    head = body[: int(limit * 0.7)]
+    tail = body[-int(limit * 0.25) :]
+    return f"{head}\n\n…（中间省略）…\n\n{tail}"
+
+
+def _call_llm_extract(*, document_title: str, text: str) -> dict[str, Any]:
+    entity_codes, relation_codes = _ontology_codes()
+    system = _EXTRACTION_SYSTEM.format(
+        entity_codes=entity_codes,
+        relation_codes=relation_codes,
+        max_entities=_MAX_ENTITIES,
+        max_relations=_MAX_RELATIONS,
+    )
+    user_content = (
+        f"文档标题：{document_title or '未命名'}\n\n"
+        f"正文：\n{_clip_document_text(text)}"
+    )
+    raw = chat_completion_sync(
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.1,
+        timeout=120.0,
+        max_user_chars=int(get_settings().kg_extraction_max_chars or 10000) + 500,
+    )
+    if not raw:
+        raise ValueError("语言模型未返回抽取结果")
+    data = extract_json_payload(raw)
+    if not isinstance(data, dict):
+        raise ValueError("抽取结果格式无效")
+    return data
+
+
+def _resolve_version(
+    db: Session,
+    doc: Document,
+    version_id: uuid.UUID | None,
+) -> DocumentVersion | None:
+    if version_id:
+        ver = db.get(DocumentVersion, version_id)
+        if ver and ver.document_id == doc.id and ver.file_size > 0:
+            return ver
+    if doc.current_version_id:
+        ver = db.get(DocumentVersion, doc.current_version_id)
+        if ver and ver.file_size > 0:
+            return ver
+    return db.scalar(
+        select(DocumentVersion)
+        .where(
+            DocumentVersion.document_id == doc.id,
+            DocumentVersion.file_size > 0,
+        )
+        .order_by(DocumentVersion.version_no.desc())
+        .limit(1)
+    )
+
+
+def _already_extracted_for_version(
+    db: Session,
+    user: User,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+) -> bool:
+    row = find_entity_by_document_id(db, user, document_id)
+    if not row:
+        return False
+    props = row.properties or {}
+    return str(props.get(EXTRACTED_VERSION_KEY) or "") == str(version_id)
+
+
+def _type_maps(db: Session) -> tuple[dict[str, KgEntityType], dict[str, KgRelationType]]:
+    ensure_ontology_defaults(db)
+    entity_types = {
+        t.code: t
+        for t in db.scalars(select(KgEntityType)).all()
+    }
+    relation_types = {
+        t.code: t
+        for t in db.scalars(select(KgRelationType)).all()
+    }
+    return entity_types, relation_types
+
+
+def _find_entity_by_name_and_type(
+    db: Session,
+    user: User,
+    *,
+    type_id: uuid.UUID,
+    name: str,
+) -> KgEntity | None:
+    name = name.strip()[:256]
+    if not name:
+        return None
+    return db.scalar(
+        select(KgEntity).where(
+            KgEntity.owner_id == user.id,
+            KgEntity.type_id == type_id,
+            KgEntity.name == name,
+        )
+    )
+
+
+def _normalize_entity_rows(data: dict[str, Any]) -> list[dict[str, str]]:
+    rows = data.get("entities")
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()[:256]
+        if not name or name in seen:
+            continue
+        type_code = str(item.get("type_code") or "doc").strip() or "doc"
+        description = str(item.get("description") or "").strip()[:1000]
+        out.append(
+            {
+                "type_code": type_code,
+                "name": name,
+                "description": description,
+            }
+        )
+        seen.add(name)
+        if len(out) >= _MAX_ENTITIES:
+            break
+    return out
+
+
+def _normalize_relation_rows(data: dict[str, Any]) -> list[dict[str, str]]:
+    rows = data.get("relations")
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        from_name = str(item.get("from_name") or "").strip()
+        to_name = str(item.get("to_name") or "").strip()
+        if not from_name or not to_name or from_name == to_name:
+            continue
+        type_code = str(item.get("type_code") or "references").strip() or "references"
+        description = str(item.get("description") or "").strip()[:500]
+        out.append(
+            {
+                "type_code": type_code,
+                "from_name": from_name,
+                "to_name": to_name,
+                "description": description,
+            }
+        )
+        if len(out) >= _MAX_RELATIONS:
+            break
+    return out
+
+
+def apply_extraction_result(
+    db: Session,
+    user: User,
+    doc: Document,
+    version: DocumentVersion,
+    data: dict[str, Any],
+) -> dict[str, int]:
+    """将 LLM 抽取结果写入用户图谱（幂等合并）。"""
+    entity_types, relation_types = _type_maps(db)
+    ensure_doc_entity_for_document(db, user, doc.id, commit=False)
+    doc_row = find_entity_by_document_id(db, user, doc.id)
+
+    name_to_id: dict[str, uuid.UUID] = {}
+    if doc_row:
+        name_to_id[doc_row.name] = doc_row.id
+
+    created_entities = 0
+    reused_entities = 0
+    source_props = {
+        SOURCE_DOCUMENT_KEY: str(doc.id),
+        SOURCE_VERSION_KEY: str(version.id),
+    }
+
+    for item in _normalize_entity_rows(data):
+        et = entity_types.get(item["type_code"]) or entity_types.get("doc")
+        if not et:
+            continue
+        existing = _find_entity_by_name_and_type(
+            db, user, type_id=et.id, name=item["name"]
+        )
+        if existing:
+            name_to_id[item["name"]] = existing.id
+            reused_entities += 1
+            continue
+        row = KgEntity(
+            type_id=et.id,
+            name=item["name"],
+            description=item["description"],
+            properties=dict(source_props),
+            owner_id=user.id,
+            created_by=user.id,
+            scope="personal",
+        )
+        db.add(row)
+        db.flush()
+        name_to_id[item["name"]] = row.id
+        created_entities += 1
+
+    created_relations = 0
+    skipped_relations = 0
+    for item in _normalize_relation_rows(data):
+        rt = relation_types.get(item["type_code"]) or relation_types.get("references")
+        if not rt:
+            continue
+        from_id = name_to_id.get(item["from_name"])
+        to_id = name_to_id.get(item["to_name"])
+        if not from_id or not to_id or from_id == to_id:
+            skipped_relations += 1
+            continue
+        dup = db.scalar(
+            select(KgRelation).where(
+                KgRelation.owner_id == user.id,
+                KgRelation.relation_type_id == rt.id,
+                KgRelation.from_entity_id == from_id,
+                KgRelation.to_entity_id == to_id,
+            )
+        )
+        if dup:
+            skipped_relations += 1
+            continue
+        db.add(
+            KgRelation(
+                relation_type_id=rt.id,
+                from_entity_id=from_id,
+                to_entity_id=to_id,
+                description=item["description"],
+                owner_id=user.id,
+                created_by=user.id,
+            )
+        )
+        created_relations += 1
+
+    if doc_row:
+        props = dict(doc_row.properties or {})
+        props[DOC_ENTITY_PROPERTY_KEY] = str(doc.id)
+        props[EXTRACTED_VERSION_KEY] = str(version.id)
+        props[EXTRACTED_AT_KEY] = datetime.now(timezone.utc).isoformat()
+        doc_row.properties = props
+
+    db.flush()
+    return {
+        "entities_created": created_entities,
+        "entities_reused": reused_entities,
+        "relations_created": created_relations,
+        "relations_skipped": skipped_relations,
+    }
+
+
+def extract_kg_from_document(
+    db: Session,
+    user: User,
+    document_id: uuid.UUID,
+    *,
+    version_id: uuid.UUID | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """从已索引文档正文抽取实体/关系并写入图谱。"""
+    if not kg_extraction_enabled():
+        return {"skipped": True, "reason": "kg_extraction_disabled"}
+    if not _user_may_extract(db, user):
+        return {"skipped": True, "reason": "no_kg_permission"}
+
+    from app.services.document_service import get_document
+
+    doc = get_document(db, document_id)
+    if not doc or doc.deleted_at:
+        return {"skipped": True, "reason": "document_not_found"}
+
+    version = _resolve_version(db, doc, version_id)
+    if not version:
+        return {"skipped": True, "reason": "no_uploaded_version"}
+
+    if not force and _already_extracted_for_version(db, user, doc.id, version.id):
+        return {"skipped": True, "reason": "already_extracted", "version_id": str(version.id)}
+
+    try:
+        parsed = load_parsed_version(db, version)
+    except Exception as exc:
+        logger.warning("KG 抽取读取正文失败 doc=%s: %s", document_id, exc)
+        return {"skipped": True, "reason": "text_load_failed"}
+
+    text = (parsed.full_text or "").strip()
+    if len(text) < 80:
+        return {"skipped": True, "reason": "text_too_short"}
+
+    try:
+        llm_data = _call_llm_extract(
+            document_title=doc.title or parsed.file_name,
+            text=text,
+        )
+    except Exception as exc:
+        logger.warning("KG 抽取 LLM 失败 doc=%s: %s", document_id, exc)
+        return {"skipped": True, "reason": "llm_failed", "error": str(exc)[:200]}
+
+    stats = apply_extraction_result(db, user, doc, version, llm_data)
+    db.commit()
+    return {
+        "skipped": False,
+        "document_id": str(document_id),
+        "version_id": str(version.id),
+        **stats,
+    }
+
+
+def _run_kg_extraction_job(
+    document_id: uuid.UUID,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID | None,
+) -> None:
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if not user:
+            return
+        result = extract_kg_from_document(
+            db,
+            user,
+            document_id,
+            version_id=version_id,
+        )
+        if not result.get("skipped"):
+            logger.info(
+                "KG 文档抽取完成 doc=%s entities=%s relations=%s",
+                document_id,
+                result.get("entities_created"),
+                result.get("relations_created"),
+            )
+    except Exception:
+        logger.exception("KG 文档抽取后台任务失败 doc=%s", document_id)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def schedule_kg_extraction_after_index(
+    *,
+    document_id: uuid.UUID,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID | None = None,
+) -> None:
+    """索引成功后异步触发图谱抽取（不阻塞索引 Job）。"""
+    if not kg_extraction_enabled():
+        return
+    from app.core.background_executor import submit_background
+
+    submit_background(
+        f"kg-extract-{document_id}",
+        _run_kg_extraction_job,
+        document_id,
+        user_id,
+        version_id,
+    )

@@ -57,6 +57,20 @@ def client_config(db: Annotated[Session, Depends(get_db)]) -> ApiResponse[Client
     )
 
 
+@router.get("/showcase-features")
+def list_showcase_features() -> ApiResponse[list[dict]]:
+    """登录页功能展示（无需登录）：仅返回已上线插件 id，供前端过滤介绍条目。"""
+    ensure_plugins_loaded()
+    items = [
+        {"id": plugin.id, "sort_order": plugin.sort_order}
+        for plugin in sorted(
+            (p for p in all_plugins() if p.enabled),
+            key=lambda p: (p.sort_order, p.id),
+        )
+    ]
+    return ApiResponse(data=items)
+
+
 @router.get("/features")
 async def list_features(
     user: Annotated[User, Depends(get_current_user)],

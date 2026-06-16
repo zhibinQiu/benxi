@@ -1,8 +1,8 @@
-# AI 办公系统 — 项目总体架构
+# 企业 AI 知识库平台 — 项目总体架构
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
 > **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
-> **版本对齐**：平台 **v4.0.4** · Monorepo `pdf_trans/`  
+> **版本对齐**：平台 **v4.0.5** · Monorepo `pdf_trans/`  
 > **运维架构（推荐）**：[系统架构](../operations/architecture.md) · [运维手册](../operations/README.md)
 
 ---
@@ -29,7 +29,7 @@ flowchart TB
     U2[系统管理员]
   end
 
-  subgraph system [AI 办公系统]
+  subgraph system [企业 AI 知识库平台]
     FE[Web 前端 Vue3]
     API[控制面 FastAPI]
     WRK[Celery Worker]
@@ -229,7 +229,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-  root[AI 办公系统]
+  root[企业 AI 知识库平台]
   root --> IAM[IAM]
   root --> DOC[文档库]
   root --> KB[知识服务]

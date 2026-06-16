@@ -47,6 +47,27 @@ _KNOWLEDGE_QA_SYSTEM = (
     "以便读者将正文与引用卡片对应"
 )
 
+_KG_QA_SYSTEM_APPENDIX = (
+    "\n\n补充说明：部分编号片段来自【知识图谱实体与关系】，描述实体之间的结构化关联；"
+    "图谱事实与文档检索片段同等可作为依据，引用时同样使用 [n]。"
+)
+
+
+def _resolve_kg_qa_context(db: Session, user: User, question: str):
+    from app.core.permissions import user_has_permission
+    from app.services.kg_service import retrieve_kg_context_for_question
+
+    if not user_has_permission(db, user, "feature.kg_palantir"):
+        return None
+    return retrieve_kg_context_for_question(db, user, question)
+
+
+def _qa_system_prompt(*, include_kg: bool) -> str:
+    if include_kg:
+        return _KNOWLEDGE_QA_SYSTEM + _KG_QA_SYSTEM_APPENDIX
+    return _KNOWLEDGE_QA_SYSTEM
+
+
 _CITATION_REF_RE = re.compile(r"\[(\d{1,2})\]")
 
 _NO_HIT_ANSWER = (
@@ -769,13 +790,15 @@ def _answer_prefix_blocks(
     return "\n\n".join(parts) + "\n\n"
 
 
-async def _iter_llm_answer_stream(*, question: str, context: str) -> AsyncIterator[str]:
+async def _iter_llm_answer_stream(
+    *, question: str, context: str, include_kg: bool = False
+) -> AsyncIterator[str]:
     from app.integrations.deepseek_client import chat_completion_stream
 
     user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
     async for delta in chat_completion_stream(
         messages=[
-            {"role": "system", "content": _KNOWLEDGE_QA_SYSTEM},
+            {"role": "system", "content": _qa_system_prompt(include_kg=include_kg)},
             {"role": "user", "content": user_content},
         ],
         temperature=0.2,
@@ -783,13 +806,13 @@ async def _iter_llm_answer_stream(*, question: str, context: str) -> AsyncIterat
         yield delta
 
 
-def _call_llm_answer(*, question: str, context: str) -> str | None:
+def _call_llm_answer(*, question: str, context: str, include_kg: bool = False) -> str | None:
     from app.integrations.deepseek_client import chat_completion_sync
 
     user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
     return chat_completion_sync(
         messages=[
-            {"role": "system", "content": _KNOWLEDGE_QA_SYSTEM},
+            {"role": "system", "content": _qa_system_prompt(include_kg=include_kg)},
             {"role": "user", "content": user_content},
         ],
         temperature=0.2,
@@ -895,19 +918,24 @@ def generate_answer(
     hits: list[dict],
     doc_titles: dict[str, str],
     context: str | None = None,
+    include_kg: bool = False,
 ) -> str:
-    if not hits:
-        return _NO_HIT_ANSWER
     if context is None:
         context, _ = build_aligned_qa_context_and_citations(
             hits,
             doc_titles,
             question=question,
         )
-    llm_answer = _call_llm_answer(question=question, context=context)
+    if not (context or "").strip():
+        return _NO_HIT_ANSWER
+    llm_answer = _call_llm_answer(
+        question=question, context=context, include_kg=include_kg
+    )
     if llm_answer:
         return _strip_meta_footer(llm_answer)
-    return _fallback_answer(question, hits, doc_titles)
+    if hits:
+        return _fallback_answer(question, hits, doc_titles)
+    return _NO_HIT_ANSWER
 
 
 def resolve_citation_image_id(
@@ -1305,12 +1333,30 @@ async def iter_knowledge_qa_stream(
     hits, mode = retrieve_hits_for_qa(db, user, doc_ids, question)
     doc_titles = _doc_titles(db, doc_ids)
     doc_meta = _doc_citation_meta(db, doc_ids)
+    kg_ctx = _resolve_kg_qa_context(db, user, question)
     context, all_citations = build_aligned_qa_context_and_citations(
         hits,
         doc_titles,
         question=question,
         doc_meta=doc_meta,
     )
+    from app.services.kg_service import merge_kg_qa_into_context
+
+    context, all_citations = merge_kg_qa_into_context(
+        context, all_citations, kg_ctx
+    )
+    include_kg = bool(kg_ctx and kg_ctx.context_text)
+
+    if kg_ctx and kg_ctx.matched_entity_ids:
+        yield json.dumps(
+            {
+                "workflow": {
+                    "phase": "node_started",
+                    "title": "正在解析知识图谱关联",
+                }
+            },
+            ensure_ascii=False,
+        )
 
     from app.services.knowledge_agent_service import (
         format_changelog_context,
@@ -1349,17 +1395,23 @@ async def iter_knowledge_qa_stream(
         answer_parts.append(prefix)
         yield json.dumps({"delta": prefix}, ensure_ascii=False)
 
-    if not hits:
+    if not (context or "").strip():
         answer_parts.append(_NO_HIT_ANSWER)
         yield json.dumps({"delta": _NO_HIT_ANSWER}, ensure_ascii=False)
     else:
         streamed = False
-        async for delta in _iter_llm_answer_stream(question=question, context=context):
+        async for delta in _iter_llm_answer_stream(
+            question=question, context=context, include_kg=include_kg
+        ):
             streamed = True
             answer_parts.append(delta)
             yield json.dumps({"delta": delta}, ensure_ascii=False)
         if not streamed:
-            fallback = _fallback_answer(question, hits, doc_titles)
+            fallback = (
+                _fallback_answer(question, hits, doc_titles)
+                if hits
+                else _NO_HIT_ANSWER
+            )
             answer_parts.append(fallback)
             yield json.dumps({"delta": fallback}, ensure_ascii=False)
 
@@ -1412,17 +1464,25 @@ def answer_knowledge_question(
     hits, _mode = retrieve_hits_for_qa(db, user, doc_ids, question)
     doc_titles = _doc_titles(db, doc_ids)
     doc_meta = _doc_citation_meta(db, doc_ids)
+    kg_ctx = _resolve_kg_qa_context(db, user, question)
     context, all_citations = build_aligned_qa_context_and_citations(
         hits,
         doc_titles,
         question=question,
         doc_meta=doc_meta,
     )
+    from app.services.kg_service import merge_kg_qa_into_context
+
+    context, all_citations = merge_kg_qa_into_context(
+        context, all_citations, kg_ctx
+    )
+    include_kg = bool(kg_ctx and kg_ctx.context_text)
     answer = generate_answer(
         question=question,
         hits=hits,
         doc_titles=doc_titles,
         context=context,
+        include_kg=include_kg,
     )
 
     from app.services.knowledge_agent_service import (

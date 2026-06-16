@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本机 venv 开发：API :8000 + Vite :40005 + 按需 Celery Worker
+# 本机 conda 开发：API :8000 + Vite :40005 + 按需 Celery Worker
 # 由 ./dev.sh local 调用，勿直接执行。
 #
 set -euo pipefail
@@ -19,9 +19,26 @@ ENV_FILE="$PLATFORM_DIR/.env"
 HOST_BIND="${LOCAL_DEV_HOST:-127.0.0.1}"
 API_PORT="${LOCAL_DEV_API_PORT:-8000}"
 WEB_PORT="${LOCAL_DEV_WEB_PORT:-40005}"
+LOCAL_DEV_CONDA_ENV="${LOCAL_DEV_CONDA_ENV:-pdf2zh}"
+
+PYTHON_CMD=(conda run --no-capture-output -n "$LOCAL_DEV_CONDA_ENV" python)
+UVICORN_CMD=(conda run --no-capture-output -n "$LOCAL_DEV_CONDA_ENV" uvicorn)
+CELERY_CMD=(conda run --no-capture-output -n "$LOCAL_DEV_CONDA_ENV" celery)
 
 init_paths() {
   mkdir -p "$LOG_DIR"
+}
+
+ensure_conda_env() {
+  command -v conda >/dev/null 2>&1 || {
+    echo "未找到 conda，请先安装/初始化 conda，并确认环境 ${LOCAL_DEV_CONDA_ENV} 可用。" >&2
+    return 1
+  }
+  conda run -n "$LOCAL_DEV_CONDA_ENV" python -c 'import sys' >/dev/null 2>&1 || {
+    echo "未找到或无法使用 conda 环境: ${LOCAL_DEV_CONDA_ENV}" >&2
+    echo "请先执行: conda activate ${LOCAL_DEV_CONDA_ENV}" >&2
+    return 1
+  }
 }
 
 is_remote_deps() {
@@ -102,7 +119,7 @@ run_with_timeout() {
 
 remote_celery_worker_count() {
   run_with_timeout 15 env ENV_FILE="$ENV_FILE" PLATFORM="$PLATFORM_DIR" \
-    "$PLATFORM_DIR/.venv/bin/python" - <<'PY' 2>/dev/null || echo 0
+    "${PYTHON_CMD[@]}" - <<'PY' 2>/dev/null || echo 0
 import os
 import sys
 from pathlib import Path
@@ -180,7 +197,7 @@ preflight_database() {
   local attempt ok=0
   for attempt in 1 2 3; do
     if run_with_timeout 20 env ENV_FILE="$ENV_FILE" PLATFORM="$PLATFORM_DIR" \
-      "$PLATFORM_DIR/.venv/bin/python" - <<'PY'
+      "${PYTHON_CMD[@]}" - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -288,6 +305,7 @@ start_local() {
   version="$(read_repo_version "$ROOT")"
   echo "正在启动 ${app_name} v${version}（本机 API + 前端）…"
 
+  ensure_conda_env || return 1
   preflight_database || return 1
 
   step "停止已有进程（API / 前端 / Worker）…"
@@ -297,7 +315,7 @@ start_local() {
   cd "$PLATFORM_DIR"
   local api_pid worker_pid web_pid
 
-  local -a uvicorn_args=(.venv/bin/uvicorn app.main:app --host "$HOST_BIND" --port "$API_PORT")
+  local -a uvicorn_args=("${UVICORN_CMD[@]}" app.main:app --host "$HOST_BIND" --port "$API_PORT")
   if is_remote_deps && [[ "${LOCAL_DEV_RELOAD:-0}" != "1" ]]; then
     step "启动 API（uvicorn :${API_PORT}，remote-dev 无热重载）…"
   else
@@ -313,7 +331,7 @@ start_local() {
   if should_start_worker; then
     step "启动本地 Celery Worker…"
     worker_pid="$(start_detached "$LOG_DIR/platform-worker.log" \
-      .venv/bin/celery -A workers.celery_app worker --loglevel=info --concurrency=4)"
+      "${CELERY_CMD[@]}" -A workers.celery_app worker --loglevel=info --concurrency=4)"
     echo "$worker_pid" >"$RUN_DIR/platform-worker.pid"
     echo "  pid=$worker_pid  日志: $LOG_DIR/platform-worker.log"
   else
@@ -448,7 +466,7 @@ status_local() {
   fi
 
   run_with_timeout 10 env ENV_FILE="$ENV_FILE" PLATFORM="$PLATFORM_DIR" \
-    "$PLATFORM_DIR/.venv/bin/python" - <<'PY' 2>/dev/null || echo "celery workers (broker): unknown (timeout)"
+    "${PYTHON_CMD[@]}" - <<'PY' 2>/dev/null || echo "celery workers (broker): unknown (timeout)"
 import os
 import sys
 from pathlib import Path

@@ -49,6 +49,11 @@ def update_job_status(
     job = db.get(Job, job_id)
     if not job:
         raise ValueError(f"Job {job_id} not found")
+    if (
+        job.status == JobStatus.cancelled.value
+        and status != JobStatus.cancelled.value
+    ):
+        return job
     job.status = status
     if progress is not None:
         job.progress = progress

@@ -966,11 +966,13 @@ _LEGACY_PLATFORM_APP_TITLES = frozenset(
         "绿叶AI办公系统",
         "绿叶 AI 办公系统",
         "AI办公系统",
+        "AI 办公系统",
+        "企业 AI 办公平台",
         "AI原型演示系统",
         "智碳平台",
     }
 )
-_CURRENT_PLATFORM_APP_TITLE = "AI 办公系统"
+_CURRENT_PLATFORM_APP_TITLE = "企业 AI 知识库平台"
 
 
 def migrate_legacy_platform_branding(db) -> None:

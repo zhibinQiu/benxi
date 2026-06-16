@@ -16,7 +16,7 @@ export const FEATURE_DESCRIPTIONS = {
   "smart-forecast": "历史数据趋势预测与情景分析。",
   speech: "会议录音转写、说话人区分与时间线总结。",
   ocr: "图片或 PDF 内容提取，批量导出 Markdown / JSON。",
-  "kg-palantir": "实体关系图谱：维护类型、编辑节点与边，子图探索。",
+  "kg-palantir": "本体建模与实体关系图谱：维护类型、编辑节点与边，子图探索；问答时解析实体关联。",
   compare: "文档版本或跨文档左右对照，段落差异与自然语言检索。",
   "assist-writing":
     "Markdown 双栏编辑，AI 润色、扩写与续写；Ctrl/Cmd + Enter 发送。",

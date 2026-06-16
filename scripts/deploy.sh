@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI 办公系统 — 生产部署：镜像 save/load 推送到远程（不 rsync 源码）
+# 企业 AI 知识库平台 — 生产部署：镜像 save/load 推送到远程（不 rsync 源码）
 #
 # 配置: platform/deploy.target（由 deploy.target.example 复制）
 #
@@ -500,14 +500,41 @@ stack_image_tarball() {
 
 rsync_stack_bundle() {
   local dest="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
+  local use_registry="${DEPLOY_USE_REGISTRY:-0}"
+  if [[ "$use_registry" == 1 ]]; then
+    info "registry 模式：同步编排 + platform 源码（镜像从 ACR pull）→ ${dest}"
+    ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/scripts' '${DEPLOY_PATH}/deploy/knowflow' '${DEPLOY_PATH}/platform'"
+    rsync -avz \
+      "$ROOT/compose.yaml" \
+      "$ROOT/compose.server.yaml" \
+      "$ROOT/compose.mirror.yaml" \
+      "$ROOT/.env.stack.example" \
+      "$ROOT/deploy/" \
+      "$ROOT/platform/app/" \
+      "${dest}platform/app/"
+    rsync -avz \
+      "$ROOT/platform/workers/" \
+      "${dest}platform/workers/"
+    rsync -avz \
+      "$ROOT/scripts/stack.sh" \
+      "$ROOT/scripts/setup-stack-env.sh" \
+      "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/scripts/"
+    if [[ -f "$ROOT/.env" ]]; then
+      rsync -avz "$ROOT/.env" "${dest}.env"
+    elif [[ -f "$PLATFORM/.env.docker" ]]; then
+      rsync -avz "$PLATFORM/.env.docker" "${dest}.env"
+    fi
+    return
+  fi
   local tarball
   tarball="$(stack_image_tarball)"
   [[ -f "$tarball" ]] || {
-    error "未找到镜像包 ${tarball}，请先在本机: bash scripts/stack.sh build && bash scripts/stack.sh save"
+    error "未找到镜像包 ${tarball}，请先: bash scripts/stack.sh build && bash scripts/stack.sh save"
+    error "或设置 DEPLOY_USE_REGISTRY=1 使用 ACR 镜像"
     exit 1
   }
   ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/images' '${DEPLOY_PATH}/data'"
-  info "rsync 编排与镜像（不含业务源码）→ ${dest}"
+  info "tar 模式：同步编排与镜像包 → ${dest}"
   ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/scripts' '${DEPLOY_PATH}/deploy/knowflow'"
   rsync -avz \
     "$ROOT/compose.yaml" \
@@ -529,6 +556,21 @@ rsync_stack_bundle() {
 
 remote_stack_up() {
   local profiles="${STACK_PROFILES:-knowflow speech}"
+  local use_registry="${DEPLOY_USE_REGISTRY:-0}"
+  if [[ "$use_registry" == 1 ]]; then
+    local profile_args=""
+    local p
+    for p in $profiles; do
+      profile_args+=" --profile ${p}"
+    done
+    ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<EOF
+set -euo pipefail
+cd '${DEPLOY_PATH}'
+bash scripts/stack.sh pull-registry
+bash scripts/stack.sh server-up${profile_args}
+EOF
+    return
+  fi
   local tarball_name up_cmd="bash scripts/stack.sh up"
   local p
   for p in $profiles; do

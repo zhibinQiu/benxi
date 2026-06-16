@@ -439,7 +439,7 @@ def get_frontend_app_title(db: Session | None = None) -> str:
     title = (merged.get("frontend_app_title") or "").strip()
     if title:
         return title
-    return (get_settings().app_name or "").strip() or "AI 办公系统"
+    return (get_settings().app_name or "").strip() or "企业 AI 知识库平台"
 
 
 def get_frontend_default_theme(db: Session | None = None) -> str:

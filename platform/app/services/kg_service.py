@@ -40,6 +40,8 @@ DEFAULT_ENTITY_TYPES: list[tuple[str, str, str, int]] = [
     ("metric", "指标", "yellow", 60),
 ]
 
+DOC_ENTITY_PROPERTY_KEY = "document_id"
+
 DEFAULT_RELATION_TYPES: list[tuple[str, str, int]] = [
     ("contains", "包含", 10),
     ("employs", "任职", 20),
@@ -786,6 +788,7 @@ def build_kg_qa_context(
                 "source": "kg",
                 "entity_id": str(ent.id),
                 "type_label": type_label,
+                "document_id": (ent.properties or {}).get(DOC_ENTITY_PROPERTY_KEY),
             }
         )
 
@@ -796,6 +799,90 @@ def build_kg_qa_context(
         entity_count=len(entities),
         relation_count=len(relations),
     )
+
+
+def find_entity_by_document_id(
+    db: Session,
+    user: User,
+    document_id: uuid.UUID,
+) -> KgEntity | None:
+    """查找用户图谱中已关联平台文档的实体。"""
+    for row in db.scalars(
+        select(KgEntity).where(KgEntity.owner_id == user.id)
+    ).all():
+        props = row.properties or {}
+        if str(props.get(DOC_ENTITY_PROPERTY_KEY) or "") == str(document_id):
+            return row
+    return None
+
+
+def ensure_doc_entity_for_document(
+    db: Session,
+    user: User,
+    document_id: uuid.UUID,
+    *,
+    entity_type_code: str = "doc",
+    commit: bool = True,
+) -> KgEntityOut:
+    """将平台文档登记为图谱实体（幂等）。"""
+    from app.core.permissions import PermissionLevel, can_access_document
+    from app.services.documents.crud import get_document
+
+    doc = get_document(db, document_id)
+    if not doc:
+        raise not_found("文档不存在")
+    if not can_access_document(db, user, doc, PermissionLevel.visible.value):
+        raise bad_request("无权访问该文档")
+
+    existing = find_entity_by_document_id(db, user, document_id)
+    if existing:
+        return _entity_out(db, existing)
+
+    ensure_ontology_defaults(db)
+    et = db.scalar(
+        select(KgEntityType).where(KgEntityType.code == entity_type_code.strip())
+    )
+    if not et:
+        raise bad_request("实体类型不存在")
+
+    title = (doc.title or "未命名文档").strip()
+    row = KgEntity(
+        type_id=et.id,
+        name=title,
+        description=f"来自文档库：{title}",
+        properties={DOC_ENTITY_PROPERTY_KEY: str(document_id)},
+        owner_id=user.id,
+        created_by=user.id,
+        scope="personal",
+    )
+    db.add(row)
+    db.flush()
+    if commit:
+        db.commit()
+        db.refresh(row)
+    return _entity_out(db, row)
+
+
+def merge_kg_qa_into_context(
+    context: str,
+    citations: list[dict],
+    kg: KgQaContext | None,
+) -> tuple[str, list[dict]]:
+    """将图谱子图上下文追加到问答检索结果后，引用编号顺延。"""
+    if not kg or not (kg.context_text or "").strip():
+        return context, citations
+    offset = len(citations)
+    merged_citations = list(citations)
+    for c in kg.citations:
+        item = dict(c)
+        item["index"] = offset + int(c.get("index") or 0)
+        merged_citations.append(item)
+    kg_body = kg.context_text.strip()
+    if context.strip():
+        merged = f"{context.strip()}\n\n{kg_body}"
+    else:
+        merged = kg_body
+    return merged, merged_citations
 
 
 def retrieve_kg_context_for_question(

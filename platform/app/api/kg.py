@@ -65,6 +65,20 @@ def kg_get_entity(
     return ApiResponse(data=kg_service.get_entity(db, user, entity_id))
 
 
+@router.post(
+    "/entities/from-document/{document_id}",
+    response_model=ApiResponse[KgEntityOut],
+)
+def kg_create_entity_from_document(
+    document_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[KgEntityOut]:
+    return ApiResponse(
+        data=kg_service.ensure_doc_entity_for_document(db, user, document_id)
+    )
+
+
 @router.post("/entities", response_model=ApiResponse[KgEntityOut])
 def kg_create_entity(
     body: KgEntityIn,

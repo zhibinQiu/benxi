@@ -8,8 +8,10 @@ from unittest.mock import MagicMock, patch
 
 from app.models.document import Document, DocumentStatus, DocumentVersion
 from app.models.job import Job, JobStatus, JobType
+from app.models.org import User
 from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
 from app.services.knowledge_sync_job_service import (
+    _complete_knowledge_index_job,
     _index_job_should_abort,
     _index_target_exists,
     cancel_document_index_job,
@@ -132,6 +134,45 @@ def test_index_job_should_abort_when_version_missing():
     db.get = fake_get
 
     assert _index_job_should_abort(db, job) is True
+
+
+def test_complete_knowledge_index_job_skips_cancelled():
+    job = Job(
+        id=uuid.uuid4(),
+        type=JobType.document_index.value,
+        status=JobStatus.cancelled.value,
+        document_id=uuid.uuid4(),
+        created_by=uuid.uuid4(),
+        payload={"awaiting_parse": True},
+    )
+    user = User(id=job.created_by, phone="13800000001")
+    doc = Document(
+        id=job.document_id,
+        title="t",
+        owner_id=user.id,
+        scope="personal",
+        status=DocumentStatus.active.value,
+    )
+    db = MagicMock()
+    db.get.return_value = job
+
+    with patch(
+        "app.services.knowledge_sync_job_service.update_job_status",
+    ) as update_status, patch(
+        "app.services.knowledge_sync_job_service.create_notification",
+    ) as notify:
+        _complete_knowledge_index_job(
+            db,
+            job,
+            user,
+            doc,
+            dataset_id="ds-1",
+            version_id_raw=None,
+            mode="index",
+        )
+
+    update_status.assert_not_called()
+    notify.assert_not_called()
 
 
 def test_detach_platform_version_knowflow_deletes_link_and_schedules_remote():

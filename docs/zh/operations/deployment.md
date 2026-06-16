@@ -53,7 +53,7 @@ bash scripts/stack.sh up --profile knowflow --profile speech
 **本机（与目标同架构或 buildx）：**
 
 ```bash
-export ZHITAN_VERSION=3.9.3
+export ZHITAN_VERSION=4.0.4
 # amd64 服务器示例 .env 片段：
 # RAGFLOW_PLATFORM=linux/amd64
 # RAGFLOW_IMAGE=zxwei/knowflow:v2.1.8

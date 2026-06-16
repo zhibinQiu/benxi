@@ -63,7 +63,8 @@ flowchart TB
 ```
 app/domains/knowledge/
   gateway.py      # KnowledgeGateway / knowledge 单例（Facade）
-  meta_service.py # /rag/meta 探活与载荷
+  meta_service.py # /knowledge/meta 探活与载荷
+  background_sync.py
 ```
 
 **调用约定**：
@@ -71,18 +72,41 @@ app/domains/knowledge/
 ```python
 from app.domains.knowledge import knowledge
 
-# 嵌入 meta
-knowledge.meta_payload(db, user)
+# 栈是否可用（已含 knowflow_enabled 判断，勿再写双重条件）
+knowledge.stack_reachable()
 
-# SSO + iframe
-knowledge.build_embed_session(db, user, sync_catalog=False)
+# 用户级 KnowFlow 客户端
+kf = knowledge.client_for_user(db, user)
 
-# 文档同步 / ACL 后 KB 授权
+# 文档同步 / ACL
 knowledge.sync_document(db, user, doc, force=True)
 knowledge.sync_kb_grants(db, doc)
 ```
 
-旧路径 `app/services/ragflow_*` 仍保留实现细节，**新代码请经 `knowledge` 入口**。
+**解析器 / 索引栈规则**（勿在 service 内重复实现）：
+
+```python
+from app.services.knowledge_parser_service import (
+    reindex_parser_id_raw,
+    resolve_job_parser_id,
+    assert_index_stack_ready,
+    index_stack_block_reason,
+)
+```
+
+详见 [知识服务实现](../implementation/knowledge-implementation.md) §3。
+
+**用户可见错误**（API、Job、SSE 统一）：
+
+```python
+from app.core.user_messages import (
+    sanitize_user_message,
+    http_exception_message,
+    background_job_error_message,
+)
+```
+
+旧路径 `app/services/ragflow_*` 仍保留实现细节，**新代码请经 `knowledge` 与上述入口**。
 
 ### 2.2 功能插件
 
@@ -102,7 +126,7 @@ platform-frontend/src/
     rag.js         # 知识问答 / 嵌入
     client.js      # 聚合 re-export（兼容旧 import）
   views/           # 页面，只调 api/* 与 composables
-  composables/     # 跨页状态（useAuth、useKnowflowEmbed）
+  composables/     # 跨页状态（useAuth、useDocumentReindex、usePlatformUi）
   components/      # 纯 UI
 ```
 
@@ -112,7 +136,7 @@ platform-frontend/src/
 | `composables/` | 可复用逻辑 + 少量 UI 副作用 |
 | `views/` | 路由页，组合 composable |
 
-**约定**：同一用户操作只弹**一条**结果提示；页面内 `n-alert` 与 `message` 不重复报错（见 `utils/uiMessage.js`）。
+**约定**：同一用户操作只弹**一条**结果提示；统一使用 `usePlatformUi`（`useUiMessage` 已废弃）；页面内 `n-alert` 与 `message` 不重复报错（见 `utils/uiMessage.js`）。
 
 ---
 
@@ -126,6 +150,7 @@ platform-frontend/src/
 | P1 | `document_service` → `services/documents/` 子包 | 已完成 |
 | P2 | `auth`/`users` 经 `knowledge` 网关 | 已完成 |
 | P2 | 删除遗留 `smart_data_query.py`（v1） | 已完成 |
+| P2 | 知识 parser / 错误文案 / KnowFlow 探活收敛 | 已完成 |
 | P3 | 前端路由与 `/system/features` 插件 id 对齐表 | 待办 |
 
 ---
@@ -135,6 +160,7 @@ platform-frontend/src/
 | 模式 | 落点 |
 |------|------|
 | **Facade** | `KnowledgeGateway` |
+| **规则集中** | `knowledge_parser_service`（parser / 栈校验） |
 | **Strategy** | `KnowflowClient` / `LocalKnowflowClient` |
 | **Plugin Registry** | `features/registry.py` |
 | **Repository**（轻量） | `services/*` + SQLAlchemy，未单独抽象类 |
@@ -147,5 +173,7 @@ platform-frontend/src/
 - [开发实现说明书总览](implementation-manual.md)
 - [系统架构](../operations/architecture.md)
 - [应用服务与域](../implementation/backend-implementation.md)
+- [知识服务实现](../implementation/knowledge-implementation.md)
+- [异步任务](../implementation/async-and-jobs.md)
 - [功能插件](../platform/feature-plugins.md)
 - [权限模型](../platform/permission-model.md)

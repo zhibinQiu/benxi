@@ -44,9 +44,10 @@ export async function fetchParserOptions() {
 
 export async function reindexDocument(
   documentId,
-  { versionId, parserId = "naive", layoutRecognize, resync = false } = {}
+  { versionId, parserId, layoutRecognize, resync = false } = {}
 ) {
-  const body = { parser_id: parserId, resync };
+  const body = { resync };
+  if (parserId) body.parser_id = parserId;
   if (versionId) body.version_id = versionId;
   if (layoutRecognize) body.layout_recognize = layoutRecognize;
   return api(`/api/v1/knowledge/documents/${encodeURIComponent(documentId)}/reindex`, {

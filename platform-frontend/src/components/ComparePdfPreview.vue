@@ -105,20 +105,17 @@ async function buildOverlayBoxes(page, viewport) {
     });
   }
 
-  const needTextFallback =
-    props.diffItems.length > 0 &&
-    (boxes.length === 0 ||
-      props.diffItems.some((d) => {
-        const id = String(d.id);
-        return !bboxCovered.has(id);
-      }));
+  const uncoveredDiffIds = props.diffItems
+    .map((d) => String(d.id))
+    .filter((id) => !bboxCovered.has(id));
 
-  if (needTextFallback) {
+  if (uncoveredDiffIds.length > 0) {
     const textBoxes = await buildTextLayerHighlightBoxes(page, viewport, pdfjsLib, {
       diffItems: props.diffItems,
       side: props.diffSide,
       pageNo,
       activeDiffId: props.activeDiffId,
+      onlyDiffIds: new Set(uncoveredDiffIds),
     });
     for (const box of textBoxes) {
       if (!boxes.some((b) => b.key === box.key)) boxes.push(box);
@@ -312,19 +309,19 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
 }
 .pdf-diff-box--delete {
-  background: rgba(239, 68, 68, 0.32);
-  border: 2px solid rgba(239, 68, 68, 0.75);
+  background: rgba(239, 68, 68, 0.16);
+  border: 1.5px solid rgba(239, 68, 68, 0.45);
 }
 .pdf-diff-box--add {
-  background: rgba(34, 197, 94, 0.32);
-  border: 2px solid rgba(34, 197, 94, 0.75);
+  background: rgba(34, 197, 94, 0.16);
+  border: 1.5px solid rgba(34, 197, 94, 0.45);
 }
 .pdf-diff-box--modify {
-  background: rgba(234, 179, 8, 0.34);
-  border: 2px solid rgba(234, 179, 8, 0.8);
+  background: rgba(234, 179, 8, 0.18);
+  border: 1.5px solid rgba(234, 179, 8, 0.48);
 }
 .pdf-diff-box--active {
-  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.5);
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.35);
   z-index: 2;
 }
 .compare-pdf-preview__caption {

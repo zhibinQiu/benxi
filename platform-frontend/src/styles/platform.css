@@ -267,6 +267,11 @@ body > .v-binder-follower-container {
   z-index: 10000 !important;
 }
 
+/* Tooltip 须高于顶栏 flyout（10050），否则弹窗内按钮的 hover 提示会被面板挡住 */
+body > .v-binder-follower-container:has(.n-popover.n-tooltip) {
+  z-index: 10100 !important;
+}
+
 body > .v-binder-follower-container .v-binder-follower-content {
   pointer-events: auto;
 }

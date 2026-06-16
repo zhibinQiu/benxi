@@ -12,7 +12,7 @@ export const FEATURE_UNAVAILABLE =
 
 const VENDOR_RE = /ragflow|knowflow/i;
 const ADMIN_SETUP_RE =
-  /资源管理|PaddleOCR|FunASR|SearXNG|DeepSeek|layout-parsing|未配置.*(?:服务|模型|LLM|API)/i;
+  /资源管理|PaddleOCR|FunASR|SearXNG|DeepSeek|layout-parsing|pageindex|KnowFlow|RAGFlow|向量|树搜索|未配置.*(?:服务|模型|LLM|API)/i;
 
 /** 去掉内部产品名与运维配置指引，统一为对用户友好的提示 */
 export function sanitizeUserFacingMessage(text, fallback = KNOWLEDGE_UNAVAILABLE) {

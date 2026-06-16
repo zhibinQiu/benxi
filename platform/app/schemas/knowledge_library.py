@@ -4,6 +4,8 @@ import uuid
 
 from pydantic import BaseModel, Field
 
+from app.services.knowledge_parser_service import default_reindex_parser_id
+
 
 class KnowledgeLibraryOut(BaseModel):
     dataset_id: str
@@ -102,7 +104,11 @@ class KnowledgeQaMindmapOut(BaseModel):
 
 
 class KnowledgeReindexRequest(BaseModel):
-    parser_id: str = Field(default="naive", min_length=1, max_length=32)
+    parser_id: str = Field(
+        default_factory=default_reindex_parser_id,
+        min_length=1,
+        max_length=32,
+    )
     layout_recognize: str | None = Field(
         default=None,
         description="PDF 版面识别 / OCR 引擎",

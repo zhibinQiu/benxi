@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import logging
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -9,6 +12,8 @@ import tomllib
 
 from app.config import get_settings
 from app.core.exceptions import bad_request
+
+logger = logging.getLogger(__name__)
 
 STYLE_PROMPTS = {
     "brief": "用 3–5 条要点简要概括，每条一行。",
@@ -80,6 +85,122 @@ def is_configured() -> bool:
         return True
     fk, _, _ = _load_from_pdf2zh_config()
     return bool(fk)
+
+
+def _chat_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/chat/completions"
+
+
+def _clip_user_content(content: str, max_chars: int | None = None) -> str:
+    limit = max_chars if max_chars is not None else get_settings().deepseek_max_chars
+    return (content or "").strip()[:limit]
+
+
+def chat_completion_sync(
+    *,
+    messages: list[dict[str, str]],
+    temperature: float = 0.2,
+    timeout: float = 90.0,
+    max_user_chars: int | None = None,
+) -> str | None:
+    """同步 chat/completions；未配置 LLM 或调用失败时返回 None。"""
+    if not is_configured():
+        return None
+    try:
+        api_key, base_url, model = resolve_credentials()
+    except Exception:
+        return None
+    payload_messages = []
+    for msg in messages:
+        role = str(msg.get("role") or "user")
+        content = msg.get("content") or ""
+        if role == "user" and max_user_chars is not None:
+            content = _clip_user_content(str(content), max_user_chars)
+        elif role == "user":
+            content = _clip_user_content(str(content))
+        payload_messages.append({"role": role, "content": content})
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(
+                _chat_url(base_url),
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model,
+                    "messages": payload_messages,
+                    "temperature": temperature,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            ) or None
+    except Exception as exc:
+        logger.warning("LLM 同步调用失败: %s", exc)
+        return None
+
+
+async def chat_completion_stream(
+    *,
+    messages: list[dict[str, str]],
+    temperature: float = 0.2,
+    timeout: float = 90.0,
+    max_user_chars: int | None = None,
+) -> AsyncIterator[str]:
+    """流式 chat/completions；未配置或失败时不产出。"""
+    if not is_configured():
+        return
+    try:
+        api_key, base_url, model = resolve_credentials()
+    except Exception:
+        return
+    payload_messages = []
+    for msg in messages:
+        role = str(msg.get("role") or "user")
+        content = msg.get("content") or ""
+        if role == "user" and max_user_chars is not None:
+            content = _clip_user_content(str(content), max_user_chars)
+        elif role == "user":
+            content = _clip_user_content(str(content))
+        payload_messages.append({"role": role, "content": content})
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST",
+                _chat_url(base_url),
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model,
+                    "messages": payload_messages,
+                    "temperature": temperature,
+                    "stream": True,
+                },
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    raw = line[5:].strip()
+                    if not raw or raw == "[DONE]":
+                        if raw == "[DONE]":
+                            break
+                        continue
+                    try:
+                        chunk = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = (
+                        chunk.get("choices", [{}])[0]
+                        .get("delta", {})
+                        .get("content")
+                    )
+                    if delta:
+                        yield delta
+    except Exception as exc:
+        logger.warning("LLM 流式调用失败: %s", exc)
 
 
 async def summarize_text(text: str, style: str = "minutes") -> dict:

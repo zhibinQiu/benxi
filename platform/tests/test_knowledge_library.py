@@ -47,7 +47,7 @@ def test_knowledge_document_chunks_requires_sync(client, admin_token, monkeypatc
         lambda db, user, doc: True,
     )
     monkeypatch.setattr(
-        "app.services.knowledge_library_service._knowflow_ready",
+        "app.domains.knowledge.gateway.knowledge.stack_reachable",
         lambda: True,
     )
 

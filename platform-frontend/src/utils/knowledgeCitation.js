@@ -15,8 +15,11 @@ export function knowledgeCitationPreviewPath(citation) {
   if (datasetId) params.set("dataset_id", datasetId);
   if (ragDocId) params.set("ragflow_document_id", ragDocId);
   if (docId) params.set("document_id", docId);
-  if (anchor.page != null && anchor.page !== "") {
+  const page = anchor.page;
+  if (page != null && page !== "") {
     params.set("page", String(anchor.page));
+  } else if (c.source === "pageindex" && docId) {
+    params.set("page", "1");
   }
   if (Array.isArray(anchor.bbox) && anchor.bbox.length >= 4) {
     params.set("bbox", anchor.bbox.map((n) => Number(n)).join(","));
@@ -31,13 +34,6 @@ export function knowledgeCitationPreviewPath(citation) {
   }
   if (!params.toString()) return "";
   return `${getApiBase()}/api/v1/knowledge/citations/preview?${params}`;
-}
-
-/** @deprecated 使用 knowledgeCitationPreviewPath */
-export function knowledgeCitationImagePath(imageId) {
-  const id = String(imageId || "").trim();
-  if (!id) return "";
-  return `${getApiBase()}/api/v1/knowledge/citations/images/${encodeURIComponent(id)}`;
 }
 
 async function fetchCitationBlob(path) {
@@ -56,11 +52,6 @@ async function fetchCitationBlob(path) {
 /** 按完整 citation 加载源 PDF 区域截图 */
 export async function fetchKnowledgeCitationPreviewBlob(citation) {
   const path = knowledgeCitationPreviewPath(citation);
-  return fetchCitationBlob(path);
-}
-
-export async function fetchKnowledgeCitationImageBlob(imageId) {
-  const path = knowledgeCitationImagePath(imageId);
   return fetchCitationBlob(path);
 }
 
@@ -182,10 +173,7 @@ export function citationCanPreviewImage(citation) {
   if (c.preview_available === true) return true;
   if (c.preview_available === false) return false;
   if (c.source === "pageindex") {
-    const page = c.anchor_json?.page;
-    if (String(c.document_id || "").trim() && page != null && page !== "") {
-      return true;
-    }
+    if (String(c.document_id || "").trim()) return true;
   }
   const anchor = c.anchor_json || {};
   const bbox = anchor.bbox;

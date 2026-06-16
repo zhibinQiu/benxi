@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.permissions import PermissionLevel
-from app.integrations.knowflow_client import get_knowflow_client_for_user, knowflow_stack_reachable
+from app.domains.knowledge import knowledge
+from app.integrations.deepseek_client import chat_completion_stream
 from app.integrations.ragflow_client import RagflowClient, RagflowError
 from app.integrations.text_extract import local_search
 from app.models.document import Document, DocumentVersion
@@ -59,7 +60,6 @@ def _parse_ids(ids: list[str]) -> list[uuid.UUID]:
 
 
 def _rag_clients_for_qa(db: Session, user: User) -> list[RagflowClient]:
-    from app.integrations.knowflow_client import get_knowflow_client_for_user
     from app.services.model_settings_service import get_ragflow_api_key
     from app.services.ragflow_identity_service import get_user_ragflow_auth
     from app.services.ragflow_scope_service import _privileged_rag_client
@@ -79,7 +79,7 @@ def _rag_clients_for_qa(db: Session, user: User) -> list[RagflowClient]:
     api_key = (get_ragflow_api_key(db) or "").strip()
     if api_key:
         _add(RagflowClient(api_key=api_key))
-    kf = get_knowflow_client_for_user(db, user)
+    kf = knowledge.client_for_user(db, user)
     if hasattr(kf, "_rag"):
         _add(kf._rag)
     auth = get_user_ragflow_auth(db, user)
@@ -317,8 +317,8 @@ def retrieve_hits_for_qa(
     remaining = max(0, top_k - len(hits))
     if kf_docs and remaining > 0:
         kf_ids = [d.id for d in kf_docs]
-        stack_on = settings.knowflow_enabled and knowflow_stack_reachable()
-        kf = get_knowflow_client_for_user(db, user)
+        stack_on = knowledge.stack_reachable()
+        kf = knowledge.client_for_user(db, user)
         if stack_on and kf.enabled():
             kf_hits = _knowflow_retrieve(
                 db, user, kf_docs, kf_ids, question, limit=remaining
@@ -351,10 +351,10 @@ def retrieve_hits_for_qa(
 
 def retrieval_workflow_title(mode: str) -> str:
     return {
-        "pageindex_tree": "PageIndex 树搜索",
-        "hybrid": "向量混合检索",
-        "mixed": "PageIndex 树搜索 + 向量检索",
-        "local": "本地全文检索",
+        "pageindex_tree": "正在检索相关文档",
+        "hybrid": "正在检索相关文档",
+        "mixed": "正在检索相关文档",
+        "local": "正在检索相关文档",
     }.get(mode, "正在检索相关文档")
 
 
@@ -390,8 +390,6 @@ def _doc_citation_meta(db: Session, doc_ids: list[uuid.UUID]) -> dict[str, dict[
 
 def _normalize_highlight_snippet(text: str) -> str:
     """将检索高亮统一为 <em>…</em>，供前端溯源展示。"""
-    import re
-
     raw = (text or "").strip()
     if not raw:
         return ""
@@ -417,15 +415,9 @@ def _citation_preview_available(h: dict) -> bool:
     if h.get("preview_available") is False:
         return False
     if str(h.get("source") or "").strip() == "pageindex":
-        anchor = h.get("anchor_json") or {}
-        page = anchor.get("page")
         did = str(h.get("document_id") or "").strip()
-        if did and page is not None:
-            try:
-                if int(page) >= 1:
-                    return True
-            except (TypeError, ValueError):
-                pass
+        if did:
+            return True
     anchor = h.get("anchor_json") or {}
     bbox = anchor.get("bbox")
     if isinstance(bbox, list) and len(bbox) >= 4:
@@ -446,9 +438,6 @@ def _citation_image_id(h: dict) -> str | None:
         or RagflowClient.synthesize_chunk_image_id(h)
         or None
     )
-
-
-_CITATION_REF_RE = re.compile(r"\[(\d{1,2})\]")
 
 
 def _citation_anchor_key(item: dict) -> tuple:
@@ -715,15 +704,6 @@ def build_aligned_qa_context_and_citations(
     return context, citations
 
 
-def finalize_qa_answer_and_citations_legacy(
-    answer: str,
-    citations: list[dict],
-) -> tuple[str, list[dict]]:
-    """旧逻辑：同句同文档合并引用编号（保留供测试）。"""
-    answer, citations = collapse_answer_citation_refs(answer, citations)
-    return answer, filter_citations_for_display(citations, answer)
-
-
 def build_citations(
     hits: list[dict],
     doc_titles: dict[str, str],
@@ -773,11 +753,6 @@ def build_citations(
     return citations
 
 
-def _build_context_block(hits: list[dict], doc_titles: dict[str, str]) -> str:
-    context, _ = build_aligned_qa_context_and_citations(hits, doc_titles)
-    return context
-
-
 def _answer_prefix_blocks(
     *,
     plan: dict[str, Any],
@@ -795,99 +770,30 @@ def _answer_prefix_blocks(
 
 
 async def _iter_llm_answer_stream(*, question: str, context: str) -> AsyncIterator[str]:
-    from app.integrations.deepseek_client import is_configured, resolve_credentials
+    from app.integrations.deepseek_client import chat_completion_stream
 
-    if not is_configured():
-        return
-    try:
-        api_key, base_url, model = resolve_credentials()
-    except Exception:
-        return
-    settings = get_settings()
     user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
-    try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            async with client.stream(
-                "POST",
-                f"{base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": _KNOWLEDGE_QA_SYSTEM},
-                        {
-                            "role": "user",
-                            "content": user_content[: settings.deepseek_max_chars],
-                        },
-                    ],
-                    "temperature": 0.2,
-                    "stream": True,
-                },
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    raw = line[5:].strip()
-                    if not raw or raw == "[DONE]":
-                        if raw == "[DONE]":
-                            break
-                        continue
-                    try:
-                        chunk = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = (
-                        chunk.get("choices", [{}])[0]
-                        .get("delta", {})
-                        .get("content")
-                    )
-                    if delta:
-                        yield delta
-    except Exception as exc:
-        logger.warning("知识检索 LLM 流式生成失败: %s", exc)
+    async for delta in chat_completion_stream(
+        messages=[
+            {"role": "system", "content": _KNOWLEDGE_QA_SYSTEM},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.2,
+    ):
+        yield delta
 
 
 def _call_llm_answer(*, question: str, context: str) -> str | None:
-    from app.integrations.deepseek_client import is_configured, resolve_credentials
+    from app.integrations.deepseek_client import chat_completion_sync
 
-    if not is_configured():
-        return None
-    try:
-        api_key, base_url, model = resolve_credentials()
-    except Exception:
-        return None
-    settings = get_settings()
     user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
-    try:
-        with httpx.Client(timeout=90.0) as client:
-            resp = client.post(
-                f"{base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": _KNOWLEDGE_QA_SYSTEM},
-                        {
-                            "role": "user",
-                            "content": user_content[: settings.deepseek_max_chars],
-                        },
-                    ],
-                    "temperature": 0.2,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            content = (
-                data.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-                .strip()
-            )
-            return content or None
-    except Exception as exc:
-        logger.warning("知识检索 LLM 生成失败: %s", exc)
-        return None
+    return chat_completion_sync(
+        messages=[
+            {"role": "system", "content": _KNOWLEDGE_QA_SYSTEM},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.2,
+    )
 
 
 def _strip_meta_footer(text: str) -> str:
@@ -1380,16 +1286,10 @@ async def iter_knowledge_qa_stream(
     except HTTPException as exc:
         from app.core.user_messages import (
             KNOWLEDGE_SERVICE_UNAVAILABLE,
-            sanitize_user_message,
+            http_exception_message,
         )
 
-        detail = exc.detail
-        msg = (
-            detail.get("message")
-            if isinstance(detail, dict)
-            else str(detail)
-        )
-        msg = sanitize_user_message(msg, fallback=KNOWLEDGE_SERVICE_UNAVAILABLE)
+        msg = http_exception_message(exc, fallback=KNOWLEDGE_SERVICE_UNAVAILABLE)
         yield json.dumps({"error": msg or "请求失败"}, ensure_ascii=False)
         return
 
@@ -1420,7 +1320,7 @@ async def iter_knowledge_qa_stream(
         plan_knowledge_query,
     )
 
-    kf = get_knowflow_client_for_user(db, user)
+    kf = knowledge.client_for_user(db, user)
     plan = plan_knowledge_query(
         question=question,
         document_count=len(doc_ids),
@@ -1534,7 +1434,7 @@ def answer_knowledge_question(
         plan_knowledge_query,
     )
 
-    kf = get_knowflow_client_for_user(db, user)
+    kf = knowledge.client_for_user(db, user)
     plan = plan_knowledge_query(
         question=question,
         document_count=len(doc_ids),

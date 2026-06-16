@@ -20,7 +20,6 @@ import {
   NEmpty,
   NProgress,
   NText,
-  NTooltip,
   NIcon,
   NDropdown } from "naive-ui";
 import {
@@ -679,7 +678,6 @@ function applyLibraryData(lib) {
   ) {
     activeDeptId.value = units[0].id;
   }
-  applyRouteFromQuery();
   if (
     libraryView.value === "main" &&
     folders.value.length &&
@@ -944,11 +942,33 @@ function buildLibraryQuery() {
 }
 
 function openDocumentDetail(id) {
-  navigateWithReturn(
+  if (!id) return;
+  void navigateWithReturn(
     router,
-    { name: "document-detail", params: { id } },
+    { name: "document-detail", params: { id: String(id) } },
     route
-  );
+  ).catch((err) => {
+    if (err?.name === "NavigationDuplicated") return;
+    ui.error(err);
+  });
+}
+
+function documentRowProps(row) {
+  return {
+    style: "cursor: pointer",
+    onClick: (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        target.closest(
+          ".n-checkbox, .n-button, .table-icon-actions, .n-dropdown, .n-data-table-expand-trigger"
+        )
+      ) {
+        return;
+      }
+      openDocumentDetail(row.id);
+    },
+  };
 }
 
 async function onTabChange(scope) {
@@ -973,7 +993,7 @@ async function onTabChange(scope) {
   await router.replace({ name: "documents", query: buildLibraryQuery() });
 }
 
-function openKbFolder(folder) {
+async function openKbFolder(folder) {
   const key = folder.virtual_id || (folder.id ? String(folder.id) : null);
   if (!key) return;
   keyword.value = "";
@@ -983,11 +1003,18 @@ function openKbFolder(folder) {
   checkedRowKeys.value = [];
   applyCachedListForActiveFolder();
   skipNextRouteLoad = true;
+  try {
+    await router.replace({ name: "documents", query: buildLibraryQuery() });
+  } catch (err) {
+    if (err?.name !== "NavigationDuplicated") {
+      ui.error(err);
+      return;
+    }
+  }
   void load();
-  router.replace({ name: "documents", query: buildLibraryQuery() });
 }
 
-function backToKbFolders() {
+async function backToKbFolders() {
   activeKbFolderKey.value = null;
   page.value = 1;
   items.value = [];
@@ -996,7 +1023,12 @@ function backToKbFolders() {
   checkedRowKeys.value = [];
   const query = { ...buildLibraryQuery() };
   delete query.folder;
-  router.replace({ name: "documents", query });
+  skipNextRouteLoad = true;
+  try {
+    await router.replace({ name: "documents", query });
+  } catch (err) {
+    if (err?.name !== "NavigationDuplicated") ui.error(err);
+  }
 }
 
 function onDeptChange(deptId) {
@@ -1577,18 +1609,14 @@ watch(
           :style="{ '--folder-i': folderIdx }"
           @mouseenter="prefetchFolderDocuments(folder)"
         >
-          <n-tooltip trigger="hover" :delay="400">
-            <template #trigger>
-              <KbFolderCard
-                :folder="folder"
-                :card-key="folder.virtual_id || folder.id || `f-${folderIdx}`"
-                :menu-options="folderMenuOptions(folder)"
-                @open="openKbFolder"
-                @menu-select="onFolderMenuSelect"
-              />
-            </template>
-            {{ folderTooltip(folder) }}
-          </n-tooltip>
+          <KbFolderCard
+            :folder="folder"
+            :title="folderTooltip(folder)"
+            :card-key="folder.virtual_id || folder.id || `f-${folderIdx}`"
+            :menu-options="folderMenuOptions(folder)"
+            @open="openKbFolder"
+            @menu-select="onFolderMenuSelect"
+          />
         </div>
         <div
           v-if="canManageKbFolders"
@@ -1624,6 +1652,7 @@ watch(
       :data="items"
       :loading="loading && !items.length"
       :row-key="(row) => row.id"
+      :row-props="documentRowProps"
       :checked-row-keys="showBatchDocActions ? checkedRowKeys : undefined"
       @update:checked-row-keys="onCheckedRowKeysChange"
       :pagination="{

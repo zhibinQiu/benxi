@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 
 import boto3
@@ -17,17 +18,44 @@ class StorageObjectNotFoundError(FileNotFoundError):
         super().__init__(file_key)
 
 
+def _append_no_proxy_hosts(*hosts: str) -> None:
+    """避免 boto3 走系统 HTTP 代理访问内网 MinIO（如 Cursor/Clash 本地代理端口）。"""
+    extra = [h.strip() for h in hosts if h and h.strip()]
+    if not extra:
+        return
+    for key in ("NO_PROXY", "no_proxy"):
+        current = os.environ.get(key, "")
+        parts = [p.strip() for p in current.split(",") if p.strip()]
+        for host in extra:
+            if host not in parts:
+                parts.append(host)
+        os.environ[key] = ",".join(parts)
+
+
 class ObjectStore:
     def __init__(self) -> None:
         settings = get_settings()
         self.bucket = settings.minio_bucket
+        endpoint = self._endpoint(settings)
+        endpoint_host = (settings.minio_endpoint or "").split(":")[0].strip()
+        _append_no_proxy_hosts(
+            endpoint_host,
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        )
         self._client = boto3.client(
             "s3",
-            endpoint_url=self._endpoint(settings),
+            endpoint_url=endpoint,
             aws_access_key_id=settings.minio_access_key,
             aws_secret_access_key=settings.minio_secret_key,
             region_name=settings.minio_region,
-            config=Config(signature_version="s3v4"),
+            config=Config(
+                signature_version="s3v4",
+                proxies={"http": None, "https": None},
+                connect_timeout=30,
+                read_timeout=300,
+            ),
         )
         self._ensure_bucket()
 

@@ -29,7 +29,15 @@ if TYPE_CHECKING:
 
 
 class KnowledgeGateway:
-    """Facade：封装 SSO、文档同步、KB 授权与嵌入元数据。"""
+    """Facade：封装 SSO、文档同步、KB 授权与元数据探活。
+
+    实现思路（高内聚低耦合）：
+    - 业务 service / API **只依赖** ``knowledge`` 单例，不直接 import ``ragflow_sync_service``
+      或 ``knowflow_stack_reachable``，降低环依赖与重复探活逻辑。
+    - 方法内部 lazy import 具体 service，gateway 模块自身不拉取重型依赖链。
+    - ``stack_reachable()`` 已含 ``knowflow_enabled`` 判断，调用方勿再写
+      ``settings.knowflow_enabled and ...`` 双重条件。
+    """
 
     @staticmethod
     def enabled() -> bool:
@@ -37,6 +45,7 @@ class KnowledgeGateway:
 
     @staticmethod
     def stack_reachable() -> bool:
+        """KnowFlow 已启用且 RAGFlow API 探活正常（等价于 knowflow_stack_reachable）。"""
         return knowflow_stack_reachable()
 
     @staticmethod
@@ -82,12 +91,6 @@ class KnowledgeGateway:
         from app.services.ragflow_scope_service import revoke_all_dept_kb_grants
 
         revoke_all_dept_kb_grants(db, user)
-
-    @staticmethod
-    def build_embed_session(db: Session, user: User, *, sync_catalog: bool | None = None) -> dict:
-        from app.services.ragflow_identity_service import build_embed_session
-
-        return build_embed_session(db, user, sync_catalog=sync_catalog)
 
     @staticmethod
     def meta_payload(db: Session, user: User) -> dict:

@@ -21,7 +21,6 @@ def register_builtin_plugins() -> None:
         kg_palantir,  # noqa: F401
         ocr,  # noqa: F401
         report_generation,  # noqa: F401
-        pageindex_demo,  # noqa: F401
         smart_data_query_v2,  # noqa: F401 — 注册 id=smart_data_query
         smart_forecast,  # noqa: F401
         speech,  # noqa: F401

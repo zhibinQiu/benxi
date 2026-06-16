@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.document_scope import content_subscription_import_scope
 from app.core.exceptions import bad_request
-from app.integrations.pdf2zh_client import pdf2zh_base_url
+from app.integrations.pdf2zh_client import pdf2zh_async_client, pdf2zh_sync_client
 from app.models.job import Job, JobStatus, JobType
 from app.models.org import User
 from app.services.job_service import create_job, update_job_status
@@ -33,7 +33,7 @@ _LANG_LABELS = {
 
 
 def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(base_url=pdf2zh_base_url(), timeout=httpx.Timeout(60.0))
+    return pdf2zh_async_client(timeout_sec=60.0)
 
 
 def pdf2zh_job_id(job: Job) -> str | None:
@@ -135,7 +135,7 @@ def sync_job_from_pdf2zh(db: Session, job: Job) -> Job:
     if not zid:
         return job
     try:
-        with httpx.Client(base_url=pdf2zh_base_url(), timeout=30.0) as client:
+        with pdf2zh_sync_client(timeout_sec=30.0) as client:
             r = client.get(f"/api/jobs/{zid}")
             r.raise_for_status()
             remote = r.json()
@@ -210,7 +210,7 @@ def _fetch_translate_output_bytes(job: Job, variant: str) -> tuple[bytes, str]:
     if not zid:
         raise bad_request("翻译任务缺少远程 ID")
     try:
-        with httpx.Client(base_url=pdf2zh_base_url(), timeout=120.0) as client:
+        with pdf2zh_sync_client(timeout_sec=120.0) as client:
             r = client.get(f"/api/jobs/{zid}/download/{kind}")
             r.raise_for_status()
             content = r.content

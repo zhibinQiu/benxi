@@ -165,10 +165,10 @@ def _indexed_doc_ids_from_ragflow(
     if not candidates:
         return set()
 
-    from app.services.knowledge_library_service import _knowflow_ready
+    from app.domains.knowledge import knowledge
     from app.services.ragflow_scope_service import _privileged_rag_client
 
-    if not _knowflow_ready():
+    if not knowledge.stack_reachable():
         return set()
 
     rag = _privileged_rag_client(db)

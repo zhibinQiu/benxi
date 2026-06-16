@@ -329,8 +329,7 @@ def repair_ragflow_link_targets(db: Session) -> dict[str, Any]:
 
 def repair_ragflow_links_with_resync(db: Session, user: User | None) -> dict[str, Any]:
     """将错位索引迁回正确分级知识库；KnowFlow 不可用时仅修正 DB 映射。"""
-    from app.integrations.knowflow_client import knowflow_stack_reachable
-    from app.config import get_settings
+    from app.domains.knowledge import knowledge
 
     misaligned = list_misaligned_ragflow_links(db)
     report: dict[str, Any] = {
@@ -343,11 +342,7 @@ def repair_ragflow_links_with_resync(db: Session, user: User | None) -> dict[str
     if not misaligned:
         return report
 
-    can_resync = bool(
-        user
-        and get_settings().knowflow_enabled
-        and knowflow_stack_reachable()
-    )
+    can_resync = bool(user and knowledge.stack_reachable())
     if can_resync:
         from app.services.ragflow_sync_service import KnowflowSyncError, sync_document_to_knowflow
 

@@ -30,7 +30,7 @@ export function useDocumentReindex(documentId, onUpdated) {
 
   const reindexModalShow = ref(false);
   const reindexTargetVersion = ref(null);
-  const parserId = ref("naive");
+  const parserId = ref("");
   const layoutRecognize = ref("PaddleOCR");
   const reindexResync = ref(true);
   const chunkMethodOptions = ref([]);
@@ -100,11 +100,11 @@ export function useDocumentReindex(documentId, onUpdated) {
       if (defaults.layout_recognize) layoutRecognize.value = defaults.layout_recognize;
     } catch {
       chunkMethodOptions.value = [
-        { label: "Naive", value: "naive" },
+        { label: "通用分块", value: "naive" },
         { label: "智能分块", value: "smart" },
       ];
       layoutOptions.value = [
-        { label: "PaddleOCR", value: "PaddleOCR" },
+        { label: "标准识别", value: "PaddleOCR" },
         { label: "纯文本", value: "Plain Text" },
       ];
     }

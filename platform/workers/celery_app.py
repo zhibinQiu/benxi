@@ -24,4 +24,8 @@ celery_app.conf.update(
     task_track_started=True,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
+    # 定期回收 worker 子进程，降低长任务内存泄漏风险
+    worker_max_tasks_per_child=25,
+    task_soft_time_limit=3600,
+    task_time_limit=3900,
 )

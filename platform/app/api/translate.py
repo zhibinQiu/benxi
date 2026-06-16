@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_client_ip, get_current_user, require_feature
 from app.core.exceptions import bad_request, forbidden, not_found
 from app.database import get_db
-from app.integrations.pdf2zh_client import pdf2zh_base_url
+from app.integrations.pdf2zh_client import pdf2zh_async_client
 from app.models.org import User
 from app.schemas.common import ApiResponse, PageResult
 from app.schemas.translate import (
@@ -41,7 +41,7 @@ router = APIRouter(
 
 
 def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(base_url=pdf2zh_base_url(), timeout=httpx.Timeout(600.0))
+    return pdf2zh_async_client(timeout_sec=600.0)
 
 
 def _require_job(db: Session, job_id: str, user: User):

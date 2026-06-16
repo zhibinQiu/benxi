@@ -1,6 +1,10 @@
 """用户可见错误文案。"""
 
-from app.core.user_messages import STORAGE_FILE_MISSING, sanitize_user_message
+from app.core.user_messages import (
+    STORAGE_FILE_MISSING,
+    background_job_error_message,
+    sanitize_user_message,
+)
 
 
 def test_sanitize_user_message_maps_nosuchkey():
@@ -19,3 +23,13 @@ def test_sanitize_user_message_maps_minio_key_path():
         )
         == STORAGE_FILE_MISSING
     )
+
+
+def test_background_job_error_message_maps_storage():
+    from app.storage.object_store import StorageObjectNotFoundError
+
+    msg = background_job_error_message(
+        StorageObjectNotFoundError("missing"),
+        fallback="失败",
+    )
+    assert msg == STORAGE_FILE_MISSING

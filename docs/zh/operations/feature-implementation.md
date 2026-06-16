@@ -1,4 +1,4 @@
-# 功能实现说明（v3.9.3）
+# 功能实现说明（v4.0.4）
 
 > **本文描述当前已实现功能的运行方式与数据流，不含代码。**  
 > 架构分层见 [系统架构](architecture.md)；文档库细节见 [文档库实现](../implementation/documents-implementation.md)。

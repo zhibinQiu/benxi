@@ -69,16 +69,30 @@ app/domains/knowledge/
 from app.domains.knowledge import knowledge
 
 knowledge.enabled()
-knowledge.stack_reachable()
+knowledge.stack_reachable()   # 已含 enabled，勿重复判断
+knowledge.client_for_user(db, user)
 knowledge.sync_document(db, user, doc, force=True)
-knowledge.build_embed_session(db, user, sync_catalog=False)
+knowledge.meta_payload(db, user)
 ```
 
 底层实现仍在 `services/ragflow_*`、`integrations/knowflow_client.py`；**新功能勿绕过 gateway**。
 
 ---
 
-## 5. 功能插件注册
+## 5. 共享规则与文案（`app/core` + parser service）
+
+| 模块 | 职责 | 典型函数 |
+|------|------|----------|
+| `core/user_messages.py` | 终端用户可见错误，过滤厂商名/堆栈 | `sanitize_user_message`, `background_job_error_message` |
+| `services/knowledge_parser_service.py` | 分块 parser 默认值、PageIndex 判定、索引栈 | `resolve_job_parser_id`, `index_stack_block_reason` |
+| `services/background_job_dispatch.py` | Celery → 线程池回落、PageIndex 本机执行 | `dispatch_document_index_job` |
+| `integrations/pdf2zh_client.py` | pdf2zh HTTP 客户端工厂 | `pdf2zh_async_client`, `pdf2zh_sync_client` |
+
+函数级实现思路见 [知识服务实现](knowledge-implementation.md) 与 [异步任务](async-and-jobs.md)。
+
+---
+
+## 6. 功能插件注册
 
 | 文件 | 作用 |
 |------|------|
@@ -91,7 +105,7 @@ knowledge.build_embed_session(db, user, sync_catalog=False)
 
 ---
 
-## 6. Schema 迁移
+## 7. Schema 迁移
 
 `app/schema_migrate.py` 在启动时执行幂等 DDL/数据修复，例如：
 
@@ -103,7 +117,7 @@ knowledge.build_embed_session(db, user, sync_catalog=False)
 
 ---
 
-## 7. 存储
+## 8. 存储
 
 | 类型 | 实现 |
 |------|------|
@@ -112,7 +126,7 @@ knowledge.build_embed_session(db, user, sync_catalog=False)
 
 ---
 
-## 8. 测试
+## 9. 测试
 
 ```bash
 cd platform && .venv/bin/pytest tests/ -q
@@ -122,7 +136,7 @@ cd platform && .venv/bin/pytest tests/ -q
 
 ---
 
-## 9. 相关文档
+## 10. 相关文档
 
 - [分层架构](../development/layered-architecture.md)
 - [知识服务实现](knowledge-implementation.md)

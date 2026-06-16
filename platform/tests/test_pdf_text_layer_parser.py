@@ -21,7 +21,7 @@ def test_infer_parser_uses_deepdoc_for_platform_generated_pdf():
         "## 章节\n\n平台 Markdown 转 PDF 应使用 DeepDOC，以生成引用页截图。",
     )
     parser, layout = infer_parser_for_upload_file(
-        "article.pdf", "application/pdf", file_content=pdf
+        "article.pdf", "application/pdf"
     )
     assert parser == "naive"
     assert layout == "DeepDOC"

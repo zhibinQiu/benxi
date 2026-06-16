@@ -19,8 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends fonts-wqy-micro
 COPY platform/pyproject.toml platform/README.md ./
 COPY platform/app ./app
 COPY platform/workers ./workers
-# KnowFlow iframe 白标资源（与 deploy/knowflow/theme 保持一致）
-COPY platform/knowflow-theme ./knowflow-theme
 
 RUN pip install --no-cache-dir -i "${PIP_INDEX_URL}" -e . && \
     python -c "\

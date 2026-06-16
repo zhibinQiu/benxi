@@ -73,7 +73,7 @@ def test_count_documents_indexed_excludes_failed(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "app.services.knowledge_library_service._knowflow_ready",
+        "app.domains.knowledge.gateway.knowledge.stack_reachable",
         lambda: True,
     )
     monkeypatch.setattr(
@@ -100,7 +100,7 @@ def test_count_documents_indexed_uses_version_link_without_knowflow(monkeypatch)
     db.execute.side_effect = _execute_side_effect
 
     monkeypatch.setattr(
-        "app.services.knowledge_library_service._knowflow_ready",
+        "app.domains.knowledge.gateway.knowledge.stack_reachable",
         lambda: False,
     )
 

@@ -90,9 +90,7 @@ def _configure_and_parse_uploaded_document(
     if parser_id and layout_recognize:
         pid, layout = parser_id, layout_recognize
     else:
-        pid, layout = infer_parser_for_upload_file(
-            file_name, mime_type, file_content=file_content
-        )
+        pid, layout = infer_parser_for_upload_file(file_name, mime_type)
     parser, parser_config = build_parser_config(pid, layout)
     clients = [getattr(kf, "_rag", None)]
     admin = _admin_rag_client()

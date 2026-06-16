@@ -27,6 +27,7 @@ def _try_sync_version_git(db: Session, version: DocumentVersion) -> None:
         ensure_version_blocks(db, version)
         sync_version_to_git(db, version)
     except Exception:
+        db.rollback()
         logger.warning(
             "版本 Git 同步失败 document=%s version=%s",
             version.document_id,
@@ -75,14 +76,21 @@ def create_initial_uploaded_version(
     )
     store.put_object_bytes(version.file_key, content, mime_type)
     db.add(version)
+    db.flush()
     document.current_version_id = version.id
-    db.commit()
+    db.flush()
     db.refresh(version)
     db.refresh(document)
     if schedule_post_upload:
+        from app.core.db_after_commit import run_after_commit
         from app.services.documents.post_upload import schedule_post_upload_processing
 
-        schedule_post_upload_processing(document.id, version.id, user.id)
+        run_after_commit(
+            db,
+            lambda: schedule_post_upload_processing(
+                document.id, version.id, user.id
+            ),
+        )
     return version
 def list_document_versions(db: Session, document_id: uuid.UUID) -> list[DocumentVersion]:
     rows = list(

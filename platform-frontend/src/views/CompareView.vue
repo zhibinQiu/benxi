@@ -1,6 +1,7 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
   NAlert,
   NButton,
@@ -18,13 +19,10 @@ import {
   NSelect } from "naive-ui";
 import {
   ArrowBackOutline,
-  ChevronDownOutline,
-  ChevronUpOutline,
   DocumentsOutline,
   GitCompareOutline,
   LayersOutline,
   SearchOutline,
-  OpenOutline,
   RefreshOutline } from "@vicons/ionicons5";
 import {
   createCompareJob,
@@ -65,6 +63,8 @@ import {
 import { PREVIEW_KIND } from "../utils/documentPreview.js";
 
 const ui = usePlatformUi();
+const route = useRoute();
+const router = useRouter();
 
 /** entry | workspace */
 const phase = ref("entry");
@@ -465,16 +465,19 @@ async function hydrateColumn(index) {
     col.pdfPage = 1;
 
     if (usesOriginalFilePreview(previewKind)) {
-      const preview_url = await loadOriginalPreviewUrl(doc);
+      const [preview_url, content] = await Promise.all([
+        loadOriginalPreviewUrl(doc),
+        fetchCompareDocumentContent(doc.id, doc.version_id || null).catch(() => null),
+      ]);
       const rootUrl = preview_url ? String(preview_url).split("#")[0] : null;
       col.pdfBaseUrl = previewKind === PREVIEW_KIND.PDF ? rootUrl : null;
       col.content = {
         file_name: fileName,
         preview_kind: previewKind,
         preview_url: rootUrl,
-        pages: [],
-        blocks: [],
-        full_text: ""};
+        pages: content?.pages || [],
+        blocks: content?.blocks || [],
+        full_text: content?.full_text || ""};
       return;
     }
 
@@ -599,12 +602,6 @@ async function loadPrecomputedVersionTimeline({ silent = false } = {}) {
     }
   } catch (e) {
     if (!silent) ui.warning(e.message);
-    try {
-      versionPairRows.value = await fetchVersionCompareAdjacent(docId, versionIds);
-      syncActivePairRelation();
-    } catch {
-      /* ignore */
-    }
   } finally {
     comparing.value = false;
   }
@@ -654,11 +651,6 @@ function enterWorkspace() {
   });
 }
 
-async function loadVersionDiff({ silent = false } = {}) {
-  if (compareMode.value !== "version") return;
-  await loadPrecomputedVersionTimeline({ silent });
-}
-
 function openVersionDocPickerFlow() {
   compareMode.value = "version";
   versionBaseDoc.value = null;
@@ -692,26 +684,60 @@ function goSetupFromWorkspace() {
   }
 }
 
-async function onVersionBaseSelected(row) {
-  versionBaseDoc.value = row;
+async function prepareVersionCompare(docId, baseDoc = null) {
   checkedVersionIds.value = [];
   versionLoading.value = true;
   try {
-    const doc = await fetchDocument(row.id);
+    const doc = await fetchDocument(docId);
+    const currentVersion = (doc.versions || []).find((v) => v.is_current);
+    versionBaseDoc.value =
+      baseDoc ||
+      {
+        id: doc.id,
+        title: doc.title,
+        file_name:
+          doc.file_name ||
+          currentVersion?.file_name ||
+          doc.versions?.[0]?.file_name ||
+          "",
+      };
     versionList.value = (doc.versions || []).filter((v) => v.uploaded);
     if (versionList.value.length < MIN_COMPARE_COLS) {
       ui.warning("该文档至少需要 2 个已上传版本");
       versionBaseDoc.value = null;
       versionList.value = [];
-      return;
+      return false;
     }
     showVersionSelectModal.value = true;
+    return true;
   } catch (e) {
     ui.error(e.message);
     versionBaseDoc.value = null;
+    return false;
   } finally {
     versionLoading.value = false;
   }
+}
+
+async function onVersionBaseSelected(row) {
+  compareMode.value = "version";
+  await prepareVersionCompare(row.id, row);
+}
+
+async function applyCompareRouteQuery() {
+  const mode = route.query.mode;
+  const documentId = route.query.documentId;
+  if (mode !== "version" || typeof documentId !== "string" || !documentId) {
+    return;
+  }
+
+  const nextQuery = { ...route.query };
+  delete nextQuery.mode;
+  delete nextQuery.documentId;
+  router.replace({ query: nextQuery });
+
+  compareMode.value = "version";
+  await prepareVersionCompare(documentId);
 }
 
 function onVersionCheckUpdate(ids) {
@@ -961,7 +987,15 @@ function onCompareKeydown(e) {
 
 onMounted(() => {
   window.addEventListener("keydown", onCompareKeydown);
+  void applyCompareRouteQuery();
 });
+
+watch(
+  () => [route.query.mode, route.query.documentId],
+  () => {
+    void applyCompareRouteQuery();
+  }
+);
 
 async function runSearch() {
   if (!targetDoc.value?.id || !searchQuery.value.trim()) return;
@@ -1392,7 +1426,7 @@ async function scrollToDiffItem(d) {
             >
               <n-space align="center" :size="6">
                 <n-tag size="tiny" type="info">{{
-                  h.source === "knowflow" ? "向量" : "关键词"
+                  h.source === "knowflow" ? "智能" : "全文"
                 }}</n-tag>
                 <n-tag v-if="hitPage(h) > 0" size="tiny" :bordered="false">P{{ hitPage(h) }}</n-tag>
                 <n-text depth="3">得分 {{ h.score?.toFixed?.(2) ?? h.score }}</n-text>

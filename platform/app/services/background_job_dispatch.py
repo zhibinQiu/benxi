@@ -1,4 +1,11 @@
-"""后台重任务统一调度：优先 Celery 队列，不可用时回落到有界线程池。"""
+"""后台重任务统一调度：优先 Celery 队列，不可用时回落到有界线程池。
+
+调度策略：
+- ``dispatch_*`` 为各 Job 类型的唯一入口；创建 Job 后只调对应 dispatch，不在 service 内
+  直接 ``threading.Thread`` 或 ``celery.delay``。
+- PageIndex 索引任务强制进程内执行（``job_payload_uses_pageindex``），因建树依赖本机
+  工作区与 LLM 配置，远程 Celery Worker 可能版本不一致或缺少 pageindex 包。
+"""
 
 from __future__ import annotations
 
@@ -38,15 +45,38 @@ def submit_light_background(name: str, fn: Callable, /, *args, **kwargs) -> None
 
 
 def dispatch_document_index_job(job_id: uuid.UUID) -> None:
-    from workers.tasks.platform_jobs import run_document_index_job_task
+    """文档索引 / 重新索引 Job 调度。
 
-    if _try_celery(
-        run_document_index_job_task,
-        [str(job_id)],
-        countdown=0,
-        label=f"document-index-{job_id}",
-    ):
-        return
+    实现思路：读 Job payload → PageIndex 则跳过 Celery，走 ``submit_background``；
+    否则优先 Celery Worker，失败再回落线程池。与 ``knowledge_sync_job_service``
+    中 ``run_document_knowledge_index_job`` 配合完成实际索引逻辑。
+    """
+    from app.database import SessionLocal
+    from app.models.job import Job
+    from app.services.knowledge_parser_service import job_payload_uses_pageindex
+
+    run_inprocess = False
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if job:
+            payload = job.payload if isinstance(job.payload, dict) else {}
+            if job_payload_uses_pageindex(payload):
+                # PageIndex 在本机建树，避免远程旧版 Celery Worker 抢任务
+                run_inprocess = True
+    finally:
+        db.close()
+
+    if not run_inprocess:
+        from workers.tasks.platform_jobs import run_document_index_job_task
+
+        if _try_celery(
+            run_document_index_job_task,
+            [str(job_id)],
+            countdown=0,
+            label=f"document-index-{job_id}",
+        ):
+            return
     from app.services.knowledge_sync_job_service import run_document_knowledge_index_job
 
     submit_background(

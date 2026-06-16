@@ -199,4 +199,6 @@ CLAUDE.md
 /data/
 /images/
 /backups/
-.envplatform/.env.local-backup-*
+platform/.env.local-backup-*
+platform/logs/tmp*.json
+platform/.run/pageindex/

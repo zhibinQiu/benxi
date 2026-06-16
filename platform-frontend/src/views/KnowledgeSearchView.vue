@@ -106,9 +106,6 @@ function resetSearch() {
       </aside>
 
       <main class="knowledge-search-page__main">
-        <p class="knowledge-search-page__engine-hint">
-          {{ t("knowledgeSearch.indexEngineHint") }}
-        </p>
         <KnowledgeSearchPanel
           :key="panelKey"
           class="knowledge-search-page__panel"
@@ -155,14 +152,6 @@ function resetSearch() {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.knowledge-search-page__engine-hint {
-  margin: 0;
-  padding: 10px 16px 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--platform-text-secondary, rgba(255, 255, 255, 0.62));
 }
 
 .knowledge-search-page__panel {

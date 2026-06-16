@@ -95,10 +95,10 @@ _FINISHED_STATUSES = (
 def _cancel_pdf2zh_remote(pdf2zh_id: str) -> None:
     import httpx
 
-    from app.integrations.pdf2zh_client import pdf2zh_base_url
+    from app.integrations.pdf2zh_client import pdf2zh_sync_client
 
     try:
-        with httpx.Client(base_url=pdf2zh_base_url(), timeout=15.0) as client:
+        with pdf2zh_sync_client(timeout_sec=15.0) as client:
             client.delete(f"/api/jobs/{pdf2zh_id}")
     except Exception:
         pass

@@ -96,10 +96,8 @@ const favoriteActiveKey = computed(() => {
   return null;
 });
 
-onMounted(async () => {
-  await loadUser();
-  loadSystemFeatures();
-  loadMenuSettings();
+onMounted(() => {
+  Promise.allSettled([loadUser(), loadSystemFeatures(), loadMenuSettings()]);
 });
 
 const showUserAdmin = computed(() => hasPerm("admin.user"));
@@ -204,9 +202,6 @@ const isSubsystemPage = computed(() =>
 const activeKey = computed(() => {
   if (route.name === "document-detail") return "documents";
   if (favoriteActiveKey.value) return favoriteActiveKey.value;
-  if (route.name === "knowledge-qa") {
-    return "system-functions";
-  }
   if (
     route.name === "knowledge-subscriptions" ||
     route.name === "subscription-item" ||
@@ -473,7 +468,7 @@ function onMenuSelect(key) {
           ]"
         >
           <router-view v-slot="{ Component, route: viewRoute }">
-            <KeepAlive :max="10" :include="KEEP_ALIVE_VIEWS">
+            <KeepAlive :max="6" :include="KEEP_ALIVE_VIEWS">
               <component
                 :is="Component"
                 :key="routeViewKey(viewRoute)"

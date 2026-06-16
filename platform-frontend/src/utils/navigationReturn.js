@@ -8,6 +8,7 @@ export const VALID_RETURN_ROUTE_NAMES = new Set([
   "ai-home",
   "system-functions",
   "documents",
+  "document-detail",
   "knowledge-subscriptions",
   "knowledge-graph",
   "knowledge-search",

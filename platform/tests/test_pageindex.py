@@ -30,18 +30,20 @@ def test_pageindex_supported_formats():
     assert is_pageindex_supported_file("报告.pdf")
     assert is_pageindex_supported_file("说明.docx")
     assert is_pageindex_supported_file("notes.txt")
+    assert is_pageindex_supported_file("report", "application/pdf")
+    assert is_pageindex_supported_file(
+        "document",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    assert is_pageindex_supported_file("notes", "text/plain")
     assert not is_pageindex_supported_file("data.xlsx")
     assert "word" in pageindex_supported_formats()
     assert "txt" in pageindex_supported_formats()
 
 
-def test_prepare_pageindex_index_path_txt_to_pdf(monkeypatch):
+def test_prepare_pageindex_index_path_txt_prefers_md():
     from app.integrations.pageindex_bridge import prepare_pageindex_index_path
 
-    monkeypatch.setattr(
-        "app.integrations.html_document_export.convert_file_bytes_to_pdf_for_citation",
-        lambda name, content, mime, **kw: ("notes.pdf", b"%PDF-fake", "application/pdf"),
-    )
     path, cleanup = prepare_pageindex_index_path(
         content=b"hello world",
         file_name="notes.txt",
@@ -49,7 +51,33 @@ def test_prepare_pageindex_index_path_txt_to_pdf(monkeypatch):
         title="Notes",
     )
     try:
-        assert path.suffix.lower() == ".pdf"
+        assert path.suffix.lower() == ".md"
+        assert path in cleanup
+        assert b"hello world" in path.read_bytes()
+    finally:
+        for p in cleanup:
+            p.unlink(missing_ok=True)
+
+
+def test_prepare_pageindex_index_path_docx_to_pdf():
+    import io
+
+    from docx import Document
+
+    from app.integrations.pageindex_bridge import prepare_pageindex_index_path
+
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_paragraph("PageIndex Word 索引测试正文。" * 8)
+    doc.save(buf)
+    path, cleanup = prepare_pageindex_index_path(
+        content=buf.getvalue(),
+        file_name="report.docx",
+        mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        title="报告",
+    )
+    try:
+        assert path.suffix.lower() == ".md"
         assert path in cleanup
     finally:
         for p in cleanup:
@@ -61,6 +89,10 @@ def test_pageindex_parser_option_listed():
     ids = {item["id"] for item in data["chunk_methods"]}
     assert "pageindex" in ids
     assert normalize_parser_id("pageindex") == "pageindex"
+    from app.services.knowledge_parser_service import is_pageindex_parser
+
+    assert is_pageindex_parser("pageindex")
+    assert not is_pageindex_parser("naive")
 
 
 def test_pageindex_tree_utils():
@@ -80,8 +112,9 @@ def test_pageindex_tree_utils():
 
 
 def test_retrieval_workflow_title_modes():
-    assert retrieval_workflow_title("pageindex_tree") == "PageIndex 树搜索"
-    assert retrieval_workflow_title("mixed") == "PageIndex 树搜索 + 向量检索"
+    assert retrieval_workflow_title("pageindex_tree") == "正在检索相关文档"
+    assert retrieval_workflow_title("hybrid") == "正在检索相关文档"
+    assert retrieval_workflow_title("mixed") == "正在检索相关文档"
     assert "检索" in retrieval_workflow_title("none")
 
 

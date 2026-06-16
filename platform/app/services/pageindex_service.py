@@ -1,4 +1,13 @@
-"""PageIndex 实验性索引与树搜索检索（独立于 KnowFlow 向量库）。"""
+"""PageIndex 树形索引与知识检索集成（独立于 KnowFlow 向量库）。
+
+职责：
+- 本地 workspace 建树（``execute_pageindex_reindex``）
+- 按文档选择检索后端（``effective_retrieval_engine``）
+- 树搜索问答片段（供 ``knowledge_qa_service`` 调用）
+
+栈启用检查复用 ``knowledge_parser_service.assert_index_stack_ready``，
+不在此重复 ``pageindex_enabled`` 判断逻辑。详见 knowledge-implementation.md §4.3。
+"""
 
 from __future__ import annotations
 
@@ -6,30 +15,24 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.exceptions import bad_request, forbidden, not_found
 from app.core.permissions import PermissionLevel
-from app.integrations.deepseek_client import is_configured, resolve_credentials
+from app.integrations.deepseek_client import is_configured
 from app.integrations.pageindex_bridge import (
-    PAGEINDEX_SUPPORTED_SUFFIXES,
-    build_pageindex_client,
     count_tree_nodes,
     create_node_mapping,
     index_file_with_pageindex,
     is_pageindex_supported_file,
     load_pageindex_doc,
-    pageindex_import_error,
     pageindex_package_available,
-    pageindex_supported_formats,
     prepare_pageindex_index_path,
     remove_fields,
 )
@@ -42,7 +45,6 @@ from app.services.ragflow_version_link_service import resolve_index_link
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_SUFFIXES = PAGEINDEX_SUPPORTED_SUFFIXES  # re-export for tests
 _JSON_BLOCK_RE = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
 
 _TREE_SEARCH_PROMPT = """\
@@ -60,18 +62,6 @@ _TREE_SEARCH_PROMPT = """\
 }}
 """
 
-_ANSWER_PROMPT = """\
-根据下列检索到的文档片段回答问题。仅依据片段内容，使用简体中文，条理清晰。
-
-问题：{question}
-
-片段：
-{context}
-
-若片段不足以回答，请明确说明。
-"""
-
-
 def _platform_dir() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -85,32 +75,6 @@ def pageindex_workspace_dir() -> Path:
         path = _platform_dir() / ".run" / "pageindex"
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def get_meta() -> dict:
-    settings = get_settings()
-    ws = pageindex_workspace_dir()
-    hints: list[str] = []
-    if not settings.pageindex_enabled:
-        hints.append("PageIndex 功能已在配置中关闭")
-    if not pageindex_package_available():
-        err = pageindex_import_error()
-        hints.append(
-            "未安装自托管 PageIndex，索引不可用。"
-            "执行：pip install -e ./third_party/pageindex-upstream"
-        )
-        if err:
-            hints.append(f"导入错误：{err[:200]}")
-    if not is_configured():
-        hints.append("语言模型未配置，树搜索检索不可用")
-    return {
-        "enabled": bool(settings.pageindex_enabled),
-        "package_available": pageindex_package_available(),
-        "llm_configured": is_configured(),
-        "workspace_dir": str(ws),
-        "supported_formats": pageindex_supported_formats(),
-        "hint": "；".join(hints) if hints else None,
-    }
 
 
 def get_version_link_by_version_id(
@@ -180,6 +144,8 @@ def batch_pageindex_links_by_document(
 
 
 def pageindex_index_meta(link: PageindexVersionLink | None) -> dict | None:
+    from app.services.knowledge_parser_service import PARSER_PAGEINDEX
+
     if not link:
         return None
     status = "已索引" if link.index_completed_at else "索引中"
@@ -189,15 +155,15 @@ def pageindex_index_meta(link: PageindexVersionLink | None) -> dict | None:
         "knowledge_synced": bool(link.index_completed_at),
         "parse_status": status,
         "parse_progress": None,
-        "parse_message": link.error_message or "PageIndex 树形索引（实验）",
+        "parse_message": link.error_message or "已建立文档索引",
         "chunk_count": link.node_count,
         "ragflow_document_id": None,
         "indexed_version_id": str(link.platform_version_id)
         if link.platform_version_id
         else None,
         "indexed_version_no": link.version_no,
-        "index_engine": "pageindex",
-        "parser_id": "pageindex",
+        "index_engine": PARSER_PAGEINDEX,
+        "parser_id": PARSER_PAGEINDEX,
     }
 
 
@@ -271,15 +237,6 @@ def partition_documents_by_retrieval_engine(
     return pi_docs, kf_docs, skipped
 
 
-def _assert_pageindex_enabled() -> None:
-    if not get_settings().pageindex_enabled:
-        raise bad_request("PageIndex 功能未启用")
-
-
-def _supported_file_name(file_name: str) -> bool:
-    return is_pageindex_supported_file(file_name)
-
-
 def _upsert_version_link(
     db: Session,
     *,
@@ -326,15 +283,16 @@ def execute_pageindex_reindex(
 ) -> dict:
     """为指定版本构建 PageIndex 树形索引（不经过 KnowFlow）。"""
     from app.services.documents.content import read_document_file_bytes
+    from app.services.knowledge_parser_service import (
+        PARSER_PAGEINDEX,
+        assert_index_stack_ready,
+    )
 
-    _assert_pageindex_enabled()
+    assert_index_stack_ready(PARSER_PAGEINDEX)
     if not pageindex_package_available():
-        raise bad_request(
-            "未安装自托管 PageIndex。请在 platform 目录执行："
-            "pip install -e ./third_party/pageindex-upstream"
-        )
+        raise bad_request("文档索引服务未就绪，请联系管理员")
     if not is_configured():
-        raise bad_request("语言模型未配置，无法构建 PageIndex 索引")
+        raise bad_request("语言模型未配置，无法建立文档索引，请联系管理员")
 
     doc = get_document(db, document_id)
     if not doc or doc.deleted_at:
@@ -355,9 +313,11 @@ def execute_pageindex_reindex(
         raise forbidden()
 
     file_name = version.file_name or "document"
-    if not _supported_file_name(file_name):
+    mime = version.mime_type or ""
+    if not is_pageindex_supported_file(file_name, mime):
         raise bad_request(
-            "PageIndex 实验索引支持 PDF、Markdown、Word（.doc/.docx）与纯文本（.txt）"
+            "该格式暂不支持索引。请使用 PDF、Markdown、Word（.doc/.docx）或纯文本（.txt），"
+            "并确认文件扩展名正确。"
         )
 
     content, _, mime = read_document_file_bytes(db, user, doc, version_id=version.id)
@@ -393,11 +353,11 @@ def execute_pageindex_reindex(
             "document_id": str(document_id),
             "version_id": str(version.id),
             "version_no": version.version_no,
-            "parser_id": "pageindex",
-            "index_engine": "pageindex",
+            "parser_id": PARSER_PAGEINDEX,
+            "index_engine": PARSER_PAGEINDEX,
             "pageindex_doc_id": link.pageindex_doc_id,
             "node_count": node_count,
-            "message": "PageIndex 树形索引已完成",
+            "message": "文档索引已完成",
         }
     except Exception as exc:
         logger.exception("PageIndex 索引失败 doc=%s", document_id)
@@ -412,7 +372,7 @@ def execute_pageindex_reindex(
             error_message=str(exc)[:500],
             completed=False,
         )
-        raise bad_request(f"PageIndex 索引失败：{exc}") from exc
+        raise bad_request(f"文档索引失败：{exc}") from exc
     finally:
         for path in temp_paths:
             try:
@@ -435,77 +395,20 @@ def _parse_tree_search_json(raw: str) -> dict:
 
 
 def _call_llm_sync(*, system: str, user_content: str, temperature: float = 0.2) -> str:
-    api_key, base_url, model = resolve_credentials()
-    settings = get_settings()
+    from app.integrations.deepseek_client import chat_completion_sync
+
     messages = []
     if system.strip():
         messages.append({"role": "system", "content": system})
-    messages.append(
-        {
-            "role": "user",
-            "content": user_content[: settings.deepseek_max_chars],
-        }
+    messages.append({"role": "user", "content": user_content})
+    content = chat_completion_sync(
+        messages=messages,
+        temperature=temperature,
+        timeout=120.0,
     )
-    with httpx.Client(timeout=120.0) as client:
-        resp = client.post(
-            f"{base_url.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return (
-            data.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
-        )
-
-
-async def _call_llm_stream(
-    *, system: str, user_content: str, temperature: float = 0.2
-) -> AsyncIterator[str]:
-    api_key, base_url, model = resolve_credentials()
-    settings = get_settings()
-    messages = []
-    if system.strip():
-        messages.append({"role": "system", "content": system})
-    messages.append(
-        {
-            "role": "user",
-            "content": user_content[: settings.deepseek_max_chars],
-        }
-    )
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        async with client.stream(
-            "POST",
-            f"{base_url.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "stream": True,
-            },
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                payload = line[5:].strip()
-                if not payload or payload == "[DONE]":
-                    continue
-                try:
-                    chunk = json.loads(payload)
-                except json.JSONDecodeError:
-                    continue
-                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                if delta:
-                    yield delta
+    if not content:
+        raise RuntimeError("语言模型未返回有效内容")
+    return content
 
 
 def _node_page(node: dict) -> int | None:
@@ -514,31 +417,6 @@ def _node_page(node: dict) -> int | None:
         if isinstance(value, int):
             return value
     return None
-
-
-def _collect_context_for_nodes(tree: Any, node_ids: list[str]) -> tuple[str, list[dict]]:
-    mapping = create_node_mapping(tree)
-    parts: list[str] = []
-    nodes_out: list[dict] = []
-    for node_id in node_ids:
-        node = mapping.get(node_id)
-        if not node:
-            continue
-        title = (node.get("title") or "").strip()
-        text = (node.get("text") or node.get("summary") or "").strip()
-        if not text:
-            continue
-        header = title or f"节点 {node_id}"
-        parts.append(f"## {header}\n\n{text}")
-        nodes_out.append(
-            {
-                "node_id": node_id,
-                "title": title or None,
-                "page": _node_page(node),
-                "snippet": text[:400],
-            }
-        )
-    return "\n\n".join(parts), nodes_out
 
 
 def _tree_search_single_document(
@@ -612,170 +490,9 @@ def retrieve_pageindex_hits_for_qa(
                 "anchor_json": anchor,
                 "node_id": node_id,
                 "section_title": title or None,
+                "preview_available": True,
             }
-            if page:
-                hit["preview_available"] = True
             hits.append(hit)
             if len(hits) >= limit:
                 return hits[:limit]
     return hits[:limit]
-
-
-def _resolve_search_targets(
-    db: Session,
-    user: User,
-    document_ids: list[uuid.UUID],
-) -> list[tuple[Document, PageindexVersionLink]]:
-    docs = validate_document_scope(
-        db,
-        user,
-        document_ids,
-        min_count=1,
-        max_count=5,
-        required_level=PermissionLevel.query.value,
-        allow_index_only=True,
-    )
-    targets: list[tuple[Document, PageindexVersionLink]] = []
-    workspace = pageindex_workspace_dir()
-    for doc in docs:
-        link = get_ready_link_for_document(db, doc)
-        if not link or not link.index_completed_at or not link.pageindex_doc_id:
-            raise bad_request(f"文档「{doc.title or doc.id}」尚未完成 PageIndex 索引")
-        if not load_pageindex_doc(workspace, link.pageindex_doc_id):
-            raise bad_request(f"文档「{doc.title or doc.id}」的 PageIndex 索引文件缺失，请重新索引")
-        targets.append((doc, link))
-    return targets
-
-
-def search_with_pageindex(
-    db: Session,
-    user: User,
-    *,
-    question: str,
-    document_ids: list[str],
-) -> dict:
-    _assert_pageindex_enabled()
-    if not is_configured():
-        raise bad_request("语言模型未配置，无法进行 PageIndex 树搜索")
-
-    question = question.strip()
-    if not question:
-        raise bad_request("问题不能为空")
-
-    doc_uuids = [uuid.UUID(x) for x in document_ids]
-    targets = _resolve_search_targets(db, user, doc_uuids)
-    workspace = pageindex_workspace_dir()
-
-    all_citations: list[dict] = []
-    contexts: list[str] = []
-    thinking_parts: list[str] = []
-    node_ids_all: list[str] = []
-
-    for doc, link in targets:
-        stored = load_pageindex_doc(workspace, link.pageindex_doc_id) or {}
-        structure = stored.get("structure") or []
-        node_list, thinking = _tree_search_single_document(structure, question)
-        if thinking:
-            thinking_parts.append(f"【{doc.title or doc.id}】{thinking}")
-        node_ids_all.extend(node_list)
-        context, nodes = _collect_context_for_nodes(structure, node_list)
-        if context:
-            contexts.append(f"### 文档：{doc.title or doc.id}\n\n{context}")
-        for idx, node in enumerate(nodes, start=len(all_citations) + 1):
-            all_citations.append(
-                {
-                    "index": idx,
-                    "document_id": str(doc.id),
-                    "document_title": doc.title or "",
-                    "node_id": node.get("node_id"),
-                    "title": node.get("title"),
-                    "page": node.get("page"),
-                    "snippet": node.get("snippet"),
-                }
-            )
-
-    merged_context = "\n\n".join(contexts).strip()
-    if not merged_context:
-        return {
-            "answer": "在 PageIndex 树结构中未定位到与问题相关的章节，请换种问法或扩大文档范围。",
-            "thinking": "\n".join(thinking_parts) or None,
-            "retrieval_mode": "pageindex_tree",
-            "citations": [],
-            "node_ids": node_ids_all,
-        }
-
-    answer = _call_llm_sync(
-        system="你是企业文档问答助手。",
-        user_content=_ANSWER_PROMPT.format(question=question, context=merged_context),
-        temperature=0.2,
-    )
-    return {
-        "answer": answer,
-        "thinking": "\n".join(thinking_parts) or None,
-        "retrieval_mode": "pageindex_tree",
-        "citations": all_citations,
-        "node_ids": node_ids_all,
-    }
-
-
-async def iter_pageindex_search_stream(
-    db: Session,
-    user: User,
-    *,
-    question: str,
-    document_ids: list[str],
-) -> AsyncIterator[str]:
-    try:
-        result = search_with_pageindex(
-            db, user, question=question, document_ids=document_ids
-        )
-    except Exception as exc:
-        from app.core.exceptions import HTTPException
-        from app.core.user_messages import sanitize_user_message
-
-        msg = sanitize_user_message(str(exc), fallback="检索失败")
-        if isinstance(exc, HTTPException):
-            detail = exc.detail
-            if isinstance(detail, dict):
-                msg = str(detail.get("message") or msg)
-            else:
-                msg = str(detail)
-        yield json.dumps({"error": msg}, ensure_ascii=False)
-        return
-
-    yield json.dumps(
-        {
-            "workflow": {
-                "phase": "node_started",
-                "title": "PageIndex 树搜索完成",
-            }
-        },
-        ensure_ascii=False,
-    )
-    if result.get("thinking"):
-        yield json.dumps(
-            {"workflow": {"phase": "node_started", "title": "推理定位相关章节"}},
-            ensure_ascii=False,
-        )
-    citations = result.get("citations") or []
-    if citations:
-        yield json.dumps({"citations": citations}, ensure_ascii=False)
-
-    answer_prompt = result.get("answer") or ""
-    # 已在 search_with_pageindex 生成完整答案；为兼容面板仍按 delta 推送
-    chunk_size = 48
-    for i in range(0, len(answer_prompt), chunk_size):
-        yield json.dumps({"delta": answer_prompt[i : i + chunk_size]}, ensure_ascii=False)
-
-    yield json.dumps(
-        {
-            "message": {
-                "role": "assistant",
-                "content": answer_prompt,
-                "citations": citations,
-            },
-            "retrieval_mode": result.get("retrieval_mode"),
-            "thinking": result.get("thinking"),
-        },
-        ensure_ascii=False,
-    )

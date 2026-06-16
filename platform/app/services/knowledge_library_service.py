@@ -14,7 +14,8 @@ from app.config import get_settings
 from app.core.document_scope import can_query_document
 from app.core.exceptions import bad_request, forbidden, not_found
 from app.core.permissions import user_is_superuser
-from app.integrations.knowflow_client import get_knowflow_client_for_user, knowflow_stack_reachable
+from app.domains.knowledge import knowledge
+from app.integrations.knowflow_client import get_knowflow_client_for_user
 from app.integrations.ragflow_client import RagflowClient, RagflowError
 from app.core.document_scope import ORG_SCOPES
 from app.models.document import Document, DocumentLibraryFolder
@@ -48,6 +49,7 @@ from app.services.library_folder_service import (
     VIRTUAL_UNCATEGORIZED_ID,
 )
 from app.services.document_library_align_service import document_matches_dataset_link
+from app.services.document_library_align_service import document_matches_library_unit
 from app.services.ragflow_scope_service import (
     _registry_for_dataset_id,
     _scope_registries_for_user,
@@ -62,11 +64,6 @@ _SCOPE_OUT = {
     REG_DEPARTMENT: "department",
     REG_TEAM: "team",
 }
-
-
-def _knowflow_ready() -> bool:
-    settings = get_settings()
-    return bool(settings.knowflow_enabled and knowflow_stack_reachable())
 
 
 def _require_dataset_access(db: Session, user: User, dataset_id: str) -> None:
@@ -185,39 +182,21 @@ def _collect_dataset_document_rows(
     if shared_doc_ids is None:
         shared_doc_ids = set()
 
-    links = list(
-        db.scalars(
-            select(RagflowDocumentLink).where(RagflowDocumentLink.dataset_id == dataset_id)
-        ).all()
-    )
+    links = _links_for_dataset(db, dataset_id)
+    docs_by_id = _documents_by_link_id(db, links)
+    dataset_ctx = _resolve_dataset_scope_context(db, dataset_id)
     rows: list[dict] = []
     for link in links:
-        doc = get_document(db, link.platform_document_id)
-        if not doc or doc.deleted_at:
+        doc = docs_by_id.get(link.platform_document_id)
+        if not doc:
             continue
-        if not document_matches_dataset_link(db, doc, dataset_id):
+        if not _document_matches_dataset_context(db, doc, dataset_ctx):
             continue
         if not can_query_document(db, user, doc):
             continue
-        title = (doc.title or "").strip() or "未命名文档"
-        rows.append(
-            {
-                "document_id": str(doc.id),
-                "title": title,
-                "scope": doc.scope or "personal",
-                "file_name": link.file_name or doc.file_name or "",
-                "folder_id": str(doc.folder_id) if doc.folder_id else None,
-                "ragflow_document_id": link.ragflow_document_id,
-                "knowledge_synced": bool(link.ragflow_document_id),
-                "synced_at": (
-                    link.updated_at.isoformat() if link.updated_at else None
-                ),
-                "chunk_count": None,
-                "parse_status": None,
-            }
-        )
+        rows.append(_row_from_link_document(link, doc))
 
-    _apply_unified_index_meta_to_rows(db, user, rows)
+    _apply_unified_index_meta_to_rows(db, user, rows, documents=list(docs_by_id.values()))
     rows.sort(key=lambda r: (r.get("synced_at") or ""), reverse=True)
     return rows
 
@@ -238,6 +217,51 @@ def _document_matches_folder_filter(
     if folder_id is not None:
         return doc.folder_id == folder_id
     return True
+
+
+def _links_for_dataset(db: Session, dataset_id: str) -> list[RagflowDocumentLink]:
+    return list(
+        db.scalars(
+            select(RagflowDocumentLink).where(RagflowDocumentLink.dataset_id == dataset_id)
+        ).all()
+    )
+
+
+def _documents_by_link_id(
+    db: Session, links: list[RagflowDocumentLink]
+) -> dict[uuid.UUID, Document]:
+    ids = {link.platform_document_id for link in links if link.platform_document_id}
+    if not ids:
+        return {}
+    docs = db.scalars(select(Document).where(Document.id.in_(ids))).all()
+    return {doc.id: doc for doc in docs if doc.deleted_at is None}
+
+
+def _document_matches_dataset_context(db: Session, doc: Document, ctx: dict | None) -> bool:
+    if not ctx or not ctx.get("scope"):
+        return False
+    return document_matches_library_unit(
+        db,
+        doc,
+        scope=ctx["scope"],
+        dept_id=ctx.get("dept_id"),
+        owner_id=ctx.get("owner_id"),
+    )
+
+
+def _row_from_link_document(link: RagflowDocumentLink, doc: Document) -> dict:
+    return {
+        "document_id": str(doc.id),
+        "title": (doc.title or "").strip() or "未命名文档",
+        "scope": doc.scope or "personal",
+        "file_name": link.file_name or doc.file_name or "",
+        "folder_id": str(doc.folder_id) if doc.folder_id else None,
+        "ragflow_document_id": link.ragflow_document_id,
+        "knowledge_synced": bool(link.ragflow_document_id),
+        "synced_at": link.updated_at.isoformat() if link.updated_at else None,
+        "chunk_count": None,
+        "parse_status": None,
+    }
 
 
 def _attach_folder_documents(
@@ -362,15 +386,23 @@ def _document_counts(db: Session, dataset_ids: set[str]) -> dict[str, int]:
     if not dataset_ids:
         return {}
     out: dict[str, int] = {str(ds_id): 0 for ds_id in dataset_ids}
-    for link in db.scalars(
+    links = list(db.scalars(
         select(RagflowDocumentLink).where(
             RagflowDocumentLink.dataset_id.in_(dataset_ids)
         )
-    ).all():
-        doc = get_document(db, link.platform_document_id)
-        if not doc or doc.deleted_at:
+    ).all())
+    docs_by_id = _documents_by_link_id(db, links)
+    ctx_by_dataset = {
+        str(ds_id): _resolve_dataset_scope_context(db, str(ds_id))
+        for ds_id in dataset_ids
+    }
+    for link in links:
+        doc = docs_by_id.get(link.platform_document_id)
+        if not doc:
             continue
-        if not document_matches_dataset_link(db, doc, link.dataset_id):
+        if not _document_matches_dataset_context(
+            db, doc, ctx_by_dataset.get(str(link.dataset_id))
+        ):
             continue
         ds = str(link.dataset_id)
         out[ds] = out.get(ds, 0) + 1
@@ -412,7 +444,7 @@ def list_knowledge_libraries(db: Session, user: User) -> dict:
 
     return {
         "items": items,
-        "knowflow_enabled": _knowflow_ready(),
+        "knowflow_enabled": knowledge.stack_reachable(),
     }
 
 
@@ -438,17 +470,15 @@ def list_library_documents(
     elif shared_doc_ids is None:
         shared_doc_ids = set()
 
-    links = list(
-        db.scalars(
-            select(RagflowDocumentLink).where(RagflowDocumentLink.dataset_id == dataset_id)
-        ).all()
-    )
+    links = _links_for_dataset(db, dataset_id)
+    docs_by_id = _documents_by_link_id(db, links)
+    dataset_ctx = _resolve_dataset_scope_context(db, dataset_id)
     rows: list[dict] = []
     for link in links:
-        doc = get_document(db, link.platform_document_id)
-        if not doc or doc.deleted_at:
+        doc = docs_by_id.get(link.platform_document_id)
+        if not doc:
             continue
-        if not document_matches_dataset_link(db, doc, dataset_id):
+        if not _document_matches_dataset_context(db, doc, dataset_ctx):
             continue
         if not can_query_document(db, user, doc):
             continue
@@ -463,24 +493,9 @@ def list_library_documents(
         title = (doc.title or "").strip() or "未命名文档"
         if kw and kw not in title.lower() and kw not in (link.file_name or "").lower():
             continue
-        rows.append(
-            {
-                "document_id": str(doc.id),
-                "title": title,
-                "scope": doc.scope or "personal",
-                "file_name": link.file_name or doc.file_name or "",
-                "folder_id": str(doc.folder_id) if doc.folder_id else None,
-                "ragflow_document_id": link.ragflow_document_id,
-                "knowledge_synced": bool(link.ragflow_document_id),
-                "synced_at": (
-                    link.updated_at.isoformat() if link.updated_at else None
-                ),
-                "chunk_count": None,
-                "parse_status": None,
-            }
-        )
+        rows.append(_row_from_link_document(link, doc))
 
-    _apply_unified_index_meta_to_rows(db, user, rows)
+    _apply_unified_index_meta_to_rows(db, user, rows, documents=list(docs_by_id.values()))
 
     rows.sort(key=lambda r: (r.get("synced_at") or ""), reverse=True)
     total = len(rows)
@@ -490,25 +505,39 @@ def list_library_documents(
 
 
 def _apply_unified_index_meta_to_rows(
-    db: Session, user: User, rows: list[dict]
+    db: Session,
+    user: User,
+    rows: list[dict],
+    *,
+    documents: list[Document] | None = None,
 ) -> None:
     """库列表与检索树共用 document_index_service 读取层。"""
     if not rows:
         return
     from app.services.document_index_service import enrich_knowledge_document_rows
-    from app.services.document_service import get_document
 
-    documents = []
-    for row in rows:
-        raw_id = row.get("document_id")
-        if not raw_id:
-            continue
-        try:
-            doc = get_document(db, uuid.UUID(str(raw_id)))
-        except (TypeError, ValueError):
-            continue
-        if doc and doc.deleted_at is None:
-            documents.append(doc)
+    if documents is None:
+        ids: set[uuid.UUID] = set()
+        for row in rows:
+            raw_id = row.get("document_id")
+            if not raw_id:
+                continue
+            try:
+                ids.add(uuid.UUID(str(raw_id)))
+            except (TypeError, ValueError):
+                continue
+        documents = (
+            list(
+                db.scalars(
+                    select(Document).where(
+                        Document.id.in_(ids),
+                        Document.deleted_at.is_(None),
+                    )
+                ).all()
+            )
+            if ids
+            else []
+        )
     enrich_knowledge_document_rows(db, user, rows, documents)
 
 
@@ -516,7 +545,7 @@ def _enrich_ragflow_doc_meta(
     db: Session, user: User, dataset_id: str, rows: list[dict]
 ) -> None:
     """从 KnowFlow 补充解析状态（run/chunk_num），便于判断是否需要重新解析。"""
-    if not rows or not _knowflow_ready():
+    if not rows or not knowledge.stack_reachable():
         return
     rag_ids = [str(r.get("ragflow_document_id") or "") for r in rows]
     rag_ids = [x for x in rag_ids if x]
@@ -566,27 +595,19 @@ def summarize_ragflow_progress_msg(msg: str | None, *, max_len: int = 500) -> st
             "403" in detail and "Error code" in detail
         ):
             return (
-                "图表增强（视觉模型 IMAGE2TEXT）调用失败：API 返回 403，"
-                "模型已停用或未开通（Model disabled）。"
-                "请在「资源管理」配置视觉模型（IMAGE2TEXT）并保存同步，"
-                "或在 KnowFlow 模型配置中更换可用的视觉模型。"
+                "文档解析失败：图表识别服务暂不可用，请更换识别方式后重试，或联系管理员。"
             )[:max_len]
         if "embedding model" in detail.lower() or "fail to bind" in detail.lower():
             return (
-                "向量嵌入模型未绑定或不可用（Fail to bind embedding model）。"
-                "请在「资源管理 → 模型配置」保存 Embedding 模型并同步到 KnowFlow；"
-                "若已配置仍失败，请确认 KnowFlow/RAGFlow 容器可访问 Embedding API（如 api.siliconflow.cn）。"
-                "然后在文档详情 → 知识索引中重试。"
+                "文档索引失败：检索服务未就绪，请在文档详情重新索引，或联系管理员。"
             )[:max_len]
         if detail.strip().endswith("Not Found") and any(
             "fail to bind" in ln.lower() for ln in error_lines
         ):
             return (
-                "向量嵌入 API 返回 404（Not Found），多为 KnowFlow 内 api_base 配置不兼容"
-                "或解析容器无法访问外网 Embedding 服务。"
-                "请在「资源管理 → 模型配置」重新保存并同步，或检查服务器出站网络。"
+                "文档索引失败：检索服务连接异常，请稍后重试或联系管理员。"
             )[:max_len]
-        return detail[:max_len]
+        return "文档解析出现问题，请稍后重试或联系管理员。"[:max_len]
     tail = "\n".join(lines[-3:])
     if len(tail) <= max_len:
         return tail
@@ -765,7 +786,7 @@ def fetch_ragflow_doc_meta_map(
 ) -> tuple[dict[str, dict], bool]:
     """按 ragflow 文档 id 拉取 run/chunk 元数据（按 id 直查 + 短 TTL 缓存）。"""
     wanted = {str(x).strip() for x in ragflow_ids if x}
-    if not wanted or not _knowflow_ready():
+    if not wanted or not knowledge.stack_reachable():
         return {}, False
 
     meta: dict[str, dict] = {}
@@ -894,15 +915,14 @@ def _chunk_list_error_message(err: RagflowError, *, dataset_missing: bool) -> st
     msg = str(err).strip()
     if dataset_missing:
         return (
-            "知识库在 KnowFlow 中已不存在（索引失效），"
-            "请在文档详情或本页点击「重新解析」重新同步。"
+            "文档索引已失效，请在文档详情点击「重新索引」。"
         )
     if "Tenant not found" in msg:
         return (
             "无法定位文档所属租户（多为历史索引与当前知识库不一致），"
             "请点击「重新解析」重新同步文档。"
         )
-    return f"无法读取切片：{msg}"
+    return f"无法读取文档片段，请稍后重试或重新索引。"
 
 
 def _normalize_chunk(raw: dict) -> dict:
@@ -960,7 +980,7 @@ def list_document_chunks(
     version_id_str = str(version.id) if version else None
     version_no = version.version_no if version else link.version_no
 
-    if not _knowflow_ready():
+    if not knowledge.stack_reachable():
         return {
             "document_id": str(document_id),
             "version_id": version_id_str,
@@ -1055,11 +1075,16 @@ def execute_document_reindex(
     document_id: uuid.UUID,
     *,
     version_id: uuid.UUID | None = None,
-    parser_id: str = "naive",
+    parser_id: str | None = None,
     layout_recognize: str | None = None,
     resync: bool = False,
 ) -> dict:
     """切换切片方法并提交重新解析（后台任务或同步 API 共用）。"""
+    from app.services.knowledge_parser_service import (
+        build_parser_config,
+        is_pageindex_parser,
+        reindex_parser_id_raw,
+    )
     from app.services.ragflow_sync_service import sync_document_to_knowflow
     from app.services.ragflow_version_link_service import (
         get_version_link_by_version_id,
@@ -1075,9 +1100,9 @@ def execute_document_reindex(
     if not version:
         raise bad_request("未找到可索引的文档版本")
 
-    from app.services.knowledge_parser_service import build_parser_config, normalize_parser_id
+    parser_id = reindex_parser_id_raw(parser_id)
 
-    if normalize_parser_id(parser_id) == "pageindex":
+    if is_pageindex_parser(parser_id):
         from app.services.pageindex_service import execute_pageindex_reindex
 
         return execute_pageindex_reindex(
@@ -1211,12 +1236,15 @@ def reindex_document(
     document_id: uuid.UUID,
     *,
     version_id: uuid.UUID | None = None,
-    parser_id: str = "naive",
+    parser_id: str | None = None,
     layout_recognize: str | None = None,
     resync: bool = False,
 ) -> dict:
     """切换切片方法并重新解析；提交后台任务，进度在「后台任务」查看。"""
-    from app.domains.knowledge.gateway import knowledge
+    from app.services.knowledge_parser_service import (
+        assert_index_stack_ready,
+        reindex_parser_id_raw,
+    )
     from app.services.knowledge_sync_job_service import enqueue_document_reindex
     from app.services.ragflow_version_link_service import resolve_index_link
 
@@ -1225,10 +1253,9 @@ def reindex_document(
         raise not_found()
     if not can_query_document(db, user, doc):
         raise forbidden()
-    if not knowledge.enabled():
-        raise bad_request("知识库同步未启用")
-    if not knowledge.stack_reachable():
-        raise bad_request("知识服务不可用，请稍后重试")
+
+    resolved_parser = reindex_parser_id_raw(parser_id)
+    assert_index_stack_ready(resolved_parser)
 
     _version_link, version = resolve_index_link(db, doc, version_id=version_id)
     if not version:
@@ -1239,7 +1266,7 @@ def reindex_document(
         user_id=user.id,
         document_id=document_id,
         version_id=version.id,
-        parser_id=parser_id,
+        parser_id=resolved_parser,
         layout_recognize=layout_recognize,
         resync=resync,
         document_title=doc.title,
@@ -1251,7 +1278,7 @@ def reindex_document(
         "document_id": str(document_id),
         "version_id": str(version.id),
         "version_no": version.version_no,
-        "parser_id": parser_id,
+        "parser_id": resolved_parser,
         "layout_recognize": layout_recognize,
         "queued": True,
         "knowledge_job_id": str(job.id),

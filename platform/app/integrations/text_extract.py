@@ -375,13 +375,33 @@ def _extract_docx(
         )
     try:
         doc = DocxDocument(io.BytesIO(data))
-        paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-        full = "\n\n".join(paras).strip()
+        parts: list[str] = []
+        for p in doc.paragraphs:
+            line = p.text.strip()
+            if not line:
+                continue
+            style = (getattr(p.style, "name", None) or "").lower()
+            if style.startswith("heading"):
+                level = 1
+                for ch in style.replace("heading", "").strip():
+                    if ch.isdigit():
+                        level = max(1, min(6, int(ch)))
+                        break
+                parts.append(f"{'#' * level} {line}")
+            else:
+                parts.append(line)
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+        full = "\n\n".join(parts).strip()
+        paragraphs = [p for p in parts if p]
         pages = [
             {
                 "page": 1,
                 "text": full,
-                "blocks": [{"text": t, "bbox": None} for t in paras],
+                "blocks": [{"text": t, "bbox": None} for t in paragraphs],
             }
         ]
         return ParsedDocument(

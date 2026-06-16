@@ -25,6 +25,7 @@ import {
 import {
   DownloadOutline,
   EyeOutline,
+  GitCompareOutline,
   LayersOutline,
   RefreshOutline,
   TrashOutline,
@@ -69,6 +70,7 @@ import {
   canViewDocument,
   emptyDocumentAclCaps,
 } from "../utils/documentCaps.js";
+import { MIN_COMPARE_COLS } from "../utils/compareDocument.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -120,6 +122,14 @@ const uploadedAtLabel = computed(() => {
 });
 
 const displayVersions = computed(() => doc.value?.versions || []);
+
+const uploadedVersionCount = computed(
+  () => displayVersions.value.filter((v) => v.uploaded).length
+);
+
+const canCompareVersions = computed(
+  () => canViewDoc.value && uploadedVersionCount.value >= MIN_COMPARE_COLS
+);
 
 const {
   reindexModalShow,
@@ -471,6 +481,17 @@ async function loadAclData() {
   }
 }
 
+function openVersionCompare() {
+  navigateWithReturn(
+    router,
+    {
+      name: "compare",
+      query: { mode: "version", documentId: docId },
+    },
+    route
+  );
+}
+
 async function refreshVersionHistory() {
   versionRefreshing.value = true;
   try {
@@ -770,12 +791,20 @@ onMounted(() => {
 
     <n-card title="版本历史">
       <template #header-extra>
-        <IconAction
-          label="刷新"
-          :icon="RefreshOutline"
-          :disabled="versionRefreshing || loading"
-          @click="refreshVersionHistory"
-        />
+        <n-space :size="4" align="center">
+          <IconAction
+            v-if="canCompareVersions"
+            label="对比"
+            :icon="GitCompareOutline"
+            @click="openVersionCompare"
+          />
+          <IconAction
+            label="刷新"
+            :icon="RefreshOutline"
+            :disabled="versionRefreshing || loading"
+            @click="refreshVersionHistory"
+          />
+        </n-space>
       </template>
       <n-table :single-line="false">
         <thead>
@@ -1041,18 +1070,18 @@ onMounted(() => {
   <AdminFormModal
     v-model:show="reindexModalShow"
     title="重新索引"
-    subtitle="切换解析器与分块方法；勾选「重新同步」会从存储重新上传 PDF，以修复引用截图"
+    subtitle="选择识别方式与分块策略后重新建立索引"
     width="420px"
   >
     <n-form label-placement="top" :show-require-mark="false">
-      <n-form-item label="PDF 解析器">
+      <n-form-item label="文档识别方式">
         <n-select
           v-model:value="layoutRecognize"
           :options="layoutOptions"
           :disabled="indexPolling || reparsing"
         />
       </n-form-item>
-      <n-form-item label="分块方法">
+      <n-form-item label="分块方式">
         <n-select
           v-model:value="parserId"
           :options="chunkMethodOptions"
@@ -1061,7 +1090,7 @@ onMounted(() => {
       </n-form-item>
       <n-form-item :show-label="false">
         <n-checkbox v-model:checked="reindexResync" :disabled="indexPolling || reparsing">
-          重新同步（从存储重新上传，修复引用截图）
+          重新上传原文件（可修复引用截图缺失）
         </n-checkbox>
       </n-form-item>
     </n-form>

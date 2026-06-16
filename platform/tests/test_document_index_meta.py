@@ -43,7 +43,7 @@ def test_summarize_ragflow_progress_msg_extracts_model_disabled():
     )
     out = summarize_ragflow_progress_msg(msg)
     assert out is not None
-    assert "Model disabled" in out or "403" in out
+    assert "图表识别" in out or "管理员" in out
 
 
 def test_summarize_ragflow_progress_msg_prefers_embedding_bind_error():
@@ -54,7 +54,7 @@ def test_summarize_ragflow_progress_msg_prefers_embedding_bind_error():
     )
     out = summarize_ragflow_progress_msg(msg)
     assert out is not None
-    assert "embedding" in out.lower() or "嵌入" in out
+    assert "索引" in out or "管理员" in out
 
 
 def test_transient_run_not_cached(monkeypatch):
@@ -92,7 +92,7 @@ def test_fetch_meta_overlays_mysql_run_when_cache_stale(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "app.services.knowledge_library_service._knowflow_ready",
+        "app.domains.knowledge.gateway.knowledge.stack_reachable",
         lambda: True,
     )
     monkeypatch.setattr(
@@ -173,7 +173,7 @@ def test_fetch_ragflow_doc_meta_map_falls_back_to_chunk_list():
     }
 
     with patch(
-        "app.services.knowledge_library_service._knowflow_ready",
+        "app.domains.knowledge.gateway.knowledge.stack_reachable",
         return_value=True,
     ), patch(
         "app.services.knowledge_library_service._read_ragflow_meta_cache",

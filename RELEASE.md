@@ -1,5 +1,15 @@
 # 发布说明
 
+## 4.0.4（v4.0.4）— 架构收敛、PageIndex 默认重索引与实现文档
+
+- **高内聚低耦合**：知识域统一经 `KnowledgeGateway`；解析器/索引栈规则收敛至 `knowledge_parser_service`；用户可见错误经 `user_messages`；后台 Job 调度经 `background_job_dispatch`
+- **PageIndex**：保留结构索引、树检索与引用预览；移除系统功能页独立卡片（入口在文档详情「重新索引」）；重新索引默认分块为 PageIndex（与上传默认 naive 分离）
+- **KnowFlow**：弃用前端 embed 与双份主题；保留 API、登录预热与原生知识检索页
+- **性能**：CompareView 并行拉取、KnowledgeScopeTree 软刷新、Celery worker 调优、后台任务去重
+- **LLM**：DeepSeek chat 统一封装，PageIndex / 知识问答复用
+- **文档与注释**：重写知识服务、异步任务、前端结构实现说明；核心模块补充函数实现思路 docstring
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.0.4）
+
 ## 4.0.3（v4.0.3）— 品牌统一、PageIndex 实验集成与知识检索增强
 
 - **品牌与系统功能**：产品统一为「AI 办公系统」；系统功能说明精简，AI 助理与功能分类面向通用办公；移除智碳平台 V3、智碳 AI v1 等遗留外链插件

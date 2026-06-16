@@ -270,6 +270,17 @@ def ensure_version_blocks(
     if version.file_size <= 0:
         return []
 
+    from app.models.document import Document
+
+    doc = db.get(Document, version.document_id)
+    if not doc or doc.deleted_at:
+        logger.info(
+            "版本分块跳过：文档不存在或已删除 doc=%s version=%s",
+            version.document_id,
+            version.id,
+        )
+        return []
+
     if not force:
         existing = list(
             db.scalars(
@@ -311,7 +322,11 @@ def ensure_version_blocks(
         db.add(row)
         rows.append(row)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     for row in rows:
         db.refresh(row)
     return rows

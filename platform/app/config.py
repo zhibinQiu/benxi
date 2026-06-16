@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "AI 办公系统"
-    platform_version: str = "4.0.3"
+    platform_version: str = "4.0.4"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -146,8 +146,10 @@ class Settings(BaseSettings):
     # 单文档版本 Git 仓库存储根目录（每文档一个 repo，用于 git diff 版本对比）
     document_git_repos_root: str = ""
 
-    # 知识库默认解析配置（上传同步 / 重新索引）
+    # 知识库默认解析配置（上传同步 / 自动推断）
     knowledge_default_parser_id: str = "naive"
+    # 重新索引弹窗与后台任务的默认分块方式
+    knowledge_reindex_default_parser_id: str = "pageindex"
     knowledge_default_layout_recognize: str = "DeepDOC"
     knowledge_default_chunk_token_num: int = 512
     # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，显著加快列表）
@@ -174,7 +176,7 @@ class Settings(BaseSettings):
     # 向量相似度下限，低于此的 chunk 不进入引用（KnowFlow 默认约 0.2，略提高以减少弱相关引用）
     knowledge_retrieval_similarity_threshold: float = 0.32
 
-    # PageIndex 实验性树形索引（独立于 KnowFlow；需额外 pip 安装上游包）
+    # PageIndex 树形索引（独立于 KnowFlow；文档详情「结构索引」与知识检索自动切换）
     pageindex_enabled: bool = True
     pageindex_workspace_dir: str = ""
     pageindex_model: str = ""

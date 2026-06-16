@@ -551,7 +551,7 @@ def _build_personal_scope_node(db: Session, user: User) -> dict | None:
 
 
 def _build_knowledge_scope_tree(db: Session, user: User) -> dict:
-    from app.services.knowledge_library_service import _knowflow_ready
+    from app.domains.knowledge import knowledge
 
     nodes: list[dict] = []
     for scope in LIBRARY_TAB_SCOPES:
@@ -566,7 +566,7 @@ def _build_knowledge_scope_tree(db: Session, user: User) -> dict:
 
     return {
         "items": nodes,
-        "knowflow_enabled": _knowflow_ready(),
+        "knowflow_enabled": knowledge.stack_reachable(),
     }
 
 

@@ -26,7 +26,7 @@ def test_pdf_with_text_layer_uses_deepdoc():
 
     pdf = markdown_text_to_pdf_bytes("标题", "这是一段可提取文本。" * 5)
     parser, layout = infer_parser_for_upload_file(
-        "text.pdf", "application/pdf", file_content=pdf
+        "text.pdf", "application/pdf"
     )
     assert parser == "naive"
     assert layout == "DeepDOC"

@@ -134,6 +134,36 @@ def test_normalize_converts_docx_to_pdf(monkeypatch):
     assert content.startswith(b"%PDF")
 
 
+def test_convert_docx_to_pdf_for_citation_real():
+    import io
+
+    from docx import Document
+
+    from app.integrations.html_document_export import convert_file_bytes_to_pdf_for_citation
+
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_paragraph("建设生态强企服务碳达峰行动工作计划。" * 5)
+    table = doc.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "指标"
+    table.cell(0, 1).text = "目标"
+    table.cell(1, 0).text = "碳排放"
+    table.cell(1, 1).text = "下降 10%"
+    doc.save(buf)
+    result = convert_file_bytes_to_pdf_for_citation(
+        "计划.docx",
+        buf.getvalue(),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        title="工作计划",
+    )
+    assert result is not None
+    name, pdf_bytes, mime = result
+    assert name.endswith(".pdf")
+    assert mime == "application/pdf"
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 200
+
+
 def test_knowflow_copy_lacks_page_snapshots_for_block_pdf():
     from app.integrations.html_document_export import knowflow_copy_lacks_page_snapshots
 

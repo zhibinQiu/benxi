@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from "vue-router";
 import { getToken } from "../api/client";
 import { useAuth } from "../composables/useAuth";
 import { routeMenuKey, useMenuSettings } from "../composables/useMenuSettings";
-import { warmupKnowflowForRoute } from "../composables/useKnowflowWarmup";
 
 const routes = [
   {
@@ -333,10 +332,6 @@ router.beforeEach(async (to) => {
     }
   }
   return true;
-});
-
-router.afterEach((to) => {
-  warmupKnowflowForRoute(to);
 });
 
 export default router;

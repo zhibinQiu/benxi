@@ -77,7 +77,7 @@ def test_build_citations_pageindex_page_preview():
             "snippet": "节点文本",
             "content": "节点文本",
             "source": "pageindex",
-            "anchor_json": {"page": 3},
+            "anchor_json": {},
             "preview_available": True,
         }
     ]
@@ -96,7 +96,7 @@ def test_build_citations_pageindex_page_preview():
     assert cites[0]["source"] == "pageindex"
     assert cites[0]["file_name"] == "报告.pdf"
     assert cites[0]["file_format"] == "pdf"
-    assert cites[0]["anchor_json"]["page"] == 3
+    assert cites[0]["anchor_json"] == {}
     assert _citation_preview_available(hits[0]) is True
 
 

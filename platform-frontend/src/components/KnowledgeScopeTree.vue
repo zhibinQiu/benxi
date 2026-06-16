@@ -360,7 +360,7 @@ async function loadTree() {
     applyTreeData(cached, { resetSelection: false });
     loading.value = false;
     await restoreCheckedSelection();
-    fetchTree({ background: true, refresh: true });
+    fetchTree({ background: true, refresh: false });
     return;
   }
   await fetchTree({ resetSelection: false });
@@ -394,11 +394,16 @@ onMounted(() => {
 });
 
 onActivated(() => {
-  if (!loading.value && !refreshing.value) {
-    void fetchTree({ background: true, refresh: true });
-  } else if (checkedKeys.value.length) {
-    emitSelectionForKeys(checkedKeys.value);
+  const cached = readKnowledgeScopeTreeCache();
+  if (cached?.items?.length && !treeData.value.length) {
+    applyTreeData(cached, { resetSelection: false });
+    syncSelectionAfterTreeUpdate();
   }
+  if (loading.value || refreshing.value) {
+    if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
+    return;
+  }
+  void fetchTree({ background: true, refresh: !cached });
 });
 
 onUnmounted(() => {

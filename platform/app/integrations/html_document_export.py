@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 
 from app.integrations.html_markdown import _plain_text_to_html, html_to_markdown
 
@@ -113,10 +114,17 @@ def convert_file_bytes_to_pdf_for_citation(
         try:
             parsed = extract_text_from_bytes(
                 content,
+                document_id=uuid.UUID(int=0),
                 file_name=name,
                 mime_type=mime_type or "",
             )
             text = (parsed.full_text or "").strip()
+            if not text and parsed.warning:
+                logger.debug(
+                    "引用预览提取文本为空 file=%s warning=%s",
+                    name,
+                    parsed.warning,
+                )
         except Exception as exc:
             logger.debug("引用预览提取文本失败 file=%s: %s", name, exc)
             text = None

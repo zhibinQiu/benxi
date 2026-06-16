@@ -325,6 +325,8 @@ def _maybe_fallback_plain_text_parse(
     detail: str | None,
 ) -> bool:
     """PaddleOCR 等版面识别失败时，先尝试 DeepDOC，最后才 Plain Text（Plain Text 无引用截图）。"""
+    from app.services.knowledge_parser_service import resolve_job_parser_id
+
     if _index_job_should_abort(db, job):
         return False
     payload = dict(job.payload or {})
@@ -343,7 +345,7 @@ def _maybe_fallback_plain_text_parse(
             actor,
             document,
             version_id,
-            parser_id=payload.get("parser_id") or "naive",
+            parser_id=resolve_job_parser_id(payload),
             layout_recognize="DeepDOC",
         ):
             payload["parse_deepdoc_fallback"] = True
@@ -1078,34 +1080,31 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
             return
         force = bool(payload.get("force", True))
         mode = str(payload.get("mode") or "index")
-        parser_id_raw = str(payload.get("parser_id") or "naive")
-        from app.services.knowledge_parser_service import normalize_parser_id
-
-        pageindex_mode = (
-            mode == "reindex" and normalize_parser_id(parser_id_raw) == "pageindex"
+        from app.services.knowledge_parser_service import (
+            index_stack_block_reason,
+            is_pageindex_reindex,
+            resolve_job_parser_id,
         )
+
+        resolved_parser = resolve_job_parser_id(payload)
+        pageindex_mode = is_pageindex_reindex(mode=mode, parser_id=resolved_parser)
 
         update_job_status(db, job_id, JobStatus.running.value, progress=8)
 
+        stack_reason = index_stack_block_reason(
+            payload.get("parser_id"),
+            reindex=(mode == "reindex"),
+        )
+        if stack_reason:
+            update_job_status(
+                db,
+                job_id,
+                JobStatus.failed.value,
+                error_message=stack_reason,
+            )
+            return
+
         if not pageindex_mode:
-            if not knowledge.enabled():
-                update_job_status(
-                    db,
-                    job_id,
-                    JobStatus.failed.value,
-                    error_message="知识库同步未启用",
-                )
-                return
-
-            if not knowledge.stack_reachable():
-                update_job_status(
-                    db,
-                    job_id,
-                    JobStatus.failed.value,
-                    error_message="知识服务不可用，请稍后重试",
-                )
-                return
-
             update_job_status(db, job_id, JobStatus.running.value, progress=18)
             try:
                 knowledge.user_auth(db, user)
@@ -1125,33 +1124,15 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                     user,
                     doc.id,
                     version_id=version_id,
-                    parser_id=str(payload.get("parser_id") or "naive"),
+                    parser_id=resolved_parser,
                     layout_recognize=payload.get("layout_recognize"),
                     resync=bool(payload.get("resync")),
                 )
                 db.commit()
             except Exception as e:
-                from app.core.exceptions import HTTPException
-                from app.core.user_messages import (
-                    STORAGE_FILE_MISSING,
-                    sanitize_user_message,
-                )
-                from app.services.ragflow_sync_service import KnowflowSyncError
-                from app.storage.object_store import StorageObjectNotFoundError
+                from app.core.user_messages import background_job_error_message
 
-                if isinstance(e, KnowflowSyncError):
-                    err_text = e.message
-                elif isinstance(e, StorageObjectNotFoundError):
-                    err_text = STORAGE_FILE_MISSING
-                elif isinstance(e, HTTPException):
-                    detail = e.detail
-                    if isinstance(detail, dict):
-                        err_text = str(detail.get("message") or detail)
-                    else:
-                        err_text = str(detail)
-                    err_text = sanitize_user_message(err_text, fallback="重新索引失败")
-                else:
-                    err_text = sanitize_user_message(str(e), fallback="重新索引失败")
+                err_text = background_job_error_message(e, fallback="重新索引失败")
                 update_job_status(
                     db,
                     job_id,
@@ -1185,10 +1166,10 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                 create_notification(
                     db,
                     user_id=user.id,
-                    title="PageIndex 索引完成",
+                    title="文档索引完成",
                     body=(
-                        f"「{doc.title or '未命名文档'}」已完成 PageIndex 树形索引，"
-                        "可在「知识检索」中测试效果。"
+                        f"「{doc.title or '未命名文档'}」已完成索引，"
+                        "可在「知识检索」中使用。"
                     ),
                     link="/knowledge/search",
                 )
@@ -1441,13 +1422,20 @@ def create_document_reindex_job(
     user_id: uuid.UUID,
     document_id: uuid.UUID,
     version_id: uuid.UUID | None = None,
-    parser_id: str = "naive",
+    parser_id: str | None = None,
     layout_recognize: str | None = None,
     resync: bool = False,
     document_title: str | None = None,
 ) -> Job | None:
-    if not knowledge.enabled():
+    from app.services.knowledge_parser_service import (
+        index_stack_block_reason,
+        reindex_parser_id_raw,
+    )
+
+    if index_stack_block_reason(parser_id, reindex=True):
         return None
+
+    resolved_parser = reindex_parser_id_raw(parser_id)
 
     doc = get_document(db, document_id)
     title = (document_title or (doc.title if doc else "") or "").strip()
@@ -1462,7 +1450,7 @@ def create_document_reindex_job(
             "document_id": str(document_id),
             "version_id": str(version_id) if version_id else None,
             "document_title": title or "未命名文档",
-            "parser_id": parser_id,
+            "parser_id": resolved_parser,
             "layout_recognize": layout_recognize,
             "resync": resync,
         },
@@ -1475,7 +1463,7 @@ def enqueue_document_reindex(
     user_id: uuid.UUID,
     document_id: uuid.UUID,
     version_id: uuid.UUID | None = None,
-    parser_id: str = "naive",
+    parser_id: str | None = None,
     layout_recognize: str | None = None,
     resync: bool = False,
     document_title: str | None = None,

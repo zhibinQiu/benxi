@@ -6,7 +6,13 @@ import {
 } from "../utils/authError.js";
 import { notifyDeduped, sanitizeUserFacingMessage } from "../utils/uiMessage";
 
-/** 统一 toast / 确认框：去重、友好错误、i18n */
+/** 统一 toast / 确认框：去重、友好错误、i18n。
+ *
+ * 实现思路：
+ * - 所有页面应用 usePlatformUi，勿直接使用 naive-ui useMessage（useUiMessage 已废弃为 re-export）
+ * - error() 经 sanitizeUserFacingMessage 过滤后端技术词，与 app/core/user_messages 对齐
+ * - notifyDeduped 防止同一操作连续弹多条相同 toast
+ */
 export function usePlatformUi() {
   const message = useMessage();
   const dialog = useDialog();

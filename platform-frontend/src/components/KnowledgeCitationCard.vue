@@ -47,6 +47,13 @@ const snippetHtml = computed(() =>
 
 const canPreviewImage = computed(() => citationCanPreviewImage(props.citation));
 
+const textOnlyHint = computed(() => {
+  if (props.citation?.source === "pageindex") {
+    return t("knowledgeSearch.citations.textOnlyHintPageindex");
+  }
+  return t("knowledgeSearch.citations.textOnlyHint");
+});
+
 const relevanceLabel = computed(() => {
   const score = props.citation?.score;
   if (score == null || Number.isNaN(Number(score))) return "";
@@ -74,7 +81,11 @@ async function loadImage(citation) {
     const blob = await fetchKnowledgeCitationPreviewBlob(citation);
     imageObjectUrl.value = URL.createObjectURL(blob);
   } catch (e) {
-    imageError.value = e?.message || t("knowledgeSearch.citations.loadFailed");
+    const fallback =
+      props.citation?.source === "pageindex"
+        ? t("knowledgeSearch.citations.loadFailedPageindex")
+        : t("knowledgeSearch.citations.loadFailed");
+    imageError.value = e?.message || fallback;
   } finally {
     imageLoading.value = false;
   }
@@ -121,7 +132,7 @@ function openDocument() {
     <div v-if="snippetHtml" class="knowledge-citation-card__snippet" v-html="snippetHtml" />
 
     <p v-if="!canPreviewImage && snippetHtml" class="knowledge-citation-card__text-only">
-      {{ t("knowledgeSearch.citations.textOnlyHint") }}
+      {{ textOnlyHint }}
     </p>
 
     <div v-if="canPreviewImage" class="knowledge-citation-card__shot">

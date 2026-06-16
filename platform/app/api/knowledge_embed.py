@@ -57,20 +57,6 @@ def knowledge_meta(
     return ApiResponse(data=knowledge.meta_payload(db, user))
 
 
-@router.get("/embed-session")
-def knowledge_embed_session(
-    user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-    sync: bool | None = Query(
-        None,
-        description="是否同步 KnowFlow 分级库；默认 false，登录后已在后台同步",
-    ),
-) -> ApiResponse[dict]:
-    data = knowledge.build_embed_session(db, user, sync_catalog=sync)
-    db.commit()
-    return ApiResponse(data=data)
-
-
 @router.get(
     "/libraries",
     response_model=ApiResponse[KnowledgeLibraryListOut],

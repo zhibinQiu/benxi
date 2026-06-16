@@ -1,6 +1,5 @@
 /** 登录/退出时清空与用户会话相关的前端状态（不复用上一账户的缓存与 KeepAlive） */
 
-import { invalidateRagCaches } from "../api/rag.js";
 import { clearAllChatSessions } from "./chatSessionPersist.js";
 import { clearDocumentsViewCache } from "./documentsViewCache.js";
 import { clearKnowledgeScopeTreeCache } from "./knowledgeScopeTreeCache.js";
@@ -15,7 +14,6 @@ export function registerMenuSettingsReset(fn) {
 }
 
 export function resetClientSessionState() {
-  invalidateRagCaches();
   clearDocumentsViewCache();
   clearKnowledgeScopeTreeCache();
   clearAllChatSessions();

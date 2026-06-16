@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 _executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
+_inflight: set[str] = set()
+_inflight_lock = threading.Lock()
 
 T = TypeVar("T")
 
@@ -32,11 +34,20 @@ def get_background_executor() -> ThreadPoolExecutor:
 
 
 def submit_background(name: str, fn: Callable[..., T], /, *args, **kwargs) -> None:
+    with _inflight_lock:
+        if name in _inflight:
+            logger.info("跳过重复后台任务: %s", name)
+            return
+        _inflight.add(name)
+
     def _wrapped() -> None:
         try:
             fn(*args, **kwargs)
         except Exception:
             logger.exception("后台任务失败: %s", name)
+        finally:
+            with _inflight_lock:
+                _inflight.discard(name)
 
     get_background_executor().submit(_wrapped)
 
@@ -47,3 +58,5 @@ def shutdown_background_executor(*, wait: bool = False) -> None:
         if _executor is not None:
             _executor.shutdown(wait=wait, cancel_futures=not wait)
             _executor = None
+    with _inflight_lock:
+        _inflight.clear()

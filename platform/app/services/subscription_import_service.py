@@ -129,7 +129,9 @@ def run_subscription_import_job(job_id: uuid.UUID) -> None:
             return
 
         update_job_status(db, job_id, JobStatus.running.value, progress=10)
-        version = db.get(DocumentVersion, doc.current_version_id) if doc.current_version_id else None
+        from app.services.documents.crud import resolve_current_version
+
+        version = resolve_current_version(db, doc, repair=True)
         if not version:
             update_job_status(
                 db,
@@ -139,6 +141,7 @@ def run_subscription_import_job(job_id: uuid.UUID) -> None:
             )
             db.commit()
             return
+        db.commit()
 
         work = {
             "job_id": job_id,

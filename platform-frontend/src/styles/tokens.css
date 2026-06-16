@@ -12,9 +12,9 @@ html[data-theme="light"] {
   --platform-font-mono:
     ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --platform-tracking-tight: -0.024em;
-  --platform-tracking-normal: -0.011em;
-  --platform-tracking-wide: 0.01em;
+  --platform-tracking-tight: 0;
+  --platform-tracking-normal: 0;
+  --platform-tracking-wide: 0;
   --platform-line-body: 1.47;
   --platform-line-heading: 1.2;
 
@@ -142,11 +142,11 @@ html[data-theme="light"] {
     0 8px 24px rgba(91, 120, 200, 0.08),
     0 2px 6px rgba(139, 92, 246, 0.05);
 
-  --platform-radius-lg: 0;
-  --platform-radius: 0;
-  --platform-radius-sm: 0;
-  --platform-radius-xs: 0;
-  --platform-radius-pill: 0;
+  --platform-radius-lg: 8px;
+  --platform-radius: 8px;
+  --platform-radius-sm: 6px;
+  --platform-radius-xs: 4px;
+  --platform-radius-pill: 999px;
 
   --platform-focus-ring: 0 0 0 4px rgba(91, 156, 245, 0.26);
 

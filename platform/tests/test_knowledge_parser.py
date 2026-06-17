@@ -1,10 +1,40 @@
 """知识库切片 / OCR 选项。"""
 
+from unittest.mock import patch
+
 from app.services.knowledge_parser_service import (
+    PARSER_PAGEINDEX,
     build_parser_config,
     coerce_parser_layout,
+    index_stack_block_reason,
     list_parser_options,
 )
+
+
+def test_index_stack_block_reason_pageindex_when_package_missing(monkeypatch):
+    monkeypatch.setattr(
+        "app.integrations.pageindex_bridge.pageindex_package_available",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "app.integrations.pageindex_bridge._PAGEINDEX_IMPORT_ERROR",
+        "No module named 'pageindex'",
+    )
+    reason = index_stack_block_reason(PARSER_PAGEINDEX, reindex=True)
+    assert reason
+    assert "PageIndex" in reason
+    assert "pip install" in reason
+
+
+def test_list_parser_options_reports_pageindex_status(monkeypatch):
+    monkeypatch.setattr(
+        "app.integrations.pageindex_bridge.pageindex_package_available",
+        lambda: False,
+    )
+    data = list_parser_options()
+    assert data["pageindex"]["available"] is False
+    assert data["pageindex"]["block_reason"]
+    assert data["defaults"]["parser_id"] != PARSER_PAGEINDEX
 
 
 def test_list_parser_options_includes_modern_ocr():

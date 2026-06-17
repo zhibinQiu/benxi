@@ -21,9 +21,26 @@ API_PORT="${LOCAL_DEV_API_PORT:-8000}"
 WEB_PORT="${LOCAL_DEV_WEB_PORT:-40005}"
 LOCAL_DEV_CONDA_ENV="${LOCAL_DEV_CONDA_ENV:-pdf2zh}"
 
-PYTHON_CMD=(conda run --no-capture-output -n "$LOCAL_DEV_CONDA_ENV" python)
-UVICORN_CMD=(conda run --no-capture-output -n "$LOCAL_DEV_CONDA_ENV" uvicorn)
-CELERY_CMD=(conda run --no-capture-output -n "$LOCAL_DEV_CONDA_ENV" celery)
+# 直接调用 env 内 python；本机 conda run 可能误用 /usr/local 或 Homebrew 解释器
+resolve_conda_env_python() {
+  if [[ -n "${LOCAL_DEV_CONDA_PYTHON:-}" && -x "${LOCAL_DEV_CONDA_PYTHON}" ]]; then
+    echo "${LOCAL_DEV_CONDA_PYTHON}"
+    return 0
+  fi
+  local base env_py
+  base="$(conda info --base 2>/dev/null || true)"
+  env_py="${base}/envs/${LOCAL_DEV_CONDA_ENV}/bin/python"
+  if [[ -x "$env_py" ]]; then
+    echo "$env_py"
+    return 0
+  fi
+  return 1
+}
+
+CONDA_ENV_PYTHON="$(resolve_conda_env_python || true)"
+PYTHON_CMD=("${CONDA_ENV_PYTHON}")
+UVICORN_CMD=("${CONDA_ENV_PYTHON}" -m uvicorn)
+CELERY_CMD=("${CONDA_ENV_PYTHON}" -m celery)
 
 init_paths() {
   mkdir -p "$LOG_DIR"
@@ -34,9 +51,16 @@ ensure_conda_env() {
     echo "未找到 conda，请先安装/初始化 conda，并确认环境 ${LOCAL_DEV_CONDA_ENV} 可用。" >&2
     return 1
   }
-  conda run -n "$LOCAL_DEV_CONDA_ENV" python -c 'import sys' >/dev/null 2>&1 || {
-    echo "未找到或无法使用 conda 环境: ${LOCAL_DEV_CONDA_ENV}" >&2
-    echo "请先执行: conda activate ${LOCAL_DEV_CONDA_ENV}" >&2
+  CONDA_ENV_PYTHON="$(resolve_conda_env_python)" || {
+    echo "未找到 conda 环境 Python: ${LOCAL_DEV_CONDA_ENV}" >&2
+    echo "请先创建环境，或设置 LOCAL_DEV_CONDA_PYTHON 指向可执行 python。" >&2
+    return 1
+  }
+  PYTHON_CMD=("${CONDA_ENV_PYTHON}")
+  UVICORN_CMD=("${CONDA_ENV_PYTHON}" -m uvicorn)
+  CELERY_CMD=("${CONDA_ENV_PYTHON}" -m celery)
+  "${CONDA_ENV_PYTHON}" -c 'import sys' >/dev/null 2>&1 || {
+    echo "无法执行 conda 环境 Python: ${CONDA_ENV_PYTHON}" >&2
     return 1
   }
 }
@@ -286,6 +310,33 @@ report_api_not_ready() {
   echo "  实时日志:   ./dev.sh local logs"
 }
 
+ensure_pageindex_extra() {
+  if [[ "${SKIP_PAGEINDEX_INSTALL:-0}" == "1" ]]; then
+    return 0
+  fi
+  if env PLATFORM="$PLATFORM_DIR" "${PYTHON_CMD[@]}" - <<'PY' 2>/dev/null; then
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, os.environ["PLATFORM"])
+from app.integrations.pageindex_bridge import pageindex_package_available
+
+raise SystemExit(0 if pageindex_package_available() else 1)
+PY
+    return 0
+  fi
+  step "安装 PageIndex 自托管依赖（pip install -e \".[pageindex]\"）…"
+  cd "$PLATFORM_DIR"
+  if ! "${PYTHON_CMD[@]}" -m pip install -e ".[pageindex]" >>"$LOG_DIR/local-dev.log" 2>&1; then
+    echo "  PageIndex 安装失败 — 重新索引选 PageIndex 会提示「索引服务未就绪」" >&2
+    echo "  请手动执行: cd platform && pip install -e '.[pageindex]'" >&2
+    return 0
+  fi
+  "${PYTHON_CMD[@]}" -m pip install -e "./third_party/pageindex-upstream" >>"$LOG_DIR/local-dev.log" 2>&1 || true
+  echo "  PageIndex 已就绪"
+}
+
 start_local() {
   local force="${1:-0}"
   init_paths
@@ -306,6 +357,7 @@ start_local() {
   echo "正在启动 ${app_name} v${version}（本机 API + 前端）…"
 
   ensure_conda_env || return 1
+  ensure_pageindex_extra
   preflight_database || return 1
 
   step "停止已有进程（API / 前端 / Worker）…"

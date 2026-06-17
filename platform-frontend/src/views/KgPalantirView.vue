@@ -1,7 +1,7 @@
 <script setup>
 defineOptions({ name: "KgPalantirView" });
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -12,9 +12,12 @@ import {
   NModal,
   NSelect,
   NSpin,
+  NTabPane,
+  NTabs,
   NTag,
 } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import KgGraphCanvas from "../components/KgGraphCanvas.vue";
 import {
   createKgEntity,
   createKgEntityType,
@@ -49,6 +52,7 @@ const TYPE_COLORS = {
 };
 
 const loading = ref(true);
+const listLoading = ref(false);
 const meta = ref(null);
 const graph = ref({ nodes: [], edges: [] });
 const relations = ref([]);
@@ -56,6 +60,12 @@ const selectedId = ref(null);
 const filterTypeId = ref(null);
 const searchQ = ref("");
 const graphDepth = ref(1);
+const leftTab = ref("entities");
+const entityList = ref([]);
+const graphCanvasRef = ref(null);
+const browseTypeId = ref(null);
+const browseTypeEntities = ref([]);
+const browseTypeLoading = ref(false);
 
 const entityModal = ref(false);
 const entityForm = ref({ type_id: null, name: "", description: "" });
@@ -78,10 +88,13 @@ const relationTypeForm = ref({ code: "", label: "", description: "" });
 const editingRelationTypeId = ref(null);
 
 const entityDetail = ref(null);
-const allEntities = ref([]);
+
+let searchTimer = null;
 
 const selectedEntity = computed(() =>
-  graph.value.nodes?.find((n) => n.id === selectedId.value) || null
+  graph.value.nodes?.find((n) => n.id === selectedId.value) ||
+  entityList.value.find((n) => n.id === selectedId.value) ||
+  null
 );
 
 const entityTypeOptions = computed(() =>
@@ -99,22 +112,23 @@ const relationTypeOptions = computed(() =>
 );
 
 const entityOptions = computed(() =>
-  (allEntities.value.length ? allEntities.value : graph.value.nodes || []).map((n) => ({
+  entityList.value.map((n) => ({
     label: n.name,
     value: n.id,
   }))
 );
 
-const filteredNodes = computed(() => {
-  let nodes = graph.value.nodes || [];
-  if (filterTypeId.value) {
-    const type = meta.value?.entity_types?.find((t) => t.id === filterTypeId.value);
-    if (type) nodes = nodes.filter((n) => n.type_code === type.code);
-  }
-  const q = searchQ.value.trim().toLowerCase();
-  if (q) nodes = nodes.filter((n) => n.name.toLowerCase().includes(q));
-  return nodes;
-});
+const typeFilterOptions = computed(() => [
+  { label: "全部类型", value: null },
+  ...(meta.value?.entity_types || []).map((t) => ({
+    label: `${t.label} (${t.entity_count})`,
+    value: t.id,
+  })),
+]);
+
+const browseTypeMeta = computed(() =>
+  (meta.value?.entity_types || []).find((t) => t.id === browseTypeId.value) || null
+);
 
 const graphLayout = computed(() => {
   const nodes = graph.value.nodes || [];
@@ -127,6 +141,7 @@ const graphLayout = computed(() => {
   for (const e of edges) {
     if (idSet.has(e.from_entity_id) && idSet.has(e.to_entity_id)) {
       adj.get(e.from_entity_id).push(e.to_entity_id);
+      adj.get(e.to_entity_id).push(e.from_entity_id);
     }
   }
 
@@ -160,16 +175,16 @@ const graphLayout = computed(() => {
     byRank.get(r).push(n);
   }
 
-  const nodeW = 132;
-  const nodeH = 36;
-  const rankGap = 72;
-  const nodeGap = 20;
-  const padding = 24;
+  const nodeW = 148;
+  const nodeH = 40;
+  const rankGap = 88;
+  const nodeGap = 28;
+  const padding = 32;
 
   const positioned = [];
   for (let r = 0; r <= maxRank; r += 1) {
     const row = byRank.get(r) || [];
-    const rowW = row.length * nodeW + (row.length - 1) * nodeGap;
+    row.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
     let x = padding;
     const y = padding + r * (nodeH + rankGap);
     for (const n of row) {
@@ -178,48 +193,69 @@ const graphLayout = computed(() => {
     }
   }
 
-  const width = Math.max(
-    ...positioned.map((n) => n.x + n.w),
-    320
-  ) + padding;
-  const height = Math.max(
-    ...positioned.map((n) => n.y + n.h),
-    120
-  ) + padding;
+  const width = Math.max(...positioned.map((n) => n.x + n.w), 360) + padding;
+  const height = Math.max(...positioned.map((n) => n.y + n.h), 160) + padding;
 
-  const posMap = Object.fromEntries(positioned.map((n) => [n.id, n]));
-  const edgeLines = edges
-    .filter((e) => posMap[e.from_entity_id] && posMap[e.to_entity_id])
-    .map((e) => {
-      const from = posMap[e.from_entity_id];
-      const to = posMap[e.to_entity_id];
-      return {
-        ...e,
-        x1: from.x + from.w,
-        y1: from.y + from.h / 2,
-        x2: to.x,
-        y2: to.y + to.h / 2,
-        mx: (from.x + from.w + to.x) / 2,
-        my: (from.y + from.h / 2 + to.y + to.h / 2) / 2 - 8,
-      };
-    });
+  const edgeLines = edges.filter(
+    (e) =>
+      positioned.some((n) => n.id === e.from_entity_id) &&
+      positioned.some((n) => n.id === e.to_entity_id)
+  );
 
   return { nodes: positioned, edges: edgeLines, width, height };
 });
 
-async function loadEntityOptions() {
+async function loadEntityList() {
+  listLoading.value = true;
   try {
-    allEntities.value = await fetchKgEntities();
-  } catch {
-    allEntities.value = graph.value.nodes || [];
+    entityList.value = await fetchKgEntities({
+      typeId: filterTypeId.value || undefined,
+      q: searchQ.value.trim() || undefined,
+    });
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    listLoading.value = false;
   }
+}
+
+async function loadBrowseByType(typeId) {
+  if (!typeId) {
+    clearBrowseType();
+    return;
+  }
+  browseTypeId.value = typeId;
+  browseTypeLoading.value = true;
+  try {
+    browseTypeEntities.value = await fetchKgEntities({ typeId });
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    browseTypeLoading.value = false;
+  }
+}
+
+function clearBrowseType() {
+  if (filterTypeId.value && filterTypeId.value === browseTypeId.value) {
+    filterTypeId.value = null;
+  }
+  browseTypeId.value = null;
+  browseTypeEntities.value = [];
+}
+
+async function browseEntityType(typeId) {
+  if (browseTypeId.value === typeId) {
+    clearBrowseType();
+    return;
+  }
+  await loadBrowseByType(typeId);
 }
 
 async function loadAll() {
   loading.value = true;
   try {
     meta.value = await fetchKgMeta();
-    await loadEntityOptions();
+    await loadEntityList();
     graph.value = await fetchKgGraph({
       focusEntityId: selectedId.value || undefined,
       depth: graphDepth.value,
@@ -231,6 +267,8 @@ async function loadAll() {
       relations.value = [];
       entityDetail.value = null;
     }
+    await nextTick();
+    graphCanvasRef.value?.fitView?.();
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -247,17 +285,25 @@ async function refreshGraph() {
     if (selectedId.value) {
       relations.value = await fetchKgRelations({ entityId: selectedId.value });
       entityDetail.value = await fetchKgEntity(selectedId.value);
+      await nextTick();
+      graphCanvasRef.value?.focusNode?.(selectedId.value);
     } else {
       entityDetail.value = null;
+      await nextTick();
+      graphCanvasRef.value?.fitView?.();
     }
-    await loadEntityOptions();
     meta.value = await fetchKgMeta();
+    await loadEntityList();
   } catch (e) {
     ui.error(e.message);
   }
 }
 
 function selectEntity(id) {
+  if (selectedId.value === id) {
+    nextTick(() => graphCanvasRef.value?.focusNode?.(id));
+    return;
+  }
   selectedId.value = id;
   refreshGraph();
 }
@@ -330,7 +376,6 @@ async function removeEntity() {
 }
 
 function openCreateRelation() {
-  loadEntityOptions();
   relationForm.value = {
     relation_type_id: relationTypeOptions.value[0]?.value || null,
     from_entity_id: selectedId.value || entityOptions.value[0]?.value || null,
@@ -341,6 +386,10 @@ function openCreateRelation() {
 }
 
 async function saveRelation() {
+  if (!relationForm.value.to_entity_id) {
+    ui.warning("请选择终点实体");
+    return;
+  }
   try {
     await createKgRelation({
       relation_type_id: relationForm.value.relation_type_id,
@@ -476,6 +525,17 @@ function openLinkedDocument() {
 
 watch(graphDepth, () => refreshGraph());
 
+watch(filterTypeId, (id) => {
+  loadEntityList();
+  if (id) loadBrowseByType(id);
+  else if (browseTypeId.value) clearBrowseType();
+});
+
+watch(searchQ, () => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadEntityList(), 280);
+});
+
 onMounted(() => {
   const focus = route.query.focusEntityId;
   if (typeof focus === "string" && focus.trim()) {
@@ -489,191 +549,241 @@ onMounted(() => {
   <FeatureSubsystemShell fill :show-intro="false">
     <template #extra>
       <div class="kg-toolbar">
-        <n-input
-          v-model:value="searchQ"
-          size="small"
-          placeholder="搜索实体…"
-          clearable
-          class="kg-toolbar__search"
-        />
         <n-select
           v-model:value="graphDepth"
           size="small"
           :options="[
-            { label: '1 跳邻居', value: 1 },
-            { label: '2 跳邻居', value: 2 },
+            { label: '子图 1 跳', value: 1 },
+            { label: '子图 2 跳', value: 2 },
           ]"
           class="kg-toolbar__depth"
         />
         <n-button size="small" type="primary" @click="openCreateEntity">新建实体</n-button>
+        <n-button size="small" secondary @click="openCreateRelation">添加关系</n-button>
         <n-button size="small" quaternary @click="loadAll">刷新</n-button>
       </div>
     </template>
 
     <n-spin :show="loading" class="kg-spin">
       <div class="kg-page">
-        <aside class="kg-sider">
-          <div class="kg-sider__head">
-            <span class="kg-sider__title">本体浏览器</span>
-            <n-button size="tiny" quaternary @click="openEntityTypeModal(null)">+ 类型</n-button>
-          </div>
-          <div class="kg-type-list">
-            <button
-              type="button"
-              class="kg-type-item"
-              :class="{ active: !filterTypeId }"
-              @click="filterTypeId = null"
-            >
-              <span>全部实体</span>
-              <span class="kg-type-item__count">{{ meta?.entity_total || 0 }}</span>
-            </button>
-            <button
-              v-for="t in meta?.entity_types || []"
-              :key="t.id"
-              type="button"
-              class="kg-type-item"
-              :class="{ active: filterTypeId === t.id }"
-              @click="filterTypeId = t.id"
-            >
-              <span
-                class="kg-type-dot"
-                :style="{ background: typeColor(t.color) }"
-              />
-              <span class="kg-type-item__label">{{ t.label }}</span>
-              <span class="kg-type-item__count">{{ t.entity_count }}</span>
-              <n-button
-                size="tiny"
-                quaternary
-                class="kg-type-item__edit"
-                @click.stop="openEntityTypeModal(t)"
-              >
-                编辑
-              </n-button>
-            </button>
-          </div>
+        <aside class="kg-panel kg-panel--left">
+          <n-tabs v-model:value="leftTab" type="line" size="small" class="kg-tabs">
+            <n-tab-pane name="entities" tab="实体查询">
+              <div class="kg-search-block">
+                <n-input
+                  v-model:value="searchQ"
+                  size="small"
+                  placeholder="按名称或描述搜索…"
+                  clearable
+                />
+                <n-select
+                  v-model:value="filterTypeId"
+                  size="small"
+                  :options="typeFilterOptions"
+                  class="kg-search-block__type"
+                />
+              </div>
+              <div class="kg-list-meta">
+                共 {{ meta?.entity_total || 0 }} 个实体
+                <span v-if="searchQ.trim()"> · 当前 {{ entityList.length }} 条结果</span>
+              </div>
+              <n-spin :show="listLoading" class="kg-list-spin">
+                <div v-if="entityList.length" class="kg-entity-list">
+                  <button
+                    v-for="item in entityList"
+                    :key="item.id"
+                    type="button"
+                    class="kg-glass-item kg-entity-row"
+                    :class="{ 'is-active': selectedId === item.id }"
+                    @click="selectEntity(item.id)"
+                  >
+                    <span
+                      class="kg-entity-row__dot"
+                      :style="{ background: typeColor(item.type_color) }"
+                    />
+                    <span class="kg-entity-row__body">
+                      <span class="kg-entity-row__name">{{ item.name }}</span>
+                      <span class="kg-entity-row__type">{{ item.type_label }}</span>
+                    </span>
+                  </button>
+                </div>
+                <n-empty
+                  v-else
+                  size="small"
+                  description="暂无匹配实体"
+                  class="kg-list-empty"
+                />
+              </n-spin>
+            </n-tab-pane>
 
-          <div class="kg-sider__head kg-sider__head--sub">
-            <span class="kg-sider__title">关系类型</span>
-            <n-button size="tiny" quaternary @click="openRelationTypeModal(null)">+ 类型</n-button>
-          </div>
-          <div class="kg-rel-type-list">
-            <div v-for="rt in meta?.relation_types || []" :key="rt.id" class="kg-rel-type">
-              <span>{{ rt.label }}</span>
-              <span class="kg-rel-type__count">{{ rt.relation_count }}</span>
-              <n-button size="tiny" quaternary @click="openRelationTypeModal(rt)">编辑</n-button>
-              <n-button size="tiny" quaternary @click="removeRelationType(rt.id)">删</n-button>
-            </div>
-          </div>
+            <n-tab-pane name="ontology" tab="本体设置">
+              <div class="kg-ontology-section">
+                <div class="kg-ontology-head">
+                  <span>实体类型</span>
+                  <n-button size="tiny" quaternary @click="openEntityTypeModal(null)">
+                    新建
+                  </n-button>
+                </div>
+                <div class="kg-ontology-list">
+                  <button
+                    v-for="t in meta?.entity_types || []"
+                    :key="t.id"
+                    type="button"
+                    class="kg-glass-item kg-ontology-item"
+                    :class="{ 'is-active': browseTypeId === t.id }"
+                    @click="browseEntityType(t.id)"
+                  >
+                    <span class="kg-ontology-item__dot" :style="{ background: typeColor(t.color) }" />
+                    <span class="kg-ontology-item__label">{{ t.label }}</span>
+                    <span class="kg-ontology-item__count">{{ t.entity_count }}</span>
+                    <n-button
+                      size="tiny"
+                      quaternary
+                      class="kg-ontology-item__edit"
+                      @click.stop="openEntityTypeModal(t)"
+                    >
+                      编辑
+                    </n-button>
+                  </button>
+                </div>
+              </div>
+              <div class="kg-ontology-section">
+                <div class="kg-ontology-head">
+                  <span>关系类型</span>
+                  <n-button size="tiny" quaternary @click="openRelationTypeModal(null)">
+                    新建
+                  </n-button>
+                </div>
+                <div class="kg-ontology-list">
+                  <div
+                    v-for="rt in meta?.relation_types || []"
+                    :key="rt.id"
+                    class="kg-ontology-item"
+                  >
+                    <span class="kg-ontology-item__label">{{ rt.label }}</span>
+                    <span class="kg-ontology-item__count">{{ rt.relation_count }}</span>
+                    <n-button size="tiny" quaternary @click="openRelationTypeModal(rt)">编辑</n-button>
+                  </div>
+                </div>
+              </div>
+              <p class="kg-ontology-tip">
+                点击实体类型可在右侧底部浏览该类型下的全部实体；点选后按顶栏跳数展示关系子图。
+              </p>
+            </n-tab-pane>
+          </n-tabs>
         </aside>
 
-        <main class="kg-main">
-          <div v-if="graphLayout.nodes.length" class="kg-graph-wrap">
-            <svg
-              class="kg-graph"
-              :viewBox="`0 0 ${graphLayout.width} ${graphLayout.height}`"
-              preserveAspectRatio="xMidYMid meet"
-            >
-              <g v-for="edge in graphLayout.edges" :key="edge.id">
-                <line
-                  :x1="edge.x1"
-                  :y1="edge.y1"
-                  :x2="edge.x2"
-                  :y2="edge.y2"
-                  class="kg-graph__edge"
-                  :class="{ active: selectedId === edge.from_entity_id || selectedId === edge.to_entity_id }"
-                />
-                <text :x="edge.mx" :y="edge.my" class="kg-graph__edge-label">
-                  {{ edge.relation_type_label }}
-                </text>
-              </g>
-              <g
-                v-for="node in graphLayout.nodes"
-                :key="node.id"
-                class="kg-graph__node"
-                :class="{ active: selectedId === node.id }"
-                :transform="`translate(${node.x}, ${node.y})`"
-                @click="selectEntity(node.id)"
-              >
-                <rect
-                  :width="node.w"
-                  :height="node.h"
-                  rx="6"
-                  class="kg-graph__node-box"
-                />
-                <circle
-                  cx="10"
-                  cy="18"
-                  r="4"
-                  :fill="typeColor(node.type_color)"
-                />
-                <text x="20" y="22" class="kg-graph__node-label">
-                  {{ node.name.length > 11 ? `${node.name.slice(0, 10)}…` : node.name }}
-                </text>
-              </g>
-            </svg>
-          </div>
-          <n-empty v-else description="暂无实体，点击「新建实体」开始" class="kg-empty" />
-
-          <div class="kg-entity-list">
-            <div
-              v-for="n in filteredNodes"
-              :key="n.id"
-              class="kg-entity-chip"
-              :class="{ active: selectedId === n.id }"
-              @click="selectEntity(n.id)"
-            >
-              <n-tag size="small" :bordered="false">{{ n.type_label }}</n-tag>
-              {{ n.name }}
-            </div>
+        <main class="kg-panel kg-panel--center">
+          <KgGraphCanvas
+            v-if="graphLayout.nodes.length"
+            ref="graphCanvasRef"
+            :layout="graphLayout"
+            :selected-id="selectedId"
+            :type-color="typeColor"
+            @select="selectEntity"
+          />
+          <div v-else class="kg-empty-wrap">
+            <n-empty description="暂无实体，点击「新建实体」开始构建图谱">
+              <template #extra>
+                <n-button size="small" type="primary" @click="openCreateEntity">
+                  新建实体
+                </n-button>
+              </template>
+            </n-empty>
           </div>
         </main>
 
-        <aside class="kg-inspector">
-          <template v-if="selectedEntity">
-            <h3 class="kg-inspector__title">{{ selectedEntity.name }}</h3>
-            <n-tag size="small" type="info">{{ selectedEntity.type_label }}</n-tag>
-            <div class="kg-inspector__actions">
-              <n-button size="small" @click="openEditEntity">编辑</n-button>
-              <n-button size="small" @click="openCreateRelation">添加关系</n-button>
-              <n-button
-                v-if="entityDetail?.properties?.document_id"
-                size="small"
-                quaternary
-                @click="openLinkedDocument"
-              >
-                打开关联文档
-              </n-button>
-              <n-button size="small" type="error" quaternary @click="removeEntity">删除</n-button>
-            </div>
-            <p
-              v-if="entityDetail?.description"
-              class="kg-inspector__desc"
-            >
-              {{ entityDetail.description }}
-            </p>
-            <div class="kg-inspector__section">
-              <div class="kg-inspector__section-title">关联关系 ({{ relations.length }})</div>
-              <div v-for="rel in relations" :key="rel.id" class="kg-rel-row">
-                <n-tag size="small">{{ rel.relation_type_label }}</n-tag>
-                <span class="kg-rel-row__dir">
-                  {{ rel.from_entity_id === selectedId ? "出" : "入" }}
-                </span>
-                <button
-                  type="button"
-                  class="kg-rel-row__link"
-                  @click="selectEntity(
-                    rel.from_entity_id === selectedId ? rel.to_entity_id : rel.from_entity_id
-                  )"
-                >
-                  {{
-                    rel.from_entity_id === selectedId ? rel.to_name : rel.from_name
-                  }}
-                </button>
-                <n-button size="tiny" quaternary @click="removeRelation(rel.id)">删</n-button>
+        <aside class="kg-panel kg-panel--right">
+          <div class="kg-detail-main">
+            <template v-if="selectedEntity">
+              <div class="kg-detail-head">
+                <h3 class="kg-detail-title">{{ selectedEntity.name }}</h3>
+                <n-tag size="small" :bordered="false">{{ selectedEntity.type_label }}</n-tag>
               </div>
+              <p v-if="entityDetail?.description" class="kg-detail-desc">
+                {{ entityDetail.description }}
+              </p>
+              <div class="kg-detail-actions">
+                <n-button size="small" type="primary" @click="openEditEntity">编辑</n-button>
+                <n-button size="small" @click="openCreateRelation">添加关系</n-button>
+                <n-button
+                  v-if="entityDetail?.properties?.document_id"
+                  size="small"
+                  quaternary
+                  @click="openLinkedDocument"
+                >
+                  关联文档
+                </n-button>
+                <n-button size="small" type="error" quaternary @click="removeEntity">删除</n-button>
+              </div>
+              <div class="kg-detail-section">
+                <div class="kg-detail-section__title">
+                  关联关系
+                  <span class="kg-detail-section__count">{{ relations.length }}</span>
+                </div>
+                <div v-for="rel in relations" :key="rel.id" class="kg-rel-item">
+                  <n-tag size="small" :bordered="false">{{ rel.relation_type_label }}</n-tag>
+                  <button
+                    type="button"
+                    class="kg-rel-item__link"
+                    @click="
+                      selectEntity(
+                        rel.from_entity_id === selectedId ? rel.to_entity_id : rel.from_entity_id
+                      )
+                    "
+                  >
+                    {{ rel.from_entity_id === selectedId ? rel.to_name : rel.from_name }}
+                  </button>
+                  <n-button size="tiny" quaternary @click="removeRelation(rel.id)">删除</n-button>
+                </div>
+                <n-empty v-if="!relations.length" size="small" description="暂无关联关系" />
+              </div>
+            </template>
+            <div v-else-if="browseTypeMeta" class="kg-detail-placeholder">
+              <p class="kg-detail-browse-hint">
+                已选类型「{{ browseTypeMeta.label }}」，请从下方列表点选实体，将展示
+                {{ graphDepth === 2 ? "二" : "一" }}跳关系子图。
+              </p>
             </div>
-          </template>
-          <n-empty v-else description="选择实体查看详情" />
+            <div v-else class="kg-detail-placeholder">
+              <n-empty size="small" description="选择实体或在左侧点选类型浏览" />
+            </div>
+          </div>
+
+          <div v-if="browseTypeId && browseTypeMeta" class="kg-type-browse">
+            <div class="kg-type-browse__head">
+              <div class="kg-type-browse__title">
+                <span
+                  class="kg-type-browse__dot"
+                  :style="{ background: typeColor(browseTypeMeta.color) }"
+                />
+                {{ browseTypeMeta.label }}
+                <span class="kg-type-browse__count">{{ browseTypeEntities.length }}</span>
+              </div>
+              <n-button size="tiny" quaternary @click="clearBrowseType">关闭</n-button>
+            </div>
+            <n-spin :show="browseTypeLoading" class="kg-type-browse__spin">
+              <div v-if="browseTypeEntities.length" class="kg-type-browse__list">
+                <button
+                  v-for="item in browseTypeEntities"
+                  :key="item.id"
+                  type="button"
+                  class="kg-glass-item kg-type-browse__item"
+                  :class="{ 'is-active': selectedId === item.id }"
+                  @click="selectEntity(item.id)"
+                >
+                  <span class="kg-type-browse__item-name">{{ item.name }}</span>
+                  <span
+                    v-if="item.properties?.document_id"
+                    class="kg-type-browse__item-tag"
+                  >
+                    文档
+                  </span>
+                </button>
+              </div>
+              <n-empty v-else size="small" description="该类型下暂无实体" />
+            </n-spin>
+          </div>
         </aside>
       </div>
     </n-spin>
@@ -717,10 +827,19 @@ onMounted(() => {
           <n-select v-model:value="relationForm.relation_type_id" :options="relationTypeOptions" />
         </n-form-item>
         <n-form-item label="起点实体">
-          <n-select v-model:value="relationForm.from_entity_id" :options="entityOptions" />
+          <n-select
+            v-model:value="relationForm.from_entity_id"
+            filterable
+            :options="entityOptions"
+          />
         </n-form-item>
         <n-form-item label="终点实体">
-          <n-select v-model:value="relationForm.to_entity_id" :options="entityOptions" />
+          <n-select
+            v-model:value="relationForm.to_entity_id"
+            filterable
+            placeholder="选择关联实体"
+            :options="entityOptions"
+          />
         </n-form-item>
         <n-form-item label="说明">
           <n-input v-model:value="relationForm.description" type="textarea" :rows="2" />
@@ -756,7 +875,12 @@ onMounted(() => {
         </n-form-item>
       </n-form>
       <template #footer>
-        <n-button v-if="editingEntityTypeId" type="error" quaternary @click="removeEntityType(editingEntityTypeId)">
+        <n-button
+          v-if="editingEntityTypeId"
+          type="error"
+          quaternary
+          @click="removeEntityType(editingEntityTypeId)"
+        >
           删除
         </n-button>
         <n-button @click="entityTypeModal = false">取消</n-button>
@@ -782,7 +906,12 @@ onMounted(() => {
         </n-form-item>
       </n-form>
       <template #footer>
-        <n-button v-if="editingRelationTypeId" type="error" quaternary @click="removeRelationType(editingRelationTypeId)">
+        <n-button
+          v-if="editingRelationTypeId"
+          type="error"
+          quaternary
+          @click="removeRelationType(editingRelationTypeId)"
+        >
           删除
         </n-button>
         <n-button @click="relationTypeModal = false">取消</n-button>
@@ -813,10 +942,6 @@ onMounted(() => {
   min-width: 0;
 }
 
-.kg-toolbar__search {
-  width: 200px;
-}
-
 .kg-toolbar__depth {
   width: 120px;
 }
@@ -832,213 +957,318 @@ onMounted(() => {
   background: var(--platform-bg-elevated);
 }
 
-.kg-sider {
-  width: min(260px, 32vw);
-  min-width: 220px;
-  border-right: 1px solid var(--platform-border);
-  background: var(--platform-bg-secondary);
-  padding: 12px;
-  overflow: auto;
+.kg-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.kg-sider__head {
+.kg-panel--left {
+  width: min(300px, 34vw);
+  min-width: 260px;
+  border-right: 1px solid var(--platform-border);
+  background: var(--platform-bg-secondary);
+}
+
+.kg-panel--center {
+  flex: 1;
+  min-width: 0;
+}
+
+.kg-panel--right {
+  width: min(300px, 32vw);
+  min-width: 260px;
+  border-left: 1px solid var(--platform-border);
+  background: var(--platform-bg-secondary);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kg-detail-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.kg-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 10px;
+}
+
+.kg-tabs :deep(.n-tabs-pane-wrapper) {
+  flex: 1;
+  min-height: 0;
+}
+
+.kg-tabs :deep(.n-tab-pane) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kg-search-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 8px;
 }
 
-.kg-sider__head--sub {
-  margin-top: 16px;
+.kg-list-meta {
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+  margin-bottom: 8px;
 }
 
-.kg-sider__title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--platform-text-secondary);
+.kg-list-spin {
+  flex: 1;
+  min-height: 0;
 }
 
-.kg-type-list {
+.kg-list-spin :deep(.n-spin-content) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kg-entity-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.kg-type-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+/* 可选列表行：玻璃底完整覆盖文字区（与侧栏菜单同源 token） */
+.kg-glass-item {
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  border: none;
   border-radius: var(--platform-radius-sm);
-  border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
-  color: var(--platform-text-primary);
+  font: inherit;
   text-align: left;
+  transition: color 0.15s ease;
 }
 
-.kg-type-item.active {
-  background: var(--platform-bg-glass-strong);
-  border-color: var(--platform-border);
+.kg-glass-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  opacity: 0;
+  background: var(--platform-glass-fill-hover);
+  box-shadow: var(--platform-glass-rim-edge);
+  transition:
+    opacity 0.18s var(--platform-ease-smooth),
+    background 0.18s var(--platform-ease-smooth),
+    border-color 0.18s var(--platform-ease-smooth);
 }
 
-.kg-type-dot {
+.kg-glass-item > * {
+  position: relative;
+  z-index: 1;
+}
+
+.kg-glass-item:hover::before {
+  opacity: var(--menu-glass-hover-opacity, 0.52);
+}
+
+.kg-glass-item.is-active {
+  color: var(--platform-accent);
+  font-weight: 600;
+}
+
+.kg-glass-item.is-active::before {
+  opacity: 1;
+  background: var(--platform-glass-fill-active);
+  border-color: color-mix(in srgb, var(--platform-accent) 24%, transparent);
+  box-shadow: var(--platform-glass-rim-edge);
+}
+
+.kg-glass-item.is-active .kg-entity-row__name,
+.kg-glass-item.is-active .kg-entity-row__type,
+.kg-glass-item.is-active .kg-ontology-item__label,
+.kg-glass-item.is-active .kg-ontology-item__count,
+.kg-glass-item.is-active .kg-type-browse__item-name {
+  color: inherit;
+}
+
+.kg-entity-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px 12px;
+  min-height: 44px;
+}
+
+.kg-entity-row__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.kg-entity-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.kg-entity-row__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--platform-text-primary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.kg-entity-row__type {
+  font-size: 11px;
+  color: var(--platform-text-tertiary);
+}
+
+.kg-list-empty {
+  padding: 24px 0;
+}
+
+.kg-ontology-section + .kg-ontology-section {
+  margin-top: 16px;
+}
+
+.kg-ontology-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--platform-text-secondary);
+}
+
+.kg-ontology-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kg-ontology-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+  font-size: 12px;
+  color: var(--platform-text-primary);
+}
+
+.kg-ontology-item__edit {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.kg-ontology-item :deep(.n-button) {
+  position: relative;
+  z-index: 1;
+}
+
+.kg-ontology-item__dot {
   width: 8px;
   height: 8px;
   border-radius: 2px;
   flex-shrink: 0;
 }
 
-.kg-type-item__label {
+.kg-ontology-item__label {
   flex: 1;
   min-width: 0;
 }
 
-.kg-type-item__count {
-  font-size: 12px;
+.kg-ontology-item__count {
   color: var(--platform-text-tertiary);
 }
 
-.kg-type-item__edit {
-  flex-shrink: 0;
-}
-
-.kg-rel-type-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.kg-rel-type {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--platform-text-secondary);
-}
-
-.kg-rel-type__count {
-  color: var(--platform-text-tertiary);
-}
-
-.kg-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.kg-graph-wrap {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 12px;
-}
-
-.kg-graph {
-  width: 100%;
-  min-height: 240px;
-  display: block;
-}
-
-.kg-graph__edge {
-  stroke: var(--platform-border-strong, #ccc);
-  stroke-width: 1;
-}
-
-.kg-graph__edge.active {
-  stroke: var(--platform-accent);
-  stroke-width: 2;
-}
-
-.kg-graph__edge-label {
-  font-size: 10px;
-  fill: var(--platform-text-tertiary);
-  text-anchor: middle;
-}
-
-.kg-graph__node {
-  cursor: pointer;
-}
-
-.kg-graph__node-box {
-  fill: var(--platform-bg-elevated);
-  stroke: var(--platform-border);
-}
-
-.kg-graph__node.active .kg-graph__node-box {
-  stroke: var(--platform-accent);
-  stroke-width: 2;
-}
-
-.kg-graph__node-label {
-  font-size: 12px;
-  fill: var(--platform-text-primary);
-}
-
-.kg-entity-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--platform-border);
-  max-height: 120px;
-  overflow: auto;
-}
-
-.kg-entity-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: var(--platform-radius-sm);
-  border: 1px solid var(--platform-border);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.kg-entity-chip.active {
-  border-color: var(--platform-accent);
-  background: var(--platform-bg-glass-subtle);
-}
-
-.kg-inspector {
-  width: min(280px, 30vw);
-  min-width: 240px;
-  border-left: 1px solid var(--platform-border);
-  padding: 12px;
-  overflow: auto;
-}
-
-.kg-inspector__title {
-  margin: 0 0 8px;
-  font-size: 16px;
-}
-
-.kg-inspector__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 12px 0;
-}
-
-.kg-inspector__desc {
-  margin: 0 0 12px;
-  font-size: 12px;
+.kg-ontology-tip {
+  margin: 16px 0 0;
+  font-size: 11px;
   line-height: 1.5;
+  color: var(--platform-text-tertiary);
+}
+
+.kg-empty-wrap,
+.kg-detail-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.kg-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.kg-detail-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.kg-detail-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--platform-text-secondary);
 }
 
-.kg-inspector__section-title {
+.kg-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.kg-detail-section__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 600;
   color: var(--platform-text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
-.kg-rel-row {
+.kg-detail-section__count {
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+}
+
+.kg-rel-item {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1046,11 +1276,7 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.kg-rel-row__dir {
-  color: var(--platform-text-tertiary);
-}
-
-.kg-rel-row__link {
+.kg-rel-item__link {
   flex: 1;
   min-width: 0;
   border: none;
@@ -1059,30 +1285,119 @@ onMounted(() => {
   cursor: pointer;
   text-align: left;
   padding: 0;
+  word-break: break-word;
 }
 
-.kg-empty {
-  flex: 1;
+.kg-detail-browse-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--platform-text-secondary);
+}
+
+.kg-type-browse {
+  flex-shrink: 0;
+  max-height: min(42vh, 320px);
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--platform-border);
+  background: color-mix(in srgb, var(--platform-bg) 70%, var(--platform-bg-secondary));
+}
+
+.kg-type-browse__head {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 8px;
 }
 
-@media (max-width: 900px) {
+.kg-type-browse__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--platform-text-primary);
+}
+
+.kg-type-browse__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.kg-type-browse__count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+}
+
+.kg-type-browse__spin {
+  flex: 1;
+  min-height: 0;
+}
+
+.kg-type-browse__spin :deep(.n-spin-content) {
+  height: 100%;
+  min-height: 0;
+}
+
+.kg-type-browse__list {
+  max-height: calc(min(42vh, 320px) - 48px);
+  overflow: auto;
+  padding: 0 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kg-type-browse__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+}
+
+.kg-type-browse__item-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--platform-text-primary);
+  word-break: break-word;
+}
+
+.kg-type-browse__item-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--platform-accent-pressed);
+  background: var(--platform-accent-muted);
+}
+
+@media (max-width: 960px) {
   .kg-page {
     flex-direction: column;
   }
 
-  .kg-sider,
-  .kg-inspector {
+  .kg-panel--left,
+  .kg-panel--right {
     width: 100%;
-    max-height: 30vh;
+    max-height: 34vh;
     border: none;
     border-bottom: 1px solid var(--platform-border);
   }
 
-  .kg-inspector {
+  .kg-panel--right {
     border-left: none;
+  }
+
+  .kg-panel--center {
+    min-height: 42vh;
   }
 }
 </style>

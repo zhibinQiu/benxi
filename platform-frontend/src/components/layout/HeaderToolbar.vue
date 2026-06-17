@@ -22,6 +22,7 @@ import { useAuth } from "../../composables/useAuth";
 import { useAppPreferences } from "../../composables/useAppPreferences";
 import { useI18n } from "../../composables/useI18n";
 import { fetchJobs, fetchNotifications } from "../../api/client";
+import { PLATFORM_Z } from "../../constants/zIndex.js";
 import AssistantChatFab from "../AssistantChatFab.vue";
 import HeaderFlyoutShell from "../HeaderFlyoutShell.vue";
 import JobsPanel from "../JobsPanel.vue";
@@ -239,7 +240,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
       trigger="click"
       placement="bottom-end"
       to="body"
-      :z-index="10000"
+      :z-index="PLATFORM_Z.dropdown"
       :options="userMenuOptions"
       :render-option="renderUserMenuOption"
       :menu-props="headerShellMenuProps"

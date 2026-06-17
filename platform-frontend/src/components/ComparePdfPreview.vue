@@ -2,13 +2,27 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NSpin, NText } from "naive-ui";
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   bboxToViewportBox,
   buildTextLayerHighlightBoxes,
 } from "../utils/comparePdfHighlights.js";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+/** Nginx 若未配置 .mjs → application/javascript，动态 import worker 会失败 */
+let pdfWorkerInitPromise = null;
+
+function initPdfWorker() {
+  if (pdfWorkerInitPromise) return pdfWorkerInitPromise;
+  pdfWorkerInitPromise = (async () => {
+    const res = await fetch(pdfjsWorkerUrl);
+    if (!res.ok) {
+      throw new Error(`PDF worker 加载失败 (${res.status})`);
+    }
+    const blob = new Blob([await res.arrayBuffer()], { type: "application/javascript" });
+    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  })();
+  return pdfWorkerInitPromise;
+}
 
 /** 双栏对比时列宽较窄，需高于布局倍率渲染以避免文字发糊 */
 const MIN_PDF_RENDER_SCALE = 2;
@@ -66,6 +80,8 @@ async function ensurePdf() {
   error.value = "";
   const token = ++loadToken;
   try {
+    await initPdfWorker();
+    if (token !== loadToken) return null;
     const task = pdfjsLib.getDocument(src);
     const doc = await task.promise;
     if (token !== loadToken) {
@@ -129,7 +145,13 @@ async function renderPage() {
   const doc = await ensurePdf();
   const canvas = canvasRef.value;
   const wrap = wrapRef.value;
-  if (!doc || !canvas || !wrap) return;
+  if (!doc || !canvas || !wrap) {
+    if (doc && String(props.src || "").trim()) {
+      await nextTick();
+      scheduleRender();
+    }
+    return;
+  }
 
   const pageNo = Math.min(Math.max(Number(props.page) || 1, 1), doc.numPages);
   loading.value = true;
@@ -213,6 +235,7 @@ watch(
 );
 
 onMounted(() => {
+  scheduleRender();
   if (typeof ResizeObserver !== "undefined" && wrapRef.value) {
     resizeObserver = new ResizeObserver(() => scheduleRender());
     resizeObserver.observe(wrapRef.value);
@@ -233,7 +256,7 @@ onBeforeUnmount(() => {
       <div v-if="error" class="compare-pdf-preview__error">
         <n-text depth="3">{{ error }}</n-text>
       </div>
-      <div v-else-if="src" class="compare-pdf-preview__scroll">
+      <div v-else-if="src" class="compare-pdf-preview__scroll" :class="{ 'compare-pdf-preview__scroll--from-top': fitMode === 'width' }">
         <div
           class="compare-pdf-preview__stage"
           :style="{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px` }"
@@ -291,6 +314,9 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 8px;
   box-sizing: border-box;
+}
+.compare-pdf-preview__scroll--from-top {
+  align-items: flex-start;
 }
 .compare-pdf-preview__stage {
   position: relative;

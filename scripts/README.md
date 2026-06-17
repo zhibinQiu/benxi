@@ -11,8 +11,8 @@
 | **容器编排** | `stack.sh`、`deploy.sh` | Compose build / up / backup；生产镜像部署 |
 | **环境** | `setup-env.sh`、`setup-stack-env.sh` | `platform/.env`（remote-dev / 本机 PG）；根 `.env` 合并 |
 | **数据迁移** | `migrate-postgres.sh` | 平台库 remote ↔ 本机 Docker postgres |
-| **远程依赖** | `verify-remote-deps.sh`、`server-deps.sh`、`server-add-swap.sh` | 端口探测、服务器依赖栈、Swap |
-| **网络暴露** | `dev-frpc.sh`、`frp-server-install.sh` | frp 暴露本机 Vite（`./dev.sh frp`） |
+| **远程依赖** | `verify-remote-deps.sh`、`server-deps.sh`、`server-sync.sh`、`server-uninstall-frp.sh` | 端口探测、依赖栈、**代码同步**、卸载 frps |
+| **网络暴露** | `dev-frpc.sh`、`frp-server-install.sh` | frp（已废弃，改用 `./dev.sh sync` + `/deps/`） |
 | **资源 / 语音** | `download_*.sh`、`start-speech-local.sh` | KnowFlow 构建依赖、BabelDOC 资源、宿主机 speech-api |
 | **公共库** | `lib/branding.sh`、`lib/version.sh`、`lib/envfile.sh` | 品牌名、版本号、`.env` 读写 helper |
 
@@ -26,6 +26,8 @@
 | `./dev.sh docker` | 全 Docker 热重载（compose dev-up） |
 | `./dev.sh stop` | 停止 Docker 栈 + 本机 dev |
 | `./dev.sh remote-dev` | 生成 `REMOTE_DEPS=1` 的 `platform/.env` |
+| `./dev.sh sync` | 同步后端到服务器并重启 API / Worker |
+| `./dev.sh sync --frontend` | 同步含前端并 npm build + nginx reload（挂载 dist） |
 | `./dev.sh stack …` | Compose 编排（build / up / logs …） |
 | `./dev.sh deploy …` | 生产镜像部署 |
 | `./dev.sh db migrate to-local\|to-remote` | 平台 PostgreSQL 迁移 |
@@ -59,11 +61,14 @@ bash scripts/server-add-swap.sh               # 缓解 OOM
 ## 典型流程
 
 ```bash
-# 本机开发 + 远程 Redis/MinIO/KnowFlow
+# 本机开发 + 远程共用数据（推荐）
 REMOTE_HOST=172.19.134.45 ./dev.sh remote-dev
 bash scripts/verify-remote-deps.sh
 ./dev.sh local
-# frpc 见 deploy/frp/frpc.toml.example
+./dev.sh sync                    # 改代码后推到服务器
+./dev.sh sync --frontend         # 含前端
+
+# 服务器首次：见 .env.server.shared.example（全栈 + EXPOSE_DEPS_DB_ONLY + server-up）
 
 # 本机 PG + 远程其余依赖（可选）
 bash scripts/migrate-postgres.sh to-local

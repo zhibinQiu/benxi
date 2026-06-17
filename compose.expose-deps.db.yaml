@@ -1,0 +1,25 @@
+# 全栈 + 本机 remote-dev 共用数据：仅暴露 TCP 依赖端口（不与 frontend :40005 冲突）
+#
+# pdf2zh / speech / knowflow / ragflow 经 frontend Nginx /deps/… 访问（见 platform-frontend/nginx.conf）
+#
+# 用法（服务器 .env）:
+#   EXPOSE_DEPS=1
+#   EXPOSE_DEPS_DB_ONLY=1
+#   bash scripts/stack.sh server-up --profile knowflow --profile speech
+
+services:
+  postgres:
+    ports:
+      - "${REMOTE_POSTGRES_PORT:-40002}:5432"
+
+  redis:
+    ports:
+      - "${REMOTE_REDIS_PORT:-40003}:6379"
+
+  minio:
+    ports:
+      - "${REMOTE_MINIO_PORT:-40004}:9000"
+
+  knowflow-mysql:
+    ports:
+      - "${REMOTE_MYSQL_PORT:-40006}:3306"

@@ -113,13 +113,20 @@ html[data-theme="light"] {
   --platform-accent-secondary-hover: #7c4fe0;
   --platform-accent-soft: rgba(91, 156, 245, 0.14);
   --platform-accent-soft-2: rgba(139, 92, 246, 0.16);
-  --platform-accent-gradient: linear-gradient(135deg, #5b9cf5 0%, #8b5cf6 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #4789e8 0%, #7c4fe0 100%);
+  --platform-accent-gradient: linear-gradient(135deg, #5b9cf5 0%, #4789e8 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #4789e8 0%, #3a75d4 100%);
   --platform-accent-gradient-soft: linear-gradient(160deg, #eff6ff 0%, #ede9fe 100%);
   --platform-accent-muted: rgba(91, 156, 245, 0.1);
   --platform-accent-muted-strong: rgba(91, 156, 245, 0.16);
   --platform-accent-border: rgba(91, 156, 245, 0.22);
   --platform-accent-border-soft: rgba(91, 156, 245, 0.14);
+
+  /* Rose 曲线 / 加载动画：偏淡紫 */
+  --platform-loader-gradient-start: #e9e0ff;
+  --platform-loader-gradient-mid: #c4b5fd;
+  --platform-loader-gradient-end: #a78bfa;
+  --platform-loader-path: rgba(167, 139, 250, 0.3);
+  --platform-loader-color: #b39df7;
 
   --platform-shell-gradient: linear-gradient(
     135deg,
@@ -147,6 +154,14 @@ html[data-theme="light"] {
   --platform-radius-sm: 6px;
   --platform-radius-xs: 4px;
   --platform-radius-pill: 999px;
+
+  /* 浮层层级：系统确认框 > Toast > 功能弹窗 > 顶栏 flyout > Tooltip > 下拉 */
+  --platform-z-dropdown: 10000;
+  --platform-z-flyout: 10050;
+  --platform-z-tooltip: 10100;
+  --platform-z-feature-modal: 10300;
+  --platform-z-message: 10900;
+  --platform-z-system-dialog: 11000;
 
   --platform-focus-ring: 0 0 0 4px rgba(91, 156, 245, 0.26);
 
@@ -255,13 +270,20 @@ html[data-theme="dark"] {
   --platform-accent-secondary-hover: #c4b5fd;
   --platform-accent-soft: rgba(124, 179, 255, 0.16);
   --platform-accent-soft-2: rgba(167, 139, 250, 0.2);
-  --platform-accent-gradient: linear-gradient(135deg, #7cb3ff 0%, #a78bfa 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #93c5fd 0%, #c4b5fd 100%);
+  --platform-accent-gradient: linear-gradient(135deg, #7cb3ff 0%, #60a5fa 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #93c5fd 0%, #7cb3ff 100%);
   --platform-accent-gradient-soft: linear-gradient(160deg, rgba(30, 41, 82, 0.72) 0%, rgba(46, 36, 72, 0.68) 100%);
   --platform-accent-muted: rgba(124, 179, 255, 0.14);
   --platform-accent-muted-strong: rgba(124, 179, 255, 0.22);
   --platform-accent-border: rgba(124, 179, 255, 0.28);
   --platform-accent-border-soft: rgba(124, 179, 255, 0.18);
+
+  /* Rose 曲线 / 加载动画：偏淡紫 */
+  --platform-loader-gradient-start: #ede9fe;
+  --platform-loader-gradient-mid: #c4b5fd;
+  --platform-loader-gradient-end: #a78bfa;
+  --platform-loader-path: rgba(196, 181, 253, 0.26);
+  --platform-loader-color: #c4b5fd;
 
   --platform-shell-gradient: linear-gradient(
     135deg,

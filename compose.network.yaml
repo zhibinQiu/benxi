@@ -1,0 +1,7 @@
+# 复用已有 Docker 网络（避免与 Dify 等栈 IP 池冲突）
+# 服务器 /root/qzb/lvye 首次部署时生成；其他环境可删除本文件
+
+networks:
+  zhitan:
+    external: true
+    name: zhitanai_default

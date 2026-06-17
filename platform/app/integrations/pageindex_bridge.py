@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -13,25 +14,126 @@ logger = logging.getLogger(__name__)
 
 _PAGEINDEX_IMPORT_ERROR: str | None = None
 _PAGEINDEX_SELFHOSTED = False
+_PAGEINDEX_AVAILABLE = False
+
+PageIndexClient = None  # type: ignore[assignment,misc]
 
 try:
-    from pageindex import PageIndexClient  # type: ignore[import-untyped]
+    from pageindex import PageIndexClient as _PageIndexClient  # type: ignore[import-untyped]
 
+    PageIndexClient = _PageIndexClient
     _PAGEINDEX_SELFHOSTED = callable(getattr(PageIndexClient, "index", None))
-    _PAGEINDEX_AVAILABLE = _PAGEINDEX_SELFHOSTED
-    if not _PAGEINDEX_SELFHOSTED:
-        _PAGEINDEX_IMPORT_ERROR = (
-            "已安装 PyPI 版 pageindex（云端 SDK），缺少自托管 index()。"
-            "请执行: pip install -e ./third_party/pageindex-upstream"
-        )
 except Exception as exc:  # pragma: no cover - optional dependency
-    PageIndexClient = None  # type: ignore[assignment,misc]
-    _PAGEINDEX_AVAILABLE = False
     _PAGEINDEX_IMPORT_ERROR = str(exc)
 
 
+def _pageindex_module_dir() -> Path | None:
+    try:
+        import pageindex as pageindex_mod
+
+        return Path(pageindex_mod.__file__).resolve().parent
+    except Exception:
+        return None
+
+
+def _vendored_pageindex_config_sources() -> list[Path]:
+    sources: list[Path] = []
+    platform_roots: list[Path] = [Path(__file__).resolve().parents[2], Path("/app")]
+    env_root = (os.environ.get("PLATFORM_ROOT") or os.environ.get("PLATFORM") or "").strip()
+    if env_root:
+        platform_roots.append(Path(env_root))
+    for root in platform_roots:
+        candidate = root / "third_party/pageindex-upstream/pageindex/config.yaml"
+        if candidate not in sources:
+            sources.append(candidate)
+    return sources
+
+
+def _bootstrap_pageindex_config(mod_dir: Path | None) -> bool:
+    """安装包缺 config.yaml 时，从仓库内 third_party 拷贝补齐。"""
+    if not mod_dir:
+        return False
+    target = mod_dir / "config.yaml"
+    if target.is_file():
+        return True
+    for src in _vendored_pageindex_config_sources():
+        if not src.is_file():
+            continue
+        try:
+            shutil.copy2(src, target)
+            logger.info("已补齐 PageIndex 配置文件：%s -> %s", src, target)
+            return True
+        except OSError as exc:
+            logger.warning("补齐 PageIndex 配置文件失败 src=%s: %s", src, exc)
+    return target.is_file()
+
+
+def _refresh_pageindex_state() -> None:
+    global _PAGEINDEX_AVAILABLE, _PAGEINDEX_IMPORT_ERROR
+
+    if PageIndexClient is None:
+        _PAGEINDEX_AVAILABLE = False
+        return
+    if not _PAGEINDEX_SELFHOSTED:
+        _PAGEINDEX_AVAILABLE = False
+        if not (_PAGEINDEX_IMPORT_ERROR or "").strip():
+            _PAGEINDEX_IMPORT_ERROR = (
+                "已安装 PyPI 版 pageindex（云端 SDK），缺少自托管 index()。"
+                "请执行: pip install -e ./third_party/pageindex-upstream"
+            )
+        return
+
+    mod_dir = _pageindex_module_dir()
+    config_ready = _bootstrap_pageindex_config(mod_dir)
+    _PAGEINDEX_AVAILABLE = config_ready
+    if not config_ready:
+        _PAGEINDEX_IMPORT_ERROR = "PageIndex 自托管包未完整安装（缺少 config.yaml）。"
+
+
+_refresh_pageindex_state()
+
+
 def pageindex_package_available() -> bool:
+    if not _PAGEINDEX_AVAILABLE and _PAGEINDEX_SELFHOSTED and PageIndexClient is not None:
+        _refresh_pageindex_state()
     return _PAGEINDEX_AVAILABLE
+
+
+def pageindex_install_hint() -> str:
+    return 'pip install -e ".[pageindex]"'
+
+
+def pageindex_install_command() -> str:
+    return f"{pageindex_install_hint()}  # 在 platform 目录执行"
+
+
+def pageindex_stack_block_reason() -> str | None:
+    """PageIndex 索引/重索引前检查：开关、自托管包、语言模型。"""
+    from app.config import get_settings
+    from app.integrations.deepseek_client import is_configured
+
+    if not get_settings().pageindex_enabled:
+        return "文档索引功能未启用，请联系管理员"
+    if not pageindex_package_available():
+        err = (_PAGEINDEX_IMPORT_ERROR or "").strip()
+        if "config.yaml" in err or "配置文件" in err:
+            return (
+                "PageIndex 索引服务未完整安装（缺少配置文件）。"
+                "请联系管理员重新构建镜像，或在 platform 目录执行 "
+                f"{pageindex_install_hint()}"
+            )
+        if "PyPI" in err or "自托管" in err:
+            return (
+                "PageIndex 自托管包未正确安装。"
+                f"请在 platform 目录执行：{pageindex_install_hint()}"
+            )
+        return (
+            "文档索引服务未就绪：未安装 PageIndex 自托管包。"
+            f"请在 platform 目录执行：{pageindex_install_hint()}"
+        )
+    if not is_configured():
+        return "语言模型未配置，无法建立文档索引，请联系管理员"
+    return None
 
 
 def _litellm_model_name(base_url: str, model: str) -> str:
@@ -107,6 +209,20 @@ def _pdf_file_to_markdown_temp(pdf_path: Path, *, title: str = "") -> Path | Non
         return None
 
 
+def _pdf_pageindex_should_fallback_to_markdown(exc: BaseException) -> bool:
+    """PDF 结构索引失败时，是否改用 Markdown 管线（md_to_tree，不依赖 PDF 目录 LLM）。"""
+    err = str(exc).lower()
+    markers = (
+        "toc transformation",
+        "table of contents",
+        "processing failed",
+        "toc_detected",
+        "failed to extract json",
+        "failed to parse json",
+    )
+    return any(marker in err for marker in markers)
+
+
 def index_file_with_pageindex(
     *,
     workspace: Path,
@@ -118,14 +234,14 @@ def index_file_with_pageindex(
     try:
         return str(client.index(str(path)))
     except Exception as exc:
-        err = str(exc).lower()
-        toc_failed = "toc transformation" in err or "table of contents" in err
-        if toc_failed and path.suffix.lower() == ".pdf":
+        if path.suffix.lower() == ".pdf" and _pdf_pageindex_should_fallback_to_markdown(
+            exc
+        ):
             md_path = _pdf_file_to_markdown_temp(path, title=path.stem)
             if md_path:
                 try:
                     logger.warning(
-                        "PageIndex PDF 目录解析失败，改用 Markdown 索引: %s",
+                        "PageIndex PDF 结构解析失败，改用 Markdown 索引: %s",
                         exc,
                     )
                     return str(client.index(str(md_path)))

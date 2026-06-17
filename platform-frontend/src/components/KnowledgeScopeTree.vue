@@ -335,7 +335,7 @@ async function fetchTree({
     loading.value = true;
   }
   try {
-    const data = await fetchKnowledgeScopeTree({ refresh: refresh || background });
+    const data = await fetchKnowledgeScopeTree({ refresh });
     applyTreeData(data, { resetSelection });
     writeKnowledgeScopeTreeCache(data);
     if (!resetSelection) {
@@ -403,7 +403,12 @@ onActivated(() => {
     if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
     return;
   }
-  void fetchTree({ background: true, refresh: !cached });
+  // KeepAlive 切回时若内存与 session 缓存仍有效，避免重复拉全量 scope-tree
+  if (treeData.value.length && cached?.items?.length) {
+    if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
+    return;
+  }
+  void fetchTree({ background: true, refresh: false });
 });
 
 onUnmounted(() => {

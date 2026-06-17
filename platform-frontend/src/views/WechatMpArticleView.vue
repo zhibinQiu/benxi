@@ -1,6 +1,7 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { onMounted, ref } from "vue";
+import { useSubscriptionImportFlow } from "../composables/useSubscriptionImportFlow.js";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -21,8 +22,21 @@ const router = useRouter();
 const ui = usePlatformUi();
 
 const loading = ref(true);
-const importing = ref(false);
 const article = ref(null);
+
+const { importing, indexing, documentId, runImport, openDocument } = useSubscriptionImportFlow({
+  router,
+  route,
+  ui,
+});
+
+const resolvedDocumentId = computed(
+  () => documentId.value || article.value?.document_id || null
+);
+
+const showImportedActions = computed(
+  () => Boolean(article.value?.imported || resolvedDocumentId.value)
+);
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -37,6 +51,9 @@ async function load({ notifyOnError = true } = {}) {
   loading.value = true;
   try {
     article.value = await fetchWechatMpArticle(route.params.id);
+    if (article.value?.document_id) {
+      documentId.value = article.value.document_id;
+    }
   } catch (e) {
     if (notifyOnError) ui.error(e.message);
     if (notifyOnError) {
@@ -48,19 +65,11 @@ async function load({ notifyOnError = true } = {}) {
 }
 
 async function onImport() {
-  importing.value = true;
   try {
-    const res = await importWechatMpArticle(route.params.id);
-    ui.success(
-      res.knowflow_synced
-        ? "已入「个人级」文档库并同步知识库"
-        : "已入「个人级」文档库",
-    );
+    await runImport(importWechatMpArticle, route.params.id);
     await load({ notifyOnError: false });
-  } catch (e) {
-    ui.error(e.message);
-  } finally {
-    importing.value = false;
+  } catch {
+    /* runImport 已提示 */
   }
 }
 
@@ -81,7 +90,9 @@ onMounted(load);
           <NButton quaternary @click="goBackToEntry(router, route, { name: route.meta.backTo || 'wechat-mp' })">
             返回列表
           </NButton>
-          <NTag v-if="article.imported" type="success" :bordered="false">已入文档库</NTag>
+          <NTag v-if="showImportedActions" type="success" :bordered="false">
+            {{ indexing ? "索引中" : "已入文档库" }}
+          </NTag>
         </NSpace>
 
         <NCard>
@@ -93,7 +104,7 @@ onMounted(load);
           </NSpace>
           <NSpace style="margin-bottom: 20px">
             <NButton
-              v-if="!article.imported"
+              v-if="!showImportedActions"
               type="primary"
               :loading="importing"
               @click="onImport"
@@ -101,7 +112,15 @@ onMounted(load);
               导入文档库
             </NButton>
             <NButton
-              v-else
+              v-if="showImportedActions && resolvedDocumentId"
+              type="primary"
+              :loading="indexing"
+              @click="openDocument(resolvedDocumentId)"
+            >
+              {{ indexing ? "查看文档（索引中）" : "查看文档" }}
+            </NButton>
+            <NButton
+              v-if="showImportedActions"
               tertiary
               @click="
                 router.push({

@@ -24,9 +24,6 @@ def _engine_kwargs(settings) -> dict:
     max_overflow = settings.db_max_overflow
     if settings.remote_deps and not _uses_local_database(settings.database_url):
         connect_timeout = max(connect_timeout, 25)
-        # 远程共享 Postgres max_connections 有限，避免单进程占满连接
-        pool_size = min(pool_size, 6)
-        max_overflow = min(max_overflow, 4)
     return {
         "poolclass": QueuePool,
         "pool_size": pool_size,

@@ -290,7 +290,6 @@ const showsExtractedText = computed(
   flex-direction: column;
 }
 .preview-spin :deep(.n-spin-container),
-.preview-spin :deep(.n-spin-body),
 .preview-spin :deep(.n-spin-content) {
   flex: 1;
   min-height: 0;

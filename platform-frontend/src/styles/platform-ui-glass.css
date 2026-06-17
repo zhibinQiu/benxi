@@ -1,6 +1,6 @@
 /* 平台 UI 统一：紫白蓝渐变玻璃层 */
 
-/* —— 视频场景：略透底 + 壳层透明 —— */
+/* —— 曲线动画场景：略透底 + 壳层透明 —— */
 .app-shell--video-bg {
   --platform-ui-glass-fill: rgba(255, 255, 255, 0.42);
   --platform-ui-glass-fill-strong: rgba(255, 255, 255, 0.56);
@@ -96,49 +96,62 @@ html[data-theme="dark"] .app-shell--video-bg {
 
 /* —— 文字按钮（非图标专用） —— */
 .n-button.platform-text-btn,
-.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star) {
-  background: var(--platform-ui-glass-fill, var(--platform-bg-glass-subtle)) !important;
-  border: 1px solid var(--platform-ui-glass-border, var(--platform-glass-border)) !important;
-  color: var(--platform-text) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 1px 3px rgba(91, 120, 200, 0.06) !important;
-  backdrop-filter: saturate(165%) blur(10px);
-  -webkit-backdrop-filter: saturate(165%) blur(10px);
-}
-
-.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):hover {
-  border-color: color-mix(in srgb, var(--platform-accent) 38%, transparent) !important;
-  color: var(--platform-accent) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 4px 14px rgba(91, 156, 245, 0.12),
-    0 2px 6px rgba(139, 92, 246, 0.08) !important;
-  transform: translateY(-1px);
-}
-
-.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):active {
-  transform: translateY(0);
-}
-
-/* 主按钮：蓝紫渐变 */
-.n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn) {
-  background: var(--platform-accent-gradient) !important;
-  border: 1px solid color-mix(in srgb, var(--platform-accent) 40%, transparent) !important;
+.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):not(.n-button--text-type):not(.n-button--tertiary-type):not(.n-button--quaternary-type) {
+  background: var(--platform-accent) !important;
+  border: 1px solid var(--platform-accent) !important;
   color: #fff !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 4px 16px rgba(91, 156, 245, 0.28),
-    0 2px 6px rgba(139, 92, 246, 0.18) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
 }
 
-.n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):hover {
-  background: var(--platform-accent-gradient-hover) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 6px 22px rgba(91, 156, 245, 0.34),
-    0 3px 10px rgba(139, 92, 246, 0.22) !important;
-  transform: translateY(-1px);
+.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):not(.n-button--text-type):not(.n-button--tertiary-type):not(.n-button--quaternary-type):hover {
+  background: var(--platform-accent-hover) !important;
+  border-color: var(--platform-accent-hover) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):not(.n-button--text-type):not(.n-button--tertiary-type):not(.n-button--quaternary-type):active {
+  background: var(--platform-accent-pressed) !important;
+  border-color: var(--platform-accent-pressed) !important;
+}
+
+/* 主按钮：纯色蓝 */
+.n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action) {
+  background: var(--platform-accent) !important;
+  border: 1px solid var(--platform-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+}
+
+.n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):hover {
+  background: var(--platform-accent-hover) !important;
+  border-color: var(--platform-accent-hover) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+}
+
+.n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):active {
+  background: var(--platform-accent-pressed) !important;
+  border-color: var(--platform-accent-pressed) !important;
+}
+
+/* default / secondary 文字按钮与主按钮一致 */
+.n-button.n-button--default-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type),
+.n-button.n-button--secondary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type) {
+  background: var(--platform-accent) !important;
+  border: 1px solid var(--platform-accent) !important;
+  color: #fff !important;
+}
+
+.n-button.n-button--default-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):hover,
+.n-button.n-button--secondary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):hover {
+  background: var(--platform-accent-hover) !important;
+  border-color: var(--platform-accent-hover) !important;
+}
+
+.n-button.n-button--default-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):active,
+.n-button.n-button--secondary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):active {
+  background: var(--platform-accent-pressed) !important;
+  border-color: var(--platform-accent-pressed) !important;
 }
 
 /*  tertiary / quaternary 保持轻量 */
@@ -153,8 +166,13 @@ html[data-theme="dark"] .app-shell--video-bg {
 
 .n-button.n-button--tertiary-type:not(.n-button--disabled):not(.header-icon-btn):hover,
 .n-button.n-button--quaternary-type:not(.n-button--disabled):not(.header-icon-btn):hover {
-  background: var(--platform-accent-soft) !important;
+  background: color-mix(in srgb, var(--platform-accent-soft) 88%, rgba(255, 255, 255, 0.24)) !important;
   color: var(--platform-accent) !important;
+  backdrop-filter: saturate(165%) blur(10px);
+  -webkit-backdrop-filter: saturate(165%) blur(10px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 4px 12px rgba(91, 156, 245, 0.1) !important;
 }
 
 /* warning / error */

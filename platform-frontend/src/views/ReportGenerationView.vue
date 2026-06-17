@@ -5,6 +5,7 @@ import { DocumentTextOutline } from "@vicons/ionicons5";
 import { NCheckbox } from "naive-ui";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import HintTooltip from "../components/HintTooltip.vue";
 import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
 import {
   downloadReportDocx,
@@ -22,6 +23,7 @@ const conversationId = ref(null);
 const selection = ref(readKnowledgeScopeSelection());
 const optimizePresets = ref([]);
 const useWebSearch = ref(true);
+const useAgentic = ref(true);
 const webSearchAvailable = ref(true);
 
 const suggestions = [
@@ -58,6 +60,7 @@ async function handleChatStream(params, callbacks) {
       ...params,
       documentIds: selection.value?.documentIds || [],
       useWebSearch: useWebSearch.value,
+      useAgentic: useAgentic.value,
     },
     callbacks
   );
@@ -85,6 +88,16 @@ onMounted(async () => {
   <FeatureSubsystemShell fill flush-start flush-end :show-intro="false">
     <template #extra>
       <div class="report-gen-toolbar">
+        <label class="report-gen-toolbar__agent">
+          <n-checkbox v-model:checked="useAgentic" size="small">
+            {{ t("reportGeneration.useAgent") }}
+          </n-checkbox>
+          <HintTooltip
+            :text="t('reportGeneration.useAgentTooltip')"
+            variant="inline"
+            placement="bottom"
+          />
+        </label>
         <n-checkbox
           v-model:checked="useWebSearch"
           class="report-gen-toolbar__web"
@@ -146,6 +159,17 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--platform-text);
   white-space: nowrap;
+}
+
+.report-gen-toolbar__agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--platform-text);
+  cursor: pointer;
+  user-select: none;
 }
 
 .report-gen-toolbar-hint {

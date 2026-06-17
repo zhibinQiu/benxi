@@ -1,4 +1,5 @@
 <script setup>
+import { nextTick, onMounted, ref } from "vue";
 import FeatureSubsystemHeader from "./FeatureSubsystemHeader.vue";
 import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 
@@ -15,6 +16,13 @@ defineProps({
 });
 
 const { headerExtensionActive } = usePageHeaderExtension();
+const teleportReady = ref(false);
+
+onMounted(() => {
+  nextTick(() => {
+    teleportReady.value = true;
+  });
+});
 </script>
 
 <template>
@@ -28,9 +36,8 @@ const { headerExtensionActive } = usePageHeaderExtension();
     }"
   >
     <Teleport
-      v-if="$slots.extra"
+      v-if="$slots.extra && teleportReady && headerExtensionActive"
       to="#page-header-extension"
-      :disabled="!headerExtensionActive"
     >
       <div class="subsystem-extra-bar">
         <div class="subsystem-extra-row">

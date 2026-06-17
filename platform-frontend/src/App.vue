@@ -15,6 +15,7 @@ import { usePlatformBranding } from "./composables/usePlatformBranding";
 import { useLiquidGlassMotion } from "./composables/useLiquidGlassMotion";
 import { useI18n } from "./composables/useI18n";
 import { createThemeOverrides } from "./utils/platformTheme";
+import { PLATFORM_Z } from "./constants/zIndex.js";
 import { shellRouteKey } from "./utils/routeTransition";
 import { routeUsesVideoBackground } from "./utils/shellBackground";
 import { onSessionReplaced } from "./utils/sessionGuard";
@@ -49,7 +50,7 @@ watch(
     :date-locale="naiveDateLocale"
     :theme-overrides="themeOverrides"
   >
-    <n-message-provider>
+    <n-message-provider :container-style="{ zIndex: PLATFORM_Z.message }">
       <n-dialog-provider>
         <AppSessionGuard />
         <div class="app-shell" :class="{ 'app-shell--video-bg': shellVideoBg }">
@@ -183,5 +184,6 @@ h4,
 <style src="./styles/selectable-glass.css"></style>
 <style src="./styles/subsystem-embed.css"></style>
 <style src="./styles/motion.css"></style>
+<style src="./styles/platform-spin.css"></style>
 <style src="./styles/video-background.css"></style>
 <style src="./styles/platform-ui-glass.css"></style>

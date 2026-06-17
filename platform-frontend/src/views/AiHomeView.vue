@@ -1,13 +1,12 @@
 <script setup>
 defineOptions({ name: "AiHomeView" });
 import { computed } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import {
-  ChatbubblesOutline,
+  CreateOutline,
   GitNetworkOutline,
   SearchOutline,
   SparklesOutline,
-  StatsChartOutline,
 } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import { aiHomeChatStream } from "../api/client";
@@ -32,19 +31,14 @@ const toolLinks = computed(() => {
       icon: SearchOutline,
     },
     {
-      title: "智能问数",
-      route: { name: "smart-data-query", query: returnQuery },
-      icon: StatsChartOutline,
+      title: "报告生成",
+      route: { name: "report-generation", query: returnQuery },
+      icon: CreateOutline,
     },
     {
-      title: "知识图谱",
+      title: "本体图谱",
       route: { name: "kg-palantir", query: returnQuery },
       icon: GitNetworkOutline,
-    },
-    {
-      title: "双碳问答",
-      route: { name: "carbon-qa", query: returnQuery },
-      icon: ChatbubblesOutline,
     },
   ];
 });
@@ -53,9 +47,9 @@ const toolLinks = computed(() => {
 <template>
   <AiChatPanel
     chat-scope="ai-home"
-    title="AI 助理"
-    description="企业级智能对话入口，支持多轮问答、知识解读与办公场景辅助。"
-    subtitle="内置大模型对话 · 知识图谱增强"
+    title="AI 智能体"
+    description="企业级智能对话入口，结合权限内文档检索、本体图谱关联与多轮问答。"
+    subtitle="内置大模型 · 文档检索 + 本体图谱增强"
     :suggestions="suggestions"
     :tool-links="toolLinks"
     :icon="SparklesOutline"

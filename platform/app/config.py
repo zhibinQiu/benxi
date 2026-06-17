@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "企业 AI 知识库平台"
-    platform_version: str = "4.0.5"
+    platform_version: str = "4.0.7"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg2://platform:platform@127.0.0.1:5432/platform"
     )
-    # SQLAlchemy 连接池（多人并发时避免默认小池耗尽；可通过环境变量按部署规模调整）
-    db_pool_size: int = 10
-    db_max_overflow: int = 10
+    # SQLAlchemy 连接池（200 人在线建议单进程 DB_POOL_SIZE=20 DB_MAX_OVERFLOW=20，多 worker 需分摊 PG max_connections）
+    db_pool_size: int = 15
+    db_max_overflow: int = 15
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
     db_connect_timeout: int = 10
@@ -152,8 +152,8 @@ class Settings(BaseSettings):
     knowledge_reindex_default_parser_id: str = "pageindex"
     knowledge_default_layout_recognize: str = "DeepDOC"
     knowledge_default_chunk_token_num: int = 512
-    # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，显著加快列表）
-    knowledge_list_live_index_meta: bool = True
+    # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，1000+ 文档列表显著加快）
+    knowledge_list_live_index_meta: bool = False
     # 文档详情是否实时拉 RAGFlow 解析进度（默认关闭，显著加快详情首屏；刷新可传 live_index=1）
     knowledge_detail_live_index_meta: bool = False
     knowledge_ragflow_meta_cache_ttl_sec: int = 60
@@ -175,6 +175,11 @@ class Settings(BaseSettings):
     knowledge_retrieval_top_k: int = 5
     # 向量相似度下限，低于此的 chunk 不进入引用（KnowFlow 默认约 0.2，略提高以减少弱相关引用）
     knowledge_retrieval_similarity_threshold: float = 0.32
+    # Agentic RAG：LLM 规划子问题、多轮 retrieve_hits_for_qa 与充足性评估
+    knowledge_agentic_enabled: bool = True
+    knowledge_agentic_max_rounds: int = 2
+    knowledge_agentic_qa_max_sub_questions: int = 4
+    knowledge_agentic_report_max_sub_questions: int = 6
 
     # PageIndex 树形索引（独立于 KnowFlow；文档详情「结构索引」与知识检索自动切换）
     pageindex_enabled: bool = True
@@ -186,8 +191,9 @@ class Settings(BaseSettings):
     # 平台 Redis/内存缓存（文档库分级、文件夹列表等；Redis 不可用时自动降级为进程内 TTL）
     platform_cache_enabled: bool = True
     platform_cache_ttl_sec: int = 60
-    document_library_cache_ttl_sec: int = 120
-    kb_folders_cache_ttl_sec: int = 45
+    document_library_cache_ttl_sec: int = 180
+    kb_folders_cache_ttl_sec: int = 120
+    scope_tree_cache_ttl_sec: int = 300
 
     # 录音总结（DeepSeek 在线 API，可与 pdf2zh 翻译共用密钥）
     deepseek_api_key: str = ""
@@ -214,6 +220,10 @@ class Settings(BaseSettings):
     platform_vl_base_url: str = ""
     platform_vl_api_key: str = ""
     platform_vl_model: str = ""
+    # 语音合成（硅基流动 / OpenAI 兼容 /v1/audio/speech）
+    platform_tts_base_url: str = ""
+    platform_tts_api_key: str = ""
+    platform_tts_model: str = ""
 
     @model_validator(mode="after")
     def _apply_legacy_vl_env_aliases(self) -> "Settings":

@@ -116,7 +116,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .header-flyout {
   position: fixed;
-  z-index: 10050;
+  z-index: var(--platform-z-flyout);
   min-height: 160px;
   min-width: min(280px, calc(100vw - 32px));
   max-height: min(560px, calc(100vh - 72px));

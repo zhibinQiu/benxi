@@ -7,8 +7,10 @@ import ChatBubbleRetry from "./ChatBubbleRetry.vue";
 import KnowledgeChatContent from "./KnowledgeChatContent.vue";
 import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 import KnowledgeMindMap from "./KnowledgeMindMap.vue";
+import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
 import { usePlatformUi } from "../composables/usePlatformUi.js";
 import { useI18n } from "../composables/useI18n.js";
+import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
 import { PLATFORM_APP_NAME } from "../constants/platform.js";
 
 const props = defineProps({
@@ -27,7 +29,7 @@ const sending = ref(false);
 const question = ref("");
 const answer = ref("");
 const citations = ref([]);
-const workflow = ref({ currentTitle: "", running: false, failed: false });
+const workflow = ref(emptyAgentWorkflow());
 const answerView = ref("answer");
 const resultsRef = ref(null);
 const composerRef = ref(null);
@@ -55,39 +57,11 @@ const composerRows = computed(() =>
 const displaySubtitle = computed(() => `${PLATFORM_APP_NAME} · ${t("knowledgeSearch.title")}`);
 
 function emptyWorkflow() {
-  return { currentTitle: "", running: false, failed: false };
+  return emptyAgentWorkflow();
 }
 
 function applyWorkflowEvent(state, ev) {
-  if (!state) return emptyWorkflow();
-  const phaseName = ev?.phase;
-  if (phaseName === "workflow_started") {
-    state.running = true;
-    state.failed = false;
-    state.currentTitle = "工作流启动";
-    return state;
-  }
-  if (phaseName === "node_started") {
-    state.running = true;
-    state.failed = false;
-    state.currentTitle = ev.title || "处理中";
-    return state;
-  }
-  if (phaseName === "node_finished") {
-    const failed = ev.status === "failed" || ev.status === "exception";
-    if (failed) {
-      state.failed = true;
-      state.currentTitle = `${ev.title || "节点"}（失败）`;
-    }
-    return state;
-  }
-  if (phaseName === "workflow_finished") {
-    state.running = false;
-    state.currentTitle = "";
-    state.failed = false;
-    return state;
-  }
-  return state;
+  return applyAgentWorkflowEvent(state, ev, t);
 }
 
 async function scrollResultsTop() {
@@ -331,16 +305,13 @@ onMounted(() => {
               />
             </template>
             <template v-else>
-              <div
-                v-if="sending && !answer && workflow.running && workflow.currentTitle"
-                class="knowledge-search-panel__loading"
-                :class="{ 'knowledge-search-panel__loading--failed': workflow.failed }"
-              >
-                <span class="knowledge-search-panel__spinner" aria-hidden="true" />
-                {{ workflow.currentTitle }}
-              </div>
-              <div v-else-if="sending && !answer" class="knowledge-search-panel__loading">
-                <span class="knowledge-search-panel__spinner" aria-hidden="true" />
+              <AgentWorkflowProgress
+                v-if="sending && !answer && workflow.running"
+                :workflow="workflow"
+                compact
+              />
+              <div v-else-if="sending && !answer" class="knowledge-search-panel__loading platform-inline-loading">
+                <n-spin size="tiny" />
                 {{ t("knowledgeSearch.thinking") }}
               </div>
               <div v-else-if="sending" class="knowledge-search-panel__streaming">
@@ -751,21 +722,6 @@ onMounted(() => {
 
 .knowledge-search-panel__loading--failed {
   color: var(--platform-danger, #dc2626);
-}
-
-.knowledge-search-panel__spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--platform-border);
-  border-top-color: var(--platform-accent);
-  border-radius: 50%;
-  animation: knowledge-search-spin 0.8s linear infinite;
-}
-
-@keyframes knowledge-search-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .knowledge-search-panel__streaming {

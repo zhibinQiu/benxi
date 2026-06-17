@@ -7,9 +7,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import require_permission
 from app.database import get_db
-from app.models.org import User
 from app.schemas.common import ApiResponse
 from app.schemas.model_settings import (
     ModelSettingsOut,
@@ -27,12 +26,15 @@ from app.services.resource_health_service import (
     _normalize_resource_id,
 )
 
-router = APIRouter(prefix="/admin/model-settings", tags=["admin"])
+router = APIRouter(
+    prefix="/admin/model-settings",
+    tags=["admin"],
+    dependencies=[Depends(require_permission("admin.user"))],
+)
 
 
 @router.get("", response_model=ApiResponse[ModelSettingsOut])
 def read_model_settings(
-    _: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[ModelSettingsOut]:
     return ApiResponse(data=get_model_settings(db))
@@ -41,7 +43,6 @@ def read_model_settings(
 @router.put("", response_model=ApiResponse[ModelSettingsOut])
 def update_model_settings(
     body: ModelSettingsUpdate,
-    _: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[ModelSettingsOut]:
     return ApiResponse(data=save_model_settings(db, body))
@@ -49,7 +50,6 @@ def update_model_settings(
 
 @router.get("/health", response_model=ApiResponse[ResourceHealthOut])
 def read_resource_health(
-    _: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[ResourceHealthOut]:
     raw = check_resource_health(db)
@@ -60,7 +60,6 @@ def read_resource_health(
 @router.post("/health/test", response_model=ApiResponse[ResourceHealthItemOut])
 def test_resource_health(
     body: ResourceHealthTestIn,
-    _: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[ResourceHealthItemOut]:
     """保存前按表单草稿探测单项连通性。"""

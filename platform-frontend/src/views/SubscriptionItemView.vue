@@ -1,5 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { useSubscriptionImportFlow } from "../composables/useSubscriptionImportFlow.js";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NButton, NSpace, NSpin, NTag, NText } from "naive-ui";
@@ -17,11 +18,24 @@ const router = useRouter();
 const ui = usePlatformUi();
 
 const loading = ref(true);
-const importing = ref(false);
 const deleting = ref(false);
 const item = ref(null);
 
+const { importing, indexing, documentId, runImport, openDocument } = useSubscriptionImportFlow({
+  router,
+  route,
+  ui,
+});
+
 const articleBody = computed(() => resolveArticleBody(item.value));
+
+const resolvedDocumentId = computed(
+  () => documentId.value || item.value?.document_id || null
+);
+
+const showImportedActions = computed(
+  () => Boolean(item.value?.imported || resolvedDocumentId.value)
+);
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -36,6 +50,9 @@ async function load({ notifyOnError = true } = {}) {
   loading.value = true;
   try {
     item.value = await fetchSubscriptionItem(route.params.ref);
+    if (item.value?.document_id) {
+      documentId.value = item.value.document_id;
+    }
   } catch (e) {
     if (notifyOnError) ui.error(e.message);
     if (notifyOnError) {
@@ -47,23 +64,11 @@ async function load({ notifyOnError = true } = {}) {
 }
 
 async function onImport() {
-  importing.value = true;
   try {
-    const res = await importSubscriptionItem(route.params.ref);
-    if (res?.queued) {
-      ui.success("已加入个人级文档库，PDF 生成与知识索引正在后台进行");
-    } else {
-      ui.success(
-        res.knowflow_synced
-          ? "已入「个人级」文档库并同步知识库"
-          : "已入「个人级」文档库"
-      );
-    }
+    await runImport(importSubscriptionItem, route.params.ref);
     await load({ notifyOnError: false });
-  } catch (e) {
-    ui.error(e.message);
-  } finally {
-    importing.value = false;
+  } catch {
+    /* runImport 已提示 */
   }
 }
 
@@ -102,9 +107,11 @@ onMounted(load);
                 <template v-if="item.author"> · {{ item.author }}</template>
               </NText>
               <NSpace class="detail-actions" align="center">
-                <NTag v-if="item.imported" type="success" :bordered="false">已入文档库</NTag>
+                <NTag v-if="showImportedActions" type="success" :bordered="false">
+                  {{ indexing ? "索引中" : "已入文档库" }}
+                </NTag>
                 <NButton
-                  v-if="!item.imported"
+                  v-if="!showImportedActions"
                   type="primary"
                   :loading="importing"
                   @click="onImport"
@@ -112,7 +119,15 @@ onMounted(load);
                   导入文档库
                 </NButton>
                 <NButton
-                  v-else
+                  v-if="showImportedActions && resolvedDocumentId"
+                  type="primary"
+                  :loading="indexing"
+                  @click="openDocument(resolvedDocumentId)"
+                >
+                  {{ indexing ? "查看文档（索引中）" : "查看文档" }}
+                </NButton>
+                <NButton
+                  v-if="showImportedActions"
                   tertiary
                   @click="
                     router.push({

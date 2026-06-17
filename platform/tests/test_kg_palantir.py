@@ -1,4 +1,4 @@
-"""Palantir 知识图谱 — 插件注册与基础 API。"""
+"""本体图谱 — 插件注册与基础 API。"""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def test_ai_home_resolves_kg_context(client: TestClient, admin_token: str):
         messages = _build_chat_messages(
             message="全国碳市场管理办法与范围一排放量是什么关系？",
             history=[],
-            kg_context=kg,
+            retrieval_context=kg.context_text or "",
         )
         system = messages[0]["content"]
         assert "知识图谱" in system

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import re
 from xml.sax.saxutils import escape
 
@@ -17,17 +18,50 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 logger = logging.getLogger(__name__)
 
-_FONT_REGISTERED = False
-_CN_FONT = "STSong-Light"
+_RESOLVED_FONT: str | None = None
+_EMBEDDED_CJK_FONT = "ArticleCJK"
+_FALLBACK_CID_FONT = "STSong-Light"
 _LINK_MD_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+# Docker 镜像已装 fonts-wqy-microhei；macOS 开发机可用 PingFang / STHeiti
+_CJK_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/wqy-microhei/wqy-microhei.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    "/Library/Fonts/Arial Unicode.ttf",
+)
 
 
 def _ensure_cn_font() -> str:
-    global _FONT_REGISTERED
-    if not _FONT_REGISTERED:
-        pdfmetrics.registerFont(UnicodeCIDFont(_CN_FONT))
-        _FONT_REGISTERED = True
-    return _CN_FONT
+    """优先嵌入 TTF/TTC，便于 pdf.js 浏览器预览；无系统字体时回退 CID。"""
+    global _RESOLVED_FONT
+    if _RESOLVED_FONT:
+        return _RESOLVED_FONT
+
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    for path in _CJK_FONT_CANDIDATES:
+        if not os.path.isfile(path):
+            continue
+        try:
+            kwargs: dict = {}
+            if path.lower().endswith(".ttc"):
+                kwargs["subfontIndex"] = 0
+            pdfmetrics.registerFont(TTFont(_EMBEDDED_CJK_FONT, path, **kwargs))
+            _RESOLVED_FONT = _EMBEDDED_CJK_FONT
+            logger.debug("article PDF font: %s (%s)", _EMBEDDED_CJK_FONT, path)
+            return _RESOLVED_FONT
+        except Exception as exc:
+            logger.debug("article PDF font skip %s: %s", path, exc)
+
+    pdfmetrics.registerFont(UnicodeCIDFont(_FALLBACK_CID_FONT))
+    _RESOLVED_FONT = _FALLBACK_CID_FONT
+    logger.warning(
+        "article PDF 使用 CID 字体 %s，浏览器内预览可能无法显示中文",
+        _FALLBACK_CID_FONT,
+    )
+    return _RESOLVED_FONT
 
 
 def _paragraph(text: str, style: ParagraphStyle) -> Paragraph:

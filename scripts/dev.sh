@@ -10,7 +10,8 @@
 #   ./dev.sh stop               # 停止 Docker 栈 + 本机进程
 #   ./dev.sh remote-dev         # 生成本机 + 远程依赖 platform/.env
 #
-# 透传：./dev.sh stack …  |  ./dev.sh deploy …  |  ./dev.sh knowflow setup
+#   ./dev.sh sync [--frontend|--all|--no-restart-api]  同步代码到服务器（默认重启 API/Worker）
+#   ./dev.sh sync-frp-uninstall                 卸载服务器 frps
 #
 set -euo pipefail
 unset DOCKER_DEFAULT_PLATFORM DOCKER_PLATFORM
@@ -196,7 +197,8 @@ usage() {
 环境与运维:
   stop                                     停止 Docker 栈 + 本机 dev 进程
   remote-dev                               生成 REMOTE_DEPS platform/.env
-  frp [setup|start|stop|status|install-server]  frp 暴露本机 dev（local 启动时自动）
+  sync [--frontend|--all]                    同步代码到服务器并重启 API/Worker
+  sync-frp-uninstall                       卸载服务器 frps
   db migrate to-local|to-remote          平台 PostgreSQL 迁移（透传 migrate-postgres.sh）
   env remote-dev|local-db                  生成 platform/.env（同 ./dev.sh remote-dev）
   fix-env                                  检查/初始化 platform/.env 模板
@@ -207,7 +209,8 @@ usage() {
 
 示例:
   REMOTE_HOST=服务器IP ./dev.sh remote-dev && ./dev.sh local
-  ./dev.sh docker --profile knowflow --profile speech
+  ./dev.sh sync                              # 改后端后同步到服务器
+  ./dev.sh sync --frontend                   # 含前端重建
 
 文档: scripts/README.md
 EOF
@@ -235,6 +238,12 @@ main() {
     fix-env) dev_fix_local_env ;;
     remote-dev) dev_remote_dev ;;
     frp) dev_frp "$@" ;;
+    sync)
+      exec bash "$SCRIPT_DIR/server-sync.sh" "$@"
+      ;;
+    sync-frp-uninstall)
+      exec bash "$SCRIPT_DIR/server-uninstall-frp.sh" "$@"
+      ;;
     stack) exec bash "$SCRIPT_DIR/stack.sh" "$@" ;;
     deploy) exec bash "$SCRIPT_DIR/deploy.sh" "$@" ;;
     knowflow)

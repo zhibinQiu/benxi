@@ -53,6 +53,7 @@ class ModelSettingsOut(BaseModel):
     knowledge: KnowledgeInfraOut
     paddleocr: ModelEndpointOut
     paddleocr_url: str = ""
+    tts: ModelEndpointOut
     speech_service_url: str = ""
     pdf2zh_api_url: str = ""
     embedding_factory: str | None = None
@@ -85,6 +86,9 @@ class ModelSettingsUpdate(BaseModel):
     paddleocr_api_key: str | None = None
     paddleocr_model: str | None = None
     paddleocr_url: str | None = None
+    tts_base_url: str | None = None
+    tts_api_key: str | None = None
+    tts_model: str | None = None
     speech_service_url: str | None = None
     pdf2zh_api_url: str | None = None
     ragflow_api_url: str | None = None

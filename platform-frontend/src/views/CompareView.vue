@@ -16,6 +16,7 @@ import {
   NCheckboxGroup,
   NEmpty,
   NModal,
+  NPagination,
   NSelect } from "naive-ui";
 import {
   ArrowBackOutline,
@@ -31,6 +32,7 @@ import {
   fetchCompareDocumentFileBlob,
   getCompareDocumentDownload,
   searchCompareDocuments,
+  fetchCompareDocuments,
   fetchVersionCompareAdjacent,
   pollVersionCompareAdjacent,
   askVersionCompare,
@@ -61,6 +63,7 @@ import {
   diffMatchesPara,
 } from "../utils/compareDocument.js";
 import { PREVIEW_KIND } from "../utils/documentPreview.js";
+import { PLATFORM_Z } from "../constants/zIndex.js";
 
 const ui = usePlatformUi();
 const route = useRoute();
@@ -102,8 +105,17 @@ const checkedVersionIds = ref([]);
 const showVersionDocPicker = ref(false);
 const showVersionSelectModal = ref(false);
 
+const CROSS_DOC_PAGE_SIZE = 10;
+const CROSS_COMPARE_DOC_COUNT = 2;
+
 const crossDocs = ref([]);
-const showCrossAddPicker = ref(false);
+const showCrossSelectModal = ref(false);
+const checkedCrossDocIds = ref([]);
+const crossDocList = ref([]);
+const crossDocLoading = ref(false);
+const crossDocPage = ref(1);
+const crossDocTotal = ref(0);
+const crossDocKeyword = ref("");
 
 const baselineColumn = computed(() => columns.value[0] || null);
 const targetColumn = computed(() => columns.value[activeTargetIndex.value] || null);
@@ -118,9 +130,20 @@ const canCompare = computed(() => {
 });
 
 const canStartCrossCompare = computed(
-  () =>
-    crossDocs.value.length >= MIN_COMPARE_COLS &&
-    crossDocs.value.length <= MAX_CROSS_COLS
+  () => checkedCrossDocIds.value.length === CROSS_COMPARE_DOC_COUNT
+);
+
+const crossDocPageCount = computed(() =>
+  Math.max(1, Math.ceil(crossDocTotal.value / CROSS_DOC_PAGE_SIZE))
+);
+
+const crossDocOptions = computed(() =>
+  crossDocList.value.map((d) => ({
+    id: d.id,
+    title: d.title,
+    file_name: d.file_name,
+    label: `${d.title} · ${d.file_name}`,
+  }))
 );
 
 const canStartVersionCompare = computed(
@@ -159,6 +182,12 @@ function columnRoleLabel(index) {
   if (compareMode.value === "version") {
     const no = columns.value[index]?.doc?.version_no;
     return no != null ? `v${no}` : `版本 ${index + 1}`;
+  }
+  if (compareMode.value === "cross") {
+    const doc = columns.value[index]?.doc;
+    if (doc?.version_no != null && columns.value.length === CROSS_COMPARE_DOC_COUNT) {
+      return index === 0 ? "参照" : "对比";
+    }
   }
   if (index === 0) return "参照";
   if (index === activeTargetIndex.value) {
@@ -272,6 +301,10 @@ const versionCompareRunning = computed(
       versionPairRows.value.some((r) => ["pending", "running"].includes(r.status)))
 );
 
+const crossCompareRunning = computed(
+  () => compareMode.value === "cross" && comparing.value
+);
+
 const activeVersionPair = computed(
   () => versionPairRows.value[activePairIndex.value] || null
 );
@@ -285,14 +318,23 @@ const isVersionGridLayout = computed(
   () => compareMode.value === "version" && columns.value.length > 2
 );
 
+/** 跨文档对比：双栏布局与版本对比 2 版一致 */
+const isCrossPairLayout = computed(
+  () => compareMode.value === "cross" && columns.value.length === CROSS_COMPARE_DOC_COUNT
+);
+
 const showCompareAside = computed(() => {
   if (compareMode.value === "version" && columns.value.length >= 2) {
+    return true;
+  }
+  if (compareMode.value === "cross" && columns.value.length >= MIN_COMPARE_COLS) {
     return true;
   }
   return (
     searchHits.value.length > 0 ||
     showDiffAside.value ||
-    versionCompareRunning.value
+    versionCompareRunning.value ||
+    crossCompareRunning.value
   );
 });
 
@@ -644,9 +686,11 @@ function enterWorkspace() {
   activePairIndex.value = 0;
   searchHits.value = [];
   activeHitIndex.value = -1;
-  hydrateAllColumns().then(() => {
+  hydrateAllColumns().then(async () => {
     if (compareMode.value === "version") {
-      loadPrecomputedVersionTimeline();
+      await loadPrecomputedVersionTimeline();
+    } else if (compareMode.value === "cross") {
+      await runCompare();
     }
   });
 }
@@ -662,7 +706,108 @@ function openVersionDocPickerFlow() {
 function openCrossDocPickerFlow() {
   compareMode.value = "cross";
   crossDocs.value = [];
-  showCrossAddPicker.value = true;
+  checkedCrossDocIds.value = [];
+  crossDocKeyword.value = "";
+  crossDocPage.value = 1;
+  showCrossSelectModal.value = true;
+  void loadCrossDocList();
+}
+
+async function loadCrossDocList() {
+  crossDocLoading.value = true;
+  try {
+    const data = await fetchCompareDocuments({
+      page: crossDocPage.value,
+      page_size: CROSS_DOC_PAGE_SIZE,
+      keyword: crossDocKeyword.value || undefined,
+    });
+    crossDocList.value = data.items || [];
+    crossDocTotal.value = data.total ?? 0;
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    crossDocLoading.value = false;
+  }
+}
+
+function onCrossDocSearch() {
+  crossDocPage.value = 1;
+  void loadCrossDocList();
+}
+
+function onCrossDocPageChange(page) {
+  crossDocPage.value = page;
+  void loadCrossDocList();
+}
+
+function onCrossDocCheckUpdate(ids) {
+  if (ids.length > CROSS_COMPARE_DOC_COUNT) {
+    checkedCrossDocIds.value = ids.slice(-CROSS_COMPARE_DOC_COUNT);
+    ui.info(`最多选择 ${CROSS_COMPARE_DOC_COUNT} 份文档`);
+    return;
+  }
+  checkedCrossDocIds.value = ids;
+}
+
+function pickLatestUploadedVersion(versions) {
+  const uploaded = (versions || []).filter((v) => v.uploaded && v.file_size > 0);
+  if (!uploaded.length) return null;
+  const current = uploaded.find((v) => v.is_current);
+  if (current) return current;
+  return uploaded.sort((a, b) => b.version_no - a.version_no)[0];
+}
+
+async function resolveCrossDocsWithLatestVersions(docRows) {
+  const resolved = [];
+  for (const row of docRows) {
+    const doc = await fetchDocument(row.id);
+    const version = pickLatestUploadedVersion(doc.versions);
+    if (!version) {
+      throw new Error(`《${doc.title || row.title}》尚无已上传版本，无法对比`);
+    }
+    resolved.push(
+      buildCompareDoc(
+        {
+          id: doc.id,
+          title: doc.title || row.title,
+          file_name: row.file_name || version.file_name,
+          file_size: version.file_size,
+          created_at: version.created_at || doc.updated_at,
+        },
+        version
+      )
+    );
+  }
+  return resolved;
+}
+
+function cancelCrossSelect() {
+  showCrossSelectModal.value = false;
+  checkedCrossDocIds.value = [];
+  crossDocs.value = [];
+}
+
+async function confirmCrossCompare() {
+  if (!canStartCrossCompare.value) {
+    ui.warning(`请勾选 ${CROSS_COMPARE_DOC_COUNT} 份不同文档`);
+    return;
+  }
+  const pickedRows = crossDocOptions.value.filter((d) =>
+    checkedCrossDocIds.value.includes(d.id)
+  );
+  if (pickedRows.length !== CROSS_COMPARE_DOC_COUNT) return;
+
+  crossDocLoading.value = true;
+  try {
+    const docs = await resolveCrossDocsWithLatestVersions(pickedRows);
+    crossDocs.value = docs;
+    showCrossSelectModal.value = false;
+    startCrossCompare(docs);
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    crossDocLoading.value = false;
+  }
 }
 
 function goEntry() {
@@ -673,6 +818,8 @@ function goEntry() {
   versionList.value = [];
   checkedVersionIds.value = [];
   crossDocs.value = [];
+  checkedCrossDocIds.value = [];
+  showCrossSelectModal.value = false;
 }
 
 function goSetupFromWorkspace() {
@@ -778,13 +925,13 @@ function startVersionCompare() {
   enterWorkspace();
 }
 
-function startCrossCompare() {
-  if (!canStartCrossCompare.value) {
+function startCrossCompare(docs = crossDocs.value) {
+  if (docs.length < MIN_COMPARE_COLS || docs.length > MAX_CROSS_COLS) {
     ui.warning(`请选择 ${MIN_COMPARE_COLS}–${MAX_CROSS_COLS} 份不同文档`);
     return;
   }
   compareMode.value = "cross";
-  initColumnsFromDocs(crossDocs.value.map((d) => buildCompareDoc(d)));
+  initColumnsFromDocs(docs);
   enterWorkspace();
 }
 
@@ -793,41 +940,48 @@ function openPicker(columnIndex) {
   showPicker.value = true;
 }
 
-function onWorkspaceDocSelect(row) {
-  const doc = buildCompareDoc(row);
-  const idx = pickerColumnIndex.value;
-  if (columns.value[idx]) {
-    revokeBlobUrl(columns.value[idx].content?.preview_url);
-    columns.value[idx].doc = doc;
-    columns.value[idx].content = null;
-    columns.value[idx].pdfBaseUrl = null;
-    columns.value[idx].pdfPage = 1;
-    hydrateColumn(idx);
+async function onWorkspaceDocSelect(row) {
+  crossDocLoading.value = true;
+  try {
+    const doc = await fetchDocument(row.id);
+    const version = pickLatestUploadedVersion(doc.versions);
+    if (!version) {
+      ui.warning(`《${doc.title || row.title}》尚无已上传版本`);
+      return;
+    }
+    const compareDoc = buildCompareDoc(
+      {
+        id: doc.id,
+        title: doc.title || row.title,
+        file_name: row.file_name || version.file_name,
+        file_size: version.file_size,
+        created_at: version.created_at || doc.updated_at,
+      },
+      version
+    );
+    const idx = pickerColumnIndex.value;
+    if (columns.value[idx]) {
+      revokeBlobUrl(columns.value[idx].content?.preview_url);
+      columns.value[idx].doc = compareDoc;
+      columns.value[idx].content = null;
+      columns.value[idx].pdfBaseUrl = null;
+      columns.value[idx].pdfPage = 1;
+      await hydrateColumn(idx);
+    }
+    if (compareMode.value !== "version") compareMode.value = "cross";
+    showPicker.value = false;
+    job.value = null;
+    versionCompareRelation.value = null;
+    searchHits.value = [];
+    activeHitIndex.value = -1;
+    if (columns.value.length >= MIN_COMPARE_COLS) {
+      await runCompare();
+    }
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    crossDocLoading.value = false;
   }
-  if (compareMode.value !== "version") compareMode.value = "cross";
-  showPicker.value = false;
-  job.value = null;
-  versionCompareRelation.value = null;
-  searchHits.value = [];
-  activeHitIndex.value = -1;
-}
-
-function onCrossDocAdd(row) {
-  if (crossDocs.value.length >= MAX_CROSS_COLS) {
-    ui.info(`最多添加 ${MAX_CROSS_COLS} 份文档`);
-    return;
-  }
-  if (crossDocs.value.some((d) => d.id === row.id)) {
-    ui.warning("已添加该文档");
-    return;
-  }
-  crossDocs.value.push(row);
-  if (crossDocs.value.length < MIN_COMPARE_COLS) {
-    ui.info(`请再选择 ${MIN_COMPARE_COLS - crossDocs.value.length} 份文档`);
-    showCrossAddPicker.value = true;
-    return;
-  }
-  startCrossCompare();
 }
 
 function setColumnScrollRef({ el, index }) {
@@ -1109,7 +1263,7 @@ async function scrollToDiffItem(d) {
           <template #icon>
             <n-icon :component="RefreshOutline" />
           </template>
-          开始对比
+          刷新差异
         </n-button>
         <n-button
           v-if="compareMode === 'version'"
@@ -1213,6 +1367,7 @@ async function scrollToDiffItem(d) {
         :class="{
           'compare-workspace-body--version-pair': isVersionPairLayout,
           'compare-workspace-body--version-grid': isVersionGridLayout,
+          'compare-workspace-body--cross-pair': isCrossPairLayout,
         }"
       >
       <div
@@ -1222,6 +1377,7 @@ async function scrollToDiffItem(d) {
           {
             'compare-columns--version-pair': isVersionPairLayout,
             'compare-columns--version-grid': isVersionGridLayout,
+            'compare-columns--cross-pair': isCrossPairLayout,
           },
         ]"
       >
@@ -1273,7 +1429,10 @@ async function scrollToDiffItem(d) {
       <aside
         v-if="showCompareAside"
         class="compare-aside"
-        :class="{ 'compare-aside--version-pair': isVersionPairLayout }"
+        :class="{
+          'compare-aside--version-pair': isVersionPairLayout,
+          'compare-aside--cross-pair': isCrossPairLayout,
+        }"
       >
         <n-card
           v-if="compareMode === 'version' && versionCompareRelation?.status === 'done'"
@@ -1369,6 +1528,15 @@ async function scrollToDiffItem(d) {
         </n-card>
 
         <n-card
+          v-if="crossCompareRunning"
+          size="small"
+          title="文档对比"
+          class="aside-card aside-card--cross-running"
+        >
+          <n-text depth="3">正在分析两份文档的文本差异…</n-text>
+        </n-card>
+
+        <n-card
           v-if="versionCompareRunning"
           size="small"
           title="版本对比"
@@ -1386,6 +1554,10 @@ async function scrollToDiffItem(d) {
           <n-text depth="3" class="aside-hint">
             <template v-if="compareMode === 'version' && versionCompareRelation">
               v{{ versionCompareRelation.from_version_no }} → v{{ versionCompareRelation.to_version_no }}：
+              共 {{ diffItems.length }} 处差异
+            </template>
+            <template v-else-if="compareMode === 'cross'">
+              {{ docDisplayTitle(baselineDoc) }} vs {{ docDisplayTitle(targetDoc) }}：
               共 {{ diffItems.length }} 处差异
             </template>
             <template v-else>
@@ -1448,6 +1620,7 @@ async function scrollToDiffItem(d) {
       v-model:show="showVersionSelectModal"
       preset="card"
       title="选择要比对的版本"
+      :z-index="PLATFORM_Z.featureModal"
       style="width: min(520px, 92vw)"
       :mask-closable="false"
     >
@@ -1500,12 +1673,77 @@ async function scrollToDiffItem(d) {
         </n-space>
       </template>
     </n-modal>
-    <CompareDocPicker
-      v-model:show="showCrossAddPicker"
-      title="添加对比文档"
-      :exclude-ids="crossDocs.map((d) => d.id)"
-      @select="onCrossDocAdd"
-    />
+    <n-modal
+      v-model:show="showCrossSelectModal"
+      preset="card"
+      title="选择要比对的两份文档"
+      :z-index="PLATFORM_Z.featureModal"
+      style="width: min(560px, 92vw)"
+      :mask-closable="false"
+    >
+      <n-space vertical :size="14">
+        <n-space :size="10">
+          <n-input
+            v-model:value="crossDocKeyword"
+            placeholder="搜索标题或文件名"
+            clearable
+            style="flex: 1"
+            @keyup.enter="onCrossDocSearch"
+          />
+          <n-button type="primary" @click="onCrossDocSearch">搜索</n-button>
+        </n-space>
+        <div>
+          <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px">
+            勾选文档（已选 {{ checkedCrossDocIds.length }} / {{ CROSS_COMPARE_DOC_COUNT }}，默认使用各文档最新版本）
+          </n-text>
+          <n-spin :show="crossDocLoading">
+            <n-checkbox-group
+              v-if="crossDocOptions.length"
+              :value="checkedCrossDocIds"
+              @update:value="onCrossDocCheckUpdate"
+            >
+              <n-space vertical :size="8">
+                <n-checkbox
+                  v-for="d in crossDocOptions"
+                  :key="d.id"
+                  :value="d.id"
+                  :label="d.label"
+                />
+              </n-space>
+            </n-checkbox-group>
+            <n-empty v-else description="暂无可比对文档" size="small" />
+          </n-spin>
+          <n-space
+            v-if="crossDocPageCount > 1"
+            justify="center"
+            style="margin-top: 12px"
+          >
+            <n-pagination
+              :page="crossDocPage"
+              :page-count="crossDocPageCount"
+              :page-slot="7"
+              @update:page="onCrossDocPageChange"
+            />
+          </n-space>
+        </div>
+      </n-space>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="cancelCrossSelect">取消</n-button>
+          <n-button
+            type="primary"
+            :disabled="!canStartCrossCompare"
+            :loading="crossDocLoading"
+            @click="confirmCrossCompare"
+          >
+            <template #icon>
+              <n-icon :component="GitCompareOutline" />
+            </template>
+            开始对比
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
     <CompareDocPicker
       v-model:show="showPicker"
       title="更换文档"
@@ -1737,6 +1975,38 @@ async function scrollToDiffItem(d) {
 .compare-aside--version-pair .aside-card--version-ask :deep(.n-card__content) {
   flex: 1;
   min-height: 0;
+}
+
+/* 跨文档对比 · 双栏：布局与版本对比 2 版一致 */
+.compare-workspace-body--cross-pair {
+  --compare-aside-width: min(260px, 22vw);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--compare-aside-width);
+  gap: var(--compare-body-gap);
+  align-items: stretch;
+}
+
+.compare-workspace-body--cross-pair .compare-columns--cross-pair {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  overflow: hidden;
+  align-items: stretch;
+}
+
+.compare-workspace-body--cross-pair .compare-columns--cross-pair > :deep(.doc-panel) {
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.compare-aside--cross-pair {
+  width: 100%;
+  max-width: var(--compare-aside-width);
+  flex-shrink: 0;
 }
 
 /* 版本对比 · 3+ 版：主区网格 + 右侧栏 */

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -24,10 +25,7 @@ from app.services.knowledge_qa_service import (
     retrieve_hits_for_qa,
 )
 from app.services.searxng_service import (
-    SearxngNotConfiguredError,
-    SearxngSearchError,
     is_enabled as searxng_enabled,
-    search_web,
 )
 
 logger = logging.getLogger(__name__)
@@ -591,8 +589,17 @@ def _build_messages(
     web_enabled: bool,
     local_enabled: bool,
     chunk_count: int,
+    insufficient_note: str | None = None,
 ) -> list[dict]:
     parts = [_REPORT_SYSTEM, _intent_instruction(intent, chunk_count=chunk_count)]
+    if insufficient_note:
+        parts.append(
+            "【材料不足】当前召回材料可能不足以完整撰写报告。"
+            f"不足方面：{insufficient_note}。"
+            "请基于已有编号材料尽力撰写；对缺失部分在相应章节标注「待补充」，"
+            "并在报告末尾用一小段友好提示用户可补充哪些具体信息（如数据口径、时间范围、案例），"
+            "不要编造缺失的具体数据或政策文号。"
+        )
     if topic:
         parts.append(f"报告主题：{topic}")
     if intent in ("follow_up", "format_adjust") and _has_prior_assistant_turn(history):
@@ -726,6 +733,7 @@ async def iter_report_generation_stream(
     conversation_id: str | None = None,
     document_ids: list[str] | None = None,
     use_web_search: bool = True,
+    use_agentic: bool = True,
 ) -> AsyncIterator[str]:
     message = message.strip()
     if not message:
@@ -757,63 +765,104 @@ async def iter_report_generation_stream(
     all_citations: list[dict] = []
     doc_titles: dict[str, str] = {}
     doc_ids = _parse_document_ids(document_ids)
-
-    if doc_ids:
-        local_queries = build_local_retrieval_queries(
-            message,
-            topic=topic,
-            intent=intent,
-            history=history,
-        )
-        yield json.dumps(
-            {
-                "workflow": {
-                    "phase": "node_started",
-                    "title": f"深度检索本地资料（{len(local_queries)} 路召回）",
-                }
-            },
-            ensure_ascii=False,
-        )
-        try:
-            local_hits = retrieve_local_hits_for_report(
-                db,
-                user,
-                doc_ids,
-                local_queries,
-            )
-            from app.services.knowledge_qa_service import _doc_titles
-
-            doc_titles = _doc_titles(db, doc_ids)
-        except Exception as exc:
-            logger.warning("报告生成本地检索失败: %s", exc)
-
-    web_items: list[dict] = []
     web_configured = searxng_enabled(db)
     web_on = bool(use_web_search and web_configured)
 
-    if web_on:
-        yield json.dumps(
-            {"workflow": {"phase": "node_started", "title": "联网检索相关资料"}},
-            ensure_ascii=False,
+    from app.services.knowledge_agentic_service import (
+        RESULT_MARKER,
+        AgenticReportGatherResult,
+        agentic_enabled,
+        iter_gather_for_report,
+    )
+    from app.services.knowledge_agentic_tools import KnowledgeAgenticToolkit
+    from app.services.knowledge_qa_service import _doc_titles
+
+    gathered: AgenticReportGatherResult | None = None
+    if use_agentic and agentic_enabled():
+        for item in iter_gather_for_report(
+            db,
+            user,
+            doc_ids,
+            message=message,
+            topic=topic,
+            intent=intent,
+            history=history,
+            web_enabled=web_on,
+        ):
+            if RESULT_MARKER in item:
+                gathered = item[RESULT_MARKER]
+            else:
+                yield json.dumps({"workflow": item}, ensure_ascii=False)
+                await asyncio.sleep(0)
+    else:
+        if doc_ids:
+            yield json.dumps(
+                {
+                    "workflow": {
+                        "phase": "node_started",
+                        "title": "深度检索本地资料（规则多路召回）",
+                    }
+                },
+                ensure_ascii=False,
+            )
+            await asyncio.sleep(0)
+        local_queries = build_local_retrieval_queries(
+            message, topic=topic, intent=intent, history=history
         )
-        queries = build_search_queries(message, topic=topic, intent=intent)
-        seen_urls: set[str] = set()
-        for q in queries:
-            try:
-                items, _ = search_web(q, page_size=_MAX_WEB_RESULTS, db=db)
-            except (SearxngNotConfiguredError, SearxngSearchError) as exc:
-                logger.warning("报告生成联网检索失败: %s", exc)
-                break
-            for row in items:
-                url = (row.get("url") or "").strip()
-                if not url or url in seen_urls:
-                    continue
-                seen_urls.add(url)
-                web_items.append(row)
-                if len(web_items) >= _MAX_WEB_RESULTS:
-                    break
-            if len(web_items) >= _MAX_WEB_RESULTS:
-                break
+        toolkit = KnowledgeAgenticToolkit(
+            db,
+            user,
+            doc_ids,
+            web_enabled=web_on,
+            include_kg=False,
+            retrieve_limit=15,
+            web_max_items=10,
+        )
+        if doc_ids:
+            for q in local_queries:
+                toolkit.retrieve(q, limit=15)
+        local_hits = (
+            toolkit.accumulated_local_hits
+            if toolkit.accumulated_local_hits
+            else (
+                retrieve_local_hits_for_report(db, user, doc_ids, local_queries)
+                if doc_ids
+                else []
+            )
+        )
+        web_items: list[dict] = []
+        web_queries: list[str] = []
+        if web_on:
+            yield json.dumps(
+                {
+                    "workflow": {
+                        "phase": "node_started",
+                        "title": "联网检索相关资料",
+                    }
+                },
+                ensure_ascii=False,
+            )
+            await asyncio.sleep(0)
+            web_queries = build_search_queries(message, topic=topic, intent=intent)
+            for q in web_queries:
+                toolkit.web_search(q)
+            web_items = toolkit.accumulated_web_items
+        gathered = AgenticReportGatherResult(
+            local_hits=local_hits,
+            web_items=web_items,
+            doc_titles=_doc_titles(db, doc_ids) if doc_ids else {},
+            plan_reasoning="规则多路召回",
+            rounds_used=1,
+            local_queries=local_queries,
+            web_queries=web_queries,
+        )
+
+    assert gathered is not None
+
+    local_hits = gathered.local_hits
+    web_items = gathered.web_items
+    doc_titles = gathered.doc_titles or doc_titles
+    insufficient_note = gathered.insufficient_note
 
     chunk_count = 0
     if local_hits or web_items:
@@ -841,6 +890,7 @@ async def iter_report_generation_stream(
         web_enabled=web_on,
         local_enabled=bool(doc_ids),
         chunk_count=len(local_hits),
+        insufficient_note=insufficient_note,
     )
 
     accumulated = ""

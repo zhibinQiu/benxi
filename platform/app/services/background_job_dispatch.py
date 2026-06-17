@@ -44,28 +44,34 @@ def submit_light_background(name: str, fn: Callable, /, *args, **kwargs) -> None
     submit_background(name, fn, *args, **kwargs)
 
 
-def dispatch_document_index_job(job_id: uuid.UUID) -> None:
-    """文档索引 / 重新索引 Job 调度。
-
-    实现思路：读 Job payload → PageIndex 则跳过 Celery，走 ``submit_background``；
-    否则优先 Celery Worker，失败再回落线程池。与 ``knowledge_sync_job_service``
-    中 ``run_document_knowledge_index_job`` 配合完成实际索引逻辑。
-    """
+def _document_index_job_run_inprocess(job_id: uuid.UUID) -> bool:
+    """PageIndex 与资讯导入链（DeepDOC→PageIndex）须在本机进程执行。"""
     from app.database import SessionLocal
     from app.models.job import Job
     from app.services.knowledge_parser_service import job_payload_uses_pageindex
+    from app.services.knowledge_sync_job_service import SUBSCRIPTION_PIPELINE_MODE
 
-    run_inprocess = False
     db = SessionLocal()
     try:
         job = db.get(Job, job_id)
-        if job:
-            payload = job.payload if isinstance(job.payload, dict) else {}
-            if job_payload_uses_pageindex(payload):
-                # PageIndex 在本机建树，避免远程旧版 Celery Worker 抢任务
-                run_inprocess = True
+        if not job:
+            return False
+        payload = job.payload if isinstance(job.payload, dict) else {}
+        if job_payload_uses_pageindex(payload):
+            return True
+        return str(payload.get("mode") or "") == SUBSCRIPTION_PIPELINE_MODE
     finally:
         db.close()
+
+
+def dispatch_document_index_job(job_id: uuid.UUID) -> None:
+    """文档索引 / 重新索引 Job 调度。
+
+    实现思路：读 Job payload → PageIndex 或资讯导入链则跳过 Celery，走 ``submit_background``；
+    否则优先 Celery Worker，失败再回落线程池。与 ``knowledge_sync_job_service``
+    中 ``run_document_knowledge_index_job`` 配合完成实际索引逻辑。
+    """
+    run_inprocess = _document_index_job_run_inprocess(job_id)
 
     if not run_inprocess:
         from workers.tasks.platform_jobs import run_document_index_job_task
@@ -132,15 +138,16 @@ def dispatch_post_upload_processing(
 
 
 def dispatch_parse_watch(job_id: uuid.UUID, *, countdown: int = 0) -> None:
-    from workers.tasks.platform_jobs import run_parse_watch_task
+    if not _document_index_job_run_inprocess(job_id):
+        from workers.tasks.platform_jobs import run_parse_watch_task
 
-    if _try_celery(
-        run_parse_watch_task,
-        [str(job_id)],
-        countdown=countdown,
-        label=f"parse-watch-{job_id}",
-    ):
-        return
+        if _try_celery(
+            run_parse_watch_task,
+            [str(job_id)],
+            countdown=countdown,
+            label=f"parse-watch-{job_id}",
+        ):
+            return
     if countdown > 0:
         threading.Timer(
             countdown,

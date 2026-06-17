@@ -68,6 +68,7 @@ async def report_generation_chat_stream(
             conversation_id=body.conversation_id,
             document_ids=body.document_ids,
             use_web_search=body.use_web_search,
+            use_agentic=body.use_agentic,
         ):
             yield f"data: {payload}\n\n"
 

@@ -82,7 +82,7 @@ def test_member_cannot_update_menu_settings(client):
     assert r.status_code == 403, r.text
 
 
-def test_member_can_update_model_settings(client):
+def test_member_cannot_update_model_settings(client):
     member_token = _register_member_token(client)
     if not member_token:
         pytest.skip("公开注册未开启")
@@ -93,5 +93,4 @@ def test_member_can_update_model_settings(client):
         headers={"Authorization": f"Bearer {member_token}"},
         json={"frontend_app_title": title},
     )
-    assert r.status_code == 200, r.text
-    assert r.json()["data"]["frontend_app_title"] == title
+    assert r.status_code == 403, r.text

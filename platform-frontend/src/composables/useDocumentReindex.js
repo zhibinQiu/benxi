@@ -1,4 +1,5 @@
-import { ref, onUnmounted } from "vue";
+import { ref, onUnmounted, h } from "vue";
+import { NTooltip } from "naive-ui";
 import { usePlatformUi } from "./usePlatformUi";
 import { fetchParserOptions, reindexDocument } from "../api/knowledge.js";
 import { fetchDocument } from "../api/documents.js";
@@ -14,14 +15,37 @@ function isTerminalSuccess(status) {
 }
 
 function isTerminalFailure(status) {
-  return status === "解析失败" || status === "索引失效" || status === "已取消";
+  return (
+    status === "解析失败"
+    || status === "索引失败"
+    || status === "索引失效"
+    || status === "已取消"
+  );
 }
 
-function mapSelectOptions(items = []) {
+function mapSelectOptions(items = [], { pageindexReady = true } = {}) {
   return items.map((p) => ({
     label: p.label,
+    hint: p.hint || "",
     value: p.id,
+    disabled: p.id === "pageindex" && !pageindexReady,
   }));
+}
+
+export function renderIndexedSelectLabel(option) {
+  return option?.label ?? "";
+}
+
+export function renderIndexedSelectOption({ node, option }) {
+  if (!option?.hint) return node;
+  return h(
+    NTooltip,
+    { placement: "right", delay: 200, keepAliveOnHover: true },
+    {
+      trigger: () => node,
+      default: () => option.hint,
+    }
+  );
 }
 
 /** 文档版本重新索引：切换解析器；可选从存储重新上传以修复引用截图 */
@@ -35,6 +59,7 @@ export function useDocumentReindex(documentId, onUpdated) {
   const reindexResync = ref(true);
   const chunkMethodOptions = ref([]);
   const layoutOptions = ref([]);
+  const pageindexBlockReason = ref("");
   const reparsing = ref(false);
   const indexPolling = ref(false);
 
@@ -93,20 +118,39 @@ export function useDocumentReindex(documentId, onUpdated) {
     try {
       const data = await fetchParserOptions();
       const methods = data?.chunk_methods || data?.items || [];
-      chunkMethodOptions.value = mapSelectOptions(methods);
+      const pageindexReady = data?.pageindex?.available !== false;
+      pageindexBlockReason.value = data?.pageindex?.block_reason || "";
+      chunkMethodOptions.value = mapSelectOptions(methods, { pageindexReady });
       layoutOptions.value = mapSelectOptions(data?.layout_recognizers || []);
       const defaults = data?.defaults || {};
       if (defaults.parser_id) parserId.value = defaults.parser_id;
       if (defaults.layout_recognize) layoutRecognize.value = defaults.layout_recognize;
+      if (!pageindexReady && parserId.value === "pageindex") {
+        parserId.value = defaults.parser_id && defaults.parser_id !== "pageindex"
+          ? defaults.parser_id
+          : "naive";
+      }
+      if (!parserId.value && chunkMethodOptions.value.length) {
+        const first = chunkMethodOptions.value.find((o) => !o.disabled) || chunkMethodOptions.value[0];
+        parserId.value = first?.value || "naive";
+      }
+      if (!layoutRecognize.value && layoutOptions.value.length) {
+        layoutRecognize.value = layoutOptions.value[0]?.value || "PaddleOCR";
+      }
     } catch {
       chunkMethodOptions.value = [
-        { label: "通用分块", value: "naive" },
-        { label: "智能分块", value: "smart" },
+        { label: "Naive（通用）", hint: "原 KnowFlow Naive；配 DeepDOC/纯文本", value: "naive" },
+        { label: "智能分块", hint: "推荐；配合 PaddleOCR/MinerU 等现代 OCR", value: "smart" },
       ];
       layoutOptions.value = [
-        { label: "标准识别", value: "PaddleOCR" },
-        { label: "纯文本", value: "Plain Text" },
+        {
+          label: "PaddleOCR",
+          hint: "版面 OCR（默认；使用资源管理中的 PaddleOCR-VL 服务）",
+          value: "PaddleOCR",
+        },
+        { label: "纯文本", hint: "跳过复杂版面分析，适合已提取文本", value: "Plain Text" },
       ];
+      if (!parserId.value) parserId.value = "smart";
     }
   }
 
@@ -114,6 +158,7 @@ export function useDocumentReindex(documentId, onUpdated) {
     if (!version?.uploaded || indexPolling.value) return;
     reindexTargetVersion.value = version;
     reindexModalShow.value = true;
+    void loadParserOptions();
   }
 
   async function pollReindexStatus(versionId, attempt = 0) {
@@ -269,11 +314,14 @@ export function useDocumentReindex(documentId, onUpdated) {
     layoutRecognize,
     chunkMethodOptions,
     layoutOptions,
+    pageindexBlockReason,
     reindexResync,
     reparsing,
     indexPolling,
     loadParserOptions,
     openReindexModal,
     submitReindex,
+    renderIndexedSelectLabel,
+    renderIndexedSelectOption,
   };
 }

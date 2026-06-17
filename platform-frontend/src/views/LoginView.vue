@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, ref, watch } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -9,7 +9,6 @@ import {
   NInput,
   NModal,
   NSpace,
-  NText,
 } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
 import { useAppPreferences } from "../composables/useAppPreferences";
@@ -32,7 +31,106 @@ const { t, localeLabel } = useI18n();
 
 onMounted(() => {
   loggingOut.value = false;
+  bindLoginPageWheelSnap();
 });
+
+onUnmounted(() => {
+  unbindLoginPageWheelSnap();
+});
+
+const pageRef = ref(null);
+const SNAP_SECTION_SELECTOR = ".login-snap-section";
+const WHEEL_SNAP_COOLDOWN_MS = 720;
+let wheelSnapLocked = false;
+let wheelSnapTimer = null;
+
+function getSnapSections() {
+  const root = pageRef.value;
+  if (!root) return [];
+  return Array.from(root.querySelectorAll(SNAP_SECTION_SELECTOR));
+}
+
+function getElementCenterInRoot(root, el) {
+  const rootRect = root.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  return root.scrollTop + (elRect.top - rootRect.top) + elRect.height / 2;
+}
+
+function getClosestSnapIndex(root, sections) {
+  const viewportCenter = root.scrollTop + root.clientHeight / 2;
+  let best = 0;
+  let bestDist = Infinity;
+  sections.forEach((el, i) => {
+    const dist = Math.abs(viewportCenter - getElementCenterInRoot(root, el));
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  });
+  return best;
+}
+
+function scrollSnapSectionIntoView(el) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function isSummaryOverflow(root, el) {
+  return el.classList.contains("login-feature-scroll__summary")
+    && el.offsetHeight > root.clientHeight * 0.82;
+}
+
+function onLoginPageWheel(e) {
+  const root = pageRef.value;
+  if (!root || exiting.value || loginModalOpen.value || registerModalOpen.value) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const sections = getSnapSections();
+  if (sections.length < 2) return;
+
+  const delta = e.deltaY;
+  if (Math.abs(delta) < 8) return;
+
+  const dir = delta > 0 ? 1 : -1;
+  const idx = getClosestSnapIndex(root, sections);
+  const current = sections[idx];
+
+  if (current && isSummaryOverflow(root, current)) {
+    const maxScroll = root.scrollHeight - root.clientHeight;
+    const atTop = root.scrollTop <= 4;
+    const atBottom = root.scrollTop >= maxScroll - 4;
+    if (dir > 0 && !atBottom) return;
+    if (dir < 0 && !atTop) return;
+  }
+
+  const nextIdx = Math.max(0, Math.min(sections.length - 1, idx + dir));
+  if (nextIdx === idx) return;
+
+  e.preventDefault();
+  if (wheelSnapLocked) return;
+
+  wheelSnapLocked = true;
+  scrollSnapSectionIntoView(sections[nextIdx]);
+  if (wheelSnapTimer) clearTimeout(wheelSnapTimer);
+  wheelSnapTimer = setTimeout(() => {
+    wheelSnapLocked = false;
+  }, WHEEL_SNAP_COOLDOWN_MS);
+}
+
+function bindLoginPageWheelSnap() {
+  nextTick(() => {
+    const root = pageRef.value;
+    if (!root) return;
+    root.addEventListener("wheel", onLoginPageWheel, { passive: false });
+  });
+}
+
+function unbindLoginPageWheelSnap() {
+  const root = pageRef.value;
+  if (root) root.removeEventListener("wheel", onLoginPageWheel);
+  if (wheelSnapTimer) clearTimeout(wheelSnapTimer);
+  wheelSnapLocked = false;
+}
 
 const loading = ref(false);
 const exiting = ref(false);
@@ -237,7 +335,11 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
 </script>
 
 <template>
-  <div class="login-page" :class="{ 'login-page--exit': exiting, 'login-page--scroll': !exiting }">
+  <div
+    ref="pageRef"
+    class="login-page"
+    :class="{ 'login-page--exit': exiting, 'login-page--scroll': !exiting }"
+  >
     <header class="login-header">
       <div class="login-header__inner">
         <a class="login-header__brand" href="#" @click.prevent>
@@ -252,7 +354,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
             :aria-label="isDark ? t('userMenu.lightMode') : t('userMenu.darkMode')"
             @click="toggleTheme"
           >
-            <n-icon :size="16" :component="isDark ? SunnyOutline : MoonOutline" />
+            <n-icon :size="14" :component="isDark ? SunnyOutline : MoonOutline" />
           </button>
           <span class="login-header__vrule" aria-hidden="true" />
           <button
@@ -260,7 +362,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
             class="login-glass-link login-header__chip login-header__chip--locale"
             @click="toggleLocale"
           >
-            <n-icon :size="15" :component="LanguageOutline" />
+            <n-icon :size="14" :component="LanguageOutline" />
             <span class="login-header__locale-label">{{ localeLabel }}</span>
           </button>
           <span class="login-header__vrule" aria-hidden="true" />
@@ -291,7 +393,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     </div>
 
     <main class="login-page__intro">
-      <section class="login-showcase__hero">
+      <section class="login-showcase__hero login-snap-section">
         <h1 class="login-showcase__platform-title">
           <PlatformBrandTitle tag="span" strong :title="t('login.showcaseBadge')" />
         </h1>
@@ -309,28 +411,49 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     <n-modal
       :show="loginModalOpen"
       preset="card"
-      :title="t('login.title')"
-      class="login-auth-modal platform-glass-modal login-glass-panel"
-      :style="{ width: 'min(380px, calc(100vw - 32px))' }"
+      class="login-auth-modal platform-glass-modal login-glass-panel login-auth-modal--login"
+      :style="{ width: 'min(440px, calc(100vw - 32px))' }"
       :mask-closable="!loading && !exiting"
       transform-origin="center"
       @update:show="onLoginModalUpdate"
     >
-      <div ref="loginPanelRef" class="login-auth-panel">
-        <n-form class="login-form login-form--compact" size="small" @submit.prevent="onSubmit">
-          <n-form-item :label="t('login.account')">
-            <n-input v-model:value="account" :placeholder="t('login.account')" />
+      <template #header>
+        <div class="login-auth-modal__header">
+          <img
+            :src="publicAsset('logo.svg')"
+            :alt="t('login.brandName')"
+            class="login-auth-modal__logo"
+          />
+          <div class="login-auth-modal__header-text">
+            <h2 class="login-auth-modal__title">{{ t("login.title") }}</h2>
+            <p class="login-auth-modal__subtitle">{{ t("app.tagline") }}</p>
+          </div>
+        </div>
+      </template>
+      <div ref="loginPanelRef" class="login-auth-panel login-auth-panel--login">
+        <n-form
+          class="login-form login-form--compact login-form--placeholder-only"
+          :show-label="false"
+          @submit.prevent="onSubmit"
+        >
+          <n-form-item :show-label="false" :show-feedback="false">
+            <n-input
+              v-model:value="account"
+              :placeholder="t('login.account')"
+              autocomplete="username"
+            />
           </n-form-item>
-          <n-form-item :label="t('login.password')">
+          <n-form-item :show-label="false" :show-feedback="false">
             <n-input
               v-model:value="password"
               type="password"
               show-password-on="click"
               :placeholder="t('login.password')"
+              autocomplete="current-password"
               @keyup.enter="onSubmit"
             />
           </n-form-item>
-          <n-space vertical :size="8" style="width: 100%">
+          <n-space vertical :size="14" class="login-form__actions" style="width: 100%">
             <n-button
               type="primary"
               block
@@ -357,18 +480,27 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     <n-modal
       :show="registerModalOpen"
       preset="card"
-      :title="t('login.registerTitle')"
-      class="login-auth-modal platform-glass-modal login-glass-panel"
-      :style="{ width: 'min(400px, calc(100vw - 32px))' }"
+      class="login-auth-modal platform-glass-modal login-glass-panel login-auth-modal--register"
+      :style="{ width: 'min(460px, calc(100vw - 32px))' }"
       :mask-closable="!registering && !exiting"
       transform-origin="center"
       @update:show="onRegisterModalUpdate"
     >
+      <template #header>
+        <div class="login-auth-modal__header">
+          <img
+            :src="publicAsset('logo.svg')"
+            :alt="t('login.brandName')"
+            class="login-auth-modal__logo"
+          />
+          <div class="login-auth-modal__header-text">
+            <h2 class="login-auth-modal__title">{{ t("login.registerTitle") }}</h2>
+            <p class="login-auth-modal__subtitle">{{ t("login.registerHint") }}</p>
+          </div>
+        </div>
+      </template>
       <div ref="registerPanelRef" class="login-auth-panel login-auth-panel--register">
-        <n-form class="login-register-form login-form--compact" size="small" @submit.prevent="onRegister">
-          <n-text depth="3" class="login-register-hint">
-            {{ t("login.registerHint") }}
-          </n-text>
+        <n-form class="login-register-form login-form--compact" @submit.prevent="onRegister">
           <n-form-item :label="t('login.phone')">
             <n-input v-model:value="regPhone" :placeholder="t('login.phone')" maxlength="11" />
           </n-form-item>
@@ -498,13 +630,13 @@ html[data-theme="dark"] .login-header {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  height: 26px;
-  max-height: 26px;
-  padding: 0 10px;
+  height: 22px;
+  max-height: 22px;
+  padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1;
   color: var(--platform-text-secondary);
@@ -520,7 +652,7 @@ html[data-theme="dark"] .login-header {
 }
 
 .login-header__chip--icon {
-  width: 26px;
+  width: 22px;
   padding: 0;
 }
 
@@ -623,7 +755,7 @@ html[data-theme="dark"] .login-header__vrule {
 }
 
 .login-showcase__hero {
-  scroll-snap-align: start;
+  scroll-snap-align: center;
   scroll-snap-stop: always;
   min-height: calc(100dvh - 36px);
   display: flex;
@@ -677,6 +809,39 @@ html[data-theme="dark"] .login-header__vrule {
   box-sizing: border-box;
 }
 
+.login-auth-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 0 2px;
+}
+
+.login-auth-modal__logo {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.login-auth-modal__header-text {
+  min-width: 0;
+}
+
+.login-auth-modal__title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+  color: var(--platform-text);
+}
+
+.login-auth-modal__subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--platform-text-secondary);
+}
+
 .login-auth-panel {
   width: 100%;
 }
@@ -686,31 +851,63 @@ html[data-theme="dark"] .login-header__vrule {
 }
 
 .login-form--compact :deep(.n-form-item) {
-  margin-bottom: 10px;
+  margin-bottom: 18px;
+}
+
+.login-auth-panel--login {
+  padding: 8px 0 4px;
+}
+
+.login-form--placeholder-only :deep(.n-form-item) {
+  margin-bottom: 16px;
+}
+
+.login-form--placeholder-only :deep(.n-form-item:last-of-type) {
+  margin-bottom: 22px;
+}
+
+.login-form--placeholder-only :deep(.n-form-item-label) {
+  display: none;
+}
+
+.login-form--placeholder-only :deep(.n-form-item-blank) {
+  min-height: unset;
 }
 
 .login-form--compact :deep(.n-form-item-label) {
-  padding-bottom: 2px;
+  padding-bottom: 4px;
   font-size: 13px;
 }
 
 .login-auth-panel :deep(.n-input) {
   --n-height: 40px;
   --n-font-size: 14px;
-  --n-padding-left: 12px;
-  --n-padding-right: 12px;
+  --n-padding-left: 14px;
+  --n-padding-right: 14px;
+  --n-border-radius: 8px;
+}
+
+.login-auth-panel :deep(.n-input .n-input__input-el::placeholder),
+.login-auth-panel :deep(.n-input .n-input__placeholder) {
+  color: var(--platform-text-tertiary);
 }
 
 .login-glass-btn--submit {
-  min-height: 42px !important;
-  margin-top: 4px;
+  min-height: 40px !important;
+  height: 40px;
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  --n-border-radius: 8px;
+  --n-height: 40px;
 }
 
 .login-terms {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin-top: 2px;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 2px;
   cursor: pointer;
   user-select: none;
 }
@@ -723,7 +920,7 @@ html[data-theme="dark"] .login-header__vrule {
 .login-terms__text {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--platform-text-tertiary);
 }
@@ -747,13 +944,6 @@ html[data-theme="dark"] .login-header__vrule {
   color: color-mix(in srgb, var(--platform-accent) 82%, var(--platform-text));
 }
 
-.login-register-hint {
-  display: block;
-  font-size: 12px;
-  line-height: 1.5;
-  margin-bottom: 10px;
-}
-
 .login-register-form {
   margin-top: 0;
 }
@@ -774,12 +964,12 @@ html[data-theme="dark"] .login-header__vrule {
 
 @media (max-width: 639px) {
   .login-header__chip--locale {
-    width: 26px;
+    width: 22px;
     padding: 0;
   }
 
   .login-header__chip--text {
-    padding: 0 8px;
+    padding: 0 6px;
   }
 }
 </style>
@@ -796,8 +986,10 @@ html[data-theme="dark"] .login-header__vrule {
   backdrop-filter: blur(32px) saturate(190%);
   -webkit-backdrop-filter: blur(32px) saturate(190%);
   border: 1px solid rgba(255, 255, 255, 0.48) !important;
+  border-radius: 18px !important;
   box-shadow:
-    0 12px 40px rgba(91, 120, 200, 0.16),
+    0 20px 56px rgba(91, 120, 200, 0.18),
+    0 8px 24px rgba(91, 120, 200, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
 }
 
@@ -810,16 +1002,26 @@ html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card 
 }
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card-header {
-  padding: 14px 16px 0 !important;
+  padding: 28px 32px 8px !important;
 }
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card-header .n-card-header__main {
-  font-size: 15px;
-  font-weight: 600;
+  flex: 1;
+  min-width: 0;
 }
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card__content {
-  padding: 12px 16px 16px !important;
+  padding: 12px 32px 32px !important;
+}
+
+.login-auth-modal--login.platform-glass-modal.n-modal .n-card__content {
+  padding-top: 16px !important;
+}
+
+.login-auth-modal--register.platform-glass-modal.n-modal .n-card__content {
+  padding-top: 8px !important;
+  max-height: min(72vh, 560px);
+  overflow-y: auto;
 }
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card {
@@ -827,7 +1029,8 @@ html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card 
 }
 
 .login-auth-modal .login-glass-btn--submit.n-button {
-  min-height: 42px;
+  min-height: 40px;
+  height: 40px;
   font-size: 14px;
 }
 </style>

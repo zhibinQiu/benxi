@@ -18,7 +18,7 @@ const routes = [
       {
         path: "ai-home",
         name: "ai-home",
-        meta: { title: "AI 助理", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
+        meta: { title: "AI 智能体", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
         component: () => import("../views/AiHomeView.vue"),
       },
       {
@@ -147,6 +147,12 @@ const routes = [
         component: () => import("../views/SpeechToTextView.vue"),
       },
       {
+        path: "system/text-to-speech",
+        name: "text-to-speech",
+        meta: { title: "语音合成", fullHeight: true, featureIcon: "volume-high" },
+        component: () => import("../views/TextToSpeechView.vue"),
+      },
+      {
         path: "system/ocr",
         name: "ocr",
         meta: { title: "文件内容提取", fullHeight: true, featureIcon: "scan" },
@@ -156,7 +162,7 @@ const routes = [
         path: "system/kg-palantir",
         name: "kg-palantir",
         meta: {
-          title: "Palantir与知识图谱",
+          title: "本体图谱",
           fullHeight: true,
           featureIcon: "git-network",
           perm: "feature.kg_palantir",
@@ -290,7 +296,7 @@ const routes = [
       {
         path: "admin/model-settings",
         name: "admin-model-settings",
-        meta: { title: "模型配置", featureLocalNav: true },
+        meta: { title: "资源管理", perm: "admin.user", featureLocalNav: true },
         component: () => import("../views/admin/ModelSettingsView.vue"),
       },
       {

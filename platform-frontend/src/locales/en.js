@@ -4,7 +4,7 @@ export default {
     tagline: "Secure knowledge accumulation, precise retrieval within your access rules",
   },
   menu: {
-    aiHome: "AI Assistant",
+    aiHome: "AI Agent",
     systemFunctions: "Features",
     todos: "Todos",
     documents: "Documents",
@@ -28,7 +28,7 @@ export default {
     defaultName: "User",
   },
   routes: {
-    "ai-home": "AI Assistant",
+    "ai-home": "AI Agent",
     "chat-history": "Chat History",
     "system-functions": "Features",
     "ai-tools": "AI Tools",
@@ -42,12 +42,14 @@ export default {
     "subscription-item": "Article",
     "smart-forecast": "Forecast",
     speech: "Meeting Assistant",
+    "text-to-speech": "Text to Speech",
     ocr: "File Content Extraction",
     compare: "Compare",
     "assist-writing": "Writing Assist",
     "report-generation": "Report Generation",
     "knowledge-graph": "Chunks",
     "knowledge-search": "Knowledge Search",
+    "kg-palantir": "Ontology Graph",
     documents: "Documents",
     "document-detail": "Document",
     jobs: "Background Jobs",
@@ -60,6 +62,17 @@ export default {
     "admin-model-settings": "Resources",
     "admin-menu-settings": "Menu settings",
     "admin-docs": "Documentation",
+  },
+  features: {
+    kg_palantir: {
+      title: "Ontology Graph",
+      description:
+        "Query and edit entity networks; ontology types and auto-extraction from documents",
+    },
+    text_to_speech: {
+      title: "Text to Speech",
+      description: "Convert text to natural speech with multiple voices and emotions",
+    },
   },
   header: {
     back: "Back",
@@ -89,19 +102,20 @@ export default {
     termsRequired: "Please agree to the platform terms first",
     brandName: "Haiyi Software",
     showcaseScrollHint: "Scroll to explore core capabilities",
-    showcaseCompareLabel: "Why us",
+    showcaseCompareLabel: "Compared to the market",
     showcaseBadge: "Enterprise AI Knowledge Platform",
     showcaseHeadline: "Turn scattered files into a governed enterprise knowledge base",
     showcaseSubheadline:
-      "From ingest to long-form reports — access rules at every step, data stays in bounds; search hits only what you may see, answers cite verifiable sources.",
+      "From ingest and ontology modeling to long-form reports — access rules at every step, data stays in bounds; search and graph hits stay in scope, answers cite sources and entity links are traceable.",
     showcaseTaglines: [
-      "From library to report — controlled access, accumulated knowledge, one closed loop, precise search, grounded answers.",
+      "From library to report — controlled access, accumulated knowledge, linked ontology, one closed loop, precise search, grounded answers.",
     ],
     showcaseHighlights: [
       "Company / dept / personal scopes with auditable sharing and recall",
       "Ingest, compare, extract, and archive — daily files become reusable knowledge",
+      "Ontology defines entity types and relations; auto-extract knowledge networks for subgraph exploration and Q&A",
       "Private deployment, in-scope access — search and Q&A never overreach",
-      "Ingest → search → Q&A → reports in one workspace",
+      "Ingest → ontology → search → Q&A → reports in one workspace",
       "Hybrid semantic + keyword search with snippet preview and traceability",
     ],
     showcaseCards: [
@@ -147,8 +161,18 @@ export default {
         desc: "Private-corpus chat with citations",
         icon: "sparkles",
         pitch: "Every answer backed by evidence",
-        value: "Multi-turn Q&A over your private libraries with citations on every claim — citation scope matches document permissions and connects to report generation.",
-        bullets: ["Grounded on private libraries", "Verifiable citations", "Multi-turn history"],
+        value: "Multi-turn Q&A over your private libraries with citations on every claim — ontology links enrich entity context; citation scope matches document permissions and connects to report generation.",
+        bullets: ["Grounded on private libraries", "Verifiable citations", "Ontology-linked multi-turn follow-ups"],
+      },
+      {
+        featureId: "kg_palantir",
+        title: "Ontology graph",
+        desc: "Query, edit entities and subgraph exploration",
+        icon: "git-network",
+        pitch: "Scattered facts, woven into a relation web",
+        value:
+          "Define enterprise entity types and relation rules in an ontology; auto-extract structured networks from documents and feeds; explore subgraphs and entity paths that enrich search and Q&A.",
+        bullets: ["Ontology types & relation modeling", "Auto-extract entity networks from docs", "Subgraph exploration linked to search & Q&A"],
       },
       {
         featureId: "pdf_translate",
@@ -171,11 +195,18 @@ export default {
       {
         featureId: "speech_to_text",
         title: "Meeting assistant",
-        desc: "Transcription & speaker labels",
+        desc: "Transcription, summaries & text-to-speech",
         icon: "mic",
-        pitch: "Meeting ends, notes ready",
-        value: "Transcription, speaker labels, and timeline summaries archived into libraries for search.",
-        bullets: ["Speaker diarization", "Timeline summaries", "Searchable after archive"],
+        pitch: "Hear it, speak it, summarize it",
+        value:
+          "End-to-end voice workflow: live or uploaded meeting audio with speaker diarization and styled minutes, records archived for search; text-to-speech turns drafts into natural speech with multiple voices, emotions, speed control, and MP3/WAV export — from capture to archive to playback.",
+        bullets: [
+          "Live recording / upload, multilingual transcription",
+          "Speaker diarization & meeting minutes (brief / detailed)",
+          "Saved records searchable in libraries",
+          "TTS: multiple voices, emotions & speed",
+          "Export synthesized audio as MP3 / WAV",
+        ],
       },
       {
         featureId: "ocr",
@@ -188,48 +219,84 @@ export default {
       },
     ],
     showcaseSummary: {
-      title: "How we differ from common options",
+      title: "How we differ from the market",
       subtitle:
-        "DingTalk, Feishu, SharePoint, Copilot, Glean, and others already offer solid drives, collaboration, enterprise search, and RAG Q&A. Our focus is one knowledge base where access, diff, search, Q&A, and reports share the same permission model — less stitching systems and reconciling scopes.",
+        "The market already has strong pieces: drives for storage, Feishu/DingTalk for collaboration, Confluence/Yuque for docs, Dify/FastGPT/RAGFlow for RAG chat, plus point tools for diff, translation, and transcription. The hard part is stitching them — document ACL, AI scope, graphs, and corpora often live in separate systems. We unify ingest, ontology, diff, search, Q&A, and reports in one scoped library: same permissions, same corpus, one workspace.",
       columns: {
         aspect: "Dimension",
-        others: "Typical market (representative capabilities)",
+        others: "Typical market (by category)",
         ours: "Haiyi Software · Enterprise AI Knowledge Platform",
       },
       rows: [
         {
           aspect: "Document access",
-          others: "Major drives/collab suites support dept spaces, sharing, and audit; AI search/Q&A scope often configured separately or via other data sources",
-          ours: "Company / dept / personal scopes + traceable sharing; search, Q&A, and reports use the same access rules",
+          others:
+            "Drives (Box, enterprise netdisk) and Feishu/DingTalk Docs: mature org spaces and sharing; AI search/Q&A scope often separate from document ACL or synced via connectors",
+          ours: "Company / dept / personal libraries + traceable sharing; search, Q&A, reports, and diff share one access model",
         },
         {
-          aspect: "Version compare",
-          others: "Word track changes, Git, and pro diff tools are mature — usually as standalone tools",
-          ours: "Built into the library: side-by-side view, paragraph diff, NL queries on changes",
-        },
-        {
-          aspect: "Report generation",
-          others: "Copilot and RAG assistants can produce long text; sources and permission boundaries vary by product and integration",
-          ours: "Multi-path recall from your library + chapter-wise Agent expansion, same corpus and permissions as search/Q&A",
+          aspect: "Content ingest",
+          others:
+            "Collab suites focus on upload and online editing; WeChat feeds, RSS, and web links often need crawlers or extra tools before manual KB import",
+          ours: "Upload plus WeChat/RSS/link subscriptions in one flow; scoped archive, auto-indexed for search and Q&A",
         },
         {
           aspect: "Precise search",
-          others: "Glean, Copilot Search, Elastic, etc. support semantic/enterprise search; hits depend on connected data and permission mapping",
-          ours: "Hybrid semantic + keyword search strictly within library permissions, with snippet preview and traceability",
+          others:
+            "Drive search is mostly filename/full-text; Dify, RAGFlow, etc. rely on vector chunks — long-doc section context is easy to lose",
+          ours: "PageIndex tree + KnowFlow vector hybrid recall; strictly within permissions, with snippet preview and traceability",
         },
         {
           aspect: "Intelligent Q&A",
-          others: "M365 Copilot, DingTalk AI, Feishu assistants, and others already support private-corpus Q&A with citations",
-          ours: "Multi-turn Q&A on the same private library, citations aligned with document access, linked to report generation",
+          others:
+            "Dify, FastGPT, Feishu AI, Copilot support KB Q&A; long reports and graph exploration are often separate; citations depend on connected sources",
+          ours: "Document chunks + ontology graph jointly enhance answers; every claim cited and aligned with doc access; links to search, reports, and graph",
+        },
+        {
+          aspect: "Ontology graph",
+          others:
+            "Neo4j and similar excel at modeling but are usually separate from libraries and Q&A; Dify and drives rarely include enterprise ontology",
+          ours: "Ontology types and relations on the same platform: auto-extract networks, subgraph exploration, entity context in search and chat",
+        },
+        {
+          aspect: "Version compare",
+          others:
+            "Word track changes and Beyond Compare excel in-editor or file-level diff; drives mostly offer version download, not library-integrated paragraph compare",
+          ours: "Cross-version / cross-doc side-by-side sync, paragraph-level diff; NL queries on what changed",
+        },
+        {
+          aspect: "Report generation",
+          others:
+            "RAG assistants and Copilot often output short answers or outlines; long chapter-wise reports and mind-map export need extra workflows or manual work",
+          ours: "Agent multi-path recall + chapter expansion, same corpus as search/Q&A; mind-map view; export Markdown / OPML",
+        },
+        {
+          aspect: "Document intelligence",
+          others:
+            "PDF translation and OCR are often standalone SaaS; bringing outputs back into a scoped library with ACL takes extra steps",
+          ours: "Layout-preserving PDF translation, batch OCR, and assist writing on one platform; outputs archive into scoped libraries for search and Q&A",
+        },
+        {
+          aspect: "Meeting & speech",
+          others:
+            "Transcription tools (e.g. iFlytek, Feishu Minutes) work well; getting minutes into a corporate KB with aligned permissions usually means export and re-upload",
+          ours: "Transcription, diarization, summaries, and TTS in one flow; meeting records archive to the library for search and Q&A",
+        },
+        {
+          aspect: "Private deployment",
+          others:
+            "Many collab and AI products are cloud SaaS-first; on-prem or hybrid options are limited; multi-vendor assembly raises ops cost",
+          ours: "Built for private all-in-one deployment; documents, indexes, models, and job queues can run entirely inside your network",
         },
         {
           aspect: "Overall shape",
-          others: "Often a mix of drive + IM AI + separate search/BI — integration and permission alignment take extra work",
-          ours: "One workspace: ingest → search → Q&A → reports, suited to private all-in-one deployment",
+          others:
+            "Typical stack: drive + collab suite + RAG platform + point tools; integration, permission mapping, and ops are DIY for IT",
+          ours: "One workspace: ingest → ontology → search → Q&A → reports — less stitching and less data copying",
         },
       ],
       closing:
-        "We are not claiming the market lacks these features — we connect them under one permission model so knowledge moves less, scopes stay consistent, and answers stay checkable.",
+        "We are not building another drive or RAG demo — we connect the knowledge loop enterprises actually need under one permission model: governable, linkable, checkable, and suited to private deployment.",
     },
   },
   common: {
@@ -482,6 +549,7 @@ export default {
       delete_document: "Delete document",
       document_index: "Document index",
       document_parse: "Document parse",
+      subscription_import: "Content import",
       maintenance: "Maintenance",
     },
     status: {
@@ -561,6 +629,16 @@ export default {
     delete: "Delete",
     confirmDelete: "Delete selected conversations?",
   },
+  agentWorkflow: {
+    tools: {
+      planner: "Planning",
+      evaluator: "Evaluation",
+      retrieve: "Knowledge retrieval",
+      kg_context: "Knowledge graph",
+      web_search: "Web search",
+      version_metadata: "Version metadata",
+    },
+  },
   knowledgeSearch: {
     title: "Knowledge Search",
     newSearch: "New search",
@@ -574,6 +652,9 @@ export default {
     mindmapTab: "Mind map",
     citationsSection: "Sources",
     thinking: "Searching and summarizing…",
+    useAgent: "Use agent",
+    useAgentTooltip:
+      "When enabled, an agent plans retrieval and evaluates materials for higher accuracy, but takes longer",
     noCitations: "No citable sources to display",
     replyPlaceholder: "Ask follow-up questions about selected documents…",
     selectIndexedDocs: "Select indexed documents from the left panel",
@@ -641,9 +722,17 @@ export default {
     exportWord: "Export Word",
     exportWordSuccess: "Word document exported",
     exportWordFailed: "Word export failed",
+    exportMindmapMd: "Export Markdown",
+    exportMindmapOpml: "Export OPML (XMind)",
+    exportMindmapMdSuccess: "Markdown outline exported",
+    exportMindmapOpmlSuccess: "OPML exported — import into XMind",
+    exportMindmapFailed: "Mind map export failed",
     optimizePresets: "Report refine",
     webCitations: "Web sources",
     useWebSearch: "Use web content",
+    useAgent: "Use agent",
+    useAgentTooltip:
+      "When enabled, an agent plans retrieval and evaluates materials for higher accuracy, but takes longer",
     selectedDocsHint: "{{count}} local documents selected",
     noLocalDocsHint: "No local documents selected",
     webSearchOnHint: "Web search enabled",

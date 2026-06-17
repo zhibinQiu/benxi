@@ -21,6 +21,7 @@ import {
   NRadio,
   NRadioGroup,
   NSelect,
+  NAlert,
 } from "naive-ui";
 import {
   DownloadOutline,
@@ -139,11 +140,14 @@ const {
   reindexResync,
   chunkMethodOptions,
   layoutOptions,
+  pageindexBlockReason,
   reparsing,
   indexPolling,
   loadParserOptions,
   openReindexModal,
   submitReindex,
+  renderIndexedSelectLabel,
+  renderIndexedSelectOption,
 } = useDocumentReindex(docId, () => load({ notifyOnError: false }));
 
 const showVersionActions = computed(
@@ -1071,20 +1075,35 @@ onMounted(() => {
     v-model:show="reindexModalShow"
     title="重新索引"
     subtitle="选择识别方式与分块策略后重新建立索引"
-    width="420px"
+    width="min(480px, 92vw)"
   >
     <n-form label-placement="top" :show-require-mark="false">
-      <n-form-item label="文档识别方式">
-        <n-select
-          v-model:value="layoutRecognize"
-          :options="layoutOptions"
-          :disabled="indexPolling || reparsing"
-        />
-      </n-form-item>
-      <n-form-item label="分块方式">
+      <n-alert
+        v-if="pageindexBlockReason"
+        type="warning"
+        :bordered="false"
+        class="reindex-pageindex-hint"
+        :title="pageindexBlockReason"
+      />
+      <n-form-item label="分块方法">
         <n-select
           v-model:value="parserId"
           :options="chunkMethodOptions"
+          :render-label="renderIndexedSelectLabel"
+          :render-option="renderIndexedSelectOption"
+          to="body"
+          consistent-menu-width
+          :disabled="indexPolling || reparsing"
+        />
+      </n-form-item>
+      <n-form-item label="版面识别（OCR）">
+        <n-select
+          v-model:value="layoutRecognize"
+          :options="layoutOptions"
+          :render-label="renderIndexedSelectLabel"
+          :render-option="renderIndexedSelectOption"
+          to="body"
+          consistent-menu-width
           :disabled="indexPolling || reparsing"
         />
       </n-form-item>
@@ -1142,6 +1161,10 @@ onMounted(() => {
 .version-upload-bar__submit {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.reindex-pageindex-hint {
+  margin-bottom: 12px;
 }
 
 @media (max-width: 720px) {

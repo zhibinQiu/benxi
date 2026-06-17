@@ -293,9 +293,8 @@ const libraryColumns = [
       h(
         NButton,
         {
-          text: true,
-          type: "primary",
           size: "small",
+          type: "primary",
           onClick: () => selectLibraryDoc(row)},
         () => "选择"
       )},
@@ -773,24 +772,24 @@ function loadPreviewBlob() {
                 <n-text class="dl-group-label">更多导出</n-text>
                 <n-space :size="6" wrap class="dl-chips">
                   <n-button
-                    size="tiny"
-                    secondary
+                    size="small"
+                    type="primary"
                     :disabled="!resultsReady"
                     @click="dl('glossary', 'glossary.csv')"
                   >
                     术语表
                   </n-button>
                   <n-button
-                    size="tiny"
-                    secondary
+                    size="small"
+                    type="primary"
                     :disabled="!resultsReady"
                     @click="dl('extracted-json', 'extracted.json')"
                   >
                     JSON
                   </n-button>
                   <n-button
-                    size="tiny"
-                    secondary
+                    size="small"
+                    type="primary"
                     :disabled="!resultsReady"
                     @click="dl('extracted-md', 'extracted.md')"
                   >
@@ -804,13 +803,13 @@ function loadPreviewBlob() {
                 <n-space :size="6" wrap align="center">
                   <template v-if="importedDocumentId">
                     <n-tag type="success" :bordered="false" size="small">已入库</n-tag>
-                    <n-button size="tiny" type="primary" @click="openImportedDocument">
+                    <n-button size="small" type="primary" @click="openImportedDocument">
                       查看文档
                     </n-button>
                   </template>
                   <template v-else>
                     <n-button
-                      size="tiny"
+                      size="small"
                       type="primary"
                       :disabled="!resultsReady"
                       :loading="importLoading"
@@ -819,8 +818,8 @@ function loadPreviewBlob() {
                       单语入库
                     </n-button>
                     <n-button
-                      size="tiny"
-                      secondary
+                      size="small"
+                      type="primary"
                       :disabled="!resultsReady"
                       :loading="importLoading"
                       @click="importToLibrary('dual')"
@@ -900,17 +899,26 @@ function loadPreviewBlob() {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1040px;
+  max-width: 1120px;
   margin: 0 auto;
+  padding: 4px 0 24px;
   box-sizing: border-box;
 }
 
 .translate-steps-bar {
   flex-shrink: 0;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--platform-radius-md, 12px);
+  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-glass-strong));
+  border: 1px solid var(--platform-ui-glass-border, var(--platform-glass-border));
+  box-shadow: var(--platform-ui-layer-shadow, var(--platform-glass-shadow));
+  backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
+  -webkit-backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
 }
 
 .translate-steps {
-  max-width: 420px;
+  max-width: 480px;
 }
 
 .page-alerts {
@@ -934,20 +942,25 @@ function loadPreviewBlob() {
 .translate-layout {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 16px;
   align-items: start;
 }
 
 @media (min-width: 880px) {
   .translate-layout {
-    grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
-    gap: 14px;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    gap: 20px;
   }
 
   .translate-aside {
     position: sticky;
-    top: 6px;
+    top: 8px;
   }
+}
+
+.workflow-card,
+.result-card {
+  border-radius: var(--platform-radius-md, 12px);
 }
 
 .translate-main,
@@ -1135,9 +1148,9 @@ function loadPreviewBlob() {
 }
 
 .block-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--n-text-color);
+  color: var(--n-text-color-2, var(--platform-text-secondary));
 }
 
 .block-label-row {
@@ -1412,17 +1425,21 @@ function loadPreviewBlob() {
 .dl-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px 4px 8px;
+  gap: 6px;
+  padding: 6px 8px 6px 10px;
   border-radius: var(--platform-radius-sm, 8px);
-  border: 1px solid var(--platform-border);
-  background: var(--platform-bg-glass-subtle, transparent);
-  transition: border-color 0.15s, background 0.15s;
+  border: 1px solid var(--platform-ui-glass-border, var(--platform-border));
+  background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle));
+  transition:
+    border-color 0.2s var(--platform-ease-smooth),
+    background 0.2s var(--platform-ease-smooth),
+    box-shadow 0.2s var(--platform-ease-smooth);
 }
 
 .dl-item:hover:not(.dl-item--disabled) {
-  border-color: var(--platform-accent-border-soft);
-  background: var(--platform-accent-soft);
+  border-color: color-mix(in srgb, var(--platform-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--platform-accent) 8%, transparent);
+  box-shadow: 0 4px 14px rgba(91, 156, 245, 0.1);
 }
 
 .dl-item--disabled {
@@ -1449,12 +1466,19 @@ function loadPreviewBlob() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 0;
-  border: 0;
+  padding: 4px 2px;
+  border: none;
   background: transparent;
+  color: var(--platform-text);
+  font: inherit;
   text-align: left;
   cursor: pointer;
-  color: inherit;
+  border-radius: 6px;
+  transition: color 0.2s ease;
+}
+
+.dl-item-main:hover:not(:disabled) {
+  color: var(--platform-accent);
 }
 
 .dl-item-main .n-icon {

@@ -1,7 +1,24 @@
-# 功能实现说明（v4.0.5）
+# 功能实现说明（v4.0.7）
 
 > **本文描述当前已实现功能的运行方式与数据流，不含代码。**  
 > 架构分层见 [系统架构](architecture.md)；文档库细节见 [文档库实现](../implementation/documents-implementation.md)。
+
+---
+
+## 0. 知识沉淀闭环
+
+平台在同一权限口径下贯通以下链路，减少多系统拼装与数据搬运：
+
+| 阶段 | 用户入口 | 后端要点 |
+|------|----------|----------|
+| 入库 | 文档中心上传 / 订阅导入 | MinIO 存储 + 可选 KnowFlow 同步 |
+| 索引 | 自动 Job / 文档详情「重新索引」 | 上传默认 **naive** 向量分块；重索引默认 **PageIndex** 结构树 |
+| 本体 | 本体图谱 · 本体设置 | LLM 从已索引文档抽取实体/关系；可手工编辑 |
+| 检索 | 知识检索 | PageIndex 树 + 向量 **混合召回**；权限内白名单过滤 |
+| 问答 | AI 智能体 / 知识检索 | 文档片段 + 图谱子图 **合并引用** |
+| 成稿 | 报告生成 | Agent 多路召回 + 章节扩写；**思维导图** Tab 可导出 |
+
+**与传统单向量 RAG 的差异**：长文档优先用 PageIndex 在目录树中定位章节，而非仅依赖 chunk  embedding 相似度；报告生成走多轮子问题规划，而非检索页的单轮短答。
 
 ---
 
@@ -127,10 +144,52 @@
 ### 4.5 知识检索（原生页）
 
 - 与 iframe 解耦的 **原生问答页**：左侧 scope 文档树，右侧对话。  
-- 检索前计算用户 **可 query 文档白名单**，再调用 KnowFlow retrieval，结果带 citation 回显。  
+- 检索前计算用户 **可 query 文档白名单**，再调用检索引擎，结果带 citation 回显。  
 - 权限过滤在平台侧完成，不暴露未授权 chunk。
 
-### 4.6 切片管理 / 编码管理
+#### 检索引擎（区别于传统单向量 RAG）
+
+| 引擎 | 适用文档 | 实现思路 |
+|------|----------|----------|
+| **PageIndex 树检索** | 已做结构索引（reindex 默认 pageindex） | LLM 在文档目录树中选 node_id，取对应章节正文；适合长 PDF/制度类文档的章节定位 |
+| **KnowFlow 向量检索** | 已同步 KnowFlow 且栈可达 | hybrid 向量 + 关键词召回 chunk |
+| **本地 fallback** | KnowFlow 不可达 | 平台侧轻量检索，保证基本可用 |
+
+同一问题可对不同文档 **按引擎分区** 后合并 hits（`retrieve_hits_for_qa`），可选 Agentic 模式由 LLM 规划多轮子问题再检索。回答可切换 **思维导图** Tab（Mermaid），便于结构化浏览。
+
+#### 与本体图谱联动
+
+问答前若用户具备 `feature.kg_palantir`，会从问题中 **匹配实体 mention**，扩展 2 跳子图，将结构化关系追加到 LLM 上下文（引用编号与文档片段顺延）。
+
+### 4.6 本体图谱
+
+1. **本体建模**：管理员/用户配置实体类型（组织、人员、法规、项目等）与关系类型（包含、引用、约束…）。  
+2. **自动抽取**：文档索引完成后，可选 LLM 从正文抽取实体/关系写入 PostgreSQL（`kg_entities` / `kg_relations`）。  
+3. **工作台**：`KgPalantirView` 三栏——实体查询、关系子图、详情编辑；支持按类型浏览、跳数控制子图范围。  
+4. **下游消费**：知识检索、报告生成、**AI 智能体** 在回答前调用 `retrieve_kg_context_for_question`，将图谱事实与文档片段一并注入 prompt。
+
+### 4.7 报告生成（区别于短答式 RAG）
+
+| 维度 | 知识检索（短答） | 报告生成 |
+|------|------------------|----------|
+| 目标 | 单轮精准回答 + 引用 | 万字级长报告，分章节交付 |
+| 召回 | 单次 top-k hits | Agent 规划多轮子问题，多路召回后去重合并 |
+| 生成 | 一次 LLM 归纳 | 按章节 Agent 扩写，可联网补充（可选） |
+| 输出 | 对话气泡 + 思维导图 Tab | 报告正文 Tab + **思维导图 Tab**，支持导出 Word / Markdown 大纲 / OPML（XMind） |
+
+实现：`report_generation_service` 复用 `retrieve_hits_for_qa` 与 `KnowledgeAgenticToolkit`；思维导图经 `generate_report_mindmap`（LLM 结构化或 Markdown 本地回退）。
+
+### 4.8 AI 智能体
+
+- 入口：默认首页 `/ai-home`，插件 `ai_home`。  
+- 对话：`ai_chat_service` 调用 DeepSeek；流式 SSE 与引用卡片对齐知识检索页。  
+- **增强上下文**（按用户权限自动启用）：  
+  1. 有 `feature.knowledge_search`：在最多 20 份可 query 文档内调用 `retrieve_hits_for_qa`；  
+  2. 有 `feature.kg_palantir`：解析问题实体并扩展子图；  
+  3. 文档片段与图谱上下文 **合并编号** 后写入 system prompt。  
+- 落地页快捷入口：**知识检索 → 报告生成 → 本体图谱**。
+
+### 4.9 切片管理 / 编码管理
 
 - **切片管理**：侧栏入口，iframe 或原生列表管理 chunk（管理员/有权限用户）。  
 - **编码管理**：系统设置内 KnowFlow 编码规则配置（管理员）。
@@ -220,7 +279,9 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 | pdf_translate | PDF 科学翻译 |
 | doc_compare | 文档对比 |
 | knowledge_search | 知识检索 |
-| ai_home | AI 助理 |
+| ai_home | AI 智能体 |
+| kg_palantir | 本体图谱 |
+| report_generation | 报告生成 |
 | smart_data_query | 智能问数 |
 | carbon_qa | 领域问答 |
 | ocr | 文件内容提取 |
@@ -262,7 +323,30 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 
 ---
 
-## 13. 与外部系统关系
+## 13. 资源管理与语音合成
+
+### 13.1 资源管理（管理员）
+
+- 入口：**系统设置 → 资源管理**（需 `admin.user` 或系统管理员）。
+- 配置项：语言模型、嵌入、VL、Rerank、OCR-VL、**语音合成**、语音识别、PDF 翻译、RAGFlow/KnowFlow、SearXNG 等。
+- 数据存 `platform_model_settings` 单例 JSON；`.env` 中 `PLATFORM_*` 仅作首次引导，运行以页面保存为准。
+- 保存后可对单项做 **连通性测试**（`POST /admin/model-settings/health/test`）。
+- 普通成员侧栏不可见，API 无 `admin.user` 返回 403。
+
+### 13.2 语音合成
+
+- 功能页：**系统功能 → 语音合成**（`feature.text_to_speech`）。
+- TTS 优先读资源管理 `tts_*`；未单独配置时从支持 `/audio/speech` 的兼容端点（如嵌入/VL）借用 URL/Key，**不会**回退 DeepSeek 等纯 LLM。
+- 合成接口：`POST /api/v1/text-to-speech/synthesize`；元数据 `GET .../meta`。
+
+### 13.3 远程代码同步
+
+- 本机 `./dev.sh sync`：rsync `platform/app` 到服务器并 **重启 API / Worker**。
+- `./dev.sh sync --frontend`：额外 build `dist` 并 nginx reload（挂载静态资源，不重建前端镜像）。
+
+---
+
+## 14. 与外部系统关系
 
 | 系统 | 关系 |
 |------|------|

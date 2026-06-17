@@ -52,6 +52,9 @@ MODEL_KEYS = (
     "paddleocr_base_url",
     "paddleocr_api_key",
     "paddleocr_model",
+    "tts_base_url",
+    "tts_api_key",
+    "tts_model",
 )
 
 

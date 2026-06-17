@@ -95,6 +95,57 @@ def test_pageindex_parser_option_listed():
     assert not is_pageindex_parser("naive")
 
 
+def test_pdf_pageindex_fallback_error_markers():
+    from app.integrations.pageindex_bridge import _pdf_pageindex_should_fallback_to_markdown
+
+    assert _pdf_pageindex_should_fallback_to_markdown(Exception("Processing failed"))
+    assert _pdf_pageindex_should_fallback_to_markdown(
+        Exception("Failed to complete toc transformation after maximum retries")
+    )
+    assert not _pdf_pageindex_should_fallback_to_markdown(
+        FileNotFoundError("config.yaml")
+    )
+
+
+def test_pageindex_package_requires_config_yaml(monkeypatch):
+    from app.integrations import pageindex_bridge
+
+    monkeypatch.setattr(pageindex_bridge, "_refresh_pageindex_state", lambda: None)
+    monkeypatch.setattr(pageindex_bridge, "_PAGEINDEX_AVAILABLE", False)
+    monkeypatch.setattr(
+        pageindex_bridge,
+        "_PAGEINDEX_IMPORT_ERROR",
+        "PageIndex 自托管包未完整安装（缺少 config.yaml）。",
+    )
+    monkeypatch.setattr(
+        "app.config.get_settings",
+        lambda: type("S", (), {"pageindex_enabled": True})(),
+    )
+    monkeypatch.setattr("app.integrations.deepseek_client.is_configured", lambda: True)
+    reason = pageindex_bridge.pageindex_stack_block_reason()
+    assert reason
+    assert "配置文件" in reason
+    assert "# 在 platform" not in reason
+
+
+def test_bootstrap_pageindex_config_from_vendor(tmp_path, monkeypatch):
+    from app.integrations import pageindex_bridge
+
+    mod_dir = tmp_path / "pageindex_pkg"
+    mod_dir.mkdir()
+    vendor_root = tmp_path / "platform"
+    vendor_cfg = vendor_root / "third_party/pageindex-upstream/pageindex/config.yaml"
+    vendor_cfg.parent.mkdir(parents=True)
+    vendor_cfg.write_text("model: test-model\n", encoding="utf-8")
+    monkeypatch.setattr(
+        pageindex_bridge,
+        "_vendored_pageindex_config_sources",
+        lambda: [vendor_cfg],
+    )
+    assert pageindex_bridge._bootstrap_pageindex_config(mod_dir)
+    assert (mod_dir / "config.yaml").read_text(encoding="utf-8").startswith("model:")
+
+
 def test_pageindex_tree_utils():
     tree = [
         {

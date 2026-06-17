@@ -1,6 +1,6 @@
 /** 各子系统功能说明（与路由 name 对应，供统一顶栏展示） */
 export const FEATURE_DESCRIPTIONS = {
-  "ai-home": "企业级 AI 助理：多轮对话、知识解读与办公场景问答。",
+  "ai-home": "企业级 AI 智能体：多轮对话，结合文档检索与本体图谱增强回答。",
   "ai-tools": "常用在线 AI 工具外链入口。",
   translate: "PDF 版式保留翻译，双语对照与术语表；任务后台执行。",
   "knowledge-search": "知识库检索与问答，分级选库、引用溯源。",
@@ -14,9 +14,10 @@ export const FEATURE_DESCRIPTIONS = {
   "feed-subscriptions": "管理 RSS/Atom 订阅源，拉取资讯并导入文档库。",
   "feed-entry": "查看订阅资讯详情，导入文档库或打开原文。",
   "smart-forecast": "历史数据趋势预测与情景分析。",
-  speech: "会议录音转写、说话人区分与时间线总结。",
+  speech: "会议录音转写、说话人区分、纪要生成与会议记录存档；配套语音合成支持多音色朗读与音频导出。",
+  "text-to-speech": "文本转自然语音，多音色与情感表达。",
   ocr: "图片或 PDF 内容提取，批量导出 Markdown / JSON。",
-  "kg-palantir": "本体建模与实体关系图谱：维护类型、编辑节点与边，子图探索；问答时解析实体关联。",
+  "kg-palantir": "查询与编辑实体关系网络；配置本体类型，文档自动抽取，子图探索联动问答。",
   compare: "文档版本或跨文档左右对照，段落差异与自然语言检索。",
   "assist-writing":
     "Markdown 双栏编辑，AI 润色、扩写与续写；Ctrl/Cmd + Enter 发送。",

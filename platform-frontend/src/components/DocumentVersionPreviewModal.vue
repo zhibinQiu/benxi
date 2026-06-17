@@ -1,14 +1,17 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { NButton, NEmpty, NSpace, NSpin, NTag, NText } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
-import ComparePdfPreview from "./ComparePdfPreview.vue";
 import { fetchDocumentFileBlob } from "../api/documents.js";
 import {
   PREVIEW_KIND,
   previewKindLabel,
-  resolveDocumentPreviewKind,
 } from "../utils/documentPreview.js";
+import {
+  loadWordPreview,
+  readTextBlob,
+  resolvePreviewContent,
+} from "../utils/documentPreviewLoad.js";
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -21,8 +24,10 @@ const props = defineProps({
   previewSubtitle: { type: String, default: "" },
   previewFileName: { type: String, default: "" },
   showDownloadAction: { type: Boolean, default: null },
-  width: { type: [Number, String], default: "min(1200px, 96vw)" },
-  viewportHeight: { type: String, default: "min(90vh, 980px)" },
+  width: { type: [Number, String], default: "min(1280px, 98vw)" },
+  viewportHeight: { type: String, default: "72vh" },
+  /** PDF 预览缩放：width 按弹窗宽度铺满（竖版文档可读性更好）；page 整页缩放进视口 */
+  pdfFitMode: { type: String, default: "width" },
 });
 
 const emit = defineEmits(["update:show", "download"]);
@@ -32,6 +37,8 @@ const error = ref("");
 const previewKind = ref(PREVIEW_KIND.UNSUPPORTED);
 const objectUrl = ref("");
 const textContent = ref("");
+const wordHtml = ref("");
+const previewLoadToken = ref(0);
 
 const visible = computed({
   get: () => props.show,
@@ -66,12 +73,14 @@ function cleanupPreview() {
     objectUrl.value = "";
   }
   textContent.value = "";
+  wordHtml.value = "";
   error.value = "";
   previewKind.value = PREVIEW_KIND.UNSUPPORTED;
   loading.value = false;
 }
 
 async function loadPreview() {
+  const token = ++previewLoadToken.value;
   cleanupPreview();
   loading.value = true;
 
@@ -86,37 +95,95 @@ async function loadPreview() {
       blob = await props.blobLoader();
     } else {
       const ver = props.version;
-      if (!props.documentId || !ver?.id || !ver.uploaded) return;
+      if (!props.documentId || !ver?.id || !ver.uploaded) {
+        if (token === previewLoadToken.value) {
+          error.value = "该版本暂无可预览文件";
+        }
+        return;
+      }
       fileName = ver.file_name || "";
       mimeType = ver.mime_type || "";
       blob = await fetchDocumentFileBlob(props.documentId, ver.id);
     }
 
-    previewKind.value = resolveDocumentPreviewKind(fileName, mimeType);
+    if (token !== previewLoadToken.value) return;
+
+    const resolved = await resolvePreviewContent(blob, fileName, mimeType);
+    if (token !== previewLoadToken.value) return;
+
+    if (resolved.error) {
+      error.value = resolved.error;
+      return;
+    }
+    previewKind.value = resolved.kind;
 
     if (previewKind.value === PREVIEW_KIND.TEXT) {
-      textContent.value = await blob.text();
+      textContent.value = resolved.text || (await readTextBlob(blob));
+      if (token !== previewLoadToken.value) return;
+      if (!textContent.value?.trim()) {
+        error.value = "文本内容为空";
+      }
+      return;
+    }
+
+    if (previewKind.value === PREVIEW_KIND.WORD) {
+      const { html, text } = await loadWordPreview(blob, {
+        documentId: props.documentId,
+        versionId: props.version?.id || null,
+        fileName,
+      });
+      if (token !== previewLoadToken.value) return;
+      if (html) {
+        wordHtml.value = html;
+        return;
+      }
+      if (text) {
+        previewKind.value = PREVIEW_KIND.TEXT;
+        textContent.value = text;
+        return;
+      }
+      error.value = "Word 文档内容为空";
       return;
     }
 
     if (previewKind.value === PREVIEW_KIND.UNSUPPORTED) {
+      error.value = "此格式暂不支持在线预览";
       return;
     }
 
-    objectUrl.value = URL.createObjectURL(blob);
+    objectUrl.value = URL.createObjectURL(
+      blob.type === "application/pdf"
+        ? blob
+        : new Blob([blob], { type: "application/pdf" }),
+    );
   } catch (e) {
-    error.value = e?.message || "预览加载失败";
+    if (token === previewLoadToken.value) {
+      error.value = e?.message || "预览加载失败";
+    }
   } finally {
-    loading.value = false;
+    if (token === previewLoadToken.value) {
+      loading.value = false;
+    }
   }
 }
 
 watch(
-  () => [props.show, props.version?.id, props.blobLoader, props.previewFileName],
-  ([open]) => {
-    if (open) loadPreview();
-  }
+  () => [
+    props.documentId,
+    props.version?.id,
+    props.blobLoader,
+    props.previewFileName,
+  ],
+  () => {
+    if (props.show) {
+      nextTick(() => loadPreview());
+    }
+  },
 );
+
+function onAfterEnter() {
+  nextTick(() => loadPreview());
+}
 
 function onAfterLeave() {
   cleanupPreview();
@@ -130,6 +197,7 @@ function onAfterLeave() {
     :title="modalTitle"
     :subtitle="modalSubtitle"
     :width="width"
+    @after-enter="onAfterEnter"
     @after-leave="onAfterLeave"
   >
     <div class="document-preview-modal__toolbar">
@@ -138,12 +206,12 @@ function onAfterLeave() {
 
     <n-spin :show="loading" class="document-preview-modal__spin">
       <div class="document-preview-modal__viewport">
-        <ComparePdfPreview
+        <iframe
           v-if="previewKind === PREVIEW_KIND.PDF && objectUrl"
-          :key="objectUrl"
+          :key="`${documentId}-${version?.id || ''}-${objectUrl}`"
           :src="objectUrl"
-          fit-mode="page"
-          class="document-preview-modal__pdf"
+          class="document-preview-modal__frame document-preview-modal__pdf-frame"
+          title="PDF 预览"
         />
         <iframe
           v-else-if="previewKind === PREVIEW_KIND.HTML && objectUrl"
@@ -162,6 +230,11 @@ function onAfterLeave() {
         <pre v-else-if="previewKind === PREVIEW_KIND.TEXT && textContent" class="document-preview-modal__text">{{
           textContent
         }}</pre>
+        <div
+          v-else-if="previewKind === PREVIEW_KIND.WORD && wordHtml"
+          class="document-preview-modal__word"
+          v-html="wordHtml"
+        />
         <n-empty
           v-else-if="error"
           description="预览加载失败"
@@ -178,6 +251,15 @@ function onAfterLeave() {
         >
           <template #extra>
             <n-text depth="3">请下载后在本地应用中打开查看</n-text>
+          </template>
+        </n-empty>
+        <n-empty
+          v-else-if="!loading"
+          description="预览内容为空"
+          class="document-preview-modal__empty"
+        >
+          <template #extra>
+            <n-text depth="3">请尝试下载文件或等待后台导入任务完成后再预览</n-text>
           </template>
         </n-empty>
       </div>
@@ -200,54 +282,70 @@ function onAfterLeave() {
 
 <style scoped>
 .document-preview-modal__toolbar {
+  flex-shrink: 0;
   margin-bottom: 12px;
 }
 
 .document-preview-modal__spin {
+  flex: 1;
   width: 100%;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
 }
 
+.document-preview-modal__spin :deep(.n-spin-container),
 .document-preview-modal__spin :deep(.n-spin-content) {
-  min-height: v-bind(viewportHeight);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .document-preview-modal__viewport {
   display: flex;
+  flex: 1;
   align-items: stretch;
   justify-content: center;
-  height: v-bind(viewportHeight);
-  min-height: v-bind(viewportHeight);
+  width: 100%;
+  min-height: 360px;
+  height: 100%;
+  max-height: v-bind(viewportHeight);
   border-radius: calc(var(--platform-radius-sm) + 4px);
   border: 1px solid var(--platform-border);
   background: color-mix(in srgb, var(--platform-text) 3%, transparent);
   overflow: hidden;
 }
 
-.document-preview-modal__pdf {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  height: 100%;
-}
-
 .document-preview-modal__frame {
   width: 100%;
-  min-height: v-bind(viewportHeight);
+  height: 100%;
+  min-height: 360px;
   border: 0;
   background: #fff;
 }
 
+.document-preview-modal__pdf-frame {
+  flex: 1;
+  min-height: 0;
+  background: #525659;
+}
+
 .document-preview-modal__image {
+  width: 100%;
   max-width: 100%;
-  max-height: v-bind(viewportHeight);
+  height: auto;
+  max-height: 100%;
   object-fit: contain;
   margin: auto;
   padding: 16px;
+  box-sizing: border-box;
 }
 
 .document-preview-modal__text {
   width: 100%;
-  max-height: v-bind(viewportHeight);
+  height: 100%;
+  max-height: 100%;
   margin: 0;
   padding: 16px 18px;
   overflow: auto;
@@ -260,8 +358,84 @@ function onAfterLeave() {
   box-sizing: border-box;
 }
 
+.document-preview-modal__word {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 20px 28px;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--platform-text);
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.document-preview-modal__word :deep(p) {
+  margin: 0 0 0.75em;
+}
+
+.document-preview-modal__word :deep(h1),
+.document-preview-modal__word :deep(h2),
+.document-preview-modal__word :deep(h3),
+.document-preview-modal__word :deep(h4),
+.document-preview-modal__word :deep(h5),
+.document-preview-modal__word :deep(h6) {
+  margin: 1.1em 0 0.5em;
+  line-height: 1.35;
+}
+
+.document-preview-modal__word :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+}
+
+.document-preview-modal__word :deep(th),
+.document-preview-modal__word :deep(td) {
+  border: 1px solid color-mix(in srgb, var(--platform-text) 18%, transparent);
+  padding: 6px 10px;
+  vertical-align: top;
+}
+
+.document-preview-modal__word :deep(ul),
+.document-preview-modal__word :deep(ol) {
+  margin: 0.5em 0 0.75em;
+  padding-left: 1.5em;
+}
+
+.document-preview-modal__word :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
 .document-preview-modal__empty {
   margin: auto;
   padding: 32px 16px;
+}
+</style>
+
+<style>
+.document-preview-modal.admin-form-modal.n-modal .n-card {
+  max-height: 96vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.document-preview-modal.admin-form-modal.n-modal .n-card__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.document-preview-modal.admin-form-modal.n-modal .admin-form-modal__body {
+  flex: 1 1 auto;
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 </style>

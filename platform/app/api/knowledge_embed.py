@@ -288,7 +288,7 @@ def ask_knowledge_qa_session(
         from app.core.exceptions import not_found
 
         raise not_found("会话不存在")
-    msg = rag_service.ask(db, session, user, body.question)
+    msg = rag_service.ask(db, session, user, body.question, use_agentic=body.use_agentic)
     return ApiResponse(
         data={
             "session_id": session_id,
@@ -319,6 +319,7 @@ async def knowledge_qa_chat_stream(
             question=body.message,
             session_id=body.conversation_id,
             document_ids=body.document_ids,
+            use_agentic=body.use_agentic,
         ):
             yield f"data: {payload}\n\n"
 

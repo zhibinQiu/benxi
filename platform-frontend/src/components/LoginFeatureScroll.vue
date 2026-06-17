@@ -112,13 +112,13 @@ let activeObserver = null;
 function scrollToSection(index) {
   const el = sectionEls.value[index];
   if (el) {
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
 
 function scrollToSummary() {
   if (summaryEl.value) {
-    summaryEl.value.scrollIntoView({ behavior: "smooth", block: "start" });
+    summaryEl.value.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
 
@@ -251,7 +251,7 @@ watch(summaryEl, () => nextTick(bindObservers));
       v-for="(card, index) in cards"
       :key="`${card.featureId}-${index}`"
       :ref="(el) => setSectionRef(el, index)"
-      class="login-feature-scroll__section"
+      class="login-feature-scroll__section login-snap-section"
       :class="{
         'login-feature-scroll__section--past': activeIndex > index && !summaryActive,
         'login-feature-scroll__section--future': activeIndex < index && !summaryActive,
@@ -303,7 +303,7 @@ watch(summaryEl, () => nextTick(bindObservers));
     <section
       v-if="summary"
       ref="summaryEl"
-      class="login-feature-scroll__summary"
+      class="login-feature-scroll__summary login-snap-section"
       :class="{ 'login-feature-scroll__summary--active': summaryActive }"
     >
       <div class="login-feature-scroll__summary-inner">
@@ -448,7 +448,7 @@ html[data-theme="dark"] .login-feature-scroll__rail {
   min-height: calc(100dvh - 36px);
   display: flex;
   align-items: center;
-  scroll-snap-align: start;
+  scroll-snap-align: center;
   scroll-snap-stop: always;
   isolation: isolate;
   box-sizing: border-box;
@@ -563,7 +563,7 @@ html[data-theme="dark"] .login-feature-scroll__pitch {
   min-height: calc(100dvh - 36px);
   display: flex;
   align-items: center;
-  scroll-snap-align: start;
+  scroll-snap-align: center;
   scroll-snap-stop: always;
   box-sizing: border-box;
   padding: 24px max(48px, env(safe-area-inset-right, 0px)) 48px max(12px, env(safe-area-inset-left, 0px));

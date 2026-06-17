@@ -32,6 +32,7 @@ TESTABLE_RESOURCE_IDS = frozenset(
         "vision",
         "rerank",
         "paddleocr",
+        "tts",
         "speech",
         "pdf2zh",
         "searxng",
@@ -354,6 +355,42 @@ def _probe_speech_url(speech_url: str) -> tuple[bool, str]:
     return healthy, "连接正常" if healthy else "无法访问 /health"
 
 
+def _probe_tts(base_url: str, api_key: str, model_name: str) -> tuple[bool, str]:
+    from app.integrations.siliconflow_tts_client import (
+        DEFAULT_TTS_MODEL,
+        build_speech_api_url,
+        voice_param,
+    )
+
+    url = build_speech_api_url(base_url)
+    if not url:
+        return False, "API 地址无效"
+    model = (model_name or "").strip() or DEFAULT_TTS_MODEL
+    payload = {
+        "model": model,
+        "voice": voice_param("alex", model=model),
+        "input": "测试",
+        "response_format": "mp3",
+    }
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            r = client.post(
+                url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=payload,
+            )
+        if r.status_code == 200:
+            return True, "连接正常"
+        if r.status_code in (401, 403):
+            return False, f"认证失败 HTTP {r.status_code}"
+        detail = (r.text or "")[:120]
+        return False, f"HTTP {r.status_code}{(': ' + detail) if detail else ''}"
+    except httpx.TimeoutException:
+        return False, "连接超时（>30s）"
+    except httpx.HTTPError as exc:
+        return False, f"无法连接：{exc}"
+
+
 def _searxng_timeout_from_cfg(cfg: dict[str, str], db) -> float:
     """与联网搜索使用同一超时配置，避免探测 5s 过短而业务请求仍成功。"""
     raw = (cfg.get("searxng_timeout_seconds") or "").strip()
@@ -474,6 +511,19 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
         if not paddle_model and not _is_openai_compatible_inference_base(paddle_base):
             return _item(configured=False, healthy=False, message="请填写模型名称")
         healthy, msg = _probe_paddleocr(paddle_base, api_key=paddle_key)
+        return _item(configured=True, healthy=healthy, message=msg)
+
+    if rid == "tts":
+        tts_base, tts_key, tts_model = _endpoint_fields(cfg, "tts")
+        if not _endpoint_configured(
+            base_url=tts_base, api_key=tts_key, model_name=tts_model
+        ):
+            return _item(
+                configured=False,
+                healthy=False,
+                message="请填写 API 地址、模型名与 Key",
+            )
+        healthy, msg = _probe_tts(tts_base, tts_key, tts_model)
         return _item(configured=True, healthy=healthy, message=msg)
 
     if rid == "speech":

@@ -289,6 +289,14 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   font-size: 13px !important;
 }
 
+.login-page .login-glass-btn--submit.n-button:not(.n-button--disabled) {
+  min-height: 40px !important;
+  height: 40px;
+  padding: 0 16px !important;
+  font-size: 14px !important;
+  --n-height: 40px;
+}
+
 .login-page .login-glass-btn--pref-circle.n-button--circle:not(.n-button--disabled) {
   width: 42px;
   height: 42px;
@@ -395,7 +403,7 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
   border-radius: inherit;
   opacity: 0;
@@ -412,16 +420,26 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
     box-shadow 0.22s var(--platform-ease-smooth);
 }
 
+.login-page .login-glass-link:not(:disabled) > * {
+  position: relative;
+  z-index: 1;
+}
+
 .login-page .login-glass-link:not(:disabled):hover::before {
-  opacity: 0.62;
+  opacity: 0.72;
+  box-shadow:
+    var(--platform-glass-rim-edge),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .login-page .login-glass-link:not(:disabled):hover {
-  border-color: rgba(255, 255, 255, 0.42) !important;
+  border-color: rgba(255, 255, 255, 0.48) !important;
+  box-shadow: 0 4px 14px rgba(91, 120, 200, 0.12);
 }
 
 html[data-theme="dark"] .login-page .login-glass-link:not(:disabled):hover {
-  border-color: rgba(147, 197, 253, 0.16) !important;
+  border-color: rgba(147, 197, 253, 0.22) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 
 .login-page .login-glass-link:not(:disabled):active {

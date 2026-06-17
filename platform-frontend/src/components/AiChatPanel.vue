@@ -11,7 +11,7 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { TimeOutline, DocumentTextOutline } from "@vicons/ionicons5";
+import { TimeOutline, DocumentTextOutline, DocumentOutline, GitNetworkOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
 import { NButton, NIcon, NSpin } from "naive-ui";
 import { marked } from "marked";
@@ -24,8 +24,11 @@ import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 import KnowledgeCitationPreviewModal from "./KnowledgeCitationPreviewModal.vue";
 import KnowledgeMindMap from "./KnowledgeMindMap.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
+import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
 import { useI18n } from "../composables/useI18n.js";
+import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
 import { splitCitedCitations } from "../utils/reportCitations.js";
+import { exportMindmapMarkdown, exportMindmapOpml } from "../utils/mindmapExport.js";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import {
@@ -96,6 +99,7 @@ const citationPreviewTarget = ref(null);
 const reportViewMode = ref("answer");
 const reportMindmapRef = ref(null);
 const exportingWord = ref(false);
+const exportingMindmap = ref("");
 let streamAbort = null;
 let streamGeneration = 0;
 
@@ -159,6 +163,30 @@ async function exportReportWord(content) {
     ui.error(e.message || t("reportGeneration.exportWordFailed"));
   } finally {
     exportingWord.value = false;
+  }
+}
+
+function exportReportMindmap(format, messageIndex) {
+  if (exportingMindmap.value) return;
+  exportingMindmap.value = format;
+  try {
+    const payload = {
+      mermaid: reportMindmapRef.value?.getMermaidSource?.() || "",
+      question: reportQuestionForMessage(messageIndex),
+      answer: messages.value[messageIndex]?.content || "",
+      title: lastReportTitle.value,
+    };
+    if (format === "md") {
+      exportMindmapMarkdown(payload);
+      ui.success(t("reportGeneration.exportMindmapMdSuccess"));
+    } else {
+      exportMindmapOpml(payload);
+      ui.success(t("reportGeneration.exportMindmapOpmlSuccess"));
+    }
+  } catch (e) {
+    ui.error(e.message || t("reportGeneration.exportMindmapFailed"));
+  } finally {
+    exportingMindmap.value = "";
   }
 }
 
@@ -231,39 +259,11 @@ const landingComposerRows = computed(() => ({ minRows: 3, maxRows: 8 }));
 const chatComposerRows = computed(() => ({ minRows: 1, maxRows: 1 }));
 
 function emptyWorkflow() {
-  return { currentTitle: "", running: false, failed: false };
+  return emptyAgentWorkflow();
 }
 
 function applyWorkflowEvent(workflow, ev) {
-  if (!workflow) return emptyWorkflow();
-  const phase = ev?.phase;
-  if (phase === "workflow_started") {
-    workflow.running = true;
-    workflow.failed = false;
-    workflow.currentTitle = "工作流启动";
-    return workflow;
-  }
-  if (phase === "node_started") {
-    workflow.running = true;
-    workflow.failed = false;
-    workflow.currentTitle = ev.title || "处理中";
-    return workflow;
-  }
-  if (phase === "node_finished") {
-    const failed = ev.status === "failed" || ev.status === "exception";
-    if (failed) {
-      workflow.failed = true;
-      workflow.currentTitle = `${ev.title || "节点"}（失败）`;
-    }
-    return workflow;
-  }
-  if (phase === "workflow_finished") {
-    workflow.running = false;
-    workflow.currentTitle = "";
-    workflow.failed = false;
-    return workflow;
-  }
-  return workflow;
+  return applyAgentWorkflowEvent(workflow, ev, t);
 }
 
 function renderMarkdown(text) {
@@ -327,6 +327,15 @@ async function sendMessageStreaming(content, assistantIdx, history) {
           if (scrollTick % 4 === 0) scrollToBottom();
         },
         onError: (err) => {
+          const row = messages.value[assistantIdx];
+          if (row?.content?.trim()) {
+            row.streaming = false;
+            if (row.workflow) {
+              row.workflow.running = false;
+              row.workflow.failed = false;
+            }
+            return;
+          }
           throw err;
         },
         onDone: (payload) => {
@@ -337,7 +346,10 @@ async function sendMessageStreaming(content, assistantIdx, history) {
               row.content = full;
             }
             row.streaming = false;
-            if (row.workflow) row.workflow.running = false;
+            if (row.workflow) {
+              row.workflow.running = false;
+              row.workflow.failed = false;
+            }
             if (props.showCitations || props.showReportTools) {
               if (Array.isArray(payload?.citations)) {
                 row.citations = payload.citations;
@@ -738,7 +750,7 @@ defineExpose({ newChat });
         </div>
       </Transition>
 
-      <div v-if="loadingHistory" class="ai-home-history-loading">
+      <div v-if="loadingHistory" class="ai-home-history-loading platform-inline-loading">
         <n-spin size="small" />
         <span>正在加载对话…</span>
       </div>
@@ -768,22 +780,18 @@ defineExpose({ newChat });
                 'ai-home-bubble--error': m.error,
                 'ai-home-bubble--streaming': m.streaming}"
             >
-              <div
+              <AgentWorkflowProgress
                 v-if="
                   showWorkflowProgress &&
                   m.streaming &&
                   !m.content &&
-                  m.workflow?.running &&
-                  m.workflow.currentTitle
+                  m.workflow?.running
                 "
-                class="ai-workflow-current"
-                :class="{ 'ai-workflow-current--failed': m.workflow.failed }"
-              >
-                <span v-if="!m.workflow.failed" class="ai-workflow-spinner" aria-hidden="true" />
-                {{ m.workflow.currentTitle }}
-              </div>
-              <div v-else-if="m.streaming && !m.content" class="ai-thinking">
-                <span class="ai-workflow-spinner" aria-hidden="true" />
+                :workflow="m.workflow"
+                compact
+              />
+              <div v-else-if="m.streaming && !m.content" class="ai-thinking platform-inline-loading">
+                <n-spin size="tiny" />
                 正在思考…
               </div>
               <div v-else-if="m.streaming" class="ai-home-stream-text">
@@ -879,17 +887,41 @@ defineExpose({ newChat });
                     </ul>
                   </section>
                 </template>
-                <div v-if="reportWordExport" class="ai-report-export">
-                  <button
-                    type="button"
-                    class="ai-report-export__btn"
-                    :disabled="exportingWord"
-                    @click="exportReportWord(m.content)"
-                  >
-                    <n-spin v-if="exportingWord" :size="14" />
-                    <n-icon v-else :size="15" :component="DocumentTextOutline" />
-                    <span>{{ t("reportGeneration.exportWord") }}</span>
-                  </button>
+                <div v-if="reportWordExport || reportViewMode === 'mindmap'" class="ai-report-export">
+                  <template v-if="reportViewMode === 'answer' && reportWordExport">
+                    <button
+                      type="button"
+                      class="ai-report-export__btn"
+                      :disabled="exportingWord"
+                      @click="exportReportWord(m.content)"
+                    >
+                      <n-spin v-if="exportingWord" :size="14" />
+                      <n-icon v-else :size="15" :component="DocumentTextOutline" />
+                      <span>{{ t("reportGeneration.exportWord") }}</span>
+                    </button>
+                  </template>
+                  <template v-else-if="reportViewMode === 'mindmap'">
+                    <button
+                      type="button"
+                      class="ai-report-export__btn"
+                      :disabled="Boolean(exportingMindmap)"
+                      @click="exportReportMindmap('md', i)"
+                    >
+                      <n-spin v-if="exportingMindmap === 'md'" :size="14" />
+                      <n-icon v-else :size="15" :component="DocumentOutline" />
+                      <span>{{ t("reportGeneration.exportMindmapMd") }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="ai-report-export__btn"
+                      :disabled="Boolean(exportingMindmap)"
+                      @click="exportReportMindmap('opml', i)"
+                    >
+                      <n-spin v-if="exportingMindmap === 'opml'" :size="14" />
+                      <n-icon v-else :size="15" :component="GitNetworkOutline" />
+                      <span>{{ t("reportGeneration.exportMindmapOpml") }}</span>
+                    </button>
+                  </template>
                 </div>
               </template>
               <KnowledgeChatContent
@@ -1273,7 +1305,7 @@ defineExpose({ newChat });
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #64748b;
+  color: var(--platform-text-secondary);
   font-size: 14px;
 }
 
@@ -1424,22 +1456,6 @@ defineExpose({ newChat });
   border-bottom-color: rgba(239, 68, 68, 0.25);
 }
 
-.ai-workflow-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--platform-accent-border-soft);
-  border-top-color: var(--platform-accent);
-  border-radius: 50%;
-  animation: ai-workflow-spin 0.8s linear infinite;
-  flex-shrink: 0;
-}
-
-@keyframes ai-workflow-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .ai-workflow-wait {
   font-size: 13px;
   color: #94a3b8;
@@ -1569,6 +1585,8 @@ defineExpose({ newChat });
 .ai-report-export {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--platform-accent-border-soft);

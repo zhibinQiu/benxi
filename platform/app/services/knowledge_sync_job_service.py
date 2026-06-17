@@ -870,6 +870,165 @@ def _fail_parse_job(
         logger.debug("解析失败后刷新索引缓存跳过 job=%s: %s", job.id, exc)
 
 
+SUBSCRIPTION_PIPELINE_MODE = "subscription_pipeline"
+
+
+def _is_subscription_pipeline_mode(mode: str | None) -> bool:
+    return str(mode or "").strip() == SUBSCRIPTION_PIPELINE_MODE
+
+
+def _finish_index_job_after_parse(
+    db: Session,
+    job: Job,
+    user: User,
+    doc: Document,
+    *,
+    dataset_id: str | None,
+    version_id_raw: str | None,
+    mode: str,
+) -> None:
+    """DeepDOC 解析完成后：资讯导入走 PageIndex + 后台 KG；其它走 KnowFlow 索引完成。"""
+    if _is_subscription_pipeline_mode(mode):
+        _complete_subscription_pipeline_after_deepdoc(
+            db,
+            job,
+            user,
+            doc,
+            version_id_raw=version_id_raw,
+        )
+        return
+    _complete_knowledge_index_job(
+        db,
+        job,
+        user,
+        doc,
+        dataset_id=dataset_id,
+        version_id_raw=version_id_raw,
+        mode=mode,
+    )
+
+
+def _complete_subscription_pipeline_after_deepdoc(
+    db: Session,
+    job: Job,
+    user: User,
+    doc: Document,
+    *,
+    version_id_raw: str | None,
+) -> None:
+    """资讯导入：DeepDOC 解析完成后建立 PageIndex，并后台触发知识图谱抽取。"""
+    from app.services.knowledge_parser_service import PARSER_PAGEINDEX, index_stack_block_reason
+    from app.services.pageindex_service import (
+        execute_pageindex_reindex,
+        resolve_pageindex_markdown_for_subscription,
+    )
+
+    if _index_job_should_abort(db, job):
+        return
+
+    version_id = uuid.UUID(str(version_id_raw)) if version_id_raw else None
+    pi_reason = index_stack_block_reason(PARSER_PAGEINDEX, reindex=True)
+    if pi_reason:
+        update_job_status(
+            db,
+            job.id,
+            JobStatus.failed.value,
+            error_message=pi_reason,
+        )
+        create_notification(
+            db,
+            user_id=user.id,
+            title="文档索引失败",
+            body=f"「{doc.title or '未命名文档'}」DeepDOC 解析已完成，但 PageIndex 不可用：{pi_reason}",
+            link=f"/documents/{doc.id}",
+        )
+        return
+
+    payload = dict(job.payload or {})
+    payload.pop("awaiting_parse", None)
+    payload.pop("parse_watch_started_at", None)
+    job.payload = payload
+    update_job_status(db, job.id, JobStatus.running.value, progress=82)
+
+    markdown_text = resolve_pageindex_markdown_for_subscription(
+        db,
+        user,
+        doc,
+        version_id=version_id,
+        job_payload=payload,
+    )
+    update_job_status(db, job.id, JobStatus.running.value, progress=88)
+
+    try:
+        execute_pageindex_reindex(
+            db,
+            user,
+            doc.id,
+            version_id=version_id,
+            markdown_text=markdown_text,
+        )
+    except Exception as exc:
+        from app.core.user_messages import background_job_error_message
+
+        err_text = background_job_error_message(exc, fallback="PageIndex 索引失败")
+        update_job_status(
+            db,
+            job.id,
+            JobStatus.failed.value,
+            error_message=err_text[:500],
+        )
+        create_notification(
+            db,
+            user_id=user.id,
+            title="文档索引失败",
+            body=f"「{doc.title or '未命名文档'}」PageIndex 索引未完成：{err_text}",
+            link=f"/documents/{doc.id}",
+        )
+        try:
+            from app.services.knowledge_scope_tree_service import (
+                notify_knowledge_index_state_changed,
+            )
+
+            notify_knowledge_index_state_changed(user_id=user.id)
+        except Exception as notify_exc:
+            logger.debug(
+                "资讯导入 PageIndex 失败后刷新缓存跳过 job=%s: %s",
+                job.id,
+                notify_exc,
+            )
+        return
+
+    update_job_status(db, job.id, JobStatus.done.value, progress=100)
+    create_notification(
+        db,
+        user_id=user.id,
+        title="文档索引完成",
+        body=(
+            f"「{doc.title or '未命名文档'}」已完成 DeepDOC 解析与 PageIndex 索引，"
+            "可用于知识检索；知识图谱抽取在后台进行。"
+        ),
+        link=f"/documents/{doc.id}",
+    )
+    try:
+        from app.services.knowledge_scope_tree_service import (
+            notify_knowledge_index_state_changed,
+        )
+
+        notify_knowledge_index_state_changed(user_id=user.id)
+    except Exception as exc:
+        logger.debug("资讯导入索引完成后刷新缓存跳过 job=%s: %s", job.id, exc)
+    try:
+        from app.services.kg_extraction_service import schedule_kg_extraction_after_index
+
+        schedule_kg_extraction_after_index(
+            document_id=doc.id,
+            user_id=user.id,
+            version_id=version_id,
+        )
+    except Exception as exc:
+        logger.debug("资讯导入 KG 抽取调度跳过 job=%s: %s", job.id, exc)
+
+
 def _complete_knowledge_index_job(
     db: Session,
     job: Job,
@@ -958,6 +1117,7 @@ def _run_parse_watch(job_id: uuid.UUID) -> None:
     from app.config import get_settings
     from app.database import SessionLocal
 
+    watch_ctx: dict | None = None
     db = SessionLocal()
     try:
         job = db.get(Job, job_id)
@@ -992,32 +1152,66 @@ def _run_parse_watch(job_id: uuid.UUID) -> None:
         version_id_raw = payload.get("version_id")
         version_uuid = uuid.UUID(str(version_id_raw)) if version_id_raw else None
 
-        try:
-            completed = _wait_for_parse(
-                job_id=job_id,
-                user_id=user.id,
-                document_id=doc.id,
-                dataset_id=dataset_id,
-                ragflow_document_id=rid,
-                version_id=version_uuid,
-                max_wait_sec=remaining,
-                update_progress=False,
-            )
-        except RuntimeError as exc:
-            _fail_parse_job(db, job, user, doc, str(exc), mode=mode)
+        watch_ctx = {
+            "user_id": user.id,
+            "document_id": doc.id,
+            "dataset_id": dataset_id,
+            "rid": rid,
+            "remaining": remaining,
+            "mode": mode,
+            "version_id_raw": version_id_raw,
+            "version_uuid": version_uuid,
+            "started_at": started_at,
+            "max_total": max_total,
+        }
+    finally:
+        db.close()
+
+    if not watch_ctx:
+        return
+
+    completed = False
+    parse_exc: RuntimeError | None = None
+    try:
+        # _wait_for_parse 每轮轮询独立会话；此处须先释放外层连接，避免占满连接池
+        completed = _wait_for_parse(
+            job_id=job_id,
+            user_id=watch_ctx["user_id"],
+            document_id=watch_ctx["document_id"],
+            dataset_id=watch_ctx["dataset_id"],
+            ragflow_document_id=watch_ctx["rid"],
+            version_id=watch_ctx["version_uuid"],
+            max_wait_sec=watch_ctx["remaining"],
+            update_progress=False,
+        )
+    except RuntimeError as exc:
+        parse_exc = exc
+
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if not job:
+            return
+        user = db.get(User, watch_ctx["user_id"])
+        doc = get_document(db, watch_ctx["document_id"])
+        if not user or not doc:
+            return
+
+        if parse_exc is not None:
+            _fail_parse_job(db, job, user, doc, str(parse_exc), mode=watch_ctx["mode"])
             db.commit()
             return
 
         if completed:
             if not _index_job_should_abort(db, job):
-                _complete_knowledge_index_job(
+                _finish_index_job_after_parse(
                     db,
                     job,
                     user,
                     doc,
-                    dataset_id=dataset_id,
-                    version_id_raw=payload.get("version_id"),
-                    mode=mode,
+                    dataset_id=watch_ctx["dataset_id"],
+                    version_id_raw=watch_ctx["version_id_raw"],
+                    mode=watch_ctx["mode"],
                 )
                 db.commit()
             return
@@ -1025,20 +1219,22 @@ def _run_parse_watch(job_id: uuid.UUID) -> None:
         if _index_job_should_abort(db, job):
             return
 
-        elapsed = time.time() - started_at
-        if elapsed < max_total - 60:
-            payload["parse_watch_started_at"] = started_at
+        elapsed = time.time() - watch_ctx["started_at"]
+        if elapsed < watch_ctx["max_total"] - 60:
+            payload = dict(job.payload or {})
+            payload["parse_watch_started_at"] = watch_ctx["started_at"]
             payload["awaiting_parse"] = True
             job.payload = payload
             update_job_status(db, job.id, JobStatus.done.value, progress=90)
             db.commit()
+            settings = get_settings()
             delay = max(60, int(settings.knowledge_parse_poll_interval_sec) * 6)
             from app.services.background_job_dispatch import dispatch_parse_watch
 
             dispatch_parse_watch(job_id, countdown=delay)
             return
 
-        _notify_parse_in_progress(db, user, doc, mode=mode)
+        _notify_parse_in_progress(db, user, doc, mode=watch_ctx["mode"])
         db.commit()
     except Exception:
         logger.exception("知识库解析后台续跑失败 job=%s", job_id)
@@ -1120,10 +1316,18 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
 
         update_job_status(db, job_id, JobStatus.running.value, progress=8)
 
-        stack_reason = index_stack_block_reason(
-            payload.get("parser_id"),
-            reindex=(mode == "reindex"),
-        )
+        if _is_subscription_pipeline_mode(mode):
+            from app.services.knowledge_parser_service import PARSER_PAGEINDEX
+
+            stack_reason = index_stack_block_reason(
+                payload.get("parser_id"),
+                reindex=False,
+            ) or index_stack_block_reason(PARSER_PAGEINDEX, reindex=True)
+        else:
+            stack_reason = index_stack_block_reason(
+                payload.get("parser_id"),
+                reindex=(mode == "reindex"),
+            )
         if stack_reason:
             update_job_status(
                 db,
@@ -1239,6 +1443,19 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                 dataset_id = resume.dataset_id
                 db.commit()
                 if resume.already_completed:
+                    if _is_subscription_pipeline_mode(mode):
+                        _finish_index_job_after_parse(
+                            db,
+                            db.get(Job, job_id) or job,
+                            user,
+                            doc,
+                            dataset_id=dataset_id,
+                            version_id_raw=version_id_raw,
+                            mode=mode,
+                        )
+                        db.commit()
+                        return
+
                     update_job_status(db, job_id, JobStatus.done.value, progress=100)
                     from app.models.document import DocumentVersion
                     from app.services.document_service import resolve_current_version
@@ -1319,19 +1536,40 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
         update_job_status(db, job_id, JobStatus.running.value, progress=68)
 
         if dataset_id and rid:
+            user_id = user.id
+            doc_id = doc.id
+            ds = str(dataset_id)
+            rflow_id = str(rid)
+            db.commit()
+            db.close()
+            db = None
+            parse_done = False
             try:
                 parse_done = _wait_for_parse(
                     job_id=job_id,
-                    user_id=user.id,
-                    document_id=doc.id,
-                    dataset_id=str(dataset_id),
-                    ragflow_document_id=str(rid),
+                    user_id=user_id,
+                    document_id=doc_id,
+                    dataset_id=ds,
+                    ragflow_document_id=rflow_id,
                     version_id=version_id,
                 )
             except RuntimeError as e:
-                _fail_parse_job(db, job, user, doc, str(e), mode=mode)
-                db.commit()
+                db = SessionLocal()
+                job = db.get(Job, job_id)
+                user = db.get(User, user_id) if user_id else None
+                doc = get_document(db, doc_id) if doc_id else None
+                if job and user and doc:
+                    _fail_parse_job(db, job, user, doc, str(e), mode=mode)
+                    db.commit()
                 return
+
+            db = SessionLocal()
+            job = db.get(Job, job_id)
+            user = db.get(User, user_id) if user_id else None
+            doc = get_document(db, doc_id) if doc_id else None
+            if not job or not user or not doc:
+                return
+
             if not parse_done:
                 if _index_job_should_abort(db, job):
                     db.commit()
@@ -1341,8 +1579,8 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                     job,
                     user,
                     doc,
-                    dataset_id=str(dataset_id),
-                    ragflow_document_id=str(rid),
+                    dataset_id=ds,
+                    ragflow_document_id=rflow_id,
                     mode=mode,
                     version_id_raw=version_id_raw,
                 )
@@ -1350,7 +1588,7 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                 return
 
         if not _index_job_should_abort(db, job):
-            _complete_knowledge_index_job(
+            _finish_index_job_after_parse(
                 db,
                 job,
                 user,
@@ -1420,6 +1658,64 @@ def create_document_knowledge_index_job(
             "version_id": str(version_id) if version_id else None,
             "document_title": title or "未命名文档",
             "force": force,
+        },
+    )
+
+
+def create_subscription_pipeline_index_job(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID | None = None,
+    document_title: str | None = None,
+    article_html_body: str = "",
+    article_summary: str = "",
+    article_link: str = "",
+    article_source_label: str = "",
+    article_title: str = "",
+) -> Job | None:
+    """资讯导入默认索引链：MinIO PDF → DeepDOC 解析 → PageIndex → 后台 KG 抽取。"""
+    from app.config import get_settings
+    from app.services.knowledge_parser_service import (
+        PARSER_PAGEINDEX,
+        index_stack_block_reason,
+        normalize_layout_recognize,
+        normalize_parser_id,
+    )
+
+    if not knowledge.enabled():
+        return None
+    if index_stack_block_reason(None, reindex=False):
+        return None
+    if index_stack_block_reason(PARSER_PAGEINDEX, reindex=True):
+        return None
+
+    settings = get_settings()
+    doc = get_document(db, document_id)
+    title = (document_title or (doc.title if doc else "") or "").strip()
+    article_title_text = (article_title or title or "").strip()
+    parser_id = normalize_parser_id(settings.knowledge_default_parser_id)
+    layout = normalize_layout_recognize("DeepDOC")
+
+    return create_job(
+        db,
+        job_type=JobType.document_index.value,
+        created_by=user_id,
+        document_id=document_id,
+        payload={
+            "mode": SUBSCRIPTION_PIPELINE_MODE,
+            "document_id": str(document_id),
+            "version_id": str(version_id) if version_id else None,
+            "document_title": title or "未命名文档",
+            "article_title": article_title_text,
+            "article_html_body": (article_html_body or "").strip(),
+            "article_summary": (article_summary or "").strip(),
+            "article_link": (article_link or "").strip(),
+            "article_source_label": (article_source_label or "").strip(),
+            "parser_id": parser_id,
+            "layout_recognize": layout,
+            "force": True,
         },
     )
 

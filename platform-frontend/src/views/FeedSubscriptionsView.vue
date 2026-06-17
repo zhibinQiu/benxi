@@ -34,6 +34,7 @@ import {
   subscribeFeedPreset,
   syncFeedSubscription } from "../api/client";
 import { deleteSequentially } from "../utils/batchActions";
+import { withSystemDialogLayer } from "../utils/systemDialog.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -207,29 +208,32 @@ function handleBatchRemoveSources() {
   const rows = selectedSources.value;
   if (!rows.length) return;
   const summary = rows.length === 1 ? `「${rows[0].name}」` : `选中的 ${rows.length} 个订阅`;
-  dialog.warning({
-    title: "批量取消订阅",
-    content: `确定取消${summary}？`,
-    positiveText: "移除",
-    negativeText: "取消",
-    onPositiveClick: async () => {
-      const { deleted, failed } = await deleteSequentially(rows, (row) =>
-        deleteFeedSubscription(row.id)
-      );
-      if (filterSourceId.value && selectedSourceIds.value.includes(filterSourceId.value)) {
-        filterSourceId.value = null;
-      }
-      selectedSourceIds.value = [];
-      if (failed.length) {
-        ui.warning(
-          `已移除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
+  dialog.warning(
+    withSystemDialogLayer({
+      title: "批量取消订阅",
+      content: `确定取消${summary}？`,
+      positiveText: "移除",
+      negativeText: "取消",
+      onPositiveClick: async () => {
+        const { deleted, failed } = await deleteSequentially(rows, (row) =>
+          deleteFeedSubscription(row.id)
         );
-      } else {
-        ui.success(deleted > 1 ? `已移除 ${deleted} 个订阅` : "已取消订阅");
-      }
-      await reload();
-      return !failed.length;
-    }});
+        if (filterSourceId.value && selectedSourceIds.value.includes(filterSourceId.value)) {
+          filterSourceId.value = null;
+        }
+        selectedSourceIds.value = [];
+        if (failed.length) {
+          ui.warning(
+            `已移除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
+          );
+        } else {
+          ui.success(deleted > 1 ? `已移除 ${deleted} 个订阅` : "已取消订阅");
+        }
+        await reload();
+        return !failed.length;
+      },
+    })
+  );
 }
 
 function openEntry(id) {

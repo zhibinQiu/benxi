@@ -1,4 +1,4 @@
-"""资讯/收藏导入文档库：入库即为 PDF，后台任务负责知识库索引。"""
+"""资讯/收藏导入文档库：HTML→PDF 存 MinIO，再 DeepDOC 解析 + PageIndex 索引 + 后台 KG 抽取。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ from app.services.documents.crud import get_document
 from app.services.job_service import create_job, update_job_status
 
 logger = logging.getLogger(__name__)
+
+
+def _pdf_bytes_valid(content: bytes) -> bool:
+    return bool(content) and content.startswith(b"%PDF") and len(content) > 128
 
 
 def replace_version_file_content(
@@ -59,6 +63,7 @@ def enqueue_subscription_import_finalize(
 ) -> Job:
     from app.models.job import JobType
 
+    title_text = (title or "").strip()
     job = create_job(
         db,
         job_type=JobType.subscription_import.value,
@@ -66,10 +71,11 @@ def enqueue_subscription_import_finalize(
         document_id=document_id,
         payload={
             "document_id": str(document_id),
+            "document_title": title_text or "未命名文档",
             "sync_knowflow": sync_knowflow,
             "source": source,
             "source_id": str(source_id),
-            "title": title,
+            "title": title_text,
             "link": link,
             "source_label": source_label,
             "html_body": html_body,
@@ -195,39 +201,66 @@ def run_subscription_import_job(job_id: uuid.UUID) -> None:
             return
 
         store = get_object_store()
+        stored = b""
         try:
             stored = store.get_object_bytes(version.file_key)
         except Exception as exc:
+            logger.warning("资讯导入读取已有文件失败 job=%s: %s", job_id, exc)
+
+        update_job_status(db, job_id, JobStatus.running.value, progress=35)
+        db.commit()
+
+        from app.integrations.html_document_export import resolve_article_html_body
+
+        html_body, summary_text = resolve_article_html_body(
+            work["html_body"] or f"<p>{work['summary']}</p>",
+            summary=work["summary"],
+            link=work["link"],
+            allow_refetch=True,
+        )
+        if html_body:
+            work["html_body"] = html_body
+        if summary_text:
+            work["summary"] = summary_text
+
+        try:
+            file_name, pdf_bytes, mime_type = html_body_to_pdf_bytes(
+                work["title"],
+                html_body or f"<p>{work['summary']}</p>",
+                summary=work["summary"],
+                link=work["link"],
+                source_label=work["source_label"],
+                fallback_stem=work["fallback_stem"],
+                allow_refetch=False,
+            )
+        except Exception as exc:
+            logger.exception("资讯导入 PDF 生成失败 job=%s", job_id)
             update_job_status(
                 db,
                 job_id,
                 JobStatus.failed.value,
-                error_message=f"读取文档文件失败：{exc}"[:500],
+                error_message=f"PDF 生成失败：{exc}"[:500],
             )
             db.commit()
             return
 
-        if not stored.startswith(b"%PDF"):
-            try:
-                file_name, pdf_bytes, mime_type = html_body_to_pdf_bytes(
-                    work["title"],
-                    work["html_body"] or f"<p>{work['summary']}</p>",
-                    summary=work["summary"],
-                    link=work["link"],
-                    source_label=work["source_label"],
-                    fallback_stem=work["fallback_stem"],
-                    allow_refetch=False,
+        if not _pdf_bytes_valid(pdf_bytes):
+            if _pdf_bytes_valid(stored):
+                logger.warning(
+                    "资讯导入 PDF 重新生成无效，保留已有 PDF job=%s doc=%s",
+                    job_id,
+                    work["document_id"],
                 )
-            except Exception as exc:
-                logger.exception("资讯导入 PDF 生成失败 job=%s", job_id)
+            else:
                 update_job_status(
                     db,
                     job_id,
                     JobStatus.failed.value,
-                    error_message=f"PDF 生成失败：{exc}"[:500],
+                    error_message="PDF 生成结果无效",
                 )
                 db.commit()
                 return
+        else:
             replace_version_file_content(
                 db,
                 version,
@@ -235,6 +268,10 @@ def run_subscription_import_job(job_id: uuid.UUID) -> None:
                 mime_type=mime_type,
                 content=pdf_bytes,
             )
+            db.commit()
+            from app.core.platform_cache import invalidate_document_caches
+
+            invalidate_document_caches(str(work["user_id"]))
 
         update_job_status(db, job_id, JobStatus.running.value, progress=70)
         db.commit()
@@ -244,19 +281,28 @@ def run_subscription_import_job(job_id: uuid.UUID) -> None:
 
             if knowledge.enabled():
                 from app.services.knowledge_sync_job_service import (
-                    create_document_knowledge_index_job,
+                    create_subscription_pipeline_index_job,
                 )
 
-                index_job = create_document_knowledge_index_job(
+                index_job = create_subscription_pipeline_index_job(
                     db,
                     user_id=work["user_id"],
                     document_id=work["document_id"],
                     version_id=work["version_id"],
-                    force=True,
                     document_title=work["document_title"],
+                    article_html_body=work["html_body"],
+                    article_summary=work["summary"],
+                    article_link=work["link"],
+                    article_source_label=work["source_label"],
+                    article_title=work["title"],
                 )
                 if index_job:
                     index_job_id = index_job.id
+                    job_row = db.get(Job, job_id)
+                    if job_row:
+                        payload = dict(job_row.payload or {})
+                        payload["index_job_id"] = str(index_job_id)
+                        job_row.payload = payload
                     db.commit()
     except Exception as exc:
         logger.exception("资讯导入后台任务失败 job=%s", job_id)

@@ -65,6 +65,8 @@ class FeedImportIn(BaseModel):
 class FeedImportOut(BaseModel):
     document_id: uuid.UUID
     knowflow_synced: bool = False
+    queued: bool = False
+    job_id: uuid.UUID | None = None
 
 
 class FeedSyncOut(BaseModel):

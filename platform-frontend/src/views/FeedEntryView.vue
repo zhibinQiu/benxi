@@ -1,6 +1,7 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { onMounted, ref } from "vue";
+import { useSubscriptionImportFlow } from "../composables/useSubscriptionImportFlow.js";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NButton, NCard, NSpace, NSpin, NTag, NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
@@ -15,8 +16,21 @@ const router = useRouter();
 const ui = usePlatformUi();
 
 const loading = ref(true);
-const importing = ref(false);
 const entry = ref(null);
+
+const { importing, indexing, documentId, runImport, openDocument } = useSubscriptionImportFlow({
+  router,
+  route,
+  ui,
+});
+
+const resolvedDocumentId = computed(
+  () => documentId.value || entry.value?.document_id || null
+);
+
+const showImportedActions = computed(
+  () => Boolean(entry.value?.imported || resolvedDocumentId.value)
+);
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -31,6 +45,9 @@ async function load({ notifyOnError = true } = {}) {
   loading.value = true;
   try {
     entry.value = await fetchFeedEntry(route.params.id);
+    if (entry.value?.document_id) {
+      documentId.value = entry.value.document_id;
+    }
   } catch (e) {
     if (notifyOnError) ui.error(e.message);
     if (notifyOnError) {
@@ -42,19 +59,11 @@ async function load({ notifyOnError = true } = {}) {
 }
 
 async function onImport() {
-  importing.value = true;
   try {
-    const res = await importFeedEntry(route.params.id);
-    ui.success(
-      res.knowflow_synced
-        ? "已入「个人级」文档库并同步知识库"
-        : "已入「个人级」文档库",
-    );
+    await runImport(importFeedEntry, route.params.id);
     await load({ notifyOnError: false });
-  } catch (e) {
-    ui.error(e.message);
-  } finally {
-    importing.value = false;
+  } catch {
+    /* runImport 已提示 */
   }
 }
 
@@ -70,7 +79,9 @@ onMounted(load);
             返回列表
           </NButton>
           <NTag :bordered="false">{{ entry.source_kind === "website" ? "网站" : "RSS" }}</NTag>
-          <NTag v-if="entry.imported" type="success" :bordered="false">已入文档库</NTag>
+          <NTag v-if="showImportedActions" type="success" :bordered="false">
+            {{ indexing ? "索引中" : "已入文档库" }}
+          </NTag>
         </NSpace>
         <NCard>
           <h1 class="article-title">{{ entry.title }}</h1>
@@ -80,11 +91,19 @@ onMounted(load);
             <NText depth="3">· {{ fmtTime(entry.publish_at) }}</NText>
           </NSpace>
           <NSpace style="margin-bottom: 20px">
-            <NButton v-if="!entry.imported" type="primary" :loading="importing" @click="onImport">
+            <NButton v-if="!showImportedActions" type="primary" :loading="importing" @click="onImport">
               导入文档库
             </NButton>
             <NButton
-              v-else
+              v-if="showImportedActions && resolvedDocumentId"
+              type="primary"
+              :loading="indexing"
+              @click="openDocument(resolvedDocumentId)"
+            >
+              {{ indexing ? "查看文档（索引中）" : "查看文档" }}
+            </NButton>
+            <NButton
+              v-if="showImportedActions"
               tertiary
               @click="
                 router.push({

@@ -36,6 +36,39 @@ NOTICE_EFFECTIVE = (
 )
 
 _DEFAULT_PADDLEOCR_MODEL = "PaddlePaddle/PaddleOCR-VL-1.5"
+_DEFAULT_TTS_MODEL = "FunAudioLLM/CosyVoice2-0.5B"
+
+# 语音合成仅能从支持 /audio/speech 的 OpenAI 兼容端点回退（如硅基流动），不能回退 DeepSeek 等纯 LLM。
+_TTS_INCOMPATIBLE_HOST_MARKERS = ("deepseek.com",)
+_TTS_COMPATIBLE_HOST_MARKERS = (
+    "siliconflow.cn",
+    "siliconflow.com",
+    "api.openai.com",
+    "openai.azure.com",
+)
+_TTS_FALLBACK_PREFIXES = ("llm", "vl", "embedding", "paddleocr")
+
+
+def _url_host_supports_tts_fallback(base_url: str) -> bool:
+    u = (base_url or "").strip().lower()
+    if not u:
+        return False
+    for marker in _TTS_INCOMPATIBLE_HOST_MARKERS:
+        if marker in u:
+            return False
+    for marker in _TTS_COMPATIBLE_HOST_MARKERS:
+        if marker in u:
+            return True
+    return False
+
+
+def _pick_tts_fallback_base_key(merged: dict[str, str]) -> tuple[str, str]:
+    """未单独配置 TTS 时，从其它已配置端点借用 URL/Key（跳过不支持 TTS 的 LLM）。"""
+    for prefix in _TTS_FALLBACK_PREFIXES:
+        base, key, _ = _endpoint_fields(merged, prefix)
+        if base and key and _url_host_supports_tts_fallback(base):
+            return base, key
+    return "", ""
 
 def _endpoint_fields(merged: dict[str, str], prefix: str) -> tuple[str, str, str]:
     return (
@@ -128,11 +161,40 @@ def _paddleocr_env_defaults(settings: Settings) -> tuple[str, str, str, str]:
     return base, key, model, legacy_url
 
 
+def _tts_env_defaults(settings: Settings) -> tuple[str, str, str]:
+    """语音合成：显式 PLATFORM_TTS_* 优先；否则从硅基流动等兼容端点回退（非 DeepSeek LLM）。"""
+    base = (settings.platform_tts_base_url or "").strip()
+    key = (settings.platform_tts_api_key or "").strip()
+    model = (settings.platform_tts_model or "").strip()
+    if not base or not key:
+        env_merged = {
+            "llm_base_url": (settings.platform_llm_base_url or "").strip()
+            or (settings.deepseek_base_url or ""),
+            "llm_api_key": (settings.platform_llm_api_key or "").strip()
+            or (settings.deepseek_api_key or ""),
+            "vl_base_url": (settings.platform_vl_base_url or "").strip(),
+            "vl_api_key": (settings.platform_vl_api_key or "").strip(),
+            "embedding_base_url": (settings.platform_embedding_base_url or "").strip(),
+            "embedding_api_key": (settings.platform_embedding_api_key or "").strip(),
+            "paddleocr_base_url": (settings.platform_paddleocr_base_url or "").strip(),
+            "paddleocr_api_key": (settings.platform_paddleocr_api_key or "").strip(),
+        }
+        fb_base, fb_key = _pick_tts_fallback_base_key(env_merged)
+        if not base:
+            base = fb_base
+        if not key:
+            key = fb_key
+    if not model:
+        model = _DEFAULT_TTS_MODEL
+    return base, key, model
+
+
 def _env_defaults(settings: Settings) -> dict[str, str]:
     llm_url = (settings.platform_llm_base_url or "").strip() or settings.deepseek_base_url
     llm_key = (settings.platform_llm_api_key or "").strip() or settings.deepseek_api_key
     llm_model = (settings.platform_llm_model or "").strip() or settings.deepseek_model
     paddle_base, paddle_key, paddle_model, paddle_legacy_url = _paddleocr_env_defaults(settings)
+    tts_base, tts_key, tts_model = _tts_env_defaults(settings)
     return {
         "llm_base_url": llm_url or "",
         "llm_api_key": llm_key or "",
@@ -151,6 +213,9 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "paddleocr_api_key": paddle_key,
         "paddleocr_model": paddle_model,
         "paddleocr_url": paddle_legacy_url,
+        "tts_base_url": tts_base,
+        "tts_api_key": tts_key,
+        "tts_model": tts_model,
         "speech_service_url": (settings.speech_service_url or "").strip(),
         "pdf2zh_api_url": (settings.pdf2zh_api_url or "").strip(),
         "platform_api_base_url": (settings.platform_api_base_url or "").strip().rstrip("/"),
@@ -221,6 +286,21 @@ def get_vl_credentials(db: Session | None = None) -> tuple[str, str, str]:
 def get_rerank_credentials(db: Session | None = None) -> tuple[str, str, str]:
     merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
     return _endpoint_fields(merged, "rerank")
+
+
+def get_tts_credentials(db: Session | None = None) -> tuple[str, str, str]:
+    """语音合成凭证（资源管理 tts_*；未填时从硅基流动等兼容端点回退）。"""
+    merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
+    base, key, model = _endpoint_fields(merged, "tts")
+    if not base or not key:
+        fb_base, fb_key = _pick_tts_fallback_base_key(merged)
+        if not base:
+            base = fb_base
+        if not key:
+            key = fb_key
+    if not model:
+        model = _DEFAULT_TTS_MODEL
+    return base, key, model
 
 
 def get_paddleocr_url(db: Session | None = None) -> str:
@@ -453,6 +533,7 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
     paddle_base, paddle_key, paddle_model = _endpoint_fields(effective, "paddleocr")
     if not paddle_base:
         paddle_base = _legacy_paddleocr_base_url(effective)
+    tts_base, tts_key, tts_model = get_tts_credentials(db)
     return ModelSettingsOut(
         effective_source="platform_model_settings",
         editable=True,
@@ -486,6 +567,11 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
             model_name=paddle_model or None,
         ),
         paddleocr_url=paddle_base or effective.get("paddleocr_url") or "",
+        tts=_endpoint(
+            base_url=tts_base,
+            api_key=tts_key,
+            model_name=tts_model or None,
+        ),
         speech_service_url=effective.get("speech_service_url") or "",
         pdf2zh_api_url=effective.get("pdf2zh_api_url") or "",
         embedding_factory=effective.get("embedding_factory") or None,
@@ -563,6 +649,13 @@ def save_model_settings(
         "paddleocr_url": (
             body.paddleocr_url if body.paddleocr_url is not None else current["paddleocr_url"]
         ),
+        "tts_base_url": (
+            body.tts_base_url if body.tts_base_url is not None else current.get("tts_base_url", "")
+        ),
+        "tts_model": (
+            body.tts_model if body.tts_model is not None else current.get("tts_model", "")
+        ),
+        "tts_api_key": _keep_secret(body.tts_api_key, current.get("tts_api_key", "")),
         "speech_service_url": (
             body.speech_service_url
             if body.speech_service_url is not None

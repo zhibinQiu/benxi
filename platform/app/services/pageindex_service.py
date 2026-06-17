@@ -33,6 +33,7 @@ from app.integrations.pageindex_bridge import (
     is_pageindex_supported_file,
     load_pageindex_doc,
     pageindex_package_available,
+    pageindex_stack_block_reason,
     prepare_pageindex_index_path,
     remove_fields,
 )
@@ -274,12 +275,125 @@ def _upsert_version_link(
     return row
 
 
+def load_deepdoc_markdown_for_pageindex(
+    db: Session,
+    user: User,
+    doc: Document,
+    *,
+    version_id: uuid.UUID | None = None,
+) -> str | None:
+    """DeepDOC 解析完成后，用 KnowFlow 切片正文供 PageIndex（比 PDF 目录 LLM 更快）。"""
+    from app.services.knowledge_library_service import list_document_chunks
+
+    title = (doc.title or "文档").strip() or "文档"
+    parts: list[str] = [f"# {title}"]
+    page = 1
+    try:
+        while True:
+            data = list_document_chunks(
+                db,
+                user,
+                doc.id,
+                version_id=version_id,
+                page=page,
+                page_size=100,
+            )
+            items = data.get("items") or []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                text = (
+                    item.get("content")
+                    or item.get("content_with_weight")
+                    or item.get("text")
+                    or ""
+                ).strip()
+                if text:
+                    parts.append(text)
+            total = int(data.get("total") or 0)
+            if not items or page * 100 >= total:
+                break
+            page += 1
+    except Exception as exc:
+        logger.debug("读取 DeepDOC 切片供 PageIndex 跳过 doc=%s: %s", doc.id, exc)
+        return None
+
+    body = "\n\n".join(parts).strip()
+    return body if len(body) >= 80 else None
+
+
+def build_subscription_article_markdown_from_payload(payload: dict | None) -> str | None:
+    """资讯导入任务 payload 中的 HTML 正文，供 PageIndex 跳过 PDF 目录 LLM。"""
+    if not payload:
+        return None
+    html_body = (payload.get("article_html_body") or "").strip()
+    if not html_body:
+        return None
+    from app.integrations.html_document_export import build_substantive_article_markdown
+
+    title = (
+        (payload.get("article_title") or payload.get("document_title") or "")
+        .strip()
+        or "文档"
+    )
+    md = build_substantive_article_markdown(
+        title,
+        html_body,
+        summary=(payload.get("article_summary") or "").strip(),
+        link=(payload.get("article_link") or "").strip(),
+        source_label=(payload.get("article_source_label") or "").strip(),
+    )
+    body = md.strip()
+    return body if len(body) >= 80 else None
+
+
+def resolve_pageindex_markdown_for_reindex(
+    db: Session,
+    user: User,
+    doc: Document,
+    *,
+    version_id: uuid.UUID | None = None,
+) -> str | None:
+    """重新索引时优先用 KnowFlow/DeepDOC 切片，跳过 PDF 目录 LLM。"""
+    markdown_text = load_deepdoc_markdown_for_pageindex(
+        db, user, doc, version_id=version_id
+    )
+    if markdown_text:
+        logger.info("PageIndex 重新索引使用 DeepDOC 切片 Markdown doc=%s", doc.id)
+        return markdown_text
+    return None
+
+
+def resolve_pageindex_markdown_for_subscription(
+    db: Session,
+    user: User,
+    doc: Document,
+    *,
+    version_id: uuid.UUID | None = None,
+    job_payload: dict | None = None,
+) -> str | None:
+    """优先 DeepDOC 切片，其次资讯 HTML 转 Markdown，否则回退 PDF 索引。"""
+    markdown_text = load_deepdoc_markdown_for_pageindex(
+        db, user, doc, version_id=version_id
+    )
+    if markdown_text:
+        logger.info("PageIndex 使用 DeepDOC 切片 Markdown doc=%s", doc.id)
+        return markdown_text
+    markdown_text = build_subscription_article_markdown_from_payload(job_payload)
+    if markdown_text:
+        logger.info("PageIndex 使用资讯原文 Markdown doc=%s", doc.id)
+        return markdown_text
+    logger.info("PageIndex 无 Markdown 可用，回退 PDF 索引 doc=%s", doc.id)
+    return None
+
+
 def execute_pageindex_reindex(
     db: Session,
     user: User,
     document_id: uuid.UUID,
     *,
     version_id: uuid.UUID | None = None,
+    markdown_text: str | None = None,
 ) -> dict:
     """为指定版本构建 PageIndex 树形索引（不经过 KnowFlow）。"""
     from app.services.documents.content import read_document_file_bytes
@@ -289,10 +403,9 @@ def execute_pageindex_reindex(
     )
 
     assert_index_stack_ready(PARSER_PAGEINDEX)
-    if not pageindex_package_available():
-        raise bad_request("文档索引服务未就绪，请联系管理员")
-    if not is_configured():
-        raise bad_request("语言模型未配置，无法建立文档索引，请联系管理员")
+    block_reason = pageindex_stack_block_reason()
+    if block_reason:
+        raise bad_request(block_reason)
 
     doc = get_document(db, document_id)
     if not doc or doc.deleted_at:
@@ -320,14 +433,30 @@ def execute_pageindex_reindex(
             "并确认文件扩展名正确。"
         )
 
+    if not (markdown_text and markdown_text.strip()):
+        markdown_text = resolve_pageindex_markdown_for_reindex(
+            db, user, doc, version_id=version.id
+        )
+
     content, _, mime = read_document_file_bytes(db, user, doc, version_id=version.id)
     doc_title = doc.title or file_name.rsplit(".", 1)[0]
-    index_path, temp_paths = prepare_pageindex_index_path(
-        content=content,
-        file_name=file_name,
-        mime_type=mime or "",
-        title=doc_title,
-    )
+    temp_paths: list[Path] = []
+    if markdown_text and markdown_text.strip():
+        from app.integrations.pageindex_bridge import write_temp_file
+
+        md_path = write_temp_file(
+            markdown_text.strip().encode("utf-8"),
+            f"{doc_title}.md",
+        )
+        index_path = md_path
+        temp_paths.append(md_path)
+    else:
+        index_path, temp_paths = prepare_pageindex_index_path(
+            content=content,
+            file_name=file_name,
+            mime_type=mime or "",
+            title=doc_title,
+        )
     workspace = pageindex_workspace_dir()
     try:
         settings = get_settings()

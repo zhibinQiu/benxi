@@ -1,6 +1,6 @@
 <script setup>
 defineOptions({ name: "DocumentsView" });
-import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NCard,
@@ -67,7 +67,7 @@ import {
   writeDocumentsKbFoldersCache,
   writeDocumentsListCache } from "../utils/documentsViewCache.js";
 import { renderIconAction, renderIconActionGroup } from "../utils/tableIconActions";
-import { renderKnowledgeIndexTag } from "../utils/knowledgeIndex.js";
+import { renderKnowledgeIndexTag, isDocumentIndexReady } from "../utils/knowledgeIndex.js";
 import { notifyKnowledgeScopeTreeStale } from "../utils/knowledgeScopeRefresh.js";
 import {
   createDocument,
@@ -107,6 +107,13 @@ const kbFoldersLoading = ref(false);
 const kbCanManageFolders = ref(false);
 const refreshing = ref(false);
 const { headerExtensionActive } = usePageHeaderExtension();
+const headerTeleportReady = ref(false);
+
+onMounted(() => {
+  nextTick(() => {
+    headerTeleportReady.value = true;
+  });
+});
 const uploadMaxMb = computed(() => getDocumentUploadMaxMb());
 const activeDeptId = ref(null);
 /** 系统管理员在个人级 Tab 下切换查看的账户 */
@@ -123,6 +130,10 @@ let documentsLoadSeq = 0;
 /** openKbFolder 已主动 load 时，跳过 route watch 的重复请求 */
 let skipNextRouteLoad = false;
 const prefetchingFolderKeys = new Set();
+/** 列表中存在「解析中」文档时后台刷新索引状态 */
+let indexStatusPollTimer = null;
+let indexRefreshDebounceTimer = null;
+const INDEX_STATUS_POLL_MS = 5000;
 
 const orgUnits = computed(() => {
   if (activeScope.value === "company") return companies.value;
@@ -384,8 +395,6 @@ watch(
   },
   { immediate: true }
 );
-
-onUnmounted(clearHeaderTitle);
 
 const columns = computed(() => {
   locale.value;
@@ -687,7 +696,7 @@ function applyLibraryData(lib) {
   }
 }
 
-async function loadKbFolders({ force = false } = {}) {
+async function loadKbFolders({ force = false, background = false } = {}) {
   const seq = ++kbFoldersLoadSeq;
   if (!usesKbFolders.value) {
     kbFoldersLoading.value = false;
@@ -699,19 +708,19 @@ async function loadKbFolders({ force = false } = {}) {
       ? activeDeptId.value
       : null;
   const ownerId = personalOwnerParam();
-  if (!force) {
+  if (!force && !background) {
     const cached = readDocumentsKbFoldersCache(activeScope.value, deptId, ownerId);
     if (cached) {
       if (seq !== kbFoldersLoadSeq) return;
       kbFolders.value = sortKbFoldersForDisplay(cached.items || []);
       kbCanManageFolders.value = !!cached.can_manage_folders;
       kbFoldersLoading.value = false;
-      void loadKbFolders({ force: true });
+      void loadKbFolders({ force: true, background: true });
       return;
     }
   }
   const hadFolders = kbFolders.value.length > 0;
-  if (!hadFolders) kbFoldersLoading.value = true;
+  if (!background && !hadFolders) kbFoldersLoading.value = true;
   try {
     const params = { scope: activeScope.value };
     if (deptId) params.dept_id = deptId;
@@ -910,6 +919,7 @@ async function load({ force = false, background = false } = {}) {
     items.value = data.items || [];
     total.value = data.total ?? 0;
     writeDocumentsListCache(listCacheKey, data);
+    scheduleIndexStatusPoll();
   } catch (e) {
     if (seq !== documentsLoadSeq) return;
     if (!items.value.length) {
@@ -951,6 +961,42 @@ function openDocumentDetail(id) {
     if (err?.name === "NavigationDuplicated") return;
     ui.error(err);
   });
+}
+
+function listHasIndexingItems(rows = items.value) {
+  return (rows || []).some((row) => {
+    if (isDocumentIndexReady(row)) return false;
+    if (!row?.knowledge_synced) return true;
+    const status = row.parse_status || "";
+    return !status || status === "解析中" || status === "未解析";
+  });
+}
+
+function stopIndexStatusPoll() {
+  if (indexStatusPollTimer) {
+    clearTimeout(indexStatusPollTimer);
+    indexStatusPollTimer = null;
+  }
+}
+
+function scheduleIndexStatusPoll() {
+  stopIndexStatusPoll();
+  if (!isMainView.value || isSearchMode.value || !listHasIndexingItems()) return;
+  indexStatusPollTimer = setTimeout(async () => {
+    indexStatusPollTimer = null;
+    await load({ force: true, background: true });
+    if (listHasIndexingItems()) scheduleIndexStatusPoll();
+  }, INDEX_STATUS_POLL_MS);
+}
+
+function onKnowledgeIndexUpdated() {
+  if (indexRefreshDebounceTimer) clearTimeout(indexRefreshDebounceTimer);
+  indexRefreshDebounceTimer = setTimeout(() => {
+    indexRefreshDebounceTimer = null;
+    clearDocumentsViewCache();
+    void load({ force: true, background: true });
+    scheduleIndexStatusPoll();
+  }, 400);
 }
 
 function documentRowProps(row) {
@@ -1418,11 +1464,19 @@ watch(libraryView, () => {
 
 onMounted(() => {
   applyRouteFromQuery();
+  window.addEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
   void syncLegacySharedScopeRoute().then(() => {
     void loadFolders();
     void loadKbFolders();
     void load();
   });
+});
+
+onUnmounted(() => {
+  clearHeaderTitle();
+  stopIndexStatusPoll();
+  if (indexRefreshDebounceTimer) clearTimeout(indexRefreshDebounceTimer);
+  window.removeEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
 });
 
 watch(
@@ -1450,7 +1504,10 @@ watch(
 
 <template>
   <div class="documents-page feature-page">
-    <Teleport to="#page-header-extension" :disabled="!headerExtensionActive">
+    <Teleport
+      v-if="headerTeleportReady && headerExtensionActive"
+      to="#page-header-extension"
+    >
       <div class="documents-actions-bar">
         <div class="documents-actions-toolbar">
         <n-space align="center" :size="4" class="documents-toolbar documents-toolbar--primary">

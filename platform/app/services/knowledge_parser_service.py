@@ -13,36 +13,36 @@ from copy import deepcopy
 
 from app.config import get_settings
 
-# 与后端解析器对齐；label/hint 面向终端用户，不含内部产品名
+# 与 KnowFlow DocumentParserType / ChunkMethod 对齐
 CHUNK_METHODS: list[dict[str, str]] = [
-    {"id": "smart", "label": "智能分块", "hint": "适用于大多数 PDF 与 Word", "group": "modern"},
-    {"id": "title", "label": "标题分块", "hint": "按章节标题切分", "group": "modern"},
-    {"id": "regex", "label": "规则分块", "hint": "按自定义分隔规则切分", "group": "modern"},
-    {"id": "parent_child", "label": "父子分块", "hint": "兼顾上下文与精确定位", "group": "modern"},
-    {"id": "naive", "label": "通用分块", "hint": "适用于结构较简单的文档", "group": "classic"},
+    {"id": "smart", "label": "智能分块", "hint": "推荐；配合 PaddleOCR/MinerU 等现代 OCR", "group": "modern"},
+    {"id": "title", "label": "标题分块", "hint": "按标题层级切分", "group": "modern"},
+    {"id": "regex", "label": "正则分块", "hint": "按自定义分隔符切分", "group": "modern"},
+    {"id": "parent_child", "label": "父子分块", "hint": "父块检索、子块精确定位", "group": "modern"},
+    {"id": "naive", "label": "Naive（通用）", "hint": "原 KnowFlow Naive；配 DeepDOC/纯文本", "group": "classic"},
     {"id": "paper", "label": "论文", "hint": "学术论文结构", "group": "classic"},
     {"id": "book", "label": "书籍", "hint": "长文档按章节", "group": "classic"},
-    {"id": "presentation", "label": "演示文稿", "hint": "幻灯片类文档", "group": "classic"},
+    {"id": "presentation", "label": "演示文稿", "hint": "PPT/PPTX", "group": "classic"},
     {"id": "laws", "label": "法规", "hint": "法律条文层级", "group": "classic"},
     {"id": "qa", "label": "问答", "hint": "问答对格式", "group": "classic"},
     {"id": "table", "label": "表格", "hint": "以表格为主", "group": "classic"},
-    {"id": "picture", "label": "图片", "hint": "扫描件或图片 PDF", "group": "classic"},
-    {"id": "one", "label": "整篇", "hint": "整篇作为一个片段", "group": "classic"},
+    {"id": "picture", "label": "图片", "hint": "扫描件/图片 PDF", "group": "classic"},
+    {"id": "one", "label": "单页", "hint": "整篇一个切片", "group": "classic"},
     {"id": "email", "label": "邮件", "hint": "邮件正文结构", "group": "classic"},
     {
         "id": "pageindex",
-        "label": "结构索引",
-        "hint": "按章节结构建立索引；支持 PDF、Word、Markdown、TXT",
+        "label": "PageIndex（实验）",
+        "hint": "无向量库树形索引；支持 PDF/Markdown/Word/TXT，检索走推理树搜索",
         "group": "experimental",
     },
 ]
 
 LAYOUT_RECOGNIZERS: list[dict[str, str]] = [
-    {"id": "PaddleOCR", "label": "标准识别（推荐）", "hint": "适用于扫描件与复杂版式"},
-    {"id": "DeepDOC", "label": "内置识别", "hint": "适用于电子版 PDF"},
-    {"id": "MinerU", "label": "高精度识别", "hint": "复杂版式，耗时较长"},
-    {"id": "DOTS", "label": "增强识别", "hint": "图表较多的文档"},
-    {"id": "Plain Text", "label": "纯文本", "hint": "跳过版式识别，适合已是文本的文件"},
+    {"id": "PaddleOCR", "label": "PaddleOCR", "hint": "版面 OCR（默认；使用资源管理中的 PaddleOCR-VL 服务）"},
+    {"id": "DeepDOC", "label": "DeepDOC", "hint": "RAGFlow 内置版面分析"},
+    {"id": "MinerU", "label": "MinerU", "hint": "高精度 PDF 解析（需部署 MinerU 服务）"},
+    {"id": "DOTS", "label": "DOTS", "hint": "视觉理解 OCR（需部署 DOTS 服务）"},
+    {"id": "Plain Text", "label": "纯文本", "hint": "跳过复杂版面分析，适合已提取文本"},
 ]
 
 _MODERN_LAYOUTS = frozenset({"MinerU", "DOTS", "PaddleOCR"})
@@ -150,9 +150,9 @@ def index_stack_block_reason(parser_id: str | None, *, reindex: bool = False) ->
     """
     pid = reindex_parser_id_raw(parser_id) if reindex else parser_id_raw(parser_id)
     if is_pageindex_parser(pid):
-        if not get_settings().pageindex_enabled:
-            return "文档索引功能未启用，请联系管理员"
-        return None
+        from app.integrations.pageindex_bridge import pageindex_stack_block_reason
+
+        return pageindex_stack_block_reason()
     from app.domains.knowledge.gateway import knowledge
 
     if not knowledge.enabled():
@@ -293,13 +293,32 @@ def list_parser_options() -> dict:
     前端 ``useDocumentReindex`` 拉取后覆盖本地 ref，避免硬编码 pageindex。
     """
     settings = get_settings()
+    from app.integrations.pageindex_bridge import (
+        pageindex_install_command,
+        pageindex_stack_block_reason,
+    )
+
+    pageindex_reason = pageindex_stack_block_reason()
+    pageindex_ready = pageindex_reason is None
+    default_parser = normalize_parser_id(settings.knowledge_reindex_default_parser_id)
+    if not pageindex_ready and default_parser == PARSER_PAGEINDEX:
+        default_parser = "naive"
     defaults = {
-        "parser_id": normalize_parser_id(settings.knowledge_reindex_default_parser_id),
+        "parser_id": default_parser,
         "layout_recognize": normalize_layout_recognize(
             settings.knowledge_default_layout_recognize
         ),
         "chunk_token_num": settings.knowledge_default_chunk_token_num,
     }
+    hints = [
+        "解析失败时请确认文档可正常打开，或更换索引方式后重试",
+        "仍失败请联系管理员",
+    ]
+    if not pageindex_ready and pageindex_reason:
+        hints.insert(
+            0,
+            f"PageIndex 暂不可用：{pageindex_reason}",
+        )
     return {
         "chunk_methods": CHUNK_METHODS,
         "layout_recognizers": LAYOUT_RECOGNIZERS,
@@ -307,8 +326,10 @@ def list_parser_options() -> dict:
         "items": [m for m in CHUNK_METHODS if m["group"] == "classic"]
         + [m for m in CHUNK_METHODS if m["group"] == "modern"]
         + [m for m in CHUNK_METHODS if m["group"] == "experimental"],
-        "config_hints": [
-            "解析失败时请确认文档可正常打开，或更换索引方式后重试",
-            "仍失败请联系管理员",
-        ],
+        "pageindex": {
+            "available": pageindex_ready,
+            "block_reason": pageindex_reason,
+            "install_command": pageindex_install_command() if not pageindex_ready else None,
+        },
+        "config_hints": hints,
     }

@@ -1,8 +1,8 @@
 /** 平台品牌、版权与版本（与后端 app/__init__.py、仓库根目录 VERSION 保持一致） */
 export const PLATFORM_APP_NAME = "企业 AI 知识库平台";
 export const PLATFORM_COPYRIGHT_HOLDER = "海颐咨询服务部";
-export const PLATFORM_VERSION = "4.0.5";
-export const PLATFORM_VERSION_LABEL = "v4.0.5";
+export const PLATFORM_VERSION = "4.0.7";
+export const PLATFORM_VERSION_LABEL = "v4.0.7";
 export const PLATFORM_RELEASE_LABEL = "内测";
 
 export function platformCopyrightText() {

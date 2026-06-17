@@ -56,14 +56,21 @@ export async function downloadReportDocx({ title, markdown }) {
 }
 
 export async function reportGenerationChatStream(
-  { message, history = [], conversationId = null, documentIds = null, useWebSearch = true },
+  {
+    message,
+    history = [],
+    conversationId = null,
+    documentIds = null,
+    useWebSearch = true,
+    useAgentic = true,
+  },
   { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
 ) {
   const headers = { "Content-Type": "application/json" };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const body = { message, history, use_web_search: useWebSearch };
+  const body = { message, history, use_web_search: useWebSearch, use_agentic: useAgentic };
   if (conversationId) body.conversation_id = conversationId;
   if (documentIds?.length) body.document_ids = documentIds;
 

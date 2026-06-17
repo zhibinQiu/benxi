@@ -24,6 +24,7 @@ class ReportGenerationChatRequest(BaseModel):
     conversation_id: str | None = Field(None, max_length=128)
     document_ids: list[str] = Field(default_factory=list, max_length=20)
     use_web_search: bool = True
+    use_agentic: bool = True
 
 
 class ReportExportDocxRequest(BaseModel):

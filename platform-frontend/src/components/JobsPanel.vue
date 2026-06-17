@@ -47,6 +47,7 @@ const TYPE_LABELS = {
   delete_document: "jobs.types.delete_document",
   document_index: "jobs.types.document_index",
   document_parse: "jobs.types.document_parse",
+  subscription_import: "jobs.types.subscription_import",
   maintenance: "jobs.types.maintenance"};
 
 const STATUS_LABELS = {
@@ -119,7 +120,8 @@ const clearMenuOptions = computed(() => {
 });
 
 function documentTitle(row) {
-  const title = row?.payload?.document_title;
+  const payload = row?.payload || {};
+  const title = payload.document_title || payload.title;
   if (title) return title;
   return row.document_id || "—";
 }

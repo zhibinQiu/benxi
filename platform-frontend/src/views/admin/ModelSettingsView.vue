@@ -26,6 +26,7 @@ import {
   ScanOutline,
   ImageOutline,
   MicOutline,
+  VolumeHighOutline,
   LanguageOutline,
   SearchOutline,
   ServerOutline,
@@ -78,6 +79,9 @@ const form = reactive({
   paddleocr_model: "",
   paddleocr_api_key: "",
   paddleocr_url: "",
+  tts_base_url: "",
+  tts_model: "",
+  tts_api_key: "",
   speech_service_url: "",
   pdf2zh_api_url: "",
   searxng_url: "",
@@ -142,6 +146,12 @@ const RESOURCE_DEFS = [
     title: "语音识别服务",
     hint: "会议助手语音转写",
     icon: MicOutline,
+    category: "service"},
+  {
+    id: "tts",
+    title: "语音合成",
+    hint: "文本转语音（硅基流动 / OpenAI 兼容）",
+    icon: VolumeHighOutline,
     category: "service"},
   {
     id: "pdf2zh",
@@ -219,6 +229,9 @@ function fillForm(data) {
   form.paddleocr_model = data?.paddleocr?.model_name || "";
   form.paddleocr_api_key = data?.paddleocr?.api_key_masked || "";
   form.paddleocr_url = data?.paddleocr_url || "";
+  form.tts_base_url = data?.tts?.base_url || "";
+  form.tts_model = data?.tts?.model_name || "";
+  form.tts_api_key = data?.tts?.api_key_masked || "";
   form.speech_service_url = data?.speech_service_url || "";
   form.pdf2zh_api_url = data?.pdf2zh_api_url || "";
   form.searxng_url = data?.searxng_url || "";
@@ -279,6 +292,10 @@ function resourceSummary(id) {
           : "未配置";
     case "speech":
       return data.speech_service_url ? truncate(data.speech_service_url) : "未配置";
+    case "tts":
+      return data.tts?.model_name
+        ? `${data.tts.model_name} · ${truncate(data.tts.base_url)}`
+        : "未配置";
     case "pdf2zh":
       return data.pdf2zh_api_url ? truncate(data.pdf2zh_api_url) : "未配置";
     case "searxng":
@@ -444,6 +461,13 @@ function buildPayloadFor(id) {
           : {})};
     case "speech":
       return { speech_service_url: form.speech_service_url.trim() };
+    case "tts":
+      return {
+        tts_base_url: form.tts_base_url.trim(),
+        tts_model: form.tts_model.trim(),
+        ...(form.tts_api_key && !form.tts_api_key.includes("••••")
+          ? { tts_api_key: form.tts_api_key.trim() }
+          : {})};
     case "pdf2zh":
       return { pdf2zh_api_url: form.pdf2zh_api_url.trim() };
     case "searxng":
@@ -482,7 +506,9 @@ async function testActive() {
   testing.value = true;
   drawerTestResult.value = null;
   try {
-    const probeTimeoutMs = ["vl", "llm", "embedding"].includes(activeId.value) ? 60000 : undefined;
+    const probeTimeoutMs = ["vl", "llm", "embedding", "tts"].includes(activeId.value)
+      ? 60000
+      : undefined;
     const result = await testResourceHealth(
       activeId.value,
       buildPayloadFor(activeId.value),
@@ -771,8 +797,34 @@ onMounted(loadAll);
               />
             </n-form-item>
             <n-text depth="3" class="drawer-hint">
-              平台语音转写功能调用此地址（对应 .env 中的
-              <code>SPEECH_SERVICE_URL</code>）。保存后立即生效。
+              会议助手「语音转写」调用此地址（FunASR speech-api）。
+            </n-text>
+          </template>
+
+          <template v-else-if="activeId === 'tts'">
+            <n-form-item label="API URL">
+              <n-input
+                v-model:value="form.tts_base_url"
+                placeholder="https://api.siliconflow.cn/v1"
+              />
+            </n-form-item>
+            <n-form-item label="模型名称">
+              <n-input
+                v-model:value="form.tts_model"
+                placeholder="FunAudioLLM/CosyVoice2-0.5B"
+              />
+            </n-form-item>
+            <n-form-item label="SK / API Key">
+              <n-input
+                v-model:value="form.tts_api_key"
+                type="password"
+                show-password-on="click"
+                placeholder="留空或掩码表示不修改"
+              />
+            </n-form-item>
+            <n-text depth="3" class="drawer-hint">
+              「语音合成」功能专用配置，与语言模型分离。API URL 请填写 OpenAI 兼容基址（含
+              <code>/v1</code>）；未填时回退语言模型配置。
             </n-text>
           </template>
 

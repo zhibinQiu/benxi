@@ -51,7 +51,9 @@ COPY platform/third_party/pageindex-upstream ./third_party/pageindex-upstream/
 RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
     pip install --no-cache-dir -i "${PIP_INDEX_URL}" . && \
     if [ "${INSTALL_PAGEINDEX}" = "1" ]; then \
-      pip install --no-cache-dir -i "${PIP_INDEX_URL}" ".[pageindex]"; \
+      pip install --no-cache-dir -i "${PIP_INDEX_URL}" ".[pageindex]" && \
+      cfg_dir="$(python -c 'import pageindex, pathlib; print(pathlib.Path(pageindex.__file__).parent)')" && \
+      cp third_party/pageindex-upstream/pageindex/config.yaml "${cfg_dir}/config.yaml"; \
     fi && \
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 

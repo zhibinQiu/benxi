@@ -129,7 +129,8 @@
   color: var(--platform-text-tertiary);
 }
 
-/* 统一确认弹窗（白底实板 + 弹簧动效，替代 Popconfirm 浮层） */
+/* 统一确认弹窗（白底实板 + 弹簧动效，替代 Popconfirm 浮层）
+ * 层级见 tokens.css --platform-z-*；须高于顶栏 flyout / 功能弹窗 */
 .n-dialog.platform-confirm-dialog {
   border-radius: calc(var(--platform-radius) + 2px) !important;
   border: 1px solid rgba(91, 120, 200, 0.12) !important;
@@ -264,12 +265,26 @@ html[data-theme="dark"] .n-base-selection:not(.n-base-selection--disabled):hover
 }
 
 body > .v-binder-follower-container {
-  z-index: 10000 !important;
+  z-index: var(--platform-z-dropdown) !important;
 }
 
-/* Tooltip 须高于顶栏 flyout（10050），否则弹窗内按钮的 hover 提示会被面板挡住 */
+/* Tooltip 须高于顶栏 flyout，否则弹窗内按钮的 hover 提示会被面板挡住 */
 body > .v-binder-follower-container:has(.n-popover.n-tooltip) {
-  z-index: 10100 !important;
+  z-index: var(--platform-z-tooltip) !important;
+}
+
+/* 系统确认框（删除 / 操作确认）须高于功能弹窗与顶栏 flyout */
+body > .n-modal-container:has(.platform-confirm-dialog) {
+  z-index: var(--platform-z-system-dialog) !important;
+}
+
+body > .n-message-container {
+  z-index: var(--platform-z-message) !important;
+  pointer-events: none;
+}
+
+body > .n-message-container .n-message {
+  pointer-events: auto;
 }
 
 body > .v-binder-follower-container .v-binder-follower-content {
@@ -349,10 +364,7 @@ body > .v-binder-follower-container .n-popover:not(.n-popover--raw):not(.n-toolt
   box-shadow: var(--platform-shadow-sm) !important;
 }
 
-/* 主按钮样式见 platform-ui-glass.css */
-.n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn)::before {
-  display: none !important;
-}
+/* 主按钮样式见 platform-ui-glass.css（含玻璃悬浮层） */
 
 .n-dropdown-divider {
   background-color: var(--platform-divider) !important;

@@ -14,6 +14,7 @@ import {
   WalletOutline,
   NewspaperOutline,
   SearchOutline,
+  VolumeHighOutline,
 } from "@vicons/ionicons5";
 
 /** 与系统功能插件 icon 字段一致 */
@@ -21,6 +22,7 @@ export const FEATURE_ICON_MAP = {
   language: LanguageOutline,
   chatbubbles: ChatbubblesOutline,
   mic: MicOutline,
+  "volume-high": VolumeHighOutline,
   scan: ScanOutline,
   "git-compare": GitCompareOutline,
   "stats-chart": StatsChartOutline,

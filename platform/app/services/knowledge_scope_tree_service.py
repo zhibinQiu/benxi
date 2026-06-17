@@ -42,9 +42,14 @@ from app.services.library_folder_service import (
 
 logger = logging.getLogger(__name__)
 
-_SCOPE_TREE_CACHE_TTL_SEC = 120
 _SCOPE_TREE_CACHE_VERSION = 3
 _local_scope_tree_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _scope_tree_cache_ttl_sec() -> int:
+    from app.config import get_settings
+
+    return max(30, int(get_settings().scope_tree_cache_ttl_sec))
 
 _ORG_UNIT_LOADERS = {
     "company": library_companies_for_user,
@@ -74,7 +79,8 @@ def _read_scope_tree_cache(user_id: uuid.UUID) -> dict | None:
         logger.debug("读取知识检索树缓存失败 key=%s: %s", key, exc)
 
     hit = _local_scope_tree_cache.get(key)
-    if hit and time.monotonic() - hit[0] < _SCOPE_TREE_CACHE_TTL_SEC:
+    ttl = _scope_tree_cache_ttl_sec()
+    if hit and time.monotonic() - hit[0] < ttl:
         return hit[1]
     return None
 
@@ -89,7 +95,7 @@ def _write_scope_tree_cache(user_id: uuid.UUID, data: dict) -> None:
         if client:
             client.setex(
                 key,
-                _SCOPE_TREE_CACHE_TTL_SEC,
+                _scope_tree_cache_ttl_sec(),
                 json.dumps(data, ensure_ascii=False),
             )
     except Exception as exc:
@@ -178,7 +184,9 @@ def _enrich_doc_rows_meta(
         return
     from app.services.document_index_service import enrich_knowledge_document_rows
 
-    enrich_knowledge_document_rows(db, user, rows, documents)
+    enrich_knowledge_document_rows(
+        db, user, rows, documents, live_ragflow=False
+    )
 
 
 def _scope_document_row(

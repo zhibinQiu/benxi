@@ -15,6 +15,12 @@ POSTGRES_PORT="${REMOTE_POSTGRES_PORT:-40002}"
 REDIS_PORT="${REMOTE_REDIS_PORT:-40003}"
 MINIO_PORT="${REMOTE_MINIO_PORT:-40004}"
 MYSQL_PORT="${REMOTE_MYSQL_PORT:-40006}"
+GATEWAY_PORT="${REMOTE_GATEWAY_PORT:-}"
+
+if [[ -f "$ENV_FILE" ]]; then
+  gw="$(grep -E '^REMOTE_GATEWAY_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '\r' || true)"
+  [[ -n "$gw" ]] && GATEWAY_PORT="$gw"
+fi
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -70,17 +76,24 @@ check_tcp "Redis" "$HOST" "$REDIS_PORT"
 check_tcp "MinIO" "$HOST" "$MINIO_PORT"
 check_tcp "RAGFlow MySQL" "$HOST" "$MYSQL_PORT"
 
-PDF2ZH_PORT="${REMOTE_PDF2ZH_PORT:-40005}"
-SPEECH_PORT="${REMOTE_SPEECH_PORT:-40006}"
-KNOWFLOW_PORT="${REMOTE_KNOWFLOW_BACKEND_PORT:-40008}"
-check_http "KnowFlow Backend" "http://${HOST}:${KNOWFLOW_PORT}/health"
-check_http "PDF 翻译 pdf2zh" "http://${HOST}:${PDF2ZH_PORT}/docs"
-check_http "语音识别" "http://${HOST}:${SPEECH_PORT}/health"
+if [[ -n "$GATEWAY_PORT" ]]; then
+  check_http "PDF 翻译 pdf2zh" "http://${HOST}:${GATEWAY_PORT}/deps/pdf2zh/docs"
+  check_http "语音识别" "http://${HOST}:${GATEWAY_PORT}/deps/speech/health"
+  check_http "KnowFlow Backend" "http://${HOST}:${GATEWAY_PORT}/deps/knowflow/health"
+  check_http "RAGFlow API" "http://${HOST}:${GATEWAY_PORT}/deps/ragflow/v1/system/config"
+else
+  PDF2ZH_PORT="${REMOTE_PDF2ZH_PORT:-40005}"
+  SPEECH_PORT="${REMOTE_SPEECH_PORT:-40006}"
+  KNOWFLOW_PORT="${REMOTE_KNOWFLOW_BACKEND_PORT:-40008}"
+  check_http "KnowFlow Backend" "http://${HOST}:${KNOWFLOW_PORT}/health"
+  check_http "PDF 翻译 pdf2zh" "http://${HOST}:${PDF2ZH_PORT}/docs"
+  check_http "语音识别" "http://${HOST}:${SPEECH_PORT}/health"
+fi
 check_http "设计系统" "http://${HOST}:40001/"
 
 echo
 echo -e "结果: ${GREEN}${ok} 通过${NC}, ${fail} 失败"
 if [[ "$fail" -gt 0 ]]; then
-  echo -e "${YELLOW}提示:${NC} 服务器需以 EXPOSE_DEPS=1 启动远程依赖栈。"
+  echo -e "${YELLOW}提示:${NC} 服务器需 EXPOSE_DEPS=1 + EXPOSE_DEPS_DB_ONLY=1，且 frontend Nginx 提供 /deps/…"
   exit 1
 fi

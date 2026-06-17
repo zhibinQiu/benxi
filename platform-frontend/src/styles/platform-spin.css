@@ -1,0 +1,97 @@
+/* PlatformSpin / Rose Three — 兼容 Naive UI NSpin 布局 */
+
+.n-spin-container {
+  position: relative;
+}
+
+.n-spin-container > .n-spin-body {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 10;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  flex: none !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.n-spin-body {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.n-spin-body--inline {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.n-spin-content {
+  opacity: 1;
+  transition: opacity 0.3s var(--platform-ease-smooth, ease);
+  pointer-events: all;
+}
+
+.n-spin-content--spinning {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.n-spin-description {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--platform-text-secondary);
+  text-align: center;
+}
+
+/* 行内：文字 + 加载（思考中、导出中等） */
+.platform-inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.platform-inline-loading .n-spin-body--inline {
+  flex-shrink: 0;
+}
+
+.fade-in-transition-enter-active,
+.fade-in-transition-leave-active {
+  transition: opacity 0.3s var(--platform-ease-smooth, ease);
+}
+
+.fade-in-transition-enter-from,
+.fade-in-transition-leave-to {
+  opacity: 0;
+}
+
+/* 按钮 loading：Rose 居中对齐图标槽 */
+.n-button__icon .platform-base-loading,
+.n-button__icon .n-base-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .n-spin-content,
+  .fade-in-transition-enter-active,
+  .fade-in-transition-leave-active {
+    transition: none;
+  }
+}

@@ -461,13 +461,17 @@ async def iter_agent_chat_stream(
                         out_conversation_id = event["conversation_id"]
 
                     if ev == "error":
-                        msg = (
-                            event.get("message")
-                            or event.get("code")
-                            or f"{feature_label}服务返回错误"
-                        )
-                        yield json.dumps({"error": str(msg)}, ensure_ascii=False)
-                        return
+                        # Dify Chatflow 常在正文已输出后仍上报检索/引用节点错误；
+                        # 此时保留已生成回答，避免前端将整个回复标为失败。
+                        if not accumulated_answer.strip():
+                            msg = (
+                                event.get("message")
+                                or event.get("code")
+                                or f"{feature_label}服务返回错误"
+                            )
+                            yield json.dumps({"error": str(msg)}, ensure_ascii=False)
+                            return
+                        continue
 
                     if ev in ("message", "agent_message"):
                         chunk = event.get("answer") or ""
@@ -506,7 +510,17 @@ async def iter_agent_chat_stream(
                         cites = parse_dify_citations(event)
                         if cites:
                             accumulated_citations = cites
-                        break
+                            yield json.dumps(
+                                {"citations": cites},
+                                ensure_ascii=False,
+                            )
+
+        if not accumulated_answer.strip():
+            yield json.dumps(
+                {"error": f"{feature_label}服务返回为空"},
+                ensure_ascii=False,
+            )
+            return
 
         yield json.dumps(
             {
@@ -519,6 +533,18 @@ async def iter_agent_chat_stream(
             ensure_ascii=False,
         )
     except httpx.HTTPError as e:
+        if accumulated_answer.strip():
+            yield json.dumps(
+                {
+                    "done": True,
+                    "model": model_name,
+                    "conversation_id": out_conversation_id,
+                    "reply": accumulated_answer,
+                    "citations": accumulated_citations,
+                },
+                ensure_ascii=False,
+            )
+            return
         yield json.dumps(
             {"error": f"无法连接{feature_label}服务: {e}"},
             ensure_ascii=False,

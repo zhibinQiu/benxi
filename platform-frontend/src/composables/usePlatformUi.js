@@ -5,6 +5,7 @@ import {
   shouldSuppressAuthFeedback,
 } from "../utils/authError.js";
 import { notifyDeduped, sanitizeUserFacingMessage } from "../utils/uiMessage";
+import { withSystemDialogLayer } from "../utils/systemDialog.js";
 
 /** 统一 toast / 确认框：去重、友好错误、i18n。
  *
@@ -67,22 +68,23 @@ export function usePlatformUi() {
       positiveText = t("common.confirm"),
       negativeText = t("common.cancel"),
     } = options;
-    dialog[type]({
-      class: "platform-confirm-dialog",
-      title,
-      content: resolveText(content),
-      positiveText,
-      negativeText,
-      onPositiveClick: async () => {
-        try {
-          await onPositive?.();
-          return true;
-        } catch (e) {
-          error(e);
-          return false;
-        }
-      },
-    });
+    dialog[type](
+      withSystemDialogLayer({
+        title,
+        content: resolveText(content),
+        positiveText,
+        negativeText,
+        onPositiveClick: async () => {
+          try {
+            await onPositive?.();
+            return true;
+          } catch (e) {
+            error(e);
+            return false;
+          }
+        },
+      })
+    );
   }
 
   function confirmDelete(options) {
@@ -105,24 +107,25 @@ export function usePlatformUi() {
       });
       return;
     }
-    dialog.warning({
-      class: "platform-confirm-dialog",
-      title,
-      content: resolveText(content),
-      positiveText,
-      negativeText,
-      onPositiveClick: () => {
-        info(pendingMessage);
-        void (async () => {
-          try {
-            await onPositive?.();
-          } catch (e) {
-            error(e);
-          }
-        })();
-        return true;
-      },
-    });
+    dialog.warning(
+      withSystemDialogLayer({
+        title,
+        content: resolveText(content),
+        positiveText,
+        negativeText,
+        onPositiveClick: () => {
+          info(pendingMessage);
+          void (async () => {
+            try {
+              await onPositive?.();
+            } catch (e) {
+              error(e);
+            }
+          })();
+          return true;
+        },
+      })
+    );
   }
 
   function confirmAction(options) {

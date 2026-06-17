@@ -1,4 +1,4 @@
-"""知识图谱 API — Palantir 风格本体与关联探索。"""
+"""知识图谱 API — 本体图谱查询与编辑。"""
 
 from __future__ import annotations
 

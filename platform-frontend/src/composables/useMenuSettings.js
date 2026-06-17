@@ -14,6 +14,7 @@ export const ROUTE_MENU_KEYS = {
   "system-functions": "system-functions",
   translate: "system-functions",
   speech: "system-functions",
+  "text-to-speech": "system-functions",
   ocr: "system-functions",
   compare: "system-functions",
   "assist-writing": "system-functions",
@@ -46,7 +47,6 @@ const MENU_FALLBACK_ORDER = [
   "documents",
   "knowledge-subscriptions",
   "admin-monitor",
-  "admin-model-settings",
   "admin-docs",
 ];
 

@@ -77,17 +77,17 @@ flowchart TB
 
 详见 [知识服务实现](../implementation/knowledge-implementation.md)（实现细节）与本目录 [网络拓扑](network-topology.md)。
 
-## 启动与版本（v4.0.5）
+## 启动与版本（v4.0.7）
 
 | 项 | 说明 |
 |----|------|
-| 版本源 | 仓库根 `VERSION`（当前 4.0.5）→ `ZHITAN_VERSION` 镜像 tag |
+| 版本源 | 仓库根 `VERSION`（当前 4.0.7）→ `ZHITAN_VERSION` 镜像 tag |
 | 开发入口 | `./dev.sh docker`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
 | 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |
 | 应用配置 | `platform/.env`；栈级 `/.env` 由 `setup-stack-env.sh` 合并 |
 
-新增 **资源管理**（系统设置）：在线配置 LLM / KnowFlow / OCR 等，`GET /api/v1/system/client-config` 供前端启动拉取主题与 API 根地址。
+新增 **资源管理**（系统设置，需 `admin.user`）：在线配置 LLM / 语音合成 / KnowFlow / OCR 等，`GET /api/v1/system/client-config` 供前端启动拉取主题与 API 根地址。
 
 ## 代码仓库布局
 

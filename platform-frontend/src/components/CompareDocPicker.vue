@@ -9,6 +9,7 @@ import {
   NPagination,
   NSpace } from "naive-ui";
 import { fetchCompareDocuments } from "../api/client";
+import { PLATFORM_Z } from "../constants/zIndex.js";
 
 const PAGE_SIZE = 10;
 
@@ -103,6 +104,7 @@ watch(
     :show="show"
     preset="card"
     :title="title"
+    :z-index="PLATFORM_Z.featureModal"
     style="width: min(720px, 92vw)"
     @update:show="emit('update:show', $event)"
   >

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
     MenuItemOut(
         key="ai-home",
-        label="AI 助理",
+        label="AI 智能体",
         group="main",
         description="首页智能对话入口",
     ),
@@ -45,12 +45,6 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         description="运行状态与资源用量",
     ),
     MenuItemOut(
-        key="admin-model-settings",
-        label="资源管理",
-        group="settings",
-        description="模型与服务连接配置",
-    ),
-    MenuItemOut(
         key="admin-docs",
         label="说明文档",
         group="settings",
@@ -66,6 +60,7 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "system-functions": "system-functions",
     "translate": "system-functions",
     "speech": "system-functions",
+    "text-to-speech": "system-functions",
     "ocr": "system-functions",
     "compare": "system-functions",
     "assist-writing": "system-functions",
@@ -152,6 +147,10 @@ def member_can_access_route(db: Session, user: User, route_name: str | None) -> 
         return True
     if user_is_system_admin(db, user):
         return True
+    if str(route_name) == "admin-model-settings":
+        from app.core.permissions import user_has_permission
+
+        return user_has_permission(db, user, "admin.user")
     menu_key = ROUTE_MENU_KEYS.get(str(route_name))
     if not menu_key:
         return True
@@ -166,7 +165,6 @@ def first_visible_menu_route(db: Session, user: User) -> str:
         "documents",
         "knowledge-subscriptions",
         "admin-monitor",
-        "admin-model-settings",
         "admin-docs",
     )
     for key in priority:

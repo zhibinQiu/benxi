@@ -63,10 +63,10 @@ cmd_rebuild_amd64() {
   rsync -avz --exclude '.venv' --exclude '__pycache__' \
     "$ROOT/platform/speech-service/" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/build/speech-service/"
-  remote_shell <<'REMOTE'
+  remote_shell <<REMOTE
 set -euo pipefail
-cd "${DEPLOY_PATH:-/root/qzb/lvye}"
-ver="${ZHITAN_VERSION:-3.9.3}"
+cd "\${DEPLOY_PATH:-/root/qzb/lvye}"
+ver="\${ZHITAN_VERSION:-${DEFAULT_VER}}"
 mkdir -p data/speech-models data/pdf2zh-config
 
 docker rmi -f "zhitan-pdf2zh:${ver}" "zhitan-speech:${ver}" 2>/dev/null || true
@@ -107,10 +107,10 @@ cmd_build_images() {
     "$ROOT/Dockerfile" "$ROOT/pyproject.toml" "$ROOT/uv.lock" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/build/pdf2zh/" 2>/dev/null || \
   rsync -avz "$ROOT/Dockerfile" "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/build/pdf2zh/"
-  remote_shell <<'REMOTE'
+  remote_shell <<REMOTE
 set -euo pipefail
-cd "${DEPLOY_PATH:-/root/qzb/lvye}"
-ver="${ZHITAN_VERSION:-3.9.3}"
+cd "\${DEPLOY_PATH:-/root/qzb/lvye}"
+ver="\${ZHITAN_VERSION:-${DEFAULT_VER}}"
 mkdir -p data/speech-models data/pdf2zh-config
 if [[ -d /root/qzb/zhitanAI/.run/speech-models ]] && [[ -z "$(ls -A data/speech-models 2>/dev/null)" ]]; then
   cp -a /root/qzb/zhitanAI/.run/speech-models/. data/speech-models/
@@ -166,12 +166,12 @@ export EXPOSE_DEPS=1
 mkdir -p "${DATA_ROOT:-./data}"
 
 optional_services=()
-if docker image inspect "${PDF2ZH_IMAGE:-zhitan-pdf2zh:3.9.3}" >/dev/null 2>&1; then
+if docker image inspect "${PDF2ZH_IMAGE:-zhitan-pdf2zh:${DEFAULT_VER}}" >/dev/null 2>&1; then
   optional_services+=(pdf2zh-api)
 else
   echo "[server-deps] 跳过 pdf2zh-api（镜像不存在，请: bash scripts/server-deps.sh build-images）"
 fi
-if docker image inspect "${SPEECH_IMAGE:-zhitan-speech:3.9.3}" >/dev/null 2>&1; then
+if docker image inspect "${SPEECH_IMAGE:-zhitan-speech:${DEFAULT_VER}}" >/dev/null 2>&1; then
   optional_services+=(speech-api)
 else
   echo "[server-deps] 跳过 speech-api（镜像不存在，请: bash scripts/server-deps.sh build-images）"

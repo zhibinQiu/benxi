@@ -54,5 +54,12 @@ export function useI18n() {
     return typeof raw === "string" ? raw : key;
   }
 
-  return { locale, localeLabel, t, routeTitle, scopeLabel, docStatusLabel, docLevelLabel };
+  function featureLabel(id, field, fallback = "") {
+    if (!id || !field) return fallback;
+    const key = `features.${id}.${field}`;
+    const raw = resolvePath(messages[locale.value], key);
+    return typeof raw === "string" ? raw : fallback;
+  }
+
+  return { locale, localeLabel, t, routeTitle, featureLabel, scopeLabel, docStatusLabel, docLevelLabel };
 }

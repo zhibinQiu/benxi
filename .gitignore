@@ -201,4 +201,6 @@ CLAUDE.md
 /backups/
 platform/.env.local-backup-*
 platform/logs/tmp*.json
+platform/logs/*.json
+platform/third_party/**/build/
 platform/.run/pageindex/

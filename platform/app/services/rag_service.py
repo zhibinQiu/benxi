@@ -124,10 +124,14 @@ def ask(
     session: RagSession,
     user: User,
     question: str,
+    *,
+    use_agentic: bool = True,
 ) -> RagMessage:
     from app.services.knowledge_qa_service import answer_knowledge_question
 
-    return answer_knowledge_question(db, session, user, question)
+    return answer_knowledge_question(
+        db, session, user, question, use_agentic=use_agentic
+    )
 
 
 def session_to_dict(db: Session, session: RagSession) -> dict:

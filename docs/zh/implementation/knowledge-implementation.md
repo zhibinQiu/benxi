@@ -246,7 +246,25 @@ sequenceDiagram
 4. KnowFlow 文档：`knowledge.stack_reachable()` 且 client enabled → 向量检索；否则 `_local_retrieve`  
 5. 合并 hits，可选 `merge_nearby_retrieval_hits`，截断 `top_k`
 
-### 5.2 流式问答错误处理
+### 5.3 本体图谱与 AI 智能体
+
+**`retrieve_kg_context_for_question`**（`kg_service.py`）：
+
+1. 从问题文本 **匹配实体名称**（`match_entities_in_question`）  
+2. 以 seed 实体为中心 **BFS 扩展** 指定跳数（默认 2）  
+3. 格式化为带编号引用块的 `KgQaContext`
+
+**消费方**：
+
+| 场景 | 合并方式 |
+|------|----------|
+| 知识检索 | `merge_kg_qa_into_context` 追加在文档 hits 之后，引用 index 顺延 |
+| 报告生成 | `KnowledgeAgenticToolkit.retrieve_kg` |
+| AI 智能体 | `ai_chat_service._resolve_answer_context`：文档检索 + 图谱合并后写入 system prompt |
+
+AI 智能体在无显式选文档时，自动在用户 **可 query 的前 20 份文档** 内检索（需 `feature.knowledge_search`）。
+
+### 5.4 流式问答错误处理
 
 `_resolve_qa_session` 抛 `HTTPException` 时，用 `http_exception_message(exc, fallback=KNOWLEDGE_SERVICE_UNAVAILABLE)` 写入 SSE JSON，与 REST API 文案一致。
 

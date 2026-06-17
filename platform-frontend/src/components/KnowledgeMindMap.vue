@@ -107,7 +107,11 @@ watch(
   { immediate: true }
 );
 
-defineExpose({ loadMindmap });
+function getMermaidSource() {
+  return (source.value || "").trim();
+}
+
+defineExpose({ loadMindmap, getMermaidSource });
 </script>
 
 <template>

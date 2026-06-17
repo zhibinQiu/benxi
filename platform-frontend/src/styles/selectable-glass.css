@@ -98,8 +98,8 @@
   box-shadow: var(--platform-glass-rim-edge) !important;
 }
 
-/* —— 默认 / 次要按钮：按下时轻玻璃反馈 —— */
-.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):active {
+/* —— 默认 / 次要按钮：按下时轻玻璃反馈（主色文字按钮除外） —— */
+.n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.n-button--default-type):not(.n-button--secondary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):active {
   background: var(--platform-glass-fill-active) !important;
   box-shadow: var(--platform-glass-rim-edge) !important;
 }

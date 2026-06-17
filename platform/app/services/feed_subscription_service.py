@@ -456,7 +456,7 @@ def import_entry_to_document(
         entry.content_html or "",
         summary=entry.summary or "",
         link=link,
-        allow_refetch=False,
+        allow_refetch=True,
     )
     if html_body and html_body != (entry.content_html or ""):
         entry.content_html = html_body
@@ -471,7 +471,7 @@ def import_entry_to_document(
         source_label=source_label,
         fallback_stem="subscription-article",
         allow_refetch=False,
-    )
+    )  # 正文已在 resolve_article_html_body 中按需重抓
 
     create_initial_uploaded_version(
         db,

@@ -3,7 +3,7 @@ import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { encodeReturnLocation } from "../utils/navigationReturn";
-import { NButton, NCard, NEmpty, NGrid, NGi, NTag, NIcon } from "naive-ui";
+import { NButton, NCard, NEmpty, NGrid, NGi, NSpin, NTag, NIcon } from "naive-ui";
 import {
   LanguageOutline,
   ChatbubblesOutline,
@@ -23,14 +23,18 @@ import {
   SearchOutline,
   GitNetworkOutline,
   StarOutline,
-  Star } from "@vicons/ionicons5";
+  Star,
+  VolumeHighOutline,
+} from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
+import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { featureLabel } = useI18n();
 const { isFavorite, toggleFavorite } = useFeatureFavorites();
 const { features, loading, loaded, loadError, loadSystemFeatures } = useSystemFeatures();
 const showLoading = computed(
@@ -44,6 +48,7 @@ const iconMap = {
   language: LanguageOutline,
   chatbubbles: ChatbubblesOutline,
   mic: MicOutline,
+  "volume-high": VolumeHighOutline,
   scan: ScanOutline,
   "git-compare": GitCompareOutline,
   "document-text": DocumentTextOutline,
@@ -62,15 +67,15 @@ const CATEGORY_ORDER = ["document", "tools", "ai"];
 const categoryMeta = {
   document: {
     title: "文档",
-    hint: "翻译、对比、辅助写作、知识检索",
+    hint: "翻译、对比、知识检索",
     icon: DocumentTextOutline},
   tools: {
     title: "工具",
-    hint: "会议助手、内容提取、数据分析、在线 AI 工具",
+    hint: "会议助手、内容提取、数据分析、辅助写作、在线 AI 工具",
     icon: GridOutline},
   ai: {
     title: "智能",
-    hint: "AI 助理、问数、问答与预测等智能应用",
+    hint: "AI 智能体、问数、问答与预测等智能应用",
     icon: SparklesOutline}};
 
 const DEFAULT_CATEGORY = "tools";
@@ -118,9 +123,17 @@ function onFavoriteClick(event, feature) {
   toggleFavorite(feature.id, feature);
 }
 
+function featureTitle(f) {
+  return featureLabel(f.id, "title", f.title);
+}
+
+function featureDescription(f) {
+  return featureLabel(f.id, "description", f.description);
+}
+
 function openFeature(f) {
   if (!f.enabled) {
-    ui.info(`「${f.title}」${f.tag || "即将推出"}，敬请期待`);
+    ui.info(`「${featureTitle(f)}」${f.tag || "即将推出"}，敬请期待`);
     return;
   }
   if (!f.accessible) {
@@ -231,7 +244,7 @@ function openFeature(f) {
               </div>
               <div class="feature-card__body">
                 <div class="feature-card__title-row">
-                  <h3 class="feature-card__title">{{ f.title }}</h3>
+                  <h3 class="feature-card__title">{{ featureTitle(f) }}</h3>
                   <n-tag
                     v-if="shouldShowTag(f)"
                     size="tiny"
@@ -243,7 +256,7 @@ function openFeature(f) {
                     {{ f.tag }}
                   </n-tag>
                 </div>
-                <p class="feature-card__desc">{{ f.description }}</p>
+                <p class="feature-card__desc">{{ featureDescription(f) }}</p>
               </div>
             </article>
           </n-gi>
@@ -251,22 +264,22 @@ function openFeature(f) {
       </section>
     </template>
 
-    <n-grid
-      v-else
-      cols="2 s:3 m:4 xl:5"
-      :x-gap="8"
-      :y-gap="8"
-      responsive="screen"
-      class="functions-page__loading"
-    >
-      <n-gi v-for="i in 10" :key="i">
-        <n-card size="small" class="feature-card feature-card--skeleton">
-          <div class="skeleton-block skeleton-block--icon" />
-          <div class="skeleton-block skeleton-block--title" />
-          <div class="skeleton-block skeleton-block--desc" />
-        </n-card>
-      </n-gi>
-    </n-grid>
+    <n-spin v-else :show="true" size="large" class="functions-page__loading">
+      <n-grid
+        cols="2 s:3 m:4 xl:5"
+        :x-gap="8"
+        :y-gap="8"
+        responsive="screen"
+      >
+        <n-gi v-for="i in 10" :key="i">
+          <n-card size="small" class="feature-card feature-card--skeleton">
+            <div class="skeleton-block skeleton-block--icon" />
+            <div class="skeleton-block skeleton-block--title" />
+            <div class="skeleton-block skeleton-block--desc" />
+          </n-card>
+        </n-gi>
+      </n-grid>
+    </n-spin>
     </div>
   </div>
 </template>
@@ -539,10 +552,15 @@ function openFeature(f) {
 
 .functions-page__loading {
   margin-top: 4px;
+  min-height: 320px;
 }
 
-.functions-page__loading :deep(> *) {
-  display: flex;
+.functions-page__loading :deep(.n-spin-container) {
+  min-height: 320px;
+}
+
+.functions-page__loading :deep(.n-spin-content) {
+  width: 100%;
 }
 
 .feature-card--skeleton {

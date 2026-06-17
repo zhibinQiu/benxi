@@ -803,6 +803,10 @@ def fetch_ragflow_doc_meta_map(
     else:
         rag_iter = _rag_clients_for_user(db, user)
 
+    from app.database import release_db_connection
+
+    release_db_connection(db)
+
     for rag in rag_iter:
         if not _ragflow_health_ok_cached(rag) or not _dataset_visible(rag, dataset_id):
             continue

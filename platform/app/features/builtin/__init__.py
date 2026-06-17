@@ -24,6 +24,7 @@ def register_builtin_plugins() -> None:
         smart_data_query_v2,  # noqa: F401 — 注册 id=smart_data_query
         smart_forecast,  # noqa: F401
         speech,  # noqa: F401
+        text_to_speech,  # noqa: F401
         stubs,  # noqa: F401
         subscriptions,  # noqa: F401
         translate,  # noqa: F401

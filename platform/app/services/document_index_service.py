@@ -445,11 +445,15 @@ def enrich_knowledge_document_rows(
     user: User,
     rows: list[dict],
     documents: list[Document],
+    *,
+    live_ragflow: bool | None = None,
 ) -> None:
     """为知识库列表/检索树行批量填充统一索引元数据。"""
     if not rows or not documents:
         return
-    meta_by_doc = enrich_document_index_meta(db, user, documents)
+    meta_by_doc = enrich_document_index_meta(
+        db, user, documents, live_ragflow=live_ragflow
+    )
     for row in rows:
         did = str(row.get("document_id") or "")
         if not did:

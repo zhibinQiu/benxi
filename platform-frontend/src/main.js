@@ -5,6 +5,7 @@ import router from "./router";
 import { useAppPreferences, initAppFromServerConfig } from "./composables/useAppPreferences";
 import { applyClientBranding } from "./composables/usePlatformBranding";
 import { bootstrapClientConfig } from "./api/http";
+import RoseLoader from "./components/RoseLoader.vue";
 
 async function bootstrap() {
   const config = await bootstrapClientConfig();
@@ -16,6 +17,7 @@ async function bootstrap() {
 
   const app = createApp(App);
   app.use(naive);
+  app.component("RoseLoader", RoseLoader);
   app.use(router);
   app.mount("#app");
 }

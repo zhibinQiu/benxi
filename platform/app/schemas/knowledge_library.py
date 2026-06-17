@@ -85,12 +85,14 @@ class KnowledgeQaAskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=4000)
     session_id: str | None = None
     document_ids: list[str] | None = Field(default=None, max_length=20)
+    use_agentic: bool = True
 
 
 class KnowledgeQaChatStreamRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     conversation_id: str | None = None
     document_ids: list[str] | None = Field(default=None, max_length=20)
+    use_agentic: bool = True
 
 
 class KnowledgeQaMindmapRequest(BaseModel):

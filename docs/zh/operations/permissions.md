@@ -28,7 +28,7 @@
 
 | 权限码 | 能力 |
 |--------|------|
-| `admin.user` | 用户管理 |
+| `admin.user` | 用户管理、菜单可见性、**资源管理**（模型/服务/API Key） |
 | `admin.dept` | 部门管理 |
 | `admin.role` | 角色管理 |
 | `admin.audit` | 审计日志 |

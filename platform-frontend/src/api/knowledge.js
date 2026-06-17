@@ -91,14 +91,14 @@ export async function knowledgeQaChatSend({ message, conversationId, documentIds
 
 /** 流式问答，供知识检索 AiChatPanel 使用 */
 export async function knowledgeQaChatStream(
-  { message, history = [], conversationId = null, documentIds = null },
+  { message, history = [], conversationId = null, documentIds = null, useAgentic = true },
   { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
 ) {
   const headers = { "Content-Type": "application/json" };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const body = { message, history };
+  const body = { message, history, use_agentic: useAgentic };
   if (conversationId) body.conversation_id = conversationId;
   if (documentIds?.length) body.document_ids = documentIds;
 

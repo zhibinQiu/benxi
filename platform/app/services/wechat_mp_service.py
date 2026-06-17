@@ -543,7 +543,7 @@ def import_article_to_document(
         article.content_html or "",
         summary=article.summary or "",
         link=link,
-        allow_refetch=False,
+        allow_refetch=True,
     )
     if html_body and html_body != (article.content_html or ""):
         article.content_html = html_body
@@ -558,7 +558,7 @@ def import_article_to_document(
         source_label=detail.get("source_name") or "微信公众号",
         fallback_stem="wechat-article",
         allow_refetch=False,
-    )
+    )  # 正文已在 resolve_article_html_body 中按需重抓
 
     create_initial_uploaded_version(
         db,

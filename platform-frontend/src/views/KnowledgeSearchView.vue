@@ -1,9 +1,10 @@
 <script setup>
 defineOptions({ name: "KnowledgeSearchView" });
 import { computed, ref } from "vue";
-import { NButton, NIcon } from "naive-ui";
+import { NButton, NCheckbox, NIcon } from "naive-ui";
 import { AddOutline, SearchOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import HintTooltip from "../components/HintTooltip.vue";
 import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
 import KnowledgeSearchPanel from "../components/KnowledgeSearchPanel.vue";
 import { knowledgeQaChatStream } from "../api/knowledge.js";
@@ -15,6 +16,7 @@ const { t, locale } = useI18n();
 
 const selection = ref(readKnowledgeScopeSelection());
 const panelKey = ref(0);
+const useAgentic = ref(true);
 
 const suggestions = computed(
   () => messages[locale.value]?.knowledgeSearch?.suggestions || []
@@ -66,6 +68,7 @@ async function handleChatStream(params, callbacks) {
     {
       ...params,
       documentIds: selection.value.documentIds,
+      useAgentic: useAgentic.value,
     },
     callbacks
   );
@@ -84,6 +87,16 @@ function resetSearch() {
   <FeatureSubsystemShell fill flush-start flush-end :show-intro="false">
     <template #extra>
       <div class="knowledge-search-toolbar">
+        <label class="knowledge-search-toolbar__agent">
+          <n-checkbox v-model:checked="useAgentic" size="small">
+            {{ t("knowledgeSearch.useAgent") }}
+          </n-checkbox>
+          <HintTooltip
+            :text="t('knowledgeSearch.useAgentTooltip')"
+            variant="inline"
+            placement="bottom"
+          />
+        </label>
         <n-icon :size="16" :component="SearchOutline" class="knowledge-search-toolbar__icon" />
         <span class="knowledge-search-toolbar__hint">{{ selectionHint }}</span>
         <n-button
@@ -166,6 +179,17 @@ function resetSearch() {
   gap: 8px;
   width: 100%;
   min-width: 0;
+}
+
+.knowledge-search-toolbar__agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--platform-text);
+  cursor: pointer;
+  user-select: none;
 }
 
 .knowledge-search-toolbar__icon {

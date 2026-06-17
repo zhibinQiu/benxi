@@ -4,7 +4,7 @@ export default {
     tagline: "企业知识安全沉淀，权限之内精准可用",
   },
   menu: {
-    aiHome: "AI 助理",
+    aiHome: "AI 智能体",
     systemFunctions: "功能列表",
     todos: "待办事项",
     documents: "文档中心",
@@ -28,7 +28,7 @@ export default {
     defaultName: "用户",
   },
   routes: {
-    "ai-home": "AI 助理",
+    "ai-home": "AI 智能体",
     "chat-history": "历史对话",
     "system-functions": "功能列表",
     "ai-tools": "在线 AI 工具",
@@ -42,12 +42,14 @@ export default {
     "subscription-item": "资讯详情",
     "smart-forecast": "智能预测",
     speech: "会议助手",
+    "text-to-speech": "语音合成",
     ocr: "文件内容提取",
     compare: "文档对比",
     "assist-writing": "辅助写作",
     "report-generation": "报告生成",
     "knowledge-graph": "切片管理",
     "knowledge-search": "知识检索",
+    "kg-palantir": "本体图谱",
     documents: "文档中心",
     "document-detail": "文档详情",
     jobs: "后台任务",
@@ -60,6 +62,16 @@ export default {
     "admin-model-settings": "资源管理",
     "admin-menu-settings": "菜单管理",
     "admin-docs": "说明文档",
+  },
+  features: {
+    kg_palantir: {
+      title: "本体图谱",
+      description: "查询、编辑实体关系网络；本体类型配置与文档自动抽取",
+    },
+    text_to_speech: {
+      title: "语音合成",
+      description: "文本转自然语音，支持多音色与情感表达",
+    },
   },
   header: {
     back: "返回",
@@ -93,16 +105,17 @@ export default {
     showcaseBadge: "企业 AI 知识库平台",
     showcaseHeadline: "让分散的文件，变成可管控的企业知识库",
     showcaseSubheadline:
-      "从文档入库到报告成稿——权限贯穿每一步，数据不出边界；检索只在可见范围内命中，问答逐条引用可核查。",
+      "从文档入库、本体建模到报告成稿——权限贯穿每一步；本体图谱串联实体关系，检索与问答在可见范围内命中并逐条引用，报告可导出思维导图，形成知识沉淀闭环。",
     showcaseTaglines: [
-      "从文档入库到报告输出——权限可控、知识可沉淀、链路可闭环，检索精准、回答有据。",
+      "入库 → 本体 → 检索 → 问答 → 报告：同一工作台数据互通，知识少搬运、关联可探索、结论更可核查。",
     ],
     showcaseHighlights: [
       "公司 / 部门 / 个人分级管控，分享与回收全程可审计",
-      "入库、对比、提取与归档，把日常文件沉淀为可复用的知识资产",
+      "本体定义实体类型与关系，文档自动抽取知识网络，子图探索与问答联动",
+      "入库 → 本体 → 检索 → 问答 → 报告，形成可沉淀、可核查的知识闭环",
+      "语义 + PageIndex 树检索 + 向量混合召回，命中片段可预览、可溯源",
+      "报告生成多路召回 + 章节化 Agent 扩写，区别于短答式 RAG；成稿可导出思维导图",
       "私有部署、权限内访问，检索与问答不越权、不泄密",
-      "入库 → 检索 → 问答 → 报告，同一工作台数据互通",
-      "语义 + 关键词混合检索，命中片段可预览、可溯源",
     ],
     showcaseCards: [
       {
@@ -124,31 +137,44 @@ export default {
         bullets: ["左右同步对照", "段落级 diff 高亮", "自然语言查变更点"],
       },
       {
-        featureId: "report_generation",
-        title: "报告生成",
-        desc: "知识召回 + Agent 扩写，长报告交付",
-        icon: "create",
-        pitch: "万字报告，不再是人工堆字",
-        value: "多路召回企业知识片段，Agent 按章节扩写整合；支持联网补充与多轮修订——区别于检索页的短答式归纳。",
-        bullets: ["大量召回本地知识片段", "章节化 Agent 扩写", "多轮补充与格式调整"],
+        featureId: "kg_palantir",
+        title: "本体图谱",
+        desc: "实体关系查询、编辑与子图探索",
+        icon: "git-network",
+        pitch: "碎片信息，串成一张关系网",
+        value:
+          "以本体定义企业实体类型与关系规则，从文档与资讯自动抽取结构化知识网络；支持子图探索与关联路径分析，检索、问答与报告生成均可解析实体上下文。",
+        bullets: ["本体类型与关系建模", "文档自动抽取实体网络", "子图探索联动检索、问答与报告"],
       },
       {
         featureId: "knowledge_search",
         title: "精准检索",
-        desc: "语义 + 关键词，权限内搜准搜全",
+        desc: "PageIndex 树 + 向量混合，权限内搜准搜全",
         icon: "search",
         pitch: "搜得准，还在权限内",
-        value: "混合语义与关键词检索，只在用户有权访问的文档范围内返回结果；命中片段可预览，一键跳转原文位置。",
-        bullets: ["权限内检索，不越权", "语义 + 关键词混合", "片段预览与溯源跳转"],
+        value:
+          "PageIndex 结构树检索与 KnowFlow 向量召回混合，只在用户有权访问的文档范围内返回结果；区别于单次 embedding 的传统 RAG，结构索引更适合长文档章节定位。",
+        bullets: ["权限内检索，不越权", "PageIndex + 向量混合召回", "片段预览与溯源跳转"],
+      },
+      {
+        featureId: "report_generation",
+        title: "报告生成",
+        desc: "多路召回 + Agent 扩写，可导出思维导图",
+        icon: "create",
+        pitch: "万字报告，不再是人工堆字",
+        value:
+          "Agent 规划多轮子问题，多路召回企业知识片段后按章节扩写整合；区别于检索页的单轮短答 RAG，支持联网补充、多轮修订，成稿可切换思维导图并导出 Markdown / OPML。",
+        bullets: ["Agent 多路召回本地知识", "章节化扩写与多轮修订", "思维导图可视化与导出"],
       },
       {
         featureId: "ai_home",
-        title: "智能问答",
-        desc: "私有库多轮问答，引用可核查",
+        title: "AI 智能体",
+        desc: "文档检索 + 本体图谱，多轮问答可核查",
         icon: "sparkles",
         pitch: "答必有据，不凭空编造",
-        value: "基于企业私有知识库多轮对话，每条结论标注引用来源；引用范围与文档权限一致，并可衔接报告生成。",
-        bullets: ["私有库 grounded 回答", "引用溯源可核查", "多轮追问与历史会话"],
+        value:
+          "在权限内自动检索文档片段，并解析本体图谱中的实体关联；多轮对话每条结论标注引用来源，可跳转知识检索、报告生成与本体图谱继续深挖。",
+        bullets: ["文档片段 + 本体图谱联合增强", "引用溯源可核查", "衔接检索、报告与图谱"],
       },
       {
         featureId: "pdf_translate",
@@ -171,11 +197,18 @@ export default {
       {
         featureId: "speech_to_text",
         title: "会议助手",
-        desc: "录音转写与说话人区分",
+        desc: "语音转写、纪要生成与语音合成一体",
         icon: "mic",
-        pitch: "会议结束，纪要已在",
-        value: "录音转写、说话人区分与时间线摘要，结果可直接归档至文档库并纳入检索。",
-        bullets: ["说话人自动区分", "时间线智能总结", "归档后可检索"],
+        pitch: "听得出、说得清、纪要快",
+        value:
+          "覆盖语音输入与播报全流程：会议录音或上传音频实时转写，说话人自动区分并生成多风格纪要，记录可存档纳入检索；语音合成将文稿转为多音色、多情感的自然朗读，支持语速调节与 MP3/WAV 导出，打通「会议录入 → 纪要沉淀 → 内容播报」。",
+        bullets: [
+          "实时录音 / 上传音频，多语言转写",
+          "说话人区分与会议纪要（要点 / 详细）",
+          "会议记录存档，可纳入文档检索",
+          "语音合成：多音色、情感与语速可调",
+          "合成音频 MP3 / WAV 一键导出",
+        ],
       },
       {
         featureId: "ocr",
@@ -188,48 +221,84 @@ export default {
       },
     ],
     showcaseSummary: {
-      title: "与常见方案的差异点",
+      title: "与市面方案的差异点",
       subtitle:
-        "钉钉、飞书、SharePoint、Copilot、Glean 等产品在网盘、协作、企业搜索与 RAG 问答上各有成熟能力；我们的侧重是：在同一知识库内贯通权限、对比、检索、问答与报告，减少多系统拼装带来的权限口径不一致与数据搬运。",
+        "市面能力并不缺：网盘管存取，飞书/钉钉管协作，语雀/Confluence 管文档沉淀，Dify/FastGPT/RAGFlow 管 RAG 对话，还有各类比对、翻译、转写工具管单点场景。难点往往在拼装——文档权限、AI 可见范围、图谱与语料往往各管各的，数据要搬、口径要对。我们把入库、本体、对比、检索、问答、报告收到同一套分级知识库，同一权限、同一语料、同一工作台。",
       columns: {
         aspect: "对比维度",
-        others: "市面常见方案（代表性能力）",
+        others: "市面常见代表（按品类）",
         ours: "海颐软件 · 企业 AI 知识库平台",
       },
       rows: [
         {
           aspect: "文档权限",
-          others: "主流网盘/协作平台已有部门空间、共享与审计；AI 检索、问答的可见范围常需单独配置或依赖外部数据源",
-          ours: "公司 / 部门 / 个人分级 + 分享回收可追溯；检索、问答、报告共用同一权限口径",
+          others:
+            "网盘（亿方云、阿里云盘等）、飞书/钉钉文档：组织空间与共享机制成熟；AI 检索、问答的可见范围常与文档 ACL 两套配置，或靠连接器同步",
+          ours: "公司 / 部门 / 个人四级文库 + 分享回收可追溯；检索、问答、报告、对比共用同一权限口径",
         },
         {
-          aspect: "版本对比",
-          others: "Word 修订、Git、专业比对工具已较成熟，多作为独立能力使用",
-          ours: "与文档库一体：左右对照、段落 diff，变更点可接自然语言查询",
-        },
-        {
-          aspect: "报告生成",
-          others: "Copilot、各类 RAG 助手均可生成长文；素材来源、权限边界因产品与接入方式而异",
-          ours: "基于企业库多路召回 + 章节化 Agent 扩写，与检索/Q&A 同源知识、同权限范围",
+          aspect: "内容入库",
+          others:
+            "协作平台以人工上传、在线编辑为主；公众号、RSS、外链资讯往往需爬虫或另购采集，再手动导入知识库",
+          ours: "上传 + 公众号 / RSS / 链接订阅采集一体；入库即分级归档，自动索引后可检索、可问答",
         },
         {
           aspect: "精准检索",
-          others: "Glean、Copilot Search、Elastic 等已支持语义/企业搜索；能否命中取决于接入的数据与权限映射",
-          ours: "语义 + 关键词混合，检索范围与文档库权限严格一致，片段可预览、可溯源",
+          others:
+            "网盘搜索以文件名、全文为主；Dify、RAGFlow 等以向量切片召回为主，长文档章节定位易丢结构上下文",
+          ours: "PageIndex 结构树 + KnowFlow 向量混合召回；严格在权限内检索，片段可预览、可溯源跳转",
         },
         {
-          aspect: "智能问答",
-          others: "M365 Copilot、钉钉 AI、飞书智能伙伴等已支持私有库问答与引用",
-          ours: "基于同一私有库多轮对话，引用与文档权限一致，可衔接报告生成",
+          aspect: "AI 问答",
+          others:
+            "Dify、FastGPT、飞书 AI、Copilot 等可做知识库问答；长报告、图谱探索常与对话分离，引用范围取决于接入数据源",
+          ours: "文档片段 + 本体图谱联合增强；结论逐条标注引用且与文档权限一致，可衔接检索、报告与图谱",
+        },
+        {
+          aspect: "本体图谱",
+          others:
+            "Neo4j 等图谱平台建模能力强，但多与文档库、问答分建；Dify、网盘类产品通常不内置企业本体建模",
+          ours: "本体类型与关系与文档库同平台：自动抽取实体网络、子图探索，检索与问答可解析实体关联",
+        },
+        {
+          aspect: "版本对比",
+          others:
+            "Word 修订、Beyond Compare 等擅长编辑内或文件级比对；网盘多仅保留历史版本下载，缺文库一体的段落对照",
+          ours: "跨版本 / 跨文档左右同步对照，段落级 diff；支持自然语言查询变更点",
+        },
+        {
+          aspect: "报告生成",
+          others:
+            "RAG 助手、Copilot 等多为短答或提纲；万字级章节扩写、思维导图导出常需另接工作流或手工整理",
+          ours: "Agent 多路召回 + 按章节扩写，语料与检索/Q&A 同源；成稿可切换思维导图，导出 Markdown / OPML",
+        },
+        {
+          aspect: "文档智能",
+          others:
+            "PDF 翻译、OCR 等多为独立工具或 SaaS；译稿与识别结果回收入库、纳入权限管控需额外流程",
+          ours: "版式保留 PDF 翻译、批量 OCR、辅助写作同一平台；产出直接归档分级库，纳入检索与问答",
+        },
+        {
+          aspect: "会议语音",
+          others:
+            "讯飞听见、飞书妙记等转写纪要体验成熟；纪要进入企业知识库、与文档权限对齐通常还要导出再上传",
+          ours: "转写、说话人区分、纪要生成与语音合成贯通；会议记录可存档入库，后续可检索、可问答",
+        },
+        {
+          aspect: "私有化部署",
+          others:
+            "部分协作与 AI 产品以公有云 SaaS 为主；私有化或混合部署型号有限，组件拆分采购与运维成本高",
+          ours: "面向内网私有化一体部署；文档、索引、模型调用与任务队列可在企业环境内闭环",
         },
         {
           aspect: "整体形态",
-          others: "常见为「网盘 + IM AI + 独立搜索/BI」组合，集成与权限对齐需额外投入",
-          ours: "入库 → 检索 → 问答 → 报告同一工作台，适合私有化一体化部署",
+          others:
+            "常见组合：网盘 + 协作套件 + RAG 平台 + 单点工具；集成、权限映射与日常运维由企业 IT 自行对接",
+          ours: "入库 → 本体 → 检索 → 问答 → 报告同一工作台，减少多系统拼装与数据搬运",
         },
       ],
       closing:
-        "不否认市面已有单点能力；我们做的是在统一权限之下打通链路，让知识少搬运、口径更一致、结论更可核查。",
+        "我们不是再做一个网盘或 RAG Demo，而是把企业要串起来的知识链路放在统一权限之下：能管控、能关联、能核查，也更适合私有化落地。",
     },
   },
   common: {
@@ -482,6 +551,7 @@ export default {
       delete_document: "删除文档",
       document_index: "文档索引",
       document_parse: "文档解析",
+      subscription_import: "资讯导入",
       maintenance: "维护任务",
     },
     status: {
@@ -561,6 +631,16 @@ export default {
     delete: "删除",
     confirmDelete: "确定删除选中的对话？",
   },
+  agentWorkflow: {
+    tools: {
+      planner: "规划",
+      evaluator: "评估",
+      retrieve: "知识库检索",
+      kg_context: "知识图谱",
+      web_search: "联网检索",
+      version_metadata: "版本信息",
+    },
+  },
   knowledgeSearch: {
     title: "知识检索",
     newSearch: "新检索",
@@ -574,6 +654,8 @@ export default {
     mindmapTab: "思维导图",
     citationsSection: "引用来源",
     thinking: "正在检索并生成总结…",
+    useAgent: "使用智能体",
+    useAgentTooltip: "启用后由智能体规划检索与评估材料，准确率更高，但耗时更长",
     noCitations: "未找到可展示的引用片段",
     replyPlaceholder: "基于所选文档继续提问…",
     selectIndexedDocs: "请从左侧勾选已成功索引的文档",
@@ -641,9 +723,16 @@ export default {
     exportWord: "导出 Word",
     exportWordSuccess: "已导出 Word 文档",
     exportWordFailed: "Word 导出失败",
+    exportMindmapMd: "导出 Markdown",
+    exportMindmapOpml: "导出 OPML（XMind）",
+    exportMindmapMdSuccess: "已导出 Markdown 大纲",
+    exportMindmapOpmlSuccess: "已导出 OPML，可在 XMind 中导入",
+    exportMindmapFailed: "思维导图导出失败",
     optimizePresets: "报告优化",
     webCitations: "联网参考",
     useWebSearch: "使用互联网内容",
+    useAgent: "使用智能体",
+    useAgentTooltip: "启用后由智能体规划检索与评估材料，准确率更高，但耗时更长",
     selectedDocsHint: "已选 {{count}} 份本地文档",
     noLocalDocsHint: "未选本地文档",
     webSearchOnHint: "已启用联网检索",

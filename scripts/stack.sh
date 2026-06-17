@@ -89,9 +89,14 @@ compose_cmd() {
     args+=(-f compose.server.yaml)
   fi
   if [[ "${EXPOSE_DEPS:-0}" == 1 ]]; then
-    if [[ -f compose.expose-deps.yaml ]]; then
+    if [[ "${EXPOSE_DEPS_DB_ONLY:-0}" == 1 ]] && [[ -f compose.expose-deps.db.yaml ]]; then
+      args+=(-f compose.expose-deps.db.yaml)
+    elif [[ -f compose.expose-deps.yaml ]]; then
       args+=(-f compose.expose-deps.yaml)
     fi
+  fi
+  if [[ -f compose.network.yaml ]]; then
+    args+=(-f compose.network.yaml)
   fi
   if [[ ${#COMPOSE_PROFILES_EXTRA[@]} -gt 0 ]]; then
     local p
@@ -222,8 +227,12 @@ cmd_build() {
   load_env
   # build 默认仅核心三镜像；要 knowflow/speech 请显式 --profile 或先 stack.sh build --profile knowflow
   if [[ ${#COMPOSE_PROFILES_EXTRA[@]} -eq 0 ]]; then
-    info "构建核心镜像（api / worker / frontend / pdf2zh-api）..."
-    compose_cmd build --parallel api worker frontend pdf2zh-api "$@"
+    local -a targets=(api worker frontend pdf2zh-api)
+    if [[ $# -gt 0 ]]; then
+      targets=("$@")
+    fi
+    info "构建镜像: ${targets[*]}"
+    compose_cmd build --parallel "${targets[@]}"
     return
   fi
   local -a targets=()
@@ -285,7 +294,7 @@ cmd_server_up() {
 ${GREEN}=== 服务器挂载模式已启动 ===${NC}
   Web:  http://127.0.0.1:${port}/ai/
   API:  http://127.0.0.1:${STACK_DEV_API_PORT:-18000}
-  改 platform/app 后 API 自动 reload；Worker: docker compose restart worker
+  改 platform/app 后执行: ./dev.sh sync（默认重启 API / Worker）
 
 EOF
 }

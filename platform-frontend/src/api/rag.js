@@ -1,10 +1,10 @@
-/** 平台原生对话流式 API（AI 助理 / 智能问数 / 双碳问答） */
+/** 平台原生对话流式 API（AI 智能体 / 智能问数 / 双碳问答） */
 import { getApiBase, getToken, rejectHttpFailure } from "./http.js";
 
 export function createPlatformChatStream(path) {
   return async function platformChatStream(
     { message, history = [], conversationId = null },
-    { onDelta, onReplace, onWorkflow, onDone, onError, signal } = {}
+    { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
   ) {
     const headers = { "Content-Type": "application/json" };
     const token = getToken();
@@ -30,6 +30,7 @@ export function createPlatformChatStream(path) {
 
     const decoder = new TextDecoder();
     let buffer = "";
+    let hasContent = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -50,14 +51,26 @@ export function createPlatformChatStream(path) {
           continue;
         }
         if (payload.error) {
+          // 正文已输出后的上游错误（常见于引用检索节点）不应覆盖成功回答
+          if (hasContent) {
+            console.warn("[chat-stream] ignored post-answer error:", payload.error);
+            continue;
+          }
           onError?.(new Error(payload.error));
           return;
         }
         if (payload.workflow) onWorkflow?.(payload.workflow);
-        if (payload.replace != null) onReplace?.(payload.replace);
+        if (payload.replace != null) {
+          hasContent = Boolean(String(payload.replace).trim());
+          onReplace?.(payload.replace);
+        }
         if (payload.citations) onCitations?.(payload.citations);
-        if (payload.delta) onDelta?.(payload.delta);
+        if (payload.delta) {
+          hasContent = true;
+          onDelta?.(payload.delta);
+        }
         if (payload.done) {
+          if ((payload.reply || "").trim()) hasContent = true;
           onDone?.(payload);
           return;
         }

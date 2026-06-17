@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -791,14 +792,26 @@ def _answer_prefix_blocks(
 
 
 async def _iter_llm_answer_stream(
-    *, question: str, context: str, include_kg: bool = False
+    *,
+    question: str,
+    context: str,
+    include_kg: bool = False,
+    insufficient_note: str | None = None,
 ) -> AsyncIterator[str]:
     from app.integrations.deepseek_client import chat_completion_stream
 
+    system = _qa_system_prompt(include_kg=include_kg)
+    if insufficient_note:
+        system += (
+            "\n\n【材料不足】当前检索材料可能不足以完整回答。"
+            f"不足方面：{insufficient_note}。"
+            "请基于已有片段尽力回答；并在回答**末尾**用一小段明确、友好地提示用户可补充哪些具体信息"
+            "（如时间范围、指标、文档范围），不要编造缺失数据。"
+        )
     user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
     async for delta in chat_completion_stream(
         messages=[
-            {"role": "system", "content": _qa_system_prompt(include_kg=include_kg)},
+            {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ],
         temperature=0.2,
@@ -806,13 +819,26 @@ async def _iter_llm_answer_stream(
         yield delta
 
 
-def _call_llm_answer(*, question: str, context: str, include_kg: bool = False) -> str | None:
+def _call_llm_answer(
+    *,
+    question: str,
+    context: str,
+    include_kg: bool = False,
+    insufficient_note: str | None = None,
+) -> str | None:
     from app.integrations.deepseek_client import chat_completion_sync
 
+    system = _qa_system_prompt(include_kg=include_kg)
+    if insufficient_note:
+        system += (
+            "\n\n【材料不足】当前检索材料可能不足以完整回答。"
+            f"不足方面：{insufficient_note}。"
+            "请基于已有片段尽力回答；并在回答末尾提示用户可补充的具体信息，不要编造。"
+        )
     user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
     return chat_completion_sync(
         messages=[
-            {"role": "system", "content": _qa_system_prompt(include_kg=include_kg)},
+            {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ],
         temperature=0.2,
@@ -919,6 +945,7 @@ def generate_answer(
     doc_titles: dict[str, str],
     context: str | None = None,
     include_kg: bool = False,
+    insufficient_note: str | None = None,
 ) -> str:
     if context is None:
         context, _ = build_aligned_qa_context_and_citations(
@@ -927,9 +954,14 @@ def generate_answer(
             question=question,
         )
     if not (context or "").strip():
+        if insufficient_note:
+            return f"{_NO_HIT_ANSWER}\n\n如需继续，请补充：{insufficient_note}"
         return _NO_HIT_ANSWER
     llm_answer = _call_llm_answer(
-        question=question, context=context, include_kg=include_kg
+        question=question,
+        context=context,
+        include_kg=include_kg,
+        insufficient_note=insufficient_note,
     )
     if llm_answer:
         return _strip_meta_footer(llm_answer)
@@ -1296,6 +1328,7 @@ async def iter_knowledge_qa_stream(
     question: str,
     session_id: str | None = None,
     document_ids: list[str] | None = None,
+    use_agentic: bool = True,
 ) -> AsyncIterator[str]:
     from fastapi import HTTPException
 
@@ -1321,19 +1354,53 @@ async def iter_knowledge_qa_stream(
         yield json.dumps({"error": msg or "请求失败"}, ensure_ascii=False)
         return
 
-    yield json.dumps(
-        {"workflow": {"phase": "node_started", "title": "正在检索相关文档"}},
-        ensure_ascii=False,
-    )
-
     db.add(RagMessage(session_id=session.id, role="user", content=question))
     db.flush()
 
     doc_ids = _parse_ids(session.document_ids)
-    hits, mode = retrieve_hits_for_qa(db, user, doc_ids, question)
+
+    from app.services.knowledge_agentic_service import (
+        RESULT_MARKER,
+        AgenticQaGatherResult,
+        agentic_enabled,
+        iter_gather_for_knowledge_qa,
+    )
+
+    agentic: AgenticQaGatherResult | None = None
+    if use_agentic and agentic_enabled():
+        for item in iter_gather_for_knowledge_qa(db, user, doc_ids, question):
+            if RESULT_MARKER in item:
+                agentic = item[RESULT_MARKER]
+            else:
+                yield json.dumps({"workflow": item}, ensure_ascii=False)
+                await asyncio.sleep(0)
+    else:
+        yield json.dumps(
+            {"workflow": {"phase": "node_started", "title": "正在检索相关文档"}},
+            ensure_ascii=False,
+        )
+        await asyncio.sleep(0)
+        hits: list[dict] = []
+        mode = "none"
+        if doc_ids:
+            hits, mode = retrieve_hits_for_qa(db, user, doc_ids, question)
+        kg_ctx = _resolve_kg_qa_context(db, user, question)
+        agentic = AgenticQaGatherResult(
+            hits=hits,
+            mode=mode,
+            kg_ctx=kg_ctx,
+            plan_reasoning="",
+            rounds_used=1,
+            sub_questions=[question],
+        )
+
+    assert agentic is not None
+
+    hits = agentic.hits
+    mode = agentic.mode
+    kg_ctx = agentic.kg_ctx
     doc_titles = _doc_titles(db, doc_ids)
     doc_meta = _doc_citation_meta(db, doc_ids)
-    kg_ctx = _resolve_kg_qa_context(db, user, question)
     context, all_citations = build_aligned_qa_context_and_citations(
         hits,
         doc_titles,
@@ -1347,7 +1414,7 @@ async def iter_knowledge_qa_stream(
     )
     include_kg = bool(kg_ctx and kg_ctx.context_text)
 
-    if kg_ctx and kg_ctx.matched_entity_ids:
+    if kg_ctx and getattr(kg_ctx, "matched_entity_ids", None):
         yield json.dumps(
             {
                 "workflow": {
@@ -1372,6 +1439,8 @@ async def iter_knowledge_qa_stream(
         document_count=len(doc_ids),
         knowflow_available=bool(kf.enabled()),
     )
+    if agentic.plan_reasoning:
+        plan = {**plan, "agentic_reasoning": agentic.plan_reasoning}
     changelogs = load_version_changelogs(db, doc_ids)
     diff_summaries = load_version_diff_summaries(db, doc_ids)
     prefix = _answer_prefix_blocks(
@@ -1396,12 +1465,23 @@ async def iter_knowledge_qa_stream(
         yield json.dumps({"delta": prefix}, ensure_ascii=False)
 
     if not (context or "").strip():
-        answer_parts.append(_NO_HIT_ANSWER)
-        yield json.dumps({"delta": _NO_HIT_ANSWER}, ensure_ascii=False)
+        if agentic.insufficient_note:
+            insuff = (
+                f"{_NO_HIT_ANSWER}\n\n"
+                f"如需继续，请补充：{agentic.insufficient_note}"
+            )
+            answer_parts.append(insuff)
+            yield json.dumps({"delta": insuff}, ensure_ascii=False)
+        else:
+            answer_parts.append(_NO_HIT_ANSWER)
+            yield json.dumps({"delta": _NO_HIT_ANSWER}, ensure_ascii=False)
     else:
         streamed = False
         async for delta in _iter_llm_answer_stream(
-            question=question, context=context, include_kg=include_kg
+            question=question,
+            context=context,
+            include_kg=include_kg,
+            insufficient_note=agentic.insufficient_note,
         ):
             streamed = True
             answer_parts.append(delta)
@@ -1450,6 +1530,8 @@ def answer_knowledge_question(
     session: RagSession,
     user: User,
     question: str,
+    *,
+    use_agentic: bool = True,
 ) -> RagMessage:
     question = question.strip()
     if not question:
@@ -1461,10 +1543,32 @@ def answer_knowledge_question(
     db.flush()
 
     doc_ids = _parse_ids(session.document_ids)
-    hits, _mode = retrieve_hits_for_qa(db, user, doc_ids, question)
+    from app.services.knowledge_agentic_service import (
+        AgenticQaGatherResult,
+        agentic_enabled,
+        gather_for_knowledge_qa,
+    )
+
+    if use_agentic and agentic_enabled():
+        agentic = gather_for_knowledge_qa(db, user, doc_ids, question)
+    else:
+        hits: list[dict] = []
+        mode = "none"
+        if doc_ids:
+            hits, mode = retrieve_hits_for_qa(db, user, doc_ids, question)
+        kg_ctx = _resolve_kg_qa_context(db, user, question)
+        agentic = AgenticQaGatherResult(
+            hits=hits,
+            mode=mode,
+            kg_ctx=kg_ctx,
+            plan_reasoning="",
+            rounds_used=1,
+            sub_questions=[question],
+        )
+    hits = agentic.hits
     doc_titles = _doc_titles(db, doc_ids)
     doc_meta = _doc_citation_meta(db, doc_ids)
-    kg_ctx = _resolve_kg_qa_context(db, user, question)
+    kg_ctx = agentic.kg_ctx
     context, all_citations = build_aligned_qa_context_and_citations(
         hits,
         doc_titles,
@@ -1483,6 +1587,7 @@ def answer_knowledge_question(
         doc_titles=doc_titles,
         context=context,
         include_kg=include_kg,
+        insufficient_note=agentic.insufficient_note,
     )
 
     from app.services.knowledge_agent_service import (

@@ -41,15 +41,8 @@ import { publicAsset } from "../utils/appBase";
 import { goBackToEntry } from "../utils/navigationReturn";
 import { sessionEpoch } from "../utils/sessionEpoch.js";
 
-/** 智能体 / 问答页：路由切换时保留组件实例 */
-const KEEP_ALIVE_VIEWS = [
-  "AiHomeView",
-  "CarbonQaV2View",
-  "SmartDataQueryV2View",
-  "DataAnalysisView",
-  "KnowledgeSearchView",
-  "DocumentsView",
-];
+/** 保留对话类页面实例，避免切路由丢失会话与顶栏操作条状态 */
+const KEEP_ALIVE_VIEWS = ["AiHomeView", "ReportGenerationView"];
 
 function routeViewKey(viewRoute) {
   const base = viewRoute.meta?.keepAlive
@@ -61,7 +54,7 @@ function routeViewKey(viewRoute) {
 const route = useRoute();
 const router = useRouter();
 const { loadUser, hasPerm, isSystemAdmin } = useAuth();
-const { t, routeTitle } = useI18n();
+const { t, routeTitle, featureLabel } = useI18n();
 const { loadMenuSettings, isMenuVisible } = useMenuSettings();
 const pageHeaderOverride = getPageHeaderOverride();
 const headerToolbarRef = ref(null);
@@ -114,7 +107,11 @@ const settingsChildren = computed(() => {
       {
         label: t("menu.menuSettings"),
         key: "admin-menu-settings",
-        icon: () => h(NIcon, null, { default: () => h(ListOutline) })}
+        icon: () => h(NIcon, null, { default: () => h(ListOutline) })},
+      {
+        label: t("menu.modelSettings"),
+        key: "admin-model-settings",
+        icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) })}
     );
   }
   if (showDeptAdmin.value) {
@@ -128,10 +125,6 @@ const settingsChildren = computed(() => {
       label: t("menu.monitor"),
       key: "admin-monitor",
       icon: () => h(NIcon, null, { default: () => h(PulseOutline) })},
-    {
-      label: t("menu.modelSettings"),
-      key: "admin-model-settings",
-      icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) })},
     {
       label: t("menu.systemDocs"),
       key: "admin-docs",
@@ -164,7 +157,7 @@ const menuOptions = computed(() => {
   for (const feature of favoriteMenuFeatures.value) {
     const Icon = resolveFeatureIcon(feature.icon) || GridOutline;
     items.push({
-      label: feature.title,
+      label: featureLabel(feature.id, "title", feature.title),
       key: favoriteMenuKey(feature),
       icon: () => h(NIcon, null, { default: () => h(Icon) })});
   }
@@ -468,7 +461,7 @@ function onMenuSelect(key) {
           ]"
         >
           <router-view v-slot="{ Component, route: viewRoute }">
-            <KeepAlive :max="6" :include="KEEP_ALIVE_VIEWS">
+            <KeepAlive :max="2" :include="KEEP_ALIVE_VIEWS">
               <component
                 :is="Component"
                 :key="routeViewKey(viewRoute)"
@@ -555,7 +548,7 @@ function onMenuSelect(key) {
   flex: 1;
   min-width: 0;
   font-family: var(--platform-font-display);
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: 0.01em;

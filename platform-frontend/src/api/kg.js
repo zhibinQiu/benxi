@@ -1,4 +1,4 @@
-/** 知识图谱（Palantir）REST API */
+/** 知识图谱（本体）REST API */
 import { api } from "./http.js";
 
 export async function fetchKgMeta() {
@@ -22,11 +22,11 @@ export async function fetchKgEntity(entityId) {
 }
 
 export async function createKgEntity(body) {
-  return api("/api/v1/kg/entities", { method: "POST", body });
+  return api("/api/v1/kg/entities", { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function updateKgEntity(entityId, body) {
-  return api(`/api/v1/kg/entities/${entityId}`, { method: "PATCH", body });
+  return api(`/api/v1/kg/entities/${entityId}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
 export async function deleteKgEntity(entityId) {
@@ -41,7 +41,7 @@ export async function fetchKgRelations({ entityId } = {}) {
 }
 
 export async function createKgRelation(body) {
-  return api("/api/v1/kg/relations", { method: "POST", body });
+  return api("/api/v1/kg/relations", { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function deleteKgRelation(relationId) {
@@ -57,11 +57,11 @@ export async function fetchKgGraph({ focusEntityId, depth = 1 } = {}) {
 }
 
 export async function createKgEntityType(body) {
-  return api("/api/v1/kg/entity-types", { method: "POST", body });
+  return api("/api/v1/kg/entity-types", { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function updateKgEntityType(typeId, body) {
-  return api(`/api/v1/kg/entity-types/${typeId}`, { method: "PATCH", body });
+  return api(`/api/v1/kg/entity-types/${typeId}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
 export async function deleteKgEntityType(typeId) {
@@ -69,11 +69,11 @@ export async function deleteKgEntityType(typeId) {
 }
 
 export async function createKgRelationType(body) {
-  return api("/api/v1/kg/relation-types", { method: "POST", body });
+  return api("/api/v1/kg/relation-types", { method: "POST", body: JSON.stringify(body) });
 }
 
 export async function updateKgRelationType(typeId, body) {
-  return api(`/api/v1/kg/relation-types/${typeId}`, { method: "PATCH", body });
+  return api(`/api/v1/kg/relation-types/${typeId}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
 export async function deleteKgRelationType(typeId) {

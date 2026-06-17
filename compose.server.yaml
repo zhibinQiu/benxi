@@ -6,7 +6,7 @@
 #   bash scripts/stack.sh pull-registry    # 从 ACR 拉 runtime 镜像
 #   bash scripts/stack.sh server-up        # 挂载 platform/app 启动 API
 #
-# 改 platform/app 后 API 自动 --reload；Worker 需 restart worker
+# 改 platform/app 后执行 ./dev.sh sync（默认重启 API / Worker）；或依赖 uvicorn --reload
 
 services:
   api:
@@ -37,3 +37,8 @@ services:
     volumes:
       - ./platform/app:/app/app:ro
       - ./platform/workers:/app/workers:ro
+
+  frontend:
+    volumes:
+      - ./platform-frontend/dist:/usr/share/nginx/html:ro
+      - ./platform-frontend/nginx.conf:/etc/nginx/http.d/default.conf:ro

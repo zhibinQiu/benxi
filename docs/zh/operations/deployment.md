@@ -55,7 +55,7 @@ bash scripts/stack.sh up --profile knowflow --profile speech
 **本机（与目标同架构或 buildx）：**
 
 ```bash
-export ZHITAN_VERSION=4.0.5
+export ZHITAN_VERSION=4.0.7
 bash scripts/stack.sh build --profile knowflow
 bash scripts/stack.sh save      # 输出 images/zhitan-*.tar.gz
 ```

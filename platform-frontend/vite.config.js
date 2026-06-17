@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
+import { fileURLToPath, URL } from "node:url";
 
 const APP_BASE = process.env.VITE_BASE_PATH || "/ai/";
 /** Docker dev：compose.dev 中设 VITE_DEV_API_TARGET=http://api:8000 */
@@ -21,6 +22,14 @@ function isDesignSystemProxyPath(url) {
 
 export default defineConfig({
   base: APP_BASE,
+  resolve: {
+    alias: {
+      "naive-ui": fileURLToPath(new URL("./src/integrations/naive-ui.js", import.meta.url)),
+      "naive-ui/es/_internal/loading/src/Loading.mjs": fileURLToPath(
+        new URL("./src/integrations/naive-base-loading.js", import.meta.url)
+      ),
+    },
+  },
   define: {
     "import.meta.env.VITE_API_BASE": JSON.stringify(VITE_API_BASE),
   },

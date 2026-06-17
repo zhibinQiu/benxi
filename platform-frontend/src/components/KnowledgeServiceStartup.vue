@@ -1,11 +1,12 @@
 <script setup>
 defineProps({
-  message: { type: String, default: "正在启动知识服务系统" }});
+  message: { type: String, default: "正在启动知识服务系统" },
+});
 </script>
 
 <template>
   <div class="ks-startup" role="status" aria-live="polite">
-    <span class="ks-startup__spinner" aria-hidden="true" />
+    <n-spin size="large" />
     <p class="ks-startup__text">{{ message }}</p>
   </div>
 </template>
@@ -18,38 +19,28 @@ defineProps({
   z-index: 2;
   transform: translate(-50%, -50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
-  animation: ks-startup-in 0.18s ease-out;
+  gap: 14px;
+  padding: 22px 28px;
+  border-radius: var(--platform-radius-lg, 12px);
+  background: var(--platform-bg-glass-strong);
+  border: 1px solid var(--platform-glass-border);
+  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
+  backdrop-filter: blur(var(--platform-glass-blur, 22px)) saturate(var(--platform-glass-saturate, 185%));
+  -webkit-backdrop-filter: blur(var(--platform-glass-blur, 22px))
+    saturate(var(--platform-glass-saturate, 185%));
+  animation: ks-startup-in 0.22s var(--platform-ease-smooth, ease-out);
 }
 
 @keyframes ks-startup-in {
   from {
     opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
   }
   to {
     opacity: 1;
-  }
-}
-
-.ks-startup__spinner {
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--platform-accent-border-soft);
-  border-top-color: var(--platform-accent);
-  border-radius: 50%;
-  animation: ks-startup-spin 0.65s linear infinite;
-}
-
-@keyframes ks-startup-spin {
-  to {
-    transform: rotate(360deg);
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 
@@ -57,18 +48,13 @@ defineProps({
   margin: 0;
   font-size: 13px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--platform-text-secondary);
   white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ks-startup {
     animation: none;
-  }
-
-  .ks-startup__spinner {
-    animation: none;
-    border-top-color: var(--platform-accent-border);
   }
 }
 </style>

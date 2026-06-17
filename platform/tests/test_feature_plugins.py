@@ -11,6 +11,7 @@ def test_builtin_plugins_registered():
     ids = {p.id for p in plugins}
     assert "pdf_translate" in ids
     assert "speech_to_text" in ids
+    assert "text_to_speech" in ids
     assert "ocr" in ids
     assert "doc_compare" in ids
     assert "ai_tools" in ids
@@ -40,6 +41,15 @@ def test_speech_plugin_has_router_and_permission():
     assert p.category == "tools"
     assert p.router is not None
     assert p.route == "/system/speech"
+
+
+def test_text_to_speech_plugin_has_router_and_permission():
+    p = get_plugin("text_to_speech")
+    assert p is not None
+    assert p.permission_code == "feature.text_to_speech"
+    assert p.category == "tools"
+    assert p.router is not None
+    assert p.route == "/system/text-to-speech"
 
 
 def test_compare_plugin_has_router():
@@ -99,7 +109,7 @@ def test_carbon_qa_plugin():
 def test_ai_home_plugin():
     p = get_plugin("ai_home")
     assert p is not None
-    assert p.title == "AI 助理"
+    assert p.title == "AI 智能体"
     assert p.category == "ai"
     assert p.route == "/ai-home"
 

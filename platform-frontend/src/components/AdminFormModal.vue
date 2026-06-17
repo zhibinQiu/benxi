@@ -4,6 +4,7 @@
  * 所有管理类弹窗应优先使用本组件，避免原生 n-modal 样式不一致。
  */
 import { NModal } from "naive-ui";
+import { PLATFORM_Z } from "../constants/zIndex.js";
 
 defineProps({
   show: { type: Boolean, default: false },
@@ -13,7 +14,7 @@ defineProps({
   width: { type: [Number, String], default: 520 },
 });
 
-const emit = defineEmits(["update:show", "after-leave"]);
+const emit = defineEmits(["update:show", "after-enter", "after-leave"]);
 
 function onUpdateShow(value) {
   emit("update:show", value);
@@ -25,10 +26,12 @@ function onUpdateShow(value) {
     :show="show"
     preset="card"
     class="admin-form-modal platform-glass-modal"
+    :z-index="PLATFORM_Z.featureModal"
     :style="{ width: typeof width === 'number' ? `${width}px` : width }"
     :mask-closable="false"
     transform-origin="center"
     @update:show="onUpdateShow"
+    @after-enter="emit('after-enter')"
     @after-leave="emit('after-leave')"
   >
     <template #header>

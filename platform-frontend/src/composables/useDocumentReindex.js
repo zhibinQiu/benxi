@@ -139,7 +139,7 @@ export function useDocumentReindex(documentId, onUpdated) {
       }
     } catch {
       chunkMethodOptions.value = [
-        { label: "Naive（通用）", hint: "原 KnowFlow Naive；配 DeepDOC/纯文本", value: "naive" },
+        { label: "Naive（通用）", hint: "通用文本分块；配 DeepDOC/纯文本", value: "naive" },
         { label: "智能分块", hint: "推荐；配合 PaddleOCR/MinerU 等现代 OCR", value: "smart" },
       ];
       layoutOptions.value = [

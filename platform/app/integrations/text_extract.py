@@ -84,6 +84,9 @@ def _parsed_text_doc(
     )
 
 
+_DOC_OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+
 def extract_text_from_bytes(
     data: bytes,
     *,
@@ -96,6 +99,15 @@ def extract_text_from_bytes(
 
     if lower.endswith(".pdf") or mime == "application/pdf":
         return _extract_pdf(data, document_id=document_id, file_name=file_name)
+    if lower.endswith(".doc") and not lower.endswith((".docx", ".dotx")):
+        if data[:8] == _DOC_OLE_MAGIC:
+            return ParsedDocument(
+                document_id=document_id,
+                file_name=file_name,
+                full_text="",
+                parse_quality="unsupported",
+                warning="旧版 .doc 格式请先另存为 .docx 后再上传与索引",
+            )
     if lower.endswith((".doc", ".docx", ".dot", ".dotx")) or "word" in mime:
         return _extract_docx(data, document_id=document_id, file_name=file_name)
     if lower.endswith((".html", ".htm")) or "html" in mime:

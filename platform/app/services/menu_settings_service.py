@@ -52,6 +52,12 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         description="运行状态与资源用量",
     ),
     MenuItemOut(
+        key="admin-model-settings",
+        label="资源管理",
+        group="settings",
+        description="语言模型、OCR、语音等服务配置",
+    ),
+    MenuItemOut(
         key="admin-docs",
         label="说明文档",
         group="settings",
@@ -62,6 +68,7 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
 DEFAULT_MENU_VISIBILITY: dict[str, MenuVisibility] = {
     item.key: "all" for item in MEMBER_MENU_ITEMS
 }
+DEFAULT_MENU_VISIBILITY["admin-model-settings"] = "admin"
 
 ROUTE_MENU_KEYS: dict[str, str] = {
     "ai-home": "ai-home",
@@ -92,6 +99,7 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "feed-subscriptions": "knowledge-subscriptions",
     "feed-entry": "knowledge-subscriptions",
     "admin-monitor": "admin-monitor",
+    "admin-model-settings": "admin-model-settings",
     "admin-docs": "admin-docs",
     "issue-reports": "issue-reports",
 }
@@ -202,7 +210,8 @@ def member_can_access_route(db: Session, user: User, route_name: str | None) -> 
     if str(route_name) == "admin-model-settings":
         from app.core.permissions import user_has_permission
 
-        return user_has_permission(db, user, "admin.user")
+        if not user_has_permission(db, user, "admin.user"):
+            return False
     menu_key = ROUTE_MENU_KEYS.get(str(route_name))
     if not menu_key:
         return True
@@ -221,8 +230,8 @@ def first_visible_menu_route(db: Session, user: User) -> str:
         "knowledge-subscriptions",
         "issue-reports",
         "admin-monitor",
+        "admin-model-settings",
         "admin-docs",
-        "issue-reports",
     )
     for key in priority:
         if key in visible:

@@ -87,6 +87,39 @@ def knowflow_copy_lacks_page_snapshots(
     return False
 
 
+def office_bytes_to_markdown_upload(
+    file_name: str,
+    content: bytes,
+    mime_type: str = "",
+    *,
+    title: str = "",
+) -> tuple[str, bytes, str] | None:
+    """Office 无法转 PDF 时，提取正文为 Markdown 供 naive + Plain Text 分块。"""
+    from app.integrations.text_extract import extract_text_from_bytes
+
+    name = (file_name or "").strip() or "document"
+    try:
+        parsed = extract_text_from_bytes(
+            content,
+            document_id=uuid.UUID(int=0),
+            file_name=name,
+            mime_type=mime_type or "",
+        )
+    except Exception as exc:
+        logger.debug("Office Markdown 回退提取失败 file=%s: %s", name, exc)
+        return None
+    body = (parsed.full_text or "").strip()
+    if not body:
+        return None
+    doc_title = (title or name.rsplit(".", 1)[0]).strip() or "文档"
+    if not body.lstrip().startswith("#"):
+        md = f"# {doc_title}\n\n{body}"
+    else:
+        md = body
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return f"{stem}.md", md.encode("utf-8"), "text/markdown"
+
+
 def convert_file_bytes_to_pdf_for_citation(
     file_name: str,
     content: bytes,
@@ -469,6 +502,18 @@ def normalize_file_for_knowflow_upload(
                 name,
             )
             return converted
+        md_upload = office_bytes_to_markdown_upload(
+            name,
+            content,
+            mime_type,
+            title=doc_title,
+        )
+        if md_upload:
+            logger.info(
+                "KnowFlow 上传：Office 转 PDF 失败，改上传 Markdown file=%s",
+                name,
+            )
+            return md_upload
 
     if any(lower.endswith(s) for s in _INDEXABLE_SUFFIXES):
         return name, content, mime_type or "application/octet-stream"

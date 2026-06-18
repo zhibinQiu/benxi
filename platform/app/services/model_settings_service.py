@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 NOTICE_EFFECTIVE = (
     "所有模型（语言 / 嵌入 / VL / Rerank / OCR-VL）均在资源管理配置「API URL + 模型名 + Key」，"
     "保存后立即生效，无需改代码或重启；上线后仅改 URL 与模型名即可切换本地 vLLM/Ollama 等。"
-    "嵌入与 VL 保存后写入 RAGFlow 模板租户并同步用户；OCR-VL 写入 KnowFlow settings.yaml。"
+    "嵌入与 VL 保存后写入知识库模板租户并同步用户；OCR-VL 写入知识库服务配置。"
     ".env 中 PLATFORM_* 仅作首次部署引导，运行中以本页保存为准。"
 )
 

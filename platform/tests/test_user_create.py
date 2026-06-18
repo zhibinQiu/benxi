@@ -29,7 +29,7 @@ def test_create_user_via_api(client, admin_token):
     assert body["status"] == "disabled"
     assert body["role_names"]
 
-    listed = client.get("/api/v1/users", headers=headers).json()["data"]
+    listed = client.get("/api/v1/users", headers=headers).json()["data"]["items"]
     assert any(u["id"] == body["id"] for u in listed)
 
     deleted = client.delete(f"/api/v1/users/{body['id']}", headers=headers)

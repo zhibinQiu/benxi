@@ -358,7 +358,7 @@ export default {
         icon: "search",
         pitch: "搜得准，还在权限内",
         value:
-          "PageIndex 结构树检索与 KnowFlow 向量召回混合，只在用户有权访问的文档范围内返回结果；区别于单次 embedding 的传统 RAG，结构索引更适合长文档章节定位。",
+          "PageIndex 结构树检索与向量召回混合，只在用户有权访问的文档范围内返回结果；区别于单次 embedding 的传统 RAG，结构索引更适合长文档章节定位。",
         bullets: ["权限内检索，不越权", "PageIndex + 向量混合召回", "片段预览与溯源跳转"],
       },
       {
@@ -1335,7 +1335,7 @@ export default {
       noStats: "暂无统计数据",
       cards: {
         documentsTotal: { label: "文档总数", hint: "按文档实体统计，不含多版本重复" },
-        documentsIndexed: { label: "已索引总数", hint: "RAGFlow 解析已完成，不含失败或进行中的文档" },
+        documentsIndexed: { label: "已索引总数", hint: "知识库解析已完成，不含失败或进行中的文档" },
         featuresTotal: { label: "功能总数", hint: "系统功能清单中的全部功能" },
         featuresPending: { label: "待开发功能", hint: "尚未启用或待集成的功能" },
         usersRegistered: { label: "已注册人数", hint: "状态为启用的平台账号" },
@@ -1400,7 +1400,7 @@ export default {
         platform: { title: "平台", hint: "前端访问地址与展示配置" },
         model: { title: "AI 模型", hint: "语言、嵌入、VL 与重排序；改 URL/模型名可切换本地或在线" },
         service: { title: "外部服务", hint: "OCR-VL、语音、翻译等；OCR 支持在线 API 或本地 layout-parsing" },
-        knowledge: { title: "知识库基础设施", hint: "RAGFlow / KnowFlow 后台与 MySQL 数据库" },
+        knowledge: { title: "知识库基础设施", hint: "知识库 API、扩展后台与 MySQL 数据库" },
       },
       resources: {
         platform_api: { title: "系统后台地址（前端）", hint: "浏览器请求平台后端的 API 根路径" },
@@ -1414,9 +1414,9 @@ export default {
         tts: { title: "语音合成", hint: "文本转语音（硅基流动 / OpenAI 兼容）" },
         pdf2zh: { title: "PDF 翻译服务", hint: "pdf2zh 文档翻译 API" },
         searxng: { title: "SearXNG 联网搜索", hint: "网站收藏在线搜索" },
-        ragflow_api: { title: "RAGFlow API", hint: "知识库检索、文档同步 HTTP API" },
-        knowflow_backend: { title: "KnowFlow 知识库后台", hint: "KnowFlow 扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选" },
-        ragflow_mysql: { title: "RAGFlow MySQL", hint: "知识库元数据与用户模型配置库" },
+        ragflow_api: { title: "知识库 API", hint: "知识库检索、文档同步 HTTP API" },
+        knowflow_backend: { title: "知识库扩展后台", hint: "知识库扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选" },
+        ragflow_mysql: { title: "知识库 MySQL", hint: "知识库元数据与用户模型配置库" },
       },
       theme: {
         system: "跟随系统（自动切换日/夜）",
@@ -1433,7 +1433,7 @@ export default {
         noApiKey: "{{model}}（未配置 Key）",
         apiPrefix: "API {{url}}",
         uiPrefix: "UI {{url}}",
-        dockerDefault: "Docker 默认（knowflow-mysql）",
+        dockerDefault: "Docker 默认（内置 MySQL）",
         seconds: "{{url}} · {{seconds}}s",
       },
       health: {
@@ -1499,20 +1499,20 @@ export default {
         ragflowApiKey: "留空或掩码表示不修改；mapped 模式可留空走用户会话",
         knowflowBackend: "http://127.0.0.1:5001",
         knowflowUi: "http://127.0.0.1:9380",
-        knowflowPublic: "可选，如 http://127.0.0.1:40005/ragflow-ui",
-        knowflowProxy: "可选，如 /ragflow-ui",
-        mysqlHost: "留空且启用 KnowFlow 时使用 knowflow-mysql",
+        knowflowPublic: "可选，如 http://127.0.0.1:40005/kb-ui",
+        knowflowProxy: "可选，如 /kb-ui",
+        mysqlHost: "留空且启用知识库时使用内置 MySQL",
         mysqlDb: "rag_flow",
-        mysqlContainer: "ragflow-mysql（无法 TCP 连接时 fallback docker exec）",
+        mysqlContainer: "kb-mysql（无法 TCP 连接时 fallback docker exec）",
       },
       hints: {
         platformApi:
           "浏览器请求平台后端的根路径（不含 <code>/api/v1</code>）。同源部署填 <code>/ai</code>；跨域或远程开发填完整 URL。对应 .env 中 <code>PLATFORM_API_BASE_URL</code>，留空时使用 <code>API_PUBLIC_PATH_PREFIX</code>（默认 <code>/ai</code>）。保存后前端立即生效；若与当前页面访问方式不一致，请刷新页面。",
         frontend:
           "「跟随系统」时，前台根据操作系统日/夜模式自动切换；用户手动切换主题后将以本地偏好为准。对应 .env 中 <code>FRONTEND_APP_TITLE</code>、<code>FRONTEND_DEFAULT_THEME</code>。",
-        vl: "KnowFlow PDF 图表增强（IMAGE2TEXT）。保存后立即生效并写入 RAGFlow；切换本地模型时仅改 API URL 与模型名即可。",
+        vl: "PDF 图表增强（IMAGE2TEXT）。保存后立即生效并同步到知识库；切换本地模型时仅改 API URL 与模型名即可。",
         paddleocr:
-          "OpenAI 兼容 API（<code>/v1</code>）或自建 layout-parsing 根地址。保存后立即写入 KnowFlow <code>settings.yaml</code>；本地部署时改 URL 与模型名即可。",
+          "OpenAI 兼容 API（<code>/v1</code>）或自建 layout-parsing 根地址。保存后立即写入知识库服务配置；本地部署时改 URL 与模型名即可。",
         speech: "会议助手「语音转写」调用此地址（FunASR speech-api）。",
         tts: "「语音合成」功能专用配置，与语言模型分离。API URL 请填写 OpenAI 兼容基址（含 <code>/v1</code>）；未填时回退语言模型配置。",
         pdf2zh:
@@ -1520,11 +1520,11 @@ export default {
         searxng:
           "网站收藏「联网搜索」通过此 SearXNG 实例的 JSON API（<code>/search?format=json</code>）检索。对应 .env 中 <code>SEARXNG_URL</code>、<code>SEARXNG_TIMEOUT_SECONDS</code>。保存后立即生效。",
         ragflowApi:
-          "对应 .env 中 <code>RAGFLOW_API_URL</code>、<code>RAGFLOW_API_KEY</code>。Docker 栈内服务名 <code>ragflow</code> 会自动映射到 nginx :80。",
+          "对应 .env 中知识库 API 地址与 Key 配置。Docker 栈内服务会自动映射到 nginx :80。",
         knowflowBackend:
-          "对应 <code>KNOWFLOW_BACKEND_URL</code>、<code>KNOWFLOW_UI_URL</code>、<code>KNOWFLOW_UI_PUBLIC_URL</code>、<code>KNOWFLOW_UI_PROXY_PREFIX</code>。API 后台用于 RBAC 与知识库授权；Web UI 为 RAGFlow 管理界面；iframe 基址用于知识问答嵌入。保存后立即生效。",
+          "对应知识库扩展后台、Web UI、iframe 基址与同源代理前缀等配置。API 后台用于 RBAC 与知识库授权；Web UI 为知识库管理界面；iframe 基址用于知识问答嵌入。保存后立即生效。",
         ragflowMysql:
-          "平台通过 MySQL 同步 RAGFlow 租户模型、清理冲突账号等。对应 <code>RAGFLOW_MYSQL_*</code> 环境变量；远程开发可填服务器 IP。",
+          "平台通过 MySQL 同步租户模型、清理冲突账号等。对应知识库 MySQL 相关环境变量；远程开发可填服务器 IP。",
       },
     },
   },

@@ -827,8 +827,22 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
   min-width: 140px;
 }
 
+.documents-upload-modal.n-modal .admin-form-modal__head {
+  padding-bottom: 10px;
+}
+
+.documents-upload-modal.n-modal .n-card__content {
+  padding-top: 14px !important;
+  padding-bottom: 4px !important;
+}
+
+.documents-upload-modal.n-modal .n-card__footer {
+  padding-top: 12px !important;
+  padding-bottom: 16px !important;
+}
+
 .documents-upload-modal__tabs {
-  margin-bottom: 2px;
+  margin-bottom: 0;
 }
 
 .documents-upload-modal__tabs :deep(.n-tabs-tab) {
@@ -838,13 +852,21 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 }
 
 .doc-upload-location {
-  margin-top: 14px;
-  padding-bottom: 4px;
+  margin-top: 8px;
+  padding-bottom: 2px;
   border-bottom: 1px solid color-mix(in srgb, var(--platform-border) 65%, transparent);
 }
 
 .doc-upload-location :deep(.n-form-item) {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+}
+
+.documents-upload-modal .doc-upload-location {
+  margin-top: 4px;
+}
+
+.documents-upload-modal .doc-upload-location :deep(.n-form-item:last-child) {
+  margin-bottom: 0;
 }
 
 .doc-upload-location__create {
@@ -869,7 +891,7 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 }
 
 .documents-upload-modal__form {
-  margin-top: 16px;
+  margin-top: 10px;
 }
 
 .documents-upload-modal__form :deep(.n-form-item-label) {
@@ -919,8 +941,8 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 32px 18px;
+  gap: 6px;
+  padding: 18px 16px;
   text-align: center;
 }
 
@@ -966,14 +988,14 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 }
 
 .documents-upload-modal__footnote {
-  margin-top: 14px;
+  margin-top: 8px;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.45;
   color: var(--platform-text-tertiary);
 }
 
 .documents-upload-modal__batch-progress {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .documents-upload-modal__batch-progress :deep(.n-progress-graph-line-fill) {

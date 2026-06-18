@@ -36,6 +36,7 @@ def test_chitchat_skips_all_tools_even_with_attachment_session():
         assert plan.use_attachment is False, message
         assert plan.use_doc_retrieval is False, message
         assert plan.use_kg is False, message
+        assert plan.use_web_search is False, message
         assert "日常" in plan.intent_label
 
 
@@ -50,6 +51,7 @@ def test_attachment_question_skips_knowledge_retrieval():
     assert plan.use_attachment is True
     assert plan.use_doc_retrieval is False
     assert plan.use_kg is False
+    assert plan.use_web_search is True
     assert "附件" in plan.intent_label
 
 
@@ -88,9 +90,17 @@ def test_business_question_retrieves():
     )
     assert plan.use_doc_retrieval is True
     assert plan.use_kg is True
+    assert plan.use_web_search is True
+    assert "联网" in plan.intent_label
 
 
-def test_platform_usage_skips_retrieval():
+def test_chitchat_skips_web_search():
+    assert _needs_web_search("你好") is False
+    assert _needs_web_search("你是谁？") is False
+
+
+def test_platform_usage_skips_web_search():
+    assert _needs_web_search("怎么上传文档到知识库？") is False
     plan = _plan_agent_tools(
         "怎么上传文档到知识库？",
         attach_count=0,
@@ -100,6 +110,7 @@ def test_platform_usage_skips_retrieval():
     )
     assert plan.use_doc_retrieval is False
     assert plan.use_kg is False
+    assert plan.use_web_search is False
 
 
 def test_followup_after_business_question_retrieves():
@@ -116,6 +127,7 @@ def test_followup_after_business_question_retrieves():
         history=history,
     )
     assert plan.use_doc_retrieval is True
+    assert plan.use_web_search is True
 
 
 def test_vague_message_skips_retrieval():
@@ -171,8 +183,8 @@ def test_explicit_web_search_request():
     assert plan.intent_label == "联网检索实时信息"
 
 
-def test_policy_process_skips_web_search():
-    assert _needs_web_search("碳配额发放流程是什么？") is False
+def test_policy_process_uses_web_search_by_default():
+    assert _needs_web_search("碳配额发放流程是什么？") is True
     plan = _plan_agent_tools(
         "碳配额发放流程是什么？",
         attach_count=0,
@@ -180,4 +192,31 @@ def test_policy_process_skips_web_search():
         kg_enabled=True,
         web_enabled=True,
     )
-    assert plan.use_web_search is False
+    assert plan.use_web_search is True
+    assert plan.use_doc_retrieval is True
+
+
+def test_lookup_carbon_price_triggers_web_search():
+    assert _needs_web_search("帮我查一下碳价") is True
+    plan = _plan_agent_tools(
+        "帮我查一下碳价",
+        attach_count=0,
+        kb_enabled=True,
+        kg_enabled=True,
+        web_enabled=True,
+    )
+    assert plan.use_web_search is True
+    assert plan.use_doc_retrieval is True
+    assert "联网" in plan.intent_label
+
+
+def test_current_carbon_market_status_triggers_web_search():
+    assert _needs_web_search("目前全国碳市场怎么样") is True
+    plan = _plan_agent_tools(
+        "目前全国碳市场怎么样",
+        attach_count=0,
+        kb_enabled=True,
+        kg_enabled=True,
+        web_enabled=True,
+    )
+    assert plan.use_web_search is True

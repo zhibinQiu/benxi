@@ -275,7 +275,7 @@ def _probe_knowflow_backend_url(api_base: str) -> tuple[bool, str]:
     """探测 KnowFlow 扩展 API（平台不依赖 RAGFlow Web UI）。"""
     api_base = (api_base or "").rstrip("/")
     if not api_base:
-        return False, "未填写 KnowFlow API 地址"
+        return False, "未填写知识库扩展 API 地址"
 
     for path in ("/health", "/api/health", "/api/v1/health"):
         api_ok, api_msg = _probe_http_get(f"{api_base}{path}", accept_405=True)
@@ -550,7 +550,7 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
     if rid == "ragflow_api":
         ragflow_url = (cfg.get("ragflow_api_url") or "").strip()
         if not ragflow_url:
-            return _item(configured=False, healthy=False, message="未填写 RAGFlow API 地址")
+            return _item(configured=False, healthy=False, message="未填写知识库 API 地址")
         healthy, msg = _probe_ragflow_api_url(ragflow_url, cfg.get("ragflow_api_key", ""))
         return _item(configured=True, healthy=healthy, message=msg)
 
@@ -560,7 +560,7 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
             return _item(
                 configured=False,
                 healthy=False,
-                message="未填写 KnowFlow API 地址",
+                message="未填写知识库扩展 API 地址",
             )
         healthy, msg = _probe_knowflow_backend_url(knowflow_url)
         return _item(configured=True, healthy=healthy, message=msg)
@@ -572,7 +572,7 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
             return _item(
                 configured=False,
                 healthy=None,
-                message="可选；留空时使用 .env 默认（Docker 内 knowflow-mysql）",
+                message="可选；留空时使用 .env 默认（Docker 内置 MySQL）",
             )
         if not mysql_pwd:
             return _item(configured=False, healthy=False, message="未填写 MySQL 密码")

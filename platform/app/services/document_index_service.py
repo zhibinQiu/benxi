@@ -13,6 +13,7 @@ from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.models.ragflow_document_link import RagflowDocumentLink
 from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
+from app.models.pageindex_version_link import PageindexVersionLink
 
 _INDEX_DONE_LABELS = frozenset({"已完成", "已索引"})
 
@@ -342,6 +343,67 @@ def enrich_document_index_meta(
     return meta_by_doc
 
 
+def _overlay_version_pageindex_meta(
+    db: Session,
+    versions: list[DocumentVersion],
+    meta_by_ver: dict[str, dict],
+) -> None:
+    from app.services.pageindex_service import pageindex_index_meta
+
+    if not versions:
+        return
+    version_ids = [v.id for v in versions]
+    try:
+        rows = list(
+            db.scalars(
+                select(PageindexVersionLink).where(
+                    PageindexVersionLink.platform_version_id.in_(version_ids)
+                )
+            ).all()
+        )
+    except Exception as exc:
+        if "pageindex_version_links" in str(exc):
+            import logging
+
+            logging.getLogger(__name__).debug(
+                "PageIndex 表未就绪，跳过版本索引元数据叠加: %s", exc
+            )
+            return
+        raise
+    link_by_ver = {
+        str(row.platform_version_id): row
+        for row in rows
+        if row.platform_version_id
+    }
+    for ver in versions:
+        vid = str(ver.id)
+        pi_meta = pageindex_index_meta(link_by_ver.get(vid))
+        if not pi_meta:
+            continue
+        current = meta_by_ver.get(vid) or _default_index_meta()
+        if pi_meta.get("knowledge_synced") or not current.get("knowledge_synced"):
+            meta_by_ver[vid] = {**current, **pi_meta}
+
+
+def _enrich_version_index_meta_db_only(
+    db: Session,
+    versions: list[DocumentVersion],
+    *,
+    link_by_ver: dict[str, RagflowDocumentVersionLink],
+) -> dict[str, dict]:
+    meta_by_ver: dict[str, dict] = {}
+    for ver in versions:
+        vid = str(ver.id)
+        link = link_by_ver.get(vid)
+        meta_by_ver[vid] = _meta_from_version_link(link)
+        if link and link.ragflow_document_id:
+            _apply_cached_ragflow_meta(
+                meta_by_ver[vid], link.dataset_id, link.ragflow_document_id
+            )
+    _overlay_version_pageindex_meta(db, versions, meta_by_ver)
+    return meta_by_ver
+
+
 def enrich_version_index_meta(
     db: Session,
     user: User,
@@ -369,16 +431,9 @@ def enrich_version_index_meta(
     link_by_ver = {str(l.platform_version_id): l for l in links if l.platform_version_id}
 
     if not live_ragflow:
-        meta_by_ver: dict[str, dict] = {}
-        for ver in versions:
-            vid = str(ver.id)
-            link = link_by_ver.get(vid)
-            meta_by_ver[vid] = _meta_from_version_link(link)
-            if link and link.ragflow_document_id:
-                _apply_cached_ragflow_meta(
-                    meta_by_ver[vid], link.dataset_id, link.ragflow_document_id
-                )
-        return meta_by_ver
+        return _enrich_version_index_meta_db_only(
+            db, versions, link_by_ver=link_by_ver
+        )
 
     meta_by_ver = {}
     rows_by_dataset: dict[str, list[dict]] = defaultdict(list)
@@ -418,6 +473,15 @@ def enrich_version_index_meta(
                 db, link_by_ver.get(vid), meta_by_ver[vid].get("parse_status")
             )
 
+    db_only = _enrich_version_index_meta_db_only(
+        db, versions, link_by_ver=link_by_ver
+    )
+    _apply_db_ready_override(meta_by_ver, db_only)
+    for ver in versions:
+        vid = str(ver.id)
+        if vid not in meta_by_ver:
+            meta_by_ver[vid] = db_only.get(vid) or _default_index_meta()
+    _overlay_version_pageindex_meta(db, versions, meta_by_ver)
     return meta_by_ver
 
 

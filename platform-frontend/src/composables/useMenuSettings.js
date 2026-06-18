@@ -37,6 +37,7 @@ export const ROUTE_MENU_KEYS = {
   "feed-subscriptions": "knowledge-subscriptions",
   "feed-entry": "knowledge-subscriptions",
   "admin-monitor": "admin-monitor",
+  "admin-model-settings": "admin-model-settings",
   "admin-docs": "admin-docs",
   "issue-reports": "issue-reports",
 };
@@ -49,6 +50,7 @@ export const CONFIGURABLE_MENU_KEYS = new Set([
   "knowledge-subscriptions",
   "issue-reports",
   "admin-monitor",
+  "admin-model-settings",
   "admin-docs",
 ]);
 
@@ -59,8 +61,8 @@ const MENU_FALLBACK_ORDER = [
   "knowledge-subscriptions",
   "issue-reports",
   "admin-monitor",
+  "admin-model-settings",
   "admin-docs",
-  "issue-reports",
 ];
 
 export function routeMenuKey(routeName) {

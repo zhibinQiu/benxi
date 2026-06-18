@@ -134,6 +134,31 @@ def test_normalize_converts_docx_to_pdf(monkeypatch):
     assert content.startswith(b"%PDF")
 
 
+def test_normalize_office_falls_back_to_markdown_when_pdf_fails(monkeypatch):
+    docx_text = "Word 文档正文内容。" * 40
+
+    class _Parsed:
+        full_text = docx_text
+
+    monkeypatch.setattr(
+        "app.integrations.text_extract.extract_text_from_bytes",
+        lambda *a, **k: _Parsed(),
+    )
+    monkeypatch.setattr(
+        "app.integrations.html_document_export.convert_file_bytes_to_pdf_for_citation",
+        lambda *a, **k: None,
+    )
+    name, content, mime = normalize_file_for_knowflow_upload(
+        "report.docx",
+        b"PK fake",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        title="报告",
+    )
+    assert name.endswith(".md")
+    assert mime == "text/markdown"
+    assert "Word 文档正文" in content.decode("utf-8")
+
+
 def test_convert_docx_to_pdf_for_citation_real():
     import io
 

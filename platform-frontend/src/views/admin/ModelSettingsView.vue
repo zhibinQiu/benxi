@@ -294,7 +294,7 @@ function resourceSummary(id) {
           ? t("admin.modelSettings.summary.dockerDefault")
           : t("admin.modelSettings.summary.notConfigured");
       }
-      const host = kb.ragflow_mysql_host || "knowflow-mysql";
+      const host = kb.ragflow_mysql_host || "localhost";
       return `${host}:${kb.ragflow_mysql_port || 3306}/${kb.ragflow_mysql_db || "rag_flow"}`;
     }
     default:

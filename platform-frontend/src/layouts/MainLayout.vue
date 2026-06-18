@@ -113,12 +113,14 @@ const settingsChildren = computed(() => {
       {
         label: t("menu.menuSettings"),
         key: "admin-menu-settings",
-        icon: () => h(NIcon, null, { default: () => h(ListOutline) })},
-      {
+        icon: () => h(NIcon, null, { default: () => h(ListOutline) })}
+    );
+    if (isMenuVisible("admin-model-settings")) {
+      children.push({
         label: t("menu.modelSettings"),
         key: "admin-model-settings",
-        icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) })}
-    );
+        icon: () => h(NIcon, null, { default: () => h(HardwareChipOutline) })});
+    }
   }
   if (showDeptAdmin.value) {
     children.push({

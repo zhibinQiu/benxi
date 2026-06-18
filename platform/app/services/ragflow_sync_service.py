@@ -340,7 +340,7 @@ def _last_upload_error(err: Exception | None) -> str | None:
         return "知识库账号未就绪，请重新登录或联系管理员完成知识服务开户。"
     if "权限检查服务异常" in raw:
         return (
-            "目标知识库在 KnowFlow 中不存在或权限服务异常，"
+            "目标知识库不存在或权限服务异常，"
             "请打开「切片管理」同步知识库目录后重试。"
         )
     if "权限检查" in raw:

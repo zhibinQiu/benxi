@@ -1888,7 +1888,6 @@ watch(
     v-model:show="showUploadModal"
     class="documents-upload-modal"
     :title="t('documents.uploadModalTitle')"
-    :subtitle="t('documents.uploadModalLead')"
     width="min(520px, 94vw)"
   >
     <n-tabs
@@ -1902,7 +1901,7 @@ watch(
     </n-tabs>
 
     <n-form
-      class="documents-upload-modal__form"
+      class="documents-upload-modal__form admin-form-modal__form admin-form-modal__form--compact"
       label-placement="top"
       :show-require-mark="uploadMode === 'single'"
     >
@@ -1924,6 +1923,7 @@ watch(
         <n-form-item :label="t('documents.uploadFileLabel')" required>
           <file-drop-zone
             class="documents-upload-modal__file-picker"
+            compact
             :title="t('documents.uploadDropHint')"
             :hint="t('documents.uploadSizeHint', { mb: uploadMaxMb })"
             :file-name="uploadFile?.name || ''"
@@ -1943,7 +1943,7 @@ watch(
           <n-input
             v-model:value="createDesc"
             type="textarea"
-            :autosize="{ minRows: 2, maxRows: 4 }"
+            :autosize="{ minRows: 1, maxRows: 3 }"
             :placeholder="t('documents.uploadDescPlaceholder')"
           />
         </n-form-item>
@@ -1964,7 +1964,7 @@ watch(
               :class="{ 'documents-upload-modal__dropzone--ready': batchUploadFiles.length }"
             >
               <div class="documents-upload-modal__dropzone-inner">
-                <n-icon :size="34" :component="CloudUploadOutline" class="documents-upload-modal__dropzone-icon" />
+                <n-icon :size="28" :component="CloudUploadOutline" class="documents-upload-modal__dropzone-icon" />
                 <span class="documents-upload-modal__dropzone-title">
                   {{
                     batchUploadFiles.length

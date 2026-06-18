@@ -31,6 +31,9 @@ const { t } = useI18n();
 const { user: currentUser } = useAuth();
 const loading = ref(false);
 const users = ref([]);
+const page = ref(1);
+const pageSize = ref(20);
+const total = ref(0);
 const departments = ref([]);
 const roles = ref([]);
 
@@ -197,13 +200,24 @@ async function loadMeta() {
 async function load() {
   loading.value = true;
   try {
-    users.value = await fetchUsers();
+    let data = await fetchUsers({ page: page.value, page_size: pageSize.value });
+    if (!data.items.length && data.total > 0 && page.value > 1) {
+      page.value -= 1;
+      data = await fetchUsers({ page: page.value, page_size: pageSize.value });
+    }
+    users.value = data.items;
+    total.value = data.total;
     clearSelection();
   } catch (e) {
     ui.error(e.message);
   } finally {
     loading.value = false;
   }
+}
+
+function onPageChange(p) {
+  page.value = p;
+  load();
 }
 
 function normalizeDepartmentIds(ids) {
@@ -373,6 +387,12 @@ onMounted(async () => {
       :scroll-x="900"
       :row-key="(row) => row.id"
       :checked-row-keys="checkedRowKeys"
+      :pagination="{
+        page,
+        pageSize,
+        itemCount: total,
+        onUpdatePage: onPageChange,
+      }"
       @update:checked-row-keys="onCheckedRowKeysChange"
     />
   </n-card>

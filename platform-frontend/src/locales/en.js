@@ -1358,7 +1358,7 @@ export default {
         },
         documentsIndexed: {
           label: "Indexed documents",
-          hint: "RAGFlow parse completed; excludes failed or in-progress",
+          hint: "Knowledge base parse completed; excludes failed or in-progress",
         },
         featuresTotal: {
           label: "Total features",
@@ -1445,7 +1445,7 @@ export default {
         },
         knowledge: {
           title: "Knowledge infrastructure",
-          hint: "RAGFlow / KnowFlow backends and MySQL",
+          hint: "Knowledge base API, extension backend and MySQL",
         },
       },
       resources: {
@@ -1463,13 +1463,13 @@ export default {
         tts: { title: "Text-to-speech", hint: "TTS (SiliconFlow / OpenAI-compatible)" },
         pdf2zh: { title: "PDF translation", hint: "pdf2zh document translation API" },
         searxng: { title: "SearXNG web search", hint: "Online search for bookmarks" },
-        ragflow_api: { title: "RAGFlow API", hint: "Knowledge retrieval and document sync HTTP API" },
+        ragflow_api: { title: "Knowledge base API", hint: "Knowledge retrieval and document sync HTTP API" },
         knowflow_backend: {
-          title: "KnowFlow backend",
-          hint: "KnowFlow extension API (RBAC & KB auth); Web UI / iframe optional",
+          title: "Knowledge extension backend",
+          hint: "Extension API (RBAC & KB auth); Web UI / iframe optional",
         },
         ragflow_mysql: {
-          title: "RAGFlow MySQL",
+          title: "Knowledge base MySQL",
           hint: "Knowledge metadata and tenant model configuration DB",
         },
       },
@@ -1488,7 +1488,7 @@ export default {
         noApiKey: "{{model}} (no API key)",
         apiPrefix: "API {{url}}",
         uiPrefix: "UI {{url}}",
-        dockerDefault: "Docker default (knowflow-mysql)",
+        dockerDefault: "Docker default (built-in MySQL)",
         seconds: "{{url}} · {{seconds}}s",
       },
       health: {
@@ -1556,20 +1556,20 @@ export default {
         ragflowApiKey: "Blank/masked to keep; mapped mode may use user session",
         knowflowBackend: "http://127.0.0.1:5001",
         knowflowUi: "http://127.0.0.1:9380",
-        knowflowPublic: "Optional, e.g. http://127.0.0.1:40005/ragflow-ui",
-        knowflowProxy: "Optional, e.g. /ragflow-ui",
-        mysqlHost: "Empty with KnowFlow enabled uses knowflow-mysql",
+        knowflowPublic: "Optional, e.g. http://127.0.0.1:40005/kb-ui",
+        knowflowProxy: "Optional, e.g. /kb-ui",
+        mysqlHost: "Empty with knowledge base enabled uses built-in MySQL",
         mysqlDb: "rag_flow",
-        mysqlContainer: "ragflow-mysql (docker exec fallback if TCP fails)",
+        mysqlContainer: "kb-mysql (docker exec fallback if TCP fails)",
       },
       hints: {
         platformApi:
           "Browser API root (without <code>/api/v1</code>). Same-origin: <code>/ai</code>; cross-origin or remote dev: full URL. Maps to <code>PLATFORM_API_BASE_URL</code> in .env; falls back to <code>API_PUBLIC_PATH_PREFIX</code> (default <code>/ai</code>). Takes effect immediately; refresh if it differs from how you access the page.",
         frontend:
           "With “follow system”, the UI follows OS day/night; after a manual theme change, local preference wins. Maps to <code>FRONTEND_APP_TITLE</code> and <code>FRONTEND_DEFAULT_THEME</code> in .env.",
-        vl: "KnowFlow PDF chart enhancement (IMAGE2TEXT). Saved immediately to RAGFlow; for local models, change API URL and model name only.",
+        vl: "PDF chart enhancement (IMAGE2TEXT). Saved immediately to knowledge base; for local models, change API URL and model name only.",
         paddleocr:
-          "OpenAI-compatible API (<code>/v1</code>) or self-hosted layout-parsing root. Written to KnowFlow <code>settings.yaml</code> on save; for local deploy, change URL and model name.",
+          "OpenAI-compatible API (<code>/v1</code>) or self-hosted layout-parsing root. Written to knowledge service config on save; for local deploy, change URL and model name.",
         speech: "Meeting assistant transcription calls this URL (FunASR speech-api).",
         tts: "Text-to-speech settings, separate from LLM. Use OpenAI-compatible base (with <code>/v1</code>); falls back to LLM config if empty.",
         pdf2zh:
@@ -1577,11 +1577,11 @@ export default {
         searxng:
           "Bookmark web search uses this SearXNG JSON API (<code>/search?format=json</code>). Maps to <code>SEARXNG_URL</code> and <code>SEARXNG_TIMEOUT_SECONDS</code>. Takes effect immediately.",
         ragflowApi:
-          "Maps to <code>RAGFLOW_API_URL</code> and <code>RAGFLOW_API_KEY</code> in .env. Docker service <code>ragflow</code> is mapped to nginx :80.",
+          "Maps to knowledge base API URL and Key in .env. In-stack services are mapped to nginx :80.",
         knowflowBackend:
-          "Maps to <code>KNOWFLOW_BACKEND_URL</code>, <code>KNOWFLOW_UI_URL</code>, <code>KNOWFLOW_UI_PUBLIC_URL</code>, <code>KNOWFLOW_UI_PROXY_PREFIX</code>. API for RBAC/KB auth; Web UI is RAGFlow admin; iframe base for embedded Q&A. Takes effect immediately.",
+          "Maps to extension backend, Web UI, iframe base and proxy prefix settings. API for RBAC/KB auth; Web UI is knowledge admin; iframe base for embedded Q&A. Takes effect immediately.",
         ragflowMysql:
-          "Platform syncs RAGFlow tenant models and cleans conflicting accounts via MySQL. Maps to <code>RAGFLOW_MYSQL_*</code>; use server IP for remote dev.",
+          "Platform syncs tenant models and cleans conflicting accounts via MySQL. Maps to knowledge base MySQL env vars; use server IP for remote dev.",
       },
     },
   },

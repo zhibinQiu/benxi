@@ -45,9 +45,15 @@ export default defineConfig({
           if (id.includes("mermaid")) return "mermaid";
           if (id.includes("pdfjs-dist")) return "pdfjs";
           if (id.includes("mammoth")) return "mammoth";
-          if (id.includes("naive-ui")) return "naive-ui";
+          // naive-ui 经 src/integrations 别名 shim，与 vue 分包会产生循环依赖导致白屏
+          if (
+            id.includes("naive-ui") ||
+            id.includes("vue") ||
+            id.includes("vue-router")
+          ) {
+            return "vue-vendor";
+          }
           if (id.includes("@vicons")) return "vicons";
-          if (id.includes("vue") || id.includes("vue-router")) return "vue-vendor";
           if (id.includes("marked")) return "markdown";
         },
       },

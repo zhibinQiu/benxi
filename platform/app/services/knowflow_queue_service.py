@@ -50,7 +50,7 @@ def collect_knowflow_queue_metrics(db: Session | None = None) -> dict[str, Any]:
 
     _, password, db_name, host, port = get_ragflow_mysql_settings(db)
     if not password or not host:
-        out["error"] = "未配置 RAGFlow MySQL"
+        out["error"] = "未配置知识库 MySQL"
         return out
 
     try:
@@ -147,7 +147,11 @@ def collect_knowflow_queue_metrics(db: Session | None = None) -> dict[str, Any]:
         out["available"] = True
     except Exception as exc:
         logger.debug("KnowFlow 队列指标采集失败: %s", exc)
-        out["error"] = str(exc)[:200]
+        from app.core.user_messages import sanitize_user_message
+
+        out["error"] = sanitize_user_message(
+            str(exc)[:200], fallback="知识库队列指标采集失败"
+        )
         return out
 
     try:

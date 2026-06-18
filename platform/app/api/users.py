@@ -4,8 +4,8 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_permission
@@ -25,7 +25,7 @@ from app.core.user_department import (
 from app.core.user_identity import email_taken, phone_taken, user_display_name, username_taken
 from app.database import get_db
 from app.models.org import Role, User, UserRole
-from app.schemas.common import ApiResponse
+from app.schemas.common import ApiResponse, PageResult
 from app.schemas.org import UserCreate, UserOut, UserUpdate
 from app.services.user_service import delete_user_account
 
@@ -83,13 +83,28 @@ def _user_out(db: Session, user: User) -> UserOut:
     )
 
 
-@router.get("", response_model=ApiResponse[list[UserOut]])
+@router.get("", response_model=ApiResponse[PageResult[UserOut]])
 def list_users(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_permission("admin.user"))],
-) -> ApiResponse[list[UserOut]]:
-    users = db.scalars(select(User).order_by(User.created_at)).all()
-    return ApiResponse(data=[_user_out(db, u) for u in users])
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> ApiResponse[PageResult[UserOut]]:
+    total = db.scalar(select(func.count()).select_from(User)) or 0
+    users = db.scalars(
+        select(User)
+        .order_by(User.created_at)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return ApiResponse(
+        data=PageResult(
+            items=[_user_out(db, u) for u in users],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+    )
 
 
 @router.post("", response_model=ApiResponse[UserOut])

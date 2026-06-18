@@ -22,6 +22,7 @@ import {
   NTag,
   NIcon } from "naive-ui";
 import { fetchAuditLogs, fetchDashboardStats, fetchSystemMetrics } from "../../api/client";
+import { sanitizeUserFacingMessage } from "../../utils/uiMessage.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -68,6 +69,10 @@ const CARD_I18N_KEYS = {
   users_registered: "usersRegistered",
   users_online: "usersOnline",
 };
+
+function formatQueueError(message) {
+  return sanitizeUserFacingMessage(message, "知识库队列指标暂不可用");
+}
 
 function formatBytes(n) {
   if (n == null || Number.isNaN(n)) return "—";
@@ -418,7 +423,7 @@ onUnmounted(() => {
                 </template>
               </n-statistic>
               <div v-if="metrics.knowflow_queue.error" class="metric-hint metric-hint--warn">
-                {{ metrics.knowflow_queue.error }}
+                {{ formatQueueError(metrics.knowflow_queue.error) }}
               </div>
             </n-gi>
           </n-grid>

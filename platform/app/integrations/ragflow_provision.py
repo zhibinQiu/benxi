@@ -50,7 +50,7 @@ def _register_user(email: str, nickname: str, password: str) -> str | None:
             return None
         if "registration is disabled" in lower or "注册" in lower and "禁用" in lower:
             raise RagflowProvisionError(
-                "RAGFlow 未开放用户注册，请在服务配置中启用 REGISTER_ENABLED"
+                "知识库未开放用户注册，请在服务配置中启用 REGISTER_ENABLED"
             )
         raise RagflowProvisionError(msg)
     return None
@@ -301,7 +301,7 @@ def provision_and_login(link: RagflowAccountLink, user: User, db=None) -> str:
                 raise
 
     if not authorization:
-        raise RagflowProvisionError("无法完成 RAGFlow 登录")
+        raise RagflowProvisionError("无法完成知识库登录")
     finalize_ragflow_link(link, authorization, user, db=db)
     return authorization
 

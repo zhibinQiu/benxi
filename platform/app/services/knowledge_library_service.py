@@ -869,7 +869,12 @@ def _apply_row_ragflow_meta(row: dict, item: dict | None, *, fetch_ok: bool) -> 
         except (TypeError, ValueError):
             row["parse_progress"] = None
     if msg and str(msg).strip():
-        row["parse_message"] = summarize_ragflow_progress_msg(msg) or str(msg).strip()[:500]
+        from app.core.user_messages import sanitize_user_message
+
+        raw_msg = summarize_ragflow_progress_msg(msg) or str(msg).strip()[:500]
+        row["parse_message"] = sanitize_user_message(
+            raw_msg, fallback="解析失败，请稍后重试或联系管理员。"
+        )
 
 
 def _rag_clients_for_chunks(

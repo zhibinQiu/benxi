@@ -7,7 +7,7 @@ import uuid
 
 def test_delete_user_via_api(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    users = client.get("/api/v1/users", headers=headers).json()["data"]
+    users = client.get("/api/v1/users", headers=headers).json()["data"]["items"]
     template = next(
         (u for u in users if u.get("phone") == "admin"),
         users[0],
@@ -34,5 +34,5 @@ def test_delete_user_via_api(client, admin_token):
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["data"]["deleted"] is True
 
-    again = client.get("/api/v1/users", headers=headers).json()["data"]
+    again = client.get("/api/v1/users", headers=headers).json()["data"]["items"]
     assert not any(u["id"] == user_id for u in again)

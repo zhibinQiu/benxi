@@ -1,5 +1,4 @@
-import { ref, onUnmounted, h } from "vue";
-import { NTooltip } from "naive-ui";
+import { ref, onUnmounted } from "vue";
 import { usePlatformUi } from "./usePlatformUi";
 import { fetchParserOptions, reindexDocument } from "../api/knowledge.js";
 import { fetchDocument } from "../api/documents.js";
@@ -32,23 +31,25 @@ function mapSelectOptions(items = [], { pageindexReady = true } = {}) {
   }));
 }
 
+export const reindexSelectMenuProps = {
+  class: "platform-select-in-modal",
+  style: { maxHeight: "280px" },
+};
+/** 弹窗靠下时默认向下展开会超出视口，统一向上弹出 */
+export const reindexSelectPlacement = "top-start";
+
 export function renderIndexedSelectLabel(option) {
   return option?.label ?? "";
 }
 
-export function renderIndexedSelectOption({ node, option }) {
-  if (!option?.hint) return node;
-  return h(
-    NTooltip,
-    { placement: "right", delay: 200, keepAliveOnHover: true },
-    {
-      trigger: () => node,
-      default: () => option.hint,
-    }
-  );
+/** 选项悬浮时用原生 title 展示说明，避免在下拉列表中占行 */
+export function reindexSelectNodeProps(option) {
+  const hint = option?.hint?.trim?.() ?? String(option?.hint || "").trim();
+  if (!hint) return {};
+  return { title: hint };
 }
 
-/** 文档版本重新索引：切换解析器；可选从存储重新上传以修复引用截图 */
+/** 文档版本重新索引：切换解析器；默认从存储重新上传以修复引用截图 */
 export function useDocumentReindex(documentId, onUpdated) {
   const ui = usePlatformUi();
 
@@ -56,7 +57,6 @@ export function useDocumentReindex(documentId, onUpdated) {
   const reindexTargetVersion = ref(null);
   const parserId = ref("");
   const layoutRecognize = ref("PaddleOCR");
-  const reindexResync = ref(true);
   const chunkMethodOptions = ref([]);
   const layoutOptions = ref([]);
   const pageindexBlockReason = ref("");
@@ -286,7 +286,7 @@ export function useDocumentReindex(documentId, onUpdated) {
         versionId: version.id,
         parserId: parserId.value,
         layoutRecognize: layoutRecognize.value,
-        resync: reindexResync.value,
+        resync: true,
       });
       ui.success(res?.message || "已提交重新索引");
       reindexModalShow.value = false;
@@ -315,13 +315,14 @@ export function useDocumentReindex(documentId, onUpdated) {
     chunkMethodOptions,
     layoutOptions,
     pageindexBlockReason,
-    reindexResync,
     reparsing,
     indexPolling,
     loadParserOptions,
     openReindexModal,
     submitReindex,
+    reindexSelectMenuProps,
+    reindexSelectPlacement,
     renderIndexedSelectLabel,
-    renderIndexedSelectOption,
+    reindexSelectNodeProps,
   };
 }

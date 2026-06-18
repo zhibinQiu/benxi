@@ -93,7 +93,7 @@ def test_resume_waits_when_parse_running():
     reparse.assert_not_called()
 
 
-def test_resume_retriggers_parse_on_failure():
+def test_resume_does_not_retrigger_parse_on_failure():
     db = MagicMock()
     user = MagicMock()
     doc = MagicMock()
@@ -118,10 +118,7 @@ def test_resume_retriggers_parse_on_failure():
         "app.services.knowledge_sync_job_service._parse_run_status",
         return_value=("解析失败", 0, -1, "timeout"),
     ), patch(
-        "app.services.ragflow_sync_service._sync_context_for_document",
-        return_value=(user, MagicMock()),
-    ), patch(
-        "app.services.ragflow_sync_service._configure_and_parse_uploaded_document",
+        "app.services.knowledge_sync_job_service._retrigger_ragflow_parse",
     ) as reparse:
         out = try_resume_incomplete_knowledge_index(
             db, user, doc, version_id=version_id
@@ -129,4 +126,4 @@ def test_resume_retriggers_parse_on_failure():
 
     assert out is not None
     assert out.already_completed is False
-    reparse.assert_called_once()
+    reparse.assert_not_called()

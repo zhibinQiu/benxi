@@ -27,10 +27,10 @@ def test_kb_folder_display_order(client, admin_token):
     assert r.status_code == 200, r.text
     items = r.json()["data"]["items"]
     kinds = [i["kind"] for i in items]
-    assert kinds[:2] == ["uncategorized", "shared"]
+    assert kinds[:3] == ["uncategorized", "shared", "web_favorites"]
     assert "normal" in kinds
     created = next(i for i in items if i.get("name") == folder_name)
-    assert items.index(created) >= 2
+    assert items.index(created) >= 3
 
 
 def test_can_manage_personal_folders(client, admin_token):
@@ -46,6 +46,37 @@ def test_can_manage_personal_folders(client, admin_token):
     kinds = {i["kind"] for i in data["items"]}
     assert "uncategorized" in kinds
     assert "shared" in kinds
+    assert "web_favorites" in kinds
+
+
+def test_web_favorites_folder_is_system_and_reserved(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = client.get(
+        "/api/v1/documents/kb-folders",
+        params={"scope": "personal"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    folder = next(
+        i for i in r.json()["data"]["items"] if i["kind"] == "web_favorites"
+    )
+    assert folder["name"] == "网页收藏"
+    assert folder["is_system"] is True
+    assert folder["can_manage"] is False
+    assert folder["id"] is not None
+
+    create = client.post(
+        "/api/v1/documents/kb-folders",
+        json={"name": "网页收藏", "scope": "personal"},
+        headers=headers,
+    )
+    assert create.status_code == 400, create.text
+
+    delete = client.delete(
+        f"/api/v1/documents/kb-folders/{folder['id']}",
+        headers=headers,
+    )
+    assert delete.status_code == 403, delete.text
 
 
 def test_update_folder_name_and_description(client, admin_token):
@@ -118,9 +149,9 @@ def test_create_document_in_folder(client, admin_token):
     )
     assert doc.status_code == 200, doc.text
     doc_id = doc.json()["data"]["id"]
-    from tests.test_document_versions import _upload_dummy_pdf
+    from test_support.document_upload import upload_dummy_pdf
 
-    _upload_dummy_pdf(client, doc_id, headers)
+    upload_dummy_pdf(client, doc_id, headers)
 
     listed = client.get(
         "/api/v1/documents",
@@ -160,9 +191,9 @@ def test_move_document_between_folders(client, admin_token):
     )
     assert doc.status_code == 200, doc.text
     doc_id = doc.json()["data"]["id"]
-    from tests.test_document_versions import _upload_dummy_pdf
+    from test_support.document_upload import upload_dummy_pdf
 
-    _upload_dummy_pdf(client, doc_id, headers)
+    upload_dummy_pdf(client, doc_id, headers)
 
     moved = client.post(
         f"/api/v1/documents/{doc_id}/move",
@@ -187,7 +218,7 @@ def test_move_document_between_folders(client, admin_token):
 
 def test_list_personal_folder_includes_can_delete(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    from tests.test_document_versions import _upload_dummy_pdf
+    from test_support.document_upload import upload_dummy_pdf
 
     doc = client.post(
         "/api/v1/documents",
@@ -196,7 +227,7 @@ def test_list_personal_folder_includes_can_delete(client, admin_token):
     )
     assert doc.status_code == 200, doc.text
     doc_id = doc.json()["data"]["id"]
-    _upload_dummy_pdf(client, doc_id, headers)
+    upload_dummy_pdf(client, doc_id, headers)
 
     listed = client.get(
         "/api/v1/documents",
@@ -211,7 +242,7 @@ def test_list_personal_folder_includes_can_delete(client, admin_token):
 
 def test_delete_active_document_purges(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    from tests.test_document_versions import _upload_dummy_pdf
+    from test_support.document_upload import upload_dummy_pdf
 
     r = client.post(
         "/api/v1/documents",
@@ -219,7 +250,7 @@ def test_delete_active_document_purges(client, admin_token):
         json={"title": "待删除文档", "scope": "personal"},
     )
     doc_id = r.json()["data"]["id"]
-    _upload_dummy_pdf(client, doc_id, headers)
+    upload_dummy_pdf(client, doc_id, headers)
 
     dr = client.delete(f"/api/v1/documents/{doc_id}/permanent", headers=headers)
     assert dr.status_code == 200, dr.text

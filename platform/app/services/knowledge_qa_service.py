@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.permissions import PermissionLevel
+from app.core.platform_assistant import assistant_knowledge_qa_persona
 from app.domains.knowledge import knowledge
 from app.integrations.deepseek_client import chat_completion_stream
 from app.integrations.ragflow_client import RagflowClient, RagflowError
@@ -33,9 +34,10 @@ from app.services.ragflow_version_link_service import (
 logger = logging.getLogger(__name__)
 
 _KNOWLEDGE_QA_SYSTEM = (
-    "你是企业知识库问答助手。仅根据用户提供的编号检索片段回答问题。\n"
+    f"{assistant_knowledge_qa_persona()}。仅根据用户提供的编号检索片段回答问题。\n"
     "要求：\n"
     "- 使用简体中文，条理清晰，可使用 Markdown 列表\n"
+    "- 自我介绍或提及助手时统一使用名称「小析」\n"
     "- **信息优先级**：检索片段为唯一事实依据；若与模型自身常识冲突，**以片段为准**，不得用常识覆盖或修正片段表述\n"
     "- 引用规则：结论或要点句末标注 [1]、[2]；编号必须与下方片段 [n] **严格一一对应**，不得张冠李戴\n"
     "- 每个 [n] 只能标注确实来自该编号片段的内容；不确定时不要标注\n"
@@ -49,7 +51,7 @@ _KNOWLEDGE_QA_SYSTEM = (
 )
 
 _KG_QA_SYSTEM_APPENDIX = (
-    "\n\n补充说明：部分编号片段来自【知识图谱实体与关系】，描述实体之间的结构化关联；"
+    "\n\n补充说明：部分编号片段来自【本体图谱实体与关系】，描述实体之间的结构化关联；"
     "图谱事实与文档检索片段同等可作为依据，引用时同样使用 [n]。"
 )
 
@@ -1419,7 +1421,7 @@ async def iter_knowledge_qa_stream(
             {
                 "workflow": {
                     "phase": "node_started",
-                    "title": "正在解析知识图谱关联",
+                    "title": "正在解析本体图谱关联",
                 }
             },
             ensure_ascii=False,

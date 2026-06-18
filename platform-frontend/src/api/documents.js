@@ -12,6 +12,13 @@ export async function fetchDocumentLibrary() {
   return api("/api/v1/documents/library");
 }
 
+export async function fetchDocumentOverview({ scope, dept_id, owner_id } = {}) {
+  const q = new URLSearchParams({ scope });
+  if (dept_id) q.set("dept_id", dept_id);
+  if (owner_id) q.set("owner_id", owner_id);
+  return api(`/api/v1/documents/overview?${q}`);
+}
+
 export async function fetchDocuments({
   page = 1,
   page_size = 20,
@@ -178,6 +185,15 @@ export async function fetchDocumentFileBlob(documentId, versionId = null) {
   return res.blob();
 }
 
+/** 浏览器内嵌预览 URL（iframe/embed；鉴权走 query token + inline disposition） */
+export function buildDocumentFilePreviewUrl(documentId, versionId = null) {
+  const params = new URLSearchParams({ disposition: "inline" });
+  if (versionId) params.set("version_id", String(versionId));
+  const token = getToken();
+  if (token) params.set("token", token);
+  return `${getApiBase()}/api/v1/documents/${documentId}/file?${params}`;
+}
+
 export async function deleteDocument(documentId) {
   return api(`/api/v1/documents/${documentId}`, { method: "DELETE" });
 }
@@ -239,9 +255,6 @@ export async function fetchDocumentAclCandidates(documentId) {
 export async function fetchDocumentShares(documentId) {
   return api(`/api/v1/documents/${documentId}/permissions`);
 }
-
-/** @deprecated 使用 fetchDocumentShares */
-export const fetchDocumentPermissions = fetchDocumentShares;
 
 export async function grantDocumentShares(documentId, { userIds, level }) {
   return api(`/api/v1/documents/${documentId}/permissions/batch`, {

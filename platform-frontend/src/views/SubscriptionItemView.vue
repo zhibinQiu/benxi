@@ -1,21 +1,24 @@
 <script setup>
+import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { useSubscriptionImportFlow } from "../composables/useSubscriptionImportFlow.js";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { NButton, NSpace, NSpin, NTag, NText } from "naive-ui";
+import { NButton, NEmpty, NSpace, NSpin, NTag, NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   DOCUMENT_SCOPE_PERSONAL,
   deleteSubscriptionItem,
   fetchSubscriptionItem,
-  importSubscriptionItem } from "../api/client";
+  importSubscriptionItem,
+} from "../api/client";
 import { resolveArticleBody } from "../utils/articleContent";
 import { goBackToEntry } from "../utils/navigationReturn";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t, locale } = useI18n();
 
 const loading = ref(true);
 const deleting = ref(false);
@@ -37,10 +40,12 @@ const showImportedActions = computed(
   () => Boolean(item.value?.imported || resolvedDocumentId.value)
 );
 
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
+
 function fmtTime(iso) {
-  if (!iso) return "—";
+  if (!iso) return t("carbonTrading.emDash");
   try {
-    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+    return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
     return iso;
   }
@@ -81,8 +86,11 @@ async function onDelete() {
   deleting.value = true;
   try {
     await deleteSubscriptionItem(route.params.ref);
-    ui.success("已删除");
-    goBackToEntry(router, route, { name: "knowledge-subscriptions" });
+    ui.success(t("subscriptionItem.deleted"));
+    router.push({
+      name: "knowledge-subscriptions",
+      query: { refresh: String(Date.now()) },
+    });
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -91,6 +99,13 @@ async function onDelete() {
 }
 
 onMounted(load);
+
+watch(
+  () => route.params.ref,
+  (ref, prev) => {
+    if (ref && ref !== prev) load();
+  }
+);
 </script>
 
 <template>
@@ -100,15 +115,21 @@ onMounted(load);
         <div v-if="item" class="detail-layout">
           <div class="detail-panel">
             <header class="detail-header">
-              <span v-if="item.is_wechat" class="wechat-badge" title="微信公众号">公众号</span>
+              <span v-if="item.is_wechat" class="wechat-badge" :title="t('subscriptionItem.wechatTitle')">
+                {{ t("subscriptionItem.wechatBadge") }}
+              </span>
               <h1 class="article-title">{{ item.title }}</h1>
               <NText depth="3" class="article-meta">
-                收录于 {{ fmtTime(item.created_at || item.publish_at) }}
+                {{
+                  t("subscriptionItem.collectedAt", {
+                    time: fmtTime(item.created_at || item.publish_at),
+                  })
+                }}
                 <template v-if="item.author"> · {{ item.author }}</template>
               </NText>
               <NSpace class="detail-actions" align="center">
                 <NTag v-if="showImportedActions" type="success" :bordered="false">
-                  {{ indexing ? "索引中" : "已入文档库" }}
+                  {{ indexing ? t("subscriptionItem.indexing") : t("subscriptionItem.imported") }}
                 </NTag>
                 <NButton
                   v-if="!showImportedActions"
@@ -116,7 +137,7 @@ onMounted(load);
                   :loading="importing"
                   @click="onImport"
                 >
-                  导入文档库
+                  {{ t("subscriptionItem.importDoc") }}
                 </NButton>
                 <NButton
                   v-if="showImportedActions && resolvedDocumentId"
@@ -124,7 +145,11 @@ onMounted(load);
                   :loading="indexing"
                   @click="openDocument(resolvedDocumentId)"
                 >
-                  {{ indexing ? "查看文档（索引中）" : "查看文档" }}
+                  {{
+                    indexing
+                      ? t("subscriptionItem.viewDocIndexing")
+                      : t("subscriptionItem.viewDoc")
+                  }}
                 </NButton>
                 <NButton
                   v-if="showImportedActions"
@@ -132,14 +157,15 @@ onMounted(load);
                   @click="
                     router.push({
                       name: 'documents',
-                      query: { scope: DOCUMENT_SCOPE_PERSONAL }})
+                      query: { scope: DOCUMENT_SCOPE_PERSONAL },
+                    })
                   "
                 >
-                  打开「个人级」文档库
+                  {{ t("subscriptionItem.openPersonalDocs") }}
                 </NButton>
-                <NButton @click="openOriginal">查看原文</NButton>
+                <NButton @click="openOriginal">{{ t("subscriptionItem.viewOriginal") }}</NButton>
                 <NButton type="error" secondary :loading="deleting" @click="onDelete">
-                  删除
+                  {{ t("subscriptionItem.delete") }}
                 </NButton>
               </NSpace>
             </header>
@@ -150,10 +176,11 @@ onMounted(load);
                 class="article-content article-html"
                 v-html="articleBody.body"
               />
-              <NText v-else depth="3">暂无正文，请查看原文链接</NText>
+              <NText v-else depth="3">{{ t("subscriptionItem.emptyBody") }}</NText>
             </div>
           </div>
         </div>
+        <NEmpty v-else-if="!loading" :description="t('subscriptionItem.notFound')" />
       </NSpin>
     </div>
   </FeatureSubsystemShell>
@@ -163,43 +190,34 @@ onMounted(load);
 .subscription-detail-page {
   flex: 1;
   min-height: 0;
-  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .detail-spin {
   flex: 1;
   min-height: 0;
-  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .detail-spin :deep(.n-spin-container),
 .detail-spin :deep(.n-spin-content) {
   flex: 1;
   min-height: 0;
-  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .detail-layout {
   flex: 1;
   min-height: 0;
-  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .detail-panel {
-  flex: 1 1 0;
-  height: 0;
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -219,8 +237,7 @@ onMounted(load);
 }
 
 .detail-body-scroll {
-  flex: 1 1 0;
-  height: 0;
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;

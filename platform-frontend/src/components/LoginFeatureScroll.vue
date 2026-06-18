@@ -86,6 +86,7 @@ const glowColors = {
 };
 
 const sectionEls = ref([]);
+const ontologyEl = ref(null);
 const summaryEl = ref(null);
 
 const allCards = computed(() => {
@@ -93,18 +94,45 @@ const allCards = computed(() => {
   return Array.isArray(list) ? list : [];
 });
 
-/** 登录页展示 curated 核心功能（排除智能问数） */
+const FEATURES_PER_SECTION = 4;
+const MAX_SHOWCASE_FEATURES = 12;
+
+/** 登录页展示 curated 核心功能（排除智能问数），每屏 4 项、共 3 屏 */
 const cards = computed(() =>
-  allCards.value.filter((card) => card.featureId !== "smart_data_query")
+  allCards.value
+    .filter((card) => card.featureId !== "smart_data_query")
+    .slice(0, MAX_SHOWCASE_FEATURES)
 );
 
+const featureSections = computed(() => {
+  const list = cards.value;
+  const sections = [];
+  for (let i = 0; i < list.length; i += FEATURES_PER_SECTION) {
+    sections.push(list.slice(i, i + FEATURES_PER_SECTION));
+  }
+  return sections;
+});
+
+function sectionRailLabel(section) {
+  return section.map((card) => card.title).join(" · ");
+}
+
+function globalCardIndex(pageIndex, cardIndex) {
+  return pageIndex * FEATURES_PER_SECTION + cardIndex;
+}
+
+const ontology = computed(() => messages[locale.value]?.login?.showcaseOntology || null);
+
 const summary = computed(() => messages[locale.value]?.login?.showcaseSummary || null);
+
+const SUMMARY_COMPARE_KEYS = ["dify", "coze", "fastgpt", "openclaw", "ours"];
 
 const compareLabel = computed(
   () => messages[locale.value]?.login?.showcaseCompareLabel || "Why us"
 );
 
 const activeIndex = ref(-1);
+const ontologyActive = ref(false);
 const summaryActive = ref(false);
 let revealObserver = null;
 let activeObserver = null;
@@ -116,10 +144,40 @@ function scrollToSection(index) {
   }
 }
 
+function scrollToOntology() {
+  if (ontologyEl.value) {
+    ontologyEl.value.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
 function scrollToSummary() {
   if (summaryEl.value) {
-    summaryEl.value.scrollIntoView({ behavior: "smooth", block: "center" });
+    summaryEl.value.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+}
+
+function resolveScrollRoot() {
+  return document.querySelector(".login-page");
+}
+
+function isTailSectionVisible() {
+  const el = summaryEl.value;
+  if (!el) return false;
+  const root = resolveScrollRoot();
+  const rootRect = root?.getBoundingClientRect() ?? {
+    top: 0,
+    bottom: window.innerHeight,
+  };
+  const rect = el.getBoundingClientRect();
+  return rect.top < rootRect.bottom - 24 && rect.bottom > rootRect.top + 24;
+}
+
+function isOntologySection(el) {
+  return el?.classList?.contains("login-feature-scroll__ontology");
+}
+
+function isSummarySection(el) {
+  return el?.classList?.contains("login-feature-scroll__summary");
 }
 
 function resolveIcon(key) {
@@ -143,43 +201,72 @@ function bindObservers() {
   activeObserver?.disconnect();
 
   const sections = sectionEls.value.filter(Boolean);
-  if (!sections.length && !summaryEl.value) return;
+  if (!sections.length && !ontologyEl.value && !summaryEl.value) return;
+
+  const scrollRoot = resolveScrollRoot();
+  const observerOptions = scrollRoot ? { root: scrollRoot } : {};
 
   revealObserver = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
-          entry.target.classList.add(
-            entry.target.classList.contains("login-feature-scroll__summary")
-              ? "login-feature-scroll__summary--visible"
-              : "login-feature-scroll__section--visible"
-          );
+          if (isOntologySection(entry.target)) {
+            entry.target.classList.add("login-feature-scroll__ontology--visible");
+          } else if (isSummarySection(entry.target)) {
+            entry.target.classList.add("login-feature-scroll__summary--visible");
+          } else {
+            entry.target.classList.add("login-feature-scroll__section--visible");
+          }
         }
       });
     },
-    { threshold: 0.22, rootMargin: "0px 0px -8% 0px" }
+    { threshold: 0.08, rootMargin: "0px 0px -4% 0px", ...observerOptions }
   );
 
   activeObserver = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
-        if (!entry.isIntersecting) return;
-        if (entry.target.classList.contains("login-feature-scroll__summary")) {
-          summaryActive.value = true;
+        if (isOntologySection(entry.target)) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.03) {
+            ontologyActive.value = true;
+            summaryActive.value = false;
+          } else if (!entry.isIntersecting) {
+            ontologyActive.value = false;
+          }
           return;
         }
+        if (isSummarySection(entry.target)) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.03) {
+            summaryActive.value = true;
+            ontologyActive.value = false;
+          } else if (!entry.isIntersecting) {
+            summaryActive.value = false;
+          }
+          return;
+        }
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.35) return;
+        if (isTailSectionVisible()) return;
+        ontologyActive.value = false;
         summaryActive.value = false;
         const idx = Number(entry.target.dataset.index);
         if (!Number.isNaN(idx)) activeIndex.value = idx;
       });
     },
-    { threshold: 0.52, rootMargin: "-18% 0px -18% 0px" }
+    {
+      threshold: [0, 0.03, 0.1, 0.25, 0.35, 0.52],
+      rootMargin: "-12% 0px -12% 0px",
+      ...observerOptions,
+    }
   );
 
   sections.forEach((el) => {
     revealObserver.observe(el);
     activeObserver.observe(el);
   });
+  if (ontologyEl.value) {
+    revealObserver.observe(ontologyEl.value);
+    activeObserver.observe(ontologyEl.value);
+  }
   if (summaryEl.value) {
     revealObserver.observe(summaryEl.value);
     activeObserver.observe(summaryEl.value);
@@ -196,31 +283,42 @@ onUnmounted(() => {
 watch(locale, () => {
   sectionEls.value = [];
   activeIndex.value = -1;
+  ontologyActive.value = false;
   summaryActive.value = false;
   nextTick(bindObservers);
 });
 
-watch(cards, () => {
+watch(featureSections, () => {
   sectionEls.value = [];
   activeIndex.value = -1;
+  ontologyActive.value = false;
   summaryActive.value = false;
   nextTick(bindObservers);
 });
 
-watch(summaryEl, () => nextTick(bindObservers));
+watch([ontologyEl, summaryEl], () => nextTick(bindObservers));
 </script>
 
 <template>
   <div v-if="cards.length" class="login-feature-scroll">
     <nav class="login-feature-scroll__rail" aria-label="Feature sections">
       <button
-        v-for="(card, index) in cards"
-        :key="`rail-${card.featureId}`"
+        v-if="ontology"
+        type="button"
+        class="login-feature-scroll__rail-dot login-feature-scroll__rail-dot--ontology"
+        :class="{ 'login-feature-scroll__rail-dot--active': ontologyActive }"
+        :aria-label="ontology.title"
+        :aria-current="ontologyActive ? 'true' : undefined"
+        @click="scrollToOntology"
+      />
+      <button
+        v-for="(section, index) in featureSections"
+        :key="`rail-${section.map((card) => card.featureId).join('-')}`"
         type="button"
         class="login-feature-scroll__rail-dot"
-        :class="{ 'login-feature-scroll__rail-dot--active': !summaryActive && activeIndex === index }"
-        :aria-label="card.title"
-        :aria-current="!summaryActive && activeIndex === index ? 'true' : undefined"
+        :class="{ 'login-feature-scroll__rail-dot--active': !ontologyActive && !summaryActive && activeIndex === index }"
+        :aria-label="sectionRailLabel(section)"
+        :aria-current="!ontologyActive && !summaryActive && activeIndex === index ? 'true' : undefined"
         @click="scrollToSection(index)"
       />
       <button
@@ -239,64 +337,88 @@ watch(summaryEl, () => nextTick(bindObservers));
         <template v-if="summaryActive && summary">
           {{ compareLabel }}
         </template>
+        <template v-else-if="ontologyActive && ontology">
+          {{ ontology.label }}
+        </template>
         <template v-else>
           {{ String((activeIndex >= 0 ? activeIndex : 0) + 1).padStart(2, "0") }}
           <span>/</span>
-          {{ String(cards.length).padStart(2, "0") }}
+          {{ String(featureSections.length).padStart(2, "0") }}
         </template>
       </p>
     </div>
 
     <section
-      v-for="(card, index) in cards"
-      :key="`${card.featureId}-${index}`"
-      :ref="(el) => setSectionRef(el, index)"
+      v-if="ontology"
+      ref="ontologyEl"
+      class="login-feature-scroll__ontology login-snap-section"
+      :class="{ 'login-feature-scroll__ontology--active': ontologyActive }"
+    >
+      <div class="login-feature-scroll__ontology-copy">
+        <p class="login-feature-scroll__ontology-label">{{ ontology.label }}</p>
+        <h2 class="login-feature-scroll__ontology-title">{{ ontology.title }}</h2>
+        <p class="login-feature-scroll__ontology-body">{{ ontology.body }}</p>
+      </div>
+    </section>
+
+    <section
+      v-for="(section, pageIndex) in featureSections"
+      :key="`page-${section.map((card) => card.featureId).join('-')}`"
+      :ref="(el) => setSectionRef(el, pageIndex)"
       class="login-feature-scroll__section login-snap-section"
       :class="{
-        'login-feature-scroll__section--past': activeIndex > index && !summaryActive,
-        'login-feature-scroll__section--future': activeIndex < index && !summaryActive,
-        'login-feature-scroll__section--active': activeIndex === index && !summaryActive,
+        'login-feature-scroll__section--past': activeIndex > pageIndex && !ontologyActive && !summaryActive,
+        'login-feature-scroll__section--future': activeIndex < pageIndex && !ontologyActive && !summaryActive,
+        'login-feature-scroll__section--active': activeIndex === pageIndex && !ontologyActive && !summaryActive,
       }"
-      :data-index="index"
-      :style="{ '--section-glow': resolveGlow(card.icon) }"
+      :data-index="pageIndex"
+      :style="{
+        '--section-glow': resolveGlow(section[0]?.icon),
+        '--section-glow-alt': resolveGlow(section[1]?.icon || section[0]?.icon),
+      }"
     >
       <div class="login-feature-scroll__section-bg" aria-hidden="true" />
       <div class="login-feature-scroll__section-sweep" aria-hidden="true" />
-      <div class="login-feature-scroll__section-layout">
-        <div class="login-feature-scroll__section-main">
-          <span class="login-feature-scroll__index">
-            {{ String(index + 1).padStart(2, "0") }}
-          </span>
-          <div class="login-feature-scroll__visual">
-            <span
-              class="login-feature-scroll__icon-ring"
-              :style="{ background: resolveIconStyle(card.icon) }"
-            />
-            <span
-              class="login-feature-scroll__icon"
-              :style="{ background: resolveIconStyle(card.icon) }"
+      <div class="login-feature-scroll__page-layout">
+        <div class="login-feature-scroll__page-glass">
+          <div class="login-feature-scroll__features-grid">
+            <article
+              v-for="(card, cardIndex) in section"
+              :key="`${card.featureId}-${cardIndex}`"
+              class="login-feature-scroll__feature-card"
+              :style="{ '--feature-accent': resolveIconStyle(card.icon) }"
             >
-              <n-icon :size="36" :component="resolveIcon(card.icon)" />
-            </span>
-          </div>
-          <h2 class="login-feature-scroll__title">{{ card.title }}</h2>
-          <p class="login-feature-scroll__desc">{{ card.desc }}</p>
-        </div>
+              <header class="login-feature-scroll__feature-head">
+                <span class="login-feature-scroll__index">
+                  {{ String(globalCardIndex(pageIndex, cardIndex) + 1).padStart(2, "0") }}
+                </span>
+                <span
+                  class="login-feature-scroll__icon"
+                  :style="{ background: resolveIconStyle(card.icon) }"
+                >
+                  <n-icon :size="20" :component="resolveIcon(card.icon)" />
+                </span>
+                <div class="login-feature-scroll__feature-intro">
+                  <h2 class="login-feature-scroll__title">{{ card.title }}</h2>
+                  <p class="login-feature-scroll__desc">{{ card.desc }}</p>
+                </div>
+              </header>
 
-        <aside
-          v-if="card.pitch || card.value || card.bullets?.length"
-          class="login-feature-scroll__pitch"
-          :style="{ '--pitch-accent': resolveIconStyle(card.icon) }"
-        >
-          <p v-if="card.pitch" class="login-feature-scroll__pitch-hook">{{ card.pitch }}</p>
-          <p v-if="card.value" class="login-feature-scroll__pitch-value">{{ card.value }}</p>
-          <ul v-if="card.bullets?.length" class="login-feature-scroll__pitch-bullets">
-            <li v-for="(bullet, bi) in card.bullets" :key="bi">
-              <n-icon :size="15" :component="CheckmarkCircleOutline" class="login-feature-scroll__pitch-check" />
-              <span>{{ bullet }}</span>
-            </li>
-          </ul>
-        </aside>
+              <div
+                v-if="card.pitch || card.bullets?.length"
+                class="login-feature-scroll__pitch"
+              >
+                <p v-if="card.pitch" class="login-feature-scroll__pitch-hook">{{ card.pitch }}</p>
+                <ul v-if="card.bullets?.length" class="login-feature-scroll__pitch-bullets">
+                  <li v-for="(bullet, bi) in card.bullets.slice(0, 2)" :key="bi">
+                    <n-icon :size="13" :component="CheckmarkCircleOutline" class="login-feature-scroll__pitch-check" />
+                    <span>{{ bullet }}</span>
+                  </li>
+                </ul>
+              </div>
+            </article>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -311,21 +433,42 @@ watch(summaryEl, () => nextTick(bindObservers));
         <h2 class="login-feature-scroll__summary-title">{{ summary.title }}</h2>
         <p class="login-feature-scroll__summary-subtitle">{{ summary.subtitle }}</p>
 
-        <div class="login-feature-scroll__compare-table">
-          <div class="login-feature-scroll__compare-row login-feature-scroll__compare-row--head">
-            <span>{{ summary.columns?.aspect }}</span>
-            <span>{{ summary.columns?.others }}</span>
-            <span>{{ summary.columns?.ours }}</span>
-          </div>
-          <div
-            v-for="(row, ri) in summary.rows"
-            :key="ri"
-            class="login-feature-scroll__compare-row"
-          >
-            <span class="login-feature-scroll__compare-aspect">{{ row.aspect }}</span>
-            <span class="login-feature-scroll__compare-others">{{ row.others }}</span>
-            <span class="login-feature-scroll__compare-ours">{{ row.ours }}</span>
-          </div>
+        <div class="login-feature-scroll__compare-wrap">
+          <table class="login-feature-scroll__compare-table">
+            <thead>
+              <tr>
+                <th scope="col" class="login-feature-scroll__compare-feature-col">
+                  {{ summary.columns?.feature }}
+                </th>
+                <th
+                  v-for="key in SUMMARY_COMPARE_KEYS"
+                  :key="key"
+                  scope="col"
+                  :class="{ 'login-feature-scroll__compare-ours-col': key === 'ours' }"
+                >
+                  {{ summary.columns?.[key] }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, ri) in summary.rows" :key="ri">
+                <th scope="row" class="login-feature-scroll__compare-feature">{{ row.feature }}</th>
+                <td
+                  v-for="key in SUMMARY_COMPARE_KEYS"
+                  :key="key"
+                  :class="{ 'login-feature-scroll__compare-ours-col': key === 'ours' }"
+                >
+                  <n-icon
+                    v-if="row[key]"
+                    :size="18"
+                    :component="CheckmarkCircleOutline"
+                    class="login-feature-scroll__compare-yes"
+                  />
+                  <span v-else class="login-feature-scroll__compare-no">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <p v-if="summary.closing" class="login-feature-scroll__summary-closing">
@@ -339,6 +482,7 @@ watch(summaryEl, () => nextTick(bindObservers));
 <style scoped>
 .login-feature-scroll {
   position: relative;
+  z-index: 1;
   width: 100%;
   margin: 0;
   padding: 0;
@@ -383,10 +527,14 @@ html[data-theme="dark"] .login-feature-scroll__rail {
     box-shadow 0.35s ease;
 }
 
+.login-feature-scroll__rail-dot--ontology {
+  width: 6px;
+  height: 6px;
+}
+
 .login-feature-scroll__rail-dot--summary {
   width: 6px;
   height: 6px;
-  margin-top: 4px;
 }
 
 .login-feature-scroll__rail-dot--active {
@@ -407,9 +555,9 @@ html[data-theme="dark"] .login-feature-scroll__rail {
 .login-feature-scroll__head {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   margin: 0 0 8px;
-  padding: 0 max(48px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px));
+  padding: 0 max(56px, env(safe-area-inset-right, 0px)) 0 max(56px, env(safe-area-inset-left, 0px));
 }
 
 .login-feature-scroll__hint {
@@ -448,11 +596,12 @@ html[data-theme="dark"] .login-feature-scroll__rail {
   min-height: calc(100dvh - 36px);
   display: flex;
   align-items: center;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
+  justify-content: center;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
   isolation: isolate;
   box-sizing: border-box;
-  padding: 24px max(48px, env(safe-area-inset-right, 0px)) 24px max(12px, env(safe-area-inset-left, 0px));
+  padding: 24px max(56px, env(safe-area-inset-right, 0px)) 24px max(56px, env(safe-area-inset-left, 0px));
 }
 
 .login-feature-scroll__section-sweep {
@@ -474,16 +623,13 @@ html[data-theme="dark"] .login-feature-scroll__rail {
   animation: login-feature-scroll-sweep 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.login-feature-scroll__section-layout {
+.login-feature-scroll__page-layout {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
-  gap: clamp(24px, 4vw, 40px);
-  width: 100%;
-  max-width: min(960px, calc(100vw - 72px));
+  width: min(920px, 100%);
+  max-width: min(920px, calc(100vw - 112px));
+  margin: 0 auto;
   padding: 0;
-  align-items: center;
   opacity: 0.28;
   filter: blur(10px);
   transform: scale(0.9) translateY(48px);
@@ -493,119 +639,175 @@ html[data-theme="dark"] .login-feature-scroll__rail {
     filter 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.login-feature-scroll__section--past .login-feature-scroll__section-layout {
+.login-feature-scroll__page-glass {
+  position: relative;
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.34);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  box-shadow:
+    0 16px 48px rgba(91, 120, 200, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.58);
+  overflow: hidden;
+}
+
+html[data-theme="dark"] .login-feature-scroll__page-glass {
+  background: rgba(22, 22, 32, 0.58);
+  border-color: rgba(147, 197, 253, 0.14);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.login-feature-scroll__features-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.login-feature-scroll__feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.login-feature-scroll__feature-card:nth-child(2) {
+  transition-delay: 0.05s;
+}
+
+.login-feature-scroll__feature-card:nth-child(3) {
+  transition-delay: 0.1s;
+}
+
+.login-feature-scroll__feature-card:nth-child(4) {
+  transition-delay: 0.15s;
+}
+
+html[data-theme="dark"] .login-feature-scroll__feature-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(147, 197, 253, 0.1);
+}
+
+.login-feature-scroll__feature-head {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.login-feature-scroll__section--past .login-feature-scroll__page-layout {
   transform: scale(0.88) translateY(-56px);
 }
 
-.login-feature-scroll__section--future .login-feature-scroll__section-layout {
+.login-feature-scroll__section--future .login-feature-scroll__page-layout {
   transform: scale(0.9) translateY(56px);
 }
 
-.login-feature-scroll__section--active .login-feature-scroll__section-layout,
-.login-feature-scroll__section--visible.login-feature-scroll__section--active .login-feature-scroll__section-layout {
+.login-feature-scroll__section--active .login-feature-scroll__page-layout,
+.login-feature-scroll__section--visible.login-feature-scroll__section--active .login-feature-scroll__page-layout {
   opacity: 1;
   filter: blur(0);
   transform: scale(1) translateY(0);
 }
 
-.login-feature-scroll__section-main {
+.login-feature-scroll__section--visible .login-feature-scroll__feature-card,
+.login-feature-scroll__section--active .login-feature-scroll__feature-card {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.login-feature-scroll__feature-intro {
   min-width: 0;
 }
 
 .login-feature-scroll__pitch {
   min-width: 0;
-  padding: 18px 20px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.28);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  box-shadow:
-    0 12px 36px rgba(91, 120, 200, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  opacity: 0;
-  transform: translateX(28px);
-  transition:
-    opacity 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.28s,
-    transform 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.28s;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 
 html[data-theme="dark"] .login-feature-scroll__pitch {
-  background: rgba(22, 22, 32, 0.52);
-  border-color: rgba(147, 197, 253, 0.14);
-  box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(147, 197, 253, 0.1);
+  box-shadow: none;
 }
 
 .login-feature-scroll__pitch-hook {
-  margin: 0 0 12px;
-  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+  margin: 0 0 4px;
+  font-size: 0.9rem;
   font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.03em;
-  background: var(--pitch-accent, linear-gradient(135deg, #60a5fa, #2563eb));
+  background: var(--feature-accent, linear-gradient(135deg, #60a5fa, #2563eb));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
 .login-feature-scroll__pitch-value {
-  margin: 0 0 12px;
-  font-size: 14px;
+  margin: 0 0 8px;
+  font-size: 13px;
   line-height: 1.7;
   color: var(--platform-text);
 }
 
 .login-feature-scroll__summary {
   position: relative;
-  min-height: calc(100dvh - 36px);
+  z-index: 3;
   display: flex;
-  align-items: center;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  scroll-snap-align: none;
+  scroll-snap-stop: normal;
   box-sizing: border-box;
-  padding: 24px max(48px, env(safe-area-inset-right, 0px)) 48px max(12px, env(safe-area-inset-left, 0px));
-  opacity: 0.35;
-  filter: blur(8px);
-  transform: scale(0.92) translateY(40px);
-  transition:
-    opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.85s cubic-bezier(0.22, 1, 0.36, 1),
-    filter 0.75s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.login-feature-scroll__summary--visible {
-  opacity: 0.35;
-  transform: scale(0.92) translateY(40px);
-}
-
-.login-feature-scroll__summary--active,
-.login-feature-scroll__summary--visible.login-feature-scroll__summary--active {
-  opacity: 1;
-  filter: blur(0);
-  transform: scale(1) translateY(0);
+  padding: calc(36px + 24px) max(56px, env(safe-area-inset-right, 0px)) 96px max(56px, env(safe-area-inset-left, 0px));
 }
 
 .login-feature-scroll__summary-inner {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: min(960px, calc(100vw - 72px));
+  margin: 0 auto;
   padding: 28px 24px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.3);
-  backdrop-filter: blur(28px) saturate(170%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow:
-    0 16px 48px rgba(91, 120, 200, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    0 16px 48px rgba(91, 120, 200, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 html[data-theme="dark"] .login-feature-scroll__summary-inner {
-  background: rgba(22, 22, 32, 0.55);
-  border-color: rgba(147, 197, 253, 0.14);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+  background: rgba(22, 22, 32, 0.88);
+  border-color: rgba(147, 197, 253, 0.18);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .login-feature-scroll__summary-label {
@@ -614,6 +816,7 @@ html[data-theme="dark"] .login-feature-scroll__summary-inner {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  text-align: center;
   color: var(--platform-accent);
 }
 
@@ -623,73 +826,183 @@ html[data-theme="dark"] .login-feature-scroll__summary-inner {
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.03em;
+  text-align: center;
   color: var(--platform-text);
 }
 
 .login-feature-scroll__summary-subtitle {
-  margin: 0 0 24px;
+  margin: 0 auto 24px;
   font-size: 15px;
   line-height: 1.65;
+  text-align: center;
   color: var(--platform-text-secondary);
   max-width: 46em;
 }
 
-.login-feature-scroll__compare-table {
+.login-feature-scroll__ontology {
+  position: relative;
+  z-index: 1;
+  min-height: calc(100dvh - 36px);
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+  box-sizing: border-box;
+  padding: 24px max(56px, env(safe-area-inset-right, 0px)) 24px max(56px, env(safe-area-inset-left, 0px));
 }
 
-.login-feature-scroll__compare-row {
-  display: grid;
-  grid-template-columns: minmax(88px, 0.9fr) minmax(0, 1.2fr) minmax(0, 1.2fr);
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.55;
-  background: rgba(255, 255, 255, 0.22);
-  border: 1px solid rgba(255, 255, 255, 0.28);
+.login-feature-scroll__ontology-copy {
+  width: 100%;
+  max-width: min(720px, calc(100vw - 112px));
+  margin: 0 auto;
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateY(48px);
+  transition:
+    opacity 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-html[data-theme="dark"] .login-feature-scroll__compare-row {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
+.login-feature-scroll__ontology--visible .login-feature-scroll__ontology-copy,
+.login-feature-scroll__ontology--active .login-feature-scroll__ontology-copy {
+  opacity: 1;
+  filter: blur(0);
+  transform: translateY(0);
 }
 
-.login-feature-scroll__compare-row--head {
+.login-feature-scroll__ontology-label {
+  margin: 0 0 14px;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--platform-text-tertiary);
-  background: transparent;
-  border-color: transparent;
-  padding-top: 0;
 }
 
-.login-feature-scroll__compare-aspect {
-  font-weight: 600;
+.login-feature-scroll__ontology-title {
+  margin: 0 0 16px;
+  font-size: clamp(1.65rem, 3.8vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.04em;
   color: var(--platform-text);
 }
 
-.login-feature-scroll__compare-others {
+.login-feature-scroll__ontology-body {
+  margin: 0;
+  font-size: clamp(14px, 1.5vw, 16px);
+  line-height: 1.75;
+  color: var(--platform-text-secondary);
+  max-width: 42em;
+}
+
+.login-feature-scroll__compare-wrap {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+
+.login-feature-scroll__compare-table {
+  width: 100%;
+  min-width: 640px;
+  margin: 0 auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.login-feature-scroll__compare-table thead th {
+  padding: 0 10px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
   color: var(--platform-text-tertiary);
+  border-bottom: 1px solid var(--platform-border, rgba(148, 163, 184, 0.22));
 }
 
-.login-feature-scroll__compare-ours {
+.login-feature-scroll__compare-feature-col {
+  text-align: left !important;
+}
+
+.login-feature-scroll__compare-table tbody tr + tr th,
+.login-feature-scroll__compare-table tbody tr + tr td {
+  border-top: 1px solid var(--platform-border, rgba(148, 163, 184, 0.16));
+}
+
+.login-feature-scroll__compare-table tbody th,
+.login-feature-scroll__compare-table tbody td {
+  padding: 12px 10px;
+  vertical-align: middle;
+}
+
+.login-feature-scroll__compare-table tbody td {
+  text-align: center;
+}
+
+.login-feature-scroll__compare-table tbody tr {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+html[data-theme="dark"] .login-feature-scroll__compare-table tbody tr {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.login-feature-scroll__compare-table tbody tr:first-child th,
+.login-feature-scroll__compare-table tbody tr:first-child td {
+  padding-top: 14px;
+}
+
+.login-feature-scroll__compare-feature {
+  font-weight: 600;
+  text-align: left;
   color: var(--platform-text);
-  font-weight: 500;
+  white-space: nowrap;
+}
+
+.login-feature-scroll__compare-ours-col {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+html[data-theme="dark"] .login-feature-scroll__compare-ours-col {
+  background: rgba(129, 140, 248, 0.1);
+}
+
+.login-feature-scroll__compare-table thead .login-feature-scroll__compare-ours-col {
+  color: var(--platform-accent);
+}
+
+.login-feature-scroll__compare-yes {
+  color: var(--platform-accent);
+  vertical-align: middle;
+}
+
+.login-feature-scroll__compare-no {
+  color: var(--platform-text-tertiary);
+  font-size: 14px;
+  line-height: 1;
 }
 
 .login-feature-scroll__summary-closing {
-  margin: 24px 0 0;
+  margin: 24px auto 0;
   padding-top: 20px;
   border-top: 1px solid var(--platform-border, rgba(148, 163, 184, 0.22));
   font-size: 15px;
   line-height: 1.65;
   font-weight: 500;
+  text-align: center;
   color: var(--platform-text);
+  max-width: 46em;
 }
 
 .login-feature-scroll__pitch-bullets {
@@ -704,9 +1017,9 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
 .login-feature-scroll__pitch-bullets li {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 1.5;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--platform-text-secondary);
 }
 
@@ -726,13 +1039,19 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
 
 .login-feature-scroll__section-bg {
   position: absolute;
-  inset: 0 12% 8% 0;
+  inset: 0 8% 8% 0;
   border-radius: 28px;
-  background: radial-gradient(
-    ellipse 72% 58% at 18% 36%,
-    var(--section-glow) 0%,
-    transparent 68%
-  );
+  background:
+    radial-gradient(
+      ellipse 52% 48% at 22% 38%,
+      var(--section-glow) 0%,
+      transparent 68%
+    ),
+    radial-gradient(
+      ellipse 52% 48% at 72% 58%,
+      var(--section-glow-alt) 0%,
+      transparent 68%
+    );
   opacity: 0;
   transform: scale(0.92);
   transition:
@@ -756,45 +1075,22 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
 
 .login-feature-scroll__index {
   display: block;
-  margin-bottom: 16px;
-  font-size: clamp(2.5rem, 6vw, 4rem);
+  margin: 0;
+  font-size: 1.1rem;
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.06em;
   background: linear-gradient(
     180deg,
-    rgba(148, 163, 184, 0.28) 0%,
-    rgba(148, 163, 184, 0.06) 100%
+    rgba(148, 163, 184, 0.38) 0%,
+    rgba(148, 163, 184, 0.08) 100%
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  opacity: 0;
-  transform: translateY(24px);
-  transition:
-    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.05s,
-    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
-}
-
-.login-feature-scroll__visual {
-  position: relative;
-  width: 80px;
-  height: 80px;
-  margin-bottom: 22px;
-  opacity: 0;
-  transform: translateY(32px) scale(0.88);
-  transition:
-    opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.12s,
-    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.12s;
-}
-
-.login-feature-scroll__icon-ring {
-  position: absolute;
-  inset: -16px;
-  border-radius: 50%;
-  opacity: 0.35;
-  filter: blur(18px);
-  animation: login-feature-scroll-orbit 6s ease-in-out infinite;
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 
 .login-feature-scroll__icon {
@@ -802,60 +1098,37 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 80px;
-  height: 80px;
-  border-radius: 22px;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
   color: #fff;
+  flex-shrink: 0;
   box-shadow:
-    0 16px 40px rgba(15, 23, 42, 0.22),
+    0 10px 24px rgba(15, 23, 42, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  animation: login-feature-scroll-float 5s ease-in-out infinite;
 }
 
 .login-feature-scroll__title {
-  margin: 0 0 12px;
-  font-size: clamp(1.65rem, 3.8vw, 2.5rem);
+  margin: 0 0 2px;
+  font-size: clamp(1rem, 1.6vw, 1.15rem);
   font-weight: 700;
-  line-height: 1.12;
-  letter-spacing: -0.04em;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
   color: var(--platform-text);
-  opacity: 0;
-  transform: translateY(28px);
-  transition:
-    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.2s,
-    transform 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.2s;
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 
 .login-feature-scroll__desc {
   margin: 0;
-  max-width: 38ch;
-  font-size: clamp(14px, 1.5vw, 17px);
-  line-height: 1.65;
+  max-width: none;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--platform-text-secondary);
-  opacity: 0;
-  transform: translateY(24px);
-  transition:
-    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.32s,
-    transform 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.32s;
-}
-
-.login-feature-scroll__section--visible .login-feature-scroll__index,
-.login-feature-scroll__section--active .login-feature-scroll__index,
-.login-feature-scroll__section--visible .login-feature-scroll__visual,
-.login-feature-scroll__section--active .login-feature-scroll__visual,
-.login-feature-scroll__section--visible .login-feature-scroll__title,
-.login-feature-scroll__section--active .login-feature-scroll__title,
-.login-feature-scroll__section--visible .login-feature-scroll__desc,
-.login-feature-scroll__section--active .login-feature-scroll__desc,
-.login-feature-scroll__section--visible .login-feature-scroll__pitch,
-.login-feature-scroll__section--active .login-feature-scroll__pitch {
   opacity: 1;
-  transform: translateY(0) scale(1);
-}
-
-.login-feature-scroll__section--visible .login-feature-scroll__pitch,
-.login-feature-scroll__section--active .login-feature-scroll__pitch {
-  transform: translateX(0);
+  transform: none;
+  transition: none;
 }
 
 .login-feature-scroll__section--active .login-feature-scroll__section-bg {
@@ -923,18 +1196,12 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
 }
 
 @media (max-width: 1100px) {
-  .login-feature-scroll__section-layout {
-    grid-template-columns: 1fr;
+  .login-feature-scroll__page-layout {
     max-width: 100%;
   }
 
-  .login-feature-scroll__pitch {
-    transform: translateY(24px);
-  }
-
-  .login-feature-scroll__section--visible .login-feature-scroll__pitch,
-  .login-feature-scroll__section--active .login-feature-scroll__pitch {
-    transform: translateY(0);
+  .login-feature-scroll__features-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -946,12 +1213,13 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
   }
 
   .login-feature-scroll__section,
+  .login-feature-scroll__ontology,
   .login-feature-scroll__summary {
-    padding-right: 36px;
+    padding-inline: max(40px, env(safe-area-inset-left, 0px)) max(40px, env(safe-area-inset-right, 0px));
   }
 
   .login-feature-scroll__head {
-    padding-right: 36px;
+    padding-inline: max(40px, env(safe-area-inset-left, 0px)) max(40px, env(safe-area-inset-right, 0px));
   }
 }
 
@@ -961,32 +1229,33 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
   }
 
   .login-feature-scroll__section,
+  .login-feature-scroll__ontology,
   .login-feature-scroll__summary {
-    padding-right: 0;
+    padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
   }
 
   .login-feature-scroll__head {
-    padding-right: 0;
-  }
-  .login-feature-scroll__compare-row,
-  .login-feature-scroll__compare-row--head {
-    grid-template-columns: 1fr;
-    gap: 6px;
+    padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
   }
 
-  .login-feature-scroll__compare-row--head {
-    display: none;
+  .login-feature-scroll__page-layout {
+    max-width: min(920px, calc(100vw - 32px));
   }
 
-  .login-feature-scroll__compare-aspect {
+  .login-feature-scroll__compare-table {
+    min-width: 580px;
+  }
+
+  .login-feature-scroll__compare-feature {
+    white-space: normal;
     font-size: 12px;
-    color: var(--platform-accent);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .login-feature-scroll__section-layout,
-  .login-feature-scroll__summary {
+  .login-feature-scroll__page-layout,
+  .login-feature-scroll__ontology-copy,
+  .login-feature-scroll__feature-card {
     opacity: 1 !important;
     filter: none !important;
     transform: none !important;
@@ -995,18 +1264,14 @@ html[data-theme="dark"] .login-feature-scroll__compare-row {
 
   .login-feature-scroll__section-bg,
   .login-feature-scroll__index,
-  .login-feature-scroll__visual,
   .login-feature-scroll__title,
   .login-feature-scroll__desc,
-  .login-feature-scroll__pitch,
-  .login-feature-scroll__summary {
+  .login-feature-scroll__pitch {
     opacity: 1 !important;
     transform: none !important;
     transition: none !important;
   }
 
-  .login-feature-scroll__icon,
-  .login-feature-scroll__icon-ring,
   .login-feature-scroll__hint-line,
   .login-feature-scroll__section-sweep,
   .login-feature-scroll__rail-dot--active::after {

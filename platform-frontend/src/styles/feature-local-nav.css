@@ -206,7 +206,9 @@
 }
 
 .subsystem-shell--flush-start.subsystem-shell--fill .knowledge-search-page,
-.subsystem-shell--flush-end.subsystem-shell--fill .knowledge-search-page {
+.subsystem-shell--flush-end.subsystem-shell--fill .knowledge-search-page,
+.subsystem-shell--flush-start.subsystem-shell--fill .report-gen-page,
+.subsystem-shell--flush-end.subsystem-shell--fill .report-gen-page {
   border-left: none;
   border-right: none;
   border-bottom: none;

@@ -1,38 +1,61 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
+import { useI18n } from "../../composables/useI18n";
 import { computed, onMounted, reactive, ref } from "vue";
 import {
   NButton,
   NCard,
-  NCheckbox,
   NDivider,
+  NSelect,
   NSpace,
   NSpin,
   NText,
 } from "naive-ui";
 import { fetchMenuSettings, updateMenuSettings } from "../../api/menuSettings.js";
+import { useMenuSettings } from "../../composables/useMenuSettings.js";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
+const { loadMenuSettings } = useMenuSettings();
 const loading = ref(false);
 const saving = ref(false);
 const items = ref([]);
 const visibility = reactive({});
+
+const visibilityOptions = computed(() => [
+  { value: "all", label: t("admin.menuSettings.visibility.all") },
+  { value: "admin", label: t("admin.menuSettings.visibility.admin") },
+  { value: "hidden", label: t("admin.menuSettings.visibility.hidden") },
+]);
 
 const mainItems = computed(() => items.value.filter((item) => item.group === "main"));
 const settingsItems = computed(() =>
   items.value.filter((item) => item.group === "settings")
 );
 
+function resolveItemVisibility(data, key) {
+  const level = data?.menu_visibility?.[key];
+  if (level === "all" || level === "admin" || level === "hidden") return level;
+  const legacy = data?.member_visible?.[key];
+  if (legacy === true) return "all";
+  if (legacy === false) return "admin";
+  return "all";
+}
+
+function applySettings(data) {
+  items.value = data?.items || [];
+  for (const item of items.value) {
+    visibility[item.key] = resolveItemVisibility(data, item.key);
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
     const data = await fetchMenuSettings();
-    items.value = data?.items || [];
-    for (const item of items.value) {
-      visibility[item.key] = Boolean(data?.member_visible?.[item.key]);
-    }
+    applySettings(data);
   } catch (e) {
-    ui.error(e.message || "加载菜单配置失败");
+    ui.error(e.message || t("admin.menuSettings.loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -41,13 +64,21 @@ async function load() {
 async function save() {
   saving.value = true;
   try {
-    const member_visible = Object.fromEntries(
-      items.value.map((item) => [item.key, Boolean(visibility[item.key])])
+    const menu_visibility = Object.fromEntries(
+      items.value.map((item) => [item.key, visibility[item.key] || "all"])
     );
-    await updateMenuSettings({ member_visible });
-    ui.success("菜单配置已保存");
+    const member_visible = Object.fromEntries(
+      items.value.map((item) => [
+        item.key,
+        (visibility[item.key] || "all") === "all",
+      ])
+    );
+    const data = await updateMenuSettings({ menu_visibility, member_visible });
+    applySettings(data);
+    await loadMenuSettings(true);
+    ui.success(t("admin.menuSettings.saved"));
   } catch (e) {
-    ui.error(e.message || "保存失败");
+    ui.error(e.message || t("admin.menuSettings.saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -59,51 +90,65 @@ onMounted(load);
 <template>
   <div class="menu-settings-page feature-page">
     <n-spin :show="loading">
-      <n-card title="普通用户可见菜单" size="small">
+      <n-card :title="t('admin.menuSettings.title')" size="small">
         <n-text depth="3" class="page-hint">
-          勾选后，普通成员登录时可在侧栏看到对应菜单；系统管理员始终可见全部菜单。
+          {{ t("admin.menuSettings.hint") }}
         </n-text>
 
         <section class="menu-group">
-          <h3 class="menu-group__title">主导航</h3>
-          <n-space vertical :size="10">
-            <label
+          <h3 class="menu-group__title">{{ t("admin.menuSettings.mainNav") }}</h3>
+          <div class="menu-table">
+            <div
               v-for="item in mainItems"
               :key="item.key"
-              class="menu-option"
+              class="menu-row"
             >
-              <n-checkbox v-model:checked="visibility[item.key]" />
-              <span class="menu-option__text">
+              <div class="menu-row__info">
                 <strong>{{ item.label }}</strong>
                 <n-text depth="3">{{ item.description }}</n-text>
-              </span>
-            </label>
-          </n-space>
+              </div>
+              <n-select
+                v-model:value="visibility[item.key]"
+                class="menu-row__select"
+                :options="visibilityOptions"
+                size="small"
+              />
+            </div>
+          </div>
         </section>
 
         <n-divider />
 
         <section class="menu-group">
-          <h3 class="menu-group__title">系统设置</h3>
-          <n-space vertical :size="10">
-            <label
+          <h3 class="menu-group__title">{{ t("admin.menuSettings.systemSettings") }}</h3>
+          <div class="menu-table">
+            <div
               v-for="item in settingsItems"
               :key="item.key"
-              class="menu-option"
+              class="menu-row"
             >
-              <n-checkbox v-model:checked="visibility[item.key]" />
-              <span class="menu-option__text">
+              <div class="menu-row__info">
                 <strong>{{ item.label }}</strong>
                 <n-text depth="3">{{ item.description }}</n-text>
-              </span>
-            </label>
-          </n-space>
+              </div>
+              <n-select
+                v-model:value="visibility[item.key]"
+                class="menu-row__select"
+                :options="visibilityOptions"
+                size="small"
+              />
+            </div>
+          </div>
         </section>
 
         <template #action>
           <n-space>
-            <n-button type="primary" :loading="saving" @click="save">保存</n-button>
-            <n-button :disabled="saving || loading" @click="load">重新加载</n-button>
+            <n-button type="primary" :loading="saving" @click="save">
+              {{ t("common.save") }}
+            </n-button>
+            <n-button :disabled="saving || loading" @click="load">
+              {{ t("admin.menuSettings.reload") }}
+            </n-button>
           </n-space>
         </template>
       </n-card>
@@ -113,7 +158,7 @@ onMounted(load);
 
 <style scoped>
 .menu-settings-page {
-  max-width: 720px;
+  max-width: 820px;
 }
 
 .page-hint {
@@ -128,17 +173,32 @@ onMounted(load);
   font-weight: 600;
 }
 
-.menu-option {
+.menu-table {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  cursor: pointer;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.menu-option__text {
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--platform-surface-muted, rgba(0, 0, 0, 0.02));
+}
+
+.menu-row__info {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1;
+}
+
+.menu-row__select {
+  width: 168px;
+  flex-shrink: 0;
 }
 </style>

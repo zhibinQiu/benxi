@@ -1,5 +1,25 @@
 # 发布说明
 
+## 4.0.9（v4.0.9）— 测试修复、代码收敛与版本清理
+
+- **测试基础设施**：新增 `test_support` 模块，修复 PyPI `tests` 包命名冲突导致的用例收集失败；补充 `llm_parse` / `text_utils` 单测
+- **公共模块**：LLM JSON 解析与文本截断收敛至 `app/core/llm_parse.py`、`app/core/text_utils.py`，对比与 Agentic 检索复用
+- **对比 API 精简**：移除废弃的 `sync_knowflow` 参数与 `version-compare/batch` 端点；前端删除未使用的对比 API 封装
+- **前端清理**：删除 `roseLoader.js`、`featureDescriptions.js`、`useUiMessage.js` 等无引用模块
+- **文档**：运维/架构文档版本号与 `dev.sh local` 命令表述统一
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.0.9）
+
+## 4.0.8（v4.0.8）— 问题登记、KnowFlow 队列治理与知识闭环增强
+
+- **问题登记**：新增问题登记模块（`/issue-reports`），成员可提交问题描述，管理员可标记已修复
+- **KnowFlow 队列治理**：解析队列监控（MySQL task + Redis lag）、看门狗与入队前 parse 守卫，避免重复解析；系统监控页展示积压与重复文档概览；运维脚本 `knowflow-queue-reset.sh`、`knowflow-dedupe-documents.py` 与健康检查
+- **本体图谱**：用户与部门组织树自动同步至知识图谱实体
+- **文档上传**：上传时可选择目标库、文件夹与归属范围（`DocumentUploadLocationPicker`）
+- **待办事项**：独立待办面板与页面（`TodosPanel` / `TodosView`）
+- **登录体验**：登录后统一进入 AI 智能体首页，不再恢复退出前页面
+- **订阅与资讯**：订阅条目管理、导入与 AI 摘要增强；菜单设置与系统监控迭代
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.0.8）
+
 ## 4.0.7（v4.0.7）— AI 智能体、本体图谱与知识闭环
 
 - **AI 智能体**：原「AI 助理」更名为 AI 智能体；落地页快捷入口调整为知识检索 → 报告生成 → 本体图谱；回答时联合权限内文档检索与本体图谱上下文

@@ -21,7 +21,8 @@ import {
   NProgress,
   NText,
   NIcon,
-  NDropdown } from "naive-ui";
+  NDropdown,
+  NSpin } from "naive-ui";
 import {
   CreateOutline,
   TrashOutline,
@@ -33,6 +34,7 @@ import {
   EyeOutline,
   RefreshOutline } from "@vicons/ionicons5";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
+import DocumentUploadLocationPicker from "../components/DocumentUploadLocationPicker.vue";
 import KbFolderCard from "../components/KbFolderCard.vue";
 import KbFolderCreateCard from "../components/KbFolderCreateCard.vue";
 import IconAction from "../components/IconAction.vue";
@@ -74,6 +76,7 @@ import {
   createKbFolder,
   deleteKbFolder,
   fetchDocuments,
+  fetchDocumentOverview,
   fetchKbFolders,
   fetchMySharedDocuments,
   prepareUpload,
@@ -106,6 +109,8 @@ const kbFolders = ref([]);
 const kbFoldersLoading = ref(false);
 const kbCanManageFolders = ref(false);
 const refreshing = ref(false);
+const formatOverview = ref(null);
+const formatOverviewLoading = ref(false);
 const { headerExtensionActive } = usePageHeaderExtension();
 const headerTeleportReady = ref(false);
 
@@ -124,9 +129,13 @@ const libraryView = ref("main");
 const companies = ref([]);
 const departments = ref([]);
 const teams = ref([]);
+
+const VIRTUAL_UNCATEGORIZED = "__uncategorized__";
+const VIRTUAL_SHARED = "__shared__";
 /** 忽略过期的 load / loadKbFolders 结果，避免切换分级时串数据 */
 let kbFoldersLoadSeq = 0;
 let documentsLoadSeq = 0;
+let formatOverviewLoadSeq = 0;
 /** openKbFolder 已主动 load 时，跳过 route watch 的重复请求 */
 let skipNextRouteLoad = false;
 const prefetchingFolderKeys = new Set();
@@ -178,6 +187,8 @@ const createTitle = ref("");
 const createDesc = ref("");
 const createScope = ref("personal");
 const createDeptId = ref(null);
+const createOwnerId = ref(null);
+const createFolderId = ref(VIRTUAL_UNCATEGORIZED);
 const uploadFile = ref(null);
 const creating = ref(false);
 
@@ -203,18 +214,27 @@ function formatUploadFileSize(bytes) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const uploadTargetLabel = computed(
-  () => activeKbFolderLabel.value || activeFolder.value?.label || "未分类"
+const hasAnyCreatableScope = computed(() =>
+  folders.value.some((f) => f.can_create && f.scope !== "all" && f.scope !== "shared")
 );
 
+const canSubmitUploadLocation = computed(() => {
+  const scopeFolder = folders.value.find((f) => f.scope === createScope.value);
+  if (!scopeFolder?.can_create) return false;
+  if (ORG_SCOPES.includes(createScope.value) && !createDeptId.value) return false;
+  return Boolean(createFolderId.value);
+});
+
 const canSubmitSingleUpload = computed(
-  () => Boolean(uploadFile.value) && !creating.value && !batchUploading.value
+  () =>
+    Boolean(uploadFile.value) &&
+    !creating.value &&
+    !batchUploading.value &&
+    canSubmitUploadLocation.value
 );
 const activeFolder = computed(() =>
   folders.value.find((f) => f.scope === activeScope.value)
 );
-
-const canCreateInActive = computed(() => activeFolder.value?.can_create ?? false);
 
 const deptOptions = computed(() =>
   orgUnits.value.map((d) => ({ label: d.name, value: d.id }))
@@ -250,15 +270,14 @@ const scopeTagType = {
   shared: "success",
   all: "primary"};
 
-const VIRTUAL_UNCATEGORIZED = "__uncategorized__";
-const VIRTUAL_SHARED = "__shared__";
-
 /** 内置文件夹 → 用户文件夹（同组内保持 API 原序） */
 function sortKbFoldersForDisplay(items) {
   const systemOrder = {
     uncategorized: 0,
     shared: 1,
-    normal: 2};
+    web_favorites: 2,
+    normal: 3,
+  };
   return [...(items || [])]
     .map((item, index) => ({ item, index }))
     .sort((a, b) => {
@@ -362,6 +381,17 @@ const showFolderNavInActions = computed(
 
 const showBottomBatchToolbar = computed(
   () => showBatchDocActions.value && !showTopFolderBatchActions.value
+);
+
+const showFormatOverview = computed(
+  () =>
+    isMainView.value &&
+    !isSearchMode.value &&
+    !isMySharesView.value &&
+    !isSharedScopeTab.value &&
+    !isSharedFolderView.value &&
+    activeScope.value !== "all" &&
+    ["personal", "company", "department", "team"].includes(activeScope.value)
 );
 
 const selectedRows = computed(() =>
@@ -480,7 +510,7 @@ const columns = computed(() => {
         title: t("documents.columns.owner"),
         key: "owner_name",
         width: 120,
-        render: (row) => row.owner_name || "未知用户"},
+        render: (row) => row.owner_name || t("documents.unknownUser")},
       {
         title: t("documents.columns.dept"),
         key: "dept_name",
@@ -499,7 +529,7 @@ const columns = computed(() => {
         title: t("documents.columns.sharer"),
         key: "owner_name",
         width: 120,
-        render: (row) => row.owner_name || "未知用户"},
+        render: (row) => row.owner_name || t("documents.unknownUser")},
       {
         title: t("documents.columns.grantedBy"),
         key: "granted_by_name",
@@ -527,7 +557,7 @@ const columns = computed(() => {
         title: t("documents.columns.owner"),
         key: "owner_name",
         width: 140,
-        render: (row) => row.owner_name || "未知用户"}
+        render: (row) => row.owner_name || t("documents.unknownUser")}
     );
   }
   base.push(
@@ -819,6 +849,33 @@ function applyCachedListForActiveFolder() {
   return false;
 }
 
+async function loadFormatOverview({ background = false } = {}) {
+  if (!showFormatOverview.value) {
+    formatOverview.value = null;
+    formatOverviewLoading.value = false;
+    return;
+  }
+  const seq = ++formatOverviewLoadSeq;
+  if (!background) formatOverviewLoading.value = true;
+  try {
+    const params = { scope: activeScope.value };
+    if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
+      params.dept_id = activeDeptId.value;
+    }
+    const ownerId = personalOwnerParam();
+    if (ownerId) params.owner_id = ownerId;
+    const data = await fetchDocumentOverview(params);
+    if (seq !== formatOverviewLoadSeq) return;
+    formatOverview.value = data;
+  } catch (e) {
+    if (seq !== formatOverviewLoadSeq) return;
+    if (!background) formatOverview.value = null;
+    if (!background) ui.error(e);
+  } finally {
+    if (seq === formatOverviewLoadSeq) formatOverviewLoading.value = false;
+  }
+}
+
 async function refreshDocumentsView() {
   if (refreshing.value) return;
   refreshing.value = true;
@@ -829,6 +886,7 @@ async function refreshDocumentsView() {
     await Promise.all([
       loadFolders({ force: true }),
       loadKbFolders({ force: true }),
+      loadFormatOverview({ background: true }),
     ]);
     await load({ force: true });
   } catch (e) {
@@ -995,6 +1053,7 @@ function onKnowledgeIndexUpdated() {
     indexRefreshDebounceTimer = null;
     clearDocumentsViewCache();
     void load({ force: true, background: true });
+    void loadFormatOverview({ background: true });
     scheduleIndexStatusPoll();
   }, 400);
 }
@@ -1175,7 +1234,7 @@ async function onDeleteKbFolder(folder) {
 function folderTooltip(folder) {
   const parts = [];
   if (folder.description) parts.push(folder.description);
-  parts.push(`${folder.document_count ?? 0} 篇文档`);
+  parts.push(t("documents.folderDocCount", { count: folder.document_count ?? 0 }));
   if (folder.is_system && folder.system_hint) parts.push(folder.system_hint);
   return parts.join("\n");
 }
@@ -1184,11 +1243,11 @@ function folderMenuOptions(folder) {
   if (!folder.can_manage || !folder.id || folder.is_system) return [];
   return [
     {
-      label: "编辑",
+      label: t("common.edit"),
       key: "edit",
       icon: () => h(NIcon, null, { default: () => h(CreateOutline) })},
     {
-      label: "删除",
+      label: t("common.delete"),
       key: "delete",
       icon: () => h(NIcon, null, { default: () => h(TrashOutline) })},
   ];
@@ -1232,6 +1291,54 @@ function backToLibrary() {
   router.replace({ name: "documents", query: buildLibraryQuery() });
 }
 
+function orgUnitsForScope(scope) {
+  if (scope === "company") return companies.value;
+  if (scope === "team") return teams.value;
+  if (scope === "department") return departments.value;
+  return [];
+}
+
+function initUploadLocation() {
+  const scope = folders.value.find(
+    (f) => f.scope === activeScope.value && f.can_create
+  )
+    ? activeScope.value
+    : folders.value.find((f) => f.can_create)?.scope || "personal";
+  createScope.value = scope;
+  createDeptId.value = ORG_SCOPES.includes(scope)
+    ? (activeScope.value === scope ? activeDeptId.value : null) ||
+      orgUnitsForScope(scope)[0]?.id ||
+      null
+    : null;
+  createOwnerId.value =
+    scope === "personal" && isSystemAdmin.value
+      ? (activeScope.value === "personal" ? activeOwnerId.value : null) ||
+        user.value?.id ||
+        null
+      : null;
+  const sameContext = activeScope.value === scope;
+  createFolderId.value =
+    sameContext &&
+    activeKbFolderKey.value &&
+    activeKbFolderKey.value !== VIRTUAL_SHARED
+      ? activeKbFolderKey.value
+      : VIRTUAL_UNCATEGORIZED;
+}
+
+function validateUploadLocation() {
+  const scopeFolder = folders.value.find((f) => f.scope === createScope.value);
+  if (!scopeFolder?.can_create) {
+    return { ok: false, message: t("documents.messages.noDocPermission") };
+  }
+  if (ORG_SCOPES.includes(createScope.value) && !createDeptId.value) {
+    return { ok: false, message: t("validation.selectDepartment") };
+  }
+  if (!createFolderId.value) {
+    return { ok: false, message: t("documents.messages.selectUploadFolder") };
+  }
+  return { ok: true };
+}
+
 function buildCreatePayload(title, description = "") {
   const payload = {
     title,
@@ -1241,11 +1348,11 @@ function buildCreatePayload(title, description = "") {
     payload.dept_id = createDeptId.value;
   }
   if (
-    activeKbFolderKey.value &&
-    activeKbFolderKey.value !== VIRTUAL_UNCATEGORIZED &&
-    activeKbFolderKey.value !== VIRTUAL_SHARED
+    createFolderId.value &&
+    createFolderId.value !== VIRTUAL_UNCATEGORIZED &&
+    createFolderId.value !== VIRTUAL_SHARED
   ) {
-    payload.folder_id = activeKbFolderKey.value;
+    payload.folder_id = createFolderId.value;
   }
   return payload;
 }
@@ -1304,25 +1411,28 @@ function ensureCanCreateDocuments() {
     !isMainView.value ||
     activeScope.value === "all" ||
     isSharedScopeTab.value ||
-    isSharedFolderView.value
+    isSharedFolderView.value ||
+    isSearchMode.value
   ) {
     ui.warning("documents.messages.enterKbFolder");
     return false;
   }
-  if (!activeKbFolderKey.value) {
-    ui.warning("documents.messages.enterFolderFirst");
-    return false;
-  }
-  if (!canCreateInActive.value) {
+  if (!hasAnyCreatableScope.value) {
     ui.warning("documents.messages.noDocPermission");
     return false;
   }
-  createScope.value = activeScope.value;
-  createDeptId.value =
-    ORG_SCOPES.includes(activeScope.value)
-      ? activeDeptId.value || orgUnits.value[0]?.id
-      : null;
+  initUploadLocation();
   return true;
+}
+
+function onUploadLocationFoldersChanged() {
+  if (
+    activeScope.value === createScope.value &&
+    (!ORG_SCOPES.includes(createScope.value) ||
+      String(activeDeptId.value) === String(createDeptId.value))
+  ) {
+    void loadKbFolders({ force: true });
+  }
 }
 
 function openUploadModal(mode = "single") {
@@ -1359,6 +1469,11 @@ async function submitCreate() {
   }
   if (!title) {
     ui.warning("validation.titleRequired");
+    return;
+  }
+  const locCheck = validateUploadLocation();
+  if (!locCheck.ok) {
+    ui.warning(locCheck.message);
     return;
   }
   creating.value = true;
@@ -1398,8 +1513,9 @@ async function submitBatchUpload() {
     ui.warning(check.message);
     return;
   }
-  if (ORG_SCOPES.includes(createScope.value) && !createDeptId.value) {
-    ui.warning("validation.selectDepartment");
+  const locCheck = validateUploadLocation();
+  if (!locCheck.ok) {
+    ui.warning(locCheck.message);
     return;
   }
   batchUploading.value = true;
@@ -1468,6 +1584,7 @@ onMounted(() => {
   void syncLegacySharedScopeRoute().then(() => {
     void loadFolders();
     void loadKbFolders();
+    void loadFormatOverview();
     void load();
   });
 });
@@ -1496,6 +1613,7 @@ watch(
     page.value = 1;
     void syncLegacySharedScopeRoute().then(() => {
       void loadKbFolders();
+      void loadFormatOverview();
       void load();
     });
   }
@@ -1606,11 +1724,10 @@ watch(
             @click="refreshDocumentsView"
           />
           <IconAction
-            v-if="isMainView && usesKbFolders && activeKbFolderKey && !isSharedFolderView"
+            v-if="isMainView && usesKbFolders && !isSharedFolderView && !isSearchMode && hasAnyCreatableScope"
             :label="t('documents.uploadDoc')"
             :icon="CloudUploadOutline"
             type="primary"
-            :disabled="!canCreateInActive"
             @click="openUploadModal('single')"
           />
         </n-space>
@@ -1652,11 +1769,54 @@ watch(
       </button>
     </div>
 
+    <div v-if="showFormatOverview" class="documents-format-overview">
+      <n-spin :show="formatOverviewLoading && !formatOverview">
+        <div v-if="formatOverview?.total" class="documents-format-overview__body">
+          <div class="documents-format-overview__head">
+            <span class="documents-format-overview__title">{{ t("documents.overview.title") }}</span>
+            <span class="documents-format-overview__hint">{{ t("documents.overview.subtitle") }}</span>
+          </div>
+          <div class="documents-format-overview__summary">
+            {{
+              t("documents.overview.summary", {
+                total: formatOverview.total,
+                parsed: formatOverview.parsed_total,
+              })
+            }}
+          </div>
+          <div class="documents-format-overview__items">
+            <div
+              v-for="item in formatOverview.items"
+              :key="item.format"
+              class="documents-format-overview__item"
+            >
+              <span class="documents-format-overview__label">{{ item.label }}</span>
+              <span class="documents-format-overview__counts">
+                {{
+                  t("documents.overview.formatCounts", {
+                    parsed: item.parsed,
+                    total: item.total,
+                  })
+                }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <n-text
+          v-else-if="!formatOverviewLoading"
+          depth="3"
+          class="documents-format-overview__empty"
+        >
+          {{ t("documents.overview.empty") }}
+        </n-text>
+      </n-spin>
+    </div>
+
     <Transition name="doc-view" mode="out-in">
-    <div v-if="showKbFolderList" key="folder-grid" v-loading="kbFoldersLoading">
+    <n-spin v-if="showKbFolderList" key="folder-grid" :show="kbFoldersLoading" class="documents-view-spin">
       <n-empty
         v-if="!kbFolders.length && !canManageKbFolders"
-        description="暂无文件夹"
+        :description="t('documents.emptyFolders')"
       />
       <div v-else class="kb-folder-explorer">
         <div
@@ -1683,7 +1843,7 @@ watch(
           <KbFolderCreateCard @create="openCreateFolder" />
         </div>
       </div>
-    </div>
+    </n-spin>
 
     <div v-else key="doc-list" class="documents-list-panel">
     <div v-if="showBottomBatchToolbar" class="doc-list-toolbar page-toolbar">
@@ -1704,20 +1864,21 @@ watch(
       </n-space>
     </div>
 
-    <n-data-table
-      :columns="columns"
-      :data="items"
-      :loading="loading && !items.length"
-      :row-key="(row) => row.id"
-      :row-props="documentRowProps"
-      :checked-row-keys="showBatchDocActions ? checkedRowKeys : undefined"
-      @update:checked-row-keys="onCheckedRowKeysChange"
-      :pagination="{
-        page: page,
-        pageSize: pageSize,
-        itemCount: total,
-        onUpdatePage: onPageChange}"
-    />
+    <n-spin :show="loading && !items.length" class="documents-view-spin">
+      <n-data-table
+        :columns="columns"
+        :data="items"
+        :row-key="(row) => row.id"
+        :row-props="documentRowProps"
+        :checked-row-keys="showBatchDocActions ? checkedRowKeys : undefined"
+        @update:checked-row-keys="onCheckedRowKeysChange"
+        :pagination="{
+          page: page,
+          pageSize: pageSize,
+          itemCount: total,
+          onUpdatePage: onPageChange}"
+      />
+    </n-spin>
     </div>
     </Transition>
     </n-card>
@@ -1726,7 +1887,7 @@ watch(
   <AdminFormModal
     v-model:show="showUploadModal"
     class="documents-upload-modal"
-    :title="t('documents.uploadModalTitle', { folder: uploadTargetLabel })"
+    :title="t('documents.uploadModalTitle')"
     :subtitle="t('documents.uploadModalLead')"
     width="min(520px, 94vw)"
   >
@@ -1740,34 +1901,24 @@ watch(
       <n-tab-pane name="batch" :tab="t('documents.batchUpload')" />
     </n-tabs>
 
-    <div class="documents-upload-modal__meta">
-      <n-text depth="3" class="documents-upload-modal__meta-label">
-        {{ t("documents.uploadTargetScope") }}
-      </n-text>
-      <n-tag size="small" :bordered="false" :type="scopeTagType[createScope] || 'default'">
-        {{ folders.find((x) => x.scope === createScope)?.label || createScope }}
-      </n-tag>
-      <n-text depth="3" class="documents-upload-modal__meta-folder">
-        {{ uploadTargetLabel }}
-      </n-text>
-    </div>
-
     <n-form
       class="documents-upload-modal__form"
       label-placement="top"
       :show-require-mark="uploadMode === 'single'"
     >
-      <n-form-item
-        v-if="ORG_SCOPES.includes(createScope)"
-        :label="t('documents.uploadDeptLabel')"
-        required
-      >
-        <n-select
-          v-model:value="createDeptId"
-          :options="deptOptions"
-          :placeholder="t('documents.deptSelectPlaceholder')"
-        />
-      </n-form-item>
+      <DocumentUploadLocationPicker
+        v-model:scope="createScope"
+        v-model:dept-id="createDeptId"
+        v-model:owner-id="createOwnerId"
+        v-model:folder-id="createFolderId"
+        :library-folders="folders"
+        :companies="companies"
+        :departments="departments"
+        :teams="teams"
+        :personal-owners="personalOwners"
+        :is-system-admin="isSystemAdmin"
+        @folders-changed="onUploadLocationFoldersChanged"
+      />
 
       <template v-if="uploadMode === 'single'">
         <n-form-item :label="t('documents.uploadFileLabel')" required>
@@ -1879,7 +2030,7 @@ watch(
           v-else
           type="primary"
           :loading="batchUploading"
-          :disabled="!batchUploadFiles.length"
+          :disabled="!batchUploadFiles.length || !canSubmitUploadLocation"
           @click="submitBatchUpload"
         >
           {{ t("documents.uploadSubmitBatch", { count: batchUploadFiles.length || 0 }) }}
@@ -1890,32 +2041,32 @@ watch(
 
   <AdminFormModal
     v-model:show="showCreateFolder"
-    title="新建知识库文件夹"
-    subtitle="在当前分级下创建文档分类文件夹"
+    :title="t('documents.folderForm.createTitle')"
+    :subtitle="t('documents.folderForm.createSubtitle')"
     width="400px"
   >
     <n-form label-placement="top">
-      <n-form-item label="名称" required>
+      <n-form-item :label="t('documents.folderForm.nameLabel')" required>
         <n-input
           v-model:value="createFolderName"
-          placeholder="例如：技术规范、政策汇编"
+          :placeholder="t('documents.folderForm.namePlaceholder')"
           @keyup.enter="submitCreateFolder"
         />
       </n-form-item>
-      <n-form-item label="介绍">
+      <n-form-item :label="t('documents.folderForm.descLabel')">
         <n-input
           v-model:value="createFolderDesc"
           type="textarea"
-          placeholder="可选，说明该知识库的用途"
+          :placeholder="t('documents.folderForm.descPlaceholder')"
           :autosize="{ minRows: 2, maxRows: 5 }"
         />
       </n-form-item>
     </n-form>
     <template #footer>
       <n-space justify="end">
-        <n-button @click="showCreateFolder = false">取消</n-button>
+        <n-button @click="showCreateFolder = false">{{ t("common.cancel") }}</n-button>
         <n-button type="primary" :loading="savingFolder" @click="submitCreateFolder">
-          创建
+          {{ t("common.create") }}
         </n-button>
       </n-space>
     </template>
@@ -1923,29 +2074,29 @@ watch(
 
   <AdminFormModal
     :show="!!editFolderTarget"
-    title="编辑文件夹"
-    subtitle="修改文件夹名称与说明"
+    :title="t('documents.folderForm.editTitle')"
+    :subtitle="t('documents.folderForm.editSubtitle')"
     width="480px"
     @update:show="(v) => { if (!v) editFolderTarget = null; }"
   >
     <n-form label-placement="top">
-      <n-form-item label="名称" required>
+      <n-form-item :label="t('documents.folderForm.nameLabel')" required>
         <n-input v-model:value="editFolderName" @keyup.enter="submitEditFolder" />
       </n-form-item>
-      <n-form-item label="介绍">
+      <n-form-item :label="t('documents.folderForm.descLabel')">
         <n-input
           v-model:value="editFolderDesc"
           type="textarea"
-          placeholder="说明该知识库的用途、适用范围等"
+          :placeholder="t('documents.folderForm.editDescPlaceholder')"
           :autosize="{ minRows: 2, maxRows: 6 }"
         />
       </n-form-item>
     </n-form>
     <template #footer>
       <n-space justify="end">
-        <n-button @click="editFolderTarget = null">取消</n-button>
+        <n-button @click="editFolderTarget = null">{{ t("common.cancel") }}</n-button>
         <n-button type="primary" :loading="savingFolder" @click="submitEditFolder">
-          保存
+          {{ t("common.save") }}
         </n-button>
       </n-space>
     </template>

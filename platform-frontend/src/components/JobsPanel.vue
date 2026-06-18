@@ -81,7 +81,23 @@ function isParsingDocumentIndex(row) {
   return row.type === "document_index" && Boolean(row.payload?.awaiting_parse);
 }
 
+function isJobEffectivelyDone(row) {
+  return row.status === "done" || (row.progress ?? 0) >= 100;
+}
+
+function displayJobStatus(row) {
+  if (isJobEffectivelyDone(row)) return "done";
+  if (isParsingDocumentIndex(row)) return "running";
+  return row.status;
+}
+
+function displayJobProgress(row) {
+  if (isJobEffectivelyDone(row)) return 100;
+  return row.progress ?? 0;
+}
+
 function isCancellable(row) {
+  if (isJobEffectivelyDone(row)) return false;
   return CANCELLABLE.has(row.status) || isParsingDocumentIndex(row);
 }
 
@@ -156,13 +172,19 @@ const pageColumns = computed(() => {
     title: t("jobs.columns.status"),
     key: "status",
     width: 100,
-    render: (row) =>
-      h(
+    render: (row) => {
+      const status = displayJobStatus(row);
+      return h(
         NTag,
-        { type: statusType[row.status] || "default", size: "small" },
-        () => jobStatusLabel(row.status)
-      )},
-  { title: t("jobs.columns.progress"), key: "progress", width: 80, render: (row) => `${row.progress}%` },
+        { type: statusType[status] || "default", size: "small" },
+        () => jobStatusLabel(status)
+      );
+    }},
+  {
+    title: t("jobs.columns.progress"),
+    key: "progress",
+    width: 80,
+    render: (row) => `${displayJobProgress(row)}%` },
   {
     title: t("jobs.columns.document"),
     key: "document_id",
@@ -318,7 +340,9 @@ function maybeStartProgressPoll() {
   stopProgressPoll();
   if (!props.active) return;
   const hasActive = items.value.some(
-    (j) => ["pending", "running"].includes(j.status) || isParsingDocumentIndex(j)
+    (j) =>
+      !isJobEffectivelyDone(j) &&
+      (["pending", "running"].includes(j.status) || isParsingDocumentIndex(j))
   );
   if (!hasActive) return;
   progressPollTimer = setInterval(() => {
@@ -411,10 +435,10 @@ defineExpose({ load, refresh: load });
             <div class="jobs-panel__item-main">
               <n-space :size="6" align="center">
                 <n-tag size="small">{{ jobTypeLabel(row.type) }}</n-tag>
-                <n-tag :type="statusType[row.status] || 'default'" size="small">
-                  {{ jobStatusLabel(row.status) }}
+                <n-tag :type="statusType[displayJobStatus(row)] || 'default'" size="small">
+                  {{ jobStatusLabel(displayJobStatus(row)) }}
                 </n-tag>
-                <span class="jobs-panel__progress">{{ row.progress }}%</span>
+                <span class="jobs-panel__progress">{{ displayJobProgress(row) }}%</span>
               </n-space>
               <div class="jobs-panel__meta">
                 {{ documentTitle(row) }} · {{ new Date(row.created_at).toLocaleString() }}

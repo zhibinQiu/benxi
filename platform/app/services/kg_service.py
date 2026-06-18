@@ -42,6 +42,13 @@ DEFAULT_ENTITY_TYPES: list[tuple[str, str, str, int]] = [
 
 DOC_ENTITY_PROPERTY_KEY = "document_id"
 
+
+def _invalidate_kg_cache(user_id: uuid.UUID | None = None) -> None:
+    from app.core.platform_cache import invalidate_kg_cache
+
+    invalidate_kg_cache(user_id)
+
+
 DEFAULT_RELATION_TYPES: list[tuple[str, str, int]] = [
     ("contains", "包含", 10),
     ("employs", "任职", 20),
@@ -96,15 +103,25 @@ def _relation_counts(db: Session, owner_id: uuid.UUID) -> dict[uuid.UUID, int]:
     return {type_id: int(count) for type_id, count in rows}
 
 
+def ensure_platform_org_synced(db: Session, user: User) -> dict[str, int] | None:
+    """将平台用户/部门 upsert 到当前用户的图谱实体。"""
+    from app.services.kg_system_sync_service import sync_platform_org_to_kg
+
+    return sync_platform_org_to_kg(db, user)
+
+
 def seed_demo_graph(db: Session, user: User) -> None:
-    """首次进入且无实体时写入示例子图。"""
-    total = db.scalar(
-        select(func.count()).select_from(KgEntity).where(KgEntity.owner_id == user.id)
+    """补充碳市场示例知识链路（组织/人员由平台同步提供）。"""
+    ensure_ontology_defaults(db)
+    exists = db.scalar(
+        select(KgEntity.id).where(
+            KgEntity.owner_id == user.id,
+            KgEntity.name == "全国碳市场管理办法",
+        )
     )
-    if total and int(total) > 0:
+    if exists:
         return
 
-    ensure_ontology_defaults(db)
     type_by_code = {
         t.code: t
         for t in db.scalars(select(KgEntityType).order_by(KgEntityType.sort_order)).all()
@@ -128,9 +145,15 @@ def seed_demo_graph(db: Session, user: User) -> None:
         db.flush()
         return row
 
-    org = add_entity("org", "示例公司")
-    dept = add_entity("org", "研发部")
-    person = add_entity("person", "张三")
+    person_type_id = type_by_code["person"].id
+    person = db.scalar(
+        select(KgEntity)
+        .where(KgEntity.owner_id == user.id, KgEntity.type_id == person_type_id)
+        .order_by(KgEntity.updated_at.desc())
+        .limit(1)
+    )
+    if not person:
+        person = add_entity("person", "张三")
     doc = add_entity("doc", "碳排放核算指南")
     reg = add_entity("regulation", "全国碳市场管理办法")
     proj = add_entity("project", "减排路径规划", "部门级减排路径项目")
@@ -148,8 +171,6 @@ def seed_demo_graph(db: Session, user: User) -> None:
             )
         )
 
-    add_rel("contains", org.id, dept.id)
-    add_rel("employs", dept.id, person.id)
     add_rel("responsible", person.id, proj.id)
     add_rel("references", proj.id, doc.id)
     add_rel("based_on", doc.id, reg.id)
@@ -158,8 +179,23 @@ def seed_demo_graph(db: Session, user: User) -> None:
     db.flush()
 
 
-def get_meta(db: Session, user: User) -> KgMetaOut:
+def get_meta(db: Session, user: User, *, sync_system: bool = True) -> KgMetaOut:
+    from app.config import get_settings
+    from app.core.platform_cache import (
+        cache_get_json,
+        cache_set_json,
+        kg_meta_cache_key,
+    )
+
+    cache_key = kg_meta_cache_key(str(user.id), sync_system)
+    ttl = max(30, int(get_settings().kg_graph_cache_ttl_sec))
+    cached = cache_get_json(cache_key, ttl=ttl)
+    if cached is not None:
+        return KgMetaOut.model_validate(cached)
+
     ensure_ontology_defaults(db)
+    if sync_system:
+        ensure_platform_org_synced(db, user)
     seed_demo_graph(db, user)
     db.commit()
 
@@ -201,12 +237,14 @@ def get_meta(db: Session, user: User) -> KgMetaOut:
         select(func.count()).select_from(KgRelation).where(KgRelation.owner_id == user.id)
     )
 
-    return KgMetaOut(
+    result = KgMetaOut(
         entity_types=entity_types,
         relation_types=relation_types,
         entity_total=int(entity_total or 0),
         relation_total=int(relation_total or 0),
     )
+    cache_set_json(cache_key, result.model_dump(mode="json"), ttl=ttl)
+    return result
 
 
 def _entity_out(db: Session, row: KgEntity) -> KgEntityOut:
@@ -276,6 +314,7 @@ def create_entity(db: Session, user: User, body: KgEntityIn) -> KgEntityOut:
     db.flush()
     db.commit()
     db.refresh(row)
+    _invalidate_kg_cache(user.id)
     return _entity_out(db, row)
 
 
@@ -306,6 +345,7 @@ def update_entity(
         row.properties = body.properties
     db.commit()
     db.refresh(row)
+    _invalidate_kg_cache(user.id)
     return _entity_out(db, row)
 
 
@@ -320,6 +360,7 @@ def delete_entity(db: Session, user: User, entity_id: uuid.UUID) -> None:
         raise not_found("实体不存在")
     db.delete(row)
     db.commit()
+    _invalidate_kg_cache(user.id)
 
 
 def _relation_out(db: Session, row: KgRelation) -> KgRelationOut:
@@ -404,6 +445,7 @@ def create_relation(db: Session, user: User, body: KgRelationIn) -> KgRelationOu
     db.flush()
     db.commit()
     db.refresh(row)
+    _invalidate_kg_cache(user.id)
     return _relation_out(db, row)
 
 
@@ -418,6 +460,7 @@ def delete_relation(db: Session, user: User, relation_id: uuid.UUID) -> None:
         raise not_found("关系不存在")
     db.delete(row)
     db.commit()
+    _invalidate_kg_cache(user.id)
 
 
 def create_entity_type(db: Session, body: KgEntityTypeIn) -> KgEntityTypeOut:
@@ -435,6 +478,7 @@ def create_entity_type(db: Session, body: KgEntityTypeIn) -> KgEntityTypeOut:
     db.flush()
     db.commit()
     db.refresh(row)
+    _invalidate_kg_cache()
     return KgEntityTypeOut(
         id=row.id,
         code=row.code,
@@ -464,6 +508,7 @@ def update_entity_type(
         row.sort_order = body.sort_order
     db.commit()
     db.refresh(row)
+    _invalidate_kg_cache()
     return KgEntityTypeOut(
         id=row.id,
         code=row.code,
@@ -486,6 +531,7 @@ def delete_entity_type(db: Session, type_id: uuid.UUID) -> None:
         raise bad_request("该类型下仍有实体，无法删除")
     db.delete(row)
     db.commit()
+    _invalidate_kg_cache()
 
 
 def create_relation_type(db: Session, body: KgRelationTypeIn) -> KgRelationTypeOut:
@@ -502,6 +548,7 @@ def create_relation_type(db: Session, body: KgRelationTypeIn) -> KgRelationTypeO
     db.flush()
     db.commit()
     db.refresh(row)
+    _invalidate_kg_cache()
     return KgRelationTypeOut(
         id=row.id,
         code=row.code,
@@ -528,6 +575,7 @@ def update_relation_type(
         row.sort_order = body.sort_order
     db.commit()
     db.refresh(row)
+    _invalidate_kg_cache()
     return KgRelationTypeOut(
         id=row.id,
         code=row.code,
@@ -551,9 +599,10 @@ def delete_relation_type(db: Session, type_id: uuid.UUID) -> None:
         raise bad_request("该关系类型仍在使用，无法删除")
     db.delete(row)
     db.commit()
+    _invalidate_kg_cache()
 
 
-def get_graph(
+def _build_graph(
     db: Session,
     user: User,
     *,
@@ -611,6 +660,15 @@ def get_graph(
     for ent in entities:
         et = type_map.get(ent.type_id)
         if not et:
+            nodes.append(
+                KgGraphNodeOut(
+                    id=ent.id,
+                    name=ent.name,
+                    type_code="unknown",
+                    type_label="未分类",
+                    type_color="gray",
+                )
+            )
             continue
         nodes.append(
             KgGraphNodeOut(
@@ -621,6 +679,25 @@ def get_graph(
                 type_color=et.color,
             )
         )
+
+    if focus_entity_id and not any(n.id == focus_entity_id for n in nodes):
+        focus_row = db.scalar(
+            select(KgEntity).where(
+                KgEntity.owner_id == user.id,
+                KgEntity.id == focus_entity_id,
+            )
+        )
+        if focus_row:
+            et = type_map.get(focus_row.type_id)
+            nodes.append(
+                KgGraphNodeOut(
+                    id=focus_row.id,
+                    name=focus_row.name,
+                    type_code=et.code if et else "unknown",
+                    type_label=et.label if et else "未分类",
+                    type_color=et.color if et else "gray",
+                )
+            )
 
     rel_rows = db.scalars(
         select(KgRelation).where(
@@ -650,6 +727,41 @@ def get_graph(
         edges=edges,
         focus_entity_id=focus_entity_id,
     )
+
+
+def get_graph(
+    db: Session,
+    user: User,
+    *,
+    focus_entity_id: uuid.UUID | None = None,
+    depth: int = 1,
+) -> KgGraphOut:
+    from app.config import get_settings
+    from app.core.platform_cache import (
+        cache_get_json,
+        cache_set_json,
+        kg_graph_cache_key,
+    )
+
+    depth = max(1, min(depth, 3))
+    cache_key = kg_graph_cache_key(
+        str(user.id),
+        str(focus_entity_id) if focus_entity_id else None,
+        depth,
+    )
+    ttl = max(30, int(get_settings().kg_graph_cache_ttl_sec))
+    cached = cache_get_json(cache_key, ttl=ttl)
+    if cached is not None:
+        return KgGraphOut.model_validate(cached)
+
+    result = _build_graph(
+        db,
+        user,
+        focus_entity_id=focus_entity_id,
+        depth=depth,
+    )
+    cache_set_json(cache_key, result.model_dump(mode="json"), ttl=ttl)
+    return result
 
 
 @dataclass
@@ -793,7 +905,7 @@ def build_kg_qa_context(
         )
 
     return KgQaContext(
-        context_text="【知识图谱实体与关系】\n" + "\n\n".join(blocks),
+        context_text="【本体图谱实体与关系】\n" + "\n\n".join(blocks),
         citations=citations,
         matched_entity_ids=sorted(matched_ids, key=str),
         entity_count=len(entities),
@@ -860,6 +972,7 @@ def ensure_doc_entity_for_document(
     if commit:
         db.commit()
         db.refresh(row)
+        _invalidate_kg_cache(user.id)
     return _entity_out(db, row)
 
 
@@ -895,8 +1008,9 @@ def retrieve_kg_context_for_question(
 ) -> KgQaContext | None:
     """解析问题中的实体 mention，扩展子图并格式化为问答上下文。"""
     ensure_ontology_defaults(db)
+    ensure_platform_org_synced(db, user)
     seed_demo_graph(db, user)
-    db.flush()
+    db.commit()
 
     matches = match_entities_in_question(db, user, question, limit=match_limit)
     if not matches:

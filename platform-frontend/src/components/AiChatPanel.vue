@@ -11,8 +11,15 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { TimeOutline, DocumentTextOutline, DocumentOutline, GitNetworkOutline } from "@vicons/ionicons5";
+import { TimeOutline, DocumentTextOutline, DocumentOutline, GitNetworkOutline, CloseOutline, AttachOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
+import {
+  AI_CHAT_ATTACHMENT_ACCEPT,
+  clearAiChatAttachments,
+  fetchAiChatAttachments,
+  removeAiChatAttachmentFile,
+  uploadAiChatAttachments,
+} from "../api/chat.js";
 import { NButton, NIcon, NSpin } from "naive-ui";
 import { marked } from "marked";
 import ChatComposer from "./ChatComposer.vue";
@@ -29,7 +36,7 @@ import { useI18n } from "../composables/useI18n.js";
 import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
 import { splitCitedCitations } from "../utils/reportCitations.js";
 import { exportMindmapMarkdown, exportMindmapOpml } from "../utils/mindmapExport.js";
-import { PLATFORM_APP_NAME } from "../constants/platform";
+import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import {
   clearChatSession,
@@ -61,7 +68,7 @@ const props = defineProps({
   /** 标题使用系统渐变色 */
   titleGradient: { type: Boolean, default: false },
   /** 进入对话后输入框占位文案 */
-  replyPlaceholder: { type: String, default: "继续提问" },
+  replyPlaceholder: { type: String, default: "" },
   /** 对话历史 scope：ai-home | carbon-qa | smart-data-query */
   chatScope: { type: String, default: "" },
   /** 是否展示历史对话 / 新对话（知识检索等单次会话场景设为 false） */
@@ -74,6 +81,8 @@ const props = defineProps({
   reportOptimizePresets: { type: Array, default: () => [] },
   /** 流式回复期间仍允许编辑输入框（Enter 发送会先停止当前生成） */
   composerInputWhileLoading: { type: Boolean, default: false },
+  /** AI 智能体：支持上传临时附件（不入库） */
+  enableAttachments: { type: Boolean, default: false },
 });
 
 const conversationId = defineModel("conversationId", { type: String, default: null });
@@ -82,6 +91,7 @@ const emit = defineEmits(["new-chat"]);
 
 const ui = usePlatformUi();
 const { t } = useI18n();
+const appDisplayName = useAppDisplayName();
 const route = useRoute();
 const router = useRouter();
 
@@ -102,6 +112,96 @@ const exportingWord = ref(false);
 const exportingMindmap = ref("");
 let streamAbort = null;
 let streamGeneration = 0;
+
+const attachmentSessionId = ref(null);
+const attachmentFiles = ref([]);
+const uploadingAttachments = ref(false);
+const attachmentInputRef = ref(null);
+const hasAttachments = computed(() => attachmentFiles.value.length > 0);
+
+function openAttachmentPicker() {
+  if (uploadingAttachments.value || sending.value) return;
+  attachmentInputRef.value?.click?.();
+}
+
+async function refreshAttachmentList(sessionId = attachmentSessionId.value) {
+  if (!sessionId) {
+    attachmentFiles.value = [];
+    return;
+  }
+  try {
+    const data = await fetchAiChatAttachments(sessionId);
+    attachmentSessionId.value = data?.attachment_session_id || sessionId;
+    attachmentFiles.value = Array.isArray(data?.files) ? data.files : [];
+  } catch {
+    attachmentSessionId.value = null;
+    attachmentFiles.value = [];
+  }
+}
+
+async function onAttachmentInputChange(event) {
+  const picked = Array.from(event?.target?.files || []);
+  if (event?.target) event.target.value = "";
+  if (!picked.length) return;
+  uploadingAttachments.value = true;
+  try {
+    const data = await uploadAiChatAttachments(picked, {
+      attachmentSessionId: attachmentSessionId.value,
+    });
+    attachmentSessionId.value = data?.attachment_session_id || attachmentSessionId.value;
+    const added = Array.isArray(data?.files) ? data.files : [];
+    if (added.length) {
+      const existingIds = new Set(attachmentFiles.value.map((f) => f.file_id));
+      attachmentFiles.value = [
+        ...attachmentFiles.value,
+        ...added.filter((f) => f?.file_id && !existingIds.has(f.file_id)),
+      ];
+    } else if (attachmentSessionId.value) {
+      await refreshAttachmentList(attachmentSessionId.value);
+    }
+    const count = added.length || picked.length;
+    ui.success(t("chat.attachments.uploadSuccess", { count }));
+  } catch (e) {
+    const msg = (e?.message || "").trim();
+    if (/not\s*found/i.test(msg)) {
+      ui.error(t("chat.attachments.serviceUnavailable"));
+    } else {
+      ui.error(msg || t("chat.attachments.uploadFailed"));
+    }
+  } finally {
+    uploadingAttachments.value = false;
+  }
+}
+
+async function removeAttachment(fileId) {
+  const sid = attachmentSessionId.value;
+  if (!sid || !fileId) return;
+  uploadingAttachments.value = true;
+  try {
+    const data = await removeAiChatAttachmentFile(sid, fileId);
+    attachmentFiles.value = Array.isArray(data?.files) ? data.files : [];
+    if (!attachmentFiles.value.length) {
+      attachmentSessionId.value = null;
+    }
+  } catch (e) {
+    ui.error(e.message || t("chat.attachments.removeFailed"));
+  } finally {
+    uploadingAttachments.value = false;
+  }
+}
+
+async function clearAttachmentState({ remote = true } = {}) {
+  const sid = attachmentSessionId.value;
+  attachmentSessionId.value = null;
+  attachmentFiles.value = [];
+  if (remote && sid) {
+    try {
+      await clearAiChatAttachments(sid);
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 const lastAssistantIndex = computed(() => {
   for (let i = messages.value.length - 1; i >= 0; i -= 1) {
@@ -126,7 +226,7 @@ const lastReportQuestion = computed(() => {
 
 const lastReportTitle = computed(() => {
   const q = lastReportQuestion.value.trim();
-  if (!q) return "研究报告";
+  if (!q) return t("chat.researchReport");
   return q.length > 48 ? `${q.slice(0, 47)}…` : q;
 });
 
@@ -241,17 +341,19 @@ function openCitationPreview(citationOrIndex, citations = []) {
 }
 
 const displaySubtitle = computed(
-  () => props.subtitle || `${PLATFORM_APP_NAME} · 智能对话`
+  () => props.subtitle || t("chat.defaultSubtitle", { appName: appDisplayName.value })
 );
 
 const headerSub = computed(
   () =>
     props.chatHeaderSub ||
-    (props.streaming ? "多轮对话 · 流式回复" : "多轮对话 · Markdown / 图表")
+    (props.streaming ? t("chat.defaultHeaderSubStreaming") : t("chat.defaultHeaderSubStatic"))
 );
 
 const composerPlaceholder = computed(() =>
-  started.value ? props.replyPlaceholder : "输入您的问题"
+  started.value
+    ? props.replyPlaceholder || t("chat.continueAsk")
+    : t("chat.enterQuestion")
 );
 
 const landingComposerRows = computed(() => ({ minRows: 3, maxRows: 8 }));
@@ -296,7 +398,9 @@ async function sendMessageStreaming(content, assistantIdx, history) {
       {
         message: content,
         history,
-        conversationId: conversationId.value},
+        conversationId: conversationId.value,
+        attachmentSessionId: attachmentSessionId.value,
+      },
       {
         signal: streamAbort.signal,
         onWorkflow: (ev) => {
@@ -380,7 +484,7 @@ function finalizeStoppedAssistant(assistantIdx) {
   row.streaming = false;
   if (row.workflow) row.workflow.running = false;
   if (!row.content.trim()) {
-    row.content = "（已停止生成）";
+    row.content = t("chat.stoppedGeneration");
   }
 }
 
@@ -452,11 +556,11 @@ async function sendMessage(text) {
   }
 
   if (props.streaming && !props.streamChat) {
-    ui.error("未配置流式对话");
+    ui.error(t("chat.streamNotConfigured"));
     return;
   }
   if (!props.streaming && !props.chatSend) {
-    ui.error("未配置对话接口");
+    ui.error(t("chat.chatNotConfigured"));
     return;
   }
 
@@ -494,18 +598,18 @@ async function sendMessage(text) {
       finalizeStoppedAssistant(assistantIdx);
       return;
     }
-    ui.error(e.message || "发送失败");
+    ui.error(e.message || t("chat.sendFailed"));
     const row = messages.value[assistantIdx];
     if (row) {
       row.streaming = false;
       row.error = true;
       if (!row.content.trim()) {
-        row.content = "抱歉，暂时无法回复，请稍后重试。";
+        row.content = t("chat.sorryRetry");
       }
     } else {
       messages.value.push({
         role: "assistant",
-        content: "抱歉，暂时无法回复，请稍后重试。",
+        content: t("chat.sorryRetry"),
         error: true});
     }
   } finally {
@@ -569,7 +673,7 @@ function useSuggestion(text) {
 function persistSessionState() {
   if (!props.chatScope) return;
   const serialized = serializeChatMessages(messages.value);
-  if (!serialized.length && !conversationId.value && !input.value.trim()) {
+  if (!serialized.length && !conversationId.value && !input.value.trim() && !attachmentSessionId.value) {
     clearChatSession(props.chatScope);
     return;
   }
@@ -578,6 +682,8 @@ function persistSessionState() {
     messages: serialized,
     started: started.value,
     input: input.value,
+    attachmentSessionId: attachmentSessionId.value,
+    attachmentFiles: attachmentFiles.value,
   });
 }
 
@@ -589,6 +695,7 @@ function newChat() {
   messages.value = [];
   input.value = "";
   conversationId.value = null;
+  clearAttachmentState();
   if (props.chatScope) clearChatSession(props.chatScope);
   emit("new-chat");
   if (route.query.conversationId) {
@@ -625,7 +732,7 @@ async function loadConversationFromId(id) {
     await scrollToBottom();
     persistSessionState();
   } catch (e) {
-    ui.error(e.message || "加载对话失败");
+    ui.error(e.message || t("chat.loadFailed"));
   } finally {
     loadingHistory.value = false;
   }
@@ -637,6 +744,14 @@ async function restorePersistedSession() {
   if (!saved) return;
 
   if (saved.input) input.value = saved.input;
+
+  if (saved.attachmentSessionId) {
+    attachmentSessionId.value = saved.attachmentSessionId;
+    if (Array.isArray(saved.attachmentFiles) && saved.attachmentFiles.length) {
+      attachmentFiles.value = saved.attachmentFiles;
+    }
+    await refreshAttachmentList(saved.attachmentSessionId);
+  }
 
   if (SERVER_HISTORY_SCOPES.has(props.chatScope) && saved.conversationId) {
     await loadConversationFromId(saved.conversationId);
@@ -676,12 +791,13 @@ onMounted(async () => {
 });
 
 onDeactivated(() => {
-  persistSessionState();
-  streamAbort?.abort();
+  // 切到其他页面时不中断流式请求；KeepAlive 下组件仍在内存中继续接收增量
+  if (!sending.value) persistSessionState();
 });
 
 onActivated(() => {
   if (started.value) scrollToBottom();
+  if (sending.value) persistSessionState();
 });
 
 onBeforeUnmount(() => {
@@ -699,7 +815,7 @@ defineExpose({ newChat });
   >
     <div v-if="!started && chatScope && showSessionActions" class="ai-home-landing-topbar">
       <IconAction
-        label="查看历史对话"
+        :label="t('chat.viewHistory')"
         :icon="TimeOutline"
         :disabled="loadingHistory"
         @click="goToHistory"
@@ -724,12 +840,12 @@ defineExpose({ newChat });
         <div v-if="showSessionActions" class="ai-home-chat-actions">
           <IconAction
             v-if="chatScope"
-            label="历史对话"
+            :label="t('chat.history')"
             :icon="TimeOutline"
             :disabled="loadingHistory"
             @click="goToHistory"
           />
-          <n-button size="small" quaternary @click="newChat">新对话</n-button>
+          <n-button size="small" quaternary @click="newChat">{{ t("chat.newChat") }}</n-button>
         </div>
       </header>
     </Transition>
@@ -752,7 +868,7 @@ defineExpose({ newChat });
 
       <div v-if="loadingHistory" class="ai-home-history-loading platform-inline-loading">
         <n-spin size="small" />
-        <span>正在加载对话…</span>
+        <span>{{ t("chat.loadingConversation") }}</span>
       </div>
 
       <div
@@ -792,7 +908,7 @@ defineExpose({ newChat });
               />
               <div v-else-if="m.streaming && !m.content" class="ai-thinking platform-inline-loading">
                 <n-spin size="tiny" />
-                正在思考…
+                {{ t("chat.thinking") }}
               </div>
               <div v-else-if="m.streaming" class="ai-home-stream-text">
                 {{ m.content }}<span class="ai-home-cursor">▍</span>
@@ -937,7 +1053,7 @@ defineExpose({ newChat });
                 :content="m.content"
               />
               <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
-              <div v-else class="ai-workflow-wait ai-workflow-wait--empty">未能生成回答</div>
+              <div v-else class="ai-workflow-wait ai-workflow-wait--empty">{{ t("chat.noAnswer") }}</div>
               <ChatMessageCitations
                 v-if="
                   showCitations &&
@@ -965,16 +1081,64 @@ defineExpose({ newChat });
 
       <div class="ai-home-dock" :class="{ 'ai-home-dock--chat': started }">
         <div class="ai-home-dock-inner">
-          <div v-if="!started && toolLinks.length" class="ai-home-tools">
-            <RouterLink
-              v-for="tool in toolLinks"
-              :key="tool.title"
-              :to="tool.route"
-              class="ai-home-tool-link"
+          <input
+            v-if="enableAttachments"
+            ref="attachmentInputRef"
+            type="file"
+            class="ai-home-attachment-input"
+            :accept="AI_CHAT_ATTACHMENT_ACCEPT"
+            multiple
+            @change="onAttachmentInputChange"
+          />
+          <div
+            v-if="(!started && toolLinks.length) || enableAttachments"
+            class="ai-home-tools"
+          >
+            <template v-if="!started">
+              <RouterLink
+                v-for="tool in toolLinks"
+                :key="tool.title"
+                :to="tool.route"
+                class="ai-home-tool-link"
+              >
+                <n-icon v-if="tool.icon" :size="13" :component="tool.icon" />
+                <span>{{ tool.title }}</span>
+              </RouterLink>
+            </template>
+            <button
+              v-if="enableAttachments"
+              type="button"
+              class="ai-home-tool-link ai-home-tool-action"
+              :disabled="uploadingAttachments || sending"
+              @click="openAttachmentPicker"
             >
-              <n-icon v-if="tool.icon" :size="13" :component="tool.icon" />
-              <span>{{ tool.title }}</span>
-            </RouterLink>
+              <n-spin v-if="uploadingAttachments" :size="12" />
+              <n-icon v-else :size="13" :component="AttachOutline" />
+              <span>{{ t("chat.attachments.add") }}</span>
+            </button>
+          </div>
+          <div v-if="enableAttachments && hasAttachments" class="ai-home-attachments">
+            <div class="ai-home-attachments__label">{{ t("chat.attachments.label") }}</div>
+            <div class="ai-home-attachments__list">
+              <div
+                v-for="file in attachmentFiles"
+                :key="file.file_id"
+                class="ai-home-attachment-chip"
+                :title="file.warning || file.file_name"
+              >
+                <n-icon :size="14" :component="DocumentTextOutline" />
+                <span class="ai-home-attachment-chip__name">{{ file.file_name }}</span>
+                <button
+                  type="button"
+                  class="ai-home-attachment-chip__remove"
+                  :disabled="uploadingAttachments || sending"
+                  :aria-label="t('chat.attachments.remove')"
+                  @click="removeAttachment(file.file_id)"
+                >
+                  <n-icon :size="12" :component="CloseOutline" />
+                </button>
+              </div>
+            </div>
           </div>
           <div class="ai-home-composer">
             <ChatComposer
@@ -1216,6 +1380,16 @@ defineExpose({ newChat });
   border-color: var(--platform-accent-border);
 }
 
+.ai-home-tool-action {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ai-home-tool-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .ai-home-suggestions {
   display: flex;
   flex-wrap: wrap;
@@ -1245,6 +1419,73 @@ defineExpose({ newChat });
 .ai-home-chip:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.ai-home-attachments {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-home-attachments__label {
+  font-size: 12px;
+  color: #64748b;
+  padding-left: 4px;
+}
+
+.ai-home-attachments__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-home-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #fff 92%, var(--platform-accent, #0f766e));
+  border: 1px solid color-mix(in srgb, var(--platform-accent, #0f766e) 18%, #e2e8f0);
+  color: #334155;
+  font-size: 12px;
+}
+
+.ai-home-attachment-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.ai-home-attachment-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ai-home-attachment-chip__remove:hover:not(:disabled) {
+  color: #ef4444;
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+}
+
+.ai-home-attachment-chip__remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-home-attachment-input {
+  display: none;
 }
 
 .ai-home-composer {

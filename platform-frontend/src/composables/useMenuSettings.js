@@ -37,22 +37,39 @@ export const ROUTE_MENU_KEYS = {
   "feed-subscriptions": "knowledge-subscriptions",
   "feed-entry": "knowledge-subscriptions",
   "admin-monitor": "admin-monitor",
-  "admin-model-settings": "admin-model-settings",
   "admin-docs": "admin-docs",
+  "issue-reports": "issue-reports",
 };
+
+/** 管理员在「菜单管理」中可配置的侧栏项（不含权限控制的子页） */
+export const CONFIGURABLE_MENU_KEYS = new Set([
+  "ai-home",
+  "system-functions",
+  "documents",
+  "knowledge-subscriptions",
+  "issue-reports",
+  "admin-monitor",
+  "admin-docs",
+]);
 
 const MENU_FALLBACK_ORDER = [
   "ai-home",
   "system-functions",
   "documents",
   "knowledge-subscriptions",
+  "issue-reports",
   "admin-monitor",
   "admin-docs",
+  "issue-reports",
 ];
 
 export function routeMenuKey(routeName) {
   if (!routeName) return null;
   return ROUTE_MENU_KEYS[String(routeName)] || null;
+}
+
+export function isConfigurableMenuKey(key) {
+  return Boolean(key && CONFIGURABLE_MENU_KEYS.has(key));
 }
 
 export function useMenuSettings() {

@@ -3,12 +3,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.api.documents.serializers import (
     attachment_disposition as _attachment_disposition,
+    inline_disposition as _inline_disposition,
 )
 from app.api.documents.serializers import (
     document_detail as _detail,
@@ -148,6 +149,10 @@ def download_document_file(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     version_id: uuid.UUID | None = None,
+    disposition: str | None = Query(
+        None,
+        description="传 inline 时用于浏览器内嵌预览（Content-Disposition: inline）",
+    ),
 ) -> Response:
     """经平台鉴权代理下载文件；不传 version_id 时下载当前版本。"""
     doc = document_service.get_document(db, document_id)
@@ -156,8 +161,14 @@ def download_document_file(
     content, file_name, mime_type = document_service.read_document_file_bytes(
         db, user, doc, version_id=version_id
     )
+    use_inline = (disposition or "").strip().lower() == "inline"
+    disp_header = (
+        _inline_disposition(file_name)
+        if use_inline
+        else _attachment_disposition(file_name)
+    )
     return Response(
         content=content,
         media_type=mime_type,
-        headers={"Content-Disposition": _attachment_disposition(file_name)},
+        headers={"Content-Disposition": disp_header},
     )

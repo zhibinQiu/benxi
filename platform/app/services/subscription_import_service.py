@@ -27,7 +27,8 @@ def replace_version_file_content(
     mime_type: str,
     content: bytes,
 ) -> None:
-    from app.storage.object_store import compute_md5_hex, get_object_store
+    from app.core.content_checksum import compute_md5_hex
+    from app.storage.object_store import get_object_store
 
     store = get_object_store()
     new_key = store.build_file_key(version.document_id, version.version_no, file_name)
@@ -261,17 +262,31 @@ def run_subscription_import_job(job_id: uuid.UUID) -> None:
                 db.commit()
                 return
         else:
-            replace_version_file_content(
-                db,
-                version,
-                file_name=file_name,
-                mime_type=mime_type,
-                content=pdf_bytes,
-            )
-            db.commit()
-            from app.core.platform_cache import invalidate_document_caches
+            from app.core.content_checksum import compute_md5_hex
 
-            invalidate_document_caches(str(work["user_id"]))
+            new_checksum = compute_md5_hex(pdf_bytes)
+            unchanged = (
+                (version.checksum or "").strip().lower() == new_checksum.lower()
+                and _pdf_bytes_valid(stored)
+            )
+            if unchanged:
+                logger.info(
+                    "资讯导入 PDF 内容未变，跳过重新上传 doc=%s job=%s",
+                    work["document_id"],
+                    job_id,
+                )
+            else:
+                replace_version_file_content(
+                    db,
+                    version,
+                    file_name=file_name,
+                    mime_type=mime_type,
+                    content=pdf_bytes,
+                )
+                db.commit()
+                from app.core.platform_cache import invalidate_document_caches
+
+                invalidate_document_caches(str(work["user_id"]))
 
         update_job_status(db, job_id, JobStatus.running.value, progress=70)
         db.commit()
@@ -283,19 +298,57 @@ def run_subscription_import_job(job_id: uuid.UUID) -> None:
                 from app.services.knowledge_sync_job_service import (
                     create_subscription_pipeline_index_job,
                 )
-
-                index_job = create_subscription_pipeline_index_job(
-                    db,
-                    user_id=work["user_id"],
-                    document_id=work["document_id"],
-                    version_id=work["version_id"],
-                    document_title=work["document_title"],
-                    article_html_body=work["html_body"],
-                    article_summary=work["summary"],
-                    article_link=work["link"],
-                    article_source_label=work["source_label"],
-                    article_title=work["title"],
+                from app.services.ragflow_version_link_service import (
+                    get_version_link_by_version_id,
                 )
+
+                skip_index = False
+                vl = get_version_link_by_version_id(db, work["version_id"])
+                if vl and vl.index_completed_at is not None:
+                    from app.services.pageindex_service import (
+                        get_version_link_by_version_id as get_pi_version_link,
+                    )
+
+                    pi = get_pi_version_link(db, work["version_id"])
+                    if pi:
+                        skip_index = True
+                        logger.info(
+                            "资讯导入已索引且内容未变，跳过重复索引 doc=%s",
+                            work["document_id"],
+                        )
+                if skip_index:
+                    index_job = None
+                else:
+                    index_job = create_subscription_pipeline_index_job(
+                        db,
+                        user_id=work["user_id"],
+                        document_id=work["document_id"],
+                        version_id=work["version_id"],
+                        document_title=work["document_title"],
+                        article_html_body=work["html_body"],
+                        article_summary=work["summary"],
+                        article_link=work["link"],
+                        article_source_label=work["source_label"],
+                        article_title=work["title"],
+                    )
+                    if not index_job:
+                        from app.services.knowledge_sync_job_service import (
+                            create_document_knowledge_index_job,
+                        )
+
+                        index_job = create_document_knowledge_index_job(
+                            db,
+                            user_id=work["user_id"],
+                            document_id=work["document_id"],
+                            version_id=work["version_id"],
+                            force=True,
+                            document_title=work["document_title"],
+                        )
+                        if index_job:
+                            logger.warning(
+                                "资讯导入专用管道未创建索引任务，已回退通用文档索引 doc=%s",
+                                work["document_id"],
+                            )
                 if index_job:
                     index_job_id = index_job.id
                     job_row = db.get(Job, job_id)

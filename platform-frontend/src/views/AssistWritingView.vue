@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from "../composables/useI18n.js";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
@@ -19,6 +20,7 @@ import {
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -42,11 +44,13 @@ const presetOptions = computed(() =>
 
 const previewHtml = computed(() => {
   const raw = markdown.value || "";
-  if (!raw.trim()) return "<p class=\"md-empty\">预览将显示在此处</p>";
+  if (!raw.trim()) {
+    return `<p class="md-empty">${t("assistWriting.previewEmpty")}</p>`;
+  }
   try {
     return marked.parse(raw);
   } catch {
-    return "<p class=\"md-error\">预览解析失败</p>";
+    return `<p class="md-error">${t("assistWriting.previewError")}</p>`;
   }
 });
 
@@ -83,14 +87,14 @@ async function loadPresets() {
   try {
     presets.value = (await fetchAssistWritingPresets()) || [];
   } catch (e) {
-    ui.warning(e.message || "无法加载提示词模板");
+    ui.warning(e.message || t("assistWriting.loadPresetsFailed"));
   }
 }
 
 async function runCompose() {
   const extra = instruction.value.trim();
   if (!presetId.value && !extra) {
-    ui.warning("请选择提示词模板或输入补充说明");
+    ui.warning(t("assistWriting.needPresetOrInstruction"));
     return;
   }
   composing.value = true;
@@ -102,9 +106,9 @@ async function runCompose() {
       preset_id: presetId.value || null});
     pushHistory(before);
     applyMarkdown(data.markdown || "");
-    ui.success("已写入左侧编辑器");
+    ui.success(t("assistWriting.writtenToEditor"));
   } catch (e) {
-    ui.error(e.message || "AI 处理失败");
+    ui.error(e.message || t("assistWriting.composeFailed"));
   } finally {
     composing.value = false;
   }
@@ -139,25 +143,25 @@ watch(presetId, (id) => {
           size="small"
           secondary
           :disabled="!canUndo"
-          title="撤销"
+          :title="t('assistWriting.undo')"
           @click="undo"
         >
           <template #icon>
             <n-icon :component="ArrowUndoOutline" />
           </template>
-          撤销
+          {{ t("assistWriting.undo") }}
         </n-button>
         <n-button
           size="small"
           secondary
           :disabled="!canRedo"
-          title="重做"
+          :title="t('assistWriting.redo')"
           @click="redo"
         >
           <template #icon>
             <n-icon :component="ArrowRedoOutline" />
           </template>
-          重做
+          {{ t("assistWriting.redo") }}
         </n-button>
       </n-space>
     </template>
@@ -167,8 +171,8 @@ watch(presetId, (id) => {
         <section class="doc-panel doc-panel--editor">
           <header class="doc-panel-head">
             <div class="doc-panel-head-main">
-              <span class="doc-panel-badge doc-panel-badge--editor">源码</span>
-              <span class="doc-panel-label">Markdown</span>
+              <span class="doc-panel-badge doc-panel-badge--editor">{{ t("assistWriting.badgeSource") }}</span>
+              <span class="doc-panel-label">{{ t("assistWriting.badgeMarkdown") }}</span>
             </div>
           </header>
           <div class="doc-panel-body doc-panel-body--editor">
@@ -176,7 +180,7 @@ watch(presetId, (id) => {
               v-model="markdown"
               class="md-editor"
               spellcheck="false"
-              placeholder="# 标题&#10;&#10;在此编写 Markdown…"
+              :placeholder="t('assistWriting.editorPlaceholder')"
               @input="onEditorInput"
             />
           </div>
@@ -185,8 +189,8 @@ watch(presetId, (id) => {
         <section class="doc-panel doc-panel--preview">
           <header class="doc-panel-head">
             <div class="doc-panel-head-main">
-              <span class="doc-panel-badge doc-panel-badge--preview">预览</span>
-              <span class="doc-panel-label">渲染效果</span>
+              <span class="doc-panel-badge doc-panel-badge--preview">{{ t("assistWriting.badgePreview") }}</span>
+              <span class="doc-panel-label">{{ t("assistWriting.badgeRendered") }}</span>
             </div>
           </header>
           <div class="doc-panel-body doc-panel-body--preview">
@@ -203,7 +207,7 @@ watch(presetId, (id) => {
             v-model:value="presetId"
             size="small"
             :options="presetOptions"
-            placeholder="提示词模板"
+            :placeholder="t('assistWriting.presetPlaceholder')"
             clearable
             class="preset-select"
           />
@@ -212,7 +216,7 @@ watch(presetId, (id) => {
             size="small"
             type="textarea"
             :autosize="{ minRows: 1, maxRows: 3 }"
-            placeholder="补充说明（可选）"
+            :placeholder="t('assistWriting.instructionPlaceholder')"
             class="instruction-input"
             @keydown="onComposeKeydown"
           />
@@ -226,7 +230,7 @@ watch(presetId, (id) => {
             <template #icon>
               <n-icon :component="SendOutline" />
             </template>
-            AI 改写
+            {{ t("assistWriting.compose") }}
           </n-button>
         </div>
       </n-spin>

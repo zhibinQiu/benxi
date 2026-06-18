@@ -14,6 +14,7 @@ from app.schemas.common import ApiResponse
 from app.schemas.menu_settings import MenuSettingsOut, MenuSettingsUpdate, VisibleMenusOut
 from app.services.menu_settings_service import (
     get_menu_settings,
+    resolve_update_menu_visibility,
     resolve_visible_menu_keys,
     save_menu_settings,
 )
@@ -44,4 +45,6 @@ def update_menu_settings_admin(
     _: Annotated[User, Depends(require_permission("admin.user"))],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[MenuSettingsOut]:
-    return ApiResponse(data=save_menu_settings(db, body.member_visible))
+    return ApiResponse(
+        data=save_menu_settings(db, resolve_update_menu_visibility(body))
+    )

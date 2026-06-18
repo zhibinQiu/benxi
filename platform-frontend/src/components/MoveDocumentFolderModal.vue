@@ -48,13 +48,13 @@ const effectiveScope = computed(
 );
 
 const effectiveDeptId = computed(() =>
-  effectiveScope.value === "department"
+  ORG_SCOPES.includes(effectiveScope.value)
     ? props.folderDeptId || props.deptId
     : null
 );
 
 const supportsFolders = computed(() =>
-  ["company", "department", "personal"].includes(effectiveScope.value)
+  ["company", "department", "team", "personal"].includes(effectiveScope.value)
 );
 
 const folderOptions = ref([]);
@@ -67,7 +67,7 @@ async function loadOptions() {
   loading.value = true;
   try {
     const params = { scope: effectiveScope.value };
-    if (effectiveScope.value === "department" && effectiveDeptId.value) {
+    if (effectiveScope.value !== "personal" && effectiveDeptId.value) {
       params.dept_id = effectiveDeptId.value;
     }
     const data = await fetchKbFolders(params);

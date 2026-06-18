@@ -21,24 +21,28 @@ import {
 import { useAuth } from "../../composables/useAuth";
 import { useAppPreferences } from "../../composables/useAppPreferences";
 import { useI18n } from "../../composables/useI18n";
-import { fetchJobs, fetchNotifications } from "../../api/client";
+import { fetchJobs, fetchNotifications, fetchTodos } from "../../api/client";
 import { PLATFORM_Z } from "../../constants/zIndex.js";
 import AssistantChatFab from "../AssistantChatFab.vue";
 import HeaderFlyoutShell from "../HeaderFlyoutShell.vue";
 import JobsPanel from "../JobsPanel.vue";
 import NotificationsPanel from "../NotificationsPanel.vue";
+import TodosPanel from "../TodosPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
-const { user, logout } = useAuth();
+const { displayName, logout } = useAuth();
 const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
 const { t, localeLabel } = useI18n();
 
 const unreadCount = ref(0);
 const activeJobCount = ref(0);
+const pendingTodoCount = ref(0);
+const todosPopoverOpen = ref(false);
 const jobsPopoverOpen = ref(false);
 const notificationsPopoverOpen = ref(false);
 const assistantOpen = ref(false);
+const todosTriggerRef = ref(null);
 const jobsTriggerRef = ref(null);
 const notificationsTriggerRef = ref(null);
 const assistantTriggerRef = ref(null);
@@ -70,49 +74,61 @@ async function refreshUnreadCount() {
 async function refreshActiveJobCount() {
   try {
     const data = await fetchJobs({ page: 1, page_size: 50 });
-    activeJobCount.value = (data.items || []).filter((job) =>
-      ["pending", "running"].includes(job.status),
+    activeJobCount.value = (data.items || []).filter(
+      (job) =>
+        (job.progress ?? 0) < 100 &&
+        job.status !== "done" &&
+        (["pending", "running"].includes(job.status) ||
+          (job.type === "document_index" && Boolean(job.payload?.awaiting_parse)))
     ).length;
   } catch {
     activeJobCount.value = 0;
   }
 }
 
+async function refreshPendingTodoCount() {
+  try {
+    const data = await fetchTodos("pending");
+    pendingTodoCount.value = Array.isArray(data) ? data.length : 0;
+  } catch {
+    pendingTodoCount.value = 0;
+  }
+}
+
 async function refreshHeaderBadges() {
-  await Promise.all([refreshUnreadCount(), refreshActiveJobCount()]);
+  await Promise.all([refreshUnreadCount(), refreshActiveJobCount(), refreshPendingTodoCount()]);
 }
 
 function closeAllFlyouts() {
+  todosPopoverOpen.value = false;
   jobsPopoverOpen.value = false;
   notificationsPopoverOpen.value = false;
   assistantOpen.value = false;
 }
 
-function toggleAssistant() {
+function toggleFlyout(target) {
+  const next = !target.value;
   closeAllFlyouts();
-  assistantOpen.value = !assistantOpen.value;
+  target.value = next;
+}
+
+function toggleTodosPopover() {
+  toggleFlyout(todosPopoverOpen);
 }
 
 function toggleJobsPopover() {
-  notificationsPopoverOpen.value = false;
-  assistantOpen.value = false;
-  jobsPopoverOpen.value = !jobsPopoverOpen.value;
+  toggleFlyout(jobsPopoverOpen);
 }
 
 function toggleNotificationsPopover() {
-  jobsPopoverOpen.value = false;
-  assistantOpen.value = false;
-  notificationsPopoverOpen.value = !notificationsPopoverOpen.value;
+  toggleFlyout(notificationsPopoverOpen);
 }
 
-function goTodos() {
-  closeAllFlyouts();
-  router.push({ name: "todos" });
+function toggleAssistant() {
+  toggleFlyout(assistantOpen);
 }
 
-const userDisplayName = computed(
-  () => user.value?.display_name || user.value?.username || t("userMenu.defaultName"),
-);
+const userDisplayName = computed(() => displayName());
 
 const userMenuOptions = computed(() => [
   {
@@ -155,6 +171,7 @@ function onUserMenuSelect(key) {
     return;
   }
   if (key === "logout") {
+    closeAllFlyouts();
     logout();
   }
 }
@@ -173,17 +190,25 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
 <template>
   <div class="header-actions">
     <div class="header-toolbar">
-      <n-button
-        quaternary
-        circle
-        size="small"
-        class="header-icon-btn"
-        :class="{ 'header-icon-btn--active': route.name === 'todos' }"
-        :aria-label="t('header.todos')"
-        @click.stop="goTodos"
-      >
-        <n-icon :size="18" :component="ListOutline" />
-      </n-button>
+      <span ref="todosTriggerRef" class="header-icon-wrap">
+        <n-button
+          quaternary
+          circle
+          size="small"
+          class="header-icon-btn"
+          :class="{ 'header-icon-btn--active': todosPopoverOpen || route.name === 'todos' }"
+          :aria-label="t('header.todos')"
+          @click.stop="toggleTodosPopover"
+        >
+          <n-icon :size="18" :component="ListOutline" />
+        </n-button>
+        <n-badge
+          v-if="pendingTodoCount > 0"
+          class="header-icon-wrap__badge"
+          :value="pendingTodoCount"
+          :max="99"
+        />
+      </span>
       <span ref="jobsTriggerRef" class="header-icon-wrap">
         <n-button
           quaternary
@@ -223,18 +248,19 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
           :max="99"
         />
       </span>
-      <n-button
-        ref="assistantTriggerRef"
-        quaternary
-        circle
-        size="small"
-        class="header-icon-btn"
-        :class="{ 'header-icon-btn--active': assistantOpen }"
-        :aria-label="t('header.assistant')"
-        @click.stop="toggleAssistant"
-      >
-        <n-icon :size="18" :component="ChatbubbleEllipsesOutline" />
-      </n-button>
+      <span ref="assistantTriggerRef" class="header-icon-wrap">
+        <n-button
+          quaternary
+          circle
+          size="small"
+          class="header-icon-btn"
+          :class="{ 'header-icon-btn--active': assistantOpen }"
+          :aria-label="t('header.assistant')"
+          @click.stop="toggleAssistant"
+        >
+          <n-icon :size="18" :component="ChatbubbleEllipsesOutline" />
+        </n-button>
+      </span>
     </div>
     <n-dropdown
       trigger="click"
@@ -256,6 +282,19 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
     </n-dropdown>
 
     <template v-if="flyoutsReady">
+      <HeaderFlyoutShell
+        v-model:show="todosPopoverOpen"
+        :anchor-el="todosTriggerRef"
+        width="min(560px, calc(100vw - 32px))"
+        aria-label="待办事项"
+      >
+        <TodosPanel
+          variant="popover"
+          :active="todosPopoverOpen"
+          @updated="refreshPendingTodoCount"
+          @navigate="todosPopoverOpen = false"
+        />
+      </HeaderFlyoutShell>
       <HeaderFlyoutShell
         v-model:show="jobsPopoverOpen"
         :anchor-el="jobsTriggerRef"

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+MenuVisibility = Literal["all", "admin", "hidden"]
 
 
 class MenuItemOut(BaseModel):
@@ -14,11 +18,12 @@ class MenuItemOut(BaseModel):
 
 class MenuSettingsOut(BaseModel):
     items: list[MenuItemOut]
-    member_visible: dict[str, bool]
+    menu_visibility: dict[str, MenuVisibility]
 
 
 class MenuSettingsUpdate(BaseModel):
-    member_visible: dict[str, bool] = Field(default_factory=dict)
+    menu_visibility: dict[str, MenuVisibility] = Field(default_factory=dict)
+    member_visible: dict[str, bool] | None = None
 
 
 class VisibleMenusOut(BaseModel):

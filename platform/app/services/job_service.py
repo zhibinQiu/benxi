@@ -55,7 +55,9 @@ def update_job_status(
     ):
         return job
     job.status = status
-    if progress is not None:
+    if status == JobStatus.done.value:
+        job.progress = 100
+    elif progress is not None:
         job.progress = progress
     if error_message is not None:
         job.error_message = error_message

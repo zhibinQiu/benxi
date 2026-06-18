@@ -41,6 +41,22 @@ class GpuMetrics(BaseModel):
     utilization_percent: float | None = None
 
 
+class KnowflowQueueMetrics(BaseModel):
+    enabled: bool = False
+    available: bool = False
+    pending_tasks: int = 0
+    running_tasks: int = 0
+    failed_tasks: int = 0
+    parsing_documents: int = 0
+    unstarted_documents: int = 0
+    queue_lag: int = 0
+    executor_active: bool = False
+    duplicate_document_groups: int = 0
+    duplicate_documents_extra: int = 0
+    top_backlog_documents: list[dict[str, str | int]] = []
+    error: str | None = None
+
+
 class SystemMetricsOut(BaseModel):
     collected_at: float
     app_version: str
@@ -53,6 +69,7 @@ class SystemMetricsOut(BaseModel):
     swap: SwapMetrics
     disk: DiskMetrics
     gpus: list[GpuMetrics] = []
+    knowflow_queue: KnowflowQueueMetrics | None = None
 
 
 class AuditLogItemOut(BaseModel):

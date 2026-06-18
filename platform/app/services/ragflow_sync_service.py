@@ -22,6 +22,7 @@ from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.org import User
 from app.models.ragflow_document_link import RagflowDocumentLink
 from app.models.ragflow_document_mirror_link import RagflowDocumentMirrorLink
+from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
 from app.services.document_service import list_queryable_documents, resolve_current_version
 from app.services.ragflow_scope_service import (
     ensure_scope_dataset,
@@ -39,6 +40,97 @@ class KnowflowSyncError(Exception):
     def __init__(self, message: str):
         self.message = message
         super().__init__(message)
+
+
+def _bind_reused_knowflow_link(
+    db: Session,
+    *,
+    document: Document,
+    version: DocumentVersion,
+    provision_user: User,
+    target_ds: str,
+    reusable: RagflowDocumentVersionLink,
+    log_action: str,
+) -> str:
+    from app.services.ragflow_version_link_service import (
+        upsert_canonical_link,
+        upsert_version_link,
+    )
+
+    reusable_id = (reusable.ragflow_document_id or "").strip()
+    canonical_ds = (reusable.dataset_id or target_ds or "").strip()
+    vl = upsert_version_link(
+        db,
+        document=document,
+        version=version,
+        ragflow_document_id=reusable_id,
+        dataset_id=canonical_ds,
+        file_name=reusable.file_name or version.file_name,
+        platform_user_id=provision_user.id,
+        parser_id=reusable.parser_id,
+    )
+    if reusable.index_completed_at and vl.index_completed_at is None:
+        vl.index_completed_at = reusable.index_completed_at
+    upsert_canonical_link(
+        db,
+        document=document,
+        ragflow_document_id=reusable_id,
+        dataset_id=canonical_ds,
+        file_name=vl.file_name,
+        platform_user_id=provision_user.id,
+    )
+    db.flush()
+    sync_document_kb_grants(db, document)
+    source_doc = db.get(Document, reusable.platform_document_id)
+    if source_doc and source_doc.id != document.id:
+        sync_document_kb_grants(db, source_doc)
+    logger.info(
+        "KnowFlow %s doc=%s version=%s ragflow=%s source_doc=%s",
+        log_action,
+        document.id,
+        version.id,
+        reusable_id,
+        reusable.platform_document_id,
+    )
+    return reusable_id
+
+
+def _find_knowflow_content_reuse(
+    db: Session,
+    *,
+    document: Document,
+    dataset_id: str,
+    checksum: str,
+    file_size: int | None,
+    exclude_version_id: uuid.UUID,
+) -> tuple[RagflowDocumentVersionLink | None, str]:
+    from app.services.ragflow_version_link_service import (
+        find_reusable_knowflow_version_link_for_document,
+    )
+
+    indexed = find_reusable_knowflow_version_link_for_document(
+        db,
+        document=document,
+        target_dataset_id=dataset_id,
+        checksum=checksum,
+        file_size=file_size,
+        exclude_version_id=exclude_version_id,
+        require_indexed=True,
+    )
+    if indexed:
+        return indexed, "复用已有索引"
+    inflight = find_reusable_knowflow_version_link_for_document(
+        db,
+        document=document,
+        target_dataset_id=dataset_id,
+        checksum=checksum,
+        file_size=file_size,
+        exclude_version_id=exclude_version_id,
+        require_indexed=False,
+    )
+    if inflight and inflight.index_completed_at is None:
+        return inflight, "复用解析中副本"
+    return None, ""
 
 
 def _read_version_object_bytes(document: Document, version: DocumentVersion) -> bytes:
@@ -78,6 +170,8 @@ def _configure_and_parse_uploaded_document(
     file_content: bytes | None = None,
     parser_id: str | None = None,
     layout_recognize: str | None = None,
+    db: Session | None = None,
+    force_parse: bool = False,
 ) -> str | None:
     """上传后设置解析器并提交解析（覆盖 upload 时的默认 DeepDOC）。"""
     from app.integrations.ragflow_client import RagflowError
@@ -105,7 +199,15 @@ def _configure_and_parse_uploaded_document(
                 rag.change_document_parser(
                     ragflow_document_id, parser, parser_config=parser_config
                 )
-                rag.parse_documents(dataset_id, [ragflow_document_id])
+                from app.services.knowflow_parse_guard import safe_parse_documents
+
+                safe_parse_documents(
+                    rag,
+                    dataset_id,
+                    [ragflow_document_id],
+                    db=db,
+                    force=force_parse,
+                )
                 return parser
         except RagflowError as e:
             last_err = e
@@ -684,6 +786,7 @@ def sync_document_to_knowflow(
     document: Document,
     *,
     force: bool = False,
+    resync: bool = False,
     version_id: uuid.UUID | None = None,
 ) -> str | None:
     """将文档同步到对应分级知识库（公司/部门/个人仅一份），并同步 KB 授权。"""
@@ -696,9 +799,6 @@ def sync_document_to_knowflow(
         return None
     if not can_access_document(db, user, document, PermissionLevel.query.value):
         return None
-
-    if version_id is not None:
-        force = True
 
     if _should_mirror_shared_document(db, user, document) and version_id is None:
         rid = sync_shared_document_mirror(db, user, document, force=force)
@@ -739,55 +839,52 @@ def sync_document_to_knowflow(
         raise KnowflowSyncError(KNOWLEDGE_SYNC_NO_FILE)
 
     from app.services.document_checksum_service import ensure_version_checksum
-    from app.services.ragflow_version_link_service import (
-        find_reusable_knowflow_version_link,
-        upsert_canonical_link,
-    )
+    from app.services.ragflow_version_link_service import find_reusable_knowflow_version_link
 
     content_checksum = ensure_version_checksum(db, version)
+    linked_rid = (version_link.ragflow_document_id if version_link else "") or ""
+    if linked_rid and not force:
+        sync_document_kb_grants(db, document)
+        return linked_rid
+    if linked_rid and version_link and version_link.index_completed_at is not None:
+        logger.info(
+            "KnowFlow 跳过重复索引 doc=%s version=%s ragflow=%s（内容未变且已索引）",
+            document.id,
+            version.id,
+            linked_rid,
+        )
+        sync_document_kb_grants(db, document)
+        return linked_rid
+    if linked_rid and force and version_link and not resync:
+        logger.info(
+            "KnowFlow 复用已有副本，避免重复上传 doc=%s version=%s ragflow=%s",
+            document.id,
+            version.id,
+            linked_rid,
+        )
+        sync_document_kb_grants(db, document)
+        return linked_rid
+
     if content_checksum:
-        reusable = find_reusable_knowflow_version_link(
+        reusable, reuse_action = _find_knowflow_content_reuse(
             db,
+            document=document,
             dataset_id=target_ds,
-            file_name=version.file_name,
             checksum=content_checksum,
+            file_size=version.file_size,
             exclude_version_id=version.id,
         )
         reusable_id = (reusable.ragflow_document_id if reusable else "") or ""
-        if reusable_id:
-            vl = upsert_version_link(
+        if reusable_id and reusable:
+            return _bind_reused_knowflow_link(
                 db,
                 document=document,
                 version=version,
-                ragflow_document_id=reusable_id,
-                dataset_id=target_ds,
-                file_name=reusable.file_name or version.file_name,
-                platform_user_id=provision_user.id,
-                parser_id=reusable.parser_id,
+                provision_user=provision_user,
+                target_ds=target_ds,
+                reusable=reusable,
+                log_action=reuse_action,
             )
-            if reusable.index_completed_at and vl.index_completed_at is None:
-                vl.index_completed_at = reusable.index_completed_at
-            upsert_canonical_link(
-                db,
-                document=document,
-                ragflow_document_id=reusable_id,
-                dataset_id=target_ds,
-                file_name=vl.file_name,
-                platform_user_id=provision_user.id,
-            )
-            db.flush()
-            sync_document_kb_grants(db, document)
-            source_doc = db.get(Document, reusable.platform_document_id)
-            if source_doc and source_doc.id != document.id:
-                sync_document_kb_grants(db, source_doc)
-            logger.info(
-                "KnowFlow 复用已有索引 doc=%s version=%s ragflow=%s source_doc=%s",
-                document.id,
-                version.id,
-                reusable_id,
-                reusable.platform_document_id,
-            )
-            return reusable_id
 
     if existing and not force:
         if existing.dataset_id == target_ds:
@@ -815,6 +912,7 @@ def sync_document_to_knowflow(
                 dataset_id=target_ds,
                 file_name=version.file_name,
                 checksum=content_checksum,
+                file_size=version.file_size,
                 exclude_version_id=version.id,
             )
             rid = (reuse.ragflow_document_id if reuse else "") or ""
@@ -847,6 +945,23 @@ def sync_document_to_knowflow(
         actor=user,
         provision_user=provision_user,
     )
+    from app.services.knowflow_parse_guard import supersede_incomplete_same_name_documents
+
+    stale_same_name = supersede_incomplete_same_name_documents(
+        db,
+        target_ds,
+        upload_name,
+        exclude_ragflow_document_id=linked_rid or None,
+    )
+    if stale_same_name:
+        try:
+            RagflowClient().delete_documents(target_ds, stale_same_name)
+        except Exception as e:
+            logger.warning(
+                "KnowFlow 删除同名未完成副本跳过 doc=%s: %s",
+                document.id,
+                e,
+            )
     rag_doc_id, upload_err = _upload_with_fallback(
         db,
         provision_user,
@@ -871,6 +986,8 @@ def sync_document_to_knowflow(
         file_name=upload_name,
         mime_type=upload_mime,
         file_content=upload_content,
+        db=db,
+        force_parse=False,
     )
 
     upsert_version_link(

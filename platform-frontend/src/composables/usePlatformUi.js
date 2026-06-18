@@ -10,7 +10,7 @@ import { withSystemDialogLayer } from "../utils/systemDialog.js";
 /** 统一 toast / 确认框：去重、友好错误、i18n。
  *
  * 实现思路：
- * - 所有页面应用 usePlatformUi，勿直接使用 naive-ui useMessage（useUiMessage 已废弃为 re-export）
+ * - 所有页面应用 usePlatformUi，勿直接使用 naive-ui useMessage
  * - error() 经 sanitizeUserFacingMessage 过滤后端技术词，与 app/core/user_messages 对齐
  * - notifyDeduped 防止同一操作连续弹多条相同 toast
  */

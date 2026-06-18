@@ -16,10 +16,14 @@ import {
   fetchWechatMpArticle,
   importWechatMpArticle } from "../api/client";
 import { goBackToEntry } from "../utils/navigationReturn";
+import { useI18n } from "../composables/useI18n";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t, locale } = useI18n();
+
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const loading = ref(true);
 const article = ref(null);
@@ -41,7 +45,7 @@ const showImportedActions = computed(
 function fmtTime(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+    return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
     return iso;
   }
@@ -88,10 +92,10 @@ onMounted(load);
       <template v-if="article">
         <NSpace align="center" style="margin-bottom: 16px">
           <NButton quaternary @click="goBackToEntry(router, route, { name: route.meta.backTo || 'wechat-mp' })">
-            返回列表
+            {{ t("wechatMpArticle.backToList") }}
           </NButton>
           <NTag v-if="showImportedActions" type="success" :bordered="false">
-            {{ indexing ? "索引中" : "已入文档库" }}
+            {{ indexing ? t("wechatMpArticle.indexing") : t("wechatMpArticle.imported") }}
           </NTag>
         </NSpace>
 
@@ -109,7 +113,7 @@ onMounted(load);
               :loading="importing"
               @click="onImport"
             >
-              导入文档库
+              {{ t("wechatMpArticle.importToLibrary") }}
             </NButton>
             <NButton
               v-if="showImportedActions && resolvedDocumentId"
@@ -117,7 +121,7 @@ onMounted(load);
               :loading="indexing"
               @click="openDocument(resolvedDocumentId)"
             >
-              {{ indexing ? "查看文档（索引中）" : "查看文档" }}
+              {{ indexing ? t("wechatMpArticle.viewDocumentIndexing") : t("wechatMpArticle.viewDocument") }}
             </NButton>
             <NButton
               v-if="showImportedActions"
@@ -128,16 +132,16 @@ onMounted(load);
                   query: { scope: DOCUMENT_SCOPE_PERSONAL }})
               "
             >
-              打开「个人级」文档库
+              {{ t("wechatMpArticle.openPersonalLibrary") }}
             </NButton>
-            <NButton @click="openOriginal">查看原文</NButton>
+            <NButton @click="openOriginal">{{ t("wechatMpArticle.viewOriginal") }}</NButton>
           </NSpace>
           <div
             v-if="article.content_html"
             class="article-content"
             v-html="article.content_html"
           />
-          <NText v-else depth="3">暂无正文，请查看原文链接</NText>
+          <NText v-else depth="3">{{ t("wechatMpArticle.noContent") }}</NText>
         </NCard>
       </template>
     </NSpin>

@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from "../composables/useI18n.js";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, h, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -45,6 +46,26 @@ import {
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t } = useI18n();
+
+const LANG_KEY_MAP = {
+  en: "en",
+  "zh-CN": "zhCN",
+  "zh-TW": "zhTW",
+  ja: "ja",
+  ko: "ko",
+  de: "de",
+  fr: "fr",
+  es: "es",
+  ru: "ru",
+  auto: "auto",
+};
+
+function langLabel(code) {
+  const key = LANG_KEY_MAP[code];
+  if (key) return t(`translate.languages.${key}`);
+  return code;
+}
 
 const meta = ref(null);
 const sourceMode = ref("upload");
@@ -85,21 +106,9 @@ const selectedEngine = computed(() =>
 const glossarySupported = computed(
   () => selectedEngine.value?.supports_glossary ?? false
 );
-const LANG_LABEL_ZH = {
-  en: "英语",
-  "zh-CN": "简体中文",
-  "zh-TW": "繁体中文（台湾）",
-  ja: "日语",
-  ko: "韩语",
-  de: "德语",
-  fr: "法语",
-  es: "西班牙语",
-  ru: "俄语",
-  auto: "自动检测"};
-
 const langOptions = computed(() =>
   (meta.value?.languages || []).map((l) => ({
-    label: LANG_LABEL_ZH[l.code] || l.label,
+    label: langLabel(l.code) || l.label,
     value: l.code}))
 );
 const engineOptions = computed(() =>
@@ -117,7 +126,10 @@ const canStart = computed(
 );
 const displayFileName = computed(() => {
   if (sourceMode.value === "library" && libraryDoc.value) {
-    return `${libraryDoc.value.title}（${libraryDoc.value.file_name}）`;
+    return t("translate.displayFileName", {
+      title: libraryDoc.value.title,
+      fileName: libraryDoc.value.file_name,
+    });
   }
   return pdfFile.value?.name || fileName.value;
 });
@@ -132,21 +144,15 @@ const currentStep = computed(() => {
   if (hasPdfSource.value) return 2;
   return 1;
 });
-const statusLabel = computed(() => {
-  const map = {
-    idle: "待开始",
-    submitting: "提交中",
-    running: "翻译中",
-    done: "已完成",
-    error: "失败"};
-  return map[status.value] || status.value;
-});
+const statusLabel = computed(
+  () => t(`translate.status.${status.value}`) || status.value
+);
 const showProgressPanel = computed(() => status.value !== "idle");
 const resultsReady = computed(() => status.value === "done");
 
 const langPairLabel = computed(() => {
-  const inL = LANG_LABEL_ZH[langIn.value] || langIn.value;
-  const outL = LANG_LABEL_ZH[langOut.value] || langOut.value;
+  const inL = langLabel(langIn.value) || langIn.value;
+  const outL = langLabel(langOut.value) || langOut.value;
   return `${inL} → ${outL}`;
 });
 
@@ -208,7 +214,7 @@ function subscribeLive(jobId) {
           glossary: r.auto_extracted_glossary_path ?? files.value.glossary};
       }
       if (ev.type === "error") {
-        error.value = ev.error || "翻译失败";
+        error.value = ev.error || t("translate.translateFailed");
         status.value = "error";
         stopPoll();
       }
@@ -260,7 +266,7 @@ onBeforeUnmount(() => {
   if (closeEvents) closeEvents();
   stopPoll();
   if (status.value === "running") {
-    ui.info("翻译将在后台继续，可在后台任务或消息中查看结果", { duration: 5000 });
+    ui.info(t("translate.backgroundContinue"), { duration: 5000 });
   }
 });
 
@@ -274,19 +280,27 @@ function onPdfChange(e) {
   if (pdfFile.value) libraryDoc.value = null;
 }
 
-const libraryColumns = [
-  { title: "标题", key: "title", ellipsis: { tooltip: true } },
-  { title: "文件名", key: "file_name", width: 180, ellipsis: { tooltip: true } },
+const libraryColumns = computed(() => [
+  { title: t("translate.libraryColTitle"), key: "title", ellipsis: { tooltip: true } },
   {
-    title: "大小",
+    title: t("translate.libraryColFileName"),
+    key: "file_name",
+    width: 180,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: t("translate.libraryColSize"),
     key: "file_size",
     width: 90,
     render: (row) => {
       const mb = row.file_size / (1024 * 1024);
-      return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(row.file_size / 1024).toFixed(0)} KB`;
-    }},
+      return mb >= 1
+        ? t("translate.sizeMb", { size: mb.toFixed(1) })
+        : t("translate.sizeKb", { size: (row.file_size / 1024).toFixed(0) });
+    },
+  },
   {
-    title: "操作",
+    title: t("translate.libraryColAction"),
     key: "actions",
     width: 80,
     render: (row) =>
@@ -295,10 +309,12 @@ const libraryColumns = [
         {
           size: "small",
           type: "primary",
-          onClick: () => selectLibraryDoc(row)},
-        () => "选择"
-      )},
-];
+          onClick: () => selectLibraryDoc(row),
+        },
+        () => t("translate.select")
+      ),
+  },
+]);
 
 async function loadLibraryDocs() {
   libraryLoading.value = true;
@@ -350,7 +366,7 @@ function swapLanguages() {
 async function startTranslation() {
   if (!hasPdfSource.value) return;
   if (glossaryFiles.value.length && !glossarySupported.value) {
-    error.value = "当前翻译方式不支持术语表";
+    error.value = t("translate.glossaryNotSupported");
     return;
   }
   error.value = "";
@@ -373,7 +389,7 @@ async function startTranslation() {
       service: service.value,
       glossaries: glossaryFiles.value});
     applyJob(job);
-    ui.success(job.message || "已提交，后台翻译中");
+    ui.success(job.message || t("translate.submitted"));
     status.value = "running";
     router.replace({ query: { job: job.platform_job_id } });
     subscribeLive(job.platform_job_id);
@@ -400,7 +416,7 @@ async function importToLibrary(variant = "mono") {
   try {
     const res = await importTranslateToLibrary(platformJobId.value, { variant });
     importedDocumentId.value = res.document_id;
-    ui.success(res.message || "已添加到知识库");
+    ui.success(res.message || t("translate.importedToLibrary"));
     await refreshJob();
   } catch (e) {
     ui.error(e.message);
@@ -415,7 +431,7 @@ function openImportedDocument() {
 }
 
 const previewTitle = computed(() =>
-  previewKind.value === "dual" ? "预览双语 PDF" : "预览单语 PDF"
+  previewKind.value === "dual" ? t("translate.previewDual") : t("translate.previewMono")
 );
 
 const previewFileName = computed(() =>
@@ -428,9 +444,15 @@ function openPreview(kind) {
   previewShow.value = true;
 }
 
+const glossaryFileLabel = computed(() =>
+  glossaryFiles.value.length
+    ? t("translate.glossaryFilesSelected", { count: glossaryFiles.value.length })
+    : ""
+);
+
 function loadPreviewBlob() {
   if (!platformJobId.value) {
-    return Promise.reject(new Error("任务不存在"));
+    return Promise.reject(new Error(t("translate.jobNotFound")));
   }
   return fetchTranslateFileBlob(platformJobId.value, previewKind.value);
 }
@@ -440,16 +462,16 @@ function loadPreviewBlob() {
   <FeatureSubsystemShell fill>
     <template #extra>
       <n-tag v-if="platformJobId" size="small" round type="info" :bordered="false">
-        任务 {{ platformJobId.slice(0, 8) }}…
+        {{ t("translate.jobTag", { id: platformJobId.slice(0, 8) }) }}
       </n-tag>
     </template>
 
     <div class="translate-page">
     <header class="translate-steps-bar feature-local-nav">
       <n-steps :current="currentStep" size="small" class="translate-steps">
-        <n-step title="文档" description="上传或选取" />
-        <n-step title="配置" description="语言与模型" />
-        <n-step title="结果" description="下载译文" />
+        <n-step :title="t('translate.steps.document.title')" :description="t('translate.steps.document.description')" />
+        <n-step :title="t('translate.steps.config.title')" :description="t('translate.steps.config.description')" />
+        <n-step :title="t('translate.steps.result.title')" :description="t('translate.steps.result.description')" />
       </n-steps>
     </header>
 
@@ -460,7 +482,7 @@ function loadPreviewBlob() {
         class="page-alert"
         closable
       >
-        翻译在后台进行，可切换其他页面；完成后在消息或后台任务查看。
+        {{ t("translate.runningAlert") }}
       </n-alert>
       <n-alert
         v-if="error"
@@ -480,8 +502,8 @@ function loadPreviewBlob() {
               <div class="wf-section-head">
                 <span class="wf-step-badge">1</span>
                 <div class="wf-section-titles">
-                  <span class="wf-section-title">选择文档</span>
-                  <span class="wf-section-desc">本地上传或从文档库选取</span>
+                  <span class="wf-section-title">{{ t("translate.selectDocument") }}</span>
+                  <span class="wf-section-desc">{{ t("translate.selectDocumentDesc") }}</span>
                 </div>
               </div>
 
@@ -492,16 +514,16 @@ function loadPreviewBlob() {
                 :disabled="status === 'running'"
                 @update:value="onSourceModeChange"
               >
-                <n-radio-button value="upload">本地上传</n-radio-button>
-                <n-radio-button value="library">文档库</n-radio-button>
+                <n-radio-button value="upload">{{ t("translate.sourceUpload") }}</n-radio-button>
+                <n-radio-button value="library">{{ t("translate.sourceLibrary") }}</n-radio-button>
               </n-radio-group>
 
               <div v-if="sourceMode === 'upload'" class="upload-fill">
                 <file-drop-zone
                   accept=".pdf"
                   compact
-                  title="拖拽 PDF 到此处"
-                  hint="支持标准 PDF"
+                  :title="t('translate.dropPdfTitle')"
+                  :hint="t('translate.dropPdfHint')"
                   :file-name="displayFileName"
                   icon="doc"
                   :disabled="status === 'running'"
@@ -521,7 +543,7 @@ function loadPreviewBlob() {
                 </div>
                 <div v-else class="library-empty">
                   <n-icon :size="22" :depth="3" :component="FolderOpenOutline" />
-                  <n-text depth="2">从文档库选择 PDF</n-text>
+                  <n-text depth="2">{{ t("translate.pickFromLibrary") }}</n-text>
                 </div>
                 <n-space :size="8" class="library-actions">
                   <n-button
@@ -533,7 +555,7 @@ function loadPreviewBlob() {
                     <template #icon>
                       <n-icon :component="FolderOpenOutline" />
                     </template>
-                    {{ libraryDoc ? "更换" : "浏览文档库" }}
+                    {{ libraryDoc ? t("translate.replace") : t("translate.browseLibrary") }}
                   </n-button>
                   <n-button
                     v-if="libraryDoc"
@@ -542,7 +564,7 @@ function loadPreviewBlob() {
                     :disabled="status === 'running'"
                     @click="libraryDoc = null"
                   >
-                    清除
+                    {{ t("translate.clear") }}
                   </n-button>
                 </n-space>
               </div>
@@ -554,17 +576,17 @@ function loadPreviewBlob() {
               <div class="wf-section-head">
                 <span class="wf-step-badge">2</span>
                 <div class="wf-section-titles">
-                  <span class="wf-section-title">翻译配置</span>
-                  <span class="wf-section-desc">语言、模型与术语表</span>
+                  <span class="wf-section-title">{{ t("translate.translateConfig") }}</span>
+                  <span class="wf-section-desc">{{ t("translate.translateConfigDesc") }}</span>
                 </div>
               </div>
 
               <div class="config-grid">
                 <section class="config-block">
-                  <n-text class="block-label">语言方向</n-text>
+                  <n-text class="block-label">{{ t("translate.langDirection") }}</n-text>
                   <div class="lang-row">
                     <div class="lang-field">
-                      <n-text depth="3" class="field-label">源</n-text>
+                      <n-text depth="3" class="field-label">{{ t("translate.langSource") }}</n-text>
                       <n-select
                         v-model:value="langIn"
                         size="small"
@@ -576,14 +598,14 @@ function loadPreviewBlob() {
                     <button
                       type="button"
                       class="lang-swap-btn"
-                      aria-label="交换语言方向"
+                      :aria-label="t('translate.swapLangAria')"
                       :disabled="status === 'running'"
                       @click="swapLanguages"
                     >
                       <n-icon :size="16"><swap-horizontal-outline /></n-icon>
                     </button>
                     <div class="lang-field">
-                      <n-text depth="3" class="field-label">目标</n-text>
+                      <n-text depth="3" class="field-label">{{ t("translate.langTarget") }}</n-text>
                       <n-select
                         v-model:value="langOut"
                         size="small"
@@ -599,7 +621,7 @@ function loadPreviewBlob() {
                 </section>
 
                 <section class="config-block">
-                  <n-text class="block-label">翻译模型</n-text>
+                  <n-text class="block-label">{{ t("translate.translateModel") }}</n-text>
                   <n-select
                     v-model:value="service"
                     size="small"
@@ -611,14 +633,14 @@ function loadPreviewBlob() {
 
               <section class="config-block config-block--glossary">
                 <div class="block-label-row">
-                  <n-text class="block-label">术语表（可选）</n-text>
+                  <n-text class="block-label">{{ t("translate.glossaryOptional") }}</n-text>
                   <n-tag
                     size="tiny"
                     round
                     :type="glossarySupported ? 'success' : 'warning'"
                     :bordered="false"
                   >
-                    {{ glossarySupported ? "支持" : "需换模型" }}
+                    {{ glossarySupported ? t("translate.glossarySupported") : t("translate.glossaryNeedModel") }}
                   </n-tag>
                 </div>
                 <file-drop-zone
@@ -626,13 +648,9 @@ function loadPreviewBlob() {
                   multiple
                   compact
                   :disabled="!glossarySupported || status === 'running'"
-                  title="上传 CSV 术语表"
-                  hint="source, target, tgt_lng"
-                  :file-name="
-                    glossaryFiles.length
-                      ? `已选 ${glossaryFiles.length} 个文件`
-                      : ''
-                  "
+                  :title="t('translate.dropGlossaryTitle')"
+                  :hint="t('translate.dropGlossaryHint')"
+                  :file-name="glossaryFileLabel"
                   @change="onGlossaryChange"
                 />
               </section>
@@ -648,7 +666,7 @@ function loadPreviewBlob() {
                 :render-icon="renderIcon(RocketOutline)"
                 @click="startTranslation"
               >
-                {{ status === "running" || status === "submitting" ? "翻译进行中…" : "开始翻译" }}
+                {{ status === "running" || status === "submitting" ? t("translate.translating") : t("translate.startTranslate") }}
               </n-button>
             </div>
           </n-card>
@@ -668,14 +686,14 @@ function loadPreviewBlob() {
                   :size="16"
                   :component="status === 'done' ? CheckmarkCircleOutline : CloudDownloadOutline"
                 />
-                <span>进度与结果</span>
+                <span>{{ t("translate.progressAndResult") }}</span>
               </div>
             </template>
 
             <div class="result-body">
               <div v-if="!showProgressPanel" class="result-idle">
                 <n-icon :size="24" :depth="3"><time-outline /></n-icon>
-                <n-text depth="2">配置完成后点击「开始翻译」</n-text>
+                <n-text depth="2">{{ t("translate.idleHint") }}</n-text>
               </div>
 
               <template v-else>
@@ -702,7 +720,7 @@ function loadPreviewBlob() {
                 class="progress-block"
               >
                 <div class="progress-head">
-                  <n-text depth="3">进度</n-text>
+                  <n-text depth="3">{{ t("translate.progress") }}</n-text>
                   <n-text strong class="progress-pct">{{ Math.round(progress) }}%</n-text>
                 </div>
                 <n-progress
@@ -720,7 +738,7 @@ function loadPreviewBlob() {
               </template>
 
               <div class="dl-group">
-                <n-text class="dl-group-label">译文</n-text>
+                <n-text class="dl-group-label">{{ t("translate.translation") }}</n-text>
                 <div class="dl-list">
                   <div
                     class="dl-item dl-item--primary"
@@ -734,15 +752,15 @@ function loadPreviewBlob() {
                     >
                       <n-icon :size="16" :component="DownloadOutline" />
                       <span class="dl-item-text">
-                        <strong>双语 PDF</strong>
-                        <small>对照版</small>
+                        <strong>{{ t("translate.dualPdf") }}</strong>
+                        <small>{{ t("translate.dualPdfDesc") }}</small>
                       </span>
                     </button>
                     <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('dual')">
                       <template #icon>
                         <n-icon :component="EyeOutline" />
                       </template>
-                      预览
+                      {{ t("translate.preview") }}
                     </n-button>
                   </div>
                   <div class="dl-item" :class="{ 'dl-item--disabled': !resultsReady }">
@@ -754,22 +772,22 @@ function loadPreviewBlob() {
                     >
                       <n-icon :size="16" :component="DownloadOutline" />
                       <span class="dl-item-text">
-                        <strong>单语 PDF</strong>
-                        <small>仅译文</small>
+                        <strong>{{ t("translate.monoPdf") }}</strong>
+                        <small>{{ t("translate.monoPdfDesc") }}</small>
                       </span>
                     </button>
                     <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('mono')">
                       <template #icon>
                         <n-icon :component="EyeOutline" />
                       </template>
-                      预览
+                      {{ t("translate.preview") }}
                     </n-button>
                   </div>
                 </div>
               </div>
 
               <div class="dl-group">
-                <n-text class="dl-group-label">更多导出</n-text>
+                <n-text class="dl-group-label">{{ t("translate.moreExports") }}</n-text>
                 <n-space :size="6" wrap class="dl-chips">
                   <n-button
                     size="small"
@@ -777,7 +795,7 @@ function loadPreviewBlob() {
                     :disabled="!resultsReady"
                     @click="dl('glossary', 'glossary.csv')"
                   >
-                    术语表
+                    {{ t("translate.glossary") }}
                   </n-button>
                   <n-button
                     size="small"
@@ -799,12 +817,12 @@ function loadPreviewBlob() {
               </div>
 
               <div class="dl-group">
-                <n-text class="dl-group-label">知识库</n-text>
+                <n-text class="dl-group-label">{{ t("translate.knowledgeBase") }}</n-text>
                 <n-space :size="6" wrap align="center">
                   <template v-if="importedDocumentId">
-                    <n-tag type="success" :bordered="false" size="small">已入库</n-tag>
+                    <n-tag type="success" :bordered="false" size="small">{{ t("translate.imported") }}</n-tag>
                     <n-button size="small" type="primary" @click="openImportedDocument">
-                      查看文档
+                      {{ t("translate.viewDocument") }}
                     </n-button>
                   </template>
                   <template v-else>
@@ -815,7 +833,7 @@ function loadPreviewBlob() {
                       :loading="importLoading"
                       @click="importToLibrary('mono')"
                     >
-                      单语入库
+                      {{ t("translate.importMono") }}
                     </n-button>
                     <n-button
                       size="small"
@@ -824,7 +842,7 @@ function loadPreviewBlob() {
                       :loading="importLoading"
                       @click="importToLibrary('dual')"
                     >
-                      双语入库
+                      {{ t("translate.importDual") }}
                     </n-button>
                   </template>
                 </n-space>
@@ -833,7 +851,7 @@ function loadPreviewBlob() {
                   depth="3"
                   class="dl-group-hint"
                 >
-                  翻译完成后可下载或导入文档库
+                  {{ t("translate.resultHint") }}
                 </n-text>
               </div>
             </div>
@@ -845,15 +863,15 @@ function loadPreviewBlob() {
 
     <AdminFormModal
       v-model:show="showLibraryModal"
-      title="选择文档库 PDF"
-      subtitle="从已上传的 PDF 中选取"
+      :title="t('translate.libraryModalTitle')"
+      :subtitle="t('translate.libraryModalSubtitle')"
       width="min(560px, 92vw)"
     >
       <n-space align="center" :size="8" class="library-search">
         <n-input
           v-model:value="libraryKeyword"
           size="small"
-          placeholder="搜索标题"
+          :placeholder="t('translate.searchTitlePlaceholder')"
           clearable
           @keyup.enter="libraryPage = 1; loadLibraryDocs()"
         >
@@ -862,7 +880,7 @@ function loadPreviewBlob() {
           </template>
         </n-input>
         <n-button size="small" type="primary" @click="libraryPage = 1; loadLibraryDocs()">
-          搜索
+          {{ t("common.search") }}
         </n-button>
       </n-space>
       <n-data-table

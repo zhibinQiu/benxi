@@ -5,10 +5,8 @@
 }
 
 .n-spin-container > .n-spin-body {
-  position: absolute;
   top: 50%;
   left: 50%;
-  z-index: 10;
   transform: translate(-50%, -50%);
   display: inline-flex;
   flex: none !important;
@@ -20,6 +18,27 @@
   justify-content: center;
   flex-direction: column;
   pointer-events: none;
+}
+
+/* 默认：视口中心（页面级加载） */
+.n-spin-container:not(.platform-spin-local):not(.documents-view-spin):not(.knowledge-scope-tree__spin):not(.kg-list-spin):not(.kg-type-browse__spin):not(.preview-spin):not(.compare-pdf-preview__spin):not(.document-preview-modal__spin):not(.assist-compose-spin)
+  > .n-spin-body {
+  position: fixed;
+  z-index: var(--platform-z-loading, 10200);
+}
+
+/* 局部面板内居中：文档库、侧边栏树、预览区等 */
+.n-spin-container.platform-spin-local > .n-spin-body,
+.n-spin-container.documents-view-spin > .n-spin-body,
+.n-spin-container.knowledge-scope-tree__spin > .n-spin-body,
+.n-spin-container.kg-list-spin > .n-spin-body,
+.n-spin-container.kg-type-browse__spin > .n-spin-body,
+.n-spin-container.preview-spin > .n-spin-body,
+.n-spin-container.compare-pdf-preview__spin > .n-spin-body,
+.n-spin-container.document-preview-modal__spin > .n-spin-body,
+.n-spin-container.assist-compose-spin > .n-spin-body {
+  position: absolute;
+  z-index: 10;
 }
 
 .n-spin-body {

@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -13,13 +13,15 @@ import {
 import { useAuth } from "../composables/useAuth";
 import { useAppPreferences } from "../composables/useAppPreferences";
 import { useI18n } from "../composables/useI18n";
+import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { loggingOut } from "../utils/sessionEpoch.js";
-import { publicAsset } from "../utils/appBase";
+import { DEFAULT_HOME_ROUTE } from "../utils/postLoginRoute.js";
 import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
+import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import LoginFeatureScroll from "../components/LoginFeatureScroll.vue";
 
 const route = useRoute();
@@ -28,109 +30,16 @@ const ui = usePlatformUi();
 const { login, register } = useAuth();
 const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
 const { t, localeLabel } = useI18n();
+const appDisplayName = useAppDisplayName();
 
 onMounted(() => {
   loggingOut.value = false;
-  bindLoginPageWheelSnap();
-});
-
-onUnmounted(() => {
-  unbindLoginPageWheelSnap();
+  nextTick(() => {
+    pageRef.value?.scrollTo({ top: 0, left: 0 });
+  });
 });
 
 const pageRef = ref(null);
-const SNAP_SECTION_SELECTOR = ".login-snap-section";
-const WHEEL_SNAP_COOLDOWN_MS = 720;
-let wheelSnapLocked = false;
-let wheelSnapTimer = null;
-
-function getSnapSections() {
-  const root = pageRef.value;
-  if (!root) return [];
-  return Array.from(root.querySelectorAll(SNAP_SECTION_SELECTOR));
-}
-
-function getElementCenterInRoot(root, el) {
-  const rootRect = root.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-  return root.scrollTop + (elRect.top - rootRect.top) + elRect.height / 2;
-}
-
-function getClosestSnapIndex(root, sections) {
-  const viewportCenter = root.scrollTop + root.clientHeight / 2;
-  let best = 0;
-  let bestDist = Infinity;
-  sections.forEach((el, i) => {
-    const dist = Math.abs(viewportCenter - getElementCenterInRoot(root, el));
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  });
-  return best;
-}
-
-function scrollSnapSectionIntoView(el) {
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
-}
-
-function isSummaryOverflow(root, el) {
-  return el.classList.contains("login-feature-scroll__summary")
-    && el.offsetHeight > root.clientHeight * 0.82;
-}
-
-function onLoginPageWheel(e) {
-  const root = pageRef.value;
-  if (!root || exiting.value || loginModalOpen.value || registerModalOpen.value) return;
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-  const sections = getSnapSections();
-  if (sections.length < 2) return;
-
-  const delta = e.deltaY;
-  if (Math.abs(delta) < 8) return;
-
-  const dir = delta > 0 ? 1 : -1;
-  const idx = getClosestSnapIndex(root, sections);
-  const current = sections[idx];
-
-  if (current && isSummaryOverflow(root, current)) {
-    const maxScroll = root.scrollHeight - root.clientHeight;
-    const atTop = root.scrollTop <= 4;
-    const atBottom = root.scrollTop >= maxScroll - 4;
-    if (dir > 0 && !atBottom) return;
-    if (dir < 0 && !atTop) return;
-  }
-
-  const nextIdx = Math.max(0, Math.min(sections.length - 1, idx + dir));
-  if (nextIdx === idx) return;
-
-  e.preventDefault();
-  if (wheelSnapLocked) return;
-
-  wheelSnapLocked = true;
-  scrollSnapSectionIntoView(sections[nextIdx]);
-  if (wheelSnapTimer) clearTimeout(wheelSnapTimer);
-  wheelSnapTimer = setTimeout(() => {
-    wheelSnapLocked = false;
-  }, WHEEL_SNAP_COOLDOWN_MS);
-}
-
-function bindLoginPageWheelSnap() {
-  nextTick(() => {
-    const root = pageRef.value;
-    if (!root) return;
-    root.addEventListener("wheel", onLoginPageWheel, { passive: false });
-  });
-}
-
-function unbindLoginPageWheelSnap() {
-  const root = pageRef.value;
-  if (root) root.removeEventListener("wheel", onLoginPageWheel);
-  if (wheelSnapTimer) clearTimeout(wheelSnapTimer);
-  wheelSnapLocked = false;
-}
 
 const loading = ref(false);
 const exiting = ref(false);
@@ -227,8 +136,7 @@ async function flyLoginCardToHeader() {
 
 async function navigateAfterAuth() {
   await flyLoginCardToHeader();
-  const redirect = route.query.redirect || { name: "ai-home" };
-  await router.push(redirect);
+  await router.replace(DEFAULT_HOME_ROUTE);
 }
 
 async function onSubmit() {
@@ -240,10 +148,10 @@ async function onSubmit() {
   flyPanelRef.value = loginPanelRef.value;
   try {
     await login(account.value.trim(), password.value);
-    ui.success("登录成功");
+    ui.success(t("login.loginSuccess"));
     await navigateAfterAuth();
   } catch (e) {
-    ui.error(e.message || "登录失败");
+    ui.error(e.message || t("login.loginFailed"));
     exiting.value = false;
   } finally {
     loading.value = false;
@@ -259,24 +167,24 @@ async function onRegister() {
   const mobile = regPhone.value.trim();
   const name = regDisplayName.value.trim();
   if (!isValidPhone(mobile)) {
-    ui.warning("请输入有效的 11 位手机号");
+    ui.warning(t("login.invalidPhone"));
     return;
   }
   if (name.length < 2) {
-    ui.warning("姓名至少 2 个字符");
+    ui.warning(t("login.nameTooShort"));
     return;
   }
   if (regPassword.value.length < 6) {
-    ui.warning("密码至少 6 个字符");
+    ui.warning(t("login.passwordTooShort"));
     return;
   }
   if (regPassword.value !== regPassword2.value) {
-    ui.warning("两次输入的密码不一致");
+    ui.warning(t("login.passwordMismatch"));
     return;
   }
   const email = regEmail.value.trim();
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    ui.warning("请输入有效的邮箱");
+    ui.warning(t("login.invalidEmail"));
     return;
   }
   registering.value = true;
@@ -288,10 +196,10 @@ async function onRegister() {
       displayName: name,
       password: regPassword.value,
     });
-    ui.success("注册成功，已自动登录");
+    ui.success(t("login.registerSuccess"));
     await navigateAfterAuth();
   } catch (e) {
-    ui.error(e.message || "注册失败");
+    ui.error(e.message || t("login.registerFailed"));
   } finally {
     registering.value = false;
   }
@@ -343,8 +251,8 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     <header class="login-header">
       <div class="login-header__inner">
         <a class="login-header__brand" href="#" @click.prevent>
-          <img :src="publicAsset('logo.svg')" :alt="t('login.brandName')" class="login-header__logo" />
-          <span class="login-header__title">{{ t("login.brandName") }}</span>
+          <PlatformBrandIcon :size="22" class="login-header__logo" />
+          <span class="login-header__title platform-text-gradient">{{ t("login.brandName") }}</span>
         </a>
 
         <div class="login-header__actions">
@@ -395,7 +303,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     <main class="login-page__intro">
       <section class="login-showcase__hero login-snap-section">
         <h1 class="login-showcase__platform-title">
-          <PlatformBrandTitle tag="span" strong :title="t('login.showcaseBadge')" />
+          <PlatformBrandTitle tag="span" strong :title="appDisplayName" />
         </h1>
         <p class="login-showcase__headline">{{ t("login.showcaseHeadline") }}</p>
         <p class="login-showcase__subheadline">{{ t("login.showcaseSubheadline") }}</p>
@@ -419,11 +327,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     >
       <template #header>
         <div class="login-auth-modal__header">
-          <img
-            :src="publicAsset('logo.svg')"
-            :alt="t('login.brandName')"
-            class="login-auth-modal__logo"
-          />
+          <PlatformBrandIcon :size="40" class="login-auth-modal__logo" />
           <div class="login-auth-modal__header-text">
             <h2 class="login-auth-modal__title">{{ t("login.title") }}</h2>
             <p class="login-auth-modal__subtitle">{{ t("app.tagline") }}</p>
@@ -488,11 +392,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     >
       <template #header>
         <div class="login-auth-modal__header">
-          <img
-            :src="publicAsset('logo.svg')"
-            :alt="t('login.brandName')"
-            class="login-auth-modal__logo"
-          />
+          <PlatformBrandIcon :size="40" class="login-auth-modal__logo" />
           <div class="login-auth-modal__header-text">
             <h2 class="login-auth-modal__title">{{ t("login.registerTitle") }}</h2>
             <p class="login-auth-modal__subtitle">{{ t("login.registerHint") }}</p>
@@ -547,14 +447,19 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
 <style scoped>
 .login-page {
   position: relative;
-  min-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   background: transparent;
 }
 
 .login-page--scroll {
-  scroll-snap-type: y mandatory;
+  scroll-snap-type: y proximity;
+  scroll-padding-top: 36px;
+  scroll-padding-bottom: 64px;
 }
 
 .login-header {
@@ -592,21 +497,19 @@ html[data-theme="dark"] .login-header {
 .login-header__brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   text-decoration: none;
   color: inherit;
 }
 
 .login-header__logo {
-  width: 22px;
-  height: 22px;
   flex-shrink: 0;
 }
 
 .login-header__title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
@@ -756,7 +659,7 @@ html[data-theme="dark"] .login-header__vrule {
 
 .login-showcase__hero {
   scroll-snap-align: center;
-  scroll-snap-stop: always;
+  scroll-snap-stop: normal;
   min-height: calc(100dvh - 36px);
   display: flex;
   flex-direction: column;
@@ -817,8 +720,6 @@ html[data-theme="dark"] .login-header__vrule {
 }
 
 .login-auth-modal__logo {
-  width: 44px;
-  height: 44px;
   flex-shrink: 0;
 }
 
@@ -904,7 +805,8 @@ html[data-theme="dark"] .login-header__vrule {
 
 .login-terms {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 10px;
   margin-top: 4px;
   padding-top: 2px;
@@ -914,14 +816,12 @@ html[data-theme="dark"] .login-header__vrule {
 
 .login-terms__checkbox {
   flex-shrink: 0;
-  margin-top: 1px;
 }
 
 .login-terms__text {
-  flex: 1;
-  min-width: 0;
   font-size: 13px;
   line-height: 1.55;
+  text-align: center;
   color: var(--platform-text-tertiary);
 }
 

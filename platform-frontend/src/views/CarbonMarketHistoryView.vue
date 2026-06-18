@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -11,16 +12,26 @@ import { goBackToEntry } from "../utils/navigationReturn";
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t, locale } = useI18n();
 
 const loading = ref(true);
 const series = ref(null);
 const chartEl = ref(null);
 const days = ref(120);
 
-const assetOptions = [
-  { label: "CEA 全国碳配额", value: "CEA" },
-  { label: "CCER 官方", value: "CCER" },
-];
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
+
+const assetOptions = computed(() => [
+  { label: t("carbonMarketHistory.assetCea"), value: "CEA" },
+  { label: t("carbonMarketHistory.assetCcer"), value: "CCER" },
+]);
+
+const dayOptions = computed(() => [
+  { label: t("carbonMarketHistory.days90"), value: 90 },
+  { label: t("carbonMarketHistory.days120"), value: 120 },
+  { label: t("carbonMarketHistory.days180"), value: 180 },
+  { label: t("carbonMarketHistory.days365"), value: 365 },
+]);
 
 const assetCode = computed(() => {
   const code = String(route.query.asset || "CEA").toUpperCase();
@@ -33,25 +44,31 @@ function onAssetChange(code) {
   router.replace({ name: "carbon-assets-history", query });
 }
 
-const pageTitle = computed(
-  () => `${series.value?.asset_name || assetCode.value} · 历史走势`
+const pageTitle = computed(() =>
+  t("carbonMarketHistory.pageTitle", {
+    name: series.value?.asset_name || assetCode.value,
+  })
 );
 
 const syncHint = computed(() => {
   const s = series.value;
   if (!s) return "";
   const parts = [];
-  if (s.data_through) parts.push(`数据截至 ${s.data_through}`);
+  if (s.data_through) {
+    parts.push(t("carbonMarketHistory.dataThrough", { date: s.data_through }));
+  }
   if (s.last_synced_at) {
     try {
-      const t = new Date(s.last_synced_at).toLocaleString("zh-CN", { hour12: false });
-      parts.push(`最近同步 ${t}`);
+      const time = new Date(s.last_synced_at).toLocaleString(dateLocale.value, {
+        hour12: false,
+      });
+      parts.push(t("carbonMarketHistory.lastSync", { time }));
     } catch {
-      parts.push(`最近同步 ${s.last_synced_at}`);
+      parts.push(t("carbonMarketHistory.lastSync", { time: s.last_synced_at }));
     }
   }
   if (assetCode.value === "CEA") {
-    parts.push("每日收盘后自动从环交所同步");
+    parts.push(t("carbonMarketHistory.ceaSyncHint"));
   }
   return parts.join(" · ");
 });
@@ -75,24 +92,30 @@ function renderChart() {
     grid: { left: 48, right: 24, top: 32, bottom: 48 },
     tooltip: {
       trigger: "axis",
-      valueFormatter: (v) => (v != null ? `¥${v}/t` : "—")},
+      valueFormatter: (v) =>
+        v != null ? t("carbonMarketHistory.tooltipPrice", { value: v }) : t("carbonMarketHistory.emDash"),
+    },
     xAxis: {
       type: "category",
       data: pts.map((p) => p.trade_date),
-      axisLabel: { rotate: 35, fontSize: 11 }},
+      axisLabel: { rotate: 35, fontSize: 11 },
+    },
     yAxis: {
       type: "value",
-      name: "收盘价 (元/吨)",
-      scale: true},
+      name: t("carbonMarketHistory.chartYAxis"),
+      scale: true,
+    },
     series: [
       {
-        name: "收盘价",
+        name: t("carbonMarketHistory.chartClosePrice"),
         type: "line",
         smooth: true,
         showSymbol: pts.length < 40,
         data: pts.map((p) => p.close_cny),
-        areaStyle: { color: "rgba(91, 156, 245, 0.08)" }},
-    ]});
+        areaStyle: { color: "rgba(91, 156, 245, 0.08)" },
+      },
+    ],
+  });
 }
 
 async function loadHistory() {
@@ -104,7 +127,7 @@ async function loadHistory() {
     await nextTick();
     renderChart();
   } catch (e) {
-    ui.error(e.message || "加载历史走势失败");
+    ui.error(e.message || t("carbonMarketHistory.loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -120,6 +143,10 @@ function handleResize() {
 
 watch([assetCode, days], () => loadHistory());
 
+watch(locale, () => {
+  if (series.value?.points?.length) renderChart();
+});
+
 onMounted(() => {
   window.addEventListener("resize", handleResize);
   loadHistory();
@@ -134,7 +161,7 @@ onBeforeUnmount(() => {
   <FeatureSubsystemShell :title="pageTitle" icon="stats-chart">
     <div class="carbon-history-page">
       <NSpace align="center" justify="space-between" style="margin-bottom: 16px">
-        <NButton quaternary size="small" @click="goBack">← 返回碳资产</NButton>
+        <NButton quaternary size="small" @click="goBack">{{ t("carbonMarketHistory.back") }}</NButton>
         <NSpace align="center">
           <NSelect
             :value="assetCode"
@@ -147,12 +174,7 @@ onBeforeUnmount(() => {
             v-model:value="days"
             size="small"
             style="width: 120px"
-            :options="[
-              { label: '近 90 日', value: 90 },
-              { label: '近 120 日', value: 120 },
-              { label: '近 180 日', value: 180 },
-              { label: '近 365 日', value: 365 },
-            ]"
+            :options="dayOptions"
           />
         </NSpace>
       </NSpace>
@@ -166,7 +188,7 @@ onBeforeUnmount(() => {
             {{ syncHint }}
           </NText>
           <div v-if="series?.points?.length" ref="chartEl" class="history-chart" />
-          <NText v-else-if="!loading" depth="3">暂无历史数据</NText>
+          <NText v-else-if="!loading" depth="3">{{ t("carbonMarketHistory.noData") }}</NText>
         </NSpin>
       </NCard>
     </div>

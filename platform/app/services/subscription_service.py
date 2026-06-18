@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from datetime import datetime
+from urllib.parse import urlparse, urlunparse
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.document_scope import content_subscription_import_scope
-from app.core.exceptions import bad_request
+from app.core.exceptions import bad_request, not_found, not_found
 from app.integrations.html_markdown import html_to_markdown
 from app.integrations.web_article_fetcher import (
     WebArticleFetchError,
@@ -25,9 +27,11 @@ from app.models.feed_subscription import (
     FeedSourceSubscription,
 )
 from app.models.org import User
+from app.models.subscription_item import SubscriptionItemRemoval
 from app.models.wechat_mp import (
     WechatMpArticle,
     WechatMpArticleImport,
+    WechatMpSource,
     WechatMpSourceSubscription,
 )
 from app.services import feed_subscription_service as feed_svc
@@ -59,6 +63,176 @@ def parse_ref(ref: str) -> tuple[str, uuid.UUID]:
     if prefix == REF_FEED:
         return "feed", item_id
     raise bad_request("无效条目类型")
+
+
+def normalize_subscription_link(url: str) -> str:
+    text = (url or "").strip()
+    if not text:
+        return ""
+    if not text.startswith(("http://", "https://")):
+        if "://" not in text:
+            text = f"https://{text}"
+    try:
+        parsed = urlparse(text)
+        scheme = (parsed.scheme or "https").lower()
+        netloc = parsed.netloc.lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        path = parsed.path or "/"
+        if path != "/":
+            path = path.rstrip("/") or "/"
+        return urlunparse((scheme, netloc, path, "", parsed.query, ""))
+    except Exception:
+        return text.lower().strip()
+
+
+def subscription_link_key(url: str) -> str:
+    norm = normalize_subscription_link(url)
+    if not norm:
+        return ""
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
+
+
+def _removed_link_keys(db: Session, user: User) -> set[str]:
+    return set(
+        db.scalars(
+            select(SubscriptionItemRemoval.link_key).where(
+                SubscriptionItemRemoval.user_id == user.id
+            )
+        ).all()
+    )
+
+
+def _is_link_removed(db: Session, user: User, url: str) -> bool:
+    key = subscription_link_key(url)
+    if not key:
+        return False
+    return (
+        db.scalar(
+            select(SubscriptionItemRemoval.id).where(
+                SubscriptionItemRemoval.user_id == user.id,
+                SubscriptionItemRemoval.link_key == key,
+            )
+        )
+        is not None
+    )
+
+
+def _mark_link_removed(db: Session, user: User, url: str) -> None:
+    key = subscription_link_key(url)
+    norm = normalize_subscription_link(url)
+    if not key:
+        return
+    existing = db.scalar(
+        select(SubscriptionItemRemoval).where(
+            SubscriptionItemRemoval.user_id == user.id,
+            SubscriptionItemRemoval.link_key == key,
+        )
+    )
+    if existing:
+        return
+    db.add(
+        SubscriptionItemRemoval(
+            user_id=user.id,
+            link_key=key,
+            link=norm[:1024],
+        )
+    )
+    db.flush()
+
+
+def _clear_link_removed(db: Session, user: User, url: str) -> None:
+    key = subscription_link_key(url)
+    if not key:
+        return
+    db.execute(
+        delete(SubscriptionItemRemoval).where(
+            SubscriptionItemRemoval.user_id == user.id,
+            SubscriptionItemRemoval.link_key == key,
+        )
+    )
+    db.flush()
+
+
+def _purge_user_items_for_link(db: Session, user: User, url: str) -> None:
+    """删除用户收藏中同一链接的全部条目（跨 RSS / 手动收录 / 公众号源）。"""
+    key = subscription_link_key(url)
+    if not key:
+        return
+
+    feed_source_ids = feed_svc._user_source_ids(db, user)
+    if feed_source_ids:
+        entries = list(
+            db.scalars(
+                select(FeedEntry).where(FeedEntry.source_id.in_(feed_source_ids))
+            ).all()
+        )
+        for entry in entries:
+            if subscription_link_key(entry.link) != key:
+                continue
+            for imp in list(
+                db.scalars(
+                    select(FeedEntryImport).where(FeedEntryImport.entry_id == entry.id)
+                ).all()
+            ):
+                db.delete(imp)
+            db.delete(entry)
+
+    wechat_ids = list(
+        db.scalars(
+            select(WechatMpSourceSubscription.source_id).where(
+                WechatMpSourceSubscription.user_id == user.id
+            )
+        ).all()
+    )
+    if wechat_ids:
+        articles = list(
+            db.scalars(
+                select(WechatMpArticle).where(
+                    WechatMpArticle.source_id.in_(wechat_ids)
+                )
+            ).all()
+        )
+        for article in articles:
+            if subscription_link_key(article.original_url) != key:
+                continue
+            for imp in list(
+                db.scalars(
+                    select(WechatMpArticleImport).where(
+                        WechatMpArticleImport.article_id == article.id
+                    )
+                ).all()
+            ):
+                db.delete(imp)
+            db.delete(article)
+    db.flush()
+
+
+def _resolve_item_link(db: Session, user: User, ref: str) -> str:
+    origin, item_id = parse_ref(ref)
+    if origin == "wechat":
+        row = db.execute(
+            select(WechatMpArticle, WechatMpSource)
+            .join(WechatMpSource, WechatMpSource.id == WechatMpArticle.source_id)
+            .where(WechatMpArticle.id == item_id)
+        ).first()
+        if not row:
+            raise not_found("文章不存在")
+        article, source = row
+        if source.id not in wechat_svc._user_source_ids(db, user):
+            raise not_found("文章不存在")
+        return article.original_url or ""
+    row = db.execute(
+        select(FeedEntry, FeedSource)
+        .join(FeedSource, FeedSource.id == FeedEntry.source_id)
+        .where(FeedEntry.id == item_id)
+    ).first()
+    if not row:
+        raise not_found("条目不存在")
+    entry, source = row
+    if source.id not in feed_svc._user_source_ids(db, user):
+        raise not_found("条目不存在")
+    return entry.link or ""
 
 
 def _normalize_item(
@@ -120,6 +294,7 @@ def ingest_url(db: Session, user: User, url: str) -> dict:
     if is_wechat_article_url(text):
         detail = wechat_svc.ingest_url(db, user, text)
         ref = make_ref(REF_WECHAT, detail["id"])
+        _clear_link_removed(db, user, detail.get("original_url") or text)
         _try_enrich_ai_summary(db, ref)
         return get_item_detail(db, user, ref)
 
@@ -182,6 +357,7 @@ def ingest_url(db: Session, user: User, url: str) -> dict:
         db.flush()
 
     ref = make_ref(REF_FEED, entry.id)
+    _clear_link_removed(db, user, parsed.link or text)
     _try_enrich_ai_summary(db, ref)
     return get_item_detail(db, user, ref)
 
@@ -205,6 +381,11 @@ def list_items(
 ) -> tuple[list[dict], int]:
     """合并当前用户已收录条目（公众号 + 网页），支持标题/正文搜索与收录时间筛选。"""
     merged: list[dict] = []
+    removed_keys = _removed_link_keys(db, user)
+
+    def _skip_removed(link: str) -> bool:
+        key = subscription_link_key(link)
+        return bool(key and key in removed_keys)
 
     wechat_ids = list(
         db.scalars(
@@ -227,6 +408,8 @@ def list_items(
         ):
             q = q.where(clause)
         for article in db.scalars(q).all():
+            if _skip_removed(article.original_url):
+                continue
             imp = db.scalar(
                 select(WechatMpArticleImport).where(
                     WechatMpArticleImport.user_id == user.id,
@@ -264,6 +447,8 @@ def list_items(
         ):
             q = q.where(clause)
         for entry in db.scalars(q).all():
+            if _skip_removed(entry.link):
+                continue
             imp = db.scalar(
                 select(FeedEntryImport).where(
                     FeedEntryImport.user_id == user.id,
@@ -300,6 +485,9 @@ def list_items(
 
 
 def get_item_detail(db: Session, user: User, ref: str) -> dict:
+    link = _resolve_item_link(db, user, ref)
+    if _is_link_removed(db, user, link):
+        raise not_found("条目不存在")
     origin, item_id = parse_ref(ref)
     if origin == "wechat":
         data = wechat_svc.get_article_detail(db, user, item_id)
@@ -371,11 +559,11 @@ def import_item_to_document(
 
 
 def delete_item(db: Session, user: User, ref: str) -> dict:
-    """从资讯订阅中删除一条内容（已入文档库的文档保留）。"""
-    origin, item_id = parse_ref(ref)
-    if origin == "wechat":
-        wechat_svc.delete_article(db, user, item_id)
-    else:
-        feed_svc.delete_entry(db, user, item_id)
+    """从资讯订阅中删除一条内容（按链接移除，已入文档库的文档保留）。"""
+    link = _resolve_item_link(db, user, ref)
+    if not link:
+        raise bad_request("无法识别文章链接")
+    _mark_link_removed(db, user, link)
+    _purge_user_items_for_link(db, user, link)
     return {"deleted": True}
 

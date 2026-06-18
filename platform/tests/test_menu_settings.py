@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from app.services.menu_settings_service import DEFAULT_MEMBER_VISIBLE
+from app.services.menu_settings_service import DEFAULT_MENU_VISIBILITY
 
 
 def test_member_menu_visibility_defaults(client, admin_token):
@@ -16,19 +16,19 @@ def test_member_menu_visibility_defaults(client, admin_token):
     )
     assert r.status_code == 200, r.text
     keys = set(r.json()["data"]["keys"])
-    assert keys == set(DEFAULT_MEMBER_VISIBLE.keys())
+    assert keys == set(DEFAULT_MENU_VISIBILITY.keys())
 
 
-def test_admin_can_update_member_menus(client, admin_token):
+def test_admin_can_update_menu_visibility(client, admin_token):
     r = client.put(
         "/api/v1/admin/menu-settings",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"member_visible": {"ai-home": True, "documents": False}},
+        json={"menu_visibility": {"ai-home": "all", "documents": "admin"}},
     )
     assert r.status_code == 200, r.text
-    visible = r.json()["data"]["member_visible"]
-    assert visible["documents"] is False
-    assert visible["ai-home"] is True
+    visibility = r.json()["data"]["menu_visibility"]
+    assert visibility["documents"] == "admin"
+    assert visibility["ai-home"] == "all"
 
 
 def _register_member_token(client) -> str | None:
@@ -56,12 +56,29 @@ def test_member_sees_filtered_menus(client, admin_token):
     client.put(
         "/api/v1/admin/menu-settings",
         headers={"Authorization": f"Bearer {admin_token}"},
-        json={"member_visible": {"documents": False, "ai-home": True}},
+        json={"menu_visibility": {"documents": "admin", "ai-home": "all"}},
     )
 
     r = client.get(
         "/api/v1/system/menus",
         headers={"Authorization": f"Bearer {member_token}"},
+    )
+    assert r.status_code == 200, r.text
+    keys = r.json()["data"]["keys"]
+    assert "documents" not in keys
+    assert "ai-home" in keys
+
+
+def test_hidden_menu_not_visible_to_admin(client, admin_token):
+    client.put(
+        "/api/v1/admin/menu-settings",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"menu_visibility": {"documents": "hidden", "ai-home": "all"}},
+    )
+
+    r = client.get(
+        "/api/v1/system/menus",
+        headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert r.status_code == 200, r.text
     keys = r.json()["data"]["keys"]
@@ -77,7 +94,7 @@ def test_member_cannot_update_menu_settings(client):
     r = client.put(
         "/api/v1/admin/menu-settings",
         headers={"Authorization": f"Bearer {member_token}"},
-        json={"member_visible": {"documents": False}},
+        json={"menu_visibility": {"documents": "hidden"}},
     )
     assert r.status_code == 403, r.text
 

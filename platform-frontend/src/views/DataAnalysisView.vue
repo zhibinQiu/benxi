@@ -1,5 +1,6 @@
 <script setup>
 defineOptions({ name: "DataAnalysisView" });
+import { useI18n } from "../composables/useI18n.js";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
@@ -25,6 +26,7 @@ import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const STORAGE_KEY = "data-analysis-session";
 const ui = usePlatformUi();
+const { t } = useI18n();
 
 const meta = ref(null);
 const loadingMeta = ref(true);
@@ -110,10 +112,22 @@ function profileSummaryText(p) {
   const sheet = (p.sheets || [])[0];
   if (!sheet) return `${p.filename}`;
   const cols = (sheet.column_profiles || []).map((c) => c.name).join("、");
+  const fields = cols || t("dataAnalysis.fieldsFallback");
   if (p.file_type === "csv") {
-    return `已加载 CSV「${p.filename}」约 ${sheet.rows} 行 × ${sheet.columns} 列\n字段：${cols || "—"}`;
+    return t("dataAnalysis.profileCsv", {
+      filename: p.filename,
+      rows: sheet.rows,
+      columns: sheet.columns,
+      fields,
+    });
   }
-  return `已加载「${p.filename}」· 工作表「${sheet.name}」约 ${sheet.rows} 行 × ${sheet.columns} 列\n字段：${cols || "—"}`;
+  return t("dataAnalysis.profileSheet", {
+    filename: p.filename,
+    sheet: sheet.name,
+    rows: sheet.rows,
+    columns: sheet.columns,
+    fields,
+  });
 }
 
 async function onUploadChange({ file }) {
@@ -125,9 +139,9 @@ async function onUploadChange({ file }) {
     datasetId.value = data.dataset_id;
     profile.value = data.profile;
     await startSessionWithDataset(data);
-    ui.success("数据文件已上传，可开始连续对话分析");
+    ui.success(t("dataAnalysis.uploadSuccess"));
   } catch (e) {
-    ui.error(e.message || "上传失败");
+    ui.error(e.message || t("dataAnalysis.uploadFailed"));
   } finally {
     uploading.value = false;
   }
@@ -142,7 +156,7 @@ async function sendChat() {
 async function sendChatText(text) {
   if (!text) return;
   if (!datasetId.value || !sessionId.value) {
-    ui.warning("请先上传 Excel 或 CSV 文件");
+    ui.warning(t("dataAnalysis.uploadFirst"));
     return;
   }
   if (!meta.value?.configured) {
@@ -159,14 +173,14 @@ async function sendChatText(text) {
     if (data.session) {
       applySession(data.session);
     } else {
-      appendMessage("assistant", data.reply || "已生成分析代码");
+      appendMessage("assistant", data.reply || t("dataAnalysis.analysisGenerated"));
       if (data.cells_added?.length) {
         cells.value = [...cells.value, ...data.cells_added];
       }
     }
   } catch (e) {
-    appendMessage("assistant", e.message || "分析失败");
-    ui.error(e.message || "分析失败");
+    appendMessage("assistant", e.message || t("dataAnalysis.analysisFailed"));
+    ui.error(e.message || t("dataAnalysis.analysisFailed"));
   } finally {
     chatting.value = false;
   }
@@ -205,6 +219,10 @@ function onChatKeydown(e) {
   }
 }
 
+const userMessageCount = computed(
+  () => Math.floor(messages.value.filter((m) => m.role === "user").length)
+);
+
 watch([sessionId, datasetId], persistSession);
 
 onMounted(async () => {
@@ -219,14 +237,14 @@ onMounted(async () => {
       <div class="data-analysis-layout">
         <aside class="chat-pane">
           <div class="pane-head">
-            <h3>对话分析</h3>
-            <p>上传 Excel / CSV，多轮追问，AI 将结合历史与 Notebook 结果继续分析</p>
+            <h3>{{ t("dataAnalysis.chatTitle") }}</h3>
+            <p>{{ t("dataAnalysis.chatDesc") }}</p>
           </div>
 
           <n-alert
             v-if="meta && !meta.configured"
             type="warning"
-            title="智能分析暂不可用"
+            :title="t('dataAnalysis.unavailableTitle')"
             class="meta-alert"
           >
             {{ FEATURE_UNAVAILABLE }}
@@ -242,18 +260,18 @@ onMounted(async () => {
             <n-upload-dragger class="upload-box">
               <div class="upload-inner">
                 <n-icon size="28" :depth="3"><CloudUploadOutline /></n-icon>
-                <p>点击或拖拽上传 Excel / CSV</p>
-                <p class="upload-limit">支持 .xlsx · .xls · .csv</p>
-                <p v-if="meta" class="upload-limit">最大 {{ meta.max_file_mb }}MB</p>
+                <p>{{ t("dataAnalysis.uploadPrompt") }}</p>
+                <p class="upload-limit">{{ t("dataAnalysis.uploadFormats") }}</p>
+                <p v-if="meta" class="upload-limit">{{ t("dataAnalysis.uploadMaxSize", { size: meta.max_file_mb }) }}</p>
               </div>
             </n-upload-dragger>
           </n-upload>
 
           <div v-if="profile" class="dataset-chip">
-            <n-tag type="success" size="small" :bordered="false">已绑定数据</n-tag>
+            <n-tag type="success" size="small" :bordered="false">{{ t("dataAnalysis.datasetBound") }}</n-tag>
             <span>{{ profile.filename }}</span>
             <n-tag v-if="messages.length > 1" size="small" :bordered="false">
-              {{ Math.floor(messages.filter((m) => m.role === "user").length) }} 轮对话
+              {{ t("dataAnalysis.chatRounds", { count: userMessageCount }) }}
             </n-tag>
           </div>
 
@@ -277,8 +295,7 @@ onMounted(async () => {
               </div>
             </div>
             <div v-if="!messages.length" class="chat-placeholder">
-              上传文件后连续提问，例如：<br />
-              「按月份汇总销售额」→「再画折线图」→「找出异常月份」
+              {{ t("dataAnalysis.chatPlaceholder") }}
             </div>
           </div>
 
@@ -287,7 +304,7 @@ onMounted(async () => {
               v-model:value="chatInput"
               type="textarea"
               :autosize="{ minRows: 2, maxRows: 5 }"
-              placeholder="继续追问或提出新的分析任务…（Ctrl/Cmd + Enter 发送）"
+              :placeholder="t('dataAnalysis.inputPlaceholder')"
               :disabled="chatting || !canChat"
               @keydown="onChatKeydown"
             />
@@ -298,15 +315,15 @@ onMounted(async () => {
               @click="sendChat"
             >
               <template #icon><n-icon><SendOutline /></n-icon></template>
-              发送
+              {{ t("dataAnalysis.send") }}
             </n-button>
           </div>
         </aside>
 
         <section class="notebook-pane">
           <div class="pane-head notebook-head">
-            <h3>Notebook</h3>
-            <p>可手动添加代码单元，或由 AI 生成 · 点击 ▶ 运行 · 图表自动展示</p>
+            <h3>{{ t("dataAnalysis.notebookTitle") }}</h3>
+            <p>{{ t("dataAnalysis.notebookDesc") }}</p>
           </div>
           <AnalysisNotebookPanel
             v-if="sessionId"
@@ -316,7 +333,7 @@ onMounted(async () => {
             @update:cells="cells = $event"
           />
           <div v-else class="notebook-wait">
-            上传数据文件后将自动创建 Notebook 会话
+            {{ t("dataAnalysis.notebookWait") }}
           </div>
         </section>
       </div>
@@ -475,6 +492,7 @@ onMounted(async () => {
   font-size: 13px;
   padding: 0 12px;
   line-height: 1.6;
+  white-space: pre-line;
 }
 
 .chat-input-row {

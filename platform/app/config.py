@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "企业 AI 知识库平台"
-    platform_version: str = "4.0.7"
+    platform_version: str = "4.0.9"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -129,8 +129,8 @@ class Settings(BaseSettings):
     knowflow_theme_primary_hover: str = "#36ad6a"
     knowflow_theme_primary_pressed: str = "#0c7a43"
     knowflow_theme_app_name: str = "企业 AI 知识库平台"
-    knowflow_theme_logo_url: str = "/logo.svg"
-    knowflow_theme_favicon_url: str = "/favicon.svg"
+    knowflow_theme_logo_url: str = "/icon.svg"
+    knowflow_theme_favicon_url: str = "/icon.svg"
     knowflow_hide_file_manager: bool = True
 
     # 录音转文字（FunASR Docker 服务）
@@ -165,10 +165,21 @@ class Settings(BaseSettings):
     knowledge_parse_soft_extend_sec: int = 600
     # 轮询 RAGFlow 解析状态间隔（秒）
     knowledge_parse_poll_interval_sec: int = 5
-    # 解析中途失败（超时、繁忙等）时自动重新提交解析的最大次数
-    knowledge_parse_max_retries: int = 12
+    # 解析中途失败时不自动重试；仅用户显式重新索引时再次提交
+    knowledge_parse_max_retries: int = 0
     # 每次自动重试解析前的等待（秒）
     knowledge_parse_retry_delay_sec: int = 90
+    # KnowFlow 解析队列看门狗：积压且 executor 长时间未消费时自动去重/恢复
+    knowflow_queue_watchdog_enabled: bool = True
+    knowflow_queue_watchdog_interval_sec: int = 120
+    knowflow_queue_watchdog_stuck_minutes: int = 10
+    knowflow_queue_watchdog_min_pending: int = 1
+    knowflow_queue_watchdog_recovery_cooldown_sec: int = 1800
+    knowflow_queue_watchdog_cmd_timeout_sec: int = 600
+    # 卡住时先执行 MySQL pending 去重 + 重置伪解析中 document；仍卡住再执行下方命令
+    knowflow_queue_watchdog_internal_recovery: bool = True
+    # 留空则仅内部去重；示例：bash scripts/knowflow-queue-reset.sh
+    knowflow_queue_watchdog_cmd: str = ""
     # 知识检索混合检索：向量相似度权重（其余为关键词权重，默认 0.3 / 0.7）
     knowledge_retrieval_vector_weight: float = 0.3
     # 知识检索召回条数（与 KnowFlow 对话默认可视引用接近，默认 5）
@@ -186,6 +197,9 @@ class Settings(BaseSettings):
     pageindex_workspace_dir: str = ""
     pageindex_model: str = ""
 
+    # 企业级：同 MD5 跨文件名/跨文档复用已有索引，通过 KB 赋权访问（不重复上传解析）
+    knowflow_content_reuse_allow_personal_from_org: bool = True
+
     redis_socket_timeout_sec: float = 0.5
 
     # 平台 Redis/内存缓存（文档库分级、文件夹列表等；Redis 不可用时自动降级为进程内 TTL）
@@ -194,6 +208,7 @@ class Settings(BaseSettings):
     document_library_cache_ttl_sec: int = 180
     kb_folders_cache_ttl_sec: int = 120
     scope_tree_cache_ttl_sec: int = 300
+    kg_graph_cache_ttl_sec: int = 120
 
     # 录音总结（DeepSeek 在线 API，可与 pdf2zh 翻译共用密钥）
     deepseek_api_key: str = ""
@@ -289,6 +304,12 @@ class Settings(BaseSettings):
     data_analysis_storage_dir: str = ""
     data_analysis_max_file_mb: int = 50
     data_analysis_exec_timeout_seconds: int = 60
+
+    # AI 智能体临时附件（不入库，仅会话内问答）
+    ai_chat_attachment_storage_dir: str = ""
+    ai_chat_attachment_max_file_mb: int = 30
+    ai_chat_attachment_max_files: int = 8
+    ai_chat_attachment_ttl_hours: int = 24
 
     # 网站收藏 · 在线搜索（SearXNG JSON API 基址，如 http://host:8080）
     searxng_url: str = ""

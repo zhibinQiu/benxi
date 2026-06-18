@@ -10,33 +10,30 @@ import {
 } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import { aiHomeChatStream } from "../api/client";
+import { useI18n } from "../composables/useI18n.js";
 import { encodeReturnLocation } from "../utils/navigationReturn";
 
 const route = useRoute();
+const { t, tm } = useI18n();
 
-const suggestions = [
-  "如何上传文档并设置分享权限？",
-  "PDF 翻译任务提交后在哪里查看进度？",
-  "全国碳市场管理办法约束哪些指标？",
-  "张三负责哪些减排项目？",
-];
+const suggestions = computed(() => tm("aiHome.suggestions") || []);
 
 const toolLinks = computed(() => {
   const encoded = encodeReturnLocation(route);
   const returnQuery = encoded ? { return: encoded } : {};
   return [
     {
-      title: "知识检索",
+      title: t("aiHome.toolLinks.knowledgeSearch"),
       route: { name: "knowledge-search", query: returnQuery },
       icon: SearchOutline,
     },
     {
-      title: "报告生成",
+      title: t("aiHome.toolLinks.reportGeneration"),
       route: { name: "report-generation", query: returnQuery },
       icon: CreateOutline,
     },
     {
-      title: "本体图谱",
+      title: t("aiHome.toolLinks.kgPalantir"),
       route: { name: "kg-palantir", query: returnQuery },
       icon: GitNetworkOutline,
     },
@@ -47,15 +44,18 @@ const toolLinks = computed(() => {
 <template>
   <AiChatPanel
     chat-scope="ai-home"
-    title="AI 智能体"
-    description="企业级智能对话入口，结合权限内文档检索、本体图谱关联与多轮问答。"
-    subtitle="内置大模型 · 文档检索 + 本体图谱增强"
+    :title="t('aiHome.title')"
+    :description="t('aiHome.description')"
+    :subtitle="t('aiHome.subtitle')"
+    :chat-header-sub="t('aiHome.chatHeaderSub')"
     :suggestions="suggestions"
     :tool-links="toolLinks"
     :icon="SparklesOutline"
     :stream-chat="aiHomeChatStream"
     :show-citations="true"
+    :show-workflow-progress="true"
     :linkify-citations="true"
+    :enable-attachments="true"
     title-gradient
     :show-chat-header-brand="false"
   />

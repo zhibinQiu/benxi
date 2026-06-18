@@ -1,6 +1,7 @@
 <script setup>
 defineOptions({ name: "KgPalantirView" });
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { useI18n } from "../composables/useI18n";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -9,13 +10,15 @@ import {
   NForm,
   NFormItem,
   NInput,
-  NModal,
+  NPagination,
   NSelect,
+  NSpace,
   NSpin,
   NTabPane,
   NTabs,
   NTag,
 } from "naive-ui";
+import AdminFormModal from "../components/AdminFormModal.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KgGraphCanvas from "../components/KgGraphCanvas.vue";
 import {
@@ -36,10 +39,20 @@ import {
   updateKgEntityType,
   updateKgRelationType,
 } from "../api/kg.js";
+import {
+  clearKgPalantirCache,
+  readKgGraphCache,
+  readKgMetaCache,
+  writeKgGraphCache,
+  writeKgMetaCache,
+} from "../utils/kgPalantirCache.js";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+
+const ENTITY_PAGE_SIZE = 10;
 
 const TYPE_COLORS = {
   blue: "#2E79B5",
@@ -63,9 +76,13 @@ const graphDepth = ref(1);
 const leftTab = ref("entities");
 const entityList = ref([]);
 const graphCanvasRef = ref(null);
+const detailMainRef = ref(null);
+const detailRelListRef = ref(null);
 const browseTypeId = ref(null);
 const browseTypeEntities = ref([]);
 const browseTypeLoading = ref(false);
+const browseRelationTypeId = ref(null);
+const entityPage = ref(1);
 
 const entityModal = ref(false);
 const entityForm = ref({ type_id: null, name: "", description: "" });
@@ -88,14 +105,31 @@ const relationTypeForm = ref({ code: "", label: "", description: "" });
 const editingRelationTypeId = ref(null);
 
 const entityDetail = ref(null);
+const detailRefreshing = ref(false);
 
 let searchTimer = null;
 
-const selectedEntity = computed(() =>
-  graph.value.nodes?.find((n) => n.id === selectedId.value) ||
-  entityList.value.find((n) => n.id === selectedId.value) ||
-  null
-);
+function normalizeKgId(id) {
+  if (id == null || id === "") return null;
+  return String(id);
+}
+
+function idEq(a, b) {
+  if (a == null || b == null) return false;
+  return normalizeKgId(a) === normalizeKgId(b);
+}
+
+const selectedEntity = computed(() => {
+  const sid = normalizeKgId(selectedId.value);
+  if (!sid) return null;
+  return (
+    graph.value.nodes?.find((n) => idEq(n.id, sid)) ||
+    entityList.value.find((n) => idEq(n.id, sid)) ||
+    browseTypeEntities.value.find((n) => idEq(n.id, sid)) ||
+    (entityDetail.value && idEq(entityDetail.value.id, sid) ? entityDetail.value : null) ||
+    null
+  );
+});
 
 const entityTypeOptions = computed(() =>
   (meta.value?.entity_types || []).map((t) => ({
@@ -119,34 +153,82 @@ const entityOptions = computed(() =>
 );
 
 const typeFilterOptions = computed(() => [
-  { label: "全部类型", value: null },
-  ...(meta.value?.entity_types || []).map((t) => ({
-    label: `${t.label} (${t.entity_count})`,
-    value: t.id,
+  { label: t("kgPalantir.allTypes"), value: null },
+  ...(meta.value?.entity_types || []).map((item) => ({
+    label: `${item.label} (${item.entity_count})`,
+    value: item.id,
   })),
 ]);
 
+const graphDepthOptions = computed(() => [
+  { label: t("kgPalantir.subgraph1Hop"), value: 1 },
+  { label: t("kgPalantir.subgraph2Hop"), value: 2 },
+]);
+
 const browseTypeMeta = computed(() =>
-  (meta.value?.entity_types || []).find((t) => t.id === browseTypeId.value) || null
+  (meta.value?.entity_types || []).find((t) => idEq(t.id, browseTypeId.value)) || null
 );
 
+const browseRelationTypeMeta = computed(() =>
+  (meta.value?.relation_types || []).find((t) => idEq(t.id, browseRelationTypeId.value)) || null
+);
+
+const entityPageCount = computed(() =>
+  Math.max(1, Math.ceil(entityList.value.length / ENTITY_PAGE_SIZE))
+);
+
+const paginatedEntityList = computed(() => {
+  const start = (entityPage.value - 1) * ENTITY_PAGE_SIZE;
+  return entityList.value.slice(start, start + ENTITY_PAGE_SIZE);
+});
+
+const isTypeBrowseMode = computed(
+  () => Boolean(browseTypeId.value && browseTypeMeta.value && !selectedEntity.value)
+);
+
+const hasAnyEntities = computed(
+  () => (meta.value?.entity_total || 0) > 0 || entityList.value.length > 0
+);
+
+function clearGraph() {
+  graph.value = { nodes: [], edges: [] };
+}
+
 const graphLayout = computed(() => {
-  const nodes = graph.value.nodes || [];
+  let nodes = graph.value.nodes || [];
   const edges = graph.value.edges || [];
+
+  if (!nodes.length && selectedId.value) {
+    const fallback = selectedEntity.value;
+    if (fallback) {
+      nodes = [
+        {
+          id: fallback.id,
+          name: fallback.name,
+          type_code: fallback.type_code || "unknown",
+          type_label: fallback.type_label || t("kgPalantir.entity"),
+          type_color: fallback.type_color || "gray",
+        },
+      ];
+    }
+  }
+
   if (!nodes.length) return { nodes: [], edges: [], width: 400, height: 200 };
 
-  const idSet = new Set(nodes.map((n) => n.id));
+  const idSet = new Set(nodes.map((n) => normalizeKgId(n.id)));
   const adj = new Map();
-  for (const n of nodes) adj.set(n.id, []);
+  for (const n of nodes) adj.set(normalizeKgId(n.id), []);
   for (const e of edges) {
-    if (idSet.has(e.from_entity_id) && idSet.has(e.to_entity_id)) {
-      adj.get(e.from_entity_id).push(e.to_entity_id);
-      adj.get(e.to_entity_id).push(e.from_entity_id);
+    const from = normalizeKgId(e.from_entity_id);
+    const to = normalizeKgId(e.to_entity_id);
+    if (idSet.has(from) && idSet.has(to)) {
+      adj.get(from).push(to);
+      adj.get(to).push(from);
     }
   }
 
   const ranks = new Map();
-  const start = selectedId.value || nodes[0]?.id;
+  const start = normalizeKgId(selectedId.value) || normalizeKgId(nodes[0]?.id);
   if (start) {
     const queue = [{ id: start, rank: 0 }];
     const seen = new Set([start]);
@@ -163,14 +245,15 @@ const graphLayout = computed(() => {
   }
   let maxRank = 0;
   for (const n of nodes) {
-    const r = ranks.get(n.id) ?? 0;
+    const nid = normalizeKgId(n.id);
+    const r = ranks.get(nid) ?? 0;
     maxRank = Math.max(maxRank, r);
-    if (!ranks.has(n.id)) ranks.set(n.id, 0);
+    if (!ranks.has(nid)) ranks.set(nid, 0);
   }
 
   const byRank = new Map();
   for (const n of nodes) {
-    const r = ranks.get(n.id) ?? 0;
+    const r = ranks.get(normalizeKgId(n.id)) ?? 0;
     if (!byRank.has(r)) byRank.set(r, []);
     byRank.get(r).push(n);
   }
@@ -198,20 +281,36 @@ const graphLayout = computed(() => {
 
   const edgeLines = edges.filter(
     (e) =>
-      positioned.some((n) => n.id === e.from_entity_id) &&
-      positioned.some((n) => n.id === e.to_entity_id)
+      positioned.some((n) => idEq(n.id, e.from_entity_id)) &&
+      positioned.some((n) => idEq(n.id, e.to_entity_id))
   );
 
   return { nodes: positioned, edges: edgeLines, width, height };
 });
 
-async function loadEntityList() {
+async function centerGraphOnSelection() {
+  await nextTick();
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+  graphCanvasRef.value?.centerOnSelection?.();
+}
+
+function scrollDetailPanelToTop() {
+  nextTick(() => {
+    detailMainRef.value?.scrollTo?.({ top: 0, behavior: "smooth" });
+    detailRelListRef.value?.scrollTo?.({ top: 0, behavior: "smooth" });
+  });
+}
+
+async function loadEntityList({ resetPage = true } = {}) {
   listLoading.value = true;
   try {
     entityList.value = await fetchKgEntities({
       typeId: filterTypeId.value || undefined,
       q: searchQ.value.trim() || undefined,
     });
+    if (resetPage) entityPage.value = 1;
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -236,76 +335,179 @@ async function loadBrowseByType(typeId) {
 }
 
 function clearBrowseType() {
-  if (filterTypeId.value && filterTypeId.value === browseTypeId.value) {
+  if (filterTypeId.value && idEq(filterTypeId.value, browseTypeId.value)) {
     filterTypeId.value = null;
   }
   browseTypeId.value = null;
   browseTypeEntities.value = [];
 }
 
+function clearBrowseRelationType() {
+  browseRelationTypeId.value = null;
+}
+
 async function browseEntityType(typeId) {
-  if (browseTypeId.value === typeId) {
+  if (idEq(browseTypeId.value, typeId)) {
     clearBrowseType();
     return;
   }
+  browseRelationTypeId.value = null;
+  selectedId.value = null;
+  entityDetail.value = null;
+  relations.value = [];
+  clearGraph();
   await loadBrowseByType(typeId);
 }
 
+function browseRelationType(typeId) {
+  if (idEq(browseRelationTypeId.value, typeId)) {
+    clearBrowseRelationType();
+    return;
+  }
+  clearBrowseType();
+  browseRelationTypeId.value = typeId;
+  selectedId.value = null;
+  entityDetail.value = null;
+  relations.value = [];
+  clearGraph();
+  scrollDetailPanelToTop();
+}
+
 async function loadAll() {
-  loading.value = true;
+  const cachedMeta = readKgMetaCache();
+  if (cachedMeta) meta.value = cachedMeta;
+
+  const sid = normalizeKgId(selectedId.value);
+  if (sid) {
+    const cachedGraph = readKgGraphCache(sid, graphDepth.value);
+    if (cachedGraph?.graph) {
+      graph.value = cachedGraph.graph;
+      if (cachedGraph.relations) relations.value = cachedGraph.relations;
+    }
+  }
+
+  await refreshAll({ fullPage: true });
+}
+
+async function loadSelectionGraph({ force = false, background = false } = {}) {
+  const sid = normalizeKgId(selectedId.value);
+  if (!sid) {
+    clearGraph();
+    relations.value = [];
+    return;
+  }
+
+  if (!force) {
+    const cached = readKgGraphCache(sid, graphDepth.value);
+    if (cached?.graph) {
+      graph.value = cached.graph;
+      if (cached.relations) relations.value = cached.relations;
+      await centerGraphOnSelection();
+      void loadSelectionGraph({ force: true, background: true }).catch(() => {});
+      return;
+    }
+  }
+
+  if (!background) detailRefreshing.value = true;
   try {
-    meta.value = await fetchKgMeta();
-    await loadEntityList();
-    graph.value = await fetchKgGraph({
-      focusEntityId: selectedId.value || undefined,
-      depth: graphDepth.value,
+    const [graphData, relData] = await Promise.all([
+      fetchKgGraph({ focusEntityId: sid, depth: graphDepth.value }),
+      fetchKgRelations({ entityId: sid }),
+    ]);
+    graph.value = graphData;
+    relations.value = relData;
+    writeKgGraphCache(sid, graphDepth.value, {
+      graph: graphData,
+      relations: relData,
     });
-    if (selectedId.value) {
-      relations.value = await fetchKgRelations({ entityId: selectedId.value });
-      entityDetail.value = await fetchKgEntity(selectedId.value);
+
+    if (!entityDetail.value || !idEq(entityDetail.value.id, sid)) {
+      try {
+        entityDetail.value = await fetchKgEntity(sid);
+      } catch {
+        const listItem = entityList.value.find((n) => idEq(n.id, sid))
+          || browseTypeEntities.value.find((n) => idEq(n.id, sid));
+        if (listItem) entityDetail.value = { ...listItem };
+      }
+    }
+
+    await centerGraphOnSelection();
+  } catch (e) {
+    if (!background) ui.error(e.message);
+  } finally {
+    if (!background) detailRefreshing.value = false;
+  }
+}
+
+async function refreshAll({ toast = false, fullPage = false, syncMeta = true } = {}) {
+  const sid = normalizeKgId(selectedId.value);
+  const activeBrowseTypeId = browseTypeId.value;
+  const prevEntityPage = entityPage.value;
+
+  if (fullPage) loading.value = true;
+  else detailRefreshing.value = true;
+
+  try {
+    if (syncMeta) {
+      meta.value = await fetchKgMeta({ syncSystem: true });
+      writeKgMetaCache(meta.value);
+    } else if (!meta.value) {
+      meta.value = await fetchKgMeta({ syncSystem: false });
+      writeKgMetaCache(meta.value);
+    }
+
+    await loadEntityList({ resetPage: false });
+    entityPage.value = Math.min(prevEntityPage, entityPageCount.value);
+
+    if (activeBrowseTypeId) {
+      browseTypeLoading.value = true;
+      try {
+        browseTypeEntities.value = await fetchKgEntities({ typeId: activeBrowseTypeId });
+      } finally {
+        browseTypeLoading.value = false;
+      }
+    }
+
+    if (sid) {
+      await loadSelectionGraph({ force: true });
     } else {
+      clearGraph();
       relations.value = [];
       entityDetail.value = null;
     }
-    await nextTick();
-    graphCanvasRef.value?.fitView?.();
+
+    if (toast) ui.success(t("kgPalantir.messages.refreshed"));
   } catch (e) {
     ui.error(e.message);
   } finally {
-    loading.value = false;
+    detailRefreshing.value = false;
+    if (fullPage) loading.value = false;
   }
 }
 
 async function refreshGraph() {
-  try {
-    graph.value = await fetchKgGraph({
-      focusEntityId: selectedId.value || undefined,
-      depth: graphDepth.value,
-    });
-    if (selectedId.value) {
-      relations.value = await fetchKgRelations({ entityId: selectedId.value });
-      entityDetail.value = await fetchKgEntity(selectedId.value);
-      await nextTick();
-      graphCanvasRef.value?.focusNode?.(selectedId.value);
-    } else {
-      entityDetail.value = null;
-      await nextTick();
-      graphCanvasRef.value?.fitView?.();
-    }
-    meta.value = await fetchKgMeta();
-    await loadEntityList();
-  } catch (e) {
-    ui.error(e.message);
-  }
+  await loadSelectionGraph({ force: true });
 }
 
 function selectEntity(id) {
-  if (selectedId.value === id) {
-    nextTick(() => graphCanvasRef.value?.focusNode?.(id));
+  const nid = normalizeKgId(id);
+  if (idEq(selectedId.value, nid)) {
+    centerGraphOnSelection();
+    scrollDetailPanelToTop();
     return;
   }
-  selectedId.value = id;
-  refreshGraph();
+  browseRelationTypeId.value = null;
+  const listItem = entityList.value.find((n) => idEq(n.id, nid))
+    || browseTypeEntities.value.find((n) => idEq(n.id, nid));
+  const graphNode = graph.value.nodes?.find((n) => idEq(n.id, nid));
+  if (listItem) {
+    entityDetail.value = { ...listItem };
+  } else if (graphNode) {
+    entityDetail.value = { ...graphNode };
+  }
+  selectedId.value = nid;
+  scrollDetailPanelToTop();
+  loadSelectionGraph();
 }
 
 function openCreateEntity() {
@@ -336,7 +538,7 @@ async function openEditEntity() {
 
 async function saveEntity() {
   if (!entityForm.value.name?.trim()) {
-    ui.warning("请填写实体名称");
+    ui.warning(t("kgPalantir.messages.enterEntityName"));
     return;
   }
   try {
@@ -346,7 +548,7 @@ async function saveEntity() {
         name: entityForm.value.name.trim(),
         description: entityForm.value.description || "",
       });
-      ui.success("实体已更新");
+      ui.success(t("kgPalantir.messages.entityUpdated"));
     } else {
       const created = await createKgEntity({
         type_id: entityForm.value.type_id,
@@ -354,13 +556,23 @@ async function saveEntity() {
         description: entityForm.value.description || "",
       });
       selectedId.value = created.id;
-      ui.success("实体已创建");
+      ui.success(t("kgPalantir.messages.entityCreated"));
     }
     entityModal.value = false;
-    await loadAll();
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
+}
+
+async function refreshAfterMutation() {
+  clearKgPalantirCache();
+  await refreshAll();
+}
+
+async function forceRefreshAll({ toast = false } = {}) {
+  clearKgPalantirCache();
+  await refreshAll({ toast, syncMeta: true });
 }
 
 async function removeEntity() {
@@ -368,8 +580,8 @@ async function removeEntity() {
   try {
     await deleteKgEntity(selectedId.value);
     selectedId.value = null;
-    ui.success("实体已删除");
-    await loadAll();
+    ui.success(t("kgPalantir.messages.entityDeleted"));
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
@@ -387,7 +599,7 @@ function openCreateRelation() {
 
 async function saveRelation() {
   if (!relationForm.value.to_entity_id) {
-    ui.warning("请选择终点实体");
+    ui.warning(t("kgPalantir.messages.selectToEntity"));
     return;
   }
   try {
@@ -398,8 +610,8 @@ async function saveRelation() {
       description: relationForm.value.description || "",
     });
     relationModal.value = false;
-    ui.success("关系已创建");
-    await refreshGraph();
+    ui.success(t("kgPalantir.messages.relationCreated"));
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
@@ -408,8 +620,8 @@ async function saveRelation() {
 async function removeRelation(relationId) {
   try {
     await deleteKgRelation(relationId);
-    ui.success("关系已删除");
-    await refreshGraph();
+    ui.success(t("kgPalantir.messages.relationDeleted"));
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
@@ -448,8 +660,8 @@ async function saveEntityType() {
       });
     }
     entityTypeModal.value = false;
-    ui.success("实体类型已保存");
-    await loadAll();
+    ui.success(t("kgPalantir.messages.entityTypeSaved"));
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
@@ -458,9 +670,10 @@ async function saveEntityType() {
 async function removeEntityType(typeId) {
   try {
     await deleteKgEntityType(typeId);
-    ui.success("实体类型已删除");
+    ui.success(t("kgPalantir.messages.entityTypeDeleted"));
     if (filterTypeId.value === typeId) filterTypeId.value = null;
-    await loadAll();
+    if (idEq(browseTypeId.value, typeId)) clearBrowseType();
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
@@ -496,8 +709,8 @@ async function saveRelationType() {
       });
     }
     relationTypeModal.value = false;
-    ui.success("关系类型已保存");
-    await loadAll();
+    ui.success(t("kgPalantir.messages.relationTypeSaved"));
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
@@ -506,8 +719,9 @@ async function saveRelationType() {
 async function removeRelationType(typeId) {
   try {
     await deleteKgRelationType(typeId);
-    ui.success("关系类型已删除");
-    await loadAll();
+    ui.success(t("kgPalantir.messages.relationTypeDeleted"));
+    if (idEq(browseRelationTypeId.value, typeId)) clearBrowseRelationType();
+    await refreshAfterMutation();
   } catch (e) {
     ui.error(e.message);
   }
@@ -523,7 +737,13 @@ function openLinkedDocument() {
   router.push({ name: "document-detail", params: { id: docId } });
 }
 
-watch(graphDepth, () => refreshGraph());
+watch(entityPageCount, (count) => {
+  if (entityPage.value > count) entityPage.value = count;
+});
+
+watch(graphDepth, () => {
+  if (normalizeKgId(selectedId.value)) refreshGraph();
+});
 
 watch(filterTypeId, (id) => {
   loadEntityList();
@@ -552,15 +772,12 @@ onMounted(() => {
         <n-select
           v-model:value="graphDepth"
           size="small"
-          :options="[
-            { label: '子图 1 跳', value: 1 },
-            { label: '子图 2 跳', value: 2 },
-          ]"
+          :options="graphDepthOptions"
           class="kg-toolbar__depth"
         />
-        <n-button size="small" type="primary" @click="openCreateEntity">新建实体</n-button>
-        <n-button size="small" secondary @click="openCreateRelation">添加关系</n-button>
-        <n-button size="small" quaternary @click="loadAll">刷新</n-button>
+        <n-button size="small" type="primary" @click="openCreateEntity">{{ t("kgPalantir.createEntity") }}</n-button>
+        <n-button size="small" secondary @click="openCreateRelation">{{ t("kgPalantir.addRelation") }}</n-button>
+        <n-button size="small" quaternary @click="forceRefreshAll({ toast: true })">{{ t("common.refresh") }}</n-button>
       </div>
     </template>
 
@@ -568,12 +785,12 @@ onMounted(() => {
       <div class="kg-page">
         <aside class="kg-panel kg-panel--left">
           <n-tabs v-model:value="leftTab" type="line" size="small" class="kg-tabs">
-            <n-tab-pane name="entities" tab="实体查询">
+            <n-tab-pane name="entities" :tab="t('kgPalantir.tabEntities')">
               <div class="kg-search-block">
                 <n-input
                   v-model:value="searchQ"
                   size="small"
-                  placeholder="按名称或描述搜索…"
+                  :placeholder="t('kgPalantir.searchPlaceholder')"
                   clearable
                 />
                 <n-select
@@ -584,90 +801,110 @@ onMounted(() => {
                 />
               </div>
               <div class="kg-list-meta">
-                共 {{ meta?.entity_total || 0 }} 个实体
-                <span v-if="searchQ.trim()"> · 当前 {{ entityList.length }} 条结果</span>
+                {{ t("kgPalantir.entityTotal", { count: meta?.entity_total || 0 }) }}
+                <span v-if="searchQ.trim()"> · {{ t("kgPalantir.searchResults", { count: entityList.length }) }}</span>
               </div>
               <n-spin :show="listLoading" class="kg-list-spin">
-                <div v-if="entityList.length" class="kg-entity-list">
-                  <button
-                    v-for="item in entityList"
-                    :key="item.id"
-                    type="button"
-                    class="kg-glass-item kg-entity-row"
-                    :class="{ 'is-active': selectedId === item.id }"
-                    @click="selectEntity(item.id)"
-                  >
-                    <span
-                      class="kg-entity-row__dot"
-                      :style="{ background: typeColor(item.type_color) }"
+                <div v-if="entityList.length" class="kg-entity-list-wrap">
+                  <div class="kg-entity-list">
+                    <button
+                      v-for="item in paginatedEntityList"
+                      :key="item.id"
+                      type="button"
+                      class="kg-glass-item kg-entity-row"
+                      :class="{ 'is-active': idEq(selectedId, item.id) }"
+                      @click="selectEntity(item.id)"
+                    >
+                      <span
+                        class="kg-entity-row__dot"
+                        :style="{ background: typeColor(item.type_color) }"
+                      />
+                      <span class="kg-entity-row__body">
+                        <span class="kg-entity-row__name">{{ item.name }}</span>
+                        <span class="kg-entity-row__type">{{ item.type_label }}</span>
+                      </span>
+                    </button>
+                  </div>
+                  <div v-if="entityPageCount > 1" class="kg-list-pagination">
+                    <n-pagination
+                      v-model:page="entityPage"
+                      :page-count="entityPageCount"
+                      size="small"
+                      :page-slot="5"
                     />
-                    <span class="kg-entity-row__body">
-                      <span class="kg-entity-row__name">{{ item.name }}</span>
-                      <span class="kg-entity-row__type">{{ item.type_label }}</span>
-                    </span>
-                  </button>
+                  </div>
                 </div>
                 <n-empty
                   v-else
                   size="small"
-                  description="暂无匹配实体"
+                  :description="t('kgPalantir.noMatchingEntities')"
                   class="kg-list-empty"
                 />
               </n-spin>
             </n-tab-pane>
 
-            <n-tab-pane name="ontology" tab="本体设置">
+            <n-tab-pane name="ontology" :tab="t('kgPalantir.tabOntology')">
               <div class="kg-ontology-section">
                 <div class="kg-ontology-head">
-                  <span>实体类型</span>
+                  <span>{{ t("kgPalantir.entityTypes") }}</span>
                   <n-button size="tiny" quaternary @click="openEntityTypeModal(null)">
-                    新建
+                    {{ t("common.create") }}
                   </n-button>
                 </div>
                 <div class="kg-ontology-list">
                   <button
-                    v-for="t in meta?.entity_types || []"
-                    :key="t.id"
+                    v-for="entityType in meta?.entity_types || []"
+                    :key="entityType.id"
                     type="button"
                     class="kg-glass-item kg-ontology-item"
-                    :class="{ 'is-active': browseTypeId === t.id }"
-                    @click="browseEntityType(t.id)"
+                    :class="{ 'is-active': idEq(browseTypeId, entityType.id) }"
+                    @click="browseEntityType(entityType.id)"
                   >
-                    <span class="kg-ontology-item__dot" :style="{ background: typeColor(t.color) }" />
-                    <span class="kg-ontology-item__label">{{ t.label }}</span>
-                    <span class="kg-ontology-item__count">{{ t.entity_count }}</span>
+                    <span class="kg-ontology-item__dot" :style="{ background: typeColor(entityType.color) }" />
+                    <span class="kg-ontology-item__label">{{ entityType.label }}</span>
+                    <span class="kg-ontology-item__count">{{ entityType.entity_count }}</span>
                     <n-button
                       size="tiny"
                       quaternary
                       class="kg-ontology-item__edit"
-                      @click.stop="openEntityTypeModal(t)"
+                      @click.stop="openEntityTypeModal(entityType)"
                     >
-                      编辑
+                      {{ t("common.edit") }}
                     </n-button>
                   </button>
                 </div>
               </div>
               <div class="kg-ontology-section">
                 <div class="kg-ontology-head">
-                  <span>关系类型</span>
+                  <span>{{ t("kgPalantir.relationTypes") }}</span>
                   <n-button size="tiny" quaternary @click="openRelationTypeModal(null)">
-                    新建
+                    {{ t("common.create") }}
                   </n-button>
                 </div>
                 <div class="kg-ontology-list">
-                  <div
+                  <button
                     v-for="rt in meta?.relation_types || []"
                     :key="rt.id"
-                    class="kg-ontology-item"
+                    type="button"
+                    class="kg-glass-item kg-ontology-item"
+                    :class="{ 'is-active': idEq(browseRelationTypeId, rt.id) }"
+                    @click="browseRelationType(rt.id)"
                   >
                     <span class="kg-ontology-item__label">{{ rt.label }}</span>
                     <span class="kg-ontology-item__count">{{ rt.relation_count }}</span>
-                    <n-button size="tiny" quaternary @click="openRelationTypeModal(rt)">编辑</n-button>
-                  </div>
+                    <n-button
+                      size="tiny"
+                      quaternary
+                      class="kg-ontology-item__edit"
+                      @click.stop="openRelationTypeModal(rt)"
+                    >
+                      {{ t("common.edit") }}
+                    </n-button>
+                  </button>
                 </div>
               </div>
               <p class="kg-ontology-tip">
-                点击实体类型可在右侧底部浏览该类型下的全部实体；点选后按顶栏跳数展示关系子图。
+                {{ t("kgPalantir.ontologyTip") }}
               </p>
             </n-tab-pane>
           </n-tabs>
@@ -683,10 +920,16 @@ onMounted(() => {
             @select="selectEntity"
           />
           <div v-else class="kg-empty-wrap">
-            <n-empty description="暂无实体，点击「新建实体」开始构建图谱">
-              <template #extra>
+            <n-empty
+              :description="
+                hasAnyEntities
+                  ? t('kgPalantir.selectEntityForGraph')
+                  : t('kgPalantir.noEntitiesYet')
+              "
+            >
+              <template v-if="!hasAnyEntities" #extra>
                 <n-button size="small" type="primary" @click="openCreateEntity">
-                  新建实体
+                  {{ t("kgPalantir.createEntity") }}
                 </n-button>
               </template>
             </n-empty>
@@ -694,230 +937,290 @@ onMounted(() => {
         </main>
 
         <aside class="kg-panel kg-panel--right">
-          <div class="kg-detail-main">
-            <template v-if="selectedEntity">
-              <div class="kg-detail-head">
-                <h3 class="kg-detail-title">{{ selectedEntity.name }}</h3>
-                <n-tag size="small" :bordered="false">{{ selectedEntity.type_label }}</n-tag>
-              </div>
-              <p v-if="entityDetail?.description" class="kg-detail-desc">
-                {{ entityDetail.description }}
-              </p>
-              <div class="kg-detail-actions">
-                <n-button size="small" type="primary" @click="openEditEntity">编辑</n-button>
-                <n-button size="small" @click="openCreateRelation">添加关系</n-button>
-                <n-button
-                  v-if="entityDetail?.properties?.document_id"
-                  size="small"
-                  quaternary
-                  @click="openLinkedDocument"
-                >
-                  关联文档
-                </n-button>
-                <n-button size="small" type="error" quaternary @click="removeEntity">删除</n-button>
-              </div>
-              <div class="kg-detail-section">
-                <div class="kg-detail-section__title">
-                  关联关系
-                  <span class="kg-detail-section__count">{{ relations.length }}</span>
+          <div class="kg-right-stack" :class="{ 'kg-right-stack--browse': isTypeBrowseMode }">
+            <div class="kg-detail-toolbar">
+              <span class="kg-detail-toolbar__title">{{ t("kgPalantir.info") }}</span>
+              <n-button
+                size="tiny"
+                quaternary
+                :loading="detailRefreshing"
+                @click="forceRefreshAll({ toast: true })"
+              >
+                {{ t("common.refresh") }}
+              </n-button>
+            </div>
+            <div
+              ref="detailMainRef"
+              class="kg-detail-main"
+              :class="{
+                'kg-detail-main--plain': !selectedEntity && !isTypeBrowseMode,
+                'kg-detail-main--compact': isTypeBrowseMode,
+              }"
+            >
+              <div v-if="selectedEntity" class="kg-detail-card kg-detail-card--entity">
+                <div class="kg-detail-card__head">
+                  <div class="kg-detail-head">
+                    <h3 class="kg-detail-title">{{ selectedEntity.name }}</h3>
+                    <n-tag size="small" :bordered="false">{{ selectedEntity.type_label }}</n-tag>
+                  </div>
+                  <p v-if="entityDetail?.description" class="kg-detail-desc">
+                    {{ entityDetail.description }}
+                  </p>
+                  <div class="kg-detail-actions">
+                    <n-button size="small" type="primary" @click="openEditEntity">{{ t("common.edit") }}</n-button>
+                    <n-button size="small" @click="openCreateRelation">{{ t("kgPalantir.addRelation") }}</n-button>
+                    <n-button
+                      v-if="entityDetail?.properties?.document_id"
+                      size="small"
+                      quaternary
+                      @click="openLinkedDocument"
+                    >
+                      {{ t("kgPalantir.linkedDocument") }}
+                    </n-button>
+                    <n-button size="small" type="error" quaternary @click="removeEntity">{{ t("common.delete") }}</n-button>
+                  </div>
+                  <div class="kg-detail-section__title">
+                    {{ t("kgPalantir.relatedRelations") }}
+                    <span class="kg-detail-section__count">{{ relations.length }}</span>
+                  </div>
                 </div>
-                <div v-for="rel in relations" :key="rel.id" class="kg-rel-item">
-                  <n-tag size="small" :bordered="false">{{ rel.relation_type_label }}</n-tag>
-                  <button
-                    type="button"
-                    class="kg-rel-item__link"
-                    @click="
-                      selectEntity(
-                        rel.from_entity_id === selectedId ? rel.to_entity_id : rel.from_entity_id
-                      )
-                    "
+                <div ref="detailRelListRef" class="kg-detail-card__scroll">
+                  <div v-for="rel in relations" :key="rel.id" class="kg-rel-item">
+                    <n-tag size="small" :bordered="false">{{ rel.relation_type_label }}</n-tag>
+                    <button
+                      type="button"
+                      class="kg-rel-item__link"
+                      @click="
+                        selectEntity(
+                          idEq(rel.from_entity_id, selectedId) ? rel.to_entity_id : rel.from_entity_id
+                        )
+                      "
+                    >
+                      {{ idEq(rel.from_entity_id, selectedId) ? rel.to_name : rel.from_name }}
+                    </button>
+                    <n-button size="tiny" quaternary @click="removeRelation(rel.id)">{{ t("common.delete") }}</n-button>
+                  </div>
+                  <n-empty v-if="!relations.length" size="small" :description="t('kgPalantir.noRelatedRelations')" />
+                </div>
+              </div>
+              <div v-else-if="browseRelationTypeMeta" class="kg-detail-card">
+                <div class="kg-detail-head">
+                  <h3 class="kg-detail-title">{{ browseRelationTypeMeta.label }}</h3>
+                  <n-tag size="small" :bordered="false">{{ t("kgPalantir.relationTypeTag") }}</n-tag>
+                </div>
+                <p class="kg-detail-meta">Code：{{ browseRelationTypeMeta.code }}</p>
+                <p v-if="browseRelationTypeMeta.description" class="kg-detail-desc">
+                  {{ browseRelationTypeMeta.description }}
+                </p>
+                <p class="kg-detail-meta">
+                  {{ t("kgPalantir.relationInstances", { count: browseRelationTypeMeta.relation_count }) }}
+                </p>
+                <div class="kg-detail-actions">
+                  <n-button
+                    size="small"
+                    type="primary"
+                    @click="openRelationTypeModal(browseRelationTypeMeta)"
                   >
-                    {{ rel.from_entity_id === selectedId ? rel.to_name : rel.from_name }}
-                  </button>
-                  <n-button size="tiny" quaternary @click="removeRelation(rel.id)">删除</n-button>
+                    {{ t("common.edit") }}
+                  </n-button>
+                  <n-button size="small" quaternary @click="clearBrowseRelationType">{{ t("common.close") }}</n-button>
                 </div>
-                <n-empty v-if="!relations.length" size="small" description="暂无关联关系" />
               </div>
-            </template>
-            <div v-else-if="browseTypeMeta" class="kg-detail-placeholder">
-              <p class="kg-detail-browse-hint">
-                已选类型「{{ browseTypeMeta.label }}」，请从下方列表点选实体，将展示
-                {{ graphDepth === 2 ? "二" : "一" }}跳关系子图。
-              </p>
+              <div v-else-if="browseTypeMeta" class="kg-detail-card kg-detail-card--hint">
+                <p class="kg-detail-browse-hint">
+                  {{
+                    t("kgPalantir.browseTypeHint", {
+                      label: browseTypeMeta.label,
+                      hop: graphDepth,
+                    })
+                  }}
+                </p>
+                <div class="kg-detail-actions">
+                  <n-button size="small" quaternary @click="clearBrowseType">{{ t("common.close") }}</n-button>
+                </div>
+              </div>
+              <div v-else class="kg-detail-placeholder">
+                <n-empty size="small" :description="t('kgPalantir.selectEntityOrType')" />
+              </div>
             </div>
-            <div v-else class="kg-detail-placeholder">
-              <n-empty size="small" description="选择实体或在左侧点选类型浏览" />
-            </div>
-          </div>
 
-          <div v-if="browseTypeId && browseTypeMeta" class="kg-type-browse">
-            <div class="kg-type-browse__head">
-              <div class="kg-type-browse__title">
-                <span
-                  class="kg-type-browse__dot"
-                  :style="{ background: typeColor(browseTypeMeta.color) }"
-                />
-                {{ browseTypeMeta.label }}
-                <span class="kg-type-browse__count">{{ browseTypeEntities.length }}</span>
-              </div>
-              <n-button size="tiny" quaternary @click="clearBrowseType">关闭</n-button>
-            </div>
-            <n-spin :show="browseTypeLoading" class="kg-type-browse__spin">
-              <div v-if="browseTypeEntities.length" class="kg-type-browse__list">
-                <button
-                  v-for="item in browseTypeEntities"
-                  :key="item.id"
-                  type="button"
-                  class="kg-glass-item kg-type-browse__item"
-                  :class="{ 'is-active': selectedId === item.id }"
-                  @click="selectEntity(item.id)"
-                >
-                  <span class="kg-type-browse__item-name">{{ item.name }}</span>
+            <div v-if="browseTypeId && browseTypeMeta && !selectedEntity" class="kg-type-browse">
+              <div class="kg-type-browse__head">
+                <div class="kg-type-browse__title">
                   <span
-                    v-if="item.properties?.document_id"
-                    class="kg-type-browse__item-tag"
-                  >
-                    文档
-                  </span>
-                </button>
+                    class="kg-type-browse__dot"
+                    :style="{ background: typeColor(browseTypeMeta.color) }"
+                  />
+                  {{ browseTypeMeta.label }}
+                  <span class="kg-type-browse__count">{{ browseTypeEntities.length }}</span>
+                </div>
+                <n-button size="tiny" quaternary @click="clearBrowseType">{{ t("common.close") }}</n-button>
               </div>
-              <n-empty v-else size="small" description="该类型下暂无实体" />
-            </n-spin>
+              <n-spin :show="browseTypeLoading" class="kg-type-browse__spin">
+                <div v-if="browseTypeEntities.length" class="kg-type-browse__body">
+                  <div class="kg-type-browse__list">
+                    <button
+                      v-for="item in browseTypeEntities"
+                      :key="item.id"
+                      type="button"
+                      class="kg-glass-item kg-type-browse__item"
+                      :class="{ 'is-active': idEq(selectedId, item.id) }"
+                      @click="selectEntity(item.id)"
+                    >
+                      <span class="kg-type-browse__item-name">{{ item.name }}</span>
+                      <span
+                        v-if="item.properties?.document_id"
+                        class="kg-type-browse__item-tag"
+                      >
+                        {{ t("kgPalantir.document") }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                <n-empty v-else size="small" :description="t('kgPalantir.noEntitiesInType')" />
+              </n-spin>
+            </div>
           </div>
         </aside>
       </div>
     </n-spin>
 
-    <n-modal
+    <AdminFormModal
       v-model:show="entityModal"
-      preset="card"
-      :title="editingEntityId ? '编辑实体' : '新建实体'"
-      style="width: 420px"
+      :title="editingEntityId ? t('kgPalantir.editEntity') : t('kgPalantir.newEntity')"
+      :width="420"
     >
-      <n-form label-placement="top">
-        <n-form-item label="类型">
+      <n-form label-placement="top" class="kg-modal-form">
+        <n-form-item :label="t('kgPalantir.type')">
           <n-select v-model:value="entityForm.type_id" :options="entityTypeOptions" />
         </n-form-item>
-        <n-form-item label="名称">
-          <n-input v-model:value="entityForm.name" placeholder="实体名称" />
+        <n-form-item :label="t('kgPalantir.name')">
+          <n-input v-model:value="entityForm.name" :placeholder="t('kgPalantir.entityName')" />
         </n-form-item>
-        <n-form-item label="描述">
+        <n-form-item :label="t('kgPalantir.description')">
           <n-input
             v-model:value="entityForm.description"
             type="textarea"
             :rows="3"
-            placeholder="可选"
+            :placeholder="t('kgPalantir.optional')"
           />
         </n-form-item>
       </n-form>
       <template #footer>
-        <n-button @click="entityModal = false">取消</n-button>
-        <n-button type="primary" @click="saveEntity">保存</n-button>
+        <n-space :size="10">
+          <n-button @click="entityModal = false">{{ t("common.cancel") }}</n-button>
+          <n-button type="primary" @click="saveEntity">{{ t("common.save") }}</n-button>
+        </n-space>
       </template>
-    </n-modal>
+    </AdminFormModal>
 
-    <n-modal
-      v-model:show="relationModal"
-      preset="card"
-      title="添加关系"
-      style="width: 420px"
-    >
-      <n-form label-placement="top">
-        <n-form-item label="关系类型">
+    <AdminFormModal v-model:show="relationModal" :title="t('kgPalantir.addRelationTitle')" :width="420">
+      <n-form label-placement="top" class="kg-modal-form">
+        <n-form-item :label="t('kgPalantir.relationType')">
           <n-select v-model:value="relationForm.relation_type_id" :options="relationTypeOptions" />
         </n-form-item>
-        <n-form-item label="起点实体">
+        <n-form-item :label="t('kgPalantir.fromEntity')">
           <n-select
             v-model:value="relationForm.from_entity_id"
             filterable
             :options="entityOptions"
           />
         </n-form-item>
-        <n-form-item label="终点实体">
+        <n-form-item :label="t('kgPalantir.toEntity')">
           <n-select
             v-model:value="relationForm.to_entity_id"
             filterable
-            placeholder="选择关联实体"
+            :placeholder="t('kgPalantir.selectRelatedEntity')"
             :options="entityOptions"
           />
         </n-form-item>
-        <n-form-item label="说明">
+        <n-form-item :label="t('kgPalantir.note')">
           <n-input v-model:value="relationForm.description" type="textarea" :rows="2" />
         </n-form-item>
       </n-form>
       <template #footer>
-        <n-button @click="relationModal = false">取消</n-button>
-        <n-button type="primary" @click="saveRelation">保存</n-button>
+        <n-space :size="10">
+          <n-button @click="relationModal = false">{{ t("common.cancel") }}</n-button>
+          <n-button type="primary" @click="saveRelation">{{ t("common.save") }}</n-button>
+        </n-space>
       </template>
-    </n-modal>
+    </AdminFormModal>
 
-    <n-modal
+    <AdminFormModal
       v-model:show="entityTypeModal"
-      preset="card"
-      :title="editingEntityTypeId ? '编辑实体类型' : '新建实体类型'"
-      style="width: 420px"
+      :title="editingEntityTypeId ? t('kgPalantir.editEntityType') : t('kgPalantir.newEntityType')"
+      :width="420"
     >
-      <n-form label-placement="top">
+      <n-form label-placement="top" class="kg-modal-form">
         <n-form-item v-if="!editingEntityTypeId" label="Code">
-          <n-input v-model:value="entityTypeForm.code" placeholder="如 event" />
+          <n-input v-model:value="entityTypeForm.code" :placeholder="t('kgPalantir.codePlaceholderEntity')" />
         </n-form-item>
-        <n-form-item label="显示名">
+        <n-form-item :label="t('kgPalantir.displayName')">
           <n-input v-model:value="entityTypeForm.label" />
         </n-form-item>
-        <n-form-item label="颜色标识">
+        <n-form-item :label="t('kgPalantir.colorTag')">
           <n-select
             v-model:value="entityTypeForm.color"
             :options="Object.keys(TYPE_COLORS).map((k) => ({ label: k, value: k }))"
           />
         </n-form-item>
-        <n-form-item label="描述">
+        <n-form-item :label="t('kgPalantir.description')">
           <n-input v-model:value="entityTypeForm.description" type="textarea" :rows="2" />
         </n-form-item>
       </n-form>
       <template #footer>
-        <n-button
-          v-if="editingEntityTypeId"
-          type="error"
-          quaternary
-          @click="removeEntityType(editingEntityTypeId)"
-        >
-          删除
-        </n-button>
-        <n-button @click="entityTypeModal = false">取消</n-button>
-        <n-button type="primary" @click="saveEntityType">保存</n-button>
+        <n-space justify="space-between" align="center" class="kg-modal-footer">
+          <n-button
+            v-if="editingEntityTypeId"
+            type="error"
+            quaternary
+            @click="removeEntityType(editingEntityTypeId)"
+          >
+            {{ t("common.delete") }}
+          </n-button>
+          <span v-else />
+          <n-space :size="10">
+            <n-button @click="entityTypeModal = false">{{ t("common.cancel") }}</n-button>
+            <n-button type="primary" @click="saveEntityType">{{ t("common.save") }}</n-button>
+          </n-space>
+        </n-space>
       </template>
-    </n-modal>
+    </AdminFormModal>
 
-    <n-modal
+    <AdminFormModal
       v-model:show="relationTypeModal"
-      preset="card"
-      :title="editingRelationTypeId ? '编辑关系类型' : '新建关系类型'"
-      style="width: 420px"
+      :title="editingRelationTypeId ? t('kgPalantir.editRelationType') : t('kgPalantir.newRelationType')"
+      :width="420"
     >
-      <n-form label-placement="top">
+      <n-form label-placement="top" class="kg-modal-form">
         <n-form-item v-if="!editingRelationTypeId" label="Code">
-          <n-input v-model:value="relationTypeForm.code" placeholder="如 relates_to" />
+          <n-input v-model:value="relationTypeForm.code" :placeholder="t('kgPalantir.codePlaceholderRelation')" />
         </n-form-item>
-        <n-form-item label="显示名">
+        <n-form-item :label="t('kgPalantir.displayName')">
           <n-input v-model:value="relationTypeForm.label" />
         </n-form-item>
-        <n-form-item label="描述">
+        <n-form-item :label="t('kgPalantir.description')">
           <n-input v-model:value="relationTypeForm.description" type="textarea" :rows="2" />
         </n-form-item>
       </n-form>
       <template #footer>
-        <n-button
-          v-if="editingRelationTypeId"
-          type="error"
-          quaternary
-          @click="removeRelationType(editingRelationTypeId)"
-        >
-          删除
-        </n-button>
-        <n-button @click="relationTypeModal = false">取消</n-button>
-        <n-button type="primary" @click="saveRelationType">保存</n-button>
+        <n-space justify="space-between" align="center" class="kg-modal-footer">
+          <n-button
+            v-if="editingRelationTypeId"
+            type="error"
+            quaternary
+            @click="removeRelationType(editingRelationTypeId)"
+          >
+            {{ t("common.delete") }}
+          </n-button>
+          <span v-else />
+          <n-space :size="10">
+            <n-button @click="relationTypeModal = false">{{ t("common.cancel") }}</n-button>
+            <n-button type="primary" @click="saveRelationType">{{ t("common.save") }}</n-button>
+          </n-space>
+        </n-space>
       </template>
-    </n-modal>
+    </AdminFormModal>
   </FeatureSubsystemShell>
 </template>
 
@@ -937,6 +1240,7 @@ onMounted(() => {
 .kg-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   width: 100%;
   min-width: 0;
@@ -950,6 +1254,7 @@ onMounted(() => {
   display: flex;
   flex: 1;
   min-height: 0;
+  max-height: 100%;
   height: 100%;
   border: 1px solid var(--platform-border);
   border-radius: var(--platform-radius);
@@ -973,6 +1278,10 @@ onMounted(() => {
 .kg-panel--center {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .kg-panel--right {
@@ -983,13 +1292,100 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+}
+
+.kg-right-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.kg-detail-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--platform-border);
+}
+
+.kg-detail-toolbar__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--platform-text-secondary);
 }
 
 .kg-detail-main {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.kg-detail-main--plain {
+  overflow-y: auto;
   padding: 16px;
+}
+
+.kg-detail-main--compact {
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 12px 16px 8px;
+}
+
+.kg-detail-card {
+  width: 100%;
+}
+
+.kg-detail-card--entity {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.kg-detail-card__head {
+  flex-shrink: 0;
+  padding: 16px 16px 10px;
+}
+
+.kg-detail-card__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 16px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kg-detail-card__head .kg-detail-section__title {
+  margin-bottom: 0;
+  padding-top: 4px;
+}
+
+.kg-detail-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  min-height: 0;
+}
+
+.kg-detail-card--hint {
+  text-align: center;
+}
+
+.kg-detail-meta {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
 }
 
 .kg-tabs {
@@ -1037,6 +1433,14 @@ onMounted(() => {
   flex-direction: column;
 }
 
+.kg-entity-list-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .kg-entity-list {
   flex: 1;
   min-height: 0;
@@ -1044,6 +1448,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.kg-list-pagination {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 2px;
 }
 
 /* 可选列表行：玻璃底完整覆盖文字区（与侧栏菜单同源 token） */
@@ -1214,13 +1625,13 @@ onMounted(() => {
   color: var(--platform-text-tertiary);
 }
 
-.kg-empty-wrap,
-.kg-detail-placeholder {
+.kg-empty-wrap {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  min-height: 0;
 }
 
 .kg-detail-head {
@@ -1249,8 +1660,16 @@ onMounted(() => {
 .kg-detail-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 16px;
+}
+
+.kg-modal-form :deep(.n-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+.kg-modal-footer {
+  width: 100%;
 }
 
 .kg-detail-section__title {
@@ -1295,14 +1714,17 @@ onMounted(() => {
   color: var(--platform-text-secondary);
 }
 
+.kg-right-stack--browse .kg-type-browse {
+  flex: 1;
+  min-height: 0;
+}
+
 .kg-type-browse {
-  flex-shrink: 0;
-  max-height: min(42vh, 320px);
-  min-height: 140px;
   display: flex;
   flex-direction: column;
   border-top: 1px solid var(--platform-border);
   background: color-mix(in srgb, var(--platform-bg) 70%, var(--platform-bg-secondary));
+  overflow: hidden;
 }
 
 .kg-type-browse__head {
@@ -1338,20 +1760,35 @@ onMounted(() => {
 .kg-type-browse__spin {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .kg-type-browse__spin :deep(.n-spin-content) {
   height: 100%;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.kg-type-browse__list {
-  max-height: calc(min(42vh, 320px) - 48px);
-  overflow: auto;
-  padding: 0 8px 10px;
+.kg-type-browse__body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow: hidden;
+}
+
+.kg-type-browse__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .kg-type-browse__item {

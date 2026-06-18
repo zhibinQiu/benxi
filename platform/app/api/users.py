@@ -22,7 +22,7 @@ from app.core.user_department import (
     set_user_departments_or_bad_request,
     user_department_id,
 )
-from app.core.user_identity import email_taken, phone_taken, username_taken
+from app.core.user_identity import email_taken, phone_taken, user_display_name, username_taken
 from app.database import get_db
 from app.models.org import Role, User, UserRole
 from app.schemas.common import ApiResponse
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def _display_name(user: User) -> str:
-    return (user.display_name or user.username or "").strip() or "用户"
+    return user_display_name(user)
 
 
 def _try_provision_ragflow_account(db: Session, user: User) -> None:
@@ -113,6 +113,7 @@ def create_user(
         display_name=name,
         email=body.email,
         password_hash=hash_password(body.password),
+        status=body.status,
     )
     db.add(user)
     db.flush()

@@ -1,6 +1,7 @@
 <script setup>
+import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -29,6 +30,9 @@ import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t, locale } = useI18n();
+
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const loading = ref(true);
 const itemsLoading = ref(false);
@@ -81,23 +85,25 @@ const showPager = computed(() => {
 const resultCountLabel = computed(() => {
   if (!isLocalMode.value) {
     if (!webSearched.value) return "";
-    return webItems.value.length ? `约 ${webItems.value.length} 条结果` : "无匹配结果";
+    return webItems.value.length
+      ? t("subscriptions.resultApprox", { count: webItems.value.length })
+      : t("subscriptions.resultNone");
   }
   if (!searchKeyword.value.trim() && !hasDateFilter.value) {
-    return total.value ? `共 ${total.value} 篇收藏` : "";
+    return total.value ? t("subscriptions.resultTotalSaved", { count: total.value }) : "";
   }
-  return `共 ${total.value} 篇`;
+  return t("subscriptions.resultTotal", { count: total.value });
 });
 
 const searchPlaceholder = computed(() =>
-  isLocalMode.value ? "搜索已收藏的文章标题或正文" : "搜索互联网内容"
+  isLocalMode.value ? t("subscriptions.placeholderLocal") : t("subscriptions.placeholderWeb")
 );
 
 function fmtSerpDate(iso) {
   if (!iso) return "";
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString("zh-CN", {
+    return d.toLocaleDateString(dateLocale.value, {
       year: "numeric",
       month: "long",
       day: "numeric"});
@@ -109,7 +115,7 @@ function fmtSerpDate(iso) {
 function fmtFilterRange(range) {
   if (!range || range.length !== 2) return "";
   const fmt = (ts) =>
-    new Date(ts).toLocaleDateString("zh-CN", {
+    new Date(ts).toLocaleDateString(dateLocale.value, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit"});
@@ -117,8 +123,8 @@ function fmtFilterRange(range) {
 }
 
 function siteLabel(item) {
-  if (item?.is_wechat) return "微信公众号";
-  return domainFromUrl(item?.link || item?.url) || "网页";
+  if (item?.is_wechat) return t("subscriptions.siteWechat");
+  return domainFromUrl(item?.link || item?.url) || t("subscriptions.siteWeb");
 }
 
 function domainFromUrl(url) {
@@ -245,7 +251,7 @@ function submitSearch() {
   }
   appliedWebQuery.value = searchKeyword.value.trim();
   if (!appliedWebQuery.value) {
-    ui.warning("请输入搜索关键词");
+    ui.warning(t("subscriptions.needKeyword"));
     return;
   }
   page.value = 1;
@@ -307,13 +313,13 @@ watch(searchMode, (mode) => {
 async function onIngest(urlInput) {
   const url = (urlInput || ingestUrl.value).trim();
   if (!url) {
-    ui.warning("请粘贴文章链接");
+    ui.warning(t("subscriptions.needUrl"));
     return;
   }
   ingesting.value = true;
   try {
     const detail = await ingestSubscriptionUrl(url);
-    ui.success(detail.summary ? "已收录并生成摘要" : "已收录");
+    ui.success(detail.summary ? t("subscriptions.ingestedWithSummary") : t("subscriptions.ingested"));
     ingestUrl.value = "";
     ingestPopoverOpen.value = false;
     searchMode.value = "local";
@@ -352,7 +358,9 @@ async function collectWebDetail() {
   try {
     const detail = await ingestSubscriptionUrl(url);
     webDetailOpen.value = false;
-    ui.success(detail.summary ? "已收藏并生成摘要" : "已收藏到本地");
+    ui.success(
+      detail.summary ? t("subscriptions.collectedWithSummary") : t("subscriptions.collectedLocal")
+    );
     openItem(detail.ref);
   } catch (e) {
     ui.error(e.message);
@@ -384,6 +392,21 @@ onMounted(async () => {
   await loadWebSearchStatus();
   await reload();
 });
+
+onActivated(() => {
+  if (isLocalMode.value) {
+    loadItems();
+  }
+});
+
+watch(
+  () => route.query.refresh,
+  (value) => {
+    if (value && isLocalMode.value) {
+      loadItems();
+    }
+  }
+);
 </script>
 
 <template>
@@ -392,8 +415,8 @@ onMounted(async () => {
       <header class="feature-top-strip subscriptions-chrome-head">
         <div class="subscriptions-search-hub feature-local-nav">
           <NRadioGroup v-model:value="searchMode" size="small" class="subscriptions-search-hub__mode">
-            <NRadioButton value="web" :disabled="!webSearchEnabled">联网搜索</NRadioButton>
-            <NRadioButton value="local">本地收藏</NRadioButton>
+            <NRadioButton value="web" :disabled="!webSearchEnabled">{{ t("subscriptions.searchWeb") }}</NRadioButton>
+            <NRadioButton value="local">{{ t("subscriptions.searchLocal") }}</NRadioButton>
           </NRadioGroup>
 
           <div class="subscriptions-search-hub__bar">
@@ -411,7 +434,7 @@ onMounted(async () => {
               :loading="itemsLoading"
               @click="submitSearch"
             >
-              搜索
+              {{ t("subscriptions.search") }}
             </NButton>
           </div>
 
@@ -430,22 +453,22 @@ onMounted(async () => {
                   :type="hasDateFilter ? 'primary' : 'default'"
                   @click="openFilterPopover"
                 >
-                  筛选条件
+                  {{ t("subscriptions.filter") }}
                 </NButton>
               </template>
               <div class="subscriptions-filter-panel">
-                <div class="subscriptions-filter-panel__label">收录开始 / 结束时间</div>
+                <div class="subscriptions-filter-panel__label">{{ t("subscriptions.filterDateLabel") }}</div>
                 <NDatePicker
                   v-model:value="draftCreatedRange"
                   type="daterange"
                   clearable
                   style="width: 100%"
-                  start-placeholder="开始日期"
-                  end-placeholder="结束日期"
+                  :start-placeholder="t('subscriptions.startDate')"
+                  :end-placeholder="t('subscriptions.endDate')"
                 />
                 <div class="subscriptions-filter-panel__actions">
-                  <NButton size="small" @click="clearDateFilter">清除</NButton>
-                  <NButton size="small" type="primary" @click="applyDateFilter">应用</NButton>
+                  <NButton size="small" @click="clearDateFilter">{{ t("subscriptions.clear") }}</NButton>
+                  <NButton size="small" type="primary" @click="applyDateFilter">{{ t("subscriptions.apply") }}</NButton>
                 </div>
               </div>
             </NPopover>
@@ -461,11 +484,11 @@ onMounted(async () => {
                   <template #icon>
                     <NIcon :component="LinkOutline" />
                   </template>
-                  通过链接收录
+                  {{ t("subscriptions.ingestByLink") }}
                 </NButton>
               </template>
               <div class="subscriptions-ingest-panel">
-                <div class="subscriptions-ingest-panel__label">粘贴文章链接收录到本地</div>
+                <div class="subscriptions-ingest-panel__label">{{ t("subscriptions.ingestLabel") }}</div>
                 <NInput
                   v-model:value="ingestUrl"
                   placeholder="https://..."
@@ -479,10 +502,10 @@ onMounted(async () => {
                   style="margin-top: 10px"
                   @click="onIngest()"
                 >
-                  收录
+                  {{ t("subscriptions.ingest") }}
                 </NButton>
                 <NText depth="3" class="subscriptions-ingest-panel__hint">
-                  支持公众号、网站文章等；收录后自动生成 AI 摘要。
+                  {{ t("subscriptions.ingestHint") }}
                 </NText>
               </div>
             </NPopover>
@@ -494,7 +517,7 @@ onMounted(async () => {
 
           <div v-if="isLocalMode && hasDateFilter" class="subscriptions-active-filters">
             <NTag size="small" closable :bordered="false" @close="clearDateFilter">
-              收录时间：{{ fmtFilterRange(createdRange) }}
+              {{ t("subscriptions.filterActive", { range: fmtFilterRange(createdRange) }) }}
             </NTag>
           </div>
         </div>
@@ -537,11 +560,11 @@ onMounted(async () => {
                       :bordered="false"
                       class="serp-result-item__imported"
                     >
-                      已入文档库
+                      {{ t("subscriptions.importedTag") }}
                     </NTag>
                   </div>
                   <h3 class="serp-result-item__title">{{ a.title }}</h3>
-                  <p class="serp-result-item__snippet">{{ a.summary || "暂无摘要" }}</p>
+                  <p class="serp-result-item__snippet">{{ a.summary || t("subscriptions.noSummary") }}</p>
                   <div class="serp-result-item__meta">
                     <NTag
                       v-if="a.is_wechat"
@@ -549,7 +572,7 @@ onMounted(async () => {
                       :bordered="false"
                       class="serp-result-item__wechat-tag"
                     >
-                      公众号
+                      {{ t("subscriptions.wechatTag") }}
                     </NTag>
                     <span v-if="fmtSerpDate(a.created_at || a.publish_at)" class="serp-result-item__date">
                       {{ fmtSerpDate(a.created_at || a.publish_at) }}
@@ -558,7 +581,7 @@ onMounted(async () => {
                 </article>
               </div>
               <div v-else-if="!loading" class="subscriptions-empty">
-                <NEmpty description="暂无收藏，可联网搜索或粘贴链接收录" />
+                <NEmpty :description="t('subscriptions.emptyLocal')" />
               </div>
             </template>
 
@@ -591,12 +614,12 @@ onMounted(async () => {
                     </div>
                   </div>
                   <h3 class="serp-result-item__title">{{ a.title }}</h3>
-                  <p class="serp-result-item__snippet">{{ a.snippet || "暂无摘要" }}</p>
+                  <p class="serp-result-item__snippet">{{ a.snippet || t("subscriptions.noSummary") }}</p>
                   <div v-if="a.engine" class="serp-result-item__meta">
                     <span class="serp-result-item__date">{{ a.engine }}</span>
                   </div>
                   <div class="serp-result-item__actions" @click.stop>
-                    <NButton size="tiny" quaternary @click="openWebDetail(a)">详情</NButton>
+                    <NButton size="tiny" quaternary @click="openWebDetail(a)">{{ t("subscriptions.detail") }}</NButton>
                     <NButton
                       size="tiny"
                       type="primary"
@@ -604,21 +627,21 @@ onMounted(async () => {
                       :loading="collectingWeb && webDetailItem?.url === a.url"
                       @click="collectWebResult(a, $event)"
                     >
-                      收藏
+                      {{ t("subscriptions.collect") }}
                     </NButton>
                   </div>
                 </article>
               </div>
               <div v-else-if="!loading && webSearched" class="subscriptions-empty">
-                <NEmpty description="未找到相关网页，请换关键词重试" />
+                <NEmpty :description="t('subscriptions.emptyWeb')" />
               </div>
               <div v-else-if="!loading && !webSearchEnabled" class="subscriptions-empty">
-                <NEmpty description="在线搜索暂不可用，请联系管理员" />
+                <NEmpty :description="t('subscriptions.webUnavailable')" />
               </div>
               <div v-else-if="!loading" class="subscriptions-empty subscriptions-empty--hero">
                 <NIcon :size="42" :component="SearchOutline" class="subscriptions-empty__icon" />
-                <p class="subscriptions-empty__title">在上方输入关键词开始搜索</p>
-                <p class="subscriptions-empty__desc">联网检索结果可查看详情或收藏到本地</p>
+                <p class="subscriptions-empty__title">{{ t("subscriptions.heroTitle") }}</p>
+                <p class="subscriptions-empty__desc">{{ t("subscriptions.heroDesc") }}</p>
               </div>
             </template>
           </div>

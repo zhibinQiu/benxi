@@ -29,10 +29,14 @@ import {
   ingestWechatMpUrl,
   parseWechatMpUrl,
   syncWechatMpSource } from "../api/client";
+import { useI18n } from "../composables/useI18n";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t, locale } = useI18n();
+
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const loading = ref(true);
 const articlesLoading = ref(false);
@@ -51,7 +55,7 @@ const parsePreview = ref(null);
 const submitting = ref(false);
 
 const sourceOptions = computed(() => [
-  { label: "全部跟踪号", value: null },
+  { label: t("wechatMpFeed.allSources"), value: null },
   ...sources.value.map((s) => ({
     label: `${s.name} (${s.article_count || 0})`,
     value: s.id})),
@@ -60,7 +64,7 @@ const sourceOptions = computed(() => [
 function fmtTime(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+    return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
     return iso;
   }
@@ -118,7 +122,7 @@ async function submitAdd() {
   const url = addForm.value.sample_url?.trim();
   const biz = addForm.value.biz?.trim();
   if (!name || (!url && !biz)) {
-    ui.warning("请填写公众号名称，并提供文章链接或 Biz 标识");
+    ui.warning(t("wechatMpFeed.fillNameAndBiz"));
     return;
   }
   submitting.value = true;
@@ -127,7 +131,7 @@ async function submitAdd() {
       name,
       sample_url: url || undefined,
       biz: biz || undefined});
-    ui.success("已添加跟踪");
+    ui.success(t("wechatMpFeed.trackingAdded"));
     showAdd.value = false;
     addForm.value = { name: "", sample_url: "", biz: "" };
     parsePreview.value = null;
@@ -145,7 +149,7 @@ async function submitIngest() {
   submitting.value = true;
   try {
     const art = await ingestWechatMpUrl(url);
-    ui.success("已收录");
+    ui.success(t("wechatMpFeed.ingested"));
     showIngest.value = false;
     ingestUrl.value = "";
     await reload();
@@ -164,7 +168,7 @@ async function submitIngest() {
 async function onSyncSource(source) {
   try {
     const res = await syncWechatMpSource(source.id);
-    ui.info(res.message || "同步完成");
+    ui.info(res.message || t("wechatMpFeed.syncDone"));
     await reload();
   } catch (e) {
     ui.error(e.message);
@@ -174,7 +178,7 @@ async function onSyncSource(source) {
 async function onRemoveSource(source) {
   try {
     await deleteWechatMpSource(source.id);
-    ui.success("已取消跟踪");
+    ui.success(t("wechatMpFeed.trackingRemoved"));
     if (filterSourceId.value === source.id) filterSourceId.value = null;
     await reload();
   } catch (e) {
@@ -199,11 +203,11 @@ onMounted(reload);
       <div class="mp-feed-layout">
         <aside class="mp-feed-sidebar">
           <NSpace vertical :size="12">
-            <NButton type="primary" block @click="showAdd = true">添加跟踪</NButton>
-            <NButton block tertiary @click="showIngest = true">粘贴链接收录</NButton>
+            <NButton type="primary" block @click="showAdd = true">{{ t("wechatMpFeed.addTracking") }}</NButton>
+            <NButton block tertiary @click="showIngest = true">{{ t("wechatMpFeed.pasteLinkIngest") }}</NButton>
           </NSpace>
           <NText depth="3" style="display: block; margin: 16px 0 8px; font-size: 12px">
-            我的跟踪
+            {{ t("wechatMpFeed.myTracking") }}
           </NText>
           <NList v-if="sources.length" hoverable clickable>
             <NListItem
@@ -214,18 +218,18 @@ onMounted(reload);
               <div class="source-row">
                 <div>
                   <div class="source-name">{{ s.name }}</div>
-                  <NText depth="3" style="font-size: 12px">{{ s.article_count }} 篇</NText>
+                  <NText depth="3" style="font-size: 12px">{{ t("wechatMpFeed.articleCount", { count: s.article_count }) }}</NText>
                 </div>
                 <NSpace size="small">
-                  <NButton size="tiny" quaternary @click.stop="onSyncSource(s)">同步</NButton>
+                  <NButton size="tiny" quaternary @click.stop="onSyncSource(s)">{{ t("wechatMpFeed.sync") }}</NButton>
                   <NButton size="tiny" quaternary type="error" @click.stop="onRemoveSource(s)">
-                    移除
+                    {{ t("wechatMpFeed.remove") }}
                   </NButton>
                 </NSpace>
               </div>
             </NListItem>
           </NList>
-          <NEmpty v-else description="暂无跟踪，请添加公众号" size="small" />
+          <NEmpty v-else :description="t('wechatMpFeed.noTracking')" size="small" />
         </aside>
 
         <main class="mp-feed-main">
@@ -236,7 +240,7 @@ onMounted(reload);
               style="width: 240px"
               @update:value="() => { page = 1; loadArticles(); }"
             />
-            <NText depth="3">共 {{ total }} 篇</NText>
+            <NText depth="3">{{ t("wechatMpFeed.totalArticles", { total }) }}</NText>
           </NSpace>
 
           <NSpin :show="articlesLoading">
@@ -252,17 +256,17 @@ onMounted(reload);
                     class="cover"
                     :style="{ backgroundImage: `url(${a.cover_url})` }"
                   />
-                  <div v-else class="cover cover-placeholder">公众号</div>
+                  <div v-else class="cover cover-placeholder">{{ t("wechatMpFeed.accountPlaceholder") }}</div>
                   <div class="card-body">
                     <div class="card-title">{{ a.title }}</div>
                     <NText depth="3" class="card-summary" :line-clamp="2">
-                      {{ a.summary || "暂无摘要" }}
+                      {{ a.summary || t("wechatMpFeed.noSummary") }}
                     </NText>
                     <NSpace justify="space-between" align="center" style="margin-top: 8px">
                       <NText depth="3" style="font-size: 12px">{{ a.source_name }}</NText>
                       <NSpace size="small">
                         <NTag v-if="a.imported" size="small" type="success" :bordered="false">
-                          已入库
+                          {{ t("wechatMpFeed.imported") }}
                         </NTag>
                         <NText depth="3" style="font-size: 12px">{{ fmtTime(a.publish_at) }}</NText>
                       </NSpace>
@@ -271,68 +275,68 @@ onMounted(reload);
                 </NCard>
               </NGi>
             </NGrid>
-            <NEmpty v-else description="暂无推文，请添加跟踪或粘贴链接" />
+            <NEmpty v-else :description="t('wechatMpFeed.emptyArticles')" />
           </NSpin>
 
           <NSpace v-if="total > pageSize" justify="center" style="margin-top: 16px">
-            <NButton :disabled="page <= 1" @click="page--; loadArticles()">上一页</NButton>
+            <NButton :disabled="page <= 1" @click="page--; loadArticles()">{{ t("wechatMpFeed.prevPage") }}</NButton>
             <NText>{{ page }} / {{ Math.ceil(total / pageSize) }}</NText>
             <NButton
               :disabled="page * pageSize >= total"
               @click="page++; loadArticles()"
             >
-              下一页
+              {{ t("wechatMpFeed.nextPage") }}
             </NButton>
           </NSpace>
         </main>
       </div>
     </NSpin>
 
-    <NModal v-model:show="showAdd" preset="card" title="添加公众号跟踪" style="width: 520px">
+    <NModal v-model:show="showAdd" preset="card" :title="t('wechatMpFeed.addModalTitle')" style="width: 520px">
       <NForm label-placement="top">
-        <NFormItem label="公众号名称">
-          <NInput v-model:value="addForm.name" placeholder="如：碳中和观察" />
+        <NFormItem :label="t('wechatMpFeed.accountName')">
+          <NInput v-model:value="addForm.name" :placeholder="t('wechatMpFeed.accountNamePlaceholder')" />
         </NFormItem>
-        <NFormItem label="示例文章链接（推荐）">
+        <NFormItem :label="t('wechatMpFeed.sampleUrl')">
           <NSpace vertical style="width: 100%">
             <NInput
               v-model:value="addForm.sample_url"
-              placeholder="在微信中打开文章 → 复制链接（宜含 __biz=）"
+              :placeholder="t('wechatMpFeed.sampleUrlPlaceholder')"
             />
-            <NButton size="small" @click="onPreviewUrl">解析预览</NButton>
+            <NButton size="small" @click="onPreviewUrl">{{ t("wechatMpFeed.parsePreview") }}</NButton>
             <NText depth="3" style="font-size: 12px">
-              短链可能无法识别，请用微信菜单「复制链接」获取完整 URL
+              {{ t("wechatMpFeed.shortUrlHint") }}
             </NText>
           </NSpace>
         </NFormItem>
-        <NFormItem label="公众号 Biz（可选，解析失败时填写）">
+        <NFormItem :label="t('wechatMpFeed.bizLabel')">
           <NInput
             v-model:value="addForm.biz"
-            placeholder="链接中 __biz= 后面整段，如 MzA3MjA0ODYzOQ=="
+            :placeholder="t('wechatMpFeed.bizPlaceholder')"
           />
         </NFormItem>
         <NCard v-if="parsePreview" size="small" embedded>
           <div style="font-weight: 600">{{ parsePreview.title }}</div>
           <NText depth="3" style="font-size: 12px">
             {{ parsePreview.account_name || "—" }}
-            <template v-if="parsePreview.biz"> · Biz 已识别</template>
+            <template v-if="parsePreview.biz"> · {{ t("wechatMpFeed.bizRecognized") }}</template>
           </NText>
         </NCard>
       </NForm>
       <template #footer>
         <NSpace justify="end">
-          <NButton @click="showAdd = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="submitAdd">确定</NButton>
+          <NButton @click="showAdd = false">{{ t("common.cancel") }}</NButton>
+          <NButton type="primary" :loading="submitting" @click="submitAdd">{{ t("common.confirm") }}</NButton>
         </NSpace>
       </template>
     </NModal>
 
-    <NModal v-model:show="showIngest" preset="card" title="粘贴文章链接" style="width: 520px">
-      <NInput v-model:value="ingestUrl" placeholder="https://mp.weixin.qq.com/s/..." />
+    <NModal v-model:show="showIngest" preset="card" :title="t('wechatMpFeed.ingestModalTitle')" style="width: 520px">
+      <NInput v-model:value="ingestUrl" :placeholder="t('wechatMpFeed.ingestUrlPlaceholder')" />
       <template #footer>
         <NSpace justify="end">
-          <NButton @click="showIngest = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="submitIngest">收录</NButton>
+          <NButton @click="showIngest = false">{{ t("common.cancel") }}</NButton>
+          <NButton type="primary" :loading="submitting" @click="submitIngest">{{ t("wechatMpFeed.ingest") }}</NButton>
         </NSpace>
       </template>
     </NModal>

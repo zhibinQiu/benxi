@@ -6,11 +6,11 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
+from app.core.platform_assistant import assistant_support_persona
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.assistant import AssistantChatMessage
 from app.services import platform_chat_store
-from app.config import get_settings
 from app.services.assistant_knowledge import build_platform_knowledge
 
 _MAX_HISTORY = 10
@@ -26,16 +26,15 @@ async def chat_with_assistant(
     conversation_id: str | None = None,
 ) -> dict:
     if not is_configured():
-        raise bad_request("智能客服未配置，请联系管理员配置 DeepSeek API")
+        raise bad_request("本析平台客服未配置，请联系管理员配置 DeepSeek API")
 
     knowledge = build_platform_knowledge(db, user, page_hint=page_hint)
-    app_name = (get_settings().app_name or "企业 AI 知识库平台").strip()
     system = (
-        f"你是「{app_name}」内置智能客服助手，专门帮助用户理解和使用本平台。\n\n"
+        f"{assistant_support_persona()}。\n\n"
         "【平台知识库】\n"
         f"{knowledge}\n\n"
         "请严格依据知识库回答。若问题超出平台使用范围，礼貌说明并建议联系系统管理员。"
-        "回答使用简体中文，结构清晰，可使用简短 Markdown。"
+        "回答使用简体中文，结构清晰，可使用简短 Markdown；提及助手时统一自称「小析」。"
     )
 
     messages: list[dict] = [{"role": "system", "content": system}]
@@ -59,7 +58,7 @@ async def chat_with_assistant(
             body = r.json()
     except httpx.HTTPStatusError as e:
         detail = e.response.text[:500] if e.response is not None else str(e)
-        raise bad_request(f"智能客服暂时不可用: {detail}") from e
+        raise bad_request(f"本析平台客服暂时不可用: {detail}") from e
     except httpx.HTTPError as e:
         raise bad_request(f"无法连接 AI 服务: {e}") from e
 

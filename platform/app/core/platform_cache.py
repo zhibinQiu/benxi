@@ -171,3 +171,31 @@ def invalidate_document_caches(user_id: str | None = None) -> None:
             invalidate_scope_tree_cache()
     except Exception:
         pass
+
+
+_KG_GRAPH_CACHE_VERSION = 1
+
+
+def kg_graph_cache_key(
+    user_id: str,
+    focus_entity_id: str | None,
+    depth: int,
+) -> str:
+    focus = focus_entity_id or "_"
+    return f"kg:graph:v{_KG_GRAPH_CACHE_VERSION}:{user_id}:{focus}:{depth}"
+
+
+def kg_meta_cache_key(user_id: str, sync_system: bool) -> str:
+    flag = "sync" if sync_system else "nosync"
+    return f"kg:meta:v{_KG_GRAPH_CACHE_VERSION}:{user_id}:{flag}"
+
+
+def invalidate_kg_cache(user_id: str | uuid.UUID | None = None) -> None:
+    """本体图谱子图/元数据变更后清理缓存。"""
+    if user_id:
+        uid = str(user_id)
+        cache_delete_prefix(f"kg:graph:v{_KG_GRAPH_CACHE_VERSION}:{uid}:")
+        cache_delete_prefix(f"kg:meta:v{_KG_GRAPH_CACHE_VERSION}:{uid}:")
+    else:
+        cache_delete_prefix(f"kg:graph:v{_KG_GRAPH_CACHE_VERSION}:")
+        cache_delete_prefix(f"kg:meta:v{_KG_GRAPH_CACHE_VERSION}:")

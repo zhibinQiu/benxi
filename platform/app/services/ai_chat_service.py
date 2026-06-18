@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
 from app.core.permissions import user_has_permission
+from app.core.platform_assistant import assistant_ai_home_persona
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
@@ -21,15 +23,16 @@ from app.services.kg_service import KgQaContext, merge_kg_qa_into_context, retri
 _MAX_HISTORY = 20
 _MAX_QUERYABLE_DOCS = 20
 
-_SYSTEM_PROMPT = """你是「AI 智能体」，企业 AI 知识库平台的内置智能助手。
+_SYSTEM_PROMPT = f"""{assistant_ai_home_persona()}。
 
 你的能力包括：
-- 解答文档管理、权限分享、PDF 翻译、知识检索等平台使用问题
+- 以「小析」身份解答文档管理、权限分享、PDF 翻译、知识检索等平台使用问题
 - 结合权限内文档检索片段与本体图谱实体关系，回答业务相关问题
 - 协助梳理办公场景下的信息整理、写作润色与数据分析思路
 
 回答要求：
 - 使用简体中文，结构清晰，可使用简短 Markdown
+- 自我介绍或提及助手时统一使用名称「小析」
 - 对不确定的政策或数据应说明需以官方来源为准，勿编造具体数值或文号
 - 引用文档片段或图谱事实时在句末标注编号，格式为 [1]、[2]
 - 超出平台或办公场景的问题可简要回应并引导回相关能力"""
@@ -90,17 +93,69 @@ def _resolve_doc_retrieval(
     )
 
 
+def _resolve_attachment_context(
+    db: Session | None,
+    user: User | None,
+    attachment_session_id: str | None,
+) -> tuple[str, int]:
+    if db is None or user is None or not (attachment_session_id or "").strip():
+        return "", 0
+    from app.services.ai_chat_attachment_service import (
+        build_attachment_context,
+        get_owned_session,
+    )
+
+    try:
+        manifest = get_owned_session(user.id, attachment_session_id)
+    except Exception:
+        return "", 0
+    files = manifest.get("files") or []
+    return build_attachment_context(files), len(files)
+
+
+def _merge_retrieval_context(
+    *,
+    attachment_context: str,
+    doc_context: str,
+    doc_citations: list[dict],
+    kg_context: KgQaContext | None,
+) -> tuple[str, list[dict]]:
+    merged_context, citations = merge_kg_qa_into_context(
+        doc_context, doc_citations, kg_context
+    )
+    parts = [p.strip() for p in (attachment_context, merged_context) if (p or "").strip()]
+    return "\n\n".join(parts), citations
+
+
 def _resolve_answer_context(
     db: Session | None,
     user: User | None,
     message: str,
-) -> tuple[str, list[dict], KgQaContext | None]:
+    attachment_session_id: str | None = None,
+) -> tuple[str, list[dict], KgQaContext | None, int]:
+    attachment_context, attach_count = _resolve_attachment_context(
+        db, user, attachment_session_id
+    )
     doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
     kg_context = _resolve_kg_context(db, user, message)
-    merged_context, citations = merge_kg_qa_into_context(
-        doc_context, doc_citations, kg_context
+    merged_context, citations = _merge_retrieval_context(
+        attachment_context=attachment_context,
+        doc_context=doc_context,
+        doc_citations=doc_citations,
+        kg_context=kg_context,
     )
-    return merged_context, citations, kg_context
+    return merged_context, citations, kg_context, attach_count
+
+
+def _resolve_platform_knowledge(
+    db: Session | None,
+    user: User | None,
+) -> str:
+    if db is None or user is None:
+        return ""
+    from app.services.assistant_knowledge import build_platform_knowledge
+
+    return build_platform_knowledge(db, user)
 
 
 def _build_chat_messages(
@@ -108,8 +163,11 @@ def _build_chat_messages(
     message: str,
     history: list[AiChatMessage],
     retrieval_context: str = "",
+    platform_knowledge: str = "",
 ) -> list[dict]:
     system = _SYSTEM_PROMPT
+    if platform_knowledge.strip():
+        system = f"{system}\n\n【平台操作知识库】\n{platform_knowledge.strip()}"
     if retrieval_context.strip():
         system = (
             f"{system}\n\n{_RETRIEVAL_CONTEXT_INSTRUCTION}\n\n{retrieval_context.strip()}"
@@ -130,6 +188,39 @@ def _kg_meta_payload(kg_context: KgQaContext | None) -> dict[str, Any]:
         "kg_entity_count": kg_context.entity_count,
         "kg_relation_count": kg_context.relation_count,
     }
+
+
+_step_seq = 0
+
+
+def _next_step_id() -> str:
+    global _step_seq
+    _step_seq += 1
+    return f"ai-s{_step_seq}"
+
+
+def _workflow_event(
+    phase: str,
+    *,
+    title: str,
+    detail: str = "",
+    tool: str = "",
+    status: str = "running",
+    step_id: str = "",
+) -> str:
+    ev: dict[str, Any] = {"phase": phase, "title": title, "status": status}
+    if detail:
+        ev["detail"] = detail
+    if tool:
+        ev["tool"] = tool
+    if step_id:
+        ev["step_id"] = step_id
+    return json.dumps({"workflow": ev}, ensure_ascii=False)
+
+
+async def _emit_workflow(phase: str, **kwargs: Any) -> AsyncIterator[str]:
+    yield _workflow_event(phase, **kwargs)
+    await asyncio.sleep(0)
 
 
 def _persist_turn(
@@ -165,19 +256,141 @@ async def iter_chat_with_ai_agent_stream(
     db: Session | None = None,
     user: User | None = None,
     conversation_id: str | None = None,
+    attachment_session_id: str | None = None,
 ) -> AsyncIterator[str]:
     """逐块产出 SSE data 行（不含 event: 前缀，由 API 层包装）。"""
     if not is_configured():
         yield json.dumps({"error": "AI 对话未配置，请联系管理员配置 DeepSeek API"}, ensure_ascii=False)
         return
 
-    retrieval_context, citations, kg_context = _resolve_answer_context(db, user, message)
+    async for payload in _emit_workflow("workflow_started", title="开始处理问题"):
+        yield payload
+
+    think_id = _next_step_id()
+    async for payload in _emit_workflow(
+        "agent_thinking",
+        title="分析问题意图",
+        detail=message.strip()[:160],
+        step_id=think_id,
+    ):
+        yield payload
+    async for payload in _emit_workflow(
+        "agent_thought",
+        title="已理解问题",
+        detail="准备检索权限内文档与本体图谱",
+        step_id=think_id,
+        status="done",
+    ):
+        yield payload
+
+    doc_context = ""
+    doc_citations: list[dict] = []
+    attachment_context = ""
+    attach_count = 0
+    attach_id = _next_step_id()
+    if (attachment_session_id or "").strip() and db is not None and user is not None:
+        async for payload in _emit_workflow(
+            "tool_call",
+            title="读取临时附件",
+            tool="attachments",
+            detail=message.strip()[:120],
+            step_id=attach_id,
+        ):
+            yield payload
+        attachment_context, attach_count = _resolve_attachment_context(
+            db, user, attachment_session_id
+        )
+        attach_detail = (
+            f"已加载 {attach_count} 个附件"
+            if attach_count
+            else "未找到有效附件"
+        )
+        async for payload in _emit_workflow(
+            "tool_result",
+            title="临时附件就绪",
+            tool="attachments",
+            detail=attach_detail,
+            step_id=attach_id,
+            status="done",
+        ):
+            yield payload
+
+    retrieve_id = _next_step_id()
+    if db is not None and user is not None and _knowledge_search_enabled(db, user):
+        async for payload in _emit_workflow(
+            "tool_call",
+            title="检索权限内文档",
+            tool="retrieve",
+            detail=message.strip()[:120],
+            step_id=retrieve_id,
+        ):
+            yield payload
+        doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
+        retrieve_detail = (
+            f"命中 {len(doc_citations)} 条相关片段"
+            if doc_citations
+            else "未命中相关文档片段"
+        )
+        async for payload in _emit_workflow(
+            "tool_result",
+            title="文档检索完成",
+            tool="retrieve",
+            detail=retrieve_detail,
+            step_id=retrieve_id,
+            status="done",
+        ):
+            yield payload
+    elif db is not None and user is not None:
+        doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
+
+    kg_context: KgQaContext | None = None
+    kg_id = _next_step_id()
+    if db is not None and user is not None and _kg_enabled_for_user(db, user):
+        async for payload in _emit_workflow(
+            "tool_call",
+            title="解析本体图谱关联",
+            tool="kg_context",
+            detail=message.strip()[:120],
+            step_id=kg_id,
+        ):
+            yield payload
+        kg_context = _resolve_kg_context(db, user, message)
+        if kg_context and kg_context.context_text.strip():
+            kg_detail = (
+                f"匹配 {len(kg_context.matched_entity_ids)} 个实体，"
+                f"{kg_context.relation_count} 条关系"
+            )
+        else:
+            kg_detail = "未匹配到相关实体"
+        async for payload in _emit_workflow(
+            "tool_result",
+            title="本体图谱上下文",
+            tool="kg_context",
+            detail=kg_detail,
+            step_id=kg_id,
+            status="done",
+        ):
+            yield payload
+
+    merged_context, citations = _merge_retrieval_context(
+        attachment_context=attachment_context,
+        doc_context=doc_context,
+        doc_citations=doc_citations,
+        kg_context=kg_context,
+    )
     if citations:
         yield json.dumps({"citations": citations}, ensure_ascii=False)
 
+    async for payload in _emit_workflow("node_started", title="正在生成回答"):
+        yield payload
+
     accumulated = ""
+    platform_knowledge = _resolve_platform_knowledge(db, user)
     messages = _build_chat_messages(
-        message=message, history=history, retrieval_context=retrieval_context
+        message=message,
+        history=history,
+        retrieval_context=merged_context,
+        platform_knowledge=platform_knowledge,
     )
     api_key, base_url, model = resolve_credentials()
     payload = {
@@ -197,6 +410,10 @@ async def iter_chat_with_ai_agent_stream(
                         {"error": f"AI 对话暂时不可用: {body}"},
                         ensure_ascii=False,
                     )
+                    async for payload in _emit_workflow(
+                        "workflow_finished", title="处理失败", status="failed"
+                    ):
+                        yield payload
                     return
                 async for line in r.aiter_lines():
                     if not line or not line.startswith("data:"):
@@ -230,8 +447,14 @@ async def iter_chat_with_ai_agent_stream(
         if citations:
             done_payload["citations"] = citations
         yield json.dumps(done_payload, ensure_ascii=False)
+        async for payload in _emit_workflow("workflow_finished", title="完成"):
+            yield payload
     except httpx.HTTPError as e:
         yield json.dumps({"error": f"无法连接 AI 服务: {e}"}, ensure_ascii=False)
+        async for payload in _emit_workflow(
+            "workflow_finished", title="处理失败", status="failed"
+        ):
+            yield payload
 
 
 async def chat_with_ai_agent(
@@ -241,13 +464,20 @@ async def chat_with_ai_agent(
     db: Session | None = None,
     user: User | None = None,
     conversation_id: str | None = None,
+    attachment_session_id: str | None = None,
 ) -> dict:
     if not is_configured():
         raise bad_request("AI 对话未配置，请联系管理员配置 DeepSeek API")
 
-    retrieval_context, citations, kg_context = _resolve_answer_context(db, user, message)
+    retrieval_context, citations, kg_context, _attach_count = _resolve_answer_context(
+        db, user, message, attachment_session_id
+    )
+    platform_knowledge = _resolve_platform_knowledge(db, user)
     messages = _build_chat_messages(
-        message=message, history=history, retrieval_context=retrieval_context
+        message=message,
+        history=history,
+        retrieval_context=retrieval_context,
+        platform_knowledge=platform_knowledge,
     )
     api_key, base_url, model = resolve_credentials()
     payload = {

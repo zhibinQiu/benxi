@@ -138,7 +138,7 @@ function openDocument() {
       </div>
 
       <div v-if="canPreviewImage" class="knowledge-citation-preview__image-wrap">
-        <n-spin :show="imageLoading">
+        <n-spin :show="imageLoading" local>
           <img
             v-if="imageObjectUrl"
             :src="imageObjectUrl"

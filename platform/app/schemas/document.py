@@ -118,6 +118,19 @@ class DocumentLibraryOut(BaseModel):
     personal_owners: list[dict] = []
 
 
+class DocumentFormatOverviewItem(BaseModel):
+    format: str = Field(description="格式标签（如 pdf、word）")
+    label: str = Field(description="格式展示名")
+    total: int = Field(description="该格式文档总数")
+    parsed: int = Field(description="该格式已解析/已索引文档数")
+
+
+class DocumentFormatOverviewOut(BaseModel):
+    items: list[DocumentFormatOverviewItem] = Field(default_factory=list)
+    total: int = Field(description="可修改权限文档总数")
+    parsed_total: int = Field(description="已解析/已索引文档总数")
+
+
 class DocumentListItem(BaseModel):
     id: uuid.UUID
     title: str

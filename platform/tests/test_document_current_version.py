@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.database import SessionLocal
 from app.models.document import Document
-from tests.test_document_versions import _upload_dummy_pdf
+from test_support.document_upload import upload_dummy_pdf
 
 
 def test_resolve_current_version_repairs_null_pointer(client, admin_token):
@@ -15,7 +15,7 @@ def test_resolve_current_version_repairs_null_pointer(client, admin_token):
         json={"title": "repair-current", "scope": "personal"},
     )
     doc_id = r.json()["data"]["id"]
-    _upload_dummy_pdf(client, doc_id, headers)
+    upload_dummy_pdf(client, doc_id, headers)
 
     with SessionLocal() as db:
         doc = db.get(Document, doc_id)

@@ -31,7 +31,6 @@ from app.schemas.compare import (
 )
 from app.schemas.version_compare import (
     VersionCompareAskIn,
-    VersionCompareBatchIn,
     VersionCompareRelationOut,
 )
 from app.services import compare_service, document_service
@@ -66,7 +65,12 @@ def _run_compare_in_background(job_id: uuid.UUID) -> None:
             from app.models.compare import CompareStatus
 
             job.status = CompareStatus.failed.value
-            job.error_message = "对比处理失败，请稍后重试"
+            if not (job.error_message or "").strip():
+                job.error_message = "对比处理失败，请稍后重试"
+            if not job.finished_at:
+                from datetime import datetime, timezone
+
+                job.finished_at = datetime.now(timezone.utc)
             db.commit()
     finally:
         db.close()
@@ -132,7 +136,6 @@ def start_compare(
         user,
         left_document_id=left,
         right_document_id=right,
-        sync_knowflow=body.sync_knowflow,
     )
     background_tasks.add_task(_run_compare_in_background, job.id)
     data = job_to_dict(db, job)
@@ -199,7 +202,6 @@ def search_documents(
         user,
         right_document_id=right_id,
         query=body.query.strip(),
-        sync_knowflow=body.sync_knowflow,
         field_match=body.field_match,
     )
     return ApiResponse(data=[CompareSearchHitOut(**h) for h in hits])
@@ -304,27 +306,6 @@ def list_version_compare_relations(
     except ValueError as e:
         raise bad_request("无效的文档 ID") from e
     rows = list_document_version_relations(db, user, did)
-    return ApiResponse(data=[VersionCompareRelationOut(**r) for r in rows])
-
-
-@router.post(
-    "/documents/{document_id}/version-compare/batch",
-    response_model=ApiResponse[list[VersionCompareRelationOut]],
-)
-def batch_version_compare(
-    document_id: str,
-    body: VersionCompareBatchIn,
-    user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[list[VersionCompareRelationOut]]:
-    """按勾选版本列表只读加载相邻版本对 diff（上传时已后台预计算）。"""
-    try:
-        did = uuid.UUID(document_id)
-        vids = [uuid.UUID(x) for x in body.version_ids]
-    except ValueError as e:
-        raise bad_request("无效的 ID") from e
-
-    rows = load_adjacent_version_relations(db, user, did, vids)
     return ApiResponse(data=[VersionCompareRelationOut(**r) for r in rows])
 
 

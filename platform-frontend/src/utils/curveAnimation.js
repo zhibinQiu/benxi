@@ -82,9 +82,6 @@ export const CURVE_PRESETS = {
   "thinking-trail": THINKING_TRAIL_PRESET,
 };
 
-/** @deprecated 使用 ROSE_THREE_PRESET */
-export const ROSE_LOADER_DEFAULTS = ROSE_THREE_PRESET;
-
 export function getCurvePreset(name = "rose-three") {
   return CURVE_PRESETS[name] ?? ROSE_THREE_PRESET;
 }
@@ -160,21 +157,4 @@ export function getCurveParticle(index, progress, detailScale, config) {
     radius: 0.9 + fade * 2.7,
     opacity: 0.04 + fade * 0.96,
   };
-}
-
-/** @deprecated */
-export const normalizeRoseProgress = normalizeCurveProgress;
-/** @deprecated */
-export const getRoseDetailScale = getCurveDetailScale;
-/** @deprecated */
-export const getRoseRotation = getCurveRotation;
-/** @deprecated */
-export const roseLoaderConfigForSize = (pixelSize) => curveConfigForSize("rose-three", pixelSize);
-/** @deprecated */
-export const buildRosePath = buildCurvePath;
-/** @deprecated */
-export const getRoseParticle = getCurveParticle;
-/** @deprecated */
-export function roseLoaderPoint(progress, detailScale, config = ROSE_THREE_PRESET) {
-  return config.point(progress, detailScale, config);
 }

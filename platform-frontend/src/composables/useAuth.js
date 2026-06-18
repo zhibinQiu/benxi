@@ -17,6 +17,22 @@ const user = ref(null);
 const loading = ref(false);
 let loadUserPromise = null;
 
+const GENERIC_DISPLAY_NAMES = new Set(["用户", "User"]);
+
+function resolveDisplayName(profile) {
+  if (!profile) return "";
+  const candidates = [
+    (profile.display_name || "").trim(),
+    (profile.username || "").trim(),
+    (profile.phone || "").trim(),
+    (profile.email || "").trim(),
+  ];
+  for (const value of candidates) {
+    if (value && !GENERIC_DISPLAY_NAMES.has(value)) return value;
+  }
+  return candidates.find(Boolean) || "";
+}
+
 export function useAuth() {
   const isLoggedIn = computed(() => !!getToken());
   const permissions = computed(() => user.value?.permissions || []);
@@ -33,7 +49,7 @@ export function useAuth() {
   }
 
   function displayName() {
-    return user.value?.display_name || user.value?.username || user.value?.phone || "";
+    return resolveDisplayName(user.value);
   }
 
   async function loadUser({ force = false } = {}) {

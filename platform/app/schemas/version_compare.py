@@ -37,10 +37,6 @@ class VersionCompareRelationOut(BaseModel):
     diff_items: list[VersionCompareDiffItemOut] = Field(default_factory=list)
 
 
-class VersionCompareBatchIn(BaseModel):
-    version_ids: list[str] = Field(min_length=2)
-
-
 class VersionCompareAskIn(BaseModel):
     left_version_id: str
     right_version_id: str

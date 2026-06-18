@@ -1,5 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { useI18n } from "../composables/useI18n.js";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   NAlert,
@@ -31,6 +32,7 @@ import {
 import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 
 const meta = ref(null);
 const loadingMeta = ref(true);
@@ -42,19 +44,19 @@ const exporting = ref(false);
 const fileItems = ref([]);
 const selectedId = ref(null);
 
-const languageOptions = [
-  { label: "自动检测", value: "" },
-  { label: "简体中文", value: "zh" },
-  { label: "英语", value: "en" },
-  { label: "日语", value: "ja" },
-  { label: "韩语", value: "ko" },
-];
+const languageOptions = computed(() => [
+  { label: t("ocr.langAuto"), value: "" },
+  { label: t("ocr.langZh"), value: "zh" },
+  { label: t("ocr.langEn"), value: "en" },
+  { label: t("ocr.langJa"), value: "ja" },
+  { label: t("ocr.langKo"), value: "ko" },
+]);
 
-const displayFormatOptions = [
-  { label: "纯文本", value: "text" },
-  { label: "Markdown", value: "markdown" },
-  { label: "JSON", value: "json" },
-];
+const displayFormatOptions = computed(() => [
+  { label: t("ocr.formatText"), value: "text" },
+  { label: t("ocr.formatMarkdown"), value: "markdown" },
+  { label: t("ocr.formatJson"), value: "json" },
+]);
 
 const acceptTypes = ".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf";
 
@@ -77,7 +79,7 @@ const processingCount = computed(() =>
 const dropSummary = computed(() => {
   const n = fileItems.value.length;
   if (!n) return "";
-  return `已添加 ${n} 个文件`;
+  return t("ocr.filesAdded", { count: n });
 });
 
 const canRecognize = computed(
@@ -119,10 +121,10 @@ const progressLabel = computed(() => {
   const failed = fileItems.value.filter((item) => item.status === "error").length;
   if (!total) return "";
   if (processing.value || processingCount.value) {
-    return `识别中 ${done + failed}/${total}`;
+    return t("ocr.progressRecognizing", { done: done + failed, total });
   }
-  if (done || failed) return `已完成 ${done}，失败 ${failed}`;
-  return `${total} 个文件待识别`;
+  if (done || failed) return t("ocr.progressCompleted", { done, failed });
+  return t("ocr.progressPending", { total });
 });
 
 function makeId() {
@@ -200,10 +202,10 @@ function statusTagType(status) {
 
 function statusLabel(status) {
   const map = {
-    pending: "待识别",
-    processing: "识别中",
-    done: "完成",
-    error: "失败",
+    pending: t("ocr.statusPending"),
+    processing: t("ocr.statusProcessing"),
+    done: t("ocr.statusDone"),
+    error: t("ocr.statusError"),
   };
   return map[status] || status;
 }
@@ -223,8 +225,8 @@ async function startRecognize() {
       item.status = "done";
     } catch (e) {
       item.status = "error";
-      item.error = e.message || "识别失败";
-      error.value = `${item.file.name}：${item.error}`;
+      item.error = e.message || t("ocr.recognizeFailed");
+      error.value = t("ocr.fileError", { name: item.file.name, error: item.error });
     }
   }
   processing.value = false;
@@ -233,12 +235,12 @@ async function startRecognize() {
 function copyResult() {
   const text = resultDisplayText.value;
   if (!text.trim()) {
-    ui.warning("暂无识别结果");
+    ui.warning(t("ocr.noResult"));
     return;
   }
   navigator.clipboard?.writeText(text).then(
-    () => ui.success("已复制到剪贴板"),
-    () => ui.error("复制失败")
+    () => ui.success(t("ocr.copied")),
+    () => ui.error(t("ocr.copyFailed"))
   );
 }
 
@@ -260,9 +262,9 @@ async function exportBatch(format) {
       format,
       items: buildExportItems(doneItems.value),
     });
-    ui.success(format === "markdown" ? "已导出 Markdown 压缩包" : "已导出 JSON 压缩包");
+    ui.success(format === "markdown" ? t("ocr.exportedMarkdownZip") : t("ocr.exportedJsonZip"));
   } catch (e) {
-    ui.error(e.message || "导出失败");
+    ui.error(e.message || t("ocr.exportFailed"));
   } finally {
     exporting.value = false;
   }
@@ -271,7 +273,7 @@ async function exportBatch(format) {
 async function exportCurrent(format) {
   const item = selectedItem.value;
   if (!item?.result) {
-    ui.warning("请先选择已完成的文件");
+    ui.warning(t("ocr.selectDoneFileFirst"));
     return;
   }
   exporting.value = true;
@@ -280,9 +282,9 @@ async function exportCurrent(format) {
       format,
       items: buildExportItems([item]),
     });
-    ui.success("已导出当前文件");
+    ui.success(t("ocr.exportedCurrent"));
   } catch (e) {
-    ui.error(e.message || "导出失败");
+    ui.error(e.message || t("ocr.exportFailed"));
   } finally {
     exporting.value = false;
   }
@@ -305,12 +307,12 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
         <n-alert
           v-if="!loadingMeta && !configured"
           type="warning"
-          title="文件内容提取暂不可用"
+          :title="t('ocr.unavailableTitle')"
           class="page-alert"
         >
           <p>{{ FEATURE_UNAVAILABLE }}</p>
           <template #action>
-            <n-button size="small" :loading="loadingMeta" @click="loadMeta">重新检测</n-button>
+            <n-button size="small" :loading="loadingMeta" @click="loadMeta">{{ t('ocr.recheck') }}</n-button>
           </template>
         </n-alert>
 
@@ -325,13 +327,13 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
       </div>
 
       <div class="ocr-layout">
-        <n-card title="文件与选项" class="panel panel-source" size="small">
+        <n-card :title="t('ocr.filesAndOptions')" class="panel panel-source" size="small">
           <div class="panel-body">
             <file-drop-zone
               :accept="acceptTypes"
               multiple
-              title="拖拽文件到此处"
-              hint="支持 PNG、JPG、WEBP、BMP、TIFF、PDF，可多选"
+              :title="t('ocr.dropTitle')"
+              :hint="t('ocr.dropHint')"
               :file-name="dropSummary"
               icon="upload"
               :disabled="!configured || processing"
@@ -340,8 +342,8 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
 
             <div v-if="fileItems.length" class="file-list">
               <div class="file-list-head">
-                <n-text depth="3">文件列表</n-text>
-                <n-button size="tiny" quaternary @click="clearAll">清空</n-button>
+                <n-text depth="3">{{ t('ocr.fileList') }}</n-text>
+                <n-button size="tiny" quaternary @click="clearAll">{{ t('ocr.clear') }}</n-button>
               </div>
               <div
                 v-for="item in fileItems"
@@ -373,12 +375,12 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
             </div>
 
             <div v-if="selectedItem?.previewUrl" class="preview-box">
-              <n-text depth="3" class="field-label">预览</n-text>
-              <img :src="selectedItem.previewUrl" alt="预览" class="preview-img" />
+              <n-text depth="3" class="field-label">{{ t('ocr.preview') }}</n-text>
+              <img :src="selectedItem.previewUrl" :alt="t('ocr.previewAlt')" class="preview-img" />
             </div>
 
             <div>
-              <n-text depth="3" class="field-label">识别语言</n-text>
+              <n-text depth="3" class="field-label">{{ t('ocr.recognizeLanguage') }}</n-text>
               <n-select
                 v-model:value="language"
                 :options="languageOptions"
@@ -393,7 +395,7 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
                 :loading="processing"
                 @click="startRecognize"
               >
-                {{ processing ? "批量识别中…" : `开始识别${pendingCount ? `（${pendingCount}）` : ""}` }}
+                {{ processing ? t('ocr.batchRecognizing') : pendingCount ? t('ocr.startRecognizeWithCount', { count: pendingCount }) : t('ocr.startRecognize') }}
               </n-button>
               <n-button
                 secondary
@@ -402,7 +404,7 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
                 @click="exportBatch('markdown')"
               >
                 <template #icon><n-icon :component="DownloadOutline" /></template>
-                导出全部 MD
+                {{ t('ocr.exportAllMd') }}
               </n-button>
               <n-button
                 secondary
@@ -411,28 +413,28 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
                 @click="exportBatch('json')"
               >
                 <template #icon><n-icon :component="DownloadOutline" /></template>
-                导出全部 JSON
+                {{ t('ocr.exportAllJson') }}
               </n-button>
             </n-space>
             <n-text depth="3" class="hint-text">
-              JSON 导出含页码与坐标（版面解析可用时）。
+              {{ t('ocr.jsonExportHint') }}
             </n-text>
           </div>
         </n-card>
 
-        <n-card title="识别结果" class="panel panel-result" size="small">
+        <n-card :title="t('ocr.results')" class="panel panel-result" size="small">
           <div class="panel-body">
             <div v-if="!hasResultPanel" class="result-idle">
               <n-icon :size="40" :depth="3" :component="ScanOutline" />
-              <n-text depth="2">添加文件并开始识别后，结果将显示在此处</n-text>
+              <n-text depth="2">{{ t('ocr.resultIdle') }}</n-text>
               <n-text depth="3" class="result-idle-hint">
-                支持批量识别，并可一键导出 Markdown / JSON 压缩包
+                {{ t('ocr.resultIdleHint') }}
               </n-text>
             </div>
 
             <div v-else-if="selectedItem?.status === 'processing'" class="result-processing">
-              <n-text>正在识别 {{ selectedItem.file.name }}…</n-text>
-              <n-text depth="3">大文件或 PDF 可能需要数十秒</n-text>
+              <n-text>{{ t('ocr.recognizingFile', { name: selectedItem.file.name }) }}</n-text>
+              <n-text depth="3">{{ t('ocr.largeFileHint') }}</n-text>
             </div>
 
             <template v-else-if="selectedItem?.status === 'done'">
@@ -446,13 +448,13 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
                 <n-space :size="8" wrap>
                   <n-button size="small" @click="copyResult">
                     <template #icon><n-icon :component="CopyOutline" /></template>
-                    复制
+                    {{ t('ocr.copy') }}
                   </n-button>
                   <n-button size="small" secondary @click="exportCurrent('markdown')">
-                    导出 MD
+                    {{ t('ocr.exportMd') }}
                   </n-button>
                   <n-button size="small" secondary @click="exportCurrent('json')">
-                    导出 JSON
+                    {{ t('ocr.exportJson') }}
                   </n-button>
                 </n-space>
               </div>
@@ -460,13 +462,13 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
                 :value="resultDisplayText"
                 type="textarea"
                 readonly
-                placeholder="识别结果"
+                :placeholder="t('ocr.resultPlaceholder')"
                 class="result-textarea textarea-fill"
               />
             </template>
 
             <div v-else-if="selectedItem?.status === 'error'" class="result-idle">
-              <n-text type="error">{{ selectedItem.error || "识别失败" }}</n-text>
+              <n-text type="error">{{ selectedItem.error || t('ocr.recognizeFailed') }}</n-text>
             </div>
           </div>
         </n-card>

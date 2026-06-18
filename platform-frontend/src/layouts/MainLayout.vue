@@ -22,6 +22,7 @@ import {
   SparklesOutline,
   ArrowBackOutline,
   NewspaperOutline,
+  BugOutline,
   ListOutline,
   BookOutline } from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
@@ -34,15 +35,20 @@ import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
+import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
-import { publicAsset } from "../utils/appBase";
 import { goBackToEntry } from "../utils/navigationReturn";
 import { sessionEpoch } from "../utils/sessionEpoch.js";
 
-/** 保留对话类页面实例，避免切路由丢失会话与顶栏操作条状态 */
-const KEEP_ALIVE_VIEWS = ["AiHomeView", "ReportGenerationView"];
+/** 保留对话类页面实例，避免切路由丢失会话、流式回复与顶栏操作条状态 */
+const KEEP_ALIVE_VIEWS = [
+  "AiHomeView",
+  "ReportGenerationView",
+  "KnowledgeSearchView",
+  "CompareView",
+];
 
 function routeViewKey(viewRoute) {
   const base = viewRoute.meta?.keepAlive
@@ -53,7 +59,7 @@ function routeViewKey(viewRoute) {
 
 const route = useRoute();
 const router = useRouter();
-const { loadUser, hasPerm, isSystemAdmin } = useAuth();
+const { loadUser, hasPerm } = useAuth();
 const { t, routeTitle, featureLabel } = useI18n();
 const { loadMenuSettings, isMenuVisible } = useMenuSettings();
 const pageHeaderOverride = getPageHeaderOverride();
@@ -131,7 +137,7 @@ const settingsChildren = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(BookOutline) })},
   ];
   for (const item of memberSettingsMenus) {
-    if (isSystemAdmin.value || isMenuVisible(item.key)) {
+    if (isMenuVisible(item.key)) {
       children.push(item);
     }
   }
@@ -141,13 +147,13 @@ const settingsChildren = computed(() => {
 const menuOptions = computed(() => {
   const items = [];
 
-  if (isSystemAdmin.value || isMenuVisible("ai-home")) {
+  if (isMenuVisible("ai-home")) {
     items.push({
       label: t("menu.aiHome"),
       key: "ai-home",
       icon: () => h(NIcon, null, { default: () => h(SparklesOutline) })});
   }
-  if (isSystemAdmin.value || isMenuVisible("system-functions")) {
+  if (isMenuVisible("system-functions")) {
     items.push({
       label: t("menu.systemFunctions"),
       key: "system-functions",
@@ -162,17 +168,23 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(Icon) })});
   }
 
-  if (isSystemAdmin.value || isMenuVisible("documents")) {
+  if (isMenuVisible("documents")) {
     items.push({
       label: t("menu.documents"),
       key: "documents",
       icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) })});
   }
-  if (isSystemAdmin.value || isMenuVisible("knowledge-subscriptions")) {
+  if (isMenuVisible("knowledge-subscriptions")) {
     items.push({
       label: t("menu.knowledgeSubscriptions"),
       key: "knowledge-subscriptions",
       icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) })});
+  }
+  if (isMenuVisible("issue-reports")) {
+    items.push({
+      label: t("menu.issueReports"),
+      key: "issue-reports",
+      icon: () => h(NIcon, null, { default: () => h(BugOutline) })});
   }
 
   if (settingsChildren.value.length) {
@@ -226,7 +238,8 @@ const activeKey = computed(() => {
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
     route.name === "admin-menu-settings" ||
-    route.name === "admin-docs"
+    route.name === "admin-docs" ||
+    route.name === "issue-reports"
   ) {
     return String(route.name);
   }
@@ -374,7 +387,7 @@ function onMenuSelect(key) {
     >
       <div class="sider-inner">
         <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
-          <img :src="publicAsset('logo.svg')" alt="" class="brand-logo" />
+          <PlatformBrandIcon :size="24" class="brand-logo" />
           <span v-if="!siderCollapsed" class="brand-name">
             <PlatformBrandTitle :title="appDisplayName" />
           </span>
@@ -461,7 +474,7 @@ function onMenuSelect(key) {
           ]"
         >
           <router-view v-slot="{ Component, route: viewRoute }">
-            <KeepAlive :max="2" :include="KEEP_ALIVE_VIEWS">
+            <KeepAlive :max="3" :include="KEEP_ALIVE_VIEWS">
               <component
                 :is="Component"
                 :key="routeViewKey(viewRoute)"
@@ -527,14 +540,16 @@ function onMenuSelect(key) {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 8px 0;
+  padding: 8px 0 4px;
   box-sizing: border-box;
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 14px 10px;
+  padding: 6px 14px 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--platform-divider);
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -557,8 +572,6 @@ function onMenuSelect(key) {
   text-overflow: ellipsis;
 }
 .brand-logo {
-  width: 30px;
-  height: 30px;
   flex-shrink: 0;
 }
 .sider-menu-wrap {
@@ -578,7 +591,9 @@ function onMenuSelect(key) {
   border-radius: var(--platform-radius-sm);
   pointer-events: none;
   background: var(--sider-menu-glass-fill-active, var(--platform-glass-fill-active));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  box-shadow: var(--menu-glass-rim-edge-active);
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(16px);
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(16px);
   will-change: transform;
   transition:
     transform 0.24s cubic-bezier(0.22, 0.95, 0.32, 1),
@@ -596,7 +611,14 @@ function onMenuSelect(key) {
 }
 .sider-copyright {
   flex-shrink: 0;
-  border-top: 1px solid var(--platform-divider);
+  margin-top: auto;
+  padding-bottom: 2px;
+}
+
+.sider-copyright :deep(.platform-copyright) {
+  padding: 2px 12px 4px;
+  font-size: 5px;
+  line-height: 1.25;
 }
 .app-main {
   height: 100vh;

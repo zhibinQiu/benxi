@@ -11,7 +11,7 @@ register(
         id="report_generation",
         title="报告生成",
         description="综合 Agent 撰写长报告：多路大量召回本地片段并扩写整合，区别于知识检索的归纳式短答",
-        icon="document-text",
+        icon="create",
         route="/system/report-generation",
         router=report_generation_api.router,
         permission_code="feature.report_generation",

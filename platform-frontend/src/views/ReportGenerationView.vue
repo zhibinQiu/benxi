@@ -1,7 +1,7 @@
 <script setup>
 defineOptions({ name: "ReportGenerationView" });
 import { computed, onMounted, ref } from "vue";
-import { DocumentTextOutline } from "@vicons/ionicons5";
+import { CreateOutline } from "@vicons/ionicons5";
 import { NCheckbox } from "naive-ui";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
@@ -17,7 +17,7 @@ import {
 import { useI18n } from "../composables/useI18n.js";
 import { readKnowledgeScopeSelection } from "../utils/knowledgeScopeSelectionCache.js";
 
-const { t } = useI18n();
+const { t, tm } = useI18n();
 
 const conversationId = ref(null);
 const selection = ref(readKnowledgeScopeSelection());
@@ -26,11 +26,7 @@ const useWebSearch = ref(true);
 const useAgentic = ref(true);
 const webSearchAvailable = ref(true);
 
-const suggestions = [
-  "生成一份关于全国碳市场纳入行业与发展趋势的研究报告",
-  "撰写 AI 在制造业质检场景的应用调研报告，含摘要与建议",
-  "整理企业 ESG 披露框架对比分析报告",
-];
+const suggestions = computed(() => tm("reportGeneration.suggestions") || []);
 
 const selectionHint = computed(() => {
   const count = selection.value?.documentIds?.length || 0;
@@ -124,13 +120,13 @@ onMounted(async () => {
           :show-workflow-progress="true"
           :show-citations="true"
           :linkify-citations="true"
-          title="报告生成"
-          description="大量召回本地知识片段并扩写整合为长报告；支持联网检索、多轮补充与格式调整。非简短归纳式问答。"
-          subtitle="报告生成 · 综合 Agent"
-          chat-header-sub="联网检索 · 本地知识 · 多轮修订"
-          reply-placeholder="补充章节、调整格式或继续追问…"
+          :title="t('reportGeneration.chatTitle')"
+          :description="t('reportGeneration.chatDescription')"
+          :subtitle="t('reportGeneration.chatSubtitle')"
+          :chat-header-sub="t('reportGeneration.chatHeaderSub')"
+          :reply-placeholder="t('reportGeneration.replyPlaceholder')"
           :suggestions="suggestions"
-          :icon="DocumentTextOutline"
+          :icon="CreateOutline"
           :stream-chat="handleChatStream"
           :show-report-tools="true"
           :report-mindmap-fetch="fetchReportMindmap"
@@ -179,16 +175,28 @@ onMounted(async () => {
 
 .report-gen-page {
   display: flex;
-  height: 100%;
+  flex: 1;
   min-height: 0;
-  gap: 0;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 0;
+  overflow: hidden;
+  border: 1px solid var(--platform-border);
+  border-left: none;
+  border-right: none;
+  background: var(--platform-bg-elevated);
 }
 
 .report-gen-page__sider {
-  flex: 0 0 280px;
-  min-width: 240px;
-  max-width: 320px;
-  border-right: 1px solid var(--platform-accent-border-soft);
+  flex-shrink: 0;
+  width: min(300px, 36vw);
+  min-width: 228px;
+  border-right: 1px solid var(--platform-border);
+  background: var(--platform-bg-secondary);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -203,19 +211,19 @@ onMounted(async () => {
 .report-gen-page__panel {
   flex: 1;
   min-height: 0;
+  border-radius: 0 !important;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .report-gen-page {
     flex-direction: column;
   }
 
   .report-gen-page__sider {
-    flex: 0 0 auto;
-    max-width: none;
-    max-height: 220px;
+    width: 100%;
+    max-height: 38vh;
     border-right: none;
-    border-bottom: 1px solid var(--platform-accent-border-soft);
+    border-bottom: 1px solid var(--platform-border);
   }
 }
 </style>

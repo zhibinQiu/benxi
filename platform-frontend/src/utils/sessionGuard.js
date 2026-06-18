@@ -3,6 +3,9 @@
 import { clearTokens } from "../api/http.js";
 import { resetClientSessionState } from "./resetClientSessionState.js";
 import { bumpSessionEpoch } from "./sessionEpoch.js";
+import { getAppRouter } from "./routerInstance.js";
+
+const LOGIN_ROUTE = { name: "login" };
 
 const listeners = new Set();
 let handling = false;
@@ -38,13 +41,29 @@ export function isSessionReplacedError(payload, message = "") {
   return /其他设备登录|session_replaced/i.test(text);
 }
 
-function navigateToLoginPage({ saveRedirect = false } = {}) {
-  return import("../router/index.js").then(({ default: router }) => {
-    if (router.currentRoute.value.name === "login") return;
-    const query = saveRedirect
-      ? { redirect: router.currentRoute.value.fullPath }
-      : undefined;
-    return router.replace({ name: "login", query });
+function resetLoginPageScroll() {
+  window.scrollTo(0, 0);
+  requestAnimationFrame(() => {
+    document.querySelector(".login-page")?.scrollTo({ top: 0, left: 0 });
+  });
+}
+
+function navigateToLoginPage({ saveRedirect = false, resetScroll = false } = {}) {
+  const router = getAppRouter();
+  if (!router) {
+    return import("../router/index.js").then(({ default: fallbackRouter }) =>
+      navigateWithRouter(fallbackRouter, { saveRedirect, resetScroll }),
+    );
+  }
+  return navigateWithRouter(router, { saveRedirect, resetScroll });
+}
+
+function navigateWithRouter(router, { saveRedirect = false, resetScroll = false } = {}) {
+  const onLogin = router.currentRoute.value.name === "login";
+  if (onLogin && !resetScroll) return Promise.resolve();
+  const query = saveRedirect ? { redirect: router.currentRoute.value.fullPath } : {};
+  return router.replace({ ...LOGIN_ROUTE, query }).then(() => {
+    if (resetScroll || onLogin) resetLoginPageScroll();
   });
 }
 
@@ -61,10 +80,10 @@ export function redirectToLoginAfterAuthFailure() {
   clearTokens();
   resetClientSessionState();
   bumpSessionEpoch();
-  navigateToLoginPage({ saveRedirect: true }).finally(finishAuthRedirect);
+  navigateToLoginPage({ saveRedirect: false }).finally(finishAuthRedirect);
 }
 
-/** 主动退出：会话已在 logout 中清理，直接跳转登录页 */
+/** 主动退出：会话已在 logout 中清理，跳转宣传页（登录页）并从首屏开始展示 */
 export function redirectToLoginAfterLogout() {
-  navigateToLoginPage({ saveRedirect: false });
+  return navigateToLoginPage({ saveRedirect: false, resetScroll: true });
 }

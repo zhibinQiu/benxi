@@ -116,7 +116,7 @@ defineExpose({ loadMindmap, getMermaidSource });
 
 <template>
   <div class="knowledge-mindmap" @click="onBlankClick">
-    <n-spin :show="loading">
+    <n-spin :show="loading" local>
       <div
         v-if="svgHtml"
         class="knowledge-mindmap__canvas knowledge-mindmap__canvas--expandable"

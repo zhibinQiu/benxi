@@ -1,5 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
+import { useI18n } from "../../composables/useI18n";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -17,6 +18,7 @@ import { fetchSystemDocCatalog, fetchSystemDocContent } from "../../api/systemDo
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t } = useI18n();
 
 const catalogLoading = ref(true);
 const contentLoading = ref(false);
@@ -117,7 +119,7 @@ watch(
         >
           <div class="system-docs-sider__head">
             <NIcon :size="18" :component="BookOutline" />
-            <span>说明文档</span>
+            <span>{{ t("admin.systemDocs.title") }}</span>
           </div>
           <NMenu
             :value="activePath"
@@ -139,7 +141,7 @@ watch(
           />
           <NEmpty
             v-else-if="!catalogLoading && !contentLoading"
-            description="暂无可用文档"
+            :description="t('admin.systemDocs.noDocs')"
           />
         </NLayoutContent>
       </NLayout>

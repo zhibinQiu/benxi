@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -23,6 +24,8 @@ from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.services.document_service import get_document, list_compareable_documents
 from app.storage.object_store import get_object_store
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_uuid_list(ids: list[str]) -> list[uuid.UUID]:
@@ -183,7 +186,73 @@ def compute_paragraph_diffs(
     return _diff_pair(base, other)
 
 
+def _parsed_document_from_blocks(
+    version: DocumentVersion, payload: dict
+) -> ParsedDocument:
+    return ParsedDocument(
+        document_id=version.document_id,
+        file_name=version.file_name,
+        full_text=(payload.get("full_text") or "").strip(),
+        pages=payload.get("pages") or [],
+        parse_quality=payload.get("parse_quality") or "blocks",
+        warning=None,
+    )
+
+
+def _load_cached_parsed_version(
+    db: Session, version: DocumentVersion
+) -> ParsedDocument | None:
+    """仅读 DB 已缓存分块，不触发 OCR / MinIO。"""
+    from app.services.document_version_block_service import (
+        blocks_to_content_dict,
+        load_version_blocks,
+    )
+
+    blocks = load_version_blocks(db, version.id)
+    if not blocks:
+        return None
+    payload = blocks_to_content_dict(blocks)
+    if not (payload.get("full_text") or "").strip():
+        return None
+    return _parsed_document_from_blocks(version, payload)
+
+
 def load_parsed_version(db: Session, version: DocumentVersion) -> ParsedDocument:
+    """优先复用已缓存分块（含 OCR）；缺失时再解析并落库。"""
+    cached = _load_cached_parsed_version(db, version)
+    if cached:
+        return cached
+
+    from app.services.document_version_block_service import (
+        blocks_to_content_dict,
+        ensure_version_blocks,
+        parse_version_document,
+    )
+
+    try:
+        blocks = ensure_version_blocks(db, version)
+        if blocks:
+            return _parsed_document_from_blocks(
+                version, blocks_to_content_dict(blocks)
+            )
+    except Exception:
+        logger.warning(
+            "版本分块落库失败，回退现场解析 doc=%s version=%s",
+            version.document_id,
+            version.id,
+            exc_info=True,
+        )
+        db.rollback()
+        try:
+            return parse_version_document(db, version)
+        except Exception:
+            logger.warning(
+                "现场解析失败，回退文本层提取 doc=%s version=%s",
+                version.document_id,
+                version.id,
+                exc_info=True,
+            )
+
     store = get_object_store()
     data = store.get_object_bytes(version.file_key)
     return extract_text_from_bytes(
@@ -242,21 +311,12 @@ def get_document_content_for_version(
 def load_parsed_documents(db: Session, docs: list[Document]) -> list[ParsedDocument]:
     from app.services.document_service import resolve_current_version
 
-    store = get_object_store()
     parsed: list[ParsedDocument] = []
     for doc in docs:
         version = resolve_current_version(db, doc)
         if not version:
             continue
-        data = store.get_object_bytes(version.file_key)
-        parsed.append(
-            extract_text_from_bytes(
-                data,
-                document_id=doc.id,
-                file_name=version.file_name,
-                mime_type=version.mime_type,
-            )
-        )
+        parsed.append(load_parsed_version(db, version))
     return parsed
 
 
@@ -376,6 +436,9 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
         if not base_parsed:
             raise ValueError("Base document parse failed")
 
+        from app.services.compare_llm_service import compare_documents_with_llm
+
+        llm_summary = ""
         for did in doc_ids:
             if did == base_id:
                 continue
@@ -383,7 +446,10 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
             if not other:
                 continue
             pair_key = f"{base_id}:{did}"
-            for item in _diff_pair_git_style(base_parsed, other):
+            diff_items, pair_summary = compare_documents_with_llm(base_parsed, other)
+            if pair_summary:
+                llm_summary = pair_summary
+            for item in diff_items:
                 db.add(
                     CompareDiffItem(
                         job_id=job.id,
@@ -396,6 +462,11 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
                         anchor_json=item.get("anchor_json"),
                     )
                 )
+
+        payload = dict(job.payload or {})
+        payload["llm_summary"] = llm_summary
+        payload["compare_engine"] = "llm"
+        job.payload = payload
 
         job.progress = 90
         job.status = CompareStatus.done.value
@@ -470,7 +541,6 @@ def search_compare_documents(
     *,
     right_document_id: uuid.UUID,
     query: str,
-    sync_knowflow: bool = True,  # noqa: ARG001 — 保留兼容，对比检索不触发建索引
     field_match: bool = True,
     limit: int = 20,
 ) -> list[dict]:
@@ -589,14 +659,13 @@ def create_compare_job(
     *,
     left_document_id: uuid.UUID,
     right_document_id: uuid.UUID,
-    sync_knowflow: bool = True,  # noqa: ARG001 — 保留兼容，对比不触发建索引
 ) -> CompareJob:
     if left_document_id == right_document_id:
         from app.core.exceptions import bad_request
 
         raise bad_request("左右两侧请选择不同文档")
     docs = validate_compare_documents(
-        db, user, [left_document_id, right_document_id], min_count=2, max_count=2
+        db, user, [left_document_id, right_document_id]
     )
     job = CompareJob(
         created_by=user.id,
@@ -611,15 +680,6 @@ def create_compare_job(
     db.add(job)
     db.commit()
     db.refresh(job)
-
-    ragflow_map = _existing_ragflow_doc_map(db, user, docs)
-    payload = dict(job.payload or {})
-    knowflow = payload.get("knowflow") or {}
-    knowflow["ragflow_doc_map"] = ragflow_map
-    payload["knowflow"] = knowflow
-    job.payload = payload
-    db.commit()
-
     return job
 
 

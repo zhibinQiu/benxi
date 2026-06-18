@@ -44,6 +44,11 @@ const props = defineProps({
   strokeWidth: { type: Number, default: undefined },
   radius: { type: Number, default: undefined },
   scale: { type: Number, default: undefined },
+  /** 在容器内居中（侧边栏、预览区等）；默认在视口中心 */
+  local: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const slots = useSlots();
@@ -96,7 +101,12 @@ const loaderLabel = computed(() => props.description || "加载中");
 </script>
 
 <template>
-  <div v-if="hasDefaultSlot" class="n-spin-container">
+  <div
+    v-if="hasDefaultSlot"
+    class="n-spin-container"
+    :class="{ 'platform-spin-local': local }"
+    v-bind="$attrs"
+  >
     <div
       class="n-spin-content"
       :class="[contentClass, { 'n-spin-content--spinning': active }]"

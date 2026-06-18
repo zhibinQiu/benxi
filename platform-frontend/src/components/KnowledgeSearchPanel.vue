@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from "vue";
 import { NIcon } from "naive-ui";
 import { SearchOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
@@ -11,7 +11,6 @@ import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
 import { usePlatformUi } from "../composables/usePlatformUi.js";
 import { useI18n } from "../composables/useI18n.js";
 import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
-import { PLATFORM_APP_NAME } from "../constants/platform.js";
 
 const props = defineProps({
   suggestions: { type: Array, default: () => [] },
@@ -54,7 +53,7 @@ const composerRows = computed(() =>
   hasResults.value ? { min: 1, max: 1 } : { min: 3, max: 8 }
 );
 
-const displaySubtitle = computed(() => `${PLATFORM_APP_NAME} · ${t("knowledgeSearch.title")}`);
+const displaySubtitle = computed(() => t("knowledgeSearch.subtitle"));
 
 function emptyWorkflow() {
   return emptyAgentWorkflow();
@@ -214,10 +213,6 @@ async function showMindmapView() {
 }
 
 onBeforeUnmount(() => {
-  cleanupStream();
-});
-
-onDeactivated(() => {
   cleanupStream();
 });
 

@@ -1,17 +1,16 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { useI18n } from "../composables/useI18n.js";
+import { messages as localeMessages } from "../locales";
+import { useAppPreferences } from "../composables/useAppPreferences";
 import { NButton, NIcon, NSpin } from "naive-ui";
-import {
-  CloseOutline,
-  SparklesOutline,
-  TimeOutline } from "@vicons/ionicons5";
+import { CloseOutline, SparklesOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
 import ChatBubbleRetry from "./ChatBubbleRetry.vue";
 import { marked } from "marked";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
-import { navigateWithReturn } from "../utils/navigationReturn";
 import {
   clearChatSession,
   loadChatSession,
@@ -21,30 +20,44 @@ import {
 
 const ASSISTANT_SCOPE = "assistant";
 
+const { t, chatScopeTitle } = useI18n();
+const { locale } = useAppPreferences();
+
 const open = defineModel("open", { type: Boolean, default: false });
 
+const props = defineProps({
+  anchorEl: { type: Object, default: null }});
+
 const route = useRoute();
-const router = useRouter();
 
 marked.setOptions({ gfm: true, breaks: true });
 
-const WELCOME_MESSAGE = {
+const WELCOME_MESSAGE = computed(() => ({
   role: "assistant",
-  content: `你好，我是${PLATFORM_APP_NAME}智能助手。可以问我菜单在哪、如何上传文档、PDF 翻译、权限与后台任务等问题。`};
+  content: t("assistantFab.welcome", { appName: PLATFORM_APP_NAME }),
+}));
+
+const quickPrompts = computed(
+  () => localeMessages[locale.value]?.assistantFab?.quickPrompts || []
+);
 
 const sending = ref(false);
 const loadingHistory = ref(false);
 const conversationId = ref(null);
 const input = ref("");
-const messages = ref([{ ...WELCOME_MESSAGE }]);
+const messages = ref([]);
 
-const quickPrompts = [
-  "如何上传和管理文档？",
-  "PDF 翻译怎么用？",
-  "文档分享权限有哪些级别？",
-  "后台任务如何终止？",
-];
+function resetWelcomeMessage() {
+  messages.value = [{ ...WELCOME_MESSAGE.value }];
+}
 
+resetWelcomeMessage();
+
+watch(locale, () => {
+  if (messages.value.length === 1 && messages.value[0]?.role === "assistant" && !conversationId.value) {
+    resetWelcomeMessage();
+  }
+});
 const pageHint = computed(() => {
   const title = route.meta?.title;
   const name = route.name;
@@ -53,6 +66,37 @@ const pageHint = computed(() => {
 });
 
 const messagesRef = ref(null);
+const panelRef = ref(null);
+const teleportReady = ref(false);
+
+function resolveAnchorNode() {
+  const raw = props.anchorEl;
+  if (!raw) return null;
+  if (raw instanceof HTMLElement) return raw;
+  if (raw.$el instanceof HTMLElement) return raw.$el;
+  if (raw.value instanceof HTMLElement) return raw.value;
+  if (raw.value?.$el instanceof HTMLElement) return raw.value.$el;
+  return null;
+}
+
+const OUTSIDE_CLOSE_IGNORE_SELECTOR =
+  ".n-dialog, .n-modal, .n-popover, .n-dropdown, .n-tooltip, .platform-confirm-dialog";
+
+function onKeydown(event) {
+  if (open.value && event.key === "Escape") {
+    open.value = false;
+  }
+}
+
+function onOutsidePointerDown(event) {
+  if (!open.value) return;
+  const target = event.target;
+  if (!(target instanceof Node)) return;
+  if (panelRef.value?.contains(target)) return;
+  if (resolveAnchorNode()?.contains(target)) return;
+  if (target instanceof Element && target.closest(OUTSIDE_CLOSE_IGNORE_SELECTOR)) return;
+  open.value = false;
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -61,8 +105,15 @@ function scrollToBottom() {
   });
 }
 
-watch(open, (v) => {
-  if (v) scrollToBottom();
+watch(open, async (v) => {
+  if (v) {
+    scrollToBottom();
+    document.addEventListener("keydown", onKeydown);
+    document.addEventListener("pointerdown", onOutsidePointerDown, true);
+  } else {
+    document.removeEventListener("keydown", onKeydown);
+    document.removeEventListener("pointerdown", onOutsidePointerDown, true);
+  }
 });
 
 function renderMarkdown(text) {
@@ -101,7 +152,10 @@ async function sendMessage(text) {
   } catch (e) {
     messages.value.push({
       role: "assistant",
-      content: `抱歉，暂时无法回答：${e.message || "服务异常"}。请稍后重试或联系管理员。`});
+      content: t("assistantFab.errorReply", {
+        error: e.message || t("assistantFab.serviceError"),
+      }),
+    });
   } finally {
     sending.value = false;
     scrollToBottom();
@@ -143,14 +197,6 @@ async function retryMessage(index) {
   await sendMessage(content);
 }
 
-function goToHistory() {
-  navigateWithReturn(
-    router,
-    { name: "chat-history", params: { scope: "assistant" } },
-    route
-  );
-}
-
 function persistAssistantSession() {
   const serialized = serializeChatMessages(messages.value);
   if (!conversationId.value && serialized.length <= 1 && !input.value.trim()) {
@@ -164,17 +210,6 @@ function persistAssistantSession() {
   });
 }
 
-function startNewChat() {
-  conversationId.value = null;
-  messages.value = [{ ...WELCOME_MESSAGE }];
-  input.value = "";
-  clearChatSession(ASSISTANT_SCOPE);
-  if (route.query.assistantConversation) {
-    const { assistantConversation: _id, ...rest } = route.query;
-    router.replace({ ...route, query: rest });
-  }
-}
-
 async function loadConversationFromId(id) {
   if (!id) return;
   loadingHistory.value = true;
@@ -185,13 +220,16 @@ async function loadConversationFromId(id) {
     messages.value =
       rows.length > 0
         ? rows.map((m) => ({ role: m.role, content: m.content }))
-        : [{ ...WELCOME_MESSAGE }];
+        : [{ ...WELCOME_MESSAGE.value }];
     await scrollToBottom();
     persistAssistantSession();
   } catch (e) {
     messages.value.push({
       role: "assistant",
-      content: `加载历史对话失败：${e.message || "请稍后重试"}`});
+      content: t("assistantFab.loadHistoryFailed", {
+        error: e.message || t("assistantFab.retryLater"),
+      }),
+    });
   } finally {
     loadingHistory.value = false;
   }
@@ -206,6 +244,10 @@ watch(
 );
 
 onMounted(() => {
+  requestAnimationFrame(() => {
+    teleportReady.value = true;
+  });
+
   const cid =
     typeof route.query.assistantConversation === "string"
       ? route.query.assistantConversation
@@ -228,32 +270,36 @@ onMounted(() => {
     }));
   }
 });
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKeydown);
+  document.removeEventListener("pointerdown", onOutsidePointerDown, true);
+});
 </script>
 
 <template>
-  <Teleport to="body">
-  <div class="assistant-root" :class="{ 'assistant-root--open': open }">
-    <Transition name="assistant-panel">
-      <div v-if="open" class="assistant-panel" role="dialog" aria-label="智能客服">
+  <Teleport v-if="teleportReady" to="body">
+    <div class="assistant-root">
+      <Transition name="assistant-panel">
+        <div
+          v-if="open"
+          ref="panelRef"
+          class="assistant-panel"
+          role="dialog"
+          :aria-label="t('assistantFab.ariaDialog')"
+        >
         <header class="assistant-header">
           <div class="assistant-header-brand">
             <div class="assistant-avatar">
               <n-icon :size="20" :component="SparklesOutline" />
             </div>
             <div>
-              <div class="assistant-title">智能助手</div>
+              <div class="assistant-title">{{ chatScopeTitle("assistant", "本析平台客服") }}</div>
               <div class="assistant-sub">{{ PLATFORM_APP_NAME }}</div>
             </div>
           </div>
           <div class="assistant-header-actions">
-            <n-button quaternary size="small" @click="goToHistory">
-              <template #icon>
-                <n-icon :component="TimeOutline" />
-              </template>
-              历史
-            </n-button>
-            <n-button quaternary size="small" @click="startNewChat">新对话</n-button>
-            <n-button quaternary circle size="small" aria-label="关闭" @click="open = false">
+            <n-button quaternary circle size="small" :aria-label="t('assistantFab.ariaClose')" @click="open = false">
               <template #icon>
                 <n-icon :component="CloseOutline" />
               </template>
@@ -263,7 +309,7 @@ onMounted(() => {
 
         <div v-if="loadingHistory" class="assistant-history-loading">
           <n-spin size="small" />
-          <span>正在加载对话…</span>
+          <span>{{ t("chat.loadingConversation") }}</span>
         </div>
 
         <div v-else ref="messagesRef" class="assistant-messages">
@@ -295,7 +341,7 @@ onMounted(() => {
           <div v-if="sending" class="assistant-msg assistant-msg--bot">
             <div class="assistant-bubble assistant-bubble--bot assistant-bubble--typing">
               <n-spin size="small" />
-              <span>正在思考…</span>
+              <span>{{ t("chat.thinking") }}</span>
             </div>
           </div>
         </div>
@@ -315,7 +361,7 @@ onMounted(() => {
         <footer class="assistant-footer">
           <ChatComposer
             v-model="input"
-            placeholder="描述你的问题，Enter 发送"
+            :placeholder="t('assistantFab.inputPlaceholder')"
             :disabled="sending"
             :loading="sending"
             :min-rows="1"
@@ -324,9 +370,9 @@ onMounted(() => {
             @send="sendMessage()"
           />
         </footer>
-      </div>
-    </Transition>
-  </div>
+        </div>
+      </Transition>
+    </div>
   </Teleport>
 </template>
 
@@ -335,7 +381,7 @@ onMounted(() => {
   position: fixed;
   right: 24px;
   bottom: 24px;
-  z-index: 1200;
+  z-index: var(--platform-z-flyout);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -347,53 +393,17 @@ onMounted(() => {
   pointer-events: auto;
 }
 
-.assistant-fab {
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--platform-accent-border);
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--platform-accent);
-  background: var(--platform-accent-gradient-soft);
-  box-shadow:
-    0 2px 8px color-mix(in srgb, var(--platform-accent) 12%, transparent),
-    0 1px 3px rgba(15, 23, 42, 0.06);
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    background 0.2s ease;
-}
-
-.assistant-fab:hover {
-  transform: translateY(-1px);
-  background: var(--platform-accent-gradient-soft);
-  box-shadow:
-    0 4px 12px color-mix(in srgb, var(--platform-accent) 16%, transparent),
-    0 2px 6px rgba(15, 23, 42, 0.06);
-}
-
-.assistant-fab--active {
-  color: #64748b;
-  border-color: rgba(100, 116, 139, 0.25);
-  background: linear-gradient(160deg, #f8fafc 0%, #e2e8f0 100%);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
-}
-
 .assistant-panel {
   width: min(400px, calc(100vw - 32px));
   height: min(520px, calc(100vh - 120px));
+  min-height: 320px;
   display: flex;
   flex-direction: column;
-  background: var(--platform-surface, #fff);
-  border-radius: 14px;
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
-  box-shadow:
-    0 12px 40px rgba(15, 23, 42, 0.14),
-    0 4px 12px rgba(15, 23, 42, 0.06);
   overflow: hidden;
+  background: var(--platform-bg-elevated-solid, #fff);
+  border-radius: var(--platform-radius, 14px);
+  border: 1px solid var(--platform-glass-border, rgba(15, 23, 42, 0.08));
+  box-shadow: var(--platform-shadow-lg);
 }
 
 .assistant-header-actions {

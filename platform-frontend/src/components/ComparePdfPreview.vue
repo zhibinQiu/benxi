@@ -29,6 +29,8 @@ const MIN_PDF_RENDER_SCALE = 2;
 const MAX_PDF_RENDER_SCALE = 4;
 const MAX_DEVICE_PIXEL_RATIO = 3;
 
+const emit = defineEmits(["ready", "page-change"]);
+
 const props = defineProps({
   src: { type: String, default: "" },
   page: { type: Number, default: 1 },
@@ -39,9 +41,14 @@ const props = defineProps({
   caption: { type: String, default: "" },
   /** width：按宽度铺满；page：整页缩放进视口（文档详情预览） */
   fitMode: { type: String, default: "width" },
+  /** 滚到顶/底时继续滚动触发翻页 */
+  wheelPageFlip: { type: Boolean, default: true },
 });
 
+const numPages = ref(0);
+
 const canvasRef = ref(null);
+const scrollRef = ref(null);
 const wrapRef = ref(null);
 const loading = ref(false);
 const error = ref("");
@@ -64,6 +71,7 @@ function resetDoc() {
     renderTask = null;
   }
   pdfDoc = null;
+  numPages.value = 0;
   overlayBoxes.value = [];
   canvasSize.value = { width: 0, height: 0 };
 }
@@ -90,6 +98,8 @@ async function ensurePdf() {
     }
     doc._src = src;
     pdfDoc = doc;
+    numPages.value = doc.numPages;
+    emit("ready", { numPages: doc.numPages });
     return doc;
   } catch (e) {
     if (token === loadToken) {
@@ -220,6 +230,22 @@ function scheduleRender() {
   nextTick(() => renderPage());
 }
 
+function onScrollWheel(e) {
+  if (!props.wheelPageFlip || numPages.value <= 1) return;
+  const el = scrollRef.value;
+  if (!el) return;
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 10;
+  const atTop = el.scrollTop <= 10;
+  const page = Math.max(1, Number(props.page) || 1);
+  if (e.deltaY > 0 && atBottom && page < numPages.value) {
+    e.preventDefault();
+    emit("page-change", page + 1);
+  } else if (e.deltaY < 0 && atTop && page > 1) {
+    e.preventDefault();
+    emit("page-change", page - 1);
+  }
+}
+
 watch(
   () => [
     props.src,
@@ -256,7 +282,13 @@ onBeforeUnmount(() => {
       <div v-if="error" class="compare-pdf-preview__error">
         <n-text depth="3">{{ error }}</n-text>
       </div>
-      <div v-else-if="src" class="compare-pdf-preview__scroll" :class="{ 'compare-pdf-preview__scroll--from-top': fitMode === 'width' }">
+      <div
+        v-else-if="src"
+        ref="scrollRef"
+        class="compare-pdf-preview__scroll"
+        :class="{ 'compare-pdf-preview__scroll--from-top': fitMode === 'width' }"
+        @wheel="onScrollWheel"
+      >
         <div
           class="compare-pdf-preview__stage"
           :style="{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px` }"

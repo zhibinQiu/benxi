@@ -507,10 +507,20 @@ defineExpose({ reload: reloadTree });
   min-height: 0;
   overflow: auto;
   padding: 8px 6px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.knowledge-scope-tree__spin :deep(.n-spin-container) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .knowledge-scope-tree__spin :deep(.n-spin-content) {
-  min-height: 120px;
+  flex: 1;
+  min-height: 0;
 }
 
 .knowledge-scope-tree__spin :deep(.n-tree-node-content__text) {

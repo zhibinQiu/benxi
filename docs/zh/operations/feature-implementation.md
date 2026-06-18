@@ -1,4 +1,4 @@
-# 功能实现说明（v4.0.7）
+# 功能实现说明（v4.0.9）
 
 > **本文描述当前已实现功能的运行方式与数据流，不含代码。**  
 > 架构分层见 [系统架构](architecture.md)；文档库细节见 [文档库实现](../implementation/documents-implementation.md)。
@@ -216,17 +216,23 @@
 
 ## 6. 文档对比
 
-### 6.1 差异对比（Diff）
+### 6.1 跨文档差异对比
 
-1. 用户选择 2–4 份已有 **query 权限** 的文档，指定基准版。  
-2. 创建 **compare job**（异步），后台抽取文本层或 KnowFlow 解析文本。  
-3. **版本块 diff 引擎** 计算增删改，结果存 Job payload。  
-4. 前端多栏预览 + 荧光高亮 + 侧栏差异列表联动滚动。
+1. 用户选择两份已有 **query 权限** 的文档（左右栏）。  
+2. 创建 **compare job**（异步），后台抽取已解析正文。  
+3. **LLM 对比**（`compare_llm_service`）或块级 diff 引擎归纳增删改，结果存 Job payload。  
+4. 前端多栏预览 + 荧光高亮 + 侧栏差异列表联动滚动。  
+5. **不触发建索引**：对比仅使用文档库已有解析/向量索引；须先完成上传与 KnowFlow 同步。
 
-### 6.2 自然语言检索（对比内）
+### 6.2 单文档版本对比
+
+- 上传完成时后台预计算**相邻版本对** diff，前端经 `GET .../version-compare/adjacent` 只读加载。  
+- 支持版本差异问答（基于入库 diff + LLM 总结）。
+
+### 6.3 自然语言检索（对比内）
 
 - 在已选文档范围内，用 NL 问句检索。  
-- 平台先算 ACL 白名单 document_id 列表，再调 KnowFlow retrieval。  
+- 平台先算 ACL 白名单 document_id 列表，再调 KnowFlow retrieval 或本地字段匹配。  
 - 命中 chunk 在预览栏高亮（与 diff 色系区分）。
 
 ---

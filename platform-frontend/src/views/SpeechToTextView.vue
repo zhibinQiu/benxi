@@ -1,5 +1,7 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { useAuth } from "../composables/useAuth";
+import { useI18n } from "../composables/useI18n.js";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
@@ -28,7 +30,8 @@ import {
   RadioOutline,
   SaveOutline,
   FolderOpenOutline,
-  TrashOutline } from "@vicons/ionicons5";
+  TrashOutline,
+  GitNetworkOutline } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import AudioWaveform from "../components/AudioWaveform.vue";
@@ -40,10 +43,13 @@ import {
   saveMeetingRecord,
   summarizeSpeech,
   transcribeSpeech } from "../api/client";
+import { extractKgFromText } from "../api/kg.js";
 import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const router = useRouter();
 const ui = usePlatformUi();
+const { hasPerm } = useAuth();
+const { t, locale } = useI18n();
 
 const meta = ref(null);
 const loadingMeta = ref(true);
@@ -71,6 +77,7 @@ const viewingRecord = ref(null);
 const recordDetailLoading = ref(false);
 const transcribing = ref(false);
 const summarizing = ref(false);
+const importingKg = ref(false);
 const error = ref("");
 
 const recording = ref(false);
@@ -93,19 +100,19 @@ const SILENCE_THRESHOLD = 0.018;
 const SILENCE_MS = 1400;
 const MIN_SPEECH_MS = 600;
 
-const languageOptions = [
-  { label: "自动检测", value: "" },
-  { label: "中文 (zh)", value: "zh" },
-  { label: "英语 (en)", value: "en" },
-  { label: "日语 (ja)", value: "ja" },
-  { label: "韩语 (ko)", value: "ko" },
-];
+const languageOptions = computed(() => [
+  { label: t("speechToText.langAuto"), value: "" },
+  { label: t("speechToText.langZh"), value: "zh" },
+  { label: t("speechToText.langEn"), value: "en" },
+  { label: t("speechToText.langJa"), value: "ja" },
+  { label: t("speechToText.langKo"), value: "ko" },
+]);
 
-const summaryStyleOptions = [
-  { label: "会议纪要", value: "minutes" },
-  { label: "简要要点", value: "brief" },
-  { label: "详细总结", value: "detailed" },
-];
+const summaryStyleOptions = computed(() => [
+  { label: t("speechToText.summaryStyleMinutes"), value: "minutes" },
+  { label: t("speechToText.summaryStyleBrief"), value: "brief" },
+  { label: t("speechToText.summaryStyleDetailed"), value: "detailed" },
+]);
 
 const configured = computed(() => meta.value?.configured ?? false);
 
@@ -129,19 +136,48 @@ const canSummarize = computed(
     (!!transcript.value.trim() || segments.value.length > 0)
 );
 
+function buildSummaryExportText({ summaryText = summary.value, blocks = summaryBlocks.value } = {}) {
+  if (blocks?.length) {
+    return blocks
+      .map((blk) => `${blk.speaker} [${blk.time_range}]: ${blk.summary || ""}`)
+      .join("\n")
+      .trim();
+  }
+  return (summaryText || "").trim();
+}
+
+function resolveImportKgTitle({ recordTitle = "" } = {}) {
+  const title = (recordTitle || saveTitle.value || "").trim();
+  if (title) return title;
+  const dateLocale = locale.value === "zh" ? "zh-CN" : "en-US";
+  return t("speechToText.meetingSummaryDefault", {
+    date: new Date().toLocaleString(dateLocale),
+  });
+}
+
+const canImportKg = computed(
+  () => hasPerm("feature.kg_palantir") && !!buildSummaryExportText().length
+);
+
 const canSave = computed(
   () => !saving.value && (segments.value.length > 0 || !!transcript.value.trim() || !!summary.value.trim())
 );
 
 const recordHint = computed(() => {
   if (recording.value) {
-    const streamHint = streamRecognize.value ? "，停顿后自动转写" : "";
-    return `录音中 ${formatDuration(recordSeconds.value)}${streamHint}`;
+    const streamHint = streamRecognize.value ? t("speechToText.streamHintSuffix") : "";
+    return t("speechToText.recordHintRecording", {
+      duration: formatDuration(recordSeconds.value),
+      streamHint,
+    });
   }
   if (audioFile.value && sourceMode.value === "record") {
-    return `${audioFile.value.name}（${formatDuration(recordSeconds.value)}）`;
+    return t("speechToText.recordHintReady", {
+      name: audioFile.value.name,
+      duration: formatDuration(recordSeconds.value),
+    });
   }
-  return "点击开始录音，再次点击停止";
+  return t("speechToText.recordHintIdle");
 });
 
 function formatDuration(sec) {
@@ -250,7 +286,7 @@ async function transcribeSegmentBlob(blob, chunkTime) {
       liveSegments.value[idx] = {
         ...liveSegments.value[idx],
         status: "done",
-        text: newSegs.map((s) => s.text).join(" ") || "（无识别内容）"};
+        text: newSegs.map((s) => s.text).join(" ") || t("speechToText.noTranscriptContent")};
     }
   } catch (e) {
     const idx = liveSegments.value.findIndex((s) => s.id === id);
@@ -258,9 +294,9 @@ async function transcribeSegmentBlob(blob, chunkTime) {
       liveSegments.value[idx] = {
         ...liveSegments.value[idx],
         status: "error",
-        text: e.message || "转写失败"};
+        text: e.message || t("speechToText.transcribeFailed")};
     }
-    ui.error(e.message || "片段转写失败");
+    ui.error(e.message || t("speechToText.segmentTranscribeFailed"));
   }
 }
 
@@ -313,7 +349,7 @@ async function startRecording() {
   try {
     recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch {
-    ui.error("无法访问麦克风，请检查浏览器权限");
+    ui.error(t("speechToText.micAccessDenied"));
     return;
   }
 
@@ -331,7 +367,11 @@ async function startRecording() {
   try {
     fullRecorder = new MediaRecorder(recordStream, { mimeType: recordMime });
   } catch (e) {
-    ui.error(`无法启动录音：${e.message || "浏览器不支持该音频格式"}`);
+    ui.error(
+      t("speechToText.cannotStartRecording", {
+        message: e.message || t("speechToText.browserUnsupportedFormat"),
+      })
+    );
     recordStream.getTracks().forEach((t) => t.stop());
     recordStream = null;
     return;
@@ -360,12 +400,16 @@ async function startRecording() {
       recordTimer = null;
     }
     clearRecording();
-    ui.error(`录音启动失败：${e.message || "未知错误"}`);
+    ui.error(
+      t("speechToText.recordingStartFailed", {
+        message: e.message || t("speechToText.unknownError"),
+      })
+    );
     return;
   }
 
   if (streamRecognize.value && !startSegmentRecorder()) {
-    ui.warning("当前浏览器不支持双路录音，已关闭实时识别，录完后请手动转写");
+    ui.warning(t("speechToText.dualRecorderUnsupported"));
     streamRecognize.value = false;
   }
 }
@@ -436,7 +480,7 @@ async function confirmSave() {
       summary_blocks: summaryBlocks.value.length ? summaryBlocks.value : null,
       meta: { style: summaryStyle.value, language: language.value || null }});
     saveModalOpen.value = false;
-    ui.success("会议记录已保存");
+    ui.success(t("speechToText.recordSaved"));
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -481,16 +525,18 @@ function applyRecordToEditor(rec) {
   summary.value = rec.summary || "";
   summaryBlocks.value = rec.summary_blocks || [];
   recordsDrawerOpen.value = false;
-  ui.success("已载入会议记录");
+  ui.success(t("speechToText.recordLoaded"));
 }
 
 function confirmDeleteRecord(rec) {
   ui.confirmDelete({
-    title: "删除会议记录",
-    content: `确定删除「${rec.title || "未命名"}」？此操作不可恢复。`,
+    title: t("speechToText.deleteRecordTitle"),
+    content: t("speechToText.deleteRecordContent", {
+      title: rec.title || t("speechToText.unnamed"),
+    }),
     onPositive: async () => {
       await deleteMeetingRecord(rec.id);
-      ui.success("已删除");
+      ui.success(t("speechToText.deleted"));
       if (viewingRecord.value?.id === rec.id) viewingRecord.value = null;
       await loadRecords();
     }});
@@ -499,7 +545,8 @@ function confirmDeleteRecord(rec) {
 function formatRecordTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleString("zh-CN", { hour12: false });
+  const dateLocale = locale.value === "zh" ? "zh-CN" : "en-US";
+  return d.toLocaleString(dateLocale, { hour12: false });
 }
 
 async function runSummarize() {
@@ -517,7 +564,7 @@ async function runSummarize() {
       segments: segs});
     summary.value = res.summary || "";
     summaryBlocks.value = res.blocks || [];
-    ui.success("总结已生成");
+    ui.success(t("speechToText.summaryGenerated"));
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -527,7 +574,7 @@ async function runSummarize() {
 
 async function runTranscribe() {
   if (!audioFile.value) {
-    ui.warning("请先录音或选择音频文件");
+    ui.warning(t("speechToText.selectAudioFirst"));
     return;
   }
   transcribing.value = true;
@@ -548,7 +595,7 @@ async function runTranscribe() {
       segments.value.length > 0
         ? segmentsToText(segments.value)
         : result.text || "";
-    ui.success("转写完成");
+    ui.success(t("speechToText.transcribeComplete"));
     if (autoSummarize.value && meta.value?.summarize_available) {
       await runSummarize();
     }
@@ -564,9 +611,46 @@ async function copyText(text) {
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
-    ui.success("已复制到剪贴板");
+    ui.success(t("speechToText.copied"));
   } catch {
-    ui.error("复制失败");
+    ui.error(t("speechToText.copyFailed"));
+  }
+}
+
+async function runImportKg({ record } = {}) {
+  const text = record
+    ? buildSummaryExportText({
+        summaryText: record.summary,
+        blocks: record.summary_blocks,
+      })
+    : buildSummaryExportText();
+  if (!text) {
+    ui.warning(t("speechToText.generateSummaryFirst"));
+    return;
+  }
+  importingKg.value = true;
+  try {
+    const res = await extractKgFromText({
+      title: resolveImportKgTitle({ recordTitle: record?.title }),
+      text,
+      sourceType: "meeting_summary",
+      sourceId: record?.id || null,
+    });
+    const created = res.entities_created || 0;
+    const relations = res.relations_created || 0;
+    ui.success(
+      t("speechToText.kgImportSuccess", { entities: created, relations })
+    );
+    if (res.root_entity_id) {
+      router.push({
+        path: "/system/kg-palantir",
+        query: { focusEntityId: res.root_entity_id },
+      });
+    }
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    importingKg.value = false;
   }
 }
 
@@ -583,11 +667,11 @@ onBeforeUnmount(() => {
       <n-space :size="8">
         <n-button quaternary @click="openRecordsDrawer">
           <template #icon><n-icon :component="FolderOpenOutline" /></template>
-          会议记录
+          {{ t('speechToText.meetingRecords') }}
         </n-button>
         <n-button type="primary" secondary :disabled="!canSave" :loading="saving" @click="openSaveModal">
           <template #icon><n-icon :component="SaveOutline" /></template>
-          保存
+          {{ t('speechToText.save') }}
         </n-button>
       </n-space>
     </template>
@@ -595,34 +679,48 @@ onBeforeUnmount(() => {
     <n-modal
       v-model:show="saveModalOpen"
       preset="dialog"
-      title="保存会议记录"
-      positive-text="保存"
-      negative-text="取消"
+      :title="t('speechToText.saveRecordTitle')"
+      :positive-text="t('speechToText.save')"
+      :negative-text="t('speechToText.cancel')"
       :loading="saving"
       @positive-click="confirmSave"
     >
       <n-input
         v-model:value="saveTitle"
-        placeholder="标题（可选，留空则自动生成）"
+        :placeholder="t('speechToText.titlePlaceholder')"
         maxlength="256"
         show-count
       />
     </n-modal>
 
     <n-drawer v-model:show="recordsDrawerOpen" :width="520" placement="right">
-      <n-drawer-content title="会议记录" closable>
-        <n-spin :show="recordsLoading || recordDetailLoading">
+      <n-drawer-content :title="t('speechToText.drawerTitle')" closable>
+        <n-spin :show="recordsLoading || recordDetailLoading" local>
           <template v-if="viewingRecord">
             <n-space vertical :size="12">
-              <n-button size="small" quaternary @click="viewingRecord = null">← 返回列表</n-button>
+              <n-button size="small" quaternary @click="viewingRecord = null">{{ t('speechToText.backToList') }}</n-button>
               <n-text strong>{{ viewingRecord.title }}</n-text>
               <n-text depth="3" style="font-size: 12px">
                 {{ formatRecordTime(viewingRecord.created_at) }}
               </n-text>
               <n-button size="small" type="primary" @click="applyRecordToEditor(viewingRecord)">
-                载入到当前编辑区
+                {{ t('speechToText.loadToEditor') }}
               </n-button>
-              <n-text strong style="font-size: 13px">转写</n-text>
+              <n-button
+                v-if="hasPerm('feature.kg_palantir')"
+                size="small"
+                quaternary
+                :loading="importingKg"
+                :disabled="!buildSummaryExportText({
+                  summaryText: viewingRecord.summary,
+                  blocks: viewingRecord.summary_blocks,
+                })"
+                @click="runImportKg({ record: viewingRecord })"
+              >
+                <template #icon><n-icon :component="GitNetworkOutline" /></template>
+                {{ t('speechToText.importKg') }}
+              </n-button>
+              <n-text strong style="font-size: 13px">{{ t('speechToText.transcript') }}</n-text>
               <div class="record-segments">
                 <div v-for="(seg, i) in viewingRecord.segments" :key="i" class="segment-row">
                   <n-tag
@@ -637,7 +735,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <template v-if="viewingRecord.summary_blocks?.length">
-                <n-text strong style="font-size: 13px">时间线总结</n-text>
+                <n-text strong style="font-size: 13px">{{ t('speechToText.timelineSummary') }}</n-text>
                 <div
                   v-for="(blk, i) in viewingRecord.summary_blocks"
                   :key="i"
@@ -655,7 +753,7 @@ onBeforeUnmount(() => {
                 </div>
               </template>
               <template v-else-if="viewingRecord.summary">
-                <n-text strong style="font-size: 13px">总结</n-text>
+                <n-text strong style="font-size: 13px">{{ t('speechToText.summary') }}</n-text>
                 <n-input
                   type="textarea"
                   :value="viewingRecord.summary"
@@ -669,11 +767,11 @@ onBeforeUnmount(() => {
             <n-space v-if="records.length" vertical :size="8">
               <div v-for="item in records" :key="item.id" class="record-list-item">
                 <div class="record-list-main" @click="viewRecord(item)">
-                  <n-text strong>{{ item.title || "未命名会议" }}</n-text>
+                  <n-text strong>{{ item.title || t('speechToText.unnamedMeeting') }}</n-text>
                   <n-text depth="3" style="font-size: 12px">
-                    {{ formatRecordTime(item.created_at) }} · {{ item.segment_count }} 段
+                    {{ t('speechToText.recordMeta', { time: formatRecordTime(item.created_at), count: item.segment_count }) }}
                     <n-tag v-if="item.has_summary" size="tiny" :bordered="false" style="margin-left: 6px">
-                      已总结
+                      {{ t('speechToText.summarized') }}
                     </n-tag>
                   </n-text>
                 </div>
@@ -682,7 +780,7 @@ onBeforeUnmount(() => {
                 </n-button>
               </div>
             </n-space>
-            <n-text v-else depth="3">暂无保存的会议记录</n-text>
+            <n-text v-else depth="3">{{ t('speechToText.noSavedRecords') }}</n-text>
           </template>
         </n-spin>
       </n-drawer-content>
@@ -693,12 +791,12 @@ onBeforeUnmount(() => {
         <n-alert
           v-if="!loadingMeta && !configured"
           type="warning"
-          title="会议录音转写暂不可用"
+          :title="t('speechToText.unavailableTitle')"
           class="page-alert"
         >
           <p>{{ FEATURE_UNAVAILABLE }}</p>
           <template #action>
-            <n-button size="small" :loading="loadingMeta" @click="loadMeta">重新检测</n-button>
+            <n-button size="small" :loading="loadingMeta" @click="loadMeta">{{ t('speechToText.recheck') }}</n-button>
           </template>
         </n-alert>
 
@@ -713,7 +811,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="speech-layout">
-          <n-card title="音频来源" class="panel panel-source">
+          <n-card :title="t('speechToText.audioSource')" class="panel panel-source">
             <div class="panel-body">
             <n-space vertical :size="16" class="source-space">
               <n-space :size="8">
@@ -722,14 +820,14 @@ onBeforeUnmount(() => {
                   :secondary="sourceMode !== 'record'"
                   @click="sourceMode = 'record'"
                 >
-                  浏览器录音
+                  {{ t('speechToText.browserRecord') }}
                 </n-button>
                 <n-button
                   :type="sourceMode === 'upload' ? 'primary' : 'default'"
                   :secondary="sourceMode !== 'upload'"
                   @click="sourceMode = 'upload'"
                 >
-                  上传文件
+                  {{ t('speechToText.uploadFile') }}
                 </n-button>
               </n-space>
 
@@ -750,21 +848,21 @@ onBeforeUnmount(() => {
                     <template #icon>
                       <n-icon :component="recording ? StopCircleOutline : MicOutline" />
                     </template>
-                    {{ recording ? "停止录音" : "开始录音" }}
+                    {{ recording ? t('speechToText.stopRecording') : t('speechToText.startRecording') }}
                   </n-button>
                   <n-tag v-if="recording && streamRecognize" type="warning" size="small" :bordered="false">
                     <template #icon>
                       <n-icon :component="RadioOutline" />
                     </template>
-                    实时转写中
+                    {{ t('speechToText.liveTranscribing') }}
                   </n-tag>
                   <n-tag v-if="pendingStreamCount" size="small" :bordered="false">
-                    {{ pendingStreamCount }} 段识别中
+                    {{ t('speechToText.segmentsRecognizing', { count: pendingStreamCount }) }}
                   </n-tag>
                 </n-space>
                 <n-text depth="3" class="record-hint">{{ recordHint }}</n-text>
                 <n-checkbox v-model:checked="streamRecognize" :disabled="recording">
-                  实时识别：检测到停顿（约 1.4 秒）后自动转写当前片段
+                  {{ t('speechToText.streamRecognizeLabel') }}
                 </n-checkbox>
                 <div v-if="liveSegments.length" class="live-segments">
                   <div
@@ -777,7 +875,7 @@ onBeforeUnmount(() => {
                       {{ item.timeLabel }}
                     </n-tag>
                     <n-spin v-if="item.status === 'transcribing'" size="small" />
-                    <n-text class="live-seg-text">{{ item.text || "识别中…" }}</n-text>
+                    <n-text class="live-seg-text">{{ item.text || t('speechToText.recognizing') }}</n-text>
                   </div>
                 </div>
               </div>
@@ -785,8 +883,8 @@ onBeforeUnmount(() => {
               <div v-else class="upload-fill source-main">
                 <file-drop-zone
                   accept="audio/*,.webm,.wav,.mp3,.m4a,.ogg,.flac"
-                  title="拖拽或选择音频"
-                  :hint="`最大 ${meta?.max_file_mb || 100} MB`"
+                  :title="t('speechToText.uploadDropTitle')"
+                  :hint="t('speechToText.uploadMaxSize', { mb: meta?.max_file_mb || 100 })"
                   :file-name="audioFile?.name || ''"
                   icon="upload"
                   :disabled="!configured"
@@ -795,12 +893,12 @@ onBeforeUnmount(() => {
               </div>
 
               <div v-if="audioFile" class="audio-actions">
-                <n-text depth="3">已就绪：{{ audioFile.name }}</n-text>
-                <n-button size="small" quaternary @click="resetAll">清除</n-button>
+                <n-text depth="3">{{ t('speechToText.audioReady', { name: audioFile.name }) }}</n-text>
+                <n-button size="small" quaternary @click="resetAll">{{ t('speechToText.clear') }}</n-button>
               </div>
 
               <div>
-                <n-text class="field-label">识别语言</n-text>
+                <n-text class="field-label">{{ t('speechToText.recognizeLanguage') }}</n-text>
                 <n-select v-model:value="language" :options="languageOptions" />
               </div>
 
@@ -808,14 +906,14 @@ onBeforeUnmount(() => {
                 v-model:checked="diarize"
                 :disabled="!meta?.diarization_available"
               >
-                区分不同说话人
+                {{ t('speechToText.diarize') }}
               </n-checkbox>
 
               <n-checkbox
                 v-if="meta?.summarize_available"
                 v-model:checked="autoSummarize"
               >
-                转写完成后自动生成智能总结
+                {{ t('speechToText.autoSummarize') }}
               </n-checkbox>
 
               <n-button
@@ -830,8 +928,8 @@ onBeforeUnmount(() => {
                 </template>
                 {{
                   streamRecognize && segments.length
-                    ? "整段重新转写"
-                    : "开始转写"
+                    ? t('speechToText.retranscribeAll')
+                    : t('speechToText.startTranscribe')
                 }}
               </n-button>
             </n-space>
@@ -839,11 +937,11 @@ onBeforeUnmount(() => {
           </n-card>
 
           <div class="speech-output-column">
-          <n-card title="转写结果" class="panel panel-transcript">
+          <n-card :title="t('speechToText.transcriptResult')" class="panel panel-transcript">
             <template #header-extra>
               <n-button size="small" quaternary :disabled="!transcript" @click="copyText(transcript)">
                 <template #icon><n-icon :component="CopyOutline" /></template>
-                复制
+                {{ t('speechToText.copy') }}
               </n-button>
             </template>
 
@@ -866,13 +964,13 @@ onBeforeUnmount(() => {
                 <n-input
                   v-model:value="transcript"
                   type="textarea"
-                  placeholder="转写文字（含说话人时间轴）"
+                  :placeholder="t('speechToText.transcriptPlaceholder')"
                 />
               </div>
             </div>
           </n-card>
 
-          <n-card title="智能总结" class="panel panel-summary">
+          <n-card :title="t('speechToText.smartSummary')" class="panel panel-summary">
             <template #header-extra>
               <n-space :size="8">
                 <n-select
@@ -889,15 +987,26 @@ onBeforeUnmount(() => {
                   @click="runSummarize"
                 >
                   <template #icon><n-icon :component="SparklesOutline" /></template>
-                  生成总结
+                  {{ t('speechToText.generateSummary') }}
                 </n-button>
                 <n-button
                   size="small"
                   quaternary
-                  :disabled="!summary"
-                  @click="copyText(summary)"
+                  :disabled="!buildSummaryExportText()"
+                  @click="copyText(buildSummaryExportText())"
                 >
-                  复制
+                  {{ t('speechToText.copy') }}
+                </n-button>
+                <n-button
+                  v-if="hasPerm('feature.kg_palantir')"
+                  size="small"
+                  quaternary
+                  :loading="importingKg"
+                  :disabled="!canImportKg"
+                  @click="runImportKg()"
+                >
+                  <template #icon><n-icon :component="GitNetworkOutline" /></template>
+                  {{ t('speechToText.importKg') }}
                 </n-button>
               </n-space>
             </template>
@@ -921,8 +1030,8 @@ onBeforeUnmount(() => {
                   type="textarea"
                   :placeholder="
                     meta?.summarize_available
-                      ? '按说话人时间线的总结将显示在这里（含上方分段视图）'
-                      : '总结功能未启用，请联系管理员'
+                      ? t('speechToText.summaryPlaceholderAvailable')
+                      : t('speechToText.summaryPlaceholderUnavailable')
                   "
                   :disabled="!meta?.summarize_available"
                 />

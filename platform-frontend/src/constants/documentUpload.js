@@ -4,13 +4,6 @@ export const DOCUMENT_UPLOAD_MAX_MB_DEFAULT = 200;
 
 let _uploadMaxMb = DOCUMENT_UPLOAD_MAX_MB_DEFAULT;
 
-/** @deprecated 请使用 getDocumentUploadMaxMb() */
-export const DOCUMENT_UPLOAD_MAX_MB = DOCUMENT_UPLOAD_MAX_MB_DEFAULT;
-
-/** @deprecated 请使用 getDocumentUploadMaxBytes() */
-export const DOCUMENT_UPLOAD_MAX_BYTES =
-  DOCUMENT_UPLOAD_MAX_MB_DEFAULT * 1024 * 1024;
-
 export function setDocumentUploadMaxMb(mb) {
   const n = Number(mb);
   if (Number.isFinite(n) && n > 0) {

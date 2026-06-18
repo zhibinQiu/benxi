@@ -95,6 +95,17 @@ def test_subscription_import_uses_subscription_pipeline():
     assert "index_job_id" in source
 
 
+def test_replace_version_file_content_uses_content_checksum():
+    """replace_version_file_content 应从 content_checksum 导入 compute_md5_hex。"""
+    import inspect
+
+    from app.services.subscription_import_service import replace_version_file_content
+
+    source = inspect.getsource(replace_version_file_content)
+    assert "app.core.content_checksum import compute_md5_hex" in source
+    assert "app.storage.object_store import compute_md5_hex" not in source
+
+
 def test_create_subscription_pipeline_index_job_payload():
     from unittest.mock import MagicMock, patch
 
@@ -146,3 +157,46 @@ def test_create_subscription_pipeline_index_job_payload():
     assert payload["article_link"] == "https://example.com/a"
     assert payload["article_source_label"] == "测试源"
     assert payload["article_title"] == "资讯标题"
+
+
+def test_create_subscription_pipeline_index_job_when_pageindex_unavailable():
+    """PageIndex 未就绪时仍应创建 DeepDOC 索引任务（PageIndex 在解析后阶段再判）。"""
+    from unittest.mock import MagicMock, patch
+
+    from app.services.knowledge_sync_job_service import create_subscription_pipeline_index_job
+
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+    ver_id = uuid.uuid4()
+    job = MagicMock(id=uuid.uuid4())
+    db = MagicMock()
+
+    def block_reason(parser_id, *, reindex=False):
+        from app.services.knowledge_parser_service import PARSER_PAGEINDEX
+
+        if parser_id == PARSER_PAGEINDEX and reindex:
+            return "PageIndex 未安装"
+        return None
+
+    with patch(
+        "app.services.knowledge_sync_job_service.knowledge.enabled",
+        return_value=True,
+    ), patch(
+        "app.services.knowledge_parser_service.index_stack_block_reason",
+        side_effect=block_reason,
+    ), patch(
+        "app.services.knowledge_sync_job_service.get_document",
+        return_value=MagicMock(title="测试"),
+    ), patch(
+        "app.services.knowledge_sync_job_service.create_job",
+        return_value=job,
+    ) as create_job:
+        out = create_subscription_pipeline_index_job(
+            db,
+            user_id=user_id,
+            document_id=doc_id,
+            version_id=ver_id,
+        )
+
+    assert out is job
+    create_job.assert_called_once()

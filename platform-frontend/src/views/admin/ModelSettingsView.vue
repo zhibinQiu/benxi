@@ -40,14 +40,10 @@ import {
 import { setApiBase } from "../../api/http";
 import { applyClientBranding } from "../../composables/usePlatformBranding";
 import { initAppFromServerConfig } from "../../composables/useAppPreferences";
-
-const THEME_OPTIONS = [
-  { label: "跟随系统（自动切换日/夜）", value: "system" },
-  { label: "默认日间模式", value: "light" },
-  { label: "默认夜间模式", value: "dark" },
-];
+import { useI18n } from "../../composables/useI18n";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 const loading = ref(false);
 const healthLoading = ref(false);
 const saving = ref(false);
@@ -98,108 +94,75 @@ const form = reactive({
   ragflow_mysql_password: "",
   ragflow_mysql_container: ""});
 
-const RESOURCE_DEFS = [
-  {
-    id: "platform_api",
-    title: "系统后台地址（前端）",
-    hint: "浏览器请求平台后端的 API 根路径",
-    icon: GlobeOutline,
-    category: "platform"},
-  {
-    id: "frontend",
-    title: "前台配置",
-    hint: "系统大标题与默认日/夜主题",
-    icon: ColorPaletteOutline,
-    category: "platform"},
-  {
-    id: "llm",
-    title: "语言模型（LLM）",
-    hint: "知识问答、会议摘要等",
-    icon: ChatbubblesOutline,
-    category: "model"},
-  {
-    id: "embedding",
-    title: "Embedding 模型",
-    hint: "文档向量与知识检索",
-    icon: HardwareChipOutline,
-    category: "model"},
-  {
-    id: "vl",
-    title: "VL 模型",
-    hint: "PDF 图表增强（IMAGE2TEXT）",
-    icon: ImageOutline,
-    category: "model"},
-  {
-    id: "rerank",
-    title: "Reranker 模型",
-    hint: "检索重排序（可选）",
-    icon: StatsChartOutline,
-    category: "model"},
-  {
-    id: "paddleocr",
-    title: "PaddleOCR-VL",
-    hint: "硅基流动 API 或自建 OCR 服务",
-    icon: ScanOutline,
-    category: "service"},
-  {
-    id: "speech",
-    title: "语音识别服务",
-    hint: "会议助手语音转写",
-    icon: MicOutline,
-    category: "service"},
-  {
-    id: "tts",
-    title: "语音合成",
-    hint: "文本转语音（硅基流动 / OpenAI 兼容）",
-    icon: VolumeHighOutline,
-    category: "service"},
-  {
-    id: "pdf2zh",
-    title: "PDF 翻译服务",
-    hint: "pdf2zh 文档翻译 API",
-    icon: LanguageOutline,
-    category: "service"},
-  {
-    id: "searxng",
-    title: "SearXNG 联网搜索",
-    hint: "网站收藏在线搜索",
-    icon: SearchOutline,
-    category: "service"},
-  {
-    id: "ragflow_api",
-    title: "RAGFlow API",
-    hint: "知识库检索、文档同步 HTTP API",
-    icon: LibraryOutline,
-    category: "knowledge"},
-  {
-    id: "knowflow_backend",
-    title: "KnowFlow 知识库后台",
-    hint: "KnowFlow 扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选",
-    icon: ServerOutline,
-    category: "knowledge"},
-  {
-    id: "ragflow_mysql",
-    title: "RAGFlow MySQL",
-    hint: "知识库元数据与用户模型配置库",
-    icon: ServerSharp,
-    category: "knowledge"},
-];
+const RESOURCE_ICON_MAP = {
+  platform_api: GlobeOutline,
+  frontend: ColorPaletteOutline,
+  llm: ChatbubblesOutline,
+  embedding: HardwareChipOutline,
+  vl: ImageOutline,
+  rerank: StatsChartOutline,
+  paddleocr: ScanOutline,
+  speech: MicOutline,
+  tts: VolumeHighOutline,
+  pdf2zh: LanguageOutline,
+  searxng: SearchOutline,
+  ragflow_api: LibraryOutline,
+  knowflow_backend: ServerOutline,
+  ragflow_mysql: ServerSharp,
+};
 
-const CATEGORY_META = {
-  platform: { title: "平台", hint: "前端访问地址与展示配置" },
-  model: { title: "AI 模型", hint: "语言、嵌入、VL 与重排序；改 URL/模型名可切换本地或在线" },
-  service: { title: "外部服务", hint: "OCR-VL、语音、翻译等；OCR 支持在线 API 或本地 layout-parsing" },
-  knowledge: { title: "知识库基础设施", hint: "RAGFlow / KnowFlow 后台与 MySQL 数据库" }};
+const RESOURCE_CATEGORY_MAP = {
+  platform_api: "platform",
+  frontend: "platform",
+  llm: "model",
+  embedding: "model",
+  vl: "model",
+  rerank: "model",
+  paddleocr: "service",
+  speech: "service",
+  tts: "service",
+  pdf2zh: "service",
+  searxng: "service",
+  ragflow_api: "knowledge",
+  knowflow_backend: "knowledge",
+  ragflow_mysql: "knowledge",
+};
+
+const RESOURCE_IDS = Object.keys(RESOURCE_ICON_MAP);
+
+const themeOptions = computed(() => [
+  { label: t("admin.modelSettings.theme.system"), value: "system" },
+  { label: t("admin.modelSettings.theme.light"), value: "light" },
+  { label: t("admin.modelSettings.theme.dark"), value: "dark" },
+]);
+
+const resourceDefs = computed(() =>
+  RESOURCE_IDS.map((id) => ({
+    id,
+    title: t(`admin.modelSettings.resources.${id}.title`),
+    hint: t(`admin.modelSettings.resources.${id}.hint`),
+    icon: RESOURCE_ICON_MAP[id],
+    category: RESOURCE_CATEGORY_MAP[id],
+  }))
+);
+
+function categoryMeta(id) {
+  return {
+    title: t(`admin.modelSettings.categories.${id}.title`),
+    hint: t(`admin.modelSettings.categories.${id}.hint`),
+  };
+}
 
 const activeResource = computed(() =>
-  RESOURCE_DEFS.find((item) => item.id === activeId.value) || null
+  resourceDefs.value.find((item) => item.id === activeId.value) || null
 );
 
 const groupedResources = computed(() =>
   ["platform", "model", "knowledge", "service"].map((id) => ({
     id,
-    ...CATEGORY_META[id],
-    items: RESOURCE_DEFS.filter((item) => item.category === id)}))
+    ...categoryMeta(id),
+    items: resourceDefs.value.filter((item) => item.category === id),
+  }))
 );
 
 function modelEndpoint(data, key, legacyKey) {
@@ -252,71 +215,84 @@ function fillForm(data) {
 
 function resourceSummary(id) {
   const data = settings.value;
-  if (!data) return "加载中…";
+  if (!data) return t("common.loading");
   switch (id) {
     case "platform_api":
       return data.platform_api_base_url
         ? truncate(data.platform_api_base_url)
-        : "默认（/ai）";
+        : t("admin.modelSettings.summary.defaultApi");
     case "frontend": {
       const themeLabel =
-        THEME_OPTIONS.find((item) => item.value === data.frontend_default_theme)?.label ||
-        "跟随系统";
-      const title = data.frontend_app_title || "使用系统名称";
+        themeOptions.value.find((item) => item.value === data.frontend_default_theme)?.label ||
+        t("admin.modelSettings.theme.systemShort");
+      const title = data.frontend_app_title || t("admin.modelSettings.summary.systemName");
       return `${title} · ${themeLabel}`;
     }
     case "llm":
       return data.llm?.model_name
         ? `${data.llm.model_name} · ${truncate(data.llm.base_url)}`
-        : "未配置";
+        : t("admin.modelSettings.summary.notConfigured");
     case "embedding":
       return data.embedding?.model_name
         ? `${data.embedding.model_name} · ${truncate(data.embedding.base_url)}`
-        : "未配置";
+        : t("admin.modelSettings.summary.notConfigured");
     case "vl": {
       const vl = modelEndpoint(data, "vl", "vision");
-      if (!vl?.model_name) return "未配置";
-      if (!vl.base_url) return `${vl.model_name}（未填 API 地址）`;
-      if (!vl.api_key_configured) return `${vl.model_name}（未配置 Key）`;
+      if (!vl?.model_name) return t("admin.modelSettings.summary.notConfigured");
+      if (!vl.base_url) return t("admin.modelSettings.summary.noApiUrl", { model: vl.model_name });
+      if (!vl.api_key_configured) return t("admin.modelSettings.summary.noApiKey", { model: vl.model_name });
       return `${vl.model_name} · ${truncate(vl.base_url)}`;
     }
     case "rerank":
       return data.rerank?.model_name
         ? `${data.rerank.model_name} · ${truncate(data.rerank.base_url)}`
-        : "可选，未配置";
+        : t("admin.modelSettings.summary.optionalNotConfigured");
     case "paddleocr":
       return data.paddleocr?.model_name
         ? `${data.paddleocr.model_name} · ${truncate(data.paddleocr.base_url)}`
         : data.paddleocr_url
           ? truncate(data.paddleocr_url)
-          : "未配置";
+          : t("admin.modelSettings.summary.notConfigured");
     case "speech":
-      return data.speech_service_url ? truncate(data.speech_service_url) : "未配置";
+      return data.speech_service_url
+        ? truncate(data.speech_service_url)
+        : t("admin.modelSettings.summary.notConfigured");
     case "tts":
       return data.tts?.model_name
         ? `${data.tts.model_name} · ${truncate(data.tts.base_url)}`
-        : "未配置";
+        : t("admin.modelSettings.summary.notConfigured");
     case "pdf2zh":
-      return data.pdf2zh_api_url ? truncate(data.pdf2zh_api_url) : "未配置";
+      return data.pdf2zh_api_url
+        ? truncate(data.pdf2zh_api_url)
+        : t("admin.modelSettings.summary.notConfigured");
     case "searxng":
       return data.searxng_url
-        ? `${truncate(data.searxng_url)} · ${data.searxng_timeout_seconds || 15}s`
-        : "未配置";
+        ? t("admin.modelSettings.summary.seconds", {
+            url: truncate(data.searxng_url),
+            seconds: data.searxng_timeout_seconds || 15,
+          })
+        : t("admin.modelSettings.summary.notConfigured");
     case "ragflow_api":
       return data.knowledge?.ragflow_api_url
         ? truncate(data.knowledge.ragflow_api_url)
-        : "未配置";
+        : t("admin.modelSettings.summary.notConfigured");
     case "knowflow_backend": {
       const kb = data.knowledge;
       const parts = [];
-      if (kb?.knowflow_backend_url) parts.push(`API ${truncate(kb.knowflow_backend_url)}`);
-      if (kb?.knowflow_ui_url) parts.push(`UI ${truncate(kb.knowflow_ui_url)}`);
-      return parts.length ? parts.join(" · ") : "未配置";
+      if (kb?.knowflow_backend_url) {
+        parts.push(t("admin.modelSettings.summary.apiPrefix", { url: truncate(kb.knowflow_backend_url) }));
+      }
+      if (kb?.knowflow_ui_url) {
+        parts.push(t("admin.modelSettings.summary.uiPrefix", { url: truncate(kb.knowflow_ui_url) }));
+      }
+      return parts.length ? parts.join(" · ") : t("admin.modelSettings.summary.notConfigured");
     }
     case "ragflow_mysql": {
       const kb = data.knowledge;
       if (!kb?.ragflow_mysql_host && !kb?.ragflow_mysql_password_configured) {
-        return kb?.knowflow_enabled ? "Docker 默认（knowflow-mysql）" : "未配置";
+        return kb?.knowflow_enabled
+          ? t("admin.modelSettings.summary.dockerDefault")
+          : t("admin.modelSettings.summary.notConfigured");
       }
       const host = kb.ragflow_mysql_host || "knowflow-mysql";
       return `${host}:${kb.ragflow_mysql_port || 3306}/${kb.ragflow_mysql_db || "rag_flow"}`;
@@ -343,11 +319,11 @@ function healthState(id) {
 
 function healthTitle(id) {
   const item = health.value[id];
-  if (healthLoading.value && !item) return "检测中";
-  if (!item) return "未检测";
-  if (item.healthy === true) return item.message || "服务正常";
-  if (item.healthy === false) return item.message || "服务异常";
-  return item.message || "未配置";
+  if (healthLoading.value && !item) return t("admin.modelSettings.health.checking");
+  if (!item) return t("admin.modelSettings.health.notChecked");
+  if (item.healthy === true) return item.message || t("admin.modelSettings.health.healthy");
+  if (item.healthy === false) return item.message || t("admin.modelSettings.health.unhealthy");
+  return item.message || t("admin.modelSettings.health.notConfigured");
 }
 
 const drawerHealthAlert = computed(() => {
@@ -368,8 +344,10 @@ const drawerHealthMessage = computed(() => {
   const item = drawerHealthAlert.value;
   if (!item) return "";
   if (drawerTestResult.value) {
-    const prefix = drawerTestResult.value.healthy ? "测试通过：" : "测试未通过：";
-    return `${prefix}${item.message || (item.healthy ? "连接正常" : "连接失败")}`;
+    const prefix = drawerTestResult.value.healthy
+      ? t("admin.modelSettings.health.testPassed")
+      : t("admin.modelSettings.health.testFailed");
+    return `${prefix}${item.message || (item.healthy ? t("admin.modelSettings.health.connectionOk") : t("admin.modelSettings.health.connectionFailed"))}`;
   }
   return healthTitle(activeId.value);
 });
@@ -516,11 +494,11 @@ async function testActive() {
     );
     drawerTestResult.value = result;
     if (result?.healthy) {
-      ui.success(result.message || "连接正常");
+      ui.success(result.message || t("admin.modelSettings.messages.connectionOk"));
     } else if (result?.healthy === false) {
-      ui.warning(result.message || "连接失败");
+      ui.warning(result.message || t("admin.modelSettings.messages.connectionFailed"));
     } else {
-      ui.info(result?.message || "当前配置无需测试或未填写完整");
+      ui.info(result?.message || t("admin.modelSettings.messages.testNotNeeded"));
     }
   } catch (e) {
     ui.error(e.message);
@@ -536,15 +514,15 @@ async function saveActive() {
     fillForm(await updateModelSettings(buildPayloadFor(activeId.value)));
     if (activeId.value === "platform_api") {
       setApiBase(form.platform_api_base_url.trim() || "/ai");
-      ui.success("资源配置已保存；若 API 地址与当前访问方式不一致，请刷新页面");
+      ui.success(t("admin.modelSettings.messages.savedApi"));
     } else if (activeId.value === "frontend") {
       applyClientBranding({
         app_title: form.frontend_app_title.trim(),
         default_theme: form.frontend_default_theme});
       initAppFromServerConfig({ default_theme: form.frontend_default_theme });
-      ui.success("前台配置已保存；标题已更新，主题策略在用户未手动切换时生效");
+      ui.success(t("admin.modelSettings.messages.savedFrontend"));
     } else {
-      ui.success("资源配置已保存并同步");
+      ui.success(t("admin.modelSettings.messages.savedDefault"));
     }
     drawerOpen.value = false;
     drawerTestResult.value = null;
@@ -563,7 +541,9 @@ onMounted(loadAll);
   <div class="resource-settings-page feature-page">
     <div class="page-toolbar feature-local-nav">
       <n-space>
-        <n-button :loading="loading || healthLoading" @click="loadAll">刷新状态</n-button>
+        <n-button :loading="loading || healthLoading" @click="loadAll">
+          {{ t("admin.modelSettings.refreshStatus") }}
+        </n-button>
       </n-space>
     </div>
 
@@ -644,285 +624,284 @@ onMounted(loadAll);
       >
         <n-form label-placement="left" label-width="108">
           <template v-if="activeId === 'platform_api'">
-            <n-form-item label="API 根地址">
+            <n-form-item :label="t('admin.modelSettings.labels.apiRoot')">
               <n-input
                 v-model:value="form.platform_api_base_url"
-                placeholder="/ai 或 http://172.19.134.45:40005/ai"
+                :placeholder="t('admin.modelSettings.placeholders.apiRoot')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              浏览器请求平台后端的根路径（不含 <code>/api/v1</code>）。
-              同源部署填 <code>/ai</code>；跨域或远程开发填完整 URL。
-              对应 .env 中 <code>PLATFORM_API_BASE_URL</code>，留空时使用
-              <code>API_PUBLIC_PATH_PREFIX</code>（默认 <code>/ai</code>）。
-              保存后前端立即生效；若与当前页面访问方式不一致，请刷新页面。
-            </n-text>
+            <div
+              class="drawer-hint"
+              v-html="t('admin.modelSettings.hints.platformApi')"
+            />
           </template>
 
           <template v-else-if="activeId === 'frontend'">
-            <n-form-item label="系统大标题">
+            <n-form-item :label="t('admin.modelSettings.labels.appTitle')">
               <n-input
                 v-model:value="form.frontend_app_title"
-                placeholder="留空时使用 APP_NAME（环境变量）"
+                :placeholder="t('admin.modelSettings.placeholders.appTitle')"
               />
             </n-form-item>
-            <n-form-item label="默认主题">
+            <n-form-item :label="t('admin.modelSettings.labels.defaultTheme')">
               <n-select
                 v-model:value="form.frontend_default_theme"
-                :options="THEME_OPTIONS"
+                :options="themeOptions"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              「跟随系统」时，前台根据操作系统日/夜模式自动切换；用户手动切换主题后将以本地偏好为准。
-              对应 .env 中 <code>FRONTEND_APP_TITLE</code>、<code>FRONTEND_DEFAULT_THEME</code>。
-            </n-text>
+            <div
+              class="drawer-hint"
+              v-html="t('admin.modelSettings.hints.frontend')"
+            />
           </template>
 
           <template v-else-if="activeId === 'llm'">
-            <n-form-item label="API URL">
-              <n-input v-model:value="form.llm_base_url" placeholder="https://host/v1 或本地 vLLM 地址" />
+            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+              <n-input
+                v-model:value="form.llm_base_url"
+                :placeholder="t('admin.modelSettings.placeholders.llmApiUrl')"
+              />
             </n-form-item>
-            <n-form-item label="模型名称">
-              <n-input v-model:value="form.llm_model" placeholder="模型名称" />
+            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+              <n-input
+                v-model:value="form.llm_model"
+                :placeholder="t('admin.modelSettings.placeholders.modelName')"
+              />
             </n-form-item>
-            <n-form-item label="SK / API Key">
+            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
               <n-input
                 v-model:value="form.llm_api_key"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
               />
             </n-form-item>
           </template>
 
           <template v-else-if="activeId === 'embedding'">
-            <n-form-item label="API URL">
-              <n-input v-model:value="form.embedding_base_url" placeholder="嵌入模型 API 地址" />
-            </n-form-item>
-            <n-form-item label="模型名称">
-              <n-input v-model:value="form.embedding_model" placeholder="如 BAAI/bge-large-zh-v1.5" />
-            </n-form-item>
-            <n-form-item label="供应商">
+            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
               <n-input
-                v-model:value="form.embedding_factory"
-                placeholder="如 SILICONFLOW、OpenAI-API-Compatible"
+                v-model:value="form.embedding_base_url"
+                :placeholder="t('admin.modelSettings.placeholders.embeddingApiUrl')"
               />
             </n-form-item>
-            <n-form-item label="SK / API Key">
+            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+              <n-input
+                v-model:value="form.embedding_model"
+                :placeholder="t('admin.modelSettings.placeholders.embeddingModel')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.provider')">
+              <n-input
+                v-model:value="form.embedding_factory"
+                :placeholder="t('admin.modelSettings.placeholders.embeddingFactory')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
               <n-input
                 v-model:value="form.embedding_api_key"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
               />
             </n-form-item>
           </template>
 
           <template v-else-if="activeId === 'vl'">
-            <n-form-item label="API URL">
+            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
               <n-input
                 v-model:value="form.vl_base_url"
-                placeholder="https://host/v1 或本地推理服务"
+                :placeholder="t('admin.modelSettings.placeholders.vlApiUrl')"
               />
             </n-form-item>
-            <n-form-item label="模型名称">
+            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
               <n-input
                 v-model:value="form.vl_model"
-                placeholder="VL 模型名称"
+                :placeholder="t('admin.modelSettings.placeholders.vlModel')"
               />
             </n-form-item>
-            <n-form-item label="SK / API Key">
+            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
               <n-input
                 v-model:value="form.vl_api_key"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              KnowFlow PDF 图表增强（IMAGE2TEXT）。保存后立即生效并写入 RAGFlow；
-              切换本地模型时仅改 API URL 与模型名即可。
-            </n-text>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.vl')" />
           </template>
 
           <template v-else-if="activeId === 'rerank'">
-            <n-form-item label="API URL">
-              <n-input v-model:value="form.rerank_base_url" placeholder="可选" />
+            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+              <n-input
+                v-model:value="form.rerank_base_url"
+                :placeholder="t('admin.modelSettings.placeholders.rerankOptional')"
+              />
             </n-form-item>
-            <n-form-item label="模型名称">
-              <n-input v-model:value="form.rerank_model" placeholder="可选" />
+            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+              <n-input
+                v-model:value="form.rerank_model"
+                :placeholder="t('admin.modelSettings.placeholders.rerankOptional')"
+              />
             </n-form-item>
-            <n-form-item label="SK / API Key">
+            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
               <n-input
                 v-model:value="form.rerank_api_key"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
               />
             </n-form-item>
           </template>
 
           <template v-else-if="activeId === 'paddleocr'">
-            <n-form-item label="API URL">
+            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
               <n-input
                 v-model:value="form.paddleocr_base_url"
-                placeholder="https://host/v1 或自建 OCR 根地址"
+                :placeholder="t('admin.modelSettings.placeholders.paddleocrApiUrl')"
               />
             </n-form-item>
-            <n-form-item label="模型名称">
+            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
               <n-input
                 v-model:value="form.paddleocr_model"
-                placeholder="OCR-VL 模型名称"
+                :placeholder="t('admin.modelSettings.placeholders.paddleocrModel')"
               />
             </n-form-item>
-            <n-form-item label="SK / API Key">
+            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
               <n-input
                 v-model:value="form.paddleocr_api_key"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              OpenAI 兼容 API（<code>/v1</code>）或自建 layout-parsing 根地址。
-              保存后立即写入 KnowFlow <code>settings.yaml</code>；本地部署时改 URL 与模型名即可。
-            </n-text>
+            <div
+              class="drawer-hint"
+              v-html="t('admin.modelSettings.hints.paddleocr')"
+            />
           </template>
 
           <template v-else-if="activeId === 'speech'">
-            <n-form-item label="服务地址">
+            <n-form-item :label="t('admin.modelSettings.labels.serviceUrl')">
               <n-input
                 v-model:value="form.speech_service_url"
-                placeholder="http://127.0.0.1:8765"
+                :placeholder="t('admin.modelSettings.placeholders.speechUrl')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              会议助手「语音转写」调用此地址（FunASR speech-api）。
-            </n-text>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.speech')" />
           </template>
 
           <template v-else-if="activeId === 'tts'">
-            <n-form-item label="API URL">
+            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
               <n-input
                 v-model:value="form.tts_base_url"
-                placeholder="https://api.siliconflow.cn/v1"
+                :placeholder="t('admin.modelSettings.placeholders.ttsApiUrl')"
               />
             </n-form-item>
-            <n-form-item label="模型名称">
+            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
               <n-input
                 v-model:value="form.tts_model"
-                placeholder="FunAudioLLM/CosyVoice2-0.5B"
+                :placeholder="t('admin.modelSettings.placeholders.ttsModel')"
               />
             </n-form-item>
-            <n-form-item label="SK / API Key">
+            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
               <n-input
                 v-model:value="form.tts_api_key"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              「语音合成」功能专用配置，与语言模型分离。API URL 请填写 OpenAI 兼容基址（含
-              <code>/v1</code>）；未填时回退语言模型配置。
-            </n-text>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.tts')" />
           </template>
 
           <template v-else-if="activeId === 'pdf2zh'">
-            <n-form-item label="服务地址">
-              <n-input v-model:value="form.pdf2zh_api_url" placeholder="http://127.0.0.1:7861" />
+            <n-form-item :label="t('admin.modelSettings.labels.serviceUrl')">
+              <n-input
+                v-model:value="form.pdf2zh_api_url"
+                :placeholder="t('admin.modelSettings.placeholders.pdf2zhUrl')"
+              />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              文档翻译任务调用 pdf2zh API（对应 .env 中的
-              <code>PDF2ZH_API_URL</code>）。保存后立即生效。
-            </n-text>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.pdf2zh')" />
           </template>
 
           <template v-else-if="activeId === 'searxng'">
-            <n-form-item label="服务地址">
+            <n-form-item :label="t('admin.modelSettings.labels.serviceUrl')">
               <n-input
                 v-model:value="form.searxng_url"
-                placeholder="http://172.19.134.45:40000"
+                :placeholder="t('admin.modelSettings.placeholders.searxngUrl')"
               />
             </n-form-item>
-            <n-form-item label="请求超时">
+            <n-form-item :label="t('admin.modelSettings.labels.requestTimeout')">
               <n-input-number
                 v-model:value="form.searxng_timeout_seconds"
                 :min="3"
                 :max="120"
                 style="width: 100%"
               >
-                <template #suffix>秒</template>
+                <template #suffix>{{ t("admin.modelSettings.secondsSuffix") }}</template>
               </n-input-number>
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              网站收藏「联网搜索」通过此 SearXNG 实例的 JSON API（<code>/search?format=json</code>）检索。
-              对应 .env 中 <code>SEARXNG_URL</code>、<code>SEARXNG_TIMEOUT_SECONDS</code>。保存后立即生效。
-            </n-text>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.searxng')" />
           </template>
 
           <template v-else-if="activeId === 'ragflow_api'">
-            <n-form-item label="API 地址">
+            <n-form-item :label="t('admin.modelSettings.labels.apiAddress')">
               <n-input
                 v-model:value="form.ragflow_api_url"
-                placeholder="http://127.0.0.1:9380"
+                :placeholder="t('admin.modelSettings.placeholders.ragflowApiUrl')"
               />
             </n-form-item>
-            <n-form-item label="API Key">
+            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
               <n-input
                 v-model:value="form.ragflow_api_key"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改；mapped 模式可留空走用户会话"
+                :placeholder="t('admin.modelSettings.placeholders.ragflowApiKey')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              对应 .env 中 <code>RAGFLOW_API_URL</code>、<code>RAGFLOW_API_KEY</code>。
-              Docker 栈内服务名 <code>ragflow</code> 会自动映射到 nginx :80。
-            </n-text>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.ragflowApi')" />
           </template>
 
           <template v-else-if="activeId === 'knowflow_backend'">
-            <n-form-item label="API 后台">
+            <n-form-item :label="t('admin.modelSettings.labels.apiBackend')">
               <n-input
                 v-model:value="form.knowflow_backend_url"
-                placeholder="http://127.0.0.1:5001"
+                :placeholder="t('admin.modelSettings.placeholders.knowflowBackend')"
               />
             </n-form-item>
-            <n-form-item label="Web UI 后台">
+            <n-form-item :label="t('admin.modelSettings.labels.webUiBackend')">
               <n-input
                 v-model:value="form.knowflow_ui_url"
-                placeholder="http://127.0.0.1:9380"
+                :placeholder="t('admin.modelSettings.placeholders.knowflowUi')"
               />
             </n-form-item>
-            <n-form-item label="iframe 基址">
+            <n-form-item :label="t('admin.modelSettings.labels.iframeBase')">
               <n-input
                 v-model:value="form.knowflow_ui_public_url"
-                placeholder="可选，如 http://127.0.0.1:40005/ragflow-ui"
+                :placeholder="t('admin.modelSettings.placeholders.knowflowPublic')"
               />
             </n-form-item>
-            <n-form-item label="同源代理前缀">
+            <n-form-item :label="t('admin.modelSettings.labels.proxyPrefix')">
               <n-input
                 v-model:value="form.knowflow_ui_proxy_prefix"
-                placeholder="可选，如 /ragflow-ui"
+                :placeholder="t('admin.modelSettings.placeholders.knowflowProxy')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              对应 <code>KNOWFLOW_BACKEND_URL</code>、<code>KNOWFLOW_UI_URL</code>、
-              <code>KNOWFLOW_UI_PUBLIC_URL</code>、<code>KNOWFLOW_UI_PROXY_PREFIX</code>。
-              API 后台用于 RBAC 与知识库授权；Web UI 为 RAGFlow 管理界面；iframe 基址用于知识问答嵌入。
-              保存后立即生效。
-            </n-text>
+            <div
+              class="drawer-hint"
+              v-html="t('admin.modelSettings.hints.knowflowBackend')"
+            />
           </template>
 
           <template v-else-if="activeId === 'ragflow_mysql'">
-            <n-form-item label="主机">
+            <n-form-item :label="t('admin.modelSettings.labels.host')">
               <n-input
                 v-model:value="form.ragflow_mysql_host"
-                placeholder="留空且启用 KnowFlow 时使用 knowflow-mysql"
+                :placeholder="t('admin.modelSettings.placeholders.mysqlHost')"
               />
             </n-form-item>
-            <n-form-item label="端口">
+            <n-form-item :label="t('admin.modelSettings.labels.port')">
               <n-input-number
                 v-model:value="form.ragflow_mysql_port"
                 :min="1"
@@ -930,27 +909,30 @@ onMounted(loadAll);
                 style="width: 100%"
               />
             </n-form-item>
-            <n-form-item label="数据库">
-              <n-input v-model:value="form.ragflow_mysql_db" placeholder="rag_flow" />
+            <n-form-item :label="t('admin.modelSettings.labels.database')">
+              <n-input
+                v-model:value="form.ragflow_mysql_db"
+                :placeholder="t('admin.modelSettings.placeholders.mysqlDb')"
+              />
             </n-form-item>
-            <n-form-item label="root 密码">
+            <n-form-item :label="t('admin.modelSettings.labels.rootPassword')">
               <n-input
                 v-model:value="form.ragflow_mysql_password"
                 type="password"
                 show-password-on="click"
-                placeholder="留空或掩码表示不修改"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
               />
             </n-form-item>
-            <n-form-item label="Docker 容器">
+            <n-form-item :label="t('admin.modelSettings.labels.dockerContainer')">
               <n-input
                 v-model:value="form.ragflow_mysql_container"
-                placeholder="ragflow-mysql（无法 TCP 连接时 fallback docker exec）"
+                :placeholder="t('admin.modelSettings.placeholders.mysqlContainer')"
               />
             </n-form-item>
-            <n-text depth="3" class="drawer-hint">
-              平台通过 MySQL 同步 RAGFlow 租户模型、清理冲突账号等。对应
-              <code>RAGFLOW_MYSQL_*</code> 环境变量；远程开发可填服务器 IP。
-            </n-text>
+            <div
+              class="drawer-hint"
+              v-html="t('admin.modelSettings.hints.ragflowMysql')"
+            />
           </template>
         </n-form>
 
@@ -971,12 +953,12 @@ onMounted(loadAll);
               :disabled="saving"
               @click="testActive"
             >
-              测试连通性
+              {{ t("admin.modelSettings.testConnectivity") }}
             </n-button>
             <n-button type="primary" :loading="saving" :disabled="testing" @click="saveActive">
-              保存并生效
+              {{ t("admin.modelSettings.saveAndApply") }}
             </n-button>
-            <n-button @click="drawerOpen = false">取消</n-button>
+            <n-button @click="drawerOpen = false">{{ t("common.cancel") }}</n-button>
           </n-space>
         </template>
       </n-drawer-content>

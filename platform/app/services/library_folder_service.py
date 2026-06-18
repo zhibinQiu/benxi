@@ -22,12 +22,15 @@ from app.models.org import User
 
 FOLDER_KIND_UNCATEGORIZED = "uncategorized"
 FOLDER_KIND_SHARED = "shared"
+FOLDER_KIND_WEB_FAVORITES = "web_favorites"
 VIRTUAL_SHARED_ID = "__shared__"
 VIRTUAL_UNCATEGORIZED_ID = "__uncategorized__"
+WEB_FAVORITES_FOLDER_NAME = "网页收藏"
 
 SYSTEM_FOLDER_HINTS = {
     FOLDER_KIND_UNCATEGORIZED: "尚未归入自定义文件夹的文档；不可删除或重命名。",
     FOLDER_KIND_SHARED: "其他用户通过显式授权分享给您的文档；不可删除或重命名。",
+    FOLDER_KIND_WEB_FAVORITES: "通过网站收藏、公众号与 RSS 导入的文档会自动归入此文件夹。",
 }
 
 
@@ -178,6 +181,114 @@ def _count_docs_grouped_by_folder(
     return {row[0]: int(row[1]) for row in db.execute(stmt).all()}
 
 
+def is_web_favorites_folder(folder: DocumentLibraryFolder | None) -> bool:
+    if not folder:
+        return False
+    return (
+        folder.scope == SCOPE_PERSONAL
+        and (folder.name or "").strip() == WEB_FAVORITES_FOLDER_NAME
+    )
+
+
+def _backfill_subscription_imports_to_web_favorites(
+    db: Session,
+    *,
+    folder: DocumentLibraryFolder,
+    owner_id: uuid.UUID,
+) -> None:
+    from app.models.feed_subscription import FeedEntryImport
+    from app.models.wechat_mp import WechatMpArticleImport
+
+    if folder.owner_id != owner_id:
+        return
+    doc_ids: set[uuid.UUID] = set()
+    for doc_id in db.scalars(
+        select(FeedEntryImport.document_id).where(
+            FeedEntryImport.user_id == owner_id
+        )
+    ):
+        doc_ids.add(doc_id)
+    for doc_id in db.scalars(
+        select(WechatMpArticleImport.document_id).where(
+            WechatMpArticleImport.user_id == owner_id
+        )
+    ):
+        doc_ids.add(doc_id)
+    if not doc_ids:
+        return
+    docs = list(
+        db.scalars(
+            select(Document).where(
+                Document.id.in_(doc_ids),
+                Document.owner_id == owner_id,
+                Document.scope == SCOPE_PERSONAL,
+                Document.folder_id.is_(None),
+                Document.deleted_at.is_(None),
+            )
+        ).all()
+    )
+    if not docs:
+        return
+    for doc in docs:
+        doc.folder_id = folder.id
+    db.flush()
+
+
+def ensure_web_favorites_folder(
+    db: Session,
+    user: User,
+    owner_id: uuid.UUID,
+) -> DocumentLibraryFolder:
+    folder = db.scalar(
+        select(DocumentLibraryFolder).where(
+            DocumentLibraryFolder.scope == SCOPE_PERSONAL,
+            DocumentLibraryFolder.owner_id == owner_id,
+            DocumentLibraryFolder.name == WEB_FAVORITES_FOLDER_NAME,
+        )
+    )
+    created = False
+    if not folder:
+        folder = DocumentLibraryFolder(
+            name=WEB_FAVORITES_FOLDER_NAME,
+            description=SYSTEM_FOLDER_HINTS[FOLDER_KIND_WEB_FAVORITES],
+            scope=SCOPE_PERSONAL,
+            dept_id=None,
+            owner_id=owner_id,
+            created_by=user.id,
+        )
+        db.add(folder)
+        db.flush()
+        created = True
+    _backfill_subscription_imports_to_web_favorites(
+        db, folder=folder, owner_id=owner_id
+    )
+    if created:
+        db.commit()
+        db.refresh(folder)
+    return folder
+
+
+def resolve_web_favorites_folder_id_for_user(
+    db: Session, user: User
+) -> uuid.UUID:
+    folder = ensure_web_favorites_folder(db, user, owner_id=user.id)
+    return folder.id
+
+
+def assign_document_to_web_favorites_folder(
+    db: Session, user: User, document_id: uuid.UUID
+) -> None:
+    doc = db.get(Document, document_id)
+    if not doc or doc.deleted_at is not None:
+        return
+    if doc.owner_id != user.id or doc.scope != SCOPE_PERSONAL:
+        return
+    if doc.folder_id is not None:
+        return
+    doc.folder_id = resolve_web_favorites_folder_id_for_user(db, user)
+    db.flush()
+
+
 def _build_kb_folders_payload(
     db: Session,
     user: User,
@@ -207,8 +318,22 @@ def _build_kb_folders_payload(
     can_manage = can_manage_library_folders(
         db, user, norm_scope, dept_id=norm_dept
     )
-    visible_rows = [f for f in rows if _folder_visible_to_user(db, user, f)]
+    web_favorites_folder = None
+    if norm_scope == SCOPE_PERSONAL:
+        target_owner = owner_id or user.id
+        web_favorites_folder = ensure_web_favorites_folder(
+            db, user, target_owner
+        )
+
+    visible_rows = [
+        f
+        for f in rows
+        if _folder_visible_to_user(db, user, f)
+        and not is_web_favorites_folder(f)
+    ]
     folder_ids = [f.id for f in visible_rows]
+    if web_favorites_folder is not None:
+        folder_ids.append(web_favorites_folder.id)
     counts = _count_docs_grouped_by_folder(
         db,
         scope=norm_scope,
@@ -256,6 +381,22 @@ def _build_kb_folders_payload(
                 "can_manage": False,
             }
         )
+        if web_favorites_folder is not None:
+            items.append(
+                {
+                    "id": web_favorites_folder.id,
+                    "virtual_id": None,
+                    "name": WEB_FAVORITES_FOLDER_NAME,
+                    "description": SYSTEM_FOLDER_HINTS[FOLDER_KIND_WEB_FAVORITES],
+                    "scope": norm_scope,
+                    "dept_id": None,
+                    "kind": FOLDER_KIND_WEB_FAVORITES,
+                    "is_system": True,
+                    "system_hint": SYSTEM_FOLDER_HINTS[FOLDER_KIND_WEB_FAVORITES],
+                    "document_count": counts.get(web_favorites_folder.id, 0),
+                    "can_manage": False,
+                }
+            )
 
     for folder in visible_rows:
         items.append(
@@ -326,6 +467,8 @@ def create_kb_folder(
     label = (name or "").strip()
     if not label:
         raise bad_request("文件夹名称不能为空")
+    if label == WEB_FAVORITES_FOLDER_NAME:
+        raise bad_request("该名称为系统保留文件夹，请换一个名称")
     if len(label) > 256:
         raise bad_request("文件夹名称过长")
 
@@ -376,6 +519,8 @@ def update_kb_folder(
     folder = db.get(DocumentLibraryFolder, folder_id)
     if not folder:
         raise not_found("文件夹不存在")
+    if is_web_favorites_folder(folder):
+        raise forbidden("系统内置文件夹不可修改")
     if not _folder_visible_to_user(db, user, folder):
         raise not_found("文件夹不存在")
     if not can_manage_library_folders(
@@ -400,6 +545,8 @@ def delete_kb_folder(db: Session, user: User, folder_id: uuid.UUID) -> None:
     folder = db.get(DocumentLibraryFolder, folder_id)
     if not folder:
         raise not_found("文件夹不存在")
+    if is_web_favorites_folder(folder):
+        raise forbidden("系统内置文件夹不可删除")
     if not _folder_visible_to_user(db, user, folder):
         raise not_found("文件夹不存在")
     if not can_manage_library_folders(

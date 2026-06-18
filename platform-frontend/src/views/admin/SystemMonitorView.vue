@@ -1,5 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
+import { useI18n } from "../../composables/useI18n";
 import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import {
   DocumentTextOutline,
@@ -23,6 +24,7 @@ import {
 import { fetchAuditLogs, fetchDashboardStats, fetchSystemMetrics } from "../../api/client";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 const loadingLogs = ref(false);
 const loadingMetrics = ref(false);
 const loadingStats = ref(false);
@@ -30,6 +32,42 @@ const logs = ref([]);
 const metrics = ref(null);
 const stats = ref(null);
 let refreshTimer = null;
+
+const CARD_KEYS = [
+  "documents_total",
+  "documents_indexed",
+  "features_total",
+  "features_pending",
+  "users_registered",
+  "users_online",
+];
+
+const CARD_ICONS = {
+  documents_total: DocumentTextOutline,
+  documents_indexed: CloudUploadOutline,
+  features_total: GridOutline,
+  features_pending: ConstructOutline,
+  users_registered: PeopleOutline,
+  users_online: RadioOutline,
+};
+
+const CARD_ACCENTS = {
+  documents_total: "#5b9cf5",
+  documents_indexed: "#34d399",
+  features_total: "#a78bfa",
+  features_pending: "#fbbf24",
+  users_registered: "#60a5fa",
+  users_online: "#f472b6",
+};
+
+const CARD_I18N_KEYS = {
+  documents_total: "documentsTotal",
+  documents_indexed: "documentsIndexed",
+  features_total: "featuresTotal",
+  features_pending: "featuresPending",
+  users_registered: "usersRegistered",
+  users_online: "usersOnline",
+};
 
 function formatBytes(n) {
   if (n == null || Number.isNaN(n)) return "—";
@@ -53,9 +91,9 @@ function formatUptime(sec) {
   const d = Math.floor(sec / 86400);
   const hr = Math.floor((sec % 86400) / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  if (d > 0) return `${d} 天 ${hr} 小时`;
-  if (hr > 0) return `${hr} 小时 ${m} 分`;
-  return `${m} 分钟`;
+  if (d > 0) return t("admin.monitor.uptimeDays", { days: d, hours: hr });
+  if (hr > 0) return t("admin.monitor.uptimeHours", { hours: hr, minutes: m });
+  return t("admin.monitor.uptimeMinutes", { minutes: m });
 }
 
 function formatTime(iso) {
@@ -79,66 +117,43 @@ function formatUnixTime(ts) {
 const overviewCards = computed(() => {
   const s = stats.value;
   if (!s) return [];
-  return [
-    {
-      key: "documents_total",
-      label: "文档总数",
-      hint: "按文档实体统计，不含多版本重复",
-      value: s.documents_total,
-      icon: DocumentTextOutline,
-      accent: "#5b9cf5"},
-    {
-      key: "documents_indexed",
-      label: "已索引总数",
-      hint: "RAGFlow 解析已完成，不含失败或进行中的文档",
-      value: s.documents_indexed,
-      icon: CloudUploadOutline,
-      accent: "#34d399"},
-    {
-      key: "features_total",
-      label: "功能总数",
-      hint: "系统功能清单中的全部功能",
-      value: s.features_total,
-      icon: GridOutline,
-      accent: "#a78bfa"},
-    {
-      key: "features_pending",
-      label: "待开发功能",
-      hint: "尚未启用或待集成的功能",
-      value: s.features_pending,
-      icon: ConstructOutline,
-      accent: "#fbbf24"},
-    {
-      key: "users_registered",
-      label: "已注册人数",
-      hint: "状态为启用的平台账号",
-      value: s.users_registered,
-      icon: PeopleOutline,
-      accent: "#60a5fa"},
-    {
-      key: "users_online",
-      label: "在线人数",
-      hint: "近 15 分钟内有活跃请求",
-      value: s.users_online,
-      icon: RadioOutline,
-      accent: "#f472b6"},
-  ];
+  return CARD_KEYS.map((key) => {
+    const i18nKey = CARD_I18N_KEYS[key];
+    return {
+      key,
+      label: t(`admin.monitor.cards.${i18nKey}.label`),
+      hint: t(`admin.monitor.cards.${i18nKey}.hint`),
+      value: s[key],
+      icon: CARD_ICONS[key],
+      accent: CARD_ACCENTS[key],
+    };
+  });
 });
 
-const logColumns = [
-  { title: "时间", key: "created_at", width: 170, render: (r) => formatTime(r.created_at) },
-  { title: "用户", key: "username", width: 100, render: (r) => r.username || "—" },
-  { title: "操作", key: "action", minWidth: 160, ellipsis: { tooltip: true } },
+const logColumns = computed(() => [
+  {
+    title: t("admin.monitor.logTime"),
+    key: "created_at",
+    width: 170,
+    render: (r) => formatTime(r.created_at),
+  },
+  {
+    title: t("admin.monitor.logUser"),
+    key: "username",
+    width: 100,
+    render: (r) => r.username || "—",
+  },
+  { title: t("admin.monitor.logAction"), key: "action", minWidth: 160, ellipsis: { tooltip: true } },
   { title: "IP", key: "ip_address", width: 120, render: (r) => r.ip_address || "—" },
-];
+]);
 
 const gpuRows = computed(() => metrics.value?.gpus || []);
 
-const gpuColumns = [
+const gpuColumns = computed(() => [
   { title: "GPU", key: "index", width: 60, render: (r) => `#${r.index}` },
-  { title: "型号", key: "name", ellipsis: { tooltip: true } },
+  { title: t("admin.monitor.gpuModel"), key: "name", ellipsis: { tooltip: true } },
   {
-    title: "显存",
+    title: t("admin.monitor.gpuVram"),
     key: "vram",
     width: 200,
     render(row) {
@@ -157,11 +172,11 @@ const gpuColumns = [
       ]);
     }},
   {
-    title: "利用率",
+    title: t("admin.monitor.gpuUtilization"),
     key: "utilization_percent",
     width: 90,
     render: (r) => (r.utilization_percent != null ? `${r.utilization_percent}%` : "—")},
-];
+]);
 
 const refreshing = computed(
   () => loadingLogs.value || loadingMetrics.value || loadingStats.value
@@ -220,10 +235,16 @@ onUnmounted(() => {
 <template>
   <div class="monitor-page">
     <div class="monitor-page__toolbar">
-      <span v-if="stats" class="metric-hint">数据更新于 {{ formatUnixTime(stats.collected_at) }}</span>
+      <span v-if="stats" class="metric-hint">
+        {{ t("admin.monitor.dataUpdatedAt", { time: formatUnixTime(stats.collected_at) }) }}
+      </span>
       <n-space :size="8">
-        <n-button quaternary :loading="loadingLogs" @click="loadLogs">刷新日志</n-button>
-        <n-button type="primary" :loading="refreshing" @click="refreshAll">全部刷新</n-button>
+        <n-button quaternary :loading="loadingLogs" @click="loadLogs">
+          {{ t("admin.monitor.refreshLogs") }}
+        </n-button>
+        <n-button type="primary" :loading="refreshing" @click="refreshAll">
+          {{ t("admin.monitor.refreshAll") }}
+        </n-button>
       </n-space>
     </div>
 
@@ -245,14 +266,14 @@ onUnmounted(() => {
           </div>
         </article>
       </div>
-      <n-empty v-else description="暂无统计数据" size="small" />
+      <n-empty v-else :description="t('admin.monitor.noStats')" size="small" />
     </n-card>
 
     <n-card class="monitor-section" :bordered="false">
       <template v-if="metrics">
         <n-grid :cols="4" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
           <n-gi span="4 m:2 l:1">
-            <n-statistic label="CPU 使用率">
+            <n-statistic :label="t('admin.monitor.cpuUsage')">
               <template #default>{{ metrics.cpu.percent?.toFixed(1) }}%</template>
             </n-statistic>
             <n-progress
@@ -262,12 +283,16 @@ onUnmounted(() => {
               style="margin-top: 8px"
             />
             <div class="metric-hint">
-              {{ metrics.cpu.count_physical || "—" }} 物理核 /
-              {{ metrics.cpu.count_logical || "—" }} 逻辑核
+              {{
+                t("admin.monitor.physicalCores", {
+                  physical: metrics.cpu.count_physical || "—",
+                  logical: metrics.cpu.count_logical || "—",
+                })
+              }}
             </div>
           </n-gi>
           <n-gi span="4 m:2 l:1">
-            <n-statistic label="内存">
+            <n-statistic :label="t('admin.monitor.memory')">
               <template #default>{{ metrics.memory.percent?.toFixed(1) }}%</template>
             </n-statistic>
             <n-progress
@@ -283,7 +308,7 @@ onUnmounted(() => {
             </div>
           </n-gi>
           <n-gi span="4 m:2 l:1">
-            <n-statistic label="磁盘 (/)">
+            <n-statistic :label="t('admin.monitor.disk')">
               <template #default>{{ metrics.disk.percent?.toFixed(1) }}%</template>
             </n-statistic>
             <n-progress
@@ -299,7 +324,7 @@ onUnmounted(() => {
             </div>
           </n-gi>
           <n-gi span="4 m:2 l:1">
-            <n-statistic label="运行时长">
+            <n-statistic :label="t('admin.monitor.uptime')">
               <template #default>{{ formatUptime(metrics.uptime_seconds) }}</template>
             </n-statistic>
             <div class="metric-hint">{{ metrics.hostname }}</div>
@@ -310,15 +335,111 @@ onUnmounted(() => {
           <n-tag size="small" :bordered="false">{{ metrics.platform }}</n-tag>
           <n-tag size="small" :bordered="false">Python {{ metrics.python_version }}</n-tag>
           <span v-if="metrics.cpu.load_avg" class="metric-hint">
-            负载 {{ metrics.cpu.load_avg.map((x) => x.toFixed(2)).join(" / ") }}
+            {{
+              t("admin.monitor.loadAvg", {
+                values: metrics.cpu.load_avg.map((x) => x.toFixed(2)).join(" / "),
+              })
+            }}
           </span>
           <span class="metric-hint">
-            交换分区 {{ formatBytes(metrics.swap.used_bytes) }} /
-            {{ formatBytes(metrics.swap.total_bytes) }}
+            {{
+              t("admin.monitor.swap", {
+                used: formatBytes(metrics.swap.used_bytes),
+                total: formatBytes(metrics.swap.total_bytes),
+              })
+            }}
           </span>
         </div>
+        <div v-if="metrics.knowflow_queue" class="knowflow-queue-section">
+          <div class="section-title">{{ t("admin.monitor.knowflowQueueTitle") }}</div>
+          <n-grid :cols="4" :x-gap="16" :y-gap="12" responsive="screen" item-responsive>
+            <n-gi span="4 m:2 l:1">
+              <n-statistic :label="t('admin.monitor.knowflowPendingTasks')">
+                <template #default>
+                  {{ formatNumber(metrics.knowflow_queue.pending_tasks) }}
+                </template>
+              </n-statistic>
+              <div class="metric-hint">
+                {{
+                  t("admin.monitor.knowflowQueueLag", {
+                    lag: metrics.knowflow_queue.queue_lag || 0,
+                  })
+                }}
+              </div>
+            </n-gi>
+            <n-gi span="4 m:2 l:1">
+              <n-statistic :label="t('admin.monitor.knowflowParsingDocs')">
+                <template #default>
+                  {{ formatNumber(metrics.knowflow_queue.parsing_documents) }}
+                </template>
+              </n-statistic>
+              <div class="metric-hint">
+                <n-tag
+                  size="small"
+                  :type="metrics.knowflow_queue.executor_active ? 'success' : 'warning'"
+                  :bordered="false"
+                >
+                  {{
+                    metrics.knowflow_queue.executor_active
+                      ? t("admin.monitor.knowflowExecutorActive")
+                      : t("admin.monitor.knowflowExecutorIdle")
+                  }}
+                </n-tag>
+                <span
+                  v-if="!metrics.knowflow_queue.executor_active"
+                  class="metric-hint metric-hint--inline"
+                >
+                  {{
+                    (metrics.knowflow_queue.pending_tasks || 0) > 0 ||
+                    (metrics.knowflow_queue.queue_lag || 0) > 0
+                      ? t("admin.monitor.knowflowExecutorStuckHint")
+                      : t("admin.monitor.knowflowExecutorIdleHint")
+                  }}
+                </span>
+              </div>
+            </n-gi>
+            <n-gi span="4 m:2 l:1">
+              <n-statistic :label="t('admin.monitor.knowflowDuplicateDocs')">
+                <template #default>
+                  {{ formatNumber(metrics.knowflow_queue.duplicate_documents_extra) }}
+                </template>
+              </n-statistic>
+              <div class="metric-hint">
+                {{
+                  t("admin.monitor.knowflowDuplicateGroups", {
+                    count: metrics.knowflow_queue.duplicate_document_groups || 0,
+                  })
+                }}
+              </div>
+            </n-gi>
+            <n-gi span="4 m:2 l:1">
+              <n-statistic :label="t('admin.monitor.knowflowFailedTasks')">
+                <template #default>
+                  {{ formatNumber(metrics.knowflow_queue.failed_tasks) }}
+                </template>
+              </n-statistic>
+              <div v-if="metrics.knowflow_queue.error" class="metric-hint metric-hint--warn">
+                {{ metrics.knowflow_queue.error }}
+              </div>
+            </n-gi>
+          </n-grid>
+          <ul
+            v-if="(metrics.knowflow_queue.top_backlog_documents || []).length"
+            class="knowflow-backlog-list"
+          >
+            <li
+              v-for="row in metrics.knowflow_queue.top_backlog_documents"
+              :key="`${row.name}-${row.pending_tasks}`"
+            >
+              <span class="knowflow-backlog-list__count" :title="t('admin.monitor.knowflowBacklogTaskCount', { count: row.pending_tasks })">
+                {{ row.pending_tasks }}
+              </span>
+              <span class="knowflow-backlog-list__name">{{ row.name }}</span>
+            </li>
+          </ul>
+        </div>
         <div class="gpu-section">
-          <div class="section-title">显存 (GPU)</div>
+          <div class="section-title">{{ t("admin.monitor.gpuSection") }}</div>
           <n-data-table
             v-if="gpuRows.length"
             :columns="gpuColumns"
@@ -326,10 +447,10 @@ onUnmounted(() => {
             :bordered="false"
             size="small"
           />
-          <n-empty v-else description="未检测到 NVIDIA GPU 或 nvidia-smi 不可用" size="small" />
+          <n-empty v-else :description="t('admin.monitor.noGpu')" size="small" />
         </div>
       </template>
-      <n-empty v-else description="加载系统资源中…" size="small" />
+      <n-empty v-else :description="t('admin.monitor.loadingMetrics')" size="small" />
     </n-card>
 
     <n-card class="monitor-section monitor-section--logs" :bordered="false">
@@ -445,6 +566,42 @@ onUnmounted(() => {
 
 .gpu-section {
   margin-top: 20px;
+}
+
+.knowflow-queue-section {
+  margin-top: 20px;
+}
+
+.knowflow-backlog-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--n-text-color-2);
+}
+
+.knowflow-backlog-list li {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--n-border-color);
+}
+
+.knowflow-backlog-list__count {
+  flex: 0 0 2.5rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--n-text-color-3);
+}
+
+.knowflow-backlog-list__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-hint--warn {
+  color: var(--n-warning-color);
 }
 
 .section-title {

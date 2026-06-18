@@ -35,6 +35,7 @@ class UserCreate(BaseModel):
         default=None, min_length=2, max_length=64, description="用户名（登录用）"
     )
     password: str = Field(..., min_length=6, description="密码，至少 6 个字符")
+    status: str = Field(default="active", description="active | disabled")
     department_ids: list[uuid.UUID] = []
     role_ids: list[uuid.UUID] = []
 
@@ -73,6 +74,13 @@ class UserCreate(BaseModel):
     def password_not_blank(cls, v: str) -> str:
         if len(v) < 6:
             raise ValueError("密码至少 6 个字符")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v: str) -> str:
+        if v not in ("active", "disabled"):
+            raise ValueError("Invalid status")
         return v
 
 

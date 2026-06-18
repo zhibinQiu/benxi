@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { NButton, NIcon, NTooltip } from "naive-ui";
 import {
   AddOutline,
@@ -9,6 +9,9 @@ import {
   RemoveOutline,
   ScanOutline,
 } from "@vicons/ionicons5";
+import { useI18n } from "../composables/useI18n";
+
+const { t } = useI18n();
 
 const props = defineProps({
   layout: {
@@ -20,6 +23,16 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["select"]);
+
+function normalizeId(id) {
+  if (id == null || id === "") return null;
+  return String(id);
+}
+
+function idEq(a, b) {
+  if (a == null || b == null) return false;
+  return normalizeId(a) === normalizeId(b);
+}
 
 const DRAG_THRESHOLD = 4;
 
@@ -84,8 +97,8 @@ const displayEdges = computed(() => {
         mx: (x1 + x2) / 2,
         my: (y1 + y2) / 2 - 10,
         active:
-          props.selectedId === e.from_entity_id ||
-          props.selectedId === e.to_entity_id,
+          idEq(props.selectedId, e.from_entity_id) ||
+          idEq(props.selectedId, e.to_entity_id),
       };
     });
 });
@@ -112,7 +125,7 @@ function onPointerDown(event) {
   const target = event.target?.closest?.("[data-kg-node]");
   if (target) {
     const nodeId = target.getAttribute("data-kg-node");
-    const node = displayNodes.value.find((n) => n.id === nodeId);
+    const node = displayNodes.value.find((n) => idEq(n.id, nodeId));
     if (!node) return;
     const pt = clientToGraph(event.clientX, event.clientY);
     interaction.value = {
@@ -162,7 +175,7 @@ function onPointerMove(event) {
       };
       return;
     }
-    const base = props.layout.nodes.find((n) => n.id === state.nodeId);
+    const base = props.layout.nodes.find((n) => idEq(n.id, state.nodeId));
     if (!base) return;
     dragOffsets.value = {
       ...dragOffsets.value,
@@ -174,9 +187,12 @@ function onPointerMove(event) {
   }
 }
 
-function onPointerUp() {
-  if (interaction.value?.kind === "node" && interaction.value.moved) {
+function onPointerUp(event) {
+  const state = interaction.value;
+  if (state?.kind === "node" && state.moved) {
     lastNodeDragAt.value = Date.now();
+  } else if (state?.kind === "node" && !state.moved) {
+    onNodeClick(state.nodeId);
   }
   interaction.value = null;
 }
@@ -195,9 +211,13 @@ function unpinAll() {
   dragOffsets.value = {};
 }
 
-function onNodeDblClick(nodeId) {
+function onNodeClick(nodeId) {
   if (Date.now() - lastNodeDragAt.value < 320) return;
   emit("select", nodeId);
+}
+
+function onNodeDblClick(nodeId) {
+  onNodeClick(nodeId);
 }
 
 function onWheel(event) {
@@ -266,27 +286,158 @@ function resetView() {
   fitView();
 }
 
-function focusNode(nodeId) {
-  const node = displayNodes.value.find((n) => n.id === nodeId);
+function getViewportRect() {
   const el = canvasRef.value;
-  if (!node || !el) return;
+  if (!el) return null;
   const rect = el.getBoundingClientRect();
-  const scale = transform.value.scale;
+  if (rect.width < 8 || rect.height < 8) return null;
+  return rect;
+}
+
+function neighborNodes(nodeId) {
+  const nid = normalizeId(nodeId);
+  const relatedIds = new Set([nid]);
+  for (const edge of props.layout.edges || []) {
+    if (idEq(edge.from_entity_id, nid)) {
+      relatedIds.add(normalizeId(edge.to_entity_id));
+    }
+    if (idEq(edge.to_entity_id, nid)) {
+      relatedIds.add(normalizeId(edge.from_entity_id));
+    }
+  }
+  const nodes = displayNodes.value.filter((n) => relatedIds.has(normalizeId(n.id)));
+  return nodes.length ? nodes : displayNodes.value.filter((n) => idEq(n.id, nid));
+}
+
+function focusNode(nodeId, { fit = "selection" } = {}) {
+  const nid = normalizeId(nodeId);
+  const node = displayNodes.value.find((n) => idEq(n.id, nid));
+  const rect = getViewportRect();
+  if (!node || !rect) return false;
+
+  const padding = 56;
+  let scale = transform.value.scale;
+  let focusMinX = node.x;
+  let focusMinY = node.y;
+  let focusW = node.w;
+  let focusH = node.h;
+
+  if (fit === "all") {
+    const nodes = displayNodes.value;
+    focusMinX = Math.min(...nodes.map((n) => n.x));
+    focusMinY = Math.min(...nodes.map((n) => n.y));
+    const maxX = Math.max(...nodes.map((n) => n.x + n.w));
+    const maxY = Math.max(...nodes.map((n) => n.y + n.h));
+    focusW = Math.max(maxX - focusMinX, node.w);
+    focusH = Math.max(maxY - focusMinY, node.h);
+    scale = Math.min(
+      (rect.width - padding * 2) / focusW,
+      (rect.height - padding * 2) / focusH,
+      1.4,
+      MAX_SCALE
+    );
+    scale = Math.max(MIN_SCALE, scale);
+  } else if (fit === "selection") {
+    const nodes = neighborNodes(nid);
+    focusMinX = Math.min(...nodes.map((n) => n.x));
+    focusMinY = Math.min(...nodes.map((n) => n.y));
+    const maxX = Math.max(...nodes.map((n) => n.x + n.w));
+    const maxY = Math.max(...nodes.map((n) => n.y + n.h));
+    focusW = Math.max(maxX - focusMinX, node.w);
+    focusH = Math.max(maxY - focusMinY, node.h);
+    scale = Math.min(
+      (rect.width - padding * 2) / focusW,
+      (rect.height - padding * 2) / focusH,
+      nodes.length <= 1 ? 1.5 : 1.25,
+      MAX_SCALE
+    );
+    scale = Math.max(MIN_SCALE, scale);
+  }
+
   transform.value = {
     scale,
-    x: rect.width / 2 - (node.x + node.w / 2) * scale,
-    y: rect.height / 2 - (node.y + node.h / 2) * scale,
+    x: rect.width / 2 - (focusMinX + focusW / 2) * scale,
+    y: rect.height / 2 - (focusMinY + focusH / 2) * scale,
   };
+  return true;
+}
+
+function scheduleFocusNode(nodeId, options = {}) {
+  const nid = normalizeId(nodeId);
+  if (!nid) return;
+
+  const attempt = (tryCount = 0) => {
+    requestAnimationFrame(() => {
+      const ok = focusNode(nid, options);
+      if (!ok && tryCount < 12) {
+        setTimeout(() => attempt(tryCount + 1), 48);
+      }
+    });
+  };
+
+  nextTick(() => {
+    nextTick(() => attempt());
+  });
+}
+
+function centerOnSelection(options = {}) {
+  const id = normalizeId(props.selectedId);
+  if (id) {
+    scheduleFocusNode(id, { fit: "selection", ...options });
+    return;
+  }
+  nextTick(() => fitView());
 }
 
 watch(
   () => props.layout.nodes?.length || 0,
   (len, prev) => {
-    if (len > 0 && !prev) fitView();
+    if (len > 0 && !prev) {
+      nextTick(() => {
+        if (normalizeId(props.selectedId)) {
+          centerOnSelection();
+        } else {
+          fitView();
+        }
+      });
+    }
   }
 );
 
-defineExpose({ fitView, resetView, focusNode });
+const layoutSignature = computed(() =>
+  (props.layout.nodes || [])
+    .map((n) => `${normalizeId(n.id)}:${n.x}:${n.y}`)
+    .join("|")
+);
+
+watch(
+  () => [normalizeId(props.selectedId), layoutSignature.value],
+  ([id]) => {
+    if (!id) return;
+    centerOnSelection();
+  }
+);
+
+let resizeObserver = null;
+
+if (typeof window !== "undefined" && typeof ResizeObserver !== "undefined") {
+  watch(
+    canvasRef,
+    (el, prev) => {
+      if (prev && resizeObserver) resizeObserver.unobserve(prev);
+      if (!el) return;
+      resizeObserver = new ResizeObserver(() => {
+        if (normalizeId(props.selectedId)) {
+          focusNode(props.selectedId, { fit: "selection" });
+        }
+      });
+      resizeObserver.observe(el);
+    },
+    { flush: "post" }
+  );
+}
+
+defineExpose({ fitView, resetView, focusNode, centerOnSelection, scheduleFocusNode });
 
 if (typeof window !== "undefined") {
   window.addEventListener("pointerup", onPointerUp);
@@ -294,6 +445,10 @@ if (typeof window !== "undefined") {
 }
 
 onBeforeUnmount(() => {
+  if (resizeObserver && canvasRef.value) {
+    resizeObserver.unobserve(canvasRef.value);
+  }
+  resizeObserver = null;
   if (typeof window !== "undefined") {
     window.removeEventListener("pointerup", onPointerUp);
     window.removeEventListener("pointercancel", onPointerUp);
@@ -363,7 +518,7 @@ onBeforeUnmount(() => {
             :key="node.id"
             class="kg-canvas__node"
             :class="{
-              active: selectedId === node.id,
+              active: idEq(selectedId, node.id),
               pinned: node.pinned,
               dragging: interaction?.kind === 'node' && interaction?.nodeId === node.id && interaction?.moved,
             }"
@@ -405,7 +560,7 @@ onBeforeUnmount(() => {
             <template #icon><n-icon :component="AddOutline" /></template>
           </n-button>
         </template>
-        放大
+        {{ t("kgPalantir.canvas.zoomIn") }}
       </n-tooltip>
       <n-tooltip trigger="hover">
         <template #trigger>
@@ -413,7 +568,7 @@ onBeforeUnmount(() => {
             <template #icon><n-icon :component="RemoveOutline" /></template>
           </n-button>
         </template>
-        缩小
+        {{ t("kgPalantir.canvas.zoomOut") }}
       </n-tooltip>
       <n-tooltip trigger="hover">
         <template #trigger>
@@ -421,7 +576,7 @@ onBeforeUnmount(() => {
             <template #icon><n-icon :component="ScanOutline" /></template>
           </n-button>
         </template>
-        适应窗口
+        {{ t("kgPalantir.canvas.fitView") }}
       </n-tooltip>
       <n-tooltip trigger="hover">
         <template #trigger>
@@ -435,7 +590,7 @@ onBeforeUnmount(() => {
             <template #icon><n-icon :component="LockClosedOutline" /></template>
           </n-button>
         </template>
-        固定当前布局
+        {{ t("kgPalantir.canvas.pinLayout") }}
       </n-tooltip>
       <n-tooltip v-if="hasPinned" trigger="hover">
         <template #trigger>
@@ -443,7 +598,7 @@ onBeforeUnmount(() => {
             <template #icon><n-icon :component="LockOpenOutline" /></template>
           </n-button>
         </template>
-        解除全部固定
+        {{ t("kgPalantir.canvas.unpinAll") }}
       </n-tooltip>
       <n-tooltip trigger="hover">
         <template #trigger>
@@ -451,13 +606,15 @@ onBeforeUnmount(() => {
             <template #icon><n-icon :component="LocateOutline" /></template>
           </n-button>
         </template>
-        重置布局
+        {{ t("kgPalantir.canvas.resetLayout") }}
       </n-tooltip>
     </div>
 
     <div class="kg-canvas__hint">
-      滚轮缩放 · 空白拖拽平移 · 按住节点拖拽 · 双击节点进入
-      <span v-if="hasPinned" class="kg-canvas__hint-pinned">已固定 {{ Object.keys(pinnedPositions).length }} 个节点</span>
+      {{ t("kgPalantir.canvas.hint") }}
+      <span v-if="hasPinned" class="kg-canvas__hint-pinned">{{
+        t("kgPalantir.canvas.pinnedNodes", { count: Object.keys(pinnedPositions).length })
+      }}</span>
     </div>
   </div>
 </template>

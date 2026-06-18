@@ -1,5 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { useI18n } from "../composables/useI18n.js";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   NAlert,
@@ -32,6 +33,7 @@ import {
 import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 
 const meta = ref(null);
 const loadingMeta = ref(true);
@@ -47,8 +49,7 @@ const audioFilename = ref("");
 const audioRef = ref(null);
 const playing = ref(false);
 
-const SAMPLE_TEXT =
-  "欢迎使用语音合成功能。支持中文、英文及多种方言，可自然流畅地朗读您的文本内容。";
+const SAMPLE_TEXT = computed(() => t("textToSpeech.sampleText"));
 
 const configured = computed(() => meta.value?.configured ?? false);
 const maxChars = computed(() => meta.value?.max_input_chars ?? 2000);
@@ -58,13 +59,16 @@ const charOverLimit = computed(() => charCount.value > maxChars.value);
 const voiceOptions = computed(() => {
   const voices = meta.value?.voices || [];
   return voices.map((v) => ({
-    label: v.gender === "male" ? `${v.label}（男声）` : `${v.label}（女声）`,
+    label:
+      v.gender === "male"
+        ? `${v.label}${t("textToSpeech.voiceMale")}`
+        : `${v.label}${t("textToSpeech.voiceFemale")}`,
     value: v.id,
   }));
 });
 
 const emotionOptions = computed(() => [
-  { label: "默认（自然）", value: "" },
+  { label: t("textToSpeech.emotionDefault"), value: "" },
   ...(meta.value?.emotions || []).map((e) => ({ label: e.label, value: e.id })),
 ]);
 
@@ -124,14 +128,14 @@ async function loadMeta() {
     }
     ensureVoiceSelection();
   } catch (e) {
-    error.value = e.message || "加载配置失败";
+    error.value = e.message || t("textToSpeech.loadConfigFailed");
   } finally {
     loadingMeta.value = false;
   }
 }
 
 function fillSample() {
-  text.value = SAMPLE_TEXT;
+  text.value = SAMPLE_TEXT.value;
 }
 
 function clearText() {
@@ -153,12 +157,12 @@ async function runSynthesize() {
     });
     audioFilename.value = filename;
     audioUrl.value = URL.createObjectURL(blob);
-    ui.success("语音合成完成");
+    ui.success(t("textToSpeech.synthComplete"));
     requestAnimationFrame(() => {
       audioRef.value?.play?.().catch(() => {});
     });
   } catch (e) {
-    error.value = e.message || "合成失败";
+    error.value = e.message || t("textToSpeech.synthFailed");
     ui.error(error.value);
   } finally {
     synthesizing.value = false;
@@ -169,7 +173,7 @@ function togglePlayback() {
   const el = audioRef.value;
   if (!el) return;
   if (el.paused) {
-    el.play().catch(() => ui.warning("无法播放音频"));
+    el.play().catch(() => ui.warning(t("textToSpeech.cannotPlay")));
   } else {
     el.pause();
   }
@@ -180,7 +184,7 @@ function downloadAudio() {
   fetch(audioUrl.value)
     .then((r) => r.blob())
     .then((blob) => downloadSpeechBlob(blob, audioFilename.value || "speech.mp3"))
-    .catch(() => ui.error("下载失败"));
+    .catch(() => ui.error(t("textToSpeech.downloadFailed")));
 }
 
 watch(responseFormat, () => {
@@ -201,7 +205,7 @@ onBeforeUnmount(revokeAudioUrl);
           :title="FEATURE_UNAVAILABLE"
           style="margin-bottom: 16px"
         >
-          请在「资源管理 → 语音合成」中配置 API URL、模型名与 Key。
+          {{ t('textToSpeech.configHint') }}
         </NAlert>
 
         <NAlert v-if="error && configured" type="error" closable style="margin-bottom: 16px" @close="error = ''">
@@ -210,11 +214,11 @@ onBeforeUnmount(revokeAudioUrl);
 
         <NGrid v-if="meta" cols="1 m:2" responsive="screen" :x-gap="20" :y-gap="20" class="tts-grid">
           <NGi>
-            <NCard title="输入文本" size="small" class="tts-card">
+            <NCard :title="t('textToSpeech.inputText')" size="small" class="tts-card">
               <template #header-extra>
                 <NSpace size="small">
-                  <NButton size="tiny" quaternary @click="fillSample">示例</NButton>
-                  <NButton size="tiny" quaternary @click="clearText">清空</NButton>
+                  <NButton size="tiny" quaternary @click="fillSample">{{ t('textToSpeech.sample') }}</NButton>
+                  <NButton size="tiny" quaternary @click="clearText">{{ t('textToSpeech.clear') }}</NButton>
                 </NSpace>
               </template>
 
@@ -222,14 +226,14 @@ onBeforeUnmount(revokeAudioUrl);
                 v-model:value="text"
                 type="textarea"
                 :rows="10"
-                placeholder="输入要转换为语音的文本，支持中文、英文及混合内容…"
+                :placeholder="t('textToSpeech.inputPlaceholder')"
                 :maxlength="maxChars + 200"
                 show-count
               />
 
               <div class="tts-meta-row">
                 <NText depth="3" :type="charOverLimit ? 'error' : undefined">
-                  {{ charCount }} / {{ maxChars }} 字
+                  {{ t('textToSpeech.charCount', { count: charCount, max: maxChars }) }}
                 </NText>
                 <NTag v-if="meta?.model" size="small" round type="info">
                   {{ meta.model }}
@@ -239,24 +243,24 @@ onBeforeUnmount(revokeAudioUrl);
           </NGi>
 
           <NGi>
-            <NCard title="合成设置" size="small" class="tts-card">
+            <NCard :title="t('textToSpeech.synthesisSettings')" size="small" class="tts-card">
               <div class="tts-field">
-                <label class="tts-label">音色</label>
+                <label class="tts-label">{{ t('textToSpeech.voice') }}</label>
                 <NSelect v-model:value="voiceId" :options="voiceOptions" />
               </div>
 
               <div class="tts-field">
-                <label class="tts-label">情感</label>
+                <label class="tts-label">{{ t('textToSpeech.emotion') }}</label>
                 <NSelect v-model:value="emotion" :options="emotionOptions" clearable />
               </div>
 
               <div class="tts-field">
-                <label class="tts-label">语速 {{ speed.toFixed(1) }}×</label>
+                <label class="tts-label">{{ t('textToSpeech.speed', { speed: speed.toFixed(1) }) }}</label>
                 <NSlider v-model:value="speed" :min="0.5" :max="2" :step="0.1" />
               </div>
 
               <div class="tts-field">
-                <label class="tts-label">输出格式</label>
+                <label class="tts-label">{{ t('textToSpeech.outputFormat') }}</label>
                 <NSelect v-model:value="responseFormat" :options="formatOptions" />
               </div>
 
@@ -272,11 +276,11 @@ onBeforeUnmount(revokeAudioUrl);
                 <template #icon>
                   <NIcon><VolumeHighOutline /></NIcon>
                 </template>
-                生成语音
+                {{ t('textToSpeech.generate') }}
               </NButton>
             </NCard>
 
-            <NCard title="试听与下载" size="small" class="tts-card tts-player-card">
+            <NCard :title="t('textToSpeech.previewAndDownload')" size="small" class="tts-card tts-player-card">
               <div v-if="hasAudio" class="tts-player">
                 <audio
                   ref="audioRef"
@@ -292,32 +296,32 @@ onBeforeUnmount(revokeAudioUrl);
                     <template #icon>
                       <NIcon><component :is="playing ? PauseOutline : PlayOutline" /></NIcon>
                     </template>
-                    {{ playing ? "暂停" : "播放" }}
+                    {{ playing ? t('textToSpeech.pause') : t('textToSpeech.play') }}
                   </NButton>
                   <NButton secondary @click="downloadAudio">
                     <template #icon>
                       <NIcon><DownloadOutline /></NIcon>
                     </template>
-                    下载
+                    {{ t('textToSpeech.download') }}
                   </NButton>
                   <NButton quaternary @click="runSynthesize">
                     <template #icon>
                       <NIcon><RefreshOutline /></NIcon>
                     </template>
-                    重新生成
+                    {{ t('textToSpeech.regenerate') }}
                   </NButton>
                 </NSpace>
               </div>
               <div v-else class="tts-player-empty">
                 <NIcon size="48" depth="3"><VolumeHighOutline /></NIcon>
-                <NText depth="3">生成后将在此播放与下载</NText>
+                <NText depth="3">{{ t('textToSpeech.playerEmpty') }}</NText>
               </div>
             </NCard>
           </NGi>
         </NGrid>
         <NGrid v-else-if="!loadingMeta" cols="1" class="tts-grid">
           <NGi>
-            <NAlert type="warning">无法加载语音合成配置，请刷新页面重试。</NAlert>
+            <NAlert type="warning">{{ t('textToSpeech.loadFailed') }}</NAlert>
           </NGi>
         </NGrid>
       </div>

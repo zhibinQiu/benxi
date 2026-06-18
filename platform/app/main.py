@@ -16,6 +16,7 @@ from app.api import (
     chat_history,
     departments,
     documents,
+    issue_reports,
     jobs,
     knowledge_embed,
     model_settings,
@@ -59,6 +60,7 @@ from app.models import (  # noqa: F401 — register ORM models
 )
 from app.schemas.common import ApiResponse
 from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
+from app.services.knowflow_queue_watchdog_service import start_knowflow_queue_watchdog
 
 _logger = logging.getLogger(__name__)
 
@@ -132,9 +134,15 @@ async def lifespan(_app: FastAPI):
 
     await asyncio.to_thread(_sync_paddleocr_on_startup)
     sync_task = start_cea_history_scheduler()
+    watchdog_task = start_knowflow_queue_watchdog()
     try:
         yield
     finally:
+        watchdog_task.cancel()
+        try:
+            await watchdog_task
+        except asyncio.CancelledError:
+            pass
         sync_task.cancel()
         try:
             await sync_task
@@ -273,6 +281,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
     app.include_router(todos.router, prefix=prefix)
+    app.include_router(issue_reports.router, prefix=prefix)
     app.include_router(monitor.router, prefix=prefix)
     app.include_router(model_settings.router, prefix=prefix)
     app.include_router(menu_settings.router, prefix=prefix)

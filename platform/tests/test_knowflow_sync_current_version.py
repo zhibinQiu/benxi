@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from app.database import SessionLocal
 from app.models.document import Document
 from app.services.ragflow_sync_service import sync_document_to_knowflow
-from tests.test_document_versions import _upload_dummy_pdf
+from test_support.document_upload import upload_dummy_pdf
 
 
 def test_sync_document_uses_resolve_current_version(client, admin_token):
@@ -16,7 +16,7 @@ def test_sync_document_uses_resolve_current_version(client, admin_token):
         json={"title": "kf-sync", "scope": "personal"},
     )
     doc_id = r.json()["data"]["id"]
-    _upload_dummy_pdf(client, doc_id, headers)
+    upload_dummy_pdf(client, doc_id, headers)
 
     with SessionLocal() as db:
         doc = db.get(Document, doc_id)

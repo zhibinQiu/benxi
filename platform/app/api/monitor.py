@@ -12,6 +12,7 @@ from app.models.audit import AuditLog
 from app.models.org import User
 from app.schemas.common import ApiResponse
 from app.schemas.monitor import AuditLogItemOut, SystemMetricsOut
+from app.services.knowflow_queue_service import collect_knowflow_queue_metrics
 from app.services.system_monitor import collect_system_metrics
 
 router = APIRouter(prefix="/monitor", tags=["monitor"])
@@ -19,9 +20,12 @@ router = APIRouter(prefix="/monitor", tags=["monitor"])
 
 @router.get("/metrics", response_model=ApiResponse[SystemMetricsOut])
 def get_system_metrics(
+    db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[SystemMetricsOut]:
-    return ApiResponse(data=SystemMetricsOut.model_validate(collect_system_metrics()))
+    payload = collect_system_metrics()
+    payload["knowflow_queue"] = collect_knowflow_queue_metrics(db)
+    return ApiResponse(data=SystemMetricsOut.model_validate(payload))
 
 
 @router.get("/audit-logs", response_model=ApiResponse[list[AuditLogItemOut]])

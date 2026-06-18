@@ -1150,7 +1150,12 @@ def execute_document_reindex(
 
         try:
             rid = sync_document_to_knowflow(
-                db, user, doc, force=True, version_id=version.id
+                db,
+                user,
+                doc,
+                force=True,
+                resync=resync,
+                version_id=version.id,
             )
         except KnowflowSyncError as e:
             raise bad_request(str(e)) from e
@@ -1199,8 +1204,14 @@ def execute_document_reindex(
             from app.core.platform_cache import invalidate_ragflow_doc_meta_cache
 
             invalidate_ragflow_doc_meta_cache(version_link.dataset_id)
-            rag.parse_documents(
-                version_link.dataset_id, [version_link.ragflow_document_id]
+            from app.services.knowflow_parse_guard import safe_parse_documents
+
+            safe_parse_documents(
+                rag,
+                version_link.dataset_id,
+                [version_link.ragflow_document_id],
+                db=db,
+                force=True,
             )
             upsert_version_link(
                 db,

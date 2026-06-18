@@ -8,6 +8,7 @@ from app.services.kg_extraction_service import (
     _normalize_entity_rows,
     _normalize_relation_rows,
     apply_extraction_result,
+    apply_extraction_result_from_text,
     extract_json_payload,
 )
 
@@ -101,3 +102,75 @@ def test_apply_extraction_result_creates_entities(client, admin_token):
         assert stats["entities_created"] == 1
     finally:
         db.close()
+
+
+def test_apply_extraction_result_from_text_creates_root_and_entities(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    client.get("/api/v1/kg/meta", headers=headers)
+
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models.org import User
+
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.phone == "admin"))
+        assert user is not None
+        suffix = uuid.uuid4().hex[:6]
+        stats = apply_extraction_result_from_text(
+            db,
+            user,
+            title=f"测试会议-{suffix}",
+            data={
+                "entities": [
+                    {
+                        "type_code": "person",
+                        "name": f"参会人-{suffix}",
+                        "description": "会议抽取测试",
+                    }
+                ],
+                "relations": [],
+            },
+            source_type="meeting_summary",
+        )
+        db.commit()
+        assert stats["entities_created"] == 1
+        assert stats["root_entity_id"]
+    finally:
+        db.close()
+
+
+def test_kg_extract_from_text_api(client, admin_token, monkeypatch):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    client.get("/api/v1/kg/meta", headers=headers)
+
+    from app.services import kg_extraction_service
+
+    def fake_call_llm_extract(*, document_title: str, text: str):
+        return {
+            "entities": [
+                {
+                    "type_code": "project",
+                    "name": f"API会议项目-{uuid.uuid4().hex[:6]}",
+                    "description": "接口测试",
+                }
+            ],
+            "relations": [],
+        }
+
+    monkeypatch.setattr(kg_extraction_service, "_call_llm_extract", fake_call_llm_extract)
+
+    res = client.post(
+        "/api/v1/kg/extract-from-text",
+        headers=headers,
+        json={
+            "title": "接口测试会议",
+            "text": "本次会议讨论了碳市场管理办法与减排项目推进计划，并明确了各部门职责分工与后续里程碑。",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["skipped"] is False
+    assert data["entities_created"] >= 1
+    assert data["root_entity_id"]

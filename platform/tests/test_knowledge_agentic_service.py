@@ -2,8 +2,8 @@
 
 from unittest.mock import patch
 
+from app.core.llm_parse import parse_llm_json
 from app.services.knowledge_agentic_service import (
-    _parse_llm_json,
     _unique_queries,
     agentic_enabled,
     gather_for_knowledge_qa,
@@ -12,7 +12,7 @@ from app.services.knowledge_agentic_service import (
 
 def test_parse_llm_json_from_fence():
     raw = '说明\n```json\n{"sufficient": true, "gaps": ""}\n```'
-    data = _parse_llm_json(raw)
+    data = parse_llm_json(raw)
     assert data is not None
     assert data["sufficient"] is True
 

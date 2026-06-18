@@ -1,19 +1,15 @@
 <script setup>
 defineOptions({ name: "CarbonQaV2View" });
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { ChatbubblesOutline } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import { carbonQaChatStream } from "../api/client";
+import { useI18n } from "../composables/useI18n.js";
 
+const { t, tm } = useI18n();
 const conversationId = ref(null);
-
-const suggestions = [
-  "全国碳市场纳入行业有哪些？",
-  "范围一、二、三排放如何划分？",
-  "企业碳中和路径一般包含哪些阶段？",
-  "CCER 与绿证在抵消中的区别是什么？",
-];
+const suggestions = computed(() => tm("carbonQa.suggestions") || []);
 </script>
 
 <template>
@@ -24,10 +20,10 @@ const suggestions = [
       :streaming="true"
       :rich-markdown="true"
       :show-workflow-progress="true"
-      title="双碳问答"
-      description="面向双碳政策、碳核算标准、碳市场与减排实践的智能问答，支持多轮追问与专业解读。"
-      subtitle="双碳问答 · 知识解读"
-      chat-header-sub="多轮对话 · 引用来源 · 图表与 Markdown"
+      :title="t('carbonQa.title')"
+      :description="t('carbonQa.description')"
+      :subtitle="t('carbonQa.subtitle')"
+      :chat-header-sub="t('carbonQa.chatHeaderSub')"
       :show-citations="true"
       :suggestions="suggestions"
       :icon="ChatbubblesOutline"

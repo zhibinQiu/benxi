@@ -19,6 +19,7 @@ def test_wechat_import_uses_personal_scope():
     article_id = uuid.uuid4()
     doc_id = uuid.uuid4()
     job_id = uuid.uuid4()
+    folder_id = uuid.uuid4()
 
     with patch.object(
         svc, "get_article_detail", return_value={"title": "t", "source_name": "s", "original_url": "u"}
@@ -31,6 +32,9 @@ def test_wechat_import_uses_personal_scope():
         "app.services.subscription_import_service.enqueue_subscription_import_finalize",
         return_value=MagicMock(id=job_id),
     ) as enqueue_finalize, patch(
+        "app.services.library_folder_service.resolve_web_favorites_folder_id_for_user",
+        return_value=folder_id,
+    ), patch(
         "app.core.platform_cache.invalidate_document_caches"
     ):
         db = MagicMock()
@@ -51,6 +55,7 @@ def test_wechat_import_uses_personal_scope():
     create_doc.assert_called_once()
     assert create_doc.call_args.kwargs["scope"] == SCOPE_PERSONAL
     assert create_doc.call_args.kwargs["dept_id"] is None
+    assert create_doc.call_args.kwargs["folder_id"] == folder_id
     create_version.assert_called_once()
     assert create_version.call_args.kwargs["file_name"].endswith(".pdf")
     assert create_version.call_args.kwargs["mime_type"] == "application/pdf"
@@ -66,6 +71,7 @@ def test_feed_import_uses_personal_scope():
     entry_id = uuid.uuid4()
     doc_id = uuid.uuid4()
     job_id = uuid.uuid4()
+    folder_id = uuid.uuid4()
 
     with patch.object(
         svc,
@@ -80,6 +86,9 @@ def test_feed_import_uses_personal_scope():
         "app.services.subscription_import_service.enqueue_subscription_import_finalize",
         return_value=MagicMock(id=job_id),
     ) as enqueue_finalize, patch(
+        "app.services.library_folder_service.resolve_web_favorites_folder_id_for_user",
+        return_value=folder_id,
+    ), patch(
         "app.core.platform_cache.invalidate_document_caches"
     ):
         db = MagicMock()
@@ -100,6 +109,7 @@ def test_feed_import_uses_personal_scope():
     create_doc.assert_called_once()
     assert create_doc.call_args.kwargs["scope"] == SCOPE_PERSONAL
     assert create_doc.call_args.kwargs["dept_id"] is None
+    assert create_doc.call_args.kwargs["folder_id"] == folder_id
     create_version.assert_called_once()
     assert create_version.call_args.kwargs["file_name"].endswith(".pdf")
     assert create_version.call_args.kwargs["mime_type"] == "application/pdf"

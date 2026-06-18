@@ -23,6 +23,7 @@ from app.core.user_identity import (
     email_taken,
     find_user_by_login_account,
     phone_taken,
+    user_display_name,
     username_taken,
 )
 from app.database import get_db
@@ -46,7 +47,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _display_name(user: User) -> str:
-    return (user.display_name or user.username or "").strip() or "用户"
+    return user_display_name(user)
 
 
 def _issue_tokens(db: Session, user: User, request: Request) -> TokenResponse:

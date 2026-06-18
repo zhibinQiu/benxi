@@ -55,7 +55,7 @@ bash scripts/stack.sh up --profile knowflow --profile speech
 **本机（与目标同架构或 buildx）：**
 
 ```bash
-export ZHITAN_VERSION=4.0.7
+export ZHITAN_VERSION=4.0.9
 bash scripts/stack.sh build --profile knowflow
 bash scripts/stack.sh save      # 输出 images/zhitan-*.tar.gz
 ```
@@ -122,7 +122,7 @@ bash scripts/stack.sh server-up --profile knowflow
 
 - `platform/docker-compose*.yml` 多文件组合
 - `bash scripts/deploy.sh full`（rsync 全仓库 + 远程 build）
-- `./dev.sh legacy`（宿主机进程 + 部分 Docker）
+- `./dev.sh local`（宿主机 venv + 远程/本地依赖）
 - `bash scripts/merge-stack-env.sh`（请用 `setup-stack-env.sh`）
 
 若文档仍引用上述路径，以本页为准。

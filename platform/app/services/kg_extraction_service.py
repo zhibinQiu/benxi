@@ -34,11 +34,14 @@ EXTRACTED_VERSION_KEY = "kg_extracted_version_id"
 EXTRACTED_AT_KEY = "kg_extracted_at"
 SOURCE_DOCUMENT_KEY = "source_document_id"
 SOURCE_VERSION_KEY = "source_version_id"
+SOURCE_TYPE_KEY = "source_type"
+SOURCE_ID_KEY = "source_id"
+SOURCE_MEETING_SUMMARY = "meeting_summary"
 
 _MAX_ENTITIES = 24
 _MAX_RELATIONS = 32
 
-_EXTRACTION_SYSTEM = """你是企业知识图谱抽取助手。根据文档正文识别关键实体与关系，输出严格 JSON。
+_EXTRACTION_SYSTEM = """你是企业本体图谱抽取助手。根据文档正文识别关键实体与关系，输出严格 JSON。
 
 实体类型 code 仅限：{entity_codes}
 关系类型 code 仅限：{relation_codes}
@@ -256,29 +259,78 @@ def _normalize_relation_rows(data: dict[str, Any]) -> list[dict[str, str]]:
     return out
 
 
-def apply_extraction_result(
+def _find_entity_by_source(
     db: Session,
     user: User,
-    doc: Document,
-    version: DocumentVersion,
-    data: dict[str, Any],
-) -> dict[str, int]:
-    """将 LLM 抽取结果写入用户图谱（幂等合并）。"""
-    entity_types, relation_types = _type_maps(db)
-    ensure_doc_entity_for_document(db, user, doc.id, commit=False)
-    doc_row = find_entity_by_document_id(db, user, doc.id)
+    *,
+    source_type: str,
+    source_id: uuid.UUID | None,
+) -> KgEntity | None:
+    for row in db.scalars(select(KgEntity).where(KgEntity.owner_id == user.id)).all():
+        props = row.properties or {}
+        if str(props.get(SOURCE_TYPE_KEY) or "") != source_type:
+            continue
+        if source_id is None:
+            return row
+        if str(props.get(SOURCE_ID_KEY) or "") == str(source_id):
+            return row
+    return None
 
-    name_to_id: dict[str, uuid.UUID] = {}
-    if doc_row:
-        name_to_id[doc_row.name] = doc_row.id
+
+def _ensure_source_root_entity(
+    db: Session,
+    user: User,
+    *,
+    title: str,
+    source_type: str,
+    source_id: uuid.UUID | None,
+) -> KgEntity:
+    existing = _find_entity_by_source(
+        db, user, source_type=source_type, source_id=source_id
+    )
+    if existing:
+        return existing
+
+    ensure_ontology_defaults(db)
+    et = db.scalar(select(KgEntityType).where(KgEntityType.code == "project"))
+    if not et:
+        et = db.scalar(select(KgEntityType).where(KgEntityType.code == "doc"))
+    if not et:
+        raise ValueError("本体默认实体类型缺失")
+
+    name = (title or "会议总结").strip()[:256] or "会议总结"
+    props: dict[str, str] = {SOURCE_TYPE_KEY: source_type}
+    if source_id:
+        props[SOURCE_ID_KEY] = str(source_id)
+
+    row = KgEntity(
+        type_id=et.id,
+        name=name,
+        description=f"来自会议总结：{name}",
+        properties=props,
+        owner_id=user.id,
+        created_by=user.id,
+        scope="personal",
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _merge_extraction_data(
+    db: Session,
+    user: User,
+    data: dict[str, Any],
+    *,
+    source_props: dict[str, str],
+    seed_entities: dict[str, uuid.UUID] | None = None,
+) -> dict[str, int]:
+    """将 LLM 抽取的实体/关系合并写入用户图谱（幂等）。"""
+    entity_types, relation_types = _type_maps(db)
+    name_to_id: dict[str, uuid.UUID] = dict(seed_entities or {})
 
     created_entities = 0
     reused_entities = 0
-    source_props = {
-        SOURCE_DOCUMENT_KEY: str(doc.id),
-        SOURCE_VERSION_KEY: str(version.id),
-    }
-
     for item in _normalize_entity_rows(data):
         et = entity_types.get(item["type_code"]) or entity_types.get("doc")
         if not et:
@@ -338,6 +390,41 @@ def apply_extraction_result(
         )
         created_relations += 1
 
+    return {
+        "entities_created": created_entities,
+        "entities_reused": reused_entities,
+        "relations_created": created_relations,
+        "relations_skipped": skipped_relations,
+    }
+
+
+def apply_extraction_result(
+    db: Session,
+    user: User,
+    doc: Document,
+    version: DocumentVersion,
+    data: dict[str, Any],
+) -> dict[str, int]:
+    """将 LLM 抽取结果写入用户图谱（幂等合并）。"""
+    ensure_doc_entity_for_document(db, user, doc.id, commit=False)
+    doc_row = find_entity_by_document_id(db, user, doc.id)
+
+    seed_entities: dict[str, uuid.UUID] = {}
+    if doc_row:
+        seed_entities[doc_row.name] = doc_row.id
+
+    source_props = {
+        SOURCE_DOCUMENT_KEY: str(doc.id),
+        SOURCE_VERSION_KEY: str(version.id),
+    }
+    stats = _merge_extraction_data(
+        db,
+        user,
+        data,
+        source_props=source_props,
+        seed_entities=seed_entities,
+    )
+
     if doc_row:
         props = dict(doc_row.properties or {})
         props[DOC_ENTITY_PROPERTY_KEY] = str(doc.id)
@@ -346,12 +433,87 @@ def apply_extraction_result(
         doc_row.properties = props
 
     db.flush()
-    return {
-        "entities_created": created_entities,
-        "entities_reused": reused_entities,
-        "relations_created": created_relations,
-        "relations_skipped": skipped_relations,
-    }
+    return stats
+
+
+def apply_extraction_result_from_text(
+    db: Session,
+    user: User,
+    *,
+    title: str,
+    data: dict[str, Any],
+    source_type: str = SOURCE_MEETING_SUMMARY,
+    source_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    """将 LLM 抽取结果写入用户图谱，并以会议/文本来源登记根实体。"""
+    root = _ensure_source_root_entity(
+        db,
+        user,
+        title=title,
+        source_type=source_type,
+        source_id=source_id,
+    )
+    source_props: dict[str, str] = {SOURCE_TYPE_KEY: source_type}
+    if source_id:
+        source_props[SOURCE_ID_KEY] = str(source_id)
+
+    stats = _merge_extraction_data(
+        db,
+        user,
+        data,
+        source_props=source_props,
+        seed_entities={root.name: root.id},
+    )
+
+    props = dict(root.properties or {})
+    props.update(source_props)
+    props[EXTRACTED_AT_KEY] = datetime.now(timezone.utc).isoformat()
+    root.properties = props
+    db.flush()
+    return {**stats, "root_entity_id": str(root.id)}
+
+
+def extract_kg_from_text(
+    db: Session,
+    user: User,
+    *,
+    title: str,
+    text: str,
+    source_type: str = SOURCE_MEETING_SUMMARY,
+    source_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    """从任意文本（如会议总结）抽取实体/关系并写入图谱。"""
+    if not kg_extraction_enabled():
+        return {"skipped": True, "reason": "kg_extraction_disabled"}
+    if not _user_may_extract(db, user):
+        return {"skipped": True, "reason": "no_kg_permission"}
+
+    body = (text or "").strip()
+    if len(body) < 40:
+        return {"skipped": True, "reason": "text_too_short"}
+
+    try:
+        llm_data = _call_llm_extract(
+            document_title=title or "会议总结",
+            text=body,
+        )
+    except Exception as exc:
+        logger.warning("KG 文本抽取 LLM 失败: %s", exc)
+        return {"skipped": True, "reason": "llm_failed", "error": str(exc)[:200]}
+
+    stats = apply_extraction_result_from_text(
+        db,
+        user,
+        title=title or "会议总结",
+        data=llm_data,
+        source_type=source_type,
+        source_id=source_id,
+    )
+    db.commit()
+    from app.core.platform_cache import invalidate_kg_cache
+
+    invalidate_kg_cache(user.id)
+    return {"skipped": False, **stats}
 
 
 def extract_kg_from_document(
@@ -402,6 +564,9 @@ def extract_kg_from_document(
 
     stats = apply_extraction_result(db, user, doc, version, llm_data)
     db.commit()
+    from app.core.platform_cache import invalidate_kg_cache
+
+    invalidate_kg_cache(user.id)
     return {
         "skipped": False,
         "document_id": str(document_id),

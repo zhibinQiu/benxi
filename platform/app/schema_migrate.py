@@ -363,6 +363,29 @@ def ensure_todo_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_issue_report_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS issue_reports (
+            id UUID PRIMARY KEY,
+            reporter_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            status VARCHAR(16) NOT NULL DEFAULT 'open',
+            fixed_at TIMESTAMPTZ,
+            fixed_by_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_issue_reports_status ON issue_reports (status)",
+        "CREATE INDEX IF NOT EXISTS ix_issue_reports_reporter ON issue_reports (reporter_id)",
+        "CREATE INDEX IF NOT EXISTS ix_issue_reports_created ON issue_reports (created_at DESC)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def ensure_carbon_market_schema(engine: Engine) -> None:
     statements = [
         """
@@ -506,6 +529,26 @@ def ensure_feed_subscription_schema(engine: Engine) -> None:
             CONSTRAINT uq_feed_import_user UNIQUE (entry_id, user_id)
         )
         """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_subscription_item_removal_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS subscription_item_removals (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            link_key VARCHAR(64) NOT NULL,
+            link VARCHAR(1024) NOT NULL DEFAULT '',
+            removed_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_subscription_item_removal UNIQUE (user_id, link_key)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_subscription_item_removal_user ON subscription_item_removals (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_subscription_item_removal_link_key ON subscription_item_removals (link_key)",
     ]
     with engine.begin() as conn:
         for sql in statements:
@@ -1021,6 +1064,8 @@ def ensure_pageindex_schema(engine: Engine) -> None:
 def run_light_schema_patches(engine: Engine) -> None:
     """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
     ensure_pageindex_schema(engine)
+    ensure_issue_report_schema(engine)
+    ensure_platform_menu_settings_schema(engine)
 
 
 def run_all_schema_migrations(engine: Engine) -> None:
@@ -1037,8 +1082,10 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_carbon_market_schema(engine)
     ensure_meeting_record_schema(engine)
     ensure_todo_schema(engine)
+    ensure_issue_report_schema(engine)
     ensure_wechat_mp_schema(engine)
     ensure_feed_subscription_schema(engine)
+    ensure_subscription_item_removal_schema(engine)
     ensure_platform_chat_schema(engine)
     ensure_kg_schema(engine)
     ensure_platform_model_settings_schema(engine)

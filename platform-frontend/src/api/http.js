@@ -35,11 +35,6 @@ export function getApiBase() {
   return resolveApiBase();
 }
 
-/** @deprecated 请使用 getApiBase()，运行时可被服务端配置覆盖 */
-export function getApiBaseSnapshot() {
-  return getApiBase();
-}
-
 /** 应用启动时从平台拉取公开配置（无需登录） */
 export async function bootstrapClientConfig() {
   const initial = resolveApiBase();

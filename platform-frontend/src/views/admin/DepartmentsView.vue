@@ -1,5 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
+import { useI18n } from "../../composables/useI18n";
 import { computed, h, onMounted, ref } from "vue";
 import {
   NCard,
@@ -22,6 +23,7 @@ import { useBatchTableSelection } from "../../composables/useBatchTableSelection
 import { deleteSequentially } from "../../utils/batchActions";
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 const loading = ref(false);
 const items = ref([]);
 const showModal = ref(false);
@@ -46,13 +48,13 @@ const {
 const canBatchDelete = computed(() => selectedRows.value.length > 0);
 
 function deptName(id) {
-  if (!id) return "（根）";
-  return items.value.find((d) => d.id === id)?.name || "未知部门";
+  if (!id) return t("admin.departments.root");
+  return items.value.find((d) => d.id === id)?.name || t("admin.departments.unknownDept");
 }
 
 const parentOptions = computed(() => {
   const exclude = editingId.value;
-  const opts = [{ label: "（根部门）", value: null }];
+  const opts = [{ label: t("admin.departments.rootDept"), value: null }];
   for (const d of items.value) {
     if (d.id === exclude) continue;
     opts.push({ label: d.name, value: d.id });
@@ -62,20 +64,20 @@ const parentOptions = computed(() => {
 
 const columns = computed(() => [
   selectionColumn(),
-  { title: "名称", key: "name" },
+  { title: t("admin.departments.name"), key: "name" },
   {
-    title: "上级部门",
+    title: t("admin.departments.parent"),
     key: "parent_id",
     render: (r) => deptName(r.parent_id)},
   {
-    title: "操作",
+    title: t("common.actions"),
     key: "actions",
     width: 80,
     render(row) {
       return h(
         NButton,
         { size: "small", quaternary: true, type: "primary", onClick: () => openEdit(row) },
-        { default: () => "编辑" }
+        { default: () => t("common.edit") }
       );
     }},
 ]);
@@ -115,21 +117,31 @@ function closeModal() {
 function handleBatchDelete() {
   const rows = selectedRows.value;
   if (!rows.length) return;
-  const summary =
-    rows.length === 1 ? `「${rows[0].name}」` : `选中的 ${rows.length} 个部门`;
+  const content =
+    rows.length === 1
+      ? t("admin.departments.batchDeleteContentSingle", { name: rows[0].name })
+      : t("admin.departments.batchDeleteContentMulti", { count: rows.length });
   ui.confirmDelete({
-    title: "批量删除部门",
-    content: `确定删除${summary}？`,
+    title: t("admin.departments.batchDeleteTitle"),
+    content,
     onPositive: async () => {
       const { deleted, failed } = await deleteSequentially(rows, (row) =>
         deleteDepartment(row.id)
       );
       if (failed.length) {
         ui.warning(
-          `已删除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
+          t("admin.batchDeletePartial", {
+            success: deleted,
+            failed: failed.length,
+            error: failed[0].message || t("admin.unknownError"),
+          })
         );
       } else {
-        ui.success(deleted > 1 ? `已删除 ${deleted} 个部门` : "部门已删除");
+        ui.success(
+          deleted > 1
+            ? t("admin.departments.batchDeletedMulti", { count: deleted })
+            : t("admin.departments.deleted")
+        );
       }
       clearSelection();
       await load();
@@ -140,7 +152,7 @@ function handleBatchDelete() {
 
 async function submit() {
   if (!form.value.name?.trim()) {
-    ui.warning("请输入部门名称");
+    ui.warning(t("admin.departments.nameRequired"));
     return;
   }
   saving.value = true;
@@ -150,10 +162,10 @@ async function submit() {
   try {
     if (isEdit.value) {
       await updateDepartment(editingId.value, payload);
-      ui.success("部门已更新");
+      ui.success(t("admin.departments.updated"));
     } else {
       await createDepartment(payload);
-      ui.success("部门已创建");
+      ui.success(t("admin.departments.created"));
     }
     closeModal();
     await load();
@@ -169,14 +181,14 @@ onMounted(load);
 
 <template>
   <n-card class="admin-page">
-    <template #header-extra>
-      <n-button type="primary" @click="openCreate">新建部门</n-button>
-    </template>
-    <BatchTableToolbar
-      :count="selectedCount"
-      :disabled="!canBatchDelete"
-      @action="handleBatchDelete"
-    />
+    <div class="admin-table-toolbar">
+      <BatchTableToolbar
+        :count="selectedCount"
+        :disabled="!canBatchDelete"
+        @action="handleBatchDelete"
+      />
+      <n-button type="primary" @click="openCreate">{{ t("admin.departments.create") }}</n-button>
+    </div>
     <n-data-table
       :columns="columns"
       :data="items"
@@ -189,7 +201,7 @@ onMounted(load);
 
   <AdminFormModal
     v-model:show="showModal"
-    :title="isEdit ? '编辑部门' : '新建部门'"
+    :title="isEdit ? t('admin.departments.edit') : t('admin.departments.create')"
     :width="460"
     @after-leave="closeModal"
   >
@@ -198,17 +210,20 @@ onMounted(load);
       label-placement="top"
     >
       <div class="admin-form-modal__form-grid">
-        <n-form-item label="部门名称" required>
-          <n-input v-model:value="form.name" placeholder="部门名称" />
+        <n-form-item :label="t('admin.departments.deptName')" required>
+          <n-input
+            v-model:value="form.name"
+            :placeholder="t('admin.departments.deptNamePlaceholder')"
+          />
         </n-form-item>
         <n-form-item>
           <template #label>
             <span class="admin-form-modal__label-row">
-              上级部门
+              {{ t("admin.departments.parent") }}
               <HintTooltip
                 variant="inline"
                 placement="top"
-                text="不选择上级时，该部门将作为根部门。"
+                :text="t('admin.departments.parentHint')"
               />
             </span>
           </template>
@@ -216,16 +231,16 @@ onMounted(load);
             v-model:value="form.parent_id"
             :options="parentOptions"
             clearable
-            placeholder="可选"
+            :placeholder="t('admin.departments.parentOptional')"
           />
         </n-form-item>
       </div>
     </n-form>
     <template #footer>
       <n-space :size="10">
-        <n-button @click="showModal = false">取消</n-button>
+        <n-button @click="showModal = false">{{ t("common.cancel") }}</n-button>
         <n-button type="primary" :loading="saving" @click="submit">
-          {{ isEdit ? "保存" : "创建" }}
+          {{ isEdit ? t("common.save") : t("common.create") }}
         </n-button>
       </n-space>
     </template>

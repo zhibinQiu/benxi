@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import uuid
@@ -13,14 +12,13 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.llm_parse import parse_llm_json
 from app.integrations.deepseek_client import chat_completion_sync, is_configured
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services.knowledge_agentic_tools import KnowledgeAgenticToolkit, ToolResult
 
 logger = logging.getLogger(__name__)
-
-_JSON_BLOCK_RE = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
 
 RESULT_MARKER = "_agentic_result"
 
@@ -85,23 +83,6 @@ class AgenticReportGatherResult:
 def agentic_enabled() -> bool:
     settings = get_settings()
     return bool(settings.knowledge_agentic_enabled and is_configured())
-
-
-def _parse_llm_json(raw: str | None) -> dict[str, Any] | None:
-    text = (raw or "").strip()
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    m = _JSON_BLOCK_RE.search(text)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return None
 
 
 def _unique_queries(queries: list[str], *, limit: int) -> list[str]:
@@ -171,7 +152,7 @@ def _plan_qa_sub_questions(
         f"已选文档数：{document_count}",
     ]
     if kg_context.strip():
-        user_parts.append("【知识图谱关联（规划参考，非检索结果）】\n" + kg_context.strip())
+        user_parts.append("【本体图谱关联（规划参考，非检索结果）】\n" + kg_context.strip())
     raw = chat_completion_sync(
         messages=[
             {"role": "system", "content": system},
@@ -180,7 +161,7 @@ def _plan_qa_sub_questions(
         temperature=0.2,
         timeout=45.0,
     )
-    data = _parse_llm_json(raw)
+    data = parse_llm_json(raw)
     if not data:
         return [question], "规则回退：单路检索"
     reasoning = str(data.get("reasoning") or "").strip() or "已规划检索子问题"
@@ -227,7 +208,7 @@ def _evaluate_qa_sufficiency(
         temperature=0.1,
         timeout=40.0,
     )
-    data = _parse_llm_json(raw)
+    data = parse_llm_json(raw)
     if not data:
         return hit_count >= 2, None, []
     sufficient = bool(data.get("sufficient"))
@@ -283,12 +264,12 @@ def iter_gather_for_knowledge_qa(
     )
     summaries: list[str] = []
 
-    sid, ev = _tool_call_event("kg_context", "加载知识图谱上下文", question[:80])
+    sid, ev = _tool_call_event("kg_context", "加载本体图谱上下文", question[:80])
     _emit_wf(emit, ev)
     yield ev
     kg_tool = toolkit.kg_planning_context(question)
     result_ev = _tool_result_event(
-        "kg_context", "知识图谱上下文", kg_tool.summary, sid, ok=kg_tool.ok
+        "kg_context", "本体图谱上下文", kg_tool.summary, sid, ok=kg_tool.ok
     )
     _emit_wf(emit, result_ev)
     yield result_ev
@@ -501,7 +482,7 @@ def _plan_report_gathering(
     if history_excerpt.strip():
         user_parts.append(f"对话摘要：\n{history_excerpt[:1200]}")
     if kg_context.strip():
-        user_parts.append("【知识图谱（规划参考）】\n" + kg_context[:1800])
+        user_parts.append("【本体图谱（规划参考）】\n" + kg_context[:1800])
     raw = chat_completion_sync(
         messages=[
             {"role": "system", "content": system},
@@ -510,7 +491,7 @@ def _plan_report_gathering(
         temperature=0.25,
         timeout=50.0,
     )
-    data = _parse_llm_json(raw)
+    data = parse_llm_json(raw)
     if not data:
         from app.services.report_generation_service import build_local_retrieval_queries
 
@@ -564,7 +545,7 @@ def _evaluate_report_sufficiency(
         temperature=0.1,
         timeout=45.0,
     )
-    data = _parse_llm_json(raw)
+    data = parse_llm_json(raw)
     if not data:
         return (local_count + web_count) >= 3, None, [], []
     sufficient = bool(data.get("sufficient"))
@@ -627,12 +608,12 @@ def iter_gather_for_report(
     )
     summaries: list[str] = []
 
-    sid, ev = _tool_call_event("kg_context", "加载知识图谱上下文", f"{topic} {message}"[:80])
+    sid, ev = _tool_call_event("kg_context", "加载本体图谱上下文", f"{topic} {message}"[:80])
     _emit_wf(emit, ev)
     yield ev
     kg_tool = toolkit.kg_planning_context(f"{topic} {message}".strip())
     result_ev = _tool_result_event(
-        "kg_context", "知识图谱上下文", kg_tool.summary, sid, ok=kg_tool.ok
+        "kg_context", "本体图谱上下文", kg_tool.summary, sid, ok=kg_tool.ok
     )
     _emit_wf(emit, result_ev)
     yield result_ev

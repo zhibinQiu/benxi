@@ -1,4 +1,4 @@
-/* 曲线动画背景：登录 / 智能体问答 / 知识检索等对话场景 */
+/* 曲线动画背景：登录 / 智能体问答 / 知识检索 / 报告生成 / 文档中心 / 功能列表 / 网站收藏 / 本体图谱 / 问题登记 / 系统设置等 */
 
 html:has(.app-shell--video-bg),
 html:has(.app-shell--video-bg) body,
@@ -55,6 +55,10 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell--video-bg .chat-history-page,
 .app-shell--video-bg .knowledge-search-panel {
   background: transparent !important;
+}
+
+.app-shell--video-bg .report-gen-page .ai-home {
+  border-radius: 0 !important;
 }
 
 .app-shell--video-bg .login-page {

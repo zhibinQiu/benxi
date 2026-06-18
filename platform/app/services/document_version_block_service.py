@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.core.text_sanitize import sanitize_db_text
 from app.integrations.paddleocr_client import recognize_bytes
 from app.integrations.text_extract import ParsedDocument, extract_text_from_bytes
 from app.models.document import DocumentVersion
@@ -229,7 +230,7 @@ def _flatten_page_blocks(parsed: ParsedDocument) -> list[dict]:
                 flat.append(
                     {
                         "page": page_no,
-                        "text": text,
+                        "text": sanitize_db_text(text),
                         "bbox": blk.get("bbox"),
                         "block_type": blk.get("block_type") or "text",
                     }
@@ -243,7 +244,7 @@ def _flatten_page_blocks(parsed: ParsedDocument) -> list[dict]:
                         flat.append(
                             {
                                 "page": page_no,
-                                "text": chunk,
+                                "text": sanitize_db_text(chunk),
                                 "bbox": None,
                                 "block_type": "paragraph",
                             }
@@ -252,7 +253,7 @@ def _flatten_page_blocks(parsed: ParsedDocument) -> list[dict]:
         flat.append(
             {
                 "page": 1,
-                "text": parsed.full_text.strip(),
+                "text": sanitize_db_text(parsed.full_text.strip()),
                 "bbox": None,
                 "block_type": "text",
             }
@@ -315,7 +316,7 @@ def ensure_version_blocks(
             block_index=idx,
             page=int(blk.get("page") or 1),
             block_type=str(blk.get("block_type") or "text")[:32],
-            text=blk["text"],
+            text=sanitize_db_text(blk["text"]),
             bbox=blk.get("bbox"),
             meta_json={"parse_quality": parsed.parse_quality},
         )

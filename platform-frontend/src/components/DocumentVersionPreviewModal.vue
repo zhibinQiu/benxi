@@ -1,8 +1,11 @@
 <script setup>
 import { computed, nextTick, ref, watch } from "vue";
-import { NButton, NEmpty, NSpace, NSpin, NTag, NText } from "naive-ui";
+import { useI18n } from "../composables/useI18n.js";
+import { NButton, NEmpty, NSpace, NSpin, NTag, NText, NRadioButton, NRadioGroup } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
+import ComparePdfPreview from "./ComparePdfPreview.vue";
 import { fetchDocumentFileBlob } from "../api/documents.js";
+import { fetchCompareDocumentContent } from "../api/compare.js";
 import {
   PREVIEW_KIND,
   previewKindLabel,
@@ -24,21 +27,31 @@ const props = defineProps({
   previewSubtitle: { type: String, default: "" },
   previewFileName: { type: String, default: "" },
   showDownloadAction: { type: Boolean, default: null },
-  width: { type: [Number, String], default: "min(1280px, 98vw)" },
-  viewportHeight: { type: String, default: "72vh" },
+  width: { type: [Number, String], default: "min(960px, 96vw)" },
+  viewportHeight: { type: String, default: "85vh" },
   /** PDF 预览缩放：width 按弹窗宽度铺满（竖版文档可读性更好）；page 整页缩放进视口 */
   pdfFitMode: { type: String, default: "width" },
 });
 
 const emit = defineEmits(["update:show", "download"]);
 
+const { t } = useI18n();
+
 const loading = ref(false);
 const error = ref("");
 const previewKind = ref(PREVIEW_KIND.UNSUPPORTED);
 const objectUrl = ref("");
 const textContent = ref("");
+const textFallback = ref("");
+const previewViewMode = ref("pdf");
 const wordHtml = ref("");
 const previewLoadToken = ref(0);
+const pdfPage = ref(1);
+const pdfNumPages = ref(1);
+
+const showTextFallback = computed(
+  () => previewKind.value === PREVIEW_KIND.PDF && Boolean(textFallback.value?.trim()),
+);
 
 const visible = computed({
   get: () => props.show,
@@ -47,9 +60,7 @@ const visible = computed({
 
 const modalTitle = computed(() => {
   if (props.previewTitle) return props.previewTitle;
-  const ver = props.version;
-  if (!ver) return "文件预览";
-  return `预览 v${ver.version_no}`;
+  return t("documents.detail.preview");
 });
 
 const modalSubtitle = computed(
@@ -73,10 +84,27 @@ function cleanupPreview() {
     objectUrl.value = "";
   }
   textContent.value = "";
+  textFallback.value = "";
+  previewViewMode.value = "pdf";
   wordHtml.value = "";
+  pdfPage.value = 1;
+  pdfNumPages.value = 1;
   error.value = "";
   previewKind.value = PREVIEW_KIND.UNSUPPORTED;
   loading.value = false;
+}
+
+async function loadPdfTextFallback(documentId, versionId) {
+  if (!documentId || !versionId) return;
+  try {
+    const content = await fetchCompareDocumentContent(documentId, versionId);
+    const text = String(content?.full_text || "").trim();
+    if (text) {
+      textFallback.value = text;
+    }
+  } catch {
+    /* 解析文本不可用时仅展示 PDF */
+  }
 }
 
 async function loadPreview() {
@@ -97,7 +125,7 @@ async function loadPreview() {
       const ver = props.version;
       if (!props.documentId || !ver?.id || !ver.uploaded) {
         if (token === previewLoadToken.value) {
-          error.value = "该版本暂无可预览文件";
+          error.value = t("documents.detail.previewNoFile");
         }
         return;
       }
@@ -121,7 +149,7 @@ async function loadPreview() {
       textContent.value = resolved.text || (await readTextBlob(blob));
       if (token !== previewLoadToken.value) return;
       if (!textContent.value?.trim()) {
-        error.value = "文本内容为空";
+        error.value = t("documents.detail.previewTextEmpty");
       }
       return;
     }
@@ -142,23 +170,31 @@ async function loadPreview() {
         textContent.value = text;
         return;
       }
-      error.value = "Word 文档内容为空";
+      error.value = t("documents.detail.previewWordEmpty");
       return;
     }
 
     if (previewKind.value === PREVIEW_KIND.UNSUPPORTED) {
-      error.value = "此格式暂不支持在线预览";
+      error.value = t("documents.detail.previewUnsupported");
       return;
     }
 
-    objectUrl.value = URL.createObjectURL(
-      blob.type === "application/pdf"
-        ? blob
-        : new Blob([blob], { type: "application/pdf" }),
-    );
+    if (previewKind.value === PREVIEW_KIND.PDF) {
+      objectUrl.value = URL.createObjectURL(
+        blob.type === "application/pdf"
+          ? blob
+          : new Blob([blob], { type: "application/pdf" }),
+      );
+      if (useDocumentSource.value && props.documentId && props.version?.id) {
+        void loadPdfTextFallback(props.documentId, props.version.id);
+      }
+      return;
+    }
+
+    objectUrl.value = URL.createObjectURL(blob);
   } catch (e) {
     if (token === previewLoadToken.value) {
-      error.value = e?.message || "预览加载失败";
+      error.value = e?.message || t("documents.detail.previewLoadFailed");
     }
   } finally {
     if (token === previewLoadToken.value) {
@@ -181,6 +217,20 @@ watch(
   },
 );
 
+function onPdfReady({ numPages }) {
+  pdfNumPages.value = Math.max(1, Number(numPages) || 1);
+  if (pdfPage.value > pdfNumPages.value) {
+    pdfPage.value = 1;
+  }
+}
+
+function goPdfPage(delta) {
+  const next = pdfPage.value + delta;
+  if (next >= 1 && next <= pdfNumPages.value) {
+    pdfPage.value = next;
+  }
+}
+
 function onAfterEnter() {
   nextTick(() => loadPreview());
 }
@@ -201,17 +251,41 @@ function onAfterLeave() {
     @after-leave="onAfterLeave"
   >
     <div class="document-preview-modal__toolbar">
-      <n-tag size="small" :bordered="false" type="info">{{ kindLabel }}</n-tag>
+      <n-space align="center" :size="10">
+        <n-tag size="small" :bordered="false" type="info">{{ kindLabel }}</n-tag>
+        <n-radio-group
+          v-if="showTextFallback"
+          v-model:value="previewViewMode"
+          size="small"
+        >
+          <n-radio-button value="pdf">PDF</n-radio-button>
+          <n-radio-button value="text">文本</n-radio-button>
+        </n-radio-group>
+        <n-space
+          v-if="previewKind === PREVIEW_KIND.PDF && objectUrl && previewViewMode === 'pdf' && pdfNumPages > 1"
+          align="center"
+          :size="6"
+        >
+          <n-button size="tiny" :disabled="pdfPage <= 1" @click="goPdfPage(-1)">上一页</n-button>
+          <n-text depth="3">{{ pdfPage }} / {{ pdfNumPages }}</n-text>
+          <n-button size="tiny" :disabled="pdfPage >= pdfNumPages" @click="goPdfPage(1)">下一页</n-button>
+        </n-space>
+      </n-space>
     </div>
 
     <n-spin :show="loading" class="document-preview-modal__spin">
-      <div class="document-preview-modal__viewport">
-        <iframe
-          v-if="previewKind === PREVIEW_KIND.PDF && objectUrl"
-          :key="`${documentId}-${version?.id || ''}-${objectUrl}`"
+      <div
+        class="document-preview-modal__viewport"
+        :class="{ 'document-preview-modal__viewport--pdf': previewKind === PREVIEW_KIND.PDF && previewViewMode === 'pdf' }"
+      >
+        <ComparePdfPreview
+          v-if="previewKind === PREVIEW_KIND.PDF && objectUrl && previewViewMode === 'pdf'"
+          :key="objectUrl"
           :src="objectUrl"
-          class="document-preview-modal__frame document-preview-modal__pdf-frame"
-          title="PDF 预览"
+          :page="pdfPage"
+          :fit-mode="pdfFitMode"
+          class="document-preview-modal__pdf"
+          @ready="onPdfReady"
         />
         <iframe
           v-else-if="previewKind === PREVIEW_KIND.HTML && objectUrl"
@@ -227,8 +301,14 @@ function onAfterLeave() {
           :alt="modalSubtitle"
           class="document-preview-modal__image"
         />
-        <pre v-else-if="previewKind === PREVIEW_KIND.TEXT && textContent" class="document-preview-modal__text">{{
-          textContent
+        <pre
+          v-else-if="
+            (previewKind === PREVIEW_KIND.PDF && previewViewMode === 'text' && textFallback) ||
+            (previewKind === PREVIEW_KIND.TEXT && textContent)
+          "
+          class="document-preview-modal__text"
+        >{{
+          previewKind === PREVIEW_KIND.PDF ? textFallback : textContent
         }}</pre>
         <div
           v-else-if="previewKind === PREVIEW_KIND.WORD && wordHtml"
@@ -237,7 +317,7 @@ function onAfterLeave() {
         />
         <n-empty
           v-else-if="error"
-          description="预览加载失败"
+          :description="t('documents.detail.previewLoadFailed')"
           class="document-preview-modal__empty"
         >
           <template #extra>
@@ -246,20 +326,20 @@ function onAfterLeave() {
         </n-empty>
         <n-empty
           v-else-if="previewKind === PREVIEW_KIND.UNSUPPORTED && !loading"
-          description="此格式暂不支持在线预览"
+          :description="t('documents.detail.previewUnsupported')"
           class="document-preview-modal__empty"
         >
           <template #extra>
-            <n-text depth="3">请下载后在本地应用中打开查看</n-text>
+            <n-text depth="3">{{ t("documents.detail.previewDownloadHint") }}</n-text>
           </template>
         </n-empty>
         <n-empty
           v-else-if="!loading"
-          description="预览内容为空"
+          :description="t('documents.detail.previewContentEmpty')"
           class="document-preview-modal__empty"
         >
           <template #extra>
-            <n-text depth="3">请尝试下载文件或等待后台导入任务完成后再预览</n-text>
+            <n-text depth="3">{{ t("documents.detail.previewRetryHint") }}</n-text>
           </template>
         </n-empty>
       </div>
@@ -292,29 +372,46 @@ function onAfterLeave() {
   min-height: 360px;
   display: flex;
   flex-direction: column;
+  align-items: center;
 }
 
 .document-preview-modal__spin :deep(.n-spin-container),
 .document-preview-modal__spin :deep(.n-spin-content) {
   flex: 1;
   min-height: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
+  align-items: center;
 }
 
 .document-preview-modal__viewport {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   align-items: stretch;
   justify-content: center;
-  width: 100%;
-  min-height: 360px;
-  height: 100%;
+  aspect-ratio: 210 / 297;
+  width: min(720px, 100%, calc(v-bind(viewportHeight) * 210 / 297));
   max-height: v-bind(viewportHeight);
+  min-height: 280px;
   border-radius: calc(var(--platform-radius-sm) + 4px);
   border: 1px solid var(--platform-border);
   background: color-mix(in srgb, var(--platform-text) 3%, transparent);
   overflow: hidden;
+}
+
+.document-preview-modal__viewport--pdf {
+  width: 100%;
+  height: v-bind(viewportHeight);
+  max-height: v-bind(viewportHeight);
+  min-height: 480px;
+  aspect-ratio: unset;
+}
+
+.document-preview-modal__pdf {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
 }
 
 .document-preview-modal__frame {

@@ -420,6 +420,13 @@ def import_entry_to_document(
         )
     )
     if existing:
+        from app.services.library_folder_service import (
+            assign_document_to_web_favorites_folder,
+        )
+
+        assign_document_to_web_favorites_folder(
+            db, user, existing.document_id
+        )
         synced = False
         if sync_knowflow:
             synced = _try_sync_knowflow(db, user, existing.document_id)
@@ -437,6 +444,10 @@ def import_entry_to_document(
         f"来源：{detail['source_name']}（{detail['source_kind']}）\n"
         f"链接：{detail['link']}"
     )
+    from app.services.library_folder_service import (
+        resolve_web_favorites_folder_id_for_user,
+    )
+
     doc = create_document(
         db,
         user,
@@ -444,6 +455,7 @@ def import_entry_to_document(
         description=desc,
         scope=scope,
         dept_id=dept_id,
+        folder_id=resolve_web_favorites_folder_id_for_user(db, user),
     )
     from app.integrations.html_document_export import (
         html_body_to_pdf_bytes,

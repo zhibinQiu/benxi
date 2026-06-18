@@ -58,8 +58,6 @@ platform-frontend/src/
 | `error` | 对象取 `.message` → `sanitizeUserFacingMessage`；鉴权错误直接 return |
 | `confirmDelete` | 非 blocking 模式：先 toast「删除中」，异步 `onPositive`，失败 `error(e)` |
 
-`useUiMessage.js` 已废弃，仅为 `usePlatformUi` 的 re-export，新代码勿引用。
-
 ---
 
 ## 4. 知识检索相关

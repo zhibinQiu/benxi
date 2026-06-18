@@ -60,7 +60,7 @@ import { useDocumentReindex } from "../composables/useDocumentReindex.js";
 import { knowledgeIndexTagProps } from "../utils/knowledgeIndex.js";
 import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
-import { ORG_SCOPES, SCOPE_LABELS, SCOPE_PERM } from "../constants/documentScope";
+import { ORG_SCOPES } from "../constants/documentScope";
 import {
   validateUploadFiles,
   validateVersionFormatMatch,
@@ -83,7 +83,7 @@ function goBack() {
 const ui = usePlatformUi();
 
 const { user, hasPerm } = useAuth();
-const { docLevelLabel } = useI18n();
+const { t, docLevelLabel, scopeLabel } = useI18n();
 const { ensureUploadLimits } = useDocumentLibrary();
 
 const docId = route.params.id;
@@ -115,7 +115,7 @@ const isOwner = computed(
   () => user.value?.id && doc.value?.owner_id === user.value.id
 );
 
-const ownerLabel = computed(() => doc.value?.owner_name || "未知用户");
+const ownerLabel = computed(() => doc.value?.owner_name || t("documents.unknownUser"));
 
 const uploadedAtLabel = computed(() => {
   const t = doc.value?.uploaded_at || doc.value?.created_at;
@@ -137,7 +137,6 @@ const {
   reindexTargetVersion,
   parserId,
   layoutRecognize,
-  reindexResync,
   chunkMethodOptions,
   layoutOptions,
   pageindexBlockReason,
@@ -147,7 +146,9 @@ const {
   openReindexModal,
   submitReindex,
   renderIndexedSelectLabel,
-  renderIndexedSelectOption,
+  reindexSelectNodeProps,
+  reindexSelectMenuProps,
+  reindexSelectPlacement,
 } = useDocumentReindex(docId, () => load({ notifyOnError: false }));
 
 const showVersionActions = computed(
@@ -186,7 +187,7 @@ function onVersionFileChange({ fileList }) {
 
 async function submitVersionUpload() {
   if (!versionUploadFile.value) {
-    ui.warning("请选择文件");
+    ui.warning(t("documents.detail.chooseFile"));
     return;
   }
   const sizeCheck = validateUploadFiles([versionUploadFile.value], { maxFiles: 1 });
@@ -216,7 +217,7 @@ async function submitVersionUpload() {
       file_size: raw.size,
       change_description: versionChangeDesc.value.trim(),
     });
-    ui.success("新版本已上传，知识库正在后台同步");
+    ui.success(t("documents.detail.versionUploaded"));
     versionChangeDesc.value = "";
     versionUploadFile.value = null;
     versionUploadFileList.value = [];
@@ -246,10 +247,15 @@ const canManageAcl = computed(() => canGrantAcl.value || canDenyAcl.value);
 const shares = ref([]);
 const denials = ref([]);
 const showDeny = ref(false);
-const aclPicker = ref({
-  company_label: "公司",
-  departments: [],
-  users: []});
+function emptyAclPicker() {
+  return {
+    company_label: t("documents.detail.companyDefault"),
+    departments: [],
+    users: [],
+  };
+}
+
+const aclPicker = ref(emptyAclPicker());
 const aclCandidates = computed(() => aclPicker.value.users || []);
 const aclDepartments = computed(() => aclPicker.value.departments || []);
 const denyUserId = ref(null);
@@ -310,18 +316,18 @@ function syncAccessModeDefault() {
 const currentScopeLabel = computed(() => {
   const s = doc.value?.scope || "personal";
   if (ORG_SCOPES.includes(s)) {
-    const tier = SCOPE_LABELS[s] || s;
+    const tier = scopeLabel(s) || s;
     const deptName =
       doc.value?.dept_name ||
       aclDepartments.value.find((x) => x.id === doc.value?.dept_id)?.name;
     return deptName ? `${tier} · ${deptName}` : tier;
   }
-  return SCOPE_LABELS[s] || s;
+  return scopeLabel(s) || s;
 });
 
 const versionUploadFileLabel = computed(() => {
   const name = versionUploadFile.value?.name;
-  if (!name) return "选择文件";
+  if (!name) return t("common.fileDrop.selectFile");
   return name.length > 28 ? `${name.slice(0, 25)}…` : name;
 });
 
@@ -329,11 +335,23 @@ const supportsKbFolder = computed(() =>
   ["company", "department", "team", "personal"].includes(doc.value?.scope)
 );
 
-const sharePermissionActions = [
-  { level: "visible", label: "可见", desc: "下载、预览" },
-  { level: "query", label: "可查", desc: "问答、检索" },
-  { level: "modify", label: "可修改", desc: "上传、分享、重建索引、删除" },
-];
+const sharePermissionActions = computed(() => [
+  {
+    level: "visible",
+    label: docLevelLabel("visible"),
+    desc: t("documents.detail.visibleDesc"),
+  },
+  {
+    level: "query",
+    label: docLevelLabel("query"),
+    desc: t("documents.detail.queryDesc"),
+  },
+  {
+    level: "modify",
+    label: docLevelLabel("modify"),
+    desc: t("documents.detail.modifyDesc"),
+  },
+]);
 
 const userNameById = computed(() => {
   const m = {};
@@ -360,7 +378,7 @@ async function loadAclCandidates() {
   try {
     aclPicker.value = await fetchDocumentAclCandidates(docId);
   } catch {
-    aclPicker.value = { company_label: "公司", departments: [], users: [] };
+    aclPicker.value = emptyAclPicker();
   }
 }
 
@@ -387,7 +405,7 @@ async function saveTitle() {
   if (!doc.value || !canEditDoc.value) return;
   const next = editTitle.value.trim();
   if (!next) {
-    ui.warning("标题不能为空");
+    ui.warning(t("documents.detail.titleEmpty"));
     editTitle.value = doc.value.title;
     return;
   }
@@ -400,7 +418,7 @@ async function saveTitle() {
     doc.value = await updateDocument(docId, { title: next });
     editTitle.value = doc.value.title;
     titleEditing.value = false;
-    ui.success("标题已保存");
+    ui.success(t("documents.detail.titleSaved"));
   } catch (e) {
     editTitle.value = doc.value.title;
     ui.error(e.message);
@@ -463,7 +481,7 @@ async function loadAclData() {
       );
     } else {
       shares.value = [];
-      aclPicker.value = { company_label: "公司", departments: [], users: [] };
+      aclPicker.value = emptyAclPicker();
     }
     if (canDenyAcl.value) {
       tasks.push(
@@ -532,7 +550,7 @@ async function downloadVersion(v) {
     const fallback =
       v.file_name || `${doc.value?.title || "document"}.pdf`;
     await downloadDocumentFile(docId, fallback, v.id);
-    ui.success("已开始下载");
+    ui.success(t("documents.detail.downloadStarted"));
   } catch (e) {
     ui.error(e.message);
   }
@@ -554,7 +572,7 @@ async function onStatusChange(enabled) {
   const next = enabled ? "active" : "disabled";
   try {
     doc.value = await patchDocumentStatus(docId, next);
-    ui.success(enabled ? "已启用" : "已关闭");
+    ui.success(enabled ? t("documents.detail.statusEnabled") : t("documents.detail.statusDisabled"));
   } catch (e) {
     ui.error(e.message);
     await load({ notifyOnError: false });
@@ -565,19 +583,19 @@ function confirmDeleteVersion(v) {
   const label = `v${v.version_no}`;
   const hint =
     displayVersions.value.length <= 1
-      ? "这是最后一个版本，删除后整份文档及知识库索引将被永久删除。"
-      : "仅删除该版本文件，其他版本保留。";
+      ? t("documents.detail.deleteLastVersionHint")
+      : t("documents.detail.deleteVersionHint");
   ui.confirmDelete({
-    title: `删除版本 ${label}`,
-    content: `${hint} 确定继续？`,
+    title: t("documents.detail.deleteVersionTitle", { label }),
+    content: `${hint} ${t("documents.detail.deleteConfirmContinue")}`,
     onPositive: async () => {
       const res = await deleteDocumentVersion(docId, v.id);
       if (res.document_deleted) {
-        ui.success(res.message || "文档已删除");
+        ui.success(res.message || t("documents.detail.docDeleted"));
         goBack();
         return;
       }
-      ui.success(res.message || "版本已删除");
+      ui.success(res.message || t("documents.detail.versionDeleted"));
       await load({ notifyOnError: false });
     },
   });
@@ -586,19 +604,19 @@ function confirmDeleteVersion(v) {
 async function publishToLibrary() {
   if (ORG_SCOPES.includes(publishTarget.value)) {
     if (!publishDeptIds.value.length) {
-      ui.warning("请选择要发布到的组织单元");
+      ui.warning(t("documents.detail.selectPublishOrg"));
       return;
     }
     if (publishTarget.value === "team" && !showTeamPublish.value) {
-      ui.warning("无权发布到小组级文库");
+      ui.warning(t("documents.detail.noTeamPublish"));
       return;
     }
     if (publishTarget.value === "department" && !canPublishDept.value) {
-      ui.warning("无权发布到部门级文库");
+      ui.warning(t("documents.detail.noDeptPublish"));
       return;
     }
   } else if (!canPublishCompany.value) {
-    ui.warning("无权发布到公司级文库");
+    ui.warning(t("documents.detail.noCompanyPublish"));
     return;
   }
   publishLoading.value = true;
@@ -608,7 +626,7 @@ async function publishToLibrary() {
       payload.dept_id = publishDeptIds.value[0];
     }
     doc.value = await updateDocument(docId, payload);
-    ui.success("已发布到文库，可在文档库对应分级中查看");
+    ui.success(t("documents.detail.publishedToLibrary"));
     await load({ notifyOnError: false });
   } catch (e) {
     ui.error(e.message);
@@ -619,7 +637,7 @@ async function publishToLibrary() {
 
 async function grantShareLevel(level) {
   if (!shareSelectedKeys.value.length) {
-    ui.warning("请先勾选要分享的用户");
+    ui.warning(t("documents.detail.selectShareUsers"));
     return;
   }
   shareGranting.value = true;
@@ -629,7 +647,10 @@ async function grantShareLevel(level) {
       level});
     const label = docLevelLabel(level) || level;
     ui.success(
-      `已为 ${shareSelectedKeys.value.length} 人授予「${label}」权限`
+      t("documents.detail.grantedToUsers", {
+        count: shareSelectedKeys.value.length,
+        label,
+      })
     );
   } catch (e) {
     ui.error(e.message);
@@ -651,7 +672,7 @@ async function openDenyModal() {
 async function removeShare(userId) {
   try {
     await revokeDocumentShare(docId, userId);
-    ui.success("已取消该用户的分享");
+    ui.success(t("documents.detail.shareRevoked"));
     shares.value = await fetchDocumentShares(docId);
   } catch (e) {
     ui.error(e.message);
@@ -660,14 +681,14 @@ async function removeShare(userId) {
 
 async function submitDeny() {
   if (!denyUserId.value) {
-    ui.warning("请选择要禁止访问的用户");
+    ui.warning(t("documents.detail.selectDenyUser"));
     return;
   }
   try {
     await denyDocumentAccess(docId, {
       user_id: denyUserId.value,
       reason: denyReason.value});
-    ui.success("已禁止该用户访问（部门/公司默认可见规则不再生效）");
+    ui.success(t("documents.detail.denySuccess"));
     showDeny.value = false;
     denyUserId.value = null;
     denyReason.value = "";
@@ -680,7 +701,7 @@ async function submitDeny() {
 async function removeDenial(uid) {
   try {
     await liftDocumentDenial(docId, uid);
-    ui.success("已恢复访问");
+    ui.success(t("documents.detail.accessRestored"));
     denials.value = await fetchDocumentDenials(docId);
   } catch (e) {
     ui.error(e.message);
@@ -715,7 +736,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <n-card v-if="loading && !doc" title="文档详情" :loading="true" />
+  <n-card v-if="loading && !doc" :title="t('documents.detail.title')" :loading="true" />
   <n-space v-else-if="doc" vertical :size="16">
     <n-card :loading="loading">
       <template #header>
@@ -725,7 +746,7 @@ onMounted(() => {
               ref="titleInputRef"
               v-model:value="editTitle"
               class="doc-title-input"
-              placeholder="文档标题"
+              :placeholder="t('documents.detail.docTitlePlaceholder')"
               maxlength="512"
               :disabled="titleSaving"
               @keyup.enter="saveTitle"
@@ -737,10 +758,10 @@ onMounted(() => {
               :disabled="titleSaving"
               @click="saveTitle"
             >
-              保存
+              {{ t("common.save") }}
             </n-button>
             <n-button size="small" :disabled="titleSaving" @click="cancelEditTitle">
-              取消
+              {{ t("common.cancel") }}
             </n-button>
           </template>
           <template v-else>
@@ -752,58 +773,62 @@ onMounted(() => {
               size="small"
               @click="startEditTitle"
             >
-              修改
+              {{ t("common.edit") }}
             </n-button>
           </template>
         </n-space>
       </template>
       <n-descriptions :column="2" label-placement="left">
         <n-descriptions-item label="ID">{{ doc.id }}</n-descriptions-item>
-        <n-descriptions-item label="文档状态">
+        <n-descriptions-item :label="t('documents.detail.docStatus')">
           <n-space align="center" :size="8">
             <n-switch
               :value="statusEnabled"
               :disabled="!canManageDoc"
               @update:value="onStatusChange"
             />
-            <span>{{ statusEnabled ? "启用" : "关闭" }}</span>
+            <span>{{
+              statusEnabled
+                ? t("documents.detail.statusEnabled")
+                : t("documents.detail.statusDisabled")
+            }}</span>
           </n-space>
         </n-descriptions-item>
-        <n-descriptions-item label="分级">
-          <n-tag size="small">{{ SCOPE_LABELS[doc.scope] || doc.scope }}</n-tag>
+        <n-descriptions-item :label="t('documents.columns.scope')">
+          <n-tag size="small">{{ scopeLabel(doc.scope) || doc.scope }}</n-tag>
         </n-descriptions-item>
-        <n-descriptions-item v-if="supportsKbFolder" label="所在文件夹">
-          {{ doc.folder_name || "未分类" }}
+        <n-descriptions-item v-if="supportsKbFolder" :label="t('documents.detail.folder')">
+          {{ doc.folder_name || t("documents.uncategorized") }}
         </n-descriptions-item>
         <n-descriptions-item
           v-if="ORG_SCOPES.includes(doc.scope) && (doc.dept_name || doc.dept_id)"
-          label="所属组织"
+          :label="t('documents.detail.org')"
         >
           {{ doc.dept_name || "—" }}
         </n-descriptions-item>
-        <n-descriptions-item label="上传人">{{ ownerLabel }}</n-descriptions-item>
-        <n-descriptions-item label="上传时间">{{ uploadedAtLabel }}</n-descriptions-item>
-        <n-descriptions-item label="说明" :span="2">{{ doc.description || "—" }}</n-descriptions-item>
-        <n-descriptions-item label="创建时间">
+        <n-descriptions-item :label="t('documents.columns.owner')">{{ ownerLabel }}</n-descriptions-item>
+        <n-descriptions-item :label="t('documents.detail.uploadedAt')">{{ uploadedAtLabel }}</n-descriptions-item>
+        <n-descriptions-item :label="t('documents.detail.description')" :span="2">{{ doc.description || "—" }}</n-descriptions-item>
+        <n-descriptions-item :label="t('documents.detail.createdAt')">
           {{ new Date(doc.created_at).toLocaleString() }}
         </n-descriptions-item>
-        <n-descriptions-item label="更新时间">
+        <n-descriptions-item :label="t('documents.columns.updatedAt')">
           {{ new Date(doc.updated_at).toLocaleString() }}
         </n-descriptions-item>
       </n-descriptions>
     </n-card>
 
-    <n-card title="版本历史">
+    <n-card :title="t('documents.detail.versionHistory')">
       <template #header-extra>
         <n-space :size="4" align="center">
           <IconAction
             v-if="canCompareVersions"
-            label="对比"
+            :label="t('documents.detail.compare')"
             :icon="GitCompareOutline"
             @click="openVersionCompare"
           />
           <IconAction
-            label="刷新"
+            :label="t('common.refresh')"
             :icon="RefreshOutline"
             :disabled="versionRefreshing || loading"
             @click="refreshVersionHistory"
@@ -813,13 +838,13 @@ onMounted(() => {
       <n-table :single-line="false">
         <thead>
           <tr>
-            <th>版本</th>
-            <th>文件名</th>
-            <th>版本说明</th>
-            <th>大小</th>
-            <th>时间</th>
-            <th>索引</th>
-            <th v-if="showVersionActions">操作</th>
+            <th>{{ t("documents.detail.version") }}</th>
+            <th>{{ t("documents.detail.fileName") }}</th>
+            <th>{{ t("documents.detail.versionDesc") }}</th>
+            <th>{{ t("documents.detail.size") }}</th>
+            <th>{{ t("documents.detail.time") }}</th>
+            <th>{{ t("documents.detail.index") }}</th>
+            <th v-if="showVersionActions">{{ t("common.actions") }}</th>
           </tr>
         </thead>
         <tbody>
@@ -827,7 +852,7 @@ onMounted(() => {
             <td>
               <n-space :size="6" align="center">
                 <span>v{{ v.version_no }}</span>
-                <n-tag v-if="v.is_current" size="small" type="info">当前</n-tag>
+                <n-tag v-if="v.is_current" size="small" type="info">{{ t("documents.detail.current") }}</n-tag>
               </n-space>
             </td>
             <td>{{ versionFileLabel(v) }}</td>
@@ -850,7 +875,7 @@ onMounted(() => {
                 <IconAction
                   v-if="v.uploaded && canReindexDoc"
                   variant="table"
-                  label="重新索引"
+                  :label="t('documents.detail.reindex')"
                   :icon="LayersOutline"
                   :disabled="indexPolling || reparsing"
                   @click="openReindexModal(v)"
@@ -858,14 +883,14 @@ onMounted(() => {
                 <IconAction
                   v-if="v.uploaded && canViewDoc"
                   variant="table"
-                  label="预览"
+                  :label="t('documents.detail.preview')"
                   :icon="EyeOutline"
                   @click="openVersionPreview(v)"
                 />
                 <IconAction
                   v-if="v.uploaded && canViewDoc"
                   variant="table"
-                  label="下载"
+                  :label="t('documents.detail.download')"
                   :icon="DownloadOutline"
                   type="primary"
                   @click="downloadVersion(v)"
@@ -873,7 +898,7 @@ onMounted(() => {
                 <IconAction
                   v-if="canDeleteDoc"
                   variant="table"
-                  label="删除"
+                  :label="t('common.delete')"
                   :icon="TrashOutline"
                   type="error"
                   @click="confirmDeleteVersion(v)"
@@ -889,7 +914,7 @@ onMounted(() => {
           v-model:value="versionChangeDesc"
           class="version-upload-bar__desc"
           size="small"
-          placeholder="版本说明（可选）"
+          :placeholder="t('documents.detail.versionDescPlaceholder')"
           clearable
         />
         <n-upload
@@ -910,33 +935,33 @@ onMounted(() => {
           :disabled="!versionUploadFile || versionUploading"
           @click="submitVersionUpload"
         >
-          上传新版本
+          {{ t("documents.detail.uploadNewVersion") }}
         </n-button>
       </div>
     </n-card>
 
-    <n-card v-if="showAccessCard" title="发布与分享" :loading="aclLoading">
+    <n-card v-if="showAccessCard" :title="t('documents.detail.publishAndShare')" :loading="aclLoading">
       <div class="access-current-loc">
-        <span class="access-current-loc__label">当前位置</span>
+        <span class="access-current-loc__label">{{ t("documents.detail.currentLocation") }}</span>
         <n-tag type="info" size="small" :bordered="false">{{ currentScopeLabel }}</n-tag>
       </div>
 
       <n-radio-group v-model:value="accessMode" class="access-mode-group">
         <n-space>
-          <n-radio v-if="showPublishCard" value="publish">发布到文库</n-radio>
-          <n-radio v-if="canGrantAcl" value="share">分享给个人</n-radio>
+          <n-radio v-if="showPublishCard" value="publish">{{ t("documents.detail.publishToLibrary") }}</n-radio>
+          <n-radio v-if="canGrantAcl" value="share">{{ t("documents.detail.shareToIndividuals") }}</n-radio>
         </n-space>
       </n-radio-group>
 
       <template v-if="accessMode === 'publish' && showPublishCard">
         <p class="access-card-hint">
-          可选择小组级 / 部门级 / 公司级发布位置；发布后按分级默认可见，不会进入「分享」Tab。
+          {{ t("documents.detail.publishHint") }}
         </p>
         <n-radio-group v-model:value="publishTarget" class="access-publish-target">
           <n-space>
-            <n-radio v-if="canPublishCompany" value="company">公司级</n-radio>
-            <n-radio v-if="canPublishDept" value="department">部门级</n-radio>
-            <n-radio v-if="showTeamPublish" value="team">小组级</n-radio>
+            <n-radio v-if="canPublishCompany" value="company">{{ t("scope.company") }}</n-radio>
+            <n-radio v-if="canPublishDept" value="department">{{ t("scope.department") }}</n-radio>
+            <n-radio v-if="showTeamPublish" value="team">{{ t("scope.team") }}</n-radio>
           </n-space>
         </n-radio-group>
         <OrgDeptPickerTree
@@ -952,14 +977,13 @@ onMounted(() => {
           :disabled="ORG_SCOPES.includes(publishTarget) && !publishDeptIds.length"
           @click="publishToLibrary"
         >
-          {{ doc.scope === "personal" ? "发布" : "更新发布位置" }}
+          {{ doc.scope === "personal" ? t("documents.detail.publish") : t("documents.detail.updatePublishLocation") }}
         </n-button>
       </template>
 
       <template v-else-if="accessMode === 'share' && canGrantAcl">
         <p class="access-card-hint">
-          按用户授予可见 / 可查 / 可修改权限；被分享者可在「分享」中查看。
-          勾选部门将展开为该部门全部用户；也可单独勾选用户。
+          {{ t("documents.detail.shareHint") }}
         </p>
         <OrgUserPickerTree
           v-if="aclCandidates.length || aclDepartments.length"
@@ -983,66 +1007,66 @@ onMounted(() => {
         </n-space>
         <n-divider v-if="shares.length" style="margin: 16px 0" />
         <p v-if="shares.length" style="margin: 0 0 8px; font-weight: 500; font-size: 13px">
-          当前已授权
+          {{ t("documents.detail.currentAuthorized") }}
         </p>
         <n-table v-if="shares.length" :single-line="false">
           <thead>
             <tr>
-              <th>用户</th>
-              <th>权限</th>
-              <th>操作</th>
+              <th>{{ t("documents.detail.user") }}</th>
+              <th>{{ t("documents.columns.permission") }}</th>
+              <th>{{ t("common.actions") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="s in shares" :key="s.user_id">
-              <td>{{ s.user_name || userNameById[s.user_id] || "未知用户" }}</td>
+              <td>{{ s.user_name || userNameById[s.user_id] || t("documents.unknownUser") }}</td>
               <td>{{ docLevelLabel(s.level) || s.level }}</td>
               <td>
                 <n-button text type="error" size="small" @click="removeShare(s.user_id)">
-                  取消分享
+                  {{ t("documents.detail.revokeShare") }}
                 </n-button>
               </td>
             </tr>
           </tbody>
         </n-table>
-        <span v-else>暂无个人分享。</span>
+        <span v-else>{{ t("documents.detail.noPersonalShares") }}</span>
       </template>
     </n-card>
 
-    <n-card v-if="canDenyAcl" title="访问限制" :loading="aclLoading">
+    <n-card v-if="canDenyAcl" :title="t('documents.detail.accessRestrictions')" :loading="aclLoading">
       <p style="margin: 0 0 12px; color: #666; font-size: 13px">
-        屏蔽在部门/公司分级下本应可见的成员；仅文档创建人或系统管理员可操作。
+        {{ t("documents.detail.denyHint") }}
       </p>
       <template #header-extra>
-        <n-button size="small" @click="openDenyModal">禁止用户访问</n-button>
+        <n-button size="small" @click="openDenyModal">{{ t("documents.detail.denyUserAccess") }}</n-button>
       </template>
       <n-table v-if="denials.length" :single-line="false">
         <thead>
           <tr>
-            <th>用户</th>
-            <th>原因</th>
-            <th>操作</th>
+            <th>{{ t("documents.detail.user") }}</th>
+            <th>{{ t("documents.detail.reason") }}</th>
+            <th>{{ t("common.actions") }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="d in denials" :key="d.id">
-            <td>{{ d.user_name || userNameById[d.user_id] || "未知用户" }}</td>
+            <td>{{ d.user_name || userNameById[d.user_id] || t("documents.unknownUser") }}</td>
             <td>{{ d.reason || "—" }}</td>
             <td>
               <n-button text type="primary" size="small" @click="removeDenial(d.user_id)">
-                恢复
+                {{ t("common.restore") }}
               </n-button>
             </td>
           </tr>
         </tbody>
       </n-table>
-      <span v-else>未设置禁止访问名单。</span>
+      <span v-else>{{ t("documents.detail.noDenials") }}</span>
     </n-card>
   </n-space>
 
-  <n-modal v-model:show="showDeny" preset="card" title="禁止用户访问" style="width: 520px">
+  <n-modal v-model:show="showDeny" preset="card" :title="t('documents.detail.denyUserAccess')" style="width: 520px">
     <n-form>
-      <n-form-item label="用户">
+      <n-form-item :label="t('documents.detail.user')">
         <OrgUserPickerTree
           v-if="aclCandidates.length || aclDepartments.length"
           mode="single"
@@ -1052,14 +1076,14 @@ onMounted(() => {
           :max-height="360"
         />
       </n-form-item>
-      <n-form-item label="原因">
-        <n-input v-model:value="denyReason" type="textarea" placeholder="可选" />
+      <n-form-item :label="t('documents.detail.reason')">
+        <n-input v-model:value="denyReason" type="textarea" :placeholder="t('common.optional')" />
       </n-form-item>
     </n-form>
     <template #footer>
       <n-space justify="end">
-        <n-button @click="showDeny = false">取消</n-button>
-        <n-button type="warning" @click="submitDeny">确定</n-button>
+        <n-button @click="showDeny = false">{{ t("common.cancel") }}</n-button>
+        <n-button type="warning" @click="submitDeny">{{ t("common.confirm") }}</n-button>
       </n-space>
     </template>
   </n-modal>
@@ -1068,13 +1092,14 @@ onMounted(() => {
     v-model:show="showVersionPreview"
     :document-id="docId"
     :version="previewVersion"
+    pdf-fit-mode="width"
     @download="onPreviewDownload"
   />
 
   <AdminFormModal
     v-model:show="reindexModalShow"
-    title="重新索引"
-    subtitle="选择识别方式与分块策略后重新建立索引"
+    :title="t('documents.detail.reindexTitle')"
+    :subtitle="t('documents.detail.reindexSubtitle')"
     width="min(480px, 92vw)"
   >
     <n-form label-placement="top" :show-require-mark="false">
@@ -1085,43 +1110,42 @@ onMounted(() => {
         class="reindex-pageindex-hint"
         :title="pageindexBlockReason"
       />
-      <n-form-item label="分块方法">
+      <n-form-item :label="t('documents.detail.chunkMethod')">
         <n-select
           v-model:value="parserId"
           :options="chunkMethodOptions"
           :render-label="renderIndexedSelectLabel"
-          :render-option="renderIndexedSelectOption"
+          :node-props="reindexSelectNodeProps"
+          :menu-props="reindexSelectMenuProps"
+          :placement="reindexSelectPlacement"
           to="body"
           consistent-menu-width
           :disabled="indexPolling || reparsing"
         />
       </n-form-item>
-      <n-form-item label="版面识别（OCR）">
+      <n-form-item :label="t('documents.detail.layoutOcr')">
         <n-select
           v-model:value="layoutRecognize"
           :options="layoutOptions"
           :render-label="renderIndexedSelectLabel"
-          :render-option="renderIndexedSelectOption"
+          :node-props="reindexSelectNodeProps"
+          :menu-props="reindexSelectMenuProps"
+          :placement="reindexSelectPlacement"
           to="body"
           consistent-menu-width
           :disabled="indexPolling || reparsing"
         />
       </n-form-item>
-      <n-form-item :show-label="false">
-        <n-checkbox v-model:checked="reindexResync" :disabled="indexPolling || reparsing">
-          重新上传原文件（可修复引用截图缺失）
-        </n-checkbox>
-      </n-form-item>
     </n-form>
     <template #footer>
       <n-space justify="end">
-        <n-button @click="reindexModalShow = false">取消</n-button>
+        <n-button @click="reindexModalShow = false">{{ t("common.cancel") }}</n-button>
         <n-button
           type="primary"
           :loading="reparsing || indexPolling"
           @click="submitReindex"
         >
-          开始索引
+          {{ t("documents.detail.startIndex") }}
         </n-button>
       </n-space>
     </template>

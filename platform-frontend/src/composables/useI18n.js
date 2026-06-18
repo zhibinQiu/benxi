@@ -27,6 +27,10 @@ export function useI18n() {
     );
   }
 
+  function tm(key) {
+    return resolvePath(messages[locale.value], key);
+  }
+
   function routeTitle(routeName, fallback = "") {
     if (!routeName) return fallback;
     const key = `routes.${routeName}`;
@@ -61,5 +65,50 @@ export function useI18n() {
     return typeof raw === "string" ? raw : fallback;
   }
 
-  return { locale, localeLabel, t, routeTitle, featureLabel, scopeLabel, docStatusLabel, docLevelLabel };
+  function featureDescription(routeName, fallback = "") {
+    if (!routeName) return fallback;
+    const key = `featureDescriptions.${routeName}`;
+    const raw = resolvePath(messages[locale.value], key);
+    return typeof raw === "string" ? raw : fallback;
+  }
+
+  function chatScopeTitle(scope, fallback = "") {
+    if (!scope) return fallback;
+    const key = `chatScopes.${scope}.title`;
+    const raw = resolvePath(messages[locale.value], key);
+    return typeof raw === "string" ? raw : fallback;
+  }
+
+  const FEATURE_TAG_ALIASES = {
+    可用: "available",
+    无权限: "noAccess",
+    即将推出: "comingSoon",
+    待集成: "pendingIntegration",
+  };
+
+  function featureTagLabel(tag, fallback = "") {
+    const rawTag = String(tag || "").trim();
+    if (!rawTag) return fallback;
+    const alias = FEATURE_TAG_ALIASES[rawTag];
+    if (alias) {
+      const localized = t(`systemFunctionsPage.tags.${alias}`);
+      if (localized !== `systemFunctionsPage.tags.${alias}`) return localized;
+    }
+    return rawTag;
+  }
+
+  return {
+    locale,
+    localeLabel,
+    t,
+    tm,
+    routeTitle,
+    featureLabel,
+    featureDescription,
+    chatScopeTitle,
+    featureTagLabel,
+    scopeLabel,
+    docStatusLabel,
+    docLevelLabel,
+  };
 }

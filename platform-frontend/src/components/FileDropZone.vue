@@ -2,6 +2,9 @@
 import { DocumentTextOutline, CloudUploadOutline, CheckmarkCircleOutline } from "@vicons/ionicons5";
 import { NIcon, NText, NButton } from "naive-ui";
 import { computed, ref } from "vue";
+import { useI18n } from "../composables/useI18n";
+
+const { t } = useI18n();
 
 const props = defineProps({
   accept: { type: String, default: "*" },
@@ -64,7 +67,7 @@ const iconComponent = computed(() => {
         <component :is="iconComponent" />
       </n-icon>
     </div>
-    <n-text strong class="drop-title">{{ fileName ? "已选择文件" : title }}</n-text>
+    <n-text strong class="drop-title">{{ fileName ? t("common.fileDrop.selectedFile") : title }}</n-text>
     <n-text depth="3" class="drop-hint">{{ fileName ? fileName : hint }}</n-text>
     <n-button
       v-if="!disabled"
@@ -74,7 +77,7 @@ const iconComponent = computed(() => {
       class="drop-btn"
       @click.stop="pick"
     >
-      {{ fileName ? "更换文件" : "选择文件" }}
+      {{ fileName ? t("common.fileDrop.replaceFile") : t("common.fileDrop.selectFile") }}
     </n-button>
   </div>
 </template>

@@ -1,7 +1,11 @@
+import logging
+
 from celery import Celery
+from celery.signals import worker_ready
 
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 celery_app = Celery(
@@ -29,3 +33,18 @@ celery_app.conf.update(
     task_soft_time_limit=3600,
     task_time_limit=3900,
 )
+
+
+@worker_ready.connect
+def _recover_document_index_jobs_on_worker_start(**_kwargs) -> None:
+    """Worker 重启后恢复中断的文档索引任务（与 API 启动恢复互补）。"""
+    try:
+        from app.services.knowledge_sync_job_service import (
+            recover_interrupted_document_index_jobs,
+        )
+
+        recovered = recover_interrupted_document_index_jobs()
+        if recovered:
+            logger.info("Worker 启动已恢复 %s 个文档索引/解析续跑任务", recovered)
+    except Exception:
+        logger.exception("Worker 启动恢复文档索引任务失败")

@@ -123,7 +123,7 @@ def run_catalog_reconcile_for_user(user_id: uuid.UUID) -> None:
             db,
             user,
             sync_limit=settings.ragflow_sync_on_login_limit,
-            sync_documents=True,
+            sync_documents=settings.ragflow_sync_on_login,
         )
         try:
             purge_stale_knowflow_links(db)

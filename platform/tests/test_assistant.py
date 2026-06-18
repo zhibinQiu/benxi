@@ -18,6 +18,8 @@ def test_build_platform_knowledge_contains_nav():
         assert "文档库" in text
         assert "后台任务" in text
         assert "功能列表" in text
+        assert "文档权限" in text
+        assert "小析" in text
     finally:
         db.close()
 

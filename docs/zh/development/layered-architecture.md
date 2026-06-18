@@ -136,7 +136,7 @@ platform-frontend/src/
 | `composables/` | 可复用逻辑 + 少量 UI 副作用 |
 | `views/` | 路由页，组合 composable |
 
-**约定**：同一用户操作只弹**一条**结果提示；统一使用 `usePlatformUi`（`useUiMessage` 已废弃）；页面内 `n-alert` 与 `message` 不重复报错（见 `utils/uiMessage.js`）。
+**约定**：同一用户操作只弹**一条**结果提示；统一使用 `usePlatformUi`；页面内 `n-alert` 与 `message` 不重复报错（见 `utils/uiMessage.js`）。
 
 ---
 
@@ -151,6 +151,7 @@ platform-frontend/src/
 | P2 | `auth`/`users` 经 `knowledge` 网关 | 已完成 |
 | P2 | 删除遗留 `smart_data_query.py`（v1） | 已完成 |
 | P2 | 知识 parser / 错误文案 / KnowFlow 探活收敛 | 已完成 |
+| P2 | LLM JSON 解析与文本截断收敛至 `app/core/llm_parse`、`text_utils` | 已完成 |
 | P3 | 前端路由与 `/system/features` 插件 id 对齐表 | 待办 |
 
 ---
@@ -160,7 +161,7 @@ platform-frontend/src/
 | 模式 | 落点 |
 |------|------|
 | **Facade** | `KnowledgeGateway` |
-| **规则集中** | `knowledge_parser_service`（parser / 栈校验） |
+| **规则集中** | `knowledge_parser_service`（parser / 栈校验）；`llm_parse` / `text_utils`（LLM 输出与截断） |
 | **Strategy** | `KnowflowClient` / `LocalKnowflowClient` |
 | **Plugin Registry** | `features/registry.py` |
 | **Repository**（轻量） | `services/*` + SQLAlchemy，未单独抽象类 |

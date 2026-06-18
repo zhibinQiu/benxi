@@ -9,12 +9,16 @@ from unittest.mock import MagicMock, patch
 from sqlalchemy import select
 
 from app.core.content_checksum import compute_md5_hex, normalize_checksum
+from app.core.document_scope import SCOPE_COMPANY
 from app.database import SessionLocal
 from app.models.document import Document, DocumentVersion
 from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
 from app.services.document_checksum_service import ensure_version_checksum
 from app.services.ragflow_sync_service import sync_document_to_knowflow
-from app.services.ragflow_version_link_service import find_reusable_knowflow_version_link
+from app.services.ragflow_version_link_service import (
+    find_existing_knowflow_version_link_by_content,
+    find_reusable_knowflow_version_link,
+)
 
 
 def test_compute_and_normalize_md5():
@@ -94,6 +98,86 @@ def test_find_reusable_knowflow_version_link(client, admin_token):
         )
         assert hit is not None
         assert hit.ragflow_document_id == "rag-existing-1"
+
+
+def test_find_inflight_knowflow_version_link_by_content(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    content = b"%PDF-1.4 inflight dedup"
+    digest = compute_md5_hex(content)
+
+    r1 = client.post(
+        "/api/v1/documents",
+        headers=headers,
+        json={"title": "inflight-a", "scope": "personal"},
+    )
+    r2 = client.post(
+        "/api/v1/documents",
+        headers=headers,
+        json={"title": "inflight-b", "scope": "personal"},
+    )
+    doc_a = r1.json()["data"]["id"]
+    doc_b = r2.json()["data"]["id"]
+
+    with SessionLocal() as db:
+        owner_id = db.scalar(
+            select(Document.owner_id).where(Document.id == uuid.UUID(doc_a))
+        )
+        ver_a = DocumentVersion(
+            document_id=uuid.UUID(doc_a),
+            version_no=1,
+            file_key=f"docs/{doc_a}/v1/report.pdf",
+            file_name="report.pdf",
+            file_size=len(content),
+            mime_type="application/pdf",
+            checksum=digest,
+            created_by=owner_id,
+        )
+        ver_b = DocumentVersion(
+            document_id=uuid.UUID(doc_b),
+            version_no=1,
+            file_key=f"docs/{doc_b}/v1/report.pdf",
+            file_name="report.pdf",
+            file_size=len(content),
+            mime_type="application/pdf",
+            checksum=digest,
+            created_by=owner_id,
+        )
+        db.add(ver_a)
+        db.add(ver_b)
+        db.flush()
+        db.add(
+            RagflowDocumentVersionLink(
+                platform_document_id=ver_a.document_id,
+                platform_version_id=ver_a.id,
+                version_no=1,
+                platform_user_id=owner_id,
+                ragflow_document_id="rag-inflight-1",
+                dataset_id="ds-personal-1",
+                file_name="report.pdf",
+                index_completed_at=None,
+            )
+        )
+        db.commit()
+        ver_b_id = ver_b.id
+
+    with SessionLocal() as db:
+        assert find_reusable_knowflow_version_link(
+            db,
+            dataset_id="ds-personal-1",
+            checksum=digest,
+            file_size=len(content),
+            exclude_version_id=ver_b_id,
+        ) is None
+        hit = find_existing_knowflow_version_link_by_content(
+            db,
+            dataset_id="ds-personal-1",
+            checksum=digest,
+            file_size=len(content),
+            exclude_version_id=ver_b_id,
+            require_indexed=False,
+        )
+        assert hit is not None
+        assert hit.ragflow_document_id == "rag-inflight-1"
 
 
 def test_find_reusable_knowflow_version_link_ignores_file_name(client, admin_token):
@@ -314,3 +398,79 @@ def test_ensure_version_checksum_reads_object_store():
     assert digest == compute_md5_hex(b"test")
     assert version.checksum == digest
     db.flush.assert_called_once()
+
+
+def test_find_reusable_cross_company_dataset():
+    """公司级文档：同 MD5 不同文件名，跨知识库复用已有索引。"""
+    content = b"%PDF-1.4 cross company dedup"
+    digest = compute_md5_hex(content)
+    owner_id = uuid.uuid4()
+    doc_a_id = uuid.uuid4()
+    doc_b_id = uuid.uuid4()
+    ver_a_id = uuid.uuid4()
+    ver_b_id = uuid.uuid4()
+
+    db = MagicMock()
+    doc_a = Document(
+        id=doc_a_id,
+        title="company-a",
+        scope=SCOPE_COMPANY,
+        owner_id=owner_id,
+        status="active",
+    )
+    doc_b = Document(
+        id=doc_b_id,
+        title="company-b",
+        scope=SCOPE_COMPANY,
+        owner_id=owner_id,
+        status="active",
+    )
+    link_a = RagflowDocumentVersionLink(
+        platform_document_id=doc_a_id,
+        platform_version_id=ver_a_id,
+        version_no=1,
+        platform_user_id=owner_id,
+        ragflow_document_id="rag-company-canonical",
+        dataset_id="ds-company-main",
+        file_name="Q3A.pdf",
+        index_completed_at=datetime.now(timezone.utc),
+    )
+
+    def _scalar(stmt):
+        _ = stmt
+        return None
+
+    def _scalars(stmt):
+        from app.services.ragflow_version_link_service import (
+            find_reusable_knowflow_version_link_for_document as finder,
+        )
+
+        _ = finder
+        return MagicMock(all=lambda: [link_a])
+
+    db.scalar = _scalar
+    db.scalars = _scalars
+    db.get.side_effect = lambda model, pk: {
+        doc_a_id: doc_a,
+        doc_b_id: doc_b,
+    }.get(pk)
+
+    with patch(
+        "app.services.ragflow_version_link_service.find_existing_knowflow_version_link_by_content",
+        return_value=None,
+    ):
+        from app.services.ragflow_version_link_service import (
+            find_reusable_knowflow_version_link_for_document,
+        )
+
+        hit = find_reusable_knowflow_version_link_for_document(
+            db,
+            document=doc_b,
+            target_dataset_id="ds-company-alt",
+            checksum=digest,
+            file_size=len(content),
+            exclude_version_id=ver_b_id,
+            require_indexed=True,
+        )
+    assert hit is not None
+    assert hit.ragflow_document_id == "rag-company-canonical"

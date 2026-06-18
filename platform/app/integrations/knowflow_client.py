@@ -138,6 +138,7 @@ class RagflowKnowflowClient:
                     "platform_user_id": str(self._platform_user_id or ""),
                     "mime_type": mime_type,
                 },
+                skip_auto_parse=True,
             )
             rag_doc_id = doc.get("id") or doc.get("doc_id")
             if not rag_doc_id:

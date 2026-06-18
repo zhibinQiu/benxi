@@ -125,6 +125,96 @@ def test_delete_item_after_ingest(client, admin_token):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert detail.status_code == 404
+    listed = client.get(
+        "/api/v1/subscriptions/items",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert listed.status_code == 200, listed.text
+    assert not any(
+        i["link"] == "https://example.com/news/del-me"
+        for i in listed.json()["data"]["items"]
+    )
+
+
+def test_delete_item_hides_duplicate_link_entries(client, admin_token):
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models.feed_subscription import FeedEntry, FeedSource, FeedSourceSubscription
+    from app.models.org import User
+    from app.services.subscription_service import REF_FEED, make_ref
+
+    parsed = ParsedFeedEntry(
+        title="重复链接",
+        summary="摘要",
+        link="https://example.com/news/dup-link",
+        content_html="<p>正文</p>",
+        entry_key="webkey-dup-a",
+        publish_at=datetime.now(timezone.utc),
+    )
+    with patch(
+        "app.services.subscription_service.fetch_web_article",
+        return_value=parsed,
+    ):
+        ing = client.post(
+            "/api/v1/subscriptions/ingest-url",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"url": "https://example.com/news/dup-link"},
+        )
+    ref = ing.json()["data"]["ref"]
+
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.username == "admin"))
+        assert user is not None
+        source_b = FeedSource(
+            feed_url="https://example.com/rss-dup-test.xml",
+            site_url="https://example.com",
+            name="示例 RSS",
+            kind="rss",
+            category="双碳",
+        )
+        db.add(source_b)
+        db.flush()
+        db.add(FeedSourceSubscription(user_id=user.id, source_id=source_b.id))
+        entry_b = FeedEntry(
+            source_id=source_b.id,
+            title="重复链接 RSS",
+            summary="摘要",
+            link="https://example.com/news/dup-link",
+            content_html="<p>正文</p>",
+            entry_key="webkey-dup-b",
+        )
+        db.add(entry_b)
+        db.commit()
+        ref_b = make_ref(REF_FEED, entry_b.id)
+    finally:
+        db.close()
+
+    listed = client.get(
+        "/api/v1/subscriptions/items",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert listed.json()["data"]["total"] >= 2
+
+    r = client.delete(
+        f"/api/v1/subscriptions/items/{ref}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert r.status_code == 200, r.text
+
+    listed_after = client.get(
+        "/api/v1/subscriptions/items",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    links = [i["link"] for i in listed_after.json()["data"]["items"]]
+    assert "https://example.com/news/dup-link" not in links
+
+    detail_b = client.get(
+        f"/api/v1/subscriptions/items/{ref_b}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert detail_b.status_code == 404
 
 
 def test_delete_item_after_import_keeps_document(client, admin_token):

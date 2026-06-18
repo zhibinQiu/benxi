@@ -15,13 +15,17 @@ import {
   clearChatConversations,
   deleteChatConversation,
   fetchChatConversations } from "../api/client";
-import { CHAT_SCOPES, chatScopeTitle } from "../constants/chatScopes";
+import { CHAT_SCOPES } from "../constants/chatScopes";
+import { useI18n } from "../composables/useI18n.js";
 import { resolveReturnTarget } from "../utils/navigationReturn";
 import { deleteSequentially } from "../utils/batchActions";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { chatScopeTitle, t, locale } = useI18n();
+
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const scope = computed(() => String(route.params.scope || ""));
 const pageTitle = computed(() => chatScopeTitle(scope.value));
@@ -59,7 +63,7 @@ function toggleSelected(id, checked) {
 
 async function loadList() {
   if (!CHAT_SCOPES[scope.value]) {
-    ui.error("不支持的对话类型");
+    ui.error(t("chatHistory.unsupportedScope"));
     router.replace({ name: "ai-home" });
     return;
   }
@@ -68,7 +72,7 @@ async function loadList() {
     items.value = (await fetchChatConversations(scope.value)) || [];
     selectedIds.value = [];
   } catch (e) {
-    ui.error(e.message || "加载历史对话失败");
+    ui.error(e.message || t("chatHistory.loadFailed"));
     items.value = [];
     selectedIds.value = [];
   } finally {
@@ -97,11 +101,14 @@ function openConversation(item) {
 function handleBatchDelete() {
   const rows = items.value.filter((row) => selectedIds.value.includes(row.id));
   if (!rows.length) return;
-  const summary = rows.length === 1 ? "该对话" : `选中的 ${rows.length} 条对话`;
+  const content =
+    rows.length === 1
+      ? t("chatHistory.batchDeleteContentSingle")
+      : t("chatHistory.batchDeleteContentMulti", { count: rows.length });
   ui.confirmDelete({
-    title: "批量删除对话",
-    content: `确定永久删除${summary}？删除后无法恢复。`,
-    positiveText: "永久删除",
+    title: t("chatHistory.batchDeleteTitle"),
+    content,
+    positiveText: t("chatHistory.permanentlyDelete"),
     onPositive: async () => {
       batchDeleting.value = true;
       try {
@@ -112,10 +119,18 @@ function handleBatchDelete() {
         selectedIds.value = [];
         if (failed.length) {
           ui.warning(
-            `已删除 ${deleted} 条，${failed.length} 条失败：${failed[0].message || "未知错误"}`
+            t("chatHistory.batchDeletePartial", {
+              deleted,
+              failed: failed.length,
+              error: failed[0].message || t("chatHistory.unknownError"),
+            })
           );
         } else {
-          ui.success(deleted > 1 ? `已永久删除 ${deleted} 条对话` : "已永久删除该对话");
+          ui.success(
+            deleted > 1
+              ? t("chatHistory.batchDeleteSuccessMulti", { count: deleted })
+              : t("chatHistory.batchDeleteSuccessSingle")
+          );
         }
       } finally {
         batchDeleting.value = false;
@@ -125,9 +140,9 @@ function handleBatchDelete() {
 
 function onClearAll() {
   ui.confirmDelete({
-    title: "清空全部历史对话",
-    content: "将永久删除当前场景下的全部历史对话，且无法恢复。确定继续？",
-    positiveText: "永久删除",
+    title: t("chatHistory.clearAllTitle"),
+    content: t("chatHistory.clearAllContent"),
+    positiveText: t("chatHistory.permanentlyDelete"),
     onPositive: async () => {
       clearing.value = true;
       try {
@@ -135,7 +150,7 @@ function onClearAll() {
         items.value = [];
         selectedIds.value = [];
         const n = res?.deleted ?? 0;
-        ui.success(n > 0 ? `已永久删除 ${n} 条对话` : "已清空");
+        ui.success(n > 0 ? t("chatHistory.clearAllSuccess", { count: n }) : t("chatHistory.cleared"));
       } finally {
         clearing.value = false;
       }
@@ -152,9 +167,9 @@ function formatTime(value) {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
   if (sameDay) {
-    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(dateLocale.value, { hour: "2-digit", minute: "2-digit" });
   }
-  return d.toLocaleString("zh-CN", {
+  return d.toLocaleString(dateLocale.value, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -168,18 +183,18 @@ watch(scope, loadList);
 <template>
   <div class="chat-history-page">
     <header class="chat-history-header">
-      <n-button quaternary circle size="small" aria-label="返回" @click="router.push(backTarget)">
+      <n-button quaternary circle size="small" :aria-label="t('chatHistory.back')" @click="router.push(backTarget)">
         <template #icon>
           <n-icon :component="ArrowBackOutline" />
         </template>
       </n-button>
       <div class="chat-history-header-text">
-        <h1 class="chat-history-title">历史对话</h1>
+        <h1 class="chat-history-title">{{ t("chatHistory.title") }}</h1>
         <n-text depth="3">{{ pageTitle }}</n-text>
       </div>
       <n-space align="center" :size="4" class="chat-history-actions">
         <IconAction
-          label="删除"
+          :label="t('chatHistory.delete')"
           :icon="TrashOutline"
           type="error"
           :disabled="!canBatchDelete"
@@ -187,7 +202,7 @@ watch(scope, loadList);
         />
         <IconAction
           v-if="canClear"
-          label="清空全部"
+          :label="t('chatHistory.clearAll')"
           :icon="TrashOutline"
           type="error"
           @click="onClearAll"
@@ -196,12 +211,12 @@ watch(scope, loadList);
     </header>
 
     <div v-if="selectedCount > 0" class="chat-history-selection-hint">
-      已选 {{ selectedCount }} 项
+      {{ t("common.selectedCount", { count: selectedCount }) }}
     </div>
 
     <n-spin :show="loading">
       <div v-if="!loading && !items.length" class="chat-history-empty">
-        <n-empty description="暂无历史对话" />
+        <n-empty :description="t('chatHistory.empty')" />
       </div>
       <ul v-else class="chat-history-list">
         <li v-for="item in items" :key="item.id" class="chat-history-row">
@@ -216,7 +231,7 @@ watch(scope, loadList);
               <n-icon :size="18" :component="ChatbubblesOutline" />
             </span>
             <span class="chat-history-item-body">
-              <span class="chat-history-item-title">{{ item.title || "未命名对话" }}</span>
+              <span class="chat-history-item-title">{{ item.title || t("chatHistory.unnamedConversation") }}</span>
               <span class="chat-history-item-time">{{ formatTime(item.updated_at) }}</span>
             </span>
           </button>

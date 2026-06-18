@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from html import unescape
 from xml.etree import ElementTree
 
+from app.core.text_sanitize import sanitize_db_text
 from app.integrations.html_markdown import html_to_markdown
 
 
@@ -72,7 +73,7 @@ def _parsed_text_doc(
     warning: str | None = None,
     paragraphs: list[str] | None = None,
 ) -> ParsedDocument:
-    text = (full_text or "").strip()
+    text = sanitize_db_text((full_text or "").strip())
     return ParsedDocument(
         document_id=document_id,
         file_name=file_name,

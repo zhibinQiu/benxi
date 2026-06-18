@@ -507,6 +507,13 @@ def import_article_to_document(
         )
     )
     if existing:
+        from app.services.library_folder_service import (
+            assign_document_to_web_favorites_folder,
+        )
+
+        assign_document_to_web_favorites_folder(
+            db, user, existing.document_id
+        )
         knowflow_synced = False
         if sync_knowflow:
             knowflow_synced = _try_sync_knowflow(db, user, existing.document_id)
@@ -524,6 +531,10 @@ def import_article_to_document(
         f"来源公众号：{detail['source_name']}\n"
         f"原文：{detail['original_url']}"
     )
+    from app.services.library_folder_service import (
+        resolve_web_favorites_folder_id_for_user,
+    )
+
     doc = create_document(
         db,
         user,
@@ -531,6 +542,7 @@ def import_article_to_document(
         description=desc,
         scope=scope,
         dept_id=dept_id,
+        folder_id=resolve_web_favorites_folder_id_for_user(db, user),
     )
 
     from app.integrations.html_document_export import (

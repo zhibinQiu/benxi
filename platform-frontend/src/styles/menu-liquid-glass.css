@@ -3,16 +3,18 @@
 .sider-menu-wrap {
   --sider-menu-glass-fill-active: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.2) 0%,
-    rgba(255, 255, 255, 0.09) 100%
+    color-mix(in srgb, var(--menu-glass-flow-a) 92%, transparent) 0%,
+    var(--menu-glass-bg-active) 42%,
+    var(--menu-glass-bg-active-bottom) 100%
   );
 }
 
 html[data-theme="dark"] .sider-menu-wrap {
   --sider-menu-glass-fill-active: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.06) 100%
+    color-mix(in srgb, var(--menu-glass-flow-a) 88%, transparent) 0%,
+    var(--menu-glass-bg-active) 42%,
+    var(--menu-glass-bg-active-bottom) 100%
   );
 }
 
@@ -24,16 +26,12 @@ html[data-theme="dark"] .sider-menu-wrap {
   --sider-menu-glass-inset-right: 4px;
   --sider-menu-glass-inset-bottom: 1px;
   --sider-menu-glass-inset-left: 0;
-  --menu-glass-hover-opacity: 0.62;
+  --menu-glass-hover-opacity: 0.72;
   --sider-menu-glass-fill-hover: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.06) 100%
-  );
-  --sider-menu-glass-fill-active: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.2) 0%,
-    rgba(255, 255, 255, 0.09) 100%
+    color-mix(in srgb, var(--menu-glass-flow-a) 88%, transparent) 0%,
+    var(--menu-glass-bg) 38%,
+    var(--menu-glass-bg-bottom) 100%
   );
   font-size: 14px;
 }
@@ -41,13 +39,9 @@ html[data-theme="dark"] .sider-menu-wrap {
 html[data-theme="dark"] .sider-menu {
   --sider-menu-glass-fill-hover: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(255, 255, 255, 0.04) 100%
-  );
-  --sider-menu-glass-fill-active: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.06) 100%
+    color-mix(in srgb, var(--menu-glass-flow-a) 84%, transparent) 0%,
+    var(--menu-glass-bg) 38%,
+    var(--menu-glass-bg-bottom) 100%
   );
 }
 
@@ -79,7 +73,9 @@ html[data-theme="dark"] .sider-menu {
   border-radius: var(--platform-radius-sm) !important;
   background-color: transparent !important;
   background-image: var(--sider-menu-glass-fill-hover) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: var(--menu-glass-rim-edge);
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(14px);
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(14px);
   transform: none !important;
   transition: opacity 0.12s ease !important;
 }
@@ -148,7 +144,9 @@ html[data-theme="dark"] .sider-menu {
   border-radius: inherit;
   opacity: 0;
   background: var(--sider-menu-glass-fill-hover, var(--platform-glass-fill-hover));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: var(--menu-glass-rim-edge);
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(8px);
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(8px);
   transition: opacity 0.12s ease;
 }
 

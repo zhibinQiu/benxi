@@ -34,13 +34,36 @@ from app.schemas.document import (
     DocumentCreate,
     DocumentDetail,
     DocumentFolderOut,
+    DocumentFormatOverviewOut,
     DocumentLibraryOut,
     DocumentListItem,
 )
 from app.services import audit_service, document_service
 from app.core.platform_cache import invalidate_document_caches
+from app.services.document_overview_service import collect_document_format_overview
 
 router = APIRouter()
+
+@router.get("/overview", response_model=ApiResponse[DocumentFormatOverviewOut])
+def document_format_overview(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: str = Query(..., pattern="^(company|department|team|personal)$"),
+    dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
+) -> ApiResponse[DocumentFormatOverviewOut]:
+    """当前分级下，用户拥有可修改权限的文档按格式汇总。"""
+    if scope in ("company", "department", "team") and dept_id is not None:
+        from app.core.document_scope import user_can_access_org_unit
+        from app.core.exceptions import forbidden
+
+        if not user_can_access_org_unit(db, user, dept_id):
+            raise forbidden("无权查看该组织节点下的文档")
+    data = collect_document_format_overview(
+        db, user, scope=scope, dept_id=dept_id, owner_id=owner_id
+    )
+    return ApiResponse(data=DocumentFormatOverviewOut.model_validate(data))
+
 
 @router.get("/library", response_model=ApiResponse[DocumentLibraryOut])
 def document_library(

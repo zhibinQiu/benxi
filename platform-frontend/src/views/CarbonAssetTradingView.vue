@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, h, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -20,7 +21,8 @@ import {
   NTabPane,
   NTabs,
   NTag,
-  NText } from "naive-ui";
+  NText,
+} from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
   createCarbonAssetTrade,
@@ -28,9 +30,11 @@ import {
   fetchCarbonAssetMarket,
   fetchCarbonAssetOverview,
   fetchCarbonAssetTrades,
-  resetCarbonAssetDemo } from "../api/client";
+  resetCarbonAssetDemo,
+} from "../api/client";
 
 const ui = usePlatformUi();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
@@ -44,26 +48,40 @@ const tradeForm = ref({
   side: "buy",
   asset_code: "CEA",
   quantity_tco2: 100,
-  price_cny: null});
+  price_cny: null,
+});
 
-const sideOptions = [
-  { label: "买入", value: "buy" },
-  { label: "卖出", value: "sell" },
-];
-const assetOptions = [
-  { label: "CEA 全国碳配额", value: "CEA" },
-  { label: "CCER", value: "CCER" },
-];
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
-const holdingColumns = [
-  { title: "资产", key: "asset_name", ellipsis: { tooltip: true } },
-  { title: "持仓 (tCO₂e)", key: "quantity_tco2", width: 120 },
-  { title: "可用", key: "available_tco2", width: 100 },
-  { title: "成本 (¥/t)", key: "avg_cost_cny", width: 100 },
-  { title: "市价 (¥/t)", key: "market_price_cny", width: 100 },
-  { title: "市值 (¥)", key: "market_value_cny", width: 120 },
+const sideOptions = computed(() => [
+  { label: t("carbonTrading.sideBuy"), value: "buy" },
+  { label: t("carbonTrading.sideSell"), value: "sell" },
+]);
+
+const assetOptions = computed(() => [
+  { label: t("carbonTrading.assetCea"), value: "CEA" },
+  { label: t("carbonTrading.assetCcer"), value: "CCER" },
+]);
+
+function sourceLabel(row) {
+  const map = {
+    cneeex: t("carbonTrading.sourceCneeex"),
+    custom: t("carbonTrading.sourceCustom"),
+    estimated: t("carbonTrading.sourceEstimated"),
+    demo: t("carbonTrading.sourceDemo"),
+  };
+  return map[row.source] || row.source;
+}
+
+const holdingColumns = computed(() => [
+  { title: t("carbonTrading.colAsset"), key: "asset_name", ellipsis: { tooltip: true } },
+  { title: t("carbonTrading.colHolding"), key: "quantity_tco2", width: 120 },
+  { title: t("carbonTrading.colAvailable"), key: "available_tco2", width: 100 },
+  { title: t("carbonTrading.colCost"), key: "avg_cost_cny", width: 100 },
+  { title: t("carbonTrading.colMarketPrice"), key: "market_price_cny", width: 100 },
+  { title: t("carbonTrading.colMarketValue"), key: "market_value_cny", width: 120 },
   {
-    title: "浮动盈亏",
+    title: t("carbonTrading.colPnl"),
     key: "pnl_cny",
     width: 120,
     render: (row) => {
@@ -73,22 +91,14 @@ const holdingColumns = [
         { style: { color: pos ? "#5b9cf5" : "#dc2626" } },
         `${pos ? "+" : ""}${row.pnl_cny} (${row.pnl_pct}%)`
       );
-    }},
-];
+    },
+  },
+]);
 
-function sourceLabel(row) {
-  const map = {
-    cneeex: "上证环交所",
-    custom: "自定义",
-    estimated: "参考估算",
-    demo: "演示"};
-  return map[row.source] || row.source;
-}
-
-const marketColumns = [
-  { title: "品种", key: "asset_name", ellipsis: { tooltip: true } },
+const marketColumns = computed(() => [
+  { title: t("carbonTrading.colVariety"), key: "asset_name", ellipsis: { tooltip: true } },
   {
-    title: "来源",
+    title: t("carbonTrading.colSource"),
     key: "source",
     width: 100,
     render: (row) =>
@@ -97,13 +107,20 @@ const marketColumns = [
         {
           size: "small",
           type: row.live ? "success" : row.source === "estimated" ? "warning" : "default",
-          bordered: false},
+          bordered: false,
+        },
         { default: () => sourceLabel(row) }
-      )},
-  { title: "交易日", key: "trade_date", width: 108, render: (row) => row.trade_date || "—" },
-  { title: "最新价 (¥/t)", key: "last_price_cny", width: 110 },
+      ),
+  },
   {
-    title: "涨跌幅",
+    title: t("carbonTrading.colTradeDate"),
+    key: "trade_date",
+    width: 108,
+    render: (row) => row.trade_date || t("carbonTrading.emDash"),
+  },
+  { title: t("carbonTrading.colLastPrice"), key: "last_price_cny", width: 110 },
+  {
+    title: t("carbonTrading.colChangePct"),
     key: "change_pct",
     width: 90,
     render: (row) => {
@@ -113,8 +130,9 @@ const marketColumns = [
         { size: "small", type: pos ? "success" : "error", bordered: false },
         { default: () => `${pos ? "+" : ""}${row.change_pct}%` }
       );
-    }},
-  { title: "成交量 (t)", key: "volume_tco2", width: 110 },
+    },
+  },
+  { title: t("carbonTrading.colVolume"), key: "volume_tco2", width: 110 },
   {
     title: "",
     key: "history",
@@ -129,10 +147,12 @@ const marketColumns = [
           onClick: (e) => {
             e.stopPropagation();
             openHistory(row);
-          }},
-        { default: () => "走势" }
-      )},
-];
+          },
+        },
+        { default: () => t("carbonTrading.trend") }
+      ),
+  },
+]);
 
 function openHistory(row) {
   if (row.asset_code === "CEA" || row.asset_code === "CCER") {
@@ -140,7 +160,8 @@ function openHistory(row) {
       router,
       {
         name: "carbon-assets-history",
-        query: { asset: row.asset_code }},
+        query: { asset: row.asset_code },
+      },
       route
     );
   }
@@ -149,35 +170,41 @@ function openHistory(row) {
 function marketRowProps(row) {
   return {
     style: "cursor: pointer",
-    onClick: () => openHistory(row)};
+    onClick: () => openHistory(row),
+  };
 }
 
-const tradeColumns = [
+const tradeColumns = computed(() => [
   {
-    title: "方向",
+    title: t("carbonTrading.colSide"),
     key: "side",
     width: 72,
     render: (row) =>
       h(
         NTag,
         { size: "small", type: row.side === "buy" ? "success" : "warning", bordered: false },
-        { default: () => (row.side === "buy" ? "买入" : "卖出") }
-      )},
-  { title: "品种", key: "asset_code", width: 72 },
-  { title: "数量 (t)", key: "quantity_tco2", width: 100 },
-  { title: "价格 (¥/t)", key: "price_cny", width: 100 },
-  { title: "金额 (¥)", key: "amount_cny", width: 110 },
+        {
+          default: () =>
+            row.side === "buy" ? t("carbonTrading.sideBuy") : t("carbonTrading.sideSell"),
+        }
+      ),
+  },
+  { title: t("carbonTrading.colVariety"), key: "asset_code", width: 72 },
+  { title: t("carbonTrading.colQuantity"), key: "quantity_tco2", width: 100 },
+  { title: t("carbonTrading.colPrice"), key: "price_cny", width: 100 },
+  { title: t("carbonTrading.colAmount"), key: "amount_cny", width: 110 },
   {
-    title: "时间",
+    title: t("carbonTrading.colTime"),
     key: "created_at",
     ellipsis: { tooltip: true },
-    render: (row) => formatTime(row.created_at)},
-];
+    render: (row) => formatTime(row.created_at),
+  },
+]);
 
 function formatTime(iso) {
-  if (!iso) return "—";
+  if (!iso) return t("carbonTrading.emDash");
   try {
-    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+    return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
     return iso;
   }
@@ -190,7 +217,7 @@ const selectedQuote = computed(() =>
 async function loadAll({ refreshMarket = false } = {}) {
   loading.value = true;
   try {
-    const [o, h, m, t] = await Promise.all([
+    const [o, h, m, tr] = await Promise.all([
       fetchCarbonAssetOverview(),
       fetchCarbonAssetHoldings(),
       fetchCarbonAssetMarket({ refresh: refreshMarket }),
@@ -199,9 +226,9 @@ async function loadAll({ refreshMarket = false } = {}) {
     overview.value = o;
     holdings.value = h;
     marketSnap.value = m;
-    trades.value = t;
+    trades.value = tr;
   } catch (e) {
-    ui.error(e.message || "加载失败");
+    ui.error(e.message || t("carbonTrading.loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -213,14 +240,15 @@ async function submitTrade() {
     const payload = {
       side: tradeForm.value.side,
       asset_code: tradeForm.value.asset_code,
-      quantity_tco2: tradeForm.value.quantity_tco2};
+      quantity_tco2: tradeForm.value.quantity_tco2,
+    };
     if (tradeForm.value.price_cny) payload.price_cny = tradeForm.value.price_cny;
     const res = await createCarbonAssetTrade(payload);
-    ui.success(res.message || "成交成功");
+    ui.success(res.message || t("carbonTrading.tradeSuccess"));
     tradeForm.value.price_cny = null;
     await loadAll();
   } catch (e) {
-    ui.error(e.message || "下单失败");
+    ui.error(e.message || t("carbonTrading.tradeFailed"));
   } finally {
     submitting.value = false;
   }
@@ -229,7 +257,7 @@ async function submitTrade() {
 async function onResetDemo() {
   try {
     await resetCarbonAssetDemo();
-    ui.success("已恢复演示初始数据");
+    ui.success(t("carbonTrading.resetSuccess"));
     await loadAll();
   } catch (e) {
     ui.error(e.message);
@@ -246,24 +274,20 @@ onMounted(loadAll);
 </script>
 
 <template>
-  <FeatureSubsystemShell
-    fill
-    description="碳配额与 CCER 持仓管理、行情查看与模拟交易（演示数据，非真实市场对接）。"
-  >
+  <FeatureSubsystemShell fill :description="t('carbonTrading.description')">
     <NSpin :show="loading">
       <NSpace vertical :size="16" class="carbon-asset-page">
         <NAlert v-if="marketSnap?.hint" type="success" :bordered="false">
           {{ marketSnap.hint }}
         </NAlert>
         <NAlert type="info" :bordered="false">
-          持仓与成交为<strong>演示数据</strong>（内存）；CEA 行情在可访问上海环交所时自动更新，CCER
-          可能为估算或演示价。点击「刷新行情」可强制重新抓取。
+          <span v-html="t('carbonTrading.demoAlert')" />
         </NAlert>
 
         <NGrid v-if="overview" :cols="4" :x-gap="12" :y-gap="12" responsive="screen">
           <NGi>
             <NCard size="small" :bordered="true">
-              <NStatistic label="持仓市值" tabular-nums>
+              <NStatistic :label="t('carbonTrading.statMarketValue')" tabular-nums>
                 <template #prefix>¥</template>
                 {{ overview.total_market_value.toLocaleString() }}
               </NStatistic>
@@ -271,7 +295,7 @@ onMounted(loadAll);
           </NGi>
           <NGi>
             <NCard size="small">
-              <NStatistic label="碳资产总量" tabular-nums>
+              <NStatistic :label="t('carbonTrading.statTotalQuota')" tabular-nums>
                 {{ overview.total_quota_tco2.toLocaleString() }}
                 <template #suffix>tCO₂e</template>
               </NStatistic>
@@ -279,7 +303,7 @@ onMounted(loadAll);
           </NGi>
           <NGi>
             <NCard size="small">
-              <NStatistic label="可交易余额" tabular-nums>
+              <NStatistic :label="t('carbonTrading.statAvailable')" tabular-nums>
                 {{ overview.available_quota_tco2.toLocaleString() }}
                 <template #suffix>tCO₂e</template>
               </NStatistic>
@@ -287,15 +311,20 @@ onMounted(loadAll);
           </NGi>
           <NGi>
             <NCard size="small">
-              <NStatistic label="本年模拟成交" tabular-nums>
-                {{ overview.ytd_trade_count }} 笔 / {{ overview.ytd_trade_volume_tco2 }} t
+              <NStatistic :label="t('carbonTrading.statYtdTrades')" tabular-nums>
+                {{
+                  t("carbonTrading.ytdTradeFormat", {
+                    count: overview.ytd_trade_count,
+                    volume: overview.ytd_trade_volume_tco2,
+                  })
+                }}
               </NStatistic>
             </NCard>
           </NGi>
         </NGrid>
 
         <NTabs type="line" animated>
-          <NTabPane name="holdings" tab="资产持仓">
+          <NTabPane name="holdings" :tab="t('carbonTrading.tabHoldings')">
             <NDataTable
               :columns="holdingColumns"
               :data="holdings"
@@ -304,11 +333,9 @@ onMounted(loadAll);
               :pagination="false"
             />
           </NTabPane>
-          <NTabPane name="market" tab="市场行情">
+          <NTabPane name="market" :tab="t('carbonTrading.tabMarket')">
             <NSpace align="center" justify="space-between" style="margin-bottom: 8px">
-              <NText depth="3">
-                点击行或「走势」进入历史走势页（CEA 存库每日同步，CCER 为估算）
-              </NText>
+              <NText depth="3">{{ t("carbonTrading.marketHint") }}</NText>
               <NButton
                 size="tiny"
                 type="primary"
@@ -321,7 +348,7 @@ onMounted(loadAll);
                   )
                 "
               >
-                CEA 历史走势
+                {{ t("carbonTrading.ceaHistory") }}
               </NButton>
             </NSpace>
             <NDataTable
@@ -333,18 +360,18 @@ onMounted(loadAll);
               :pagination="false"
             />
           </NTabPane>
-          <NTabPane name="trade" tab="模拟交易">
+          <NTabPane name="trade" :tab="t('carbonTrading.tabTrade')">
             <NGrid :cols="2" :x-gap="16" item-responsive responsive="screen">
               <NGi span="2 m:1">
-                <NCard title="下单" size="small">
+                <NCard :title="t('carbonTrading.orderTitle')" size="small">
                   <NForm label-placement="left" label-width="88">
-                    <NFormItem label="方向">
+                    <NFormItem :label="t('carbonTrading.formSide')">
                       <NSelect v-model:value="tradeForm.side" :options="sideOptions" />
                     </NFormItem>
-                    <NFormItem label="品种">
+                    <NFormItem :label="t('carbonTrading.formAsset')">
                       <NSelect v-model:value="tradeForm.asset_code" :options="assetOptions" />
                     </NFormItem>
-                    <NFormItem label="数量">
+                    <NFormItem :label="t('carbonTrading.formQuantity')">
                       <NInputNumber
                         v-model:value="tradeForm.quantity_tco2"
                         :min="0.01"
@@ -354,20 +381,20 @@ onMounted(loadAll);
                         <template #suffix>tCO₂e</template>
                       </NInputNumber>
                     </NFormItem>
-                    <NFormItem label="限价">
+                    <NFormItem :label="t('carbonTrading.formLimitPrice')">
                       <NSpace align="center">
                         <NInputNumber
                           v-model:value="tradeForm.price_cny"
                           :min="0.01"
                           :step="0.1"
                           clearable
-                          placeholder="市价"
+                          :placeholder="t('carbonTrading.marketPricePlaceholder')"
                           style="width: 160px"
                         >
                           <template #suffix>¥/t</template>
                         </NInputNumber>
                         <NButton size="small" tertiary @click="fillMarketPrice">
-                          填入市价
+                          {{ t("carbonTrading.fillMarketPrice") }}
                           <template v-if="selectedQuote">
                             ({{ selectedQuote.last_price_cny }})
                           </template>
@@ -376,14 +403,14 @@ onMounted(loadAll);
                     </NFormItem>
                     <NFormItem>
                       <NButton type="primary" :loading="submitting" @click="submitTrade">
-                        提交模拟成交
+                        {{ t("carbonTrading.submitTrade") }}
                       </NButton>
                     </NFormItem>
                   </NForm>
                 </NCard>
               </NGi>
               <NGi span="2 m:1">
-                <NCard title="最近成交" size="small">
+                <NCard :title="t('carbonTrading.recentTrades')" size="small">
                   <NDataTable
                     :columns="tradeColumns"
                     :data="trades"
@@ -399,11 +426,11 @@ onMounted(loadAll);
         </NTabs>
 
         <NSpace>
-          <NButton quaternary size="small" @click="loadAll()">刷新</NButton>
+          <NButton quaternary size="small" @click="loadAll()">{{ t("carbonTrading.refresh") }}</NButton>
           <NButton quaternary size="small" @click="loadAll({ refreshMarket: true })">
-            刷新行情
+            {{ t("carbonTrading.refreshMarket") }}
           </NButton>
-          <NButton quaternary size="small" @click="onResetDemo">重置演示</NButton>
+          <NButton quaternary size="small" @click="onResetDemo">{{ t("carbonTrading.resetDemo") }}</NButton>
         </NSpace>
       </NSpace>
     </NSpin>

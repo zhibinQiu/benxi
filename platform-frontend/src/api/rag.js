@@ -3,7 +3,7 @@ import { getApiBase, getToken, rejectHttpFailure } from "./http.js";
 
 export function createPlatformChatStream(path) {
   return async function platformChatStream(
-    { message, history = [], conversationId = null },
+    { message, history = [], conversationId = null, attachmentSessionId = null },
     { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
   ) {
     const headers = { "Content-Type": "application/json" };
@@ -12,6 +12,7 @@ export function createPlatformChatStream(path) {
 
     const body = { message, history };
     if (conversationId) body.conversation_id = conversationId;
+    if (attachmentSessionId) body.attachment_session_id = attachmentSessionId;
 
     const res = await fetch(`${getApiBase()}${path}`, {
       method: "POST",

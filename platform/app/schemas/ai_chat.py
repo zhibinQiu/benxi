@@ -10,6 +10,26 @@ class AiChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=8000)
     history: list[AiChatMessage] = Field(default_factory=list, max_length=40)
     conversation_id: str | None = Field(None, max_length=128)
+    attachment_session_id: str | None = Field(None, max_length=64)
+
+
+class AttachmentFileOut(BaseModel):
+    file_id: str
+    file_name: str
+    char_count: int = 0
+    parse_quality: str = ""
+    warning: str | None = None
+
+
+class AttachmentUploadOut(BaseModel):
+    attachment_session_id: str
+    files: list[AttachmentFileOut] = Field(default_factory=list)
+    total_files: int = 0
+
+
+class AttachmentSessionOut(BaseModel):
+    attachment_session_id: str
+    files: list[AttachmentFileOut] = Field(default_factory=list)
 
 
 class ChatCitation(BaseModel):

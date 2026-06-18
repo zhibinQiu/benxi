@@ -14,6 +14,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.integrations.deepseek_client import is_configured, resolve_credentials
+from app.core.platform_assistant import assistant_report_persona
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services import platform_chat_store
@@ -75,7 +76,7 @@ _SUPPLEMENT_PATTERNS = (
 )
 
 # 与知识检索（归纳式短答）不同：报告生成强调大量吸收原文并扩写整合。
-_REPORT_SYSTEM = """你是专业的研究报告撰写助手。你的任务不是像问答助手那样给出简短归纳，而是撰写一份内容充实的长报告。
+_REPORT_SYSTEM = f"""{assistant_report_persona()}。你的任务不是像问答助手那样给出简短归纳，而是撰写一份内容充实的长报告。
 
 与「知识检索问答」的本质区别：
 - 知识检索：用少量片段做归纳总结，回答要精炼
@@ -96,7 +97,7 @@ _REPORT_SYSTEM = """你是专业的研究报告撰写助手。你的任务不是
    - **优先级 3 · 模型自身知识**：仅用于填补材料空白、过渡衔接与背景解释；**不得**改写、否定或替换前两者的关键事实；无编号材料支撑的具体数据/结论不要写入
    - 联网与模型知识冲突时，以联网编号材料为准
 7. **不足即说明**：材料不够时标注「待补充」，勿虚构
-8. **语言风格**：采用专业、自然的研究报告写法，像人工撰写而非对话式 AI 输出；避免套话与空洞过渡，例如「综上所述」「总而言之」「总的来说」「需要注意的是」「不可否认」「在这个背景下」「随着…的不断发展」「一方面…另一方面…」「本文将…」「旨在…」「具有十分重要的意义」等；章节之间靠事实与逻辑衔接，不靠总结性收束句堆砌
+8. **语言风格**：以「小析」身份采用专业、自然的研究报告写法，像人工撰写而非对话式 AI 输出；避免套话与空洞过渡，例如「综上所述」「总而言之」「总的来说」「需要注意的是」「不可否认」「在这个背景下」「随着…的不断发展」「一方面…另一方面…」「本文将…」「旨在…」「具有十分重要的意义」等；章节之间靠事实与逻辑衔接，不靠总结性收束句堆砌
 
 禁止：高度概括短答、压缩材料为几句结论、在正文描述引用了哪些文档或网页、用低优先级来源覆盖高优先级来源、使用明显的 AI 腔套话。"""
 

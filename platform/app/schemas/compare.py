@@ -16,10 +16,6 @@ class CompareDocumentOut(BaseModel):
 class CompareJobCreate(BaseModel):
     left_document_id: str = Field(..., description="左侧：待比对文档")
     right_document_id: str = Field(..., description="右侧：比对目标")
-    sync_knowflow: bool = Field(
-        True,
-        description="已废弃：对比功能不触发建索引，文档须先入文档库并完成解析",
-    )
 
 
 class CompareSearchRequest(BaseModel):
@@ -38,10 +34,6 @@ class CompareDirectSearchRequest(BaseModel):
 
     right_document_id: str = Field(..., description="右侧：检索目标文档")
     query: str = Field(..., min_length=1, max_length=500)
-    sync_knowflow: bool = Field(
-        True,
-        description="已废弃：对比检索仅使用文档库已有索引，不会触发建索引",
-    )
     field_match: bool = Field(
         True, description="KnowFlow 不可用时的本地字段匹配",
     )

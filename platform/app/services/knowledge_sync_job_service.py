@@ -239,9 +239,9 @@ def try_resume_incomplete_knowledge_index(
     if status == "解析中" or (status and str(status).upper() in _PARSE_RUNNING):
         return KnowledgeIndexResumeResult(rid, ds, already_completed=False)
 
-    if _retrigger_ragflow_parse(db, user, document, version.id):
+    if _is_parse_failed(status):
         logger.info(
-            "KnowFlow 续跑解析 doc=%s version=%s ragflow=%s status=%s",
+            "KnowFlow 已有失败解析记录，不自动重试 doc=%s version=%s ragflow=%s status=%s",
             document.id,
             version.id,
             rid,
@@ -267,6 +267,7 @@ def _retrigger_ragflow_parse(
     parser_id: str | None = None,
     layout_recognize: str | None = None,
     file_content: bytes | None = None,
+    force_parse: bool = False,
 ) -> bool:
     """已上传文档仅重新提交解析，不重复上传文件。"""
     from app.models.document import DocumentVersion
@@ -287,6 +288,19 @@ def _retrigger_ragflow_parse(
         return False
     vl = get_version_link_by_version_id(db, version.id)
     if not vl or not vl.ragflow_document_id or not vl.dataset_id:
+        return False
+    from app.services.knowflow_parse_guard import should_submit_parse
+
+    ok, reason = should_submit_parse(
+        db, vl.ragflow_document_id, force=force_parse
+    )
+    if not ok:
+        logger.info(
+            "KnowFlow 跳过重复解析 doc=%s version=%s reason=%s",
+            document.id,
+            version.id,
+            reason,
+        )
         return False
     from app.services.ragflow_version_link_service import clear_version_index_completed
 
@@ -311,6 +325,8 @@ def _retrigger_ragflow_parse(
         file_content=content,
         parser_id=parser_id,
         layout_recognize=layout_recognize,
+        db=db,
+        force_parse=force_parse,
     )
     return True
 
@@ -462,6 +478,35 @@ def _parse_run_status(
     if not item:
         return None, None, None, None
     return _parse_run_status_from_item(item)
+
+
+def _is_ragflow_queue_backlog(detail: str | None) -> bool:
+    text = (detail or "").lower()
+    return "tasks are ahead in the queue" in text or "排队" in text
+
+
+def _subscription_has_html_fallback(payload: dict | None) -> bool:
+    data = payload or {}
+    html = str(data.get("article_html_body") or "").strip()
+    summary = str(data.get("article_summary") or "").strip()
+    return bool(html) or bool(summary)
+
+
+def _should_skip_deepdoc_for_subscription(
+    payload: dict | None,
+    *,
+    status: str | None,
+    rag_progress: int | None,
+    detail: str | None,
+) -> bool:
+    """资讯导入已有 HTML 正文时，KnowFlow 排队过久则直接用原文走 PageIndex。"""
+    if not _subscription_has_html_fallback(payload):
+        return False
+    if _is_parse_done(status):
+        return False
+    if rag_progress is not None and rag_progress > 0:
+        return False
+    return _is_ragflow_queue_backlog(detail)
 
 
 def _advance_parse_job_progress(
@@ -684,7 +729,7 @@ def _wait_for_parse(
     progress = 68
     last_status: str | None = None
     stagnant_polls = 0
-    unparsed_polls = 0
+    queue_backlog_polls = 0
 
     while time.time() < absolute_deadline:
         db = SessionLocal()
@@ -721,16 +766,17 @@ def _wait_for_parse(
                 background=True,
             )
             last_status = status
-            unparsed_polls = _maybe_bootstrap_ragflow_parse(
-                db,
-                job,
-                actor,
-                document,
-                version_id,
-                status=status,
-                unparsed_polls=unparsed_polls,
-            )
             _record_parse_progress(job, progress_pct=rag_progress, detail=detail)
+            if (
+                _is_ragflow_queue_backlog(detail)
+                and (rag_progress is None or rag_progress <= 0)
+            ):
+                queue_backlog_polls += 1
+                if queue_backlog_polls >= 3:
+                    db.commit()
+                    return False
+            else:
+                queue_backlog_polls = 0
             if _is_parse_done(status):
                 if _index_job_should_abort(db, job):
                     db.commit()
@@ -740,30 +786,6 @@ def _wait_for_parse(
                 db.commit()
                 return True
             if _is_parse_failed(status):
-                if _maybe_fallback_plain_text_parse(
-                    db,
-                    job,
-                    actor,
-                    document,
-                    version_id,
-                    detail=detail,
-                ):
-                    last_status = "解析中"
-                    db.commit()
-                    time.sleep(interval)
-                    continue
-                if _maybe_retry_parse_failure(
-                    db,
-                    job,
-                    actor,
-                    document,
-                    version_id,
-                    detail=detail,
-                ):
-                    last_status = "解析中"
-                    db.commit()
-                    time.sleep(interval)
-                    continue
                 db.commit()
                 raise RuntimeError(_format_parse_failure(status, detail))
             if status == "索引失效":
@@ -797,32 +819,6 @@ def _wait_for_parse(
     if _is_parse_running(last_status) or last_status is None:
         return False
     return False
-
-
-def _notify_parse_in_progress(
-    db: Session,
-    user: User,
-    doc: Document,
-    *,
-    mode: str,
-) -> None:
-    title = (
-        "文档已保存，重新索引解析进行中"
-        if mode == "reindex"
-        else "文档已保存，知识库解析进行中"
-    )
-    body = (
-        f"「{doc.title or '未命名文档'}」已上传成功，解析仍在后台进行"
-        "（大文件或解析队列繁忙时可能需较长时间），完成后将自动通知。"
-        "也可在文档详情 → 知识索引查看进度。"
-    )
-    create_notification(
-        db,
-        user_id=user.id,
-        title=title,
-        body=body,
-        link=f"/documents/{doc.id}",
-    )
 
 
 def _fail_parse_job(
@@ -1005,7 +1001,7 @@ def _complete_subscription_pipeline_after_deepdoc(
         title="文档索引完成",
         body=(
             f"「{doc.title or '未命名文档'}」已完成 DeepDOC 解析与 PageIndex 索引，"
-            "可用于知识检索；知识图谱抽取在后台进行。"
+            "可用于知识检索；本体图谱抽取在后台进行。"
         ),
         link=f"/documents/{doc.id}",
     )
@@ -1225,7 +1221,7 @@ def _run_parse_watch(job_id: uuid.UUID) -> None:
             payload["parse_watch_started_at"] = watch_ctx["started_at"]
             payload["awaiting_parse"] = True
             job.payload = payload
-            update_job_status(db, job.id, JobStatus.done.value, progress=90)
+            update_job_status(db, job.id, JobStatus.running.value, progress=90)
             db.commit()
             settings = get_settings()
             delay = max(60, int(settings.knowledge_parse_poll_interval_sec) * 6)
@@ -1234,7 +1230,6 @@ def _run_parse_watch(job_id: uuid.UUID) -> None:
             dispatch_parse_watch(job_id, countdown=delay)
             return
 
-        _notify_parse_in_progress(db, user, doc, mode=watch_ctx["mode"])
         db.commit()
     except Exception:
         logger.exception("知识库解析后台续跑失败 job=%s", job_id)
@@ -1267,8 +1262,7 @@ def _defer_parse_watch(
     if not payload.get("parse_watch_started_at"):
         payload["parse_watch_started_at"] = time.time()
     job.payload = payload
-    update_job_status(db, job.id, JobStatus.done.value, progress=90, error_message=None)
-    _notify_parse_in_progress(db, user, doc, mode=mode)
+    update_job_status(db, job.id, JobStatus.running.value, progress=90, error_message=None)
     _schedule_parse_watch(job.id)
 
 
@@ -1498,6 +1492,43 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                         logger.debug("KG 抽取调度跳过 job=%s: %s", job_id, exc)
                     db.commit()
                     return
+
+                if _is_subscription_pipeline_mode(mode):
+                    actor = _background_actor(db, doc, user)
+                    parse_status, _chunks, rag_progress, detail = _parse_run_status(
+                        db,
+                        actor,
+                        dataset_id=str(dataset_id),
+                        ragflow_document_id=str(rid),
+                        document=doc,
+                        background=True,
+                    )
+                    if _should_skip_deepdoc_for_subscription(
+                        payload,
+                        status=parse_status,
+                        rag_progress=rag_progress,
+                        detail=detail,
+                    ):
+                        logger.info(
+                            "资讯导入续跑：KnowFlow 排队，跳过 DeepDOC doc=%s job=%s detail=%s",
+                            doc.id,
+                            job_id,
+                            (detail or parse_status or "")[:120],
+                        )
+                        update_job_status(
+                            db, job_id, JobStatus.running.value, progress=82
+                        )
+                        _finish_index_job_after_parse(
+                            db,
+                            db.get(Job, job_id) or job,
+                            user,
+                            doc,
+                            dataset_id=str(dataset_id),
+                            version_id_raw=version_id_raw,
+                            mode=mode,
+                        )
+                        db.commit()
+                        return
             else:
                 rid = sync_document_to_knowflow(
                     db,
@@ -1540,9 +1571,59 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
             doc_id = doc.id
             ds = str(dataset_id)
             rflow_id = str(rid)
+            skip_deepdoc = False
+            if _is_subscription_pipeline_mode(mode):
+                actor = _background_actor(db, doc, user)
+                parse_status, _chunks, rag_progress, detail = _parse_run_status(
+                    db,
+                    actor,
+                    dataset_id=ds,
+                    ragflow_document_id=rflow_id,
+                    document=doc,
+                    background=True,
+                )
+                skip_deepdoc = _should_skip_deepdoc_for_subscription(
+                    payload,
+                    status=parse_status,
+                    rag_progress=rag_progress,
+                    detail=detail,
+                )
+                if skip_deepdoc:
+                    logger.info(
+                        "资讯导入 KnowFlow 排队或未启动，跳过 DeepDOC 等待 doc=%s job=%s detail=%s",
+                        doc.id,
+                        job_id,
+                        (detail or parse_status or "")[:120],
+                    )
             db.commit()
             db.close()
             db = None
+
+            if skip_deepdoc:
+                db = SessionLocal()
+                try:
+                    job = db.get(Job, job_id)
+                    user = db.get(User, user_id) if user_id else None
+                    doc = get_document(db, doc_id) if doc_id else None
+                    if job and user and doc and not _index_job_should_abort(db, job):
+                        update_job_status(
+                            db, job_id, JobStatus.running.value, progress=82
+                        )
+                        db.commit()
+                        _finish_index_job_after_parse(
+                            db,
+                            job,
+                            user,
+                            doc,
+                            dataset_id=ds,
+                            version_id_raw=version_id_raw,
+                            mode=mode,
+                        )
+                        db.commit()
+                finally:
+                    db.close()
+                return
+
             parse_done = False
             try:
                 parse_done = _wait_for_parse(
@@ -1633,6 +1714,61 @@ def _start_job_thread(job_id: uuid.UUID) -> None:
     dispatch_document_index_job(job_id)
 
 
+def find_active_document_index_job(
+    db: Session,
+    document_id: uuid.UUID,
+    *,
+    version_id: uuid.UUID | None = None,
+) -> Job | None:
+    """同一文档/版本已有进行中的索引或解析续跑任务时不再新建。"""
+    for job in _collect_document_index_jobs(db, document_id, version_id=version_id):
+        payload = job.payload or {}
+        if job.status in (JobStatus.pending.value, JobStatus.running.value):
+            return job
+        if payload.get("awaiting_parse"):
+            return job
+    return None
+
+
+def _cancel_active_document_index_jobs(
+    db: Session,
+    document_id: uuid.UUID,
+    *,
+    version_id: uuid.UUID | None = None,
+    reason: str = "已提交新的索引任务",
+) -> int:
+    """取消同一文档/版本进行中的平台索引任务，避免重复解析。"""
+    cancelled = 0
+    for job in _collect_document_index_jobs(db, document_id, version_id=version_id):
+        payload = dict(job.payload or {})
+        had_watch = bool(payload.get("awaiting_parse"))
+        payload.pop("awaiting_parse", None)
+        payload.pop("parse_watch_started_at", None)
+        job.payload = payload
+        if job.status in (JobStatus.pending.value, JobStatus.running.value):
+            update_job_status(
+                db,
+                job.id,
+                JobStatus.cancelled.value,
+                error_message=reason,
+            )
+            cancelled += 1
+        elif had_watch:
+            db.add(job)
+            db.flush()
+            cancelled += 1
+        with _parse_watch_lock:
+            _active_parse_watches.discard(job.id)
+    if cancelled:
+        logger.info(
+            "已取消文档旧索引任务 doc=%s version=%s count=%s",
+            document_id,
+            version_id,
+            cancelled,
+        )
+    return cancelled
+
+
 def create_document_knowledge_index_job(
     db: Session,
     *,
@@ -1644,6 +1780,23 @@ def create_document_knowledge_index_job(
 ) -> Job | None:
     if not knowledge.enabled():
         return None
+
+    existing = find_active_document_index_job(
+        db, document_id, version_id=version_id
+    )
+    if existing:
+        logger.info(
+            "文档索引任务已存在，取消旧任务并重新创建 doc=%s version=%s job=%s",
+            document_id,
+            version_id,
+            existing.id,
+        )
+        _cancel_active_document_index_jobs(
+            db,
+            document_id,
+            version_id=version_id,
+            reason="已提交新的索引任务",
+        )
 
     doc = get_document(db, document_id)
     title = (document_title or (doc.title if doc else "") or "").strip()
@@ -1678,7 +1831,6 @@ def create_subscription_pipeline_index_job(
     """资讯导入默认索引链：MinIO PDF → DeepDOC 解析 → PageIndex → 后台 KG 抽取。"""
     from app.config import get_settings
     from app.services.knowledge_parser_service import (
-        PARSER_PAGEINDEX,
         index_stack_block_reason,
         normalize_layout_recognize,
         normalize_parser_id,
@@ -1686,10 +1838,16 @@ def create_subscription_pipeline_index_job(
 
     if not knowledge.enabled():
         return None
+    # 资讯链先走 KnowFlow DeepDOC；PageIndex 在解析完成后单独检查（见
+    # _complete_subscription_pipeline_after_deepdoc），勿在此拦截否则导入后不会解析。
     if index_stack_block_reason(None, reindex=False):
         return None
-    if index_stack_block_reason(PARSER_PAGEINDEX, reindex=True):
-        return None
+
+    existing = find_active_document_index_job(
+        db, document_id, version_id=version_id
+    )
+    if existing:
+        return existing
 
     settings = get_settings()
     doc = get_document(db, document_id)
@@ -1819,6 +1977,12 @@ def enqueue_document_reindex(
     document_title: str | None = None,
 ) -> Job | None:
     """创建后台任务：切换解析器并重新索引。"""
+    _cancel_active_document_index_jobs(
+        db,
+        document_id,
+        version_id=version_id,
+        reason="已提交新的重新索引任务",
+    )
     job = create_document_reindex_job(
         db,
         user_id=user_id,

@@ -11,6 +11,7 @@ import httpx
 
 from app.config import get_settings
 from app.core.exceptions import bad_request, not_found
+from app.core.platform_assistant import assistant_data_analysis_persona
 from app.integrations.data_analysis_executor import execute_analysis_code
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.schemas.data_analysis import (
@@ -47,7 +48,7 @@ print(df.describe())
 """
 
 _SYSTEM_PROMPT = (
-    "你是企业数据分析助手。用户已上传 Excel 或 CSV，你只能看到数据结构画像（字段、类型、"
+    f"{assistant_data_analysis_persona()}。用户已上传 Excel 或 CSV，你只能看到数据结构画像（字段、类型、"
     "样例行、统计摘要），看不到全量数据。\n"
     "支持多轮连续对话：请结合历史问答与已有 Notebook 单元格及其运行结果，"
     "在同一数据集上递进分析，避免重复已完成的工作。\n"
@@ -59,7 +60,7 @@ _SYSTEM_PROMPT = (
     "3. 统计用 df 聚合；绘图用 plt 或 sns，无需 plt.show()，运行后自动展示图表\n"
     "4. 输出必须是 JSON 对象，不要 Markdown 围栏，格式：\n"
     '{"reply":"自然语言说明","cells":[{"title":"单元标题","code":"python代码"}]}\n'
-    "若仅需解释无需代码，cells 可为空数组。"
+    "若仅需解释无需代码，cells 可为空数组。回复中提及助手时统一使用名称「小析」。"
 )
 
 

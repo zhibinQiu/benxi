@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_feature
+from app.core.exceptions import bad_request
 from app.database import get_db
 from app.models.org import User
 from app.schemas.common import ApiResponse
@@ -19,6 +20,8 @@ from app.schemas.kg import (
     KgEntityTypeOut,
     KgEntityTypeUpdate,
     KgEntityUpdate,
+    KgExtractFromTextIn,
+    KgExtractFromTextOut,
     KgGraphOut,
     KgMetaOut,
     KgRelationIn,
@@ -28,6 +31,7 @@ from app.schemas.kg import (
     KgRelationTypeUpdate,
 )
 from app.services import kg_service
+from app.services.kg_extraction_service import extract_kg_from_text
 
 router = APIRouter(
     prefix="/kg",
@@ -40,8 +44,35 @@ router = APIRouter(
 def kg_meta(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    sync_system: bool = Query(True, description="是否同步平台用户与部门到图谱"),
 ) -> ApiResponse[KgMetaOut]:
-    return ApiResponse(data=kg_service.get_meta(db, user))
+    return ApiResponse(data=kg_service.get_meta(db, user, sync_system=sync_system))
+
+
+@router.post("/extract-from-text", response_model=ApiResponse[KgExtractFromTextOut])
+def kg_extract_from_text(
+    body: KgExtractFromTextIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[KgExtractFromTextOut]:
+    result = extract_kg_from_text(
+        db,
+        user,
+        title=body.title,
+        text=body.text,
+        source_type=body.source_type,
+        source_id=body.source_id,
+    )
+    if result.get("skipped"):
+        reason = str(result.get("reason") or "unknown")
+        messages = {
+            "kg_extraction_disabled": "本体图谱抽取未启用，请联系管理员配置语言模型",
+            "no_kg_permission": "无本体图谱权限",
+            "text_too_short": "总结内容过短，无法抽取实体关系",
+            "llm_failed": f"抽取失败：{result.get('error', '')}",
+        }
+        raise bad_request(messages.get(reason, reason))
+    return ApiResponse(data=KgExtractFromTextOut(**result))
 
 
 @router.get("/entities", response_model=ApiResponse[list[KgEntityOut]])

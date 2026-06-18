@@ -26,7 +26,7 @@ function toolLabel(tool, t) {
     planner: "规划",
     evaluator: "评估",
     retrieve: "知识库检索",
-    kg_context: "知识图谱",
+    kg_context: "本体图谱",
     web_search: "联网检索",
     version_metadata: "版本元数据",
   };

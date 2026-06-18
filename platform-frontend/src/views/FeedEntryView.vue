@@ -10,10 +10,14 @@ import {
   fetchFeedEntry,
   importFeedEntry } from "../api/client";
 import { goBackToEntry } from "../utils/navigationReturn";
+import { useI18n } from "../composables/useI18n";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
+const { t, locale } = useI18n();
+
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const loading = ref(true);
 const entry = ref(null);
@@ -35,7 +39,7 @@ const showImportedActions = computed(
 function fmtTime(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+    return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
     return iso;
   }
@@ -76,11 +80,11 @@ onMounted(load);
       <template v-if="entry">
         <NSpace align="center" style="margin-bottom: 16px">
           <NButton quaternary @click="goBackToEntry(router, route, { name: route.meta.backTo || 'feed-subscriptions' })">
-            返回列表
+            {{ t("feedEntry.backToList") }}
           </NButton>
-          <NTag :bordered="false">{{ entry.source_kind === "website" ? "网站" : "RSS" }}</NTag>
+          <NTag :bordered="false">{{ entry.source_kind === "website" ? t("feedEntry.kindWebsite") : t("feedEntry.kindRss") }}</NTag>
           <NTag v-if="showImportedActions" type="success" :bordered="false">
-            {{ indexing ? "索引中" : "已入文档库" }}
+            {{ indexing ? t("feedEntry.indexing") : t("feedEntry.imported") }}
           </NTag>
         </NSpace>
         <NCard>
@@ -92,7 +96,7 @@ onMounted(load);
           </NSpace>
           <NSpace style="margin-bottom: 20px">
             <NButton v-if="!showImportedActions" type="primary" :loading="importing" @click="onImport">
-              导入文档库
+              {{ t("feedEntry.importToLibrary") }}
             </NButton>
             <NButton
               v-if="showImportedActions && resolvedDocumentId"
@@ -100,7 +104,7 @@ onMounted(load);
               :loading="indexing"
               @click="openDocument(resolvedDocumentId)"
             >
-              {{ indexing ? "查看文档（索引中）" : "查看文档" }}
+              {{ indexing ? t("feedEntry.viewDocumentIndexing") : t("feedEntry.viewDocument") }}
             </NButton>
             <NButton
               v-if="showImportedActions"
@@ -111,14 +115,14 @@ onMounted(load);
                   query: { scope: DOCUMENT_SCOPE_PERSONAL }})
               "
             >
-              打开「个人级」文档库
+              {{ t("feedEntry.openPersonalLibrary") }}
             </NButton>
             <NButton v-if="entry.link" tag="a" :href="entry.link" target="_blank" rel="noopener">
-              查看原文
+              {{ t("feedEntry.viewOriginal") }}
             </NButton>
           </NSpace>
           <div v-if="entry.content_html" class="article-content" v-html="entry.content_html" />
-          <NText v-else depth="3">暂无正文，请查看原文链接</NText>
+          <NText v-else depth="3">{{ t("feedEntry.noContent") }}</NText>
         </NCard>
       </template>
     </NSpin>

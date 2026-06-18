@@ -81,7 +81,7 @@ class KnowledgeAgenticToolkit:
 
     def kg_planning_context(self, question: str) -> ToolResult:
         if not self.include_kg:
-            return ToolResult("kg_context", True, "未启用知识图谱", data=None)
+            return ToolResult("kg_context", True, "未启用本体图谱", data=None)
         try:
             from app.core.permissions import user_has_permission
             from app.services.kg_service import retrieve_kg_context_for_question

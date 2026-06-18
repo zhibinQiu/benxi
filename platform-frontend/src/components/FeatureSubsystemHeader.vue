@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { useRoute } from "vue-router";
-import { getFeatureDescription } from "../constants/featureDescriptions";
+import { useI18n } from "../composables/useI18n";
 import HintTooltip from "./HintTooltip.vue";
 
 const props = defineProps({
@@ -12,9 +12,10 @@ const props = defineProps({
 });
 
 const route = useRoute();
+const { featureDescription } = useI18n();
 
 const introText = computed(
-  () => props.description || getFeatureDescription(route.name) || ""
+  () => props.description || featureDescription(String(route.name || "")) || ""
 );
 
 const showIntroBlock = computed(() => props.showIntro && Boolean(introText.value));

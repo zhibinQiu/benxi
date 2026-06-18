@@ -119,11 +119,11 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 .kb-folder-card {
   --accent: var(--platform-accent);
   --accent-border: var(--platform-accent-soft);
-  --stop-a: #93c5fd;
-  --stop-b: #5b9cf5;
+  --stop-a: #ddd6fe;
+  --stop-b: #a78bfa;
   --stop-c: #c4b5fd;
   --stop-d: #8b5cf6;
-  --stop-e: #4789e8;
+  --stop-e: #9374f0;
 
   position: relative;
   display: flex;

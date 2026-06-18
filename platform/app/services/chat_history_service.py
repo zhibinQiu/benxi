@@ -24,7 +24,7 @@ CHAT_SCOPES = frozenset(
 
 _SCOPE_LABELS = {
     "ai-home": "AI 智能体",
-    "assistant": "智能助手",
+    "assistant": "本析平台客服",
     "carbon-qa": "双碳问答",
     "smart-data-query": "智能问数",
     "report-generation": "报告生成",

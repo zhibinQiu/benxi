@@ -99,3 +99,34 @@ def test_enqueue_warm_on_login_starts_thread():
         enqueue_warm_on_login(user_id)
 
     submit.assert_called_once()
+
+
+def test_catalog_reconcile_respects_sync_on_login_flag():
+    user_id = uuid.uuid4()
+    user = MagicMock()
+    user.username = "u1"
+
+    db = MagicMock()
+    db.get.return_value = user
+
+    with patch(
+        "app.database.SessionLocal",
+        return_value=db,
+    ), patch(
+        "app.config.get_settings",
+        return_value=MagicMock(
+            knowflow_enabled=True,
+            ragflow_sync_on_login=False,
+            ragflow_sync_on_login_limit=50,
+        ),
+    ), patch(
+        "app.services.knowflow_catalog_service.reconcile_user_knowflow_catalog",
+    ) as reconcile, patch(
+        "app.services.ragflow_sync_service.purge_stale_knowflow_links",
+    ):
+        from app.domains.knowledge.background_sync import run_catalog_reconcile_for_user
+
+        run_catalog_reconcile_for_user(user_id)
+
+    reconcile.assert_called_once()
+    assert reconcile.call_args.kwargs["sync_documents"] is False

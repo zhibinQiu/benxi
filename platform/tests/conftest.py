@@ -14,6 +14,7 @@ def _ensure_version_compare_tables():
     from app.schema_migrate import (
         ensure_document_version_change_description,
         ensure_kg_schema,
+        ensure_subscription_item_removal_schema,
         ensure_user_auth_token_version_schema,
         ensure_version_compare_schema,
         ensure_version_compare_llm_summary_schema,
@@ -26,6 +27,7 @@ def _ensure_version_compare_tables():
     ensure_document_version_blocks_schema(engine)
     ensure_user_auth_token_version_schema(engine)
     ensure_kg_schema(engine)
+    ensure_subscription_item_removal_schema(engine)
 
 
 @pytest.fixture(scope="session")

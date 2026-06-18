@@ -6,11 +6,11 @@
   --platform-ui-glass-fill-strong: rgba(255, 255, 255, 0.56);
   --platform-ui-glass-fill-subtle: rgba(255, 255, 255, 0.28);
   --platform-ui-glass-border: rgba(139, 92, 246, 0.14);
-  --platform-ui-glass-rim: rgba(91, 156, 245, 0.2);
+  --platform-ui-glass-rim: rgba(167, 139, 250, 0.2);
   --platform-ui-layer-shadow:
     0 1px 0 rgba(255, 255, 255, 0.72) inset,
-    0 8px 28px rgba(91, 120, 200, 0.1),
-    0 2px 8px rgba(139, 92, 246, 0.06);
+    0 8px 28px rgba(139, 92, 246, 0.1),
+    0 2px 8px rgba(167, 139, 250, 0.06);
   --platform-bg-glass: var(--platform-ui-glass-fill-subtle);
   --platform-bg-glass-strong: var(--platform-ui-glass-fill-strong);
   --platform-bg-glass-subtle: rgba(255, 255, 255, 0.22);
@@ -44,6 +44,7 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell--video-bg .main-layout .app-view-host,
 .app-shell--video-bg .main-layout .app-route-page,
 .app-shell--video-bg .feature-page,
+.app-shell--video-bg .monitor-page,
 .app-shell--video-bg .subsystem-shell,
 .app-shell--video-bg .login-page__layout {
   background: transparent !important;
@@ -115,7 +116,7 @@ html[data-theme="dark"] .app-shell--video-bg {
   border-color: var(--platform-accent-pressed) !important;
 }
 
-/* 主按钮：纯色蓝 */
+/* 主按钮：纯色淡紫 */
 .n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action) {
   background: var(--platform-accent) !important;
   border: 1px solid var(--platform-accent) !important;
@@ -172,7 +173,7 @@ html[data-theme="dark"] .app-shell--video-bg {
   -webkit-backdrop-filter: saturate(165%) blur(10px);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 4px 12px rgba(91, 156, 245, 0.1) !important;
+    0 4px 12px rgba(167, 139, 250, 0.1) !important;
 }
 
 /* warning / error */
@@ -204,6 +205,8 @@ html[data-theme="dark"] .app-shell--video-bg {
 
 /* 常见页面容器 — 玻璃面板 */
 .app-shell .knowledge-search-page,
+.app-shell .report-gen-page,
+.app-shell .kg-page,
 .app-shell .admin-page,
 .app-shell .documents-list-card,
 .app-shell .subscriptions-search-hub__bar,
@@ -214,6 +217,9 @@ html[data-theme="dark"] .app-shell--video-bg {
 }
 
 .app-shell .knowledge-search-page__sider,
+.app-shell .report-gen-page__sider,
+.app-shell .kg-panel--left,
+.app-shell .kg-panel--right,
 .app-shell .system-docs-sider {
   background: var(--platform-ui-glass-fill-subtle) !important;
 }

@@ -131,3 +131,20 @@ class KgMetaOut(BaseModel):
     relation_types: list[KgRelationTypeOut]
     entity_total: int
     relation_total: int
+
+
+class KgExtractFromTextIn(BaseModel):
+    title: str = Field(default="会议总结", max_length=256)
+    text: str = Field(min_length=1)
+    source_type: str = Field(default="meeting_summary", max_length=64)
+    source_id: UUID | None = None
+
+
+class KgExtractFromTextOut(BaseModel):
+    skipped: bool = False
+    reason: str | None = None
+    root_entity_id: UUID | None = None
+    entities_created: int = 0
+    entities_reused: int = 0
+    relations_created: int = 0
+    relations_skipped: int = 0

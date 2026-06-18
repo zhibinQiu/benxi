@@ -1,4 +1,4 @@
-# 组件位置与数据存储（v4.0.7）
+# 组件位置与数据存储（v4.0.9）
 
 > **本文描述当前系统的真实部署形态**：各服务跑在哪里、数据存在哪、如何连接查看。  
 > 启动与部署命令见 [运维部署指南](../../../运维部署指南.md)；容器细节见 [Docker 容器说明](docker-services.md)。
@@ -25,7 +25,7 @@
 |----------|------|
 | `platform/docker-compose*.yml` 多文件组合 | 根目录 `compose.yaml` + `deploy/knowflow.yml` |
 | `bash scripts/merge-stack-env.sh` | `bash scripts/setup-stack-env.sh` |
-| `./dev.sh legacy` | `./dev.sh docker` |
+| `./dev.sh local` | `./dev.sh docker` |
 | `bash scripts/deploy.sh full`（rsync 全仓库远程 build） | `stack build` + `stack save` + `deploy.sh stack push` |
 | 独立 Elasticsearch 向量库 | Infinity（`knowflow-infinity` 容器） |
 

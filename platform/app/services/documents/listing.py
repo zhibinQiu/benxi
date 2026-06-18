@@ -86,12 +86,10 @@ def list_shared_documents(
     total = len(visible)
     start = (page - 1) * page_size
     return visible[start : start + page_size], total
-def list_accessible_documents(
+def filter_accessible_documents(
     db: Session,
     user: User,
     *,
-    page: int,
-    page_size: int,
     keyword: str | None = None,
     scope: str | None = None,
     min_permission_level: str | None = None,
@@ -99,7 +97,8 @@ def list_accessible_documents(
     uncategorized_only: bool = False,
     dept_id: uuid.UUID | None = None,
     owner_id: uuid.UUID | None = None,
-) -> tuple[list[Document], int]:
+) -> list[Document]:
+    """返回当前用户满足权限要求的全部文档（不分页）。"""
     from app.core.document_scope import SCOPE_PERSONAL, VALID_SCOPES
     from app.core.permissions import user_dept_ids, user_is_superuser
     from app.models.document import DocumentStatus
@@ -163,6 +162,34 @@ def list_accessible_documents(
         ):
             continue
         visible.append(d)
+    return visible
+
+
+def list_accessible_documents(
+    db: Session,
+    user: User,
+    *,
+    page: int,
+    page_size: int,
+    keyword: str | None = None,
+    scope: str | None = None,
+    min_permission_level: str | None = None,
+    folder_id: uuid.UUID | None = None,
+    uncategorized_only: bool = False,
+    dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
+) -> tuple[list[Document], int]:
+    visible = filter_accessible_documents(
+        db,
+        user,
+        keyword=keyword,
+        scope=scope,
+        min_permission_level=min_permission_level,
+        folder_id=folder_id,
+        uncategorized_only=uncategorized_only,
+        dept_id=dept_id,
+        owner_id=owner_id,
+    )
     total = len(visible)
     start = (page - 1) * page_size
     return visible[start : start + page_size], total

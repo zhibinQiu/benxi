@@ -35,16 +35,20 @@ import {
   syncFeedSubscription } from "../api/client";
 import { deleteSequentially } from "../utils/batchActions";
 import { withSystemDialogLayer } from "../utils/systemDialog.js";
+import { useI18n } from "../composables/useI18n";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
 const dialog = useDialog();
+const { t, locale } = useI18n();
+
+const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const pageTitle = computed(() => {
-  if (route.query.kind === "website") return "双碳网站资讯";
-  if (route.query.kind === "rss") return "RSS 订阅";
-  return "RSS 与网站订阅";
+  if (route.query.kind === "website") return t("feedSubscriptions.titleWebsite");
+  if (route.query.kind === "rss") return t("feedSubscriptions.titleRss");
+  return t("feedSubscriptions.titleDefault");
 });
 
 const filterKind = computed(() => route.query.kind || null);
@@ -65,13 +69,24 @@ const submitting = ref(false);
 const selectedSourceIds = ref([]);
 
 const sourceOptions = computed(() => [
-  { label: "全部订阅源", value: null },
+  { label: t("feedSubscriptions.allSources"), value: null },
   ...sources.value.map((s) => ({
     label: `${s.name} (${s.entry_count || 0})`,
     value: s.id})),
 ]);
 
-/** 按 category 分组展示内置源（国际双碳 / 国内政策） */
+const PRESET_CATEGORY_KEYS = {
+  国际双碳: "feedSubscriptions.presetIntlCarbon",
+  国内政策: "feedSubscriptions.presetDomesticPolicy",
+  推荐: "feedSubscriptions.presetRecommended",
+};
+
+function presetCategoryLabel(cat) {
+  const key = PRESET_CATEGORY_KEYS[cat];
+  return key ? t(key) : cat;
+}
+
+/** 按 category 分组展示内置源 */
 const presetGroups = computed(() => {
   const order = ["国际双碳", "国内政策"];
   const buckets = new Map();
@@ -84,13 +99,16 @@ const presetGroups = computed(() => {
     ...order.filter((k) => buckets.has(k)),
     ...[...buckets.keys()].filter((k) => !order.includes(k)),
   ];
-  return keys.map((label) => ({ label, items: buckets.get(label) || [] }));
+  return keys.map((label) => ({
+    label: presetCategoryLabel(label),
+    items: buckets.get(label) || [],
+  }));
 });
 
 function fmtTime(iso) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+    return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
     return iso;
   }
@@ -139,7 +157,7 @@ async function submitAdd() {
   const name = addForm.value.name?.trim();
   const url = addForm.value.feed_url?.trim();
   if (!name || !url) {
-    ui.warning("请填写名称与订阅地址");
+    ui.warning(t("feedSubscriptions.fillNameAndUrl"));
     return;
   }
   submitting.value = true;
@@ -149,7 +167,7 @@ async function submitAdd() {
       feed_url: url,
       kind: addForm.value.kind,
       category: addForm.value.category?.trim() || "双碳"});
-    ui.success("已添加订阅");
+    ui.success(t("feedSubscriptions.added"));
     showAdd.value = false;
     addForm.value = {
       name: "",
@@ -167,7 +185,7 @@ async function submitAdd() {
 async function addPreset(index) {
   try {
     await subscribeFeedPreset(index);
-    ui.success("已添加推荐订阅");
+    ui.success(t("feedSubscriptions.presetAdded"));
     await reload();
   } catch (e) {
     ui.error(e.message);
@@ -177,7 +195,7 @@ async function addPreset(index) {
 async function onSyncSource(source) {
   try {
     const res = await syncFeedSubscription(source.id);
-    ui.info(res.message || "同步完成");
+    ui.info(res.message || t("feedSubscriptions.syncDone"));
     await reload();
   } catch (e) {
     ui.error(e.message);
@@ -207,13 +225,16 @@ function toggleSourceSelected(id, checked) {
 function handleBatchRemoveSources() {
   const rows = selectedSources.value;
   if (!rows.length) return;
-  const summary = rows.length === 1 ? `「${rows[0].name}」` : `选中的 ${rows.length} 个订阅`;
+  const content =
+    rows.length === 1
+      ? t("feedSubscriptions.batchRemoveContentSingle", { name: rows[0].name })
+      : t("feedSubscriptions.batchRemoveContentMulti", { count: rows.length });
   dialog.warning(
     withSystemDialogLayer({
-      title: "批量取消订阅",
-      content: `确定取消${summary}？`,
-      positiveText: "移除",
-      negativeText: "取消",
+      title: t("feedSubscriptions.batchRemoveTitle"),
+      content,
+      positiveText: t("feedSubscriptions.remove"),
+      negativeText: t("common.cancel"),
       onPositiveClick: async () => {
         const { deleted, failed } = await deleteSequentially(rows, (row) =>
           deleteFeedSubscription(row.id)
@@ -224,10 +245,18 @@ function handleBatchRemoveSources() {
         selectedSourceIds.value = [];
         if (failed.length) {
           ui.warning(
-            `已移除 ${deleted} 个，${failed.length} 个失败：${failed[0].message || "未知错误"}`
+            t("feedSubscriptions.batchRemovePartial", {
+              deleted,
+              failed: failed.length,
+              error: failed[0].message || t("chatHistory.unknownError"),
+            })
           );
         } else {
-          ui.success(deleted > 1 ? `已移除 ${deleted} 个订阅` : "已取消订阅");
+          ui.success(
+            deleted > 1
+              ? t("feedSubscriptions.batchRemoveSuccessMulti", { deleted })
+              : t("feedSubscriptions.batchRemoveSuccessSingle")
+          );
         }
         await reload();
         return !failed.length;
@@ -269,7 +298,7 @@ onMounted(() => {
       <div class="feed-layout">
         <aside class="feed-sidebar">
           <NSpace vertical :size="12">
-            <NButton type="primary" block @click="showAdd = true">添加订阅</NButton>
+            <NButton type="primary" block @click="showAdd = true">{{ t("feedSubscriptions.addSubscription") }}</NButton>
           </NSpace>
 
           <template v-for="group in presetGroups" :key="group.label">
@@ -287,9 +316,9 @@ onMounted(() => {
               </NButton>
             </NSpace>
           </template>
-          <NText v-if="!presets.length" depth="3" style="font-size: 12px">暂无推荐源</NText>
+          <NText v-if="!presets.length" depth="3" style="font-size: 12px">{{ t("feedSubscriptions.noPresets") }}</NText>
 
-          <NText depth="3" class="section-label">我的订阅</NText>
+          <NText depth="3" class="section-label">{{ t("feedSubscriptions.mySubscriptions") }}</NText>
           <NSpace v-if="sources.length" align="center" :size="8" style="margin-bottom: 8px">
             <NButton
               size="tiny"
@@ -298,10 +327,10 @@ onMounted(() => {
               :disabled="!canBatchRemove"
               @click="handleBatchRemoveSources"
             >
-              移除
+              {{ t("feedSubscriptions.remove") }}
             </NButton>
             <NText v-if="selectedSourceIds.length" depth="3" style="font-size: 12px">
-              已选 {{ selectedSourceIds.length }} 项
+              {{ t("common.selectedCount", { count: selectedSourceIds.length }) }}
             </NText>
           </NSpace>
           <NList v-if="sources.length" hoverable clickable>
@@ -319,17 +348,17 @@ onMounted(() => {
                 <div class="source-row-main">
                   <div class="source-name">
                     {{ s.name }}
-                    <NTag size="tiny" :bordered="false">{{ s.kind === "website" ? "网站" : "RSS" }}</NTag>
+                    <NTag size="tiny" :bordered="false">{{ s.kind === "website" ? t("feedSubscriptions.kindWebsiteTag") : t("feedSubscriptions.kindRssTag") }}</NTag>
                   </div>
-                  <NText depth="3" style="font-size: 12px">{{ s.entry_count }} 条</NText>
+                  <NText depth="3" style="font-size: 12px">{{ t("feedSubscriptions.entryCount", { count: s.entry_count }) }}</NText>
                 </div>
                 <NSpace size="small">
-                  <NButton size="tiny" quaternary @click.stop="onSyncSource(s)">同步</NButton>
+                  <NButton size="tiny" quaternary @click.stop="onSyncSource(s)">{{ t("feedSubscriptions.sync") }}</NButton>
                 </NSpace>
               </div>
             </NListItem>
           </NList>
-          <NEmpty v-else description="暂无订阅" size="small" />
+          <NEmpty v-else :description="t('feedSubscriptions.noSubscriptions')" size="small" />
         </aside>
 
         <main class="feed-main">
@@ -340,7 +369,7 @@ onMounted(() => {
               style="width: 260px"
               @update:value="() => { page = 1; loadArticles(); }"
             />
-            <NText depth="3">共 {{ total }} 条 · {{ pageTitle }}</NText>
+            <NText depth="3">{{ t("feedSubscriptions.totalEntries", { total, title: pageTitle }) }}</NText>
           </NSpace>
 
           <NSpin :show="articlesLoading">
@@ -350,12 +379,12 @@ onMounted(() => {
                   <div class="card-body">
                     <div class="card-title">{{ a.title }}</div>
                     <NText depth="3" class="card-summary" :line-clamp="3">
-                      {{ a.summary || "暂无摘要" }}
+                      {{ a.summary || t("feedSubscriptions.noSummary") }}
                     </NText>
                     <NSpace justify="space-between" style="margin-top: 8px">
                       <NText depth="3" style="font-size: 12px">{{ a.source_name }}</NText>
                       <NSpace size="small">
-                        <NTag v-if="a.imported" size="small" type="success" :bordered="false">已入库</NTag>
+                        <NTag v-if="a.imported" size="small" type="success" :bordered="false">{{ t("feedSubscriptions.imported") }}</NTag>
                         <NText depth="3" style="font-size: 12px">{{ fmtTime(a.publish_at) }}</NText>
                       </NSpace>
                     </NSpace>
@@ -363,47 +392,47 @@ onMounted(() => {
                 </NCard>
               </NGi>
             </NGrid>
-            <NEmpty v-else description="暂无资讯，请添加订阅或点击推荐源" />
+            <NEmpty v-else :description="t('feedSubscriptions.emptyArticles')" />
           </NSpin>
 
           <NSpace v-if="total > pageSize" justify="center" style="margin-top: 16px">
-            <NButton :disabled="page <= 1" @click="page--; loadArticles()">上一页</NButton>
+            <NButton :disabled="page <= 1" @click="page--; loadArticles()">{{ t("feedSubscriptions.prevPage") }}</NButton>
             <NText>{{ page }} / {{ Math.ceil(total / pageSize) }}</NText>
-            <NButton :disabled="page * pageSize >= total" @click="page++; loadArticles()">下一页</NButton>
+            <NButton :disabled="page * pageSize >= total" @click="page++; loadArticles()">{{ t("feedSubscriptions.nextPage") }}</NButton>
           </NSpace>
         </main>
       </div>
     </NSpin>
 
-    <NModal v-model:show="showAdd" preset="card" title="添加 RSS / 网站订阅" style="width: 520px">
+    <NModal v-model:show="showAdd" preset="card" :title="t('feedSubscriptions.addModalTitle')" style="width: 520px">
       <NForm label-placement="top">
-        <NFormItem label="类型">
+        <NFormItem :label="t('feedSubscriptions.typeLabel')">
           <NRadioGroup v-model:value="addForm.kind">
-            <NRadio value="rss">RSS / Atom 地址</NRadio>
-            <NRadio value="website">网站首页（自动发现 Feed）</NRadio>
+            <NRadio value="rss">{{ t("feedSubscriptions.kindRss") }}</NRadio>
+            <NRadio value="website">{{ t("feedSubscriptions.kindWebsite") }}</NRadio>
           </NRadioGroup>
         </NFormItem>
-        <NFormItem label="显示名称">
-          <NInput v-model:value="addForm.name" placeholder="如：上海环交所资讯" />
+        <NFormItem :label="t('feedSubscriptions.displayName')">
+          <NInput v-model:value="addForm.name" :placeholder="t('feedSubscriptions.namePlaceholder')" />
         </NFormItem>
-        <NFormItem :label="addForm.kind === 'website' ? '网站首页 URL' : 'RSS / Atom URL'">
+        <NFormItem :label="addForm.kind === 'website' ? t('feedSubscriptions.websiteUrl') : t('feedSubscriptions.feedUrl')">
           <NInput
             v-model:value="addForm.feed_url"
             :placeholder="
               addForm.kind === 'website'
-                ? 'https://example.com'
-                : 'https://example.com/rss.xml'
+                ? t('feedSubscriptions.websiteUrlPlaceholder')
+                : t('feedSubscriptions.feedUrlPlaceholder')
             "
           />
         </NFormItem>
-        <NFormItem label="分类标签">
-          <NInput v-model:value="addForm.category" placeholder="双碳" />
+        <NFormItem :label="t('feedSubscriptions.categoryLabel')">
+          <NInput v-model:value="addForm.category" :placeholder="t('feedSubscriptions.categoryPlaceholder')" />
         </NFormItem>
       </NForm>
       <template #footer>
         <NSpace justify="end">
-          <NButton @click="showAdd = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="submitAdd">确定</NButton>
+          <NButton @click="showAdd = false">{{ t("common.cancel") }}</NButton>
+          <NButton type="primary" :loading="submitting" @click="submitAdd">{{ t("common.confirm") }}</NButton>
         </NSpace>
       </template>
     </NModal>

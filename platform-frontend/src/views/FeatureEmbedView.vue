@@ -5,12 +5,16 @@ import { NAlert, NButton, NText } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeServiceStartup from "../components/KnowledgeServiceStartup.vue";
 import { fetchFeatureEmbedMeta, getToken } from "../api/client";
+import { useI18n } from "../composables/useI18n.js";
 import { FEATURE_UNAVAILABLE, sanitizeUserFacingMessage } from "../utils/uiMessage";
 
 const route = useRoute();
+const { t, routeTitle } = useI18n();
 
 const featureId = computed(() => route.meta.embedFeatureId || "");
-const pageTitle = computed(() => route.meta.title || "功能");
+const pageTitle = computed(() =>
+  routeTitle(String(route.name || ""), String(route.meta.title || "").trim() || t("featureEmbed.defaultTitle"))
+);
 
 const bootstrapping = ref(true);
 const iframeReady = ref(false);
@@ -43,10 +47,11 @@ const showStartupHint = computed(
     (Boolean(iframeSrc.value) && !iframeReady.value && !error.value)
 );
 
-const startupMessage = computed(() => {
-  if (loadSlow.value) return "加载较慢，请稍候…";
-  return "正在加载子系统…";
-});
+const startupMessage = computed(() =>
+  loadSlow.value ? t("featureEmbed.loadSlow") : t("featureEmbed.loading")
+);
+
+const loadErrorTitle = computed(() => t("featureEmbed.loadFailed", { title: pageTitle.value }));
 
 function onIframeLoad() {
   iframeReady.value = true;
@@ -75,7 +80,7 @@ function startSlowTimer() {
 
 async function loadEmbed() {
   if (!featureId.value) {
-    error.value = "未指定功能";
+    error.value = t("featureEmbed.noFeature");
     bootstrapping.value = false;
     return;
   }
@@ -105,10 +110,10 @@ onBeforeUnmount(clearSlowTimer);
 <template>
   <FeatureSubsystemShell fill>
     <div class="subsystem-embed-host">
-      <n-alert v-if="error" type="error" :title="`无法加载${pageTitle}`" class="embed-alert">
+      <n-alert v-if="error" type="error" :title="loadErrorTitle" class="embed-alert">
         {{ error }}
         <template #action>
-          <n-button size="small" @click="loadEmbed">重试</n-button>
+          <n-button size="small" @click="loadEmbed">{{ t("chat.retry") }}</n-button>
         </template>
       </n-alert>
 
@@ -126,7 +131,7 @@ onBeforeUnmount(clearSlowTimer);
         @error="onIframeError"
       />
       <p v-if="loadSlow && showStartupHint" class="embed-slow-hint">
-        <n-text depth="3">若长时间无响应，请稍后重试或联系管理员。</n-text>
+        <n-text depth="3">{{ t("featureEmbed.slowHint") }}</n-text>
       </p>
     </div>
   </FeatureSubsystemShell>

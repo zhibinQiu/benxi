@@ -1,5 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { useI18n } from "../composables/useI18n.js";
 import { computed, h, ref, watch } from "vue";
 import {
   NButton,
@@ -15,19 +16,21 @@ const PAGE_SIZE = 10;
 
 const props = defineProps({
   show: { type: Boolean, default: false },
-  title: { type: String, default: "选择文档" },
+  title: { type: String, default: "" },
   excludeId: { type: String, default: null },
   excludeIds: { type: Array, default: () => [] }});
 
 const emit = defineEmits(["update:show", "select"]);
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 const keyword = ref("");
 const page = ref(1);
 const total = ref(0);
 const items = ref([]);
 const loading = ref(false);
 
+const modalTitle = computed(() => props.title || t("compare.pickerDefaultTitle"));
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 const showPager = computed(() => total.value > PAGE_SIZE);
 
@@ -36,11 +39,16 @@ function isRowDisabled(row) {
   return props.excludeIds.includes(row.id);
 }
 
-const columns = [
-  { title: "标题", key: "title", ellipsis: { tooltip: true } },
-  { title: "文件名", key: "file_name", width: 200, ellipsis: { tooltip: true } },
+const columns = computed(() => [
+  { title: t("compare.pickerTitle"), key: "title", ellipsis: { tooltip: true } },
   {
-    title: "操作",
+    title: t("compare.pickerFileName"),
+    key: "file_name",
+    width: 200,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: t("compare.pickerAction"),
     key: "actions",
     width: 72,
     render: (row) =>
@@ -52,9 +60,9 @@ const columns = [
           size: "small",
           disabled: isRowDisabled(row),
           onClick: () => onSelect(row)},
-        () => (isRowDisabled(row) ? "已选" : "选择")
+        () => (isRowDisabled(row) ? t("compare.pickerSelected") : t("compare.pickerSelect"))
       )},
-];
+]);
 
 async function loadDocs() {
   loading.value = true;
@@ -103,7 +111,7 @@ watch(
   <n-modal
     :show="show"
     preset="card"
-    :title="title"
+    :title="modalTitle"
     :z-index="PLATFORM_Z.featureModal"
     style="width: min(720px, 92vw)"
     @update:show="emit('update:show', $event)"
@@ -111,12 +119,12 @@ watch(
     <n-space :size="10" style="margin-bottom: 12px">
       <n-input
         v-model:value="keyword"
-        placeholder="搜索标题或文件名"
+        :placeholder="t('compare.searchDocPlaceholder')"
         clearable
         style="flex: 1"
         @keyup.enter="onSearch"
       />
-      <n-button type="primary" @click="onSearch">搜索</n-button>
+      <n-button type="primary" @click="onSearch">{{ t("compare.searchBtn") }}</n-button>
     </n-space>
     <n-data-table
       :columns="columns"

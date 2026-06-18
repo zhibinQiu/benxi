@@ -34,7 +34,7 @@ import { useSystemFeatures } from "../composables/useSystemFeatures";
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
-const { featureLabel } = useI18n();
+const { featureLabel, t, tm, featureTagLabel } = useI18n();
 const { isFavorite, toggleFavorite } = useFeatureFavorites();
 const { features, loading, loaded, loadError, loadSystemFeatures } = useSystemFeatures();
 const showLoading = computed(
@@ -64,19 +64,23 @@ const iconMap = {
 
 const CATEGORY_ORDER = ["document", "tools", "ai"];
 
-const categoryMeta = {
-  document: {
-    title: "文档",
-    hint: "翻译、对比、知识检索",
-    icon: DocumentTextOutline},
-  tools: {
-    title: "工具",
-    hint: "会议助手、内容提取、数据分析、辅助写作、在线 AI 工具",
-    icon: GridOutline},
-  ai: {
-    title: "智能",
-    hint: "AI 智能体、问数、问答与预测等智能应用",
-    icon: SparklesOutline}};
+const categoryMeta = computed(() =>
+  Object.fromEntries(
+    CATEGORY_ORDER.map((id) => [
+      id,
+      {
+        title: t(`systemFunctionsPage.categories.${id}.title`),
+        hint: t(`systemFunctionsPage.categories.${id}.hint`),
+        icon:
+          id === "document"
+            ? DocumentTextOutline
+            : id === "tools"
+              ? GridOutline
+              : SparklesOutline,
+      },
+    ])
+  )
+);
 
 const DEFAULT_CATEGORY = "tools";
 
@@ -88,7 +92,12 @@ function tagType(f) {
 
 function shouldShowTag(f) {
   const tag = String(f.tag || "").trim();
-  return Boolean(tag) && tag !== "可用";
+  const available = t("systemFunctionsPage.tags.available");
+  return Boolean(tag) && tag !== available && tag !== "可用";
+}
+
+function displayTag(f) {
+  return featureTagLabel(f.tag, f.tag);
 }
 
 const groupedCategories = computed(() => {
@@ -101,7 +110,7 @@ const groupedCategories = computed(() => {
   }
   return CATEGORY_ORDER.map((id) => ({
     id,
-    ...categoryMeta[id],
+    ...categoryMeta.value[id],
     features: buckets[id].sort((a, b) => Number(b.enabled) - Number(a.enabled)),
   })).filter((c) => c.features.length > 0);
 });
@@ -110,7 +119,7 @@ async function refreshFeatures() {
   try {
     await loadSystemFeatures(true);
   } catch (e) {
-    ui.error(e.message || loadError.value || "加载功能列表失败");
+    ui.error(e.message || loadError.value || t("systemFunctionsPage.loadFailed"));
   }
 }
 
@@ -133,11 +142,11 @@ function featureDescription(f) {
 
 function openFeature(f) {
   if (!f.enabled) {
-    ui.info(`「${featureTitle(f)}」${f.tag || "即将推出"}，敬请期待`);
+    ui.info(t("systemFunctionsPage.comingSoon", { title: featureTitle(f), tag: displayTag(f) }));
     return;
   }
   if (!f.accessible) {
-    ui.warning("暂无权限，请联系管理员在角色管理中开通");
+    ui.warning(t("systemFunctionsPage.noPermission"));
     return;
   }
   if (f.route) {
@@ -151,7 +160,7 @@ function openFeature(f) {
     window.open(f.external_url, "_blank", "noopener,noreferrer");
     return;
   }
-  ui.warning("该功能暂未配置入口");
+  ui.warning(t("systemFunctionsPage.noEntry"));
 }
 </script>
 
@@ -159,18 +168,16 @@ function openFeature(f) {
   <div class="functions-page feature-page">
     <div class="functions-page__content">
     <header class="functions-page__intro">
-      <HintTooltip
-        text="按类别选择功能进入；长任务提交后可离开，在后台任务或消息中查看结果"
-      />
+      <HintTooltip :text="t('systemFunctionsPage.introHint')" />
     </header>
 
     <n-empty
       v-if="showEmpty && !loadError"
       class="functions-page__empty"
-      description="暂无可用功能，请确认账号权限或稍后重试"
+      :description="t('systemFunctionsPage.emptyDescription')"
     >
       <template #extra>
-        <n-button size="small" @click="refreshFeatures">重新加载</n-button>
+        <n-button size="small" @click="refreshFeatures">{{ t("systemFunctionsPage.reload") }}</n-button>
       </template>
     </n-empty>
 
@@ -180,7 +187,7 @@ function openFeature(f) {
       :description="loadError"
     >
       <template #extra>
-        <n-button size="small" type="primary" @click="refreshFeatures">重新加载</n-button>
+        <n-button size="small" type="primary" @click="refreshFeatures">{{ t("systemFunctionsPage.reload") }}</n-button>
       </template>
     </n-empty>
 
@@ -233,7 +240,7 @@ function openFeature(f) {
                   type="button"
                   class="feature-card__star"
                   :class="{ 'feature-card__star--active': isFavorite(f.id) }"
-                  :aria-label="isFavorite(f.id) ? '取消收藏' : '收藏到侧栏'"
+                  :aria-label="isFavorite(f.id) ? t('systemFunctionsPage.favoriteRemove') : t('systemFunctionsPage.favoriteAdd')"
                   :aria-pressed="isFavorite(f.id)"
                   @click="onFavoriteClick($event, f)"
                 >
@@ -253,7 +260,7 @@ function openFeature(f) {
                     :type="tagType(f)"
                     class="feature-card__tag"
                   >
-                    {{ f.tag }}
+                    {{ displayTag(f) }}
                   </n-tag>
                 </div>
                 <p class="feature-card__desc">{{ featureDescription(f) }}</p>

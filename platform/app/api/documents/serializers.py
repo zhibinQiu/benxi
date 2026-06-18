@@ -312,3 +312,8 @@ def attachment_disposition(file_name: str) -> str:
         f'attachment; filename="{ascii_name}"; '
         f"filename*=UTF-8''{quote(name)}"
     )
+
+
+def inline_disposition(file_name: str) -> str:
+    name = (file_name or "preview").replace("\n", "").replace("\r", "")
+    return f"inline; filename*=UTF-8''{quote(name)}"

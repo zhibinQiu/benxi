@@ -1,8 +1,11 @@
 /** 知识图谱（本体）REST API */
 import { api } from "./http.js";
 
-export async function fetchKgMeta() {
-  return api("/api/v1/kg/meta");
+export async function fetchKgMeta({ syncSystem = false } = {}) {
+  const params = new URLSearchParams();
+  if (syncSystem) params.set("sync_system", "true");
+  const qs = params.toString();
+  return api(`/api/v1/kg/meta${qs ? `?${qs}` : ""}`);
 }
 
 export async function createKgEntityFromDocument(documentId) {
@@ -78,4 +81,16 @@ export async function updateKgRelationType(typeId, body) {
 
 export async function deleteKgRelationType(typeId) {
   return api(`/api/v1/kg/relation-types/${typeId}`, { method: "DELETE" });
+}
+
+export async function extractKgFromText({ title, text, sourceType, sourceId } = {}) {
+  return api("/api/v1/kg/extract-from-text", {
+    method: "POST",
+    body: JSON.stringify({
+      title: title || "会议总结",
+      text,
+      source_type: sourceType || "meeting_summary",
+      source_id: sourceId || null,
+    }),
+  });
 }

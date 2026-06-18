@@ -1,15 +1,16 @@
-"""侧栏菜单可见性：管理员配置普通用户可见项。"""
+"""侧栏菜单可见性：管理员为各菜单项配置可见范围。"""
 
 from __future__ import annotations
 
 import logging
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.permissions import user_is_system_admin
 from app.models.org import User
 from app.models.platform_menu_settings import SINGLETON_ID, PlatformMenuSettings
-from app.schemas.menu_settings import MenuItemOut, MenuSettingsOut, VisibleMenusOut
+from app.schemas.menu_settings import MenuItemOut, MenuSettingsOut, MenuVisibility, VisibleMenusOut
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,12 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         description="资讯订阅与联网搜索收藏",
     ),
     MenuItemOut(
+        key="issue-reports",
+        label="问题登记",
+        group="main",
+        description="内测问题反馈与跟踪",
+    ),
+    MenuItemOut(
         key="admin-monitor",
         label="系统监控",
         group="settings",
@@ -52,7 +59,9 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
     ),
 )
 
-DEFAULT_MEMBER_VISIBLE: dict[str, bool] = {item.key: True for item in MEMBER_MENU_ITEMS}
+DEFAULT_MENU_VISIBILITY: dict[str, MenuVisibility] = {
+    item.key: "all" for item in MEMBER_MENU_ITEMS
+}
 
 ROUTE_MENU_KEYS: dict[str, str] = {
     "ai-home": "ai-home",
@@ -83,8 +92,8 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "feed-subscriptions": "knowledge-subscriptions",
     "feed-entry": "knowledge-subscriptions",
     "admin-monitor": "admin-monitor",
-    "admin-model-settings": "admin-model-settings",
     "admin-docs": "admin-docs",
+    "issue-reports": "issue-reports",
 }
 
 
@@ -100,52 +109,95 @@ def _load_payload(db: Session | None) -> dict:
     return {}
 
 
-def get_member_menu_visibility(db: Session | None = None) -> dict[str, bool]:
-    raw = _load_payload(db).get("member_visible")
+def _normalize_visibility(value: object) -> MenuVisibility | None:
+    if value in ("all", "admin", "hidden"):
+        return value
+    if isinstance(value, bool):
+        return "all" if value else "admin"
+    return None
+
+
+def get_menu_visibility(db: Session | None = None) -> dict[str, MenuVisibility]:
+    payload = _load_payload(db)
+    raw = payload.get("menu_visibility")
     if not isinstance(raw, dict):
-        return dict(DEFAULT_MEMBER_VISIBLE)
-    merged = dict(DEFAULT_MEMBER_VISIBLE)
+        legacy = payload.get("member_visible")
+        if isinstance(legacy, dict):
+            raw = {
+                key: ("all" if bool(value) else "admin")
+                for key, value in legacy.items()
+            }
+        else:
+            raw = {}
+    merged = dict(DEFAULT_MENU_VISIBILITY)
     for key in merged:
-        if key in raw:
-            merged[key] = bool(raw[key])
+        normalized = _normalize_visibility(raw.get(key))
+        if normalized is not None:
+            merged[key] = normalized
     return merged
 
 
 def get_menu_settings(db: Session) -> MenuSettingsOut:
     return MenuSettingsOut(
         items=list(MEMBER_MENU_ITEMS),
-        member_visible=get_member_menu_visibility(db),
+        menu_visibility=get_menu_visibility(db),
     )
 
 
-def save_menu_settings(db: Session, member_visible: dict[str, bool]) -> MenuSettingsOut:
-    allowed = set(DEFAULT_MEMBER_VISIBLE)
-    cleaned = dict(DEFAULT_MEMBER_VISIBLE)
-    for key, value in (member_visible or {}).items():
-        if key in allowed:
-            cleaned[key] = bool(value)
+def resolve_update_menu_visibility(body) -> dict[str, MenuVisibility]:
+    if body.menu_visibility:
+        return dict(body.menu_visibility)
+    if body.member_visible:
+        return {
+            key: ("all" if bool(value) else "admin")
+            for key, value in body.member_visible.items()
+        }
+    return {}
+
+
+def save_menu_settings(
+    db: Session, menu_visibility: dict[str, MenuVisibility]
+) -> MenuSettingsOut:
+    allowed = set(DEFAULT_MENU_VISIBILITY)
+    cleaned = dict(DEFAULT_MENU_VISIBILITY)
+    for key, value in (menu_visibility or {}).items():
+        normalized = _normalize_visibility(value)
+        if key in allowed and normalized is not None:
+            cleaned[key] = normalized
     row = db.get(PlatformMenuSettings, SINGLETON_ID)
     if not row:
         row = PlatformMenuSettings(id=SINGLETON_ID, payload={})
         db.add(row)
-    row.payload = {"member_visible": cleaned}
+    row.payload = {"menu_visibility": cleaned}
+    flag_modified(row, "payload")
     db.commit()
     db.refresh(row)
     return get_menu_settings(db)
 
 
+def _menu_visible_to_user(
+    visibility: MenuVisibility, *, is_admin: bool
+) -> bool:
+    if visibility == "hidden":
+        return False
+    if visibility == "admin":
+        return is_admin
+    return True
+
+
 def resolve_visible_menu_keys(db: Session, user: User) -> VisibleMenusOut:
-    if user_is_system_admin(db, user):
-        return VisibleMenusOut(keys=list(DEFAULT_MEMBER_VISIBLE.keys()))
-    visibility = get_member_menu_visibility(db)
-    keys = [key for key, visible in visibility.items() if visible]
+    visibility = get_menu_visibility(db)
+    is_admin = user_is_system_admin(db, user)
+    keys = [
+        key
+        for key, level in visibility.items()
+        if _menu_visible_to_user(level, is_admin=is_admin)
+    ]
     return VisibleMenusOut(keys=keys)
 
 
 def member_can_access_route(db: Session, user: User, route_name: str | None) -> bool:
     if not route_name:
-        return True
-    if user_is_system_admin(db, user):
         return True
     if str(route_name) == "admin-model-settings":
         from app.core.permissions import user_has_permission
@@ -154,7 +206,10 @@ def member_can_access_route(db: Session, user: User, route_name: str | None) -> 
     menu_key = ROUTE_MENU_KEYS.get(str(route_name))
     if not menu_key:
         return True
-    return get_member_menu_visibility(db).get(menu_key, True)
+    visibility = get_menu_visibility(db).get(menu_key, "all")
+    return _menu_visible_to_user(
+        visibility, is_admin=user_is_system_admin(db, user)
+    )
 
 
 def first_visible_menu_route(db: Session, user: User) -> str:
@@ -164,8 +219,10 @@ def first_visible_menu_route(db: Session, user: User) -> str:
         "system-functions",
         "documents",
         "knowledge-subscriptions",
+        "issue-reports",
         "admin-monitor",
         "admin-docs",
+        "issue-reports",
     )
     for key in priority:
         if key in visible:

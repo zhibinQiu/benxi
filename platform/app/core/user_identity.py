@@ -110,6 +110,15 @@ def username_taken(
     return db.scalar(stmt) is not None
 
 
+def user_display_name(user: User) -> str:
+    """界面显示名：姓名 / 用户名 / 手机号，最后才回退「用户」。"""
+    for value in (user.display_name, user.username, user.phone, user.email):
+        text = (value or "").strip()
+        if text:
+            return text
+    return "用户"
+
+
 def phone_taken(
     db: Session, phone: str, *, exclude_user_id: uuid.UUID | None = None
 ) -> bool:

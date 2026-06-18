@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from "../composables/useI18n.js";
 import { computed, ref, watch } from "vue";
 import { NButton, NIcon, NInput, NSpin, NTag } from "naive-ui";
 import { AddOutline, PlayOutline, RefreshOutline } from "@vicons/ionicons5";
@@ -18,6 +19,7 @@ const props = defineProps({
 const emit = defineEmits(["update:cells"]);
 
 const ui = usePlatformUi();
+const { t } = useI18n();
 const localCells = ref([]);
 const runningId = ref("");
 const savingId = ref("");
@@ -74,7 +76,7 @@ async function runCell(cell) {
       localCells.value[idx] = {
         ...localCells.value[idx],
         status: "error",
-        stderr: e.message || "执行失败",
+        stderr: e.message || t("dataAnalysis.runFailed"),
       };
       emitCells();
     }
@@ -93,17 +95,17 @@ async function addCell() {
       emitCells();
     }
   } catch (e) {
-    ui.error(e.message || "添加代码单元失败");
+    ui.error(e.message || t("dataAnalysis.addCellFailed"));
   } finally {
     creating.value = false;
   }
 }
 
 function statusTag(status) {
-  if (status === "success") return { type: "success", label: "已完成" };
-  if (status === "error") return { type: "error", label: "出错" };
-  if (status === "running") return { type: "warning", label: "运行中" };
-  return { type: "default", label: "待运行" };
+  if (status === "success") return { type: "success", label: t("dataAnalysis.statusSuccess") };
+  if (status === "error") return { type: "error", label: t("dataAnalysis.statusError") };
+  if (status === "running") return { type: "warning", label: t("dataAnalysis.statusRunning") };
+  return { type: "default", label: t("dataAnalysis.statusPending") };
 }
 </script>
 
@@ -120,20 +122,20 @@ function statusTag(status) {
         >
           {{ lib }}
         </n-tag>
-        <span class="library-hint">内置 df · pd · np · plt · sns · display</span>
+        <span class="library-hint">{{ t("dataAnalysis.libraryHint") }}</span>
       </div>
       <n-button size="small" type="primary" :loading="creating" @click="addCell">
         <template #icon><n-icon><AddOutline /></n-icon></template>
-        添加代码单元
+        {{ t("dataAnalysis.addCell") }}
       </n-button>
     </div>
 
     <div v-if="!localCells.length" class="notebook-empty">
-      <p>Notebook 为空</p>
+      <p>{{ t("dataAnalysis.notebookEmpty") }}</p>
       <p class="hint">
-        点击「添加代码单元」手动编写 Python，或在左侧对话让 AI 生成分析代码。
+        {{ t("dataAnalysis.notebookEmptyHint") }}
       </p>
-      <p class="hint">支持 {{ libraryHint }}，matplotlib / seaborn 图表运行后自动展示。</p>
+      <p class="hint">{{ t("dataAnalysis.notebookEmptyLibraries", { libraries: libraryHint }) }}</p>
     </div>
 
     <article v-for="cell in localCells" :key="cell.id" class="notebook-cell">
@@ -142,7 +144,7 @@ function statusTag(status) {
           v-model:value="cell.title"
           size="small"
           class="cell-title-input"
-          placeholder="单元标题"
+          :placeholder="t('dataAnalysis.cellTitlePlaceholder')"
           @blur="onCodeBlur(cell)"
         />
         <n-tag size="small" :type="statusTag(cell.status).type" :bordered="false">
@@ -168,12 +170,12 @@ function statusTag(status) {
         type="textarea"
         class="cell-code"
         :autosize="{ minRows: 6, maxRows: 18 }"
-        placeholder="# 可用: df, pd, np, plt, sns, display, display_image"
+        :placeholder="t('dataAnalysis.cellCodePlaceholder')"
         @blur="onCodeBlur(cell)"
       />
 
       <div v-if="cell.status === 'running'" class="cell-output running">
-        <n-spin size="small" /> 正在执行…
+        <n-spin size="small" /> {{ t("dataAnalysis.cellRunning") }}
       </div>
 
       <div v-if="cell.stdout" class="cell-output stdout">
@@ -187,14 +189,14 @@ function statusTag(status) {
           v-for="(img, i) in cell.images"
           :key="`${cell.id}-img-${i}`"
           :src="`data:image/png;base64,${img}`"
-          :alt="`图表 ${i + 1}`"
+          :alt="t('dataAnalysis.chartAlt', { index: i + 1 })"
           loading="lazy"
         />
       </div>
     </article>
 
     <div v-if="savingId" class="notebook-saving">
-      <n-icon><RefreshOutline /></n-icon> 保存中…
+      <n-icon><RefreshOutline /></n-icon> {{ t("dataAnalysis.saving") }}
     </div>
   </div>
 </template>

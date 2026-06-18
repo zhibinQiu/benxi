@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { useI18n } from "../composables/useI18n.js";
 import {
   NButton,
   NIcon,
@@ -49,9 +50,21 @@ const props = defineProps({
   docDisplayTitle: { type: Function, required: true },
   hitPage: { type: Function, required: true },
   highlightSnippet: { type: Function, required: true },
-  allowPick: { type: Boolean, default: true }});
+  allowPick: { type: Boolean, default: true },
+});
 
-defineEmits(["pick", "open-pdf", "scroll-ref", "prev-hit", "next-hit"]);
+const emit = defineEmits([
+  "pick",
+  "open-pdf",
+  "scroll-ref",
+  "prev-hit",
+  "next-hit",
+  "update:pdfPage",
+]);
+
+const { t } = useI18n();
+
+const pdfNumPages = ref(1);
 
 const panelClass = computed(() =>
   props.isBaseline
@@ -79,6 +92,17 @@ const showsExtractedText = computed(
     !showsImagePreview.value &&
     !showsHtmlPreview.value
 );
+
+function onPdfReady({ numPages }) {
+  pdfNumPages.value = Math.max(1, Number(numPages) || 1);
+}
+
+function goPdfPage(delta) {
+  const next = (props.pdfPage || 1) + delta;
+  if (next >= 1 && next <= pdfNumPages.value) {
+    emit("update:pdfPage", next);
+  }
+}
 </script>
 
 <template>
@@ -94,20 +118,41 @@ const showsExtractedText = computed(
         <n-text v-if="doc" class="doc-panel-name" :title="doc.file_name">
           {{ docDisplayTitle(doc) }}
         </n-text>
-        <n-text v-else depth="3" class="doc-panel-placeholder">未选择</n-text>
+        <n-text v-else depth="3" class="doc-panel-placeholder">{{ t("compare.notSelected") }}</n-text>
       </div>
       <n-space :size="6">
+        <n-space
+          v-if="showsPdfPreview && pdfNumPages > 1"
+          :size="4"
+          align="center"
+          class="doc-panel-page-nav"
+        >
+          <n-button size="tiny" quaternary :disabled="pdfPage <= 1" @click="goPdfPage(-1)">
+            {{ t("compare.prevPage") }}
+          </n-button>
+          <n-text depth="3" class="doc-panel-page-label">
+            {{ t("compare.pageNav", { page: pdfPage, total: pdfNumPages }) }}
+          </n-text>
+          <n-button
+            size="tiny"
+            quaternary
+            :disabled="pdfPage >= pdfNumPages"
+            @click="goPdfPage(1)"
+          >
+            {{ t("compare.nextPage") }}
+          </n-button>
+        </n-space>
         <n-button v-if="allowPick" size="tiny" secondary @click="$emit('pick', columnIndex)">
           <template #icon>
             <n-icon :component="FolderOpenOutline" />
           </template>
-          选择
+          {{ t("compare.pick") }}
         </n-button>
         <n-button v-if="doc" size="tiny" quaternary @click="$emit('open-pdf', doc)">
           <template #icon>
             <n-icon :component="OpenOutline" />
           </template>
-          原文
+          {{ t("compare.original") }}
         </n-button>
       </n-space>
     </header>
@@ -115,7 +160,7 @@ const showsExtractedText = computed(
       <n-spin :show="loading || comparing" class="preview-spin">
         <div v-if="showsPdfPreview" class="pdf-preview-wrap">
           <ComparePdfPreview
-            :key="`pdf-col-${columnIndex}-${pdfSrc}-${pdfPage}`"
+            :key="`pdf-col-${columnIndex}-${pdfSrc}`"
             :src="pdfSrc.split('#')[0]"
             :page="pdfPage"
             :highlights="pdfHighlights"
@@ -123,6 +168,8 @@ const showsExtractedText = computed(
             :diff-side="diffSide"
             :active-diff-id="activeDiffId"
             :caption="pdfCaption"
+            @ready="onPdfReady"
+            @page-change="(page) => emit('update:pdfPage', page)"
           />
           <div
             v-if="isSearchTarget && activeHit && searchHits.length"
@@ -142,7 +189,7 @@ const showsExtractedText = computed(
               </n-button>
             </n-space>
             <n-tag size="small" type="warning" :bordered="false">
-              第 {{ hitPage(activeHit) }} 页
+              {{ t("compare.page", { page: hitPage(activeHit) }) }}
             </n-tag>
             <span class="pdf-hit-snippet" v-html="highlightSnippet(activeHit.snippet)" />
           </div>
@@ -156,7 +203,7 @@ const showsExtractedText = computed(
           :src="imageSrc"
           class="pdf-frame"
           sandbox="allow-same-origin"
-          :title="`${roleLabel}预览`"
+          :title="t('compare.previewTitle', { role: roleLabel })"
         />
         <template v-else-if="showsExtractedText">
           <pre v-if="plainPreview" class="plain-preview">{{ plainPreview }}</pre>
@@ -181,8 +228,8 @@ const showsExtractedText = computed(
                   'para-diff-modify': diffClassForSide(diffSide, p) === 'hl-modify'}"
               >
                 <n-text depth="3" class="page-label">
-                  第 {{ p.page }} 页
-                  <span v-if="p.bbox" class="bbox-hint"> · 版面块</span>
+                  {{ t("compare.page", { page: p.page }) }}
+                  <span v-if="p.bbox" class="bbox-hint">{{ t("compare.layoutBlock") }}</span>
                 </n-text>
                 <div
                   class="para-text"
@@ -204,10 +251,10 @@ const showsExtractedText = computed(
               </div>
             </template>
             <n-text v-else depth="3" class="empty-hint">
-              {{ content?.warning || "暂无文本内容" }}
+              {{ content?.warning || t("compare.noTextContent") }}
             </n-text>
           </div>
-          <n-text v-else-if="!doc" depth="3" class="empty-hint">请选择文档</n-text>
+          <n-text v-else-if="!doc" depth="3" class="empty-hint">{{ t("compare.pickDoc") }}</n-text>
         </template>
       </n-spin>
     </div>
@@ -217,6 +264,8 @@ const showsExtractedText = computed(
 <style scoped>
 .doc-panel {
   min-height: 0;
+  height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--platform-surface, #fff);
@@ -273,6 +322,13 @@ const showsExtractedText = computed(
 }
 .doc-panel-placeholder {
   font-size: 12px;
+}
+.doc-panel-page-nav {
+  flex-shrink: 0;
+}
+.doc-panel-page-label {
+  font-size: 11px;
+  white-space: nowrap;
 }
 .doc-panel-preview {
   flex: 1;
@@ -333,7 +389,7 @@ const showsExtractedText = computed(
   width: 100%;
   height: 100%;
   border: none;
-  background: #525659;
+  background: #fff;
   display: block;
 }
 .pdf-hit-bar {

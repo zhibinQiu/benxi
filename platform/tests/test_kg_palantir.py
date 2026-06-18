@@ -71,11 +71,11 @@ def test_kg_question_entity_match_and_context(client: TestClient, admin_token: s
         names = [ent.name for ent, _ in matches]
         assert "全国碳市场管理办法" in names
 
-        ctx = retrieve_kg_context_for_question(db, user, "张三负责哪些减排项目？")
+        ctx = retrieve_kg_context_for_question(db, user, "系统管理员负责哪些减排项目？")
         assert ctx is not None
         assert ctx.entity_count >= 3
         assert ctx.relation_count >= 1
-        assert any("张三" in c["title"] for c in ctx.citations)
+        assert any("减排路径规划" in c["title"] for c in ctx.citations)
         assert "负责" in ctx.context_text
 
         empty = retrieve_kg_context_for_question(db, user, "今天天气怎么样")
@@ -103,7 +103,7 @@ def test_ai_home_resolves_kg_context(client: TestClient, admin_token: str):
             retrieval_context=kg.context_text or "",
         )
         system = messages[0]["content"]
-        assert "知识图谱" in system
+        assert "本体图谱" in system
         assert "全国碳市场管理办法" in system
         assert "范围一排放量" in system
     finally:
@@ -118,7 +118,7 @@ def test_merge_kg_qa_into_context_offsets_citations():
         "[1]\n文档片段",
         doc_citations,
         KgQaContext(
-            context_text="【知识图谱实体与关系】\n[1] 法规 · 测试",
+            context_text="【本体图谱实体与关系】\n[1] 法规 · 测试",
             citations=[
                 {
                     "index": 1,
@@ -130,7 +130,55 @@ def test_merge_kg_qa_into_context_offsets_citations():
             ],
         ),
     )
-    assert "知识图谱" in merged_ctx
+    assert "本体图谱" in merged_ctx
     assert merged_cites[0]["index"] == 1
     assert merged_cites[1]["index"] == 2
     assert merged_cites[1]["source"] == "kg"
+
+
+def test_kg_graph_focus_isolated_entity(client: TestClient, admin_token: str):
+    """无关系的孤立实体也应出现在子图中。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    meta = client.get("/api/v1/kg/meta", headers=headers)
+    assert meta.status_code == 200
+    type_id = meta.json()["data"]["entity_types"][0]["id"]
+
+    create = client.post(
+        "/api/v1/kg/entities",
+        headers=headers,
+        json={"type_id": type_id, "name": "孤立测试实体", "description": ""},
+    )
+    assert create.status_code == 200
+    entity_id = create.json()["data"]["id"]
+
+    graph = client.get(
+        f"/api/v1/kg/graph?focus_entity_id={entity_id}&depth=1",
+        headers=headers,
+    )
+    assert graph.status_code == 200
+    nodes = graph.json()["data"]["nodes"]
+    assert len(nodes) == 1
+    assert nodes[0]["id"] == entity_id
+
+    client.delete(f"/api/v1/kg/entities/{entity_id}", headers=headers)
+
+
+def test_kg_meta_syncs_platform_org(client: TestClient, admin_token: str):
+    """加载 meta 时将平台用户/部门同步为图谱实体。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    res = client.get("/api/v1/kg/meta", headers=headers)
+    assert res.status_code == 200
+
+    entities = client.get("/api/v1/kg/entities", headers=headers)
+    assert entities.status_code == 200
+    rows = entities.json()["data"]
+    orgs = [e for e in rows if e["type_code"] == "org"]
+    persons = [e for e in rows if e["type_code"] == "person"]
+    assert len(persons) >= 1
+    assert any(
+        (e.get("properties") or {}).get("platform_user_id")
+        for e in persons
+    )
+    # 测试库可能无部门数据，有组织实体则校验属性键
+    for org in orgs:
+        assert (org.get("properties") or {}).get("platform_department_id")

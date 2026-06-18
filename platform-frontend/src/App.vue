@@ -11,7 +11,7 @@ import {
   dateZhCN,
   dateEnUS } from "naive-ui";
 import { useAppPreferences } from "./composables/useAppPreferences";
-import { usePlatformBranding } from "./composables/usePlatformBranding";
+import { useAppDisplayName } from "./composables/usePlatformBranding";
 import { useLiquidGlassMotion } from "./composables/useLiquidGlassMotion";
 import { useI18n } from "./composables/useI18n";
 import { createThemeOverrides } from "./utils/platformTheme";
@@ -22,8 +22,8 @@ import { onSessionReplaced } from "./utils/sessionGuard";
 import PageVideoBackground from "./components/PageVideoBackground.vue";
 import AppSessionGuard from "./components/AppSessionGuard.vue";
 const { isDark } = useAppPreferences();
-const { locale, t } = useI18n();
-const { platformAppTitle } = usePlatformBranding();
+const { locale } = useI18n();
+const appDisplayName = useAppDisplayName();
 useLiquidGlassMotion();
 
 const naiveTheme = computed(() => (isDark.value ? darkTheme : null));
@@ -35,9 +35,9 @@ const route = useRoute();
 const shellVideoBg = computed(() => routeUsesVideoBackground(route));
 
 watch(
-  [locale, platformAppTitle],
+  [locale, appDisplayName],
   () => {
-    document.title = platformAppTitle.value || t("app.name");
+    document.title = appDisplayName.value;
   },
   { immediate: true }
 );

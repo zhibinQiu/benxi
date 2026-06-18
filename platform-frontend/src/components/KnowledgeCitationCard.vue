@@ -130,7 +130,7 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
         class="knowledge-citation-card__title"
         @click="openKgEntity"
       >
-        {{ citation.title || "知识图谱实体" }}
+        {{ citation.title || "本体图谱实体" }}
       </button>
       <button
         v-else-if="citation.document_id"
@@ -155,7 +155,7 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
     </p>
 
     <div v-if="canPreviewImage" class="knowledge-citation-card__shot">
-      <n-spin :show="imageLoading">
+      <n-spin :show="imageLoading" local>
         <img
           v-if="imageObjectUrl"
           :src="imageObjectUrl"

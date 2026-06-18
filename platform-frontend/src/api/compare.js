@@ -1,5 +1,12 @@
 /** 文档对比 REST API */
 import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
+import { messages } from "../locales/index.js";
+
+function compareMessage(key) {
+  const locale = localStorage.getItem("platform-locale") === "en" ? "en" : "zh";
+  const raw = key.split(".").reduce((obj, part) => obj?.[part], messages[locale]);
+  return typeof raw === "string" ? raw : key;
+}
 
 export async function fetchCompareDocuments({ page = 1, page_size = 10, keyword } = {}) {
   const q = new URLSearchParams({ page, page_size });
@@ -7,13 +14,12 @@ export async function fetchCompareDocuments({ page = 1, page_size = 10, keyword 
   return api(`/api/v1/compare/documents?${q}`);
 }
 
-export async function createCompareJob({ leftDocumentId, rightDocumentId, syncKnowflow = true }) {
+export async function createCompareJob({ leftDocumentId, rightDocumentId }) {
   return api("/api/v1/compare/jobs", {
     method: "POST",
     body: JSON.stringify({
       left_document_id: leftDocumentId,
       right_document_id: rightDocumentId,
-      sync_knowflow: syncKnowflow,
     }),
   });
 }
@@ -38,7 +44,7 @@ export async function waitCompareJob(jobId, { intervalMs = 1500, timeoutMs = 120
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
-  throw new Error("文档对比超时，请稍后重试");
+  throw new Error(compareMessage("compare.timeout"));
 }
 
 export async function searchCompareJob(jobId, { query, scope = "right", fieldMatch = true }) {
@@ -56,7 +62,6 @@ export async function searchCompareJob(jobId, { query, scope = "right", fieldMat
 export async function searchCompareDocuments({
   rightDocumentId,
   query,
-  syncKnowflow = true,
   fieldMatch = true,
 }) {
   return api("/api/v1/compare/search", {
@@ -64,7 +69,6 @@ export async function searchCompareDocuments({
     body: JSON.stringify({
       right_document_id: rightDocumentId,
       query,
-      sync_knowflow: syncKnowflow,
       field_match: fieldMatch,
     }),
   });
@@ -79,34 +83,6 @@ export async function fetchCompareDocumentContent(documentId, versionId = null) 
   return api(`/api/v1/compare/documents/${documentId}/content${q}`);
 }
 
-/** 单文档版本对 diff：只读，返回上传时预计算入库的结果 */
-export async function fetchVersionCompare(documentId, leftVersionId, rightVersionId) {
-  const q = new URLSearchParams({
-    left_version_id: leftVersionId,
-    right_version_id: rightVersionId,
-  });
-  return api(`/api/v1/compare/documents/${documentId}/version-compare?${q}`);
-}
-
-export async function pollVersionCompare(
-  documentId,
-  leftVersionId,
-  rightVersionId,
-  { intervalMs = 1500, timeoutMs = 120000 } = {}
-) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const rel = await fetchVersionCompare(documentId, leftVersionId, rightVersionId);
-    if (rel?.status === "done" || rel?.status === "failed") return rel;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  throw new Error("预计算差异尚未就绪，请稍后刷新");
-}
-
-export async function fetchDocumentVersionCompareRelations(documentId) {
-  return api(`/api/v1/compare/documents/${documentId}/version-compare/relations`);
-}
-
 /** 只读：加载时间线相邻版本对的预计算 diff */
 export async function fetchVersionCompareAdjacent(documentId, versionIds) {
   const q = new URLSearchParams({
@@ -115,14 +91,6 @@ export async function fetchVersionCompareAdjacent(documentId, versionIds) {
   return api(
     `/api/v1/compare/documents/${documentId}/version-compare/adjacent?${q}`
   );
-}
-
-/** @deprecated 使用 fetchVersionCompareAdjacent */
-export async function fetchVersionCompareBatch(documentId, versionIds) {
-  return api(`/api/v1/compare/documents/${documentId}/version-compare/batch`, {
-    method: "POST",
-    body: JSON.stringify({ version_ids: versionIds }),
-  });
 }
 
 /** 版本差异问答（基于入库 diff + LLM 总结） */
@@ -150,26 +118,7 @@ export async function pollVersionCompareAdjacent(
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }
-  throw new Error("部分版本差异仍在后台预计算，请稍后刷新");
-}
-
-/** @deprecated */
-export async function waitVersionCompareBatch(
-  documentId,
-  versionIds,
-  opts = {}
-) {
-  return pollVersionCompareAdjacent(documentId, versionIds, opts);
-}
-
-/** @deprecated */
-export async function waitVersionCompare(
-  documentId,
-  leftVersionId,
-  rightVersionId,
-  opts = {}
-) {
-  return pollVersionCompare(documentId, leftVersionId, rightVersionId, opts);
+  throw new Error(compareMessage("compare.precomputePartialPending"));
 }
 
 /** 带鉴权拉取原文，用于对比页 iframe（blob URL） */

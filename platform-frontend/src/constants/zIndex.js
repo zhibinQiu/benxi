@@ -12,6 +12,8 @@ export const PLATFORM_Z = {
   tooltip: 10100,
   /** 功能弹窗：表单、文档选择、对比工作台等 n-modal */
   featureModal: 10300,
+  /** 功能弹窗内的 Select / Cascader 下拉层（须高于 featureModal 遮罩） */
+  selectInModal: 10400,
   /** 系统 Toast */
   message: 10900,
   /** 系统确认框：删除 / 操作确认 / 登录失效（最高交互层） */

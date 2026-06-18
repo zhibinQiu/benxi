@@ -1,7 +1,8 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getToken } from "../api/client";
 import { useAuth } from "../composables/useAuth";
-import { routeMenuKey, useMenuSettings } from "../composables/useMenuSettings";
+import { routeMenuKey, useMenuSettings, isConfigurableMenuKey } from "../composables/useMenuSettings";
+import { DEFAULT_HOME_ROUTE } from "../utils/postLoginRoute.js";
 
 const routes = [
   {
@@ -30,7 +31,7 @@ const routes = [
       {
         path: "system/functions",
         name: "system-functions",
-        meta: { title: "功能列表", featureIcon: "grid" },
+        meta: { title: "功能列表", featureIcon: "grid", videoBg: true },
         component: () => import("../views/SystemFunctionsView.vue"),
       },
       {
@@ -95,7 +96,7 @@ const routes = [
       {
         path: "knowledge/subscriptions",
         name: "knowledge-subscriptions",
-        meta: { title: "网站收藏", fullHeight: true, featureIcon: "newspaper" },
+        meta: { title: "网站收藏", fullHeight: true, featureIcon: "newspaper", videoBg: true },
         component: () => import("../views/SubscriptionsView.vue"),
       },
       {
@@ -167,6 +168,7 @@ const routes = [
           featureIcon: "git-network",
           perm: "feature.kg_palantir",
           keepAlive: true,
+          videoBg: true,
         },
         component: () => import("../views/KgPalantirView.vue"),
       },
@@ -194,7 +196,7 @@ const routes = [
           fullHeight: true,
           flushStart: true,
           flushEnd: true,
-          featureIcon: "document-text",
+          featureIcon: "create",
           keepAlive: true,
           videoBg: true,
         },
@@ -216,13 +218,14 @@ const routes = [
           backTo: "ai-home",
           perm: "feature.knowledge_search",
           videoBg: true,
+          keepAlive: true,
         },
         component: () => import("../views/KnowledgeSearchView.vue"),
       },
       {
         path: "documents",
         name: "documents",
-        meta: { title: "文档中心", featureIcon: "document-text" },
+        meta: { title: "文档中心", featureIcon: "document-text", videoBg: true },
         component: () => import("../views/DocumentsView.vue"),
       },
       {
@@ -278,38 +281,44 @@ const routes = [
       {
         path: "admin/users",
         name: "admin-users",
-        meta: { title: "用户管理", perm: "admin.user" },
+        meta: { title: "用户管理", perm: "admin.user", videoBg: true },
         component: () => import("../views/admin/UsersView.vue"),
       },
       {
         path: "admin/departments",
         name: "admin-departments",
-        meta: { title: "部门管理", perm: "admin.dept" },
+        meta: { title: "部门管理", perm: "admin.dept", videoBg: true },
         component: () => import("../views/admin/DepartmentsView.vue"),
       },
       {
         path: "admin/monitor",
         name: "admin-monitor",
-        meta: { title: "系统监控" },
+        meta: { title: "系统监控", videoBg: true },
         component: () => import("../views/admin/SystemMonitorView.vue"),
       },
       {
         path: "admin/model-settings",
         name: "admin-model-settings",
-        meta: { title: "资源管理", perm: "admin.user", featureLocalNav: true },
+        meta: { title: "资源管理", perm: "admin.user", featureLocalNav: true, videoBg: true },
         component: () => import("../views/admin/ModelSettingsView.vue"),
       },
       {
         path: "admin/menu-settings",
         name: "admin-menu-settings",
-        meta: { title: "菜单管理", perm: "admin.user" },
+        meta: { title: "菜单管理", perm: "admin.user", videoBg: true },
         component: () => import("../views/admin/MenuSettingsView.vue"),
       },
       {
         path: "admin/docs",
         name: "admin-docs",
-        meta: { title: "说明文档" },
+        meta: { title: "说明文档", videoBg: true },
         component: () => import("../views/admin/SystemDocsView.vue"),
+      },
+      {
+        path: "issue-reports",
+        name: "issue-reports",
+        meta: { title: "问题登记", featureIcon: "list", videoBg: true },
+        component: () => import("../views/IssueReportsView.vue"),
       },
     ],
   },
@@ -320,20 +329,37 @@ const router = createRouter({
   routes,
 });
 
+/** 默认首页与对话历史：不受「菜单可见性」拦截，确保登录后可达 AI 智能体 */
+const MENU_VISIBILITY_EXEMPT = new Set(["ai-home", "chat-history"]);
+
 router.beforeEach(async (to) => {
-  if (to.meta.public) return true;
-  if (!getToken()) return { name: "login", query: { redirect: to.fullPath } };
+  if (to.meta.public) {
+    if (to.name === "login" && getToken()) {
+      const { loadUser } = useAuth();
+      await loadUser();
+      if (getToken()) {
+        return DEFAULT_HOME_ROUTE;
+      }
+    }
+    return true;
+  }
+  if (!getToken()) return { name: "login" };
   const { loadUser, hasPerm, user } = useAuth();
   if (!user.value) await loadUser();
-  if (!getToken()) return { name: "login", query: { redirect: to.fullPath } };
+  if (!getToken()) return { name: "login" };
   if (to.meta.perm && !hasPerm(to.meta.perm)) {
-    return { name: "ai-home" };
+    return DEFAULT_HOME_ROUTE;
   }
-  if (user.value && !user.value.is_system_admin) {
+  if (user.value) {
     const { loadMenuSettings, isMenuVisible, firstVisibleRouteName } = useMenuSettings();
     await loadMenuSettings();
     const menuKey = routeMenuKey(String(to.name || ""));
-    if (menuKey && !isMenuVisible(menuKey)) {
+    if (
+      menuKey &&
+      isConfigurableMenuKey(menuKey) &&
+      !MENU_VISIBILITY_EXEMPT.has(String(to.name || "")) &&
+      !isMenuVisible(menuKey)
+    ) {
       return { name: firstVisibleRouteName() };
     }
   }

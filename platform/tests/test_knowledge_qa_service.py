@@ -127,21 +127,20 @@ def test_build_aligned_qa_context_skips_empty_and_reindexes():
     assert cites[1]["title"] == "C"
 
 
-def test_finalize_qa_preserves_citation_index():
+def test_finalize_qa_renumbers_citations_sequentially():
     citations = [
         {"index": 1, "document_id": "a", "title": "Doc A", "snippet": "alpha"},
         {"index": 2, "document_id": "b", "title": "Doc B", "snippet": "beta"},
         {"index": 3, "document_id": "c", "title": "Doc C", "snippet": "gamma"},
+        {"index": 4, "document_id": "d", "title": "Doc D", "snippet": "delta"},
     ]
-    answer = "要点 [1]。补充 [3]。"
+    answer = "要点 [1]。补充 [3]。结论 [4]。"
     normalized, kept = finalize_qa_answer_and_citations(answer, citations)
-    assert "[1]" in normalized and "[3]" in normalized
-    assert len(kept) == 2
-    assert kept[0]["index"] == 1
-    assert kept[1]["index"] == 3
+    assert normalized == "要点 [1]。补充 [2]。结论 [3]。"
+    assert [c["index"] for c in kept] == [1, 2, 3]
 
 
-def test_finalize_qa_keeps_all_citations_without_marks():
+def test_finalize_qa_drops_citations_without_body_refs():
     citations = [
         {"index": 1, "document_id": "a", "title": "Doc A", "snippet": "alpha"},
         {"index": 2, "document_id": "b", "title": "Doc B", "snippet": "beta"},
@@ -149,8 +148,7 @@ def test_finalize_qa_keeps_all_citations_without_marks():
     answer = "根据材料，项目将于下月启动。"
     normalized, kept = finalize_qa_answer_and_citations(answer, citations)
     assert "项目将于下月启动" in normalized
-    assert len(kept) == 2
-    assert [c["index"] for c in kept] == [1, 2]
+    assert kept == []
 
 
 def test_finalize_citations_strips_reference_section():

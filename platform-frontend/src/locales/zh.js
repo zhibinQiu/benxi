@@ -930,7 +930,6 @@ export default {
   notifications: {
     title: "消息通知",
     markAllRead: "全部已读",
-    clearAll: "清空",
     empty: "暂无消息",
     columns: {
       title: "标题",
@@ -942,15 +941,9 @@ export default {
       delete: "删除",
     },
     messages: {
-      allRead: "已全部标为已读",
       noneUnread: "暂无未读消息",
-      cleared: "已删除 {{count}} 条消息",
-      nothingToClear: "没有可删除的消息",
+      clearedAll: "已全部标为已读并清空 {{count}} 条消息",
       markedRead: "已标记 {{count}} 条为已读",
-    },
-    confirm: {
-      clearRead: "将删除所有已读消息，确定继续？",
-      clearAll: "将删除全部消息记录，确定继续？",
     },
     read: "已读",
   },
@@ -1377,7 +1370,6 @@ export default {
       knowflowDuplicateGroups: "{{count}} 组重复文件名",
       knowflowFailedTasks: "失败 task 累计",
       knowflowBacklogTaskCount: "{{count}} 个待解析 task",
-      knowflowExecutorIdleHint: "空闲（无积压可忽略）",
       knowflowExecutorStuckHint: "有积压但未消费，可执行 queue-reset",
     },
     menuSettings: {

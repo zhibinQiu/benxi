@@ -386,15 +386,14 @@ onUnmounted(() => {
                   }}
                 </n-tag>
                 <span
-                  v-if="!metrics.knowflow_queue.executor_active"
+                  v-if="
+                    !metrics.knowflow_queue.executor_active &&
+                    ((metrics.knowflow_queue.pending_tasks || 0) > 0 ||
+                      (metrics.knowflow_queue.queue_lag || 0) > 0)
+                  "
                   class="metric-hint metric-hint--inline"
                 >
-                  {{
-                    (metrics.knowflow_queue.pending_tasks || 0) > 0 ||
-                    (metrics.knowflow_queue.queue_lag || 0) > 0
-                      ? t("admin.monitor.knowflowExecutorStuckHint")
-                      : t("admin.monitor.knowflowExecutorIdleHint")
-                  }}
+                  {{ t("admin.monitor.knowflowExecutorStuckHint") }}
                 </span>
               </div>
             </n-gi>

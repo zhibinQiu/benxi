@@ -2,6 +2,7 @@
 import { usePlatformUi } from "../composables/usePlatformUi";
 import {
   computed,
+  defineAsyncComponent,
   nextTick,
   onActivated,
   onBeforeUnmount,
@@ -21,7 +22,7 @@ import {
   uploadAiChatAttachments,
 } from "../api/chat.js";
 import { NButton, NIcon, NSpin } from "naive-ui";
-import { marked } from "marked";
+import { renderMarkdown } from "../utils/markdown.js";
 import ChatComposer from "./ChatComposer.vue";
 import ChatBubbleRetry from "./ChatBubbleRetry.vue";
 import IconAction from "./IconAction.vue";
@@ -29,12 +30,12 @@ import MarkdownRichContent from "./MarkdownRichContent.vue";
 import KnowledgeChatContent from "./KnowledgeChatContent.vue";
 import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 import KnowledgeCitationPreviewModal from "./KnowledgeCitationPreviewModal.vue";
-import KnowledgeMindMap from "./KnowledgeMindMap.vue";
+const KnowledgeMindMap = defineAsyncComponent(() => import("./KnowledgeMindMap.vue"));
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
 import { useI18n } from "../composables/useI18n.js";
 import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
-import { splitCitedCitations } from "../utils/reportCitations.js";
+import { alignCitationsWithContent, splitCitedCitations } from "../utils/reportCitations.js";
 import { exportMindmapMarkdown, exportMindmapOpml } from "../utils/mindmapExport.js";
 import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { navigateWithReturn } from "../utils/navigationReturn";
@@ -94,8 +95,6 @@ const { t } = useI18n();
 const appDisplayName = useAppDisplayName();
 const route = useRoute();
 const router = useRouter();
-
-marked.setOptions({ gfm: true, breaks: true });
 
 const started = ref(false);
 const loadingHistory = ref(false);
@@ -291,7 +290,12 @@ function exportReportMindmap(format, messageIndex) {
 }
 
 function reportCitationGroups(message) {
-  return splitCitedCitations(message?.content, message?.citations || []);
+  const aligned = alignCitationsWithContent(message?.content, message?.citations || []);
+  return splitCitedCitations(aligned.content, aligned.citations);
+}
+
+function messageCitationView(message) {
+  return alignCitationsWithContent(message?.content, message?.citations || []);
 }
 
 function reportQuestionForMessage(index) {
@@ -368,12 +372,8 @@ function applyWorkflowEvent(workflow, ev) {
   return applyAgentWorkflowEvent(workflow, ev, t);
 }
 
-function renderMarkdown(text) {
-  try {
-    return marked.parse(text || "");
-  } catch {
-    return `<p>${text || ""}</p>`;
-  }
+function renderMarkdownHtml(text) {
+  return renderMarkdown(text || "");
 }
 
 async function scrollToBottom() {
@@ -951,16 +951,19 @@ defineExpose({ newChat });
                   <KnowledgeChatContent
                     v-if="linkifyCitations && m.content"
                     :key="`kc-report-${i}`"
-                    :content="m.content"
+                    :content="reportCitationGroups(m).content"
                     :citations="reportCitationGroups(m).cited"
                     @open-citation="onReportCitationClick"
                   />
                   <MarkdownRichContent
                     v-else-if="richMarkdown && m.content"
                     :key="`md-report-${i}`"
-                    :content="m.content"
+                    :content="reportCitationGroups(m).content || m.content"
                   />
-                  <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
+                  <div
+                    v-else-if="m.content"
+                    v-html="renderMarkdownHtml(reportCitationGroups(m).content || m.content)"
+                  />
                   <section
                     v-if="reportCitationGroups(m).local.length"
                     class="ai-report-citations"
@@ -1043,27 +1046,27 @@ defineExpose({ newChat });
               <KnowledgeChatContent
                 v-else-if="linkifyCitations && m.content"
                 :key="`kc-${i}`"
-                :content="m.content"
-                :citations="m.citations || []"
-                @open-citation="openCitationPreview($event, m.citations)"
+                :content="messageCitationView(m).content"
+                :citations="messageCitationView(m).citations"
+                @open-citation="openCitationPreview($event, messageCitationView(m).citations)"
               />
               <MarkdownRichContent
                 v-else-if="richMarkdown && m.content"
                 :key="`md-${i}`"
                 :content="m.content"
               />
-              <div v-else-if="m.content" v-html="renderMarkdown(m.content)" />
+              <div v-else-if="m.content" v-html="renderMarkdownHtml(m.content)" />
               <div v-else class="ai-workflow-wait ai-workflow-wait--empty">{{ t("chat.noAnswer") }}</div>
               <ChatMessageCitations
                 v-if="
                   showCitations &&
                   !showReportTools &&
                   !m.streaming &&
-                  m.citations?.length
+                  messageCitationView(m).citations.length
                 "
-                :citations="m.citations"
+                :citations="messageCitationView(m).citations"
                 :preview-on-click="linkifyCitations"
-                @open-citation="openCitationPreview($event, m.citations)"
+                @open-citation="openCitationPreview($event, messageCitationView(m).citations)"
               />
             </div>
             <div v-else class="ai-home-bubble ai-home-bubble--user">
@@ -1619,9 +1622,12 @@ defineExpose({ newChat });
 }
 
 .ai-home-bubble--user {
+  width: fit-content;
+  max-width: 100%;
   background: var(--platform-accent-gradient);
   color: #fff;
   border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
 }
 
 .ai-home-bubble--bot {

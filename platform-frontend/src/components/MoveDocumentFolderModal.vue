@@ -3,6 +3,7 @@ import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, ref, watch } from "vue";
 import { NForm, NFormItem, NSelect, NButton, NSpace } from "naive-ui";
 import { fetchKbFolders, moveDocument } from "../api/client";
+import { ORG_SCOPES } from "../constants/documentScope";
 import AdminFormModal from "./AdminFormModal.vue";
 
 const props = defineProps({

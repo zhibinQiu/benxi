@@ -34,6 +34,25 @@ export default defineConfig({
     "import.meta.env.VITE_API_BASE": JSON.stringify(VITE_API_BASE),
   },
   plugins: [vue()],
+  build: {
+    target: "es2020",
+    cssCodeSplit: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("echarts")) return "echarts";
+          if (id.includes("mermaid")) return "mermaid";
+          if (id.includes("pdfjs-dist")) return "pdfjs";
+          if (id.includes("mammoth")) return "mammoth";
+          if (id.includes("naive-ui")) return "naive-ui";
+          if (id.includes("@vicons")) return "vicons";
+          if (id.includes("vue") || id.includes("vue-router")) return "vue-vendor";
+          if (id.includes("marked")) return "markdown";
+        },
+      },
+    },
+  },
   server: {
     host: "0.0.0.0",
     port: 40005,

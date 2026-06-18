@@ -8,7 +8,7 @@ import { NButton, NIcon, NSpin } from "naive-ui";
 import { CloseOutline, SparklesOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
 import ChatBubbleRetry from "./ChatBubbleRetry.vue";
-import { marked } from "marked";
+import { renderMarkdown } from "../utils/markdown.js";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import {
@@ -29,8 +29,6 @@ const props = defineProps({
   anchorEl: { type: Object, default: null }});
 
 const route = useRoute();
-
-marked.setOptions({ gfm: true, breaks: true });
 
 const WELCOME_MESSAGE = computed(() => ({
   role: "assistant",
@@ -82,7 +80,7 @@ function resolveAnchorNode() {
 const OUTSIDE_CLOSE_IGNORE_SELECTOR =
   ".n-dialog, .n-modal, .n-popover, .n-dropdown, .n-tooltip, .platform-confirm-dialog";
 
-function onKeydown(event) {
+function onDocumentKeydown(event) {
   if (open.value && event.key === "Escape") {
     open.value = false;
   }
@@ -108,20 +106,16 @@ function scrollToBottom() {
 watch(open, async (v) => {
   if (v) {
     scrollToBottom();
-    document.addEventListener("keydown", onKeydown);
+    document.addEventListener("keydown", onDocumentKeydown);
     document.addEventListener("pointerdown", onOutsidePointerDown, true);
   } else {
-    document.removeEventListener("keydown", onKeydown);
+    document.removeEventListener("keydown", onDocumentKeydown);
     document.removeEventListener("pointerdown", onOutsidePointerDown, true);
   }
 });
 
-function renderMarkdown(text) {
-  try {
-    return marked.parse(text || "");
-  } catch {
-    return text || "";
-  }
+function renderMarkdownHtml(text) {
+  return renderMarkdown(text || "");
 }
 
 function historyForApi() {
@@ -272,7 +266,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener("keydown", onKeydown);
+  document.removeEventListener("keydown", onDocumentKeydown);
   document.removeEventListener("pointerdown", onOutsidePointerDown, true);
 });
 </script>
@@ -326,7 +320,7 @@ onBeforeUnmount(() => {
               <div
                 v-if="m.role === 'assistant'"
                 class="assistant-bubble assistant-bubble--bot"
-                v-html="renderMarkdown(m.content)"
+                v-html="renderMarkdownHtml(m.content)"
               />
               <div v-else class="assistant-bubble assistant-bubble--user">
                 {{ m.content }}
@@ -513,9 +507,12 @@ onBeforeUnmount(() => {
 }
 
 .assistant-bubble--user {
+  width: fit-content;
+  max-width: 100%;
   background: var(--platform-accent-gradient);
   color: #fff;
   border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
 }
 
 .assistant-bubble--bot {

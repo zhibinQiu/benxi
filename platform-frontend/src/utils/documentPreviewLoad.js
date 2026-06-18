@@ -1,6 +1,5 @@
 /** 文档版本预览内容加载（Word / 文本编码等） */
 
-import mammoth from "mammoth";
 import { fetchCompareDocumentContent } from "../api/compare.js";
 import { PREVIEW_KIND, resolveDocumentPreviewKind } from "./documentPreview.js";
 
@@ -99,6 +98,7 @@ export async function loadWordPreview(
 ) {
   const arrayBuffer = await blob.arrayBuffer();
   try {
+    const mammoth = (await import("mammoth")).default;
     const result = await mammoth.convertToHtml({ arrayBuffer });
     return {
       html: result.value || "",

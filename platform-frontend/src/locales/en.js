@@ -938,7 +938,6 @@ export default {
   notifications: {
     title: "Notifications",
     markAllRead: "Mark all read",
-    clearAll: "Clear all",
     empty: "No notifications",
     columns: {
       title: "Title",
@@ -950,15 +949,9 @@ export default {
       delete: "Delete",
     },
     messages: {
-      allRead: "All marked as read",
       noneUnread: "No unread notifications",
-      cleared: "Deleted {{count}} notifications",
-      nothingToClear: "Nothing to delete",
+      clearedAll: "Marked all read and cleared {{count}} notifications",
       markedRead: "Marked {{count}} as read",
-    },
-    confirm: {
-      clearRead: "Delete all read notifications?",
-      clearAll: "Delete all notifications?",
     },
     read: "Read",
   },
@@ -1413,7 +1406,6 @@ export default {
       knowflowDuplicateGroups: "{{count}} duplicate name groups",
       knowflowFailedTasks: "Failed tasks (total)",
       knowflowBacklogTaskCount: "{{count}} pending tasks",
-      knowflowExecutorIdleHint: "Idle (ok if no backlog)",
       knowflowExecutorStuckHint: "Backlog but not consuming — try queue-reset",
     },
     menuSettings: {

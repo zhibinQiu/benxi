@@ -28,7 +28,7 @@ def test_filter_by_answer_citation_marks():
     assert [c["index"] for c in out] == [1, 3]
 
 
-def test_fallback_top_scored_one_per_document():
+def test_fallback_without_body_refs_returns_empty():
     citations = [
         {"index": 1, "document_id": "a", "score": 0.9},
         {"index": 2, "document_id": "a", "score": 0.8},
@@ -36,10 +36,7 @@ def test_fallback_top_scored_one_per_document():
         {"index": 4, "document_id": "c", "score": 0.6},
     ]
     out = filter_citations_for_display(citations, "无编号回答", max_fallback=3)
-    assert len(out) == 3
-    assert out[0]["index"] == 1
-    assert out[1]["index"] == 3
-    assert out[2]["index"] == 4
+    assert out == []
 
 
 def test_collapse_same_document_keeps_highest_score():

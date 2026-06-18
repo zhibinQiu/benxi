@@ -1,16 +1,17 @@
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from "vue";
 import { NIcon } from "naive-ui";
 import { SearchOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
 import ChatBubbleRetry from "./ChatBubbleRetry.vue";
 import KnowledgeChatContent from "./KnowledgeChatContent.vue";
 import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
-import KnowledgeMindMap from "./KnowledgeMindMap.vue";
+const KnowledgeMindMap = defineAsyncComponent(() => import("./KnowledgeMindMap.vue"));
 import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
 import { usePlatformUi } from "../composables/usePlatformUi.js";
 import { useI18n } from "../composables/useI18n.js";
 import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
+import { alignCitationsWithContent } from "../utils/reportCitations.js";
 
 const props = defineProps({
   suggestions: { type: Array, default: () => [] },
@@ -28,6 +29,10 @@ const sending = ref(false);
 const question = ref("");
 const answer = ref("");
 const citations = ref([]);
+const answerCitationView = computed(() =>
+  alignCitationsWithContent(answer.value, citations.value)
+);
+const displayCitations = computed(() => answerCitationView.value.citations);
 const workflow = ref(emptyAgentWorkflow());
 const answerView = ref("answer");
 const resultsRef = ref(null);
@@ -311,16 +316,16 @@ onMounted(() => {
               </div>
               <div v-else-if="sending" class="knowledge-search-panel__streaming">
                 <KnowledgeChatContent
-                  :content="answer"
-                  :citations="citations"
+                  :content="answerCitationView.content"
+                  :citations="displayCitations"
                   @open-citation="onCitationClick"
                 />
                 <span class="knowledge-search-panel__cursor">▍</span>
               </div>
               <KnowledgeChatContent
                 v-else-if="answer"
-                :content="answer"
-                :citations="citations"
+                :content="answerCitationView.content"
+                :citations="displayCitations"
                 @open-citation="onCitationClick"
               />
             </template>
@@ -332,7 +337,7 @@ onMounted(() => {
           </div>
         </section>
 
-        <section v-if="citations.length" class="knowledge-search-panel__citations">
+        <section v-if="displayCitations.length" class="knowledge-search-panel__citations">
           <div class="knowledge-search-panel__citations-head">
             <span class="knowledge-search-panel__citations-icon" aria-hidden="true">📎</span>
             <span class="knowledge-search-panel__citations-label">
@@ -341,7 +346,7 @@ onMounted(() => {
           </div>
           <div class="knowledge-search-panel__citation-list">
             <KnowledgeCitationCard
-              v-for="c in citations"
+              v-for="c in displayCitations"
               :id="`knowledge-cite-card-${c.index}`"
               :key="`${c.index}-${c.chunk_id || c.document_id}`"
               :citation="c"
@@ -572,31 +577,13 @@ onMounted(() => {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding: 14px 16px 16px;
-  border-radius: calc(var(--platform-radius-sm) + 4px);
-  border: 1px solid color-mix(in srgb, #6366f1 18%, var(--platform-border));
-  background: linear-gradient(
-    165deg,
-    color-mix(in srgb, #6366f1 7%, var(--platform-bg-elevated)) 0%,
-    var(--platform-bg-elevated) 42%,
-    color-mix(in srgb, #0ea5e9 5%, var(--platform-bg-elevated)) 100%
-  );
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.05),
-    0 10px 28px color-mix(in srgb, #6366f1 8%, transparent);
-  position: relative;
+  padding: 12px 16px 14px;
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  border: 1px solid var(--platform-border);
+  background: var(--platform-surface);
+  box-shadow: var(--platform-shadow);
   overflow: visible;
-}
-
-.knowledge-search-panel__summary::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: linear-gradient(180deg, #818cf8, #6366f1 55%, #38bdf8);
-  border-radius: 4px 0 0 4px;
 }
 
 .knowledge-search-panel__summary-head {
@@ -646,8 +633,8 @@ onMounted(() => {
 
 .knowledge-search-panel__summary-tab--active {
   color: #fff;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  box-shadow: 0 2px 8px color-mix(in srgb, #6366f1 28%, transparent);
+  background: var(--platform-accent-gradient);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 22%, transparent);
 }
 
 .knowledge-search-panel__summary-label {
@@ -662,9 +649,9 @@ onMounted(() => {
 .knowledge-search-panel__summary-body {
   width: 100%;
   min-width: 0;
-  font-size: 15px;
-  line-height: 1.8;
-  color: var(--platform-text);
+  font-size: 14px;
+  line-height: 1.6;
+  color: #334155;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

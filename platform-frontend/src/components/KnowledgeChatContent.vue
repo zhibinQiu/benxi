@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { renderRichMarkdown } from "../utils/richMarkdown.js";
+import { renderMarkdown } from "../utils/markdown.js";
 
 const props = defineProps({
   content: { type: String, default: "" },
@@ -16,34 +16,31 @@ const citationIndexes = computed(() => {
   return set;
 });
 
+const CITE_GROUP_RE = /(?:[\[【]\d{1,2}[\]】])+/g;
+const CITE_NUM_RE = /[\[【](\d{1,2})[\]】]/g;
+
 const html = computed(() => {
   let text = props.content || "";
   if (!text) return "";
-  text = text.replace(/(?:\[\d{1,2}\])+/g, (group) => {
-    const nums = [...group.matchAll(/\[(\d{1,2})\]/g)].map((m) => Number(m[1]));
-    const byDoc = new Map();
+  // 保留正文中的原始编号，仅将可点击的 [n] 转为按钮（不按 document_id 合并，避免 [1][2][3] 全变成 [1]）
+  text = text.replace(CITE_GROUP_RE, (group) => {
+    const nums = [...group.matchAll(CITE_NUM_RE)].map((m) => Number(m[1]));
+    const seen = new Set();
+    const linked = [];
     for (const num of nums) {
-      const cite = (props.citations || []).find((c) => Number(c.index) === num);
-      const docId = cite?.document_id || `__idx_${num}`;
-      const score = Number(cite?.score ?? 0);
-      const prev = byDoc.get(docId);
-      if (!prev || score > prev.score) {
-        byDoc.set(docId, { index: num, score });
-      }
+      if (!citationIndexes.value.has(num) || seen.has(num)) continue;
+      seen.add(num);
+      linked.push(num);
     }
-    const kept = [...byDoc.values()]
-      .sort((a, b) => nums.indexOf(a.index) - nums.indexOf(b.index))
-      .map((item) => item.index);
-    if (!kept.length) return group;
-    const primary = kept[0];
-    if (!citationIndexes.value.has(primary)) return group;
-    const linked = kept.filter((num) => citationIndexes.value.has(num));
     if (!linked.length) return group;
-    return linked.map((num) =>
-      `<button type="button" class="knowledge-cite-mark" data-cite-index="${num}">[${num}]</button>`
-    ).join("");
+    return linked
+      .map(
+        (num) =>
+          `<button type="button" class="knowledge-cite-mark" data-cite-index="${num}">[${num}]</button>`
+      )
+      .join("");
   });
-  return renderRichMarkdown(text);
+  return renderMarkdown(text);
 });
 
 function onClick(event) {

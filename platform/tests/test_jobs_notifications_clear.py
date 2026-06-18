@@ -112,16 +112,19 @@ def test_update_job_status_preserves_cancelled():
         db.close()
 
 
-def test_clear_notifications_endpoint(client, admin_token):
+def test_mark_all_read_clears_notifications(client, admin_token):
     r = client.patch(
         "/api/v1/notifications/read-all",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert "updated" in data
+    assert "deleted" in data
 
-    r = client.delete(
-        "/api/v1/notifications/clear?scope=all",
+    listed = client.get(
+        "/api/v1/notifications?page=1&page_size=20",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
-    assert r.status_code == 200, r.text
-    assert "deleted" in r.json()["data"]
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["data"]["total"] == 0

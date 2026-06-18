@@ -505,7 +505,7 @@ def finalize_report_citations(
     answer: str,
     citations: list[dict],
 ) -> tuple[str, list[dict]]:
-    """报告专用：正文有 [n] 时仅保留对应引用；否则保留全部召回引用供底部展示。"""
+    """报告专用：仅保留正文 [n] 实际引用的条目。"""
     return finalize_citations_for_display(answer, citations)
 
 

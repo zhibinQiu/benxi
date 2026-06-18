@@ -13,7 +13,7 @@ import {
   ArrowUndoOutline,
   ArrowRedoOutline,
   SendOutline } from "@vicons/ionicons5";
-import { marked } from "marked";
+import { renderMarkdown } from "../utils/markdown.js";
 import {
   assistWritingCompose,
   fetchAssistWritingPresets } from "../api/client";
@@ -21,8 +21,6 @@ import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
-
-marked.setOptions({ gfm: true, breaks: true });
 
 const markdown = ref("");
 const history = ref([""]);
@@ -47,11 +45,7 @@ const previewHtml = computed(() => {
   if (!raw.trim()) {
     return `<p class="md-empty">${t("assistWriting.previewEmpty")}</p>`;
   }
-  try {
-    return marked.parse(raw);
-  } catch {
-    return `<p class="md-error">${t("assistWriting.previewError")}</p>`;
-  }
+  return renderMarkdown(raw);
 });
 
 function pushHistory(val) {

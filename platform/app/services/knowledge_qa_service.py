@@ -71,7 +71,8 @@ def _qa_system_prompt(*, include_kg: bool) -> str:
     return _KNOWLEDGE_QA_SYSTEM
 
 
-_CITATION_REF_RE = re.compile(r"\[(\d{1,2})\]")
+_CITATION_REF_RE = re.compile(r"[\[【](\d{1,2})[\]】]")
+_CITATION_REF_REPLACE_RE = re.compile(r"(\[|【)(\d{1,2})(\]|】)")
 
 _NO_HIT_ANSWER = (
     "在所选文档的知识库内容中未找到与问题直接相关的段落。"
@@ -589,62 +590,36 @@ def filter_citations_for_display(
     max_fallback: int | None = None,
     max_per_document: int = 1,
 ) -> list[dict]:
-    """对齐 KnowFlow：优先展示回答中 [n] 实际引用的条目，否则取高分且每文档最多一条。"""
+    """仅展示回答正文中实际标注 [n] 的引用条目。"""
     if not citations:
         return []
-    settings = get_settings()
-    cap = max_fallback if max_fallback is not None else int(
-        settings.knowledge_retrieval_top_k or 5
-    )
-    cap = max(1, min(cap, 10))
 
     indexes = {
         int(n)
         for n in _CITATION_REF_RE.findall(answer or "")
         if str(n).isdigit() and int(n) > 0
     }
-    pool: list[dict]
-    if indexes:
-        pool = [c for c in citations if int(c.get("index") or 0) in indexes]
-        pool.sort(key=lambda c: int(c.get("index") or 0))
-        return pool
+    if not indexes:
+        return []
 
-    pool = sorted(
-        citations,
-        key=lambda c: float(c.get("score") or 0),
-        reverse=True,
-    )
-
-    seen_docs: dict[str, int] = {}
-    out: list[dict] = []
-    for c in pool:
-        did = str(c.get("document_id") or f"__idx_{c.get('index')}")
-        count = seen_docs.get(did, 0)
-        if count >= max(1, max_per_document):
-            continue
-        seen_docs[did] = count + 1
-        out.append(c)
-        if len(out) >= cap:
-            break
-    return out
+    pool = [c for c in citations if int(c.get("index") or 0) in indexes]
+    pool.sort(key=lambda c: int(c.get("index") or 0))
+    return pool
 
 
 def finalize_citations_for_display(
     answer: str,
     citations: list[dict],
 ) -> tuple[str, list[dict]]:
-    """正文有 [n] 时仅保留对应引用；否则保留全部召回引用供底部展示。"""
-    answer, kept = finalize_citations_preserving_index(answer, citations)
-    if kept:
-        return answer, kept
-    return answer, list(citations)
+    """仅保留正文 [n] 实际引用的条目；未标注则不展示引用区。"""
+    return finalize_citations_preserving_index(answer, citations)
 
 
 def finalize_qa_answer_and_citations(
     answer: str,
     citations: list[dict],
 ) -> tuple[str, list[dict]]:
-    """过滤未使用的引用，保留 [n] 原编号（不重映射）。"""
+    """过滤未使用的引用，并将正文与引用编号重排为连续的 1,2,3…"""
     answer = _strip_meta_footer(answer)
     return finalize_citations_for_display(answer, citations)
 
@@ -673,11 +648,47 @@ def strip_answer_source_narrative(text: str) -> str:
     return "\n".join(out).strip()
 
 
+def _renumber_citations_sequential(
+    answer: str,
+    citations: list[dict],
+) -> tuple[str, list[dict]]:
+    """将正文与引用列表的编号统一重排为连续的 1,2,3…"""
+    if not citations:
+        return answer, []
+    old_indexes = sorted(
+        {int(c.get("index") or 0) for c in citations if int(c.get("index") or 0) > 0}
+    )
+    if not old_indexes:
+        return answer, []
+    remap = {old: new for new, old in enumerate(old_indexes, start=1)}
+    if remap == {i: i for i in old_indexes}:
+        return answer, citations
+
+    def _replace_ref(match: re.Match[str]) -> str:
+        old = int(match.group(2))
+        new = remap.get(old)
+        if new is None:
+            return match.group(0)
+        return f"{match.group(1)}{new}{match.group(3)}"
+
+    normalized = _CITATION_REF_REPLACE_RE.sub(_replace_ref, answer)
+    renumbered: list[dict] = []
+    for c in citations:
+        old_idx = int(c.get("index") or 0)
+        if old_idx not in remap:
+            continue
+        item = dict(c)
+        item["index"] = remap[old_idx]
+        renumbered.append(item)
+    renumbered.sort(key=lambda c: int(c.get("index") or 0))
+    return normalized, renumbered
+
+
 def finalize_citations_preserving_index(
     answer: str,
     citations: list[dict],
 ) -> tuple[str, list[dict]]:
-    """保留 [n] 原编号，仅过滤未使用的引用（不做同文档合并重映射）。"""
+    """过滤未使用引用，并将正文与引用编号重排为连续的 1,2,3…"""
     answer = strip_answer_source_narrative(answer)
     if not answer or not citations:
         return answer, []
@@ -690,7 +701,7 @@ def finalize_citations_preserving_index(
         return answer, []
     kept = [c for c in citations if int(c.get("index") or 0) in indexes]
     kept.sort(key=lambda c: int(c.get("index") or 0))
-    return answer, kept
+    return _renumber_citations_sequential(answer, kept)
 
 
 def _extract_qa_context_body(hit: dict) -> str:

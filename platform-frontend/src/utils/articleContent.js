@@ -1,4 +1,4 @@
-import { renderRichMarkdown } from "./richMarkdown";
+import { renderMarkdown } from "./markdown";
 
 /** 基础 HTML 消毒（订阅正文来自用户粘贴链接，仅剔除脚本与事件属性） */
 export function sanitizeArticleHtml(html) {
@@ -27,7 +27,7 @@ export function resolveArticleBody(item) {
 
   const md = String(item?.content_markdown || "").trim();
   if (md) {
-    return { mode: "html", body: renderRichMarkdown(md) };
+    return { mode: "html", body: renderMarkdown(md) };
   }
 
   const plain = String(item?.content_html || "").trim();

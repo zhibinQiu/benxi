@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
@@ -49,26 +49,25 @@ def mark_read(db: Session, user_id: uuid.UUID, notification_id: uuid.UUID) -> No
         db.commit()
 
 
-def mark_all_read(db: Session, user_id: uuid.UUID) -> int:
-    now = datetime.now(timezone.utc)
-    result = db.execute(
-        update(Notification)
-        .where(Notification.user_id == user_id, Notification.read_at.is_(None))
-        .values(read_at=now)
+def mark_all_read(db: Session, user_id: uuid.UUID) -> dict[str, int]:
+    """将全部未读标为已读，并清除该用户全部通知。"""
+    unread = (
+        db.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.user_id == user_id, Notification.read_at.is_(None))
+        )
+        or 0
     )
-    db.commit()
-    return int(result.rowcount or 0)
-
-
-def clear_notifications(db: Session, user_id: uuid.UUID, *, scope: str) -> int:
-    """scope: read=仅已读；all=全部。"""
-    stmt = delete(Notification).where(Notification.user_id == user_id)
-    if scope == "read":
-        stmt = stmt.where(Notification.read_at.is_not(None))
-    elif scope == "all":
-        pass
-    else:
-        raise ValueError(f"unknown scope: {scope}")
-    result = db.execute(stmt)
-    db.commit()
-    return int(result.rowcount or 0)
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.user_id == user_id)
+        )
+        or 0
+    )
+    if total:
+        db.execute(delete(Notification).where(Notification.user_id == user_id))
+        db.commit()
+    return {"updated": int(unread), "deleted": int(total)}

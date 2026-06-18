@@ -4,7 +4,6 @@ import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NButton, NCard, NSelect, NSpin, NText, NSpace } from "naive-ui";
-import * as echarts from "echarts";
 import { fetchCarbonAssetHistory } from "../api/client";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import { goBackToEntry } from "../utils/navigationReturn";
@@ -82,10 +81,12 @@ function disposeChart() {
   }
 }
 
-function renderChart() {
+async function renderChart() {
   if (!chartEl.value || !series.value?.points?.length) return;
   disposeChart();
-  chart = echarts.init(chartEl.value);
+  const echarts = await import("echarts");
+  const lib = echarts.default ?? echarts;
+  chart = lib.init(chartEl.value);
   const pts = series.value.points;
   chart.setOption({
     color: ["#5b9cf5"],

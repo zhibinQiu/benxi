@@ -4,7 +4,7 @@ import { NIcon, NSpin } from "naive-ui";
 import { ExpandOutline } from "@vicons/ionicons5";
 import AdminFormModal from "./AdminFormModal.vue";
 import { useI18n } from "../composables/useI18n.js";
-import { renderMermaidSvg } from "../utils/systemDocMarkdown.js";
+import { renderMermaidSvg } from "../utils/mermaidRender.js";
 import { buildMindmapFromAnswer } from "../utils/knowledgeMindmap.js";
 import { fetchKnowledgeMindmap } from "../api/knowledge.js";
 

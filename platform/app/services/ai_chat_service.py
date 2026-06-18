@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -28,17 +30,321 @@ _SYSTEM_PROMPT = f"""{assistant_ai_home_persona()}。
 你的能力包括：
 - 以「小析」身份解答文档管理、权限分享、PDF 翻译、知识检索等平台使用问题
 - 结合权限内文档检索片段与本体图谱实体关系，回答业务相关问题
+- 对实时行情、最新价格、近期动态等时效性问题，结合互联网检索摘要作答
 - 协助梳理办公场景下的信息整理、写作润色与数据分析思路
 
 回答要求：
 - 使用简体中文，结构清晰，可使用简短 Markdown
 - 自我介绍或提及助手时统一使用名称「小析」
 - 对不确定的政策或数据应说明需以官方来源为准，勿编造具体数值或文号
-- 引用文档片段或图谱事实时在句末标注编号，格式为 [1]、[2]
+- 引用文档片段、图谱事实或联网摘要时在句末标注编号，格式为 [1]、[2]
 - 超出平台或办公场景的问题可简要回应并引导回相关能力"""
 
 _RETRIEVAL_CONTEXT_INSTRUCTION = """以下是从用户权限内文档检索到的相关片段，以及（若有）从本体图谱解析出的实体与关系上下文。
 请在回答中优先参考这些材料；引用时在句末标注编号 [1]、[2]。若材料未覆盖问题，可结合专业知识补充并说明缺口。"""
+
+_ATTACHMENT_CONTEXT_INSTRUCTION = """以下是用户上传的临时附件正文（未写入知识库），请优先且主要依据附件内容回答。
+若附件不足以回答，请明确说明缺口，不要编造附件中不存在的内容，也不要引用未提供的知识库片段。"""
+
+_MIXED_ATTACHMENT_KB_INSTRUCTION = """以下包含用户上传的临时附件，以及（若有）从权限内知识库检索到的片段或本体图谱上下文。
+请按问题意图选用材料：分析「这篇/该文/附件」时以附件为主；明确要求对比或检索知识库时结合检索片段；引用检索片段时用 [1]、[2]。"""
+
+_WEB_SEARCH_CONTEXT_INSTRUCTION = """以下是从互联网检索到的相关摘要（实时性信息以检索结果为准，并说明数据日期或来源局限）。
+请在回答中优先参考这些材料；引用时在句末标注编号 [1]、[2]。若检索结果不足以给出准确数值，请明确说明并建议查阅官方平台的最新公告。"""
+
+_MIXED_RETRIEVAL_WEB_INSTRUCTION = """以下包含权限内文档/本体图谱检索结果，以及（若有）互联网检索摘要。
+实时行情、价格类问题优先参考联网材料；政策解读与流程说明优先参考文档/图谱材料；引用时在句末标注 [1]、[2]。"""
+
+_EXPLICIT_KB_RE = re.compile(
+    r"(知识库|文档库|我的文档|权限内.{0,6}(文档|资料)|"
+    r"检索.{0,8}(文档|资料|知识库)|"
+    r"(和|与|跟|对比|比较).{0,8}知识库|"
+    r"知识库.{0,8}(里|中|内)|"
+    r"库里.{0,8}(文档|资料|有没有))"
+)
+
+_EXPLICIT_KG_RE = re.compile(r"(本体图谱|知识图谱|图谱里|图谱中|实体关系)")
+
+_PLATFORM_USAGE_RE = re.compile(
+    r"(怎么|如何|怎样|在哪|哪里|能不能).{0,16}(上传|分享|翻译|权限|知识库|导出|下载|登录|注册|设置|使用)"
+    r"|平台.{0,8}(功能|使用|操作|入口)"
+)
+
+_CHITCHAT_ONLY_RE = re.compile(
+    r"^(?:"
+    r"你好|您好|hi|hello|hey|嗨|早上好|下午好|晚上好|"
+    r"你是谁|你是哪位|你叫什么|你是谁啊|你谁啊|你是？|"
+    r"你是什么|你是什么模型|你是啥|你是哪个模型|你是哪个助手|"
+    r"介绍一下自己|介绍你自己|自我介绍|"
+    r"谢谢|感谢|多谢|辛苦了|"
+    r"再见|拜拜|bye|"
+    r"好的|好哒|明白|知道了|收到|没问题|ok|okay|"
+    r"在吗|在不在|"
+    r"你能做什么|你会什么|你能帮我什么|有什么功能|"
+    r"(?:随便)?聊聊|闲聊一下|闲聊|讲个笑话"
+    r")(?:[!！?？呀啊吧呢嘛。.,，~～\s]*)$",
+    re.I,
+)
+
+_CHITCHAT_FRAGMENT_RE = re.compile(
+    r"^(?:"
+    r"你好|您好|嗨|谢谢|感谢|多谢|再见|拜拜|在吗|在不在|"
+    r"你是谁|你是哪位|你叫什么|你是什么|辛苦了|好的|明白|知道了|收到|没问题"
+    r")(?:[!！?？呀啊吧呢嘛。.,，~～\s]*)$",
+    re.I,
+)
+
+_RETRIEVAL_HINT_RE = re.compile(
+    r"(?:什么|为何|为什么|哪些|哪个|多少|是否|有没有)"
+    r"|(?:怎么|如何|怎样|能不能|可不可以)"
+    r"|(?:查|检索|搜索|找|分析|总结|对比|比较|解释|说明|撰写|写|翻译)"
+    r"|(?:介绍).{0,8}(?:政策|文档|报告|方法|背景|概况|技术|流程)"
+    r"|(?:碳|政策|排放|配额|法规|标准|文档|报告|论文|数据|市场|行业|企业|知识库|图谱|实体)"
+)
+
+_SHORT_CASUAL_RE = re.compile(
+    r"^(?:嗯|哦|啊|哈|好|行|可以|不错|厉害|哈哈|嘻嘻|嘿嘿|加油|"
+    r"辛苦了|没事了|算了|好吧|就这样)(?:[!！?？。.,，~～\s]*)$",
+    re.I,
+)
+
+_FOLLOWUP_RE = re.compile(
+    r"(?:继续|然后|还有|进一步|详细|展开|具体|再说说|刚才|上面|前述|前面说的|"
+    r"第二点|第三点|上一条|补充一下)"
+)
+
+_EXPLICIT_WEB_RE = re.compile(
+    r"(?:联网|上网|网上(?:查|搜|搜索)|搜索(?:一下|互联网)|查一下(?:网|网上)|"
+    r"互联网(?:上)?(?:查|搜|检索))"
+)
+
+_REALTIME_RE = re.compile(
+    r"(?:最近|最新|当前|现在|今天|今日|实时|近期|本周|本月|今年|刚才|此刻|目前市场上|目前)"
+)
+
+_DATA_QUERY_RE = re.compile(
+    r"(?:价格|行情|报价|收盘价|开盘价|汇率|股价|碳价|配额价|成交价|涨跌|涨幅|市值|指数|"
+    r"CEA|CCER|排放权)"
+)
+
+_DATA_AMOUNT_RE = re.compile(r"(?:多少|是多少|什么价|几点|多高|多低|多少钱)")
+
+_NEWS_REALTIME_RE = re.compile(
+    r"(?:最近|最新|今天|今日|近期).{0,12}(?:新闻|动态|进展|公告|政策|规定|通知)"
+)
+
+_MAX_WEB_ITEMS = 8
+
+
+def _is_compound_chitchat(text: str) -> bool:
+    """复合寒暄，如「你好，你是谁？」。"""
+    parts = [p.strip() for p in re.split(r"[，,。.!！?？\s]+", text) if p.strip()]
+    if not parts or len(parts) > 4:
+        return False
+    return all(
+        _CHITCHAT_FRAGMENT_RE.match(part) or _CHITCHAT_ONLY_RE.match(part)
+        for part in parts
+    )
+
+
+def _is_chitchat_message(text: str) -> bool:
+    """判断是否为无需检索、无需读取附件的日常寒暄或闲聊。"""
+    t = (text or "").strip()
+    if not t:
+        return True
+    if _EXPLICIT_KB_RE.search(t) or _EXPLICIT_KG_RE.search(t):
+        return False
+    if _CHITCHAT_ONLY_RE.match(t):
+        return True
+    if _is_compound_chitchat(t):
+        return True
+    if len(t) <= 12 and _SHORT_CASUAL_RE.match(t):
+        return True
+    if _RETRIEVAL_HINT_RE.search(t):
+        return False
+    return False
+
+
+def _history_had_retrieval_question(history: list[AiChatMessage] | None) -> bool:
+    if not history:
+        return False
+    for item in reversed(history):
+        if item.role != "user":
+            continue
+        text = (item.content or "").strip()
+        if _RETRIEVAL_HINT_RE.search(text) or _EXPLICIT_KB_RE.search(text):
+            return True
+        return False
+    return False
+
+
+def _needs_knowledge_retrieval(
+    message: str,
+    history: list[AiChatMessage] | None = None,
+) -> bool:
+    text = (message or "").strip()
+    if _RETRIEVAL_HINT_RE.search(text):
+        return True
+    if _EXPLICIT_KB_RE.search(text) or _EXPLICIT_KG_RE.search(text):
+        return True
+    if _FOLLOWUP_RE.search(text) and _history_had_retrieval_question(history):
+        return True
+    return False
+
+
+def _history_had_web_question(history: list[AiChatMessage] | None) -> bool:
+    if not history:
+        return False
+    for item in reversed(history):
+        if item.role != "user":
+            continue
+        text = (item.content or "").strip()
+        if _needs_web_search(text):
+            return True
+        return False
+    return False
+
+
+def _needs_web_search(
+    message: str,
+    history: list[AiChatMessage] | None = None,
+) -> bool:
+    """判断是否需要联网检索（实时行情、最新动态或用户明确要求）。"""
+    text = (message or "").strip()
+    if not text:
+        return False
+    if _EXPLICIT_WEB_RE.search(text):
+        return True
+    if _REALTIME_RE.search(text) and (
+        _DATA_QUERY_RE.search(text) or _NEWS_REALTIME_RE.search(text)
+    ):
+        return True
+    if _DATA_QUERY_RE.search(text) and _DATA_AMOUNT_RE.search(text):
+        return True
+    if _FOLLOWUP_RE.search(text) and _history_had_web_question(history):
+        return True
+    return False
+
+
+def _web_search_fallback_after_empty_kb(message: str) -> bool:
+    """本地文档未命中时，对数据/时效类问题尝试联网补充。"""
+    text = (message or "").strip()
+    if not text:
+        return False
+    return bool(
+        _DATA_QUERY_RE.search(text)
+        or _REALTIME_RE.search(text)
+        or _NEWS_REALTIME_RE.search(text)
+        or _EXPLICIT_WEB_RE.search(text)
+    )
+
+
+@dataclass(frozen=True)
+class AgentToolPlan:
+    use_attachment: bool
+    use_doc_retrieval: bool
+    use_kg: bool
+    use_web_search: bool
+    intent_label: str
+    context_instruction: str
+
+
+def _plan_agent_tools(
+    message: str,
+    *,
+    attach_count: int,
+    kb_enabled: bool,
+    kg_enabled: bool,
+    web_enabled: bool,
+    history: list[AiChatMessage] | None = None,
+) -> AgentToolPlan:
+    """根据当前问题、对话历史与是否有附件，决定调用哪些工具。"""
+    text = (message or "").strip()
+    explicit_kb = bool(_EXPLICIT_KB_RE.search(text))
+    explicit_kg = bool(_EXPLICIT_KG_RE.search(text))
+    platform_usage = bool(_PLATFORM_USAGE_RE.search(text))
+    chitchat = _is_chitchat_message(text)
+    use_web = bool(web_enabled and _needs_web_search(text, history))
+
+    if chitchat and not explicit_kb and not explicit_kg and not use_web:
+        return AgentToolPlan(
+            use_attachment=False,
+            use_doc_retrieval=False,
+            use_kg=False,
+            use_web_search=False,
+            intent_label="日常交流，直接回答",
+            context_instruction="",
+        )
+
+    if platform_usage and not explicit_kb and not explicit_kg and not use_web:
+        return AgentToolPlan(
+            use_attachment=False,
+            use_doc_retrieval=False,
+            use_kg=False,
+            use_web_search=False,
+            intent_label="解答平台使用问题",
+            context_instruction="",
+        )
+
+    # 有附件时默认读附件，但闲聊/平台问题已在上方提前返回，不会加载附件
+    if attach_count > 0 and not chitchat:
+        if explicit_kb:
+            return AgentToolPlan(
+                use_attachment=True,
+                use_doc_retrieval=kb_enabled,
+                use_kg=kg_enabled and explicit_kg,
+                use_web_search=use_web,
+                intent_label="结合附件与知识库回答",
+                context_instruction=_MIXED_ATTACHMENT_KB_INSTRUCTION,
+            )
+        if explicit_kg:
+            return AgentToolPlan(
+                use_attachment=True,
+                use_doc_retrieval=False,
+                use_kg=kg_enabled,
+                use_web_search=use_web,
+                intent_label="结合附件与本体图谱回答",
+                context_instruction=_MIXED_ATTACHMENT_KB_INSTRUCTION,
+            )
+        return AgentToolPlan(
+            use_attachment=True,
+            use_doc_retrieval=False,
+            use_kg=False,
+            use_web_search=use_web,
+            intent_label="依据用户上传的附件回答",
+            context_instruction=_ATTACHMENT_CONTEXT_INSTRUCTION,
+        )
+
+    needs_kb = _needs_knowledge_retrieval(text, history)
+    if needs_kb or use_web:
+        use_doc = bool(needs_kb and kb_enabled)
+        use_kg = bool(needs_kb and kg_enabled)
+        if use_web and use_doc:
+            label = "检索文档并结合联网查询"
+            instruction = _MIXED_RETRIEVAL_WEB_INSTRUCTION
+        elif use_web:
+            label = "联网检索实时信息"
+            instruction = _WEB_SEARCH_CONTEXT_INSTRUCTION
+        else:
+            label = "检索权限内文档与本体图谱"
+            instruction = _RETRIEVAL_CONTEXT_INSTRUCTION
+        return AgentToolPlan(
+            use_attachment=False,
+            use_doc_retrieval=use_doc,
+            use_kg=use_kg,
+            use_web_search=use_web,
+            intent_label=label,
+            context_instruction=instruction,
+        )
+
+    return AgentToolPlan(
+        use_attachment=False,
+        use_doc_retrieval=False,
+        use_kg=False,
+        use_web_search=False,
+        intent_label="直接回答",
+        context_instruction="",
+    )
 
 
 def _kg_enabled_for_user(db: Session, user: User) -> bool:
@@ -47,6 +353,46 @@ def _kg_enabled_for_user(db: Session, user: User) -> bool:
 
 def _knowledge_search_enabled(db: Session, user: User) -> bool:
     return user_has_permission(db, user, "feature.knowledge_search")
+
+
+def _web_search_enabled(db: Session | None) -> bool:
+    from app.services.searxng_service import is_enabled
+
+    return is_enabled(db)
+
+
+def _resolve_web_search(
+    db: Session | None,
+    message: str,
+    *,
+    citation_start: int = 1,
+) -> tuple[str, list[dict]]:
+    if db is None:
+        return "", []
+    from app.services.report_generation_service import (
+        _format_web_context,
+        build_web_citations,
+    )
+    from app.services.searxng_service import (
+        SearxngNotConfiguredError,
+        SearxngSearchError,
+        search_web,
+    )
+
+    q = (message or "").strip()[:120]
+    if not q:
+        return "", []
+    try:
+        items, _ = search_web(q, page_size=_MAX_WEB_ITEMS, db=db)
+    except (SearxngNotConfiguredError, SearxngSearchError):
+        return "", []
+    except Exception:
+        return "", []
+    if not items:
+        return "", []
+    web_context = _format_web_context(items, start_index=citation_start)
+    web_citations = build_web_citations(items, start_index=citation_start)
+    return web_context, web_citations
 
 
 def _resolve_kg_context(
@@ -93,6 +439,22 @@ def _resolve_doc_retrieval(
     )
 
 
+def _attachment_file_count(
+    db: Session | None,
+    user: User | None,
+    attachment_session_id: str | None,
+) -> int:
+    if db is None or user is None or not (attachment_session_id or "").strip():
+        return 0
+    from app.services.ai_chat_attachment_service import get_owned_session
+
+    try:
+        manifest = get_owned_session(user.id, attachment_session_id)
+    except Exception:
+        return 0
+    return len(manifest.get("files") or [])
+
+
 def _resolve_attachment_context(
     db: Session | None,
     user: User | None,
@@ -113,6 +475,19 @@ def _resolve_attachment_context(
     return build_attachment_context(files), len(files)
 
 
+def _append_web_context(
+    merged_context: str,
+    citations: list[dict],
+    *,
+    web_context: str,
+    web_citations: list[dict],
+) -> tuple[str, list[dict]]:
+    if not (web_context or "").strip():
+        return merged_context, citations
+    parts = [p.strip() for p in (merged_context, web_context) if (p or "").strip()]
+    return "\n\n".join(parts), list(citations) + list(web_citations)
+
+
 def _merge_retrieval_context(
     *,
     attachment_context: str,
@@ -127,24 +502,96 @@ def _merge_retrieval_context(
     return "\n\n".join(parts), citations
 
 
+def _effective_context_instruction(
+    plan: AgentToolPlan,
+    *,
+    use_web_search: bool,
+) -> str:
+    if use_web_search and not plan.use_web_search:
+        return (
+            _MIXED_RETRIEVAL_WEB_INSTRUCTION
+            if plan.use_doc_retrieval
+            else _WEB_SEARCH_CONTEXT_INSTRUCTION
+        )
+    return plan.context_instruction
+
+
 def _resolve_answer_context(
     db: Session | None,
     user: User | None,
     message: str,
     attachment_session_id: str | None = None,
-) -> tuple[str, list[dict], KgQaContext | None, int]:
-    attachment_context, attach_count = _resolve_attachment_context(
-        db, user, attachment_session_id
+    history: list[AiChatMessage] | None = None,
+) -> tuple[str, list[dict], KgQaContext | None, int, AgentToolPlan, str]:
+    attach_count = _attachment_file_count(db, user, attachment_session_id)
+    kb_enabled = bool(
+        db is not None
+        and user is not None
+        and _knowledge_search_enabled(db, user)
     )
-    doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
-    kg_context = _resolve_kg_context(db, user, message)
+    kg_enabled = bool(
+        db is not None and user is not None and _kg_enabled_for_user(db, user)
+    )
+    web_enabled = _web_search_enabled(db)
+    plan = _plan_agent_tools(
+        message,
+        attach_count=attach_count,
+        kb_enabled=kb_enabled,
+        kg_enabled=kg_enabled,
+        web_enabled=web_enabled,
+        history=history,
+    )
+
+    attachment_context = ""
+    if plan.use_attachment:
+        attachment_context, attach_count = _resolve_attachment_context(
+            db, user, attachment_session_id
+        )
+
+    doc_context, doc_citations = "", []
+    if plan.use_doc_retrieval:
+        doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
+
+    kg_context: KgQaContext | None = None
+    if plan.use_kg:
+        kg_context = _resolve_kg_context(db, user, message)
+
+    use_web_search = plan.use_web_search
+    if (
+        not use_web_search
+        and web_enabled
+        and plan.use_doc_retrieval
+        and not doc_citations
+        and _web_search_fallback_after_empty_kb(message)
+    ):
+        use_web_search = True
+
     merged_context, citations = _merge_retrieval_context(
         attachment_context=attachment_context,
         doc_context=doc_context,
         doc_citations=doc_citations,
         kg_context=kg_context,
     )
-    return merged_context, citations, kg_context, attach_count
+    if use_web_search:
+        web_context, web_citations = _resolve_web_search(
+            db,
+            message,
+            citation_start=len(citations) + 1,
+        )
+        merged_context, citations = _append_web_context(
+            merged_context,
+            citations,
+            web_context=web_context,
+            web_citations=web_citations,
+        )
+    return (
+        merged_context,
+        citations,
+        kg_context,
+        attach_count,
+        plan,
+        _effective_context_instruction(plan, use_web_search=use_web_search),
+    )
 
 
 def _resolve_platform_knowledge(
@@ -164,14 +611,14 @@ def _build_chat_messages(
     history: list[AiChatMessage],
     retrieval_context: str = "",
     platform_knowledge: str = "",
+    context_instruction: str = _RETRIEVAL_CONTEXT_INSTRUCTION,
 ) -> list[dict]:
     system = _SYSTEM_PROMPT
     if platform_knowledge.strip():
         system = f"{system}\n\n【平台操作知识库】\n{platform_knowledge.strip()}"
     if retrieval_context.strip():
-        system = (
-            f"{system}\n\n{_RETRIEVAL_CONTEXT_INSTRUCTION}\n\n{retrieval_context.strip()}"
-        )
+        instruction = (context_instruction or _RETRIEVAL_CONTEXT_INSTRUCTION).strip()
+        system = f"{system}\n\n{instruction}\n\n{retrieval_context.strip()}"
     messages: list[dict] = [{"role": "system", "content": system}]
     tail = history[-_MAX_HISTORY:] if history else []
     for item in tail:
@@ -277,7 +724,7 @@ async def iter_chat_with_ai_agent_stream(
     async for payload in _emit_workflow(
         "agent_thought",
         title="已理解问题",
-        detail="准备检索权限内文档与本体图谱",
+        detail="准备处理用户问题",
         step_id=think_id,
         status="done",
     ):
@@ -286,9 +733,37 @@ async def iter_chat_with_ai_agent_stream(
     doc_context = ""
     doc_citations: list[dict] = []
     attachment_context = ""
-    attach_count = 0
+    attach_count = _attachment_file_count(db, user, attachment_session_id)
+
+    kb_enabled = bool(
+        db is not None
+        and user is not None
+        and _knowledge_search_enabled(db, user)
+    )
+    kg_enabled = bool(
+        db is not None and user is not None and _kg_enabled_for_user(db, user)
+    )
+    web_enabled = _web_search_enabled(db)
+    plan = _plan_agent_tools(
+        message,
+        attach_count=attach_count,
+        kb_enabled=kb_enabled,
+        kg_enabled=kg_enabled,
+        web_enabled=web_enabled,
+        history=history,
+    )
+
+    async for payload in _emit_workflow(
+        "agent_thought",
+        title="已选择处理方式",
+        detail=plan.intent_label,
+        step_id=think_id,
+        status="done",
+    ):
+        yield payload
+
     attach_id = _next_step_id()
-    if (attachment_session_id or "").strip() and db is not None and user is not None:
+    if plan.use_attachment and db is not None and user is not None:
         async for payload in _emit_workflow(
             "tool_call",
             title="读取临时附件",
@@ -316,7 +791,7 @@ async def iter_chat_with_ai_agent_stream(
             yield payload
 
     retrieve_id = _next_step_id()
-    if db is not None and user is not None and _knowledge_search_enabled(db, user):
+    if plan.use_doc_retrieval and db is not None and user is not None:
         async for payload in _emit_workflow(
             "tool_call",
             title="检索权限内文档",
@@ -340,12 +815,10 @@ async def iter_chat_with_ai_agent_stream(
             status="done",
         ):
             yield payload
-    elif db is not None and user is not None:
-        doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
 
     kg_context: KgQaContext | None = None
     kg_id = _next_step_id()
-    if db is not None and user is not None and _kg_enabled_for_user(db, user):
+    if plan.use_kg and db is not None and user is not None:
         async for payload in _emit_workflow(
             "tool_call",
             title="解析本体图谱关联",
@@ -372,14 +845,64 @@ async def iter_chat_with_ai_agent_stream(
         ):
             yield payload
 
+    use_web_search = plan.use_web_search
+    if (
+        not use_web_search
+        and web_enabled
+        and plan.use_doc_retrieval
+        and not doc_citations
+        and _web_search_fallback_after_empty_kb(message)
+    ):
+        use_web_search = True
+
     merged_context, citations = _merge_retrieval_context(
         attachment_context=attachment_context,
         doc_context=doc_context,
         doc_citations=doc_citations,
         kg_context=kg_context,
     )
-    if citations:
-        yield json.dumps({"citations": citations}, ensure_ascii=False)
+
+    context_instruction = plan.context_instruction
+    if use_web_search and not plan.use_web_search:
+        context_instruction = _effective_context_instruction(
+            plan, use_web_search=use_web_search
+        )
+
+    web_id = _next_step_id()
+    if use_web_search:
+        async for payload in _emit_workflow(
+            "tool_call",
+            title="联网检索相关资料",
+            tool="web_search",
+            detail=message.strip()[:120],
+            step_id=web_id,
+        ):
+            yield payload
+        web_context, web_citations = _resolve_web_search(
+            db,
+            message,
+            citation_start=len(citations) + 1,
+        )
+        merged_context, citations = _append_web_context(
+            merged_context,
+            citations,
+            web_context=web_context,
+            web_citations=web_citations,
+        )
+        web_detail = (
+            f"获取 {len(web_citations)} 条联网摘要"
+            if web_citations
+            else "未获取到有效联网结果"
+        )
+        async for payload in _emit_workflow(
+            "tool_result",
+            title="联网检索完成",
+            tool="web_search",
+            detail=web_detail,
+            step_id=web_id,
+            status="done",
+        ):
+            yield payload
 
     async for payload in _emit_workflow("node_started", title="正在生成回答"):
         yield payload
@@ -391,6 +914,7 @@ async def iter_chat_with_ai_agent_stream(
         history=history,
         retrieval_context=merged_context,
         platform_knowledge=platform_knowledge,
+        context_instruction=context_instruction,
     )
     api_key, base_url, model = resolve_credentials()
     payload = {
@@ -437,15 +961,24 @@ async def iter_chat_with_ai_agent_stream(
             message=message,
             reply=accumulated,
         )
+        from app.services.knowledge_qa_service import finalize_citations_preserving_index
+
+        display_citations: list[dict] = []
+        normalized_answer = accumulated
+        if citations:
+            normalized_answer, display_citations = finalize_citations_preserving_index(
+                accumulated, citations
+            )
         done_payload: dict[str, Any] = {
             "done": True,
             "model": model,
-            "reply": accumulated,
+            "reply": normalized_answer,
             "conversation_id": out_conv_id,
             **_kg_meta_payload(kg_context),
         }
-        if citations:
-            done_payload["citations"] = citations
+        if display_citations:
+            yield json.dumps({"citations": display_citations}, ensure_ascii=False)
+            done_payload["citations"] = display_citations
         yield json.dumps(done_payload, ensure_ascii=False)
         async for payload in _emit_workflow("workflow_finished", title="完成"):
             yield payload
@@ -469,8 +1002,10 @@ async def chat_with_ai_agent(
     if not is_configured():
         raise bad_request("AI 对话未配置，请联系管理员配置 DeepSeek API")
 
-    retrieval_context, citations, kg_context, _attach_count = _resolve_answer_context(
-        db, user, message, attachment_session_id
+    retrieval_context, citations, kg_context, _attach_count, plan, context_instruction = (
+        _resolve_answer_context(
+            db, user, message, attachment_session_id, history=history
+        )
     )
     platform_knowledge = _resolve_platform_knowledge(db, user)
     messages = _build_chat_messages(
@@ -478,6 +1013,7 @@ async def chat_with_ai_agent(
         history=history,
         retrieval_context=retrieval_context,
         platform_knowledge=platform_knowledge,
+        context_instruction=context_instruction,
     )
     api_key, base_url, model = resolve_credentials()
     payload = {
@@ -512,12 +1048,20 @@ async def chat_with_ai_agent(
         message=message,
         reply=reply,
     )
+    from app.services.knowledge_qa_service import finalize_citations_preserving_index
+
+    display_citations: list[dict] = []
+    normalized_reply = reply
+    if citations:
+        normalized_reply, display_citations = finalize_citations_preserving_index(
+            reply, citations
+        )
     result: dict[str, Any] = {
-        "reply": reply,
+        "reply": normalized_reply,
         "model": model,
         "conversation_id": out_conv_id,
         **_kg_meta_payload(kg_context),
     }
-    if citations:
-        result["citations"] = citations
+    if display_citations:
+        result["citations"] = display_citations
     return result

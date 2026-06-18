@@ -471,6 +471,8 @@ onMounted(async () => {
 }
 
 .chat-item.user .bubble {
+  width: fit-content;
+  max-width: 100%;
   background: var(--n-primary-color);
   color: #fff;
 }

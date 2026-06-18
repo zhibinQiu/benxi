@@ -1,10 +1,9 @@
-import { marked } from "marked";
-import * as echarts from "echarts";
-
-marked.setOptions({ gfm: true, breaks: true });
+import { ensureMarked, marked, normalizeMarkdownInput } from "./markdown.js";
 
 let echartSeq = 0;
 const chartInstances = new WeakMap();
+let echartsLoader = null;
+let rendererRegistered = false;
 
 function escapeHtml(text) {
   return String(text)
@@ -35,47 +34,54 @@ function parseEchartsOption(raw) {
   return null;
 }
 
-const renderer = {
-  code({ text, lang }) {
-    const language = (lang || "").trim().toLowerCase();
-    if (language === "echarts" || language === "chart") {
-      const id = `md-echart-${echartSeq++}`;
-      const encoded = encodeURIComponent(text || "");
-      return (
-        `<div class="md-echart-wrap">` +
-        `<div id="${id}" class="md-echart" data-option="${encoded}" ` +
-        `style="height:320px;width:100%;min-height:200px"></div></div>`
-      );
-    }
-    if (language === "json") {
-      const option = parseEchartsOption(text);
-      if (option) {
-        const id = `md-echart-${echartSeq++}`;
-        const encoded = encodeURIComponent(JSON.stringify(option));
-        return (
-          `<div class="md-echart-wrap">` +
-          `<div id="${id}" class="md-echart" data-option="${encoded}" ` +
-          `style="height:320px;width:100%;min-height:200px"></div></div>`
-        );
-      }
-    }
-    const safe = escapeHtml(text || "");
-    const langClass = language ? ` class="language-${language}"` : "";
-    return `<pre><code${langClass}>${safe}</code></pre>`;
-  },
-};
-
-marked.use({ renderer });
-
-/** 去掉模型外包的一层 ```markdown 围栏，避免整段被当作代码块。 */
-export function normalizeMarkdownInput(text) {
-  const raw = String(text || "").trim();
-  const fenced = raw.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/i);
-  if (fenced) return fenced[1].trim();
-  return raw;
+function ensureEchartsRenderer() {
+  if (rendererRegistered) return;
+  ensureMarked();
+  marked.use({
+    renderer: {
+      code({ text, lang }) {
+        const language = (lang || "").trim().toLowerCase();
+        if (language === "echarts" || language === "chart") {
+          const id = `md-echart-${echartSeq++}`;
+          const encoded = encodeURIComponent(text || "");
+          return (
+            `<div class="md-echart-wrap">` +
+            `<div id="${id}" class="md-echart" data-option="${encoded}" ` +
+            `style="height:320px;width:100%;min-height:200px"></div></div>`
+          );
+        }
+        if (language === "json") {
+          const option = parseEchartsOption(text);
+          if (option) {
+            const id = `md-echart-${echartSeq++}`;
+            const encoded = encodeURIComponent(JSON.stringify(option));
+            return (
+              `<div class="md-echart-wrap">` +
+              `<div id="${id}" class="md-echart" data-option="${encoded}" ` +
+              `style="height:320px;width:100%;min-height:200px"></div></div>`
+            );
+          }
+        }
+        const safe = escapeHtml(text || "");
+        const langClass = language ? ` class="language-${language}"` : "";
+        return `<pre><code${langClass}>${safe}</code></pre>`;
+      },
+    },
+  });
+  rendererRegistered = true;
 }
 
+async function loadEcharts() {
+  if (!echartsLoader) {
+    echartsLoader = import("echarts").then((mod) => mod.default ?? mod);
+  }
+  return echartsLoader;
+}
+
+export { normalizeMarkdownInput };
+
 export function renderRichMarkdown(text) {
+  ensureEchartsRenderer();
   const source = normalizeMarkdownInput(text);
   try {
     return marked.parse(source);
@@ -84,7 +90,7 @@ export function renderRichMarkdown(text) {
   }
 }
 
-function mountOneEchart(el) {
+async function mountOneEchart(el) {
   const encoded = el.getAttribute("data-option");
   if (!encoded) return;
   let option;
@@ -103,6 +109,7 @@ function mountOneEchart(el) {
     prev.dispose();
     chartInstances.delete(el);
   }
+  const echarts = await loadEcharts();
   const chart = echarts.init(el, undefined, { renderer: "canvas" });
   chart.setOption(option, { notMerge: true });
   chartInstances.set(el, chart);
@@ -110,7 +117,9 @@ function mountOneEchart(el) {
 
 export function mountEchartsInElement(root) {
   if (!root?.querySelectorAll) return;
-  root.querySelectorAll(".md-echart").forEach(mountOneEchart);
+  root.querySelectorAll(".md-echart").forEach((el) => {
+    void mountOneEchart(el);
+  });
 }
 
 export function disposeEchartsInElement(root) {

@@ -14,8 +14,3 @@ export async function markNotificationRead(id) {
 export async function markAllNotificationsRead() {
   return api("/api/v1/notifications/read-all", { method: "PATCH" });
 }
-
-export async function clearNotifications(scope = "read") {
-  const q = new URLSearchParams({ scope });
-  return api(`/api/v1/notifications/clear?${q}`, { method: "DELETE" });
-}

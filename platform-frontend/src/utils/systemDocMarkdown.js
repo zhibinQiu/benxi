@@ -1,57 +1,40 @@
-import { marked } from "marked";
+import { ensureMarked, marked } from "./markdown.js";
+import { mountMermaidInElement } from "./mermaidRender.js";
 import {
   bindEchartsResize,
-  mountEchartsInElement,
   disposeEchartsInElement,
+  mountEchartsInElement,
   unbindEchartsResize,
-} from "./richMarkdown";
-
-marked.setOptions({ gfm: true, breaks: true });
+} from "./richMarkdown.js";
 
 let mermaidSeq = 0;
-let mermaidLoader = null;
+let mermaidRendererRegistered = false;
 
-function normalizeMermaidSource(source) {
-  return String(source || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .trim();
+function ensureMermaidRenderer() {
+  if (mermaidRendererRegistered) return;
+  ensureMarked();
+  marked.use({
+    renderer: {
+      code({ text, lang }) {
+        const language = (lang || "").trim().toLowerCase();
+        if (language === "mermaid") {
+          const id = `md-mermaid-${mermaidSeq++}`;
+          const encoded = encodeURIComponent(text || "");
+          return (
+            `<div class="md-mermaid-wrap">` +
+            `<pre class="md-mermaid" id="${id}" data-mermaid="${encoded}"></pre>` +
+            `</div>`
+          );
+        }
+        return false;
+      },
+    },
+  });
+  mermaidRendererRegistered = true;
 }
-
-async function loadMermaid() {
-  if (!mermaidLoader) {
-    mermaidLoader = import("mermaid").then((mod) => {
-      mod.default.initialize({
-        startOnLoad: false,
-        theme: document.documentElement.dataset.theme === "dark" ? "dark" : "default",
-        // strict 会拒绝节点标签中的 HTML（如 br），导致系统说明文档中架构图无法渲染
-        securityLevel: "antiscript",
-        fontFamily: "var(--platform-font)",
-      });
-      return mod.default;
-    });
-  }
-  return mermaidLoader;
-}
-
-const renderer = {
-  code({ text, lang }) {
-    const language = (lang || "").trim().toLowerCase();
-    if (language === "mermaid") {
-      const id = `md-mermaid-${mermaidSeq++}`;
-      const encoded = encodeURIComponent(text || "");
-      return (
-        `<div class="md-mermaid-wrap">` +
-        `<pre class="md-mermaid" id="${id}" data-mermaid="${encoded}"></pre>` +
-        `</div>`
-      );
-    }
-    return false;
-  },
-};
-
-marked.use({ renderer });
 
 export function renderSystemDocMarkdown(text) {
+  ensureMermaidRenderer();
   try {
     return marked.parse(String(text || ""));
   } catch {
@@ -59,40 +42,7 @@ export function renderSystemDocMarkdown(text) {
   }
 }
 
-export async function renderMermaidSvg(source) {
-  const mermaid = await loadMermaid();
-  const renderId = `md-mermaid-render-${mermaidSeq++}`;
-  const { svg } = await mermaid.render(renderId, normalizeMermaidSource(source));
-  return svg;
-}
-
-export async function mountMermaidInElement(root) {
-  if (!root?.querySelectorAll) return;
-  const nodes = root.querySelectorAll(".md-mermaid[data-mermaid]");
-  if (!nodes.length) return;
-  const mermaid = await loadMermaid();
-  for (const el of nodes) {
-    const encoded = el.getAttribute("data-mermaid");
-    if (!encoded) continue;
-    let source = "";
-    try {
-      source = normalizeMermaidSource(decodeURIComponent(encoded));
-    } catch {
-      continue;
-    }
-    const renderId = `md-mermaid-render-${mermaidSeq++}`;
-    try {
-      const { svg } = await mermaid.render(renderId, source);
-      const wrap = el.closest(".md-mermaid-wrap") || el.parentElement;
-      if (wrap) {
-        wrap.innerHTML = `<div class="md-mermaid-svg" aria-hidden="true">${svg}</div>`;
-      }
-    } catch {
-      el.textContent = source;
-      el.classList.add("md-mermaid--error");
-    }
-  }
-}
+export { renderMermaidSvg } from "./mermaidRender.js";
 
 export async function mountSystemDocContent(root) {
   if (!root) return;

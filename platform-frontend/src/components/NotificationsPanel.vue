@@ -10,9 +10,8 @@ import {
   NSpin,
   NThing,
   NTooltip } from "naive-ui";
-import { RefreshOutline, TrashOutline, CheckmarkDoneOutline } from "@vicons/ionicons5";
+import { RefreshOutline, CheckmarkDoneOutline } from "@vicons/ionicons5";
 import {
-  clearNotifications,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead } from "../api/client";
@@ -56,22 +55,12 @@ async function markRead(id) {
 
 async function markAllRead() {
   try {
-    const { updated } = await markAllNotificationsRead();
-    ui.success(updated ? "notifications.messages.markedRead" : "notifications.messages.noneUnread", {
-      count: updated || 0});
-    await load({ notifyOnError: false });
-  } catch (e) {
-    ui.error(e);
-  }
-}
-
-async function doClear(scope) {
-  try {
-    const { deleted } = await clearNotifications(scope);
-    ui.success(
-      deleted ? "notifications.messages.cleared" : "notifications.messages.nothingToClear",
-      { count: deleted || 0 }
-    );
+    const { deleted } = await markAllNotificationsRead();
+    if (deleted > 0) {
+      ui.success("notifications.messages.clearedAll", { count: deleted });
+    } else {
+      ui.success("notifications.messages.noneUnread");
+    }
     await load({ notifyOnError: false });
   } catch (e) {
     ui.error(e);
@@ -141,20 +130,6 @@ defineExpose({ load, refresh: load });
             </button>
           </template>
           {{ t("notifications.markAllRead") }}
-        </n-tooltip>
-        <n-tooltip placement="bottom">
-          <template #trigger>
-            <button
-              type="button"
-              class="notif-header-btn notif-header-btn--clear"
-              :aria-label="t('notifications.clearAll')"
-              :title="t('notifications.clearAll')"
-              @click="doClear('all')"
-            >
-              <n-icon :size="16" :component="TrashOutline" />
-            </button>
-          </template>
-          {{ t("notifications.clearAll") }}
         </n-tooltip>
       </div>
     </header>
@@ -280,16 +255,6 @@ defineExpose({ load, refresh: load });
 .notif-header-btn--read:not(:disabled):hover {
   background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 18%, transparent);
-}
-
-.notif-header-btn--clear {
-  color: var(--platform-danger, #d03050);
-  background: var(--platform-danger-soft, color-mix(in srgb, #d03050 12%, transparent));
-}
-
-.notif-header-btn--clear:not(:disabled):hover {
-  background: color-mix(in srgb, var(--platform-danger, #d03050) 22%, transparent);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-danger, #d03050) 16%, transparent);
 }
 
 .notifications-panel__body {

@@ -105,6 +105,8 @@ def _catalog_raw() -> list[dict[str, Any]]:
                 {"key": "impl-jobs", "title": "异步与任务", "path": "docs/zh/implementation/async-and-jobs.md"},
                 {"key": "impl-docs", "title": "文档中心实现", "path": "docs/zh/implementation/documents-implementation.md"},
                 {"key": "impl-knowledge", "title": "知识库实现", "path": "docs/zh/implementation/knowledge-implementation.md"},
+                {"key": "impl-report", "title": "报告生成实现", "path": "docs/zh/implementation/report-generation-implementation.md"},
+                {"key": "impl-agent-skills", "title": "Agent Skills 实现", "path": "docs/zh/implementation/agent-skills-implementation.md"},
             ],
         },
         {

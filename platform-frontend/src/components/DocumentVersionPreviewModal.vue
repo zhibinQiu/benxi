@@ -369,10 +369,10 @@ function onAfterLeave() {
 .document-preview-modal__spin {
   flex: 1;
   width: 100%;
-  min-height: 360px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
 }
 
 .document-preview-modal__spin :deep(.n-spin-container),
@@ -382,12 +382,13 @@ function onAfterLeave() {
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
 }
 
 .document-preview-modal__viewport {
   display: flex;
   flex: 0 1 auto;
+  align-self: center;
   align-items: stretch;
   justify-content: center;
   aspect-ratio: 210 / 297;
@@ -401,10 +402,12 @@ function onAfterLeave() {
 }
 
 .document-preview-modal__viewport--pdf {
+  align-self: stretch;
   width: 100%;
-  height: v-bind(viewportHeight);
+  flex: 1 1 auto;
+  min-height: 240px;
   max-height: v-bind(viewportHeight);
-  min-height: 480px;
+  height: auto;
   aspect-ratio: unset;
 }
 
@@ -530,7 +533,7 @@ function onAfterLeave() {
 
 .document-preview-modal.admin-form-modal.n-modal .admin-form-modal__body {
   flex: 1 1 auto;
-  min-height: 360px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;

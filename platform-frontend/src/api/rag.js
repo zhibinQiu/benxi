@@ -4,7 +4,7 @@ import { getApiBase, getToken, rejectHttpFailure } from "./http.js";
 export function createPlatformChatStream(path) {
   return async function platformChatStream(
     { message, history = [], conversationId = null, attachmentSessionId = null },
-    { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
+    { onDelta, onReplace, onWorkflow, onCitations, onAttachments, onDone, onError, signal } = {}
   ) {
     const headers = { "Content-Type": "application/json" };
     const token = getToken();
@@ -66,6 +66,7 @@ export function createPlatformChatStream(path) {
           onReplace?.(payload.replace);
         }
         if (payload.citations) onCitations?.(payload.citations);
+        if (payload.attachments) onAttachments?.(payload.attachments);
         if (payload.delta) {
           hasContent = true;
           onDelta?.(payload.delta);

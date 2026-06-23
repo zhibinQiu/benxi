@@ -31,6 +31,16 @@ function localizeStatus(status, t) {
   return key ? tr(t, key, raw) : raw;
 }
 
+/** 已索引版本的索引方法展示文案 */
+export function versionIndexMethodLabel(row, { t } = {}) {
+  if (!isDocumentIndexReady(row)) return null;
+  const engine = (row.index_engine || "").trim().toLowerCase();
+  if (engine === "pageindex") {
+    return tr(t, "documents.detail.indexMethodPageIndex", "PageIndex");
+  }
+  return tr(t, "documents.detail.indexMethodDefault", "Vector");
+}
+
 /** 文档是否已成功索引、可用于知识检索问答 */
 export function isDocumentIndexReady(row) {
   if (!row?.knowledge_synced) return false;

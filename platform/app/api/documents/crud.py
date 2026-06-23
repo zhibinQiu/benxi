@@ -13,7 +13,7 @@ from app.core.document_scope import (
     can_restore_document,
 )
 from app.core.exceptions import forbidden, not_found
-from app.database import get_db
+from app.database import get_db, get_read_db
 from app.models.org import User
 from app.schemas.common import ApiResponse
 from app.schemas.document import (
@@ -29,12 +29,28 @@ router = APIRouter()
 def get_document(
     document_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
     live_index: bool = Query(
         False,
         description="为 true 时实时拉取 RAGFlow 索引进度（较慢，适合手动刷新）",
     ),
 ) -> ApiResponse[DocumentDetail]:
+    from app.config import get_settings
+    from app.core.platform_cache import (
+        cache_get_json,
+        cache_set_json,
+        document_detail_cache_key,
+    )
+
+    if not live_index:
+        cache_key = document_detail_cache_key(str(document_id), str(user.id))
+        cached = cache_get_json(
+            cache_key,
+            ttl=get_settings().platform_cache_document_detail_ttl_sec,
+        )
+        if cached is not None:
+            return ApiResponse(data=DocumentDetail.model_validate(cached))
+
     doc = document_service.get_document(db, document_id)
     if not doc:
         raise not_found("Document not found")
@@ -43,7 +59,14 @@ def get_document(
             raise not_found("Document not found")
     elif not can_read_document(db, user, doc):
         raise forbidden()
-    return ApiResponse(data=_detail(db, doc, user=user, live_index=live_index))
+    detail = _detail(db, doc, user=user, live_index=live_index)
+    if not live_index:
+        cache_set_json(
+            document_detail_cache_key(str(document_id), str(user.id)),
+            detail.model_dump(),
+            ttl=get_settings().platform_cache_document_detail_ttl_sec,
+        )
+    return ApiResponse(data=detail)
 
 
 @router.patch("/{document_id}", response_model=ApiResponse[DocumentDetail])
@@ -70,8 +93,7 @@ def patch_document(
         scope=body.scope,
         dept_id=body.dept_id,
     )
-    audit_service.write_audit(
-        db,
+    audit_service.write_audit_async(
         user_id=user.id,
         action="document.update",
         resource_type="document",
@@ -96,8 +118,7 @@ def move_document(
     doc = document_service.move_document_to_folder(
         db, user, doc, folder_id=body.folder_id
     )
-    audit_service.write_audit(
-        db,
+    audit_service.write_audit_async(
         user_id=user.id,
         action="document.move",
         resource_type="document",
@@ -122,8 +143,7 @@ def permanent_delete_document(
     document_service.permanently_delete_document(
         db, user, doc, defer_knowflow=True
     )
-    audit_service.write_audit(
-        db,
+    audit_service.write_audit_async(
         user_id=user.id,
         action="document.purge",
         resource_type="document",

@@ -16,6 +16,8 @@ export const PLATFORM_Z = {
   selectInModal: 10400,
   /** 系统 Toast */
   message: 10900,
+  /** 定时/系统通知弹窗卡片（须低于 message、高于 flyout） */
+  notificationAlert: 10880,
   /** 系统确认框：删除 / 操作确认 / 登录失效（最高交互层） */
   systemDialog: 11000,
 };

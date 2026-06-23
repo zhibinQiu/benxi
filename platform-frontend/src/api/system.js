@@ -20,3 +20,7 @@ export async function fetchDashboardStats() {
 export async function fetchFeatureEmbedMeta(featureId) {
   return api(`/api/v1/system/features/${encodeURIComponent(featureId)}/embed-meta`);
 }
+
+export async function fetchReleaseHighlights() {
+  return api("/api/v1/system/release-highlights");
+}

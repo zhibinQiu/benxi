@@ -36,6 +36,8 @@ import {
   todoLlmPreview,
   updateTodo } from "../api/client";
 import { deleteSequentially } from "../utils/batchActions";
+import ListRefreshButton from "./ListRefreshButton.vue";
+import { PLATFORM_Z } from "../constants/zIndex.js";
 
 const props = defineProps({
   variant: {
@@ -351,6 +353,7 @@ defineExpose({ load, refresh: load });
     <n-card v-if="variant === 'page'" size="small" class="todos-card">
       <template #header-extra>
         <n-space align="center" :size="4">
+          <ListRefreshButton :loading="loading" @click="load" />
           <HintTooltip :text="t('todos.pageHint')" />
           <n-button size="small" quaternary @click="openLlm">
             <template #icon>
@@ -596,6 +599,7 @@ defineExpose({ load, refresh: load });
       v-model:show="showLlmModal"
       preset="card"
       :title="t('todos.llmModalTitle')"
+      :z-index="PLATFORM_Z.featureModal"
       style="width: min(560px, 92vw)"
     >
       <n-space vertical :size="12">

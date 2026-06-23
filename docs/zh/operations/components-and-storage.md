@@ -1,4 +1,4 @@
-# 组件位置与数据存储（v4.0.9）
+# 组件位置与数据存储（v4.2.1）
 
 > **本文描述当前系统的真实部署形态**：各服务跑在哪里、数据存在哪、如何连接查看。  
 > 启动与部署命令见 [运维部署指南](../../../运维部署指南.md)；容器细节见 [Docker 容器说明](docker-services.md)。
@@ -14,7 +14,7 @@
 | 编排入口 | `bash scripts/stack.sh`（build / up / dev-up / backup） |
 | 日常开发 | `./dev.sh docker`（全 Docker 热重载） |
 | 对外 Web | 仅 **40005**（Nginx 或 Vite） |
-| 知识库向量引擎 | **Infinity**（`DOC_ENGINE=infinity`），**不是** Elasticsearch |
+| 知识库向量引擎 | **Infinity**（`DOC_ENGINE=infinity`） |
 | 对象存储 | 栈内 **MinIO**，平台与 KnowFlow **共用** |
 | 平台业务库 | **PostgreSQL 16** |
 | KnowFlow 元数据库 | **MySQL 8**（库名 `rag_flow`） |
@@ -94,6 +94,17 @@ data/
 - **连接串**（容器内）：`postgresql+psycopg2://platform:platform@postgres:5432/platform`
 - **账号**：`.env` 中 `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`（默认均为 `platform`）
 - **迁移**：启动时 `create_all` + `schema_migrate.py` 自动补丁（非 Alembic）
+
+#### 3.1.1 读写分离（可选）
+
+| 变量 | 说明 |
+|------|------|
+| `DATABASE_URL` | 主库连接串（读写） |
+| `DATABASE_READ_URL` | 只读副本；留空则全部走主库 |
+
+实现：`app/database.py` 中 `get_read_db()` / `read_session_factory()`。文档列表、文档详情、`/system/*` 等只读 API 使用 `get_read_db`；创建、更新、删除与 Celery 任务使用 `get_db()`（主库）。异步辅助函数 `run_db_read_task()` 同样路由到只读副本。
+
+默认单机 Compose **仅一个 PostgreSQL 实例**，不配置 `DATABASE_READ_URL` 时读写均在同一库；生产可对接流复制只读节点后开启。
 
 | 域 | 主要表 | 存储内容 |
 |----|--------|----------|

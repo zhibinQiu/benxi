@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "企业 AI 知识库平台"
-    platform_version: str = "4.0.9"
+    platform_version: str = "4.2.1"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -28,12 +28,25 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg2://platform:platform@127.0.0.1:5432/platform"
     )
+    # 只读副本（留空则全部走 database_url；列表/详情/配置等读 API 优先使用）
+    database_read_url: str = ""
     # SQLAlchemy 连接池（200 人在线建议单进程 DB_POOL_SIZE=20 DB_MAX_OVERFLOW=20，多 worker 需分摊 PG max_connections）
     db_pool_size: int = 15
     db_max_overflow: int = 15
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
     db_connect_timeout: int = 10
+    # PostgreSQL 单条 SQL 超时（毫秒；0=不设置）
+    db_statement_timeout_ms: int = 30000
+    # 超过该耗时的 SQL 记 warning 日志（毫秒；0=关闭）
+    db_slow_query_log_ms: int = 500
+    # 数据库熔断：连续失败达阈值后冷却，快速返回 503
+    db_circuit_enabled: bool = True
+    db_circuit_failure_threshold: int = 5
+    db_circuit_cooldown_sec: int = 20
+    # 单 worker 允许同时进行的长 SSE/流式任务数（LLM/Agent 收集），超出快速拒绝
+    stream_max_concurrent_per_worker: int = 12
+    stream_acquire_timeout: float = 8.0
     # 进程内有界后台池（Celery 不可用时的兜底；登录预热等轻任务）
     background_job_max_workers: int = 4
     # 重任务（文档索引/导入/上传后处理）优先走 Celery 队列
@@ -189,6 +202,15 @@ class Settings(BaseSettings):
     # Agentic RAG：LLM 规划子问题、多轮 retrieve_hits_for_qa 与充足性评估
     knowledge_agentic_enabled: bool = True
     knowledge_agentic_max_rounds: int = 2
+    # AI 首页智能体：思考 + 工具调用最大轮次，满足需求后应停止
+    agent_max_tool_rounds: int = 40
+    # AI 首页：tool loop 前 LLM 规划（方案 A）；寒暄/附件等仍走规则 fast path
+    agent_planning_enabled: bool = True
+    # 问题规划缓存：归纳相似问题并复用已探索的执行方案，跳过重复 LLM 规划
+    agent_plan_cache_enabled: bool = True
+    agent_plan_cache_ttl_sec: int = 86400
+    agent_plan_cache_similarity_threshold: float = 0.85
+    agent_plan_cache_max_entries: int = 120
     knowledge_agentic_qa_max_sub_questions: int = 4
     knowledge_agentic_report_max_sub_questions: int = 6
 
@@ -205,6 +227,10 @@ class Settings(BaseSettings):
     # 平台 Redis/内存缓存（文档库分级、文件夹列表等；Redis 不可用时自动降级为进程内 TTL）
     platform_cache_enabled: bool = True
     platform_cache_ttl_sec: int = 60
+    platform_cache_client_config_ttl_sec: int = 300
+    platform_cache_dashboard_ttl_sec: int = 30
+    platform_cache_features_ttl_sec: int = 60
+    platform_cache_document_detail_ttl_sec: int = 90
     document_library_cache_ttl_sec: int = 180
     kb_folders_cache_ttl_sec: int = 120
     scope_tree_cache_ttl_sec: int = 300
@@ -215,6 +241,17 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
     deepseek_max_chars: int = 12000
+
+    # 对话 LLM token 控制（字符预算 ≈ 中文 input token 的保守估计）
+    chat_prompt_max_chars: int = 32000
+    chat_report_prompt_max_chars: int = 48000
+    chat_history_max_chars: int = 6000
+    chat_history_max_messages: int = 8
+    chat_context_max_chars: int = 10000
+    chat_report_context_max_chars: int = 16000
+    chat_user_message_max_chars: int = 4000
+    # 0 = 不限制输出（不传 max_tokens）；报告生成始终不限制，不受此项影响
+    chat_max_output_tokens: int = 0
 
     # 知识图谱：索引完成后 LLM 自动抽取实体/关系
     kg_extraction_enabled: bool = True
@@ -310,6 +347,26 @@ class Settings(BaseSettings):
     ai_chat_attachment_max_file_mb: int = 30
     ai_chat_attachment_max_files: int = 8
     ai_chat_attachment_ttl_hours: int = 24
+
+    # Agent Skills（Claude Code / Agent Skills 规范）
+    agent_skill_max_zip_mb: int = 20
+    agent_skill_max_files_per_skill: int = 100
+    agent_skill_max_total_mb_per_skill: int = 10
+    agent_skill_script_enabled: bool = True
+    agent_skill_script_timeout_seconds: int = 30
+    agent_skill_script_max_conclusion_chars: int = 4000
+    # 浏览器 RPA（Playwright；默认关闭，需 pip install '.[browser]' && playwright install chromium）
+    agent_browser_enabled: bool = False
+    agent_browser_headless: bool = True
+    agent_browser_session_ttl_seconds: int = 1800
+    agent_browser_max_steps_per_session: int = 50
+    agent_browser_allowed_domains: str = ""
+    agent_browser_screenshot_max_kb: int = 800
+    agent_browser_auto_task_enabled: bool = True
+    agent_browser_auto_task_max_steps: int = 15
+    agent_memory_read_max_chars: int = 2000
+    agent_memory_max_chars: int = 8000
+    agent_memory_entry_max_chars: int = 500
 
     # 网站收藏 · 在线搜索（SearXNG JSON API 基址，如 http://host:8080）
     searxng_url: str = ""

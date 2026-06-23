@@ -1,20 +1,23 @@
 <script setup>
 defineOptions({ name: "KnowledgeSearchView" });
-import { computed, ref } from "vue";
+import { computed, inject, ref } from "vue";
 import { NButton, NCheckbox, NIcon } from "naive-ui";
 import { AddOutline, SearchOutline } from "@vicons/ionicons5";
-import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import HintTooltip from "../components/HintTooltip.vue";
-import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
 import KnowledgeSearchPanel from "../components/KnowledgeSearchPanel.vue";
+import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 import { knowledgeQaChatStream } from "../api/knowledge.js";
 import { useI18n } from "../composables/useI18n.js";
 import { messages } from "../locales";
-import { readKnowledgeScopeSelection } from "../utils/knowledgeScopeSelectionCache.js";
+import { KNOWLEDGE_SCOPE_SELECTION_KEY, readKnowledgeScopeSelection } from "../utils/knowledgeScopeSelectionCache.js";
 
 const { t, locale } = useI18n();
+const { headerExtensionActive } = usePageHeaderExtension();
 
-const selection = ref(readKnowledgeScopeSelection());
+const selection = inject(
+  KNOWLEDGE_SCOPE_SELECTION_KEY,
+  ref(readKnowledgeScopeSelection())
+);
 const panelKey = ref(0);
 const useAgentic = ref(true);
 
@@ -74,97 +77,63 @@ async function handleChatStream(params, callbacks) {
   );
 }
 
-function onSelectionChange(next) {
-  selection.value = next;
-}
-
 function resetSearch() {
   panelKey.value += 1;
 }
 </script>
 
 <template>
-  <FeatureSubsystemShell fill flush-start flush-end :show-intro="false">
-    <template #extra>
-      <div class="knowledge-search-toolbar">
-        <label class="knowledge-search-toolbar__agent">
-          <n-checkbox v-model:checked="useAgentic" size="small">
-            {{ t("knowledgeSearch.useAgent") }}
-          </n-checkbox>
-          <HintTooltip
-            :text="t('knowledgeSearch.useAgentTooltip')"
-            variant="inline"
-            placement="bottom"
-          />
-        </label>
-        <n-icon :size="16" :component="SearchOutline" class="knowledge-search-toolbar__icon" />
-        <span class="knowledge-search-toolbar__hint">{{ selectionHint }}</span>
-        <n-button
-          size="small"
-          quaternary
-          class="knowledge-search-toolbar__reset"
-          @click="resetSearch"
-        >
-          <template #icon>
-            <n-icon :component="AddOutline" />
-          </template>
-          {{ t("knowledgeSearch.newSearch") }}
-        </n-button>
+  <div class="knowledge-feature-panel">
+    <Teleport v-if="headerExtensionActive" to="#page-header-extension">
+    <div class="subsystem-extra-bar">
+      <div class="subsystem-extra-row">
+        <div class="knowledge-search-toolbar">
+          <label class="knowledge-search-toolbar__agent">
+            <n-checkbox v-model:checked="useAgentic" size="small">
+              {{ t("knowledgeSearch.useAgent") }}
+            </n-checkbox>
+            <HintTooltip
+              :text="t('knowledgeSearch.useAgentTooltip')"
+              variant="inline"
+              placement="bottom"
+            />
+          </label>
+          <n-icon :size="16" :component="SearchOutline" class="knowledge-search-toolbar__icon" />
+          <span class="knowledge-search-toolbar__hint">{{ selectionHint }}</span>
+          <n-button
+            size="small"
+            quaternary
+            class="knowledge-search-toolbar__reset"
+            @click="resetSearch"
+          >
+            <template #icon>
+              <n-icon :component="AddOutline" />
+            </template>
+            {{ t("knowledgeSearch.newSearch") }}
+          </n-button>
+        </div>
       </div>
-    </template>
-
-    <div class="knowledge-search-page">
-      <aside class="knowledge-search-page__sider">
-        <KnowledgeScopeTree @selection-change="onSelectionChange" />
-      </aside>
-
-      <main class="knowledge-search-page__main">
-        <KnowledgeSearchPanel
-          :key="panelKey"
-          class="knowledge-search-page__panel"
-          :suggestions="canAsk ? suggestions : []"
-          :can-search="canAsk"
-          :has-checked-docs="hasCheckedDocs"
-          :stream-chat="handleChatStream"
-        />
-      </main>
     </div>
-  </FeatureSubsystemShell>
+  </Teleport>
+
+  <KnowledgeSearchPanel
+    :key="panelKey"
+    class="knowledge-search-page__panel"
+    :suggestions="canAsk ? suggestions : []"
+    :can-search="canAsk"
+    :has-checked-docs="hasCheckedDocs"
+    :stream-chat="handleChatStream"
+  />
+  </div>
 </template>
 
 <style scoped>
-.knowledge-search-page {
-  display: flex;
+.knowledge-feature-panel {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  width: 100%;
-  box-sizing: border-box;
-  border-radius: 0;
-  overflow: hidden;
-  border: 1px solid var(--platform-border);
-  border-left: none;
-  border-right: none;
-  background: var(--platform-bg-elevated);
-}
-
-.knowledge-search-page__sider {
-  flex-shrink: 0;
-  width: min(300px, 36vw);
-  min-width: 228px;
-  border-right: 1px solid var(--platform-border);
-  background: var(--platform-bg-secondary);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.knowledge-search-page__main {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 
 .knowledge-search-page__panel {
@@ -210,18 +179,5 @@ function resetSearch() {
 
 .knowledge-search-toolbar__reset {
   flex-shrink: 0;
-}
-
-@media (max-width: 900px) {
-  .knowledge-search-page {
-    flex-direction: column;
-  }
-
-  .knowledge-search-page__sider {
-    width: 100%;
-    max-height: 38vh;
-    border-right: none;
-    border-bottom: 1px solid var(--platform-border);
-  }
 }
 </style>

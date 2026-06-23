@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, onUnmounted, ref } from "vue";
+import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NAvatar,
@@ -21,7 +21,8 @@ import {
 import { useAuth } from "../../composables/useAuth";
 import { useAppPreferences } from "../../composables/useAppPreferences";
 import { useI18n } from "../../composables/useI18n";
-import { fetchJobs, fetchNotifications, fetchTodos } from "../../api/client";
+import { fetchJobs, fetchTodos } from "../../api/client";
+import { refreshNotificationAlerts, useNotificationAlerts } from "../../composables/useNotificationAlerts.js";
 import { PLATFORM_Z } from "../../constants/zIndex.js";
 import AssistantChatFab from "../AssistantChatFab.vue";
 import HeaderFlyoutShell from "../HeaderFlyoutShell.vue";
@@ -35,7 +36,7 @@ const { displayName, logout } = useAuth();
 const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
 const { t, localeLabel } = useI18n();
 
-const unreadCount = ref(0);
+const { unreadCount } = useNotificationAlerts();
 const activeJobCount = ref(0);
 const pendingTodoCount = ref(0);
 const todosPopoverOpen = ref(false);
@@ -47,28 +48,118 @@ const jobsTriggerRef = ref(null);
 const notificationsTriggerRef = ref(null);
 const assistantTriggerRef = ref(null);
 const flyoutsReady = ref(false);
+const todosPanelMounted = ref(false);
+const jobsPanelMounted = ref(false);
+const notificationsPanelMounted = ref(false);
+const assistantMounted = ref(false);
 let badgeTimer = null;
+let todosUnmountTimer = null;
+let jobsUnmountTimer = null;
+let notificationsUnmountTimer = null;
+let assistantUnmountTimer = null;
+
+const FLYOUT_UNMOUNT_DELAY_MS = 320;
+
+function clearFlyoutUnmountTimer(timer) {
+  if (timer) clearTimeout(timer);
+}
+
+function scheduleFlyoutUnmount(openRef, mountedRef, setTimer) {
+  setTimer(
+    setTimeout(() => {
+      setTimer(null);
+      if (!openRef.value) mountedRef.value = false;
+    }, FLYOUT_UNMOUNT_DELAY_MS)
+  );
+}
+
+function releaseFlyoutPanels() {
+  clearFlyoutUnmountTimer(todosUnmountTimer);
+  clearFlyoutUnmountTimer(jobsUnmountTimer);
+  clearFlyoutUnmountTimer(notificationsUnmountTimer);
+  clearFlyoutUnmountTimer(assistantUnmountTimer);
+  todosUnmountTimer = null;
+  jobsUnmountTimer = null;
+  notificationsUnmountTimer = null;
+  assistantUnmountTimer = null;
+  todosPanelMounted.value = false;
+  jobsPanelMounted.value = false;
+  notificationsPanelMounted.value = false;
+  assistantMounted.value = false;
+}
+
+watch(todosPopoverOpen, (open) => {
+  if (open) {
+    clearFlyoutUnmountTimer(todosUnmountTimer);
+    todosUnmountTimer = null;
+    todosPanelMounted.value = true;
+    return;
+  }
+  clearFlyoutUnmountTimer(todosUnmountTimer);
+  scheduleFlyoutUnmount(todosPopoverOpen, todosPanelMounted, (timer) => {
+    todosUnmountTimer = timer;
+  });
+});
+watch(jobsPopoverOpen, (open) => {
+  if (open) {
+    clearFlyoutUnmountTimer(jobsUnmountTimer);
+    jobsUnmountTimer = null;
+    jobsPanelMounted.value = true;
+    return;
+  }
+  clearFlyoutUnmountTimer(jobsUnmountTimer);
+  scheduleFlyoutUnmount(jobsPopoverOpen, jobsPanelMounted, (timer) => {
+    jobsUnmountTimer = timer;
+  });
+});
+watch(notificationsPopoverOpen, (open) => {
+  if (open) {
+    clearFlyoutUnmountTimer(notificationsUnmountTimer);
+    notificationsUnmountTimer = null;
+    notificationsPanelMounted.value = true;
+    void refreshNotificationAlerts();
+    return;
+  }
+  clearFlyoutUnmountTimer(notificationsUnmountTimer);
+  scheduleFlyoutUnmount(notificationsPopoverOpen, notificationsPanelMounted, (timer) => {
+    notificationsUnmountTimer = timer;
+  });
+});
+watch(assistantOpen, (open) => {
+  if (open) {
+    clearFlyoutUnmountTimer(assistantUnmountTimer);
+    assistantUnmountTimer = null;
+    assistantMounted.value = true;
+    return;
+  }
+  clearFlyoutUnmountTimer(assistantUnmountTimer);
+  scheduleFlyoutUnmount(assistantOpen, assistantMounted, (timer) => {
+    assistantUnmountTimer = timer;
+  });
+});
 
 onMounted(() => {
   flyoutsReady.value = true;
-  refreshHeaderBadges();
+  const scheduleBadges = () => {
+    void refreshHeaderBadges();
+  };
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(scheduleBadges, { timeout: 2500 });
+  } else {
+    setTimeout(scheduleBadges, 1200);
+  }
   badgeTimer = setInterval(() => {
-    if (document.hidden) return;
     refreshHeaderBadges();
-  }, 60_000);
+  }, 15_000);
 });
 
 onUnmounted(() => {
   if (badgeTimer) clearInterval(badgeTimer);
+  releaseFlyoutPanels();
 });
 
 async function refreshUnreadCount() {
-  try {
-    const data = await fetchNotifications({ page: 1, page_size: 1, unread_only: true });
-    unreadCount.value = data.total ?? 0;
-  } catch {
-    unreadCount.value = 0;
-  }
+  await refreshNotificationAlerts();
 }
 
 async function refreshActiveJobCount() {
@@ -99,11 +190,12 @@ async function refreshHeaderBadges() {
   await Promise.all([refreshUnreadCount(), refreshActiveJobCount(), refreshPendingTodoCount()]);
 }
 
-function closeAllFlyouts() {
+function closeAllFlyouts({ releasePanels = false } = {}) {
   todosPopoverOpen.value = false;
   jobsPopoverOpen.value = false;
   notificationsPopoverOpen.value = false;
   assistantOpen.value = false;
+  if (releasePanels) releaseFlyoutPanels();
 }
 
 function toggleFlyout(target) {
@@ -283,6 +375,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
 
     <template v-if="flyoutsReady">
       <HeaderFlyoutShell
+        v-if="todosPanelMounted"
         v-model:show="todosPopoverOpen"
         :anchor-el="todosTriggerRef"
         width="min(560px, calc(100vw - 32px))"
@@ -296,6 +389,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
         />
       </HeaderFlyoutShell>
       <HeaderFlyoutShell
+        v-if="jobsPanelMounted"
         v-model:show="jobsPopoverOpen"
         :anchor-el="jobsTriggerRef"
         aria-label="后台任务"
@@ -308,6 +402,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
         />
       </HeaderFlyoutShell>
       <HeaderFlyoutShell
+        v-if="notificationsPanelMounted"
         v-model:show="notificationsPopoverOpen"
         :anchor-el="notificationsTriggerRef"
         aria-label="通知"
@@ -319,6 +414,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
         />
       </HeaderFlyoutShell>
       <AssistantChatFab
+        v-if="assistantMounted"
         v-model:open="assistantOpen"
         :anchor-el="assistantTriggerRef"
       />
@@ -355,7 +451,12 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
 .header-icon-wrap {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   vertical-align: middle;
+  flex-shrink: 0;
 }
 
 .header-icon-wrap__badge {

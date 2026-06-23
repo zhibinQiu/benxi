@@ -203,3 +203,68 @@ def test_resolve_retrieval_engine_prefers_newer_pageindex(monkeypatch):
     )
 
     assert resolve_retrieval_engine_for_document(MagicMock(), doc) == "pageindex"
+
+
+def test_retrieve_pageindex_hits_runs_tree_search_in_parallel(monkeypatch):
+    from unittest.mock import patch
+
+    from app.services.pageindex_service import retrieve_pageindex_hits_for_qa
+
+    docs = [SimpleNamespace(id=uuid.uuid4()) for _ in range(3)]
+    jobs = [
+        SimpleNamespace(
+            doc=doc,
+            structure=[
+                {
+                    "node_id": "0001",
+                    "title": "Section",
+                    "text": f"content-{idx}",
+                }
+            ],
+        )
+        for idx, doc in enumerate(docs)
+    ]
+    call_count = {"n": 0}
+
+    def fake_tree_search(job, question):
+        call_count["n"] += 1
+        return str(job.doc.id), ["0001"]
+
+    monkeypatch.setattr(
+        "app.services.pageindex_service.pageindex_retrieval_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.pageindex_service._collect_pageindex_tree_search_jobs",
+        lambda _db, _docs: jobs,
+    )
+    with patch(
+        "app.services.pageindex_service.ThreadPoolExecutor"
+    ) as mock_pool_cls, patch(
+        "app.services.pageindex_service.as_completed",
+        side_effect=lambda futures: list(futures),
+    ):
+        mock_pool = MagicMock()
+        mock_pool.__enter__.return_value = mock_pool
+        mock_pool.__exit__.return_value = False
+
+        def submit(_fn, job, question):
+            fut = MagicMock()
+            fut.result.return_value = fake_tree_search(job, question)
+            return fut
+
+        mock_pool.submit.side_effect = submit
+        mock_pool_cls.return_value = mock_pool
+
+        hits = retrieve_pageindex_hits_for_qa(
+            MagicMock(),
+            MagicMock(),
+            docs,
+            "测试问题",
+            limit=5,
+        )
+
+    assert len(hits) == 3
+    assert call_count["n"] == 3
+    mock_pool_cls.assert_called_once()
+    assert mock_pool_cls.call_args.kwargs["max_workers"] == 3

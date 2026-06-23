@@ -11,8 +11,8 @@ import {
   NSpace } from "naive-ui";
 import { fetchCompareDocuments } from "../api/client";
 import { PLATFORM_Z } from "../constants/zIndex.js";
-
-const PAGE_SIZE = 10;
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
+import ListRefreshButton from "./ListRefreshButton.vue";
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -31,8 +31,8 @@ const items = ref([]);
 const loading = ref(false);
 
 const modalTitle = computed(() => props.title || t("compare.pickerDefaultTitle"));
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
-const showPager = computed(() => total.value > PAGE_SIZE);
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / LIST_PAGE_SIZE)));
+const showPager = computed(() => total.value > LIST_PAGE_SIZE);
 
 function isRowDisabled(row) {
   if (props.excludeId && row.id === props.excludeId) return true;
@@ -69,7 +69,7 @@ async function loadDocs() {
   try {
     const data = await fetchCompareDocuments({
       page: page.value,
-      page_size: PAGE_SIZE,
+      page_size: LIST_PAGE_SIZE,
       keyword: keyword.value || undefined});
     items.value = data.items || [];
     total.value = data.total ?? 0;
@@ -125,6 +125,7 @@ watch(
         @keyup.enter="onSearch"
       />
       <n-button type="primary" @click="onSearch">{{ t("compare.searchBtn") }}</n-button>
+      <ListRefreshButton :loading="loading" @click="loadDocs" />
     </n-space>
     <n-data-table
       :columns="columns"

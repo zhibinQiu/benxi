@@ -158,10 +158,56 @@ def invalidate_ragflow_doc_meta_cache(dataset_id: str | None = None) -> None:
         cache_delete_prefix("rag:docmeta:")
 
 
+def client_config_cache_key() -> str:
+    return "sys:client-config"
+
+
+def dashboard_stats_cache_key() -> str:
+    return "sys:dashboard-stats"
+
+
+def features_cache_key(user_id: str) -> str:
+    return f"sys:features:{user_id}"
+
+
+def document_detail_cache_key(document_id: str, user_id: str) -> str:
+    return f"doc:detail:{document_id}:{user_id}"
+
+
+def invalidate_system_config_cache() -> None:
+    cache_delete_prefix(client_config_cache_key())
+
+
+def invalidate_dashboard_cache() -> None:
+    cache_delete_prefix(dashboard_stats_cache_key())
+
+
+def invalidate_features_cache(user_id: str | uuid.UUID | None = None) -> None:
+    if user_id:
+        cache_delete_prefix(features_cache_key(str(user_id)))
+    else:
+        cache_delete_prefix("sys:features:")
+
+
+def invalidate_document_detail_cache(
+    document_id: str | uuid.UUID | None = None,
+    user_id: str | uuid.UUID | None = None,
+) -> None:
+    if document_id and user_id:
+        cache_delete_prefix(
+            document_detail_cache_key(str(document_id), str(user_id))
+        )
+    elif document_id:
+        cache_delete_prefix(f"doc:detail:{document_id}:")
+    else:
+        cache_delete_prefix("doc:detail:")
+
+
 def invalidate_document_caches(user_id: str | None = None) -> None:
     """文档/文件夹变更后清理相关缓存。"""
     invalidate_document_library_cache(user_id)
     invalidate_kb_folders_cache(user_id)
+    invalidate_document_detail_cache(user_id=user_id)
     try:
         from app.services.knowledge_scope_tree_service import invalidate_scope_tree_cache
 

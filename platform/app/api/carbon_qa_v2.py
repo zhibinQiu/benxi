@@ -5,9 +5,12 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
 from app.api.deps import get_current_user, require_feature
+from app.api.streaming_utils import stream_sse_payloads
+from app.database import get_db
 from app.models.org import User
 from app.schemas.ai_chat import AiChatRequest, AiChatResponse
 from app.schemas.common import ApiResponse
@@ -48,17 +51,18 @@ async def carbon_qa_v2_chat(
 async def carbon_qa_v2_chat_stream(
     body: AiChatRequest,
     user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> StreamingResponse:
-    async def sse_body():
+    async def payloads():
         async for payload in iter_carbon_qa_v2_stream(
             message=body.message,
             user_id=str(user.id),
             conversation_id=body.conversation_id,
         ):
-            yield f"data: {payload}\n\n"
+            yield payload
 
     return StreamingResponse(
-        sse_body(),
+        stream_sse_payloads(db, payloads),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -43,8 +43,8 @@ const pageRef = ref(null);
 
 const loading = ref(false);
 const exiting = ref(false);
-const account = ref("admin");
-const password = ref("admin123");
+const account = ref("");
+const password = ref("");
 const loginPanelRef = ref(null);
 const registerPanelRef = ref(null);
 const loginModalOpen = ref(false);
@@ -305,8 +305,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
         <h1 class="login-showcase__platform-title">
           <PlatformBrandTitle tag="span" strong :title="appDisplayName" />
         </h1>
-        <p class="login-showcase__headline">{{ t("login.showcaseHeadline") }}</p>
-        <p class="login-showcase__subheadline">{{ t("login.showcaseSubheadline") }}</p>
+        <p class="login-showcase__intro">{{ t("login.showcaseIntro") }}</p>
         <p class="login-showcase__scroll-hint">{{ t("login.showcaseScrollHint") }}</p>
       </section>
       <LoginFeatureScroll v-if="!exiting" class="login-showcase__scroll" />
@@ -457,9 +456,10 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
 }
 
 .login-page--scroll {
+  scroll-behavior: smooth;
   scroll-snap-type: y proximity;
   scroll-padding-top: 36px;
-  scroll-padding-bottom: 64px;
+  scroll-padding-bottom: 48px;
 }
 
 .login-header {
@@ -689,10 +689,21 @@ html[data-theme="dark"] .login-header__vrule {
   color: var(--platform-text);
 }
 
-.login-showcase__subheadline {
-  margin: 0 0 20px;
-  max-width: 36em;
-  font-size: clamp(14px, 1.6vw, 16px);
+.login-showcase__headline--vision {
+  margin-bottom: 16px;
+  font-size: clamp(1.65rem, 4vw, 2.35rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, var(--platform-text) 0%, var(--platform-accent) 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.login-showcase__intro {
+  margin: 0 0 24px;
+  max-width: 34em;
+  font-size: clamp(12px, 1.25vw, 14px);
   font-weight: 400;
   line-height: 1.65;
   color: var(--platform-text-secondary);

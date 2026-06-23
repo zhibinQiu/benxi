@@ -33,6 +33,10 @@ const naiveDateLocale = computed(() => (locale.value === "en" ? dateEnUS : dateZ
 
 const route = useRoute();
 const shellVideoBg = computed(() => routeUsesVideoBackground(route));
+const shellVideoBgLite = computed(() => {
+  const name = String(route.name || "");
+  return name !== "ai-home" && name !== "login";
+});
 
 watch(
   [locale, appDisplayName],
@@ -54,7 +58,7 @@ watch(
       <n-dialog-provider>
         <AppSessionGuard />
         <div class="app-shell" :class="{ 'app-shell--video-bg': shellVideoBg }">
-          <PageVideoBackground v-if="shellVideoBg" fixed />
+          <PageVideoBackground v-if="shellVideoBg" fixed :lite="shellVideoBgLite" />
           <div v-if="!shellVideoBg" class="app-ambient" aria-hidden="true">
             <span class="app-ambient__orb app-ambient__orb--1" />
             <span class="app-ambient__orb app-ambient__orb--2" />
@@ -177,6 +181,7 @@ h4,
 </style>
 
 <style src="./styles/platform.css"></style>
+<style src="./styles/chat-message-media.css"></style>
 <style src="./styles/platform-typography.css"></style>
 <style src="./styles/liquid-glass.css"></style>
 <style src="./styles/feature-local-nav.css"></style>

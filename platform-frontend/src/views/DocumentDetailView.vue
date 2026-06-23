@@ -57,7 +57,10 @@ import { useDocumentLibrary } from "../composables/useDocumentLibrary.js";
 import OrgUserPickerTree from "../components/OrgUserPickerTree.vue";
 import OrgDeptPickerTree from "../components/OrgDeptPickerTree.vue";
 import { useDocumentReindex } from "../composables/useDocumentReindex.js";
-import { knowledgeIndexTagProps } from "../utils/knowledgeIndex.js";
+import {
+  knowledgeIndexTagProps,
+  versionIndexMethodLabel,
+} from "../utils/knowledgeIndex.js";
 import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
 import { ORG_SCOPES } from "../constants/documentScope";
@@ -844,6 +847,7 @@ onMounted(() => {
             <th>{{ t("documents.detail.size") }}</th>
             <th>{{ t("documents.detail.time") }}</th>
             <th>{{ t("documents.detail.index") }}</th>
+            <th>{{ t("documents.detail.indexMethod") }}</th>
             <th v-if="showVersionActions">{{ t("common.actions") }}</th>
           </tr>
         </thead>
@@ -870,6 +874,7 @@ onMounted(() => {
               </n-tag>
               <span v-else>—</span>
             </td>
+            <td>{{ versionIndexMethodLabel(v, { t }) || "—" }}</td>
             <td v-if="showVersionActions">
               <div class="table-icon-actions">
                 <IconAction
@@ -1093,6 +1098,8 @@ onMounted(() => {
     :document-id="docId"
     :version="previewVersion"
     pdf-fit-mode="width"
+    width="min(960px, 96vw)"
+    viewport-height="min(85vh, calc(100dvh - 160px))"
     @download="onPreviewDownload"
   />
 

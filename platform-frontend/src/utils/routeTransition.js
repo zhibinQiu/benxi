@@ -12,6 +12,7 @@ export const SUBSYSTEM_PAGE_ROUTES = new Set([
   "kg-palantir",
   "compare",
   "assist-writing",
+  "agent-skills",
   "report-generation",
   "knowledge-search",
   "knowledge-graph",

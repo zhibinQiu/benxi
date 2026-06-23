@@ -2,16 +2,18 @@
 import { computed } from "vue";
 import CurveAnimation from "./CurveAnimation.vue";
 
-defineProps({
+const props = defineProps({
   /** 固定铺满视口（App 壳层）；否则相对父容器 absolute */
   fixed: { type: Boolean, default: false },
+  /** 非首页时使用单层曲线，降低 RAF / SVG 内存占用 */
+  lite: { type: Boolean, default: false },
 });
 
 const reducedMotion = computed(
   () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false
 );
 
-const curveLayers = [
+const ALL_CURVE_LAYERS = [
   {
     className: "page-video-bg__curve--primary",
     phaseOffset: 0,
@@ -28,6 +30,8 @@ const curveLayers = [
     intensity: 0.62,
   },
 ];
+
+const curveLayers = computed(() => (props.lite ? ALL_CURVE_LAYERS.slice(0, 1) : ALL_CURVE_LAYERS));
 </script>
 
 <template>

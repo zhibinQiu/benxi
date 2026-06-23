@@ -1,7 +1,23 @@
-# 功能实现说明（v4.0.9）
+# 功能实现说明（v4.2.1）
 
-> **本文描述当前已实现功能的运行方式与数据流，不含代码。**  
-> 架构分层见 [系统架构](architecture.md)；文档库细节见 [文档库实现](../implementation/documents-implementation.md)。
+> **本文说明各功能如何运转**，含关键方法与提示词落点。  
+> 架构分层见 [系统架构](architecture.md)；Agent Skills 详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)（含 §10 Prompt、§11 调用链）。
+
+---
+
+## 阅读说明
+
+| 章节 | 内容 |
+|------|------|
+| [§0](#0-知识沉淀闭环) | 文档从入库到问答的整体链路 |
+| [§1](#1-总体原则) | 平台设计原则（含术语解释） |
+| [§2–§3](#2-身份认证与会话) | 登录、权限、文档中心 |
+| [§4](#4-knowflow--知识库) | 知识库、检索、图谱、AI 智能体 |
+| [§5–§13](#5-pdf-翻译) | 翻译、对比、语音、任务等 |
+| [§14](#14-agent-skills-管理) | Agent Skills 管理 |
+| [§16](#16-postgresql-读写分离) | PostgreSQL 读写分离 |
+
+**常见术语**：**JWT** = 登录后颁发的访问凭证；**RBAC** = 按角色分配功能权限；**MinIO** = 存文件的 object 存储；**Celery** = 后台异步任务 worker；**SSE** = 浏览器实时接收服务端推送（用于对话流式输出）。
 
 ---
 
@@ -18,19 +34,20 @@
 | 问答 | AI 智能体 / 知识检索 | 文档片段 + 图谱子图 **合并引用** |
 | 成稿 | 报告生成 | Agent 多路召回 + 章节扩写；**思维导图** Tab 可导出 |
 
-**与传统单向量 RAG 的差异**：长文档优先用 PageIndex 在目录树中定位章节，而非仅依赖 chunk  embedding 相似度；报告生成走多轮子问题规划，而非检索页的单轮短答。
+**检索策略**：长文档用 **PageIndex**（PDF/Word 章节目录树定位章节）+ 向量 **混合召回**；报告生成用 Agent 规划多轮子问题、分章节扩写。
 
 ---
 
 ## 1. 总体原则
 
-| 原则 | 含义 |
-|------|------|
-| 平台是唯一控制面 | 用户、组织、文档元数据、权限、任务状态存在 **PostgreSQL**；二进制文件在 **MinIO** |
-| 重计算外置 | PDF 翻译走 **pdf2zh-api**；向量检索与切片走 **KnowFlow/RAGFlow**；长时任务走 **Celery Worker** |
-| 功能插件化 | 每个业务能力注册为 `FeaturePlugin`：挂载 API 路由、写入权限码、出现在「系统功能」列表 |
-| 权限先于能力 | 所有文档相关操作先过 `can_*_document`；KnowFlow 侧通过 dataset / KB ACL 与平台 scope 对齐 |
-| 异步不阻塞交互 | 翻译、大文档删除、对比 diff 等创建 **Job** 后轮询或 SSE；HTTP 请求快速返回 |
+| 原则 | 含义 | 这样设计的原因 |
+|------|------|----------------|
+| 平台是唯一控制面 | 用户、组织、文档信息、权限在 **PostgreSQL**；文件在 **MinIO** | 权限与元数据只维护一份，避免多系统数据不一致 |
+| 重计算外置 | 翻译、向量检索、长任务交给独立服务或 Worker | API 保持轻量，交互不被大任务阻塞 |
+| 功能插件化 | 每项业务能力注册为插件，统一出现在「系统功能」 | 新功能可插拔，菜单与权限自动对齐 |
+| 权限先于能力 | 文档操作先校验 ACL，再调 KnowFlow | 防止「平台不让看但检索能搜到」 |
+| 异步不阻塞 | 翻译、大删除、对比等走 **Job** + 轮询/SSE | 用户不必长时间等待 HTTP 响应 |
+| 读写分离（可选） | 配置 `DATABASE_READ_URL` 后，只读 API 走副本 | 文档列表/详情、`/system/*` 读接口用 `get_read_db`；写操作仍走主库 |
 
 ---
 
@@ -155,7 +172,9 @@
 | **KnowFlow 向量检索** | 已同步 KnowFlow 且栈可达 | hybrid 向量 + 关键词召回 chunk |
 | **本地 fallback** | KnowFlow 不可达 | 平台侧轻量检索，保证基本可用 |
 
-同一问题可对不同文档 **按引擎分区** 后合并 hits（`retrieve_hits_for_qa`），可选 Agentic 模式由 LLM 规划多轮子问题再检索。回答可切换 **思维导图** Tab（Mermaid），便于结构化浏览。
+**问答实现**：`knowledge_qa_service.iter_knowledge_qa_stream` → 召回 → `build_aligned_qa_context_and_citations` → `_build_qa_llm_messages`（system 含引用规则，`temperature=0.2`）→ 流式生成。Agentic 模式见 `knowledge_agentic_service`（规划子问题 + 充足性评估）。详见 [知识库实现 §5](../implementation/knowledge-implementation.md)。
+
+同一问题可对不同文档 **按引擎分区** 后合并 hits（`retrieve_hits_for_qa`），可选 Agentic 模式由 `knowledge_agentic_service.iter_gather_for_knowledge_qa` 规划子问题多轮检索。回答可切换 **思维导图** Tab（`generate_knowledge_mindmap`）。实现细节见 [知识库实现 §5](../implementation/knowledge-implementation.md)。
 
 #### 与本体图谱联动
 
@@ -177,17 +196,46 @@
 | 生成 | 一次 LLM 归纳 | 按章节 Agent 扩写，可联网补充（可选） |
 | 输出 | 对话气泡 + 思维导图 Tab | 报告正文 Tab + **思维导图 Tab**，支持导出 Word / Markdown 大纲 / OPML（XMind） |
 
-实现：`report_generation_service` 复用 `retrieve_hits_for_qa` 与 `KnowledgeAgenticToolkit`；思维导图经 `generate_report_mindmap`（LLM 结构化或 Markdown 本地回退）。
+**实现入口**：`report_generation_service.iter_report_generation_stream()`。
 
-### 4.8 AI 智能体
+| 环节 | 方法 | 说明 |
+|------|------|------|
+| 意图 | `classify_intent` | `initial` / `follow_up` / `format_adjust` |
+| 主题 | `resolve_report_topic` | 正则从用户句抽取报告主题 |
+| 多路召回 | `build_local_retrieval_queries` + `retrieve_local_hits_for_report` | 每查询 15 段，合并至多 28 段 |
+| Agentic | `iter_gather_for_report` | LLM 规划 `local_queries` / `web_queries` |
+| Prompt | `_build_messages` | `_REPORT_SYSTEM` + 意图指令 + 编号材料块 |
+| 引用 | `build_aligned_report_sources` | 本地 [1..n] + 联网 [n+1..] 连续编号 |
+| 思维导图 | `generate_report_mindmap` | 复用 QA mindmap LLM，失败本地回退 |
 
-- 入口：默认首页 `/ai-home`，插件 `ai_home`。  
-- 对话：`ai_chat_service` 调用 DeepSeek；流式 SSE 与引用卡片对齐知识检索页。  
-- **增强上下文**（按用户权限自动启用）：  
-  1. 有 `feature.knowledge_search`：在最多 20 份可 query 文档内调用 `retrieve_hits_for_qa`；  
-  2. 有 `feature.kg_palantir`：解析问题实体并扩展子图；  
-  3. 文档片段与图谱上下文 **合并编号** 后写入 system prompt。  
-- 落地页快捷入口：**知识检索 → 报告生成 → 本体图谱**。
+System 提示词、Agentic 规划 JSON、优化预设详见 [报告生成实现](../implementation/report-generation-implementation.md)。
+
+### 4.8 AI 智能体（Agent Skills）
+
+**入口**：`POST /api/v1/ai-chat/stream` → `ai_chat_service.iter_chat_with_ai_agent_stream()`。
+
+**用户侧体验**：
+
+1. 输入问题 → SSE 流式显示回答；  
+2. 调用了检索时显示 workflow 步骤（`agent_thinking` / `tool_call` / `tool_result`）；  
+3. 回答中带 `[1][2]` 引用，底部展示来源卡片。
+
+**后端实现（v4.2.1）**：
+
+| 环节 | 方法 / 模块 | 做法 |
+|------|-------------|------|
+| 意图预判 | `agent_intent.plan_agent_tools` | 寒暄/平台用法直接答；有附件则预读正文 |
+| Prompt 组装 | `prompt_budget.build_bounded_chat_messages` | 常驻 system + Discovery 目录 + 历史 + 用户消息 |
+| 常驻提示词 | `agent_resident.build_ai_home_resident_prompt` | 身份、引用格式、工具约定、禁止越权 |
+| Discovery | `catalog.build_agent_catalog_prompt` | 注入 Skill 摘要与选用规则 |
+| 工具循环 | `agent_tool_loop.iter_agent_tool_loop` | 多轮 LLM tool-calling，默认最多 40 轮 |
+| 综合检索 | `skill_chat_service.resolve_combined_research_async` | `research` 工具内并行 KB + KG + Web |
+| 上传 Skill | `execute_agent_tool` → `load_uploaded_skill` | 从 MinIO 读 `SKILL.md` 全文 |
+| 记忆 | `maybe_write_user_memory` / `read_agent_memory` | 用户级 `MEMORY.md` |
+
+详细提示词片段与调用链见 [Agent Skills 实现 §10–§11](../implementation/agent-skills-implementation.md)。
+
+**浏览器 RPA（Phase 1）**：启用 `AGENT_BROWSER_ENABLED` 后，智能体可用内置 `browser_navigate` / `browser_snapshot` / `browser_click` / `browser_type` / `browser_screenshot` 操作网页并展示截图；`browser_save_workflow` 将探索过程固化为 upload Skill。详见 [浏览器 RPA 实现](../implementation/browser-rpa-implementation.md)。
 
 ### 4.9 切片管理 / 编码管理
 
@@ -294,6 +342,7 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 | speech_to_text | 会议转写 |
 | assist_writing | 辅助写作 |
 | data_analysis | 数据分析 Notebook |
+| agent_skills | Agent Skills 管理（内置启停、上传包、记忆） |
 | knowflow 相关 | 切片管理、编码管理等 |
 
 未授权的功能码不在列表出现；路由层 `require_feature` 与菜单双重拦截。
@@ -342,7 +391,7 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 ### 13.2 语音合成
 
 - 功能页：**系统功能 → 语音合成**（`feature.text_to_speech`）。
-- TTS 优先读资源管理 `tts_*`；未单独配置时从支持 `/audio/speech` 的兼容端点（如嵌入/VL）借用 URL/Key，**不会**回退 DeepSeek 等纯 LLM。
+- TTS 优先读资源管理 `tts_*`；未单独配置时从支持 `/audio/speech` 的兼容端点（如嵌入/VL）借用 URL/Key。
 - 合成接口：`POST /api/v1/text-to-speech/synthesize`；元数据 `GET .../meta`。
 
 ### 13.3 远程代码同步
@@ -352,7 +401,49 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 
 ---
 
-## 14. 与外部系统关系
+## 14. Agent Skills 管理
+
+**面向谁**：系统管理员或有 `feature.agent_skills` 权限的用户。
+
+| 能力 | 说明 |
+|------|------|
+| 内置 Skill | 14 项平台能力；4 项在对话中可执行（联网、文档、图谱、综合检索），其余引导去功能页 |
+| 上传包 | ZIP 或文件夹，含 `SKILL.md`；存对象存储，全员共享（scope=system） |
+| 启停 | 内置用 binding 表；上传包用 enabled 字段 |
+| 用户记忆 | 每用户一份 `MEMORY.md`，对话中可「请记住…」或工具读写 |
+
+**上传后如何生效**：启用 → `build_agent_catalog_prompt` 写入 Discovery 目录 → 模型在任务匹配时调用 `load_uploaded_skill`。
+
+示例包：`examples/agent-skills/mermaid-diagram/`（教模型如何输出 Mermaid 图）。
+
+---
+
+## 16. PostgreSQL 读写分离
+
+平台在 `app/database.py` 实现可选读写分离：
+
+| 组件 | 说明 |
+|------|------|
+| `DATABASE_URL` | 主库（读写） |
+| `DATABASE_READ_URL` | 只读副本；**留空时读写均走主库** |
+| `get_db()` | 写路径：创建/更新/删除、事务提交 |
+| `get_read_db()` | 读路径：列表、详情等只读查询 |
+| `read_session_factory()` | 有副本用副本 Session，否则回退 `SessionLocal` |
+| `run_db_read_task()` | 异步线程池中执行只读 DB 任务（同 `get_read_db` 路由） |
+
+**已接入 `get_read_db` 的 API**（节选）：
+
+- `documents/listing.py` — 文档列表、文件夹树、回收站列表等  
+- `documents/crud.py` — `GET` 文档详情  
+- `system.py` — 客户端配置、功能列表等读接口  
+
+Celery Worker、流式对话中的写操作（如 `platform_chat_store.append_turn`）仍使用主库 `SessionLocal`。
+
+生产启用：在 `platform/.env` 配置 `DATABASE_READ_URL` 指向 PostgreSQL 只读副本（流复制或云厂商只读实例），连接池参数与主库共用 `DB_POOL_*`。
+
+---
+
+## 15. 与外部系统关系
 
 | 系统 | 关系 |
 |------|------|
@@ -368,5 +459,7 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 
 - [系统架构](architecture.md)
 - [权限与账户](permissions.md)
-- [知识库实现](../implementation/knowledge-implementation.md)（待补充细节时可读源码 `domains/knowledge/`）
+- [知识库实现](../implementation/knowledge-implementation.md)
+- [报告生成实现](../implementation/report-generation-implementation.md)
+- [Agent Skills 实现](../implementation/agent-skills-implementation.md)
 - [文档对比产品设计](../platform/doc-compare-product-design.md)

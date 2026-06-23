@@ -59,18 +59,22 @@ function onOutsidePointerDown(event) {
   show.value = false;
 }
 
-watch(show, async (visible) => {
-  if (visible) {
-    updatePosition();
-    await nextTick();
-    updatePosition();
-    document.addEventListener("keydown", onKeydown);
-    document.addEventListener("pointerdown", onOutsidePointerDown, true);
-  } else {
-    document.removeEventListener("keydown", onKeydown);
-    document.removeEventListener("pointerdown", onOutsidePointerDown, true);
-  }
-});
+watch(
+  show,
+  async (visible) => {
+    if (visible) {
+      updatePosition();
+      await nextTick();
+      updatePosition();
+      document.addEventListener("keydown", onKeydown);
+      document.addEventListener("pointerdown", onOutsidePointerDown, true);
+    } else {
+      document.removeEventListener("keydown", onKeydown);
+      document.removeEventListener("pointerdown", onOutsidePointerDown, true);
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.anchorEl,

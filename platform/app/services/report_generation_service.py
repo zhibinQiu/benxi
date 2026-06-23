@@ -7,12 +7,18 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.chat_context import trim_chat_history
+from app.core.prompt_budget import (
+    fit_messages_to_total_budget,
+    get_prompt_limits,
+    truncate_to_budget,
+)
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.core.platform_assistant import assistant_report_persona
 from app.models.org import User
@@ -38,7 +44,7 @@ _MAX_WEB_RESULTS = 10
 _PER_QUERY_LOCAL_HITS = 15
 _MAX_LOCAL_CHUNKS = 28
 _MAX_CHARS_PER_CHUNK = 1600
-_MAX_LOCAL_CONTEXT_CHARS = 28000
+_MAX_LOCAL_CONTEXT_CHARS = get_prompt_limits()["report_context_max_chars"]
 
 _FORMAT_HINTS = (
     "格式",
@@ -591,7 +597,14 @@ def _build_messages(
     local_enabled: bool,
     chunk_count: int,
     insufficient_note: str | None = None,
+    local_searched: bool = False,
+    web_searched: bool = False,
 ) -> list[dict]:
+    limits = get_prompt_limits()
+    local_context = truncate_to_budget(local_context, limits["report_context_max_chars"] // 2)
+    web_context = truncate_to_budget(web_context, limits["report_context_max_chars"] // 2)
+    message = truncate_to_budget(message.strip(), limits["user_max_chars"])
+
     parts = [_REPORT_SYSTEM, _intent_instruction(intent, chunk_count=chunk_count)]
     if insufficient_note:
         parts.append(
@@ -614,11 +627,11 @@ def _build_messages(
         source_notes.append(_REPORT_CITATION_RULE)
     if local_context:
         source_notes.append("【编号材料 · 本地知识库 · 优先级 1】\n" + local_context)
-    elif local_enabled:
+    elif local_enabled and local_searched:
         source_notes.append("【本地知识库 · 优先级 1】未命中相关内容。")
     if web_context:
         source_notes.append("【编号材料 · 联网检索 · 优先级 2】\n" + web_context)
-    elif web_enabled:
+    elif web_enabled and web_searched:
         source_notes.append("【联网检索 · 优先级 2】未获取到有效结果或未配置搜索服务。")
     if not local_context and not web_context:
         source_notes.append(
@@ -630,46 +643,31 @@ def _build_messages(
 
     system = "\n\n".join(parts)
     messages: list[dict] = [{"role": "system", "content": system}]
-    tail = history[-_MAX_HISTORY:] if history else []
+    tail = trim_chat_history(history, max_messages=_MAX_HISTORY)
     for item in tail:
         messages.append({"role": item.role, "content": item.content.strip()})
-    messages.append({"role": "user", "content": message.strip()})
-    return messages
+    messages.append({"role": "user", "content": message})
+    return fit_messages_to_total_budget(messages, limits["report_prompt_max_chars"])
+
+
+def _report_web_on(db: Session, use_web_search: bool) -> bool:
+    return bool(use_web_search and searxng_enabled(db))
 
 
 async def _iter_llm_stream(*, messages: list[dict], intent: str) -> AsyncIterator[str]:
-    api_key, base_url, model = resolve_credentials()
+    """保留兼容：仅产出正文 delta。"""
+    from app.services.llm_workflow_stream import iter_llm_answer_events
+
     temperature = 0.35 if intent == "format_adjust" else 0.55
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "stream": True,
-    }
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-        async with client.stream("POST", url, headers=headers, json=payload) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                raw = line[5:].strip()
-                if not raw or raw == "[DONE]":
-                    if raw == "[DONE]":
-                        break
-                    continue
-                try:
-                    chunk = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                delta = (
-                    chunk.get("choices", [{}])[0]
-                    .get("delta", {})
-                    .get("content")
-                )
-                if delta:
-                    yield delta
+    async for ev in iter_llm_answer_events(
+        messages=messages,
+        temperature=temperature,
+        think_title="正在撰写报告",
+        think_detail="整合材料并生成报告正文…",
+        unlimited_output=True,
+    ):
+        if ev.get("type") == "delta" and ev.get("text"):
+            yield ev["text"]
 
 
 def _persist_turn(
@@ -711,6 +709,77 @@ def get_meta(db: Session | None = None) -> dict[str, Any]:
     }
 
 
+def import_report_to_library(
+    db: Session,
+    user: User,
+    *,
+    title: str,
+    markdown: str,
+    sync_knowflow: bool = True,
+) -> dict[str, Any]:
+    """将报告正文导出为 Word 并写入个人级文档库（默认未分类）。"""
+    from app.core.document_scope import content_subscription_import_scope
+    from app.core.exceptions import bad_request
+    from app.core.platform_cache import invalidate_document_caches
+    from app.integrations.markdown_docx_export import (
+        build_docx_download_filename,
+        markdown_to_docx_bytes,
+    )
+    from app.services.document_service import create_document, create_initial_uploaded_version
+
+    safe_title = (title or "研究报告").strip()[:500] or "研究报告"
+    try:
+        content = markdown_to_docx_bytes(title=safe_title, markdown_text=markdown)
+    except Exception as exc:
+        raise bad_request(f"Word 生成失败: {exc}") from exc
+
+    doc = create_document(
+        db,
+        user,
+        title=safe_title,
+        description="由报告生成导入",
+        scope=content_subscription_import_scope(),
+        folder_id=None,
+    )
+    create_initial_uploaded_version(
+        db,
+        doc,
+        user,
+        file_name=build_docx_download_filename(safe_title),
+        mime_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        content=content,
+    )
+    db.commit()
+    db.refresh(doc)
+
+    knowflow_synced = False
+    if sync_knowflow:
+        from app.domains.knowledge.gateway import knowledge
+        from app.services.document_service import resolve_current_version
+
+        if (
+            knowledge.enabled()
+            and resolve_current_version(db, doc)
+        ):
+            knowledge.enqueue_sync_after_ingest(doc.id, user.id)
+            knowflow_synced = True
+
+    invalidate_document_caches(str(user.id))
+    message = (
+        "已添加到个人级文档库（未分类），正在后台同步知识库索引"
+        if knowflow_synced
+        else "已添加到个人级文档库（未分类）"
+    )
+    return {
+        "document_id": doc.id,
+        "title": doc.title,
+        "knowflow_synced": knowflow_synced,
+        "message": message,
+    }
+
+
 def generate_report_mindmap(*, question: str, answer: str) -> tuple[str | None, str]:
     """复用知识检索思维导图能力，将报告正文结构化为 Mermaid。"""
     from app.services.knowledge_mindmap_service import build_mindmap_from_answer
@@ -725,10 +794,170 @@ def generate_report_mindmap(*, question: str, answer: str) -> tuple[str | None, 
     return None, "local"
 
 
-async def iter_report_generation_stream(
+def _gather_report_agentic(
     db: Session,
-    user: User,
+    user_id: uuid.UUID,
+    doc_ids: list[uuid.UUID],
     *,
+    message: str,
+    topic: str,
+    intent: str,
+    history: list[AiChatMessage],
+    web_on: bool,
+    emit: Callable[[dict[str, Any]], None] | None = None,
+) -> Any:
+    from app.core.async_db import resolve_db_user
+    from app.services.knowledge_agentic_service import (
+        RESULT_MARKER,
+        AgenticReportGatherResult,
+        iter_gather_for_report,
+    )
+
+    user = resolve_db_user(db, user_id)
+    gathered = None
+    for item in iter_gather_for_report(
+        db,
+        user,
+        doc_ids,
+        message=message,
+        topic=topic,
+        intent=intent,
+        history=history,
+        web_enabled=web_on,
+        emit=emit,
+    ):
+        if RESULT_MARKER in item:
+            gathered = item[RESULT_MARKER]
+    if gathered is None:
+        gathered = AgenticReportGatherResult(
+            local_hits=[],
+            web_items=[],
+            doc_titles={},
+            plan_reasoning="材料收集未完成，将主要依据模型知识",
+            rounds_used=0,
+            local_queries=[],
+            web_queries=[],
+            insufficient_note="未获取到本地或联网材料",
+        )
+    return gathered
+
+
+def _gather_report_simple(
+    db: Session,
+    user_id: uuid.UUID,
+    doc_ids: list[uuid.UUID],
+    *,
+    message: str,
+    topic: str,
+    intent: str,
+    history: list[AiChatMessage],
+    web_on: bool,
+) -> Any:
+    from app.core.async_db import resolve_db_user
+    from app.services.knowledge_agentic_service import (
+        AgenticReportGatherResult,
+        _history_excerpt,
+        _plan_report_gathering,
+    )
+    from app.services.knowledge_agentic_tools import KnowledgeAgenticToolkit
+    from app.services.knowledge_qa_service import _doc_titles
+
+    user = resolve_db_user(db, user_id)
+    local_queries, web_queries, reasoning = _plan_report_gathering(
+        message=message,
+        topic=topic,
+        intent=intent,
+        document_count=len(doc_ids),
+        web_allowed=web_on,
+        kg_context="",
+        history_excerpt=_history_excerpt(history),
+    )
+    toolkit = KnowledgeAgenticToolkit(
+        db,
+        user,
+        doc_ids,
+        web_enabled=web_on,
+        include_kg=False,
+        retrieve_limit=15,
+        web_max_items=10,
+    )
+    if doc_ids and local_queries:
+        for q in local_queries:
+            toolkit.retrieve(q, limit=15)
+    local_hits = (
+        toolkit.accumulated_local_hits
+        if toolkit.accumulated_local_hits
+        else (
+            retrieve_local_hits_for_report(db, user, doc_ids, local_queries)
+            if doc_ids and local_queries
+            else []
+        )
+    )
+    web_items: list[dict] = []
+    if web_on and web_queries:
+        for q in web_queries:
+            toolkit.web_search(q)
+        web_items = toolkit.accumulated_web_items
+    return AgenticReportGatherResult(
+        local_hits=local_hits,
+        web_items=web_items,
+        doc_titles=_doc_titles(db, doc_ids) if doc_ids else {},
+        plan_reasoning=reasoning,
+        rounds_used=1,
+        local_queries=local_queries,
+        web_queries=web_queries,
+    )
+
+
+def _collect_report_materials(
+    db: Session,
+    user_id: uuid.UUID,
+    doc_ids: list[uuid.UUID],
+    *,
+    message: str,
+    topic: str,
+    intent: str,
+    history: list[AiChatMessage],
+    use_web_search: bool,
+    use_agentic: bool,
+) -> dict[str, Any]:
+    """单次 DB 会话：检查联网配置 + 收集报告材料。"""
+    from app.services.knowledge_agentic_service import agentic_enabled
+
+    web_configured = searxng_enabled(db)
+    web_on = bool(use_web_search and web_configured)
+
+    if use_agentic and agentic_enabled():
+        gathered = _gather_report_agentic(
+            db,
+            user_id,
+            doc_ids,
+            message=message,
+            topic=topic,
+            intent=intent,
+            history=history,
+            web_on=web_on,
+        )
+    else:
+        gathered = _gather_report_simple(
+            db,
+            user_id,
+            doc_ids,
+            message=message,
+            topic=topic,
+            intent=intent,
+            history=history,
+            web_on=web_on,
+        )
+    return {
+        "web_on": web_on,
+        "gathered": gathered,
+    }
+
+
+async def iter_report_generation_stream(
+    *,
+    user_id: uuid.UUID,
     message: str,
     history: list[AiChatMessage],
     conversation_id: str | None = None,
@@ -766,99 +995,126 @@ async def iter_report_generation_stream(
     all_citations: list[dict] = []
     doc_titles: dict[str, str] = {}
     doc_ids = _parse_document_ids(document_ids)
-    web_configured = searxng_enabled(db)
-    web_on = bool(use_web_search and web_configured)
+    from app.core.async_db import run_db_task
 
+    gathered = None
+    web_on = False
     from app.services.knowledge_agentic_service import (
-        RESULT_MARKER,
         AgenticReportGatherResult,
         agentic_enabled,
-        iter_gather_for_report,
     )
-    from app.services.knowledge_agentic_tools import KnowledgeAgenticToolkit
-    from app.services.knowledge_qa_service import _doc_titles
 
-    gathered: AgenticReportGatherResult | None = None
-    if use_agentic and agentic_enabled():
-        for item in iter_gather_for_report(
-            db,
-            user,
-            doc_ids,
-            message=message,
-            topic=topic,
-            intent=intent,
-            history=history,
-            web_enabled=web_on,
-        ):
-            if RESULT_MARKER in item:
-                gathered = item[RESULT_MARKER]
-            else:
+    use_agentic_path = bool(use_agentic and agentic_enabled())
+    try:
+        web_on = await run_db_task(_report_web_on, use_web_search)
+
+        if use_agentic_path:
+            loop = asyncio.get_running_loop()
+            event_q: asyncio.Queue[Any] = asyncio.Queue()
+            gather_holder: dict[str, Any] = {}
+
+            def emit_workflow(ev: dict[str, Any]) -> None:
+                loop.call_soon_threadsafe(event_q.put_nowait, ev)
+
+            async def run_agentic_gather() -> None:
+                try:
+                    gather_holder["gathered"] = await run_db_task(
+                        _gather_report_agentic,
+                        user_id,
+                        doc_ids,
+                        message=message,
+                        topic=topic,
+                        intent=intent,
+                        history=history,
+                        web_on=web_on,
+                        emit=emit_workflow,
+                    )
+                finally:
+                    loop.call_soon_threadsafe(event_q.put_nowait, None)
+
+            gather_task = asyncio.create_task(run_agentic_gather())
+            while True:
+                item = await event_q.get()
+                if item is None:
+                    break
                 yield json.dumps({"workflow": item}, ensure_ascii=False)
                 await asyncio.sleep(0)
-    else:
-        if doc_ids:
+            await gather_task
+            gathered = gather_holder.get("gathered")
+            if gathered is None:
+                gathered = AgenticReportGatherResult(
+                    local_hits=[],
+                    web_items=[],
+                    doc_titles={},
+                    plan_reasoning="材料收集未完成",
+                    rounds_used=0,
+                    local_queries=[],
+                    web_queries=[],
+                    insufficient_note="未获取到材料",
+                )
+        else:
             yield json.dumps(
-                {
-                    "workflow": {
-                        "phase": "node_started",
-                        "title": "深度检索本地资料（规则多路召回）",
-                    }
-                },
+                {"workflow": {"phase": "workflow_started", "title": "开始收集报告材料"}},
                 ensure_ascii=False,
             )
             await asyncio.sleep(0)
-        local_queries = build_local_retrieval_queries(
-            message, topic=topic, intent=intent, history=history
-        )
-        toolkit = KnowledgeAgenticToolkit(
-            db,
-            user,
-            doc_ids,
-            web_enabled=web_on,
-            include_kg=False,
-            retrieve_limit=15,
-            web_max_items=10,
-        )
-        if doc_ids:
-            for q in local_queries:
-                toolkit.retrieve(q, limit=15)
-        local_hits = (
-            toolkit.accumulated_local_hits
-            if toolkit.accumulated_local_hits
-            else (
-                retrieve_local_hits_for_report(db, user, doc_ids, local_queries)
-                if doc_ids
-                else []
+            material = await run_db_task(
+                _collect_report_materials,
+                user_id,
+                doc_ids,
+                message=message,
+                topic=topic,
+                intent=intent,
+                history=history,
+                use_web_search=use_web_search,
+                use_agentic=False,
             )
-        )
-        web_items: list[dict] = []
-        web_queries: list[str] = []
-        if web_on:
-            yield json.dumps(
-                {
-                    "workflow": {
-                        "phase": "node_started",
-                        "title": "联网检索相关资料",
-                    }
-                },
-                ensure_ascii=False,
-            )
-            await asyncio.sleep(0)
-            web_queries = build_search_queries(message, topic=topic, intent=intent)
-            for q in web_queries:
-                toolkit.web_search(q)
-            web_items = toolkit.accumulated_web_items
-        gathered = AgenticReportGatherResult(
-            local_hits=local_hits,
-            web_items=web_items,
-            doc_titles=_doc_titles(db, doc_ids) if doc_ids else {},
-            plan_reasoning="规则多路召回",
-            rounds_used=1,
-            local_queries=local_queries,
-            web_queries=web_queries,
-        )
+            web_on = bool(material.get("web_on"))
+            gathered = material.get("gathered")
+            if gathered is not None:
+                if gathered.local_queries:
+                    yield json.dumps(
+                        {
+                            "workflow": {
+                                "phase": "node_started",
+                                "title": "检索本地资料",
+                            }
+                        },
+                        ensure_ascii=False,
+                    )
+                    await asyncio.sleep(0)
+                if gathered.web_queries:
+                    yield json.dumps(
+                        {
+                            "workflow": {
+                                "phase": "node_started",
+                                "title": "联网检索相关资料",
+                            }
+                        },
+                        ensure_ascii=False,
+                    )
+                    await asyncio.sleep(0)
+                elif not gathered.local_queries and not gathered.web_queries:
+                    yield json.dumps(
+                        {
+                            "workflow": {
+                                "phase": "agent_thought",
+                                "title": "无需额外检索",
+                                "detail": (gathered.plan_reasoning or "")[:500],
+                                "status": "done",
+                            }
+                        },
+                        ensure_ascii=False,
+                    )
+                    await asyncio.sleep(0)
+    except Exception as exc:
+        logger.warning("报告材料收集失败: %s", exc, exc_info=True)
+        yield json.dumps({"error": "资料检索失败，请稍后重试"}, ensure_ascii=False)
+        return
 
-    assert gathered is not None
+    if gathered is None:
+        yield json.dumps({"error": "资料检索失败，请稍后重试"}, ensure_ascii=False)
+        return
 
     local_hits = gathered.local_hits
     web_items = gathered.web_items
@@ -877,9 +1133,10 @@ async def iter_report_generation_stream(
         )
 
     yield json.dumps(
-        {"workflow": {"phase": "node_started", "title": "扩写整合报告正文"}},
+        {"workflow": {"phase": "node_started", "title": "正在整理报告材料"}},
         ensure_ascii=False,
     )
+    await asyncio.sleep(0)
 
     messages = _build_messages(
         message=message,
@@ -892,13 +1149,28 @@ async def iter_report_generation_stream(
         local_enabled=bool(doc_ids),
         chunk_count=len(local_hits),
         insufficient_note=insufficient_note,
+        local_searched=bool(gathered.local_queries),
+        web_searched=bool(gathered.web_queries),
     )
 
     accumulated = ""
+    temperature = 0.35 if intent == "format_adjust" else 0.55
+    from app.services.llm_workflow_stream import iter_llm_answer_events
+
     try:
-        async for delta in _iter_llm_stream(messages=messages, intent=intent):
-            accumulated += delta
-            yield json.dumps({"delta": delta}, ensure_ascii=False)
+        async for ev in iter_llm_answer_events(
+            messages=messages,
+            temperature=temperature,
+            think_title="正在撰写报告",
+            think_detail="整合材料并生成报告正文…",
+            unlimited_output=True,
+        ):
+            if ev.get("type") == "workflow":
+                yield json.dumps({"workflow": ev["data"]}, ensure_ascii=False)
+                await asyncio.sleep(0)
+            elif ev.get("type") == "delta" and ev.get("text"):
+                accumulated += ev["text"]
+                yield json.dumps({"delta": ev["text"]}, ensure_ascii=False)
     except httpx.HTTPError as exc:
         logger.warning("报告生成 LLM 流式失败: %s", exc)
         yield json.dumps({"error": "报告生成暂时不可用，请稍后重试"}, ensure_ascii=False)
@@ -915,12 +1187,16 @@ async def iter_report_generation_stream(
     if all_citations:
         yield json.dumps({"citations": all_citations}, ensure_ascii=False)
 
-    out_conv_id = _persist_turn(
-        db,
-        user_id=user.id,
+    out_conv_id = await run_db_task(
+        _persist_turn,
+        user_id=user_id,
         conversation_id=conversation_id,
         message=message,
         reply=reply,
+    )
+    yield json.dumps(
+        {"workflow": {"phase": "workflow_finished", "title": "完成"}},
+        ensure_ascii=False,
     )
     yield json.dumps(
         {

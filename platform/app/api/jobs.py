@@ -11,6 +11,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import get_current_user
 from app.core.exceptions import forbidden, not_found
+from app.core.async_db import detach_request_db
 from app.database import get_db
 from app.models.job import Job
 from app.models.org import User
@@ -118,6 +119,8 @@ async def job_events(
 
         if not user_has_permission(db, user, "admin.user"):
             raise forbidden()
+
+    detach_request_db(db)
 
     async def generator():
         from app.database import SessionLocal

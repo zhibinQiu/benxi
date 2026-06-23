@@ -28,6 +28,7 @@ def _default_index_meta() -> dict:
         "ragflow_document_id": None,
         "indexed_version_id": None,
         "indexed_version_no": None,
+        "index_engine": None,
     }
 
 
@@ -121,6 +122,7 @@ def _meta_from_version_link(link: RagflowDocumentVersionLink | None) -> dict:
             "ragflow_document_id": link.ragflow_document_id,
             "indexed_version_id": version_id,
             "indexed_version_no": link.version_no,
+            "index_engine": "knowflow",
         }
     return {
         "knowledge_synced": True,
@@ -563,4 +565,8 @@ def apply_index_meta_to_item(item, meta: dict | None):
     else:
         update["indexed_version_id"] = None
     update["indexed_version_no"] = m.get("indexed_version_no")
+    index_engine = m.get("index_engine")
+    if not index_engine and is_index_ready_meta(m) and m.get("ragflow_document_id"):
+        index_engine = "knowflow"
+    update["index_engine"] = index_engine
     return item.model_copy(update=update)

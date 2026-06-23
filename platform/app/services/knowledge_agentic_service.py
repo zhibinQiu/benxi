@@ -138,7 +138,32 @@ def _plan_qa_sub_questions(
     question: str,
     document_count: int,
     kg_context: str,
+    user_id: uuid.UUID | None = None,
+    doc_ids: list[uuid.UUID] | None = None,
 ) -> tuple[list[str], str]:
+    from app.services.agent_plan_cache_service import (
+        PLAN_TYPE_KNOWLEDGE_QA,
+        knowledge_qa_scope_key,
+        lookup_cached_payload,
+        store_cached_payload,
+    )
+
+    if user_id and doc_ids:
+        scope_key = knowledge_qa_scope_key(user_id, doc_ids)
+        cached = lookup_cached_payload(
+            scope_key,
+            question,
+            plan_type=PLAN_TYPE_KNOWLEDGE_QA,
+        )
+        if cached:
+            payload = cached.get("payload") or {}
+            subs = payload.get("sub_questions") or [question]
+            reasoning = str(payload.get("reasoning") or cached.get("intent") or "命中问题缓存")
+            if not isinstance(subs, list):
+                subs = [question]
+            queries = _unique_queries([str(x) for x in subs] + [question], limit=6)
+            return queries or [question], reasoning
+
     settings = get_settings()
     max_q = max(1, min(int(settings.knowledge_agentic_qa_max_sub_questions or 4), 6))
     system = (
@@ -169,6 +194,19 @@ def _plan_qa_sub_questions(
     if not isinstance(subs, list):
         subs = [question]
     queries = _unique_queries([str(x) for x in subs] + [question], limit=max_q)
+
+    if user_id and doc_ids and queries:
+        store_cached_payload(
+            knowledge_qa_scope_key(user_id, doc_ids),
+            question,
+            plan_type=PLAN_TYPE_KNOWLEDGE_QA,
+            intent=reasoning,
+            payload={
+                "reasoning": reasoning,
+                "sub_questions": list(queries),
+            },
+        )
+
     return queries or [question], reasoning
 
 
@@ -268,8 +306,14 @@ def iter_gather_for_knowledge_qa(
     _emit_wf(emit, ev)
     yield ev
     kg_tool = toolkit.kg_planning_context(question)
+    kg_detail = kg_tool.summary
+    kg_ctx_data = kg_tool.data
+    if kg_ctx_data and getattr(kg_ctx_data, "context_text", ""):
+        preview = kg_ctx_data.context_text.strip().replace("\n", " ")[:160]
+        if preview:
+            kg_detail = f"{kg_tool.summary}\n上下文预览：{preview}"
     result_ev = _tool_result_event(
-        "kg_context", "本体图谱上下文", kg_tool.summary, sid, ok=kg_tool.ok
+        "kg_context", "本体图谱上下文", kg_detail, sid, ok=kg_tool.ok
     )
     _emit_wf(emit, result_ev)
     yield result_ev
@@ -327,11 +371,18 @@ def iter_gather_for_knowledge_qa(
         question=question,
         document_count=len(doc_ids),
         kg_context=kg_plan_text,
+        user_id=user.id,
+        doc_ids=doc_ids,
     )
+    plan_detail_parts = [reasoning[:500]] if reasoning else []
+    if sub_questions:
+        plan_detail_parts.append(
+            "检索子问题：" + "；".join(str(q) for q in sub_questions[:4])
+        )
     thought_ev = _workflow_event(
         "agent_thought",
         title="规划完成",
-        detail=reasoning[:500],
+        detail="\n".join(plan_detail_parts)[:800],
         tool="planner",
         step_id=think_id,
         status="done",
@@ -383,11 +434,15 @@ def iter_gather_for_knowledge_qa(
             snippet_preview=_hits_snippet_preview(hits),
             kg_context=kg_plan_text,
         )
-        eval_detail = "材料充足，可以生成回答" if sufficient else (gaps or "仍需补充检索")
+        eval_lines = [
+            "材料充足，可以生成回答" if sufficient else (gaps or "仍需补充检索")
+        ]
+        if not sufficient and extra:
+            eval_lines.append("建议补充检索：" + "；".join(str(q) for q in extra[:2]))
         eval_done = _workflow_event(
             "agent_thought",
             title="评估完成",
-            detail=eval_detail[:400],
+            detail="\n".join(eval_lines)[:600],
             tool="evaluator",
             step_id=eval_id,
             status="done",
@@ -452,6 +507,38 @@ def gather_for_knowledge_qa(
     return result
 
 
+def _plan_report_gathering_fallback(
+    *,
+    message: str,
+    topic: str,
+    intent: str,
+    local_allowed: bool,
+    web_allowed: bool,
+    history_excerpt: str,
+) -> tuple[list[str], list[str], str]:
+    """LLM 规划失败时的规则回退；格式调整等场景默认不检索。"""
+    from app.services.report_generation_service import (
+        build_local_retrieval_queries,
+        build_search_queries,
+    )
+
+    if intent == "format_adjust" and history_excerpt.strip():
+        return [], [], "规则回退：格式调整，沿用对话中的报告正文"
+    if not local_allowed and not web_allowed:
+        return [], [], "规则回退：未启用本地文档与联网，将依据模型知识与对话历史"
+    local: list[str] = []
+    web: list[str] = []
+    if local_allowed and intent != "format_adjust":
+        local = build_local_retrieval_queries(
+            message, topic=topic, intent=intent, history=[]
+        )
+    if web_allowed and intent != "format_adjust":
+        web = build_search_queries(message, topic=topic, intent=intent)
+    if not local and not web:
+        return [], [], "规则回退：判断无需额外检索"
+    return local, web, "规则回退：沿用多路召回模板"
+
+
 def _plan_report_gathering(
     *,
     message: str,
@@ -462,21 +549,31 @@ def _plan_report_gathering(
     kg_context: str,
     history_excerpt: str,
 ) -> tuple[list[str], list[str], str]:
+    local_allowed = document_count > 0
+    if not local_allowed and not web_allowed:
+        return [], [], "未启用本地文档与联网，将依据模型知识与对话历史撰写"
+
     settings = get_settings()
     max_local = max(2, min(int(settings.knowledge_agentic_report_max_sub_questions or 6), 8))
     system = (
-        "你是研究报告材料检索规划助手。拆解本地知识库检索词与（可选）联网检索词。"
+        "你是研究报告材料检索规划助手。"
+        "用户可能已允许使用本地知识库和/或联网检索，但**允许不等于必须**——请根据意图与上下文**智能判断**是否需要检索。\n"
+        "判断参考：\n"
+        "- format_adjust（格式/结构调整）：对话中已有报告正文时，通常**无需**检索；\n"
+        "- follow_up（追问补充）：仅当需要**新的事实、数据或案例**时才检索；\n"
+        "- initial（新报告）：通常需要检索，但若主题宽泛且无本地文档、模型知识已足够，可跳过。\n"
         "仅返回 JSON："
-        '{"reasoning":"策略说明","local_queries":["..."],'
-        '"web_queries":["..."], "use_web": true|false}。'
-        f"local_queries 1～{max_local} 条；web_queries 0～3 条。"
-        "本地检索词应覆盖报告不同章节维度；追问场景要包含用户本轮补充点。"
+        '{"reasoning":"策略说明","use_local":true|false,"local_queries":["..."],'
+        '"use_web":true|false,"web_queries":["..."]}。\n'
+        f"约束：local_queries 0～{max_local} 条，web_queries 0～3 条；"
+        "决定不检索时 use_local/use_web 为 false 且对应 queries 为空数组；"
+        "use_local 仅当已选本地文档时可 true；use_web 仅当允许联网时可 true。"
     )
     user_parts = [
         f"报告主题：{topic or message[:80]}",
         f"用户输入：{message}",
         f"意图：{intent}",
-        f"已选本地文档数：{document_count}",
+        f"已选本地文档（允许本地检索）：{'是' if local_allowed else '否'}",
         f"允许联网：{'是' if web_allowed else '否'}",
     ]
     if history_excerpt.strip():
@@ -493,26 +590,28 @@ def _plan_report_gathering(
     )
     data = parse_llm_json(raw)
     if not data:
-        from app.services.report_generation_service import build_local_retrieval_queries
-
-        local = build_local_retrieval_queries(
-            message, topic=topic, intent=intent, history=[]
+        return _plan_report_gathering_fallback(
+            message=message,
+            topic=topic,
+            intent=intent,
+            local_allowed=local_allowed,
+            web_allowed=web_allowed,
+            history_excerpt=history_excerpt,
         )
-        web = [topic or message[:80]] if web_allowed else []
-        return local, web, "规则回退：沿用多路召回模板"
 
     reasoning = str(data.get("reasoning") or "").strip() or "已规划报告材料检索"
     local_raw = data.get("local_queries") or data.get("sub_questions") or []
     web_raw = data.get("web_queries") or []
-    use_web = bool(data.get("use_web", web_allowed)) and web_allowed
+    use_local = bool(data.get("use_local", False)) and local_allowed
+    use_web = bool(data.get("use_web", False)) and web_allowed
     if not isinstance(local_raw, list):
-        local_raw = [topic or message]
+        local_raw = []
     if not isinstance(web_raw, list):
         web_raw = []
-    local = _unique_queries([str(x) for x in local_raw], limit=max_local)
+    local = (
+        _unique_queries([str(x) for x in local_raw], limit=max_local) if use_local else []
+    )
     web = _unique_queries([str(x) for x in web_raw], limit=3) if use_web else []
-    if not local:
-        local = [topic or message[:120]]
     return local, web, reasoning
 
 
@@ -523,9 +622,23 @@ def _evaluate_report_sufficiency(
     local_count: int,
     web_count: int,
     snippet_preview: str,
+    local_docs_available: bool = True,
+    web_allowed: bool = True,
+    intent: str = "initial",
+    retrieval_attempted: bool = False,
+    history_available: bool = False,
 ) -> tuple[bool, str | None, list[str], list[str]]:
     if local_count == 0 and web_count == 0:
-        return False, "未获取到本地或联网材料", [topic or message[:80]], []
+        if not retrieval_attempted:
+            return True, None, [], []
+        if not local_docs_available and not web_allowed:
+            return True, None, [], []
+        if intent == "format_adjust" and history_available:
+            return True, None, [], []
+        seed = topic or message[:80]
+        extra_local = [seed] if local_docs_available else []
+        extra_web = [seed] if web_allowed else []
+        return False, "未获取到本地或联网材料", extra_local, extra_web
     system = (
         "你是报告材料充足性评估助手。判断现有材料是否足以撰写该主题报告。"
         "仅返回 JSON："
@@ -641,20 +754,23 @@ def iter_gather_for_report(
     max_rounds = max(1, min(int(settings.knowledge_agentic_max_rounds or 2), 3))
 
     if not agentic_enabled():
-        from app.services.report_generation_service import (
-            build_local_retrieval_queries,
-            build_search_queries,
-            retrieve_local_hits_for_report,
-        )
+        from app.services.report_generation_service import retrieve_local_hits_for_report
 
-        node = _workflow_event("node_started", title="深度检索本地资料（规则多路召回）")
-        _emit_wf(emit, node)
-        yield node
-        local_queries = build_local_retrieval_queries(
-            message, topic=topic, intent=intent, history=history
+        hist = _history_excerpt(history)
+        local_queries, web_queries, reasoning = _plan_report_gathering(
+            message=message,
+            topic=topic,
+            intent=intent,
+            document_count=len(doc_ids),
+            web_allowed=web_enabled,
+            kg_context="",
+            history_excerpt=hist,
         )
         local_hits: list[dict] = []
-        if doc_ids:
+        if doc_ids and local_queries:
+            node = _workflow_event("node_started", title="深度检索本地资料")
+            _emit_wf(emit, node)
+            yield node
             for q in local_queries:
                 sid, ev = _tool_call_event("retrieve", "知识库检索", q[:120])
                 _emit_wf(emit, ev)
@@ -670,12 +786,10 @@ def iter_gather_for_report(
                 db, user, doc_ids, local_queries
             )
         web_items: list[dict] = []
-        web_queries: list[str] = []
-        if web_enabled:
+        if web_enabled and web_queries:
             web_node = _workflow_event("node_started", title="联网检索相关资料")
             _emit_wf(emit, web_node)
             yield web_node
-            web_queries = build_search_queries(message, topic=topic, intent=intent)
             for q in web_queries:
                 sid, ev = _tool_call_event("web_search", "联网检索", q[:120])
                 _emit_wf(emit, ev)
@@ -688,12 +802,22 @@ def iter_gather_for_report(
                 _emit_wf(emit, tre)
                 yield tre
             web_items = toolkit.accumulated_web_items
+        elif not local_queries and not web_queries:
+            skip_ev = _workflow_event(
+                "agent_thought",
+                title="无需额外检索",
+                detail=reasoning[:500],
+                tool="planner",
+                status="done",
+            )
+            _emit_wf(emit, skip_ev)
+            yield skip_ev
         yield {
             RESULT_MARKER: AgenticReportGatherResult(
                 local_hits=local_hits,
                 web_items=web_items,
                 doc_titles=toolkit.doc_titles(),
-                plan_reasoning="规则多路召回",
+                plan_reasoning=reasoning,
                 rounds_used=1,
                 local_queries=local_queries,
                 web_queries=web_queries,
@@ -723,10 +847,18 @@ def iter_gather_for_report(
         kg_context=kg_plan_text,
         history_excerpt=_history_excerpt(history),
     )
+    plan_detail_parts = [reasoning[:500]] if reasoning else []
+    query_bits: list[str] = []
+    if local_queries:
+        query_bits.append("本地：" + "；".join(str(q) for q in local_queries[:3]))
+    if web_queries:
+        query_bits.append("联网：" + "；".join(str(q) for q in web_queries[:3]))
+    if query_bits:
+        plan_detail_parts.append("\n".join(query_bits))
     thought_ev = _workflow_event(
         "agent_thought",
         title="规划完成",
-        detail=reasoning[:500],
+        detail="\n".join(plan_detail_parts)[:800],
         tool="planner",
         step_id=think_id,
         status="done",
@@ -734,103 +866,127 @@ def iter_gather_for_report(
     _emit_wf(emit, thought_ev)
     yield thought_ev
 
+    retrieval_planned = bool(
+        (doc_ids and local_queries) or (web_enabled and web_queries)
+    )
     insufficient_note: str | None = None
     rounds = 0
     extra_local: list[str] = []
     extra_web: list[str] = []
 
-    for round_idx in range(1, max_rounds + 1):
-        rounds = round_idx
-        loc_q = local_queries if round_idx == 1 else extra_local
-        web_q = web_queries if round_idx == 1 else extra_web
-
-        if round_idx > 1 and not loc_q and not web_q:
-            break
-
-        if doc_ids and loc_q:
-            for q in loc_q:
-                sid, ev = _tool_call_event(
-                    "retrieve",
-                    f"第 {round_idx} 轮 · 知识库检索",
-                    q[:120],
-                )
-                _emit_wf(emit, ev)
-                yield ev
-                tr = toolkit.retrieve(q, limit=15)
-                summaries.append(tr.summary)
-                tre = _tool_result_event(
-                    "retrieve", "知识库检索", tr.summary, sid, ok=tr.ok
-                )
-                _emit_wf(emit, tre)
-                yield tre
-        if web_enabled and web_q:
-            for q in web_q:
-                sid, ev = _tool_call_event(
-                    "web_search",
-                    f"第 {round_idx} 轮 · 联网检索",
-                    q[:120],
-                )
-                _emit_wf(emit, ev)
-                yield ev
-                tr = toolkit.web_search(q)
-                summaries.append(tr.summary)
-                tre = _tool_result_event(
-                    "web_search", "联网检索", tr.summary, sid, ok=tr.ok
-                )
-                _emit_wf(emit, tre)
-                yield tre
-
-        local_hits = toolkit.accumulated_local_hits
-        web_items = toolkit.accumulated_web_items
-        preview_parts = [_hits_snippet_preview(local_hits)]
-        for i, w in enumerate(web_items[:5], start=1):
-            preview_parts.append(f"[W{i}] {(w.get('snippet') or '')[:200]}")
-        eval_id = _next_step_id()
-        eval_think = _workflow_event(
-            "agent_thinking",
-            title="评估报告材料是否充足",
-            detail=f"本地 {len(local_hits)} 段 · 联网 {len(web_items)} 条",
-            tool="evaluator",
-            step_id=eval_id,
-        )
-        _emit_wf(emit, eval_think)
-        yield eval_think
-        sufficient, gaps, extra_local, extra_web = _evaluate_report_sufficiency(
-            topic=topic,
-            message=message,
-            local_count=len(local_hits),
-            web_count=len(web_items),
-            snippet_preview="\n".join(preview_parts),
-        )
-        eval_detail = "材料充足，可以撰写报告" if sufficient else (gaps or "仍需补充检索")
-        eval_done = _workflow_event(
+    if not retrieval_planned:
+        skip_ev = _workflow_event(
             "agent_thought",
-            title="评估完成",
-            detail=eval_detail[:400],
-            tool="evaluator",
-            step_id=eval_id,
+            title="无需额外检索",
+            detail="智能体判断本次可依据对话历史与模型知识撰写",
+            tool="planner",
             status="done",
         )
-        _emit_wf(emit, eval_done)
-        yield eval_done
+        _emit_wf(emit, skip_ev)
+        yield skip_ev
+    else:
+        for round_idx in range(1, max_rounds + 1):
+            rounds = round_idx
+            loc_q = local_queries if round_idx == 1 else extra_local
+            web_q = web_queries if round_idx == 1 else extra_web
 
-        if sufficient or round_idx >= max_rounds:
-            if not sufficient and gaps:
-                insufficient_note = gaps
-            break
-        if extra_local or extra_web:
-            local_queries = extra_local
-            web_queries = extra_web
-            sup = _workflow_event(
-                "node_started",
-                title="材料不足，规划补充检索",
-                detail="；".join((extra_local + extra_web)[:2]),
+            if round_idx > 1 and not loc_q and not web_q:
+                break
+
+            if doc_ids and loc_q:
+                for q in loc_q:
+                    sid, ev = _tool_call_event(
+                        "retrieve",
+                        f"第 {round_idx} 轮 · 知识库检索",
+                        q[:120],
+                    )
+                    _emit_wf(emit, ev)
+                    yield ev
+                    tr = toolkit.retrieve(q, limit=15)
+                    summaries.append(tr.summary)
+                    tre = _tool_result_event(
+                        "retrieve", "知识库检索", tr.summary, sid, ok=tr.ok
+                    )
+                    _emit_wf(emit, tre)
+                    yield tre
+            if web_enabled and web_q:
+                for q in web_q:
+                    sid, ev = _tool_call_event(
+                        "web_search",
+                        f"第 {round_idx} 轮 · 联网检索",
+                        q[:120],
+                    )
+                    _emit_wf(emit, ev)
+                    yield ev
+                    tr = toolkit.web_search(q)
+                    summaries.append(tr.summary)
+                    tre = _tool_result_event(
+                        "web_search", "联网检索", tr.summary, sid, ok=tr.ok
+                    )
+                    _emit_wf(emit, tre)
+                    yield tre
+
+            local_hits = toolkit.accumulated_local_hits
+            web_items = toolkit.accumulated_web_items
+            preview_parts = [_hits_snippet_preview(local_hits)]
+            for i, w in enumerate(web_items[:5], start=1):
+                preview_parts.append(f"[W{i}] {(w.get('snippet') or '')[:200]}")
+            eval_id = _next_step_id()
+            eval_think = _workflow_event(
+                "agent_thinking",
+                title="评估报告材料是否充足",
+                detail=f"本地 {len(local_hits)} 段 · 联网 {len(web_items)} 条",
+                tool="evaluator",
+                step_id=eval_id,
             )
-            _emit_wf(emit, sup)
-            yield sup
-        else:
-            insufficient_note = gaps
-            break
+            _emit_wf(emit, eval_think)
+            yield eval_think
+            sufficient, gaps, extra_local, extra_web = _evaluate_report_sufficiency(
+                topic=topic,
+                message=message,
+                local_count=len(local_hits),
+                web_count=len(web_items),
+                snippet_preview="\n".join(preview_parts),
+                local_docs_available=bool(doc_ids),
+                web_allowed=web_enabled,
+                intent=intent,
+                retrieval_attempted=bool(loc_q or web_q),
+                history_available=bool(_history_excerpt(history).strip()),
+            )
+            eval_lines = [
+                "材料充足，可以撰写报告" if sufficient else (gaps or "仍需补充检索")
+            ]
+            if not sufficient and (extra_local or extra_web):
+                extras = extra_local[:2] + extra_web[:2]
+                eval_lines.append("建议补充检索：" + "；".join(str(q) for q in extras))
+            eval_done = _workflow_event(
+                "agent_thought",
+                title="评估完成",
+                detail="\n".join(eval_lines)[:600],
+                tool="evaluator",
+                step_id=eval_id,
+                status="done",
+            )
+            _emit_wf(emit, eval_done)
+            yield eval_done
+
+            if sufficient or round_idx >= max_rounds:
+                if not sufficient and gaps:
+                    insufficient_note = gaps
+                break
+            if extra_local or extra_web:
+                local_queries = extra_local
+                web_queries = extra_web
+                sup = _workflow_event(
+                    "node_started",
+                    title="材料不足，规划补充检索",
+                    detail="；".join((extra_local + extra_web)[:2]),
+                )
+                _emit_wf(emit, sup)
+                yield sup
+            else:
+                insufficient_note = gaps
+                break
 
     yield {
         RESULT_MARKER: AgenticReportGatherResult(

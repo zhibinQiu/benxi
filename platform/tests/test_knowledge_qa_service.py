@@ -200,15 +200,19 @@ def test_filter_hits_by_version_maps_ragflow_doc_to_platform():
                 "document_version_id": None,
             }
         },
-    ), patch(
-        "app.services.knowledge_qa_service.get_document",
-        return_value=doc,
+    ), patch.object(
+        db,
+        "scalars",
+        return_value=MagicMock(all=MagicMock(return_value=[doc])),
     ), patch(
         "app.services.knowledge_qa_service.resolve_latest_indexed_version",
         return_value=None,
     ), patch(
         "app.services.knowledge_qa_service.resolve_current_version",
         return_value=None,
+    ), patch(
+        "app.services.knowledge_qa_service.resolve_index_link",
+        return_value=(None, None),
     ):
         out = _filter_hits_by_version(
             db,
@@ -220,3 +224,90 @@ def test_filter_hits_by_version_maps_ragflow_doc_to_platform():
     assert len(out) == 1
     assert out[0]["document_id"] == PLATFORM_DOC_ID
     assert out[0]["image_id"] == "img-1"
+
+
+def test_retrieve_hits_falls_back_to_knowflow_when_pageindex_empty():
+    """PageIndex 未命中时应回退 KnowFlow（资讯网页等双索引文档）。"""
+    from app.services.knowledge_qa_service import retrieve_hits_for_qa
+
+    doc_id = uuid.UUID(PLATFORM_DOC_ID)
+    doc = MagicMock()
+    doc.id = doc_id
+    db = MagicMock()
+    user = MagicMock()
+    kf_hit = {
+        "document_id": PLATFORM_DOC_ID,
+        "snippet": "网页正文片段",
+        "highlight": "网页正文片段",
+        "score": 0.91,
+        "source": "knowflow",
+    }
+
+    with patch(
+        "app.services.knowledge_qa_service.validate_document_scope",
+        return_value=[doc],
+    ), patch(
+        "app.services.pageindex_service.partition_documents_by_retrieval_engine",
+        return_value=([doc], [], []),
+    ), patch(
+        "app.services.pageindex_service.retrieve_pageindex_hits_for_qa",
+        return_value=[],
+    ), patch(
+        "app.services.knowledge_qa_service._knowflow_retrieval_available",
+        return_value=True,
+    ), patch(
+        "app.services.knowledge_qa_service._knowflow_retrieve",
+        return_value=[kf_hit],
+    ) as mock_kf, patch(
+        "app.services.knowledge_qa_service._local_retrieve",
+    ) as mock_local, patch(
+        "app.services.knowledge_qa_service.merge_nearby_retrieval_hits",
+        side_effect=lambda hits: hits,
+    ):
+        hits, mode = retrieve_hits_for_qa(db, user, [doc_id], "碳价走势")
+
+    assert len(hits) == 1
+    assert hits[0]["snippet"] == "网页正文片段"
+    assert mode == "hybrid"
+    mock_kf.assert_called_once()
+    mock_local.assert_not_called()
+
+
+def test_retrieve_hits_local_fallback_includes_skipped_docs():
+    """不可向量/PageIndex 检索的文档仍应走本地全文回退。"""
+    from app.services.knowledge_qa_service import retrieve_hits_for_qa
+
+    doc_id = uuid.UUID(PLATFORM_DOC_ID)
+    doc = MagicMock()
+    doc.id = doc_id
+    db = MagicMock()
+    user = MagicMock()
+    local_hit = {
+        "document_id": PLATFORM_DOC_ID,
+        "snippet": "本地命中",
+        "highlight": "本地命中",
+        "score": 0.5,
+        "source": "local",
+    }
+
+    with patch(
+        "app.services.knowledge_qa_service.validate_document_scope",
+        return_value=[doc],
+    ), patch(
+        "app.services.pageindex_service.partition_documents_by_retrieval_engine",
+        return_value=([], [], [doc]),
+    ), patch(
+        "app.services.knowledge_qa_service._knowflow_retrieval_available",
+        return_value=False,
+    ), patch(
+        "app.services.knowledge_qa_service._local_retrieve",
+        return_value=[local_hit],
+    ) as mock_local, patch(
+        "app.services.knowledge_qa_service.merge_nearby_retrieval_hits",
+        side_effect=lambda hits: hits,
+    ):
+        hits, mode = retrieve_hits_for_qa(db, user, [doc_id], "测试")
+
+    assert len(hits) == 1
+    assert mode == "local"
+    mock_local.assert_called_once()

@@ -17,6 +17,7 @@ from app.api.documents.serializers import (
 from app.core.exceptions import bad_request, forbidden, not_found
 from app.database import get_db
 from app.domains.knowledge import knowledge
+from app.core.async_db import release_db, run_sync
 from app.models.document import DocumentVersion
 from app.models.org import User
 from app.schemas.common import ApiResponse
@@ -28,6 +29,38 @@ from app.schemas.document import (
 from app.services import document_service
 
 router = APIRouter()
+
+
+def _save_document_blob_sync(
+    user_id: uuid.UUID,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    data: bytes,
+    content_type: str | None,
+) -> None:
+    from app.database import SessionLocal
+    from app.models.org import User
+
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        doc = document_service.get_document(db, document_id)
+        if not doc or doc.deleted_at:
+            raise not_found()
+        version = db.get(DocumentVersion, version_id)
+        if not version or version.document_id != doc.id:
+            raise not_found("Version not found")
+        document_service.save_upload_blob(
+            db,
+            user,
+            doc,
+            version,
+            data,
+            content_type=content_type,
+        )
+    finally:
+        db.close()
+
 
 @router.post("/{document_id}/upload/prepare", response_model=ApiResponse[UploadPrepareResponse])
 def prepare_upload(
@@ -72,13 +105,14 @@ async def upload_document_blob(
     if not data:
         raise bad_request("Empty upload body")
     content_type = (request.headers.get("content-type") or "").split(";")[0].strip()
-    document_service.save_upload_blob(
-        db,
-        user,
-        doc,
-        version,
+    release_db(db)
+    await run_sync(
+        _save_document_blob_sync,
+        user.id,
+        document_id,
+        version_id,
         data,
-        content_type=content_type or None,
+        content_type or None,
     )
     return Response(status_code=204)
 

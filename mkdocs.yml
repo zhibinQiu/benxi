@@ -75,6 +75,9 @@ nav:
       - 权限模型与文档分级: platform/permission-model.md
       - 文档库实现: implementation/documents-implementation.md
       - 知识服务实现: implementation/knowledge-implementation.md
+      - 报告生成实现: implementation/report-generation-implementation.md
+      - Agent Skills 实现: implementation/agent-skills-implementation.md
+      - 浏览器 RPA 实现: implementation/browser-rpa-implementation.md
       - 异步任务: implementation/async-and-jobs.md
     - 第四篇 前端实现:
       - 前端结构: implementation/frontend-implementation.md

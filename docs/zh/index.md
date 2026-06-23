@@ -1,6 +1,6 @@
 # 企业 AI 知识库平台 文档
 
-**当前版本 v4.0.9** · 运维与开发文档入口。
+**当前版本 v4.2.1** · 运维与开发文档入口。
 
 ## 知识能力闭环（速览）
 
@@ -22,11 +22,10 @@ flowchart LR
 
 | 环节 | 文档 |
 |------|------|
-| 检索 vs 传统 RAG | [功能实现 §4.5](operations/feature-implementation.md#45-知识检索原生页) |
-| 本体图谱 | [功能实现 §4.6](operations/feature-implementation.md#46-本体图谱) |
-| 报告生成 | [功能实现 §4.7](operations/feature-implementation.md#47-报告生成区别于短答式-rag) |
-| AI 智能体 | [功能实现 §4.8](operations/feature-implementation.md#48-ai-智能体) |
-| 实现细节 | [知识服务实现](implementation/knowledge-implementation.md) |
+| 平台能力总览 | [功能实现说明](operations/feature-implementation.md) |
+| Agent Skills 专题 | [Agent Skills 实现](implementation/agent-skills-implementation.md) |
+| 浏览器 RPA | [浏览器 RPA 实现](implementation/browser-rpa-implementation.md) |
+| 检索 vs 传统做法 | [功能实现 §0 / §4.5](operations/feature-implementation.md) |
 
 ## 运维与部署
 

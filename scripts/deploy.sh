@@ -206,6 +206,8 @@ sync_deploy_env() {
   set_kv "$tmp" DEPLOY_HOST "$host"
   set_kv "$tmp" FRONTEND_PORT "${FRONTEND_PORT:-40005}"
   set_kv "$tmp" DEPLOY_ARCH "$arch"
+  set_kv "$tmp" AGENT_BROWSER_ENABLED true
+  set_kv "$tmp" INSTALL_BROWSER 1
   mv "$tmp" "$out_env"
 
   tmp="$(mktemp)"
@@ -568,6 +570,8 @@ set -euo pipefail
 cd '${DEPLOY_PATH}'
 bash scripts/stack.sh pull-registry
 bash scripts/stack.sh server-up${profile_args}
+export INSTALL_BROWSER=1 SERVER_MOUNT_CODE=1
+bash scripts/stack.sh build-browser || true
 EOF
     return
   fi

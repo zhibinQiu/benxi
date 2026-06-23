@@ -1,9 +1,9 @@
 import { ensureMarked, marked } from "./markdown.js";
-import { mountMermaidInElement } from "./mermaidRender.js";
+import { unmountMermaidInElement } from "./mermaidRender.js";
 import {
   bindEchartsResize,
   disposeEchartsInElement,
-  mountEchartsInElement,
+  mountRichMediaInElement,
   unbindEchartsResize,
 } from "./richMarkdown.js";
 
@@ -46,14 +46,15 @@ export { renderMermaidSvg } from "./mermaidRender.js";
 
 export async function mountSystemDocContent(root) {
   if (!root) return;
-  mountEchartsInElement(root);
+  unmountMermaidInElement(root);
+  await mountRichMediaInElement(root);
   bindEchartsResize();
-  await mountMermaidInElement(root);
 }
 
 export function disposeSystemDocContent(root) {
   if (!root) return;
   disposeEchartsInElement(root);
+  unmountMermaidInElement(root);
 }
 
 export function unbindSystemDocContent() {

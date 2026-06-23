@@ -28,6 +28,8 @@ error() { echo -e "${RED}[stack]${NC} $*" >&2; }
 source "$ROOT/scripts/lib/version.sh"
 # shellcheck source=lib/branding.sh
 source "$ROOT/scripts/lib/branding.sh"
+# shellcheck source=lib/browser-rpa.sh
+source "$ROOT/scripts/lib/browser-rpa.sh"
 ZHITAN_VERSION="${ZHITAN_VERSION:-$(read_repo_version "$ROOT")}"
 DATA_ROOT="${DATA_ROOT:-./data}"
 IMAGES_DIR="${IMAGES_DIR:-./images}"
@@ -176,12 +178,34 @@ cmd_build_runtime() {
     --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
     --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
     --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
+    --build-arg "INSTALL_BROWSER=${INSTALL_BROWSER:-1}" \
     -t "${local_tag}" \
     .
   if [[ "${tag}" != "${local_tag}" ]]; then
     docker tag "${local_tag}" "${tag}"
     info "额外 tag: ${tag}"
   fi
+}
+
+cmd_build_browser() {
+  export INSTALL_BROWSER=1
+  load_env
+  default_profiles
+  if [[ "$COMPOSE_DEV" == 1 ]] || [[ "$COMPOSE_SERVER" == 1 ]] || [[ "${SERVER_MOUNT_CODE:-0}" == 1 ]]; then
+    if [[ "$COMPOSE_SERVER" == 1 ]] || [[ "${SERVER_MOUNT_CODE:-0}" == 1 ]]; then
+      COMPOSE_SERVER=1
+    fi
+    warn "构建含 Playwright 的 runtime 镜像（首次约 3–8 分钟）…"
+    cmd_build_runtime
+    info "应用 runtime 镜像并重启 api / worker…"
+    compose_cmd up -d api worker
+    browser_restart_api_worker
+  else
+    warn "构建 api / worker 镜像（INSTALL_BROWSER=1）…"
+    compose_cmd build api worker
+    compose_cmd up -d api worker
+  fi
+  browser_verify_ready_or_fail
 }
 
 cmd_push_registry() {
@@ -207,6 +231,7 @@ cmd_push_registry() {
     --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
     --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
     --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
+    --build-arg "INSTALL_BROWSER=${INSTALL_BROWSER:-1}" \
     -t "${image}" \
     -t "${prefix}zhitan-api-runtime:latest" \
     --push \
@@ -286,8 +311,9 @@ cmd_server_up() {
   export SERVER_MOUNT_CODE=1
   load_env
   default_profiles
-  info "服务器模式：runtime 镜像 + 挂载 platform/app（--reload）"
+  info "服务器模式：runtime 镜像 + 挂载 platform/app"
   compose_cmd up -d --no-build "$@"
+  browser_ensure_ready || true
   local port="${FRONTEND_PORT:-40005}"
   cat <<EOF
 
@@ -307,8 +333,14 @@ cmd_dev_up() {
   info "开发模式：API --reload + 前端 Vite（挂载源码）"
   compose_cmd up -d --no-build "$@"
   local port="${FRONTEND_PORT:-40005}"
-  local app_name
+  local app_name project api_cid
   app_name="$(read_platform_app_name "$ROOT")"
+  project="${COMPOSE_PROJECT_NAME:-zhitan}"
+  api_cid="$(docker compose -p "$project" ps -q api 2>/dev/null | head -1 || true)"
+  if [[ -n "$api_cid" ]] && ! docker exec "$api_cid" python -c \
+    "from playwright.sync_api import sync_playwright" 2>/dev/null; then
+    warn "浏览器 RPA 未就绪。本机: ./dev.sh browser setup --docker  |  服务器: ./dev.sh browser setup --server"
+  fi
   cat <<EOF
 
 ${GREEN}=== ${app_name} 开发栈已启动 ===${NC}
@@ -416,6 +448,7 @@ usage() {
 命令:
   build [服务名...]     构建镜像（可加 --profile knowflow --profile speech）
   build-runtime         构建 zhitan-api-runtime（仅 Python 依赖，供挂载部署）
+  build-browser         构建含 Playwright 的 runtime 并重启 api/worker（服务器 RPA）
   push-registry         buildx 推送 runtime 镜像到 REGISTRY_IMAGE_PREFIX（amd64+arm64）
   pull-registry         从 REGISTRY_IMAGE_PREFIX 拉 runtime 镜像
   server-up             服务器模式：runtime 镜像 + 挂载 platform/app
@@ -435,6 +468,7 @@ usage() {
   REGISTRY_IMAGE_PREFIX  阿里云 ACR 前缀，如 registry.cn-hangzhou.aliyuncs.com/ns/
   BUILD_PLATFORMS       push-registry 用，默认 linux/amd64,linux/arm64
   INSTALL_PAGEINDEX     构建时安装 PageIndex extra，默认 1
+  INSTALL_BROWSER       构建时安装 Playwright Chromium（RPA），默认 1
   SERVER_MOUNT_CODE=1   叠加 compose.server.yaml（等同 server-up）
   EXPOSE_DEPS=1         叠加 compose.expose-deps.yaml（远程依赖开发）
   STACK_USE_MIRROR=1    叠加 compose.mirror.yaml（默认开启）
@@ -482,6 +516,12 @@ main() {
   case "$cmd" in
     build)   cmd_build "$@" ;;
     build-runtime) cmd_build_runtime "$@" ;;
+    build-browser)
+      if [[ "${SERVER_MOUNT_CODE:-0}" == 1 ]]; then
+        COMPOSE_SERVER=1
+      fi
+      cmd_build_browser "$@"
+      ;;
     push-registry) cmd_push_registry "$@" ;;
     pull-registry) cmd_pull_registry "$@" ;;
     server-up) cmd_server_up "$@" ;;

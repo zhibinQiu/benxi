@@ -1,6 +1,11 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { NButton, NDrawer, NDrawerContent, NSpace, NTag, NText } from "naive-ui";
+import {
+  siteFaviconUrl,
+  siteHostFromUrl,
+  siteInitialFromHost,
+} from "../utils/siteFavicon.js";
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -10,20 +15,20 @@ const props = defineProps({
 
 const emit = defineEmits(["update:show", "collect", "open-original"]);
 
-const siteHost = computed(() => {
-  const url = props.item?.url;
-  if (!url) return "";
-  try {
-    return new URL(url).hostname.replace(/^www\./i, "");
-  } catch {
-    return "";
-  }
-});
+const siteHost = computed(() => siteHostFromUrl(props.item?.url));
 
-const favicon = computed(() => {
-  if (!siteHost.value) return "";
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(siteHost.value)}&sz=32`;
-});
+const favicon = computed(() => siteFaviconUrl(props.item?.url || siteHost.value));
+
+const siteInitial = computed(() => siteInitialFromHost(siteHost.value));
+
+const faviconBroken = ref(false);
+
+watch(
+  () => props.item?.url,
+  () => {
+    faviconBroken.value = false;
+  }
+);
 
 function close() {
   emit("update:show", false);
@@ -41,7 +46,16 @@ function close() {
       <template #header>
         <div class="web-detail-head">
           <span v-if="favicon" class="web-detail-head__favicon" aria-hidden="true">
-            <img :src="favicon" alt="" loading="lazy" />
+            <img
+              v-show="!faviconBroken"
+              :src="favicon"
+              alt=""
+              loading="lazy"
+              @error="faviconBroken = true"
+            />
+            <span v-if="faviconBroken" class="web-detail-head__favicon-fallback">
+              {{ siteInitial }}
+            </span>
           </span>
           <span class="web-detail-head__site">{{ siteHost || "网页" }}</span>
         </div>
@@ -100,6 +114,12 @@ function close() {
 .web-detail-head__favicon img {
   width: 16px;
   height: 16px;
+}
+
+.web-detail-head__favicon-fallback {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--platform-text-secondary);
 }
 
 .web-detail-head__site {

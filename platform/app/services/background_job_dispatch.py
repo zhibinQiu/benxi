@@ -161,3 +161,65 @@ def _dispatch_parse_watch_inprocess(job_id: uuid.UUID) -> None:
     from app.services.knowledge_sync_job_service import _run_parse_watch
 
     submit_background(f"parse-watch-{job_id}", _run_parse_watch, job_id)
+
+
+def dispatch_scheduled_notification(
+    notification_id: uuid.UUID, *, countdown: int = 0
+) -> None:
+    """定时系统通知投递：进程内 Timer 保证无 Celery Worker 时也能准时；Celery 作多副本冗余。"""
+    from workers.tasks.platform_jobs import deliver_scheduled_notification_task
+
+    countdown = max(0, int(countdown))
+    if countdown > 0:
+        threading.Timer(
+            countdown,
+            lambda: _dispatch_scheduled_notification_inprocess(notification_id),
+        ).start()
+    else:
+        _dispatch_scheduled_notification_inprocess(notification_id)
+
+    _try_celery(
+        deliver_scheduled_notification_task,
+        [str(notification_id)],
+        countdown=countdown,
+        label=f"scheduled-notification-{notification_id}",
+    )
+
+
+def _dispatch_scheduled_notification_inprocess(notification_id: uuid.UUID) -> None:
+    from app.services.notification_service import deliver_scheduled_notification
+
+    submit_background(
+        f"scheduled-notification-{notification_id}",
+        deliver_scheduled_notification,
+        notification_id,
+    )
+
+
+def dispatch_scheduled_rpa_task(task_id: uuid.UUID, *, countdown: int = 0) -> None:
+    from workers.tasks.platform_jobs import deliver_scheduled_rpa_task_task
+
+    if _try_celery(
+        deliver_scheduled_rpa_task_task,
+        [str(task_id)],
+        countdown=max(0, int(countdown)),
+        label=f"scheduled-rpa-{task_id}",
+    ):
+        return
+    if countdown > 0:
+        threading.Timer(
+            countdown,
+            lambda: _dispatch_scheduled_rpa_inprocess(task_id),
+        ).start()
+        return
+    _dispatch_scheduled_rpa_inprocess(task_id)
+
+
+def _dispatch_scheduled_rpa_inprocess(task_id: uuid.UUID) -> None:
+    from app.services.browser_rpa_service import deliver_scheduled_rpa_task
+
+    submit_background(
+        f"scheduled-rpa-{task_id}",
+        deliver_scheduled_rpa_task,
+        task_id,
+    )

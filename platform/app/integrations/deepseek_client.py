@@ -6,6 +6,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import tomllib
@@ -92,8 +93,100 @@ def _chat_url(base_url: str) -> str:
 
 
 def _clip_user_content(content: str, max_chars: int | None = None) -> str:
-    limit = max_chars if max_chars is not None else get_settings().deepseek_max_chars
-    return (content or "").strip()[:limit]
+    from app.core.prompt_budget import get_prompt_limits, truncate_to_budget
+
+    limits = get_prompt_limits()
+    limit = max_chars if max_chars is not None else limits["user_max_chars"]
+    return truncate_to_budget(content or "", limit)
+
+
+def _prepare_messages_for_api(
+    messages: list[dict[str, Any]],
+    *,
+    max_total_chars: int | None = None,
+) -> list[dict[str, Any]]:
+    from app.core.prompt_budget import fit_messages_to_total_budget, get_prompt_limits
+
+    limits = get_prompt_limits()
+    budget = max_total_chars if max_total_chars is not None else limits["prompt_max_chars"]
+    clipped: list[dict[str, Any]] = []
+    for msg in messages:
+        role = str(msg.get("role") or "user")
+        row: dict[str, Any] = {"role": role}
+        if msg.get("content") is not None:
+            content = str(msg.get("content") or "")
+            if role == "user":
+                content = _clip_user_content(content)
+            row["content"] = content
+        if msg.get("tool_calls"):
+            row["tool_calls"] = msg["tool_calls"]
+        if msg.get("tool_call_id"):
+            row["tool_call_id"] = str(msg["tool_call_id"])
+        clipped.append(row)
+    return fit_messages_to_total_budget(clipped, budget)  # type: ignore[return-value]
+
+
+async def chat_completion_message_async(
+    *,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    temperature: float = 0.3,
+    timeout: float = 120.0,
+) -> dict[str, Any] | None:
+    """单次 chat/completions，返回 choices[0]（含 message.tool_calls）。"""
+    from app.core.prompt_budget import llm_completion_extras
+
+    if not is_configured():
+        return None
+    try:
+        api_key, base_url, model = resolve_credentials()
+    except Exception:
+        return None
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": _prepare_messages_for_api(messages),
+        "temperature": temperature,
+        **llm_completion_extras(),
+    }
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                _chat_url(base_url),
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            choices = data.get("choices") or []
+            return choices[0] if choices else None
+    except Exception as exc:
+        logger.warning("LLM tool 调用失败: %s", exc)
+        return None
+
+
+def _completion_payload(
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    stream: bool = False,
+    max_total_chars: int | None = None,
+    unlimited_output: bool = False,
+) -> dict:
+    from app.core.prompt_budget import llm_completion_extras
+
+    payload: dict = {
+        "model": model,
+        "messages": _prepare_messages_for_api(messages, max_total_chars=max_total_chars),
+        "temperature": temperature,
+        **llm_completion_extras(unlimited=unlimited_output),
+    }
+    if stream:
+        payload["stream"] = True
+    return payload
 
 
 def chat_completion_sync(
@@ -110,25 +203,17 @@ def chat_completion_sync(
         api_key, base_url, model = resolve_credentials()
     except Exception:
         return None
-    payload_messages = []
-    for msg in messages:
-        role = str(msg.get("role") or "user")
-        content = msg.get("content") or ""
-        if role == "user" and max_user_chars is not None:
-            content = _clip_user_content(str(content), max_user_chars)
-        elif role == "user":
-            content = _clip_user_content(str(content))
-        payload_messages.append({"role": role, "content": content})
+    payload_messages = _prepare_messages_for_api(messages)
     try:
         with httpx.Client(timeout=timeout) as client:
             resp = client.post(
                 _chat_url(base_url),
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model,
-                    "messages": payload_messages,
-                    "temperature": temperature,
-                },
+                json=_completion_payload(
+                    model=model,
+                    messages=payload_messages,
+                    temperature=temperature,
+                ),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -143,41 +228,35 @@ def chat_completion_sync(
         return None
 
 
-async def chat_completion_stream(
+async def chat_completion_stream_parts(
     *,
     messages: list[dict[str, str]],
     temperature: float = 0.2,
     timeout: float = 90.0,
     max_user_chars: int | None = None,
-) -> AsyncIterator[str]:
-    """流式 chat/completions；未配置或失败时不产出。"""
+    unlimited_output: bool = False,
+) -> AsyncIterator[dict[str, str]]:
+    """流式 chat/completions；产出 kind=reasoning|content 的文本片段。"""
     if not is_configured():
         return
     try:
         api_key, base_url, model = resolve_credentials()
     except Exception:
         return
-    payload_messages = []
-    for msg in messages:
-        role = str(msg.get("role") or "user")
-        content = msg.get("content") or ""
-        if role == "user" and max_user_chars is not None:
-            content = _clip_user_content(str(content), max_user_chars)
-        elif role == "user":
-            content = _clip_user_content(str(content))
-        payload_messages.append({"role": role, "content": content})
+    payload_messages = _prepare_messages_for_api(messages)
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST",
                 _chat_url(base_url),
                 headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model,
-                    "messages": payload_messages,
-                    "temperature": temperature,
-                    "stream": True,
-                },
+                json=_completion_payload(
+                    model=model,
+                    messages=payload_messages,
+                    temperature=temperature,
+                    stream=True,
+                    unlimited_output=unlimited_output,
+                ),
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -192,15 +271,33 @@ async def chat_completion_stream(
                         chunk = json.loads(raw)
                     except json.JSONDecodeError:
                         continue
-                    delta = (
-                        chunk.get("choices", [{}])[0]
-                        .get("delta", {})
-                        .get("content")
-                    )
-                    if delta:
-                        yield delta
+                    delta_obj = (chunk.get("choices") or [{}])[0].get("delta") or {}
+                    reasoning = delta_obj.get("reasoning_content") or ""
+                    content = delta_obj.get("content") or ""
+                    if reasoning:
+                        yield {"kind": "reasoning", "text": reasoning}
+                    if content:
+                        yield {"kind": "content", "text": content}
     except Exception as exc:
         logger.warning("LLM 流式调用失败: %s", exc)
+
+
+async def chat_completion_stream(
+    *,
+    messages: list[dict[str, str]],
+    temperature: float = 0.2,
+    timeout: float = 90.0,
+    max_user_chars: int | None = None,
+) -> AsyncIterator[str]:
+    """流式 chat/completions；未配置或失败时不产出。"""
+    async for part in chat_completion_stream_parts(
+        messages=messages,
+        temperature=temperature,
+        timeout=timeout,
+        max_user_chars=max_user_chars,
+    ):
+        if part.get("kind") == "content" and part.get("text"):
+            yield part["text"]
 
 
 async def summarize_text(text: str, style: str = "minutes") -> dict:

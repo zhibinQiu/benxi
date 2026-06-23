@@ -2,7 +2,9 @@ import { createRouter, createWebHistory } from "vue-router";
 import { getToken } from "../api/client";
 import { useAuth } from "../composables/useAuth";
 import { routeMenuKey, useMenuSettings, isConfigurableMenuKey } from "../composables/useMenuSettings";
+import { useSystemFeatures } from "../composables/useSystemFeatures";
 import { DEFAULT_HOME_ROUTE } from "../utils/postLoginRoute.js";
+import { releaseRouteMemory } from "../utils/routeMemoryCleanup.js";
 
 const routes = [
   {
@@ -19,7 +21,7 @@ const routes = [
       {
         path: "ai-home",
         name: "ai-home",
-        meta: { title: "AI 智能体", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
+        meta: { title: "本析智能", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
         component: () => import("../views/AiHomeView.vue"),
       },
       {
@@ -49,13 +51,13 @@ const routes = [
       {
         path: "system/smart-data-query",
         name: "smart-data-query",
-        meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart", videoBg: true, keepAlive: true },
+        meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart", videoBg: true },
         component: () => import("../views/SmartDataQueryV2View.vue"),
       },
       {
         path: "system/data-analysis",
         name: "data-analysis",
-        meta: { title: "数据分析", fullHeight: true, featureIcon: "stats-chart", keepAlive: true },
+        meta: { title: "数据分析", fullHeight: true, featureIcon: "stats-chart" },
         component: () => import("../views/DataAnalysisView.vue"),
       },
       {
@@ -65,7 +67,7 @@ const routes = [
       {
         path: "system/carbon-qa",
         name: "carbon-qa",
-        meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles", videoBg: true, keepAlive: true },
+        meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles", videoBg: true },
         component: () => import("../views/CarbonQaV2View.vue"),
       },
       {
@@ -167,7 +169,6 @@ const routes = [
           fullHeight: true,
           featureIcon: "git-network",
           perm: "feature.kg_palantir",
-          keepAlive: true,
           videoBg: true,
         },
         component: () => import("../views/KgPalantirView.vue"),
@@ -185,28 +186,6 @@ const routes = [
         component: () => import("../views/AssistWritingView.vue"),
       },
       {
-        path: "system/pageindex",
-        redirect: { name: "knowledge-search" },
-      },
-      {
-        path: "system/report-generation",
-        name: "report-generation",
-        meta: {
-          title: "报告生成",
-          fullHeight: true,
-          flushStart: true,
-          flushEnd: true,
-          featureIcon: "create",
-          keepAlive: true,
-          videoBg: true,
-        },
-        component: () => import("../views/ReportGenerationView.vue"),
-      },
-      {
-        path: "knowledge-graph",
-        redirect: { name: "documents" },
-      },
-      {
         path: "knowledge/search",
         name: "knowledge-search",
         meta: {
@@ -220,12 +199,38 @@ const routes = [
           videoBg: true,
           keepAlive: true,
         },
-        component: () => import("../views/KnowledgeSearchView.vue"),
+        component: () => import("../layouts/KnowledgeFeatureLayout.vue"),
+      },
+      {
+        path: "knowledge/report",
+        name: "report-generation",
+        meta: {
+          title: "报告生成",
+          fullHeight: true,
+          flushStart: true,
+          flushEnd: true,
+          featureIcon: "create",
+          keepAlive: true,
+          videoBg: true,
+        },
+        component: () => import("../layouts/KnowledgeFeatureLayout.vue"),
+      },
+      {
+        path: "system/pageindex",
+        redirect: { name: "knowledge-search" },
+      },
+      {
+        path: "system/report-generation",
+        redirect: { name: "report-generation" },
+      },
+      {
+        path: "knowledge-graph",
+        redirect: { name: "documents" },
       },
       {
         path: "documents",
         name: "documents",
-        meta: { title: "文档中心", featureIcon: "document-text", videoBg: true },
+        meta: { title: "我的文件", featureIcon: "document-text", videoBg: true },
         component: () => import("../views/DocumentsView.vue"),
       },
       {
@@ -303,6 +308,21 @@ const routes = [
         component: () => import("../views/admin/ModelSettingsView.vue"),
       },
       {
+        path: "system/agent-skills",
+        name: "agent-skills",
+        meta: {
+          title: "Agent Skills",
+          perm: "feature.agent_skills",
+          featureIcon: "extension-puzzle",
+          videoBg: true,
+        },
+        component: () => import("../views/admin/AgentSkillsView.vue"),
+      },
+      {
+        path: "admin/agent-skills",
+        redirect: { name: "agent-skills" },
+      },
+      {
         path: "admin/menu-settings",
         name: "admin-menu-settings",
         meta: { title: "菜单管理", perm: "admin.user", videoBg: true },
@@ -352,7 +372,8 @@ router.beforeEach(async (to) => {
   }
   if (user.value) {
     const { loadMenuSettings, isMenuVisible, firstVisibleRouteName } = useMenuSettings();
-    await loadMenuSettings();
+    const { loadSystemFeatures } = useSystemFeatures();
+    await Promise.all([loadMenuSettings(), loadSystemFeatures()]);
     const menuKey = routeMenuKey(String(to.name || ""));
     if (
       menuKey &&
@@ -364,6 +385,11 @@ router.beforeEach(async (to) => {
     }
   }
   return true;
+});
+
+router.afterEach((to, from) => {
+  if (from.meta?.public) return;
+  releaseRouteMemory(from, to);
 });
 
 export default router;

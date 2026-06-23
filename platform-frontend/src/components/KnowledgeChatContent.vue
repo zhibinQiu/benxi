@@ -1,6 +1,13 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { renderMarkdown } from "../utils/markdown.js";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import {
+  bindEchartsResize,
+  disposeEchartsInElement,
+  mountRichMediaInElement,
+  renderRichMarkdown,
+  unbindEchartsResize,
+} from "../utils/richMarkdown.js";
+import { unmountMermaidInElement } from "../utils/mermaidRender.js";
 
 const props = defineProps({
   content: { type: String, default: "" },
@@ -10,6 +17,8 @@ const props = defineProps({
 const emit = defineEmits(["open-citation"]);
 
 const rootRef = ref(null);
+const domActive = ref(true);
+let refreshTimer = null;
 
 const citationIndexes = computed(() => {
   const set = new Set((props.citations || []).map((c) => Number(c.index)).filter(Boolean));
@@ -20,9 +29,9 @@ const CITE_GROUP_RE = /(?:[\[【]\d{1,2}[\]】])+/g;
 const CITE_NUM_RE = /[\[【](\d{1,2})[\]】]/g;
 
 const html = computed(() => {
+  if (!domActive.value) return "";
   let text = props.content || "";
   if (!text) return "";
-  // 保留正文中的原始编号，仅将可点击的 [n] 转为按钮（不按 document_id 合并，避免 [1][2][3] 全变成 [1]）
   text = text.replace(CITE_GROUP_RE, (group) => {
     const nums = [...group.matchAll(CITE_NUM_RE)].map((m) => Number(m[1]));
     const seen = new Set();
@@ -40,7 +49,7 @@ const html = computed(() => {
       )
       .join("");
   });
-  return renderMarkdown(text);
+  return renderRichMarkdown(text);
 });
 
 function onClick(event) {
@@ -53,10 +62,55 @@ function onClick(event) {
   emit("open-citation", index);
 }
 
-watch(() => props.content, () => nextTick(bindCiteButtons));
+async function refreshRichMedia() {
+  if (!domActive.value) return;
+  await nextTick();
+  const root = rootRef.value;
+  if (!root) return;
+  disposeEchartsInElement(root);
+  unmountMermaidInElement(root);
+  await mountRichMediaInElement(root);
+  bindCiteButtons();
+}
 
-onMounted(() => nextTick(bindCiteButtons));
-onBeforeUnmount(() => {});
+function scheduleRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void refreshRichMedia();
+  }, 280);
+}
+
+function releaseDom() {
+  const root = rootRef.value;
+  if (root) {
+    disposeEchartsInElement(root);
+    unmountMermaidInElement(root);
+  }
+  domActive.value = false;
+}
+
+watch(() => props.content, scheduleRefresh);
+
+onMounted(() => {
+  bindEchartsResize();
+  void refreshRichMedia();
+});
+
+onActivated(() => {
+  domActive.value = true;
+  void refreshRichMedia();
+});
+
+onDeactivated(releaseDom);
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  releaseDom();
+});
 
 function bindCiteButtons() {
   const root = rootRef.value;
@@ -72,26 +126,6 @@ function bindCiteButtons() {
 </template>
 
 <style scoped>
-.knowledge-chat-content :deep(.knowledge-cite-mark) {
-  display: inline;
-  margin: 0 1px;
-  padding: 0 3px;
-  border: none;
-  border-radius: 4px;
-  background: var(--platform-accent-muted);
-  color: var(--platform-accent-pressed);
-  font-size: 0.92em;
-  font-weight: 600;
-  line-height: 1.4;
-  cursor: pointer;
-  vertical-align: baseline;
-}
-
-.knowledge-chat-content :deep(.knowledge-cite-mark:hover) {
-  background: var(--platform-accent-soft);
-  text-decoration: underline;
-}
-
 .knowledge-chat-content :deep(p) {
   margin: 0 0 0.5em;
 }
@@ -100,9 +134,20 @@ function bindCiteButtons() {
   margin-bottom: 0;
 }
 
-.knowledge-chat-content :deep(ul),
-.knowledge-chat-content :deep(ol) {
-  margin: 0.4em 0;
-  padding-left: 1.25em;
+.knowledge-chat-content :deep(.knowledge-cite-mark) {
+  display: inline;
+  margin: 0 1px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  color: var(--primary-color, #18a058);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.knowledge-chat-content :deep(.knowledge-cite-mark:hover) {
+  opacity: 0.85;
 }
 </style>

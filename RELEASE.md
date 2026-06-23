@@ -1,5 +1,17 @@
 # 发布说明
 
+## 4.2.1（v4.2.1）— Agent Skills 架构升级与系统文档
+
+- **Agent Skills 框架**：内置 14 项能力注册表（4 READY + 10 STUB）；上传型 Skill 包（ZIP/文件夹/`SKILL.md`）；Discovery 常驻目录 + Activation 按需 tool 调用
+- **浏览器 RPA（Phase 1）**：Playwright 会话与 `browser_*` 工具族；对话探索录制 → Skill 固化；`INSTALL_BROWSER` / `AGENT_BROWSER_ENABLED` 可选启用
+- **AI 智能体**：统一 `iter_agent_tool_loop`；`research` 综合 KB/KG/联网；对话历史预算与富内容生命周期优化
+- **报告生成**：万字长报告流式生成；独立实现文档与 Agent 多路召回扩写链路
+- **管理端**：`AgentSkillsView` — 内置启停、上传包、用户记忆；API `/admin/agent-skills`
+- **版本更新弹窗**：登录后从 `RELEASE.md` 解析最新版本亮点，首次登录展示 `ReleaseHighlightsModal`
+- **代码收敛**：删除未使用的 skill 路由、预检索 helper 与冗余 catalog 封装
+- **系统文档**：新增 [Agent Skills](docs/zh/implementation/agent-skills-implementation.md)、[报告生成](docs/zh/implementation/report-generation-implementation.md)、[浏览器 RPA](docs/zh/implementation/browser-rpa-implementation.md) 实现说明；更新功能实现说明与架构总览
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.2.1）
+
 ## 4.1.1（v4.1.1）— 知识库去品牌化、索引增强与 AI 默认联网
 
 - **产品去品牌化**：前台与资源管理文案统一为「知识库 API / 扩展后台 / MySQL」，去除 RAGFlow、KnowFlow 等对外展示名称

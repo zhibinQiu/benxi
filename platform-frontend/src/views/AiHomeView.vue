@@ -46,7 +46,6 @@ const toolLinks = computed(() => {
     chat-scope="ai-home"
     :title="t('aiHome.title')"
     :description="t('aiHome.description')"
-    :subtitle="t('aiHome.subtitle')"
     :chat-header-sub="t('aiHome.chatHeaderSub')"
     :suggestions="suggestions"
     :tool-links="toolLinks"
@@ -56,6 +55,7 @@ const toolLinks = computed(() => {
     :show-workflow-progress="true"
     :linkify-citations="true"
     :enable-attachments="true"
+    :enable-agent-skills="true"
     title-gradient
     :show-chat-header-brand="false"
   />

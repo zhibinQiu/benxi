@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, get_current_user, require_feature
 from app.core.exceptions import bad_request, forbidden, not_found
+from app.core.async_db import detach_request_db
 from app.database import get_db
 from app.integrations.pdf2zh_client import pdf2zh_async_client
 from app.models.org import User
@@ -262,6 +263,8 @@ async def job_events(
     zid = pdf2zh_job_id(job)
     if not zid:
         raise not_found("pdf2zh 任务 ID 缺失")
+
+    detach_request_db(db)
 
     async def stream():
         async with _client() as client:

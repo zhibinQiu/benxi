@@ -6,11 +6,11 @@
 #   bash scripts/stack.sh pull-registry    # 从 ACR 拉 runtime 镜像
 #   bash scripts/stack.sh server-up        # 挂载 platform/app 启动 API
 #
-# 改 platform/app 后执行 ./dev.sh sync（默认重启 API / Worker）；或依赖 uvicorn --reload
+# 改 platform/app 后执行 ./dev.sh sync（默认重建 API / Worker）
 
 services:
   api:
-    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.0.5}
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.2.1}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -20,6 +20,8 @@ services:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         INSTALL_PAGEINDEX: ${INSTALL_PAGEINDEX:-1}
+        INSTALL_BROWSER: ${INSTALL_BROWSER:-1}
+    shm_size: "512mb"
     ports:
       - "127.0.0.1:${STACK_DEV_API_PORT:-18000}:8000"
     volumes:
@@ -28,15 +30,33 @@ services:
       - ./docs:/app/system-docs/docs:ro
       - ./运维部署指南.md:/app/system-docs/运维部署指南.md:ro
       - ./RELEASE.md:/app/system-docs/RELEASE.md:ro
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
+      # 4 worker × (5+3) ≈ 32 连接上限，避免占满 Postgres max_connections
+      DB_POOL_SIZE: "5"
+      DB_MAX_OVERFLOW: "3"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
 
   worker:
-    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.0.5}
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.2.1}
+    shm_size: "512mb"
     volumes:
       - ./platform/app:/app/app:ro
       - ./platform/workers:/app/workers:ro
+      - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
 
   frontend:
     volumes:

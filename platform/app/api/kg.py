@@ -44,7 +44,7 @@ router = APIRouter(
 def kg_meta(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-    sync_system: bool = Query(True, description="是否同步平台用户与部门到图谱"),
+    sync_system: bool = Query(False, description="是否同步平台用户与部门到图谱（显式刷新时开启）"),
 ) -> ApiResponse[KgMetaOut]:
     return ApiResponse(data=kg_service.get_meta(db, user, sync_system=sync_system))
 

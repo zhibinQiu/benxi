@@ -1,35 +1,70 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import {
   bindEchartsResize,
   disposeEchartsInElement,
-  mountEchartsInElement,
+  mountRichMediaInElement,
   renderRichMarkdown,
   unbindEchartsResize } from "../utils/richMarkdown";
+import { unmountMermaidInElement } from "../utils/mermaidRender.js";
 
 const props = defineProps({
   content: { type: String, default: "" }});
 
 const rootRef = ref(null);
-const html = computed(() => renderRichMarkdown(props.content));
+/** KeepAlive 失活时不渲染 v-html，避免大量 DOM 常驻内存 */
+const domActive = ref(true);
+const html = computed(() => (domActive.value ? renderRichMarkdown(props.content) : ""));
+
+let refreshChartsTimer = null;
 
 async function refreshCharts() {
+  if (!domActive.value) return;
   await nextTick();
   const root = rootRef.value;
   if (!root) return;
   disposeEchartsInElement(root);
-  mountEchartsInElement(root);
+  unmountMermaidInElement(root);
+  await mountRichMediaInElement(root);
 }
 
-watch(() => props.content, refreshCharts);
+function scheduleRefreshCharts() {
+  if (refreshChartsTimer) clearTimeout(refreshChartsTimer);
+  refreshChartsTimer = setTimeout(() => {
+    refreshChartsTimer = null;
+    void refreshCharts();
+  }, 280);
+}
+
+function releaseDom() {
+  const root = rootRef.value;
+  if (root) {
+    disposeEchartsInElement(root);
+    unmountMermaidInElement(root);
+  }
+  domActive.value = false;
+}
+
+watch(() => props.content, scheduleRefreshCharts);
 
 onMounted(() => {
   bindEchartsResize();
   refreshCharts();
 });
 
+onActivated(() => {
+  domActive.value = true;
+  refreshCharts();
+});
+
+onDeactivated(releaseDom);
+
 onBeforeUnmount(() => {
-  if (rootRef.value) disposeEchartsInElement(rootRef.value);
+  if (refreshChartsTimer) {
+    clearTimeout(refreshChartsTimer);
+    refreshChartsTimer = null;
+  }
+  releaseDom();
 });
 </script>
 

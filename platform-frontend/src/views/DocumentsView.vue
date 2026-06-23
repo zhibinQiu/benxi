@@ -85,6 +85,7 @@ import {
   batchDeleteDocuments,
   deleteDocument,
   updateKbFolder } from "../api/documents.js";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const route = useRoute();
 const { isSystemAdmin, user } = useAuth();
@@ -98,7 +99,7 @@ const loading = ref(false);
 const keyword = ref("");
 const appliedSearch = ref("");
 const page = ref(1);
-const pageSize = ref(20);
+const pageSize = ref(LIST_PAGE_SIZE);
 const total = ref(0);
 const items = ref([]);
 const folders = ref([]);
@@ -1774,7 +1775,6 @@ watch(
         <div v-if="formatOverview?.total" class="documents-format-overview__body">
           <div class="documents-format-overview__head">
             <span class="documents-format-overview__title">{{ t("documents.overview.title") }}</span>
-            <span class="documents-format-overview__hint">{{ t("documents.overview.subtitle") }}</span>
           </div>
           <div class="documents-format-overview__summary">
             {{

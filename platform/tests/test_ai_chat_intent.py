@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import uuid
+
 from app.schemas.ai_chat import AiChatMessage
-from app.services.ai_chat_service import (
-    _is_chitchat_message,
-    _needs_web_search,
-    _plan_agent_tools,
+from app.services.agent_intent import (
+    is_chitchat_message,
+    needs_web_search,
+    plan_agent_tools,
 )
+
+_is_chitchat_message = is_chitchat_message
+_needs_web_search = needs_web_search
+_plan_agent_tools = plan_agent_tools
 
 
 def test_who_are_you_with_question_mark_is_chitchat():
@@ -40,7 +46,7 @@ def test_chitchat_skips_all_tools_even_with_attachment_session():
         assert "日常" in plan.intent_label
 
 
-def test_attachment_question_skips_knowledge_retrieval():
+def test_attachment_question_uses_attachment_only():
     plan = _plan_agent_tools(
         "这篇论文的核心方法是什么？",
         attach_count=1,
@@ -51,11 +57,11 @@ def test_attachment_question_skips_knowledge_retrieval():
     assert plan.use_attachment is True
     assert plan.use_doc_retrieval is False
     assert plan.use_kg is False
-    assert plan.use_web_search is True
+    assert plan.use_web_search is False
     assert "附件" in plan.intent_label
 
 
-def test_attachment_with_explicit_kb_request_uses_retrieval():
+def test_attachment_with_explicit_kb_still_attachment_only():
     plan = _plan_agent_tools(
         "对比这篇论文和知识库里的碳排放政策",
         attach_count=1,
@@ -64,7 +70,7 @@ def test_attachment_with_explicit_kb_request_uses_retrieval():
         web_enabled=True,
     )
     assert plan.use_attachment is True
-    assert plan.use_doc_retrieval is True
+    assert plan.use_doc_retrieval is False
     assert plan.use_kg is False
 
 
@@ -80,7 +86,7 @@ def test_chitchat_skips_retrieval_without_attachment():
     assert plan.use_kg is False
 
 
-def test_business_question_retrieves():
+def test_business_question_defers_to_agent_tools():
     plan = _plan_agent_tools(
         "碳配额发放流程是什么？",
         attach_count=0,
@@ -88,10 +94,10 @@ def test_business_question_retrieves():
         kg_enabled=True,
         web_enabled=True,
     )
-    assert plan.use_doc_retrieval is True
-    assert plan.use_kg is True
-    assert plan.use_web_search is True
-    assert "联网" in plan.intent_label
+    assert plan.use_doc_retrieval is False
+    assert plan.use_kg is False
+    assert plan.use_web_search is False
+    assert "按需" in plan.intent_label
 
 
 def test_chitchat_skips_web_search():
@@ -113,7 +119,7 @@ def test_platform_usage_skips_web_search():
     assert plan.use_web_search is False
 
 
-def test_followup_after_business_question_retrieves():
+def test_followup_after_business_question_defers_to_agent_tools():
     history = [
         AiChatMessage(role="user", content="碳配额发放流程是什么？"),
         AiChatMessage(role="assistant", content="根据检索材料……"),
@@ -126,8 +132,8 @@ def test_followup_after_business_question_retrieves():
         web_enabled=True,
         history=history,
     )
-    assert plan.use_doc_retrieval is True
-    assert plan.use_web_search is True
+    assert plan.use_doc_retrieval is False
+    assert plan.use_web_search is False
 
 
 def test_vague_message_skips_retrieval():
@@ -140,10 +146,31 @@ def test_vague_message_skips_retrieval():
     )
     assert plan.use_doc_retrieval is False
     assert plan.use_web_search is False
-    assert plan.intent_label == "直接回答"
+    assert "按需" in plan.intent_label
 
 
-def test_recent_carbon_price_uses_web_search():
+def test_delete_skill_removes_db_row_even_if_storage_fails():
+    from unittest.mock import MagicMock, patch
+
+    from app.services.agent_skill_service import delete_skill
+
+    skill_id = uuid.uuid4()
+    skill = MagicMock()
+    skill.storage_prefix = f"skills/{skill_id}/"
+    db = MagicMock()
+    db.get.return_value = skill
+
+    with patch(
+        "app.services.agent_skill_service.get_object_store",
+        side_effect=RuntimeError("storage unavailable"),
+    ):
+        delete_skill(db, skill_id)
+
+    db.delete.assert_called_once_with(skill)
+    db.commit.assert_called_once()
+
+
+def test_recent_carbon_price_heuristic_still_detects_web_need():
     assert _needs_web_search("最近的碳价格是多少？") is True
     plan = _plan_agent_tools(
         "最近的碳价格是多少？",
@@ -152,9 +179,8 @@ def test_recent_carbon_price_uses_web_search():
         kg_enabled=True,
         web_enabled=True,
     )
-    assert plan.use_web_search is True
-    assert plan.use_doc_retrieval is True
-    assert "联网" in plan.intent_label
+    assert plan.use_web_search is False
+    assert plan.use_doc_retrieval is False
 
 
 def test_carbon_price_without_web_config():
@@ -166,10 +192,10 @@ def test_carbon_price_without_web_config():
         web_enabled=False,
     )
     assert plan.use_web_search is False
-    assert plan.use_doc_retrieval is True
+    assert plan.use_doc_retrieval is False
 
 
-def test_explicit_web_search_request():
+def test_explicit_web_search_request_defers_to_agent_tools():
     assert _needs_web_search("帮我上网查一下欧盟碳价") is True
     plan = _plan_agent_tools(
         "帮我上网查一下欧盟碳价",
@@ -178,12 +204,11 @@ def test_explicit_web_search_request():
         kg_enabled=False,
         web_enabled=True,
     )
-    assert plan.use_web_search is True
+    assert plan.use_web_search is False
     assert plan.use_doc_retrieval is False
-    assert plan.intent_label == "联网检索实时信息"
 
 
-def test_policy_process_uses_web_search_by_default():
+def test_policy_process_defers_retrieval_to_agent_tools():
     assert _needs_web_search("碳配额发放流程是什么？") is True
     plan = _plan_agent_tools(
         "碳配额发放流程是什么？",
@@ -192,11 +217,11 @@ def test_policy_process_uses_web_search_by_default():
         kg_enabled=True,
         web_enabled=True,
     )
-    assert plan.use_web_search is True
-    assert plan.use_doc_retrieval is True
+    assert plan.use_web_search is False
+    assert plan.use_doc_retrieval is False
 
 
-def test_lookup_carbon_price_triggers_web_search():
+def test_lookup_carbon_price_defers_to_agent_tools():
     assert _needs_web_search("帮我查一下碳价") is True
     plan = _plan_agent_tools(
         "帮我查一下碳价",
@@ -205,12 +230,11 @@ def test_lookup_carbon_price_triggers_web_search():
         kg_enabled=True,
         web_enabled=True,
     )
-    assert plan.use_web_search is True
-    assert plan.use_doc_retrieval is True
-    assert "联网" in plan.intent_label
+    assert plan.use_web_search is False
+    assert plan.use_doc_retrieval is False
 
 
-def test_current_carbon_market_status_triggers_web_search():
+def test_current_carbon_market_status_defers_to_agent_tools():
     assert _needs_web_search("目前全国碳市场怎么样") is True
     plan = _plan_agent_tools(
         "目前全国碳市场怎么样",
@@ -219,4 +243,4 @@ def test_current_carbon_market_status_triggers_web_search():
         kg_enabled=True,
         web_enabled=True,
     )
-    assert plan.use_web_search is True
+    assert plan.use_web_search is False

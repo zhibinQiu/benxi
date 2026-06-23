@@ -1,6 +1,6 @@
 [project]
 name = "doc-platform"
-version = "4.1.1"
+version = "4.2.1"
 description = "Single-tenant document platform (IAM, documents, jobs, notifications)"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -19,6 +19,9 @@ dependencies = [
     "redis>=5.2.0",
     "boto3>=1.35.0",
     "httpx>=0.28.0",
+    "requests>=2.32.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
     "pymysql>=1.1.0",
     "html2text>=2024.2.26",
     "sse-starlette>=2.3.0",
@@ -38,6 +41,9 @@ dependencies = [
 [project.optional-dependencies]
 pageindex = [
     "pageindex-selfhosted @ file:third_party/pageindex-upstream",
+]
+browser = [
+    "playwright>=1.49.0",
 ]
 
 [project.scripts]

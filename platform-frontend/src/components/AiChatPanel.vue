@@ -1,4 +1,6 @@
 <script setup>
+defineOptions({ inheritAttrs: false });
+
 import { usePlatformUi } from "../composables/usePlatformUi";
 import {
   computed,
@@ -12,16 +14,17 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { TimeOutline, DocumentTextOutline, DocumentOutline, GitNetworkOutline, CloseOutline, AttachOutline } from "@vicons/ionicons5";
+import { TimeOutline, DocumentTextOutline, DocumentOutline, GitNetworkOutline, CloseOutline, FolderOpenOutline, SparklesOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
+import { getApiBase } from "../api/http.js";
 import {
-  AI_CHAT_ATTACHMENT_ACCEPT,
   clearAiChatAttachments,
   fetchAiChatAttachments,
+  fetchAiChatSkillCatalog,
   removeAiChatAttachmentFile,
   uploadAiChatAttachments,
 } from "../api/chat.js";
-import { NButton, NIcon, NSpin } from "naive-ui";
+import { NButton, NIcon, NPopover, NSpin } from "naive-ui";
 import { renderMarkdown } from "../utils/markdown.js";
 import ChatComposer from "./ChatComposer.vue";
 import ChatBubbleRetry from "./ChatBubbleRetry.vue";
@@ -34,18 +37,31 @@ const KnowledgeMindMap = defineAsyncComponent(() => import("./KnowledgeMindMap.v
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
 import { useI18n } from "../composables/useI18n.js";
+import { handleAgentWorkflowForNotifications } from "../composables/useNotificationAlerts.js";
 import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
 import { alignCitationsWithContent, splitCitedCitations } from "../utils/reportCitations.js";
 import { exportMindmapMarkdown, exportMindmapOpml } from "../utils/mindmapExport.js";
-import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import {
   clearChatSession,
   loadChatSession,
+  readChatSessionBootstrap,
   saveChatSession,
   serializeChatMessages,
   SERVER_HISTORY_SCOPES,
 } from "../utils/chatSessionPersist";
+import {
+  MAX_CHAT_MESSAGES,
+  MAX_VISIBLE_CHAT_MESSAGES,
+  trimChatMessages,
+} from "../utils/chatMessageLimits.js";
+import { trimHistoryForApi } from "../utils/chatHistoryBudget.js";
+import {
+  isPlainPreviewTruncated,
+  plainMessagePreview,
+  shouldRenderMessageRich,
+} from "../utils/chatMessageRender.js";
+import { disposeRichContentInElement } from "../utils/richContentLifecycle.js";
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -78,12 +94,15 @@ const props = defineProps({
   showReportTools: { type: Boolean, default: false },
   reportMindmapFetch: { type: Function, default: null },
   reportWordExport: { type: Function, default: null },
+  reportLibraryImport: { type: Function, default: null },
   /** { id, label, description?, prompt } */
   reportOptimizePresets: { type: Array, default: () => [] },
   /** 流式回复期间仍允许编辑输入框（Enter 发送会先停止当前生成） */
   composerInputWhileLoading: { type: Boolean, default: false },
   /** AI 智能体：支持上传临时附件（不入库） */
   enableAttachments: { type: Boolean, default: false },
+  /** AI 智能体：展示 Agent Skills 目录 */
+  enableAgentSkills: { type: Boolean, default: false },
 });
 
 const conversationId = defineModel("conversationId", { type: String, default: null });
@@ -92,15 +111,19 @@ const emit = defineEmits(["new-chat"]);
 
 const ui = usePlatformUi();
 const { t } = useI18n();
-const appDisplayName = useAppDisplayName();
 const route = useRoute();
 const router = useRouter();
 
-const started = ref(false);
-const loadingHistory = ref(false);
-const input = ref("");
+const sessionBootstrap = readChatSessionBootstrap(props.chatScope, {
+  conversationId:
+    typeof route.query.conversationId === "string" ? route.query.conversationId : "",
+});
+
+const started = ref(sessionBootstrap.started);
+const loadingHistory = ref(sessionBootstrap.loadingHistory);
+const input = ref(sessionBootstrap.input);
 const sending = ref(false);
-const messages = ref([]);
+const messages = ref(sessionBootstrap.messages);
 const messagesRef = ref(null);
 const composerRef = ref(null);
 const citationPreviewShow = ref(false);
@@ -108,15 +131,140 @@ const citationPreviewTarget = ref(null);
 const reportViewMode = ref("answer");
 const reportMindmapRef = ref(null);
 const exportingWord = ref(false);
+const savingToLibrary = ref(false);
+const savedLibraryDocumentId = ref(null);
 const exportingMindmap = ref("");
 let streamAbort = null;
 let streamGeneration = 0;
+let persistTimer = null;
+/** 长对话只渲染最近 N 条，更早消息按需加载 */
+const messageWindowStart = ref(sessionBootstrap.messageWindowStart);
+/** KeepAlive 失活时不渲染 Markdown DOM，仅保留纯文本占位 */
+const chatDomActive = ref(true);
+const loadingConversationId = ref("");
+const expandedMessageIndexes = ref(new Set());
+const historyHasOlder = ref(false);
+const historyOldestId = ref(null);
+const loadingOlderHistory = ref(false);
 
-const attachmentSessionId = ref(null);
-const attachmentFiles = ref([]);
+if (sessionBootstrap.conversationId) {
+  conversationId.value = sessionBootstrap.conversationId;
+}
+
+const hiddenOlderCount = computed(() => messageWindowStart.value);
+const canLoadOlder = computed(() => hiddenOlderCount.value > 0 || historyHasOlder.value);
+
+const displayEntries = computed(() =>
+  messages.value
+    .slice(messageWindowStart.value)
+    .map((message, offset) => ({
+      message,
+      index: messageWindowStart.value + offset,
+    }))
+);
+
+async function showOlderMessages() {
+  if (hiddenOlderCount.value > 0) {
+    messageWindowStart.value = Math.max(0, messageWindowStart.value - 20);
+    return;
+  }
+  if (!historyHasOlder.value || !historyOldestId.value || loadingOlderHistory.value) return;
+  if (!props.chatScope || !conversationId.value) return;
+  loadingOlderHistory.value = true;
+  try {
+    const data = await fetchChatConversationMessages(props.chatScope, conversationId.value, {
+      limit: 24,
+      beforeId: historyOldestId.value,
+    });
+    const older = Array.isArray(data?.messages) ? data.messages : [];
+    historyHasOlder.value = Boolean(data?.has_older);
+    historyOldestId.value = data?.oldest_id || historyOldestId.value;
+    if (!older.length) {
+      historyHasOlder.value = false;
+      return;
+    }
+    const mapped = older.map((m) => ({
+      role: m.role,
+      content: m.content,
+      streaming: false,
+    }));
+    messages.value = trimChatMessages([...mapped, ...messages.value]);
+    messageWindowStart.value += mapped.length;
+  } catch (e) {
+    ui.error(e.message || t("chat.loadFailed"));
+  } finally {
+    loadingOlderHistory.value = false;
+  }
+}
+
+function shouldRenderRich(entry) {
+  return shouldRenderMessageRich({
+    messageIndex: entry.index,
+    totalMessages: messages.value.length,
+    message: entry.message,
+    chatDomActive: chatDomActive.value,
+    expandedIndexes: expandedMessageIndexes.value,
+  });
+}
+
+function expandMessage(index) {
+  const next = new Set(expandedMessageIndexes.value);
+  next.add(index);
+  expandedMessageIndexes.value = next;
+}
+
+watch(
+  () => messages.value.length,
+  (len, prevLen) => {
+    if (loadingOlderHistory.value) return;
+    if (len <= MAX_VISIBLE_CHAT_MESSAGES) {
+      messageWindowStart.value = 0;
+      return;
+    }
+    if (len > prevLen) {
+      messageWindowStart.value = Math.max(messageWindowStart.value, len - MAX_VISIBLE_CHAT_MESSAGES);
+    }
+  }
+);
+
+const attachmentSessionId = ref(sessionBootstrap.attachmentSessionId);
+const attachmentFiles = ref(sessionBootstrap.attachmentFiles);
 const uploadingAttachments = ref(false);
 const attachmentInputRef = ref(null);
 const hasAttachments = computed(() => attachmentFiles.value.length > 0);
+
+const skillCatalog = ref([]);
+const skillCatalogLoading = ref(false);
+const skillPopoverShow = ref(false);
+const skillCatalogLoaded = ref(false);
+
+async function loadSkillCatalog() {
+  if (skillCatalogLoading.value) return;
+  skillCatalogLoading.value = true;
+  try {
+    skillCatalog.value = (await fetchAiChatSkillCatalog()) || [];
+    skillCatalogLoaded.value = true;
+  } catch (e) {
+    ui.error(e.message || t("chat.agentSkills.loadFailed"));
+  } finally {
+    skillCatalogLoading.value = false;
+  }
+}
+
+async function onSkillPopoverShowChange(show) {
+  skillPopoverShow.value = show;
+  if (show && !skillCatalogLoaded.value) {
+    await loadSkillCatalog();
+  }
+}
+
+function useSkill(skill) {
+  const label = skill.title || skill.name;
+  const prefix = input.value.trim() ? `${input.value.trim()}\n` : "";
+  input.value = `${prefix}请使用「${label}」技能：`;
+  skillPopoverShow.value = false;
+  nextTick(() => composerRef.value?.focus?.());
+}
 
 function openAttachmentPicker() {
   if (uploadingAttachments.value || sending.value) return;
@@ -231,6 +379,7 @@ const lastReportTitle = computed(() => {
 
 watch(lastAssistantIndex, () => {
   reportViewMode.value = "answer";
+  savedLibraryDocumentId.value = null;
 });
 
 function isReportMessage(index, message) {
@@ -263,6 +412,28 @@ async function exportReportWord(content) {
   } finally {
     exportingWord.value = false;
   }
+}
+
+async function saveReportToLibrary(content) {
+  if (!props.reportLibraryImport || savingToLibrary.value) return;
+  savingToLibrary.value = true;
+  try {
+    const res = await props.reportLibraryImport({
+      title: lastReportTitle.value,
+      markdown: content,
+    });
+    savedLibraryDocumentId.value = res?.document_id || null;
+    ui.success(res?.message || t("reportGeneration.saveToLibrarySuccess"));
+  } catch (e) {
+    ui.error(e.message || t("reportGeneration.saveToLibraryFailed"));
+  } finally {
+    savingToLibrary.value = false;
+  }
+}
+
+function openSavedLibraryDocument() {
+  if (!savedLibraryDocumentId.value) return;
+  router.push({ name: "document-detail", params: { id: savedLibraryDocumentId.value } });
 }
 
 function exportReportMindmap(format, messageIndex) {
@@ -344,10 +515,6 @@ function openCitationPreview(citationOrIndex, citations = []) {
   citationPreviewShow.value = true;
 }
 
-const displaySubtitle = computed(
-  () => props.subtitle || t("chat.defaultSubtitle", { appName: appDisplayName.value })
-);
-
 const headerSub = computed(
   () =>
     props.chatHeaderSub ||
@@ -372,8 +539,36 @@ function applyWorkflowEvent(workflow, ev) {
   return applyAgentWorkflowEvent(workflow, ev, t);
 }
 
-function renderMarkdownHtml(text) {
-  return renderMarkdown(text || "");
+function clearFollowUpQuestions() {
+  for (const msg of messages.value) {
+    if (msg.followUpQuestions) delete msg.followUpQuestions;
+  }
+}
+
+function applyFollowUpQuestions(row, questions) {
+  if (props.chatScope !== "ai-home" || !row) return;
+  if (!Array.isArray(questions) || !questions.length) return;
+  row.followUpQuestions = questions.filter((q) => String(q || "").trim());
+}
+
+function showFollowUpForMessage(index, message) {
+  if (props.chatScope !== "ai-home") return false;
+  if (message?.role !== "assistant" || message.streaming || message.error) return false;
+  if (!Array.isArray(message.followUpQuestions) || !message.followUpQuestions.length) {
+    return false;
+  }
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    if (messages.value[i]?.role === "assistant") {
+      return i === index;
+    }
+  }
+  return false;
+}
+
+function useFollowUpQuestion(text) {
+  const q = String(text || "").trim();
+  if (!q || sending.value) return;
+  sendMessage(q);
 }
 
 async function scrollToBottom() {
@@ -383,9 +578,11 @@ async function scrollToBottom() {
 }
 
 function buildChatHistory() {
-  return messages.value
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ role: m.role, content: m.content }));
+  return trimHistoryForApi(messages.value);
+}
+
+function renderMarkdownHtml(text) {
+  return renderMarkdown(text || "");
 }
 
 async function sendMessageStreaming(content, assistantIdx, history) {
@@ -404,6 +601,7 @@ async function sendMessageStreaming(content, assistantIdx, history) {
       {
         signal: streamAbort.signal,
         onWorkflow: (ev) => {
+          handleAgentWorkflowForNotifications(ev);
           if (!props.showWorkflowProgress) return;
           const row = messages.value[assistantIdx];
           if (!row) return;
@@ -422,6 +620,22 @@ async function sendMessageStreaming(content, assistantIdx, history) {
           if ((!props.showCitations && !props.showReportTools) || !Array.isArray(citations)) return;
           const row = messages.value[assistantIdx];
           if (row) row.citations = citations;
+        },
+        onAttachments: (attachments) => {
+          const row = messages.value[assistantIdx];
+          if (!row || !Array.isArray(attachments)) return;
+          const base = getApiBase().replace(/\/$/, "");
+          for (const att of attachments) {
+            if (att?.type !== "image" || !att.url) continue;
+            const src = String(att.url).startsWith("http")
+              ? att.url
+              : `${base}${att.url.startsWith("/") ? att.url : `/${att.url}`}`;
+            const title = att.title || "浏览器截图";
+            if (!String(row.content || "").includes(src)) {
+              row.content = `${row.content || ""}\n\n![${title}](${src})\n`;
+            }
+          }
+          scrollToBottom();
         },
         onDelta: (delta) => {
           const row = messages.value[assistantIdx];
@@ -459,6 +673,7 @@ async function sendMessageStreaming(content, assistantIdx, history) {
                 row.citations = payload.citations;
               }
             }
+            applyFollowUpQuestions(row, payload?.follow_up_questions);
           }
           if (payload?.conversation_id) {
             conversationId.value = payload.conversation_id;
@@ -541,6 +756,7 @@ async function sendMessageBlocking(content, assistantIdx, history) {
       row.streaming = false;
       row.content = "";
     }
+    applyFollowUpQuestions(row, data?.follow_up_questions);
   }
 }
 
@@ -568,6 +784,8 @@ async function sendMessage(text) {
   const firstTurn = !started.value;
   if (firstTurn) started.value = true;
 
+  clearFollowUpQuestions();
+
   const history = buildChatHistory();
   messages.value.push({ role: "user", content });
   input.value = "";
@@ -587,7 +805,14 @@ async function sendMessage(text) {
         role: "assistant",
         content: "",
         streaming: true,
-        workflow: props.showWorkflowProgress ? emptyWorkflow() : null});
+        workflow: props.showWorkflowProgress
+          ? {
+              ...emptyWorkflow(),
+              running: true,
+              currentTitle: t("chat.thinking"),
+            }
+          : null,
+      });
       await scrollToBottom();
       await sendMessageStreaming(content, assistantIdx, history);
     } else {
@@ -618,7 +843,7 @@ async function sendMessage(text) {
       streamAbort = null;
     }
     await scrollToBottom();
-    persistSessionState();
+    persistSessionState({ immediate: true });
   }
 }
 
@@ -670,21 +895,36 @@ function useSuggestion(text) {
   sendMessage(text);
 }
 
-function persistSessionState() {
+function persistSessionState({ immediate = false } = {}) {
   if (!props.chatScope) return;
-  const serialized = serializeChatMessages(messages.value);
-  if (!serialized.length && !conversationId.value && !input.value.trim() && !attachmentSessionId.value) {
-    clearChatSession(props.chatScope);
+  const run = () => {
+    const serialized = serializeChatMessages(messages.value);
+    if (!serialized.length && !conversationId.value && !input.value.trim() && !attachmentSessionId.value) {
+      clearChatSession(props.chatScope);
+      return;
+    }
+    saveChatSession(props.chatScope, {
+      conversationId: conversationId.value,
+      messages: serialized,
+      started: started.value,
+      input: input.value,
+      attachmentSessionId: attachmentSessionId.value,
+      attachmentFiles: attachmentFiles.value,
+    });
+  };
+  if (immediate) {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    run();
     return;
   }
-  saveChatSession(props.chatScope, {
-    conversationId: conversationId.value,
-    messages: serialized,
-    started: started.value,
-    input: input.value,
-    attachmentSessionId: attachmentSessionId.value,
-    attachmentFiles: attachmentFiles.value,
-  });
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    run();
+  }, sending.value ? 1200 : 200);
 }
 
 function newChat() {
@@ -693,6 +933,10 @@ function newChat() {
   sending.value = false;
   started.value = false;
   messages.value = [];
+  messageWindowStart.value = 0;
+  expandedMessageIndexes.value = new Set();
+  historyHasOlder.value = false;
+  historyOldestId.value = null;
   input.value = "";
   conversationId.value = null;
   clearAttachmentState();
@@ -713,28 +957,61 @@ function goToHistory() {
   );
 }
 
+function routeConversationId() {
+  const id = route.query.conversationId;
+  return typeof id === "string" ? id.trim() : "";
+}
+
+function syncConversationFromRoute() {
+  const cid = routeConversationId();
+  if (!cid || !props.chatScope || !SERVER_HISTORY_SCOPES.has(props.chatScope)) return;
+  if (loadingConversationId.value === cid && loadingHistory.value) return;
+  if (cid === conversationId.value && messages.value.length && !loadingHistory.value) {
+    started.value = true;
+    chatDomActive.value = true;
+    return;
+  }
+  void loadConversationFromId(cid);
+}
+
 async function loadConversationFromId(id) {
   if (!props.chatScope || !id) return;
-  if (!SERVER_HISTORY_SCOPES.has(props.chatScope)) return;
+  if (!SERVER_HISTORY_SCOPES.has(props.chatScope)) {
+    loadingHistory.value = false;
+    return;
+  }
+  if (loadingConversationId.value === id && loadingHistory.value) return;
+  loadingConversationId.value = id;
   loadingHistory.value = true;
   try {
-    const rows = (await fetchChatConversationMessages(props.chatScope, id)) || [];
+    const data = await fetchChatConversationMessages(props.chatScope, id, {
+      limit: MAX_CHAT_MESSAGES,
+    });
+    const rows = Array.isArray(data?.messages) ? data.messages : [];
+    historyHasOlder.value = Boolean(data?.has_older);
+    historyOldestId.value = data?.oldest_id || null;
+    expandedMessageIndexes.value = new Set();
     streamAbort?.abort();
     streamAbort = null;
     sending.value = false;
-    messages.value = rows.map((m) => ({
-      role: m.role,
-      content: m.content,
-      streaming: false}));
+    messages.value = trimChatMessages(
+      rows.map((m) => ({
+        role: m.role,
+        content: m.content ?? "",
+        streaming: false,
+      }))
+    );
     conversationId.value = id;
     started.value = messages.value.length > 0;
+    messageWindowStart.value = Math.max(0, messages.value.length - MAX_VISIBLE_CHAT_MESSAGES);
     input.value = "";
     await scrollToBottom();
-    persistSessionState();
+    persistSessionState({ immediate: true });
   } catch (e) {
     ui.error(e.message || t("chat.loadFailed"));
   } finally {
     loadingHistory.value = false;
+    if (loadingConversationId.value === id) loadingConversationId.value = "";
   }
 }
 
@@ -743,65 +1020,63 @@ async function restorePersistedSession() {
   const saved = loadChatSession(props.chatScope);
   if (!saved) return;
 
-  if (saved.input) input.value = saved.input;
-
-  if (saved.attachmentSessionId) {
-    attachmentSessionId.value = saved.attachmentSessionId;
-    if (Array.isArray(saved.attachmentFiles) && saved.attachmentFiles.length) {
+  const sid = saved.attachmentSessionId || attachmentSessionId.value;
+  if (sid) {
+    attachmentSessionId.value = sid;
+    if (!attachmentFiles.value.length && Array.isArray(saved.attachmentFiles)) {
       attachmentFiles.value = saved.attachmentFiles;
     }
-    await refreshAttachmentList(saved.attachmentSessionId);
+    await refreshAttachmentList(sid);
   }
 
   if (SERVER_HISTORY_SCOPES.has(props.chatScope) && saved.conversationId) {
-    await loadConversationFromId(saved.conversationId);
+    if (!messages.value.length) {
+      await loadConversationFromId(saved.conversationId);
+    }
     return;
   }
 
-  const rows = Array.isArray(saved.messages) ? saved.messages : [];
-  if (!rows.length) return;
-
-  messages.value = rows.map((m) => ({
-    role: m.role,
-    content: m.content || "",
-    streaming: false,
-    citations: m.citations,
-    error: m.error,
-  }));
-  conversationId.value = saved.conversationId || null;
-  started.value = Boolean(saved.started ?? messages.value.length > 0);
-  await scrollToBottom();
+  if (messages.value.length) {
+    await scrollToBottom();
+  }
 }
 
-watch(
-  () => route.query.conversationId,
-  (id) => {
-    const cid = typeof id === "string" ? id : "";
-    if (cid) loadConversationFromId(cid);
-  }
-);
+watch(() => route.query.conversationId, syncConversationFromRoute);
 
 onMounted(async () => {
-  const cid = typeof route.query.conversationId === "string" ? route.query.conversationId : "";
+  const cid = routeConversationId();
   if (cid) {
-    await loadConversationFromId(cid);
+    syncConversationFromRoute();
     return;
   }
   await restorePersistedSession();
 });
 
 onDeactivated(() => {
-  // 切到其他页面时不中断流式请求；KeepAlive 下组件仍在内存中继续接收增量
-  if (!sending.value) persistSessionState();
+  chatDomActive.value = false;
+  expandedMessageIndexes.value = new Set();
+  // 切到其他页面时不中断流式请求；释放富文本 DOM / 图表实例
+  if (messagesRef.value) disposeRichContentInElement(messagesRef.value);
+  reportViewMode.value = "answer";
+  if (messages.value.length > MAX_VISIBLE_CHAT_MESSAGES) {
+    messages.value = trimChatMessages(messages.value);
+    messageWindowStart.value = Math.max(0, messages.value.length - MAX_VISIBLE_CHAT_MESSAGES);
+  }
+  if (!sending.value) persistSessionState({ immediate: true });
 });
 
 onActivated(() => {
-  if (started.value) scrollToBottom();
-  if (sending.value) persistSessionState();
+  chatDomActive.value = true;
+  syncConversationFromRoute();
+  if (started.value && !loadingHistory.value) scrollToBottom();
 });
 
 onBeforeUnmount(() => {
-  persistSessionState();
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  persistSessionState({ immediate: true });
   streamAbort?.abort();
 });
 
@@ -812,6 +1087,7 @@ defineExpose({ newChat });
   <div
     class="ai-home"
     :class="{ 'ai-home--active': started }"
+    v-bind="$attrs"
   >
     <div v-if="!started && chatScope && showSessionActions" class="ai-home-landing-topbar">
       <IconAction
@@ -861,7 +1137,7 @@ defineExpose({ newChat });
               {{ title }}
             </h1>
             <p v-if="description" class="ai-home-desc">{{ description }}</p>
-            <p class="ai-home-sub">{{ displaySubtitle }}</p>
+            <p v-if="subtitle" class="ai-home-sub">{{ subtitle }}</p>
           </div>
         </div>
       </Transition>
@@ -880,40 +1156,58 @@ defineExpose({ newChat });
       >
         <TransitionGroup name="ai-msg" tag="div" class="ai-home-messages-inner">
           <div
-            v-for="(m, i) in messages"
-            :key="`msg-${i}`"
+            v-if="canLoadOlder"
+            key="load-older"
+            class="ai-home-load-older"
+          >
+            <button
+              type="button"
+              class="ai-home-load-older__btn"
+              :disabled="loadingOlderHistory"
+              @click="showOlderMessages"
+            >
+              <n-spin v-if="loadingOlderHistory" :size="14" />
+              <span v-else-if="hiddenOlderCount > 0">
+                {{ t("chat.loadOlderMessages", { count: hiddenOlderCount }) }}
+              </span>
+              <span v-else>{{ t("chat.loadOlderFromServer") }}</span>
+            </button>
+          </div>
+          <div
+            v-for="entry in displayEntries"
+            :key="`msg-${entry.index}`"
             class="ai-home-msg"
-            :class="m.role === 'user' ? 'ai-home-msg--user' : 'ai-home-msg--bot'"
+            :class="entry.message.role === 'user' ? 'ai-home-msg--user' : 'ai-home-msg--bot'"
           >
             <div
               class="ai-home-msg-stack"
-              :class="m.role === 'user' ? 'ai-home-msg-stack--user' : 'ai-home-msg-stack--bot'"
+              :class="entry.message.role === 'user' ? 'ai-home-msg-stack--user' : 'ai-home-msg-stack--bot'"
             >
             <div
-              v-if="m.role === 'assistant'"
+              v-if="entry.message.role === 'assistant'"
               class="ai-home-bubble ai-home-bubble--bot"
               :class="{
-                'ai-home-bubble--error': m.error,
-                'ai-home-bubble--streaming': m.streaming}"
+                'ai-home-bubble--error': entry.message.error,
+                'ai-home-bubble--streaming': entry.message.streaming}"
             >
               <AgentWorkflowProgress
-                v-if="
-                  showWorkflowProgress &&
-                  m.streaming &&
-                  !m.content &&
-                  m.workflow?.running
-                "
-                :workflow="m.workflow"
+                v-if="showWorkflowProgress && entry.message.workflow?.steps?.length"
+                :workflow="entry.message.workflow"
+                :keep-visible-after-done="true"
                 compact
               />
-              <div v-else-if="m.streaming && !m.content" class="ai-thinking platform-inline-loading">
+              <div
+                v-else-if="entry.message.streaming && !entry.message.content"
+                class="ai-thinking platform-inline-loading"
+              >
                 <n-spin size="tiny" />
                 {{ t("chat.thinking") }}
               </div>
-              <div v-else-if="m.streaming" class="ai-home-stream-text">
-                {{ m.content }}<span class="ai-home-cursor">▍</span>
+              <div v-if="entry.message.streaming && entry.message.content" class="ai-home-stream-text">
+                {{ entry.message.content }}<span class="ai-home-cursor">▍</span>
               </div>
-              <template v-else-if="isReportMessage(i, m)">
+              <template v-else-if="shouldRenderRich(entry)">
+              <template v-if="isReportMessage(entry.index, entry.message)">
                 <div class="ai-report-tools">
                   <div class="ai-report-tools__tabs" role="tablist">
                     <button
@@ -941,31 +1235,31 @@ defineExpose({ newChat });
                 <KnowledgeMindMap
                   v-show="reportViewMode === 'mindmap'"
                   ref="reportMindmapRef"
-                  :question="reportQuestionForMessage(i)"
-                  :answer="m.content"
+                  :question="reportQuestionForMessage(entry.index)"
+                  :answer="entry.message.content"
                   :fetch-mindmap="reportMindmapFetch"
                   :auto-load="true"
                   :active="reportViewMode === 'mindmap'"
                 />
                 <template v-if="reportViewMode !== 'mindmap'">
                   <KnowledgeChatContent
-                    v-if="linkifyCitations && m.content"
-                    :key="`kc-report-${i}`"
-                    :content="reportCitationGroups(m).content"
-                    :citations="reportCitationGroups(m).cited"
+                    v-if="linkifyCitations && entry.message.content"
+                    :key="`kc-report-${entry.index}`"
+                    :content="reportCitationGroups(entry.message).content"
+                    :citations="reportCitationGroups(entry.message).cited"
                     @open-citation="onReportCitationClick"
                   />
                   <MarkdownRichContent
-                    v-else-if="richMarkdown && m.content"
-                    :key="`md-report-${i}`"
-                    :content="reportCitationGroups(m).content || m.content"
+                    v-else-if="richMarkdown && entry.message.content"
+                    :key="`md-report-${entry.index}`"
+                    :content="reportCitationGroups(entry.message).content || entry.message.content"
                   />
                   <div
-                    v-else-if="m.content"
-                    v-html="renderMarkdownHtml(reportCitationGroups(m).content || m.content)"
+                    v-else-if="entry.message.content"
+                    v-html="renderMarkdownHtml(reportCitationGroups(entry.message).content || entry.message.content)"
                   />
                   <section
-                    v-if="reportCitationGroups(m).local.length"
+                    v-if="reportCitationGroups(entry.message).local.length"
                     class="ai-report-citations"
                   >
                     <div class="ai-report-citations__head">
@@ -974,23 +1268,23 @@ defineExpose({ newChat });
                     </div>
                     <div class="ai-report-citations__list">
                       <KnowledgeCitationCard
-                        v-for="c in reportCitationGroups(m).local"
+                        v-for="c in reportCitationGroups(entry.message).local"
                         :id="`report-cite-card-${c.index}`"
                         :key="`${c.index}-${c.chunk_id || c.document_id}`"
                         :citation="c"
-                        :question="reportQuestionForMessage(i)"
+                        :question="reportQuestionForMessage(entry.index)"
                       />
                     </div>
                   </section>
                   <section
-                    v-if="reportCitationGroups(m).web.length"
+                    v-if="reportCitationGroups(entry.message).web.length"
                     class="ai-report-web-cites"
                   >
                     <div class="ai-report-citations__head">
                       <span>{{ t("reportGeneration.webCitations") }}</span>
                     </div>
                     <ul class="ai-report-web-cites__list">
-                      <li v-for="c in reportCitationGroups(m).web" :key="`web-${c.index}`">
+                      <li v-for="c in reportCitationGroups(entry.message).web" :key="`web-${c.index}`">
                         <span class="ai-report-web-cites__num">[{{ c.index }}]</span>
                         <a
                           v-if="c.url"
@@ -1006,17 +1300,38 @@ defineExpose({ newChat });
                     </ul>
                   </section>
                 </template>
-                <div v-if="reportWordExport || reportViewMode === 'mindmap'" class="ai-report-export">
-                  <template v-if="reportViewMode === 'answer' && reportWordExport">
+                <div v-if="reportWordExport || reportLibraryImport || reportViewMode === 'mindmap'" class="ai-report-export">
+                  <template v-if="reportViewMode === 'answer' && (reportWordExport || reportLibraryImport)">
                     <button
+                      v-if="reportWordExport"
                       type="button"
                       class="ai-report-export__btn"
                       :disabled="exportingWord"
-                      @click="exportReportWord(m.content)"
+                      @click="exportReportWord(entry.message.content)"
                     >
                       <n-spin v-if="exportingWord" :size="14" />
                       <n-icon v-else :size="15" :component="DocumentTextOutline" />
                       <span>{{ t("reportGeneration.exportWord") }}</span>
+                    </button>
+                    <button
+                      v-if="savedLibraryDocumentId"
+                      type="button"
+                      class="ai-report-export__btn ai-report-export__btn--primary"
+                      @click="openSavedLibraryDocument"
+                    >
+                      <n-icon :size="15" :component="FolderOpenOutline" />
+                      <span>{{ t("reportGeneration.viewDocument") }}</span>
+                    </button>
+                    <button
+                      v-else-if="reportLibraryImport"
+                      type="button"
+                      class="ai-report-export__btn"
+                      :disabled="savingToLibrary"
+                      @click="saveReportToLibrary(entry.message.content)"
+                    >
+                      <n-spin v-if="savingToLibrary" :size="14" />
+                      <n-icon v-else :size="15" :component="FolderOpenOutline" />
+                      <span>{{ t("reportGeneration.saveToLibrary") }}</span>
                     </button>
                   </template>
                   <template v-else-if="reportViewMode === 'mindmap'">
@@ -1024,7 +1339,7 @@ defineExpose({ newChat });
                       type="button"
                       class="ai-report-export__btn"
                       :disabled="Boolean(exportingMindmap)"
-                      @click="exportReportMindmap('md', i)"
+                      @click="exportReportMindmap('md', entry.index)"
                     >
                       <n-spin v-if="exportingMindmap === 'md'" :size="14" />
                       <n-icon v-else :size="15" :component="DocumentOutline" />
@@ -1034,7 +1349,7 @@ defineExpose({ newChat });
                       type="button"
                       class="ai-report-export__btn"
                       :disabled="Boolean(exportingMindmap)"
-                      @click="exportReportMindmap('opml', i)"
+                      @click="exportReportMindmap('opml', entry.index)"
                     >
                       <n-spin v-if="exportingMindmap === 'opml'" :size="14" />
                       <n-icon v-else :size="15" :component="GitNetworkOutline" />
@@ -1044,39 +1359,71 @@ defineExpose({ newChat });
                 </div>
               </template>
               <KnowledgeChatContent
-                v-else-if="linkifyCitations && m.content"
-                :key="`kc-${i}`"
-                :content="messageCitationView(m).content"
-                :citations="messageCitationView(m).citations"
-                @open-citation="openCitationPreview($event, messageCitationView(m).citations)"
+                v-else-if="linkifyCitations && entry.message.content"
+                :key="`kc-${entry.index}`"
+                :content="messageCitationView(entry.message).content"
+                :citations="messageCitationView(entry.message).citations"
+                @open-citation="openCitationPreview($event, messageCitationView(entry.message).citations)"
               />
               <MarkdownRichContent
-                v-else-if="richMarkdown && m.content"
-                :key="`md-${i}`"
-                :content="m.content"
+                v-else-if="richMarkdown && entry.message.content"
+                :key="`md-${entry.index}`"
+                :content="entry.message.content"
               />
-              <div v-else-if="m.content" v-html="renderMarkdownHtml(m.content)" />
+              <div v-else-if="entry.message.content" v-html="renderMarkdownHtml(entry.message.content)" />
               <div v-else class="ai-workflow-wait ai-workflow-wait--empty">{{ t("chat.noAnswer") }}</div>
               <ChatMessageCitations
                 v-if="
                   showCitations &&
                   !showReportTools &&
-                  !m.streaming &&
-                  messageCitationView(m).citations.length
+                  !entry.message.streaming &&
+                  messageCitationView(entry.message).citations.length
                 "
-                :citations="messageCitationView(m).citations"
+                :citations="messageCitationView(entry.message).citations"
                 :preview-on-click="linkifyCitations"
-                @open-citation="openCitationPreview($event, messageCitationView(m).citations)"
+                @open-citation="openCitationPreview($event, messageCitationView(entry.message).citations)"
               />
+              </template>
+              <div v-else-if="entry.message.content" class="ai-home-msg-collapsed">
+                <div class="ai-home-msg-preview">
+                  {{ plainMessagePreview(entry.message.content) }}
+                </div>
+                <button
+                  v-if="isPlainPreviewTruncated(entry.message.content)"
+                  type="button"
+                  class="ai-home-msg-expand"
+                  @click="expandMessage(entry.index)"
+                >
+                  {{ t("chat.expandMessage") }}
+                </button>
+              </div>
             </div>
             <div v-else class="ai-home-bubble ai-home-bubble--user">
-              {{ m.content }}
+              {{ entry.message.content }}
             </div>
             <ChatBubbleRetry
-              v-if="m.role === 'assistant' && canRetryMessage(i, m)"
+              v-if="entry.message.role === 'assistant' && canRetryMessage(entry.index, entry.message)"
               align="start"
-              @retry="retryMessage(i)"
+              @retry="retryMessage(entry.index)"
             />
+            <div
+              v-if="showFollowUpForMessage(entry.index, entry.message)"
+              class="ai-home-follow-ups"
+            >
+              <span class="ai-home-follow-ups__label">{{ t("chat.continueAsk") }}</span>
+              <div class="ai-home-follow-ups__list">
+                <button
+                  v-for="q in entry.message.followUpQuestions"
+                  :key="q"
+                  type="button"
+                  class="ai-home-chip"
+                  :disabled="sending"
+                  @click="useFollowUpQuestion(q)"
+                >
+                  {{ q }}
+                </button>
+              </div>
+            </div>
             </div>
           </div>
         </TransitionGroup>
@@ -1094,7 +1441,7 @@ defineExpose({ newChat });
             @change="onAttachmentInputChange"
           />
           <div
-            v-if="(!started && toolLinks.length) || enableAttachments"
+            v-if="(!started && toolLinks.length) || enableAgentSkills"
             class="ai-home-tools"
           >
             <template v-if="!started">
@@ -1108,17 +1455,49 @@ defineExpose({ newChat });
                 <span>{{ tool.title }}</span>
               </RouterLink>
             </template>
-            <button
-              v-if="enableAttachments"
-              type="button"
-              class="ai-home-tool-link ai-home-tool-action"
-              :disabled="uploadingAttachments || sending"
-              @click="openAttachmentPicker"
+            <n-popover
+              v-if="enableAgentSkills"
+              trigger="click"
+              placement="top-start"
+              :width="320"
+              :show="skillPopoverShow"
+              @update:show="onSkillPopoverShowChange"
             >
-              <n-spin v-if="uploadingAttachments" :size="12" />
-              <n-icon v-else :size="13" :component="AttachOutline" />
-              <span>{{ t("chat.attachments.add") }}</span>
-            </button>
+              <template #trigger>
+                <button
+                  type="button"
+                  class="ai-home-tool-link ai-home-tool-action"
+                  :disabled="sending"
+                >
+                  <n-icon :size="13" :component="SparklesOutline" />
+                  <span>{{ t("menu.agentSkills") }}</span>
+                </button>
+              </template>
+              <div class="ai-home-skills-popover">
+                <div class="ai-home-skills-popover__title">{{ t("chat.agentSkills.title") }}</div>
+                <div v-if="skillCatalogLoading" class="ai-home-skills-popover__loading">
+                  <n-spin :size="16" />
+                </div>
+                <div v-else-if="!skillCatalog.length" class="ai-home-skills-popover__empty">
+                  {{ t("chat.agentSkills.empty") }}
+                </div>
+                <button
+                  v-for="skill in skillCatalog"
+                  :key="skill.name"
+                  type="button"
+                  class="ai-home-skills-popover__item"
+                  :disabled="skill.readiness !== 'ready'"
+                  @click="useSkill(skill)"
+                >
+                  <span class="ai-home-skills-popover__item-name">
+                    {{ skill.title || skill.name }}
+                  </span>
+                  <span v-if="skill.description" class="ai-home-skills-popover__item-desc">
+                    {{ skill.description }}
+                  </span>
+                </button>
+              </div>
+            </n-popover>
           </div>
           <div v-if="enableAttachments && hasAttachments" class="ai-home-attachments">
             <div class="ai-home-attachments__label">{{ t("chat.attachments.label") }}</div>
@@ -1153,9 +1532,13 @@ defineExpose({ newChat });
               :disable-input-while-loading="!composerInputWhileLoading"
               :min-rows="started ? chatComposerRows.minRows : landingComposerRows.minRows"
               :max-rows="started ? chatComposerRows.maxRows : landingComposerRows.maxRows"
+              :show-attachment="enableAttachments"
+              :attachment-loading="uploadingAttachments"
+              :attachment-disabled="uploadingAttachments || sending"
               @keydown="onComposerKeydown"
               @send="sendMessage()"
               @stop="stopGeneration"
+              @attach="openAttachmentPicker"
             />
           </div>
           <div
@@ -1424,6 +1807,27 @@ defineExpose({ newChat });
   cursor: not-allowed;
 }
 
+.ai-home-follow-ups {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  max-width: min(100%, 720px);
+  padding: 2px 2px 0;
+}
+
+.ai-home-follow-ups__label {
+  font-size: 12px;
+  color: var(--platform-text-muted);
+}
+
+.ai-home-follow-ups__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .ai-home-attachments {
   width: 100%;
   display: flex;
@@ -1489,6 +1893,70 @@ defineExpose({ newChat });
 
 .ai-home-attachment-input {
   display: none;
+}
+
+.ai-home-skills-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.ai-home-skills-popover__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  padding: 0 4px 6px;
+}
+
+.ai-home-skills-popover__loading,
+.ai-home-skills-popover__empty {
+  padding: 12px 4px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.ai-home-skills-popover__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.ai-home-skills-popover__item:hover:not(:disabled) {
+  background: var(--platform-accent-soft);
+}
+
+.ai-home-skills-popover__item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-home-skills-popover__item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--platform-accent-pressed);
+}
+
+.ai-home-skills-popover__item-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #64748b;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ai-home-composer {
@@ -1585,6 +2053,27 @@ defineExpose({ newChat });
   gap: 16px;
 }
 
+.ai-home-load-older {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+
+.ai-home-load-older__btn {
+  border: 1px solid var(--platform-border);
+  background: var(--platform-surface-soft, rgba(255, 255, 255, 0.6));
+  color: var(--platform-text-secondary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-home-load-older__btn:hover {
+  color: var(--platform-accent);
+  border-color: var(--platform-accent-soft);
+}
+
 .ai-home-msg {
   display: flex;
 }
@@ -1646,6 +2135,36 @@ defineExpose({ newChat });
 .ai-home-stream-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ai-home-msg-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--platform-text-secondary);
+  max-height: 8.5em;
+  overflow: hidden;
+}
+
+.ai-home-msg-collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ai-home-msg-expand {
+  border: none;
+  background: transparent;
+  color: var(--platform-accent);
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ai-home-msg-expand:hover {
+  text-decoration: underline;
 }
 
 .ai-home-cursor {
@@ -1873,6 +2392,18 @@ defineExpose({ newChat });
 .ai-report-export__btn:disabled {
   opacity: 0.65;
   cursor: wait;
+}
+
+.ai-report-export__btn--primary {
+  background: var(--platform-accent);
+  border-color: var(--platform-accent);
+  color: #fff;
+}
+
+.ai-report-export__btn--primary:hover:not(:disabled) {
+  background: var(--platform-accent-pressed);
+  border-color: var(--platform-accent-pressed);
+  color: #fff;
 }
 
 .ai-report-citations {

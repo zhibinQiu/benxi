@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { NIcon, NSpin } from "naive-ui";
 import { ExpandOutline } from "@vicons/ionicons5";
 import AdminFormModal from "./AdminFormModal.vue";
@@ -26,6 +26,8 @@ const error = ref("");
 const svgHtml = ref("");
 const source = ref("");
 const expandOpen = ref(false);
+const rootRef = ref(null);
+let visibilityObserver = null;
 
 const expandTitle = computed(() => {
   const q = (props.question || "").trim();
@@ -87,6 +89,39 @@ function openExpand(event) {
   expandOpen.value = true;
 }
 
+function disconnectVisibilityObserver() {
+  visibilityObserver?.disconnect();
+  visibilityObserver = null;
+}
+
+function scheduleVisibleLoad() {
+  if (!props.active || !props.autoLoad || !(props.answer || "").trim() || svgHtml.value || loading.value) {
+    return;
+  }
+  disconnectVisibilityObserver();
+  if (typeof IntersectionObserver === "undefined") {
+    void loadMindmap();
+    return;
+  }
+  visibilityObserver = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      disconnectVisibilityObserver();
+      void loadMindmap();
+    },
+    { rootMargin: "80px 0px", threshold: 0.01 }
+  );
+  if (rootRef.value) visibilityObserver.observe(rootRef.value);
+}
+
+watch(
+  () => [props.active, props.autoLoad, props.answer],
+  () => {
+    nextTick(() => scheduleVisibleLoad());
+  },
+  { immediate: true }
+);
+
 watch(
   () => [props.question, props.answer],
   () => {
@@ -94,18 +129,24 @@ watch(
     source.value = "";
     error.value = "";
     expandOpen.value = false;
+    disconnectVisibilityObserver();
   }
 );
 
-watch(
-  () => [props.active, props.autoLoad, props.answer],
-  ([active, autoLoad, answer]) => {
-    if (active && autoLoad && (answer || "").trim() && !svgHtml.value && !loading.value) {
-      loadMindmap();
-    }
-  },
-  { immediate: true }
-);
+onDeactivated(() => {
+  disconnectVisibilityObserver();
+  svgHtml.value = "";
+  expandOpen.value = false;
+  loading.value = false;
+});
+
+onActivated(() => {
+  nextTick(() => scheduleVisibleLoad());
+});
+
+onBeforeUnmount(() => {
+  disconnectVisibilityObserver();
+});
 
 function getMermaidSource() {
   return (source.value || "").trim();
@@ -115,7 +156,7 @@ defineExpose({ loadMindmap, getMermaidSource });
 </script>
 
 <template>
-  <div class="knowledge-mindmap" @click="onBlankClick">
+  <div ref="rootRef" class="knowledge-mindmap" @click="onBlankClick">
     <n-spin :show="loading" local>
       <div
         v-if="svgHtml"

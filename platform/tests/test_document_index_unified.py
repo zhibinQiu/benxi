@@ -102,3 +102,4 @@ def test_enrich_version_index_meta_overlays_pageindex_without_ragflow_link():
     meta = enrich_version_index_meta(db, user, [version], live_ragflow=False)
     assert is_index_ready_meta(meta[str(ver_id)])
     assert meta[str(ver_id)]["parse_status"] == "已索引"
+    assert meta[str(ver_id)]["index_engine"] == "pageindex"

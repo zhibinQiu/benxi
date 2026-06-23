@@ -21,6 +21,8 @@ import AdminFormModal from "../../components/AdminFormModal.vue";
 import HintTooltip from "../../components/HintTooltip.vue";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
+import ListRefreshButton from "../../components/ListRefreshButton.vue";
+import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -187,6 +189,7 @@ onMounted(load);
         :disabled="!canBatchDelete"
         @action="handleBatchDelete"
       />
+      <ListRefreshButton :loading="loading" @click="load" />
       <n-button type="primary" @click="openCreate">{{ t("admin.departments.create") }}</n-button>
     </div>
     <n-data-table
@@ -195,6 +198,7 @@ onMounted(load);
       :loading="loading"
       :row-key="(row) => row.id"
       :checked-row-keys="checkedRowKeys"
+      :pagination="{ pageSize: LIST_PAGE_SIZE }"
       @update:checked-row-keys="onCheckedRowKeysChange"
     />
   </n-card>

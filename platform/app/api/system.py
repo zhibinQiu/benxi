@@ -12,7 +12,7 @@ from app.api.deps import get_current_user
 from app.config import get_settings
 from app.core.exceptions import not_found
 from app.core.permissions import user_has_permission
-from app.database import get_db
+from app.database import get_read_db
 from app.features.registry import all_plugins, ensure_plugins_loaded, get_plugin
 from app.models.org import User
 from app.schemas.common import ApiResponse
@@ -24,6 +24,7 @@ from app.services.model_settings_service import (
     get_platform_api_base_url,
 )
 from app.services.platform_dashboard_service import collect_platform_dashboard_stats
+from app.services.release_highlights_service import load_release_highlights
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -46,15 +47,32 @@ def system_version() -> ApiResponse[dict]:
 
 
 @router.get("/client-config", response_model=ApiResponse[ClientConfigOut])
-def client_config(db: Annotated[Session, Depends(get_db)]) -> ApiResponse[ClientConfigOut]:
+def client_config(
+    db: Annotated[Session, Depends(get_read_db)],
+) -> ApiResponse[ClientConfigOut]:
     """前端启动配置（无需登录）：浏览器请求平台后端的根地址与前台展示项。"""
-    return ApiResponse(
-        data=ClientConfigOut(
+    from app.config import get_settings
+    from app.core.platform_cache import cache_get_or_set, client_config_cache_key
+
+    ttl = get_settings().platform_cache_client_config_ttl_sec
+
+    def _load() -> dict:
+        return ClientConfigOut(
             api_base=get_platform_api_base_url(db),
             app_title=get_frontend_app_title(db),
             default_theme=get_frontend_default_theme(db),
-        )
-    )
+        ).model_dump()
+
+    data = cache_get_or_set(client_config_cache_key(), _load, ttl=ttl)
+    return ApiResponse(data=ClientConfigOut.model_validate(data))
+
+
+@router.get("/release-highlights")
+def release_highlights(
+    _: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[dict | None]:
+    """登录后版本更新弹窗：最新一条 RELEASE 说明中的功能与修复。"""
+    return ApiResponse(data=load_release_highlights())
 
 
 @router.get("/showcase-features")
@@ -74,10 +92,23 @@ def list_showcase_features() -> ApiResponse[list[dict]]:
 @router.get("/features")
 async def list_features(
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
 ) -> ApiResponse[list[dict]]:
     """功能清单：由插件注册表生成，按用户权限过滤可进入的路由。"""
+    from app.config import get_settings
+    from app.core.platform_cache import (
+        cache_get_json,
+        cache_set_json,
+        features_cache_key,
+    )
+
     ensure_plugins_loaded()
+    ttl = get_settings().platform_cache_features_ttl_sec
+    cache_key = features_cache_key(str(user.id))
+    cached = cache_get_json(cache_key, ttl=ttl)
+    if cached is not None:
+        return ApiResponse(data=cached)
+
     catalog_plugins = [
         p for p in all_plugins() if getattr(p, "show_in_catalog", True)
     ]
@@ -92,17 +123,20 @@ async def list_features(
             continue
         allowed = user_has_permission(db, user, plugin.permission_code)
         items.append(plugin.catalog_dict(accessible=allowed))
+    cache_set_json(cache_key, items, ttl=ttl)
     return ApiResponse(data=items)
 
 
 @router.get("/dashboard-stats", response_model=ApiResponse[PlatformDashboardStatsOut])
 def get_dashboard_stats(
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
     _: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[PlatformDashboardStatsOut]:
-    """运行大屏：平台级文档、功能与用户统计。"""
+    """运行大屏：平台级文档、功能与用户统计（仅在前端监控页按需拉取）。"""
     return ApiResponse(
-        data=PlatformDashboardStatsOut.model_validate(collect_platform_dashboard_stats(db))
+        data=PlatformDashboardStatsOut.model_validate(
+            collect_platform_dashboard_stats(db)
+        )
     )
 
 
@@ -122,7 +156,7 @@ def _resolve_embed_url(feature_id: str) -> str:
 async def feature_embed_meta(
     feature_id: str,
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
 ) -> ApiResponse[dict]:
     """内嵌页元数据（智能预测等 iframe 功能）。"""
     ensure_plugins_loaded()

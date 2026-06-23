@@ -3,8 +3,10 @@
 import { clearAllChatSessions } from "./chatSessionPersist.js";
 import { clearCompareViewSession } from "./compareViewPersist.js";
 import { clearDocumentsViewCache } from "./documentsViewCache.js";
+import { clearKgPalantirCache } from "./kgPalantirCache.js";
 import { clearKnowledgeScopeTreeCache } from "./knowledgeScopeTreeCache.js";
 import { clearKnowledgeScopeSelection } from "./knowledgeScopeSelectionCache.js";
+import { stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
 
 let resetMenuSettingsFn = null;
 
@@ -15,7 +17,9 @@ export function registerMenuSettingsReset(fn) {
 }
 
 export function resetClientSessionState() {
+  stopNotificationAlerts();
   clearDocumentsViewCache();
+  clearKgPalantirCache();
   clearKnowledgeScopeTreeCache();
   clearAllChatSessions();
   clearCompareViewSession();

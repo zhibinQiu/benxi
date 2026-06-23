@@ -40,7 +40,7 @@ export async function updateMe(body) {
   });
 }
 
-export async function fetchUsers({ page = 1, page_size = 20 } = {}) {
+export async function fetchUsers({ page = 1, page_size = 15 } = {}) {
   const q = new URLSearchParams({ page, page_size });
   return api(`/api/v1/users?${q}`);
 }

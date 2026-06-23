@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
+from app.models.scheduled_notification import ScheduledNotification
+
+_logger = logging.getLogger(__name__)
+
+_MAX_SCHEDULE_DELAY_SECONDS = 30 * 24 * 3600  # 30 天
 
 
 def create_notification(
@@ -71,3 +78,190 @@ def mark_all_read(db: Session, user_id: uuid.UUID) -> dict[str, int]:
         db.execute(delete(Notification).where(Notification.user_id == user_id))
         db.commit()
     return {"updated": int(unread), "deleted": int(total)}
+
+
+def _resolve_scheduled_at(
+    *,
+    delay_seconds: int | None = None,
+    delay_minutes: int | None = None,
+    scheduled_at: datetime | None = None,
+) -> datetime:
+    now = datetime.now(timezone.utc)
+    if scheduled_at is not None:
+        target = scheduled_at
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=timezone.utc)
+        else:
+            target = target.astimezone(timezone.utc)
+    else:
+        seconds = 0
+        if delay_seconds is not None:
+            seconds = int(delay_seconds)
+        elif delay_minutes is not None:
+            seconds = int(delay_minutes) * 60
+        if seconds <= 0:
+            raise ValueError("定时通知须指定正数的 delay_minutes 或 delay_seconds")
+        target = now + timedelta(seconds=seconds)
+    if target <= now:
+        raise ValueError("通知时间须晚于当前时刻")
+    delta = (target - now).total_seconds()
+    if delta > _MAX_SCHEDULE_DELAY_SECONDS:
+        raise ValueError("定时通知最远不得超过 30 天")
+    return target
+
+
+def schedule_notification(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    title: str,
+    body: str = "",
+    link: str | None = None,
+    delay_seconds: int | None = None,
+    delay_minutes: int | None = None,
+    scheduled_at: datetime | None = None,
+) -> ScheduledNotification:
+    title = (title or "").strip()
+    if not title:
+        raise ValueError("通知标题不能为空")
+    target = _resolve_scheduled_at(
+        delay_seconds=delay_seconds,
+        delay_minutes=delay_minutes,
+        scheduled_at=scheduled_at,
+    )
+    row = ScheduledNotification(
+        user_id=user_id,
+        title=title,
+        body=(body or "").strip(),
+        link=(link or "").strip() or None,
+        scheduled_at=target,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    from app.services.background_job_dispatch import dispatch_scheduled_notification
+
+    countdown = max(0, int((target - datetime.now(timezone.utc)).total_seconds()))
+    dispatch_scheduled_notification(row.id, countdown=countdown)
+    return row
+
+
+def cancel_scheduled_notification(
+    db: Session,
+    user_id: uuid.UUID,
+    notification_id: uuid.UUID,
+) -> dict[str, Any]:
+    row = db.get(ScheduledNotification, notification_id)
+    if not row or row.user_id != user_id:
+        raise ValueError("定时通知不存在")
+    if row.sent_at is not None:
+        raise ValueError("通知已发送，无法取消")
+    if row.cancelled_at is not None:
+        return {"cancelled": True, "id": str(notification_id), "already": True}
+    row.cancelled_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"cancelled": True, "id": str(notification_id)}
+
+
+def list_pending_scheduled_notifications(
+    db: Session,
+    user_id: uuid.UUID,
+    *,
+    limit: int = 20,
+) -> list[ScheduledNotification]:
+    limit = max(1, min(int(limit or 20), 50))
+    return list(
+        db.scalars(
+            select(ScheduledNotification)
+            .where(
+                ScheduledNotification.user_id == user_id,
+                ScheduledNotification.sent_at.is_(None),
+                ScheduledNotification.cancelled_at.is_(None),
+            )
+            .order_by(ScheduledNotification.scheduled_at.asc())
+            .limit(limit)
+        ).all()
+    )
+
+
+def serialize_scheduled_notification(row: ScheduledNotification) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "title": row.title,
+        "body": row.body,
+        "link": row.link,
+        "scheduled_at": row.scheduled_at.isoformat() if row.scheduled_at else None,
+        "sent_at": row.sent_at.isoformat() if row.sent_at else None,
+        "cancelled_at": row.cancelled_at.isoformat() if row.cancelled_at else None,
+    }
+
+
+def deliver_scheduled_notification(notification_id: uuid.UUID) -> dict[str, Any]:
+    """投递一条定时通知（由后台任务调用）。"""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        row = db.get(ScheduledNotification, notification_id)
+        if not row:
+            return {"ok": False, "reason": "not_found"}
+        if row.cancelled_at is not None:
+            return {"ok": False, "reason": "cancelled"}
+        if row.sent_at is not None:
+            return {"ok": True, "reason": "already_sent"}
+        now = datetime.now(timezone.utc)
+        if row.scheduled_at > now + timedelta(seconds=5):
+            # 进程重启后可能提前触发，重新调度
+            from app.services.background_job_dispatch import (
+                dispatch_scheduled_notification,
+            )
+
+            countdown = max(0, int((row.scheduled_at - now).total_seconds()))
+            dispatch_scheduled_notification(row.id, countdown=countdown)
+            return {"ok": True, "reason": "rescheduled", "countdown": countdown}
+        create_notification(
+            db,
+            user_id=row.user_id,
+            title=row.title,
+            body=row.body,
+            link=row.link,
+        )
+        row.sent_at = now
+        db.commit()
+        return {"ok": True, "reason": "delivered"}
+    except Exception:
+        db.rollback()
+        _logger.exception("投递定时通知失败 id=%s", notification_id)
+        raise
+    finally:
+        db.close()
+
+
+def recover_pending_scheduled_notifications() -> int:
+    """启动时恢复未投递的定时通知。"""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    recovered = 0
+    try:
+        now = datetime.now(timezone.utc)
+        rows = list(
+            db.scalars(
+                select(ScheduledNotification).where(
+                    ScheduledNotification.sent_at.is_(None),
+                    ScheduledNotification.cancelled_at.is_(None),
+                    ScheduledNotification.scheduled_at > now - timedelta(days=30),
+                )
+            ).all()
+        )
+        from app.services.background_job_dispatch import dispatch_scheduled_notification
+
+        for row in rows:
+            countdown = max(0, int((row.scheduled_at - now).total_seconds()))
+            dispatch_scheduled_notification(row.id, countdown=countdown)
+            recovered += 1
+        if recovered:
+            _logger.info("已恢复 %s 条待投递定时通知", recovered)
+        return recovered
+    finally:
+        db.close()

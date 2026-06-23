@@ -12,6 +12,7 @@
   max-width: 100%;
 }
 
+.subsystem-shell--fill .knowledge-feature-page,
 .subsystem-shell--fill [class$="-layout"],
 .subsystem-shell--fill [class$="-workspace"],
 .subsystem-shell--fill .assist-columns,
@@ -208,7 +209,9 @@
 .subsystem-shell--flush-start.subsystem-shell--fill .knowledge-search-page,
 .subsystem-shell--flush-end.subsystem-shell--fill .knowledge-search-page,
 .subsystem-shell--flush-start.subsystem-shell--fill .report-gen-page,
-.subsystem-shell--flush-end.subsystem-shell--fill .report-gen-page {
+.subsystem-shell--flush-end.subsystem-shell--fill .report-gen-page,
+.subsystem-shell--flush-start.subsystem-shell--fill .knowledge-feature-page,
+.subsystem-shell--flush-end.subsystem-shell--fill .knowledge-feature-page {
   border-left: none;
   border-right: none;
   border-bottom: none;
@@ -218,6 +221,9 @@
 /* 局部顶栏与正文之间仅保留内容区内边距，不再重复顶部分割 */
 .feature-top-strip + .documents-list-card,
 .feature-local-nav + .page-alert,
+.subsystem-body > .knowledge-feature-page,
+.subsystem-body > .knowledge-feature-panel,
+.subsystem-body > .knowledge-search-page__panel,
 .subsystem-body > .feature-local-nav + .page-alert,
 .subsystem-body > .feature-local-nav + .page-alerts,
 .subsystem-body > .feature-local-nav + .ocr-workspace,

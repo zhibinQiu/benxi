@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import PermissionLevel
+from app.core.text_sanitize import sanitize_json_text
 from app.integrations.knowflow_client import get_knowflow_client_for_user
 from app.models.org import User
 from app.models.rag import RagMessage, RagSession
@@ -92,14 +93,13 @@ def create_session(
             "parsed": [
                 {
                     "document_id": str(p.document_id),
-                    "file_name": p.file_name,
+                    "file_name": sanitize_json_text(p.file_name),
                     "char_count": len(p.full_text),
                     "parse_quality": p.parse_quality,
-                    "warning": p.warning,
+                    "warning": sanitize_json_text(p.warning),
                 }
                 for p in parsed
             ],
-            "full_text_cache": {str(p.document_id): p.full_text for p in parsed},
             "ragflow_doc_map": ragflow_map,
             "knowflow": get_knowflow_client_for_user(db, user).health(),
         },

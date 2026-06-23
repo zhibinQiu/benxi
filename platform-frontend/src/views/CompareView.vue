@@ -80,6 +80,7 @@ import {
   loadCompareViewSession,
   saveCompareViewSession,
 } from "../utils/compareViewPersist.js";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -122,7 +123,7 @@ const checkedVersionIds = ref([]);
 const showVersionDocPicker = ref(false);
 const showVersionSelectModal = ref(false);
 
-const CROSS_DOC_PAGE_SIZE = 10;
+const CROSS_DOC_PAGE_SIZE = LIST_PAGE_SIZE;
 const CROSS_COMPARE_DOC_COUNT = 2;
 
 const crossDocs = ref([]);

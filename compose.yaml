@@ -82,7 +82,7 @@ services:
 
   # --- PDF 翻译 API（BabelDOC / pdf2zh_next）---
   pdf2zh-api:
-    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.0.5}}
+    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.2.1}}
     build:
       context: .
       dockerfile: Dockerfile
@@ -119,7 +119,7 @@ services:
 
   # --- 平台 API（FastAPI）与 Celery Worker，共用 zhitan-api 镜像 ---
   api:
-    image: zhitan-api:${ZHITAN_VERSION:-4.0.5}
+    image: zhitan-api:${ZHITAN_VERSION:-4.2.1}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -129,6 +129,7 @@ services:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         INSTALL_PAGEINDEX: ${INSTALL_PAGEINDEX:-1}
+        INSTALL_BROWSER: ${INSTALL_BROWSER:-1}
     restart: unless-stopped
     env_file:
       - path: .env
@@ -154,12 +155,15 @@ services:
         condition: service_started
       pdf2zh-api:
         condition: service_healthy
+    volumes:
+      - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    shm_size: "512mb"
     networks:
       - zhitan
 
   worker:
-    image: zhitan-api:${ZHITAN_VERSION:-4.0.5}
+    image: zhitan-api:${ZHITAN_VERSION:-4.2.1}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -169,6 +173,7 @@ services:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         INSTALL_PAGEINDEX: ${INSTALL_PAGEINDEX:-1}
+        INSTALL_BROWSER: ${INSTALL_BROWSER:-1}
     restart: unless-stopped
     env_file:
       - path: .env
@@ -188,13 +193,16 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    volumes:
+      - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
     command: celery -A workers.celery_app worker --loglevel=info --concurrency=4
+    shm_size: "512mb"
     networks:
       - zhitan
 
   # --- 唯一对外 Web 入口（生产 Nginx；dev 见 compose.dev.yaml 的 Vite）---
   frontend:
-    image: zhitan-frontend:${ZHITAN_VERSION:-4.0.5}
+    image: zhitan-frontend:${ZHITAN_VERSION:-4.2.1}
     build:
       context: platform-frontend
       dockerfile: Dockerfile
@@ -221,7 +229,7 @@ services:
   # --- profile speech: FunASR 会议转写（模型卷 data/speech-models）---
   speech-api:
     profiles: ["speech"]
-    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.0.5}}
+    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.2.1}}
     build:
       context: platform/speech-service
       dockerfile: Dockerfile

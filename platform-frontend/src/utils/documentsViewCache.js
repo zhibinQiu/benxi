@@ -1,5 +1,7 @@
 /** 文档中心：sessionStorage 缓存，进入时先展示缓存，手动刷新或变更后再拉取 */
 
+import { trimBoundedMap } from "./boundedMap.js";
+
 const LIBRARY_KEY = "platform:documents-library:v1";
 const KB_FOLDERS_PREFIX = "platform:documents-kb-folders:v1:";
 const DOC_LIST_PREFIX = "platform:documents-list:v1:";
@@ -8,6 +10,7 @@ const LIBRARY_TTL_MS = 120 * 1000;
 const KB_FOLDERS_TTL_MS = 45 * 1000;
 const DOC_LIST_TTL_MS = 60 * 1000;
 const DOC_LIST_MEM_TTL_MS = 5 * 60 * 1000;
+const DOC_LIST_MEM_MAX_ENTRIES = 24;
 
 /** 同会话内存缓存，避免 sessionStorage 读写与 TTL 导致的二次打开延迟 */
 const memListCache = new Map();
@@ -77,6 +80,7 @@ export function readDocumentsListCache(cacheKey) {
 
 export function writeDocumentsListCache(cacheKey, data) {
   memListCache.set(cacheKey, { savedAt: Date.now(), data });
+  trimBoundedMap(memListCache, DOC_LIST_MEM_MAX_ENTRIES);
   writeEntry(`${DOC_LIST_PREFIX}${cacheKey}`, data);
 }
 

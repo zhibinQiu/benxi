@@ -29,7 +29,7 @@ export async function syncFeedSubscription(sourceId) {
   return api(`/api/v1/feed-subscriptions/sources/${sourceId}/sync`, { method: "POST" });
 }
 
-export async function fetchFeedEntries({ page = 1, page_size = 20, source_id, kind } = {}) {
+export async function fetchFeedEntries({ page = 1, page_size = 15, source_id, kind } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (source_id) q.set("source_id", source_id);
   if (kind) q.set("kind", kind);

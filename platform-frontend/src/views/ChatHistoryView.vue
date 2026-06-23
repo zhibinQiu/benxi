@@ -19,6 +19,8 @@ import { CHAT_SCOPES } from "../constants/chatScopes";
 import { useI18n } from "../composables/useI18n.js";
 import { resolveReturnTarget } from "../utils/navigationReturn";
 import { deleteSequentially } from "../utils/batchActions";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -35,6 +37,16 @@ const clearing = ref(false);
 const batchDeleting = ref(false);
 const items = ref([]);
 const selectedIds = ref([]);
+const page = ref(1);
+
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil(items.value.length / LIST_PAGE_SIZE))
+);
+
+const pagedItems = computed(() => {
+  const start = (page.value - 1) * LIST_PAGE_SIZE;
+  return items.value.slice(start, start + LIST_PAGE_SIZE);
+});
 
 const backTarget = computed(() => {
   const fromReturn = resolveReturnTarget(route);
@@ -71,6 +83,7 @@ async function loadList() {
   try {
     items.value = (await fetchChatConversations(scope.value)) || [];
     selectedIds.value = [];
+    page.value = 1;
   } catch (e) {
     ui.error(e.message || t("chatHistory.loadFailed"));
     items.value = [];
@@ -82,19 +95,23 @@ async function loadList() {
 
 function openConversation(item) {
   const meta = CHAT_SCOPES[scope.value];
-  if (!meta) return;
+  if (!meta || !item?.id) return;
 
   if (scope.value === "assistant") {
+    const target = resolveReturnTarget(route) || { name: "ai-home", query: {}, params: {} };
     router.push({
-      path: typeof route.query.from === "string" ? route.query.from : "/",
-      query: { assistantConversation: item.id }});
+      name: target.name,
+      params: target.params || {},
+      query: { ...(target.query || {}), assistantConversation: item.id },
+    });
     return;
   }
 
   if (meta.routeName) {
     router.push({
       name: meta.routeName,
-      query: { conversationId: item.id }});
+      query: { conversationId: item.id },
+    });
   }
 }
 
@@ -193,6 +210,7 @@ watch(scope, loadList);
         <n-text depth="3">{{ pageTitle }}</n-text>
       </div>
       <n-space align="center" :size="4" class="chat-history-actions">
+        <ListRefreshButton :loading="loading" size="small" @click="loadList" />
         <IconAction
           :label="t('chatHistory.delete')"
           :icon="TrashOutline"
@@ -219,7 +237,7 @@ watch(scope, loadList);
         <n-empty :description="t('chatHistory.empty')" />
       </div>
       <ul v-else class="chat-history-list">
-        <li v-for="item in items" :key="item.id" class="chat-history-row">
+        <li v-for="item in pagedItems" :key="item.id" class="chat-history-row">
           <n-checkbox
             :checked="isSelected(item.id)"
             class="chat-history-select"
@@ -237,6 +255,11 @@ watch(scope, loadList);
           </button>
         </li>
       </ul>
+      <div v-if="items.length > LIST_PAGE_SIZE" class="chat-history-pagination">
+        <n-button size="small" :disabled="page <= 1" @click="page--">{{ t("common.prevPage") }}</n-button>
+        <n-text depth="3">{{ page }} / {{ pageCount }}</n-text>
+        <n-button size="small" :disabled="page >= pageCount" @click="page++">{{ t("common.nextPage") }}</n-button>
+      </div>
     </n-spin>
   </div>
 </template>
@@ -356,5 +379,13 @@ watch(scope, loadList);
 .chat-history-item-time {
   font-size: 12px;
   color: #94a3b8;
+}
+
+.chat-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
 }
 </style>

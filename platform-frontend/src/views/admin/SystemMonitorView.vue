@@ -1,7 +1,7 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
-import { computed, h, onMounted, onUnmounted, ref } from "vue";
+import { computed, h, onMounted, ref } from "vue";
 import {
   DocumentTextOutline,
   CloudUploadOutline,
@@ -23,6 +23,7 @@ import {
   NIcon } from "naive-ui";
 import { fetchAuditLogs, fetchDashboardStats, fetchSystemMetrics } from "../../api/client";
 import { sanitizeUserFacingMessage } from "../../utils/uiMessage.js";
+import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -32,7 +33,6 @@ const loadingStats = ref(false);
 const logs = ref([]);
 const metrics = ref(null);
 const stats = ref(null);
-let refreshTimer = null;
 
 const CARD_KEYS = [
   "documents_total",
@@ -224,16 +224,8 @@ async function refreshAll() {
   await Promise.all([loadStats(), loadMetrics(), loadLogs()]);
 }
 
-onMounted(async () => {
-  await refreshAll();
-  refreshTimer = setInterval(() => {
-    loadStats();
-    loadMetrics();
-  }, 30_000);
-});
-
-onUnmounted(() => {
-  if (refreshTimer) clearInterval(refreshTimer);
+onMounted(() => {
+  void refreshAll();
 });
 </script>
 
@@ -450,6 +442,7 @@ onUnmounted(() => {
             :data="gpuRows"
             :bordered="false"
             size="small"
+            :pagination="{ pageSize: LIST_PAGE_SIZE }"
           />
           <n-empty v-else :description="t('admin.monitor.noGpu')" size="small" />
         </div>
@@ -458,12 +451,18 @@ onUnmounted(() => {
     </n-card>
 
     <n-card class="monitor-section monitor-section--logs" :bordered="false">
+      <template #header-extra>
+        <n-button quaternary size="small" :loading="loadingLogs" @click="loadLogs">
+          {{ t("admin.monitor.refreshLogs") }}
+        </n-button>
+      </template>
       <n-data-table
         :columns="logColumns"
         :data="logs"
         :loading="loadingLogs"
         :scroll-x="640"
         size="small"
+        :pagination="{ pageSize: LIST_PAGE_SIZE }"
       />
     </n-card>
   </div>

@@ -22,6 +22,8 @@ import {
   fetchIssueReports,
   updateIssueReport,
 } from "../api/issueReports.js";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -212,6 +214,7 @@ onMounted(load);
               </n-text>
             </div>
             <n-space :size="12" align="center">
+              <ListRefreshButton :loading="loading" @click="load" />
               <n-select
                 v-model:value="statusFilter"
                 :options="statusOptions"
@@ -233,6 +236,7 @@ onMounted(load);
           :bordered="false"
           size="small"
           :scroll-x="900"
+          :pagination="{ pageSize: LIST_PAGE_SIZE }"
         />
         <n-empty v-else :description="t('issueReports.empty')" style="padding: 32px 0" />
       </n-card>

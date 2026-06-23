@@ -36,6 +36,8 @@ import {
 import { deleteSequentially } from "../utils/batchActions";
 import { withSystemDialogLayer } from "../utils/systemDialog.js";
 import { useI18n } from "../composables/useI18n";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -60,7 +62,7 @@ const presets = ref([]);
 const articles = ref([]);
 const total = ref(0);
 const page = ref(1);
-const pageSize = 20;
+const pageSize = LIST_PAGE_SIZE;
 const filterSourceId = ref(null);
 
 const showAdd = ref(false);
@@ -299,6 +301,7 @@ onMounted(() => {
         <aside class="feed-sidebar">
           <NSpace vertical :size="12">
             <NButton type="primary" block @click="showAdd = true">{{ t("feedSubscriptions.addSubscription") }}</NButton>
+            <ListRefreshButton :loading="loading" size="small" @click="reload" />
           </NSpace>
 
           <template v-for="group in presetGroups" :key="group.label">
@@ -369,7 +372,10 @@ onMounted(() => {
               style="width: 260px"
               @update:value="() => { page = 1; loadArticles(); }"
             />
-            <NText depth="3">{{ t("feedSubscriptions.totalEntries", { total, title: pageTitle }) }}</NText>
+            <NSpace align="center" :size="8">
+              <ListRefreshButton :loading="articlesLoading" size="small" @click="reload" />
+              <NText depth="3">{{ t("feedSubscriptions.totalEntries", { total, title: pageTitle }) }}</NText>
+            </NSpace>
           </NSpace>
 
           <NSpin :show="articlesLoading">

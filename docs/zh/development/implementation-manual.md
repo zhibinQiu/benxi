@@ -78,6 +78,9 @@ flowchart TB
 | 3.4 | [文档库实现](../implementation/documents-implementation.md) | 上传、版本、文件夹、回收站、同步知识库 API |
 | 3.5 | [知识服务实现](../implementation/knowledge-implementation.md) | RAGFlow vs KnowFlow、开户、dataset、镜像与 KB ACL |
 | 3.6 | [异步任务](../implementation/async-and-jobs.md) | Celery、翻译监控、对比 BackgroundTasks、文档删除 |
+| 3.7 | [Agent Skills 实现](../implementation/agent-skills-implementation.md) | Discovery / Activation、tool loop、上传包与内置 Skill |
+| 3.8 | [浏览器 RPA 实现](../implementation/browser-rpa-implementation.md) | Playwright 会话、`browser_*` 工具、录制固化 Skill |
+| 3.9 | [报告生成实现](../implementation/report-generation-implementation.md) | 长报告流式生成、多路召回与章节扩写 |
 
 ### 第四篇 · 前端实现
 

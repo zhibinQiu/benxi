@@ -6,14 +6,13 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
+from app.core.prompt_budget import build_bounded_chat_messages, llm_completion_extras
 from app.core.platform_assistant import assistant_support_persona
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.assistant import AssistantChatMessage
 from app.services import platform_chat_store
 from app.services.assistant_knowledge import build_platform_knowledge
-
-_MAX_HISTORY = 10
 
 
 async def chat_with_assistant(
@@ -29,25 +28,24 @@ async def chat_with_assistant(
         raise bad_request("本析平台客服未配置，请联系管理员配置 DeepSeek API")
 
     knowledge = build_platform_knowledge(db, user, page_hint=page_hint)
-    system = (
-        f"{assistant_support_persona()}。\n\n"
-        "【平台知识库】\n"
-        f"{knowledge}\n\n"
-        "请严格依据知识库回答。若问题超出平台使用范围，礼貌说明并建议联系系统管理员。"
-        "回答使用简体中文，结构清晰，可使用简短 Markdown；提及助手时统一自称「小析」。"
+    messages = build_bounded_chat_messages(
+        system=(
+            f"{assistant_support_persona()}。\n\n"
+            "【平台知识库】\n"
+            f"{knowledge}\n\n"
+            "请严格依据知识库回答。若问题超出平台使用范围，礼貌说明并建议联系系统管理员。"
+            "回答使用简体中文，结构清晰，可使用简短 Markdown；提及助手时统一自称「小析」。"
+        ),
+        history=history,
+        user_message=message,
     )
-
-    messages: list[dict] = [{"role": "system", "content": system}]
-    tail = history[-_MAX_HISTORY:] if history else []
-    for item in tail:
-        messages.append({"role": item.role, "content": item.content.strip()})
-    messages.append({"role": "user", "content": message.strip()})
 
     api_key, base_url, model = resolve_credentials()
     payload = {
         "model": model,
         "messages": messages,
         "temperature": 0.35,
+        **llm_completion_extras(),
     }
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}

@@ -66,3 +66,27 @@ def run_parse_watch_task(self, job_id: str) -> dict:
 
     _run_parse_watch(uuid.UUID(job_id))
     return {"ok": True, "job_id": job_id}
+
+
+@celery_app.task(
+    name="platform.deliver_scheduled_notification",
+    bind=True,
+    max_retries=0,
+    acks_late=True,
+)
+def deliver_scheduled_notification_task(self, notification_id: str) -> dict:
+    from app.services.notification_service import deliver_scheduled_notification
+
+    return deliver_scheduled_notification(uuid.UUID(notification_id))
+
+
+@celery_app.task(
+    name="platform.deliver_scheduled_rpa_task",
+    bind=True,
+    max_retries=0,
+    acks_late=True,
+)
+def deliver_scheduled_rpa_task_task(self, task_id: str) -> dict:
+    from app.services.browser_rpa_service import deliver_scheduled_rpa_task
+
+    return deliver_scheduled_rpa_task(uuid.UUID(task_id))

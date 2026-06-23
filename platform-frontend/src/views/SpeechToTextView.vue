@@ -15,6 +15,7 @@ import {
   NIcon,
   NInput,
   NModal,
+  NPagination,
   NSelect,
   NSpace,
   NSpin,
@@ -34,6 +35,8 @@ import {
   GitNetworkOutline } from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import AudioWaveform from "../components/AudioWaveform.vue";
 import {
   deleteMeetingRecord,
@@ -488,10 +491,15 @@ async function confirmSave() {
   }
 }
 
+async function onRecordsPageChange(p) {
+  recordsPage.value = p;
+  await loadRecords();
+}
+
 async function loadRecords() {
   recordsLoading.value = true;
   try {
-    const res = await listMeetingRecords({ page: recordsPage.value, pageSize: 30 });
+    const res = await listMeetingRecords({ page: recordsPage.value, pageSize: LIST_PAGE_SIZE });
     records.value = res.items || [];
     recordsTotal.value = res.total || 0;
   } catch (e) {
@@ -695,6 +703,14 @@ onBeforeUnmount(() => {
 
     <n-drawer v-model:show="recordsDrawerOpen" :width="520" placement="right">
       <n-drawer-content :title="t('speechToText.drawerTitle')" closable>
+        <template #header-extra>
+          <ListRefreshButton
+            v-if="!viewingRecord"
+            :loading="recordsLoading"
+            size="small"
+            @click="loadRecords"
+          />
+        </template>
         <n-spin :show="recordsLoading || recordDetailLoading" local>
           <template v-if="viewingRecord">
             <n-space vertical :size="12">
@@ -780,7 +796,16 @@ onBeforeUnmount(() => {
                 </n-button>
               </div>
             </n-space>
-            <n-text v-else depth="3">{{ t('speechToText.noSavedRecords') }}</n-text>
+            <n-pagination
+              v-if="recordsTotal > LIST_PAGE_SIZE"
+              :page="recordsPage"
+              :page-size="LIST_PAGE_SIZE"
+              :item-count="recordsTotal"
+              size="small"
+              style="margin-top: 8px"
+              @update:page="onRecordsPageChange"
+            />
+            <n-text v-if="!records.length" depth="3">{{ t('speechToText.noSavedRecords') }}</n-text>
           </template>
         </n-spin>
       </n-drawer-content>

@@ -18,7 +18,7 @@ def assistant_support_persona() -> str:
 
 def assistant_ai_home_persona() -> str:
     return assistant_persona_intro(
-        role="本析平台的 AI 智能体助手，企业 AI 知识库平台的多场景对话入口"
+        role="本析平台的本析智能助手，企业级对话入口；按需发现与调用 Agent Skills"
     )
 
 

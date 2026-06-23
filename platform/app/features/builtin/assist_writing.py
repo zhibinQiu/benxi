@@ -17,7 +17,7 @@ register(
         permission_code="feature.assist_writing",
         permission_name="辅助写作",
         enabled=True,
-        category="tools",
+        category="document",
         sort_order=15,
         grant_to_roles=("sys_admin", "member", "member"),
     )

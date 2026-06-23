@@ -1098,9 +1098,11 @@ def allowed_ragflow_doc_map(
     db: Session, user: User, platform_document_ids: list[str]
 ) -> dict[str, str]:
     """平台文档 ID → RAGFlow 文档 ID（最后索引成功版本的切片，可查询权限）。"""
+    from app.config import get_settings
     from app.services.ragflow_version_link_service import resolve_index_link
 
-    if not get_knowflow_client_for_user(db, user).enabled():
+    # 映射来自 DB 索引记录，不依赖当前用户 RAGFlow 会话是否就绪
+    if not get_settings().knowflow_enabled:
         return {}
     out: dict[str, str] = {}
     for pid in platform_document_ids:

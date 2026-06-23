@@ -1,5 +1,7 @@
 <script setup>
 import { useI18n } from "../composables/useI18n";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -26,6 +28,7 @@ import {
   ingestSubscriptionUrl,
   searchSubscriptionWeb } from "../api/client";
 import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
+import { siteFaviconUrl } from "../utils/siteFavicon.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -39,7 +42,7 @@ const itemsLoading = ref(false);
 const items = ref([]);
 const total = ref(0);
 const page = ref(1);
-const pageSize = 20;
+const pageSize = LIST_PAGE_SIZE;
 
 const ingestUrl = ref("");
 const ingesting = ref(false);
@@ -149,9 +152,7 @@ function breadcrumbPath(url) {
 }
 
 function faviconForUrl(url) {
-  const domain = domainFromUrl(url);
-  if (!domain) return "";
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
+  return siteFaviconUrl(url);
 }
 
 function siteInitial(item) {
@@ -509,6 +510,8 @@ watch(
                 </NText>
               </div>
             </NPopover>
+
+            <ListRefreshButton :loading="itemsLoading || loading" size="tiny" @click="reload" />
 
             <NText v-if="resultCountLabel" depth="3" class="subscriptions-search-hub__count">
               {{ resultCountLabel }}

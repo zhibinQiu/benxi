@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.exceptions import bad_request, not_found
+from app.core.prompt_budget import get_prompt_limits
 from app.core.text_utils import truncate_text
 from app.integrations.text_extract import ParsedDocument, extract_text_from_bytes
 from app.schemas.ai_chat import AttachmentFileOut, AttachmentSessionOut, AttachmentUploadOut
@@ -159,6 +160,50 @@ def get_session_out(user_id: Any, session_id: str) -> AttachmentSessionOut:
     return _manifest_out(manifest)
 
 
+def _process_attachment_payloads(
+    db: Session | None,
+    *,
+    user_id: Any,
+    sid: str,
+    manifest: dict[str, Any],
+    payloads: list[tuple[str, bytes, str]],
+) -> tuple[list[AttachmentFileOut], list[dict], int]:
+    existing = list(manifest.get("files") or [])
+    added: list[AttachmentFileOut] = []
+    for file_name, content, mime_type in payloads:
+        parsed = _parse_uploaded_file(
+            db,
+            content=content,
+            file_name=file_name,
+            mime_type=mime_type,
+        )
+        file_id = store.new_file_id()
+        entry = {
+            "file_id": file_id,
+            "file_name": file_name,
+            "mime_type": mime_type,
+            "char_count": len(parsed.full_text or ""),
+            "full_text": parsed.full_text or "",
+            "parse_quality": parsed.parse_quality,
+            "warning": parsed.warning,
+            "uploaded_at": store.utc_now_iso(),
+        }
+        existing.append(entry)
+        added.append(
+            AttachmentFileOut(
+                file_id=file_id,
+                file_name=file_name,
+                char_count=entry["char_count"],
+                parse_quality=parsed.parse_quality,
+                warning=parsed.warning,
+            )
+        )
+    manifest["files"] = existing
+    manifest["updated_at"] = store.utc_now_iso()
+    store.save_manifest(user_id, sid, manifest)
+    return added, existing, len(existing)
+
+
 async def upload_attachments(
     db: Session | None,
     *,
@@ -190,6 +235,7 @@ async def upload_attachments(
         raise bad_request(f"临时附件最多 {max_files} 个，请删除部分后重试")
 
     added: list[AttachmentFileOut] = []
+    payloads: list[tuple[str, bytes, str]] = []
     for upload in files:
         file_name = (upload.filename or "attachment").strip() or "attachment"
         _validate_extension(file_name)
@@ -200,41 +246,22 @@ async def upload_attachments(
             raise bad_request(
                 f"文件 {file_name} 超过 {settings.ai_chat_attachment_max_file_mb}MB 限制"
             )
-        parsed = _parse_uploaded_file(
-            db,
-            content=content,
-            file_name=file_name,
-            mime_type=upload.content_type or "",
-        )
-        file_id = store.new_file_id()
-        entry = {
-            "file_id": file_id,
-            "file_name": file_name,
-            "mime_type": upload.content_type or "",
-            "char_count": len(parsed.full_text or ""),
-            "full_text": parsed.full_text or "",
-            "parse_quality": parsed.parse_quality,
-            "warning": parsed.warning,
-            "uploaded_at": store.utc_now_iso(),
-        }
-        existing.append(entry)
-        added.append(
-            AttachmentFileOut(
-                file_id=file_id,
-                file_name=file_name,
-                char_count=entry["char_count"],
-                parse_quality=parsed.parse_quality,
-                warning=parsed.warning,
-            )
-        )
+        payloads.append((file_name, content, upload.content_type or ""))
 
-    manifest["files"] = existing
-    manifest["updated_at"] = store.utc_now_iso()
-    store.save_manifest(user_id, sid, manifest)
+    from app.core.async_db import release_db, run_db_task
+
+    release_db(db)
+    added, _existing, total = await run_db_task(
+        _process_attachment_payloads,
+        user_id=user_id,
+        sid=sid,
+        manifest=manifest,
+        payloads=payloads,
+    )
     return AttachmentUploadOut(
         attachment_session_id=sid,
         files=added,
-        total_files=len(existing),
+        total_files=total,
     )
 
 
@@ -263,9 +290,13 @@ def build_attachment_context(files: list[dict[str, Any]]) -> str:
     if not usable:
         return ""
     settings = get_settings()
+    limits = get_prompt_limits()
     per_doc = max(
         1500,
-        settings.deepseek_max_chars // max(len(usable), 1) // 2,
+        min(
+            settings.deepseek_max_chars // max(len(usable), 1) // 2,
+            limits["context_max_chars"] // max(len(usable), 1),
+        ),
     )
     parts = [_ATTACHMENTS_INSTRUCTION, ""]
     for idx, item in enumerate(usable, 1):

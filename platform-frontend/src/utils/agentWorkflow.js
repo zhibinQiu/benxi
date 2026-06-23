@@ -22,6 +22,12 @@ function toolLabel(tool, t) {
     const label = t(key);
     if (label && label !== key) return label;
   }
+  if (tool?.startsWith("skill.")) {
+    const name = tool.slice("skill.".length);
+    if (name && name !== "create" && name !== "update" && name !== "delete") {
+      return `Skill: ${name}`;
+    }
+  }
   const fallback = {
     planner: "规划",
     evaluator: "评估",
@@ -29,6 +35,22 @@ function toolLabel(tool, t) {
     kg_context: "本体图谱",
     web_search: "联网检索",
     version_metadata: "版本元数据",
+    llm: "语言模型",
+    "agent.tools": "智能体工具",
+    "agent.memory": "Agent 记忆",
+    "agent.tool": "工具",
+    "skill.create": "创建 Skill",
+    "skill.update": "更新 Skill",
+    "skill.delete": "删除 Skill",
+    load_uploaded_skill: "加载技能",
+    create_uploaded_skill: "创建技能",
+    web_search: "联网搜索",
+    knowledge_retrieve: "知识库检索",
+    kg_query: "本体图谱查询",
+    update_uploaded_skill_file: "更新 Skill 文件",
+    delete_uploaded_skill: "删除 Skill",
+    read_agent_memory: "读取记忆",
+    append_agent_memory: "写入记忆",
   };
   return fallback[tool] || "";
 }
@@ -42,12 +64,17 @@ function upsertStep(steps, step) {
   steps.push(step);
 }
 
-function finishRunningSteps(steps, { failed = false } = {}) {
+function finishRunningSteps(steps, { failed = false, kinds = null } = {}) {
   for (const s of steps) {
-    if (s.status === "running") {
+    if (s.status === "running" && (!kinds || kinds.includes(s.kind))) {
       s.status = failed ? "failed" : "done";
     }
   }
+}
+
+function findStep(steps, id) {
+  if (!id) return null;
+  return steps.find((s) => s.id === id) || null;
 }
 
 /**
@@ -69,10 +96,28 @@ export function applyAgentWorkflowEvent(state, ev, t) {
     return state;
   }
 
+  if (phase === "thinking_delta") {
+    state.running = true;
+    state.failed = false;
+    state.currentTitle = ev.title || toolName || "思考中";
+    const id = ev.step_id || state.steps[state.steps.length - 1]?.id || nextStepId();
+    const existing = findStep(state.steps, id);
+    upsertStep(state.steps, {
+      id,
+      kind: "thinking",
+      tool,
+      title: ev.title || existing?.title || (toolName ? `${toolName}思考中` : "思考中"),
+      detail: `${existing?.detail || ""}${ev.delta || ""}`,
+      status: "running",
+    });
+    return state;
+  }
+
   if (phase === "agent_thinking") {
     state.running = true;
     state.failed = false;
     state.currentTitle = ev.title || "思考中";
+    finishRunningSteps(state.steps, { kinds: ["node"] });
     const id = ev.step_id || nextStepId();
     upsertStep(state.steps, {
       id,
@@ -85,26 +130,52 @@ export function applyAgentWorkflowEvent(state, ev, t) {
     return state;
   }
 
-  if (phase === "agent_thought" || phase === "tool_result") {
+  if (phase === "agent_thought") {
     state.running = true;
     const id = ev.step_id || state.steps[state.steps.length - 1]?.id || nextStepId();
     const failed = ev.status === "failed";
+    const existing = findStep(state.steps, id);
+    const nextDetail = ev.detail || "";
+    const keepDetail =
+      existing?.detail && existing.detail.length > nextDetail.length
+        ? existing.detail
+        : nextDetail || existing?.detail || "";
     upsertStep(state.steps, {
       id,
-      kind: phase === "agent_thought" ? "thinking" : "tool",
+      kind: "thinking",
       tool,
-      title: ev.title || toolName || "完成",
-      detail: ev.detail || "",
+      title: ev.title || existing?.title || toolName || "完成",
+      detail: keepDetail,
       status: failed ? "failed" : "done",
     });
     state.currentTitle = ev.title || state.currentTitle;
-    state.failed = state.failed || failed;
+    state.failed = failed;
+    return state;
+  }
+
+  if (phase === "tool_result") {
+    state.running = true;
+    const id = ev.step_id || state.steps[state.steps.length - 1]?.id || nextStepId();
+    const failed = ev.status === "failed";
+    const existing = findStep(state.steps, id);
+    upsertStep(state.steps, {
+      id,
+      kind: "tool",
+      tool,
+      title: ev.title || existing?.title || toolName || "工具返回",
+      callDetail: existing?.callDetail || "",
+      resultDetail: ev.detail || "",
+      status: failed ? "failed" : "done",
+    });
+    state.currentTitle = ev.title || state.currentTitle;
+    state.failed = failed;
     return state;
   }
 
   if (phase === "tool_call") {
     state.running = true;
     state.failed = false;
+    finishRunningSteps(state.steps, { kinds: ["node"] });
     const id = ev.step_id || nextStepId();
     const title = ev.title || toolName || "工具调用";
     state.currentTitle = title;
@@ -113,7 +184,8 @@ export function applyAgentWorkflowEvent(state, ev, t) {
       kind: "tool",
       tool,
       title,
-      detail: ev.detail || "",
+      callDetail: ev.detail || "",
+      resultDetail: "",
       status: "running",
     });
     return state;
@@ -121,6 +193,7 @@ export function applyAgentWorkflowEvent(state, ev, t) {
 
   if (phase === "node_started") {
     state.running = true;
+    finishRunningSteps(state.steps, { kinds: ["node"] });
     state.currentTitle = ev.title || "处理中";
     if (ev.title) {
       upsertStep(state.steps, {
@@ -141,12 +214,15 @@ export function applyAgentWorkflowEvent(state, ev, t) {
       state.failed = true;
       state.currentTitle = `${ev.title || "节点"}（失败）`;
       finishRunningSteps(state.steps, { failed: true });
+    } else {
+      finishRunningSteps(state.steps, { kinds: ["node"] });
     }
     return state;
   }
 
   if (phase === "workflow_finished") {
     state.running = false;
+    state.failed = false;
     state.currentTitle = "";
     finishRunningSteps(state.steps);
     return state;

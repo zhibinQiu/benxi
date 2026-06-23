@@ -27,7 +27,7 @@ export async function syncWechatMpSource(sourceId) {
   return api(`/api/v1/wechat-mp/sources/${sourceId}/sync`, { method: "POST" });
 }
 
-export async function fetchWechatMpArticles({ page = 1, page_size = 20, source_id } = {}) {
+export async function fetchWechatMpArticles({ page = 1, page_size = 15, source_id } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (source_id) q.set("source_id", source_id);
   return api(`/api/v1/wechat-mp/articles?${q}`);

@@ -57,6 +57,7 @@ class DocumentVersionOut(BaseModel):
     parse_message: str | None = None
     chunk_count: int | None = None
     ragflow_document_id: str | None = None
+    index_engine: str | None = None
     change_description: str = ""
 
     model_config = {"from_attributes": True}

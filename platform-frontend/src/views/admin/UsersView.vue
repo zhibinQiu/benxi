@@ -25,6 +25,8 @@ import HintTooltip from "../../components/HintTooltip.vue";
 import { useAuth } from "../../composables/useAuth";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
+import ListRefreshButton from "../../components/ListRefreshButton.vue";
+import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -32,7 +34,7 @@ const { user: currentUser } = useAuth();
 const loading = ref(false);
 const users = ref([]);
 const page = ref(1);
-const pageSize = ref(20);
+const pageSize = ref(LIST_PAGE_SIZE);
 const total = ref(0);
 const departments = ref([]);
 const roles = ref([]);
@@ -378,6 +380,7 @@ onMounted(async () => {
         :disabled="!canBatchDelete"
         @action="handleBatchDelete"
       />
+      <ListRefreshButton :loading="loading" @click="load" />
       <n-button type="primary" @click="openCreate">{{ t("admin.users.create") }}</n-button>
     </div>
     <n-data-table

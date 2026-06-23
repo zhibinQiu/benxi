@@ -23,7 +23,7 @@ CHAT_SCOPES = frozenset(
 )
 
 _SCOPE_LABELS = {
-    "ai-home": "AI 智能体",
+    "ai-home": "本析智能",
     "assistant": "本析平台客服",
     "carbon-qa": "双碳问答",
     "smart-data-query": "智能问数",
@@ -78,7 +78,9 @@ async def list_messages(
     user_id: uuid.UUID,
     scope: str,
     conversation_id: str,
-) -> list[dict]:
+    limit: int = 48,
+    before_id: str | None = None,
+) -> dict:
     if scope not in CHAT_SCOPES:
         raise bad_request("不支持的对话类型")
 
@@ -88,18 +90,27 @@ async def list_messages(
             user_id=user_id,
             scope=scope,
             conversation_id=conversation_id,
+            limit=limit,
+            before_id=before_id,
         )
 
     base, key, label = _dify_credentials(scope)
     if not is_chat_configured(base, key):
         raise not_found("会话不存在")
-    return await list_agent_conversation_messages(
+    rows = await list_agent_conversation_messages(
         base_url=base,
         api_key=key,
         user_id=str(user_id),
         conversation_id=conversation_id,
+        limit=limit,
         feature_label=label,
     )
+    return {
+        "messages": rows,
+        "total": len(rows),
+        "has_older": False,
+        "oldest_id": None,
+    }
 
 
 async def delete_conversation(

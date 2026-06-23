@@ -22,6 +22,7 @@ import {
   NewspaperOutline,
   SearchOutline,
   GitNetworkOutline,
+  ExtensionPuzzleOutline,
   StarOutline,
   Star,
   VolumeHighOutline,
@@ -60,9 +61,17 @@ const iconMap = {
   wallet: WalletOutline,
   newspaper: NewspaperOutline,
   search: SearchOutline,
-  "git-network": GitNetworkOutline};
+  "git-network": GitNetworkOutline,
+  "extension-puzzle": ExtensionPuzzleOutline,
+};
 
 const CATEGORY_ORDER = ["document", "tools", "ai"];
+
+/** 功能 id → 路由名（避免 path/redirect 循环） */
+const FEATURE_ROUTE_NAMES = {
+  knowledge_search: "knowledge-search",
+  report_generation: "report-generation",
+};
 
 const categoryMeta = computed(() =>
   Object.fromEntries(
@@ -149,11 +158,16 @@ function openFeature(f) {
     ui.warning(t("systemFunctionsPage.noPermission"));
     return;
   }
+  const encoded = encodeReturnLocation(route);
+  const query = encoded ? { return: encoded } : {};
+  /** 优先按功能 id 走路由名，避免 path 与 redirect 别名冲突 */
+  const byId = FEATURE_ROUTE_NAMES[f.id];
+  if (byId) {
+    router.push({ name: byId, query });
+    return;
+  }
   if (f.route) {
-    const encoded = encodeReturnLocation(route);
-    router.push({
-      path: f.route,
-      query: encoded ? { return: encoded } : {}});
+    router.push({ path: f.route, query });
     return;
   }
   if (f.external_url) {

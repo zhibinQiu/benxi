@@ -8,7 +8,7 @@ function compareMessage(key) {
   return typeof raw === "string" ? raw : key;
 }
 
-export async function fetchCompareDocuments({ page = 1, page_size = 10, keyword } = {}) {
+export async function fetchCompareDocuments({ page = 1, page_size = 15, keyword } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (keyword) q.set("keyword", keyword);
   return api(`/api/v1/compare/documents?${q}`);

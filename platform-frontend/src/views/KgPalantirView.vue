@@ -46,13 +46,14 @@ import {
   writeKgGraphCache,
   writeKgMetaCache,
 } from "../utils/kgPalantirCache.js";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
-const ENTITY_PAGE_SIZE = 10;
+const ENTITY_PAGE_SIZE = LIST_PAGE_SIZE;
 
 const TYPE_COLORS = {
   blue: "#2E79B5",
@@ -386,7 +387,7 @@ async function loadAll() {
     }
   }
 
-  await refreshAll({ fullPage: true });
+  await refreshAll({ fullPage: true, syncMeta: false });
 }
 
 async function loadSelectionGraph({ force = false, background = false } = {}) {
@@ -403,7 +404,6 @@ async function loadSelectionGraph({ force = false, background = false } = {}) {
       graph.value = cached.graph;
       if (cached.relations) relations.value = cached.relations;
       await centerGraphOnSelection();
-      void loadSelectionGraph({ force: true, background: true }).catch(() => {});
       return;
     }
   }
@@ -439,7 +439,7 @@ async function loadSelectionGraph({ force = false, background = false } = {}) {
   }
 }
 
-async function refreshAll({ toast = false, fullPage = false, syncMeta = true } = {}) {
+async function refreshAll({ toast = false, fullPage = false, syncMeta = false } = {}) {
   const sid = normalizeKgId(selectedId.value);
   const activeBrowseTypeId = browseTypeId.value;
   const prevEntityPage = entityPage.value;

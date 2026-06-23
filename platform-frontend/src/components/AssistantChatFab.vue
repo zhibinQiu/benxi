@@ -17,6 +17,13 @@ import {
   saveChatSession,
   serializeChatMessages,
 } from "../utils/chatSessionPersist";
+import { MAX_CHAT_MESSAGES, MAX_VISIBLE_CHAT_MESSAGES, trimChatMessages } from "../utils/chatMessageLimits.js";
+import { trimHistoryForApi } from "../utils/chatHistoryBudget.js";
+import {
+  isPlainPreviewTruncated,
+  plainMessagePreview,
+  shouldRenderMessageRich,
+} from "../utils/chatMessageRender.js";
 
 const ASSISTANT_SCOPE = "assistant";
 
@@ -44,6 +51,42 @@ const loadingHistory = ref(false);
 const conversationId = ref(null);
 const input = ref("");
 const messages = ref([]);
+const messageWindowStart = ref(0);
+const expandedMessageIndexes = ref(new Set());
+const historyHasOlder = ref(false);
+const historyOldestId = ref(null);
+const loadingOlderHistory = ref(false);
+
+const hiddenOlderCount = computed(() => messageWindowStart.value);
+const canLoadOlder = computed(() => hiddenOlderCount.value > 0 || historyHasOlder.value);
+
+const displayEntries = computed(() =>
+  messages.value
+    .slice(messageWindowStart.value)
+    .map((message, offset) => ({
+      message,
+      index: messageWindowStart.value + offset,
+    }))
+);
+
+watch(
+  () => messages.value.length,
+  (len, prevLen) => {
+    if (loadingOlderHistory.value) return;
+    if (len <= MAX_VISIBLE_CHAT_MESSAGES) {
+      messageWindowStart.value = 0;
+      return;
+    }
+    if (len > prevLen) {
+      messageWindowStart.value = Math.max(messageWindowStart.value, len - MAX_VISIBLE_CHAT_MESSAGES);
+    }
+  }
+);
+
+function trimAssistantMessages() {
+  if (messages.value.length <= MAX_CHAT_MESSAGES) return;
+  messages.value = trimChatMessages(messages.value, MAX_CHAT_MESSAGES);
+}
 
 function resetWelcomeMessage() {
   messages.value = [{ ...WELCOME_MESSAGE.value }];
@@ -66,6 +109,7 @@ const pageHint = computed(() => {
 const messagesRef = ref(null);
 const panelRef = ref(null);
 const teleportReady = ref(false);
+const markdownActive = ref(false);
 
 function resolveAnchorNode() {
   const raw = props.anchorEl;
@@ -103,26 +147,77 @@ function scrollToBottom() {
   });
 }
 
-watch(open, async (v) => {
-  if (v) {
-    scrollToBottom();
-    document.addEventListener("keydown", onDocumentKeydown);
-    document.addEventListener("pointerdown", onOutsidePointerDown, true);
-  } else {
-    document.removeEventListener("keydown", onDocumentKeydown);
-    document.removeEventListener("pointerdown", onOutsidePointerDown, true);
-  }
-});
+watch(
+  open,
+  async (v) => {
+    if (v) {
+      markdownActive.value = true;
+      scrollToBottom();
+      document.addEventListener("keydown", onDocumentKeydown);
+      document.addEventListener("pointerdown", onOutsidePointerDown, true);
+    } else {
+      markdownActive.value = false;
+      expandedMessageIndexes.value = new Set();
+      document.removeEventListener("keydown", onDocumentKeydown);
+      document.removeEventListener("pointerdown", onOutsidePointerDown, true);
+      trimAssistantMessages();
+      persistAssistantSession();
+    }
+  },
+  { immediate: true },
+);
 
 function renderMarkdownHtml(text) {
   return renderMarkdown(text || "");
 }
 
 function historyForApi() {
-  return messages.value
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .slice(-10)
-    .map((m) => ({ role: m.role, content: m.content }));
+  return trimHistoryForApi(messages.value);
+}
+
+function shouldRenderRich(entry) {
+  return shouldRenderMessageRich({
+    messageIndex: entry.index,
+    totalMessages: messages.value.length,
+    message: entry.message,
+    chatDomActive: markdownActive.value,
+    expandedIndexes: expandedMessageIndexes.value,
+  });
+}
+
+function expandMessage(index) {
+  const next = new Set(expandedMessageIndexes.value);
+  next.add(index);
+  expandedMessageIndexes.value = next;
+}
+
+async function showOlderMessages() {
+  if (hiddenOlderCount.value > 0) {
+    messageWindowStart.value = Math.max(0, messageWindowStart.value - 20);
+    return;
+  }
+  if (!historyHasOlder.value || !historyOldestId.value || loadingOlderHistory.value || !conversationId.value) {
+    return;
+  }
+  loadingOlderHistory.value = true;
+  try {
+    const data = await fetchChatConversationMessages(ASSISTANT_SCOPE, conversationId.value, {
+      limit: 24,
+      beforeId: historyOldestId.value,
+    });
+    const older = Array.isArray(data?.messages) ? data.messages : [];
+    historyHasOlder.value = Boolean(data?.has_older);
+    historyOldestId.value = data?.oldest_id || historyOldestId.value;
+    if (!older.length) {
+      historyHasOlder.value = false;
+      return;
+    }
+    const mapped = older.map((m) => ({ role: m.role, content: m.content }));
+    messages.value = trimChatMessages([...mapped, ...messages.value]);
+    messageWindowStart.value += mapped.length;
+  } finally {
+    loadingOlderHistory.value = false;
+  }
 }
 
 async function sendMessage(text) {
@@ -143,6 +238,7 @@ async function sendMessage(text) {
       conversationId.value = data.conversation_id;
     }
     messages.value.push({ role: "assistant", content: data.reply });
+    trimAssistantMessages();
   } catch (e) {
     messages.value.push({
       role: "assistant",
@@ -209,12 +305,22 @@ async function loadConversationFromId(id) {
   loadingHistory.value = true;
   open.value = true;
   try {
-    const rows = (await fetchChatConversationMessages("assistant", id)) || [];
+    const data = await fetchChatConversationMessages(ASSISTANT_SCOPE, id, {
+      limit: MAX_CHAT_MESSAGES,
+    });
+    const rows = Array.isArray(data?.messages) ? data.messages : [];
+    historyHasOlder.value = Boolean(data?.has_older);
+    historyOldestId.value = data?.oldest_id || null;
+    expandedMessageIndexes.value = new Set();
     conversationId.value = id;
     messages.value =
       rows.length > 0
-        ? rows.map((m) => ({ role: m.role, content: m.content }))
+        ? trimChatMessages(
+            rows.map((m) => ({ role: m.role, content: m.content })),
+            MAX_CHAT_MESSAGES
+          )
         : [{ ...WELCOME_MESSAGE.value }];
+    messageWindowStart.value = Math.max(0, messages.value.length - MAX_VISIBLE_CHAT_MESSAGES);
     await scrollToBottom();
     persistAssistantSession();
   } catch (e) {
@@ -258,10 +364,13 @@ onMounted(() => {
     return;
   }
   if (Array.isArray(saved.messages) && saved.messages.length) {
-    messages.value = saved.messages.map((m) => ({
-      role: m.role,
-      content: m.content || "",
-    }));
+    messages.value = trimChatMessages(
+      saved.messages.map((m) => ({
+        role: m.role,
+        content: m.content || "",
+      })),
+      MAX_CHAT_MESSAGES
+    );
   }
 });
 
@@ -307,28 +416,54 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else ref="messagesRef" class="assistant-messages">
+          <div v-if="canLoadOlder" class="assistant-load-older">
+            <button
+              type="button"
+              class="assistant-load-older__btn"
+              :disabled="loadingOlderHistory"
+              @click="showOlderMessages"
+            >
+              <n-spin v-if="loadingOlderHistory" :size="14" />
+              <span v-else-if="hiddenOlderCount > 0">
+                {{ t("chat.loadOlderMessages", { count: hiddenOlderCount }) }}
+              </span>
+              <span v-else>{{ t("chat.loadOlderFromServer") }}</span>
+            </button>
+          </div>
           <div
-            v-for="(m, i) in messages"
-            :key="i"
+            v-for="entry in displayEntries"
+            :key="entry.index"
             class="assistant-msg"
-            :class="m.role === 'user' ? 'assistant-msg--user' : 'assistant-msg--bot'"
+            :class="entry.message.role === 'user' ? 'assistant-msg--user' : 'assistant-msg--bot'"
           >
             <div
               class="assistant-msg-stack"
-              :class="m.role === 'user' ? 'assistant-msg-stack--user' : 'assistant-msg-stack--bot'"
+              :class="entry.message.role === 'user' ? 'assistant-msg-stack--user' : 'assistant-msg-stack--bot'"
             >
               <div
-                v-if="m.role === 'assistant'"
+                v-if="entry.message.role === 'assistant'"
                 class="assistant-bubble assistant-bubble--bot"
-                v-html="renderMarkdownHtml(m.content)"
-              />
+              >
+                <div v-if="shouldRenderRich(entry)" v-html="renderMarkdownHtml(entry.message.content)" />
+                <div v-else class="assistant-msg-collapsed">
+                  <span class="assistant-msg-plain">{{ plainMessagePreview(entry.message.content) }}</span>
+                  <button
+                    v-if="isPlainPreviewTruncated(entry.message.content)"
+                    type="button"
+                    class="assistant-msg-expand"
+                    @click="expandMessage(entry.index)"
+                  >
+                    {{ t("chat.expandMessage") }}
+                  </button>
+                </div>
+              </div>
               <div v-else class="assistant-bubble assistant-bubble--user">
-                {{ m.content }}
+                {{ entry.message.content }}
               </div>
               <ChatBubbleRetry
-                v-if="m.role === 'assistant' && canRetryMessage(i, m)"
+                v-if="entry.message.role === 'assistant' && canRetryMessage(entry.index, entry.message)"
                 align="start"
-                @retry="retryMessage(i)"
+                @retry="retryMessage(entry.index)"
               />
             </div>
           </div>
@@ -468,6 +603,46 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 10px;
   background: #f8fafc;
+}
+
+.assistant-load-older {
+  display: flex;
+  justify-content: center;
+}
+
+.assistant-load-older__btn {
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.1));
+  background: #fff;
+  color: #64748b;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.assistant-load-older__btn:hover:not(:disabled) {
+  color: var(--platform-accent);
+  border-color: color-mix(in srgb, var(--platform-accent) 35%, transparent);
+}
+
+.assistant-msg-collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.assistant-msg-expand {
+  border: none;
+  background: transparent;
+  color: var(--platform-accent);
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.assistant-msg-expand:hover {
+  text-decoration: underline;
 }
 
 .assistant-msg {

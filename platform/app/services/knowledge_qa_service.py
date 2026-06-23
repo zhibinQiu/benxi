@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
@@ -24,10 +24,13 @@ from app.integrations.text_extract import local_search
 from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.models.rag import RagMessage, RagSession
+from app.models.ragflow_document_link import RagflowDocumentLink
+from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
 from app.services.compare_service import load_parsed_documents, validate_document_scope
 from app.services.document_service import get_document, resolve_current_version
 from app.services.ragflow_version_link_service import (
     ragflow_to_platform_version_map,
+    resolve_index_link,
     resolve_latest_indexed_version,
 )
 
@@ -101,15 +104,16 @@ def _rag_clients_for_qa(db: Session, user: User) -> list[RagflowClient]:
         seen.add(key)
         clients.append(client)
 
-    api_key = (get_ragflow_api_key(db) or "").strip()
-    if api_key:
-        _add(RagflowClient(api_key=api_key))
+    # 用户 KnowFlow 客户端优先，减少无效 fallback 探活
     kf = knowledge.client_for_user(db, user)
     if hasattr(kf, "_rag"):
         _add(kf._rag)
     auth = get_user_ragflow_auth(db, user)
     if auth:
         _add(RagflowClient(session_auth=auth))
+    api_key = (get_ragflow_api_key(db) or "").strip()
+    if api_key:
+        _add(RagflowClient(api_key=api_key))
     priv = _privileged_rag_client(db)
     _add(priv)
     settings = get_settings()
@@ -151,19 +155,40 @@ def _filter_hits_by_version(
         str(h.get("ragflow_document_id") or h.get("document_id") or "") for h in hits
     ]
     vmap = ragflow_to_platform_version_map(db, [x for x in rag_ids if x])
+    platform_ids: set[str] = set()
+    for h in hits:
+        pid = _resolve_hit_platform_document_id(h, allowed, vmap)
+        if pid:
+            platform_ids.add(pid)
+    docs_by_id: dict[str, Document] = {}
+    if platform_ids:
+        for doc in db.scalars(
+            select(Document).where(
+                Document.id.in_([uuid.UUID(x) for x in platform_ids])
+            )
+        ).all():
+            docs_by_id[str(doc.id)] = doc
+    version_by_doc: dict[str, DocumentVersion | None] = {}
+    indexed_rag_id_by_doc: dict[str, str] = {}
+    for pid, doc in docs_by_id.items():
+        indexed = resolve_latest_indexed_version(db, doc)
+        version_by_doc[pid] = indexed or resolve_current_version(db, doc)
+        vl, _ = resolve_index_link(db, doc)
+        if vl and (vl.ragflow_document_id or "").strip():
+            indexed_rag_id_by_doc[pid] = str(vl.ragflow_document_id).strip()
+
     filtered: list[dict] = []
     for h in hits:
         rid = str(h.get("ragflow_document_id") or "")
         platform_id = _resolve_hit_platform_document_id(h, allowed, vmap)
-        if not platform_id:
+        if not platform_id or platform_id not in docs_by_id:
             continue
-        doc = get_document(db, uuid.UUID(platform_id))
-        if not doc:
-            continue
-        indexed = resolve_latest_indexed_version(db, doc)
-        current = indexed or resolve_current_version(db, doc)
+        current = version_by_doc.get(platform_id)
         chunk_ver = (vmap.get(rid) or {}).get("document_version_id")
-        if current and chunk_ver and chunk_ver != str(current.id):
+        indexed_rid = indexed_rag_id_by_doc.get(platform_id, "")
+        if indexed_rid and rid and rid == indexed_rid:
+            pass
+        elif current and chunk_ver and chunk_ver != str(current.id):
             continue
         normalized = dict(h)
         normalized["document_id"] = platform_id
@@ -171,10 +196,49 @@ def _filter_hits_by_version(
     return filtered
 
 
+def _knowflow_retrieval_available(db: Session, user: User) -> bool:
+    from app.integrations.ragflow_http import should_attempt_ragflow_http
+
+    if not get_settings().knowflow_enabled:
+        return False
+    if not should_attempt_ragflow_http():
+        return False
+    return bool(_rag_clients_for_qa(db, user))
+
+
+def _resolve_dataset_ids_for_ragflow_docs(
+    db: Session, rag_doc_ids: list[str]
+) -> list[str]:
+    """按 RAGFlow 文档 ID 从索引链接表补全 dataset_id。"""
+    ids = [str(x).strip() for x in rag_doc_ids if str(x).strip()]
+    if not ids:
+        return []
+    dataset_ids: list[str] = []
+    for row in db.scalars(
+        select(RagflowDocumentVersionLink).where(
+            RagflowDocumentVersionLink.ragflow_document_id.in_(ids)
+        )
+    ).all():
+        ds = (row.dataset_id or "").strip()
+        if ds:
+            dataset_ids.append(ds)
+    for row in db.scalars(
+        select(RagflowDocumentLink).where(
+            RagflowDocumentLink.ragflow_document_id.in_(ids)
+        )
+    ).all():
+        ds = (row.dataset_id or "").strip()
+        if ds:
+            dataset_ids.append(ds)
+    return list(dict.fromkeys(dataset_ids))
+
+
 def _qa_retrieval_targets(
     db: Session,
     user: User,
     doc_ids: list[uuid.UUID],
+    *,
+    docs_by_id: dict[str, Document] | None = None,
 ) -> tuple[list[str], list[str]]:
     """按最后索引成功版本收集 RAG 检索目标（复用文档对比/同步映射）。"""
     from app.services.ragflow_sync_service import (
@@ -194,15 +258,16 @@ def _qa_retrieval_targets(
         if not rag_id:
             continue
         rag_doc_ids.append(str(rag_id).strip())
-        try:
-            did = uuid.UUID(pid)
-        except ValueError:
-            continue
-        doc = get_document(db, did)
+        doc = (docs_by_id or {}).get(pid)
+        if not doc:
+            try:
+                doc = get_document(db, uuid.UUID(pid))
+            except ValueError:
+                continue
         if not doc:
             continue
         ds_id: str | None = None
-        mirror = get_document_mirror_link(db, did, user.id)
+        mirror = get_document_mirror_link(db, doc.id, user.id)
         if mirror and mirror.dataset_id:
             ds_id = str(mirror.dataset_id).strip()
         if not ds_id:
@@ -210,7 +275,7 @@ def _qa_retrieval_targets(
             if vl and vl.dataset_id:
                 ds_id = str(vl.dataset_id).strip()
         if not ds_id:
-            link = _get_link(db, did)
+            link = _get_link(db, doc.id)
             if link and link.dataset_id:
                 ds_id = str(link.dataset_id).strip()
         if ds_id:
@@ -228,29 +293,40 @@ def _knowflow_retrieve(
     *,
     limit: int,
 ) -> list[dict]:
-    dataset_ids, rag_doc_ids = _qa_retrieval_targets(db, user, doc_ids)
-    if not dataset_ids or not rag_doc_ids:
+    from app.integrations.ragflow_http import should_attempt_ragflow_http
+
+    dataset_ids, rag_doc_ids = _qa_retrieval_targets(
+        db,
+        user,
+        doc_ids,
+        docs_by_id={str(d.id): d for d in docs},
+    )
+    if not rag_doc_ids:
+        return []
+    if not dataset_ids:
+        dataset_ids = _resolve_dataset_ids_for_ragflow_docs(db, rag_doc_ids)
+    if not dataset_ids:
         return []
 
     settings = get_settings()
     top_k = max(1, min(int(limit), 20))
     threshold = float(settings.knowledge_retrieval_similarity_threshold or 0.32)
+    if not should_attempt_ragflow_http():
+        return []
+
+    payload_kwargs = {
+        "question": question,
+        "dataset_ids": dataset_ids,
+        "document_ids": rag_doc_ids or None,
+        "top_k": top_k,
+        "keyword": True,
+        "highlight": True,
+        "vector_similarity_weight": float(settings.knowledge_retrieval_vector_weight),
+        "similarity_threshold": threshold,
+    }
     for rag in _rag_clients_for_qa(db, user):
-        if not rag.health_ok():
-            continue
         try:
-            raw = rag.retrieval(
-                question=question,
-                dataset_ids=dataset_ids,
-                document_ids=rag_doc_ids or None,
-                top_k=top_k,
-                keyword=True,
-                highlight=True,
-                vector_similarity_weight=float(
-                    settings.knowledge_retrieval_vector_weight
-                ),
-                similarity_threshold=threshold,
-            )
+            raw = rag.retrieval(**payload_kwargs)
             hits = _filter_hits_by_version(db, user, raw, doc_ids)
             if hits:
                 return hits[:top_k]
@@ -327,37 +403,64 @@ def retrieve_hits_for_qa(
         retrieve_pageindex_hits_for_qa,
     )
 
-    pi_docs, kf_docs, _skipped = partition_documents_by_retrieval_engine(db, docs)
+    pi_docs, kf_docs, skipped = partition_documents_by_retrieval_engine(db, docs)
     hits: list[dict] = []
     modes: list[str] = []
+    kf_available = _knowflow_retrieval_available(db, user)
+    total_knowflow_hits = 0
 
-    if pi_docs:
+    # KnowFlow 文档优先走向量检索，避免被 PageIndex LLM 树搜索阻塞
+    if kf_docs and kf_available:
+        kf_ids = [d.id for d in kf_docs]
+        kf_hits = _knowflow_retrieve(
+            db, user, kf_docs, kf_ids, question, limit=top_k
+        )
+        if kf_hits:
+            hits.extend(kf_hits)
+            total_knowflow_hits += len(kf_hits)
+            modes.append("hybrid")
+
+    remaining = max(0, top_k - len(hits))
+    pi_doc_ids_with_hits: set[str] = set()
+    if pi_docs and remaining > 0:
         pi_hits = retrieve_pageindex_hits_for_qa(
-            db, user, pi_docs, question, limit=top_k
+            db, user, pi_docs, question, limit=remaining
         )
         if pi_hits:
             hits.extend(pi_hits)
             modes.append("pageindex_tree")
+            pi_doc_ids_with_hits = {
+                str(h.get("document_id"))
+                for h in pi_hits
+                if h.get("source") == "pageindex" and h.get("document_id")
+            }
+
+    # PageIndex 未命中时回退 KnowFlow / 本地（资讯网页等常双索引且 PageIndex 较新）
+    fallback_docs = [
+        doc for doc in pi_docs if str(doc.id) not in pi_doc_ids_with_hits
+    ]
+    remaining = max(0, top_k - len(hits))
+    if fallback_docs and remaining > 0 and kf_available:
+        fallback_ids = [d.id for d in fallback_docs]
+        fb_hits = _knowflow_retrieve(
+            db, user, fallback_docs, fallback_ids, question, limit=remaining
+        )
+        if fb_hits:
+            hits.extend(fb_hits)
+            total_knowflow_hits += len(fb_hits)
+            if "hybrid" not in modes:
+                modes.append("hybrid")
 
     remaining = max(0, top_k - len(hits))
-    if kf_docs and remaining > 0:
-        kf_ids = [d.id for d in kf_docs]
-        stack_on = knowledge.stack_reachable()
-        kf = knowledge.client_for_user(db, user)
-        if stack_on and kf.enabled():
-            kf_hits = _knowflow_retrieve(
-                db, user, kf_docs, kf_ids, question, limit=remaining
-            )
-            if kf_hits:
-                hits.extend(kf_hits)
-                modes.append("hybrid")
-        if remaining > 0 and not any(m == "hybrid" for m in modes):
-            local_hits = _local_retrieve(
-                db, user, kf_docs, kf_ids, question, limit=remaining
-            )
-            if local_hits:
-                hits.extend(local_hits)
-                modes.append("local")
+    fallback_all = list(kf_docs) + fallback_docs + skipped
+    if fallback_all and remaining > 0 and total_knowflow_hits == 0:
+        fallback_ids = [d.id for d in fallback_all]
+        local_hits = _local_retrieve(
+            db, user, fallback_all, fallback_ids, question, limit=remaining
+        )
+        if local_hits:
+            hits.extend(local_hits)
+            modes.append("local")
 
     if merge_nearby:
         hits = merge_nearby_retrieval_hits(hits)
@@ -804,14 +907,14 @@ def _answer_prefix_blocks(
     return "\n\n".join(parts) + "\n\n"
 
 
-async def _iter_llm_answer_stream(
+def _build_qa_llm_messages(
     *,
     question: str,
     context: str,
     include_kg: bool = False,
     insufficient_note: str | None = None,
-) -> AsyncIterator[str]:
-    from app.integrations.deepseek_client import chat_completion_stream
+) -> list[dict[str, str]]:
+    from app.core.prompt_budget import build_bounded_qa_messages
 
     system = _qa_system_prompt(include_kg=include_kg)
     if insufficient_note:
@@ -821,15 +924,45 @@ async def _iter_llm_answer_stream(
             "请基于已有片段尽力回答；并在回答**末尾**用一小段明确、友好地提示用户可补充哪些具体信息"
             "（如时间范围、指标、文档范围），不要编造缺失数据。"
         )
-    user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
-    async for delta in chat_completion_stream(
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ],
+    return build_bounded_qa_messages(system=system, question=question, context=context)
+
+
+async def _iter_llm_answer_stream_parts(
+    *,
+    question: str,
+    context: str,
+    include_kg: bool = False,
+    insufficient_note: str | None = None,
+) -> AsyncIterator[dict[str, str]]:
+    from app.integrations.deepseek_client import chat_completion_stream_parts
+
+    async for part in chat_completion_stream_parts(
+        messages=_build_qa_llm_messages(
+            question=question,
+            context=context,
+            include_kg=include_kg,
+            insufficient_note=insufficient_note,
+        ),
         temperature=0.2,
     ):
-        yield delta
+        yield part
+
+
+async def _iter_llm_answer_stream(
+    *,
+    question: str,
+    context: str,
+    include_kg: bool = False,
+    insufficient_note: str | None = None,
+) -> AsyncIterator[str]:
+    async for part in _iter_llm_answer_stream_parts(
+        question=question,
+        context=context,
+        include_kg=include_kg,
+        insufficient_note=insufficient_note,
+    ):
+        if part.get("kind") == "content" and part.get("text"):
+            yield part["text"]
 
 
 def _call_llm_answer(
@@ -841,19 +974,14 @@ def _call_llm_answer(
 ) -> str | None:
     from app.integrations.deepseek_client import chat_completion_sync
 
-    system = _qa_system_prompt(include_kg=include_kg)
-    if insufficient_note:
-        system += (
-            "\n\n【材料不足】当前检索材料可能不足以完整回答。"
-            f"不足方面：{insufficient_note}。"
-            "请基于已有片段尽力回答；并在回答末尾提示用户可补充的具体信息，不要编造。"
-        )
-    user_content = f"问题：{question.strip()}\n\n检索片段：\n{context}"
+    messages = _build_qa_llm_messages(
+        question=question,
+        context=context,
+        include_kg=include_kg,
+        insufficient_note=insufficient_note,
+    )
     return chat_completion_sync(
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ],
+        messages=messages,
         temperature=0.2,
     )
 
@@ -903,6 +1031,8 @@ def generate_knowledge_mindmap(*, question: str, answer: str) -> str | None:
         return None
     from app.integrations.deepseek_client import is_configured, resolve_credentials
 
+    from app.core.prompt_budget import llm_completion_extras, truncate_to_budget
+
     if not is_configured():
         return None
     try:
@@ -911,7 +1041,7 @@ def generate_knowledge_mindmap(*, question: str, answer: str) -> str | None:
         return None
     user_content = (
         f"问题：{question}\n\n"
-        f"回答：\n{answer[:6000]}"
+        f"回答：\n{truncate_to_budget(answer, 6000)}"
     )
     try:
         with httpx.Client(timeout=60.0) as client:
@@ -925,6 +1055,7 @@ def generate_knowledge_mindmap(*, question: str, answer: str) -> str | None:
                         {"role": "user", "content": user_content},
                     ],
                     "temperature": 0.1,
+                    **llm_completion_extras(),
                 },
             )
             resp.raise_for_status()
@@ -1334,22 +1465,22 @@ def _resolve_qa_session(
     )
 
 
-async def iter_knowledge_qa_stream(
+def _begin_knowledge_qa_stream(
     db: Session,
-    user: User,
+    user_id: uuid.UUID,
     *,
     question: str,
-    session_id: str | None = None,
-    document_ids: list[str] | None = None,
-    use_agentic: bool = True,
-) -> AsyncIterator[str]:
+    session_id: str | None,
+    document_ids: list[str] | None,
+) -> dict[str, Any]:
+    from app.core.async_db import resolve_db_user
+    from app.core.user_messages import (
+        KNOWLEDGE_SERVICE_UNAVAILABLE,
+        http_exception_message,
+    )
     from fastapi import HTTPException
 
-    question = question.strip()
-    if not question:
-        yield json.dumps({"error": "问题不能为空"}, ensure_ascii=False)
-        return
-
+    user = resolve_db_user(db, user_id)
     try:
         session = _resolve_qa_session(
             db,
@@ -1358,57 +1489,100 @@ async def iter_knowledge_qa_stream(
             document_ids=document_ids,
         )
     except HTTPException as exc:
-        from app.core.user_messages import (
-            KNOWLEDGE_SERVICE_UNAVAILABLE,
-            http_exception_message,
-        )
+        return {
+            "error": http_exception_message(exc, fallback=KNOWLEDGE_SERVICE_UNAVAILABLE)
+            or "请求失败"
+        }
+    except Exception:
+        import logging
 
-        msg = http_exception_message(exc, fallback=KNOWLEDGE_SERVICE_UNAVAILABLE)
-        yield json.dumps({"error": msg or "请求失败"}, ensure_ascii=False)
-        return
+        logging.getLogger(__name__).exception("knowledge qa session begin failed")
+        return {"error": KNOWLEDGE_SERVICE_UNAVAILABLE}
 
     db.add(RagMessage(session_id=session.id, role="user", content=question))
     db.flush()
+    db.commit()
+    return {
+        "session_id": session.id,
+        "doc_ids": _parse_ids(session.document_ids),
+    }
 
-    doc_ids = _parse_ids(session.document_ids)
 
+def _gather_qa_agentic(
+    db: Session,
+    user_id: uuid.UUID,
+    doc_ids: list[str],
+    question: str,
+    *,
+    emit: Callable[[dict[str, Any]], None] | None = None,
+) -> Any:
+    from app.core.async_db import resolve_db_user
     from app.services.knowledge_agentic_service import (
         RESULT_MARKER,
         AgenticQaGatherResult,
-        agentic_enabled,
         iter_gather_for_knowledge_qa,
     )
 
+    user = resolve_db_user(db, user_id)
     agentic: AgenticQaGatherResult | None = None
-    if use_agentic and agentic_enabled():
-        for item in iter_gather_for_knowledge_qa(db, user, doc_ids, question):
-            if RESULT_MARKER in item:
-                agentic = item[RESULT_MARKER]
-            else:
-                yield json.dumps({"workflow": item}, ensure_ascii=False)
-                await asyncio.sleep(0)
-    else:
-        yield json.dumps(
-            {"workflow": {"phase": "node_started", "title": "正在检索相关文档"}},
-            ensure_ascii=False,
-        )
-        await asyncio.sleep(0)
-        hits: list[dict] = []
-        mode = "none"
-        if doc_ids:
-            hits, mode = retrieve_hits_for_qa(db, user, doc_ids, question)
-        kg_ctx = _resolve_kg_qa_context(db, user, question)
+    for item in iter_gather_for_knowledge_qa(db, user, doc_ids, question, emit=emit):
+        if RESULT_MARKER in item:
+            agentic = item[RESULT_MARKER]
+    if agentic is None:
         agentic = AgenticQaGatherResult(
-            hits=hits,
-            mode=mode,
-            kg_ctx=kg_ctx,
+            hits=[],
+            mode="none",
+            kg_ctx=None,
             plan_reasoning="",
-            rounds_used=1,
+            rounds_used=0,
             sub_questions=[question],
         )
+    return agentic
 
-    assert agentic is not None
 
+def _gather_qa_simple(
+    db: Session,
+    user_id: uuid.UUID,
+    doc_ids: list[str],
+    question: str,
+) -> AgenticQaGatherResult:
+    from app.core.async_db import resolve_db_user
+    from app.services.knowledge_agentic_service import AgenticQaGatherResult
+
+    user = resolve_db_user(db, user_id)
+    hits: list[dict] = []
+    mode = "none"
+    if doc_ids:
+        hits, mode = retrieve_hits_for_qa(db, user, doc_ids, question)
+    kg_ctx = _resolve_kg_qa_context(db, user, question)
+    return AgenticQaGatherResult(
+        hits=hits,
+        mode=mode,
+        kg_ctx=kg_ctx,
+        plan_reasoning="",
+        rounds_used=1,
+        sub_questions=[question],
+    )
+
+
+def _prepare_qa_stream_bundle(
+    db: Session,
+    user_id: uuid.UUID,
+    doc_ids: list[str],
+    question: str,
+    agentic: AgenticQaGatherResult,
+) -> dict[str, Any]:
+    from app.core.async_db import resolve_db_user
+    from app.services.kg_service import merge_kg_qa_into_context
+    from app.services.knowledge_agent_service import (
+        format_changelog_context,
+        format_diff_summary_context,
+        load_version_changelogs,
+        load_version_diff_summaries,
+        plan_knowledge_query,
+    )
+
+    user = resolve_db_user(db, user_id)
     hits = agentic.hits
     mode = agentic.mode
     kg_ctx = agentic.kg_ctx
@@ -1420,32 +1594,8 @@ async def iter_knowledge_qa_stream(
         question=question,
         doc_meta=doc_meta,
     )
-    from app.services.kg_service import merge_kg_qa_into_context
-
-    context, all_citations = merge_kg_qa_into_context(
-        context, all_citations, kg_ctx
-    )
+    context, all_citations = merge_kg_qa_into_context(context, all_citations, kg_ctx)
     include_kg = bool(kg_ctx and kg_ctx.context_text)
-
-    if kg_ctx and getattr(kg_ctx, "matched_entity_ids", None):
-        yield json.dumps(
-            {
-                "workflow": {
-                    "phase": "node_started",
-                    "title": "正在解析本体图谱关联",
-                }
-            },
-            ensure_ascii=False,
-        )
-
-    from app.services.knowledge_agent_service import (
-        format_changelog_context,
-        format_diff_summary_context,
-        load_version_changelogs,
-        load_version_diff_summaries,
-        plan_knowledge_query,
-    )
-
     kf = knowledge.client_for_user(db, user)
     plan = plan_knowledge_query(
         question=question,
@@ -1461,27 +1611,197 @@ async def iter_knowledge_qa_stream(
         changelog_block=format_changelog_context(changelogs, doc_titles),
         diff_summary_block=format_diff_summary_context(diff_summaries, doc_titles),
     )
+    return {
+        "context": context,
+        "all_citations": all_citations,
+        "include_kg": include_kg,
+        "prefix": prefix,
+        "mode": mode,
+        "insufficient_note": agentic.insufficient_note,
+        "kg_ctx": kg_ctx,
+        "hits": hits,
+        "doc_titles": doc_titles,
+    }
+
+
+def _persist_qa_assistant_turn(
+    db: Session,
+    *,
+    session_id: uuid.UUID,
+    answer: str,
+    citations: list[dict],
+) -> uuid.UUID:
+    msg = RagMessage(
+        session_id=session_id,
+        role="assistant",
+        content=answer,
+        citations=citations,
+    )
+    db.add(msg)
+    from datetime import datetime, timezone
+
+    session = db.get(RagSession, session_id)
+    if session:
+        session.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(msg)
+    return session_id
+
+
+async def iter_knowledge_qa_stream(
+    *,
+    user_id: uuid.UUID,
+    question: str,
+    session_id: str | None = None,
+    document_ids: list[str] | None = None,
+    use_agentic: bool = True,
+) -> AsyncIterator[str]:
+    from app.core.async_db import run_db_task
+    from app.services.knowledge_agentic_service import agentic_enabled
+
+    question = question.strip()
+    if not question:
+        yield json.dumps({"error": "问题不能为空"}, ensure_ascii=False)
+        return
+
+    begin = await run_db_task(
+        _begin_knowledge_qa_stream,
+        user_id,
+        question=question,
+        session_id=session_id,
+        document_ids=document_ids,
+    )
+    if begin.get("error"):
+        yield json.dumps({"error": begin["error"]}, ensure_ascii=False)
+        return
+
+    session_id_val = begin["session_id"]
+    doc_ids = begin["doc_ids"]
+
+    if use_agentic and agentic_enabled():
+        loop = asyncio.get_running_loop()
+        event_q: asyncio.Queue[Any] = asyncio.Queue()
+        gather_holder: dict[str, Any] = {}
+
+        def emit_workflow(ev: dict[str, Any]) -> None:
+            loop.call_soon_threadsafe(event_q.put_nowait, ev)
+
+        async def run_agentic_gather() -> None:
+            try:
+                gather_holder["agentic"] = await run_db_task(
+                    _gather_qa_agentic,
+                    user_id,
+                    doc_ids,
+                    question,
+                    emit=emit_workflow,
+                )
+            finally:
+                loop.call_soon_threadsafe(event_q.put_nowait, None)
+
+        gather_task = asyncio.create_task(run_agentic_gather())
+        while True:
+            item = await event_q.get()
+            if item is None:
+                break
+            yield json.dumps({"workflow": item}, ensure_ascii=False)
+            await asyncio.sleep(0)
+        await gather_task
+        agentic = gather_holder.get("agentic")
+        if agentic is None:
+            from app.services.knowledge_agentic_service import AgenticQaGatherResult
+
+            agentic = AgenticQaGatherResult(
+                hits=[],
+                mode="none",
+                kg_ctx=None,
+                plan_reasoning="",
+                rounds_used=0,
+                sub_questions=[question],
+            )
+    else:
+        yield json.dumps(
+            {"workflow": {"phase": "workflow_started", "title": "开始检索"}},
+            ensure_ascii=False,
+        )
+        await asyncio.sleep(0)
+        yield json.dumps(
+            {"workflow": {"phase": "node_started", "title": "正在检索相关文档"}},
+            ensure_ascii=False,
+        )
+        await asyncio.sleep(0)
+        agentic = await run_db_task(_gather_qa_simple, user_id, doc_ids, question)
+
+    yield json.dumps(
+        {"workflow": {"phase": "node_started", "title": "正在整理检索结果"}},
+        ensure_ascii=False,
+    )
+    await asyncio.sleep(0)
+    bundle = await run_db_task(
+        _prepare_qa_stream_bundle, user_id, doc_ids, question, agentic
+    )
+    context = bundle["context"]
+    all_citations = bundle["all_citations"]
+    include_kg = bundle["include_kg"]
+    prefix = bundle["prefix"]
+    mode = bundle["mode"]
+    kg_ctx = bundle["kg_ctx"]
+
+    if kg_ctx and getattr(kg_ctx, "matched_entity_ids", None):
+        yield json.dumps(
+            {
+                "workflow": {
+                    "phase": "node_started",
+                    "title": "正在解析本体图谱关联",
+                }
+            },
+        ensure_ascii=False,
+    )
 
     yield json.dumps(
         {"workflow": {"phase": "node_started", "title": retrieval_workflow_title(mode)}},
         ensure_ascii=False,
     )
+    await asyncio.sleep(0)
 
+    answer_think_id = f"answer-{uuid.uuid4().hex[:8]}"
     yield json.dumps(
-        {"workflow": {"phase": "node_started", "title": "正在生成回答"}},
+        {
+            "workflow": {
+                "phase": "agent_thinking",
+                "title": "正在组织回答",
+                "detail": "分析检索材料并生成回答…",
+                "tool": "llm",
+                "step_id": answer_think_id,
+            }
+        },
         ensure_ascii=False,
     )
+    await asyncio.sleep(0)
 
     answer_parts: list[str] = []
     if prefix:
         answer_parts.append(prefix)
         yield json.dumps({"delta": prefix}, ensure_ascii=False)
 
+    insufficient_note = bundle["insufficient_note"]
     if not (context or "").strip():
-        if agentic.insufficient_note:
+        yield json.dumps(
+            {
+                "workflow": {
+                    "phase": "agent_thought",
+                    "title": "无需生成回答",
+                    "detail": "未检索到可用材料",
+                    "tool": "llm",
+                    "step_id": answer_think_id,
+                    "status": "done",
+                }
+            },
+            ensure_ascii=False,
+        )
+        if insufficient_note:
             insuff = (
                 f"{_NO_HIT_ANSWER}\n\n"
-                f"如需继续，请补充：{agentic.insufficient_note}"
+                f"如需继续，请补充：{insufficient_note}"
             )
             answer_parts.append(insuff)
             yield json.dumps({"delta": insuff}, ensure_ascii=False)
@@ -1489,17 +1809,45 @@ async def iter_knowledge_qa_stream(
             answer_parts.append(_NO_HIT_ANSWER)
             yield json.dumps({"delta": _NO_HIT_ANSWER}, ensure_ascii=False)
     else:
+        from app.services.llm_workflow_stream import iter_llm_answer_events
+
         streamed = False
-        async for delta in _iter_llm_answer_stream(
-            question=question,
-            context=context,
-            include_kg=include_kg,
-            insufficient_note=agentic.insufficient_note,
+        async for ev in iter_llm_answer_events(
+            messages=_build_qa_llm_messages(
+                question=question,
+                context=context,
+                include_kg=include_kg,
+                insufficient_note=insufficient_note,
+            ),
+            temperature=0.2,
+            think_title="正在组织回答",
+            think_detail="分析检索材料并生成回答…",
+            step_id=answer_think_id,
+            skip_initial_thinking=True,
         ):
-            streamed = True
-            answer_parts.append(delta)
-            yield json.dumps({"delta": delta}, ensure_ascii=False)
+            if ev.get("type") == "workflow":
+                yield json.dumps({"workflow": ev["data"]}, ensure_ascii=False)
+                await asyncio.sleep(0)
+            elif ev.get("type") == "delta" and ev.get("text"):
+                streamed = True
+                answer_parts.append(ev["text"])
+                yield json.dumps({"delta": ev["text"]}, ensure_ascii=False)
         if not streamed:
+            yield json.dumps(
+                {
+                    "workflow": {
+                        "phase": "agent_thought",
+                        "title": "模型未返回内容",
+                        "detail": "使用检索摘要回退",
+                        "tool": "llm",
+                        "step_id": answer_think_id,
+                        "status": "done",
+                    }
+                },
+                ensure_ascii=False,
+            )
+            hits = bundle["hits"]
+            doc_titles = bundle["doc_titles"]
             fallback = (
                 _fallback_answer(question, hits, doc_titles)
                 if hits
@@ -1514,25 +1862,24 @@ async def iter_knowledge_qa_stream(
     if citations:
         yield json.dumps({"citations": citations}, ensure_ascii=False)
 
-    msg = RagMessage(
-        session_id=session.id,
-        role="assistant",
-        content=answer,
+    await run_db_task(
+        _persist_qa_assistant_turn,
+        session_id=session_id_val,
+        answer=answer,
         citations=citations,
     )
-    db.add(msg)
-    from datetime import datetime, timezone
 
-    session.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(msg)
+    yield json.dumps(
+        {"workflow": {"phase": "workflow_finished", "title": "完成"}},
+        ensure_ascii=False,
+    )
 
     yield json.dumps(
         {
             "done": True,
             "reply": answer,
             "citations": citations,
-            "conversation_id": str(session.id),
+            "conversation_id": str(session_id_val),
         },
         ensure_ascii=False,
     )

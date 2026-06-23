@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, ref, watch } from "vue";
+import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NLayout,
@@ -37,22 +37,29 @@ import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
+import SystemNotificationToast from "../components/SystemNotificationToast.vue";
+import { startNotificationAlerts, stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { goBackToEntry } from "../utils/navigationReturn";
 import { sessionEpoch } from "../utils/sessionEpoch.js";
+import ReleaseHighlightsModal from "../components/ReleaseHighlightsModal.vue";
+import { fetchReleaseHighlights } from "../api/system.js";
+import {
+  acknowledgeReleaseVersion,
+  shouldShowReleaseHighlights,
+} from "../utils/releaseNotesAck.js";
 
-/** 保留对话类页面实例，避免切路由丢失会话、流式回复与顶栏操作条状态 */
-const KEEP_ALIVE_VIEWS = [
-  "AiHomeView",
-  "ReportGenerationView",
-  "KnowledgeSearchView",
-  "CompareView",
-];
+/** 对话 / 知识检索 / 报告生成保留实例；其余功能离开路由后销毁以释放内存 */
+const KEEP_ALIVE_VIEWS = ["AiHomeView", "KnowledgeFeatureLayout"];
 
 function routeViewKey(viewRoute) {
+  const name = String(viewRoute.name || "");
+  if (name === "knowledge-search" || name === "report-generation") {
+    return `${sessionEpoch.value}:knowledge-feature`;
+  }
   const base = viewRoute.meta?.keepAlive
-    ? String(viewRoute.name || viewRoute.path)
+    ? name || viewRoute.path
     : viewRoute.path;
   return `${sessionEpoch.value}:${base}`;
 }
@@ -64,6 +71,8 @@ const { t, routeTitle, featureLabel } = useI18n();
 const { loadMenuSettings, isMenuVisible } = useMenuSettings();
 const pageHeaderOverride = getPageHeaderOverride();
 const headerToolbarRef = ref(null);
+const releaseHighlightsOpen = ref(false);
+const releaseHighlights = ref(null);
 
 const SETTINGS_KEY = "system-settings";
 const expandedKeys = ref([]);
@@ -96,8 +105,34 @@ const favoriteActiveKey = computed(() => {
 });
 
 onMounted(() => {
-  Promise.allSettled([loadUser(), loadSystemFeatures(), loadMenuSettings()]);
+  startNotificationAlerts();
+  Promise.allSettled([loadUser(), loadSystemFeatures(), loadMenuSettings()]).then(() => {
+    void tryShowReleaseHighlights();
+  });
 });
+
+onUnmounted(() => {
+  stopNotificationAlerts();
+});
+
+async function tryShowReleaseHighlights() {
+  try {
+    const data = await fetchReleaseHighlights();
+    if (!data?.version) return;
+    const hasItems = (data.features?.length || 0) + (data.fixes?.length || 0) > 0;
+    if (!hasItems || !shouldShowReleaseHighlights(data.version)) return;
+    releaseHighlights.value = data;
+    releaseHighlightsOpen.value = true;
+  } catch {
+    /* 非关键路径：忽略网络或权限错误 */
+  }
+}
+
+function onReleaseHighlightsAcknowledge() {
+  const version = releaseHighlights.value?.version;
+  if (version) acknowledgeReleaseVersion(version);
+  releaseHighlightsOpen.value = false;
+}
 
 const showUserAdmin = computed(() => hasPerm("admin.user"));
 const showDeptAdmin = computed(() => hasPerm("admin.dept"));
@@ -225,6 +260,8 @@ const activeKey = computed(() => {
     route.name === "ocr" ||
     route.name === "compare" ||
     route.name === "assist-writing" ||
+    route.name === "agent-skills" ||
+    route.name === "knowledge-search" ||
     route.name === "report-generation" ||
     route.name === "ai-tools" ||
     route.name === "smart-data-query" ||
@@ -253,6 +290,12 @@ const fullHeightPage = computed(() => Boolean(route.meta?.fullHeight));
 const flushFeatureNav = computed(
   () => fullHeightPage.value || Boolean(route.meta?.featureLocalNav)
 );
+
+/** 子功能页 Teleport 操作条：预留顶栏高度，避免注入后挤压正文 */
+const reservesHeaderExtension = computed(() => {
+  if (route.name === "documents") return true;
+  return flushFeatureNav.value;
+});
 
 const headerTitle = computed(() => {
   if (pageHeaderOverride.value) return pageHeaderOverride.value;
@@ -328,7 +371,7 @@ function onExpandedKeysUpdate(keys) {
 watch(
   () => route.name,
   (name) => {
-    headerToolbarRef.value?.closeAllFlyouts?.();
+    headerToolbarRef.value?.closeAllFlyouts?.({ releasePanels: true });
     if (name && name !== "login") {
       headerToolbarRef.value?.refreshHeaderBadges?.();
     }
@@ -455,7 +498,11 @@ function onMenuSelect(key) {
               <HeaderToolbar ref="headerToolbarRef" />
             </n-space>
           </div>
-          <div id="page-header-extension" class="header-extension" />
+          <div
+            id="page-header-extension"
+            class="header-extension"
+            :class="{ 'header-extension--reserved': reservesHeaderExtension }"
+          />
         </div>
       </n-layout-header>
       <n-layout-content
@@ -476,7 +523,7 @@ function onMenuSelect(key) {
           ]"
         >
           <router-view v-slot="{ Component, route: viewRoute }">
-            <KeepAlive :max="3" :include="KEEP_ALIVE_VIEWS">
+            <KeepAlive :max="KEEP_ALIVE_VIEWS.length" :include="KEEP_ALIVE_VIEWS">
               <component
                 :is="Component"
                 :key="routeViewKey(viewRoute)"
@@ -491,6 +538,12 @@ function onMenuSelect(key) {
       </n-layout-content>
     </n-layout>
   </n-layout>
+  <ReleaseHighlightsModal
+    v-model:show="releaseHighlightsOpen"
+    :highlights="releaseHighlights"
+    @acknowledge="onReleaseHighlightsAcknowledge"
+  />
+  <SystemNotificationToast />
 </template>
 
 <style scoped>
@@ -678,8 +731,14 @@ function onMenuSelect(key) {
   box-sizing: border-box;
 }
 
-.header-extension:empty {
+.header-extension:empty:not(.header-extension--reserved) {
   display: none;
+}
+
+.header-extension--reserved {
+  min-height: 50px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .header-extension:not(:empty) {

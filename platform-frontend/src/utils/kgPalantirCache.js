@@ -3,6 +3,7 @@
 const META_CACHE_KEY = "platform:kg-meta:v1";
 const GRAPH_CACHE_KEY = "platform:kg-graph:v1";
 const CACHE_TTL_MS = 120 * 1000;
+const GRAPH_CACHE_MAX_ENTRIES = 16;
 
 function readEntry(key) {
   try {
@@ -56,6 +57,12 @@ export function writeKgGraphCache(focusEntityId, depth, data) {
   const entry = readEntry(GRAPH_CACHE_KEY) || { entries: {} };
   const entries = { ...(entry.entries || {}) };
   entries[graphEntryKey(focusEntityId, depth)] = data;
+  const keys = Object.keys(entries);
+  if (keys.length > GRAPH_CACHE_MAX_ENTRIES) {
+    for (const stale of keys.slice(0, keys.length - GRAPH_CACHE_MAX_ENTRIES)) {
+      delete entries[stale];
+    }
+  }
   writeEntry(GRAPH_CACHE_KEY, { entries });
 }
 

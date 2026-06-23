@@ -69,10 +69,32 @@ class KnowledgeAgenticToolkit:
                 self._local_hits + list(hits),
                 max_total=max(20, (limit or self.retrieve_limit) * 4),
             )
+            summary = f"检索「{q[:40]}」命中 {len(hits)} 段（累计 {len(self._local_hits)} 段）"
+            detail_lines = [summary]
+            mode_label = {
+                "hybrid": "混合检索（语义+关键词）",
+                "pageindex_tree": "PageIndex 树检索",
+                "local": "本地全文检索",
+                "mixed": "多路混合",
+                "none": "未命中",
+            }.get(str(mode or ""), str(mode or ""))
+            if mode_label:
+                detail_lines.append(f"检索模式：{mode_label}")
+            previews: list[str] = []
+            for hit in hits[:2]:
+                snip = (
+                    (hit.get("snippet") or hit.get("highlight") or hit.get("content") or "")
+                    .strip()
+                    .replace("\n", " ")
+                )
+                if snip:
+                    previews.append(snip[:100])
+            if previews:
+                detail_lines.append("片段预览：" + " | ".join(previews))
             return ToolResult(
                 "retrieve",
                 True,
-                f"检索「{q[:40]}」命中 {len(hits)} 段（累计 {len(self._local_hits)} 段）",
+                "\n".join(detail_lines),
                 data={"hits": hits, "mode": mode, "query": q},
             )
         except Exception as exc:

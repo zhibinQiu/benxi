@@ -10,6 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_feature
+from app.api.streaming_utils import stream_sse_payloads
 from app.database import get_db
 from app.domains.knowledge import knowledge
 from app.models.org import User
@@ -312,19 +313,20 @@ async def knowledge_qa_chat_stream(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> StreamingResponse:
-    async def sse_body():
+    user_id = user.id
+
+    async def payloads():
         async for payload in iter_knowledge_qa_stream(
-            db,
-            user,
+            user_id=user_id,
             question=body.message,
             session_id=body.conversation_id,
             document_ids=body.document_ids,
             use_agentic=body.use_agentic,
         ):
-            yield f"data: {payload}\n\n"
+            yield payload
 
     return StreamingResponse(
-        sse_body(),
+        stream_sse_payloads(db, payloads),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

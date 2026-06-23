@@ -6,6 +6,7 @@ from __future__ import annotations
 def register_builtin_plugins() -> None:
     # Side-effect registration on import
     from app.features.builtin import (
+        agent_skills,  # noqa: F401
         ai_home,  # noqa: F401
         ai_tools,  # noqa: F401
         assist_writing,  # noqa: F401

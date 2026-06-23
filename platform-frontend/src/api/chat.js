@@ -61,14 +61,25 @@ export async function clearAiChatAttachments(attachmentSessionId) {
   });
 }
 
+export async function fetchAiChatSkillCatalog() {
+  return api("/api/v1/ai-chat/skills/catalog");
+}
+
 export async function fetchChatConversations(scope, { limit = 30 } = {}) {
   const q = limit ? `?limit=${encodeURIComponent(limit)}` : "";
   return api(`/api/v1/chat-history/${encodeURIComponent(scope)}/conversations${q}`);
 }
 
-export async function fetchChatConversationMessages(scope, conversationId) {
+export async function fetchChatConversationMessages(
+  scope,
+  conversationId,
+  { limit = 48, beforeId = null } = {}
+) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (beforeId) params.set("before_id", beforeId);
   return api(
-    `/api/v1/chat-history/${encodeURIComponent(scope)}/conversations/${encodeURIComponent(conversationId)}/messages`
+    `/api/v1/chat-history/${encodeURIComponent(scope)}/conversations/${encodeURIComponent(conversationId)}/messages?${params.toString()}`
   );
 }
 

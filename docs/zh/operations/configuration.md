@@ -26,7 +26,7 @@
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `ZHITAN_VERSION` | 4.0.9（见根目录 `VERSION`） | 自有镜像 tag |
+| `ZHITAN_VERSION` | 4.2.1（见根目录 `VERSION`） | 自有镜像 tag |
 | `DATA_ROOT` | ./data | 持久化根目录 |
 | `FRONTEND_PORT` | 40005 | 唯一对外 Web 端口 |
 | `STACK_USE_MIRROR` | 1 | 启用 compose.mirror.yaml |
@@ -38,6 +38,8 @@
 | 变量 | 说明 |
 |------|------|
 | `POSTGRES_*` | 平台库账号（compose 注入 `DATABASE_URL`） |
+| `DATABASE_READ_URL` | 可选只读副本；留空则读写均走 `DATABASE_URL` |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | SQLAlchemy 连接池（主库与副本各自独立池） |
 | `MINIO_ROOT_*` | 对象存储；与 KnowFlow 对齐时可改 |
 
 ### KnowFlow

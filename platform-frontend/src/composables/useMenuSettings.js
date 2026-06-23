@@ -38,6 +38,7 @@ export const ROUTE_MENU_KEYS = {
   "feed-entry": "knowledge-subscriptions",
   "admin-monitor": "admin-monitor",
   "admin-model-settings": "admin-model-settings",
+  "agent-skills": "system-functions",
   "admin-docs": "admin-docs",
   "issue-reports": "issue-reports",
 };
@@ -102,8 +103,7 @@ export function useMenuSettings() {
 
   function isMenuVisible(key) {
     if (!key) return true;
-    if (!loaded.value || !visibleKeys.value) return true;
-    return visibleKeys.value.has(key);
+    return visibleSet.value.has(key);
   }
 
   function firstVisibleRouteName() {

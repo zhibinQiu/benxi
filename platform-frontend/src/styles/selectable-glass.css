@@ -16,13 +16,12 @@
 }
 
 .n-tabs.n-tabs--segment-type .n-tabs-tab {
-  font-weight: 500;
+  font-weight: 600;
   transition: color 0.22s var(--platform-ease-smooth);
 }
 
 .n-tabs.n-tabs--segment-type .n-tabs-tab.n-tabs-tab--active {
   color: var(--platform-text) !important;
-  font-weight: 600;
 }
 
 /* —— 单选按钮组（翻译来源、订阅模式等） —— */
@@ -219,16 +218,17 @@
   position: relative;
   border-radius: var(--platform-radius-sm) var(--platform-radius-sm) 0 0;
   transition: color 0.2s var(--platform-ease-smooth);
+  isolation: isolate;
 }
 
 .n-tabs.n-tabs--line-type .n-tabs-tab::before,
 .n-tabs.n-tabs--bar-type .n-tabs-tab::before {
   content: "";
   position: absolute;
-  inset: 4px 6px;
+  inset: 2px 0;
   z-index: 0;
   pointer-events: none;
-  border-radius: var(--platform-radius-xs);
+  border-radius: var(--platform-radius-sm);
   opacity: 0;
   background: var(--platform-glass-fill-hover);
   box-shadow: var(--platform-glass-rim-edge);

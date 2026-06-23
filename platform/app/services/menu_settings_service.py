@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
     MenuItemOut(
         key="ai-home",
-        label="AI 智能体",
+        label="本析智能",
         group="main",
         description="首页智能对话入口",
     ),
@@ -29,7 +29,7 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
     ),
     MenuItemOut(
         key="documents",
-        label="文档中心",
+        label="我的文件",
         group="main",
         description="分级文档管理与分享",
     ),
@@ -90,6 +90,7 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "smart-forecast": "system-functions",
     "kg-palantir": "system-functions",
     "knowledge-search": "system-functions",
+    "agent-skills": "system-functions",
     "documents": "documents",
     "document-detail": "documents",
     "knowledge-subscriptions": "knowledge-subscriptions",

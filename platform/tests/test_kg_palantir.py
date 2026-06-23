@@ -8,7 +8,8 @@ from sqlalchemy import select
 from app.features.registry import ensure_plugins_loaded, get_plugin
 from app.database import SessionLocal
 from app.models.org import User
-from app.services.ai_chat_service import _build_chat_messages, _resolve_kg_context
+from app.services.ai_chat_service import _build_chat_messages
+from app.services.skill_chat_service import resolve_kg_context_via_skill_sync as resolve_kg_context_via_skill
 from app.services.kg_service import (
     match_entities_in_question,
     merge_kg_qa_into_context,
@@ -93,7 +94,7 @@ def test_ai_home_resolves_kg_context(client: TestClient, admin_token: str):
         user = db.scalar(select(User).where(User.phone == "admin"))
         assert user is not None
 
-        kg = _resolve_kg_context(
+        kg = resolve_kg_context_via_skill(
             db, user, "全国碳市场管理办法与范围一排放量是什么关系？"
         )
         assert kg is not None
@@ -102,10 +103,9 @@ def test_ai_home_resolves_kg_context(client: TestClient, admin_token: str):
             history=[],
             retrieval_context=kg.context_text or "",
         )
-        system = messages[0]["content"]
-        assert "本体图谱" in system
-        assert "全国碳市场管理办法" in system
-        assert "范围一排放量" in system
+        joined = "\n".join(m.get("content") or "" for m in messages)
+        assert "全国碳市场管理办法" in joined
+        assert "范围一排放量" in joined
     finally:
         db.close()
 

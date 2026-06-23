@@ -12,7 +12,7 @@ def test_assist_writing_plugin_registered():
     assert plugin is not None
     assert plugin.route == "/system/assist-writing"
     assert plugin.permission_code == "feature.assist_writing"
-    assert plugin.category == "tools"
+    assert plugin.category == "document"
 
 
 def test_list_presets_covers_all_keys():

@@ -17,6 +17,7 @@ function detectAdvancedLiquidGlass() {
 /** 驱动 Liquid Glass 全局 CSS 变量：指针位置、轻微 3D 倾斜、滚动垂坠。 */
 export function useLiquidGlassMotion() {
   let raf = 0;
+  let motionEnabled = false;
   let targetX = 0.5;
   let targetY = 0.38;
   let currentX = 0.5;
@@ -38,14 +39,26 @@ export function useLiquidGlassMotion() {
     root.style.setProperty("--liquid-drape-offset", `${drape.toFixed(2)}px`);
   }
 
+  function stopMotionLoop() {
+    if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+  }
+
   function tick() {
-    if (document.hidden) {
-      raf = requestAnimationFrame(tick);
+    if (!motionEnabled || document.hidden) {
+      stopMotionLoop();
       return;
     }
     currentX = lerp(currentX, targetX, 0.065);
     currentY = lerp(currentY, targetY, 0.065);
     applyVars();
+    raf = requestAnimationFrame(tick);
+  }
+
+  function startMotionLoop() {
+    if (!motionEnabled || raf || document.hidden) return;
     raf = requestAnimationFrame(tick);
   }
 
@@ -56,12 +69,21 @@ export function useLiquidGlassMotion() {
     targetY = event.clientY / h;
     tiltX = (targetX - 0.5) * 2;
     tiltY = (targetY - 0.5) * 2;
+    startMotionLoop();
   }
 
   function onScroll() {
     const max = Math.min((window.scrollY || 0) * 0.0025, 0.18);
     drape = max * 14;
     document.documentElement.style.setProperty("--liquid-scroll", max.toFixed(4));
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) {
+      stopMotionLoop();
+    } else {
+      startMotionLoop();
+    }
   }
 
   onMounted(() => {
@@ -71,14 +93,17 @@ export function useLiquidGlassMotion() {
 
     if (prefersReducedMotion()) return;
 
+    motionEnabled = true;
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("scroll", onScroll, { passive: true });
-    raf = requestAnimationFrame(tick);
+    document.addEventListener("visibilitychange", onVisibilityChange);
   });
 
   onUnmounted(() => {
-    cancelAnimationFrame(raf);
+    motionEnabled = false;
+    stopMotionLoop();
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("scroll", onScroll);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
   });
 }

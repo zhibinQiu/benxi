@@ -21,7 +21,7 @@ export async function fetchDocumentOverview({ scope, dept_id, owner_id } = {}) {
 
 export async function fetchDocuments({
   page = 1,
-  page_size = 20,
+  page_size = 15,
   keyword,
   scope,
   folder_id,
@@ -64,13 +64,13 @@ export async function deleteKbFolder(folderId) {
   return api(`/api/v1/documents/kb-folders/${folderId}`, { method: "DELETE" });
 }
 
-export async function fetchRecycleDocuments({ page = 1, page_size = 20, keyword } = {}) {
+export async function fetchRecycleDocuments({ page = 1, page_size = 15, keyword } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (keyword) q.set("keyword", keyword);
   return api(`/api/v1/documents/trash?${q}`);
 }
 
-export async function fetchMySharedDocuments({ page = 1, page_size = 20, keyword } = {}) {
+export async function fetchMySharedDocuments({ page = 1, page_size = 15, keyword } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (keyword) q.set("keyword", keyword);
   return api(`/api/v1/documents/my-shares?${q}`);

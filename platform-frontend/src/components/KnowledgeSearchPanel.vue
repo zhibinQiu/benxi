@@ -1,5 +1,6 @@
 <script setup>
-import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
+import { disposeRichContentInElement } from "../utils/richContentLifecycle.js";
 import { NIcon } from "naive-ui";
 import { SearchOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
@@ -10,6 +11,7 @@ const KnowledgeMindMap = defineAsyncComponent(() => import("./KnowledgeMindMap.v
 import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
 import { usePlatformUi } from "../composables/usePlatformUi.js";
 import { useI18n } from "../composables/useI18n.js";
+import { handleAgentWorkflowForNotifications } from "../composables/useNotificationAlerts.js";
 import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
 import { alignCitationsWithContent } from "../utils/reportCitations.js";
 
@@ -38,6 +40,8 @@ const answerView = ref("answer");
 const resultsRef = ref(null);
 const composerRef = ref(null);
 const mindmapRef = ref(null);
+/** KeepAlive 失活时不挂载检索结果 DOM（答案/引用/思维导图） */
+const resultsDomActive = ref(true);
 let streamAbort = null;
 
 const hasResults = computed(() => phase.value === "results");
@@ -55,7 +59,7 @@ const composerPlaceholder = computed(() => {
 });
 
 const composerRows = computed(() =>
-  hasResults.value ? { min: 1, max: 1 } : { min: 3, max: 8 }
+  hasResults.value ? { min: 1, max: 6 } : { min: 3, max: 8 }
 );
 
 const displaySubtitle = computed(() => t("knowledgeSearch.subtitle"));
@@ -109,7 +113,11 @@ async function runSearch(content) {
   question.value = text;
   answer.value = "";
   citations.value = [];
-  workflow.value = emptyWorkflow();
+  workflow.value = {
+    ...emptyWorkflow(),
+    running: true,
+    currentTitle: t("knowledgeSearch.thinking"),
+  };
   answerView.value = "answer";
   phase.value = "results";
   sending.value = true;
@@ -124,6 +132,7 @@ async function runSearch(content) {
       {
         signal: streamAbort.signal,
         onWorkflow: (ev) => {
+          handleAgentWorkflowForNotifications(ev);
           applyWorkflowEvent(workflow.value, ev);
         },
         onCitations: (items) => {
@@ -221,7 +230,14 @@ onBeforeUnmount(() => {
   cleanupStream();
 });
 
+onDeactivated(() => {
+  resultsDomActive.value = false;
+  if (resultsRef.value) disposeRichContentInElement(resultsRef.value);
+  answerView.value = "answer";
+});
+
 onActivated(() => {
+  resultsDomActive.value = true;
   focusComposer();
 });
 
@@ -253,7 +269,7 @@ onMounted(() => {
         </div>
       </Transition>
 
-        <div v-if="hasResults" ref="resultsRef" class="knowledge-search-panel__results">
+        <div v-if="hasResults && resultsDomActive" ref="resultsRef" class="knowledge-search-panel__results">
         <div class="knowledge-search-panel__results-inner knowledge-search-panel__content-column">
         <section class="knowledge-search-panel__question-block">
           <div class="knowledge-search-panel__question-label">
@@ -306,15 +322,19 @@ onMounted(() => {
             </template>
             <template v-else>
               <AgentWorkflowProgress
-                v-if="sending && !answer && workflow.running"
+                v-if="sending && (workflow.running || workflow.steps.length)"
                 :workflow="workflow"
+                :keep-visible-after-done="sending"
                 compact
               />
-              <div v-else-if="sending && !answer" class="knowledge-search-panel__loading platform-inline-loading">
+              <div
+                v-else-if="sending && !answer"
+                class="knowledge-search-panel__loading platform-inline-loading"
+              >
                 <n-spin size="tiny" />
                 {{ t("knowledgeSearch.thinking") }}
               </div>
-              <div v-else-if="sending" class="knowledge-search-panel__streaming">
+              <div v-if="sending && answer" class="knowledge-search-panel__streaming">
                 <KnowledgeChatContent
                   :content="answerCitationView.content"
                   :citations="displayCitations"

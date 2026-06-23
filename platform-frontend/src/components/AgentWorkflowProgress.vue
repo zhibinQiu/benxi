@@ -5,15 +5,21 @@ import { useI18n } from "../composables/useI18n.js";
 const props = defineProps({
   workflow: { type: Object, default: null },
   compact: { type: Boolean, default: false },
+  /** 流程结束后仍展示已完成步骤（如流式回答阶段） */
+  keepVisibleAfterDone: { type: Boolean, default: false },
 });
 
 const { t } = useI18n();
 
-const visible = computed(
-  () =>
-    props.workflow?.running &&
-    (props.workflow.currentTitle || (props.workflow.steps?.length ?? 0) > 0)
-);
+const visible = computed(() => {
+  if (!props.workflow) return false;
+  const hasSteps = (props.workflow.steps?.length ?? 0) > 0;
+  if (props.keepVisibleAfterDone && hasSteps) return true;
+  return (
+    props.workflow.running &&
+    (props.workflow.currentTitle || hasSteps)
+  );
+});
 
 const steps = computed(() => props.workflow?.steps || []);
 
@@ -21,6 +27,20 @@ function stepIcon(step) {
   if (step.status === "running") return "spinner";
   if (step.status === "failed") return "failed";
   return "done";
+}
+
+function stepBody(step) {
+  const lines = [];
+  if (step.callDetail) {
+    lines.push({ label: t("agentWorkflow.call"), text: step.callDetail });
+  }
+  if (step.resultDetail) {
+    lines.push({ label: t("agentWorkflow.result"), text: step.resultDetail });
+  }
+  if (!lines.length && step.detail) {
+    lines.push({ label: "", text: step.detail });
+  }
+  return lines;
 }
 </script>
 
@@ -51,7 +71,10 @@ function stepIcon(step) {
         </span>
         <div class="agent-workflow__body">
           <div class="agent-workflow__title">{{ step.title }}</div>
-          <div v-if="step.detail" class="agent-workflow__detail">{{ step.detail }}</div>
+          <template v-for="(row, idx) in stepBody(step)" :key="idx">
+            <div v-if="row.label" class="agent-workflow__label">{{ row.label }}</div>
+            <div class="agent-workflow__detail">{{ row.text }}</div>
+          </template>
         </div>
       </li>
     </ol>
@@ -102,7 +125,7 @@ function stepIcon(step) {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .agent-workflow__step {
@@ -149,12 +172,21 @@ function stepIcon(step) {
   line-height: 1.35;
 }
 
+.agent-workflow__label {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--platform-text-secondary, #64748b);
+  letter-spacing: 0.02em;
+}
+
 .agent-workflow__detail {
   margin-top: 2px;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
   color: var(--platform-text-secondary, #64748b);
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .agent-workflow__footer {
@@ -166,12 +198,5 @@ function stepIcon(step) {
 
 .agent-workflow--compact {
   padding: 8px 10px;
-}
-
-.agent-workflow--compact .agent-workflow__detail {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 </style>

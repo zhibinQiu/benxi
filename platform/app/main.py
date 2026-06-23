@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api import (
+    agent_skills,
     assistant,
     auth,
     chat_history,
@@ -36,6 +37,8 @@ from app.database import SessionLocal, engine
 from app.db_bootstrap import bootstrap_database
 from app.features.registry import ensure_plugins_loaded, mount_routers
 from app.models import (  # noqa: F401 — register ORM models
+    agent_skill,
+    agent_skill_binding,
     audit,
     carbon_market,
     compare,
@@ -55,6 +58,7 @@ from app.models import (  # noqa: F401 — register ORM models
     ragflow_document_mirror_link,
     ragflow_link,
     ragflow_scope_dataset,
+    scheduled_notification,
     todo,
     wechat_mp,
 )
@@ -122,17 +126,20 @@ async def lifespan(_app: FastAPI):
     from app.core.background_executor import submit_background
 
     submit_background("recover-index-jobs", _recover_index_jobs_background)
-    from app.database import SessionLocal
-    from app.services.model_settings_service import sync_paddleocr_to_knowflow
 
-    def _sync_paddleocr_on_startup() -> None:
-        db = SessionLocal()
+    def _recover_scheduled_notifications_background() -> None:
         try:
-            sync_paddleocr_to_knowflow(db)
-        finally:
-            db.close()
+            from app.services.notification_service import (
+                recover_pending_scheduled_notifications,
+            )
 
-    await asyncio.to_thread(_sync_paddleocr_on_startup)
+            recover_pending_scheduled_notifications()
+        except Exception:
+            _logger.exception("后台恢复定时通知失败")
+
+    submit_background(
+        "recover-scheduled-notifications", _recover_scheduled_notifications_background
+    )
     sync_task = start_cea_history_scheduler()
     watchdog_task = start_knowflow_queue_watchdog()
     try:
@@ -155,6 +162,9 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     ensure_plugins_loaded()
+    from app.skills.registry import ensure_skills_loaded
+
+    ensure_skills_loaded()
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
@@ -197,9 +207,27 @@ def create_app() -> FastAPI:
     try:
         from sqlalchemy.exc import TimeoutError as SATimeoutError
 
+        from app.core.db_circuit import DbCircuitOpenError, is_db_failure, mark_db_failure
+
+        @app.exception_handler(DbCircuitOpenError)
+        async def handle_db_circuit_open(
+            _request: Request, exc: DbCircuitOpenError
+        ) -> JSONResponse:
+            logging.getLogger(__name__).warning("数据库熔断已打开: %s", exc)
+            err = service_unavailable(str(exc) or "系统繁忙，请稍后重试")
+            detail = err.detail if isinstance(err.detail, dict) else {}
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "code": detail.get("code", 503),
+                    "message": detail.get("message", "系统繁忙，请稍后重试"),
+                },
+            )
+
         @app.exception_handler(SATimeoutError)
-        async def handle_pool_timeout(_request: Request, _exc: Exception) -> JSONResponse:
+        async def handle_pool_timeout(_request: Request, exc: Exception) -> JSONResponse:
             logging.getLogger(__name__).warning("数据库连接池已耗尽，请求排队超时")
+            mark_db_failure()
             err = service_unavailable("系统繁忙，请稍后重试")
             detail = err.detail if isinstance(err.detail, dict) else {}
             return JSONResponse(
@@ -236,6 +264,13 @@ def create_app() -> FastAPI:
         msg = str(exc)
         if "QueuePool limit" in msg or "connection timed out" in msg.lower():
             logging.getLogger(__name__).warning("数据库连接异常: %s", msg)
+            try:
+                from app.core.db_circuit import is_db_failure, mark_db_failure
+
+                if is_db_failure(exc):
+                    mark_db_failure()
+            except ImportError:
+                pass
             err = service_unavailable("系统繁忙，请稍后重试")
             detail = err.detail if isinstance(err.detail, dict) else {}
             return JSONResponse(
@@ -285,6 +320,10 @@ def create_app() -> FastAPI:
     app.include_router(monitor.router, prefix=prefix)
     app.include_router(model_settings.router, prefix=prefix)
     app.include_router(menu_settings.router, prefix=prefix)
+    app.include_router(agent_skills.router, prefix=prefix)
+    from app.api import browser_rpa
+
+    app.include_router(browser_rpa.router, prefix=prefix)
 
     return app
 

@@ -15,6 +15,8 @@ import json
 import logging
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,6 +47,8 @@ from app.services.document_service import get_document, resolve_current_version
 from app.services.ragflow_version_link_service import resolve_index_link
 
 logger = logging.getLogger(__name__)
+
+_PAGEINDEX_TREE_SEARCH_MAX_WORKERS = 4
 
 _JSON_BLOCK_RE = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
 
@@ -150,13 +154,19 @@ def pageindex_index_meta(link: PageindexVersionLink | None) -> dict | None:
     if not link:
         return None
     status = "已索引" if link.index_completed_at else "索引中"
+    parse_message = link.error_message or "已建立文档索引"
     if link.error_message and not link.index_completed_at:
         status = "索引失败"
+    elif link.index_completed_at:
+        doc_id = (link.pageindex_doc_id or "").strip()
+        if doc_id and not load_pageindex_doc(pageindex_workspace_dir(), doc_id):
+            status = "索引失效"
+            parse_message = "PageIndex 索引文件不可读（API/Worker 未共享存储时请重新索引）"
     return {
-        "knowledge_synced": bool(link.index_completed_at),
+        "knowledge_synced": bool(link.index_completed_at) and status != "索引失效",
         "parse_status": status,
         "parse_progress": None,
-        "parse_message": link.error_message or "已建立文档索引",
+        "parse_message": parse_message,
         "chunk_count": link.node_count,
         "ragflow_document_id": None,
         "indexed_version_id": str(link.platform_version_id)
@@ -565,6 +575,95 @@ def _tree_search_single_document(
     return node_list, thinking
 
 
+@dataclass(frozen=True)
+class _PageIndexTreeSearchJob:
+    doc: Document
+    structure: Any
+
+
+def _collect_pageindex_tree_search_jobs(
+    db: Session,
+    docs: list[Document],
+) -> list[_PageIndexTreeSearchJob]:
+    workspace = pageindex_workspace_dir()
+    jobs: list[_PageIndexTreeSearchJob] = []
+    for doc in docs:
+        if effective_retrieval_engine(db, doc) != "pageindex":
+            continue
+        link = get_ready_link_for_document(db, doc)
+        if not link or not link.pageindex_doc_id:
+            continue
+        stored = load_pageindex_doc(workspace, link.pageindex_doc_id) or {}
+        structure = stored.get("structure") or []
+        if structure:
+            jobs.append(_PageIndexTreeSearchJob(doc=doc, structure=structure))
+    return jobs
+
+
+def _pageindex_hits_for_document(
+    doc: Document,
+    structure: Any,
+    node_list: list[str],
+) -> list[dict]:
+    mapping = create_node_mapping(structure)
+    hits: list[dict] = []
+    for node_id in node_list:
+        node = mapping.get(node_id)
+        if not node:
+            continue
+        text = (node.get("text") or node.get("summary") or "").strip()
+        if not text:
+            continue
+        page = _node_page(node)
+        title = (node.get("title") or "").strip()
+        anchor: dict = {"page": page} if page else {}
+        hits.append(
+            {
+                "document_id": str(doc.id),
+                "content": text,
+                "snippet": text[:500],
+                "source": "pageindex",
+                "anchor_json": anchor,
+                "node_id": node_id,
+                "section_title": title or None,
+                "preview_available": True,
+            }
+        )
+    return hits
+
+
+def _run_pageindex_tree_search_job(
+    job: _PageIndexTreeSearchJob,
+    question: str,
+) -> tuple[str, list[str] | None]:
+    try:
+        node_list, _thinking = _tree_search_single_document(job.structure, question)
+        return str(job.doc.id), node_list
+    except Exception as exc:
+        logger.warning("PageIndex 树搜索失败 doc=%s: %s", job.doc.id, exc)
+        return str(job.doc.id), None
+
+
+def _merge_pageindex_tree_search_results(
+    docs: list[Document],
+    jobs_by_doc_id: dict[str, _PageIndexTreeSearchJob],
+    node_lists_by_doc_id: dict[str, list[str]],
+    *,
+    limit: int,
+) -> list[dict]:
+    hits: list[dict] = []
+    for doc in docs:
+        doc_id = str(doc.id)
+        job = jobs_by_doc_id.get(doc_id)
+        node_list = node_lists_by_doc_id.get(doc_id)
+        if not job or not node_list:
+            continue
+        hits.extend(_pageindex_hits_for_document(doc, job.structure, node_list))
+        if len(hits) >= limit:
+            return hits[:limit]
+    return hits[:limit]
+
+
 def retrieve_pageindex_hits_for_qa(
     db: Session,
     user: User,
@@ -583,45 +682,37 @@ def retrieve_pageindex_hits_for_qa(
     if not question:
         return []
 
-    workspace = pageindex_workspace_dir()
-    hits: list[dict] = []
-    for doc in docs:
-        if effective_retrieval_engine(db, doc) != "pageindex":
-            continue
-        link = get_ready_link_for_document(db, doc)
-        if not link or not link.pageindex_doc_id:
-            continue
-        stored = load_pageindex_doc(workspace, link.pageindex_doc_id) or {}
-        structure = stored.get("structure") or []
-        if not structure:
-            continue
-        try:
-            node_list, _thinking = _tree_search_single_document(structure, question)
-        except Exception as exc:
-            logger.warning("PageIndex 树搜索失败 doc=%s: %s", doc.id, exc)
-            continue
-        mapping = create_node_mapping(structure)
-        for node_id in node_list:
-            node = mapping.get(node_id)
-            if not node:
-                continue
-            text = (node.get("text") or node.get("summary") or "").strip()
-            if not text:
-                continue
-            page = _node_page(node)
-            title = (node.get("title") or "").strip()
-            anchor: dict = {"page": page} if page else {}
-            hit: dict = {
-                "document_id": str(doc.id),
-                "content": text,
-                "snippet": text[:500],
-                "source": "pageindex",
-                "anchor_json": anchor,
-                "node_id": node_id,
-                "section_title": title or None,
-                "preview_available": True,
-            }
-            hits.append(hit)
-            if len(hits) >= limit:
-                return hits[:limit]
-    return hits[:limit]
+    jobs = _collect_pageindex_tree_search_jobs(db, docs)
+    if not jobs:
+        return []
+
+    jobs_by_doc_id = {str(job.doc.id): job for job in jobs}
+
+    if len(jobs) == 1:
+        doc_id, node_list = _run_pageindex_tree_search_job(jobs[0], question)
+        if not node_list:
+            return []
+        job = jobs_by_doc_id[doc_id]
+        return _pageindex_hits_for_document(job.doc, job.structure, node_list)[:limit]
+
+    max_workers = min(_PAGEINDEX_TREE_SEARCH_MAX_WORKERS, len(jobs))
+    node_lists_by_doc_id: dict[str, list[str]] = {}
+    with ThreadPoolExecutor(
+        max_workers=max_workers,
+        thread_name_prefix="pageindex-tree",
+    ) as pool:
+        futures = {
+            pool.submit(_run_pageindex_tree_search_job, job, question): job
+            for job in jobs
+        }
+        for future in as_completed(futures):
+            doc_id, node_list = future.result()
+            if node_list:
+                node_lists_by_doc_id[doc_id] = node_list
+
+    return _merge_pageindex_tree_search_results(
+        docs,
+        jobs_by_doc_id,
+        node_lists_by_doc_id,
+        limit=limit,
+    )

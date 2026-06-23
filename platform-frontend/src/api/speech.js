@@ -27,7 +27,7 @@ export async function saveMeetingRecord(payload) {
   });
 }
 
-export async function listMeetingRecords({ page = 1, pageSize = 20 } = {}) {
+export async function listMeetingRecords({ page = 1, pageSize = 15 } = {}) {
   const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   return api(`/api/v1/speech/records?${q}`);
 }

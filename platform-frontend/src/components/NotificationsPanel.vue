@@ -15,6 +15,7 @@ import {
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead } from "../api/client";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 
@@ -34,7 +35,7 @@ const loading = ref(false);
 async function load({ notifyOnError = true } = {}) {
   loading.value = true;
   try {
-    const data = await fetchNotifications({ page: 1, page_size: 12 });
+    const data = await fetchNotifications({ page: 1, page_size: LIST_PAGE_SIZE });
     items.value = data.items;
     emit("updated", data);
   } catch (e) {

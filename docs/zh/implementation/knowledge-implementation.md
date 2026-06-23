@@ -69,7 +69,7 @@ Facade 模式：对外暴露稳定 API，内部 lazy import 具体 service，避
 
 | 方法 | 实现思路 |
 |------|----------|
-| `enabled()` | 读 `Settings.knowflow_enabled`，表示功能开关，**不**代表 API 可达 |
+| `enabled()` | 读 `Settings.knowflow_enabled`，表示功能开关；栈可达性由 `stack_reachable()` 单独判断 |
 | `stack_reachable()` | 委托 `knowflow_stack_reachable()`：已 enabled 且 `RagflowClient().health_ok()` |
 | `client_for_user(db, user)` | 按用户 RAGFlow 会话 / API Key 构造 `RagflowKnowflowClient`；无 KnowFlow 时返回 `LocalKnowflowClient` |
 | `client_probe(user_id)` | 探活用，**不触发** RAGFlow 开户 |
@@ -107,7 +107,7 @@ kf = knowledge.client_for_user(db, user)
 
 1. 若调用方传入非空字符串 → 去空格、小写后直接返回  
 2. 否则读 `settings.knowledge_default_parser_id`，再 fallback `naive`  
-3. **不做**白名单校验（由 `normalize_parser_id` 负责）
+3. 白名单校验由下游 `normalize_parser_id` 统一处理
 
 #### `reindex_parser_id_raw(parser_id)`
 
@@ -238,15 +238,131 @@ sequenceDiagram
 
 ## 5. 知识问答（`knowledge_qa_service.py`）
 
-### 5.1 `retrieve_hits_for_qa` 实现思路
+### 5.1 流式入口与调用链
+
+```mermaid
+sequenceDiagram
+  participant API as knowledge_embed.py
+  participant QA as iter_knowledge_qa_stream
+  participant AG as knowledge_agentic_service
+  participant RET as retrieve_hits_for_qa
+  participant LLM as DeepSeek
+
+  API->>QA: SSE 流式问答
+  QA->>QA: _begin_knowledge_qa_stream（建会话、写 user 消息）
+  alt agentic_enabled 且 use_agentic
+    QA->>AG: iter_gather_for_knowledge_qa
+    AG->>AG: _plan_qa_sub_questions
+    AG->>RET: 多轮子问题检索
+    AG->>AG: _evaluate_qa_sufficiency
+  else 简单模式
+    QA->>RET: retrieve_hits_for_qa（单次）
+  end
+  QA->>QA: build_aligned_qa_context_and_citations
+  QA->>QA: merge_kg_qa_into_context（若有图谱）
+  QA->>LLM: _build_qa_llm_messages → chat_completion_stream
+  QA->>QA: finalize_qa_answer_and_citations
+```
+
+| 方法 | 职责 |
+|------|------|
+| `iter_knowledge_qa_stream` | SSE 主入口；Agentic / 简单两路召回 |
+| `_begin_knowledge_qa_stream` | 解析 session、校验文档 scope、持久化 user 消息 |
+| `_gather_qa_agentic` | 包装 `iter_gather_for_knowledge_qa`，产出 workflow 事件 |
+| `_gather_qa_simple` | 单次 `retrieve_hits_for_qa` + 图谱上下文 |
+| `_prepare_qa_stream_bundle` | 合并 hits、图谱、版本对比块，生成 context |
+| `_build_qa_llm_messages` | 组装 system + 检索片段 + 问题 |
+| `finalize_qa_answer_and_citations` | 后处理引用编号、去来源叙述、裁剪展示用 citations |
+
+### 5.2 `retrieve_hits_for_qa` 实现思路
 
 1. `validate_document_scope` 过滤无权文档  
 2. `partition_documents_by_retrieval_engine` → PageIndex / KnowFlow / 不可检索  
 3. PageIndex 文档：`pageindex_tree_search`（LLM 选 node_id → 取正文片段）  
 4. KnowFlow 文档：`knowledge.stack_reachable()` 且 client enabled → 向量检索；否则 `_local_retrieve`  
-5. 合并 hits，可选 `merge_nearby_retrieval_hits`，截断 `top_k`
+5. 合并 hits，可选 `merge_nearby_retrieval_hits`，截断 `top_k`（默认 `knowledge_retrieval_top_k`，上限 20）
 
-### 5.3 本体图谱与 AI 智能体
+**检索优先级**：KnowFlow 向量文档优先 `_knowflow_retrieve`；PageIndex 文档走 `retrieve_pageindex_hits_for_qa`；PageIndex 未命中时回退 KnowFlow / `_local_retrieve`。
+
+### 5.3 问答 System 提示词（`_KNOWLEDGE_QA_SYSTEM`）
+
+由 `assistant_knowledge_qa_persona()` + 固定规则拼接，经 `_qa_system_prompt(include_kg=…)` 输出：
+
+| 规则类别 | 内容要点 |
+|----------|----------|
+| 身份 | 知识检索问答助手「小析」 |
+| 事实依据 | 仅以编号检索片段为准；与模型常识冲突时以片段为准 |
+| 引用 | 句末 `[1][2]`，与片段 `[n]` 严格一一对应 |
+| 禁止来源叙述 | 正文不出现文档名、「根据…文档」「参考了…」等 |
+| 不足处理 | 信息不足时明确说明；禁止元信息脚注 |
+
+含本体图谱时追加 `_KG_QA_SYSTEM_APPENDIX`：图谱片段与文档片段同等可作为依据。
+
+**材料不足追加段**（`insufficient_note` 非空时）：
+
+```
+【材料不足】当前检索材料可能不足以完整回答。不足方面：{gaps}。
+请基于已有片段尽力回答；并在回答末尾友好提示用户可补充哪些具体信息。
+```
+
+LLM 调用：`temperature=0.2`；消息经 `build_bounded_qa_messages()` 受 `chat_prompt_max_chars` / `chat_context_max_chars` 约束。
+
+### 5.4 检索上下文与引用对齐
+
+`build_aligned_qa_context_and_citations(hits, doc_titles)`：
+
+1. 遍历 hits，提取正文 `_extract_qa_context_body`  
+2. 按顺序编号：`[1]\n{body}`、`[2]\n{body}`…  
+3. `build_citations` 生成前端引用卡片（snippet 高亮、页码、bbox、预览图 id）  
+4. 回答生成后 `finalize_qa_answer_and_citations`：重排引用、合并同句多引用、过滤未使用 citations
+
+图谱合并：`kg_service.merge_kg_qa_into_context(doc_context, citations, kg_ctx)`，引用 index 在文档 citations 之后顺延。
+
+### 5.5 Agentic 检索（`knowledge_agentic_service.py`）
+
+开关：`knowledge_agentic_enabled=true` 且 DeepSeek 已配置（`agentic_enabled()`）。
+
+#### 规划子问题（`_plan_qa_sub_questions`）
+
+**System**：
+
+```
+你是企业知识库检索规划助手。根据用户问题拆解为若干可独立检索的子问题。
+仅返回 JSON：{"reasoning":"简要策略","sub_questions":["子问题1","子问题2"]}。
+sub_questions 数量 1～{max_q}，使用简体中文。
+```
+
+**User**：用户问题、已选文档数、可选本体图谱规划参考。
+
+#### 充足性评估（`_evaluate_qa_sufficiency`）
+
+**System**：
+
+```
+你是检索质量评估助手。判断材料是否足以回答。
+仅返回 JSON：{"sufficient":true|false,"gaps":"…","extra_queries":["…"]}。
+```
+
+不足时进入下一轮，用 `extra_queries` 补充检索（最多 `knowledge_agentic_qa_max_rounds` 轮）。
+
+#### 报告侧规划（`_plan_report_gathering`）
+
+输出 JSON：`use_local`、`local_queries`、`use_web`、`web_queries`；按 `intent`（`initial` / `follow_up` / `format_adjust`）决定是否检索。
+
+### 5.6 思维导图提示词（`generate_knowledge_mindmap`）
+
+**System（`_MINDMAP_SYSTEM`）**：
+
+```
+你是知识结构分析助手。根据用户问题和 AI 回答，输出 Mermaid mindmap 语法。
+- 仅输出 mindmap 代码，不要使用 ``` 围栏
+- 第一行必须是 mindmap，根节点形如 root((问题摘要))
+- 提炼 2-3 层要点分支，节点文字简短，使用简体中文
+```
+
+`temperature=0.1`；LLM 失败时 `_normalize_mindmap_source` 从回答文本本地回退生成简单 mindmap。
+
+### 5.7 本体图谱与 AI 智能体
 
 **`retrieve_kg_context_for_question`**（`kg_service.py`）：
 
@@ -259,12 +375,12 @@ sequenceDiagram
 | 场景 | 合并方式 |
 |------|----------|
 | 知识检索 | `merge_kg_qa_into_context` 追加在文档 hits 之后，引用 index 顺延 |
-| 报告生成 | `KnowledgeAgenticToolkit.retrieve_kg` |
-| AI 智能体 | `ai_chat_service._resolve_answer_context`：文档检索 + 图谱合并后写入 system prompt |
+| 报告生成 | `KnowledgeAgenticToolkit.retrieve_kg`；详见 [报告生成实现](report-generation-implementation.md) |
+| AI 智能体 | `skill_chat_service.resolve_combined_research_async` 内合并 KB + KG + Web |
 
 AI 智能体在无显式选文档时，自动在用户 **可 query 的前 20 份文档** 内检索（需 `feature.knowledge_search`）。
 
-### 5.4 流式问答错误处理
+### 5.8 流式问答错误处理
 
 `_resolve_qa_session` 抛 `HTTPException` 时，用 `http_exception_message(exc, fallback=KNOWLEDGE_SERVICE_UNAVAILABLE)` 写入 SSE JSON，与 REST API 文案一致。
 
@@ -280,6 +396,10 @@ AI 智能体在无显式选文档时，自动在用户 **可 query 的前 20 份
 | `KNOWLEDGE_DEFAULT_LAYOUT_RECOGNIZE` | PDF OCR 引擎 | `DeepDOC` |
 | `PAGEINDEX_ENABLED` | 结构索引开关 | — |
 | `PAGEINDEX_WORKSPACE_DIR` | 树索引本地目录 | `platform/.run/pageindex` |
+| `KNOWLEDGE_AGENTIC_ENABLED` | 知识检索 Agentic 多轮召回 | — |
+| `KNOWLEDGE_AGENTIC_QA_MAX_SUB_QUESTIONS` | 问答子问题上限 | 4 |
+| `KNOWLEDGE_AGENTIC_QA_MAX_ROUNDS` | 问答充足性评估轮次 | — |
+| `KNOWLEDGE_RETRIEVAL_TOP_K` | 单次检索 hit 上限 | 5 |
 
 ---
 
@@ -296,6 +416,8 @@ AI 智能体在无显式选文档时，自动在用户 **可 query 的前 20 份
 
 ## 8. 相关文档
 
+- [报告生成实现](report-generation-implementation.md)
+- [Agent Skills 实现](agent-skills-implementation.md)
 - [分层架构](../development/layered-architecture.md)
 - [异步任务](async-and-jobs.md)
 - [应用服务与域](backend-implementation.md)

@@ -17,11 +17,11 @@ def test_dataset_name_for_dept_unique():
     assert a.startswith("zt-dept-")
 
 
-def test_allowed_ragflow_doc_map_empty_when_disabled():
+def test_allowed_ragflow_doc_map_empty_when_knowflow_disabled():
     from app.services.ragflow_sync_service import allowed_ragflow_doc_map
 
     db = MagicMock()
     user = MagicMock()
-    with patch("app.services.ragflow_sync_service.get_knowflow_client_for_user") as gkc:
-        gkc.return_value.enabled.return_value = False
+    with patch("app.config.get_settings") as gs:
+        gs.return_value.knowflow_enabled = False
         assert allowed_ragflow_doc_map(db, user, ["00000000-0000-0000-0000-000000000001"]) == {}

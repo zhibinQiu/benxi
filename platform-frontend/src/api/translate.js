@@ -5,12 +5,12 @@ export async function fetchTranslateMeta() {
   return api("/api/v1/translate/meta");
 }
 
-export async function fetchTranslateJobs({ page = 1, page_size = 20 } = {}) {
+export async function fetchTranslateJobs({ page = 1, page_size = 15 } = {}) {
   const q = new URLSearchParams({ page, page_size });
   return api(`/api/v1/translate/jobs?${q}`);
 }
 
-export async function fetchTranslateDocuments({ page = 1, page_size = 20, keyword } = {}) {
+export async function fetchTranslateDocuments({ page = 1, page_size = 15, keyword } = {}) {
   const q = new URLSearchParams({ page, page_size });
   if (keyword) q.set("keyword", keyword);
   return api(`/api/v1/translate/documents?${q}`);

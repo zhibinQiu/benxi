@@ -55,22 +55,26 @@ async def list_chat_conversations(
 
 @router.get(
     "/{scope}/conversations/{conversation_id}/messages",
-    response_model=ApiResponse[list[dict]],
+    response_model=ApiResponse[dict],
 )
 async def list_chat_messages(
     scope: str,
     conversation_id: str,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[list[dict]]:
+    limit: int = Query(48, ge=1, le=100),
+    before_id: str | None = Query(None),
+) -> ApiResponse[dict]:
     _ensure_scope_access(db, user, scope)
-    rows = await chat_history_service.list_messages(
+    payload = await chat_history_service.list_messages(
         db,
         user_id=user.id,
         scope=scope,
         conversation_id=conversation_id,
+        limit=limit,
+        before_id=before_id,
     )
-    return ApiResponse(data=rows)
+    return ApiResponse(data=payload)
 
 
 @router.delete("/{scope}/conversations", response_model=ApiResponse[dict])

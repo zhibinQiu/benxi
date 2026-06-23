@@ -109,7 +109,7 @@ def test_carbon_qa_plugin():
 def test_ai_home_plugin():
     p = get_plugin("ai_home")
     assert p is not None
-    assert p.title == "AI 智能体"
+    assert p.title == "本析智能"
     assert p.category == "ai"
     assert p.route == "/ai-home"
 

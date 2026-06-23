@@ -33,6 +33,8 @@ import AdminFormModal from "../components/AdminFormModal.vue";
 import FileDropZone from "../components/FileDropZone.vue";
 import DocumentVersionPreviewModal from "../components/DocumentVersionPreviewModal.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import {
   createTranslateJob,
   downloadTranslateFile,
@@ -321,6 +323,7 @@ async function loadLibraryDocs() {
   try {
     const data = await fetchTranslateDocuments({
       page: libraryPage.value,
+      page_size: LIST_PAGE_SIZE,
       keyword: libraryKeyword.value || undefined});
     libraryItems.value = data.items;
     libraryTotal.value = data.total;
@@ -882,6 +885,7 @@ function loadPreviewBlob() {
         <n-button size="small" type="primary" @click="libraryPage = 1; loadLibraryDocs()">
           {{ t("common.search") }}
         </n-button>
+        <ListRefreshButton :loading="libraryLoading" size="small" @click="loadLibraryDocs" />
       </n-space>
       <n-data-table
         :columns="libraryColumns"
@@ -890,7 +894,7 @@ function loadPreviewBlob() {
         :max-height="320"
         :pagination="{
           page: libraryPage,
-          pageSize: 10,
+          pageSize: LIST_PAGE_SIZE,
           itemCount: libraryTotal,
           onUpdatePage: onLibraryPageChange}"
         size="small"

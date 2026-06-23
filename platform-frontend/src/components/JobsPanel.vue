@@ -16,6 +16,7 @@ import { useBatchTableSelection } from "../composables/useBatchTableSelection";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { deleteSequentially } from "../utils/batchActions";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import {
   ChevronDownOutline,
   ListOutline,
@@ -213,7 +214,7 @@ const pageColumns = computed(() => {
 async function load() {
   loading.value = true;
   try {
-    const pageSize = props.variant === "popover" ? 8 : 20;
+    const pageSize = LIST_PAGE_SIZE;
     const data = await fetchJobs({ page: page.value, page_size: pageSize });
     items.value = data.items;
     total.value = data.total;
@@ -541,7 +542,7 @@ defineExpose({ load, refresh: load });
           @update:checked-row-keys="onCheckedRowKeysChange"
           :pagination="{
             page,
-            pageSize: 20,
+            pageSize: LIST_PAGE_SIZE,
             itemCount: total,
             onUpdatePage: onPageChange}"
         />

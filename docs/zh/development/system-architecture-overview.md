@@ -2,7 +2,7 @@
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
 > **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
-> **版本对齐**：平台 **v4.0.9** · Monorepo `pdf_trans/`  
+> **版本对齐**：平台 **v4.2.1** · Monorepo `pdf_trans/`  
 > **运维架构（推荐）**：[系统架构](../operations/architecture.md) · [运维手册](../operations/README.md)
 
 ---
@@ -221,7 +221,34 @@ sequenceDiagram
   FE-->>Admin: 按权限展示入口
 ```
 
-已实现插件示例：`translate`、`compare`、`rag`、`speech`、`subscriptions`、`wechat_mp_feed`、`feed_subscriptions` 等（见 `platform/app/features/builtin/`）。
+已实现插件示例：`translate`、`compare`、`rag`、`speech`、`agent_skills`、`subscriptions` 等（见 `platform/app/features/builtin/`）。
+
+### 4.4 Agent Skills 架构（v4.2.1）
+
+```mermaid
+flowchart LR
+  subgraph skills [Skill 框架 app/skills]
+    REG[registry 内置]
+    CAT[catalog Discovery]
+    EXEC[executor Activation]
+  end
+
+  subgraph agent [AI 智能体]
+    CHAT[ai_chat_service]
+    LOOP[agent_tool_loop]
+    TOOLS[agent_tools research/load/memory]
+  end
+
+  REG --> CAT
+  CAT --> CHAT
+  CHAT --> LOOP
+  LOOP --> TOOLS
+  TOOLS --> EXEC
+  EXEC --> KB[knowledge_qa / kg / searxng]
+  EXEC --> MD[上传 SKILL.md]
+```
+
+AI 首页对话不再 HTTP 层预检索；LLM 通过 `research` 按需调用内置 handler，通过 `load_uploaded_skill` 激活上传包。详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)。
 
 ---
 
@@ -470,6 +497,7 @@ erDiagram
 | 存储 | 内容 | 一致性 |
 |------|------|--------|
 | **PostgreSQL** | 用户、组织、文档元数据、ACL、任务、对比、RAG 链接、订阅 | 事务 + 启动时 schema migrate |
+| **PostgreSQL 只读副本** | 同主库 schema（流复制） | 配置 `DATABASE_READ_URL` 后，只读 API 经 `get_read_db` 查询；未配置则与主库合一 |
 | **MinIO** | 文档二进制、版本文件 | 与 DB 通过 version 记录关联；删除文档 Celery 异步清理 |
 | **Redis** | Celery broker、缓存 | 可丢次要缓存，任务状态以 DB 为准 |
 | **RAGFlow MySQL** | KnowFlow 栈内部（租户、LLM 配置） | 平台通过 API/模板账号同步 LLM，不直接当业务库 |
@@ -574,6 +602,7 @@ erDiagram
 | 8 | 文档对比 | 异步 job + ACL 白名单检索 | `compare` 插件 |
 | 9 | 外部内容 | fetch + markdown + 摘要 | `integrations/web_*`, `subscription_*` |
 | 10 | 错误体验 | 统一 ApiResponse + 中文文案 | `core/exceptions`, `client.js` |
+| 11 | Agent Skills | Discovery 常驻 + tool loop 按需 Activation | `app/skills/*`, `agent_tool_loop` |
 
 ---
 
@@ -599,6 +628,7 @@ erDiagram
 | 分层与迁移 | [分层架构](./layered-architecture.md) |
 | RBAC 与文档 ACL | [权限模型](../platform/permission-model.md) |
 | 功能插件开发 | [功能插件](../platform/feature-plugins.md) |
+| Agent Skills | [Agent Skills 实现](../implementation/agent-skills-implementation.md) |
 | 文档对比产品 | [文档对比](../platform/doc-compare-product-design.md) |
 | 快速上手 | [getting-started.md](../getting-started.md) |
 | 部署 | [部署指南](../operations/deployment.md) |

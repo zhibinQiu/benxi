@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from pydantic import BaseModel, Field
 
 from app.schemas.ai_chat import AiChatMessage
@@ -30,6 +32,22 @@ class ReportGenerationChatRequest(BaseModel):
 class ReportExportDocxRequest(BaseModel):
     title: str = Field(default="研究报告", min_length=1, max_length=200)
     markdown: str = Field(..., min_length=1, max_length=120000)
+
+
+class ReportImportLibraryRequest(BaseModel):
+    title: str = Field(default="研究报告", min_length=1, max_length=200)
+    markdown: str = Field(..., min_length=1, max_length=120000)
+    sync_knowflow: bool = Field(
+        default=True,
+        description="入库后自动同步至知识库索引",
+    )
+
+
+class ReportImportLibraryOut(BaseModel):
+    document_id: uuid.UUID
+    title: str
+    knowflow_synced: bool = False
+    message: str = ""
 
 
 class ReportMindmapRequest(BaseModel):

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -15,334 +13,16 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
 from app.core.permissions import user_has_permission
-from app.core.platform_assistant import assistant_ai_home_persona
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services import platform_chat_store
-from app.services.kg_service import KgQaContext, merge_kg_qa_into_context, retrieve_kg_context_for_question
+from app.services.kg_service import KgQaContext
 
-_MAX_HISTORY = 20
-_MAX_QUERYABLE_DOCS = 20
-
-_SYSTEM_PROMPT = f"""{assistant_ai_home_persona()}。
-
-你的能力包括：
-- 以「小析」身份解答文档管理、权限分享、PDF 翻译、知识检索等平台使用问题
-- 结合权限内文档检索片段与本体图谱实体关系，回答业务相关问题
-- 除日常寒暄与平台操作说明外，结合互联网检索与权限内文档/图谱材料交叉验证后作答；实时数据与政策动态以联网结果为准
-- 协助梳理办公场景下的信息整理、写作润色与数据分析思路
-
-回答要求：
-- 使用简体中文，结构清晰，可使用简短 Markdown
-- 自我介绍或提及助手时统一使用名称「小析」
-- 对不确定的政策或数据应说明需以官方来源为准，勿编造具体数值或文号
-- 引用文档片段、图谱事实或联网摘要时在句末标注编号，格式为 [1]、[2]
-- 超出平台或办公场景的问题可简要回应并引导回相关能力"""
-
-_RETRIEVAL_CONTEXT_INSTRUCTION = """以下是从用户权限内文档检索到的相关片段，以及（若有）从本体图谱解析出的实体与关系上下文。
-请在回答中优先参考这些材料；引用时在句末标注编号 [1]、[2]。若材料未覆盖问题，可结合专业知识补充并说明缺口。"""
-
-_ATTACHMENT_CONTEXT_INSTRUCTION = """以下是用户上传的临时附件正文（未写入知识库），请优先且主要依据附件内容回答。
-若附件不足以回答，请明确说明缺口，不要编造附件中不存在的内容，也不要引用未提供的知识库片段。"""
-
-_MIXED_ATTACHMENT_KB_INSTRUCTION = """以下包含用户上传的临时附件，以及（若有）从权限内知识库检索到的片段或本体图谱上下文。
-请按问题意图选用材料：分析「这篇/该文/附件」时以附件为主；明确要求对比或检索知识库时结合检索片段；引用检索片段时用 [1]、[2]。"""
-
-_WEB_SEARCH_CONTEXT_INSTRUCTION = """以下是从互联网检索到的相关摘要（实时性信息以检索结果为准，并说明数据日期或来源局限）。
-请在回答中优先参考这些材料；引用时在句末标注编号 [1]、[2]。若检索结果不足以给出准确数值，请明确说明并建议查阅官方平台的最新公告。"""
-
-_MIXED_RETRIEVAL_WEB_INSTRUCTION = """以下包含权限内文档/本体图谱检索结果，以及（若有）互联网检索摘要。
-请综合两类材料作答：本地文档/图谱优先用于企业内资料与权限内事实；联网摘要用于补充最新公开信息、数据与政策动态；二者冲突时说明差异并优先采信本地权限内材料，实时行情与价格类问题优先参考联网材料。引用时在句末标注 [1]、[2]。"""
-
-_EXPLICIT_KB_RE = re.compile(
-    r"(知识库|文档库|我的文档|权限内.{0,6}(文档|资料)|"
-    r"检索.{0,8}(文档|资料|知识库)|"
-    r"(和|与|跟|对比|比较).{0,8}知识库|"
-    r"知识库.{0,8}(里|中|内)|"
-    r"库里.{0,8}(文档|资料|有没有))"
-)
-
-_EXPLICIT_KG_RE = re.compile(r"(本体图谱|知识图谱|图谱里|图谱中|实体关系)")
-
-_PLATFORM_USAGE_RE = re.compile(
-    r"(怎么|如何|怎样|在哪|哪里|能不能).{0,16}(上传|分享|翻译|权限|知识库|导出|下载|登录|注册|设置|使用)"
-    r"|平台.{0,8}(功能|使用|操作|入口)"
-)
-
-_CHITCHAT_ONLY_RE = re.compile(
-    r"^(?:"
-    r"你好|您好|hi|hello|hey|嗨|早上好|下午好|晚上好|"
-    r"你是谁|你是哪位|你叫什么|你是谁啊|你谁啊|你是？|"
-    r"你是什么|你是什么模型|你是啥|你是哪个模型|你是哪个助手|"
-    r"介绍一下自己|介绍你自己|自我介绍|"
-    r"谢谢|感谢|多谢|辛苦了|"
-    r"再见|拜拜|bye|"
-    r"好的|好哒|明白|知道了|收到|没问题|ok|okay|"
-    r"在吗|在不在|"
-    r"你能做什么|你会什么|你能帮我什么|有什么功能|"
-    r"(?:随便)?聊聊|闲聊一下|闲聊|讲个笑话"
-    r")(?:[!！?？呀啊吧呢嘛。.,，~～\s]*)$",
-    re.I,
-)
-
-_CHITCHAT_FRAGMENT_RE = re.compile(
-    r"^(?:"
-    r"你好|您好|嗨|谢谢|感谢|多谢|再见|拜拜|在吗|在不在|"
-    r"你是谁|你是哪位|你叫什么|你是什么|辛苦了|好的|明白|知道了|收到|没问题"
-    r")(?:[!！?？呀啊吧呢嘛。.,，~～\s]*)$",
-    re.I,
-)
-
-_RETRIEVAL_HINT_RE = re.compile(
-    r"(?:什么|为何|为什么|哪些|哪个|多少|是否|有没有)"
-    r"|(?:怎么|如何|怎样|能不能|可不可以)"
-    r"|(?:查|检索|搜索|找|分析|总结|对比|比较|解释|说明|撰写|写|翻译)"
-    r"|(?:介绍).{0,8}(?:政策|文档|报告|方法|背景|概况|技术|流程)"
-    r"|(?:碳|政策|排放|配额|法规|标准|文档|报告|论文|数据|市场|行业|企业|知识库|图谱|实体)"
-)
-
-_SHORT_CASUAL_RE = re.compile(
-    r"^(?:嗯|哦|啊|哈|好|行|可以|不错|厉害|哈哈|嘻嘻|嘿嘿|加油|"
-    r"辛苦了|没事了|算了|好吧|就这样)(?:[!！?？。.,，~～\s]*)$",
-    re.I,
-)
-
-_FOLLOWUP_RE = re.compile(
-    r"(?:继续|然后|还有|进一步|详细|展开|具体|再说说|刚才|上面|前述|前面说的|"
-    r"第二点|第三点|上一条|补充一下)"
-)
-
-_EXPLICIT_WEB_RE = re.compile(
-    r"(?:联网|上网|网上(?:查|搜|搜索)|搜索(?:一下|互联网)|"
-    r"查(?:一下|下)?(?:网|网上|互联网)|"
-    r"互联网(?:上)?(?:查|搜|检索)|在线(?:查|搜|搜索|检索))"
-)
-
-_MAX_WEB_ITEMS = 8
-
-
-def _is_compound_chitchat(text: str) -> bool:
-    """复合寒暄，如「你好，你是谁？」。"""
-    parts = [p.strip() for p in re.split(r"[，,。.!！?？\s]+", text) if p.strip()]
-    if not parts or len(parts) > 4:
-        return False
-    return all(
-        _CHITCHAT_FRAGMENT_RE.match(part) or _CHITCHAT_ONLY_RE.match(part)
-        for part in parts
-    )
-
-
-def _is_chitchat_message(text: str) -> bool:
-    """判断是否为无需检索、无需读取附件的日常寒暄或闲聊。"""
-    t = (text or "").strip()
-    if not t:
-        return True
-    if _EXPLICIT_KB_RE.search(t) or _EXPLICIT_KG_RE.search(t):
-        return False
-    if _CHITCHAT_ONLY_RE.match(t):
-        return True
-    if _is_compound_chitchat(t):
-        return True
-    if len(t) <= 12 and _SHORT_CASUAL_RE.match(t):
-        return True
-    if _RETRIEVAL_HINT_RE.search(t):
-        return False
-    return False
-
-
-def _history_had_retrieval_question(history: list[AiChatMessage] | None) -> bool:
-    if not history:
-        return False
-    for item in reversed(history):
-        if item.role != "user":
-            continue
-        text = (item.content or "").strip()
-        if _RETRIEVAL_HINT_RE.search(text) or _EXPLICIT_KB_RE.search(text):
-            return True
-        return False
-    return False
-
-
-def _needs_knowledge_retrieval(
-    message: str,
-    history: list[AiChatMessage] | None = None,
-) -> bool:
-    text = (message or "").strip()
-    if _RETRIEVAL_HINT_RE.search(text):
-        return True
-    if _EXPLICIT_KB_RE.search(text) or _EXPLICIT_KG_RE.search(text):
-        return True
-    if _FOLLOWUP_RE.search(text) and _history_had_retrieval_question(history):
-        return True
-    return False
-
-
-def _history_had_web_question(history: list[AiChatMessage] | None) -> bool:
-    if not history:
-        return False
-    for item in reversed(history):
-        if item.role != "user":
-            continue
-        text = (item.content or "").strip()
-        if _needs_web_search(text, history):
-            return True
-        return False
-    return False
-
-
-def _should_skip_web_search(
-    message: str,
-    history: list[AiChatMessage] | None = None,
-    *,
-    chitchat: bool | None = None,
-    platform_usage: bool | None = None,
-) -> bool:
-    """仅寒暄、平台操作与无实质内容的短句跳过联网；其余默认联网。"""
-    text = (message or "").strip()
-    if not text:
-        return True
-    if _EXPLICIT_WEB_RE.search(text):
-        return False
-    if chitchat if chitchat is not None else _is_chitchat_message(text):
-        return True
-    if platform_usage if platform_usage is not None else bool(
-        _PLATFORM_USAGE_RE.search(text)
-    ):
-        return True
-    if (
-        len(text) <= 20
-        and not _RETRIEVAL_HINT_RE.search(text)
-        and not _needs_knowledge_retrieval(text, history)
-        and not _FOLLOWUP_RE.search(text)
-    ):
-        return True
-    return False
-
-
-def _needs_web_search(
-    message: str,
-    history: list[AiChatMessage] | None = None,
-) -> bool:
-    """SearXNG 可用时默认联网检索，仅明确无需外部信息的场景跳过。"""
-    return not _should_skip_web_search(message, history)
-
-
-def _web_search_fallback_after_empty_kb(message: str) -> bool:
-    """本地文档未命中时，仍尝试联网补充（与默认联网策略一致）。"""
-    return _needs_web_search(message)
-
-
-@dataclass(frozen=True)
-class AgentToolPlan:
-    use_attachment: bool
-    use_doc_retrieval: bool
-    use_kg: bool
-    use_web_search: bool
-    intent_label: str
-    context_instruction: str
-
-
-def _plan_agent_tools(
-    message: str,
-    *,
-    attach_count: int,
-    kb_enabled: bool,
-    kg_enabled: bool,
-    web_enabled: bool,
-    history: list[AiChatMessage] | None = None,
-) -> AgentToolPlan:
-    """根据当前问题、对话历史与是否有附件，决定调用哪些工具。"""
-    text = (message or "").strip()
-    explicit_kb = bool(_EXPLICIT_KB_RE.search(text))
-    explicit_kg = bool(_EXPLICIT_KG_RE.search(text))
-    platform_usage = bool(_PLATFORM_USAGE_RE.search(text))
-    chitchat = _is_chitchat_message(text)
-    use_web = bool(
-        web_enabled and not _should_skip_web_search(
-            text, history, chitchat=chitchat, platform_usage=platform_usage
-        )
-    )
-
-    if chitchat and not explicit_kb and not explicit_kg:
-        return AgentToolPlan(
-            use_attachment=False,
-            use_doc_retrieval=False,
-            use_kg=False,
-            use_web_search=False,
-            intent_label="日常交流，直接回答",
-            context_instruction="",
-        )
-
-    if platform_usage and not explicit_kb and not explicit_kg:
-        return AgentToolPlan(
-            use_attachment=False,
-            use_doc_retrieval=False,
-            use_kg=False,
-            use_web_search=False,
-            intent_label="解答平台使用问题",
-            context_instruction="",
-        )
-
-    # 有附件时默认读附件，但闲聊/平台问题已在上方提前返回，不会加载附件
-    if attach_count > 0 and not chitchat:
-        if explicit_kb:
-            return AgentToolPlan(
-                use_attachment=True,
-                use_doc_retrieval=kb_enabled,
-                use_kg=kg_enabled and explicit_kg,
-                use_web_search=use_web,
-                intent_label="结合附件与知识库回答",
-                context_instruction=_MIXED_ATTACHMENT_KB_INSTRUCTION,
-            )
-        if explicit_kg:
-            return AgentToolPlan(
-                use_attachment=True,
-                use_doc_retrieval=False,
-                use_kg=kg_enabled,
-                use_web_search=use_web,
-                intent_label="结合附件与本体图谱回答",
-                context_instruction=_MIXED_ATTACHMENT_KB_INSTRUCTION,
-            )
-        return AgentToolPlan(
-            use_attachment=True,
-            use_doc_retrieval=False,
-            use_kg=False,
-            use_web_search=use_web,
-            intent_label="依据用户上传的附件回答",
-            context_instruction=_ATTACHMENT_CONTEXT_INSTRUCTION,
-        )
-
-    needs_kb = _needs_knowledge_retrieval(text, history)
-    if needs_kb or use_web:
-        use_doc = bool(needs_kb and kb_enabled)
-        use_kg = bool(needs_kb and kg_enabled)
-        if use_web and use_doc:
-            label = "检索文档并结合联网查询"
-            instruction = _MIXED_RETRIEVAL_WEB_INSTRUCTION
-        elif use_web:
-            label = "联网检索实时信息"
-            instruction = _WEB_SEARCH_CONTEXT_INSTRUCTION
-        else:
-            label = "检索权限内文档与本体图谱"
-            instruction = _RETRIEVAL_CONTEXT_INSTRUCTION
-        return AgentToolPlan(
-            use_attachment=False,
-            use_doc_retrieval=use_doc,
-            use_kg=use_kg,
-            use_web_search=use_web,
-            intent_label=label,
-            context_instruction=instruction,
-        )
-
-    return AgentToolPlan(
-        use_attachment=False,
-        use_doc_retrieval=False,
-        use_kg=False,
-        use_web_search=False,
-        intent_label="直接回答",
-        context_instruction="",
-    )
+from app.core.async_db import release_db, run_db_task
+from app.core.agent_resident import build_ai_home_resident_prompt
+from app.core.prompt_budget import build_bounded_chat_messages, llm_completion_extras
+from app.services.agent_intent import AgentToolPlan, plan_agent_tools
 
 
 def _kg_enabled_for_user(db: Session, user: User) -> bool:
@@ -359,92 +39,25 @@ def _web_search_enabled(db: Session | None) -> bool:
     return is_enabled(db)
 
 
-def _resolve_web_search(
-    db: Session | None,
-    message: str,
-    *,
-    citation_start: int = 1,
-) -> tuple[str, list[dict]]:
-    if db is None:
-        return "", []
-    from app.services.report_generation_service import (
-        _format_web_context,
-        build_web_citations,
-    )
-    from app.services.searxng_service import (
-        SearxngNotConfiguredError,
-        SearxngSearchError,
-        search_web,
-    )
-
-    q = (message or "").strip()[:120]
-    if not q:
-        return "", []
-    try:
-        items, _ = search_web(q, page_size=_MAX_WEB_ITEMS, db=db)
-    except (SearxngNotConfiguredError, SearxngSearchError):
-        return "", []
-    except Exception:
-        return "", []
-    if not items:
-        return "", []
-    web_context = _format_web_context(items, start_index=citation_start)
-    web_citations = build_web_citations(items, start_index=citation_start)
-    return web_context, web_citations
-
-
-def _resolve_kg_context(
-    db: Session | None,
-    user: User | None,
-    message: str,
-) -> KgQaContext | None:
-    if db is None or user is None or not _kg_enabled_for_user(db, user):
-        return None
-    return retrieve_kg_context_for_question(db, user, message)
-
-
-def _resolve_doc_retrieval(
-    db: Session | None,
-    user: User | None,
-    message: str,
-) -> tuple[str, list[dict]]:
-    if db is None or user is None or not _knowledge_search_enabled(db, user):
-        return "", []
-    from app.services.document_service import list_queryable_documents
-    from app.services.knowledge_qa_service import (
-        _doc_citation_meta,
-        _doc_titles,
-        build_aligned_qa_context_and_citations,
-        retrieve_hits_for_qa,
-    )
-
-    docs, _ = list_queryable_documents(
-        db, user, page=1, page_size=_MAX_QUERYABLE_DOCS
-    )
-    doc_ids = [d.id for d in docs]
-    if not doc_ids:
-        return "", []
-    hits, _mode = retrieve_hits_for_qa(db, user, doc_ids, message)
-    if not hits:
-        return "", []
-    doc_titles = _doc_titles(db, doc_ids)
-    doc_meta = _doc_citation_meta(db, doc_ids)
-    return build_aligned_qa_context_and_citations(
-        hits,
-        doc_titles,
-        question=message,
-        doc_meta=doc_meta,
-    )
+def _user_retrieval_flags(db: Session, user: User) -> dict[str, bool]:
+    return {
+        "kb_enabled": _knowledge_search_enabled(db, user),
+        "kg_enabled": _kg_enabled_for_user(db, user),
+        "web_enabled": _web_search_enabled(db),
+    }
 
 
 def _attachment_file_count(
     db: Session | None,
-    user: User | None,
+    user: uuid.UUID | User | None,
     attachment_session_id: str | None,
 ) -> int:
     if db is None or user is None or not (attachment_session_id or "").strip():
         return 0
+    from app.core.async_db import resolve_db_user
     from app.services.ai_chat_attachment_service import get_owned_session
+
+    user = resolve_db_user(db, user)
 
     try:
         manifest = get_owned_session(user.id, attachment_session_id)
@@ -455,15 +68,18 @@ def _attachment_file_count(
 
 def _resolve_attachment_context(
     db: Session | None,
-    user: User | None,
+    user: uuid.UUID | User | None,
     attachment_session_id: str | None,
 ) -> tuple[str, int]:
     if db is None or user is None or not (attachment_session_id or "").strip():
         return "", 0
+    from app.core.async_db import resolve_db_user
     from app.services.ai_chat_attachment_service import (
         build_attachment_context,
         get_owned_session,
     )
+
+    user = resolve_db_user(db, user)
 
     try:
         manifest = get_owned_session(user.id, attachment_session_id)
@@ -471,47 +87,6 @@ def _resolve_attachment_context(
         return "", 0
     files = manifest.get("files") or []
     return build_attachment_context(files), len(files)
-
-
-def _append_web_context(
-    merged_context: str,
-    citations: list[dict],
-    *,
-    web_context: str,
-    web_citations: list[dict],
-) -> tuple[str, list[dict]]:
-    if not (web_context or "").strip():
-        return merged_context, citations
-    parts = [p.strip() for p in (merged_context, web_context) if (p or "").strip()]
-    return "\n\n".join(parts), list(citations) + list(web_citations)
-
-
-def _merge_retrieval_context(
-    *,
-    attachment_context: str,
-    doc_context: str,
-    doc_citations: list[dict],
-    kg_context: KgQaContext | None,
-) -> tuple[str, list[dict]]:
-    merged_context, citations = merge_kg_qa_into_context(
-        doc_context, doc_citations, kg_context
-    )
-    parts = [p.strip() for p in (attachment_context, merged_context) if (p or "").strip()]
-    return "\n\n".join(parts), citations
-
-
-def _effective_context_instruction(
-    plan: AgentToolPlan,
-    *,
-    use_web_search: bool,
-) -> str:
-    if use_web_search and not plan.use_web_search:
-        return (
-            _MIXED_RETRIEVAL_WEB_INSTRUCTION
-            if plan.use_doc_retrieval
-            else _WEB_SEARCH_CONTEXT_INSTRUCTION
-        )
-    return plan.context_instruction
 
 
 def _resolve_answer_context(
@@ -522,22 +97,16 @@ def _resolve_answer_context(
     history: list[AiChatMessage] | None = None,
 ) -> tuple[str, list[dict], KgQaContext | None, int, AgentToolPlan, str]:
     attach_count = _attachment_file_count(db, user, attachment_session_id)
-    kb_enabled = bool(
-        db is not None
-        and user is not None
-        and _knowledge_search_enabled(db, user)
+    flags = (
+        _user_retrieval_flags(db, user)
+        if db is not None and user is not None
+        else {"kb_enabled": False, "kg_enabled": False, "web_enabled": _web_search_enabled(db)}
     )
-    kg_enabled = bool(
-        db is not None and user is not None and _kg_enabled_for_user(db, user)
-    )
-    web_enabled = _web_search_enabled(db)
-    plan = _plan_agent_tools(
+    plan = plan_agent_tools(
         message,
         attach_count=attach_count,
-        kb_enabled=kb_enabled,
-        kg_enabled=kg_enabled,
-        web_enabled=web_enabled,
         history=history,
+        **flags,
     )
 
     attachment_context = ""
@@ -546,61 +115,174 @@ def _resolve_answer_context(
             db, user, attachment_session_id
         )
 
-    doc_context, doc_citations = "", []
-    if plan.use_doc_retrieval:
-        doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
-
+    merged_context = attachment_context.strip()
+    citations: list[dict] = []
     kg_context: KgQaContext | None = None
-    if plan.use_kg:
-        kg_context = _resolve_kg_context(db, user, message)
-
-    use_web_search = plan.use_web_search
-    if (
-        not use_web_search
-        and web_enabled
-        and plan.use_doc_retrieval
-        and not doc_citations
-        and _web_search_fallback_after_empty_kb(message)
-    ):
-        use_web_search = True
-
-    merged_context, citations = _merge_retrieval_context(
-        attachment_context=attachment_context,
-        doc_context=doc_context,
-        doc_citations=doc_citations,
-        kg_context=kg_context,
-    )
-    if use_web_search:
-        web_context, web_citations = _resolve_web_search(
-            db,
-            message,
-            citation_start=len(citations) + 1,
-        )
-        merged_context, citations = _append_web_context(
-            merged_context,
-            citations,
-            web_context=web_context,
-            web_citations=web_citations,
-        )
+    context_instruction = plan.context_instruction or ""
     return (
         merged_context,
         citations,
         kg_context,
         attach_count,
         plan,
-        _effective_context_instruction(plan, use_web_search=use_web_search),
+        context_instruction,
     )
 
 
-def _resolve_platform_knowledge(
+def _resolve_prompt_layers(
     db: Session | None,
     user: User | None,
-) -> str:
-    if db is None or user is None:
-        return ""
-    from app.services.assistant_knowledge import build_platform_knowledge
+    message: str,
+    *,
+    conversation_id: str | None = None,
+) -> "AgentPromptLayers":
+    from app.core.async_db import resolve_db_user
+    from app.services.agent_context_service import (
+        AgentPromptLayers,
+        resolve_agent_prompt_layers,
+    )
 
-    return build_platform_knowledge(db, user)
+    if db is None or user is None:
+        return AgentPromptLayers()
+    user = resolve_db_user(db, user)
+    return resolve_agent_prompt_layers(
+        db,
+        user,
+        message,
+        channel="ai-home",
+        conversation_id=conversation_id,
+    )
+
+
+def _maybe_write_user_memory(
+    db: Session | None,
+    user: User | uuid.UUID | None,
+    message: str,
+) -> None:
+    if db is None or user is None:
+        return
+    from app.core.async_db import resolve_db_user
+    from app.services.agent_context_service import maybe_write_user_memory
+
+    resolved = resolve_db_user(db, user)
+    maybe_write_user_memory(resolved.id, message)
+
+
+def _try_auto_schedule_reminder(
+    db: Session,
+    user_id: uuid.UUID,
+    message: str,
+) -> dict[str, Any] | None:
+    """用户消息为明确定时提醒时，服务端直接创建 scheduled_notification。"""
+    from app.core.async_db import resolve_db_user
+    from app.services import agent_platform_service as plat
+    from app.services.agent_intent import parse_scheduled_reminder_request
+
+    parsed = parse_scheduled_reminder_request(message)
+    if not parsed:
+        return None
+    user = resolve_db_user(db, user_id)
+    try:
+        data = plat.schedule_notification_for_agent(
+            db,
+            user,
+            title=str(parsed["title"]),
+            body=str(parsed.get("body") or ""),
+            delay_seconds=parsed.get("delay_seconds"),
+            delay_minutes=parsed.get("delay_minutes"),
+        )
+    except ValueError:
+        return None
+    boost_seconds = parsed.get("delay_seconds")
+    if boost_seconds is None and parsed.get("delay_minutes") is not None:
+        boost_seconds = int(parsed["delay_minutes"]) * 60
+    return {
+        "message": str(data.get("message") or "已设置定时通知"),
+        "boost_seconds": boost_seconds,
+        "title": str(parsed["title"]),
+    }
+
+
+async def _reply_after_auto_reminder(
+    *,
+    message: str,
+    history: list[AiChatMessage],
+    reminder_result: dict[str, Any],
+    layers: Any,
+) -> str:
+    from app.integrations.deepseek_client import chat_completion_message_async
+
+    confirm_instruction = (
+        f"【系统已代为设置定时通知】{reminder_result['message']}。"
+        "请用一两句简体中文向用户确认提醒已安排好，说明提醒事项与大致时间，语气自然亲切。"
+    )
+    messages = _build_chat_messages(
+        message=message,
+        history=history,
+        layers=layers,
+        context_instruction=confirm_instruction,
+    )
+    choice = await chat_completion_message_async(
+        messages=messages,
+        tools=None,
+        temperature=0.4,
+    )
+    reply = (
+        (((choice or {}).get("message") or {}).get("content") or "").strip()
+        or f"好的，{reminder_result['message']}"
+    )
+    return reply
+
+
+async def _emit_reminder_scheduled_workflow(
+    reminder_result: dict[str, Any],
+) -> AsyncIterator[str]:
+    step_id = _next_step_id()
+    detail = str(reminder_result.get("title") or "")
+    boost = reminder_result.get("boost_seconds")
+    for phase, title, status in (
+        ("tool_call", "设置定时通知", "running"),
+        ("tool_result", "定时通知已设置", "done"),
+    ):
+        ev: dict[str, Any] = {
+            "phase": phase,
+            "title": title,
+            "detail": detail,
+            "tool": "platform.notification",
+            "tool_name": "schedule_notification",
+            "step_id": step_id,
+            "status": status,
+        }
+        if boost is not None:
+            ev["boost_seconds"] = int(boost)
+        yield json.dumps({"workflow": ev}, ensure_ascii=False)
+        await asyncio.sleep(0)
+
+
+def _prepare_ai_chat_stream_plan(
+    db: Session,
+    user_id: uuid.UUID,
+    message: str,
+    attachment_session_id: str | None,
+    history: list[AiChatMessage] | None,
+) -> dict[str, Any]:
+    """单次 DB 会话：读取开关并生成 Agent 工具计划。"""
+    from app.core.async_db import resolve_db_user
+
+    user = resolve_db_user(db, user_id)
+    attach_count = _attachment_file_count(db, user, attachment_session_id)
+    flags = _user_retrieval_flags(db, user)
+    plan = plan_agent_tools(
+        message,
+        attach_count=attach_count,
+        history=history,
+        **flags,
+    )
+    return {
+        "plan": plan,
+        **flags,
+        "attach_count": attach_count,
+    }
 
 
 def _build_chat_messages(
@@ -608,21 +290,115 @@ def _build_chat_messages(
     message: str,
     history: list[AiChatMessage],
     retrieval_context: str = "",
-    platform_knowledge: str = "",
-    context_instruction: str = _RETRIEVAL_CONTEXT_INSTRUCTION,
+    layers: "AgentPromptLayers | None" = None,
+    context_instruction: str = "",
 ) -> list[dict]:
-    system = _SYSTEM_PROMPT
-    if platform_knowledge.strip():
-        system = f"{system}\n\n【平台操作知识库】\n{platform_knowledge.strip()}"
-    if retrieval_context.strip():
-        instruction = (context_instruction or _RETRIEVAL_CONTEXT_INSTRUCTION).strip()
-        system = f"{system}\n\n{instruction}\n\n{retrieval_context.strip()}"
-    messages: list[dict] = [{"role": "system", "content": system}]
-    tail = history[-_MAX_HISTORY:] if history else []
-    for item in tail:
-        messages.append({"role": item.role, "content": item.content.strip()})
-    messages.append({"role": "user", "content": message.strip()})
-    return messages
+    from app.services.agent_context_service import AgentPromptLayers
+
+    layers = layers or AgentPromptLayers()
+    return build_bounded_chat_messages(
+        system=build_ai_home_resident_prompt(),
+        history=history,
+        user_message=message,
+        retrieval_context=retrieval_context,
+        platform_knowledge=layers.platform_knowledge,
+        skill_catalog=layers.skill_catalog,
+        activated_skills=layers.activated_skills,
+        runtime_context=layers.runtime_context,
+        memory_context=layers.memory_context,
+        context_instruction=context_instruction or "",
+    )
+
+
+_FOLLOW_UP_SKIP_MARKERS = ("未能生成", "无法回复", "未配置", "暂时无法")
+
+
+def generate_follow_up_questions(
+    *,
+    user_message: str,
+    assistant_answer: str,
+    history: list[AiChatMessage] | None = None,
+) -> list[str]:
+    """根据本轮问答生成 2～3 条可继续追问的短问题。"""
+    from app.core.llm_parse import parse_llm_json
+    from app.integrations.deepseek_client import chat_completion_sync, is_configured
+
+    answer = (assistant_answer or "").strip()
+    if not answer or len(answer) < 16:
+        return []
+    if any(marker in answer for marker in _FOLLOW_UP_SKIP_MARKERS):
+        return []
+    if not is_configured():
+        return []
+
+    hist_lines: list[str] = []
+    for msg in (history or [])[-4:]:
+        role = "用户" if msg.role == "user" else "助手"
+        text = (msg.content or "").strip()[:200]
+        if text:
+            hist_lines.append(f"{role}：{text}")
+    hist_block = "\n".join(hist_lines)
+
+    system = (
+        "你是企业知识助手「小析」。根据本轮问答，生成用户可能继续追问的短问题。"
+        '仅返回 JSON：{"questions":["问题1","问题2"]}。'
+        "要求：2～3 条；每条 8～40 字；具体、可独立作答；不要重复用户刚问过的问题；"
+        "不要编号、不要解释。"
+    )
+    user = f"用户问题：{user_message.strip()[:500]}\n助手回答：{answer[:2000]}"
+    if hist_block:
+        user = f"近期对话：\n{hist_block}\n\n{user}"
+
+    try:
+        raw = chat_completion_sync(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.4,
+            timeout=25.0,
+        )
+    except Exception:
+        return []
+
+    data = parse_llm_json(raw)
+    if not data:
+        return []
+    raw_q = data.get("questions") or data.get("follow_up_questions") or []
+    if not isinstance(raw_q, list):
+        return []
+
+    seen: set[str] = set()
+    out: list[str] = []
+    user_norm = user_message.strip().lower()
+    for item in raw_q:
+        q = str(item or "").strip().strip("？?").strip()
+        if not q:
+            continue
+        if not q.endswith("？") and not q.endswith("?"):
+            q += "？"
+        key = q.lower()
+        if key in seen or key == user_norm:
+            continue
+        seen.add(key)
+        out.append(q[:80])
+        if len(out) >= 3:
+            break
+    return out
+
+
+async def _resolve_follow_up_questions(
+    *,
+    user_message: str,
+    assistant_answer: str,
+    history: list[AiChatMessage] | None = None,
+) -> list[str]:
+    return await asyncio.to_thread(
+        generate_follow_up_questions,
+        user_message=user_message,
+        assistant_answer=assistant_answer,
+        history=history,
+    )
 
 
 def _kg_meta_payload(kg_context: KgQaContext | None) -> dict[str, Any]:
@@ -696,10 +472,9 @@ def _persist_turn(
 
 async def iter_chat_with_ai_agent_stream(
     *,
+    user_id: uuid.UUID,
     message: str,
     history: list[AiChatMessage],
-    db: Session | None = None,
-    user: User | None = None,
     conversation_id: str | None = None,
     attachment_session_id: str | None = None,
 ) -> AsyncIterator[str]:
@@ -728,28 +503,14 @@ async def iter_chat_with_ai_agent_stream(
     ):
         yield payload
 
-    doc_context = ""
-    doc_citations: list[dict] = []
-    attachment_context = ""
-    attach_count = _attachment_file_count(db, user, attachment_session_id)
-
-    kb_enabled = bool(
-        db is not None
-        and user is not None
-        and _knowledge_search_enabled(db, user)
-    )
-    kg_enabled = bool(
-        db is not None and user is not None and _kg_enabled_for_user(db, user)
-    )
-    web_enabled = _web_search_enabled(db)
-    plan = _plan_agent_tools(
+    prep = await run_db_task(
+        _prepare_ai_chat_stream_plan,
+        user_id,
         message,
-        attach_count=attach_count,
-        kb_enabled=kb_enabled,
-        kg_enabled=kg_enabled,
-        web_enabled=web_enabled,
-        history=history,
+        attachment_session_id,
+        history,
     )
+    plan: AgentToolPlan = prep["plan"]
 
     async for payload in _emit_workflow(
         "agent_thought",
@@ -760,8 +521,13 @@ async def iter_chat_with_ai_agent_stream(
     ):
         yield payload
 
+    doc_context = ""
+    doc_citations: list[dict] = []
+    attachment_context = ""
+    attach_count = int(prep.get("attach_count") or 0)
+
     attach_id = _next_step_id()
-    if plan.use_attachment and db is not None and user is not None:
+    if plan.use_attachment:
         async for payload in _emit_workflow(
             "tool_call",
             title="读取临时附件",
@@ -770,8 +536,8 @@ async def iter_chat_with_ai_agent_stream(
             step_id=attach_id,
         ):
             yield payload
-        attachment_context, attach_count = _resolve_attachment_context(
-            db, user, attachment_session_id
+        attachment_context, attach_count = await run_db_task(
+            _resolve_attachment_context, user_id, attachment_session_id
         )
         attach_detail = (
             f"已加载 {attach_count} 个附件"
@@ -788,173 +554,151 @@ async def iter_chat_with_ai_agent_stream(
         ):
             yield payload
 
-    retrieve_id = _next_step_id()
-    if plan.use_doc_retrieval and db is not None and user is not None:
-        async for payload in _emit_workflow(
-            "tool_call",
-            title="检索权限内文档",
-            tool="retrieve",
-            detail=message.strip()[:120],
-            step_id=retrieve_id,
-        ):
-            yield payload
-        doc_context, doc_citations = _resolve_doc_retrieval(db, user, message)
-        retrieve_detail = (
-            f"命中 {len(doc_citations)} 条相关片段"
-            if doc_citations
-            else "未命中相关文档片段"
-        )
-        async for payload in _emit_workflow(
-            "tool_result",
-            title="文档检索完成",
-            tool="retrieve",
-            detail=retrieve_detail,
-            step_id=retrieve_id,
-            status="done",
-        ):
-            yield payload
-
     kg_context: KgQaContext | None = None
-    kg_id = _next_step_id()
-    if plan.use_kg and db is not None and user is not None:
-        async for payload in _emit_workflow(
-            "tool_call",
-            title="解析本体图谱关联",
-            tool="kg_context",
-            detail=message.strip()[:120],
-            step_id=kg_id,
-        ):
-            yield payload
-        kg_context = _resolve_kg_context(db, user, message)
-        if kg_context and kg_context.context_text.strip():
-            kg_detail = (
-                f"匹配 {len(kg_context.matched_entity_ids)} 个实体，"
-                f"{kg_context.relation_count} 条关系"
-            )
-        else:
-            kg_detail = "未匹配到相关实体"
-        async for payload in _emit_workflow(
-            "tool_result",
-            title="本体图谱上下文",
-            tool="kg_context",
-            detail=kg_detail,
-            step_id=kg_id,
-            status="done",
-        ):
-            yield payload
+    merged_context = attachment_context.strip()
+    context_instruction = plan.context_instruction or ""
 
-    use_web_search = plan.use_web_search
-    if (
-        not use_web_search
-        and web_enabled
-        and plan.use_doc_retrieval
-        and not doc_citations
-        and _web_search_fallback_after_empty_kb(message)
-    ):
-        use_web_search = True
-
-    merged_context, citations = _merge_retrieval_context(
-        attachment_context=attachment_context,
-        doc_context=doc_context,
-        doc_citations=doc_citations,
-        kg_context=kg_context,
-    )
-
-    context_instruction = plan.context_instruction
-    if use_web_search and not plan.use_web_search:
-        context_instruction = _effective_context_instruction(
-            plan, use_web_search=use_web_search
-        )
-
-    web_id = _next_step_id()
-    if use_web_search:
-        async for payload in _emit_workflow(
-            "tool_call",
-            title="联网检索相关资料",
-            tool="web_search",
-            detail=message.strip()[:120],
-            step_id=web_id,
-        ):
-            yield payload
-        web_context, web_citations = _resolve_web_search(
-            db,
-            message,
-            citation_start=len(citations) + 1,
-        )
-        merged_context, citations = _append_web_context(
-            merged_context,
-            citations,
-            web_context=web_context,
-            web_citations=web_citations,
-        )
-        web_detail = (
-            f"获取 {len(web_citations)} 条联网摘要"
-            if web_citations
-            else "未获取到有效联网结果"
-        )
-        async for payload in _emit_workflow(
-            "tool_result",
-            title="联网检索完成",
-            tool="web_search",
-            detail=web_detail,
-            step_id=web_id,
-            status="done",
-        ):
-            yield payload
-
-    async for payload in _emit_workflow("node_started", title="正在生成回答"):
+    async for payload in _emit_workflow("node_started", title="正在整理上下文"):
         yield payload
 
+    await run_db_task(_maybe_write_user_memory, user_id, message)
+
+    layers = await run_db_task(
+        _resolve_prompt_layers,
+        user_id,
+        message,
+        conversation_id=conversation_id,
+    )
+
+    auto_reminder = await run_db_task(_try_auto_schedule_reminder, user_id, message)
+    if auto_reminder:
+        async for payload in _emit_reminder_scheduled_workflow(auto_reminder):
+            yield payload
+        reply = await _reply_after_auto_reminder(
+            message=message,
+            history=history,
+            reminder_result=auto_reminder,
+            layers=layers,
+        )
+        out_conv_id = await run_db_task(
+            _persist_turn,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=message,
+            reply=reply,
+        )
+        done_payload: dict[str, Any] = {
+            "done": True,
+            "reply": reply,
+            "conversation_id": out_conv_id,
+            "tool_loop": True,
+            "auto_reminder": True,
+        }
+        yield json.dumps(done_payload, ensure_ascii=False)
+        async for payload in _emit_workflow("workflow_finished", title="完成"):
+            yield payload
+        return
+
     accumulated = ""
-    platform_knowledge = _resolve_platform_knowledge(db, user)
     messages = _build_chat_messages(
         message=message,
         history=history,
         retrieval_context=merged_context,
-        platform_knowledge=platform_knowledge,
+        layers=layers,
         context_instruction=context_instruction,
     )
-    api_key, base_url, model = resolve_credentials()
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": 0.6,
-        "stream": True,
-    }
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}"}
+
+    from app.core.async_db import resolve_db_user
+    from app.database import SessionLocal
+    from app.services.agent_tool_loop import iter_agent_tool_loop
+
+    tool_reply: str | None = None
+    tool_citations: list[dict] = []
+    db = SessionLocal()
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as r:
-                if r.status_code >= 400:
-                    body = (await r.aread())[:500].decode("utf-8", errors="replace")
-                    yield json.dumps(
-                        {"error": f"AI 对话暂时不可用: {body}"},
-                        ensure_ascii=False,
-                    )
-                    async for payload in _emit_workflow(
-                        "workflow_finished", title="处理失败", status="failed"
-                    ):
-                        yield payload
-                    return
-                async for line in r.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
-                    text = delta.get("content") or ""
-                    if text:
-                        accumulated += text
-                        yield json.dumps({"delta": text}, ensure_ascii=False)
-        out_conv_id = _persist_turn(
+        agent_user = resolve_db_user(db, user_id)
+        async for event in iter_agent_tool_loop(
             db,
-            user_id=user.id if user else None,
+            agent_user,
+            messages,
+            conversation_id=conversation_id,
+            user_message=message,
+            attachment_session_id=attachment_session_id,
+            intent_plan=plan,
+            chat_history=history,
+        ):
+            if event.get("type") == "workflow":
+                yield json.dumps({"workflow": event["data"]}, ensure_ascii=False)
+                await asyncio.sleep(0)
+            elif event.get("type") == "attachment":
+                yield json.dumps({"attachments": [event["data"]]}, ensure_ascii=False)
+                await asyncio.sleep(0)
+            elif event.get("type") == "complete":
+                messages = event.get("messages") or messages
+                tool_reply = event.get("reply")
+                tool_citations = list(event.get("citations") or [])
+                kg_context = event.get("kg_context")
+    finally:
+        db.close()
+
+    if tool_reply:
+        from app.services.knowledge_qa_service import finalize_citations_preserving_index
+
+        normalized_reply = tool_reply
+        display_citations: list[dict] = []
+        if tool_citations:
+            normalized_reply, display_citations = finalize_citations_preserving_index(
+                tool_reply, tool_citations
+            )
+        out_conv_id = await run_db_task(
+            _persist_turn,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message=message,
+            reply=normalized_reply,
+        )
+        follow_ups = await _resolve_follow_up_questions(
+            user_message=message,
+            assistant_answer=normalized_reply,
+            history=history,
+        )
+        done_payload: dict[str, Any] = {
+            "done": True,
+            "reply": normalized_reply,
+            "conversation_id": out_conv_id,
+            "tool_loop": True,
+            **_kg_meta_payload(kg_context),
+        }
+        if display_citations:
+            done_payload["citations"] = display_citations
+        if follow_ups:
+            done_payload["follow_up_questions"] = follow_ups
+        yield json.dumps(done_payload, ensure_ascii=False)
+        async for payload in _emit_workflow("workflow_finished", title="完成"):
+            yield payload
+        return
+
+    from app.services.llm_workflow_stream import iter_llm_answer_events
+
+    answer_think_id = _next_step_id()
+    _, _, model = resolve_credentials()
+    try:
+        async for ev in iter_llm_answer_events(
+            messages=messages,
+            temperature=0.6,
+            think_title="正在生成回答",
+            think_detail="综合工具结果并生成回复…",
+            step_id=answer_think_id,
+        ):
+            if ev.get("type") == "workflow":
+                yield json.dumps({"workflow": ev["data"]}, ensure_ascii=False)
+                await asyncio.sleep(0)
+            elif ev.get("type") == "delta" and ev.get("text"):
+                accumulated += ev["text"]
+                yield json.dumps({"delta": ev["text"]}, ensure_ascii=False)
+        out_conv_id = await run_db_task(
+            _persist_turn,
+            user_id=user_id,
             conversation_id=conversation_id,
             message=message,
             reply=accumulated,
@@ -963,10 +707,15 @@ async def iter_chat_with_ai_agent_stream(
 
         display_citations: list[dict] = []
         normalized_answer = accumulated
-        if citations:
+        if tool_citations:
             normalized_answer, display_citations = finalize_citations_preserving_index(
-                accumulated, citations
+                accumulated, tool_citations
             )
+        follow_ups = await _resolve_follow_up_questions(
+            user_message=message,
+            assistant_answer=normalized_answer,
+            history=history,
+        )
         done_payload: dict[str, Any] = {
             "done": True,
             "model": model,
@@ -977,10 +726,12 @@ async def iter_chat_with_ai_agent_stream(
         if display_citations:
             yield json.dumps({"citations": display_citations}, ensure_ascii=False)
             done_payload["citations"] = display_citations
+        if follow_ups:
+            done_payload["follow_up_questions"] = follow_ups
         yield json.dumps(done_payload, ensure_ascii=False)
         async for payload in _emit_workflow("workflow_finished", title="完成"):
             yield payload
-    except httpx.HTTPError as e:
+    except Exception as e:
         yield json.dumps({"error": f"无法连接 AI 服务: {e}"}, ensure_ascii=False)
         async for payload in _emit_workflow(
             "workflow_finished", title="处理失败", status="failed"
@@ -1000,24 +751,127 @@ async def chat_with_ai_agent(
     if not is_configured():
         raise bad_request("AI 对话未配置，请联系管理员配置 DeepSeek API")
 
-    retrieval_context, citations, kg_context, _attach_count, plan, context_instruction = (
-        _resolve_answer_context(
-            db, user, message, attachment_session_id, history=history
-        )
+    release_db(db)
+    (
+        retrieval_context,
+        citations,
+        kg_context,
+        _attach_count,
+        plan,
+        context_instruction,
+    ) = await run_db_task(
+        _resolve_answer_context,
+        user,
+        message,
+        attachment_session_id,
+        history=history,
     )
-    platform_knowledge = _resolve_platform_knowledge(db, user)
+    await run_db_task(_maybe_write_user_memory, user, message)
+    layers = await run_db_task(
+        _resolve_prompt_layers,
+        user,
+        message,
+        conversation_id=conversation_id,
+    )
+
+    auto_reminder = await run_db_task(_try_auto_schedule_reminder, user.id, message)
+    if auto_reminder:
+        reply = await _reply_after_auto_reminder(
+            message=message,
+            history=history,
+            reminder_result=auto_reminder,
+            layers=layers,
+        )
+        out_conv_id = await run_db_task(
+            _persist_turn,
+            user_id=user.id,
+            conversation_id=conversation_id,
+            message=message,
+            reply=reply,
+        )
+        return {
+            "reply": reply,
+            "conversation_id": out_conv_id,
+            "model": resolve_credentials()[2],
+            "tool_loop": True,
+            "auto_reminder": True,
+        }
+
     messages = _build_chat_messages(
         message=message,
         history=history,
         retrieval_context=retrieval_context,
-        platform_knowledge=platform_knowledge,
+        layers=layers,
         context_instruction=context_instruction,
     )
+
+    from app.core.async_db import resolve_db_user
+    from app.database import SessionLocal
+    from app.services.agent_tool_loop import iter_agent_tool_loop
+
+    tool_reply: str | None = None
+    tool_citations: list[dict] = []
+    kg_context_from_tools: KgQaContext | None = None
+    db_session = SessionLocal()
+    try:
+        agent_user = resolve_db_user(db_session, user)
+        async for event in iter_agent_tool_loop(
+            db_session,
+            agent_user,
+            messages,
+            conversation_id=conversation_id,
+            user_message=message,
+            attachment_session_id=attachment_session_id,
+            intent_plan=plan,
+            chat_history=history,
+        ):
+            if event.get("type") == "complete":
+                messages = event.get("messages") or messages
+                tool_reply = event.get("reply")
+                tool_citations = list(event.get("citations") or [])
+                kg_context_from_tools = event.get("kg_context")
+    finally:
+        db_session.close()
+
+    if tool_reply:
+        from app.services.knowledge_qa_service import finalize_citations_preserving_index
+
+        normalized_reply = tool_reply
+        display_citations: list[dict] = []
+        if tool_citations:
+            normalized_reply, display_citations = finalize_citations_preserving_index(
+                tool_reply, tool_citations
+            )
+        out_conv_id = await run_db_task(
+            _persist_turn,
+            user_id=user.id,
+            conversation_id=conversation_id,
+            message=message,
+            reply=normalized_reply,
+        )
+        follow_ups = await _resolve_follow_up_questions(
+            user_message=message,
+            assistant_answer=normalized_reply,
+            history=history,
+        )
+        result: dict[str, Any] = {
+            "reply": normalized_reply,
+            "conversation_id": out_conv_id,
+            "model": resolve_credentials()[2],
+            "tool_loop": True,
+            **_kg_meta_payload(kg_context_from_tools),
+        }
+        if display_citations:
+            result["citations"] = display_citations
+        if follow_ups:
+            result["follow_up_questions"] = follow_ups
+        return result
     api_key, base_url, model = resolve_credentials()
     payload = {
         "model": model,
         "messages": messages,
         "temperature": 0.6,
+        **llm_completion_extras(),
     }
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -1039,8 +893,8 @@ async def chat_with_ai_agent(
     reply = reply.strip()
     if not reply:
         raise bad_request("AI 返回为空")
-    out_conv_id = _persist_turn(
-        db,
+    out_conv_id = await run_db_task(
+        _persist_turn,
         user_id=user.id if user else None,
         conversation_id=conversation_id,
         message=message,
@@ -1050,16 +904,23 @@ async def chat_with_ai_agent(
 
     display_citations: list[dict] = []
     normalized_reply = reply
-    if citations:
+    if tool_citations:
         normalized_reply, display_citations = finalize_citations_preserving_index(
-            reply, citations
+            reply, tool_citations
         )
+    follow_ups = await _resolve_follow_up_questions(
+        user_message=message,
+        assistant_answer=normalized_reply,
+        history=history,
+    )
     result: dict[str, Any] = {
         "reply": normalized_reply,
         "model": model,
         "conversation_id": out_conv_id,
-        **_kg_meta_payload(kg_context),
+        **_kg_meta_payload(kg_context_from_tools or kg_context),
     }
     if display_citations:
         result["citations"] = display_citations
+    if follow_ups:
+        result["follow_up_questions"] = follow_ups
     return result

@@ -7,7 +7,7 @@
 #   ./dev.sh sync                  # 同步后端 + 重启 API / Worker
 #   ./dev.sh sync --frontend       # 同步前端源码 + npm build + nginx reload（挂载 dist，不重建镜像）
 #   ./dev.sh sync --all            # 后端 + 前端
-#   ./dev.sh sync --no-restart-api # 仅依赖 uvicorn --reload，不重启 API（更快但不稳）
+#   ./dev.sh sync --browser            # 同步后在服务器重建 Playwright runtime
 #
 # 配置: platform/deploy.target（可选，默认 172.19.134.45:/root/qzb/lvye）
 #
@@ -30,6 +30,7 @@ DEPLOY_PATH="${DEPLOY_PATH:-/root/qzb/lvye}"
 
 SYNC_FRONTEND=0
 RESTART_API=1
+SYNC_BROWSER=0
 RSYNC_OPTS=(-avz --delete)
 
 load_target() {
@@ -46,6 +47,7 @@ parse_args() {
       --frontend) SYNC_FRONTEND=1; shift ;;
       --all) SYNC_FRONTEND=1; shift ;;
       --no-restart-api) RESTART_API=0; shift ;;
+      --browser) SYNC_BROWSER=1; shift ;;
       --restart-api)
         warn "--restart-api 已废弃（默认即重启 API），请直接使用 ./dev.sh sync"
         shift
@@ -66,7 +68,7 @@ remote() {
 rsync_to_server() {
   local dest="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
   info "同步后端 → ${dest}"
-  remote "mkdir -p '${DEPLOY_PATH}/platform/app' '${DEPLOY_PATH}/platform/workers' '${DEPLOY_PATH}/docs'"
+  remote "mkdir -p '${DEPLOY_PATH}/platform/app' '${DEPLOY_PATH}/platform/workers' '${DEPLOY_PATH}/docs' '${DEPLOY_PATH}/scripts/lib'"
   rsync "${RSYNC_OPTS[@]}" \
     --exclude '__pycache__/' --exclude '*.pyc' \
     "$ROOT/platform/app/" "${dest}platform/app/"
@@ -77,6 +79,15 @@ rsync_to_server() {
     "$ROOT/docs/" "${dest}docs/" \
     "$ROOT/RELEASE.md" "${dest}RELEASE.md" \
     "$ROOT/运维部署指南.md" "${dest}运维部署指南.md" 2>/dev/null || true
+  rsync -avz \
+    "$ROOT/compose.yaml" "${dest}compose.yaml" \
+    "$ROOT/compose.server.yaml" "${dest}compose.server.yaml" \
+    "$ROOT/scripts/stack.sh" "${dest}scripts/stack.sh" \
+    "$ROOT/scripts/setup-browser-rpa.sh" "${dest}scripts/setup-browser-rpa.sh" \
+    "$ROOT/scripts/lib/browser-rpa.sh" "${dest}scripts/lib/browser-rpa.sh" \
+    "$ROOT/platform/Dockerfile" "${dest}platform/Dockerfile" \
+    "$ROOT/platform/pyproject.toml" "${dest}platform/pyproject.toml" \
+    2>/dev/null || true
 
   if [[ "$SYNC_FRONTEND" == 1 ]]; then
     info "同步前端 → ${dest}"
@@ -97,29 +108,67 @@ set -euo pipefail
 cd '${DEPLOY_PATH}'
 proj="\${COMPOSE_PROJECT_NAME:-lvye}"
 
-restart_by_name() {
-  local pattern="\$1"
-  local cid
-  cid="\$(docker ps -q -f "name=\${pattern}")"
-  if [[ -n "\$cid" ]]; then
-    docker restart \$cid
-    echo "[sync] restarted \${pattern}"
-  fi
-}
-
-restart_by_name "\${proj}-worker"
-if [[ "${api_flag}" == 1 ]]; then
-  restart_by_name "\${proj}-api"
+wait_api_ready() {
   echo "[sync] 等待 API 就绪…"
+  local ok=0
   for i in \$(seq 1 30); do
-    if curl -sf -o /dev/null http://127.0.0.1:40005/ai/api/v1/system/version 2>/dev/null; then
-      echo "[sync] API 已就绪"
+    if curl -sf -o /dev/null --max-time 5 http://127.0.0.1:40005/ai/api/v1/system/client-config 2>/dev/null; then
+      echo "[sync] API 已就绪（client-config OK）"
+      ok=1
       break
     fi
     sleep 2
   done
+  if [[ "\$ok" != 1 ]]; then
+    echo "[sync] 警告: API 未在 60s 内就绪，尝试强制重建 api 容器…"
+    SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up api 2>/dev/null || true
+    for i in \$(seq 1 15); do
+      if curl -sf -o /dev/null --max-time 5 http://127.0.0.1:40005/ai/api/v1/system/client-config 2>/dev/null; then
+        echo "[sync] API 已就绪（重试成功）"
+        ok=1
+        break
+      fi
+      sleep 2
+    done
+  fi
+  [[ "\$ok" == 1 ]] || echo "[sync] 警告: API 仍不可用，请 ssh 检查 lvye-api-1 日志"
+}
+
+if [[ "${api_flag}" == 1 ]]; then
+  echo "[sync] 重建 API / Worker（compose up -d + restart，加载挂载的新代码）…"
+  SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up api worker
+  # compose up -d 在配置未变时不会重启已运行容器，uvicorn 多 worker 会继续用旧内存代码
+  for svc in api worker; do
+    cid="\$(docker ps -q -f "name=\${proj}-\${svc}")"
+    if [[ -n "\$cid" ]]; then
+      docker restart \$cid
+      echo "[sync] restarted \${proj}-\${svc}"
+    fi
+  done
+  wait_api_ready
 else
-  echo "[sync] 跳过 API 重启（--no-restart-api），依赖 uvicorn --reload"
+  echo "[sync] 跳过 API 重建（--no-restart-api）"
+  restart_by_name() {
+    local pattern="\$1"
+    local cid
+    cid="\$(docker ps -q -f "name=\${pattern}")"
+    if [[ -n "\$cid" ]]; then
+      docker restart \$cid
+      echo "[sync] restarted \${pattern}"
+    fi
+  }
+  restart_by_name "\${proj}-worker"
+fi
+
+# 浏览器 RPA：api 就绪后自动检测，缺失则重建 Playwright runtime
+if [[ "${api_flag}" == 1 ]]; then
+  export INSTALL_BROWSER=1
+  export SERVER_MOUNT_CODE=1
+  if ! docker exec "\$(docker ps -q -f name=\${proj}-api | head -1)" python -c \
+    "from playwright.sync_api import sync_playwright" 2>/dev/null; then
+    echo "[sync] 自动构建 Playwright runtime（Docker，约 3–8 分钟）…"
+    bash scripts/stack.sh build-browser
+  fi
 fi
 
 if [[ "${fe_flag}" == 1 ]]; then
@@ -169,6 +218,17 @@ main() {
   remote "echo ok" >/dev/null || { error "SSH 连接失败"; exit 1; }
   rsync_to_server
   apply_on_server "$SYNC_FRONTEND" "$RESTART_API"
+  if [[ "$SYNC_BROWSER" == 1 && "$RESTART_API" != 1 ]]; then
+    info "强制重建 Playwright runtime…"
+    remote bash -s <<EOF
+set -euo pipefail
+cd '${DEPLOY_PATH}'
+export INSTALL_BROWSER=1 SERVER_MOUNT_CODE=1
+export COMPOSE_PROJECT_NAME="\${COMPOSE_PROJECT_NAME:-lvye}"
+[[ -f .env ]] && set -a && source .env && set +a
+bash scripts/stack.sh build-browser
+EOF
+  fi
   info "完成。本机开发: ./dev.sh local  |  服务器 Web: http://${DEPLOY_HOST}:40005/ai/"
 }
 

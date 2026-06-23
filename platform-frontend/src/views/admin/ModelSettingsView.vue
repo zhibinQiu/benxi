@@ -15,6 +15,7 @@ import {
   NInputNumber,
   NSelect,
   NSpace,
+  NSwitch,
   NTag,
   NText } from "naive-ui";
 import {
@@ -82,6 +83,12 @@ const form = reactive({
   pdf2zh_api_url: "",
   searxng_url: "",
   searxng_timeout_seconds: 15,
+  agent_browser_enabled: false,
+  agent_browser_headless: true,
+  agent_browser_allowed_domains: "",
+  agent_browser_max_steps_per_session: 50,
+  agent_browser_auto_task_enabled: true,
+  agent_browser_auto_task_max_steps: 15,
   ragflow_api_url: "",
   ragflow_api_key: "",
   knowflow_backend_url: "",
@@ -106,6 +113,7 @@ const RESOURCE_ICON_MAP = {
   tts: VolumeHighOutline,
   pdf2zh: LanguageOutline,
   searxng: SearchOutline,
+  browser_rpa: GlobeOutline,
   ragflow_api: LibraryOutline,
   knowflow_backend: ServerOutline,
   ragflow_mysql: ServerSharp,
@@ -123,6 +131,7 @@ const RESOURCE_CATEGORY_MAP = {
   tts: "service",
   pdf2zh: "service",
   searxng: "service",
+  browser_rpa: "service",
   ragflow_api: "knowledge",
   knowflow_backend: "knowledge",
   ragflow_mysql: "knowledge",
@@ -199,6 +208,12 @@ function fillForm(data) {
   form.pdf2zh_api_url = data?.pdf2zh_api_url || "";
   form.searxng_url = data?.searxng_url || "";
   form.searxng_timeout_seconds = data?.searxng_timeout_seconds || 15;
+  form.agent_browser_enabled = Boolean(data?.agent_browser_enabled);
+  form.agent_browser_headless = data?.agent_browser_headless !== false;
+  form.agent_browser_allowed_domains = data?.agent_browser_allowed_domains || "";
+  form.agent_browser_max_steps_per_session = data?.agent_browser_max_steps_per_session || 50;
+  form.agent_browser_auto_task_enabled = data?.agent_browser_auto_task_enabled !== false;
+  form.agent_browser_auto_task_max_steps = data?.agent_browser_auto_task_max_steps || 15;
   const kb = data?.knowledge || {};
   form.ragflow_api_url = kb.ragflow_api_url || "";
   form.ragflow_api_key = kb.ragflow_api_key_masked || "";
@@ -270,6 +285,13 @@ function resourceSummary(id) {
         ? t("admin.modelSettings.summary.seconds", {
             url: truncate(data.searxng_url),
             seconds: data.searxng_timeout_seconds || 15,
+          })
+        : t("admin.modelSettings.summary.notConfigured");
+    case "browser_rpa":
+      return data.agent_browser_enabled
+        ? t("admin.modelSettings.summary.browserRpaEnabled", {
+            headless: data.agent_browser_headless ? "headless" : "headed",
+            domains: data.agent_browser_allowed_domains || t("admin.modelSettings.summary.browserRpaAllDomains"),
           })
         : t("admin.modelSettings.summary.notConfigured");
     case "ragflow_api":
@@ -383,6 +405,10 @@ async function loadHealth() {
 }
 
 async function loadAll() {
+  await loadSettings();
+}
+
+async function refreshAll() {
   await Promise.all([loadSettings(), loadHealth()]);
 }
 
@@ -452,6 +478,17 @@ function buildPayloadFor(id) {
       return {
         searxng_url: form.searxng_url.trim(),
         searxng_timeout_seconds: Number(form.searxng_timeout_seconds) || 15,
+      };
+    case "browser_rpa":
+      return {
+        agent_browser_enabled: Boolean(form.agent_browser_enabled),
+        agent_browser_headless: Boolean(form.agent_browser_headless),
+        agent_browser_allowed_domains: form.agent_browser_allowed_domains.trim(),
+        agent_browser_max_steps_per_session:
+          Number(form.agent_browser_max_steps_per_session) || 50,
+        agent_browser_auto_task_enabled: Boolean(form.agent_browser_auto_task_enabled),
+        agent_browser_auto_task_max_steps:
+          Number(form.agent_browser_auto_task_max_steps) || 15,
       };
     case "ragflow_api":
       return {
@@ -541,7 +578,10 @@ onMounted(loadAll);
   <div class="resource-settings-page feature-page">
     <div class="page-toolbar feature-local-nav">
       <n-space>
-        <n-button :loading="loading || healthLoading" @click="loadAll">
+        <n-button :loading="loading" @click="loadAll">
+          {{ t("common.refresh") }}
+        </n-button>
+        <n-button :loading="healthLoading" @click="loadHealth">
           {{ t("admin.modelSettings.refreshStatus") }}
         </n-button>
       </n-space>
@@ -843,6 +883,41 @@ onMounted(loadAll);
               </n-input-number>
             </n-form-item>
             <div class="drawer-hint" v-html="t('admin.modelSettings.hints.searxng')" />
+          </template>
+
+          <template v-else-if="activeId === 'browser_rpa'">
+            <n-form-item :label="t('admin.modelSettings.labels.browserRpaEnabled')">
+              <n-switch v-model:value="form.agent_browser_enabled" />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.browserRpaHeadless')">
+              <n-switch v-model:value="form.agent_browser_headless" />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.browserRpaAllowedDomains')">
+              <n-input
+                v-model:value="form.agent_browser_allowed_domains"
+                :placeholder="t('admin.modelSettings.placeholders.browserRpaDomains')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.browserRpaMaxSteps')">
+              <n-input-number
+                v-model:value="form.agent_browser_max_steps_per_session"
+                :min="5"
+                :max="200"
+                style="width: 100%"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.browserRpaAutoTask')">
+              <n-switch v-model:value="form.agent_browser_auto_task_enabled" />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.browserRpaAutoTaskMaxSteps')">
+              <n-input-number
+                v-model:value="form.agent_browser_auto_task_max_steps"
+                :min="3"
+                :max="40"
+                style="width: 100%"
+              />
+            </n-form-item>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.browserRpa')" />
           </template>
 
           <template v-else-if="activeId === 'ragflow_api'">

@@ -310,6 +310,21 @@ report_api_not_ready() {
   echo "  实时日志:   ./dev.sh local logs"
 }
 
+ensure_skill_script_deps() {
+  if "${PYTHON_CMD[@]}" -c 'import bs4, lxml' 2>/dev/null; then
+    return 0
+  fi
+  step "安装 Skill 脚本沙箱依赖（beautifulsoup4、lxml）…"
+  cd "$PLATFORM_DIR"
+  if ! "${PYTHON_CMD[@]}" -m pip install "beautifulsoup4>=4.12.0" "lxml>=5.0.0" \
+    >>"$LOG_DIR/local-dev.log" 2>&1; then
+    echo "  Skill 沙箱依赖安装失败 — run_skill_script 可能报 No module named 'bs4'" >&2
+    echo "  请手动执行: pip install 'beautifulsoup4>=4.12.0' 'lxml>=5.0.0'" >&2
+    return 0
+  fi
+  echo "  Skill 沙箱依赖已就绪"
+}
+
 ensure_pageindex_extra() {
   if [[ "${SKIP_PAGEINDEX_INSTALL:-0}" == "1" ]]; then
     return 0
@@ -337,6 +352,34 @@ PY
   echo "  PageIndex 已就绪"
 }
 
+agent_browser_enabled_in_env() {
+  [[ -f "$ENV_FILE" ]] && grep -qE '^AGENT_BROWSER_ENABLED=(true|1|yes|True|TRUE)' "$ENV_FILE"
+}
+
+ensure_browser_rpa_deps() {
+  if [[ "${SKIP_BROWSER_INSTALL:-0}" == "1" ]]; then
+    return 0
+  fi
+  if ! agent_browser_enabled_in_env; then
+    return 0
+  fi
+  if "${PYTHON_CMD[@]}" -c "from playwright.sync_api import sync_playwright" 2>/dev/null; then
+    return 0
+  fi
+  step "安装浏览器 RPA（Playwright + Chromium）…"
+  cd "$PLATFORM_DIR"
+  if ! "${PYTHON_CMD[@]}" -m pip install -e ".[browser]" >>"$LOG_DIR/local-dev.log" 2>&1; then
+    echo "  浏览器 RPA 安装失败 — browser_navigate 会提示 Playwright 未安装" >&2
+    echo "  请手动执行: ./dev.sh browser setup" >&2
+    return 0
+  fi
+  if ! "${PYTHON_CMD[@]}" -m playwright install chromium >>"$LOG_DIR/local-dev.log" 2>&1; then
+    echo "  Chromium 下载失败 — 请手动执行: ./dev.sh browser setup" >&2
+    return 0
+  fi
+  echo "  浏览器 RPA 已就绪"
+}
+
 start_local() {
   local force="${1:-0}"
   init_paths
@@ -357,7 +400,9 @@ start_local() {
   echo "正在启动 ${app_name} v${version}（本机 API + 前端）…"
 
   ensure_conda_env || return 1
+  ensure_skill_script_deps
   ensure_pageindex_extra
+  ensure_browser_rpa_deps
   preflight_database || return 1
 
   step "停止已有进程（API / 前端 / Worker）…"

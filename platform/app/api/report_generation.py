@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from starlette.responses import Response, StreamingResponse
 
-from app.api.deps import get_current_user, require_feature
+from app.api.deps import get_client_ip, get_current_user, require_feature
+from app.api.streaming_utils import stream_sse_payloads
 from app.core.exceptions import bad_request
 from app.database import get_db
 from app.integrations.markdown_docx_export import (
@@ -21,10 +22,13 @@ from app.schemas.report_generation import (
     ReportExportDocxRequest,
     ReportGenerationChatRequest,
     ReportGenerationMetaOut,
+    ReportImportLibraryOut,
+    ReportImportLibraryRequest,
     ReportMindmapOut,
     ReportMindmapRequest,
     ReportOptimizePresetOut,
 )
+from app.services import audit_service
 from app.services import report_generation_service as svc
 
 router = APIRouter(
@@ -59,10 +63,11 @@ async def report_generation_chat_stream(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> StreamingResponse:
-    async def sse_body():
+    user_id = user.id
+
+    async def payloads():
         async for payload in svc.iter_report_generation_stream(
-            db,
-            user,
+            user_id=user_id,
             message=body.message,
             history=body.history,
             conversation_id=body.conversation_id,
@@ -70,10 +75,10 @@ async def report_generation_chat_stream(
             use_web_search=body.use_web_search,
             use_agentic=body.use_agentic,
         ):
-            yield f"data: {payload}\n\n"
+            yield payload
 
     return StreamingResponse(
-        sse_body(),
+        stream_sse_payloads(db, payloads),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -118,3 +123,29 @@ def report_generation_export_docx(
             "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
         },
     )
+
+
+@router.post("/import-library", response_model=ApiResponse[ReportImportLibraryOut])
+def report_generation_import_library(
+    body: ReportImportLibraryRequest,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[ReportImportLibraryOut]:
+    data = svc.import_report_to_library(
+        db,
+        user,
+        title=body.title,
+        markdown=body.markdown,
+        sync_knowflow=body.sync_knowflow,
+    )
+    audit_service.write_audit(
+        db,
+        user_id=user.id,
+        action="report_generation.import_library",
+        resource_type="document",
+        resource_id=str(data["document_id"]),
+        ip_address=get_client_ip(request),
+        detail={"title": data.get("title")},
+    )
+    return ApiResponse(data=ReportImportLibraryOut.model_validate(data))

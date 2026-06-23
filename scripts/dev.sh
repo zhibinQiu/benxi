@@ -197,7 +197,7 @@ usage() {
 环境与运维:
   stop                                     停止 Docker 栈 + 本机 dev 进程
   remote-dev                               生成 REMOTE_DEPS platform/.env
-  sync [--frontend|--all]                    同步代码到服务器并重启 API/Worker
+  sync [--frontend|--all|--browser]                    同步代码到服务器并重启 API/Worker
   sync-frp-uninstall                       卸载服务器 frps
   db migrate to-local|to-remote          平台 PostgreSQL 迁移（透传 migrate-postgres.sh）
   env remote-dev|local-db                  生成 platform/.env（同 ./dev.sh remote-dev）
@@ -206,6 +206,7 @@ usage() {
   deploy …                                 透传 scripts/deploy.sh
   knowflow setup | build                   KnowFlow 源码
   speech setup | local                     speech-api（Docker profile / 宿主机）
+  browser setup [--docker|--server]                 Playwright Chromium（浏览器 RPA）
 
 示例:
   REMOTE_HOST=服务器IP ./dev.sh remote-dev && ./dev.sh local
@@ -258,6 +259,19 @@ main() {
         setup) dev_speech_setup ;;
         local) dev_speech_local ;;
         *) error "用法: ./dev.sh speech setup|local"; exit 1 ;;
+      esac
+      ;;
+    browser)
+      shift || true
+      case "${1:-setup}" in
+        setup)
+          shift || true
+          exec bash "$SCRIPT_DIR/setup-browser-rpa.sh" "${1:-local}"
+          ;;
+        *)
+          error "用法: ./dev.sh browser setup [local|--docker|--server]"
+          exit 1
+          ;;
       esac
       ;;
     db)

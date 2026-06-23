@@ -234,6 +234,12 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "ragflow_mysql_container": (settings.ragflow_mysql_container or "ragflow-mysql").strip(),
         "searxng_url": (settings.searxng_url or "").strip(),
         "searxng_timeout_seconds": str(float(settings.searxng_timeout_seconds or 15.0)),
+        "agent_browser_enabled": str(settings.agent_browser_enabled).lower(),
+        "agent_browser_headless": str(settings.agent_browser_headless).lower(),
+        "agent_browser_allowed_domains": (settings.agent_browser_allowed_domains or "").strip(),
+        "agent_browser_max_steps_per_session": str(settings.agent_browser_max_steps_per_session),
+        "agent_browser_auto_task_enabled": str(settings.agent_browser_auto_task_enabled).lower(),
+        "agent_browser_auto_task_max_steps": str(settings.agent_browser_auto_task_max_steps),
     }
 
 
@@ -577,6 +583,21 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
         embedding_factory=effective.get("embedding_factory") or None,
         searxng_url=effective.get("searxng_url") or "",
         searxng_timeout_seconds=float(effective.get("searxng_timeout_seconds") or 15.0),
+        agent_browser_enabled=(effective.get("agent_browser_enabled") or "false").lower()
+        in {"1", "true", "yes", "on"},
+        agent_browser_headless=(effective.get("agent_browser_headless") or "true").lower()
+        not in {"0", "false", "no", "off"},
+        agent_browser_allowed_domains=effective.get("agent_browser_allowed_domains") or "",
+        agent_browser_max_steps_per_session=int(
+            effective.get("agent_browser_max_steps_per_session") or 50
+        ),
+        agent_browser_auto_task_enabled=(
+            effective.get("agent_browser_auto_task_enabled") or "true"
+        ).lower()
+        not in {"0", "false", "no", "off"},
+        agent_browser_auto_task_max_steps=int(
+            effective.get("agent_browser_auto_task_max_steps") or 15
+        ),
         knowledge=_knowledge_infra_out(effective),
     )
 
@@ -738,6 +759,36 @@ def save_model_settings(
             if body.searxng_timeout_seconds is not None
             else current.get("searxng_timeout_seconds", "15.0")
         ),
+        "agent_browser_enabled": (
+            str(bool(body.agent_browser_enabled)).lower()
+            if body.agent_browser_enabled is not None
+            else current.get("agent_browser_enabled", "false")
+        ),
+        "agent_browser_headless": (
+            str(bool(body.agent_browser_headless)).lower()
+            if body.agent_browser_headless is not None
+            else current.get("agent_browser_headless", "true")
+        ),
+        "agent_browser_allowed_domains": (
+            (body.agent_browser_allowed_domains or "").strip()
+            if body.agent_browser_allowed_domains is not None
+            else current.get("agent_browser_allowed_domains", "")
+        ),
+        "agent_browser_max_steps_per_session": (
+            str(max(1, int(body.agent_browser_max_steps_per_session)))
+            if body.agent_browser_max_steps_per_session is not None
+            else current.get("agent_browser_max_steps_per_session", "50")
+        ),
+        "agent_browser_auto_task_enabled": (
+            str(bool(body.agent_browser_auto_task_enabled)).lower()
+            if body.agent_browser_auto_task_enabled is not None
+            else current.get("agent_browser_auto_task_enabled", "true")
+        ),
+        "agent_browser_auto_task_max_steps": (
+            str(max(1, int(body.agent_browser_auto_task_max_steps)))
+            if body.agent_browser_auto_task_max_steps is not None
+            else current.get("agent_browser_auto_task_max_steps", "15")
+        ),
     }
 
     row = db.get(PlatformModelSettings, SINGLETON_ID)
@@ -750,6 +801,12 @@ def save_model_settings(
 
     apply_saved_settings(db, payload)
     db.commit()
+    try:
+        from app.core.platform_cache import invalidate_system_config_cache
+
+        invalidate_system_config_cache()
+    except Exception:
+        pass
     return get_model_settings(db)
 
 

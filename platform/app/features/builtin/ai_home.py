@@ -9,13 +9,13 @@ from app.features.registry import register
 register(
     FeaturePlugin(
         id="ai_home",
-        title="AI 智能体",
-        description="多轮对话与办公场景智能问答，结合文档检索与本体图谱增强回答",
+        title="本析智能",
+        description="企业级智能对话入口；按需发现与调用 Agent Skills，结合权限内检索、本体关联与多轮问答",
         icon="sparkles",
         route="/ai-home",
         router=ai_chat_api.router,
         permission_code="feature.ai_home",
-        permission_name="AI 智能体",
+        permission_name="本析智能",
         enabled=True,
         category="ai",
         sort_order=1,

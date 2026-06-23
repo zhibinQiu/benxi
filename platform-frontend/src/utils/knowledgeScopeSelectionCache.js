@@ -1,5 +1,7 @@
 /** 知识检索文档勾选结果：与树 checkedKeys 配套，供主面板立即恢复可检索状态 */
 
+export const KNOWLEDGE_SCOPE_SELECTION_KEY = Symbol("knowledgeScopeSelection");
+
 const SELECTION_KEY = "platform:knowledge-search-selection:v1";
 
 export function readKnowledgeScopeSelection() {

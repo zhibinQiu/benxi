@@ -25,7 +25,7 @@ from app.core.document_scope import (
     personal_library_owners_for_user,
 )
 from app.core.document_upload_limits import document_upload_max_label
-from app.database import get_db
+from app.database import get_db, get_read_db
 from app.models.org import User
 from app.schemas.common import ApiResponse, PageResult
 from app.schemas.document import (
@@ -47,7 +47,7 @@ router = APIRouter()
 @router.get("/overview", response_model=ApiResponse[DocumentFormatOverviewOut])
 def document_format_overview(
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
     scope: str = Query(..., pattern="^(company|department|team|personal)$"),
     dept_id: uuid.UUID | None = None,
     owner_id: uuid.UUID | None = None,
@@ -68,7 +68,7 @@ def document_format_overview(
 @router.get("/library", response_model=ApiResponse[DocumentLibraryOut])
 def document_library(
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
 ) -> ApiResponse[DocumentLibraryOut]:
     from app.core.platform_cache import cache_get_or_set, document_library_cache_key
 
@@ -120,7 +120,7 @@ def document_library(
 
 def list_documents(
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = None,
@@ -254,7 +254,7 @@ def create_document(
 @router.get("/my-shares", response_model=ApiResponse[PageResult[DocumentListItem]])
 def list_my_shares(
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = None,
@@ -288,7 +288,7 @@ def list_my_shares(
 @router.get("/recycle", response_model=ApiResponse[PageResult[DocumentListItem]], include_in_schema=False)
 def list_recycle_bin(
     user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
+    db: Annotated[Session, Depends(get_read_db)],
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = None,

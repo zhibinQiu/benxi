@@ -10,6 +10,8 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.core.chat_context import trim_chat_history
+from app.core.prompt_budget import fit_messages_to_total_budget, get_prompt_limits, llm_completion_extras
 from app.core.exceptions import bad_request, not_found
 from app.core.platform_assistant import assistant_data_analysis_persona
 from app.integrations.data_analysis_executor import execute_analysis_code
@@ -210,7 +212,7 @@ def _build_llm_messages(
     messages: list[dict[str, str]] = [
         {"role": "system", "content": _SYSTEM_PROMPT + "\n\n" + context_block},
     ]
-    for item in history[-24:]:
+    for item in trim_chat_history(history, max_messages=24):
         role = item.get("role")
         content = (item.get("content") or "").strip()
         if role in {"user", "assistant"} and content:
@@ -248,10 +250,13 @@ async def chat(
     history = state.get("messages") or []
     history.append({"role": "user", "content": user_text})
 
-    llm_messages = _build_llm_messages(
-        profile=profile,
-        history=history,
-        cells=state.get("cells") or [],
+    llm_messages = fit_messages_to_total_budget(
+        _build_llm_messages(
+            profile=profile,
+            history=history,
+            cells=state.get("cells") or [],
+        ),
+        get_prompt_limits()["prompt_max_chars"],
     )
 
     api_key, base_url, model = resolve_credentials()
@@ -259,6 +264,7 @@ async def chat(
         "model": model,
         "messages": llm_messages,
         "temperature": 0.2,
+        **llm_completion_extras(),
     }
     url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}

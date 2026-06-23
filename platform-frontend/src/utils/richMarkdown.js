@@ -1,9 +1,28 @@
 import { ensureMarked, marked, normalizeMarkdownInput } from "./markdown.js";
 
 let echartSeq = 0;
+let mermaidSeq = 0;
 const chartInstances = new WeakMap();
+const chartPending = new WeakSet();
 let echartsLoader = null;
 let rendererRegistered = false;
+let chartObserver = null;
+
+function getChartObserver() {
+  if (chartObserver || typeof IntersectionObserver === "undefined") return chartObserver;
+  chartObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        chartObserver?.unobserve(entry.target);
+        chartPending.delete(entry.target);
+        void mountOneEchart(entry.target);
+      }
+    },
+    { rootMargin: "240px 0px", threshold: 0.01 }
+  );
+  return chartObserver;
+}
 
 function escapeHtml(text) {
   return String(text)
@@ -41,6 +60,15 @@ function ensureEchartsRenderer() {
     renderer: {
       code({ text, lang }) {
         const language = (lang || "").trim().toLowerCase();
+        if (language === "mermaid") {
+          const id = `md-mermaid-${mermaidSeq++}`;
+          const encoded = encodeURIComponent(text || "");
+          return (
+            `<div class="md-mermaid-wrap">` +
+            `<pre class="md-mermaid" id="${id}" data-mermaid="${encoded}"></pre>` +
+            `</div>`
+          );
+        }
         if (language === "echarts" || language === "chart") {
           const id = `md-echart-${echartSeq++}`;
           const encoded = encodeURIComponent(text || "");
@@ -117,14 +145,32 @@ async function mountOneEchart(el) {
 
 export function mountEchartsInElement(root) {
   if (!root?.querySelectorAll) return;
+  const observer = getChartObserver();
   root.querySelectorAll(".md-echart").forEach((el) => {
+    if (chartInstances.get(el)) return;
+    if (observer) {
+      if (!chartPending.has(el)) {
+        chartPending.add(el);
+        observer.observe(el);
+      }
+      return;
+    }
     void mountOneEchart(el);
   });
+}
+
+/** 挂载富文本中的 ECharts / Mermaid（均在进入视口后才加载对应 JS 包） */
+export async function mountRichMediaInElement(root) {
+  mountEchartsInElement(root);
+  const { mountMermaidInElement } = await import("./mermaidRender.js");
+  await mountMermaidInElement(root);
 }
 
 export function disposeEchartsInElement(root) {
   if (!root?.querySelectorAll) return;
   root.querySelectorAll(".md-echart").forEach((el) => {
+    chartPending.delete(el);
+    chartObserver?.unobserve(el);
     const chart = chartInstances.get(el);
     if (chart) {
       chart.dispose();

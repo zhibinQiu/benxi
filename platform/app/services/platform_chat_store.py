@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import not_found
@@ -66,11 +66,13 @@ def append_turn(
     if conversation.title == "新对话":
         conversation.title = _title_from_message(user_message)
 
+    now = datetime.now(timezone.utc)
     db.add(
         PlatformChatMessage(
             conversation_id=conversation.id,
             role="user",
             content=user_message,
+            created_at=now,
         )
     )
     if assistant_message:
@@ -79,6 +81,7 @@ def append_turn(
                 conversation_id=conversation.id,
                 role="assistant",
                 content=assistant_message,
+                created_at=now + timedelta(microseconds=1),
             )
         )
     conversation.updated_at = datetime.now(timezone.utc)
@@ -116,13 +119,85 @@ def list_conversations(
     ]
 
 
+def _role_rank_column():
+    """同秒内 user 须排在 assistant 之前（UUID 主键无序）。"""
+    return case(
+        (PlatformChatMessage.role == "user", 0),
+        (PlatformChatMessage.role == "assistant", 1),
+        else_=2,
+    )
+
+
+def _role_rank_value(role: str) -> int:
+    if role == "user":
+        return 0
+    if role == "assistant":
+        return 1
+    return 2
+
+
+def _message_desc_order():
+    role_rank = _role_rank_column()
+    return (
+        PlatformChatMessage.created_at.desc(),
+        role_rank.desc(),
+        PlatformChatMessage.id.desc(),
+    )
+
+
+def _is_older_than_message(first: PlatformChatMessage):
+    """严格早于 first 在对话时间线上的位置（用于分页与 has_older）。"""
+    role_rank = _role_rank_column()
+    first_rank = _role_rank_value(first.role)
+    return or_(
+        PlatformChatMessage.created_at < first.created_at,
+        and_(
+            PlatformChatMessage.created_at == first.created_at,
+            or_(
+                role_rank < first_rank,
+                and_(
+                    role_rank == first_rank,
+                    PlatformChatMessage.id < first.id,
+                ),
+            ),
+        ),
+    )
+
+
+def _is_before_cursor(before_row: PlatformChatMessage):
+    """分页游标：返回严格早于 before_row 的消息。"""
+    return _is_older_than_message(before_row)
+
+
+def _message_row_dict(row: PlatformChatMessage) -> dict:
+    return {
+        "id": str(row.id),
+        "role": row.role,
+        "content": row.content,
+    }
+
+
+def _has_older_messages(db: Session, *, conversation_id: uuid.UUID, first: PlatformChatMessage) -> bool:
+    count = db.scalar(
+        select(func.count())
+        .select_from(PlatformChatMessage)
+        .where(
+            PlatformChatMessage.conversation_id == conversation_id,
+            _is_older_than_message(first),
+        )
+    )
+    return bool(count)
+
+
 def list_messages(
     db: Session,
     *,
     user_id: uuid.UUID,
     scope: str,
     conversation_id: str,
-) -> list[dict]:
+    limit: int = 48,
+    before_id: str | None = None,
+) -> dict:
     try:
         cid = uuid.UUID(str(conversation_id))
     except ValueError as e:
@@ -132,13 +207,50 @@ def list_messages(
     if not conv or conv.user_id != user_id or conv.scope != scope:
         raise not_found("会话不存在")
 
-    stmt = (
-        select(PlatformChatMessage)
-        .where(PlatformChatMessage.conversation_id == conv.id)
-        .order_by(PlatformChatMessage.created_at.asc())
+    page_limit = max(1, min(limit, 100))
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(PlatformChatMessage)
+            .where(PlatformChatMessage.conversation_id == conv.id)
+        )
+        or 0
     )
-    rows = db.scalars(stmt).all()
-    return [{"role": row.role, "content": row.content} for row in rows]
+
+    if before_id:
+        try:
+            bid = uuid.UUID(str(before_id))
+        except ValueError as e:
+            raise not_found("消息不存在") from e
+        before_row = db.get(PlatformChatMessage, bid)
+        if not before_row or before_row.conversation_id != conv.id:
+            raise not_found("消息不存在")
+        stmt = (
+            select(PlatformChatMessage)
+            .where(
+                PlatformChatMessage.conversation_id == conv.id,
+                _is_before_cursor(before_row),
+            )
+            .order_by(*_message_desc_order())
+            .limit(page_limit)
+        )
+        rows = list(reversed(db.scalars(stmt).all()))
+    else:
+        stmt = (
+            select(PlatformChatMessage)
+            .where(PlatformChatMessage.conversation_id == conv.id)
+            .order_by(*_message_desc_order())
+            .limit(page_limit)
+        )
+        rows = list(reversed(db.scalars(stmt).all()))
+
+    has_older = _has_older_messages(db, conversation_id=conv.id, first=rows[0]) if rows else False
+    return {
+        "messages": [_message_row_dict(row) for row in rows],
+        "total": int(total),
+        "has_older": has_older,
+        "oldest_id": str(rows[0].id) if rows else None,
+    }
 
 
 def delete_conversation(

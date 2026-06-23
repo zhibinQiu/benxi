@@ -24,6 +24,7 @@ import {
   NText,
 } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import {
   createCarbonAssetTrade,
   fetchCarbonAssetHoldings,
@@ -330,7 +331,7 @@ onMounted(loadAll);
               :data="holdings"
               :bordered="false"
               size="small"
-              :pagination="false"
+              :pagination="{ pageSize: LIST_PAGE_SIZE }"
             />
           </NTabPane>
           <NTabPane name="market" :tab="t('carbonTrading.tabMarket')">
@@ -357,7 +358,7 @@ onMounted(loadAll);
               :row-props="marketRowProps"
               :bordered="false"
               size="small"
-              :pagination="false"
+              :pagination="{ pageSize: LIST_PAGE_SIZE }"
             />
           </NTabPane>
           <NTabPane name="trade" :tab="t('carbonTrading.tabTrade')">
@@ -417,7 +418,7 @@ onMounted(loadAll);
                     :bordered="false"
                     size="small"
                     :max-height="280"
-                    :pagination="false"
+                    :pagination="{ pageSize: LIST_PAGE_SIZE }"
                   />
                 </NCard>
               </NGi>

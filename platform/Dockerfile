@@ -14,6 +14,7 @@ ARG PYTHON_IMAGE=python:3.11-slim
 ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 ARG INSTALL_PAGEINDEX=0
+ARG INSTALL_BROWSER=0
 
 FROM ${PYTHON_IMAGE} AS base
 ARG PIP_INDEX_URL
@@ -39,6 +40,7 @@ RUN if [ -n "${APT_MIRROR}" ] && [ -f /etc/apt/sources.list.d/debian.sources ]; 
 FROM base AS deps
 ARG PIP_INDEX_URL
 ARG INSTALL_PAGEINDEX
+ARG INSTALL_BROWSER
 
 COPY platform/pyproject.toml platform/README.md ./
 
@@ -55,10 +57,15 @@ RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
       cfg_dir="$(python -c 'import pageindex, pathlib; print(pathlib.Path(pageindex.__file__).parent)')" && \
       cp third_party/pageindex-upstream/pageindex/config.yaml "${cfg_dir}/config.yaml"; \
     fi && \
+    if [ "${INSTALL_BROWSER}" = "1" ]; then \
+      pip install --no-cache-dir -i "${PIP_INDEX_URL}" ".[browser]" && \
+      python -m playwright install-deps chromium && \
+      python -m playwright install chromium; \
+    fi && \
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 RUN python -c "\
-import fastapi, sqlalchemy, celery, httpx, pandas, numpy; \
+import fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml; \
 print('core deps ok', fastapi.__version__)\
 "
 

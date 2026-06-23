@@ -24,6 +24,7 @@ export * from "./subscriptions.js";
 export * from "./speech.js";
 export * from "./textToSpeech.js";
 export * from "./ocr.js";
+export * from "./agentSkills.js";
 export * from "./chat.js";
 
 export { formatApiDetail, getApiBase, getToken } from "./http.js";

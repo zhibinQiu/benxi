@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, h, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NEmpty, NIcon, NInput, NSpin, NTag, NTree } from "naive-ui";
 import {
@@ -222,6 +222,27 @@ async function restoreCheckedSelection() {
   emitSelectionForKeys(pruned);
 }
 
+/** KeepAlive 在知识检索 ↔ 报告生成间切换时，从 session 同步另一页的勾选 */
+function syncCheckedKeysFromStorage() {
+  if (!treeData.value.length) return false;
+  const saved = loadSavedCheckedKeys();
+  if (!saved?.length) {
+    if (!checkedKeys.value.length) return false;
+    checkedKeys.value = [];
+    clearKnowledgeScopeSelection();
+    emit("selection-change", null);
+    return true;
+  }
+  const pruned = pruneCheckedKeys(saved);
+  const prev = JSON.stringify(checkedKeys.value);
+  const next = JSON.stringify(pruned);
+  if (prev === next) return false;
+  checkedKeys.value = pruned;
+  saveCheckedKeys(pruned);
+  emitSelectionForKeys(pruned);
+  return true;
+}
+
 function findNode(nodes, key) {
   for (const node of nodes || []) {
     if (node.key === key) return node;
@@ -399,12 +420,12 @@ onActivated(() => {
     applyTreeData(cached, { resetSelection: false });
     syncSelectionAfterTreeUpdate();
   }
+  if (syncCheckedKeysFromStorage()) return;
   if (loading.value || refreshing.value) {
     if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
     return;
   }
-  // KeepAlive 切回时若内存与 session 缓存仍有效，避免重复拉全量 scope-tree
-  if (treeData.value.length && cached?.items?.length) {
+  if (treeData.value.length) {
     if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
     return;
   }

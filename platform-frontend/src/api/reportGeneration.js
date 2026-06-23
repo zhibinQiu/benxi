@@ -55,6 +55,17 @@ export async function downloadReportDocx({ title, markdown }) {
   URL.revokeObjectURL(a.href);
 }
 
+export async function importReportToLibrary({ title, markdown, syncKnowflow = true }) {
+  return api("/api/v1/report-generation/import-library", {
+    method: "POST",
+    body: JSON.stringify({
+      title,
+      markdown,
+      sync_knowflow: syncKnowflow,
+    }),
+  });
+}
+
 export async function reportGenerationChatStream(
   {
     message,

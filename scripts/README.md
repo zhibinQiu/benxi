@@ -28,6 +28,8 @@
 | `./dev.sh remote-dev` | 生成 `REMOTE_DEPS=1` 的 `platform/.env` |
 | `./dev.sh sync` | 同步后端到服务器并重启 API / Worker |
 | `./dev.sh sync --frontend` | 同步含前端并 npm build + nginx reload（挂载 dist） |
+| `./dev.sh browser setup --server` | 在服务器构建 Playwright runtime（浏览器 RPA） |
+| `./dev.sh sync --browser` | 同步代码并在服务器重建 Playwright runtime |
 | `./dev.sh stack …` | Compose 编排（build / up / logs …） |
 | `./dev.sh deploy …` | 生产镜像部署 |
 | `./dev.sh db migrate to-local\|to-remote` | 平台 PostgreSQL 迁移 |

@@ -1,0 +1,21 @@
+/* 对话气泡内 Markdown 图片：不超出气泡宽度，过高时同比例缩小 */
+.ai-home-bubble img,
+.assistant-bubble img,
+.md-rich img,
+.knowledge-chat-content img {
+  display: block;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  max-height: min(320px, 48vh);
+  object-fit: contain;
+  margin: 8px 0;
+  border-radius: 8px;
+}
+
+.ai-home-bubble p:has(> img:only-child),
+.assistant-bubble p:has(> img:only-child),
+.md-rich p:has(> img:only-child),
+.knowledge-chat-content p:has(> img:only-child) {
+  margin: 0;
+}

@@ -1,6 +1,7 @@
 /** 平台原生知识库 / 知识检索 API */
 import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
+import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 export async function fetchKnowledgeScopeTree({ refresh = false } = {}) {
   const q = refresh ? "?refresh=1" : "";
@@ -13,7 +14,7 @@ export async function fetchKnowledgeLibraries() {
 
 export async function fetchLibraryDocuments(
   datasetId,
-  { page = 1, pageSize = 50, keyword, folderId, virtualFolderId } = {}
+  { page = 1, pageSize = LIST_PAGE_SIZE, keyword, folderId, virtualFolderId } = {}
 ) {
   const q = new URLSearchParams({
     page: String(page),
@@ -27,7 +28,7 @@ export async function fetchLibraryDocuments(
 
 export async function fetchDocumentChunks(
   documentId,
-  { versionId, page = 1, pageSize = 30, keywords } = {}
+  { versionId, page = 1, pageSize = LIST_PAGE_SIZE, keywords } = {}
 ) {
   const q = new URLSearchParams({
     page: String(page),

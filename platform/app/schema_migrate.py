@@ -958,7 +958,7 @@ def ensure_ragflow_version_index_completed_schema(engine: Engine) -> None:
 
 
 # 新增 ensure_* 补丁时递增；启动时若库中无对应记录则自动跑全量 schema 迁移。
-PLATFORM_SCHEMA_REVISION = 1
+PLATFORM_SCHEMA_REVISION = 2
 
 
 def platform_schema_revision_patch() -> str:
@@ -1061,11 +1061,100 @@ def ensure_pageindex_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_scheduled_rpa_task_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS scheduled_rpa_tasks (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            skill_name VARCHAR(128) NOT NULL,
+            parameters JSONB,
+            scheduled_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ,
+            cancelled_at TIMESTAMPTZ,
+            status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            result_summary TEXT,
+            screenshot_key VARCHAR(512),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_scheduled_rpa_tasks_user ON scheduled_rpa_tasks (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_scheduled_rpa_tasks_scheduled_at "
+        "ON scheduled_rpa_tasks (scheduled_at)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_scheduled_notification_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS scheduled_notifications (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title VARCHAR(256) NOT NULL,
+            body TEXT NOT NULL DEFAULT '',
+            link VARCHAR(1024),
+            scheduled_at TIMESTAMPTZ NOT NULL,
+            sent_at TIMESTAMPTZ,
+            cancelled_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_scheduled_notifications_user "
+        "ON scheduled_notifications (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_scheduled_notifications_scheduled_at "
+        "ON scheduled_notifications (scheduled_at)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_agent_skill_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS agent_skills (
+            id UUID PRIMARY KEY,
+            name VARCHAR(64) NOT NULL UNIQUE,
+            description TEXT NOT NULL DEFAULT '',
+            storage_prefix VARCHAR(512) NOT NULL DEFAULT '',
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            scope VARCHAR(16) NOT NULL DEFAULT 'system',
+            owner_id UUID REFERENCES users(id) ON DELETE SET NULL,
+            frontmatter JSONB,
+            file_count INTEGER NOT NULL DEFAULT 0,
+            total_bytes INTEGER NOT NULL DEFAULT 0,
+            source_type VARCHAR(16) NOT NULL DEFAULT 'zip',
+            created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_agent_skills_enabled ON agent_skills (enabled)",
+        "CREATE INDEX IF NOT EXISTS ix_agent_skills_scope ON agent_skills (scope)",
+        """
+        CREATE TABLE IF NOT EXISTS agent_skill_bindings (
+            name VARCHAR(64) PRIMARY KEY,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def run_light_schema_patches(engine: Engine) -> None:
     """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
     ensure_pageindex_schema(engine)
     ensure_issue_report_schema(engine)
     ensure_platform_menu_settings_schema(engine)
+    ensure_agent_skill_schema(engine)
+    ensure_scheduled_notification_schema(engine)
+    ensure_scheduled_rpa_task_schema(engine)
 
 
 def run_all_schema_migrations(engine: Engine) -> None:
@@ -1100,6 +1189,9 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_version_compare_llm_summary_schema(engine)
     ensure_document_version_blocks_schema(engine)
     ensure_pageindex_schema(engine)
+    ensure_agent_skill_schema(engine)
+    ensure_scheduled_notification_schema(engine)
+    ensure_scheduled_rpa_task_schema(engine)
     ensure_permission_level_migration(engine)
     ensure_document_library_align_v1(engine)
     migrate_legacy_admin_roles(engine)

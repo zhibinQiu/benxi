@@ -67,13 +67,28 @@ function diffBoxClass(diffType, active) {
 
 function resetDoc() {
   if (renderTask) {
-    renderTask.cancel();
+    try {
+      renderTask.cancel();
+    } catch {
+      /* ignore */
+    }
     renderTask = null;
   }
+  const doc = pdfDoc;
   pdfDoc = null;
+  if (doc) {
+    void doc.destroy?.().catch(() => {});
+  }
   numPages.value = 0;
   overlayBoxes.value = [];
   canvasSize.value = { width: 0, height: 0 };
+  const canvas = canvasRef.value;
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 }
 
 async function ensurePdf() {

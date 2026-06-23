@@ -13,6 +13,7 @@ import {
 } from "naive-ui";
 import { fetchMenuSettings, updateMenuSettings } from "../../api/menuSettings.js";
 import { useMenuSettings } from "../../composables/useMenuSettings.js";
+import ListRefreshButton from "../../components/ListRefreshButton.vue";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -91,6 +92,9 @@ onMounted(load);
   <div class="menu-settings-page feature-page">
     <n-spin :show="loading">
       <n-card :title="t('admin.menuSettings.title')" size="small">
+        <template #header-extra>
+          <ListRefreshButton :loading="loading" @click="load" />
+        </template>
         <n-text depth="3" class="page-hint">
           {{ t("admin.menuSettings.hint") }}
         </n-text>

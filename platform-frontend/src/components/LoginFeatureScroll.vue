@@ -77,14 +77,16 @@ const skillsEl = ref(null);
 const featuresEl = ref(null);
 const summaryEl = ref(null);
 
-const vision = computed(() => messages[locale.value]?.login?.showcaseVision || null);
-const ontology = computed(() => messages[locale.value]?.login?.showcaseOntology || null);
-const skills = computed(() => messages[locale.value]?.login?.showcaseSkills || null);
-const featuresMeta = computed(() => messages[locale.value]?.login?.showcaseFeatures || null);
-const summary = computed(() => messages[locale.value]?.login?.showcaseSummary || null);
+const dict = computed(() => messages[locale.value] || messages.zh);
+
+const vision = computed(() => dict.value?.login?.showcaseVision || null);
+const ontology = computed(() => dict.value?.login?.showcaseOntology || null);
+const skills = computed(() => dict.value?.login?.showcaseSkills || null);
+const featuresMeta = computed(() => dict.value?.login?.showcaseFeatures || null);
+const summary = computed(() => dict.value?.login?.showcaseSummary || null);
 
 const allCards = computed(() => {
-  const list = messages[locale.value]?.login?.showcaseCards;
+  const list = dict.value?.login?.showcaseCards;
   return Array.isArray(list) ? list : [];
 });
 
@@ -93,7 +95,7 @@ const cards = computed(() => allCards.value.slice(0, 16));
 const SUMMARY_COMPARE_KEYS = ["dify", "coze", "fastgpt", "openclaw", "ours"];
 
 const compareLabel = computed(
-  () => messages[locale.value]?.login?.showcaseCompareLabel || "Why us"
+  () => dict.value?.login?.showcaseCompareLabel || "Why us"
 );
 
 const railItems = computed(() => {

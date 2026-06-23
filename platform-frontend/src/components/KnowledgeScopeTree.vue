@@ -416,9 +416,16 @@ onMounted(() => {
 
 onActivated(() => {
   const cached = readKnowledgeScopeTreeCache();
-  if (cached?.items?.length && !treeData.value.length) {
+  if (cached?.items?.length) {
     applyTreeData(cached, { resetSelection: false });
+    loading.value = false;
     syncSelectionAfterTreeUpdate();
+    if (!refreshing.value) {
+      void fetchTree({ background: true, refresh: false });
+    }
+    if (syncCheckedKeysFromStorage()) return;
+    if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
+    return;
   }
   if (syncCheckedKeysFromStorage()) return;
   if (loading.value || refreshing.value) {

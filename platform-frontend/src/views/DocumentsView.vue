@@ -39,6 +39,7 @@ import KbFolderCard from "../components/KbFolderCard.vue";
 import KbFolderCreateCard from "../components/KbFolderCreateCard.vue";
 import IconAction from "../components/IconAction.vue";
 import BatchTableToolbar from "../components/BatchTableToolbar.vue";
+import ListTableFooter from "../components/ListTableFooter.vue";
 import AdminFormModal from "../components/AdminFormModal.vue";
 import FileDropZone from "../components/FileDropZone.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
@@ -76,7 +77,6 @@ import {
   createKbFolder,
   deleteKbFolder,
   fetchDocuments,
-  fetchDocumentOverview,
   fetchKbFolders,
   fetchMySharedDocuments,
   prepareUpload,
@@ -110,8 +110,6 @@ const kbFolders = ref([]);
 const kbFoldersLoading = ref(false);
 const kbCanManageFolders = ref(false);
 const refreshing = ref(false);
-const formatOverview = ref(null);
-const formatOverviewLoading = ref(false);
 const { headerExtensionActive } = usePageHeaderExtension();
 const headerTeleportReady = ref(false);
 
@@ -136,7 +134,6 @@ const VIRTUAL_SHARED = "__shared__";
 /** 忽略过期的 load / loadKbFolders 结果，避免切换分级时串数据 */
 let kbFoldersLoadSeq = 0;
 let documentsLoadSeq = 0;
-let formatOverviewLoadSeq = 0;
 /** openKbFolder 已主动 load 时，跳过 route watch 的重复请求 */
 let skipNextRouteLoad = false;
 const prefetchingFolderKeys = new Set();
@@ -382,17 +379,6 @@ const showFolderNavInActions = computed(
 
 const showBottomBatchToolbar = computed(
   () => showBatchDocActions.value && !showTopFolderBatchActions.value
-);
-
-const showFormatOverview = computed(
-  () =>
-    isMainView.value &&
-    !isSearchMode.value &&
-    !isMySharesView.value &&
-    !isSharedScopeTab.value &&
-    !isSharedFolderView.value &&
-    activeScope.value !== "all" &&
-    ["personal", "company", "department", "team"].includes(activeScope.value)
 );
 
 const selectedRows = computed(() =>
@@ -850,33 +836,6 @@ function applyCachedListForActiveFolder() {
   return false;
 }
 
-async function loadFormatOverview({ background = false } = {}) {
-  if (!showFormatOverview.value) {
-    formatOverview.value = null;
-    formatOverviewLoading.value = false;
-    return;
-  }
-  const seq = ++formatOverviewLoadSeq;
-  if (!background) formatOverviewLoading.value = true;
-  try {
-    const params = { scope: activeScope.value };
-    if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
-      params.dept_id = activeDeptId.value;
-    }
-    const ownerId = personalOwnerParam();
-    if (ownerId) params.owner_id = ownerId;
-    const data = await fetchDocumentOverview(params);
-    if (seq !== formatOverviewLoadSeq) return;
-    formatOverview.value = data;
-  } catch (e) {
-    if (seq !== formatOverviewLoadSeq) return;
-    if (!background) formatOverview.value = null;
-    if (!background) ui.error(e);
-  } finally {
-    if (seq === formatOverviewLoadSeq) formatOverviewLoading.value = false;
-  }
-}
-
 async function refreshDocumentsView() {
   if (refreshing.value) return;
   refreshing.value = true;
@@ -884,11 +843,7 @@ async function refreshDocumentsView() {
   clearDocumentsViewCache();
   notifyKnowledgeScopeTreeStale();
   try {
-    await Promise.all([
-      loadFolders({ force: true }),
-      loadKbFolders({ force: true }),
-      loadFormatOverview({ background: true }),
-    ]);
+    await Promise.all([loadFolders({ force: true }), loadKbFolders({ force: true })]);
     await load({ force: true });
   } catch (e) {
     ui.error(e);
@@ -1054,7 +1009,6 @@ function onKnowledgeIndexUpdated() {
     indexRefreshDebounceTimer = null;
     clearDocumentsViewCache();
     void load({ force: true, background: true });
-    void loadFormatOverview({ background: true });
     scheduleIndexStatusPoll();
   }, 400);
 }
@@ -1585,7 +1539,6 @@ onMounted(() => {
   void syncLegacySharedScopeRoute().then(() => {
     void loadFolders();
     void loadKbFolders();
-    void loadFormatOverview();
     void load();
   });
 });
@@ -1614,7 +1567,6 @@ watch(
     page.value = 1;
     void syncLegacySharedScopeRoute().then(() => {
       void loadKbFolders();
-      void loadFormatOverview();
       void load();
     });
   }
@@ -1770,50 +1722,14 @@ watch(
       </button>
     </div>
 
-    <div v-if="showFormatOverview" class="documents-format-overview">
-      <n-spin :show="formatOverviewLoading && !formatOverview">
-        <div v-if="formatOverview?.total" class="documents-format-overview__body">
-          <div class="documents-format-overview__head">
-            <span class="documents-format-overview__title">{{ t("documents.overview.title") }}</span>
-          </div>
-          <div class="documents-format-overview__summary">
-            {{
-              t("documents.overview.summary", {
-                total: formatOverview.total,
-                parsed: formatOverview.parsed_total,
-              })
-            }}
-          </div>
-          <div class="documents-format-overview__items">
-            <div
-              v-for="item in formatOverview.items"
-              :key="item.format"
-              class="documents-format-overview__item"
-            >
-              <span class="documents-format-overview__label">{{ item.label }}</span>
-              <span class="documents-format-overview__counts">
-                {{
-                  t("documents.overview.formatCounts", {
-                    parsed: item.parsed,
-                    total: item.total,
-                  })
-                }}
-              </span>
-            </div>
-          </div>
-        </div>
-        <n-text
-          v-else-if="!formatOverviewLoading"
-          depth="3"
-          class="documents-format-overview__empty"
-        >
-          {{ t("documents.overview.empty") }}
-        </n-text>
-      </n-spin>
-    </div>
-
     <Transition name="doc-view" mode="out-in">
-    <n-spin v-if="showKbFolderList" key="folder-grid" :show="kbFoldersLoading" class="documents-view-spin">
+    <n-spin
+      v-if="showKbFolderList"
+      key="folder-grid"
+      :show="kbFoldersLoading"
+      class="documents-view-spin"
+      local
+    >
       <n-empty
         v-if="!kbFolders.length && !canManageKbFolders"
         :description="t('documents.emptyFolders')"
@@ -1864,7 +1780,7 @@ watch(
       </n-space>
     </div>
 
-    <n-spin :show="loading && !items.length" class="documents-view-spin">
+    <n-spin :show="loading && !items.length" class="documents-view-spin" local>
       <n-data-table
         :columns="columns"
         :data="items"
@@ -1872,16 +1788,20 @@ watch(
         :row-props="documentRowProps"
         :checked-row-keys="showBatchDocActions ? checkedRowKeys : undefined"
         @update:checked-row-keys="onCheckedRowKeysChange"
-        :pagination="{
-          page: page,
-          pageSize: pageSize,
-          itemCount: total,
-          onUpdatePage: onPageChange}"
+        :pagination="false"
       />
     </n-spin>
     </div>
     </Transition>
     </n-card>
+
+    <ListTableFooter
+      v-if="!showKbFolderList"
+      :page="page"
+      :page-size="pageSize"
+      :item-count="total"
+      @update:page="onPageChange"
+    />
   </div>
 
   <AdminFormModal

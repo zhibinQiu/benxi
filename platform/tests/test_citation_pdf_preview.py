@@ -86,7 +86,7 @@ def test_ragflow_lrtb_bbox_on_a4_page():
 
 
 def test_fetch_citation_pdf_page_fallback_uses_platform_pdf(monkeypatch):
-    from app.services import knowledge_qa_service as svc
+    from app.services.knowledge_qa import preview as svc
 
     pdf = markdown_text_to_pdf_bytes("体检通知", "公司员工体检安排说明。")
     fake_link = MagicMock(

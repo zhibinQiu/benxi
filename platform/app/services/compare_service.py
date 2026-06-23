@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.permissions import PermissionLevel, can_access_document
+from app.core.uuid_utils import parse_uuid_list
 from app.integrations.knowflow_client import get_knowflow_client_for_user
 from app.integrations.text_extract import (
     ParsedDocument,
@@ -26,10 +27,6 @@ from app.services.document_service import get_document, list_compareable_documen
 from app.storage.object_store import get_object_store
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_uuid_list(ids: list[str]) -> list[uuid.UUID]:
-    return [uuid.UUID(x) for x in ids]
 
 
 def validate_document_scope(
@@ -311,13 +308,33 @@ def get_document_content_for_version(
 def load_parsed_documents(db: Session, docs: list[Document]) -> list[ParsedDocument]:
     from app.services.document_service import resolve_current_version
 
-    parsed: list[ParsedDocument] = []
-    for doc in docs:
-        version = resolve_current_version(db, doc)
+    if not docs:
+        return []
+
+    def _load_one(session: Session, doc: Document) -> ParsedDocument | None:
+        version = resolve_current_version(session, doc)
         if not version:
-            continue
-        parsed.append(load_parsed_version(db, version))
-    return parsed
+            return None
+        return load_parsed_version(session, version)
+
+    if len(docs) == 1:
+        one = _load_one(db, docs[0])
+        return [one] if one else []
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    from app.database import SessionLocal
+
+    def _load_one_thread(doc: Document) -> ParsedDocument | None:
+        session = SessionLocal()
+        try:
+            return _load_one(session, doc)
+        finally:
+            session.close()
+
+    workers = min(4, len(docs))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return [p for p in pool.map(_load_one_thread, docs) if p is not None]
 
 
 def _diff_pair(
@@ -398,7 +415,7 @@ def run_compare_job(db: Session, job_id: uuid.UUID) -> CompareJob:
     db.commit()
 
     try:
-        doc_ids = _parse_uuid_list(job.document_ids)
+        doc_ids = parse_uuid_list(job.document_ids)
         user = db.get(User, job.created_by)
         if not user:
             raise ValueError("User not found")
@@ -586,7 +603,7 @@ def search_compare_job(
     user = db.get(User, job.created_by)
     if not user:
         return []
-    doc_ids = _parse_uuid_list(job.document_ids)
+    doc_ids = parse_uuid_list(job.document_ids)
     docs = validate_compare_documents(db, user, doc_ids)
     parsed = load_parsed_documents(db, docs)
 
@@ -716,7 +733,7 @@ def job_to_dict(db: Session, job: CompareJob) -> dict:
         .order_by(CompareDiffItem.pair_key)
     ).all()
     doc_titles: dict[str, str] = {}
-    for did in _parse_uuid_list(job.document_ids):
+    for did in parse_uuid_list(job.document_ids):
         d = get_document(db, did)
         if d:
             doc_titles[str(did)] = d.title

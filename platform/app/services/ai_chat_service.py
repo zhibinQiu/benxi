@@ -13,6 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
 from app.core.permissions import user_has_permission
+from app.core.workflow_events import (
+    next_workflow_step_id,
+    workflow_event_json,
+)
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
@@ -237,7 +241,7 @@ async def _reply_after_auto_reminder(
 async def _emit_reminder_scheduled_workflow(
     reminder_result: dict[str, Any],
 ) -> AsyncIterator[str]:
-    step_id = _next_step_id()
+    step_id = next_workflow_step_id("ai-s")
     detail = str(reminder_result.get("title") or "")
     boost = reminder_result.get("boost_seconds")
     for phase, title, status in (
@@ -411,36 +415,8 @@ def _kg_meta_payload(kg_context: KgQaContext | None) -> dict[str, Any]:
     }
 
 
-_step_seq = 0
-
-
-def _next_step_id() -> str:
-    global _step_seq
-    _step_seq += 1
-    return f"ai-s{_step_seq}"
-
-
-def _workflow_event(
-    phase: str,
-    *,
-    title: str,
-    detail: str = "",
-    tool: str = "",
-    status: str = "running",
-    step_id: str = "",
-) -> str:
-    ev: dict[str, Any] = {"phase": phase, "title": title, "status": status}
-    if detail:
-        ev["detail"] = detail
-    if tool:
-        ev["tool"] = tool
-    if step_id:
-        ev["step_id"] = step_id
-    return json.dumps({"workflow": ev}, ensure_ascii=False)
-
-
 async def _emit_workflow(phase: str, **kwargs: Any) -> AsyncIterator[str]:
-    yield _workflow_event(phase, **kwargs)
+    yield workflow_event_json(phase, **kwargs)
     await asyncio.sleep(0)
 
 
@@ -486,7 +462,7 @@ async def iter_chat_with_ai_agent_stream(
     async for payload in _emit_workflow("workflow_started", title="开始处理问题"):
         yield payload
 
-    think_id = _next_step_id()
+    think_id = next_workflow_step_id("ai-s")
     async for payload in _emit_workflow(
         "agent_thinking",
         title="分析问题意图",
@@ -526,7 +502,7 @@ async def iter_chat_with_ai_agent_stream(
     attachment_context = ""
     attach_count = int(prep.get("attach_count") or 0)
 
-    attach_id = _next_step_id()
+    attach_id = next_workflow_step_id("ai-s")
     if plan.use_attachment:
         async for payload in _emit_workflow(
             "tool_call",
@@ -680,7 +656,7 @@ async def iter_chat_with_ai_agent_stream(
 
     from app.services.llm_workflow_stream import iter_llm_answer_events
 
-    answer_think_id = _next_step_id()
+    answer_think_id = next_workflow_step_id("ai-s")
     _, _, model = resolve_credentials()
     try:
         async for ev in iter_llm_answer_events(

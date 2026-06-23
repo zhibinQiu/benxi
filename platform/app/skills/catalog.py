@@ -198,9 +198,9 @@ def build_agent_catalog_prompt(
         "- 查本体图谱 → `kg_query`",
         "- 查互联网 → `web_search`",
         "- 知识问答需多路资料 → 按「知识综合检索」技能编排，依次调用 `knowledge_retrieve` / `kg_query` / `web_search`（按需，非每问必调）",
-        "- 用户要**新建/编写 Skill** → `create_uploaded_skill`（勿 load 已有 Skill）",
-        "- 用户任务**明确匹配**某发展技能且需按其 SKILL.md 流程 → `load_uploaded_skill`",
-        "- 用户要求**运行发展技能中的 Python 脚本** → `run_skill_script`",
+        "- 用户要**新建/编写 Skill** → `create_uploaded_skill`（系统会自动附带 SKILL.md）",
+        "- 用户任务匹配某发展技能 → 直接 `run_skill_script`（系统自动注入 SKILL.md，勿 load）",
+        "- 你判断任务需要某发展技能时也可自行调用 `run_skill_script`，无需用户明确要求",
     ]
     from app.integrations.browser_automation.browser_config import get_browser_rpa_config
 
@@ -239,7 +239,7 @@ def build_agent_catalog_prompt(
         lines.append("")
 
     if uploaded:
-        lines.append("### 发展技能（上传 / Agent 生成；任务明确匹配时才 load_uploaded_skill）")
+        lines.append("### 发展技能（上传 / Agent 生成；匹配时直接 run_skill_script，系统自动加载 SKILL.md）")
         lines.append(
             "含 Python 脚本的上传 Skill 可通过 `run_skill_script` 沙箱执行"
             "（入口 main.py/run.py；须 skill_runtime.finish 输出结论，不保存抓取原文）"

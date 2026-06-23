@@ -26,6 +26,8 @@ function currentPollMs() {
   return Date.now() < boostUntil ? BOOST_POLL_MS : POLL_MS;
 }
 
+let pollLock = Promise.resolve();
+
 function parseNotificationCreatedAt(notification) {
   const raw = notification?.created_at;
   if (!raw) return 0;
@@ -65,50 +67,66 @@ export function dismissToast(key) {
 }
 
 function pushToast(notification) {
-  const key = `${notification.id}-${Date.now()}`;
+  const id = notification?.id;
+  if (id && activeToasts.value.some((t) => t.notification?.id === id)) return;
+  const key = `${id}-${Date.now()}`;
   activeToasts.value = [{ key, notification }, ...activeToasts.value].slice(0, MAX_TOASTS);
   vibrateAlert();
   scheduleDismiss(key);
 }
 
-function shouldToastNotification(notification) {
-  if (!notification?.id || toastedIds.has(notification.id)) return false;
-  if (document.hidden) return false;
+/** 同步占位，避免并发轮询对同一通知重复弹窗 */
+function reserveToast(notification) {
+  if (!notification?.id || document.hidden) return false;
+  if (toastedIds.has(notification.id)) return false;
+  toastedIds.add(notification.id);
   return true;
+}
+
+function shouldToastNotification(notification) {
+  return reserveToast(notification);
 }
 
 function markToasted(notification) {
   if (notification?.id) toastedIds.add(notification.id);
 }
 
+async function executePollNotifications({ seedOnly = false } = {}) {
+  const data = await fetchNotifications({ page: 1, page_size: 15, unread_only: true });
+  const items = data.items || [];
+  unreadCount.value = data.total ?? items.length;
+
+  if (!seeded || seedOnly) {
+    const start = sessionStartMs || Date.now();
+    for (const n of items) {
+      const createdAt = parseNotificationCreatedAt(n);
+      // 仅抑制「进入页面前」就存在的旧未读；时钟慢的 server 上新建通知不会误入
+      if (!createdAt || createdAt < start - SESSION_CLOCK_SKEW_MS) {
+        markToasted(n);
+      }
+    }
+    seeded = true;
+    if (seedOnly) return;
+  }
+
+  for (const n of items) {
+    if (!shouldToastNotification(n)) continue;
+    pushToast(n);
+  }
+}
+
 async function pollNotifications({ seedOnly = false } = {}) {
   if (!getToken()) return;
-  try {
-    const data = await fetchNotifications({ page: 1, page_size: 15, unread_only: true });
-    const items = data.items || [];
-    unreadCount.value = data.total ?? items.length;
-
-    if (!seeded || seedOnly) {
-      const start = sessionStartMs || Date.now();
-      for (const n of items) {
-        const createdAt = parseNotificationCreatedAt(n);
-        // 仅抑制「进入页面前」就存在的旧未读；时钟慢的 server 上新建通知不会误入
-        if (!createdAt || createdAt < start - SESSION_CLOCK_SKEW_MS) {
-          markToasted(n);
-        }
-      }
-      seeded = true;
-      if (seedOnly) return;
+  const run = async () => {
+    try {
+      await executePollNotifications({ seedOnly });
+    } catch {
+      /* 轮询失败不打断 UI */
     }
-
-    for (const n of items) {
-      if (!shouldToastNotification(n)) continue;
-      markToasted(n);
-      pushToast(n);
-    }
-  } catch {
-    /* 轮询失败不打断 UI */
-  }
+  };
+  const next = pollLock.then(run, run);
+  pollLock = next.catch(() => {});
+  return next;
 }
 
 function scheduleNextPoll() {
@@ -175,6 +193,7 @@ export function startNotificationAlerts() {
 
 export function stopNotificationAlerts() {
   pollActive = false;
+  pollLock = Promise.resolve();
   if (pollTimer) {
     clearTimeout(pollTimer);
     pollTimer = null;

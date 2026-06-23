@@ -2,7 +2,7 @@
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
 > **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
-> **版本对齐**：平台 **v4.2.1** · Monorepo `pdf_trans/`  
+> **版本对齐**：平台 **v4.3.1** · Monorepo `pdf_trans/`  
 > **运维架构（推荐）**：[系统架构](../operations/architecture.md) · [运维手册](../operations/README.md)
 
 ---
@@ -223,7 +223,7 @@ sequenceDiagram
 
 已实现插件示例：`translate`、`compare`、`rag`、`speech`、`agent_skills`、`subscriptions` 等（见 `platform/app/features/builtin/`）。
 
-### 4.4 Agent Skills 架构（v4.2.1）
+### 4.4 Agent Skills 架构（v4.3.1）
 
 ```mermaid
 flowchart LR

@@ -30,10 +30,6 @@ platform/**/__pycache__/
 !platform/app/
 !platform/workers/
 !platform/third_party/pageindex-upstream/
-# 系统说明文档
-!docs/
-!docs/**
-!运维部署指南.md
 !RELEASE.md
 # Byte-compiled / optimized / DLL files
 __pycache__/

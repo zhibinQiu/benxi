@@ -1,7 +1,8 @@
-/** 知识检索左侧树：sessionStorage 缓存，进入页面时先展示缓存再后台刷新 */
+/** 知识检索 / 报告生成左侧树：sessionStorage 缓存，进入页面时先展示缓存再后台刷新 */
 
-const CACHE_KEY = "platform:knowledge-scope-tree:v4";
-const CACHE_TTL_MS = 120 * 1000;
+const CACHE_KEY = "platform:knowledge-scope-tree:v5";
+/** 与后端 scope_tree_cache_ttl_sec 默认 300s 对齐 */
+const CACHE_TTL_MS = 300 * 1000;
 
 function readRaw() {
   try {

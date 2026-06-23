@@ -1,6 +1,6 @@
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useAppPreferences } from "./useAppPreferences";
-import { messages } from "../locales";
+import { ensureLocale, LOCALE_LABELS, messages } from "../locales";
 
 function resolvePath(dict, key) {
   let cur = dict;
@@ -14,12 +14,25 @@ function resolvePath(dict, key) {
 export function useI18n() {
   const { locale } = useAppPreferences();
 
-  const localeLabel = computed(() =>
-    locale.value === "zh" ? messages.en.userMenu.switchToEnglish : messages.zh.userMenu.switchToChinese
+  watch(
+    locale,
+    (value) => {
+      void ensureLocale(value);
+    },
+    { immediate: true }
   );
 
+  const localeLabel = computed(() => {
+    const other = locale.value === "zh" ? "en" : "zh";
+    return LOCALE_LABELS[other] || other;
+  });
+
+  function activeMessages() {
+    return messages[locale.value] || messages.zh;
+  }
+
   function t(key, params) {
-    const raw = resolvePath(messages[locale.value], key);
+    const raw = resolvePath(activeMessages(), key);
     if (typeof raw !== "string") return key;
     if (!params) return raw;
     return raw.replace(/\{\{(\w+)\}\}/g, (_, name) =>
@@ -28,54 +41,54 @@ export function useI18n() {
   }
 
   function tm(key) {
-    return resolvePath(messages[locale.value], key);
+    return resolvePath(activeMessages(), key);
   }
 
   function routeTitle(routeName, fallback = "") {
     if (!routeName) return fallback;
     const key = `routes.${routeName}`;
-    const raw = resolvePath(messages[locale.value], key);
+    const raw = resolvePath(activeMessages(), key);
     return typeof raw === "string" ? raw : fallback;
   }
 
   function scopeLabel(scope) {
     const key = `scope.${scope}`;
-    const raw = resolvePath(messages[locale.value], key);
+    const raw = resolvePath(activeMessages(), key);
     return typeof raw === "string" ? raw : scope;
   }
 
   function docStatusLabel(key) {
     if (!key) return "";
     const i18nKey = `documents.status.${key}`;
-    const raw = resolvePath(messages[locale.value], i18nKey);
+    const raw = resolvePath(activeMessages(), i18nKey);
     return typeof raw === "string" ? raw : key;
   }
 
   function docLevelLabel(key) {
     if (!key) return "";
     const i18nKey = `documents.level.${key}`;
-    const raw = resolvePath(messages[locale.value], i18nKey);
+    const raw = resolvePath(activeMessages(), i18nKey);
     return typeof raw === "string" ? raw : key;
   }
 
   function featureLabel(id, field, fallback = "") {
     if (!id || !field) return fallback;
     const key = `features.${id}.${field}`;
-    const raw = resolvePath(messages[locale.value], key);
+    const raw = resolvePath(activeMessages(), key);
     return typeof raw === "string" ? raw : fallback;
   }
 
   function featureDescription(routeName, fallback = "") {
     if (!routeName) return fallback;
     const key = `featureDescriptions.${routeName}`;
-    const raw = resolvePath(messages[locale.value], key);
+    const raw = resolvePath(activeMessages(), key);
     return typeof raw === "string" ? raw : fallback;
   }
 
   function chatScopeTitle(scope, fallback = "") {
     if (!scope) return fallback;
     const key = `chatScopes.${scope}.title`;
-    const raw = resolvePath(messages[locale.value], key);
+    const raw = resolvePath(activeMessages(), key);
     return typeof raw === "string" ? raw : fallback;
   }
 

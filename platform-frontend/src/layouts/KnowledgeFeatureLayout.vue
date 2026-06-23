@@ -1,15 +1,20 @@
 <script setup>
 defineOptions({ name: "KnowledgeFeatureLayout" });
-import { onActivated, provide, ref, watch } from "vue";
+import { defineAsyncComponent, onActivated, provide, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
-import KnowledgeSearchView from "../views/KnowledgeSearchView.vue";
-import ReportGenerationView from "../views/ReportGenerationView.vue";
 import {
   KNOWLEDGE_SCOPE_SELECTION_KEY,
   readKnowledgeScopeSelection,
 } from "../utils/knowledgeScopeSelectionCache.js";
+
+const KnowledgeSearchView = defineAsyncComponent(
+  () => import("../views/KnowledgeSearchView.vue")
+);
+const ReportGenerationView = defineAsyncComponent(
+  () => import("../views/ReportGenerationView.vue")
+);
 
 const KEEP_ALIVE_PANELS = ["KnowledgeSearchView", "ReportGenerationView"];
 
@@ -47,7 +52,7 @@ onActivated(() => {
         <KnowledgeScopeTree @selection-change="onSelectionChange" />
       </aside>
       <main class="knowledge-feature-page__main knowledge-search-page__main report-gen-page__main">
-        <KeepAlive :max="KEEP_ALIVE_PANELS.length" :include="KEEP_ALIVE_PANELS">
+        <KeepAlive :max="1" :include="KEEP_ALIVE_PANELS">
           <KnowledgeSearchView v-if="activePanel === 'knowledge-search'" />
           <ReportGenerationView v-else-if="activePanel === 'report-generation'" />
         </KeepAlive>

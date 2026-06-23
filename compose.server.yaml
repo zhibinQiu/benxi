@@ -10,7 +10,7 @@
 
 services:
   api:
-    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.2.1}
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.3.1}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -27,9 +27,7 @@ services:
     volumes:
       - ./platform/app:/app/app
       - ./platform/workers:/app/workers:ro
-      - ./docs:/app/system-docs/docs:ro
-      - ./运维部署指南.md:/app/system-docs/运维部署指南.md:ro
-      - ./RELEASE.md:/app/system-docs/RELEASE.md:ro
+      - ./RELEASE.md:/app/RELEASE.md:ro
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
     environment:
@@ -51,7 +49,7 @@ services:
       start_period: 45s
 
   worker:
-    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.2.1}
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.3.1}
     shm_size: "512mb"
     volumes:
       - ./platform/app:/app/app:ro

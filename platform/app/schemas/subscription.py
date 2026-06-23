@@ -41,23 +41,3 @@ class SubscriptionImportOut(BaseModel):
     knowflow_synced: bool = False
     queued: bool = False
     job_id: uuid.UUID | None = None
-
-
-class WebSearchResultOut(BaseModel):
-    title: str
-    url: str
-    snippet: str = ""
-    engine: str = ""
-
-
-class WebSearchOut(BaseModel):
-    query: str
-    page: int
-    page_size: int
-    items: list[WebSearchResultOut]
-    has_more: bool = False
-    enabled: bool = True
-
-
-class WebSearchStatusOut(BaseModel):
-    enabled: bool

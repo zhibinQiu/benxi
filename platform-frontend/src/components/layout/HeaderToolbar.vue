@@ -149,7 +149,7 @@ onMounted(() => {
     setTimeout(scheduleBadges, 1200);
   }
   badgeTimer = setInterval(() => {
-    refreshHeaderBadges();
+    if (!document.hidden) refreshHeaderBadges();
   }, 15_000);
 });
 
@@ -157,10 +157,6 @@ onUnmounted(() => {
   if (badgeTimer) clearInterval(badgeTimer);
   releaseFlyoutPanels();
 });
-
-async function refreshUnreadCount() {
-  await refreshNotificationAlerts();
-}
 
 async function refreshActiveJobCount() {
   try {
@@ -187,7 +183,8 @@ async function refreshPendingTodoCount() {
 }
 
 async function refreshHeaderBadges() {
-  await Promise.all([refreshUnreadCount(), refreshActiveJobCount(), refreshPendingTodoCount()]);
+  if (document.hidden) return;
+  await Promise.all([refreshActiveJobCount(), refreshPendingTodoCount()]);
 }
 
 function closeAllFlyouts({ releasePanels = false } = {}) {
@@ -409,7 +406,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
       >
         <NotificationsPanel
           :active="notificationsPopoverOpen"
-          @updated="refreshUnreadCount"
+          @updated="refreshNotificationAlerts"
           @navigate="notificationsPopoverOpen = false"
         />
       </HeaderFlyoutShell>

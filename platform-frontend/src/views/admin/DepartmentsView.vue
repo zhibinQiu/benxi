@@ -189,8 +189,10 @@ onMounted(load);
         :disabled="!canBatchDelete"
         @action="handleBatchDelete"
       />
-      <ListRefreshButton :loading="loading" @click="load" />
-      <n-button type="primary" @click="openCreate">{{ t("admin.departments.create") }}</n-button>
+      <n-space align="center" :size="8">
+        <ListRefreshButton :loading="loading" @click="load" />
+        <n-button type="primary" @click="openCreate">{{ t("admin.departments.create") }}</n-button>
+      </n-space>
     </div>
     <n-data-table
       :columns="columns"

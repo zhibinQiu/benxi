@@ -4,7 +4,6 @@
 .app-content,
 .main-layout .app-content :deep(.n-layout-scroll-container),
 .subscriptions-list-scroll,
-.system-docs-main,
 .monitor-page {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--platform-accent) 42%, transparent) transparent;
@@ -12,16 +11,14 @@
 
 .app-content::-webkit-scrollbar,
 .main-layout .app-content :deep(.n-layout-scroll-container)::-webkit-scrollbar,
-.subscriptions-list-scroll::-webkit-scrollbar,
-.system-docs-main::-webkit-scrollbar {
+.subscriptions-list-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .app-content::-webkit-scrollbar-thumb,
 .main-layout .app-content :deep(.n-layout-scroll-container)::-webkit-scrollbar-thumb,
-.subscriptions-list-scroll::-webkit-scrollbar-thumb,
-.system-docs-main::-webkit-scrollbar-thumb {
+.subscriptions-list-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: linear-gradient(
     180deg,
@@ -32,15 +29,13 @@
 
 .app-content::-webkit-scrollbar-thumb:hover,
 .main-layout .app-content :deep(.n-layout-scroll-container)::-webkit-scrollbar-thumb:hover,
-.subscriptions-list-scroll::-webkit-scrollbar-thumb:hover,
-.system-docs-main::-webkit-scrollbar-thumb:hover {
+.subscriptions-list-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--platform-accent-gradient);
 }
 
 .app-content::-webkit-scrollbar-track,
 .main-layout .app-content :deep(.n-layout-scroll-container)::-webkit-scrollbar-track,
-.subscriptions-list-scroll::-webkit-scrollbar-track,
-.system-docs-main::-webkit-scrollbar-track {
+.subscriptions-list-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -1148,10 +1143,34 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
   flex-direction: column;
   gap: 12px;
   width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.documents-list-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.documents-list-card :deep(.n-card__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+}
+
+.documents-actions-card :deep(.n-card__content) {
+  padding: 14px 16px;
 }
 
 .documents-list-panel {
+  flex: 1;
   min-height: 240px;
+  display: flex;
+  flex-direction: column;
 }
 
 .documents-view-spin {
@@ -1162,11 +1181,6 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 .documents-actions-card :deep(.n-card-header),
 .documents-list-card :deep(.n-card-header) {
   display: none;
-}
-
-.documents-actions-card :deep(.n-card__content),
-.documents-list-card :deep(.n-card__content) {
-  padding: 14px 16px;
 }
 
 .documents-actions-toolbar {
@@ -1472,4 +1486,66 @@ html[data-theme="dark"] .documents-actions-bar .documents-org-picker__select :de
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.admin-page--list-table :deep(.n-card__content) {
+  padding-bottom: 14px;
+}
+
+.admin-list-table {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.list-table-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  padding: 10px 16px 14px;
+}
+
+.list-table-footer :deep(.n-pagination) {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.batch-table-toolbar .icon-action.icon-action--danger:not(:disabled),
+.page-toolbar .icon-action.icon-action--danger:not(:disabled),
+.documents-actions-toolbar .icon-action.icon-action--danger:not(:disabled),
+.documents-actions-toolbar .icon-action.icon-action--caution:not(:disabled) {
+  background: var(--platform-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--platform-danger) 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+}
+
+.batch-table-toolbar .icon-action.icon-action--caution:not(:disabled),
+.documents-actions-toolbar .icon-action.icon-action--caution:not(:disabled) {
+  color: var(--platform-caution);
+  background: var(--platform-caution-soft);
+  border-color: color-mix(in srgb, var(--platform-caution) 24%, transparent);
+}
+
+.batch-table-toolbar .icon-action.icon-action--danger:not(:disabled):hover,
+.page-toolbar .icon-action.icon-action--danger:not(:disabled):hover,
+.documents-actions-toolbar .icon-action.icon-action--danger:not(:disabled):hover {
+  color: var(--platform-danger);
+  background: color-mix(in srgb, var(--platform-danger) 16%, var(--platform-danger-soft));
+  border-color: color-mix(in srgb, var(--platform-danger) 40%, transparent);
+}
+
+.batch-table-toolbar .icon-action.icon-action--caution:not(:disabled):hover,
+.documents-actions-toolbar .icon-action.icon-action--caution:not(:disabled):hover {
+  color: var(--platform-caution);
+  background: color-mix(in srgb, var(--platform-caution) 16%, var(--platform-caution-soft));
+  border-color: color-mix(in srgb, var(--platform-caution) 40%, transparent);
+}
+
+.batch-table-toolbar .icon-action:disabled,
+.page-toolbar .icon-action.icon-action--danger:disabled,
+.documents-actions-toolbar .icon-action:disabled {
+  opacity: 0.42;
+  background: var(--platform-bg-glass-subtle);
+  border-color: var(--platform-border);
+  box-shadow: none;
 }

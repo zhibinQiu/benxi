@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_any_permission
@@ -18,17 +18,8 @@ from app.schemas.subscription import (
     SubscriptionIngestIn,
     SubscriptionItemDetailOut,
     SubscriptionItemOut,
-    WebSearchOut,
-    WebSearchResultOut,
-    WebSearchStatusOut,
 )
 from app.services import subscription_service as svc
-from app.services.searxng_service import (
-    SearxngNotConfiguredError,
-    SearxngSearchError,
-    is_enabled,
-    search_web,
-)
 
 router = APIRouter(
     prefix="/subscriptions",
@@ -118,37 +109,3 @@ def delete_item(
     data = svc.delete_item(db, user, ref)
     db.commit()
     return ApiResponse(data=data)
-
-
-@router.get("/web-search/status", response_model=ApiResponse[WebSearchStatusOut])
-def web_search_status(
-    db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[WebSearchStatusOut]:
-    return ApiResponse(data=WebSearchStatusOut(enabled=is_enabled(db)))
-
-
-@router.get("/web-search", response_model=ApiResponse[WebSearchOut])
-def web_search(
-    db: Annotated[Session, Depends(get_db)],
-    q: str = Query(..., min_length=1, max_length=200),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
-) -> ApiResponse[WebSearchOut]:
-    if not is_enabled(db):
-        raise HTTPException(status_code=503, detail="未配置 SearXNG 服务地址")
-    try:
-        items, has_more = search_web(q, page=page, page_size=page_size, db=db)
-    except SearxngNotConfiguredError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except SearxngSearchError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return ApiResponse(
-        data=WebSearchOut(
-            query=q.strip(),
-            page=page,
-            page_size=page_size,
-            items=[WebSearchResultOut.model_validate(i) for i in items],
-            has_more=has_more,
-            enabled=True,
-        )
-    )

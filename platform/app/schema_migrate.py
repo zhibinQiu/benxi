@@ -958,7 +958,7 @@ def ensure_ragflow_version_index_completed_schema(engine: Engine) -> None:
 
 
 # 新增 ensure_* 补丁时递增；启动时若库中无对应记录则自动跑全量 schema 迁移。
-PLATFORM_SCHEMA_REVISION = 2
+PLATFORM_SCHEMA_REVISION = 3
 
 
 def platform_schema_revision_patch() -> str:
@@ -1147,8 +1147,46 @@ def ensure_agent_skill_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_document_performance_indexes(engine: Engine) -> None:
+    """文档列表、权限与版本检查的高频查询索引。"""
+    statements = [
+        """
+        CREATE INDEX IF NOT EXISTS ix_documents_active_updated
+        ON documents (updated_at DESC)
+        WHERE deleted_at IS NULL AND status = 'active'
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_documents_scope_owner_updated
+        ON documents (scope, owner_id, updated_at DESC)
+        WHERE deleted_at IS NULL
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_documents_scope_dept_updated
+        ON documents (scope, dept_id, updated_at DESC)
+        WHERE deleted_at IS NULL
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_document_permissions_doc_subject
+        ON document_permissions (document_id, subject_type, subject_id)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_document_versions_doc_file
+        ON document_versions (document_id)
+        WHERE file_size > 0
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_jobs_type_status
+        ON jobs (type, status)
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def run_light_schema_patches(engine: Engine) -> None:
     """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
+    ensure_document_performance_indexes(engine)
     ensure_pageindex_schema(engine)
     ensure_issue_report_schema(engine)
     ensure_platform_menu_settings_schema(engine)
@@ -1171,14 +1209,12 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_carbon_market_schema(engine)
     ensure_meeting_record_schema(engine)
     ensure_todo_schema(engine)
-    ensure_issue_report_schema(engine)
     ensure_wechat_mp_schema(engine)
     ensure_feed_subscription_schema(engine)
     ensure_subscription_item_removal_schema(engine)
     ensure_platform_chat_schema(engine)
     ensure_kg_schema(engine)
     ensure_platform_model_settings_schema(engine)
-    ensure_platform_menu_settings_schema(engine)
     ensure_user_single_department_schema(engine)
     ensure_user_phone_schema(engine)
     ensure_user_last_seen_schema(engine)
@@ -1188,10 +1224,7 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_version_compare_schema(engine)
     ensure_version_compare_llm_summary_schema(engine)
     ensure_document_version_blocks_schema(engine)
-    ensure_pageindex_schema(engine)
-    ensure_agent_skill_schema(engine)
-    ensure_scheduled_notification_schema(engine)
-    ensure_scheduled_rpa_task_schema(engine)
+    ensure_document_performance_indexes(engine)
     ensure_permission_level_migration(engine)
     ensure_document_library_align_v1(engine)
     migrate_legacy_admin_roles(engine)

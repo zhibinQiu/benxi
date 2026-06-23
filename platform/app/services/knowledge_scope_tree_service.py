@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
+from app.core.platform_cache import invalidate_scope_tree_cache  # noqa: F401
 
 from app.core.document_scope import (
     LIBRARY_TAB_SCOPES,
@@ -42,15 +42,6 @@ from app.services.library_folder_service import (
 
 logger = logging.getLogger(__name__)
 
-_SCOPE_TREE_CACHE_VERSION = 3
-_local_scope_tree_cache: dict[str, tuple[float, dict]] = {}
-
-
-def _scope_tree_cache_ttl_sec() -> int:
-    from app.config import get_settings
-
-    return max(30, int(get_settings().scope_tree_cache_ttl_sec))
-
 _ORG_UNIT_LOADERS = {
     "company": library_companies_for_user,
     "department": library_departments_for_user,
@@ -58,65 +49,6 @@ _ORG_UNIT_LOADERS = {
 }
 
 KNOWLEDGE_SCOPE_LABELS = SCOPE_LABELS
-
-
-def _scope_tree_cache_key(user_id: uuid.UUID) -> str:
-    return f"knowledge:scope-tree:v{_SCOPE_TREE_CACHE_VERSION}:{user_id}"
-
-
-def _read_scope_tree_cache(user_id: uuid.UUID) -> dict | None:
-    key = _scope_tree_cache_key(user_id)
-    client = None
-    try:
-        from app.core.redis_client import get_redis_client
-
-        client = get_redis_client()
-        if client:
-            raw = client.get(key)
-            if raw:
-                return json.loads(raw)
-    except Exception as exc:
-        logger.debug("读取知识检索树缓存失败 key=%s: %s", key, exc)
-
-    hit = _local_scope_tree_cache.get(key)
-    ttl = _scope_tree_cache_ttl_sec()
-    if hit and time.monotonic() - hit[0] < ttl:
-        return hit[1]
-    return None
-
-
-def _write_scope_tree_cache(user_id: uuid.UUID, data: dict) -> None:
-    key = _scope_tree_cache_key(user_id)
-    _local_scope_tree_cache[key] = (time.monotonic(), data)
-    try:
-        from app.core.redis_client import get_redis_client
-
-        client = get_redis_client()
-        if client:
-            client.setex(
-                key,
-                _scope_tree_cache_ttl_sec(),
-                json.dumps(data, ensure_ascii=False),
-            )
-    except Exception as exc:
-        logger.debug("写入知识检索树缓存失败 key=%s: %s", key, exc)
-
-
-def invalidate_scope_tree_cache(user_id: uuid.UUID | None = None) -> None:
-    """文档同步/索引变更后可调用；user_id 为空时仅清本地兜底缓存。"""
-    if user_id is not None:
-        key = _scope_tree_cache_key(user_id)
-        _local_scope_tree_cache.pop(key, None)
-        try:
-            from app.core.redis_client import get_redis_client
-
-            client = get_redis_client()
-            if client:
-                client.delete(key)
-        except Exception as exc:
-            logger.debug("删除知识检索树缓存失败 key=%s: %s", key, exc)
-        return
-    _local_scope_tree_cache.clear()
 
 
 def notify_knowledge_index_state_changed(
@@ -128,6 +60,7 @@ def notify_knowledge_index_state_changed(
     from app.core.platform_cache import (
         invalidate_document_library_cache,
         invalidate_ragflow_doc_meta_cache,
+        invalidate_scope_tree_cache,
     )
 
     invalidate_scope_tree_cache(user_id)
@@ -581,10 +514,19 @@ def _build_knowledge_scope_tree(db: Session, user: User) -> dict:
 def build_knowledge_scope_tree(
     db: Session, user: User, *, force_refresh: bool = False
 ) -> dict:
-    if not force_refresh:
-        cached = _read_scope_tree_cache(user_id=user.id)
-        if cached is not None:
-            return cached
-    data = _build_knowledge_scope_tree(db, user)
-    _write_scope_tree_cache(user.id, data)
-    return data
+    from app.config import get_settings
+    from app.core.platform_cache import (
+        cache_get_or_set,
+        invalidate_scope_tree_cache,
+        scope_tree_cache_key,
+    )
+
+    cache_key = scope_tree_cache_key(str(user.id))
+    ttl = max(30, int(get_settings().scope_tree_cache_ttl_sec))
+    if force_refresh:
+        invalidate_scope_tree_cache(user.id)
+    return cache_get_or_set(
+        cache_key,
+        lambda: _build_knowledge_scope_tree(db, user),
+        ttl=ttl,
+    )

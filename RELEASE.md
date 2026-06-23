@@ -1,5 +1,18 @@
 # 发布说明
 
+## 4.3.1（v4.3.1）— 知识检索模块化、功能收敛与 Agent 工具链增强
+
+- **知识检索问答模块化**：`knowledge_qa_service` 拆分为 `knowledge_qa/` 子包（检索、生成、引用、预览、流式等），对外 API 保持不变
+- **知识检索 UI 收敛**：移除独立 `KnowledgeQaView`，统一由 `KnowledgeSearchView` 承载问答与检索
+- **移除系统文档模块**：删除 `system_docs` API/服务/管理页及前端 `SystemDocContent`
+- **移除公众号资讯页**：删除 `WechatMpArticleView` / `WechatMpFeedView` 独立路由
+- **Agent 工具链**：新增 `agent_tool_context`、`workflow_events`；tool loop 与技能路由增强
+- **文档权限批量**：`documents/access_batch` 支持批量访问校验
+- **列表页体验**：通用 `ListTableFooter`；订阅/用户/部门列表分页与页脚统一
+- **API 请求作用域**：`requestScope.js` 统一请求上下文传递
+- **代码收敛**：删除 `WebSearchResultDrawer`、`knowledge_qa` builtin feature 等冗余路径
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.3.1）
+
 ## 4.2.1（v4.2.1）— Agent Skills 架构升级与系统文档
 
 - **Agent Skills 框架**：内置 14 项能力注册表（4 READY + 10 STUB）；上传型 Skill 包（ZIP/文件夹/`SKILL.md`）；Discovery 常驻目录 + Activation 按需 tool 调用

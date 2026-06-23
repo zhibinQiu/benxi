@@ -22,7 +22,6 @@ export default {
     modelSettings: "Resources",
     menuSettings: "Menu settings",
     agentSkills: "Agent Skills",
-    systemDocs: "Documentation",
     issueReports: "Issue reports",
     readOnly: "View only",
   },
@@ -71,7 +70,6 @@ export default {
     "admin-menu-settings": "Menu settings",
     "admin-agent-skills": "Agent Skills",
     "agent-skills": "Agent Skills",
-    "admin-docs": "Documentation",
     "issue-reports": "Issue reports",
   },
   features: {
@@ -1680,10 +1678,6 @@ export default {
       saveFailed: "Save failed",
       saved: "Menu settings saved",
     },
-    systemDocs: {
-      title: "Documentation",
-      noDocs: "No documentation available",
-    },
     modelSettings: {
       refreshStatus: "Refresh status",
       testConnectivity: "Test connectivity",
@@ -1718,7 +1712,7 @@ export default {
         speech: { title: "Speech recognition", hint: "Meeting assistant transcription" },
         tts: { title: "Text-to-speech", hint: "TTS (SiliconFlow / OpenAI-compatible)" },
         pdf2zh: { title: "PDF translation", hint: "pdf2zh document translation API" },
-        searxng: { title: "SearXNG web search", hint: "Online search for bookmarks" },
+        searxng: { title: "SearXNG web search", hint: "Report generation and AI agent web retrieval" },
         browser_rpa: { title: "Browser RPA", hint: "AI agent web automation (headless Chromium)" },
         ragflow_api: { title: "Knowledge base API", hint: "Knowledge retrieval and document sync HTTP API" },
         knowflow_backend: {
@@ -1841,7 +1835,7 @@ export default {
         pdf2zh:
           "Document translation uses pdf2zh API (<code>PDF2ZH_API_URL</code> in .env). Takes effect immediately.",
         searxng:
-          "Bookmark web search uses this SearXNG JSON API (<code>/search?format=json</code>). Maps to <code>SEARXNG_URL</code> and <code>SEARXNG_TIMEOUT_SECONDS</code>. Takes effect immediately.",
+          "Report generation and the AI agent use this SearXNG JSON API (<code>/search?format=json</code>). Maps to <code>SEARXNG_URL</code> and <code>SEARXNG_TIMEOUT_SECONDS</code>. Takes effect immediately.",
         browserRpa:
           "AI agent drives Playwright Chromium. <strong>Headless servers need no display</strong>; keep headless on. Docker image requires <code>INSTALL_BROWSER=1</code> (enabled in compose by default). Comma-separated domain allowlist; empty blocks intranet only.",
         ragflowApi:
@@ -1886,11 +1880,8 @@ export default {
     deleteFailed: "Delete failed",
   },
   subscriptions: {
-    searchWeb: "Web search",
-    searchLocal: "Saved articles",
     search: "Search",
     placeholderLocal: "Search saved article titles or body",
-    placeholderWeb: "Search the web",
     filter: "Filters",
     filterDateLabel: "Saved from / to",
     startDate: "Start date",
@@ -1901,8 +1892,6 @@ export default {
     ingestLabel: "Paste an article URL to save locally",
     ingest: "Save",
     ingestHint: "Supports WeChat articles, websites, etc.; AI summary is generated after save.",
-    resultApprox: "About {{count}} results",
-    resultNone: "No matches",
     resultTotalSaved: "{{count}} saved articles",
     resultTotal: "{{count}} articles",
     filterActive: "Saved: {{range}}",
@@ -1911,19 +1900,10 @@ export default {
     importedTag: "In document library",
     wechatTag: "WeChat",
     noSummary: "No summary",
-    emptyLocal: "No saved articles — try web search or paste a URL",
-    emptyWeb: "No pages found — try other keywords",
-    webUnavailable: "Web search is unavailable — contact an administrator",
-    heroTitle: "Enter keywords above to search",
-    heroDesc: "View web results or save them locally",
-    detail: "Details",
-    collect: "Save",
-    needKeyword: "Enter search keywords",
+    emptyLocal: "No saved articles — paste a URL to get started",
     needUrl: "Paste an article URL",
     ingestedWithSummary: "Saved with AI summary",
     ingested: "Saved",
-    collectedWithSummary: "Saved with AI summary",
-    collectedLocal: "Saved locally",
   },
   subscriptionItem: {
     wechatBadge: "WeChat",

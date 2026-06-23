@@ -43,7 +43,7 @@ const WELCOME_MESSAGE = computed(() => ({
 }));
 
 const quickPrompts = computed(
-  () => localeMessages[locale.value]?.assistantFab?.quickPrompts || []
+  () => (localeMessages[locale.value] || localeMessages.zh)?.assistantFab?.quickPrompts || []
 );
 
 const sending = ref(false);

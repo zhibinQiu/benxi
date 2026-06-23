@@ -5,18 +5,21 @@ import {
   getToken,
   fetchWithTimeout,
   rejectHttpFailure,
+  LIST_API_TIMEOUT_MS,
   UPLOAD_API_TIMEOUT_MS,
 } from "./http.js";
 
+const listReadOpts = { timeoutMs: LIST_API_TIMEOUT_MS };
+
 export async function fetchDocumentLibrary() {
-  return api("/api/v1/documents/library");
+  return api("/api/v1/documents/library", listReadOpts);
 }
 
 export async function fetchDocumentOverview({ scope, dept_id, owner_id } = {}) {
   const q = new URLSearchParams({ scope });
   if (dept_id) q.set("dept_id", dept_id);
   if (owner_id) q.set("owner_id", owner_id);
-  return api(`/api/v1/documents/overview?${q}`);
+  return api(`/api/v1/documents/overview?${q}`, listReadOpts);
 }
 
 export async function fetchDocuments({
@@ -36,14 +39,14 @@ export async function fetchDocuments({
   if (uncategorized) q.set("uncategorized", "true");
   if (dept_id) q.set("dept_id", dept_id);
   if (owner_id) q.set("owner_id", owner_id);
-  return api(`/api/v1/documents?${q}`);
+  return api(`/api/v1/documents?${q}`, listReadOpts);
 }
 
 export async function fetchKbFolders({ scope, dept_id, owner_id } = {}) {
   const q = new URLSearchParams({ scope });
   if (dept_id) q.set("dept_id", dept_id);
   if (owner_id) q.set("owner_id", owner_id);
-  return api(`/api/v1/documents/kb-folders?${q}`);
+  return api(`/api/v1/documents/kb-folders?${q}`, listReadOpts);
 }
 
 export async function createKbFolder(payload) {

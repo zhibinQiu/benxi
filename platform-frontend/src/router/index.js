@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getToken } from "../api/client";
+import { beginRouteRequestScope } from "../api/requestScope.js";
 import { useAuth } from "../composables/useAuth";
 import { routeMenuKey, useMenuSettings, isConfigurableMenuKey } from "../composables/useMenuSettings";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
@@ -329,12 +330,6 @@ const routes = [
         component: () => import("../views/admin/MenuSettingsView.vue"),
       },
       {
-        path: "admin/docs",
-        name: "admin-docs",
-        meta: { title: "说明文档", videoBg: true },
-        component: () => import("../views/admin/SystemDocsView.vue"),
-      },
-      {
         path: "issue-reports",
         name: "issue-reports",
         meta: { title: "问题登记", featureIcon: "list", videoBg: true },
@@ -353,6 +348,7 @@ const router = createRouter({
 const MENU_VISIBILITY_EXEMPT = new Set(["ai-home", "chat-history"]);
 
 router.beforeEach(async (to) => {
+  beginRouteRequestScope();
   if (to.meta.public) {
     if (to.name === "login" && getToken()) {
       const { loadUser } = useAuth();

@@ -60,6 +60,24 @@
   margin-right: calc(-1 * var(--feature-nav-inset-x, 20px));
 }
 
+/* 底部分页：独立玻璃条（与 feature-local-nav 壳层分离） */
+.feature-bottom-strip {
+  position: relative;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
+  border-top: 1px solid var(--platform-ui-glass-border, var(--platform-divider)) !important;
+  border-radius: var(--platform-radius-md, 12px);
+  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-glass-strong)) !important;
+  box-shadow: var(--platform-ui-layer-shadow) !important;
+  backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
+  -webkit-backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
+}
+
+.feature-bottom-strip::before {
+  display: none !important;
+}
+
 .main-layout .app-content--full .feature-top-strip,
 .main-layout .app-content--full .feature-local-nav {
   margin-left: 0;
@@ -187,13 +205,13 @@
 
 .main-layout .app-content--full .subscriptions-page > .feature-top-strip,
 .main-layout .app-content--full .subscriptions-page > .subscriptions-body,
-.main-layout .app-content--full .subscriptions-page > .subscriptions-footer {
+.main-layout .app-content--full .subscriptions-page > .feature-bottom-strip {
   margin-inline: calc(-1 * var(--feature-nav-inset-x, 20px));
 }
 
 .main-layout .app-content--full .feature-top-strip .subscriptions-search-hub.feature-local-nav,
 .main-layout .app-content--full .subscriptions-page > .subscriptions-body .subscriptions-list-scroll,
-.main-layout .app-content--full .subscriptions-page > .subscriptions-footer .subscriptions-footer__inner {
+.main-layout .app-content--full .subscriptions-page > .feature-bottom-strip .subscriptions-footer__inner {
   padding-inline: var(--feature-nav-inset-x, 20px);
 }
 
@@ -241,8 +259,16 @@
   margin-top: 12px;
 }
 
+.subscriptions-page > .subscriptions-body + .feature-bottom-strip {
+  margin-top: 12px;
+}
+
 .documents-page.feature-page:has(.feature-top-strip) {
   gap: 12px;
+}
+
+.documents-page > .documents-list-card + .feature-bottom-strip {
+  flex-shrink: 0;
 }
 
 .resource-settings-page.feature-page > .page-alert {

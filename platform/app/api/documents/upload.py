@@ -105,10 +105,11 @@ async def upload_document_blob(
     if not data:
         raise bad_request("Empty upload body")
     content_type = (request.headers.get("content-type") or "").split(";")[0].strip()
+    user_id = user.id
     release_db(db)
     await run_sync(
         _save_document_blob_sync,
-        user.id,
+        user_id,
         document_id,
         version_id,
         data,

@@ -34,7 +34,7 @@ flowchart TB
   end
 
   subgraph qa [检索问答]
-    KQS[knowledge_qa_service]
+    KQS[knowledge_qa/*]
   end
 
   API[knowledge_embed.py API] --> KLS
@@ -236,7 +236,9 @@ sequenceDiagram
 
 ---
 
-## 5. 知识问答（`knowledge_qa_service.py`）
+## 5. 知识问答（`app/services/knowledge_qa/`）
+
+实现按职责拆分为子模块（`retrieval`、`citations`、`answer`、`preview`、`stream` 等），对外仍通过 `knowledge_qa_service` 兼容层导出。
 
 ### 5.1 流式入口与调用链
 

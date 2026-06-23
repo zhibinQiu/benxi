@@ -147,16 +147,6 @@ def user_is_superuser(db: Session, user: User) -> bool:
     return user_is_system_admin(db, user)
 
 
-def user_is_company_admin(db: Session, user: User) -> bool:
-    """已废弃分级管理员；仅系统管理员视为公司级管理身份。"""
-    return user_is_superuser(db, user)
-
-
-def user_is_dept_admin(db: Session, user: User) -> bool:
-    """已废弃分级管理员。"""
-    return False
-
-
 def user_has_permission(db: Session, user: User, code: str) -> bool:
     if user_is_superuser(db, user):
         return True

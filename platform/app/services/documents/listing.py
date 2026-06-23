@@ -2,15 +2,25 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import PermissionLevel, can_access_document
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.org import User
+from app.services.documents.access_batch import filter_documents_for_list
 from app.services.documents.acl import _subject_user_label
 from app.services.documents.content import _is_compareable_version, _is_pdf_version
-from app.services.documents.crud import document_has_uploaded_version, is_version_uploaded
+from app.services.documents.crud import is_version_uploaded
+
+
+def _has_uploaded_version_exists():
+    return exists(
+        select(1).where(
+            DocumentVersion.document_id == Document.id,
+            DocumentVersion.file_size > 0,
+        )
+    )
 
 
 def _user_share_meta(
@@ -69,11 +79,10 @@ def list_shared_documents(
     )
     if keyword:
         stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+    stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible: list[tuple[Document, dict[str, str | None]]] = []
     for doc in candidates:
-        if not document_has_uploaded_version(db, doc.id):
-            continue
         if not _has_explicit_permission(
             db, user, doc, PermissionLevel.visible.value
         ):
@@ -142,27 +151,15 @@ def filter_accessible_documents(
         stmt = stmt.where(Document.folder_id.is_(None))
     elif folder_id is not None:
         stmt = stmt.where(Document.folder_id == folder_id)
+    stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
-    from app.core.document_scope import owner_qualifies_for_scope_list
-
-    is_super = user_is_superuser(db, user)
-    visible: list[Document] = []
-    for d in candidates:
-        if not document_has_uploaded_version(db, d.id):
-            continue
-        if not can_access_document(db, user, d, required):
-            continue
-        doc_scope = d.scope or "personal"
-        if scope == "personal" and d.owner_id != user.id and not is_super:
-            continue
-        if (
-            not is_super
-            and doc_scope in ("company", "department", "team")
-            and not owner_qualifies_for_scope_list(db, d)
-        ):
-            continue
-        visible.append(d)
-    return visible
+    return filter_documents_for_list(
+        db,
+        user,
+        candidates,
+        required_level=required,
+        scope=scope,
+    )
 
 
 def list_accessible_documents(
@@ -211,14 +208,14 @@ def list_all_visible_documents(
     )
     if keyword:
         stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+    stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
-    visible: list[Document] = []
-    for doc in candidates:
-        if not document_has_uploaded_version(db, doc.id):
-            continue
-        if not can_access_document(db, user, doc, required):
-            continue
-        visible.append(doc)
+    visible = filter_documents_for_list(
+        db,
+        user,
+        candidates,
+        required_level=required,
+    )
     total = len(visible)
     start = (page - 1) * page_size
     return visible[start : start + page_size], total
@@ -240,16 +237,14 @@ def list_queryable_documents(
     )
     if keyword:
         stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+    stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
-    visible: list[Document] = []
-    for doc in candidates:
-        if doc.deleted_at is not None:
-            continue
-        if not document_has_uploaded_version(db, doc.id):
-            continue
-        if not can_query_document(db, user, doc):
-            continue
-        visible.append(doc)
+    visible = filter_documents_for_list(
+        db,
+        user,
+        candidates,
+        required_level=PermissionLevel.query.value,
+    )
     total = len(visible)
     start = (page - 1) * page_size
     return visible[start : start + page_size], total
@@ -273,11 +268,10 @@ def list_my_shared_out_documents(
     )
     if keyword:
         stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+    stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible: list[tuple[Document, dict]] = []
     for doc in candidates:
-        if not document_has_uploaded_version(db, doc.id):
-            continue
         perms = list(
             db.scalars(
                 select(DocumentPermission).where(
@@ -341,8 +335,6 @@ def _list_documents_with_current_version(
     version_ok,
 ) -> tuple[list[tuple[Document, DocumentVersion]], int]:
     """未删除、已启用、当前版本已上传，且用户具备 required_level（通常为可查询）。"""
-    from app.core.document_scope import can_query_document
-    from app.core.permissions import PermissionLevel
     from app.models.document import DocumentStatus
 
     cur_ver = DocumentVersion.__table__.alias("cur_ver")
@@ -359,22 +351,14 @@ def _list_documents_with_current_version(
     if keyword:
         stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
-    rows: list[tuple[Document, DocumentVersion]] = []
-    query_level = (
-        required_level
-        if required_level == PermissionLevel.query.value
-        else required_level
+    filtered = filter_documents_for_list(
+        db,
+        user,
+        candidates,
+        required_level=required_level,
     )
-    for doc in candidates:
-        if doc.deleted_at is not None:
-            continue
-        if doc.status != DocumentStatus.active.value:
-            continue
-        if query_level == PermissionLevel.query.value:
-            if not can_query_document(db, user, doc):
-                continue
-        elif not can_access_document(db, user, doc, required_level):
-            continue
+    rows: list[tuple[Document, DocumentVersion]] = []
+    for doc in filtered:
         version = db.get(DocumentVersion, doc.current_version_id)
         if not version or not is_version_uploaded(version) or not version_ok(version):
             continue

@@ -63,8 +63,7 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell .n-card:not(.feature-local-nav),
 .app-shell .n-data-table,
 .app-shell .n-list,
-.app-shell .glass-float-panel,
-.app-shell .system-docs-layout {
+.app-shell .glass-float-panel {
   background: var(--platform-ui-glass-fill-strong) !important;
   border: 1px solid var(--platform-ui-glass-border) !important;
   box-shadow: var(--platform-ui-layer-shadow) !important;
@@ -210,6 +209,7 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell .admin-page,
 .app-shell .documents-list-card,
 .app-shell .subscriptions-search-hub__bar,
+.app-shell .feature-bottom-strip,
 .app-shell .subsystem-shell .n-card:not(.feature-local-nav) {
   background: var(--platform-ui-glass-fill-strong) !important;
   border-color: var(--platform-ui-glass-border) !important;
@@ -219,8 +219,7 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell .knowledge-search-page__sider,
 .app-shell .report-gen-page__sider,
 .app-shell .kg-panel--left,
-.app-shell .kg-panel--right,
-.app-shell .system-docs-sider {
+.app-shell .kg-panel--right {
   background: var(--platform-ui-glass-fill-subtle) !important;
 }
 

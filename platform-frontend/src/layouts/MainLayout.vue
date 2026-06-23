@@ -23,8 +23,7 @@ import {
   ArrowBackOutline,
   NewspaperOutline,
   BugOutline,
-  ListOutline,
-  BookOutline } from "@vicons/ionicons5";
+  ListOutline } from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
@@ -168,10 +167,6 @@ const settingsChildren = computed(() => {
       label: t("menu.monitor"),
       key: "admin-monitor",
       icon: () => h(NIcon, null, { default: () => h(PulseOutline) })},
-    {
-      label: t("menu.systemDocs"),
-      key: "admin-docs",
-      icon: () => h(NIcon, null, { default: () => h(BookOutline) })},
   ];
   for (const item of memberSettingsMenus) {
     if (isMenuVisible(item.key)) {
@@ -247,8 +242,6 @@ const activeKey = computed(() => {
   if (
     route.name === "knowledge-subscriptions" ||
     route.name === "subscription-item" ||
-    route.name === "wechat-mp" ||
-    route.name === "wechat-mp-article" ||
     route.name === "feed-subscriptions" ||
     route.name === "feed-entry"
   ) {
@@ -257,6 +250,7 @@ const activeKey = computed(() => {
   if (
     route.name === "translate" ||
     route.name === "speech" ||
+    route.name === "text-to-speech" ||
     route.name === "ocr" ||
     route.name === "compare" ||
     route.name === "assist-writing" ||
@@ -277,7 +271,6 @@ const activeKey = computed(() => {
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
     route.name === "admin-menu-settings" ||
-    route.name === "admin-docs" ||
     route.name === "issue-reports"
   ) {
     return String(route.name);

@@ -110,6 +110,7 @@ onBeforeUnmount(() => {
     refreshTimer = null;
   }
   releaseDom();
+  unbindEchartsResize();
 });
 
 function bindCiteButtons() {

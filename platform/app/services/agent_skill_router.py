@@ -26,8 +26,15 @@ _SKILL_MANAGE_RE = re.compile(
 )
 
 _URL_IN_MESSAGE_RE = re.compile(r"https?://[^\s<>\"']+", re.I)
-_PAGE_INTENT_RE = re.compile(r"页面|网页|网站|链接|url|站点|抓取|爬取|打开.{0,6}看", re.I)
-_WEB_SKILL_DESC_RE = re.compile(r"网页|抓取|拉取|http|url|洞察|页面", re.I)
+_DOMAIN_IN_MESSAGE_RE = re.compile(
+    r"(?:https?://)?(?:[\w-]+\.)+[a-z]{2,}(?:/[^\s<>\"']*)?", re.I
+)
+_PAGE_INTENT_RE = re.compile(
+    r"页面|网页|网站|链接|url|站点|抓取|爬取|行情|价格|打开.{0,6}看", re.I
+)
+_WEB_SKILL_DESC_RE = re.compile(
+    r"网页|抓取|爬取|拉取|http|url|洞察|页面|行情|价格|数据", re.I
+)
 
 
 def should_read_memory(message: str) -> bool:
@@ -54,6 +61,7 @@ def validate_uploaded_skill_load(
     skill_description: str,
     skill_source: SkillSource,
     planned_skill: str | None = None,
+    created_skills: tuple[str, ...] | None = None,
 ) -> tuple[bool, str]:
     """服务端校验 load_uploaded_skill 是否与用户意图匹配。"""
     name = (skill_name or "").strip()
@@ -61,8 +69,15 @@ def validate_uploaded_skill_load(
     if not name:
         return False, "缺少 skill_name"
 
+    name_key = name.casefold()
+    created_keys = {
+        (s or "").strip().casefold() for s in (created_skills or ()) if (s or "").strip()
+    }
+    if name_key in created_keys:
+        return True, ""
+
     planned = (planned_skill or "").strip()
-    if planned and name.casefold() == planned.casefold():
+    if planned and name_key == planned.casefold():
         return True, ""
 
     if skill_source != SkillSource.UPLOADED:
@@ -121,7 +136,11 @@ def _message_aligns_with_skill(message: str, description: str) -> bool:
     msg = message.casefold()
     desc = (description or "").casefold()
     if _WEB_SKILL_DESC_RE.search(desc):
-        if _URL_IN_MESSAGE_RE.search(message) or _PAGE_INTENT_RE.search(message):
+        if (
+            _URL_IN_MESSAGE_RE.search(message)
+            or _DOMAIN_IN_MESSAGE_RE.search(message)
+            or _PAGE_INTENT_RE.search(message)
+        ):
             return True
     if _MATH_SKILL_RE.search(desc) and _MATH_TASK_RE.search(message):
         return True

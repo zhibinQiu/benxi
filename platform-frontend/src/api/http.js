@@ -115,8 +115,13 @@ import {
   isSessionReplacedError,
   redirectToLoginAfterAuthFailure,
 } from "../utils/sessionGuard.js";
+import { getRouteRequestSignal, isRouteAbortError } from "./requestScope.js";
+
+export { getRouteRequestSignal, isRouteAbortError } from "./requestScope.js";
 
 export const DEFAULT_API_TIMEOUT_MS = 20_000;
+/** 列表/角标等轻量读 API：超时更短，避免后台拥塞时长时间占住 UI 线程 */
+export const LIST_API_TIMEOUT_MS = 12_000;
 export const UPLOAD_API_TIMEOUT_MS = 120_000;
 /** 收藏/订阅导入文档库（抓取 + PDF 生成 + 上传） */
 export const IMPORT_API_TIMEOUT_MS = 120_000;
@@ -124,15 +129,28 @@ export const IMPORT_API_TIMEOUT_MS = 120_000;
 export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_API_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const external = options.signal;
+  const onExternalAbort = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener("abort", onExternalAbort, { once: true });
+  }
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (err) {
     if (err?.name === "AbortError") {
+      if (external?.aborted) {
+        const routeErr = new Error("ROUTE_ABORT");
+        routeErr.code = "ROUTE_ABORT";
+        routeErr.name = "AbortError";
+        throw routeErr;
+      }
       throw new Error("请求超时，请稍后重试");
     }
     throw err;
   } finally {
     clearTimeout(timer);
+    external?.removeEventListener?.("abort", onExternalAbort);
   }
 }
 
@@ -172,12 +190,27 @@ export async function api(path, options = {}) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
   const timeoutMs = options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
-  const { timeoutMs: _omit, ...fetchOptions } = options;
+  const {
+    timeoutMs: _omitTimeout,
+    preserveOnNavigate = false,
+    signal: callerSignal,
+    ...fetchOptions
+  } = options;
+  const routeSignal = preserveOnNavigate ? null : getRouteRequestSignal();
   let res;
   const base = getApiBase();
   try {
-    res = await fetchWithTimeout(`${base}${path}`, { ...fetchOptions, headers }, timeoutMs);
+    res = await fetchWithTimeout(
+      `${base}${path}`,
+      { ...fetchOptions, headers, signal: callerSignal || routeSignal || undefined },
+      timeoutMs
+    );
   } catch (err) {
+    if (isRouteAbortError(err)) {
+      const silent = new Error("ROUTE_ABORT");
+      silent.code = "ROUTE_ABORT";
+      throw silent;
+    }
     const msg = String(err?.message || "");
     if (/failed to fetch|networkerror|load failed/i.test(msg)) {
       if (base === "/ai" || base.endsWith("/ai")) {

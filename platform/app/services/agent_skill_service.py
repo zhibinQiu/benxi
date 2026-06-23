@@ -38,8 +38,6 @@ from app.storage.object_store import get_object_store
 
 logger = logging.getLogger(__name__)
 
-_logger = logging.getLogger(__name__)
-
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _TEXT_EXTENSIONS = frozenset(
     {

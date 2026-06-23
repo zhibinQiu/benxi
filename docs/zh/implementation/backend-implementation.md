@@ -8,7 +8,7 @@
 
 `app/main.py` 中 `lifespan`：
 
-1. `bootstrap_db()` — 种子角色、权限、内置管理员  
+1. `bootstrap_database()` — 种子角色、权限、内置管理员（`db_bootstrap.py`）
 2. 一系列 `ensure_*_schema()` — 轻量 schema 迁移（非 Alembic 全量）  
 3. `ensure_plugins_loaded()` + `mount_routers(app)`  
 4. 可选调度器（如碳市场同步）

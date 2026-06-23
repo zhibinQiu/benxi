@@ -42,12 +42,3 @@ export async function deleteSubscriptionItem(ref) {
     method: "DELETE",
   });
 }
-
-export async function fetchWebSearchStatus() {
-  return api("/api/v1/subscriptions/web-search/status");
-}
-
-export async function searchSubscriptionWeb({ q, page = 1, page_size = 15 } = {}) {
-  const params = new URLSearchParams({ q, page, page_size });
-  return api(`/api/v1/subscriptions/web-search?${params}`);
-}

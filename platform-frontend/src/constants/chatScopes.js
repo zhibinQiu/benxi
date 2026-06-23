@@ -30,7 +30,8 @@ export const CHAT_SCOPES = {
 
 export function chatScopeTitle(scope, locale = "zh") {
   if (!scope) return scope;
-  const raw = resolvePath(messages[locale], `chatScopes.${scope}.title`);
+  const dict = messages[locale] || messages.zh;
+  const raw = resolvePath(dict, `chatScopes.${scope}.title`);
   if (typeof raw === "string") return raw;
   return scope;
 }

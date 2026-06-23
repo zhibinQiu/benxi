@@ -12,6 +12,7 @@ from app.api.deps import get_current_user
 from app.config import get_settings
 from app.core.exceptions import not_found
 from app.core.permissions import user_has_permission
+from app.core.platform_cache import cache_get_or_set, dashboard_stats_cache_key
 from app.database import get_read_db
 from app.features.registry import all_plugins, ensure_plugins_loaded, get_plugin
 from app.models.org import User
@@ -133,10 +134,14 @@ def get_dashboard_stats(
     _: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[PlatformDashboardStatsOut]:
     """运行大屏：平台级文档、功能与用户统计（仅在前端监控页按需拉取）。"""
+    ttl = max(1, int(get_settings().platform_cache_dashboard_ttl_sec))
+    payload = cache_get_or_set(
+        dashboard_stats_cache_key(),
+        lambda: collect_platform_dashboard_stats(db),
+        ttl=ttl,
+    )
     return ApiResponse(
-        data=PlatformDashboardStatsOut.model_validate(
-            collect_platform_dashboard_stats(db)
-        )
+        data=PlatformDashboardStatsOut.model_validate(payload)
     )
 
 

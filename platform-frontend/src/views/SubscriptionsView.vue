@@ -13,21 +13,14 @@ import {
   NInput,
   NPagination,
   NPopover,
-  NRadioButton,
-  NRadioGroup,
   NSpin,
   NTag,
-  NText } from "naive-ui";
+  NText,
+} from "naive-ui";
 import { LinkOutline, SearchOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
-import WebSearchResultDrawer from "../components/WebSearchResultDrawer.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
-import {
-  fetchSubscriptionItems,
-  fetchWebSearchStatus,
-  ingestSubscriptionUrl,
-  searchSubscriptionWeb } from "../api/client";
-import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
+import { fetchSubscriptionItems, ingestSubscriptionUrl } from "../api/client";
 import { siteFaviconUrl } from "../utils/siteFavicon.js";
 
 const route = useRoute();
@@ -48,59 +41,29 @@ const ingestUrl = ref("");
 const ingesting = ref(false);
 const ingestPopoverOpen = ref(false);
 
-const searchMode = ref("local");
 const searchKeyword = ref("");
-const appliedWebQuery = ref("");
 const createdRange = ref(null);
 const draftCreatedRange = ref(null);
 const filterPopoverOpen = ref(false);
 
-const webSearchEnabled = ref(false);
-const webItems = ref([]);
-const webHasMore = ref(false);
-const webSearched = ref(false);
-
-const webDetailOpen = ref(false);
-const webDetailItem = ref(null);
-const collectingWeb = ref(false);
-
 let searchTimer = null;
 
-const isLocalMode = computed(() => searchMode.value === "local");
 const hasDateFilter = computed(
   () => Array.isArray(createdRange.value) && createdRange.value.length === 2
 );
 
-const pageCount = computed(() => {
-  if (!isLocalMode.value) {
-    return Math.max(1, webHasMore.value ? page.value + 1 : page.value);
-  }
-  return Math.max(1, Math.ceil(total.value / pageSize));
-});
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil(total.value / pageSize))
+);
 
-const showPager = computed(() => {
-  if (!isLocalMode.value) {
-    return webSearched.value && (webItems.value.length > 0 || page.value > 1);
-  }
-  return total.value > pageSize;
-});
+const showPager = computed(() => total.value > pageSize);
 
 const resultCountLabel = computed(() => {
-  if (!isLocalMode.value) {
-    if (!webSearched.value) return "";
-    return webItems.value.length
-      ? t("subscriptions.resultApprox", { count: webItems.value.length })
-      : t("subscriptions.resultNone");
-  }
   if (!searchKeyword.value.trim() && !hasDateFilter.value) {
     return total.value ? t("subscriptions.resultTotalSaved", { count: total.value }) : "";
   }
   return t("subscriptions.resultTotal", { count: total.value });
 });
-
-const searchPlaceholder = computed(() =>
-  isLocalMode.value ? t("subscriptions.placeholderLocal") : t("subscriptions.placeholderWeb")
-);
 
 function fmtSerpDate(iso) {
   if (!iso) return "";
@@ -109,7 +72,8 @@ function fmtSerpDate(iso) {
     return d.toLocaleDateString(dateLocale.value, {
       year: "numeric",
       month: "long",
-      day: "numeric"});
+      day: "numeric",
+    });
   } catch {
     return "";
   }
@@ -121,7 +85,8 @@ function fmtFilterRange(range) {
     new Date(ts).toLocaleDateString(dateLocale.value, {
       year: "numeric",
       month: "2-digit",
-      day: "2-digit"});
+      day: "2-digit",
+    });
   return `${fmt(range[0])} — ${fmt(range[1])}`;
 }
 
@@ -167,7 +132,8 @@ function rangeToQuery(range) {
   const [from, to] = range;
   return {
     created_from: from ? new Date(from).toISOString() : undefined,
-    created_to: to ? new Date(to).toISOString() : undefined};
+    created_to: to ? new Date(to).toISOString() : undefined,
+  };
 }
 
 async function loadItems() {
@@ -179,7 +145,8 @@ async function loadItems() {
       page_size: pageSize,
       keyword: searchKeyword.value.trim() || undefined,
       created_from,
-      created_to});
+      created_to,
+    });
     items.value = data.items || [];
     total.value = data.total || 0;
   } catch (e) {
@@ -189,45 +156,10 @@ async function loadItems() {
   }
 }
 
-async function loadWebSearch() {
-  const q = appliedWebQuery.value.trim();
-  if (!q) {
-    webItems.value = [];
-    webHasMore.value = false;
-    webSearched.value = false;
-    return;
-  }
-  if (!webSearchEnabled.value) {
-    ui.warning(FEATURE_UNAVAILABLE);
-    return;
-  }
-  itemsLoading.value = true;
-  try {
-    const data = await searchSubscriptionWeb({
-      q,
-      page: page.value,
-      page_size: pageSize});
-    webItems.value = data.items || [];
-    webHasMore.value = !!data.has_more;
-    webSearched.value = true;
-  } catch (e) {
-    ui.error(e.message);
-    webItems.value = [];
-    webHasMore.value = false;
-    webSearched.value = true;
-  } finally {
-    itemsLoading.value = false;
-  }
-}
-
 async function reload() {
   loading.value = true;
   try {
-    if (isLocalMode.value) {
-      await loadItems();
-    } else if (appliedWebQuery.value) {
-      await loadWebSearch();
-    }
+    await loadItems();
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -236,7 +168,6 @@ async function reload() {
 }
 
 function scheduleLocalSearch() {
-  if (!isLocalMode.value) return;
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     page.value = 1;
@@ -245,27 +176,13 @@ function scheduleLocalSearch() {
 }
 
 function submitSearch() {
-  if (isLocalMode.value) {
-    page.value = 1;
-    loadItems();
-    return;
-  }
-  appliedWebQuery.value = searchKeyword.value.trim();
-  if (!appliedWebQuery.value) {
-    ui.warning(t("subscriptions.needKeyword"));
-    return;
-  }
   page.value = 1;
-  loadWebSearch();
+  loadItems();
 }
 
 function onPageChange(nextPage) {
   page.value = nextPage;
-  if (isLocalMode.value) {
-    loadItems();
-  } else {
-    loadWebSearch();
-  }
+  loadItems();
 }
 
 function openFilterPopover() {
@@ -276,40 +193,19 @@ function openFilterPopover() {
 function applyDateFilter() {
   createdRange.value = draftCreatedRange.value;
   filterPopoverOpen.value = false;
-  if (isLocalMode.value) {
-    page.value = 1;
-    loadItems();
-  }
+  page.value = 1;
+  loadItems();
 }
 
 function clearDateFilter() {
   draftCreatedRange.value = null;
   createdRange.value = null;
   filterPopoverOpen.value = false;
-  if (isLocalMode.value) {
-    page.value = 1;
-    loadItems();
-  }
+  page.value = 1;
+  loadItems();
 }
 
 watch(searchKeyword, scheduleLocalSearch);
-
-watch(searchMode, (mode) => {
-  page.value = 1;
-  webDetailOpen.value = false;
-  if (mode === "local") {
-    loadItems();
-    return;
-  }
-  appliedWebQuery.value = searchKeyword.value.trim();
-  if (appliedWebQuery.value) {
-    loadWebSearch();
-  } else {
-    webItems.value = [];
-    webHasMore.value = false;
-    webSearched.value = false;
-  }
-});
 
 async function onIngest(urlInput) {
   const url = (urlInput || ingestUrl.value).trim();
@@ -323,7 +219,6 @@ async function onIngest(urlInput) {
     ui.success(detail.summary ? t("subscriptions.ingestedWithSummary") : t("subscriptions.ingested"));
     ingestUrl.value = "";
     ingestPopoverOpen.value = false;
-    searchMode.value = "local";
     searchKeyword.value = "";
     await loadItems();
     openItem(detail.ref);
@@ -342,68 +237,18 @@ function openItem(ref) {
   );
 }
 
-function openWebDetail(item) {
-  webDetailItem.value = item;
-  webDetailOpen.value = true;
-}
-
-function openWebOriginal() {
-  const url = webDetailItem.value?.url;
-  if (url) window.open(url, "_blank", "noopener,noreferrer");
-}
-
-async function collectWebDetail() {
-  const url = webDetailItem.value?.url;
-  if (!url) return;
-  collectingWeb.value = true;
-  try {
-    const detail = await ingestSubscriptionUrl(url);
-    webDetailOpen.value = false;
-    ui.success(
-      detail.summary ? t("subscriptions.collectedWithSummary") : t("subscriptions.collectedLocal")
-    );
-    openItem(detail.ref);
-  } catch (e) {
-    ui.error(e.message);
-  } finally {
-    collectingWeb.value = false;
-  }
-}
-
-async function collectWebResult(item, event) {
-  event?.stopPropagation?.();
-  webDetailItem.value = item;
-  await collectWebDetail();
-}
-
-async function loadWebSearchStatus() {
-  try {
-    const data = await fetchWebSearchStatus();
-    webSearchEnabled.value = !!data?.enabled;
-    if (!webSearchEnabled.value && searchMode.value === "web") {
-      searchMode.value = "local";
-    }
-  } catch {
-    webSearchEnabled.value = false;
-    searchMode.value = "local";
-  }
-}
-
-onMounted(async () => {
-  await loadWebSearchStatus();
-  await reload();
+onMounted(() => {
+  reload();
 });
 
 onActivated(() => {
-  if (isLocalMode.value) {
-    loadItems();
-  }
+  loadItems();
 });
 
 watch(
   () => route.query.refresh,
   (value) => {
-    if (value && isLocalMode.value) {
+    if (value) {
       loadItems();
     }
   }
@@ -415,16 +260,11 @@ watch(
     <div class="subscriptions-page">
       <header class="feature-top-strip subscriptions-chrome-head">
         <div class="subscriptions-search-hub feature-local-nav">
-          <NRadioGroup v-model:value="searchMode" size="small" class="subscriptions-search-hub__mode">
-            <NRadioButton value="web" :disabled="!webSearchEnabled">{{ t("subscriptions.searchWeb") }}</NRadioButton>
-            <NRadioButton value="local">{{ t("subscriptions.searchLocal") }}</NRadioButton>
-          </NRadioGroup>
-
           <div class="subscriptions-search-hub__bar">
             <NIcon :size="18" class="subscriptions-search-hub__icon" :component="SearchOutline" />
             <NInput
               v-model:value="searchKeyword"
-              :placeholder="searchPlaceholder"
+              :placeholder="t('subscriptions.placeholderLocal')"
               clearable
               class="subscriptions-search-hub__input"
               @keyup.enter="submitSearch"
@@ -441,7 +281,6 @@ watch(
 
           <div class="subscriptions-search-hub__tools">
             <NPopover
-              v-if="isLocalMode"
               v-model:show="filterPopoverOpen"
               trigger="click"
               placement="bottom-start"
@@ -518,7 +357,7 @@ watch(
             </NText>
           </div>
 
-          <div v-if="isLocalMode && hasDateFilter" class="subscriptions-active-filters">
+          <div v-if="hasDateFilter" class="subscriptions-active-filters">
             <NTag size="small" closable :bordered="false" @close="clearDateFilter">
               {{ t("subscriptions.filterActive", { range: fmtFilterRange(createdRange) }) }}
             </NTag>
@@ -529,129 +368,67 @@ watch(
       <div class="subscriptions-body">
         <NSpin :show="itemsLoading || loading" class="list-spin">
           <div class="subscriptions-list-scroll">
-            <template v-if="isLocalMode">
-              <div v-if="items.length" class="subscriptions-serp-list" role="list">
-                <article
-                  v-for="a in items"
-                  :key="a.ref"
-                  role="listitem"
-                  class="serp-result-item"
-                  @click="openItem(a.ref)"
-                >
-                  <div class="serp-result-item__source">
-                    <span class="serp-result-item__favicon" aria-hidden="true">
-                      <img
-                        v-if="faviconForUrl(a.link)"
-                        class="serp-result-item__favicon-img"
-                        :src="faviconForUrl(a.link)"
-                        alt=""
-                        loading="lazy"
-                        @error="$event.target.classList.add('is-broken')"
-                      />
-                      <span class="serp-result-item__favicon-fallback">{{ siteInitial(a) }}</span>
-                    </span>
-                    <div class="serp-result-item__source-text">
-                      <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
-                      <span v-if="breadcrumbPath(a.link)" class="serp-result-item__path">
-                        › {{ breadcrumbPath(a.link) }}
-                      </span>
-                    </div>
-                    <NTag
-                      v-if="a.imported"
-                      size="small"
-                      type="success"
-                      :bordered="false"
-                      class="serp-result-item__imported"
-                    >
-                      {{ t("subscriptions.importedTag") }}
-                    </NTag>
-                  </div>
-                  <h3 class="serp-result-item__title">{{ a.title }}</h3>
-                  <p class="serp-result-item__snippet">{{ a.summary || t("subscriptions.noSummary") }}</p>
-                  <div class="serp-result-item__meta">
-                    <NTag
-                      v-if="a.is_wechat"
-                      size="small"
-                      :bordered="false"
-                      class="serp-result-item__wechat-tag"
-                    >
-                      {{ t("subscriptions.wechatTag") }}
-                    </NTag>
-                    <span v-if="fmtSerpDate(a.created_at || a.publish_at)" class="serp-result-item__date">
-                      {{ fmtSerpDate(a.created_at || a.publish_at) }}
+            <div v-if="items.length" class="subscriptions-serp-list" role="list">
+              <article
+                v-for="a in items"
+                :key="a.ref"
+                role="listitem"
+                class="serp-result-item"
+                @click="openItem(a.ref)"
+              >
+                <div class="serp-result-item__source">
+                  <span class="serp-result-item__favicon" aria-hidden="true">
+                    <img
+                      v-if="faviconForUrl(a.link)"
+                      class="serp-result-item__favicon-img"
+                      :src="faviconForUrl(a.link)"
+                      alt=""
+                      loading="lazy"
+                      @error="$event.target.classList.add('is-broken')"
+                    />
+                    <span class="serp-result-item__favicon-fallback">{{ siteInitial(a) }}</span>
+                  </span>
+                  <div class="serp-result-item__source-text">
+                    <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
+                    <span v-if="breadcrumbPath(a.link)" class="serp-result-item__path">
+                      › {{ breadcrumbPath(a.link) }}
                     </span>
                   </div>
-                </article>
-              </div>
-              <div v-else-if="!loading" class="subscriptions-empty">
-                <NEmpty :description="t('subscriptions.emptyLocal')" />
-              </div>
-            </template>
-
-            <template v-else>
-              <div v-if="webItems.length" class="subscriptions-serp-list" role="list">
-                <article
-                  v-for="(a, idx) in webItems"
-                  :key="`${a.url}-${idx}`"
-                  role="listitem"
-                  class="serp-result-item serp-result-item--web"
-                  @click="openWebDetail(a)"
-                >
-                  <div class="serp-result-item__source">
-                    <span class="serp-result-item__favicon" aria-hidden="true">
-                      <img
-                        v-if="faviconForUrl(a.url)"
-                        class="serp-result-item__favicon-img"
-                        :src="faviconForUrl(a.url)"
-                        alt=""
-                        loading="lazy"
-                        @error="$event.target.classList.add('is-broken')"
-                      />
-                      <span class="serp-result-item__favicon-fallback">{{ siteInitial(a) }}</span>
-                    </span>
-                    <div class="serp-result-item__source-text">
-                      <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
-                      <span v-if="breadcrumbPath(a.url)" class="serp-result-item__path">
-                        › {{ breadcrumbPath(a.url) }}
-                      </span>
-                    </div>
-                  </div>
-                  <h3 class="serp-result-item__title">{{ a.title }}</h3>
-                  <p class="serp-result-item__snippet">{{ a.snippet || t("subscriptions.noSummary") }}</p>
-                  <div v-if="a.engine" class="serp-result-item__meta">
-                    <span class="serp-result-item__date">{{ a.engine }}</span>
-                  </div>
-                  <div class="serp-result-item__actions" @click.stop>
-                    <NButton size="tiny" quaternary @click="openWebDetail(a)">{{ t("subscriptions.detail") }}</NButton>
-                    <NButton
-                      size="tiny"
-                      type="primary"
-                      ghost
-                      :loading="collectingWeb && webDetailItem?.url === a.url"
-                      @click="collectWebResult(a, $event)"
-                    >
-                      {{ t("subscriptions.collect") }}
-                    </NButton>
-                  </div>
-                </article>
-              </div>
-              <div v-else-if="!loading && webSearched" class="subscriptions-empty">
-                <NEmpty :description="t('subscriptions.emptyWeb')" />
-              </div>
-              <div v-else-if="!loading && !webSearchEnabled" class="subscriptions-empty">
-                <NEmpty :description="t('subscriptions.webUnavailable')" />
-              </div>
-              <div v-else-if="!loading" class="subscriptions-empty subscriptions-empty--hero">
-                <NIcon :size="42" :component="SearchOutline" class="subscriptions-empty__icon" />
-                <p class="subscriptions-empty__title">{{ t("subscriptions.heroTitle") }}</p>
-                <p class="subscriptions-empty__desc">{{ t("subscriptions.heroDesc") }}</p>
-              </div>
-            </template>
+                  <NTag
+                    v-if="a.imported"
+                    size="small"
+                    type="success"
+                    :bordered="false"
+                    class="serp-result-item__imported"
+                  >
+                    {{ t("subscriptions.importedTag") }}
+                  </NTag>
+                </div>
+                <h3 class="serp-result-item__title">{{ a.title }}</h3>
+                <p class="serp-result-item__snippet">{{ a.summary || t("subscriptions.noSummary") }}</p>
+                <div class="serp-result-item__meta">
+                  <NTag
+                    v-if="a.is_wechat"
+                    size="small"
+                    :bordered="false"
+                    class="serp-result-item__wechat-tag"
+                  >
+                    {{ t("subscriptions.wechatTag") }}
+                  </NTag>
+                  <span v-if="fmtSerpDate(a.created_at || a.publish_at)" class="serp-result-item__date">
+                    {{ fmtSerpDate(a.created_at || a.publish_at) }}
+                  </span>
+                </div>
+              </article>
+            </div>
+            <div v-else-if="!loading" class="subscriptions-empty">
+              <NEmpty :description="t('subscriptions.emptyLocal')" />
+            </div>
           </div>
         </NSpin>
       </div>
 
-      <footer v-if="showPager" class="subscriptions-footer feature-local-nav">
+      <footer v-if="showPager" class="subscriptions-footer feature-bottom-strip">
         <div class="subscriptions-footer__inner">
           <NPagination
             :page="page"
@@ -662,14 +439,6 @@ watch(
         </div>
       </footer>
     </div>
-
-    <WebSearchResultDrawer
-      v-model:show="webDetailOpen"
-      :item="webDetailItem"
-      :collecting="collectingWeb"
-      @collect="collectWebDetail"
-      @open-original="openWebOriginal"
-    />
   </FeatureSubsystemShell>
 </template>
 
@@ -697,10 +466,6 @@ watch(
   gap: 12px;
   padding-top: 8px;
   padding-bottom: 12px;
-}
-
-.subscriptions-search-hub__mode {
-  align-self: flex-start;
 }
 
 .subscriptions-search-hub__bar {
@@ -852,28 +617,6 @@ watch(
   padding: 24px 0;
 }
 
-.subscriptions-empty--hero {
-  text-align: center;
-  padding: 48px 16px 32px;
-  color: var(--platform-text-secondary);
-}
-
-.subscriptions-empty__icon {
-  color: var(--platform-text-tertiary);
-  margin-bottom: 12px;
-}
-
-.subscriptions-empty__title {
-  margin: 0 0 6px;
-  font-size: 16px;
-  color: var(--platform-text);
-}
-
-.subscriptions-empty__desc {
-  margin: 0;
-  font-size: 13px;
-}
-
 .serp-result-item {
   display: block;
   width: 100%;
@@ -890,28 +633,6 @@ watch(
 
 .serp-result-item:hover {
   background: color-mix(in srgb, var(--platform-text) 5%, transparent);
-}
-
-.serp-result-item--web {
-  padding-bottom: 8px;
-}
-
-.serp-result-item__actions {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-  padding-left: 36px;
-}
-
-@media (hover: hover) {
-  .serp-result-item__actions {
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-
-  .serp-result-item--web:hover .serp-result-item__actions {
-    opacity: 1;
-  }
 }
 
 .serp-result-item__source {
@@ -1049,7 +770,6 @@ html[data-theme="light"] .serp-result-item__snippet {
 .subscriptions-footer {
   flex-shrink: 0;
   padding: 10px 0 14px;
-  border-top: 1px solid var(--platform-divider);
 }
 
 .subscriptions-footer__inner {

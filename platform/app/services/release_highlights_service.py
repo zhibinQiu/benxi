@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
-
-from app.services.system_docs_service import _repo_root
 
 _SECTION_RE = re.compile(
     r"^##\s+(\d+\.\d+\.\d+)（v[^）]+）\s*[—–-]\s*(.+)$",
@@ -13,6 +12,20 @@ _SECTION_RE = re.compile(
 )
 _ITEM_RE = re.compile(r"^- \*\*(.+?)\*\*[：:]\s*(.+)$", re.MULTILINE)
 _FIX_TITLE_HINTS = ("修复", "Bug", "bug", "问题", "测试", "清理", "收敛", "精简")
+
+
+def _repo_root() -> Path:
+    """定位包含 RELEASE.md 的目录（仓库根或容器 /app）。"""
+    service_file = Path(__file__).resolve()
+    repo_candidate = service_file.parents[3]
+    if (repo_candidate / "RELEASE.md").is_file():
+        return repo_candidate
+
+    app_root = Path("/app")
+    if (app_root / "RELEASE.md").is_file():
+        return app_root
+
+    return repo_candidate
 
 
 def _is_fix_item(title: str, summary: str) -> bool:

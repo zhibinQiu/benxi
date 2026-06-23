@@ -79,8 +79,12 @@ def test_filter_removes_skipped_retrieval_and_skill_load():
     assert "create_todo" in names
 
 
-def test_filter_keeps_load_when_uploaded_skill_set():
-    specs = [_tool_spec("load_uploaded_skill"), _tool_spec("create_todo")]
+def test_filter_always_hides_load_and_keeps_run_skill_script():
+    specs = [
+        _tool_spec("load_uploaded_skill"),
+        _tool_spec("run_skill_script"),
+        _tool_spec("create_todo"),
+    ]
     plan = AgentExecutionPlan(
         reasoning="",
         intent="",
@@ -93,7 +97,27 @@ def test_filter_keeps_load_when_uploaded_skill_set():
         source="test",
     )
     names = {s["function"]["name"] for s in filter_tool_specs_by_plan(specs, plan)}
-    assert "load_uploaded_skill" in names
+    assert "load_uploaded_skill" not in names
+    assert "run_skill_script" in names
+    assert "create_todo" in names
+
+
+def test_plan_instruction_uploaded_skill_uses_run_script():
+    plan = AgentExecutionPlan(
+        reasoning="",
+        intent="分析网页",
+        direct_answer=False,
+        atomic_tools=(),
+        skip_tools=(),
+        uploaded_skill="web-page-insight",
+        builtin_orchestration=None,
+        steps=("执行脚本",),
+        source="test",
+    )
+    text = build_plan_context_instruction(plan)
+    assert "run_skill_script" in text
+    assert "web-page-insight" in text
+    assert "勿" in text and "load_uploaded_skill" in text
 
 
 def test_parse_llm_plan_distinguishes_tools_and_skills():

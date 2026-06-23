@@ -1,4 +1,4 @@
-# 功能实现说明（v4.2.1）
+# 功能实现说明（v4.3.1）
 
 > **本文说明各功能如何运转**，含关键方法与提示词落点。  
 > 架构分层见 [系统架构](architecture.md)；Agent Skills 详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)（含 §10 Prompt、§11 调用链）。
@@ -220,7 +220,7 @@ System 提示词、Agentic 规划 JSON、优化预设详见 [报告生成实现]
 2. 调用了检索时显示 workflow 步骤（`agent_thinking` / `tool_call` / `tool_result`）；  
 3. 回答中带 `[1][2]` 引用，底部展示来源卡片。
 
-**后端实现（v4.2.1）**：
+**后端实现（v4.3.1）**：
 
 | 环节 | 方法 / 模块 | 做法 |
 |------|-------------|------|

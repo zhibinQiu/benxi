@@ -85,9 +85,11 @@ _RUNNER_TEMPLATE = textwrap.dedent(
             return plt.gcf()
         return fig
 
+    from app.integrations.data_analysis_images import prepare_image_for_imshow
+
     def display_image(image, *, cmap=None):
         fig, ax = plt.subplots()
-        ax.imshow(image, cmap=cmap)
+        ax.imshow(prepare_image_for_imshow(image), cmap=cmap)
         ax.axis("off")
         return fig
 

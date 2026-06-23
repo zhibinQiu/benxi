@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.permissions import PermissionLevel
 from app.core.text_sanitize import sanitize_json_text
+from app.core.uuid_utils import parse_uuid_list
 from app.integrations.knowflow_client import get_knowflow_client_for_user
 from app.models.org import User
 from app.models.rag import RagMessage, RagSession
@@ -17,11 +18,6 @@ from app.services.compare_service import (
     validate_document_scope,
 )
 from app.services.document_service import get_document
-
-
-def _parse_ids(ids: list[str]) -> list[uuid.UUID]:
-    return [uuid.UUID(x) for x in ids]
-
 
 def _sync_docs_to_knowflow(
     db: Session, user: User, docs
@@ -69,7 +65,7 @@ def create_session(
     document_ids: list[str],
     title: str = "知识问答",
 ) -> RagSession:
-    uuids = _parse_ids(document_ids)
+    uuids = parse_uuid_list(document_ids)
     if len(uuids) < 1:
         from app.core.exceptions import bad_request
 

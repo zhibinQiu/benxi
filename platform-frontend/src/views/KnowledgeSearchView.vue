@@ -8,10 +8,9 @@ import KnowledgeSearchPanel from "../components/KnowledgeSearchPanel.vue";
 import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 import { knowledgeQaChatStream } from "../api/knowledge.js";
 import { useI18n } from "../composables/useI18n.js";
-import { messages } from "../locales";
 import { KNOWLEDGE_SCOPE_SELECTION_KEY, readKnowledgeScopeSelection } from "../utils/knowledgeScopeSelectionCache.js";
 
-const { t, locale } = useI18n();
+const { t, tm } = useI18n();
 const { headerExtensionActive } = usePageHeaderExtension();
 
 const selection = inject(
@@ -21,9 +20,7 @@ const selection = inject(
 const panelKey = ref(0);
 const useAgentic = ref(true);
 
-const suggestions = computed(
-  () => messages[locale.value]?.knowledgeSearch?.suggestions || []
-);
+const suggestions = computed(() => tm("knowledgeSearch.suggestions") || []);
 
 const selectionHint = computed(() => {
   if (!selection.value?.totalSelected) {

@@ -19,6 +19,7 @@ export const VALID_RETURN_ROUTE_NAMES = new Set([
   "data-analysis",
   "translate",
   "speech",
+  "text-to-speech",
   "ocr",
   "kg-palantir",
   "compare",

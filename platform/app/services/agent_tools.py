@@ -28,9 +28,81 @@ from app.services.skill_chat_service import (
     web_result_to_context,
 )
 from app.skills.executor import invoke_skill_tool
-from app.skills.types import SkillInvocationContext
+from app.skills.types import SkillInvocationContext, SkillSource
 
 _logger = logging.getLogger(__name__)
+
+_SKILL_MD_AUTO_INJECT_MAX_CHARS = 12000
+
+
+def fetch_uploaded_skill_md(
+    db: Session,
+    skill_name: str,
+    *,
+    user: User | None = None,
+    max_chars: int = _SKILL_MD_AUTO_INJECT_MAX_CHARS,
+) -> str | None:
+    """读取上传型 Skill 的 SKILL.md 全文，供系统自动注入上下文。"""
+    from app.skills.catalog import get_merged_skill_definition
+    from app.services.agent_skill_service import get_skill_file_content
+
+    name = (skill_name or "").strip()
+    if not name:
+        return None
+    defn = get_merged_skill_definition(db, name, user=user)
+    if not defn or defn.source != SkillSource.UPLOADED or not defn.skill_id:
+        return None
+    try:
+        file_out = get_skill_file_content(db, defn.skill_id, "SKILL.md")
+        body = (file_out.text or "").strip()
+    except Exception:
+        _logger.debug("读取 SKILL.md 失败: %s", name, exc_info=True)
+        return None
+    if not body:
+        return None
+    limit = max(512, int(max_chars or _SKILL_MD_AUTO_INJECT_MAX_CHARS))
+    if len(body) > limit:
+        body = body[: limit - 1] + "…（已截断）"
+    return body
+
+
+def build_skill_md_context_block(skill_name: str, skill_md: str) -> str:
+    """格式化为注入 tool loop 的 SKILL.md 说明块。"""
+    name = (skill_name or "").strip()
+    body = (skill_md or "").strip()
+    if not name or not body:
+        return ""
+    return (
+        f"【发展技能 `{name}` · SKILL.md（系统自动加载，无需 load_uploaded_skill）】\n"
+        f"{body}"
+    )
+
+
+def maybe_inject_skill_md(
+    db: Session,
+    user: User,
+    loop_state: dict[str, Any],
+    messages: list[dict[str, Any]],
+    skill_name: str,
+) -> list[dict[str, Any]]:
+    """若尚未注入，将 SKILL.md 追加为 system 说明。"""
+    name = (skill_name or "").strip()
+    if not name:
+        return messages
+    injected = {
+        str(s).strip() for s in (loop_state.get("injected_skill_mds") or []) if str(s).strip()
+    }
+    if name in injected:
+        return messages
+    skill_md = fetch_uploaded_skill_md(db, name, user=user)
+    block = build_skill_md_context_block(name, skill_md or "")
+    if not block:
+        return messages
+    loop_state["injected_skill_mds"] = list(injected | {name})
+    loop_state["planned_uploaded_skill"] = name
+    out = [dict(m) for m in messages]
+    out.append({"role": "system", "content": block})
+    return out
 
 _ATOMIC_RETRIEVAL_TOOL_SPECS: list[dict[str, Any]] = [
     {
@@ -101,7 +173,9 @@ _RUN_SKILL_SCRIPT_SPEC: dict[str, Any] = {
         "description": (
             "在沙箱中执行**上传型** Skill 包内的 Python 入口脚本（支持多文件 import）。"
             "脚本须在内存中完成抓取/分析，最后用 skill_runtime.finish(conclusion) 输出结论；"
-            "平台不保存原始网页/抓取内容。仅当用户明确要求运行该 Skill 脚本时调用"
+            "平台不保存原始网页/抓取内容。"
+            "当任务匹配某发展技能时可直接调用，无需用户明确要求或先 load_uploaded_skill；"
+            "系统会自动附带 SKILL.md 说明"
         ),
         "parameters": {
             "type": "object",
@@ -865,12 +939,15 @@ def _record_retrieval(
     context: str,
     citations: list[dict],
 ) -> tuple[str, list[dict]]:
+    from app.core.agent_tool_context import append_retrieval_context
+
     start = _citation_start(loop_state)
     context, citations = _offset_context_citations(
         context, citations, start=start
     )
     if loop_state is not None and citations:
         loop_state.setdefault("citations", []).extend(citations)
+    append_retrieval_context(loop_state, context)
     return context, citations
 
 
@@ -1327,14 +1404,17 @@ async def execute_agent_tool(
             if not defn:
                 return _tool_result(False, f"Skill 不存在: {skill_name}")
             planned = None
+            created_skills: tuple[str, ...] = ()
             if loop_state:
                 planned = str(loop_state.get("planned_uploaded_skill") or "").strip() or None
+                created_skills = tuple(loop_state.get("created_uploaded_skills") or ())
             ok, reason = validate_uploaded_skill_load(
                 user_message=user_message,
                 skill_name=skill_name,
                 skill_description=defn.description,
                 skill_source=defn.source,
                 planned_skill=planned,
+                created_skills=created_skills,
             )
             if not ok:
                 return _tool_result(False, reason)
@@ -1347,6 +1427,12 @@ async def execute_agent_tool(
             skill_name = str(params.get("skill_name") or "").strip()
             if not skill_name:
                 return _tool_result(False, "缺少 skill_name")
+            if loop_state is not None:
+                loop_state["planned_uploaded_skill"] = skill_name
+                invoked = list(loop_state.get("invoked_uploaded_skills") or [])
+                if skill_name not in invoked:
+                    invoked.append(skill_name)
+                loop_state["invoked_uploaded_skills"] = invoked
             entry = str(params.get("entry") or "").strip()
             raw_args = params.get("args")
             args: list[str] = []
@@ -1381,6 +1467,9 @@ async def execute_agent_tool(
                 "entry": payload.get("entry"),
                 "hint": payload.get("hint"),
             }
+            skill_md = fetch_uploaded_skill_md(db, skill_name, user=user, max_chars=4000)
+            if skill_md:
+                extra["skill_md"] = skill_md
             if payload.get("screenshot_api_path") and loop_state is not None:
                 loop_state.setdefault("stream_attachments", []).append(
                     {
@@ -1407,14 +1496,25 @@ async def execute_agent_tool(
                 skill_md_body=str(params.get("skill_md_body") or ""),
                 replace_existing=bool(params.get("replace_existing")),
             )
+            if loop_state is not None:
+                loop_state["planned_uploaded_skill"] = skill.name
+                loop_state["pending_skill_md_inject"] = skill.name
+                created = list(loop_state.get("created_uploaded_skills") or [])
+                if skill.name not in created:
+                    created.append(skill.name)
+                loop_state["created_uploaded_skills"] = created
+            skill_md = fetch_uploaded_skill_md(db, skill.name, user=user, max_chars=4000)
+            create_data: dict[str, Any] = {
+                "skill_id": str(skill.id),
+                "name": skill.name,
+                "source_type": skill.source_type,
+            }
+            if skill_md:
+                create_data["skill_md"] = skill_md
             return _tool_result(
                 True,
                 f"已创建 Skill `{skill.name}`",
-                {
-                    "skill_id": str(skill.id),
-                    "name": skill.name,
-                    "source_type": skill.source_type,
-                },
+                create_data,
             )
 
         if tool_name == "update_uploaded_skill_file":

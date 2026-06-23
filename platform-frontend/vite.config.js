@@ -1,5 +1,7 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
+import Components from "unplugin-vue-components/vite";
+import { NaiveUiResolver } from "unplugin-vue-components/resolvers";
 import { fileURLToPath, URL } from "node:url";
 
 const APP_BASE = process.env.VITE_BASE_PATH || "/ai/";
@@ -9,6 +11,10 @@ const API_TARGET = process.env.VITE_DEV_API_TARGET || "http://127.0.0.1:8000";
 const VITE_API_BASE =
   (process.env.VITE_API_BASE || "").trim() ||
   (process.env.NODE_ENV === "production" ? "/ai" : "http://127.0.0.1:18000");
+
+const platformSpinPath = fileURLToPath(
+  new URL("./src/components/PlatformSpin.vue", import.meta.url)
+);
 
 /** 设计系统内嵌路径（须与 platform EMBED 配置一致，且勿与平台前端路由冲突） */
 const DESIGN_SYSTEM_PATH_RE =
@@ -20,11 +26,22 @@ function isDesignSystemProxyPath(url) {
   return DESIGN_SYSTEM_PATH_RE.test(pathname);
 }
 
+/** NSpin 统一替换为 Rose Three；其余 naive-ui 组件按需解析 */
+function platformNaiveResolver() {
+  return {
+    type: "component",
+    resolve: (name) => {
+      if (name === "NSpin") {
+        return { name: "default", from: platformSpinPath, as: "NSpin" };
+      }
+    },
+  };
+}
+
 export default defineConfig({
   base: APP_BASE,
   resolve: {
     alias: {
-      "naive-ui": fileURLToPath(new URL("./src/integrations/naive-ui.js", import.meta.url)),
       "naive-ui/es/_internal/loading/src/Loading.mjs": fileURLToPath(
         new URL("./src/integrations/naive-base-loading.js", import.meta.url)
       ),
@@ -33,7 +50,13 @@ export default defineConfig({
   define: {
     "import.meta.env.VITE_API_BASE": JSON.stringify(VITE_API_BASE),
   },
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({
+      resolvers: [platformNaiveResolver(), NaiveUiResolver()],
+      dts: false,
+    }),
+  ],
   build: {
     target: "es2020",
     cssCodeSplit: true,
@@ -45,14 +68,8 @@ export default defineConfig({
           if (id.includes("mermaid")) return "mermaid";
           if (id.includes("pdfjs-dist")) return "pdfjs";
           if (id.includes("mammoth")) return "mammoth";
-          // naive-ui 经 src/integrations 别名 shim，与 vue 分包会产生循环依赖导致白屏
-          if (
-            id.includes("naive-ui") ||
-            id.includes("vue") ||
-            id.includes("vue-router")
-          ) {
-            return "vue-vendor";
-          }
+          if (id.includes("naive-ui")) return "naive-ui";
+          if (id.includes("vue") || id.includes("vue-router")) return "vue-vendor";
           if (id.includes("@vicons")) return "vicons";
           if (id.includes("marked")) return "markdown";
         },

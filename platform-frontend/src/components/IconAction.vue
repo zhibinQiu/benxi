@@ -90,6 +90,6 @@ const actionClass = computed(() => {
 
 .icon-action.icon-action--danger:not(:disabled):hover {
   color: var(--platform-danger);
-  background: var(--platform-danger-soft);
+  background: color-mix(in srgb, var(--platform-danger) 14%, var(--platform-danger-soft));
 }
 </style>

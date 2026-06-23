@@ -379,9 +379,7 @@ def repair_document_library_alignment(db: Session, *, actor: User | None = None)
     ragflow = repair_ragflow_links_with_resync(db, actor)
     db.commit()
     from app.core.platform_cache import invalidate_document_caches
-    from app.services.knowledge_scope_tree_service import invalidate_scope_tree_cache
 
-    invalidate_scope_tree_cache()
     invalidate_document_caches(None)
     return {"platform": platform, "ragflow": ragflow}
 

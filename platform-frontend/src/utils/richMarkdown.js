@@ -179,7 +179,7 @@ export function disposeEchartsInElement(root) {
   });
 }
 
-let resizeBound = false;
+let resizeBoundCount = 0;
 
 function onWindowResize() {
   document.querySelectorAll(".md-echart").forEach((el) => {
@@ -189,13 +189,17 @@ function onWindowResize() {
 }
 
 export function bindEchartsResize() {
-  if (resizeBound || typeof window === "undefined") return;
-  window.addEventListener("resize", onWindowResize);
-  resizeBound = true;
+  if (typeof window === "undefined") return;
+  resizeBoundCount += 1;
+  if (resizeBoundCount === 1) {
+    window.addEventListener("resize", onWindowResize);
+  }
 }
 
 export function unbindEchartsResize() {
-  if (!resizeBound || typeof window === "undefined") return;
-  window.removeEventListener("resize", onWindowResize);
-  resizeBound = false;
+  if (typeof window === "undefined" || resizeBoundCount <= 0) return;
+  resizeBoundCount -= 1;
+  if (resizeBoundCount === 0) {
+    window.removeEventListener("resize", onWindowResize);
+  }
 }

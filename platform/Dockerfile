@@ -71,20 +71,14 @@ print('core deps ok', fastapi.__version__)\
 
 # --- runtime：服务器挂载源码 ---
 FROM deps AS runtime
-COPY docs ./system-docs/docs
-COPY 运维部署指南.md ./system-docs/
-COPY RELEASE.md ./system-docs/
-ENV SYSTEM_DOCS_ROOT=/app/system-docs
+COPY RELEASE.md ./
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # --- production：离线交付 / stack save ---
 FROM deps AS production
-COPY docs ./system-docs/docs
-COPY 运维部署指南.md ./system-docs/
-COPY RELEASE.md ./system-docs/
+COPY RELEASE.md ./
 COPY platform/app ./app
 COPY platform/workers ./workers
-ENV SYSTEM_DOCS_ROOT=/app/system-docs
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

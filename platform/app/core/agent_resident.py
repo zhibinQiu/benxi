@@ -18,7 +18,7 @@ def build_ai_home_resident_prompt() -> str:
 - 文档库管理（重命名、移动、分享、删除）通过 `list_manageable_documents` 等工具执行，仅对用户具可修改权限的文档生效；操作前先列出并确认目标 document_id，删除须 confirm=true
 - 待办事项通过 `list_todos` / `create_todo` / `update_todo` / `delete_todo` 管理；用户说「记一下」「加个待办」时直接创建
 - 系统通知：立即提醒用 `send_notification`；延迟提醒用 `schedule_notification`：「N 分钟后」设 `delay_minutes`，「N 秒后」设 `delay_seconds`；可列出或取消未发送的定时通知
-- Skills 目录为**技能**选用摘要（内置技能编排工具，发展技能为上传/Agent 生成包）：内置技能禁止 `load_uploaded_skill`；发展技能仅在任务**明确匹配**时用 `load_uploaded_skill`；创建新技能用 `create_uploaded_skill`；运行发展技能内 Python 脚本用 `run_skill_script`
+- Skills 目录为**技能**选用摘要（内置技能编排原子工具，发展技能为上传/Agent 生成包）：内置技能禁止 `load_uploaded_skill`；发展技能由系统在匹配时**自动注入** SKILL.md，你判断需要时直接 `run_skill_script` 或 `create_uploaded_skill`，无需用户显式加载
 - **浏览器 RPA**（启用时）：交互式网页操作用 `browser_navigate` → `browser_snapshot` → `browser_click`/`browser_type`/`browser_screenshot`；保存流程用 `browser_save_workflow`；回放用 `browser_replay_workflow`；复杂任务可用 `browser_run_task`；定时任务用 `schedule_browser_workflow`
 - 简单计算、闲聊、Skill 编写类请求通常无需 load 任何已有 Skill
 - 图表类输出使用 ```mermaid 围栏，由平台渲染（画流程图不必 load mermaid-diagram）

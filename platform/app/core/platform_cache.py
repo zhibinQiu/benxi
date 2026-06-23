@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 _local_cache: dict[str, tuple[float, str]] = {}
+_LOCAL_CACHE_MAX_ENTRIES = 512
 
 
 def _json_default(obj: Any) -> Any:
@@ -46,6 +47,9 @@ def _local_get(key: str, ttl: int) -> Any | None:
 
 
 def _local_set(key: str, value: Any) -> None:
+    if len(_local_cache) >= _LOCAL_CACHE_MAX_ENTRIES:
+        oldest_key = min(_local_cache, key=lambda k: _local_cache[k][0])
+        _local_cache.pop(oldest_key, None)
     _local_cache[key] = (
         time.monotonic(),
         json.dumps(value, ensure_ascii=False, default=_json_default),
@@ -137,6 +141,21 @@ def kb_folders_cache_key(
     return f"doc:kb-folders:{user_id}:{scope}:{dept}:{owner}"
 
 
+_SCOPE_TREE_CACHE_VERSION = 3
+
+
+def scope_tree_cache_key(user_id: str) -> str:
+    """知识检索 / 报告生成左侧文档树。"""
+    return f"knowledge:scope-tree:v{_SCOPE_TREE_CACHE_VERSION}:{user_id}"
+
+
+def invalidate_scope_tree_cache(user_id: str | uuid.UUID | None = None) -> None:
+    if user_id is not None:
+        cache_delete_prefix(scope_tree_cache_key(str(user_id)))
+    else:
+        cache_delete_prefix("knowledge:scope-tree:")
+
+
 def invalidate_document_library_cache(user_id: str | None = None) -> None:
     if user_id:
         cache_delete_prefix(document_library_cache_key(str(user_id)))
@@ -208,15 +227,7 @@ def invalidate_document_caches(user_id: str | None = None) -> None:
     invalidate_document_library_cache(user_id)
     invalidate_kb_folders_cache(user_id)
     invalidate_document_detail_cache(user_id=user_id)
-    try:
-        from app.services.knowledge_scope_tree_service import invalidate_scope_tree_cache
-
-        if user_id:
-            invalidate_scope_tree_cache(uuid.UUID(str(user_id)))
-        else:
-            invalidate_scope_tree_cache()
-    except Exception:
-        pass
+    invalidate_scope_tree_cache(user_id)
 
 
 _KG_GRAPH_CACHE_VERSION = 1

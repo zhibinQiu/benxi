@@ -82,7 +82,7 @@ services:
 
   # --- PDF 翻译 API（BabelDOC / pdf2zh_next）---
   pdf2zh-api:
-    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.2.1}}
+    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.3.1}}
     build:
       context: .
       dockerfile: Dockerfile
@@ -119,7 +119,7 @@ services:
 
   # --- 平台 API（FastAPI）与 Celery Worker，共用 zhitan-api 镜像 ---
   api:
-    image: zhitan-api:${ZHITAN_VERSION:-4.2.1}
+    image: zhitan-api:${ZHITAN_VERSION:-4.3.1}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -163,7 +163,7 @@ services:
       - zhitan
 
   worker:
-    image: zhitan-api:${ZHITAN_VERSION:-4.2.1}
+    image: zhitan-api:${ZHITAN_VERSION:-4.3.1}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -202,7 +202,7 @@ services:
 
   # --- 唯一对外 Web 入口（生产 Nginx；dev 见 compose.dev.yaml 的 Vite）---
   frontend:
-    image: zhitan-frontend:${ZHITAN_VERSION:-4.2.1}
+    image: zhitan-frontend:${ZHITAN_VERSION:-4.3.1}
     build:
       context: platform-frontend
       dockerfile: Dockerfile
@@ -229,7 +229,7 @@ services:
   # --- profile speech: FunASR 会议转写（模型卷 data/speech-models）---
   speech-api:
     profiles: ["speech"]
-    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.2.1}}
+    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.3.1}}
     build:
       context: platform/speech-service
       dockerfile: Dockerfile

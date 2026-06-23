@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, defineAsyncComponent, ref } from "vue";
 import { useI18n } from "../composables/useI18n.js";
 import {
   NButton,
@@ -13,7 +13,7 @@ import {
   ChevronUpOutline,
   FolderOpenOutline,
   OpenOutline } from "@vicons/ionicons5";
-import ComparePdfPreview from "./ComparePdfPreview.vue";
+const ComparePdfPreview = defineAsyncComponent(() => import("./ComparePdfPreview.vue"));
 import { PREVIEW_KIND } from "../utils/documentPreview.js";
 
 const props = defineProps({

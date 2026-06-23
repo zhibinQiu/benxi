@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -26,7 +27,6 @@ from app.api import (
     notifications,
     roles,
     system,
-    system_docs,
     todos,
     users,
 )
@@ -101,6 +101,22 @@ def _check_database() -> bool:
     from app.database import check_database_health
 
     return check_database_health()
+
+
+_db_health_cache: tuple[float, bool] | None = None
+_DB_HEALTH_CACHE_TTL_SEC = 5.0
+
+
+def _check_database_cached() -> bool:
+    global _db_health_cache
+    now = time.monotonic()
+    if _db_health_cache is not None:
+        cached_at, ok = _db_health_cache
+        if now - cached_at < _DB_HEALTH_CACHE_TTL_SEC:
+            return ok
+    ok = _check_database()
+    _db_health_cache = (now, ok)
+    return ok
 
 
 @asynccontextmanager
@@ -290,7 +306,12 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        db_ok = _check_database()
+        """轻量存活探针，不每次打 DB。"""
+        return {"ok": True, "version": __version__}
+
+    @app.get("/health/ready")
+    def health_ready():
+        db_ok = _check_database_cached()
         body = {"ok": db_ok, "db": db_ok, "version": __version__}
         if not db_ok:
             return JSONResponse(status_code=503, content=body)
@@ -309,7 +330,6 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix=prefix)
     app.include_router(knowledge_embed.router, prefix=prefix)
     app.include_router(system.router, prefix=prefix)
-    app.include_router(system_docs.router, prefix=prefix)
     app.include_router(embed_proxy_api.public_router, prefix=prefix)
     app.include_router(embed_proxy_api.router, prefix=prefix)
     mount_routers(app, prefix)

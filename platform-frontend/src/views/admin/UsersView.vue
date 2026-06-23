@@ -26,6 +26,7 @@ import { useAuth } from "../../composables/useAuth";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
 import ListRefreshButton from "../../components/ListRefreshButton.vue";
+import ListTableFooter from "../../components/ListTableFooter.vue";
 import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
 
 const ui = usePlatformUi();
@@ -34,7 +35,7 @@ const { user: currentUser } = useAuth();
 const loading = ref(false);
 const users = ref([]);
 const page = ref(1);
-const pageSize = ref(LIST_PAGE_SIZE);
+const pageSize = LIST_PAGE_SIZE;
 const total = ref(0);
 const departments = ref([]);
 const roles = ref([]);
@@ -202,10 +203,10 @@ async function loadMeta() {
 async function load() {
   loading.value = true;
   try {
-    let data = await fetchUsers({ page: page.value, page_size: pageSize.value });
+    let data = await fetchUsers({ page: page.value, page_size: pageSize });
     if (!data.items.length && data.total > 0 && page.value > 1) {
       page.value -= 1;
-      data = await fetchUsers({ page: page.value, page_size: pageSize.value });
+      data = await fetchUsers({ page: page.value, page_size: pageSize });
     }
     users.value = data.items;
     total.value = data.total;
@@ -373,32 +374,37 @@ onMounted(async () => {
 </script>
 
 <template>
-  <n-card class="admin-page">
-    <div class="admin-table-toolbar">
-      <BatchTableToolbar
-        :count="selectedCount"
-        :disabled="!canBatchDelete"
-        @action="handleBatchDelete"
+  <div class="admin-list-table">
+    <n-card class="admin-page admin-page--list-table">
+      <div class="admin-table-toolbar">
+        <BatchTableToolbar
+          :count="selectedCount"
+          :disabled="!canBatchDelete"
+          @action="handleBatchDelete"
+        />
+        <n-space align="center" :size="8">
+          <ListRefreshButton :loading="loading" @click="load" />
+          <n-button type="primary" @click="openCreate">{{ t("admin.users.create") }}</n-button>
+        </n-space>
+      </div>
+      <n-data-table
+        :columns="columns"
+        :data="users"
+        :loading="loading"
+        :scroll-x="900"
+        :row-key="(row) => row.id"
+        :checked-row-keys="checkedRowKeys"
+        :pagination="false"
+        @update:checked-row-keys="onCheckedRowKeysChange"
       />
-      <ListRefreshButton :loading="loading" @click="load" />
-      <n-button type="primary" @click="openCreate">{{ t("admin.users.create") }}</n-button>
-    </div>
-    <n-data-table
-      :columns="columns"
-      :data="users"
-      :loading="loading"
-      :scroll-x="900"
-      :row-key="(row) => row.id"
-      :checked-row-keys="checkedRowKeys"
-      :pagination="{
-        page,
-        pageSize,
-        itemCount: total,
-        onUpdatePage: onPageChange,
-      }"
-      @update:checked-row-keys="onCheckedRowKeysChange"
+    </n-card>
+    <ListTableFooter
+      :page="page"
+      :page-size="pageSize"
+      :item-count="total"
+      @update:page="onPageChange"
     />
-  </n-card>
+  </div>
 
   <AdminFormModal
     v-model:show="showModal"

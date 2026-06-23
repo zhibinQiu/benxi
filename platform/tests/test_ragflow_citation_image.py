@@ -171,7 +171,7 @@ def test_resolve_citation_image_id_from_chunk():
     rag.resolve_chunk_image_id.return_value = "kb-resolved"
 
     with patch(
-        "app.services.knowledge_qa_service._rag_clients_for_qa",
+        "app.services.knowledge_qa.preview._rag_clients_for_qa",
         return_value=[rag],
     ):
         out = resolve_citation_image_id(

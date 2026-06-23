@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "企业 AI 知识库平台"
-    platform_version: str = "4.2.1"
+    platform_version: str = "4.3.1"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -78,8 +78,6 @@ class Settings(BaseSettings):
     allow_public_register: bool = True
 
     cors_origins: str = "*"
-    # 系统说明文档根目录（默认：仓库根或容器内 /app/system-docs）
-    system_docs_root: str = ""
     # 经网关对外暴露时的路径前缀（如 http://<IP>/ai/api/v1）；后端仍注册 /api/v1
     api_public_path_prefix: str = "/ai"
 

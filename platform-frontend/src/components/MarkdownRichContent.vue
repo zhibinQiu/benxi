@@ -65,6 +65,7 @@ onBeforeUnmount(() => {
     refreshChartsTimer = null;
   }
   releaseDom();
+  unbindEchartsResize();
 });
 </script>
 

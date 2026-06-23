@@ -1,12 +1,26 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NSpin, NText } from "naive-ui";
-import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   bboxToViewportBox,
   buildTextLayerHighlightBoxes,
 } from "../utils/comparePdfHighlights.js";
+
+/** pdfjs-dist 仅在 PDF 预览时按需加载 */
+let pdfjsLib = null;
+let pdfjsLoader = null;
+
+async function loadPdfjs() {
+  if (pdfjsLib) return pdfjsLib;
+  if (!pdfjsLoader) {
+    pdfjsLoader = import("pdfjs-dist").then((mod) => {
+      pdfjsLib = mod;
+      return pdfjsLib;
+    });
+  }
+  return pdfjsLoader;
+}
 
 /** Nginx 若未配置 .mjs → application/javascript，动态 import worker 会失败 */
 let pdfWorkerInitPromise = null;
@@ -14,12 +28,13 @@ let pdfWorkerInitPromise = null;
 function initPdfWorker() {
   if (pdfWorkerInitPromise) return pdfWorkerInitPromise;
   pdfWorkerInitPromise = (async () => {
+    const lib = await loadPdfjs();
     const res = await fetch(pdfjsWorkerUrl);
     if (!res.ok) {
       throw new Error(`PDF worker 加载失败 (${res.status})`);
     }
     const blob = new Blob([await res.arrayBuffer()], { type: "application/javascript" });
-    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+    lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
   })();
   return pdfWorkerInitPromise;
 }
@@ -105,7 +120,8 @@ async function ensurePdf() {
   try {
     await initPdfWorker();
     if (token !== loadToken) return null;
-    const task = pdfjsLib.getDocument(src);
+    const lib = await loadPdfjs();
+    const task = lib.getDocument(src);
     const doc = await task.promise;
     if (token !== loadToken) {
       await doc.destroy();
@@ -151,7 +167,8 @@ async function buildOverlayBoxes(page, viewport) {
     .filter((id) => !bboxCovered.has(id));
 
   if (uncoveredDiffIds.length > 0) {
-    const textBoxes = await buildTextLayerHighlightBoxes(page, viewport, pdfjsLib, {
+    const lib = await loadPdfjs();
+    const textBoxes = await buildTextLayerHighlightBoxes(page, viewport, lib, {
       diffItems: props.diffItems,
       side: props.diffSide,
       pageNo,

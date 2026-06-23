@@ -193,7 +193,7 @@ def test_filter_hits_by_version_maps_ragflow_doc_to_platform():
     ]
 
     with patch(
-        "app.services.knowledge_qa_service.ragflow_to_platform_version_map",
+        "app.services.knowledge_qa.retrieval.ragflow_to_platform_version_map",
         return_value={
             RAGFLOW_DOC_ID: {
                 "platform_document_id": PLATFORM_DOC_ID,
@@ -205,13 +205,13 @@ def test_filter_hits_by_version_maps_ragflow_doc_to_platform():
         "scalars",
         return_value=MagicMock(all=MagicMock(return_value=[doc])),
     ), patch(
-        "app.services.knowledge_qa_service.resolve_latest_indexed_version",
+        "app.services.knowledge_qa.retrieval.resolve_latest_indexed_version",
         return_value=None,
     ), patch(
-        "app.services.knowledge_qa_service.resolve_current_version",
+        "app.services.knowledge_qa.retrieval.resolve_current_version",
         return_value=None,
     ), patch(
-        "app.services.knowledge_qa_service.resolve_index_link",
+        "app.services.knowledge_qa.retrieval.resolve_index_link",
         return_value=(None, None),
     ):
         out = _filter_hits_by_version(
@@ -244,7 +244,7 @@ def test_retrieve_hits_falls_back_to_knowflow_when_pageindex_empty():
     }
 
     with patch(
-        "app.services.knowledge_qa_service.validate_document_scope",
+        "app.services.compare_service.validate_document_scope",
         return_value=[doc],
     ), patch(
         "app.services.pageindex_service.partition_documents_by_retrieval_engine",
@@ -253,15 +253,15 @@ def test_retrieve_hits_falls_back_to_knowflow_when_pageindex_empty():
         "app.services.pageindex_service.retrieve_pageindex_hits_for_qa",
         return_value=[],
     ), patch(
-        "app.services.knowledge_qa_service._knowflow_retrieval_available",
+        "app.services.knowledge_qa.retrieval._knowflow_retrieval_available",
         return_value=True,
     ), patch(
-        "app.services.knowledge_qa_service._knowflow_retrieve",
+        "app.services.knowledge_qa.retrieval._knowflow_retrieve",
         return_value=[kf_hit],
     ) as mock_kf, patch(
-        "app.services.knowledge_qa_service._local_retrieve",
+        "app.services.knowledge_qa.retrieval._local_retrieve",
     ) as mock_local, patch(
-        "app.services.knowledge_qa_service.merge_nearby_retrieval_hits",
+        "app.services.knowledge_qa.retrieval.merge_nearby_retrieval_hits",
         side_effect=lambda hits: hits,
     ):
         hits, mode = retrieve_hits_for_qa(db, user, [doc_id], "碳价走势")
@@ -291,19 +291,19 @@ def test_retrieve_hits_local_fallback_includes_skipped_docs():
     }
 
     with patch(
-        "app.services.knowledge_qa_service.validate_document_scope",
+        "app.services.compare_service.validate_document_scope",
         return_value=[doc],
     ), patch(
         "app.services.pageindex_service.partition_documents_by_retrieval_engine",
         return_value=([], [], [doc]),
     ), patch(
-        "app.services.knowledge_qa_service._knowflow_retrieval_available",
+        "app.services.knowledge_qa.retrieval._knowflow_retrieval_available",
         return_value=False,
     ), patch(
-        "app.services.knowledge_qa_service._local_retrieve",
+        "app.services.knowledge_qa.retrieval._local_retrieve",
         return_value=[local_hit],
     ) as mock_local, patch(
-        "app.services.knowledge_qa_service.merge_nearby_retrieval_hits",
+        "app.services.knowledge_qa.retrieval.merge_nearby_retrieval_hits",
         side_effect=lambda hits: hits,
     ):
         hits, mode = retrieve_hits_for_qa(db, user, [doc_id], "测试")

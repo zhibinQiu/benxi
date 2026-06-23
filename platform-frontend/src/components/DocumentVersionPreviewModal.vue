@@ -1,9 +1,9 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, ref, watch } from "vue";
 import { useI18n } from "../composables/useI18n.js";
 import { NButton, NEmpty, NSpace, NSpin, NTag, NText, NRadioButton, NRadioGroup } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
-import ComparePdfPreview from "./ComparePdfPreview.vue";
+const ComparePdfPreview = defineAsyncComponent(() => import("./ComparePdfPreview.vue"));
 import { fetchDocumentFileBlob } from "../api/documents.js";
 import { fetchCompareDocumentContent } from "../api/compare.js";
 import {

@@ -97,6 +97,30 @@ def test_validate_uploaded_skill_load_allows_planned_skill():
     assert reason == ""
 
 
+def test_validate_uploaded_skill_load_allows_created_skill_after_skill_mgmt():
+    """创建 Skill 后同轮 load 刚创建的包，不应被 Skill 管理意图拦截。"""
+    ok, reason = validate_uploaded_skill_load(
+        user_message="帮我创建一个 skill，从碳市场网爬取碳价数据",
+        skill_name="carbon-price-scraper",
+        skill_description="从碳市场网爬取全国碳市场价格行情",
+        skill_source=SkillSource.UPLOADED,
+        created_skills=("carbon-price-scraper",),
+    )
+    assert ok is True
+    assert reason == ""
+
+
+def test_validate_uploaded_skill_load_allows_domain_in_message():
+    ok, reason = validate_uploaded_skill_load(
+        user_message="从碳市场网（tanshichang.cn）爬取全国碳市场最新价格行情",
+        skill_name="carbon-price-scraper",
+        skill_description="从碳市场网爬取全国碳市场价格行情数据",
+        skill_source=SkillSource.UPLOADED,
+    )
+    assert ok is True
+    assert reason == ""
+
+
 def test_validate_uploaded_skill_load_allows_math_task():
     ok, reason = validate_uploaded_skill_load(
         user_message="123乘以456等于多少",

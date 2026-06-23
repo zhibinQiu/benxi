@@ -21,9 +21,15 @@ from app.services.agent_planner import (
     filter_tool_specs_by_plan,
     resolve_execution_plan,
 )
+from app.core.agent_tool_context import (
+    compress_tool_result_for_loop,
+    inject_retrieval_context_message,
+    trim_agent_loop_messages,
+)
 from app.services.agent_tools import (
     build_agent_tool_specs,
     execute_agent_tool,
+    maybe_inject_skill_md,
     tool_workflow_meta,
 )
 
@@ -175,7 +181,12 @@ async def iter_agent_tool_loop(
 
     plan_instruction = build_plan_context_instruction(execution_plan)
     working = _inject_plan_instruction(working, plan_instruction)
-    tool_specs = filter_tool_specs_by_plan(all_tool_specs, execution_plan)
+    initial_skill = (
+        str(execution_plan.uploaded_skill or "").strip()
+        or str(loop_state.get("planned_uploaded_skill") or "").strip()
+    )
+    if initial_skill:
+        working = maybe_inject_skill_md(db, user, loop_state, working, initial_skill)
 
     yield {
         "type": "workflow",
@@ -191,8 +202,17 @@ async def iter_agent_tool_loop(
     final_reply: str | None = None
 
     for _ in range(max(1, rounds)):
+        pending_skill = str(loop_state.get("pending_skill_md_inject") or "").strip()
+        if pending_skill:
+            working = maybe_inject_skill_md(db, user, loop_state, working, pending_skill)
+            loop_state.pop("pending_skill_md_inject", None)
+
+        tool_specs = filter_tool_specs_by_plan(all_tool_specs, execution_plan)
+        llm_messages = trim_agent_loop_messages(
+            inject_retrieval_context_message(working, loop_state)
+        )
         choice = await chat_completion_message_async(
-            messages=working,
+            messages=llm_messages,
             tools=tool_specs or None,
             temperature=0.3,
         )
@@ -253,7 +273,7 @@ async def iter_agent_tool_loop(
                     {
                         "role": "tool",
                         "tool_call_id": tool_id,
-                        "content": result_text,
+                        "content": compress_tool_result_for_loop(result_text),
                     }
                 )
                 for att in list(loop_state.get("stream_attachments") or []):

@@ -57,12 +57,6 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         group="settings",
         description="语言模型、OCR、语音等服务配置",
     ),
-    MenuItemOut(
-        key="admin-docs",
-        label="说明文档",
-        group="settings",
-        description="平台使用与运维说明",
-    ),
 )
 
 DEFAULT_MENU_VISIBILITY: dict[str, MenuVisibility] = {
@@ -101,7 +95,6 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "feed-entry": "knowledge-subscriptions",
     "admin-monitor": "admin-monitor",
     "admin-model-settings": "admin-model-settings",
-    "admin-docs": "admin-docs",
     "issue-reports": "issue-reports",
 }
 
@@ -232,7 +225,6 @@ def first_visible_menu_route(db: Session, user: User) -> str:
         "issue-reports",
         "admin-monitor",
         "admin-model-settings",
-        "admin-docs",
     )
     for key in priority:
         if key in visible:

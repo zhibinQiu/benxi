@@ -8,6 +8,7 @@ export const SUBSYSTEM_PAGE_ROUTES = new Set([
   "carbon-assets",
   "smart-forecast",
   "speech",
+  "text-to-speech",
   "ocr",
   "kg-palantir",
   "compare",

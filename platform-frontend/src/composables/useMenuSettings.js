@@ -39,7 +39,6 @@ export const ROUTE_MENU_KEYS = {
   "admin-monitor": "admin-monitor",
   "admin-model-settings": "admin-model-settings",
   "agent-skills": "system-functions",
-  "admin-docs": "admin-docs",
   "issue-reports": "issue-reports",
 };
 
@@ -52,7 +51,6 @@ export const CONFIGURABLE_MENU_KEYS = new Set([
   "issue-reports",
   "admin-monitor",
   "admin-model-settings",
-  "admin-docs",
 ]);
 
 const MENU_FALLBACK_ORDER = [
@@ -63,7 +61,6 @@ const MENU_FALLBACK_ORDER = [
   "issue-reports",
   "admin-monitor",
   "admin-model-settings",
-  "admin-docs",
 ];
 
 export function routeMenuKey(routeName) {

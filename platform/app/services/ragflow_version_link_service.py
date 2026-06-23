@@ -254,12 +254,20 @@ def list_version_links_for_document(
 
 
 def resolve_latest_indexed_version(
-    db: Session, document: Document
+    db: Session,
+    document: Document,
+    *,
+    version_links: list[RagflowDocumentVersionLink] | None = None,
 ) -> DocumentVersion | None:
     """问答/检索与文档展示：已索引成功的最高版本号。"""
     from app.services.documents.crud import is_version_uploaded
 
-    for link in list_version_links_for_document(db, document.id):
+    links = (
+        version_links
+        if version_links is not None
+        else list_version_links_for_document(db, document.id)
+    )
+    for link in links:
         if not (link.ragflow_document_id or "").strip():
             continue
         if link.index_completed_at is None:

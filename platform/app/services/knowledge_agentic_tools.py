@@ -63,43 +63,92 @@ class KnowledgeAgenticToolkit:
                 limit=limit or self.retrieve_limit,
                 merge_nearby=True,
             )
-            from app.services.report_generation_service import merge_retrieval_hits
-
-            self._local_hits = merge_retrieval_hits(
-                self._local_hits + list(hits),
-                max_total=max(20, (limit or self.retrieve_limit) * 4),
-            )
-            summary = f"检索「{q[:40]}」命中 {len(hits)} 段（累计 {len(self._local_hits)} 段）"
-            detail_lines = [summary]
-            mode_label = {
-                "hybrid": "混合检索（语义+关键词）",
-                "pageindex_tree": "PageIndex 树检索",
-                "local": "本地全文检索",
-                "mixed": "多路混合",
-                "none": "未命中",
-            }.get(str(mode or ""), str(mode or ""))
-            if mode_label:
-                detail_lines.append(f"检索模式：{mode_label}")
-            previews: list[str] = []
-            for hit in hits[:2]:
-                snip = (
-                    (hit.get("snippet") or hit.get("highlight") or hit.get("content") or "")
-                    .strip()
-                    .replace("\n", " ")
-                )
-                if snip:
-                    previews.append(snip[:100])
-            if previews:
-                detail_lines.append("片段预览：" + " | ".join(previews))
-            return ToolResult(
-                "retrieve",
-                True,
-                "\n".join(detail_lines),
-                data={"hits": hits, "mode": mode, "query": q},
-            )
+            return self._finalize_retrieve_result(q, hits, mode)
         except Exception as exc:
             logger.warning("Agentic retrieve 失败 q=%r: %s", q, exc)
             return ToolResult("retrieve", False, f"检索失败：{exc}", error=str(exc))
+
+    def retrieve_many(
+        self,
+        queries: list[str],
+        *,
+        limit: int | None = None,
+    ) -> list[ToolResult]:
+        """并行检索多个子问题，返回与 queries 顺序对应的结果列表。"""
+        cleaned = [(q or "").strip() for q in queries]
+        if not self.doc_ids:
+            return [
+                ToolResult("retrieve", False, "未选择文档", data=[])
+                for _ in cleaned
+            ]
+
+        per_limit = limit or self.retrieve_limit
+        unique = list(dict.fromkeys(q for q in cleaned if q))
+        hits_by_query: dict[str, tuple[list[dict], str]] = {}
+
+        if unique:
+            from app.services.knowledge_qa.retrieval import retrieve_hits_by_queries
+
+            hits_by_query = retrieve_hits_by_queries(
+                self.db,
+                self.user,
+                self.doc_ids,
+                unique,
+                limit_per_query=per_limit,
+                merge_nearby=True,
+            )
+
+        results: list[ToolResult] = []
+        for q in cleaned:
+            if not q:
+                results.append(
+                    ToolResult("retrieve", False, "检索词为空", error="empty_query")
+                )
+                continue
+            hits, mode = hits_by_query.get(q, ([], "none"))
+            results.append(self._finalize_retrieve_result(q, hits, mode))
+        return results
+
+    def _finalize_retrieve_result(
+        self,
+        q: str,
+        hits: list[dict],
+        mode: str,
+    ) -> ToolResult:
+        from app.services.report_generation_service import merge_retrieval_hits
+
+        self._local_hits = merge_retrieval_hits(
+            self._local_hits + list(hits),
+            max_total=max(20, self.retrieve_limit * 4),
+        )
+        summary = f"检索「{q[:40]}」命中 {len(hits)} 段（累计 {len(self._local_hits)} 段）"
+        detail_lines = [summary]
+        mode_label = {
+            "hybrid": "混合检索（语义+关键词）",
+            "pageindex_tree": "PageIndex 树检索",
+            "local": "本地全文检索",
+            "mixed": "多路混合",
+            "none": "未命中",
+        }.get(str(mode or ""), str(mode or ""))
+        if mode_label:
+            detail_lines.append(f"检索模式：{mode_label}")
+        previews: list[str] = []
+        for hit in hits[:2]:
+            snip = (
+                (hit.get("snippet") or hit.get("highlight") or hit.get("content") or "")
+                .strip()
+                .replace("\n", " ")
+            )
+            if snip:
+                previews.append(snip[:100])
+        if previews:
+            detail_lines.append("片段预览：" + " | ".join(previews))
+        return ToolResult(
+            "retrieve",
+            True,
+            "\n".join(detail_lines),
+            data={"hits": hits, "mode": mode, "query": q},
+        )
 
     def kg_planning_context(self, question: str) -> ToolResult:
         if not self.include_kg:

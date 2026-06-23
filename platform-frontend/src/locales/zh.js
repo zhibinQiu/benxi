@@ -22,7 +22,6 @@ export default {
     modelSettings: "资源管理",
     menuSettings: "菜单管理",
     agentSkills: "Agent Skills",
-    systemDocs: "说明文档",
     issueReports: "问题登记",
     readOnly: "仅查阅",
   },
@@ -71,7 +70,6 @@ export default {
     "admin-menu-settings": "菜单管理",
     "admin-agent-skills": "Agent Skills",
     "agent-skills": "Agent Skills",
-    "admin-docs": "说明文档",
     "issue-reports": "问题登记",
   },
   features: {
@@ -1641,10 +1639,6 @@ export default {
       saveFailed: "保存失败",
       saved: "菜单配置已保存",
     },
-    systemDocs: {
-      title: "说明文档",
-      noDocs: "暂无可用文档",
-    },
     modelSettings: {
       refreshStatus: "刷新状态",
       testConnectivity: "测试连通性",
@@ -1667,7 +1661,7 @@ export default {
         speech: { title: "语音识别服务", hint: "会议助手语音转写" },
         tts: { title: "语音合成", hint: "文本转语音（硅基流动 / OpenAI 兼容）" },
         pdf2zh: { title: "PDF 翻译服务", hint: "pdf2zh 文档翻译 API" },
-        searxng: { title: "SearXNG 联网搜索", hint: "网站收藏在线搜索" },
+        searxng: { title: "SearXNG 联网搜索", hint: "报告生成与本析智能体联网检索" },
         browser_rpa: { title: "浏览器 RPA", hint: "本析智能体网页自动化（无头 Chromium）" },
         ragflow_api: { title: "知识库 API", hint: "知识库检索、文档同步 HTTP API" },
         knowflow_backend: { title: "知识库扩展后台", hint: "知识库扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选" },
@@ -1782,7 +1776,7 @@ export default {
         pdf2zh:
           "文档翻译任务调用 pdf2zh API（对应 .env 中的 <code>PDF2ZH_API_URL</code>）。保存后立即生效。",
         searxng:
-          "网站收藏「联网搜索」通过此 SearXNG 实例的 JSON API（<code>/search?format=json</code>）检索。对应 .env 中 <code>SEARXNG_URL</code>、<code>SEARXNG_TIMEOUT_SECONDS</code>。保存后立即生效。",
+          "报告生成与本析智能体的联网检索通过此 SearXNG 实例的 JSON API（<code>/search?format=json</code>）调用。对应 .env 中 <code>SEARXNG_URL</code>、<code>SEARXNG_TIMEOUT_SECONDS</code>。保存后立即生效。",
         browserRpa:
           "本析智能体通过 Playwright Chromium 操作网页。<strong>无头服务器无需显示器</strong>，请保持「无头模式」开启。Docker 镜像需 <code>INSTALL_BROWSER=1</code>（compose 默认已开）。域名白名单逗号分隔，留空则仅拦截内网。",
         ragflowApi:
@@ -1826,11 +1820,8 @@ export default {
     deleteFailed: "删除失败",
   },
   subscriptions: {
-    searchWeb: "联网搜索",
-    searchLocal: "本地收藏",
     search: "搜索",
     placeholderLocal: "搜索已收藏的文章标题或正文",
-    placeholderWeb: "搜索互联网内容",
     filter: "筛选条件",
     filterDateLabel: "收录开始 / 结束时间",
     startDate: "开始日期",
@@ -1841,8 +1832,6 @@ export default {
     ingestLabel: "粘贴文章链接收录到本地",
     ingest: "收录",
     ingestHint: "支持公众号、网站文章等；收录后自动生成 AI 摘要。",
-    resultApprox: "约 {{count}} 条结果",
-    resultNone: "无匹配结果",
     resultTotalSaved: "共 {{count}} 篇收藏",
     resultTotal: "共 {{count}} 篇",
     filterActive: "收录时间：{{range}}",
@@ -1851,19 +1840,10 @@ export default {
     importedTag: "已入文档库",
     wechatTag: "公众号",
     noSummary: "暂无摘要",
-    emptyLocal: "暂无收藏，可联网搜索或粘贴链接收录",
-    emptyWeb: "未找到相关网页，请换关键词重试",
-    webUnavailable: "在线搜索暂不可用，请联系管理员",
-    heroTitle: "在上方输入关键词开始搜索",
-    heroDesc: "联网检索结果可查看详情或收藏到本地",
-    detail: "详情",
-    collect: "收藏",
-    needKeyword: "请输入搜索关键词",
+    emptyLocal: "暂无收藏，可粘贴链接收录",
     needUrl: "请粘贴文章链接",
     ingestedWithSummary: "已收录并生成摘要",
     ingested: "已收录",
-    collectedWithSummary: "已收藏并生成摘要",
-    collectedLocal: "已收藏到本地",
   },
   subscriptionItem: {
     wechatBadge: "公众号",

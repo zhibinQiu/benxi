@@ -7,7 +7,9 @@ import pytest
 from app.core.platform_cache import (
     client_config_cache_key,
     document_detail_cache_key,
+    invalidate_scope_tree_cache,
     invalidate_system_config_cache,
+    scope_tree_cache_key,
 )
 
 
@@ -38,6 +40,21 @@ def test_client_config_cache_key_stable():
 def test_document_detail_cache_key_includes_user():
     key = document_detail_cache_key("doc-1", "user-2")
     assert key == "doc:detail:doc-1:user-2"
+
+
+def test_scope_tree_cache_key_includes_user():
+    key = scope_tree_cache_key("user-2")
+    assert key == "knowledge:scope-tree:v3:user-2"
+
+
+def test_invalidate_scope_tree_cache():
+    from app.core import platform_cache as pc
+
+    key = scope_tree_cache_key("user-x")
+    pc.cache_set_json(key, {"items": []})
+    assert pc.cache_get_json(key) is not None
+    invalidate_scope_tree_cache("user-x")
+    assert pc.cache_get_json(key) is None
 
 
 def test_invalidate_system_config_cache():

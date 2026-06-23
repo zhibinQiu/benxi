@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.features.registry import ensure_plugins_loaded, get_plugin
 from app.integrations.data_analysis_executor import validate_user_code
+from app.integrations.data_analysis_images import prepare_image_for_imshow
 from app.services import data_analysis_store as store
 from app.services.data_analysis_profile import (
     missing_data_analysis_modules,
@@ -186,3 +187,26 @@ def test_data_analysis_meta_lists_builtin_libraries(client: TestClient, admin_to
     assert "pandas" in data["builtin_libraries"]
     assert "seaborn" in data["builtin_libraries"]
     assert "df" in data["builtin_variables"]
+
+
+def test_prepare_image_for_imshow_coerces_object_numeric_matrix():
+    np = pytest.importorskip("numpy")
+    pd = pytest.importorskip("pandas")
+    plt = pytest.importorskip("matplotlib.pyplot")
+
+    matrix = pd.DataFrame([[1, 2], [3, 4]], dtype=object)
+    arr = prepare_image_for_imshow(matrix)
+    assert arr.dtype == float
+    assert arr.shape == (2, 2)
+
+    fig, ax = plt.subplots()
+    ax.imshow(arr)
+    plt.close(fig)
+
+
+def test_prepare_image_for_imshow_accepts_numeric_array():
+    np = pytest.importorskip("numpy")
+    arr = prepare_image_for_imshow(np.array([[0.0, 1.0], [0.5, 0.25]]))
+    assert arr.dtype == float
+    assert arr.shape == (2, 2)
+

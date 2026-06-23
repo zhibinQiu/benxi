@@ -91,8 +91,8 @@ def build_plan_context_instruction(plan: AgentExecutionPlan) -> str:
         )
     if plan.uploaded_skill:
         lines.append(
-            f"- 发展技能：先 `load_uploaded_skill` 加载 `{plan.uploaded_skill}`，"
-            "再按其 SKILL.md 执行；内置技能不可 load"
+            f"- 发展技能 `{plan.uploaded_skill}`：系统会自动注入 SKILL.md；"
+            f"直接 `run_skill_script` 执行即可，**勿**先 `load_uploaded_skill`"
         )
     if plan.atomic_tools:
         lines.append(
@@ -115,7 +115,6 @@ def filter_tool_specs_by_plan(
     """按规划裁剪可用 tools；检索类原子工具与发展技能 load 分别控制。"""
     skip = set(plan.skip_tools)
     allow_retrieval = set(plan.atomic_tools) if plan.atomic_tools else None
-    hide_skill_load = not plan.uploaded_skill
 
     filtered: list[dict[str, Any]] = []
     for spec in specs:
@@ -128,13 +127,8 @@ def filter_tool_specs_by_plan(
                 continue
             if allow_retrieval is None and plan.blocks_all_retrieval():
                 continue
-        if name == SKILL_LOAD_TOOL and hide_skill_load:
-            continue
-        if (
-            name == SKILL_SCRIPT_TOOL
-            and hide_skill_load
-            and name not in plan.atomic_tools
-        ):
+        # load_uploaded_skill 由系统自动注入 SKILL.md，不向 Agent 暴露
+        if name == SKILL_LOAD_TOOL:
             continue
         filtered.append(spec)
     return filtered
@@ -308,8 +302,8 @@ def _planning_system_prompt(
         "**禁止**对内置技能使用 `load_uploaded_skill`，应直接调用其编排的原子工具。\n"
         f"   当前内置技能名：{builtin_list}\n"
         "3. **发展技能 (Uploaded Skills)**：用户上传的 SKILL.md 包；"
-        "仅当任务明确匹配时才在 JSON 中填写 `uploaded_skill`，"
-        "执行阶段会先 `load_uploaded_skill`。\n"
+        "任务匹配时由系统自动注入 SKILL.md，执行阶段直接 `run_skill_script`，"
+        "勿使用 `load_uploaded_skill`。\n"
         f"   当前发展技能名：{uploaded_list}\n\n"
         "【输出 JSON 字段】\n"
         '{"reasoning":"策略一句话","intent":"用户意图",'

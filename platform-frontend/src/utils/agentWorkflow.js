@@ -77,6 +77,16 @@ function findStep(steps, id) {
   return steps.find((s) => s.id === id) || null;
 }
 
+/** Skill 脚本运行失败等可恢复错误：展示详情但不标红整个流程。 */
+function isSoftToolFailure(ev, failed) {
+  if (!failed) return false;
+  const toolName = String(ev?.tool_name || "");
+  const tool = String(ev?.tool || "");
+  if (toolName === "run_skill_script") return true;
+  if (tool.startsWith("skill.run.")) return true;
+  return false;
+}
+
 /**
  * @param {ReturnType<typeof emptyAgentWorkflow>} state
  * @param {object} ev
@@ -157,6 +167,7 @@ export function applyAgentWorkflowEvent(state, ev, t) {
     state.running = true;
     const id = ev.step_id || state.steps[state.steps.length - 1]?.id || nextStepId();
     const failed = ev.status === "failed";
+    const softFailure = isSoftToolFailure(ev, failed);
     const existing = findStep(state.steps, id);
     upsertStep(state.steps, {
       id,
@@ -165,10 +176,12 @@ export function applyAgentWorkflowEvent(state, ev, t) {
       title: ev.title || existing?.title || toolName || "工具返回",
       callDetail: existing?.callDetail || "",
       resultDetail: ev.detail || "",
-      status: failed ? "failed" : "done",
+      status: softFailure ? "done" : failed ? "failed" : "done",
     });
     state.currentTitle = ev.title || state.currentTitle;
-    state.failed = failed;
+    if (!softFailure) {
+      state.failed = failed;
+    }
     return state;
   }
 

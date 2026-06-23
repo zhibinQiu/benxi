@@ -1,7 +1,7 @@
 # Agent Skills 实现说明
 
 > **适用读者**：产品经理、运维、后端/前端开发  
-> **版本**：v4.2.1 · [开发说明书总览](../development/implementation-manual.md)  
+> **版本**：v4.3.1 · [开发说明书总览](../development/implementation-manual.md)  
 > **配套阅读**：[功能实现说明 §4.8 / §14](../operations/feature-implementation.md)（偏业务视角）
 
 ---
@@ -39,7 +39,7 @@
 
 ---
 
-## 1. 实现总览（v4.2.1）
+## 1. 实现总览（v4.3.1）
 
 AI 首页对话采用 **Discovery + Activation** 两阶段：
 

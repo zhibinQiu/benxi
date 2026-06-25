@@ -15,6 +15,9 @@ import {
   NewspaperOutline,
   SearchOutline,
   VolumeHighOutline,
+  ExtensionPuzzleOutline,
+  HardwareChipOutline,
+  LeafOutline,
 } from "@vicons/ionicons5";
 
 /** 与系统功能插件 icon 字段一致 */
@@ -35,6 +38,9 @@ export const FEATURE_ICON_MAP = {
   wallet: WalletOutline,
   newspaper: NewspaperOutline,
   search: SearchOutline,
+  "extension-puzzle": ExtensionPuzzleOutline,
+  "hardware-chip": HardwareChipOutline,
+  leaf: LeafOutline,
 };
 
 export function resolveFeatureIcon(key) {

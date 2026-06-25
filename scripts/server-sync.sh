@@ -176,16 +176,30 @@ if [[ "${fe_flag}" == 1 ]]; then
   cd platform-frontend
   node_image="\${NODE_IMAGE:-node:22-alpine}"
   npm_registry="\${NPM_REGISTRY:-https://registry.npmmirror.com}"
-  if [[ -x node_modules/.bin/vite ]]; then
-    VITE_API_BASE=/ai VITE_BASE_PATH=/ai/ npm run build
+  lock_stamp=".node_modules-lock.sha256"
+  need_npm=1
+  if [[ -x node_modules/.bin/vite && -f "\${lock_stamp}" && -f package-lock.json ]]; then
+    current="\$(sha256sum package-lock.json | awk '{print \$1}')"
+    saved="\$(cat "\${lock_stamp}" 2>/dev/null || true)"
+    [[ "\${current}" == "\${saved}" ]] && need_npm=0
+  fi
+  fe_install_and_build='npm ci --prefer-offline 2>/dev/null || npm install; VITE_API_BASE=/ai VITE_BASE_PATH=/ai/ npm run build'
+  if [[ "\${need_npm}" == 1 ]]; then
+    echo "[sync] 安装/更新前端依赖（package-lock.json 已变更或 node_modules 未就绪）…"
+    if command -v npm >/dev/null 2>&1; then
+      sh -c "\${fe_install_and_build}"
+    else
+      docker run --rm \
+        -v "\$(pwd):/app" -w /app \
+        -e NPM_CONFIG_REGISTRY="\${npm_registry}" \
+        -e VITE_API_BASE=/ai \
+        -e VITE_BASE_PATH=/ai/ \
+        "\${node_image}" \
+        sh -c "\${fe_install_and_build}"
+    fi
+    sha256sum package-lock.json | awk '{print \$1}' > "\${lock_stamp}"
   else
-    docker run --rm \
-      -v "\$(pwd):/app" -w /app \
-      -e NPM_CONFIG_REGISTRY="\${npm_registry}" \
-      -e VITE_API_BASE=/ai \
-      -e VITE_BASE_PATH=/ai/ \
-      "\${node_image}" \
-      sh -c 'npm ci --prefer-offline 2>/dev/null || npm install && npm run build'
+    VITE_API_BASE=/ai VITE_BASE_PATH=/ai/ npm run build
   fi
   cd ..
   fe_cid=\$(docker ps -q -f "name=\${proj}-frontend")

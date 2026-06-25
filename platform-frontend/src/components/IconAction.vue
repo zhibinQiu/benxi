@@ -77,19 +77,35 @@ const actionClass = computed(() => {
 
 .icon-action.icon-action--caution:not(:disabled) {
   color: var(--platform-caution);
+  background: var(--platform-caution-soft);
+  border: 1px solid color-mix(in srgb, var(--platform-caution) 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
 }
 
 .icon-action.icon-action--caution:not(:disabled):hover {
   color: var(--platform-caution);
-  background: var(--platform-caution-soft);
+  background: color-mix(in srgb, var(--platform-caution) 16%, var(--platform-caution-soft));
+  border-color: color-mix(in srgb, var(--platform-caution) 40%, transparent);
 }
 
 .icon-action.icon-action--danger:not(:disabled) {
   color: var(--platform-danger);
+  background: var(--platform-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--platform-danger) 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
 }
 
 .icon-action.icon-action--danger:not(:disabled):hover {
   color: var(--platform-danger);
-  background: color-mix(in srgb, var(--platform-danger) 14%, var(--platform-danger-soft));
+  background: color-mix(in srgb, var(--platform-danger) 16%, var(--platform-danger-soft));
+  border-color: color-mix(in srgb, var(--platform-danger) 40%, transparent);
+}
+
+.icon-action.icon-action--danger:disabled,
+.icon-action.icon-action--caution:disabled {
+  opacity: 0.42;
+  background: var(--platform-bg-glass-subtle);
+  border-color: var(--platform-border);
+  box-shadow: none;
 }
 </style>

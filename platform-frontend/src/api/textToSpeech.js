@@ -1,5 +1,6 @@
 /** 语音合成 REST API */
 import { getApiBase, getToken, rejectHttpFailure, UPLOAD_API_TIMEOUT_MS } from "./http.js";
+import { downloadBlob } from "../utils/downloadBlob.js";
 
 export async function fetchTextToSpeechMeta() {
   const controller = new AbortController();
@@ -67,9 +68,5 @@ export async function synthesizeTextToSpeech({
 }
 
 export function downloadSpeechBlob(blob, filename) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadBlob(blob, filename);
 }

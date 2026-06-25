@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 from app.config import get_settings
-from app.core.exceptions import bad_request
+from app.core.exceptions import AppError, bad_request
 
 _FORBIDDEN_PATTERNS = (
     r"\bimport\s+subprocess\b",
@@ -73,6 +73,21 @@ def resolve_entry_path(files: dict[str, bytes], entry: str = "") -> str:
             f"请指定 entry；候选: {', '.join(py_files[:8])}"
         )
     raise bad_request("Skill 包内没有可执行的 .py 脚本")
+
+
+def probe_script_entry(files: dict[str, bytes], entry: str = "") -> str | None:
+    """若存在可执行入口则返回相对路径，否则 None（不抛错）。"""
+    try:
+        return resolve_entry_path(files, entry)
+    except AppError:
+        return None
+
+
+def skill_files_have_executable_script(files: dict[str, bytes]) -> bool:
+    """Skill 包是否含 Python 入口或 RPA workflow.json。"""
+    if "workflow.json" in files:
+        return True
+    return probe_script_entry(files) is not None
 
 
 def _inject_runtime_py(files: dict[str, bytes]) -> dict[str, bytes]:

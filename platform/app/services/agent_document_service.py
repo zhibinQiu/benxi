@@ -21,6 +21,7 @@ from app.core.permissions import PermissionLevel
 from app.services.documents.listing import filter_accessible_documents
 from app.services.library_folder_service import (
     WEB_FAVORITES_FOLDER_NAME,
+    create_kb_folder,
     ensure_web_favorites_folder,
     list_kb_folders,
 )
@@ -338,4 +339,293 @@ def share_document_for_agent(
         "level": norm,
         "shared_with": labels,
         "message": f"已将「{doc.title}」分享给 {len(user_ids)} 人（{norm}）",
+    }
+
+
+def _resolve_create_folder_id(
+    db: Session,
+    user: User,
+    *,
+    scope: str,
+    folder_id: uuid.UUID | None = None,
+    folder_name: str | None = None,
+    dept_id: uuid.UUID | None = None,
+) -> uuid.UUID | None:
+    if folder_id is not None:
+        return folder_id
+    name = (folder_name or "").strip()
+    if not name or name in ("未分类", "uncategorized", "none", "null"):
+        return None
+    folders = list_document_folders_for_agent(
+        db, user, scope=scope, dept_id=dept_id
+    )
+    matched = [f for f in folders if (f.get("name") or "").strip() == name]
+    if not matched:
+        raise bad_request(f"未找到文件夹「{name}」，请先调用 list_document_folders 或 create_kb_folder")
+    fid = matched[0].get("id")
+    return uuid.UUID(str(fid)) if fid else None
+
+
+def create_kb_folder_for_agent(
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    scope: str = "personal",
+    description: str = "",
+    dept_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    """在文档库中新建文件夹。"""
+    scope = (scope or "personal").strip() or "personal"
+    folder = create_kb_folder(
+        db,
+        user,
+        name=name,
+        description=description,
+        scope=scope,
+        dept_id=dept_id,
+        owner_id=user.id if scope == "personal" else None,
+    )
+    db.commit()
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
+    return {
+        "id": str(folder.id),
+        "name": folder.name,
+        "scope": folder.scope,
+        "message": f"已创建文件夹「{folder.name}」",
+    }
+
+
+def create_library_document_for_agent(
+    db: Session,
+    user: User,
+    *,
+    title: str,
+    content: str,
+    scope: str = "personal",
+    folder_id: uuid.UUID | None = None,
+    folder_name: str | None = None,
+    description: str = "",
+    content_format: str = "markdown",
+) -> dict[str, Any]:
+    """将文本/Markdown 写入文档库（新建文档并上传首版）。"""
+    from app.core.document_scope import resolve_create_params
+    from app.services.library_folder_service import resolve_document_folder_id
+
+    label = (title or "").strip()
+    if not label:
+        raise bad_request("文档标题不能为空")
+    body = str(content or "")
+    if not body.strip():
+        raise bad_request("文档内容不能为空")
+
+    scope = (scope or "personal").strip() or "personal"
+    norm_scope, norm_dept = resolve_create_params(
+        db, user, scope=scope, dept_id=None
+    )
+    target_folder_id = _resolve_create_folder_id(
+        db,
+        user,
+        scope=norm_scope,
+        folder_id=folder_id,
+        folder_name=folder_name,
+        dept_id=norm_dept,
+    )
+    if folder_id is not None or folder_name:
+        target_folder_id = resolve_document_folder_id(
+            db,
+            user,
+            scope=norm_scope,
+            folder_id=target_folder_id,
+            dept_id=norm_dept,
+        )
+
+    fmt = (content_format or "markdown").strip().casefold()
+    if fmt in ("md", "markdown", "text/markdown"):
+        file_name = f"{label[:120]}.md"
+        mime_type = "text/markdown"
+        payload = body.encode("utf-8")
+    elif fmt in ("txt", "plain", "text", "text/plain"):
+        file_name = f"{label[:120]}.txt"
+        mime_type = "text/plain"
+        payload = body.encode("utf-8")
+    else:
+        raise bad_request("content_format 仅支持 markdown 或 plain")
+
+    doc = document_service.create_document(
+        db,
+        user,
+        title=label,
+        description=(description or "").strip(),
+        scope=norm_scope,
+        dept_id=norm_dept,
+        folder_id=target_folder_id,
+    )
+    document_service.create_initial_uploaded_version(
+        db,
+        doc,
+        user,
+        file_name=file_name,
+        mime_type=mime_type,
+        content=payload,
+    )
+    db.commit()
+    db.refresh(doc)
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
+    folder_label = folder_name or ("未分类" if not target_folder_id else str(target_folder_id))
+    return {
+        "id": str(doc.id),
+        "title": doc.title,
+        "scope": doc.scope,
+        "folder_id": str(doc.folder_id) if doc.folder_id else None,
+        "file_name": file_name,
+        "message": f"已将「{doc.title}」写入文档库（{folder_label}）",
+    }
+
+
+def update_kb_folder_for_agent(
+    db: Session,
+    user: User,
+    *,
+    folder_id: uuid.UUID | None = None,
+    folder_name: str | None = None,
+    scope: str = "personal",
+    name: str | None = None,
+    description: str | None = None,
+) -> dict[str, Any]:
+    from app.services.library_folder_service import update_kb_folder
+
+    scope = (scope or "personal").strip() or "personal"
+    fid = _resolve_create_folder_id(
+        db,
+        user,
+        scope=scope,
+        folder_id=folder_id,
+        folder_name=folder_name,
+    )
+    if fid is None:
+        raise bad_request("请指定要修改的文件夹")
+    folder = update_kb_folder(
+        db,
+        user,
+        fid,
+        name=name,
+        description=description,
+    )
+    db.commit()
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
+    return {
+        "id": str(folder.id),
+        "name": folder.name,
+        "message": f"已更新文件夹「{folder.name}」",
+    }
+
+
+def delete_kb_folder_for_agent(
+    db: Session,
+    user: User,
+    *,
+    folder_id: uuid.UUID | None = None,
+    folder_name: str | None = None,
+    scope: str = "personal",
+    confirm: bool = False,
+) -> dict[str, Any]:
+    from app.services.library_folder_service import delete_kb_folder
+
+    if not confirm:
+        raise bad_request("删除文件夹需显式设置 confirm=true")
+    scope = (scope or "personal").strip() or "personal"
+    fid = _resolve_create_folder_id(
+        db,
+        user,
+        scope=scope,
+        folder_id=folder_id,
+        folder_name=folder_name,
+    )
+    if fid is None:
+        raise bad_request("请指定要删除的文件夹")
+    delete_kb_folder(db, user, fid)
+    db.commit()
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
+    return {"message": "已删除文件夹", "folder_id": str(fid)}
+
+
+def sync_document_knowledge_for_agent(
+    db: Session,
+    user: User,
+    *,
+    document_id: uuid.UUID,
+) -> dict[str, Any]:
+    """将文档导入/同步到知识库（与文档详情「同步知识库」相同）。"""
+    from app.core.document_scope import can_read_document
+    from app.core.user_messages import (
+        KNOWLEDGE_SERVICE_UNAVAILABLE,
+        KNOWLEDGE_SYNC_DISABLED,
+        KNOWLEDGE_SYNC_FAILED,
+    )
+    from app.domains.knowledge import knowledge
+    from app.services.document_service import get_document, resolve_current_version
+    from app.services.knowledge_sync_job_service import enqueue_document_knowledge_index
+
+    doc = get_document(db, document_id)
+    if not doc or doc.deleted_at:
+        raise not_found("文档不存在或已删除")
+    if not can_read_document(db, user, doc):
+        raise forbidden("无权访问该文档")
+    if not resolve_current_version(db, doc):
+        raise bad_request("文档尚未上传文件，无法同步知识库")
+    if not knowledge.enabled():
+        raise bad_request(KNOWLEDGE_SYNC_DISABLED)
+    if not knowledge.stack_reachable():
+        raise bad_request(KNOWLEDGE_SERVICE_UNAVAILABLE)
+
+    job = enqueue_document_knowledge_index(
+        db,
+        user_id=user.id,
+        document_id=doc.id,
+        version_id=doc.current_version_id,
+        force=True,
+        document_title=doc.title,
+    )
+    if not job:
+        raise bad_request(KNOWLEDGE_SYNC_FAILED)
+    db.commit()
+    return {
+        "document_id": str(doc.id),
+        "title": doc.title,
+        "knowledge_job_id": str(job.id),
+        "message": "已加入后台任务，正在同步并解析知识库，请在「后台任务」查看进度。",
+    }
+
+
+def reindex_document_for_agent(
+    db: Session,
+    user: User,
+    *,
+    document_id: uuid.UUID,
+    parser_id: str | None = None,
+    resync: bool = False,
+) -> dict[str, Any]:
+    from app.services.knowledge_library_service import reindex_document
+
+    result = reindex_document(
+        db,
+        user,
+        document_id,
+        parser_id=parser_id,
+        resync=resync,
+    )
+    db.commit()
+    return {
+        **result,
+        "message": result.get("message")
+        or "已加入后台任务，正在重新索引，请在「后台任务」查看进度。",
     }

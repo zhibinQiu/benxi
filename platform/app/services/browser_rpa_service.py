@@ -18,7 +18,6 @@ from app.integrations.browser_automation.browser_config import (
 from app.integrations.browser_automation.playwright_session import (
     BrowserSessionState,
     get_browser_session_manager,
-    run_browser_sync,
 )
 from app.integrations.browser_automation.workflow_replay import (
     parse_replay_params,
@@ -64,8 +63,7 @@ async def _session_for(
     create: bool = True,
 ) -> BrowserSessionState:
     mgr = get_browser_session_manager()
-    state = await run_browser_sync(
-        mgr.get_session,
+    state = await mgr.get_session(
         user_id=str(user.id),
         conversation_id=conversation_id,
         create=create,
@@ -107,8 +105,7 @@ async def browser_navigate(
     cfg = _require_enabled(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
-    return await run_browser_sync(
-        mgr.navigate,
+    return await mgr.navigate(
         state,
         url,
         allowed_domains=cfg.allowed_domains,
@@ -125,7 +122,7 @@ async def browser_snapshot(
     cfg = _cfg(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
-    return await run_browser_sync(mgr.snapshot, state)
+    return await mgr.snapshot(state)
 
 
 async def browser_click(
@@ -138,7 +135,7 @@ async def browser_click(
     cfg = _require_enabled(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
-    return await run_browser_sync(mgr.click, state, ref)
+    return await mgr.click(state, ref)
 
 
 async def browser_type(
@@ -153,7 +150,7 @@ async def browser_type(
     cfg = _require_enabled(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
-    return await run_browser_sync(mgr.type_text, state, ref, text, submit=submit)
+    return await mgr.type_text(state, ref, text, submit=submit)
 
 
 async def browser_fill(
@@ -166,7 +163,7 @@ async def browser_fill(
     cfg = _require_enabled(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
-    return await run_browser_sync(mgr.fill_fields, state, fields)
+    return await mgr.fill_fields(state, fields)
 
 
 async def browser_screenshot(
@@ -179,8 +176,7 @@ async def browser_screenshot(
     cfg = _require_enabled(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
-    png, page_url, title = await run_browser_sync(
-        mgr.screenshot_png,
+    png, page_url, title = await mgr.screenshot_png(
         state,
         full_page=full_page,
         max_kb=cfg.screenshot_max_kb,
@@ -205,8 +201,7 @@ async def _replay_workflow_core(
     cfg = _require_enabled(db)
     mgr = get_browser_session_manager()
     replay_conv = f"replay-{uuid.uuid4().hex[:8]}"
-    state = await run_browser_sync(
-        mgr.get_session,
+    state = await mgr.get_session(
         user_id=str(user.id),
         conversation_id=replay_conv,
         create=True,
@@ -215,8 +210,7 @@ async def _replay_workflow_core(
     if not state:
         raise bad_request("无法创建浏览器会话")
     try:
-        result = await run_browser_sync(
-            replay_workflow_steps,
+        result = await replay_workflow_steps(
             mgr,
             state,
             list(workflow.get("steps") or []),
@@ -225,8 +219,7 @@ async def _replay_workflow_core(
             screenshot_max_kb=cfg.screenshot_max_kb,
         )
     finally:
-        await run_browser_sync(
-            mgr.close_session,
+        await mgr.close_session(
             user_id=str(user.id),
             conversation_id=replay_conv,
         )
@@ -330,8 +323,7 @@ async def browser_save_workflow(
 ) -> dict[str, Any]:
     _require_enabled(db)
     mgr = get_browser_session_manager()
-    state = await run_browser_sync(
-        mgr.get_session,
+    state = await mgr.get_session(
         user_id=str(user.id),
         conversation_id=conversation_id,
         create=False,
@@ -401,8 +393,7 @@ async def browser_close_session(
     conversation_id: str | None,
 ) -> dict[str, Any]:
     mgr = get_browser_session_manager()
-    await run_browser_sync(
-        mgr.close_session,
+    await mgr.close_session(
         user_id=str(user.id),
         conversation_id=conversation_id,
     )

@@ -86,3 +86,10 @@ gantt
 1. 节点 ID 含空格 — 使用 `step1` 而非 `step 1` 作为 ID。
 2. 中文边标签 — 使用 `A -->|是| B` 格式。
 3. 子图 — `subgraph 标题` … `end`，标题可用引号包裹特殊字符。
+4. **Mermaid 11 时序图消息** — 消息中含 `+`、`-` 或箭头片段时**必须用双引号**，否则报 `Syntax error in text`：
+   - ❌ `A->>B: done + reply`
+   - ✅ `A->>B: "done + reply"`
+   - ❌ `Note over A: 步骤 A -> B`
+   - ✅ `Note over A: "步骤 A -> B"`
+5. **参与者别名** — 显示名含 `/`、`+`、`-` 时用 `participant Id as "显示名"`。
+6. **flowchart 边标签** — 含括号时用 `-->|"标签(说明)"| B`。

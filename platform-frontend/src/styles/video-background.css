@@ -9,15 +9,15 @@ html:has(.app-shell--video-bg) #app {
 .app-shell--video-bg {
   --platform-shell-gradient-video: linear-gradient(
     135deg,
-    rgba(239, 246, 255, 0.38) 0%,
-    rgba(237, 233, 254, 0.34) 48%,
-    rgba(241, 238, 252, 0.36) 100%
+    color-mix(in srgb, var(--platform-accent-soft) 38%, rgba(255, 255, 255, 0.38)) 0%,
+    color-mix(in srgb, var(--platform-accent-soft-2) 34%, rgba(255, 255, 255, 0.34)) 48%,
+    color-mix(in srgb, var(--platform-accent-muted) 36%, rgba(255, 255, 255, 0.36)) 100%
   );
   --platform-shell-gradient-video-subtle: linear-gradient(
     135deg,
-    rgba(239, 246, 255, 0.28) 0%,
-    rgba(237, 233, 254, 0.24) 48%,
-    rgba(241, 238, 252, 0.26) 100%
+    color-mix(in srgb, var(--platform-accent-soft) 28%, rgba(255, 255, 255, 0.28)) 0%,
+    color-mix(in srgb, var(--platform-accent-soft-2) 24%, rgba(255, 255, 255, 0.24)) 48%,
+    color-mix(in srgb, var(--platform-accent-muted) 26%, rgba(255, 255, 255, 0.26)) 100%
   );
 }
 
@@ -25,13 +25,13 @@ html[data-theme="dark"] .app-shell--video-bg {
   --platform-shell-gradient-video: linear-gradient(
     135deg,
     rgba(22, 22, 36, 0.52) 0%,
-    rgba(30, 24, 48, 0.46) 50%,
+    color-mix(in srgb, var(--platform-accent-stop-d) 46%, rgba(30, 24, 48, 0.46)) 50%,
     rgba(26, 22, 40, 0.5) 100%
   );
   --platform-shell-gradient-video-subtle: linear-gradient(
     135deg,
     rgba(22, 22, 36, 0.4) 0%,
-    rgba(30, 24, 48, 0.34) 50%,
+    color-mix(in srgb, var(--platform-accent-stop-d) 34%, rgba(30, 24, 48, 0.34)) 50%,
     rgba(26, 22, 40, 0.38) 100%
   );
 }
@@ -41,8 +41,6 @@ html[data-theme="dark"] .app-shell--video-bg {
 .app-shell--video-bg .main-layout .header {
   background: var(--platform-shell-gradient-video) !important;
   background-attachment: fixed;
-  backdrop-filter: saturate(160%) blur(14px);
-  -webkit-backdrop-filter: saturate(160%) blur(14px);
 }
 
 .app-shell--video-bg .feature-local-nav,
@@ -84,7 +82,7 @@ html[data-theme="dark"] .app-shell--video-bg {
 .n-dialog-mask,
 .n-modal-mask {
   background-color: var(--platform-modal-mask, rgba(15, 23, 42, 0.18)) !important;
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(130%);
+  -webkit-backdrop-filter: blur(8px) saturate(130%);
   transition: background-color 0.28s var(--platform-ease-smooth);
 }

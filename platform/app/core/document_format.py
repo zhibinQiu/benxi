@@ -141,6 +141,26 @@ def format_label_display(label: str | None) -> str:
     return _FORMAT_DISPLAY.get(key, key.upper())
 
 
+_UPLOAD_ALLOWED_LABELS = frozenset({"pdf", "word", "excel", "txt", "md"})
+
+
+def is_allowed_upload_format(
+    file_name: str | None, mime_type: str | None = None
+) -> bool:
+    label = version_file_format_label(file_name, mime_type)
+    return label in _UPLOAD_ALLOWED_LABELS
+
+
+def assert_allowed_upload_format(
+    file_name: str | None, mime_type: str | None = None
+) -> None:
+    if is_allowed_upload_format(file_name, mime_type):
+        return
+    from app.core.exceptions import bad_request
+
+    raise bad_request("仅支持上传 PDF、Word、Excel、TXT、MD 格式文件")
+
+
 def assert_compatible_version_format(
     *,
     existing_file_name: str | None,

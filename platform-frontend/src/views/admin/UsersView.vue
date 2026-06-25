@@ -38,6 +38,8 @@ const page = ref(1);
 const pageSize = LIST_PAGE_SIZE;
 const total = ref(0);
 const departments = ref([]);
+/** 组织树展示用（含各页用户，用于部门选择树中标注成员） */
+const orgUsers = ref([]);
 const roles = ref([]);
 
 const showModal = ref(false);
@@ -187,13 +189,28 @@ const columns = computed(() => [
     }},
 ]);
 
+async function loadAllUsersForOrgTree() {
+  const pageSize = 100;
+  const first = await fetchUsers({ page: 1, page_size: pageSize });
+  let items = first.items || [];
+  const totalCount = first.total || items.length;
+  for (let p = 2; items.length < totalCount; p += 1) {
+    const next = await fetchUsers({ page: p, page_size: pageSize });
+    items = items.concat(next.items || []);
+    if (!(next.items || []).length) break;
+  }
+  return items;
+}
+
 async function loadMeta() {
   try {
-    const [depts, roleList] = await Promise.all([
+    const [depts, roleList, allUsers] = await Promise.all([
       fetchDepartments().catch(() => []),
       fetchRoles().catch(() => []),
+      loadAllUsersForOrgTree().catch(() => []),
     ]);
     departments.value = depts;
+    orgUsers.value = allUsers;
     roles.value = roleList.filter((r) => ASSIGNABLE_ROLE_CODES.includes(r.code));
   } catch (e) {
     ui.warning(e.message || t("admin.users.loadMetaFailed"));
@@ -490,7 +507,8 @@ onMounted(async () => {
         <OrgDeptPickerTree
           v-model:department-ids="form.department_ids"
           :departments="departments"
-          :max-height="140"
+          :users="orgUsers"
+          :max-height="200"
         />
       </n-form-item>
 

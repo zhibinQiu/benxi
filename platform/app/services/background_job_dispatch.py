@@ -166,10 +166,17 @@ def _dispatch_parse_watch_inprocess(job_id: uuid.UUID) -> None:
 def dispatch_scheduled_notification(
     notification_id: uuid.UUID, *, countdown: int = 0
 ) -> None:
-    """定时系统通知投递：进程内 Timer 保证无 Celery Worker 时也能准时；Celery 作多副本冗余。"""
+    """定时系统通知投递：优先 Celery；不可用时回落进程内 Timer。"""
     from workers.tasks.platform_jobs import deliver_scheduled_notification_task
 
     countdown = max(0, int(countdown))
+    if _try_celery(
+        deliver_scheduled_notification_task,
+        [str(notification_id)],
+        countdown=countdown,
+        label=f"scheduled-notification-{notification_id}",
+    ):
+        return
     if countdown > 0:
         threading.Timer(
             countdown,
@@ -177,13 +184,6 @@ def dispatch_scheduled_notification(
         ).start()
     else:
         _dispatch_scheduled_notification_inprocess(notification_id)
-
-    _try_celery(
-        deliver_scheduled_notification_task,
-        [str(notification_id)],
-        countdown=countdown,
-        label=f"scheduled-notification-{notification_id}",
-    )
 
 
 def _dispatch_scheduled_notification_inprocess(notification_id: uuid.UUID) -> None:

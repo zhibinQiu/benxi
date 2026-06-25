@@ -6,12 +6,14 @@ export async function assistantChat({
   history = [],
   page_hint = null,
   conversationId = null,
+  signal = null,
 }) {
   const body = { message, history, page_hint };
   if (conversationId) body.conversation_id = conversationId;
   return api("/api/v1/assistant/chat", {
     method: "POST",
     body: JSON.stringify(body),
+    signal,
   });
 }
 
@@ -63,6 +65,10 @@ export async function clearAiChatAttachments(attachmentSessionId) {
 
 export async function fetchAiChatSkillCatalog() {
   return api("/api/v1/ai-chat/skills/catalog");
+}
+
+export async function fetchAiChatAgentCatalog() {
+  return api("/api/v1/ai-chat/agents/catalog");
 }
 
 export async function fetchChatConversations(scope, { limit = 30 } = {}) {

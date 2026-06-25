@@ -6,6 +6,7 @@ import {
 } from "../utils/authError.js";
 import { notifyDeduped, sanitizeUserFacingMessage } from "../utils/uiMessage";
 import { withSystemDialogLayer } from "../utils/systemDialog.js";
+import { isBenignNavigationError } from "../api/requestScope.js";
 
 /** 统一 toast / 确认框：去重、友好错误、i18n。
  *
@@ -44,11 +45,13 @@ export function usePlatformUi() {
 
   function error(keyOrText, params) {
     if (isAuthSilentError(keyOrText)) return;
+    if (isBenignNavigationError(keyOrText)) return;
     const text =
       typeof keyOrText === "object" && keyOrText?.message
         ? sanitizeUserFacingMessage(keyOrText.message, t("messages.operationFailed"))
         : resolveText(keyOrText, params);
     if (shouldSuppressAuthFeedback(text)) return;
+    if (isBenignNavigationError({ message: text })) return;
     notifyDeduped(message, "error", text, t("messages.operationFailed"));
   }
 

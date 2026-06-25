@@ -1147,6 +1147,27 @@ def ensure_agent_skill_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_agent_profile_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS agent_profile_bindings (
+            agent_id VARCHAR(64) PRIMARY KEY,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            skill_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+            config_md TEXT,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        ALTER TABLE agent_profile_bindings
+        ADD COLUMN IF NOT EXISTS config_md TEXT
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def ensure_document_performance_indexes(engine: Engine) -> None:
     """文档列表、权限与版本检查的高频查询索引。"""
     statements = [
@@ -1191,6 +1212,7 @@ def run_light_schema_patches(engine: Engine) -> None:
     ensure_issue_report_schema(engine)
     ensure_platform_menu_settings_schema(engine)
     ensure_agent_skill_schema(engine)
+    ensure_agent_profile_schema(engine)
     ensure_scheduled_notification_schema(engine)
     ensure_scheduled_rpa_task_schema(engine)
 

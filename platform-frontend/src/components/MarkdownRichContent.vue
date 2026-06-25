@@ -7,6 +7,15 @@ import {
   renderRichMarkdown,
   unbindEchartsResize } from "../utils/richMarkdown";
 import { unmountMermaidInElement } from "../utils/mermaidRender.js";
+import {
+  authImageUrlFingerprint,
+  hydrateAuthenticatedImagesInElement,
+  isAuthenticatedApiImageUrl,
+  normalizeAuthImageSrc,
+  revokeAuthenticatedImagesInElement,
+} from "../utils/authenticatedImage.js";
+import { useRichMediaViewer } from "../composables/useRichMediaViewer.js";
+import RichMediaViewerModal from "./RichMediaViewerModal.vue";
 
 const props = defineProps({
   content: { type: String, default: "" }});
@@ -15,17 +24,51 @@ const rootRef = ref(null);
 /** KeepAlive 失活时不渲染 v-html，避免大量 DOM 常驻内存 */
 const domActive = ref(true);
 const html = computed(() => (domActive.value ? renderRichMarkdown(props.content) : ""));
+const imageFingerprint = computed(() => authImageUrlFingerprint(props.content));
+
+const {
+  viewerOpen,
+  viewerPayload,
+  bindRichMediaViewerOnRoot,
+  unbindRichMediaViewerOnRoot,
+} = useRichMediaViewer();
 
 let refreshChartsTimer = null;
+let refreshGeneration = 0;
+let lastHydratedFingerprint = "";
 
-async function refreshCharts() {
+function authImagesHydrated(root) {
+  if (!root) return false;
+  const imgs = [...root.querySelectorAll("img[src]")].filter((img) => {
+    const src = normalizeAuthImageSrc(img.getAttribute("src") || "");
+    return src && isAuthenticatedApiImageUrl(src);
+  });
+  if (!imgs.length) return false;
+  return imgs.every((img) => img.dataset.authHydrated === "1" && img.src.startsWith("blob:"));
+}
+
+async function refreshCharts({ force = false } = {}) {
   if (!domActive.value) return;
-  await nextTick();
+  const fp = imageFingerprint.value;
   const root = rootRef.value;
-  if (!root) return;
-  disposeEchartsInElement(root);
-  unmountMermaidInElement(root);
-  await mountRichMediaInElement(root);
+  if (!force && fp && fp === lastHydratedFingerprint && authImagesHydrated(root)) {
+    return;
+  }
+  const gen = ++refreshGeneration;
+  if (root) {
+    unbindRichMediaViewerOnRoot(root);
+    revokeAuthenticatedImagesInElement(root);
+  }
+  await nextTick();
+  if (gen !== refreshGeneration || !rootRef.value) return;
+  disposeEchartsInElement(rootRef.value);
+  unmountMermaidInElement(rootRef.value);
+  await mountRichMediaInElement(rootRef.value);
+  if (gen !== refreshGeneration || !rootRef.value) return;
+  await hydrateAuthenticatedImagesInElement(rootRef.value);
+  if (gen !== refreshGeneration || !rootRef.value) return;
+  bindRichMediaViewerOnRoot(rootRef.value);
+  lastHydratedFingerprint = fp;
 }
 
 function scheduleRefreshCharts() {
@@ -39,17 +82,20 @@ function scheduleRefreshCharts() {
 function releaseDom() {
   const root = rootRef.value;
   if (root) {
+    unbindRichMediaViewerOnRoot(root);
+    revokeAuthenticatedImagesInElement(root);
     disposeEchartsInElement(root);
     unmountMermaidInElement(root);
   }
   domActive.value = false;
 }
 
+watch(imageFingerprint, scheduleRefreshCharts);
 watch(() => props.content, scheduleRefreshCharts);
 
 onMounted(() => {
   bindEchartsResize();
-  refreshCharts();
+  refreshCharts({ force: true });
 });
 
 onActivated(() => {
@@ -60,6 +106,8 @@ onActivated(() => {
 onDeactivated(releaseDom);
 
 onBeforeUnmount(() => {
+  refreshGeneration += 1;
+  lastHydratedFingerprint = "";
   if (refreshChartsTimer) {
     clearTimeout(refreshChartsTimer);
     refreshChartsTimer = null;
@@ -71,6 +119,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="rootRef" class="md-rich" v-html="html" />
+  <RichMediaViewerModal v-model:show="viewerOpen" :payload="viewerPayload" />
 </template>
 
 <style scoped>

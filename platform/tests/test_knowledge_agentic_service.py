@@ -141,10 +141,10 @@ def test_gather_qa_second_round_uses_supplemental_queries(monkeypatch):
         and ev.get("tool") == "retrieve"
     ]
     assert retrieve_titles == [
-        "第 1 轮 · 知识库检索",
-        "第 2 轮 · 知识库检索",
+        "知识库检索",
+        "知识库检索",
     ]
-    assert toolkit.retrieve.call_count == 2
+    assert toolkit.retrieve_many.call_count == 2
     assert eval_calls["n"] == 2
 
     result = next(ev[RESULT_MARKER] for ev in events if isinstance(ev, dict) and RESULT_MARKER in ev)
@@ -237,10 +237,10 @@ def test_gather_report_second_round_uses_supplemental_queries(monkeypatch):
         and ev.get("tool") == "retrieve"
     ]
     assert retrieve_titles == [
-        "第 1 轮 · 知识库检索",
-        "第 2 轮 · 知识库检索",
+        "知识库检索",
+        "知识库检索",
     ]
-    assert toolkit.retrieve.call_count == 2
+    assert toolkit.retrieve_many.call_count == 2
     assert eval_calls["n"] == 2
 
     result = next(

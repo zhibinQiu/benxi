@@ -39,6 +39,7 @@ const canManageFolders = ref(false);
 const showInlineCreate = ref(false);
 const newFolderName = ref("");
 const creatingFolder = ref(false);
+let loadFoldersGeneration = 0;
 
 const creatableScopes = computed(() =>
   props.libraryFolders.filter(
@@ -115,7 +116,7 @@ function ensureDeptForScope(scope) {
   emit("update:deptId", units[0].id);
 }
 
-async function loadFolders() {
+async function loadFolders(preferredFolderId = null) {
   if (!props.scope || props.scope === "all" || props.scope === "shared") {
     kbFolders.value = [];
     canManageFolders.value = false;
@@ -127,6 +128,7 @@ async function loadFolders() {
     return;
   }
   loading.value = true;
+  const gen = ++loadFoldersGeneration;
   try {
     const params = { scope: props.scope };
     if (ORG_SCOPES.includes(props.scope) && props.deptId) {
@@ -136,6 +138,7 @@ async function loadFolders() {
       params.owner_id = props.ownerId;
     }
     const data = await fetchKbFolders(params);
+    if (gen !== loadFoldersGeneration) return;
     kbFolders.value = data.items || [];
     canManageFolders.value = !!data.can_manage_folders;
     const validIds = kbFolders.value
@@ -145,7 +148,8 @@ async function loadFolders() {
           ? VIRTUAL_UNCATEGORIZED
           : String(f.id)
       );
-    if (!validIds.includes(props.folderId)) {
+    const keepId = preferredFolderId ?? props.folderId;
+    if (keepId && !validIds.includes(String(keepId))) {
       emit("update:folderId", VIRTUAL_UNCATEGORIZED);
     }
   } catch (e) {
@@ -192,14 +196,28 @@ async function submitCreateFolder() {
     if (ORG_SCOPES.includes(props.scope) && props.deptId) {
       payload.dept_id = props.deptId;
     }
+    if (props.scope === "personal" && props.isSystemAdmin && props.ownerId) {
+      payload.owner_id = props.ownerId;
+    }
     const folder = await createKbFolder(payload);
+    const createdId = folder?.id ? String(folder.id) : null;
+    if (createdId && folder?.name) {
+      kbFolders.value = [
+        ...kbFolders.value.filter((item) => String(item?.id || "") !== createdId),
+        {
+          id: folder.id,
+          name: folder.name,
+          description: folder.description || "",
+          kind: folder.kind || "normal",
+          virtual_id: null,
+        },
+      ];
+      emit("update:folderId", createdId);
+    }
     ui.success("documents.messages.folderCreated");
     showInlineCreate.value = false;
     newFolderName.value = "";
-    await loadFolders();
-    if (folder?.id) {
-      emit("update:folderId", String(folder.id));
-    }
+    await loadFolders(createdId);
     emit("folders-changed");
   } catch (e) {
     ui.error(e);

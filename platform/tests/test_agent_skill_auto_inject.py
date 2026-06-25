@@ -15,6 +15,15 @@ def test_build_skill_md_context_block():
     assert "main.py" in block
 
 
+def test_build_skill_md_context_block_instruction_only():
+    block = build_skill_md_context_block(
+        "mermaid-diagram",
+        "# Mermaid",
+        has_script=False,
+    )
+    assert "勿" in block and "run_skill_script" in block
+
+
 def test_maybe_inject_skill_md_skips_duplicate():
     loop_state: dict = {"injected_skill_mds": ["demo-skill"]}
     messages = [{"role": "user", "content": "hi"}]

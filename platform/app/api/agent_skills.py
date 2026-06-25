@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_client_ip, require_permission
 from app.database import get_db
 from app.models.org import User
+from app.schemas.agent_profile import AgentProfileDetailOut, AgentProfileOut, AgentProfilePatchIn
+from app.schemas.agent_skill import AgentSkillFileContentOut, AgentSkillFileUpdateIn
 from app.schemas.agent_skill import (
     AgentMemoryOut,
     AgentMemoryUpdateIn,
@@ -31,6 +33,7 @@ from app.schemas.agent_skill import (
 )
 from app.schemas.common import ApiResponse, PageResult
 from app.services import agent_skill_service as svc
+from app.services import agent_profile_service as agent_profile_svc
 from app.services import skill_registry_service as registry_svc
 from app.services.audit_service import write_audit
 
@@ -66,10 +69,13 @@ def read_skill_catalog(
 def read_skill_registry(
     db: Annotated[Session, Depends(get_db)],
     include_disabled: bool = Query(True),
+    catalog_only: bool = Query(True),
 ) -> ApiResponse[list[UnifiedSkillOut]]:
     """Skill 注册表：可对话调用的内置 Skill + 上传包（不含系统功能占位）。"""
     return ApiResponse(
-        data=registry_svc.list_unified_skills(db, include_disabled=include_disabled)
+        data=registry_svc.list_unified_skills(
+            db, include_disabled=include_disabled, catalog_only=catalog_only
+        )
     )
 
 
@@ -129,6 +135,85 @@ async def invoke_agent_skill(
             "tool_name": body.tool_name,
             "ok": result.ok,
         },
+        ip_address=client_ip,
+    )
+    return ApiResponse(data=result)
+
+
+@router.get("/agents", response_model=ApiResponse[list[AgentProfileOut]])
+def list_system_agents(
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[AgentProfileOut]]:
+    """系统内置专精智能体列表（不可手动创建）。"""
+    return ApiResponse(data=agent_profile_svc.list_agent_profiles(db))
+
+
+@router.get("/agents/{agent_id}", response_model=ApiResponse[AgentProfileDetailOut])
+def read_system_agent(
+    agent_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[AgentProfileDetailOut]:
+    return ApiResponse(data=agent_profile_svc.get_agent_profile_detail(db, agent_id))
+
+
+@router.get(
+    "/agents/{agent_id}/files/{file_path:path}",
+    response_model=ApiResponse[AgentSkillFileContentOut],
+)
+def read_system_agent_file(
+    agent_id: str,
+    file_path: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[AgentSkillFileContentOut]:
+    return ApiResponse(data=agent_profile_svc.get_agent_config_file(db, agent_id, file_path))
+
+
+@router.put(
+    "/agents/{agent_id}/files/{file_path:path}",
+    response_model=ApiResponse[AgentSkillFileContentOut],
+)
+def update_system_agent_file(
+    agent_id: str,
+    file_path: str,
+    body: AgentSkillFileUpdateIn,
+    user: Annotated[User, Depends(require_permission("admin.user"))],
+    db: Annotated[Session, Depends(get_db)],
+    client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
+) -> ApiResponse[AgentSkillFileContentOut]:
+    result = agent_profile_svc.update_agent_config_file(
+        db, agent_id, file_path, body.content
+    )
+    write_audit(
+        db,
+        user_id=user.id,
+        action="agent_profile.file_update",
+        resource_type="agent_profile",
+        detail={"agent_id": agent_id, "path": file_path},
+        ip_address=client_ip,
+    )
+    return ApiResponse(data=result)
+
+
+@router.patch("/agents/{agent_id}", response_model=ApiResponse[AgentProfileOut])
+def patch_system_agent(
+    agent_id: str,
+    body: AgentProfilePatchIn,
+    user: Annotated[User, Depends(require_permission("admin.user"))],
+    db: Annotated[Session, Depends(get_db)],
+    client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
+) -> ApiResponse[AgentProfileOut]:
+    result = agent_profile_svc.patch_agent_profile(
+        db,
+        agent_id,
+        enabled=body.enabled,
+        skill_names=body.skill_names,
+    )
+    write_audit(
+        db,
+        user_id=user.id,
+        action="agent_profile.patch",
+        resource_type="agent_profile",
+        detail={"agent_id": agent_id, **body.model_dump(exclude_unset=True)},
         ip_address=client_ip,
     )
     return ApiResponse(data=result)

@@ -1,30 +1,42 @@
 <script setup>
-import { NButton, NIcon } from "naive-ui";
+import { computed } from "vue";
+import { NButton, NIcon, NTooltip } from "naive-ui";
 import { RefreshOutline } from "@vicons/ionicons5";
 import { useI18n } from "../composables/useI18n";
 
-defineProps({
+const props = defineProps({
   loading: { type: Boolean, default: false },
+  disabled: { type: Boolean, default: false },
   size: { type: String, default: "small" },
-  quaternary: { type: Boolean, default: true },
-  text: { type: Boolean, default: false },
+  type: { type: String, default: "default" },
+  /** tooltip / aria-label；默认「刷新」 */
+  label: { type: String, default: "" },
+  tooltip: { type: String, default: "" },
 });
 
 const emit = defineEmits(["click"]);
 const { t } = useI18n();
+
+const actionLabel = computed(() => props.label || t("common.refresh"));
+const tooltipText = computed(() => props.tooltip || actionLabel.value);
 </script>
 
 <template>
-  <NButton
-    :quaternary="quaternary"
-    :text="text"
-    :size="size"
-    :loading="loading"
-    @click="emit('click')"
-  >
-    <template #icon>
-      <NIcon :component="RefreshOutline" />
+  <NTooltip placement="bottom">
+    <template #trigger>
+      <NButton
+        circle
+        :quaternary="type !== 'primary'"
+        :type="type === 'primary' ? 'primary' : 'default'"
+        :size="size"
+        :loading="loading"
+        :disabled="disabled"
+        :aria-label="actionLabel"
+        @click="emit('click')"
+      >
+        <NIcon :component="RefreshOutline" />
+      </NButton>
     </template>
-    {{ t("common.refresh") }}
-  </NButton>
+    {{ tooltipText }}
+  </NTooltip>
 </template>

@@ -340,7 +340,7 @@ def iter_gather_for_knowledge_qa(
     think_ev = workflow_event(
         "agent_thinking",
         title="规划检索策略",
-        detail="分析问题并拆解检索子问题…",
+        detail="",
         tool="planner",
         step_id=think_id,
     )
@@ -353,15 +353,10 @@ def iter_gather_for_knowledge_qa(
         user_id=user.id,
         doc_ids=doc_ids,
     )
-    plan_detail_parts = [reasoning[:500]] if reasoning else []
-    if sub_questions:
-        plan_detail_parts.append(
-            "检索子问题：" + "；".join(str(q) for q in sub_questions[:4])
-        )
     thought_ev = workflow_event(
         "agent_thought",
         title="规划完成",
-        detail="\n".join(plan_detail_parts)[:800],
+        detail="",
         tool="planner",
         step_id=think_id,
         status="done",
@@ -423,7 +418,7 @@ def iter_gather_for_knowledge_qa(
         eval_think = workflow_event(
             "agent_thinking",
             title="评估材料是否充足",
-            detail=f"已召回 {len(hits)} 段片段",
+            detail="",
             tool="evaluator",
             step_id=eval_id,
         )
@@ -435,15 +430,10 @@ def iter_gather_for_knowledge_qa(
             snippet_preview=_hits_snippet_preview(hits),
             kg_context=kg_plan_text,
         )
-        eval_lines = [
-            "材料充足，可以生成回答" if sufficient else (gaps or "仍需补充检索")
-        ]
-        if not sufficient and extra:
-            eval_lines.append("建议补充检索：" + "；".join(str(q) for q in extra[:2]))
         eval_done = workflow_event(
             "agent_thought",
             title="评估完成",
-            detail="\n".join(eval_lines)[:600],
+            detail="",
             tool="evaluator",
             step_id=eval_id,
             status="done",
@@ -461,7 +451,7 @@ def iter_gather_for_knowledge_qa(
             sup = workflow_event(
                 "node_started",
                 title="材料不足，规划补充检索",
-                detail="；".join(extra[:2]),
+                detail="",
             )
             _emit_wf(emit, sup)
             yield sup
@@ -625,8 +615,9 @@ def _retrieval_step_title(
     query_total: int = 1,
     done: bool = False,
 ) -> str:
+    _ = round_idx
     suffix = "完成" if done else ""
-    base = f"第 {round_idx} 轮 · {kind}{suffix}"
+    base = f"{kind}{suffix}"
     if query_total > 1:
         return f"{base} ({query_index}/{query_total})"
     return base
@@ -774,7 +765,7 @@ def iter_gather_for_report(
     plan_think = workflow_event(
         "agent_thinking",
         title="规划报告材料检索",
-        detail="分析意图并拆解本地与联网检索策略…",
+        detail="",
         tool="planner",
         step_id=plan_id,
     )
@@ -792,7 +783,7 @@ def iter_gather_for_report(
     plan_done = workflow_event(
         "agent_thought",
         title="规划完成",
-        detail=_report_plan_detail(reasoning, local_queries, web_queries),
+        detail="",
         tool="planner",
         step_id=plan_id,
         status="done",
@@ -812,7 +803,7 @@ def iter_gather_for_report(
         skip_ev = workflow_event(
             "agent_thought",
             title="无需额外检索",
-            detail=(reasoning[:500] or "智能体判断本次可依据对话历史与模型知识撰写"),
+            detail="",
             tool="planner",
             status="done",
         )
@@ -835,18 +826,11 @@ def iter_gather_for_report(
         return
 
     # --- 再行动：按需加载上下文，再执行检索 ---
-    act_bits: list[str] = []
-    if doc_ids and local_queries:
-        act_bits.append("本地检索")
-    if web_enabled and web_queries:
-        act_bits.append("联网检索")
-    if doc_ids:
-        act_bits.append("图谱与版本信息")
     act_id = next_workflow_step_id(_WF_PREFIX)
     act_think = workflow_event(
         "agent_thinking",
         title="按计划收集材料",
-        detail="、".join(act_bits),
+        detail="",
         tool="agent.tools",
         step_id=act_id,
     )
@@ -983,7 +967,7 @@ def iter_gather_for_report(
         eval_think = workflow_event(
             "agent_thinking",
             title="评估报告材料是否充足",
-            detail=f"本地 {len(local_hits)} 段 · 联网 {len(web_items)} 条",
+            detail="",
             tool="evaluator",
             step_id=eval_id,
         )
@@ -1001,16 +985,10 @@ def iter_gather_for_report(
             retrieval_attempted=bool(loc_q or web_q),
             history_available=bool(hist_excerpt.strip()),
         )
-        eval_lines = [
-            "材料充足，可以撰写报告" if sufficient else (gaps or "仍需补充检索")
-        ]
-        if not sufficient and (next_local or next_web):
-            extras = next_local[:2] + next_web[:2]
-            eval_lines.append("建议补充检索：" + "；".join(str(q) for q in extras))
         eval_done = workflow_event(
             "agent_thought",
             title="评估完成",
-            detail="\n".join(eval_lines)[:600],
+            detail="",
             tool="evaluator",
             step_id=eval_id,
             status="done",
@@ -1030,7 +1008,7 @@ def iter_gather_for_report(
             sup = workflow_event(
                 "node_started",
                 title="材料不足，规划补充检索",
-                detail="；".join((next_local + next_web)[:2]),
+                detail="",
             )
             _emit_wf(emit, sup)
             yield sup

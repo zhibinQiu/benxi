@@ -53,10 +53,12 @@ async def smart_data_query_v2_chat_stream(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> StreamingResponse:
+    user_id = str(user.id)
+
     async def payloads():
         async for payload in iter_smart_data_query_v2_stream(
             message=body.message,
-            user_id=str(user.id),
+            user_id=user_id,
             conversation_id=body.conversation_id,
         ):
             yield payload

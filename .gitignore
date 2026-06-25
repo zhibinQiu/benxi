@@ -144,6 +144,7 @@ assets/offline_assets_*.zip
 platform/.env.docker
 platform/knowflow.env.docker
 platform/deploy.target
+platform/data/
 platform/tunnel.target
 platform/frp.target
 platform/third_party/

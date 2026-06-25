@@ -29,7 +29,6 @@ router = APIRouter(
             require_any_permission(
                 "feature.subscriptions",
                 "feature.wechat_mp_feed",
-                "feature.feed_subscriptions",
             )
         )
     ],

@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import CurveAnimation from "./CurveAnimation.vue";
+import { prefersReducedMotion } from "../utils/mediaQuery.js";
 
 const props = defineProps({
   /** 固定铺满视口（App 壳层）；否则相对父容器 absolute */
@@ -9,9 +10,7 @@ const props = defineProps({
   lite: { type: Boolean, default: false },
 });
 
-const reducedMotion = computed(
-  () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false
-);
+const reducedMotion = computed(() => prefersReducedMotion());
 
 const ALL_CURVE_LAYERS = [
   {
@@ -55,7 +54,7 @@ const curveLayers = computed(() => (props.lite ? ALL_CURVE_LAYERS.slice(0, 1) : 
           :phase-offset="layer.phaseOffset"
           :intensity="layer.intensity"
           :path-opacity="0.1"
-          :path-steps="240"
+          :path-steps="160"
         />
       </div>
     </div>
@@ -118,10 +117,14 @@ const curveLayers = computed(() => (props.lite ? ALL_CURVE_LAYERS.slice(0, 1) : 
   background:
     linear-gradient(
       180deg,
-      rgba(248, 250, 255, 0.72) 0%,
-      rgba(236, 242, 255, 0.82) 100%
+      color-mix(in srgb, var(--platform-bg-base) 72%, white) 0%,
+      color-mix(in srgb, var(--platform-accent-soft) 82%, white) 100%
     ),
-    radial-gradient(ellipse 70% 55% at 18% 12%, rgba(91, 156, 245, 0.14) 0%, transparent 58%);
+    radial-gradient(
+      ellipse 70% 55% at 18% 12%,
+      color-mix(in srgb, var(--platform-accent) 14%, transparent) 0%,
+      transparent 58%
+    );
 }
 
 .page-video-bg__overlay {
@@ -130,12 +133,16 @@ const curveLayers = computed(() => (props.lite ? ALL_CURVE_LAYERS.slice(0, 1) : 
   background:
     linear-gradient(
       180deg,
-      rgba(248, 250, 255, 0.42) 0%,
-      rgba(241, 245, 255, 0.34) 42%,
-      rgba(236, 242, 255, 0.48) 100%
+      color-mix(in srgb, var(--platform-bg-base) 42%, white) 0%,
+      color-mix(in srgb, var(--platform-accent-soft) 34%, white) 42%,
+      color-mix(in srgb, var(--platform-accent-soft-2) 48%, white) 100%
     ),
-    radial-gradient(ellipse 70% 55% at 18% 12%, rgba(91, 156, 245, 0.12) 0%, transparent 58%),
-    radial-gradient(ellipse 60% 50% at 88% 78%, rgba(167, 139, 250, 0.16) 0%, transparent 55%);
+    radial-gradient(
+      ellipse 70% 55% at 18% 12%,
+      color-mix(in srgb, var(--platform-accent) 12%, transparent) 0%,
+      transparent 58%
+    ),
+    radial-gradient(ellipse 60% 50% at 88% 78%, color-mix(in srgb, var(--platform-accent-secondary) 16%, transparent) 0%, transparent 55%);
 }
 
 html[data-theme="dark"] .page-video-bg__overlay {
@@ -146,8 +153,12 @@ html[data-theme="dark"] .page-video-bg__overlay {
       rgba(12, 14, 28, 0.48) 45%,
       rgba(10, 12, 24, 0.62) 100%
     ),
-    radial-gradient(ellipse 70% 55% at 18% 12%, rgba(59, 130, 246, 0.14) 0%, transparent 58%),
-    radial-gradient(ellipse 60% 50% at 88% 78%, rgba(167, 139, 250, 0.2) 0%, transparent 55%);
+    radial-gradient(
+      ellipse 70% 55% at 18% 12%,
+      color-mix(in srgb, var(--platform-accent) 14%, transparent) 0%,
+      transparent 58%
+    ),
+    radial-gradient(ellipse 60% 50% at 88% 78%, color-mix(in srgb, var(--platform-accent-secondary) 20%, transparent) 0%, transparent 55%);
 }
 
 html[data-theme="dark"] .page-video-bg--static .page-video-bg__overlay {
@@ -157,7 +168,11 @@ html[data-theme="dark"] .page-video-bg--static .page-video-bg__overlay {
       rgba(8, 10, 20, 0.72) 0%,
       rgba(12, 14, 28, 0.82) 100%
     ),
-    radial-gradient(ellipse 70% 55% at 18% 12%, rgba(59, 130, 246, 0.14) 0%, transparent 58%);
+    radial-gradient(
+      ellipse 70% 55% at 18% 12%,
+      color-mix(in srgb, var(--platform-accent) 14%, transparent) 0%,
+      transparent 58%
+    );
 }
 
 @media (prefers-reduced-motion: reduce) {

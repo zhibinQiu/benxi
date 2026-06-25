@@ -10,8 +10,6 @@ import {
   NCard,
   NCheckbox,
   NDrawer,
-  NGi,
-  NGrid,
   NIcon,
   NInput,
   NModal,
@@ -22,7 +20,6 @@ import {
   NTag,
   NText } from "naive-ui";
 import {
-  ArrowBackOutline,
   MicOutline,
   StopCircleOutline,
   CopyOutline,
@@ -1283,12 +1280,26 @@ onBeforeUnmount(() => {
 .record-list-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: calc(var(--platform-radius-sm) + 2px);
+  border: 1px solid var(--platform-border);
+  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-elevated));
+  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
   cursor: default;
+  transition:
+    background 0.16s var(--platform-ease-smooth),
+    box-shadow 0.16s var(--platform-ease-smooth),
+    border-color 0.16s var(--platform-ease-smooth);
 }
+
+.record-list-item:hover {
+  border-color: color-mix(in srgb, var(--platform-accent) 22%, var(--platform-border));
+  box-shadow:
+    inset 3px 0 0 var(--platform-accent),
+    var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
+}
+
 .record-list-main {
   flex: 1;
   cursor: pointer;
@@ -1296,8 +1307,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 4px;
 }
+
 .record-list-main:hover {
-  opacity: 0.85;
+  opacity: 1;
 }
 @media (max-width: 900px) {
   .speech-spin {

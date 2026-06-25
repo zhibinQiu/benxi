@@ -65,7 +65,7 @@ def test_wechat_import_uses_personal_scope():
 
 
 def test_feed_import_uses_personal_scope():
-    from app.services import feed_subscription_service as svc
+    from app.services import subscription_service as svc
 
     user = MagicMock(id=uuid.uuid4())
     entry_id = uuid.uuid4()
@@ -75,13 +75,13 @@ def test_feed_import_uses_personal_scope():
 
     with patch.object(
         svc,
-        "get_entry_detail",
-        return_value={"title": "t", "source_name": "s", "source_kind": "rss", "link": ""},
+        "_get_feed_entry_detail",
+        return_value={"title": "t", "source_name": "s", "source_kind": "link", "link": ""},
     ), patch(
-        "app.services.feed_subscription_service.create_document",
+        "app.services.document_service.create_document",
         return_value=MagicMock(id=doc_id, title="t"),
     ) as create_doc, patch(
-        "app.services.feed_subscription_service.create_initial_uploaded_version"
+        "app.services.document_service.create_initial_uploaded_version"
     ) as create_version, patch(
         "app.services.subscription_import_service.enqueue_subscription_import_finalize",
         return_value=MagicMock(id=job_id),
@@ -98,12 +98,11 @@ def test_feed_import_uses_personal_scope():
             summary="摘要说明",
             link="",
         )
-        result = svc.import_entry_to_document(
+        result = svc._import_feed_entry_to_document(
             db,
             user,
             entry_id,
-            scope="department",
-            dept_id=uuid.uuid4(),
+            sync_knowflow=True,
         )
 
     create_doc.assert_called_once()

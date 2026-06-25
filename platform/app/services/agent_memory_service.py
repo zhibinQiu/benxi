@@ -1,4 +1,4 @@
-"""AI 智能体记忆层 — 跨会话 MEMORY.md，按需读取，不常驻 system。"""
+"""AI 智能体记忆层 — 跨会话 MEMORY.md，每轮注入 system，亦可通过工具按需读取。"""
 
 from __future__ import annotations
 
@@ -33,6 +33,17 @@ def read_user_memory(user_id: uuid.UUID, *, max_chars: int | None = None) -> str
         _logger.exception("read agent memory failed user=%s", user_id)
         return ""
     return truncate_text(raw.strip(), budget, suffix=_TRUNC)
+
+
+_MEMORY_OVERRIDE_HINT = "以记忆为准：名称与偏好优先于默认自称「小析」。"
+
+
+def build_memory_prompt_context(user_id: uuid.UUID) -> str:
+    """将 MEMORY.md 格式化为每轮 system 注入块；无内容时返回空字符串。"""
+    body = read_user_memory(user_id)
+    if not body.strip():
+        return ""
+    return f"【用户记忆】\n{body.strip()}\n\n{_MEMORY_OVERRIDE_HINT}"
 
 
 def write_user_memory(user_id: uuid.UUID, content: str) -> bool:

@@ -52,7 +52,7 @@ const iconMap = {
 
 const iconStyles = {
   "document-text": "linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)",
-  search: "linear-gradient(135deg, #c084fc 0%, #7c3aed 100%)",
+  search: "var(--platform-accent-gradient)",
   sparkles: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
   language: "linear-gradient(135deg, #22d3ee 0%, #0891b2 100%)",
   "git-compare": "linear-gradient(135deg, #818cf8 0%, #4f46e5 100%)",
@@ -61,7 +61,7 @@ const iconStyles = {
   "trending-up": "linear-gradient(135deg, #fb923c 0%, #ea580c 100%)",
   leaf: "linear-gradient(135deg, #4ade80 0%, #16a34a 100%)",
   wallet: "linear-gradient(135deg, #f472b6 0%, #db2777 100%)",
-  mic: "linear-gradient(135deg, #a78bfa 0%, #9333ea 100%)",
+  mic: "var(--platform-accent-gradient)",
   scan: "linear-gradient(135deg, #38bdf8 0%, #0284c7 100%)",
   "git-network": "linear-gradient(135deg, #e879f9 0%, #c026d3 100%)",
   create: "linear-gradient(135deg, #f87171 0%, #dc2626 100%)",
@@ -430,7 +430,7 @@ watch(cards, () => nextTick(bindObservers));
 
 html[data-theme="dark"] .login-feature-scroll__rail {
   background: rgba(22, 22, 32, 0.55);
-  border-color: rgba(147, 197, 253, 0.14);
+  border-color: var(--platform-accent-border-soft);
 }
 
 .login-feature-scroll__rail-dot {
@@ -529,8 +529,8 @@ html[data-theme="dark"] .login-feature-scroll__rail {
 .login-feature-scroll__glass {
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(165%);
+  -webkit-backdrop-filter: blur(16px) saturate(165%);
   border: 1px solid rgba(255, 255, 255, 0.38);
   box-shadow:
     0 16px 48px rgba(91, 120, 200, 0.1),
@@ -539,7 +539,7 @@ html[data-theme="dark"] .login-feature-scroll__rail {
 
 html[data-theme="dark"] .login-feature-scroll__glass {
   background: rgba(22, 22, 32, 0.42);
-  border-color: rgba(147, 197, 253, 0.16);
+  border-color: var(--platform-accent-border);
   box-shadow:
     0 16px 48px rgba(0, 0, 0, 0.26),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -709,7 +709,7 @@ html[data-theme="dark"] .login-feature-scroll__glass {
 
 html[data-theme="dark"] .login-feature-scroll__chain-pill {
   background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(147, 197, 253, 0.14);
+  border-color: var(--platform-accent-border-soft);
   box-shadow:
     0 4px 14px rgba(0, 0, 0, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -764,7 +764,7 @@ html[data-theme="dark"] .login-feature-scroll__chain-pill {
 html[data-theme="dark"] .login-feature-scroll__tile--card,
 html[data-theme="dark"] .login-feature-scroll__tile--feature {
   background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(147, 197, 253, 0.12);
+  border-color: var(--platform-accent-border-soft);
   box-shadow:
     0 8px 22px rgba(0, 0, 0, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);

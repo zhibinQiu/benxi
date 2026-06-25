@@ -197,12 +197,16 @@ def _try_auto_schedule_reminder(
         )
     except ValueError:
         return None
-    boost_seconds = parsed.get("delay_seconds")
-    if boost_seconds is None and parsed.get("delay_minutes") is not None:
-        boost_seconds = int(parsed["delay_minutes"]) * 60
+    from app.services.notification_service import preview_scheduled_display
+
+    scheduled_at_display, boost_seconds = preview_scheduled_display(
+        delay_seconds=parsed.get("delay_seconds"),
+        delay_minutes=parsed.get("delay_minutes"),
+    )
     return {
         "message": str(data.get("message") or "已设置定时通知"),
         "boost_seconds": boost_seconds,
+        "scheduled_at_display": scheduled_at_display,
         "title": str(parsed["title"]),
     }
 
@@ -216,9 +220,13 @@ async def _reply_after_auto_reminder(
 ) -> str:
     from app.integrations.deepseek_client import chat_completion_message_async
 
+    when = str(reminder_result.get("scheduled_at_display") or "").strip()
+    when_hint = f"具体提醒时间为 {when}。" if when else ""
     confirm_instruction = (
         f"【系统已代为设置定时通知】{reminder_result['message']}。"
-        "请用一两句简体中文向用户确认提醒已安排好，说明提醒事项与大致时间，语气自然亲切。"
+        f"{when_hint}"
+        "请用一两句简体中文向用户确认提醒已安排好，说明提醒事项与上述具体日期时间，"
+        "勿使用「N 分钟后/秒后」等相对倒计时表述，语气自然亲切。"
     )
     messages = _build_chat_messages(
         message=message,
@@ -242,7 +250,9 @@ async def _emit_reminder_scheduled_workflow(
     reminder_result: dict[str, Any],
 ) -> AsyncIterator[str]:
     step_id = next_workflow_step_id("ai-s")
-    detail = str(reminder_result.get("title") or "")
+    title = str(reminder_result.get("title") or "")
+    when = str(reminder_result.get("scheduled_at_display") or "").strip()
+    detail = f"{title} · {when}" if when else title
     boost = reminder_result.get("boost_seconds")
     for phase, title, status in (
         ("tool_call", "设置定时通知", "running"),
@@ -403,6 +413,71 @@ async def _resolve_follow_up_questions(
         assistant_answer=assistant_answer,
         history=history,
     )
+
+
+def _normalize_ai_home_reply(text: str, tool_citations: list[dict] | None) -> str:
+    """本析智能不展示引用卡片，仅去除正文中的引用角标。"""
+    if not text or not tool_citations:
+        return text or ""
+    from app.services.knowledge_qa_service import collapse_answer_citation_refs
+
+    normalized, _ = collapse_answer_citation_refs(text, tool_citations)
+    return normalized
+
+
+async def _iter_stream_turn_tail(
+    *,
+    user_id: uuid.UUID,
+    message: str,
+    history: list[AiChatMessage],
+    conversation_id: str | None,
+    normalized_reply: str,
+    display_citations: list[dict],
+    kg_context: KgQaContext | None,
+    streamed_content: bool = False,
+    tool_loop: bool = False,
+    model: str | None = None,
+) -> AsyncIterator[str]:
+    """先结束 workflow，再下发正文与 done；写库与追问建议延后，避免阻塞首屏。"""
+    async for payload in _emit_workflow("workflow_finished", title="完成"):
+        yield payload
+
+    if normalized_reply and not streamed_content:
+        yield json.dumps({"replace": normalized_reply}, ensure_ascii=False)
+
+    if display_citations:
+        yield json.dumps({"citations": display_citations}, ensure_ascii=False)
+
+    done_payload: dict[str, Any] = {
+        "done": True,
+        "reply": normalized_reply,
+        "conversation_id": conversation_id,
+        "tool_loop": tool_loop,
+        **_kg_meta_payload(kg_context),
+    }
+    if model:
+        done_payload["model"] = model
+    if display_citations:
+        done_payload["citations"] = display_citations
+    yield json.dumps(done_payload, ensure_ascii=False)
+
+    out_conv_id = await run_db_task(
+        _persist_turn,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        message=message,
+        reply=normalized_reply,
+    )
+    if out_conv_id and str(out_conv_id) != str(conversation_id or ""):
+        yield json.dumps({"conversation_id": out_conv_id}, ensure_ascii=False)
+
+    follow_ups = await _resolve_follow_up_questions(
+        user_message=message,
+        assistant_answer=normalized_reply,
+        history=history,
+    )
+    if follow_ups:
+        yield json.dumps({"follow_up_questions": follow_ups}, ensure_ascii=False)
 
 
 def _kg_meta_payload(kg_context: KgQaContext | None) -> dict[str, Any]:
@@ -586,14 +661,16 @@ async def iter_chat_with_ai_agent_stream(
 
     from app.core.async_db import resolve_db_user
     from app.database import SessionLocal
-    from app.services.agent_tool_loop import iter_agent_tool_loop
+    from app.services.agent_supervisor import iter_supervised_agent_loop
 
     tool_reply: str | None = None
     tool_citations: list[dict] = []
+    tool_reply_streamed = False
+    tool_reply_replaced = False
     db = SessionLocal()
     try:
         agent_user = resolve_db_user(db, user_id)
-        async for event in iter_agent_tool_loop(
+        async for event in iter_supervised_agent_loop(
             db,
             agent_user,
             messages,
@@ -602,12 +679,23 @@ async def iter_chat_with_ai_agent_stream(
             attachment_session_id=attachment_session_id,
             intent_plan=plan,
             chat_history=history,
+            retrieval_context=merged_context,
+            context_instruction=context_instruction,
         ):
             if event.get("type") == "workflow":
                 yield json.dumps({"workflow": event["data"]}, ensure_ascii=False)
                 await asyncio.sleep(0)
             elif event.get("type") == "attachment":
                 yield json.dumps({"attachments": [event["data"]]}, ensure_ascii=False)
+                await asyncio.sleep(0)
+            elif event.get("type") == "delta" and event.get("text"):
+                tool_reply_streamed = True
+                tool_reply = f"{tool_reply or ''}{event['text']}"
+                yield json.dumps({"delta": event["text"]}, ensure_ascii=False)
+                await asyncio.sleep(0)
+            elif event.get("type") == "replace" and event.get("text") is not None:
+                tool_reply = str(event["text"])
+                tool_reply_replaced = True
                 await asyncio.sleep(0)
             elif event.get("type") == "complete":
                 messages = event.get("messages") or messages
@@ -618,39 +706,20 @@ async def iter_chat_with_ai_agent_stream(
         db.close()
 
     if tool_reply:
-        from app.services.knowledge_qa_service import finalize_citations_preserving_index
-
-        normalized_reply = tool_reply
-        display_citations: list[dict] = []
-        if tool_citations:
-            normalized_reply, display_citations = finalize_citations_preserving_index(
-                tool_reply, tool_citations
-            )
-        out_conv_id = await run_db_task(
-            _persist_turn,
+        normalized_reply = _normalize_ai_home_reply(tool_reply, tool_citations)
+        if tool_reply_streamed and normalized_reply and normalized_reply != tool_reply:
+            yield json.dumps({"replace": normalized_reply}, ensure_ascii=False)
+        async for payload in _iter_stream_turn_tail(
             user_id=user_id,
-            conversation_id=conversation_id,
             message=message,
-            reply=normalized_reply,
-        )
-        follow_ups = await _resolve_follow_up_questions(
-            user_message=message,
-            assistant_answer=normalized_reply,
             history=history,
-        )
-        done_payload: dict[str, Any] = {
-            "done": True,
-            "reply": normalized_reply,
-            "conversation_id": out_conv_id,
-            "tool_loop": True,
-            **_kg_meta_payload(kg_context),
-        }
-        if display_citations:
-            done_payload["citations"] = display_citations
-        if follow_ups:
-            done_payload["follow_up_questions"] = follow_ups
-        yield json.dumps(done_payload, ensure_ascii=False)
-        async for payload in _emit_workflow("workflow_finished", title="完成"):
+            conversation_id=conversation_id,
+            normalized_reply=normalized_reply,
+            display_citations=[],
+            kg_context=kg_context,
+            streamed_content=tool_reply_streamed or tool_reply_replaced,
+            tool_loop=True,
+        ):
             yield payload
         return
 
@@ -672,40 +741,21 @@ async def iter_chat_with_ai_agent_stream(
             elif ev.get("type") == "delta" and ev.get("text"):
                 accumulated += ev["text"]
                 yield json.dumps({"delta": ev["text"]}, ensure_ascii=False)
-        out_conv_id = await run_db_task(
-            _persist_turn,
+        normalized_answer = _normalize_ai_home_reply(accumulated, tool_citations)
+        if normalized_answer and normalized_answer != accumulated:
+            yield json.dumps({"replace": normalized_answer}, ensure_ascii=False)
+        async for payload in _iter_stream_turn_tail(
             user_id=user_id,
-            conversation_id=conversation_id,
             message=message,
-            reply=accumulated,
-        )
-        from app.services.knowledge_qa_service import finalize_citations_preserving_index
-
-        display_citations: list[dict] = []
-        normalized_answer = accumulated
-        if tool_citations:
-            normalized_answer, display_citations = finalize_citations_preserving_index(
-                accumulated, tool_citations
-            )
-        follow_ups = await _resolve_follow_up_questions(
-            user_message=message,
-            assistant_answer=normalized_answer,
             history=history,
-        )
-        done_payload: dict[str, Any] = {
-            "done": True,
-            "model": model,
-            "reply": normalized_answer,
-            "conversation_id": out_conv_id,
-            **_kg_meta_payload(kg_context),
-        }
-        if display_citations:
-            yield json.dumps({"citations": display_citations}, ensure_ascii=False)
-            done_payload["citations"] = display_citations
-        if follow_ups:
-            done_payload["follow_up_questions"] = follow_ups
-        yield json.dumps(done_payload, ensure_ascii=False)
-        async for payload in _emit_workflow("workflow_finished", title="完成"):
+            conversation_id=conversation_id,
+            normalized_reply=normalized_answer,
+            display_citations=[],
+            kg_context=kg_context,
+            streamed_content=bool(accumulated.strip()),
+            tool_loop=False,
+            model=model,
+        ):
             yield payload
     except Exception as e:
         yield json.dumps({"error": f"无法连接 AI 服务: {e}"}, ensure_ascii=False)
@@ -783,7 +833,7 @@ async def chat_with_ai_agent(
 
     from app.core.async_db import resolve_db_user
     from app.database import SessionLocal
-    from app.services.agent_tool_loop import iter_agent_tool_loop
+    from app.services.agent_supervisor import iter_supervised_agent_loop
 
     tool_reply: str | None = None
     tool_citations: list[dict] = []
@@ -791,7 +841,7 @@ async def chat_with_ai_agent(
     db_session = SessionLocal()
     try:
         agent_user = resolve_db_user(db_session, user)
-        async for event in iter_agent_tool_loop(
+        async for event in iter_supervised_agent_loop(
             db_session,
             agent_user,
             messages,
@@ -800,6 +850,8 @@ async def chat_with_ai_agent(
             attachment_session_id=attachment_session_id,
             intent_plan=plan,
             chat_history=history,
+            retrieval_context=retrieval_context,
+            context_instruction=context_instruction,
         ):
             if event.get("type") == "complete":
                 messages = event.get("messages") or messages
@@ -810,14 +862,7 @@ async def chat_with_ai_agent(
         db_session.close()
 
     if tool_reply:
-        from app.services.knowledge_qa_service import finalize_citations_preserving_index
-
-        normalized_reply = tool_reply
-        display_citations: list[dict] = []
-        if tool_citations:
-            normalized_reply, display_citations = finalize_citations_preserving_index(
-                tool_reply, tool_citations
-            )
+        normalized_reply = _normalize_ai_home_reply(tool_reply, tool_citations)
         out_conv_id = await run_db_task(
             _persist_turn,
             user_id=user.id,
@@ -837,8 +882,6 @@ async def chat_with_ai_agent(
             "tool_loop": True,
             **_kg_meta_payload(kg_context_from_tools),
         }
-        if display_citations:
-            result["citations"] = display_citations
         if follow_ups:
             result["follow_up_questions"] = follow_ups
         return result
@@ -869,21 +912,14 @@ async def chat_with_ai_agent(
     reply = reply.strip()
     if not reply:
         raise bad_request("AI 返回为空")
+    normalized_reply = _normalize_ai_home_reply(reply, tool_citations)
     out_conv_id = await run_db_task(
         _persist_turn,
         user_id=user.id if user else None,
         conversation_id=conversation_id,
         message=message,
-        reply=reply,
+        reply=normalized_reply,
     )
-    from app.services.knowledge_qa_service import finalize_citations_preserving_index
-
-    display_citations: list[dict] = []
-    normalized_reply = reply
-    if tool_citations:
-        normalized_reply, display_citations = finalize_citations_preserving_index(
-            reply, tool_citations
-        )
     follow_ups = await _resolve_follow_up_questions(
         user_message=message,
         assistant_answer=normalized_reply,
@@ -895,8 +931,6 @@ async def chat_with_ai_agent(
         "conversation_id": out_conv_id,
         **_kg_meta_payload(kg_context_from_tools or kg_context),
     }
-    if display_citations:
-        result["citations"] = display_citations
     if follow_ups:
         result["follow_up_questions"] = follow_ups
     return result

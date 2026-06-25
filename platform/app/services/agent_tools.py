@@ -66,16 +66,31 @@ def fetch_uploaded_skill_md(
     return body
 
 
-def build_skill_md_context_block(skill_name: str, skill_md: str) -> str:
+def build_skill_md_context_block(
+    skill_name: str,
+    skill_md: str,
+    *,
+    has_script: bool | None = None,
+) -> str:
     """格式化为注入 tool loop 的 SKILL.md 说明块。"""
     name = (skill_name or "").strip()
     body = (skill_md or "").strip()
     if not name or not body:
         return ""
-    return (
-        f"【发展技能 `{name}` · SKILL.md（系统自动加载，无需 load_uploaded_skill）】\n"
-        f"{body}"
-    )
+    lines = [
+        f"【发展技能 `{name}` · SKILL.md（系统自动加载，无需 load_uploaded_skill）】",
+        body,
+    ]
+    if has_script is False:
+        lines.append(
+            "（本包为**指令型**技能：按上述流程直接作答；"
+            "图表用 ```mermaid 围栏；**勿**调用 run_skill_script）"
+        )
+    elif has_script is True:
+        lines.append(
+            "（本包含 Python 脚本：需要执行时使用 run_skill_script，入口 main.py/run.py）"
+        )
+    return "\n".join(lines)
 
 
 def maybe_inject_skill_md(
@@ -95,7 +110,14 @@ def maybe_inject_skill_md(
     if name in injected:
         return messages
     skill_md = fetch_uploaded_skill_md(db, name, user=user)
-    block = build_skill_md_context_block(name, skill_md or "")
+    has_script = None
+    try:
+        from app.services.agent_skill_service import uploaded_skill_has_script
+
+        has_script = uploaded_skill_has_script(db, name)
+    except Exception:
+        has_script = None
+    block = build_skill_md_context_block(name, skill_md or "", has_script=has_script)
     if not block:
         return messages
     loop_state["injected_skill_mds"] = list(injected | {name})
@@ -171,11 +193,11 @@ _RUN_SKILL_SCRIPT_SPEC: dict[str, Any] = {
     "function": {
         "name": "run_skill_script",
         "description": (
-            "在沙箱中执行**上传型** Skill 包内的 Python 入口脚本（支持多文件 import）。"
+            "在沙箱中执行**含 Python 脚本**的上传型 Skill（入口 main.py/run.py，支持多文件 import）。"
             "脚本须在内存中完成抓取/分析，最后用 skill_runtime.finish(conclusion) 输出结论；"
             "平台不保存原始网页/抓取内容。"
-            "当任务匹配某发展技能时可直接调用，无需用户明确要求或先 load_uploaded_skill；"
-            "系统会自动附带 SKILL.md 说明"
+            "**纯 SKILL.md 指令包（如 mermaid-diagram）无脚本，勿调用本工具**，按已注入的 SKILL.md 直接作答。"
+            "当任务匹配**含脚本**的发展技能时可调用，无需先 load_uploaded_skill"
         ),
         "parameters": {
             "type": "object",
@@ -292,7 +314,9 @@ _BROWSER_TOOL_SPECS: list[dict[str, Any]] = [
         "function": {
             "name": "browser_screenshot",
             "description": (
-                "截取当前页面截图并返回 URL；在回复中用 Markdown 图片展示给用户"
+                "截取当前页面截图；回复中用 Markdown 图片展示，"
+                "须使用返回的 screenshot_api_path（形如 /api/v1/browser-rpa/screenshot?key=...），"
+                "勿使用 screenshot_url 内网地址"
             ),
             "parameters": {
                 "type": "object",
@@ -420,7 +444,7 @@ _DOCUMENT_TOOL_SPECS: list[dict[str, Any]] = [
             "description": (
                 "列出平台文档库中用户可见的文档（只读查看）。"
                 "用户问某文件夹/分级下有哪些文件、文档、收藏时调用；"
-                "「网页收藏」是平台个人文档库系统文件夹（网站收藏/RSS 导入），不是浏览器书签。"
+                "「网页收藏」是平台个人文档库系统文件夹（网站收藏导入），不是浏览器书签。"
                 "默认 scope=personal；可按 folder_name（如「网页收藏」）或 folder_id 筛选"
             ),
             "parameters": {
@@ -490,6 +514,75 @@ _DOCUMENT_TOOL_SPECS: list[dict[str, Any]] = [
                     "scope": {
                         "type": "string",
                         "description": "文档分级：personal、company、department、team",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_kb_folder",
+            "description": (
+                "在平台文档库中新建文件夹；用户要求创建目录/文件夹时调用。"
+                "默认 scope=personal；同名文件夹已存在时会报错"
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["name", "scope"],
+                "properties": {
+                    "name": {"type": "string", "description": "文件夹名称"},
+                    "scope": {
+                        "type": "string",
+                        "description": "文档分级：personal、company、department、team",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "文件夹说明（可选）",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_library_document",
+            "description": (
+                "将指定文本或 Markdown 内容写入平台文档库（新建文档）。"
+                "用户要求保存/写入/归档到文档库、某文件夹时调用；"
+                "可先 create_kb_folder 或 list_document_folders 定位目标文件夹"
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["title", "content"],
+                "properties": {
+                    "title": {"type": "string", "description": "文档标题"},
+                    "content": {
+                        "type": "string",
+                        "description": "正文（Markdown 或纯文本）",
+                    },
+                    "scope": {
+                        "type": "string",
+                        "description": "文档分级，默认 personal",
+                        "default": "personal",
+                    },
+                    "folder_id": {
+                        "type": "string",
+                        "description": "目标文件夹 UUID（与 folder_name 二选一）",
+                    },
+                    "folder_name": {
+                        "type": "string",
+                        "description": "目标文件夹名称；省略则写入未分类",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "文档描述（可选）",
+                    },
+                    "content_format": {
+                        "type": "string",
+                        "description": "markdown 或 plain，默认 markdown",
+                        "default": "markdown",
                     },
                 },
             },
@@ -571,6 +664,80 @@ _DOCUMENT_TOOL_SPECS: list[dict[str, Any]] = [
                     "confirm": {
                         "type": "boolean",
                         "description": "必须为 true 才执行删除",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_kb_folder",
+            "description": "重命名或修改平台文档库文件夹说明",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "default": "personal"},
+                    "folder_id": {"type": "string"},
+                    "folder_name": {"type": "string"},
+                    "name": {"type": "string", "description": "新文件夹名称"},
+                    "description": {"type": "string", "description": "新说明"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_kb_folder",
+            "description": "删除自定义文档库文件夹（系统文件夹不可删，需 confirm=true）",
+            "parameters": {
+                "type": "object",
+                "required": ["confirm"],
+                "properties": {
+                    "scope": {"type": "string", "default": "personal"},
+                    "folder_id": {"type": "string"},
+                    "folder_name": {"type": "string"},
+                    "confirm": {"type": "boolean"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sync_document_knowledge",
+            "description": (
+                "将文档同步/导入知识库索引（等同文档详情「同步知识库」）；"
+                "文档须已上传文件"
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["document_id"],
+                "properties": {
+                    "document_id": {"type": "string", "description": "文档 UUID"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reindex_document",
+            "description": (
+                "对文档重新建立知识库索引（等同文档详情「重新索引」）；"
+                "任务在后台执行"
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["document_id"],
+                "properties": {
+                    "document_id": {"type": "string", "description": "文档 UUID"},
+                    "parser_id": {"type": "string", "description": "切片方法（可选）"},
+                    "resync": {
+                        "type": "boolean",
+                        "description": "是否强制重新同步",
+                        "default": False,
                     },
                 },
             },
@@ -680,15 +847,15 @@ _PLATFORM_TOOL_SPECS: list[dict[str, Any]] = [
                     "link": {"type": "string", "description": "可选跳转链接"},
                     "delay_minutes": {
                         "type": "integer",
-                        "description": "多少分钟后提醒，如 5",
+                        "description": "相对延迟：多少分钟后提醒（内部会换算为具体时刻）",
                     },
                     "delay_seconds": {
                         "type": "integer",
-                        "description": "多少秒后提醒；与 delay_minutes 二选一",
+                        "description": "相对延迟：多少秒后提醒；与 delay_minutes 二选一",
                     },
                     "scheduled_at": {
                         "type": "string",
-                        "description": "ISO8601 绝对时间，如 2026-06-22T15:30:00+08:00",
+                        "description": "ISO8601 绝对提醒时间，如 2026-06-22T15:30:00+08:00；用户指定具体时刻时优先使用",
                     },
                 },
             },
@@ -759,7 +926,10 @@ AGENT_TOOL_SPECS: list[dict[str, Any]] = [
             "name": "create_uploaded_skill",
             "description": (
                 "创建组织共享的上传型 Skill（与 ZIP 上传格式一致，含 SKILL.md）。"
-                "用户要求新建/编写 Skill 时使用；勿用 load_uploaded_skill 代替创建"
+                "爬取/数据处理/自动化类任务**必须**在 extra_files 中提供 main.py 等 Python 脚本，"
+                "运行时通过 run_skill_script 执行，勿只写 SKILL.md。"
+                "**先** browser_snapshot / web_search 调研确认可行后再调用；"
+                "勿用 load_uploaded_skill 代替创建"
             ),
             "parameters": {
                 "type": "object",
@@ -767,7 +937,7 @@ AGENT_TOOL_SPECS: list[dict[str, Any]] = [
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "小写连字符 slug，如 my-workflow",
+                        "description": "小写连字符 slug，如 carbon-price-scraper",
                     },
                     "description": {
                         "type": "string",
@@ -775,7 +945,19 @@ AGENT_TOOL_SPECS: list[dict[str, Any]] = [
                     },
                     "skill_md_body": {
                         "type": "string",
-                        "description": "SKILL.md 正文（不含 frontmatter）",
+                        "description": (
+                            "SKILL.md 正文（不含 frontmatter）；"
+                            "须说明 run_skill_script 调用方式与参数"
+                        ),
+                    },
+                    "extra_files": {
+                        "type": "object",
+                        "description": (
+                            "额外文本文件，键为相对路径，值为文件内容。"
+                            "示例：{\"main.py\": \"import skill_runtime\\n...\", "
+                            "\"fetch_utils.py\": \"...\"}；爬取类至少含 main.py"
+                        ),
+                        "additionalProperties": {"type": "string"},
                     },
                     "replace_existing": {
                         "type": "boolean",
@@ -842,7 +1024,150 @@ AGENT_TOOL_SPECS: list[dict[str, Any]] = [
 ]
 
 
-def build_agent_tool_specs(db: Session, user: User) -> list[dict[str, Any]]:
+_ADMIN_USER_TOOL_SPECS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_users",
+            "description": "列出平台用户（需用户管理权限）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer", "default": 1},
+                    "page_size": {"type": "integer", "default": 20},
+                    "keyword": {"type": "string", "description": "姓名/手机/邮箱筛选"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_user",
+            "description": "创建平台用户（需用户管理权限）",
+            "parameters": {
+                "type": "object",
+                "required": ["phone", "email", "display_name", "password"],
+                "properties": {
+                    "phone": {"type": "string"},
+                    "email": {"type": "string"},
+                    "display_name": {"type": "string"},
+                    "password": {"type": "string"},
+                    "status": {"type": "string", "default": "active"},
+                    "department_id": {"type": "string"},
+                    "department_name": {"type": "string"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_user",
+            "description": "修改平台用户信息（需用户管理权限）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "string"},
+                    "user_name": {"type": "string", "description": "姓名/手机"},
+                    "phone": {"type": "string"},
+                    "email": {"type": "string"},
+                    "display_name": {"type": "string"},
+                    "password": {"type": "string"},
+                    "status": {"type": "string"},
+                    "department_id": {"type": "string"},
+                    "department_name": {"type": "string"},
+                    "clear_department": {"type": "boolean", "default": False},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_user",
+            "description": "删除平台用户（不可恢复，需 confirm=true）",
+            "parameters": {
+                "type": "object",
+                "required": ["confirm"],
+                "properties": {
+                    "user_id": {"type": "string"},
+                    "user_name": {"type": "string"},
+                    "confirm": {"type": "boolean"},
+                },
+            },
+        },
+    },
+]
+
+_ADMIN_DEPT_TOOL_SPECS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_departments",
+            "description": "列出组织部门",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_department",
+            "description": "新建部门（需部门管理权限）",
+            "parameters": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "parent_id": {"type": "string"},
+                    "parent_name": {"type": "string"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_department",
+            "description": "修改部门名称或上级（需部门管理权限）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "department_id": {"type": "string"},
+                    "department_name": {"type": "string"},
+                    "name": {"type": "string"},
+                    "parent_id": {"type": "string"},
+                    "parent_name": {"type": "string"},
+                    "clear_parent": {"type": "boolean", "default": False},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_department",
+            "description": "删除部门（需 confirm=true）",
+            "parameters": {
+                "type": "object",
+                "required": ["confirm"],
+                "properties": {
+                    "department_id": {"type": "string"},
+                    "department_name": {"type": "string"},
+                    "confirm": {"type": "boolean"},
+                },
+            },
+        },
+    },
+]
+
+
+def build_agent_tool_specs(
+    db: Session,
+    user: User,
+    *,
+    allowed_names: set[str] | None = None,
+) -> list[dict[str, Any]]:
     """按用户权限与平台开关组装可用原子工具列表。"""
     from app.config import get_settings
     from app.services.searxng_service import is_enabled as web_search_enabled
@@ -857,12 +1182,31 @@ def build_agent_tool_specs(db: Session, user: User) -> list[dict[str, Any]]:
     specs.extend(AGENT_TOOL_SPECS)
     specs.extend(_DOCUMENT_TOOL_SPECS)
     specs.extend(_PLATFORM_TOOL_SPECS)
+    if user_has_permission(db, user, "admin.user"):
+        specs.extend(_ADMIN_USER_TOOL_SPECS)
+    if user_has_permission(db, user, "admin.dept"):
+        specs.extend(_ADMIN_DEPT_TOOL_SPECS)
+    from app.domains.knowledge import knowledge
+
+    if not knowledge.enabled():
+        specs = [
+            s
+            for s in specs
+            if str((s.get("function") or {}).get("name") or "")
+            not in ("sync_document_knowledge", "reindex_document")
+        ]
     if get_settings().agent_skill_script_enabled:
         specs.append(_RUN_SKILL_SCRIPT_SPEC)
     from app.integrations.browser_automation.browser_config import get_browser_rpa_config
 
     if get_browser_rpa_config(db).enabled:
         specs.extend(_BROWSER_TOOL_SPECS)
+    if allowed_names is not None:
+        specs = [
+            spec
+            for spec in specs
+            if str((spec.get("function") or {}).get("name") or "") in allowed_names
+        ]
     return specs
 
 
@@ -898,6 +1242,16 @@ def agent_tool_names() -> set[str]:
         for spec in _PLATFORM_TOOL_SPECS
         if spec.get("function", {}).get("name")
     )
+    names.update(
+        spec["function"]["name"]
+        for spec in _ADMIN_USER_TOOL_SPECS
+        if spec.get("function", {}).get("name")
+    )
+    names.update(
+        spec["function"]["name"]
+        for spec in _ADMIN_DEPT_TOOL_SPECS
+        if spec.get("function", {}).get("name")
+    )
     return names
 
 
@@ -906,6 +1260,30 @@ def _tool_result(ok: bool, summary: str, data: Any = None) -> str:
         {"ok": ok, "summary": summary, "data": data},
         ensure_ascii=False,
     )
+
+
+def _parse_extra_files(raw: Any) -> dict[str, str] | None:
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        out = {str(k).strip(): str(v) for k, v in raw.items() if str(k).strip()}
+        return out or None
+    if isinstance(raw, list):
+        out: dict[str, str] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path") or item.get("file_path") or "").strip()
+            if path:
+                out[path] = str(item.get("content") or "")
+        return out or None
+    return None
+
+
+def _extra_files_has_python(extra_files: dict[str, str] | None) -> bool:
+    if not extra_files:
+        return False
+    return any(str(path).endswith(".py") for path in extra_files)
 
 
 def _citation_start(loop_state: dict[str, Any] | None) -> int:
@@ -1071,6 +1449,26 @@ def _execute_document_tool(
             user,
             scope=str(params.get("scope") or "").strip(),
         ),
+        "create_kb_folder": lambda: doc_svc.create_kb_folder_for_agent(
+            db,
+            user,
+            name=str(params.get("name") or ""),
+            scope=str(params.get("scope") or "personal").strip(),
+            description=str(params.get("description") or ""),
+        ),
+        "create_library_document": lambda: doc_svc.create_library_document_for_agent(
+            db,
+            user,
+            title=str(params.get("title") or ""),
+            content=str(params.get("content") or ""),
+            scope=str(params.get("scope") or "personal").strip(),
+            folder_id=_parse_uuid(params["folder_id"], field="folder_id")
+            if params.get("folder_id")
+            else None,
+            folder_name=str(params.get("folder_name") or "") or None,
+            description=str(params.get("description") or ""),
+            content_format=str(params.get("content_format") or "markdown"),
+        ),
         "rename_document": lambda: doc_svc.rename_document_for_agent(
             db,
             user,
@@ -1098,6 +1496,41 @@ def _execute_document_tool(
             user,
             document_id=_parse_uuid(params.get("document_id"), field="document_id"),
             confirm=bool(params.get("confirm")),
+        ),
+        "update_kb_folder": lambda: doc_svc.update_kb_folder_for_agent(
+            db,
+            user,
+            scope=str(params.get("scope") or "personal").strip(),
+            folder_id=_parse_uuid(params["folder_id"], field="folder_id")
+            if params.get("folder_id")
+            else None,
+            folder_name=str(params.get("folder_name") or "") or None,
+            name=str(params["name"]).strip() if params.get("name") is not None else None,
+            description=str(params["description"]).strip()
+            if params.get("description") is not None
+            else None,
+        ),
+        "delete_kb_folder": lambda: doc_svc.delete_kb_folder_for_agent(
+            db,
+            user,
+            scope=str(params.get("scope") or "personal").strip(),
+            folder_id=_parse_uuid(params["folder_id"], field="folder_id")
+            if params.get("folder_id")
+            else None,
+            folder_name=str(params.get("folder_name") or "") or None,
+            confirm=bool(params.get("confirm")),
+        ),
+        "sync_document_knowledge": lambda: doc_svc.sync_document_knowledge_for_agent(
+            db,
+            user,
+            document_id=_parse_uuid(params.get("document_id"), field="document_id"),
+        ),
+        "reindex_document": lambda: doc_svc.reindex_document_for_agent(
+            db,
+            user,
+            document_id=_parse_uuid(params.get("document_id"), field="document_id"),
+            parser_id=str(params.get("parser_id") or "") or None,
+            resync=bool(params.get("resync")),
         ),
     }
     handler = handlers.get(tool_name)
@@ -1213,6 +1646,120 @@ def _execute_platform_tool(
         return _tool_result(False, str(exc))
 
 
+def _execute_admin_tool(
+    db: Session,
+    user: User,
+    *,
+    tool_name: str,
+    params: dict[str, Any],
+) -> str | None:
+    from app.core.exceptions import AppError
+    from app.services import agent_admin_service as admin_svc
+
+    handlers = {
+        "list_users": lambda: admin_svc.list_users_for_agent(
+            db,
+            user,
+            page=int(params.get("page") or 1),
+            page_size=int(params.get("page_size") or 20),
+            keyword=str(params.get("keyword") or "") or None,
+        ),
+        "create_user": lambda: admin_svc.create_user_for_agent(
+            db,
+            user,
+            phone=str(params.get("phone") or ""),
+            email=str(params.get("email") or ""),
+            display_name=str(params.get("display_name") or ""),
+            password=str(params.get("password") or ""),
+            status=str(params.get("status") or "active"),
+            department_id=_parse_uuid(params["department_id"], field="department_id")
+            if params.get("department_id")
+            else None,
+            department_name=str(params.get("department_name") or "") or None,
+        ),
+        "update_user": lambda: admin_svc.update_user_for_agent(
+            db,
+            user,
+            user_id=_parse_uuid(params["user_id"], field="user_id")
+            if params.get("user_id")
+            else None,
+            user_name=str(params.get("user_name") or "") or None,
+            phone=str(params.get("phone") or "") or None,
+            email=str(params.get("email") or "") or None,
+            display_name=str(params.get("display_name") or "") or None,
+            password=str(params.get("password") or "") or None,
+            status=str(params.get("status") or "") or None,
+            department_id=_parse_uuid(params["department_id"], field="department_id")
+            if params.get("department_id")
+            else None,
+            department_name=str(params.get("department_name") or "") or None,
+            clear_department=bool(params.get("clear_department")),
+        ),
+        "delete_user": lambda: admin_svc.delete_user_for_agent(
+            db,
+            user,
+            user_id=_parse_uuid(params["user_id"], field="user_id")
+            if params.get("user_id")
+            else None,
+            user_name=str(params.get("user_name") or "") or None,
+            confirm=bool(params.get("confirm")),
+        ),
+        "list_departments": lambda: admin_svc.list_departments_for_agent(db, user),
+        "create_department": lambda: admin_svc.create_department_for_agent(
+            db,
+            user,
+            name=str(params.get("name") or ""),
+            parent_id=_parse_uuid(params["parent_id"], field="parent_id")
+            if params.get("parent_id")
+            else None,
+            parent_name=str(params.get("parent_name") or "") or None,
+        ),
+        "update_department": lambda: admin_svc.update_department_for_agent(
+            db,
+            user,
+            department_id=_parse_uuid(params["department_id"], field="department_id")
+            if params.get("department_id")
+            else None,
+            department_name=str(params.get("department_name") or "") or None,
+            name=str(params.get("name") or "") or None,
+            parent_id=_parse_uuid(params["parent_id"], field="parent_id")
+            if params.get("parent_id")
+            else None,
+            parent_name=str(params.get("parent_name") or "") or None,
+            clear_parent=bool(params.get("clear_parent")),
+        ),
+        "delete_department": lambda: admin_svc.delete_department_for_agent(
+            db,
+            user,
+            department_id=_parse_uuid(params["department_id"], field="department_id")
+            if params.get("department_id")
+            else None,
+            department_name=str(params.get("department_name") or "") or None,
+            confirm=bool(params.get("confirm")),
+        ),
+    }
+    handler = handlers.get(tool_name)
+    if handler is None:
+        return None
+    try:
+        data = handler()
+        if isinstance(data, dict) and data.get("message"):
+            return _tool_result(True, str(data["message"]), data)
+        if isinstance(data, list):
+            return _tool_result(
+                True,
+                f"共 {len(data)} 条",
+                {"items": data, "count": len(data)},
+            )
+        return _tool_result(True, "操作完成", data)
+    except AppError as exc:
+        detail = exc.detail
+        msg = detail.get("message") if isinstance(detail, dict) else str(detail)
+        return _tool_result(False, msg)
+    except ValueError as exc:
+        return _tool_result(False, str(exc))
+
+
 async def _execute_browser_tool(
     db: Session,
     user: User,
@@ -1221,8 +1768,51 @@ async def _execute_browser_tool(
     params: dict[str, Any],
     conversation_id: str | None,
     loop_state: dict[str, Any] | None = None,
+    user_message: str = "",
 ) -> str | None:
+    from app.core.agent_tool_context import append_skill_explore_context
     from app.services import browser_rpa_service as rpa
+    from app.services.agent_skill_router import (
+        is_skill_management_message,
+        skill_creation_needs_site_research,
+    )
+
+    def _track_skill_explore(data: dict[str, Any] | None) -> None:
+        if not loop_state or not isinstance(data, dict):
+            return
+        if not is_skill_management_message(user_message):
+            return
+        if tool_name == "browser_navigate":
+            url = str(data.get("url") or "").strip()
+            title = str(data.get("title") or "").strip()
+            if url:
+                append_skill_explore_context(
+                    loop_state,
+                    f"页面导航：{title or url}\nURL：{url}",
+                )
+            return
+        if tool_name != "browser_snapshot":
+            return
+        url = str(data.get("url") or "").strip()
+        title = str(data.get("title") or "").strip()
+        preview = str(data.get("text_preview") or "").strip()
+        refs = data.get("refs") or []
+        ref_lines: list[str] = []
+        if isinstance(refs, list):
+            for item in refs[:12]:
+                if not isinstance(item, dict):
+                    continue
+                ref_lines.append(
+                    f"- {item.get('ref')}: {item.get('role')} {item.get('name') or ''}".strip()
+                )
+        block_parts = [f"页面快照：{title or url}"]
+        if url:
+            block_parts.append(f"URL：{url}")
+        if preview:
+            block_parts.append(f"可见文本摘要：\n{preview}")
+        if ref_lines:
+            block_parts.append("可交互元素（节选）：\n" + "\n".join(ref_lines))
+        append_skill_explore_context(loop_state, "\n".join(block_parts))
 
     def _track_screenshot(data: dict[str, Any] | None) -> None:
         if not loop_state or not isinstance(data, dict):
@@ -1331,6 +1921,8 @@ async def _execute_browser_tool(
         import asyncio
 
         data = await result if asyncio.iscoroutine(result) else result
+        if tool_name in {"browser_navigate", "browser_snapshot"}:
+            _track_skill_explore(data if isinstance(data, dict) else None)
         if tool_name in {"browser_screenshot", "browser_replay_workflow", "browser_run_task"}:
             _track_screenshot(data if isinstance(data, dict) else None)
         if isinstance(data, dict) and data.get("message"):
@@ -1346,8 +1938,14 @@ async def _execute_browser_tool(
             api_path = str((data or {}).get("screenshot_api_path") or "")
             summary = "截图已生成"
             if api_path:
-                summary = f"截图已生成：{api_path}"
-            return _tool_result(True, summary, data)
+                summary = (
+                    f"截图已生成：{api_path}；"
+                    "回复中请用 Markdown 图片引用此路径，勿用 screenshot_url"
+                )
+            compact = dict(data or {})
+            compact.pop("screenshot_url", None)
+            compact.pop("storage_key", None)
+            return _tool_result(True, summary, compact)
         if tool_name == "browser_replay_workflow":
             conclusion = str((data or {}).get("conclusion") or "RPA 回放完成")
             return _tool_result(True, conclusion[:200], data)
@@ -1442,24 +2040,36 @@ async def execute_agent_tool(
                 args = [raw_args.strip()]
             from app.services import agent_skill_service as svc
             from app.services.agent_skill_service import load_skill_workspace_bytes, _skill_by_name
+            from app.services.agent_skill_router import (
+                append_skill_repair_context,
+                is_inconclusive_skill_conclusion,
+            )
 
             skill = _skill_by_name(db, skill_name)
             files = load_skill_workspace_bytes(db, skill.id)
-            if b"workflow.json" in files and (
-                not entry or entry == "replay.py" or entry.endswith("replay.py")
-            ):
-                from app.services.browser_rpa_service import replay_skill_workflow_script
+            try:
+                if b"workflow.json" in files and (
+                    not entry or entry == "replay.py" or entry.endswith("replay.py")
+                ):
+                    from app.services.browser_rpa_service import replay_skill_workflow_script
 
-                payload = await replay_skill_workflow_script(
-                    db, user, files=files, args=args
-                )
-            else:
-                payload = svc.run_uploaded_skill_script(
-                    db,
-                    skill_name,
-                    user=user,
-                    entry=entry,
-                    args=args,
+                    payload = await replay_skill_workflow_script(
+                        db, user, files=files, args=args
+                    )
+                else:
+                    payload = svc.run_uploaded_skill_script(
+                        db,
+                        skill_name,
+                        user=user,
+                        entry=entry,
+                        args=args,
+                    )
+            except Exception as exc:
+                append_skill_repair_context(loop_state, skill_name, str(exc)[:400])
+                return _tool_result(
+                    False,
+                    f"Skill `{skill_name}` 执行失败：{exc}；"
+                    "请用 `update_uploaded_skill_file` 修复后再次 `run_skill_script`",
                 )
             conclusion = str(payload.get("conclusion") or "")
             extra: dict[str, Any] = {
@@ -1479,6 +2089,26 @@ async def execute_agent_tool(
                     }
                 )
                 extra["screenshot_api_path"] = payload["screenshot_api_path"]
+            if payload.get("status") == "instruction_only":
+                return _tool_result(
+                    True,
+                    conclusion[:200] or "脚本执行完成",
+                    extra,
+                )
+            if is_inconclusive_skill_conclusion(conclusion):
+                append_skill_repair_context(
+                    loop_state,
+                    skill_name,
+                    f"未产出有效结论：{conclusion[:240]}",
+                )
+                return _tool_result(
+                    False,
+                    f"Skill `{skill_name}` 未产出有效结论；"
+                    "请用 `update_uploaded_skill_file` 修复 main.py / SKILL.md 后重试",
+                    extra,
+                )
+            if loop_state is not None:
+                loop_state.pop("pending_skill_repair", None)
             return _tool_result(
                 True,
                 conclusion[:200] or "脚本执行完成",
@@ -1486,7 +2116,36 @@ async def execute_agent_tool(
             )
 
         if tool_name == "create_uploaded_skill":
+            from app.core.agent_tool_context import has_skill_research_context
             from app.services import agent_skill_service as svc
+            from app.services.agent_skill_router import (
+                is_skill_management_message,
+                skill_creation_needs_site_research,
+                skill_creation_requires_python_script,
+            )
+
+            if is_skill_management_message(user_message) and not has_skill_research_context(
+                loop_state,
+                needs_site_research=skill_creation_needs_site_research(user_message),
+            ):
+                return _tool_result(
+                    False,
+                    "创建 Skill 前须先完成调研：对目标网页执行 browser_navigate + "
+                    "browser_snapshot（或 web_search 验证数据源），确认能定位到所需字段后再调用 "
+                    "create_uploaded_skill，勿猜测页面结构",
+                )
+
+            extra_files = _parse_extra_files(params.get("extra_files"))
+            if skill_creation_requires_python_script(user_message) and not _extra_files_has_python(
+                extra_files
+            ):
+                return _tool_result(
+                    False,
+                    "该任务应创建**可执行** Skill：在 create_uploaded_skill 的 extra_files 中"
+                    "提供 main.py（及可选辅助 .py），脚本内用 skill_runtime.finish(conclusion) 返回结果；"
+                    "SKILL.md 说明 run_skill_script 用法。勿只提交 Markdown，否则调用时仍须"
+                    "智能体现场推理，耗时长且易错",
+                )
 
             skill = svc.create_generated_skill(
                 db,
@@ -1495,6 +2154,7 @@ async def execute_agent_tool(
                 description=str(params.get("description") or ""),
                 skill_md_body=str(params.get("skill_md_body") or ""),
                 replace_existing=bool(params.get("replace_existing")),
+                extra_files=extra_files,
             )
             if loop_state is not None:
                 loop_state["planned_uploaded_skill"] = skill.name
@@ -1560,6 +2220,10 @@ async def execute_agent_tool(
         if plat_tool is not None:
             return plat_tool
 
+        admin_tool = _execute_admin_tool(db, user, tool_name=tool_name, params=params)
+        if admin_tool is not None:
+            return admin_tool
+
         browser_tool = await _execute_browser_tool(
             db,
             user,
@@ -1567,6 +2231,7 @@ async def execute_agent_tool(
             params=params,
             conversation_id=conversation_id,
             loop_state=loop_state,
+            user_message=user_message,
         )
         if browser_tool is not None:
             return browser_tool
@@ -1704,6 +2369,24 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
             "detail": scope,
             "tool": "document.folders",
         }
+    if name == "create_kb_folder":
+        folder_name = str(params.get("name") or "").strip()[:80]
+        scope = str(params.get("scope") or "").strip()
+        return {
+            "title": "新建文件夹",
+            "result_title": "文件夹已创建",
+            "detail": f"{scope}/{folder_name}".strip("/"),
+            "tool": "document.folder_create",
+        }
+    if name == "create_library_document":
+        title = str(params.get("title") or "").strip()[:80]
+        folder = str(params.get("folder_name") or params.get("folder_id") or "未分类")[:80]
+        return {
+            "title": "写入文档库",
+            "result_title": "文档已写入",
+            "detail": f"{title} → {folder}",
+            "tool": "document.create",
+        }
     if name == "rename_document":
         title = str(params.get("new_title") or "").strip()[:80]
         return {
@@ -1776,17 +2459,23 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
             "tool": "platform.notification",
         }
     if name == "schedule_notification":
-        delay = params.get("delay_minutes") or params.get("delay_seconds")
+        from app.services.notification_service import preview_scheduled_display
+
         title = str(params.get("title") or "").strip()[:80]
-        boost_seconds = None
-        if params.get("delay_seconds") is not None:
-            boost_seconds = max(1, int(params["delay_seconds"]))
-        elif params.get("delay_minutes") is not None:
-            boost_seconds = max(60, int(params["delay_minutes"]) * 60)
+        when, boost_seconds = preview_scheduled_display(
+            delay_seconds=int(params["delay_seconds"])
+            if params.get("delay_seconds") is not None
+            else None,
+            delay_minutes=int(params["delay_minutes"])
+            if params.get("delay_minutes") is not None
+            else None,
+            scheduled_at=str(params.get("scheduled_at") or "") or None,
+        )
+        detail = f"{title} · {when}" if when else title
         meta = {
             "title": "设置定时通知",
             "result_title": "定时通知已设置",
-            "detail": f"{title} · {delay or params.get('scheduled_at', '')}"[:80],
+            "detail": detail[:80],
             "tool": "platform.notification",
         }
         if boost_seconds is not None:

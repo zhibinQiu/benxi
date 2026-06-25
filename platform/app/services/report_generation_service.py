@@ -646,7 +646,12 @@ def _build_messages(
 
     system = "\n\n".join(parts)
     messages: list[dict] = [{"role": "system", "content": system}]
-    tail = trim_chat_history(history, max_messages=_MAX_HISTORY)
+    history_chars = max(8000, limits["report_prompt_max_chars"] // 2)
+    tail = trim_chat_history(
+        history,
+        max_messages=_MAX_HISTORY,
+        max_chars=history_chars,
+    )
     for item in tail:
         messages.append({"role": item.role, "content": item.content.strip()})
     messages.append({"role": "user", "content": message})
@@ -661,6 +666,7 @@ async def _iter_llm_stream(*, messages: list[dict], intent: str) -> AsyncIterato
     """保留兼容：仅产出正文 delta。"""
     from app.services.llm_workflow_stream import iter_llm_answer_events
 
+    limits = get_prompt_limits()
     temperature = 0.35 if intent == "format_adjust" else 0.55
     async for ev in iter_llm_answer_events(
         messages=messages,
@@ -668,6 +674,7 @@ async def _iter_llm_stream(*, messages: list[dict], intent: str) -> AsyncIterato
         think_title="正在撰写报告",
         think_detail="整合材料并生成报告正文…",
         unlimited_output=True,
+        max_total_chars=limits["report_prompt_max_chars"],
     ):
         if ev.get("type") == "delta" and ev.get("text"):
             yield ev["text"]
@@ -1160,6 +1167,7 @@ async def iter_report_generation_stream(
     temperature = 0.35 if intent == "format_adjust" else 0.55
     from app.services.llm_workflow_stream import iter_llm_answer_events
 
+    report_prompt_budget = get_prompt_limits()["report_prompt_max_chars"]
     try:
         async for ev in iter_llm_answer_events(
             messages=messages,
@@ -1167,6 +1175,7 @@ async def iter_report_generation_stream(
             think_title="正在撰写报告",
             think_detail="整合材料并生成报告正文…",
             unlimited_output=True,
+            max_total_chars=report_prompt_budget,
         ):
             if ev.get("type") == "workflow":
                 yield json.dumps({"workflow": ev["data"]}, ensure_ascii=False)

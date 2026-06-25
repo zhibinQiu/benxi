@@ -4,6 +4,7 @@ import { clearAllChatSessions } from "./chatSessionPersist.js";
 import { clearCompareViewSession } from "./compareViewPersist.js";
 import { clearDocumentsViewCache } from "./documentsViewCache.js";
 import { clearKgPalantirCache } from "./kgPalantirCache.js";
+import { invalidateKnowledgeScopeTree } from "../composables/useKnowledgeScopeTree.js";
 import { clearKnowledgeScopeTreeCache } from "./knowledgeScopeTreeCache.js";
 import { clearKnowledgeScopeSelection } from "./knowledgeScopeSelectionCache.js";
 import { stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
@@ -20,6 +21,7 @@ export function resetClientSessionState() {
   stopNotificationAlerts();
   clearDocumentsViewCache();
   clearKgPalantirCache();
+  invalidateKnowledgeScopeTree();
   clearKnowledgeScopeTreeCache();
   clearAllChatSessions();
   clearCompareViewSession();

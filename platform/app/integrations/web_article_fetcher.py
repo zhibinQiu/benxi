@@ -1,4 +1,4 @@
-"""通用网页文章解析（手动粘贴链接收录，非 RSS 批量订阅）。"""
+"""通用网页文章解析（手动粘贴链接收录）。"""
 
 from __future__ import annotations
 
@@ -14,9 +14,18 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 
-from app.integrations.feed_fetcher import ParsedFeedEntry
-
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ParsedFeedEntry:
+    title: str
+    summary: str
+    link: str
+    content_html: str
+    publish_at: datetime | None
+    entry_key: str
+
 
 _DEFAULT_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "

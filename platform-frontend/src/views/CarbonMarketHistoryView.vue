@@ -7,6 +7,7 @@ import { NButton, NCard, NSelect, NSpin, NText, NSpace } from "naive-ui";
 import { fetchCarbonAssetHistory } from "../api/client";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import { goBackToEntry } from "../utils/navigationReturn";
+import { loadEcharts } from "../utils/echartsLoader.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -84,8 +85,7 @@ function disposeChart() {
 async function renderChart() {
   if (!chartEl.value || !series.value?.points?.length) return;
   disposeChart();
-  const echarts = await import("echarts");
-  const lib = echarts.default ?? echarts;
+  const lib = await loadEcharts();
   chart = lib.init(chartEl.value);
   const pts = series.value.points;
   chart.setOption({

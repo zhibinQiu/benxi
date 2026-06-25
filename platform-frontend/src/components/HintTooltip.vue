@@ -55,7 +55,7 @@ defineProps({
 
 .hint-tooltip--inline:hover,
 .hint-tooltip--inline:focus-visible {
-  background: rgba(91, 156, 245, 0.1);
+  background: var(--platform-accent-muted);
   color: var(--platform-accent);
 }
 </style>

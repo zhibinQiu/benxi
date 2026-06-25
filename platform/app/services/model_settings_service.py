@@ -137,6 +137,13 @@ def _normalize_frontend_theme(value: str | None) -> str:
     return "system"
 
 
+def _normalize_frontend_color_scheme(value: str | None) -> str:
+    v = (value or "").strip().lower()
+    if v in ("purple", "blue"):
+        return v
+    return "purple"
+
+
 def _paddleocr_env_defaults(settings: Settings) -> tuple[str, str, str, str]:
     """PaddleOCR-VL：显式 PLATFORM_PADDLEOCR_* 优先，否则回退 VL / 嵌入（硅基流动等在线 API）。"""
     base = (settings.platform_paddleocr_base_url or "").strip()
@@ -221,6 +228,7 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "platform_api_base_url": (settings.platform_api_base_url or "").strip().rstrip("/"),
         "frontend_app_title": (settings.frontend_app_title or "").strip(),
         "frontend_default_theme": _normalize_frontend_theme(settings.frontend_default_theme),
+        "frontend_color_scheme": _normalize_frontend_color_scheme(settings.frontend_color_scheme),
         "ragflow_api_url": (settings.ragflow_api_url or "").strip(),
         "ragflow_api_key": (settings.ragflow_api_key or "").strip(),
         "knowflow_backend_url": (settings.knowflow_backend_url or "").strip(),
@@ -533,6 +541,11 @@ def get_frontend_default_theme(db: Session | None = None) -> str:
     return _normalize_frontend_theme(merged.get("frontend_default_theme"))
 
 
+def get_frontend_color_scheme(db: Session | None = None) -> str:
+    merged = _effective_config(db, fill_embedding_from_ragflow=False)
+    return _normalize_frontend_color_scheme(merged.get("frontend_color_scheme"))
+
+
 def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
     effective = _merge_effective(get_settings(), db)
     vl_base, vl_key, vl_model = _endpoint_fields(effective, "vl")
@@ -547,6 +560,9 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
         platform_api_base_url=get_platform_api_base_url(db),
         frontend_app_title=(effective.get("frontend_app_title") or "").strip(),
         frontend_default_theme=_normalize_frontend_theme(effective.get("frontend_default_theme")),
+        frontend_color_scheme=_normalize_frontend_color_scheme(
+            effective.get("frontend_color_scheme")
+        ),
         llm=_endpoint(
             base_url=effective["llm_base_url"],
             api_key=effective["llm_api_key"],
@@ -699,6 +715,11 @@ def save_model_settings(
             _normalize_frontend_theme(body.frontend_default_theme)
             if body.frontend_default_theme is not None
             else _normalize_frontend_theme(current.get("frontend_default_theme"))
+        ),
+        "frontend_color_scheme": (
+            _normalize_frontend_color_scheme(body.frontend_color_scheme)
+            if body.frontend_color_scheme is not None
+            else _normalize_frontend_color_scheme(current.get("frontend_color_scheme"))
         ),
         "ragflow_api_url": (
             body.ragflow_api_url

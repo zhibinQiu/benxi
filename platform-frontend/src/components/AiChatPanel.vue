@@ -16,20 +16,24 @@ import {
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { TimeOutline, DocumentTextOutline, DocumentOutline, GitNetworkOutline, CloseOutline, FolderOpenOutline, SparklesOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
-import { getApiBase } from "../api/http.js";
+import {
+  isAuthenticatedApiImageUrl,
+  normalizeChatAttachmentUrl,
+} from "../utils/authenticatedImage.js";
 import {
   clearAiChatAttachments,
+  fetchAiChatAgentCatalog,
   fetchAiChatAttachments,
-  fetchAiChatSkillCatalog,
   removeAiChatAttachmentFile,
   uploadAiChatAttachments,
 } from "../api/chat.js";
+import { formatAgentDisplayName } from "../utils/agentDisplay.js";
 import { NButton, NIcon, NPopover, NSpin } from "naive-ui";
-import { renderMarkdown } from "../utils/markdown.js";
 import ChatComposer from "./ChatComposer.vue";
 import ChatBubbleRetry from "./ChatBubbleRetry.vue";
 import IconAction from "./IconAction.vue";
 import MarkdownRichContent from "./MarkdownRichContent.vue";
+import ChatMarkdownBody from "./ChatMarkdownBody.vue";
 import KnowledgeChatContent from "./KnowledgeChatContent.vue";
 import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 import KnowledgeCitationPreviewModal from "./KnowledgeCitationPreviewModal.vue";
@@ -42,6 +46,7 @@ import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkf
 import { alignCitationsWithContent, splitCitedCitations } from "../utils/reportCitations.js";
 import { exportMindmapMarkdown, exportMindmapOpml } from "../utils/mindmapExport.js";
 import { navigateWithReturn } from "../utils/navigationReturn";
+import { openExternal } from "../utils/openExternal.js";
 import {
   clearChatSession,
   loadChatSession,
@@ -52,6 +57,8 @@ import {
 } from "../utils/chatSessionPersist";
 import {
   MAX_CHAT_MESSAGES,
+  MAX_REPORT_HISTORY_CHARS,
+  MAX_REPORT_HISTORY_FOR_API,
   MAX_VISIBLE_CHAT_MESSAGES,
   trimChatMessages,
 } from "../utils/chatMessageLimits.js";
@@ -90,6 +97,8 @@ const props = defineProps({
   chatScope: { type: String, default: "" },
   /** 是否展示历史对话 / 新对话（知识检索等单次会话场景设为 false） */
   showSessionActions: { type: Boolean, default: true },
+  /** 历史 / 新对话由页面 Teleport 至顶栏 extension（仿知识检索布局） */
+  sessionActionsInToolbar: { type: Boolean, default: false },
   /** 报告生成：最新报告支持思维导图与 Word 导出 */
   showReportTools: { type: Boolean, default: false },
   reportMindmapFetch: { type: Function, default: null },
@@ -97,8 +106,8 @@ const props = defineProps({
   reportLibraryImport: { type: Function, default: null },
   /** { id, label, description?, prompt } */
   reportOptimizePresets: { type: Array, default: () => [] },
-  /** 流式回复期间仍允许编辑输入框（Enter 发送会先停止当前生成） */
-  composerInputWhileLoading: { type: Boolean, default: false },
+  /** 流式回复期间仍允许编辑输入框（发送需先停止当前生成） */
+  composerInputWhileLoading: { type: Boolean, default: true },
   /** AI 智能体：支持上传临时附件（不入库） */
   enableAttachments: { type: Boolean, default: false },
   /** AI 智能体：展示 Agent Skills 目录 */
@@ -111,6 +120,10 @@ const emit = defineEmits(["new-chat"]);
 
 const ui = usePlatformUi();
 const { t } = useI18n();
+
+const showPanelSessionActions = computed(
+  () => props.showSessionActions && !props.sessionActionsInToolbar
+);
 const route = useRoute();
 const router = useRouter();
 
@@ -198,6 +211,13 @@ async function showOlderMessages() {
 }
 
 function shouldRenderRich(entry) {
+  if (
+    props.showReportTools &&
+    entry.message.role === "assistant" &&
+    (entry.message.content || "").trim()
+  ) {
+    return true;
+  }
   return shouldRenderMessageRich({
     messageIndex: entry.index,
     totalMessages: messages.value.length,
@@ -233,36 +253,36 @@ const uploadingAttachments = ref(false);
 const attachmentInputRef = ref(null);
 const hasAttachments = computed(() => attachmentFiles.value.length > 0);
 
-const skillCatalog = ref([]);
-const skillCatalogLoading = ref(false);
-const skillPopoverShow = ref(false);
-const skillCatalogLoaded = ref(false);
+const agentCatalog = ref([]);
+const agentCatalogLoading = ref(false);
+const agentPopoverShow = ref(false);
+const agentCatalogLoaded = ref(false);
 
-async function loadSkillCatalog() {
-  if (skillCatalogLoading.value) return;
-  skillCatalogLoading.value = true;
+async function loadAgentCatalog() {
+  if (agentCatalogLoading.value) return;
+  agentCatalogLoading.value = true;
   try {
-    skillCatalog.value = (await fetchAiChatSkillCatalog()) || [];
-    skillCatalogLoaded.value = true;
+    agentCatalog.value = (await fetchAiChatAgentCatalog()) || [];
+    agentCatalogLoaded.value = true;
   } catch (e) {
     ui.error(e.message || t("chat.agentSkills.loadFailed"));
   } finally {
-    skillCatalogLoading.value = false;
+    agentCatalogLoading.value = false;
   }
 }
 
-async function onSkillPopoverShowChange(show) {
-  skillPopoverShow.value = show;
-  if (show && !skillCatalogLoaded.value) {
-    await loadSkillCatalog();
+async function onAgentPopoverShowChange(show) {
+  agentPopoverShow.value = show;
+  if (show && !agentCatalogLoaded.value) {
+    await loadAgentCatalog();
   }
 }
 
-function useSkill(skill) {
-  const label = skill.title || skill.name;
+function useAgent(agent) {
+  const label = formatAgentDisplayName(agent.title);
   const prefix = input.value.trim() ? `${input.value.trim()}\n` : "";
-  input.value = `${prefix}请使用「${label}」技能：`;
-  skillPopoverShow.value = false;
+  input.value = `${prefix}请让 ${label}：`;
+  agentPopoverShow.value = false;
   nextTick(() => composerRef.value?.focus?.());
 }
 
@@ -508,7 +528,7 @@ function openCitationPreview(citationOrIndex, citations = []) {
     return;
   }
   if (citation.source === "web" && citation.url) {
-    window.open(citation.url, "_blank", "noopener,noreferrer");
+    openExternal(citation.url);
     return;
   }
   citationPreviewTarget.value = citation;
@@ -528,8 +548,8 @@ const composerPlaceholder = computed(() =>
 );
 
 const landingComposerRows = computed(() => ({ minRows: 3, maxRows: 8 }));
-/** 对话中输入框固定 1 行 */
-const chatComposerRows = computed(() => ({ minRows: 1, maxRows: 1 }));
+/** 对话中从 1 行起随内容增高，不出现滚动条 */
+const chatComposerRows = computed(() => ({ minRows: 1, maxRows: 6 }));
 
 function emptyWorkflow() {
   return emptyAgentWorkflow();
@@ -578,11 +598,13 @@ async function scrollToBottom() {
 }
 
 function buildChatHistory() {
+  if (props.chatScope === "report-generation") {
+    return trimHistoryForApi(messages.value, {
+      maxMessages: MAX_REPORT_HISTORY_FOR_API,
+      maxChars: MAX_REPORT_HISTORY_CHARS,
+    });
+  }
   return trimHistoryForApi(messages.value);
-}
-
-function renderMarkdownHtml(text) {
-  return renderMarkdown(text || "");
 }
 
 async function sendMessageStreaming(content, assistantIdx, history) {
@@ -590,6 +612,7 @@ async function sendMessageStreaming(content, assistantIdx, history) {
   streamAbort = new AbortController();
 
   let scrollTick = 0;
+  const streamedScreenshotBlocks = [];
   try {
     await props.streamChat(
       {
@@ -624,15 +647,17 @@ async function sendMessageStreaming(content, assistantIdx, history) {
         onAttachments: (attachments) => {
           const row = messages.value[assistantIdx];
           if (!row || !Array.isArray(attachments)) return;
-          const base = getApiBase().replace(/\/$/, "");
           for (const att of attachments) {
             if (att?.type !== "image" || !att.url) continue;
-            const src = String(att.url).startsWith("http")
-              ? att.url
-              : `${base}${att.url.startsWith("/") ? att.url : `/${att.url}`}`;
+            const src = normalizeChatAttachmentUrl(att.url);
+            if (!src) continue;
             const title = att.title || "浏览器截图";
+            const block = `![${title}](${src})`;
+            if (!streamedScreenshotBlocks.includes(block)) {
+              streamedScreenshotBlocks.push(block);
+            }
             if (!String(row.content || "").includes(src)) {
-              row.content = `${row.content || ""}\n\n![${title}](${src})\n`;
+              row.content = `${row.content || ""}\n\n${block}\n`;
             }
           }
           scrollToBottom();
@@ -659,8 +684,14 @@ async function sendMessageStreaming(content, assistantIdx, history) {
         onDone: (payload) => {
           const row = messages.value[assistantIdx];
           if (row) {
-            const full = (payload?.reply || "").trim();
+            let full = (payload?.reply || "").trim();
             if (full) {
+              for (const block of streamedScreenshotBlocks) {
+                const url = block.match(/\(([^)]+)\)/)?.[1] || "";
+                if (url && isAuthenticatedApiImageUrl(url) && !full.includes(url)) {
+                  full = `${full}\n\n${block}\n`;
+                }
+              }
               row.content = full;
             }
             row.streaming = false;
@@ -678,7 +709,15 @@ async function sendMessageStreaming(content, assistantIdx, history) {
           if (payload?.conversation_id) {
             conversationId.value = payload.conversation_id;
           }
-        }}
+        },
+        onFollowUpQuestions: (questions) => {
+          const row = messages.value[assistantIdx];
+          applyFollowUpQuestions(row, questions);
+        },
+        onConversationId: (id) => {
+          if (id) conversationId.value = id;
+        },
+      }
     );
     const row = messages.value[assistantIdx];
     if (row && !row.content.trim()) {
@@ -764,12 +803,7 @@ async function sendMessage(text) {
   const content = (text ?? input.value).trim();
   if (!content) return;
 
-  if (sending.value) {
-    if (!props.composerInputWhileLoading) return;
-    streamGeneration += 1;
-    streamAbort?.abort();
-    finalizeStoppedAssistant(messages.value.length - 1);
-  }
+  if (sending.value) return;
 
   if (props.streaming && !props.streamChat) {
     ui.error(t("chat.streamNotConfigured"));
@@ -850,6 +884,7 @@ async function sendMessage(text) {
 function onComposerKeydown(e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
+    if (sending.value) return;
     sendMessage();
   }
 }
@@ -987,6 +1022,7 @@ async function loadConversationFromId(id) {
     const data = await fetchChatConversationMessages(props.chatScope, id, {
       limit: MAX_CHAT_MESSAGES,
     });
+    if (loadingConversationId.value !== id) return;
     const rows = Array.isArray(data?.messages) ? data.messages : [];
     historyHasOlder.value = Boolean(data?.has_older);
     historyOldestId.value = data?.oldest_id || null;
@@ -1080,7 +1116,7 @@ onBeforeUnmount(() => {
   streamAbort?.abort();
 });
 
-defineExpose({ newChat });
+defineExpose({ newChat, goToHistory, loadingHistory });
 </script>
 
 <template>
@@ -1089,7 +1125,7 @@ defineExpose({ newChat });
     :class="{ 'ai-home--active': started }"
     v-bind="$attrs"
   >
-    <div v-if="!started && chatScope && showSessionActions" class="ai-home-landing-topbar">
+    <div v-if="!started && chatScope && showPanelSessionActions" class="ai-home-landing-topbar">
       <IconAction
         :label="t('chat.viewHistory')"
         :icon="TimeOutline"
@@ -1100,7 +1136,7 @@ defineExpose({ newChat });
 
     <Transition name="ai-chat-header">
       <header
-        v-if="started && (showChatHeaderBrand || showSessionActions)"
+        v-if="started && (showChatHeaderBrand || showPanelSessionActions)"
         class="ai-home-chat-header"
         :class="{ 'ai-home-chat-header--minimal': !showChatHeaderBrand }"
       >
@@ -1113,7 +1149,7 @@ defineExpose({ newChat });
             <div class="ai-home-chat-sub">{{ headerSub }}</div>
           </div>
         </div>
-        <div v-if="showSessionActions" class="ai-home-chat-actions">
+        <div v-if="showPanelSessionActions" class="ai-home-chat-actions">
           <IconAction
             v-if="chatScope"
             :label="t('chat.history')"
@@ -1203,8 +1239,12 @@ defineExpose({ newChat });
                 <n-spin size="tiny" />
                 {{ t("chat.thinking") }}
               </div>
-              <div v-if="entry.message.streaming && entry.message.content" class="ai-home-stream-text">
-                {{ entry.message.content }}<span class="ai-home-cursor">▍</span>
+              <div
+                v-if="entry.message.streaming && entry.message.content"
+                class="ai-home-stream-md"
+              >
+                <ChatMarkdownBody :content="entry.message.content" />
+                <span class="ai-home-cursor">▍</span>
               </div>
               <template v-else-if="shouldRenderRich(entry)">
               <template v-if="isReportMessage(entry.index, entry.message)">
@@ -1254,9 +1294,10 @@ defineExpose({ newChat });
                     :key="`md-report-${entry.index}`"
                     :content="reportCitationGroups(entry.message).content || entry.message.content"
                   />
-                  <div
+                  <ChatMarkdownBody
                     v-else-if="entry.message.content"
-                    v-html="renderMarkdownHtml(reportCitationGroups(entry.message).content || entry.message.content)"
+                    :key="`md-plain-report-${entry.index}`"
+                    :content="reportCitationGroups(entry.message).content || entry.message.content"
                   />
                   <section
                     v-if="reportCitationGroups(entry.message).local.length"
@@ -1370,7 +1411,11 @@ defineExpose({ newChat });
                 :key="`md-${entry.index}`"
                 :content="entry.message.content"
               />
-              <div v-else-if="entry.message.content" v-html="renderMarkdownHtml(entry.message.content)" />
+              <ChatMarkdownBody
+                v-else-if="entry.message.content"
+                :key="`md-plain-${entry.index}`"
+                :content="entry.message.content"
+              />
               <div v-else class="ai-workflow-wait ai-workflow-wait--empty">{{ t("chat.noAnswer") }}</div>
               <ChatMessageCitations
                 v-if="
@@ -1441,27 +1486,25 @@ defineExpose({ newChat });
             @change="onAttachmentInputChange"
           />
           <div
-            v-if="(!started && toolLinks.length) || enableAgentSkills"
+            v-if="toolLinks.length || enableAgentSkills"
             class="ai-home-tools"
           >
-            <template v-if="!started">
-              <RouterLink
-                v-for="tool in toolLinks"
-                :key="tool.title"
-                :to="tool.route"
-                class="ai-home-tool-link"
-              >
-                <n-icon v-if="tool.icon" :size="13" :component="tool.icon" />
-                <span>{{ tool.title }}</span>
-              </RouterLink>
-            </template>
+            <RouterLink
+              v-for="tool in toolLinks"
+              :key="tool.title"
+              :to="tool.route"
+              class="ai-home-tool-link"
+            >
+              <n-icon v-if="tool.icon" :size="13" :component="tool.icon" />
+              <span>{{ tool.title }}</span>
+            </RouterLink>
             <n-popover
               v-if="enableAgentSkills"
               trigger="click"
               placement="top-start"
               :width="320"
-              :show="skillPopoverShow"
-              @update:show="onSkillPopoverShowChange"
+              :show="agentPopoverShow"
+              @update:show="onAgentPopoverShowChange"
             >
               <template #trigger>
                 <button
@@ -1475,25 +1518,24 @@ defineExpose({ newChat });
               </template>
               <div class="ai-home-skills-popover">
                 <div class="ai-home-skills-popover__title">{{ t("chat.agentSkills.title") }}</div>
-                <div v-if="skillCatalogLoading" class="ai-home-skills-popover__loading">
+                <div v-if="agentCatalogLoading" class="ai-home-skills-popover__loading">
                   <n-spin :size="16" />
                 </div>
-                <div v-else-if="!skillCatalog.length" class="ai-home-skills-popover__empty">
+                <div v-else-if="!agentCatalog.length" class="ai-home-skills-popover__empty">
                   {{ t("chat.agentSkills.empty") }}
                 </div>
                 <button
-                  v-for="skill in skillCatalog"
-                  :key="skill.name"
+                  v-for="agent in agentCatalog"
+                  :key="agent.id"
                   type="button"
                   class="ai-home-skills-popover__item"
-                  :disabled="skill.readiness !== 'ready'"
-                  @click="useSkill(skill)"
+                  @click="useAgent(agent)"
                 >
                   <span class="ai-home-skills-popover__item-name">
-                    {{ skill.title || skill.name }}
+                    {{ formatAgentDisplayName(agent.title) }}
                   </span>
-                  <span v-if="skill.description" class="ai-home-skills-popover__item-desc">
-                    {{ skill.description }}
+                  <span v-if="agent.description" class="ai-home-skills-popover__item-desc">
+                    {{ agent.description }}
                   </span>
                 </button>
               </div>
@@ -1898,23 +1940,26 @@ defineExpose({ newChat });
 .ai-home-skills-popover {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 280px;
+  gap: 2px;
+  max-height: 320px;
   overflow-y: auto;
+  padding: 2px;
 }
 
 .ai-home-skills-popover__title {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #64748b;
-  padding: 0 4px 6px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--platform-text-secondary);
+  padding: 4px 8px 8px;
 }
 
 .ai-home-skills-popover__loading,
 .ai-home-skills-popover__empty {
-  padding: 12px 4px;
-  font-size: 12px;
-  color: #94a3b8;
+  padding: 16px 8px;
+  font-size: 13px;
+  color: var(--platform-text-tertiary);
   text-align: center;
 }
 
@@ -1922,20 +1967,23 @@ defineExpose({ newChat });
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border: none;
   border-radius: 10px;
   background: transparent;
   text-align: left;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.15s ease;
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .ai-home-skills-popover__item:hover:not(:disabled) {
-  background: var(--platform-accent-soft);
+  background: color-mix(in srgb, var(--platform-accent) 10%, var(--platform-accent-soft));
+  box-shadow: inset 3px 0 0 var(--platform-accent);
 }
 
 .ai-home-skills-popover__item:disabled {
@@ -1945,14 +1993,14 @@ defineExpose({ newChat });
 
 .ai-home-skills-popover__item-name {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--platform-accent-pressed);
+  font-weight: 600;
+  color: var(--platform-text);
 }
 
 .ai-home-skills-popover__item-desc {
   font-size: 11px;
-  line-height: 1.4;
-  color: #64748b;
+  line-height: 1.45;
+  color: var(--platform-text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2135,6 +2183,15 @@ defineExpose({ newChat });
 .ai-home-stream-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ai-home-stream-md {
+  word-break: break-word;
+}
+
+.ai-home-stream-md .ai-home-cursor {
+  display: inline-block;
+  margin-left: 2px;
 }
 
 .ai-home-msg-preview {

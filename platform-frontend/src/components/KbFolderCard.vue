@@ -119,11 +119,11 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 .kb-folder-card {
   --accent: var(--platform-accent);
   --accent-border: var(--platform-accent-soft);
-  --stop-a: #ddd6fe;
-  --stop-b: #a78bfa;
-  --stop-c: #c4b5fd;
-  --stop-d: #8b5cf6;
-  --stop-e: #9374f0;
+  --stop-a: var(--platform-accent-stop-a);
+  --stop-b: var(--platform-accent-stop-b);
+  --stop-c: var(--platform-accent-stop-c);
+  --stop-d: var(--platform-accent-stop-d);
+  --stop-e: var(--platform-accent-stop-e);
 
   position: relative;
   display: flex;
@@ -164,11 +164,11 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 .kb-folder-card--shared {
   --accent: var(--platform-accent-secondary);
   --accent-border: var(--platform-accent-soft-2);
-  --stop-a: #c4b5fd;
-  --stop-b: #a78bfa;
-  --stop-c: #ddd6fe;
-  --stop-d: #8b5cf6;
-  --stop-e: #7c4fe0;
+  --stop-a: var(--platform-accent-stop-c);
+  --stop-b: var(--platform-accent-stop-b);
+  --stop-c: var(--platform-accent-stop-a);
+  --stop-d: var(--platform-accent-stop-d);
+  --stop-e: var(--platform-accent-pressed);
 }
 
 .kb-folder-card--system,
@@ -283,8 +283,8 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   margin: 0 auto;
   width: 100%;
   max-width: 100%;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-xs);
+  font-weight: var(--platform-font-weight-strong);
   line-height: 1.4;
   text-align: center;
   color: var(--platform-text, #0f172a);
@@ -306,8 +306,8 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 .kb-folder-card__meta {
   margin: 3px 0 0;
   width: 100%;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
   line-height: 1.2;
   text-align: center;
   color: var(--accent);

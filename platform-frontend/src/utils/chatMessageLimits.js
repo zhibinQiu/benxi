@@ -21,6 +21,11 @@ export const MAX_HISTORY_FOR_API = 8;
 /** 发给后端的 history 总字符预算 */
 export const MAX_HISTORY_CHARS = 6000;
 
+/** 报告生成：需携带上一版完整报告正文，预算远大于普通问答 */
+export const MAX_REPORT_HISTORY_FOR_API = 6;
+
+export const MAX_REPORT_HISTORY_CHARS = 40000;
+
 export function trimChatMessages(messages, max = MAX_CHAT_MESSAGES) {
   const list = messages || [];
   if (list.length <= max) return list;

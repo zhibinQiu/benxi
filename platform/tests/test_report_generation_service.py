@@ -215,6 +215,50 @@ def test_build_messages_includes_source_priority():
     assert "本地片段" in system and "联网片段" in system
 
 
+def test_build_messages_keeps_long_prior_report_for_follow_up():
+    long_report = "## 摘要\n" + ("全国碳市场分析段落。" * 800)
+    history = [
+        AiChatMessage(role="user", content="请生成全国碳市场研究报告"),
+        AiChatMessage(role="assistant", content=long_report),
+    ]
+    messages = _build_messages(
+        message="补充海外案例",
+        history=history,
+        intent="follow_up",
+        topic="全国碳市场",
+        local_context="",
+        web_context="",
+        web_enabled=False,
+        local_enabled=False,
+        chunk_count=0,
+    )
+    assistant_rows = [m for m in messages if m["role"] == "assistant"]
+    assert len(assistant_rows) == 1
+    # 旧默认 history 预算 6000 会截断到约 5985；扩大后应保留绝大部分上一版报告
+    assert len(assistant_rows[0]["content"]) > 7500
+
+
+def test_prepare_messages_for_report_uses_report_prompt_budget():
+    from app.integrations.deepseek_client import _prepare_messages_for_api
+
+    messages = [
+        {"role": "system", "content": "系统提示。" * 2500},
+        {"role": "user", "content": "生成报告"},
+        {"role": "assistant", "content": "上一版报告。" * 3500},
+        {"role": "user", "content": "补充结论"},
+    ]
+    default_budget = _prepare_messages_for_api(messages)
+    report_budget = _prepare_messages_for_api(
+        messages,
+        max_total_chars=48000,
+    )
+    default_chars = sum(len(m["content"]) for m in default_budget)
+    report_chars = sum(len(m["content"]) for m in report_budget)
+    assert report_chars > default_chars
+    assert default_chars < 20000
+    assert report_chars > 32000
+
+
 def test_generate_report_mindmap_local_fallback():
     from app.services.report_generation_service import generate_report_mindmap
 

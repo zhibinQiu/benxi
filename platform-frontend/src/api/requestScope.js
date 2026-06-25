@@ -1,5 +1,7 @@
 /** 路由级请求作用域：切换页面时取消在途 API，避免后台慢请求拖住 UI。 */
 
+import { isNavigationFailure, NavigationFailureType } from "vue-router";
+
 let routeEpoch = 0;
 let routeAbortController = new AbortController();
 
@@ -22,4 +24,22 @@ export function beginRouteRequestScope() {
 
 export function isRouteAbortError(err) {
   return err?.name === "AbortError" || err?.code === "ROUTE_ABORT";
+}
+
+/** 路由切换或重复导航导致的可忽略错误，勿向用户弹 toast */
+export function isBenignNavigationError(err) {
+  if (!err) return false;
+  if (isRouteAbortError(err)) return true;
+  if (err?.name === "NavigationDuplicated") return true;
+  const msg = String(err?.message || err || "").trim();
+  if (msg === "ROUTE_ABORT") return true;
+  if (/Avoided redundant navigation/i.test(msg)) return true;
+  if (
+    isNavigationFailure(err, NavigationFailureType.duplicated) ||
+    isNavigationFailure(err, NavigationFailureType.aborted) ||
+    isNavigationFailure(err, NavigationFailureType.cancelled)
+  ) {
+    return true;
+  }
+  return false;
 }

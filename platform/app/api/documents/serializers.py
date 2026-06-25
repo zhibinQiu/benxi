@@ -55,7 +55,8 @@ def batch_owner_names(db: Session, owner_ids: set[uuid.UUID]) -> dict[uuid.UUID,
     if not owner_ids:
         return {}
     users = db.scalars(select(User).where(User.id.in_(owner_ids))).all()
-    return {u.id: user_display_name(u) for u in users}
+    found = {u.id: user_display_name(u) for u in users}
+    return {oid: found.get(oid, user_display_name(None)) for oid in owner_ids}
 
 
 def batch_dept_names(db: Session, dept_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:

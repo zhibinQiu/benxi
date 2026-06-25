@@ -182,7 +182,7 @@ def client_config_cache_key() -> str:
 
 
 def dashboard_stats_cache_key() -> str:
-    return "sys:dashboard-stats"
+    return "sys:dashboard-stats:v2"
 
 
 def features_cache_key(user_id: str) -> str:

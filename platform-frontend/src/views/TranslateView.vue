@@ -34,6 +34,7 @@ import FileDropZone from "../components/FileDropZone.vue";
 import DocumentVersionPreviewModal from "../components/DocumentVersionPreviewModal.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
+import ListTableFooter from "../components/ListTableFooter.vue";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import {
   createTranslateJob,
@@ -887,18 +888,22 @@ function loadPreviewBlob() {
         </n-button>
         <ListRefreshButton :loading="libraryLoading" size="small" @click="loadLibraryDocs" />
       </n-space>
-      <n-data-table
-        :columns="libraryColumns"
-        :data="libraryItems"
-        :loading="libraryLoading"
-        :max-height="320"
-        :pagination="{
-          page: libraryPage,
-          pageSize: LIST_PAGE_SIZE,
-          itemCount: libraryTotal,
-          onUpdatePage: onLibraryPageChange}"
-        size="small"
-      />
+      <div class="admin-list-table">
+        <n-data-table
+          :columns="libraryColumns"
+          :data="libraryItems"
+          :loading="libraryLoading"
+          :max-height="320"
+          :pagination="false"
+          size="small"
+        />
+        <ListTableFooter
+          :page="libraryPage"
+          :page-size="LIST_PAGE_SIZE"
+          :item-count="libraryTotal"
+          @update:page="onLibraryPageChange"
+        />
+      </div>
     </AdminFormModal>
 
     <DocumentVersionPreviewModal
@@ -1026,7 +1031,7 @@ function loadPreviewBlob() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
   font-weight: 700;
   color: var(--platform-accent);
   background: var(--platform-accent-soft);
@@ -1040,14 +1045,14 @@ function loadPreviewBlob() {
 }
 
 .wf-section-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-lg);
+  font-weight: var(--platform-font-weight-strong);
   color: var(--n-text-color);
   line-height: 1.3;
 }
 
 .wf-section-desc {
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
   color: var(--platform-muted);
   line-height: 1.35;
 }
@@ -1103,13 +1108,13 @@ function loadPreviewBlob() {
 }
 
 .upload-fill :deep(.drop-zone .drop-icon-wrap .n-icon) {
-  font-size: 16px !important;
+  font-size: var(--platform-font-size-lg) !important;
 }
 
 .upload-fill :deep(.drop-zone .drop-title) {
   grid-column: 2;
   grid-row: 1;
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
   margin-bottom: 0;
   min-width: 0;
   overflow: hidden;
@@ -1120,7 +1125,7 @@ function loadPreviewBlob() {
 .upload-fill :deep(.drop-zone .drop-hint) {
   grid-column: 2;
   grid-row: 2;
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.35;
   min-width: 0;
   overflow: hidden;
@@ -1139,7 +1144,7 @@ function loadPreviewBlob() {
 .upload-fill :deep(.drop-zone .drop-btn.n-button) {
   height: 24px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
 }
 
 .config-grid {
@@ -1170,8 +1175,8 @@ function loadPreviewBlob() {
 }
 
 .block-label {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-lg);
+  font-weight: var(--platform-font-weight-medium);
   color: var(--n-text-color-2, var(--platform-text-secondary));
 }
 
@@ -1229,7 +1234,7 @@ function loadPreviewBlob() {
 
 .field-label {
   display: block;
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
   margin-bottom: 4px;
 }
 
@@ -1241,7 +1246,7 @@ function loadPreviewBlob() {
 
 .start-btn {
   width: 100%;
-  font-weight: 600;
+  font-weight: var(--platform-font-weight-strong);
   height: 36px;
 }
 
@@ -1263,7 +1268,7 @@ function loadPreviewBlob() {
   border: 1.5px dashed var(--n-border-color);
   background: color-mix(in srgb, var(--platform-text) 2%, transparent);
   text-align: left;
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
 }
 
 .library-selected {
@@ -1289,7 +1294,7 @@ function loadPreviewBlob() {
 
 .library-file-name {
   display: block;
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
   margin-top: 2px;
 }
 
@@ -1306,8 +1311,8 @@ function loadPreviewBlob() {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-lg);
+  font-weight: var(--platform-font-weight-medium);
   color: var(--n-text-color);
 }
 
@@ -1331,7 +1336,7 @@ function loadPreviewBlob() {
   gap: 6px;
   padding: 8px 4px 4px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
 }
 
 .result-body {
@@ -1386,7 +1391,7 @@ function loadPreviewBlob() {
 
 .status-file {
   display: block;
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
   margin-top: 6px;
   word-break: break-all;
   line-height: 1.4;
@@ -1394,7 +1399,7 @@ function loadPreviewBlob() {
 
 .status-meta {
   display: block;
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
   margin-top: 3px;
 }
 
@@ -1408,16 +1413,16 @@ function loadPreviewBlob() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
 }
 
 .progress-pct {
-  font-size: 13px;
+  font-size: var(--platform-font-size-lg);
   color: var(--platform-accent);
 }
 
 .stage-text {
-  font-size: 12px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.45;
 }
 
@@ -1428,13 +1433,13 @@ function loadPreviewBlob() {
 }
 
 .dl-group-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
   color: var(--platform-muted);
 }
 
 .dl-group-hint {
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.4;
 }
 
@@ -1516,13 +1521,13 @@ function loadPreviewBlob() {
 }
 
 .dl-item-text strong {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-strong);
   line-height: 1.3;
 }
 
 .dl-item-text small {
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-muted);
   line-height: 1.3;
 }

@@ -8,7 +8,7 @@ import { NButton, NIcon, NSpin } from "naive-ui";
 import { CloseOutline, SparklesOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
 import ChatBubbleRetry from "./ChatBubbleRetry.vue";
-import { renderMarkdown } from "../utils/markdown.js";
+import ChatMarkdownBody from "./ChatMarkdownBody.vue";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
 import {
@@ -48,6 +48,7 @@ const quickPrompts = computed(
 
 const sending = ref(false);
 const loadingHistory = ref(false);
+const loadingConversationId = ref("");
 const conversationId = ref(null);
 const input = ref("");
 const messages = ref([]);
@@ -167,10 +168,6 @@ watch(
   { immediate: true },
 );
 
-function renderMarkdownHtml(text) {
-  return renderMarkdown(text || "");
-}
-
 function historyForApi() {
   return trimHistoryForApi(messages.value);
 }
@@ -220,6 +217,15 @@ async function showOlderMessages() {
   }
 }
 
+let chatAbort = null;
+
+function stopGeneration() {
+  if (!sending.value) return;
+  chatAbort?.abort();
+  chatAbort = null;
+  sending.value = false;
+}
+
 async function sendMessage(text) {
   const msg = (text || input.value).trim();
   if (!msg || sending.value) return;
@@ -227,19 +233,23 @@ async function sendMessage(text) {
   messages.value.push({ role: "user", content: msg });
   scrollToBottom();
   sending.value = true;
+  chatAbort = new AbortController();
   try {
     const history = historyForApi().slice(0, -1);
     const data = await assistantChat({
       message: msg,
       history,
       page_hint: pageHint.value || null,
-      conversationId: conversationId.value});
+      conversationId: conversationId.value,
+      signal: chatAbort.signal,
+    });
     if (data?.conversation_id) {
       conversationId.value = data.conversation_id;
     }
     messages.value.push({ role: "assistant", content: data.reply });
     trimAssistantMessages();
   } catch (e) {
+    if (e?.name === "AbortError") return;
     messages.value.push({
       role: "assistant",
       content: t("assistantFab.errorReply", {
@@ -248,6 +258,7 @@ async function sendMessage(text) {
     });
   } finally {
     sending.value = false;
+    chatAbort = null;
     scrollToBottom();
     persistAssistantSession();
   }
@@ -256,6 +267,7 @@ async function sendMessage(text) {
 function onKeydown(e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
+    if (sending.value) return;
     sendMessage();
   }
 }
@@ -302,12 +314,14 @@ function persistAssistantSession() {
 
 async function loadConversationFromId(id) {
   if (!id) return;
+  loadingConversationId.value = id;
   loadingHistory.value = true;
   open.value = true;
   try {
     const data = await fetchChatConversationMessages(ASSISTANT_SCOPE, id, {
       limit: MAX_CHAT_MESSAGES,
     });
+    if (loadingConversationId.value !== id) return;
     const rows = Array.isArray(data?.messages) ? data.messages : [];
     historyHasOlder.value = Boolean(data?.has_older);
     historyOldestId.value = data?.oldest_id || null;
@@ -332,6 +346,7 @@ async function loadConversationFromId(id) {
     });
   } finally {
     loadingHistory.value = false;
+    if (loadingConversationId.value === id) loadingConversationId.value = "";
   }
 }
 
@@ -375,6 +390,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  chatAbort?.abort();
   document.removeEventListener("keydown", onDocumentKeydown);
   document.removeEventListener("pointerdown", onOutsidePointerDown, true);
 });
@@ -444,7 +460,11 @@ onBeforeUnmount(() => {
                 v-if="entry.message.role === 'assistant'"
                 class="assistant-bubble assistant-bubble--bot"
               >
-                <div v-if="shouldRenderRich(entry)" v-html="renderMarkdownHtml(entry.message.content)" />
+                <ChatMarkdownBody
+                  v-if="shouldRenderRich(entry)"
+                  :key="`assistant-md-${entry.index}`"
+                  :content="entry.message.content"
+                />
                 <div v-else class="assistant-msg-collapsed">
                   <span class="assistant-msg-plain">{{ plainMessagePreview(entry.message.content) }}</span>
                   <button
@@ -491,12 +511,12 @@ onBeforeUnmount(() => {
           <ChatComposer
             v-model="input"
             :placeholder="t('assistantFab.inputPlaceholder')"
-            :disabled="sending"
             :loading="sending"
             :min-rows="1"
             :max-rows="3"
             @keydown="onKeydown"
             @send="sendMessage()"
+            @stop="stopGeneration"
           />
         </footer>
         </div>

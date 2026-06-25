@@ -414,7 +414,7 @@ function goPdfPage(delta) {
   word-break: break-word;
 }
 .pdf-hit-snippet :deep(mark.hl-search) {
-  background: rgba(139, 92, 246, 0.35);
+  background: color-mix(in srgb, var(--platform-accent) 35%, transparent);
   border-radius: 2px;
   padding: 0 2px;
 }
@@ -450,13 +450,13 @@ function goPdfPage(delta) {
   border: 1px solid transparent;
 }
 .para-block.para-search-hit {
-  border-color: rgba(139, 92, 246, 0.45);
-  background: rgba(139, 92, 246, 0.08);
+  border-color: color-mix(in srgb, var(--platform-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--platform-accent) 8%, transparent);
 }
 .para-block.para-search-hit--active {
-  border-color: rgba(139, 92, 246, 0.85);
-  background: rgba(139, 92, 246, 0.16);
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+  border-color: color-mix(in srgb, var(--platform-accent) 85%, transparent);
+  background: color-mix(in srgb, var(--platform-accent) 16%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--platform-accent) 20%, transparent);
 }
 .para-block.para-diff-active {
   border-color: rgba(234, 179, 8, 0.85);
@@ -482,7 +482,7 @@ function goPdfPage(delta) {
 @keyframes para-flash {
   0%,
   15% {
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.55);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-accent) 55%, transparent);
   }
   100% {
     box-shadow: none;
@@ -512,13 +512,13 @@ function goPdfPage(delta) {
   border-radius: 2px;
 }
 .para-text :deep(mark.hl-search) {
-  background: rgba(139, 92, 246, 0.35);
+  background: color-mix(in srgb, var(--platform-accent) 35%, transparent);
   color: inherit;
   padding: 0 2px;
   border-radius: 2px;
 }
 .para-text :deep(mark.hl-search--active) {
-  background: rgba(139, 92, 246, 0.62);
-  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.45);
+  background: color-mix(in srgb, var(--platform-accent) 62%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--platform-accent) 45%, transparent);
 }
 </style>

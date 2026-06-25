@@ -1,5 +1,6 @@
 /** OCR 识别 REST API */
 import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
+import { downloadBlob } from "../utils/downloadBlob.js";
 
 export async function fetchOcrMeta() {
   return api("/api/v1/ocr/meta");
@@ -40,9 +41,5 @@ export async function downloadOcrExportZip({ format, items }) {
   const match = disp.match(/filename="?([^";]+)"?/);
   const suffix = format === "markdown" ? "md" : "json";
   const name = match ? match[1] : `ocr-export-${suffix}.zip`;
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadBlob(blob, name);
 }

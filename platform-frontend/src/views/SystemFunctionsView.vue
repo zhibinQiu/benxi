@@ -1,9 +1,10 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { encodeReturnLocation } from "../utils/navigationReturn";
-import { NButton, NCard, NEmpty, NGrid, NGi, NSpin, NTag, NIcon } from "naive-ui";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
+import { NCard, NEmpty, NGrid, NGi, NSpin, NTag, NIcon } from "naive-ui";
 import {
   LanguageOutline,
   ChatbubblesOutline,
@@ -15,7 +16,6 @@ import {
   LeafOutline,
   SparklesOutline,
   GridOutline,
-  OpenOutline,
   HardwareChipOutline,
   CreateOutline,
   WalletOutline,
@@ -31,6 +31,7 @@ import HintTooltip from "../components/HintTooltip.vue";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
+import { openExternal } from "../utils/openExternal.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -171,7 +172,7 @@ function openFeature(f) {
     return;
   }
   if (f.external_url) {
-    window.open(f.external_url, "_blank", "noopener,noreferrer");
+    openExternal(f.external_url);
     return;
   }
   ui.warning(t("systemFunctionsPage.noEntry"));
@@ -191,7 +192,7 @@ function openFeature(f) {
       :description="t('systemFunctionsPage.emptyDescription')"
     >
       <template #extra>
-        <n-button size="small" @click="refreshFeatures">{{ t("systemFunctionsPage.reload") }}</n-button>
+        <ListRefreshButton :label="t('systemFunctionsPage.reload')" @click="refreshFeatures" />
       </template>
     </n-empty>
 
@@ -201,7 +202,11 @@ function openFeature(f) {
       :description="loadError"
     >
       <template #extra>
-        <n-button size="small" type="primary" @click="refreshFeatures">{{ t("systemFunctionsPage.reload") }}</n-button>
+        <ListRefreshButton
+          :label="t('systemFunctionsPage.reload')"
+          type="primary"
+          @click="refreshFeatures"
+        />
       </template>
     </n-empty>
 
@@ -378,8 +383,8 @@ function openFeature(f) {
 
 .category-block__title {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-medium);
   line-height: 1.35;
   color: var(--platform-text);
 }
@@ -454,11 +459,11 @@ function openFeature(f) {
 .feature-card--locked {
   cursor: not-allowed;
   opacity: 0.55;
-  background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle)) !important;
+  background: var(--platform-bg-elevated-solid, var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle))) !important;
   border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
   box-shadow: none !important;
-  backdrop-filter: saturate(120%) blur(calc(var(--platform-glass-blur) * 0.65));
-  -webkit-backdrop-filter: saturate(120%) blur(calc(var(--platform-glass-blur) * 0.65));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .feature-card__top {
@@ -549,8 +554,8 @@ function openFeature(f) {
   margin: 0;
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-medium);
   line-height: 1.35;
   color: var(--platform-text);
   display: -webkit-box;
@@ -562,7 +567,8 @@ function openFeature(f) {
 .feature-card__desc {
   margin: 4px 0 0;
   margin-top: auto;
-  font-size: 11px;
+  font-size: var(--platform-font-size-xs);
+  font-weight: var(--platform-font-weight-normal);
   line-height: 1.45;
   color: var(--platform-text-tertiary);
   display: -webkit-box;
@@ -587,10 +593,10 @@ function openFeature(f) {
 .feature-card--skeleton {
   min-height: 112px;
   pointer-events: none;
-  background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle)) !important;
+  background: var(--platform-bg-elevated-solid, var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle))) !important;
   border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
-  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
-  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .skeleton-block {

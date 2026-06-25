@@ -1,3 +1,3 @@
 """Document AI platform — control plane (single enterprise)."""
 
-__version__ = "4.3.1"
+__version__ = "4.3.2"

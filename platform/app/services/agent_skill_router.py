@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from app.skills.types import SkillSource
 
@@ -32,8 +33,17 @@ _DOMAIN_IN_MESSAGE_RE = re.compile(
 _PAGE_INTENT_RE = re.compile(
     r"页面|网页|网站|链接|url|站点|抓取|爬取|行情|价格|打开.{0,6}看", re.I
 )
-_WEB_SKILL_DESC_RE = re.compile(
-    r"网页|抓取|爬取|拉取|http|url|洞察|页面|行情|价格|数据", re.I
+_SCREENSHOT_INTENT_RE = re.compile(
+    r"截图|截屏|screenshot|页面长什么样|可视化.{0,6}页面|看一下.{0,6}(?:网页|页面|网站)", re.I
+)
+_SKILL_INSTRUCTION_ONLY_RE = re.compile(
+    r"仅说明|纯指令|不要脚本|不写脚本|无需脚本|instruction.only|"
+    r"mermaid|流程图说明|只写.{0,4}说明",
+    re.I,
+)
+_SCRIPT_TASK_RE = re.compile(
+    r"爬取|抓取|拉取|脚本|执行|运行|数据|api|自动化|价格|行情|采集|同步|监控",
+    re.I,
 )
 
 
@@ -52,6 +62,34 @@ def is_platform_usage_message(message: str) -> bool:
 def is_skill_management_message(message: str) -> bool:
     """用户是否在创建/更新/删除 Skill，而非使用已有 Skill 执行任务。"""
     return bool(_SKILL_MANAGE_RE.search((message or "").strip()))
+
+
+def user_wants_browser_screenshot(message: str) -> bool:
+    """用户是否明确要求浏览器截图（与 Skill 编写探页不同）。"""
+    return bool(_SCREENSHOT_INTENT_RE.search((message or "").strip()))
+
+
+def skill_creation_needs_site_research(message: str) -> bool:
+    """编写抓取类 Skill 前是否必须先探查网页/数据源。"""
+    msg = (message or "").strip()
+    return bool(_URL_IN_MESSAGE_RE.search(msg) or _PAGE_INTENT_RE.search(msg))
+
+
+def skill_creation_requires_python_script(message: str) -> bool:
+    """除极简指令型外，发展技能应含可执行 Python 脚本（main.py）。"""
+    msg = (message or "").strip()
+    if not is_skill_management_message(msg):
+        return False
+    if _SKILL_INSTRUCTION_ONLY_RE.search(msg):
+        return False
+    if skill_creation_needs_site_research(msg):
+        return True
+    return bool(_SCRIPT_TASK_RE.search(msg))
+
+
+_WEB_SKILL_DESC_RE = re.compile(
+    r"网页|抓取|爬取|拉取|http|url|洞察|页面|行情|价格|数据", re.I
+)
 
 
 def validate_uploaded_skill_load(
@@ -150,6 +188,29 @@ def _message_aligns_with_skill(message: str, description: str) -> bool:
         if token in msg and (len(token) >= 3 or any("\u4e00" <= c <= "\u9fff" for c in token)):
             return True
     return False
+
+
+_INCONCLUSIVE_SKILL_CONCLUSION_RE = re.compile(
+    r"无法|失败|未能|不知道|没有结果|无结论|无有效|未获取|未找到|"
+    r"请检查|不能完成|超时|timeout|error|exception|traceback",
+    re.I,
+)
+
+
+def is_inconclusive_skill_conclusion(text: str) -> bool:
+    """脚本虽返回 conclusion，但内容表明任务未成功完成。"""
+    body = (text or "").strip()
+    if not body:
+        return True
+    if len(body) < 6:
+        return True
+    return bool(_INCONCLUSIVE_SKILL_CONCLUSION_RE.search(body))
+
+
+def append_skill_repair_context(loop_state: dict[str, Any] | None, skill_name: str, reason: str) -> None:
+    from app.core.agent_tool_context import append_skill_repair_context as _append
+
+    _append(loop_state, skill_name=skill_name, reason=reason)
 
 
 def extract_memory_note(message: str, *, max_len: int = 500) -> str:

@@ -18,10 +18,15 @@ def test_schedule_notification_workflow_meta_includes_boost_seconds():
         '{"title": "喝水", "delay_seconds": 30}',
     )
     assert meta["tool"] == "platform.notification"
-    assert meta["boost_seconds"] == "30"
+    assert 28 <= int(meta["boost_seconds"]) <= 30
+    assert " · " in meta["detail"]
+    when_part = meta["detail"].split(" · ", 1)[1]
+    assert len(when_part) >= 16
 
     meta_min = tool_workflow_meta(
         "schedule_notification",
         '{"title": "开会", "delay_minutes": 5}',
     )
-    assert meta_min["boost_seconds"] == "300"
+    assert 298 <= int(meta_min["boost_seconds"]) <= 300
+    assert "开会" in meta_min["detail"]
+    assert ":" in meta_min["detail"]

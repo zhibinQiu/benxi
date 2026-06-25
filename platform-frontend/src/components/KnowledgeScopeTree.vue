@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, h, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { NEmpty, NIcon, NInput, NSpin, NTag, NTree } from "naive-ui";
 import {
@@ -10,7 +10,7 @@ import {
   PersonOutline,
   RefreshOutline } from "@vicons/ionicons5";
 import IconAction from "./IconAction.vue";
-import { fetchKnowledgeScopeTree } from "../api/knowledge.js";
+import { useKnowledgeScopeTree } from "../composables/useKnowledgeScopeTree.js";
 import { useI18n } from "../composables/useI18n.js";
 import { usePlatformUi } from "../composables/usePlatformUi.js";
 import {
@@ -20,12 +20,13 @@ import {
 import {
   clearKnowledgeScopeTreeCache,
   readKnowledgeScopeTreeCache,
-  writeKnowledgeScopeTreeCache } from "../utils/knowledgeScopeTreeCache.js";
+} from "../utils/knowledgeScopeTreeCache.js";
 import {
   clearKnowledgeScopeSelection,
   writeKnowledgeScopeSelection,
 } from "../utils/knowledgeScopeSelectionCache.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
+import { KNOWLEDGE_INDEX_UPDATED_EVENT } from "../constants/platformEvents.js";
 
 const CHECKED_KEYS_STORAGE = "platform:knowledge-search-checked-keys:v2";
 
@@ -37,11 +38,11 @@ const route = useRoute();
 const router = useRouter();
 const { t, scopeLabel } = useI18n();
 const ui = usePlatformUi();
+const { treePayload, loading, loadKnowledgeScopeTree } = useKnowledgeScopeTree();
 
-const loading = ref(true);
 const refreshing = ref(false);
 const filter = ref("");
-const treeData = ref([]);
+const treeData = computed(() => treePayload.value?.items || []);
 const expandedKeys = ref([]);
 const checkedKeys = ref([]);
 
@@ -335,7 +336,7 @@ function buildSelectionPayload(docNodes) {
 }
 
 function applyTreeData(data, { resetSelection = false } = {}) {
-  treeData.value = data?.items || [];
+  treePayload.value = data;
   if (resetSelection) {
     expandedKeys.value = [];
     checkedKeys.value = [];
@@ -352,13 +353,14 @@ async function fetchTree({
   const hadTree = treeData.value.length > 0;
   if (background) {
     refreshing.value = true;
-  } else if (!hadTree) {
-    loading.value = true;
   }
   try {
-    const data = await fetchKnowledgeScopeTree({ refresh });
+    const data = await loadKnowledgeScopeTree({
+      force: refresh,
+      background: background && hadTree,
+      refresh,
+    });
     applyTreeData(data, { resetSelection });
-    writeKnowledgeScopeTreeCache(data);
     if (!resetSelection) {
       syncSelectionAfterTreeUpdate();
     }
@@ -370,18 +372,16 @@ async function fetchTree({
       ui.error(e?.message || t("knowledgeSearch.tree.loadFailed"));
     }
   } finally {
-    loading.value = false;
     refreshing.value = false;
   }
 }
 
 async function loadTree() {
-  const cached = readKnowledgeScopeTreeCache();
-  if (cached?.items?.length) {
+  const cached = readKnowledgeScopeTreeCache({ allowStale: true });
+  if (cached) {
     applyTreeData(cached, { resetSelection: false });
-    loading.value = false;
     await restoreCheckedSelection();
-    fetchTree({ background: true, refresh: false });
+    void fetchTree({ background: true, refresh: false });
     return;
   }
   await fetchTree({ resetSelection: false });
@@ -411,14 +411,13 @@ function onCheckedKeysChange(keys) {
 
 onMounted(() => {
   loadTree();
-  window.addEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
+  window.addEventListener(KNOWLEDGE_INDEX_UPDATED_EVENT, onKnowledgeIndexUpdated);
 });
 
 onActivated(() => {
-  const cached = readKnowledgeScopeTreeCache();
-  if (cached?.items?.length) {
+  const cached = readKnowledgeScopeTreeCache({ allowStale: true });
+  if (cached) {
     applyTreeData(cached, { resetSelection: false });
-    loading.value = false;
     syncSelectionAfterTreeUpdate();
     if (!refreshing.value) {
       void fetchTree({ background: true, refresh: false });
@@ -440,7 +439,7 @@ onActivated(() => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
+  window.removeEventListener(KNOWLEDGE_INDEX_UPDATED_EVENT, onKnowledgeIndexUpdated);
 });
 
 defineExpose({ reload: reloadTree });

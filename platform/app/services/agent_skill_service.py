@@ -727,6 +727,15 @@ def load_skill_workspace_bytes(db: Session, skill_id: uuid.UUID) -> dict[str, by
     return out
 
 
+def uploaded_skill_has_script(db: Session, skill_name: str) -> bool:
+    """发展技能是否含可执行 Python / RPA 脚本。"""
+    from app.integrations.skill_script_executor import skill_files_have_executable_script
+
+    skill = _skill_by_name(db, (skill_name or "").strip())
+    files = load_skill_workspace_bytes(db, skill.id)
+    return skill_files_have_executable_script(files)
+
+
 def run_uploaded_skill_script(
     db: Session,
     skill_name: str,
@@ -736,7 +745,10 @@ def run_uploaded_skill_script(
     args: list[str] | None = None,
 ) -> dict:
     """执行上传 Skill 的 Python 入口脚本，仅返回 conclusion。"""
-    from app.integrations.skill_script_executor import execute_skill_script
+    from app.integrations.skill_script_executor import (
+        execute_skill_script,
+        skill_files_have_executable_script,
+    )
     from app.skills.registry import ensure_skills_loaded, get_skill
 
     ensure_skills_loaded()
@@ -747,4 +759,16 @@ def run_uploaded_skill_script(
     if not skill.enabled:
         raise bad_request(f"Skill `{skill.name}` 已禁用")
     files = load_skill_workspace_bytes(db, skill.id)
+    if not skill_files_have_executable_script(files):
+        return {
+            "status": "instruction_only",
+            "conclusion": (
+                f"技能 `{skill.name}` 为纯 SKILL.md 指令包，无 Python 脚本。"
+                "请按已注入的 SKILL.md 工作流程直接生成回答"
+                "（如图表类任务在回复中使用 ```mermaid 围栏）；"
+                "勿再次调用 run_skill_script。"
+            ),
+            "entry": None,
+            "hint": "instruction_only",
+        }
     return execute_skill_script(files=files, entry=entry, args=args)

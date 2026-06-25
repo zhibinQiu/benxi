@@ -1,5 +1,6 @@
 import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
+import { downloadBlob } from "../utils/downloadBlob.js";
 
 export async function fetchReportGenerationMeta() {
   return api("/api/v1/report-generation/meta");
@@ -48,11 +49,7 @@ export async function downloadReportDocx({ title, markdown }) {
   } else if (title) {
     name = `${String(title).replace(/[\\/:*?"<>|]+/g, "_").slice(0, 80) || "研究报告"}.docx`;
   }
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadBlob(blob, name);
 }
 
 export async function importReportToLibrary({ title, markdown, syncKnowflow = true }) {

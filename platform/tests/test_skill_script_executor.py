@@ -7,7 +7,9 @@ import pytest
 from app.core.exceptions import AppError
 from app.integrations.skill_script_executor import (
     execute_skill_script,
+    probe_script_entry,
     resolve_entry_path,
+    skill_files_have_executable_script,
     validate_skill_script,
 )
 from app.integrations.skill_script_runtime import fetch_text
@@ -21,6 +23,22 @@ def test_validate_skill_script_blocks_open():
 def test_resolve_entry_default_main():
     files = {"SKILL.md": b"# x", "main.py": b"print(1)"}
     assert resolve_entry_path(files) == "main.py"
+
+
+def test_probe_script_entry_none_for_instruction_only():
+    files = {"SKILL.md": b"# mermaid", "references/guide.md": b"guide"}
+    assert probe_script_entry(files) is None
+    assert skill_files_have_executable_script(files) is False
+
+
+def test_skill_files_have_script_with_main_py():
+    files = {"SKILL.md": b"# x", "main.py": b"pass"}
+    assert skill_files_have_executable_script(files) is True
+
+
+def test_skill_files_have_script_with_workflow():
+    files = {"SKILL.md": b"# rpa", "workflow.json": b"{}"}
+    assert skill_files_have_executable_script(files) is True
 
 
 def test_execute_skill_script_returns_conclusion():

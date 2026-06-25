@@ -1,5 +1,15 @@
 # 发布说明
 
+## 4.3.2（v4.3.2）— 智能体编排、流式体验与 Mermaid 加固
+
+- **父智能体任务编排**：新增 `agent_orchestrator.py`，多路由复合任务默认顺序执行；workflow 推送 `plan_tasks` / `task_*` 事件；前端 checklist 展示子任务进度
+- **提示词精简**：常驻/专精/规划器 system prompt 收敛为短约定；子任务 `task_mode` 只调工具、由调度层汇总最终回答
+- **流式 UX**：中间 hop 不下发 `replace`；顺序 `workflow_finished` → `replace` → `done`；回答区仅展示最终结论
+- **Agent 记忆**：`MEMORY.md` 每轮注入 system，「以记忆为准」覆盖默认自称
+- **Mermaid 渲染加固**：语法自动清洗 + 三档重试；保留源码占位避免重挂载空白；视口内即时渲染
+- **代码清理**：修复 `agentWorkflow.js` 任务清单处理；移除无效引用；富媒体 DOM 生命周期统一
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.3.2）
+
 ## 4.3.1（v4.3.1）— 知识检索模块化、功能收敛与 Agent 工具链增强
 
 - **知识检索问答模块化**：`knowledge_qa_service` 拆分为 `knowledge_qa/` 子包（检索、生成、引用、预览、流式等），对外 API 保持不变

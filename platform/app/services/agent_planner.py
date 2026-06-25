@@ -14,6 +14,12 @@ from app.integrations.deepseek_client import chat_completion_message_async, is_c
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_intent import AgentToolPlan, plan_agent_tools
+from app.services.agent_skill_router import (
+    _PAGE_INTENT_RE,
+    _URL_IN_MESSAGE_RE,
+    is_skill_management_message,
+    user_wants_browser_screenshot,
+)
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
@@ -73,39 +79,43 @@ class AgentExecutionPlan:
         return RETRIEVAL_ATOMIC_TOOLS.issubset(set(self.skip_tools))
 
 
-def build_plan_context_instruction(plan: AgentExecutionPlan) -> str:
-    """注入 tool loop 的执行计划说明。"""
+SKILL_MGMT_INTENT = "创建或管理 Agent 发展技能"
+
+
+def _skill_management_plan_instruction() -> str:
+    return "Skill：先调研再 create；数据类须 main.py；失败用 update 修复，勿重复 create。"
+
+
+def build_plan_context_instruction(
+    plan: AgentExecutionPlan,
+    *,
+    uploaded_skill_has_script: bool | None = None,
+) -> str:
+    """注入 tool loop 的短计划。"""
     if plan.direct_answer:
         return ""
-    lines = ["【执行计划 · 务必遵守】"]
-    if plan.intent:
-        lines.append(f"- 用户意图：{plan.intent}")
-    if plan.reasoning:
-        lines.append(f"- 策略：{plan.reasoning}")
+    parts: list[str] = []
     if plan.steps:
-        lines.append("- 步骤：" + " → ".join(plan.steps))
-    if plan.builtin_orchestration:
-        lines.append(
-            f"- 内置技能 `{plan.builtin_orchestration}` 仅为编排说明："
-            "直接调用其对应的原子工具，**禁止** `load_uploaded_skill`"
-        )
+        parts.append("步骤：" + " → ".join(plan.steps[:5]))
+    elif plan.intent:
+        parts.append(plan.intent)
+    if plan.intent == SKILL_MGMT_INTENT:
+        parts.append(_skill_management_plan_instruction())
     if plan.uploaded_skill:
-        lines.append(
-            f"- 发展技能 `{plan.uploaded_skill}`：系统会自动注入 SKILL.md；"
-            f"直接 `run_skill_script` 执行即可，**勿**先 `load_uploaded_skill`"
-        )
+        parts.append(f"技能：{plan.uploaded_skill}")
+        if uploaded_skill_has_script is True:
+            parts.append("用 run_skill_script，勿 load")
+        elif uploaded_skill_has_script is False:
+            parts.append("按 SKILL.md，勿 run_skill_script/load")
+    if plan.builtin_orchestration:
+        parts.append(f"内置：{plan.builtin_orchestration}（勿 load）")
     if plan.atomic_tools:
-        lines.append(
-            "- 应使用的原子工具："
-            + "、".join(f"`{t}`" for t in plan.atomic_tools)
-        )
+        parts.append("工具：" + "、".join(plan.atomic_tools))
     if plan.skip_tools:
-        lines.append(
-            "- 禁止调用："
-            + "、".join(f"`{t}`" for t in plan.skip_tools)
-        )
-    lines.append("- 信息已足够时立即停止工具调用并作答")
-    return "\n".join(lines)
+        parts.append("勿调：" + "、".join(plan.skip_tools))
+    if not parts:
+        return ""
+    return "【计划】" + "；".join(parts)
 
 
 def filter_tool_specs_by_plan(
@@ -132,6 +142,69 @@ def filter_tool_specs_by_plan(
             continue
         filtered.append(spec)
     return filtered
+
+
+def _rule_plan_for_skill_management(message: str) -> AgentExecutionPlan | None:
+    """创建/更新/删除发展技能必须走 tool loop，禁止 direct_answer。"""
+    if not is_skill_management_message(message):
+        return None
+    msg = (message or "").strip()
+    needs_browser = bool(_URL_IN_MESSAGE_RE.search(msg) or _PAGE_INTENT_RE.search(msg))
+    if needs_browser:
+        steps = (
+            "澄清目标字段与验收标准",
+            "browser_navigate → browser_snapshot 探查页面（勿截图）",
+            "确认能定位到价格/数据后再编写 main.py 与 SKILL.md",
+            "create_uploaded_skill（extra_files 含 main.py）",
+            "向用户说明用法与局限",
+        )
+    else:
+        steps = (
+            "澄清需求、输入输出与验收标准",
+            "必要时 web_search 或读文档验证可行性",
+            "编写 main.py 与 SKILL.md",
+            "create_uploaded_skill（含 extra_files 脚本）",
+            "向用户说明用法",
+        )
+    skip_tools: tuple[str, ...] = ()
+    if not user_wants_browser_screenshot(msg):
+        skip_tools = ("browser_screenshot",)
+    return AgentExecutionPlan(
+        reasoning=(
+            "发展技能须先调研验证、想清楚再 create_uploaded_skill，避免错误技能浪费用户时间；"
+            "探页用 browser_snapshot，勿臆造页面结构"
+        ),
+        intent=SKILL_MGMT_INTENT,
+        direct_answer=False,
+        atomic_tools=(),
+        skip_tools=skip_tools,
+        uploaded_skill=None,
+        builtin_orchestration=None,
+        steps=steps,
+        source="rule",
+    )
+
+
+def _coerce_skill_management_plan(
+    message: str, plan: AgentExecutionPlan
+) -> AgentExecutionPlan:
+    """修正规划器/缓存将 Skill 管理误判为 direct_answer 的情况。"""
+    if not plan.direct_answer or not is_skill_management_message(message):
+        return plan
+    fixed = _rule_plan_for_skill_management(message)
+    if fixed is None:
+        return plan
+    return AgentExecutionPlan(
+        reasoning=fixed.reasoning,
+        intent=plan.intent or fixed.intent,
+        direct_answer=False,
+        atomic_tools=plan.atomic_tools,
+        skip_tools=fixed.skip_tools or plan.skip_tools,
+        uploaded_skill=plan.uploaded_skill,
+        builtin_orchestration=plan.builtin_orchestration,
+        steps=fixed.steps or plan.steps,
+        source=plan.source,
+    )
 
 
 def _rule_plan_from_intent(intent_plan: AgentToolPlan) -> AgentExecutionPlan | None:
@@ -283,44 +356,56 @@ def _skill_name_sets(
     return builtin, uploaded
 
 
+_KG_PLANNING_USER_LABEL = "【本体图谱关联（规划参考，非检索结果）】"
+
+
+def resolve_kg_planning_context(
+    db: Session,
+    user: User,
+    question: str,
+) -> str:
+    """规划前从问题匹配实体并扩展子图，供消歧与工具选型参考。"""
+    from app.core.permissions import user_has_permission
+
+    if not user_has_permission(db, user, "feature.kg_palantir"):
+        return ""
+    text = (question or "").strip()
+    if not text:
+        return ""
+    try:
+        from app.services.kg_service import retrieve_kg_context_for_question
+
+        ctx = retrieve_kg_context_for_question(db, user, text)
+        if ctx and ctx.context_text:
+            return ctx.context_text.strip()[:1800]
+    except Exception as exc:
+        _logger.warning("Agent 规划前本体图谱加载失败: %s", exc)
+    return ""
+
+
 def _planning_system_prompt(
     *,
     allowed_atomic: set[str],
     builtin_names: set[str],
     uploaded_names: set[str],
+    include_kg_reference: bool = False,
 ) -> str:
-    atomic_list = "、".join(sorted(allowed_atomic)) or "（当前用户无检索类工具）"
-    builtin_list = "、".join(sorted(builtin_names)) or "无"
+    atomic_list = "、".join(sorted(allowed_atomic)) or "无"
     uploaded_list = "、".join(sorted(uploaded_names)) or "无"
+    del builtin_names
+    kg_block = ""
+    if include_kg_reference:
+        kg_block = "若有图谱上下文，先消歧再选工具。\n"
     return (
-        "你是企业 AI 助手「小析」的任务规划器。收到用户问题后，先分析目标与最短路径，"
-        "再决定是否需要调用工具。**只输出 JSON，不要其他文字**。\n\n"
-        "【概念区分 · 必须遵守】\n"
-        "1. **原子工具 (Tools)**：平台 function calling 原语，直接调用，例如 "
-        f"{atomic_list}，以及文档/待办/浏览器等操作工具。\n"
-        "2. **内置技能 (Builtin Skills)**：仅为编排说明，对应若干原子工具；"
-        "**禁止**对内置技能使用 `load_uploaded_skill`，应直接调用其编排的原子工具。\n"
-        f"   当前内置技能名：{builtin_list}\n"
-        "3. **发展技能 (Uploaded Skills)**：用户上传的 SKILL.md 包；"
-        "任务匹配时由系统自动注入 SKILL.md，执行阶段直接 `run_skill_script`，"
-        "勿使用 `load_uploaded_skill`。\n"
-        f"   当前发展技能名：{uploaded_list}\n\n"
-        "【输出 JSON 字段】\n"
-        '{"reasoning":"策略一句话","intent":"用户意图",'
-        '"direct_answer":true|false,'
-        '"atomic_tools":["knowledge_retrieve"],'
-        '"skip_tools":["web_search"],'
-        '"builtin_orchestration":"knowledge-research",'
-        '"uploaded_skill":null,'
-        '"steps":["步骤1","步骤2"]}\n\n'
-        "规则：\n"
-        "- 闲聊、自我介绍、简单计算、已有上下文足够 → direct_answer=true，atomic_tools=[]\n"
-        "- 定时提醒（如「30秒后提醒我喝水」）→ direct_answer=false，必须调用 schedule_notification（秒用 delay_seconds，分钟用 delay_minutes）\n"
-        "- 查企业文档 → atomic_tools 含 knowledge_retrieve；勿 load 内置技能\n"
-        "- 多路资料 → builtin_orchestration=knowledge-research，按需列 atomic_tools\n"
-        "- 任务明确匹配某**发展**技能 → uploaded_skill 填 slug，勿填 builtin\n"
-        "- 不需要联网时 skip_tools 含 web_search\n"
-        "- uploaded_skill 与 builtin_orchestration 二选一或不填"
+        "任务规划器。只输出 JSON。\n"
+        + kg_block
+        + f"原子工具示例：{atomic_list}。发展技能：{uploaded_list}。\n"
+        '{"reasoning":"…","intent":"…","direct_answer":true|false,'
+        '"atomic_tools":[],"skip_tools":[],"uploaded_skill":null,'
+        '"builtin_orchestration":null,"steps":[]}\n'
+        "规则：闲聊/够答→direct_answer；仅 steps 覆盖用户明确诉求，勿加额外任务；"
+        "定时提醒→schedule_notification；查文档→knowledge_retrieve；"
+        "够用即停。"
     )
 
 
@@ -344,6 +429,7 @@ async def resolve_execution_plan(
     history: list[AiChatMessage] | None = None,
     intent_plan: AgentToolPlan | None = None,
     available_atomic_tools: set[str] | None = None,
+    kg_planning_context: str | None = None,
 ) -> AgentExecutionPlan:
     """规则 fast path → 可选 LLM 规划 → fallback。"""
     settings = get_settings()
@@ -367,6 +453,10 @@ async def resolve_execution_plan(
     rule_plan = _rule_plan_from_intent(intent_plan)
     if rule_plan is not None:
         return rule_plan
+
+    skill_mgmt_plan = _rule_plan_for_skill_management(message)
+    if skill_mgmt_plan is not None:
+        return skill_mgmt_plan
 
     if not settings.agent_planning_enabled or not is_configured():
         return _fallback_plan(intent_plan.intent_label)
@@ -412,17 +502,24 @@ async def resolve_execution_plan(
                 steps=plan.steps,
                 source="cache",
             )
-        return plan
+        return _coerce_skill_management_plan(message, plan)
+
+    kg_text = (kg_planning_context or "").strip()
+    if not kg_text:
+        kg_text = resolve_kg_planning_context(db, user, message)
 
     system = _planning_system_prompt(
         allowed_atomic=allowed_atomic,
         builtin_names=builtin_names,
         uploaded_names=uploaded_names,
+        include_kg_reference=bool(kg_text),
     )
     user_parts = [f"用户问题：{(message or '').strip()[:800]}"]
     hist = _history_snippet(history)
     if hist:
         user_parts.append(f"近期对话：\n{hist}")
+    if kg_text:
+        user_parts.append(f"{_KG_PLANNING_USER_LABEL}\n{kg_text}")
 
     choice = await chat_completion_message_async(
         messages=[
@@ -441,6 +538,7 @@ async def resolve_execution_plan(
         allowed_builtin=builtin_names,
     )
     if parsed:
+        parsed = _coerce_skill_management_plan(message, parsed)
         store_cached_payload(
             scope_key,
             message,

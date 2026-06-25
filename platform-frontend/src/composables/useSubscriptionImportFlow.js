@@ -3,6 +3,7 @@ import { fetchDocument } from "../api/documents.js";
 import { subscribePlatformJobEvents } from "../api/jobEvents.js";
 import { isDocumentIndexReady } from "../utils/knowledgeIndex.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
+import { notifyKnowledgeScopeTreeStale } from "../utils/knowledgeScopeRefresh.js";
 
 const INDEX_POLL_MS = 4000;
 const INDEX_POLL_MAX = 90;
@@ -39,9 +40,7 @@ export function useSubscriptionImportFlow({ router, route, ui }) {
   }
 
   function notifyIndexUpdated() {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("platform:knowledge-index-updated"));
-    }
+    notifyKnowledgeScopeTreeStale();
   }
 
   async function pollDocumentIndex(docId, attempt = 0) {

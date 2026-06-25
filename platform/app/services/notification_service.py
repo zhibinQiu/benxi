@@ -80,6 +80,43 @@ def mark_all_read(db: Session, user_id: uuid.UUID) -> dict[str, int]:
     return {"updated": int(unread), "deleted": int(total)}
 
 
+def format_scheduled_at_local(dt: datetime) -> str:
+    """用户可见的本地提醒时间；含非零秒时展示到秒。"""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone()
+    if local.second or local.microsecond:
+        return local.strftime("%Y-%m-%d %H:%M:%S")
+    return local.strftime("%Y-%m-%d %H:%M")
+
+
+def preview_scheduled_display(
+    *,
+    delay_seconds: int | None = None,
+    delay_minutes: int | None = None,
+    scheduled_at: datetime | str | None = None,
+) -> tuple[str, int | None]:
+    """将定时参数转为本地时间文案，并返回 boost_seconds（轮询加速用）。"""
+    try:
+        parsed_at: datetime | None = None
+        if scheduled_at is not None:
+            text = str(scheduled_at).strip()
+            if text:
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                parsed_at = datetime.fromisoformat(text)
+        target = _resolve_scheduled_at(
+            delay_seconds=delay_seconds,
+            delay_minutes=delay_minutes,
+            scheduled_at=parsed_at,
+        )
+        display = format_scheduled_at_local(target)
+        boost = max(0, int((target - datetime.now(timezone.utc)).total_seconds()))
+        return display, boost or None
+    except (ValueError, TypeError):
+        return "", None
+
+
 def _resolve_scheduled_at(
     *,
     delay_seconds: int | None = None,
@@ -202,7 +239,12 @@ def deliver_scheduled_notification(notification_id: uuid.UUID) -> dict[str, Any]
 
     db = SessionLocal()
     try:
-        row = db.get(ScheduledNotification, notification_id)
+        # 行锁保证进程内 Timer 与 Celery 并发投递时只生成一条用户通知
+        row = db.scalar(
+            select(ScheduledNotification)
+            .where(ScheduledNotification.id == notification_id)
+            .with_for_update()
+        )
         if not row:
             return {"ok": False, "reason": "not_found"}
         if row.cancelled_at is not None:

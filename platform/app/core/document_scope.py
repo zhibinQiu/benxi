@@ -47,7 +47,7 @@ DEPT_SCOPES = ORG_SCOPES
 
 
 def content_subscription_import_scope() -> str:
-    """公众号 / RSS / 网站资讯导入文档库时固定为「个人级」分级。"""
+    """公众号 / 网站资讯导入文档库时固定为「个人级」分级。"""
     return SCOPE_PERSONAL
 
 _SCOPE_PERM_PREFIX = {

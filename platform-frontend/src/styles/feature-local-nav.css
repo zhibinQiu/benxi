@@ -224,6 +224,15 @@
   padding: 0;
 }
 
+/* 本析智能 / 报告生成：历史对话 + 新对话（顶栏 extension） */
+.header-extension .chat-session-toolbar {
+  padding: 0;
+}
+
+.header-extension .chat-session-toolbar__new {
+  flex-shrink: 0;
+}
+
 .subsystem-shell--flush-start.subsystem-shell--fill .knowledge-search-page,
 .subsystem-shell--flush-end.subsystem-shell--fill .knowledge-search-page,
 .subsystem-shell--flush-start.subsystem-shell--fill .report-gen-page,

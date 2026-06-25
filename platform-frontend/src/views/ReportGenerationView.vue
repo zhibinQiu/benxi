@@ -4,6 +4,7 @@ import { computed, inject, onMounted, ref } from "vue";
 import { CreateOutline } from "@vicons/ionicons5";
 import { NCheckbox } from "naive-ui";
 import AiChatPanel from "../components/AiChatPanel.vue";
+import ChatSessionToolbarActions from "../components/ChatSessionToolbarActions.vue";
 import HintTooltip from "../components/HintTooltip.vue";
 import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 import {
@@ -24,6 +25,7 @@ const selection = inject(
   KNOWLEDGE_SCOPE_SELECTION_KEY,
   ref(readKnowledgeScopeSelection())
 );
+const chatPanelRef = ref(null);
 const conversationId = ref(null);
 const optimizePresets = ref([]);
 const useWebSearch = ref(true);
@@ -49,6 +51,16 @@ const selectionHint = computed(() => {
   }
   return parts.join(" · ");
 });
+
+const historyLoading = computed(() => Boolean(chatPanelRef.value?.loadingHistory));
+
+function openHistory() {
+  chatPanelRef.value?.goToHistory?.();
+}
+
+function startNewChat() {
+  chatPanelRef.value?.newChat?.();
+}
 
 async function handleChatStream(params, callbacks) {
   return reportGenerationChatStream(
@@ -104,15 +116,22 @@ onMounted(async () => {
             {{ t("reportGeneration.useWebSearch") }}
           </n-checkbox>
           <span class="report-gen-toolbar-hint">{{ selectionHint }}</span>
+          <ChatSessionToolbarActions
+            :disabled="historyLoading"
+            @history="openHistory"
+            @new-chat="startNewChat"
+          />
         </div>
       </div>
     </div>
   </Teleport>
 
   <AiChatPanel
+    ref="chatPanelRef"
     v-model:conversation-id="conversationId"
     chat-scope="report-generation"
     class="report-gen-page__panel"
+    session-actions-in-toolbar
     :streaming="true"
     :rich-markdown="true"
     :show-workflow-progress="true"
@@ -131,7 +150,6 @@ onMounted(async () => {
     :report-word-export="downloadReportDocx"
     :report-library-import="importReportToLibrary"
     :report-optimize-presets="optimizePresets"
-    :composer-input-while-loading="true"
     title-gradient
     :show-chat-header-brand="false"
   />
@@ -150,10 +168,10 @@ onMounted(async () => {
 .report-gen-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
+  min-width: 0;
 }
 
 .report-gen-toolbar__web {
@@ -174,8 +192,14 @@ onMounted(async () => {
 }
 
 .report-gen-toolbar-hint {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
+  line-height: 1.45;
   color: var(--platform-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .report-gen-page__panel {

@@ -194,7 +194,7 @@ def list_document_shares(db: Session, document_id: uuid.UUID) -> list[dict]:
         out.append(
             {
                 "user_id": uid,
-                "user_name": names.get(uid),
+                "user_name": names.get(uid, user_display_name(None)),
                 "level": perm.level,
             }
         )
@@ -265,7 +265,6 @@ def revoke_permission(
     db.delete(perm)
     db.commit()
 def _subject_user_label(db: Session, user_id: uuid.UUID) -> str:
-    u = db.get(User, user_id)
-    if not u:
-        return "未知用户"
-    return u.username or "未知用户"
+    from app.core.user_display import user_display_name
+
+    return user_display_name(db.get(User, user_id))

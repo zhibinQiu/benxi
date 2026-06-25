@@ -1,0 +1,29 @@
+---
+alwaysApply: false
+---
+# 脚本与文档同步
+
+## 原则
+
+- **精简**：只保留 `./dev.sh` 一个开发入口；不新增平行启动脚本。
+- **删旧**：废弃脚本直接删除，不用「兼容包装」长期并存。
+- **文档只写现状**：说明当前怎么用，不写历史迁移、废弃对照表（RELEASE 除外）。
+
+## 改脚本时必须同步
+
+1. `scripts/README.md` — 命令表与实现脚本列表
+2. `docs/zh/getting-started.md` — 快速开始
+3. `运维部署指南.md` — 启动 / 故障排查中的命令
+4. `platform-frontend/src/api/http.js` — API 连接失败时的用户提示
+5. 若动 Compose：更新 `docs/zh/operations/config-and-scripts.md` 相关段落
+
+## 当前架构（勿在文档中引入旧名）
+
+| 用途 | 命令 |
+|------|------|
+| 本机 venv 开发 | `./dev.sh local` |
+| 全 Docker 开发 | `./dev.sh docker` |
+| 停止 | `./dev.sh stop` |
+| 远程依赖配置 | `./dev.sh remote-dev` |
+
+已删除：`start-local.sh`、`scripts/zhitan.sh`。产品名用「企业 AI 知识库平台」。

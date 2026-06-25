@@ -1,0 +1,55 @@
+---
+description: 平台前端编码规范（Vue 3 + Naive UI）
+globs: platform-frontend/**
+alwaysApply: false
+---
+
+# 平台前端编码规范
+
+## 分层与导入
+
+- **UI 反馈**：统一 `usePlatformUi()`，禁止在业务组件直接 `useMessage` / `useDialog`。
+- **Naive UI 组件**：优先 `unplugin-vue-components` 自动解析；同一文件勿重复 import（如 `NIcon` 拆成两行）。
+- **删除死代码**：移除未引用文件与 import，勿留空 composable 或废弃 shim（如已被 `main.js` / Vite alias 替代的集成层）。
+
+## 禁止散落的浏览器全局 API
+
+| 场景 | 统一入口 |
+|------|----------|
+| 外链新窗口 | `openExternal(url)` → `utils/openExternal.js` |
+| Blob 下载 | `downloadBlob(blob, filename)` → `utils/downloadBlob.js` |
+| `matchMedia` | `prefersReducedMotion()` / `subscribeMediaQuery()` → `utils/mediaQuery.js` |
+| 知识索引变更广播 | `notifyKnowledgeScopeTreeStale()` → `utils/knowledgeScopeRefresh.js` |
+| 跨组件事件名 | `constants/platformEvents.js`（禁止手写字符串） |
+| ECharts 动态加载 | `loadEcharts()` → `utils/echartsLoader.js` |
+
+**不要**在 `api/*.js`、视图、组件中直接 `document.createElement("a")` 或裸 `window.open`。
+
+## Naive UI 遮罩与路由（预防侧栏/菜单点击无响应）
+
+Modal / Drawer 会 teleport 到 `body`，残留 `.n-modal-mask` / `.n-drawer-mask` 会挡住侧栏。
+
+1. **关闭弹窗**：路由离开前将 `show` 置 `false`；子页面弹窗勿依赖卸载自动清理。
+2. **主布局清理**：`useBlockingUiCleanup()` 在挂载、路由切换、侧栏点击时调用 `cleanupBlockingUiArtifacts()`。
+3. **保留白名单**：清理时保留 `.release-highlights`、`.platform-confirm-dialog`。
+4. **登录飞行动画**：克隆节点 class 使用 `LOGIN_FLY_CLONE_CLASS` 常量。
+
+新增全局 teleport 浮层（全屏 mask、fixed 覆盖层）时，必须说明：由谁创建、何时销毁、是否与 `blockingUiCleanup` 冲突。
+
+## 组件与 composable
+
+- 单文件 >400 行 script：抽出 composable（如侧栏菜单、版本弹窗、表单流程）。
+- `window` / `document` 事件监听：在 `onMounted` 注册、`onUnmounted` 卸载；优先 `subscribeMediaQuery` 等带 unsubscribe 的封装。
+- 路由与壳层行为写在 `router/index.js` 的 `meta`（`keepAlive`、`fullHeight`、`siderActiveKey` 等），避免在 layout 硬编码路由名列表。
+
+## 命名与文件
+
+- 工具模块按职责命名：`blockingUiCleanup.js`（非 `loginUiCleanup` 等业务耦合名）。
+- 常量放 `src/constants/`，跨模块事件、动画 class、storage key 集中管理。
+- API 层只做请求与数据；下载、打开外链等副作用走 `utils/`。
+
+## 提交前检查
+
+```bash
+cd platform-frontend && npm run lint && npm run build
+```

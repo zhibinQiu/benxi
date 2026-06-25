@@ -1,10 +1,9 @@
-"""Playwright 浏览器会话：Snapshot → Act 循环。"""
+"""Playwright 浏览器会话：Snapshot → Act 循环（async API，与 uvicorn 事件循环兼容）。"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -14,25 +13,25 @@ from app.integrations.browser_automation.url_guard import validate_browser_url
 
 _logger = logging.getLogger(__name__)
 
-_playwright_lock = threading.Lock()
+_playwright_lock = asyncio.Lock()
 _playwright_instance = None
 _browser_instance = None
 _launch_headless = True
 
 
-def _ensure_playwright(*, headless: bool = True):
+async def _ensure_playwright(*, headless: bool = True):
     global _playwright_instance, _browser_instance, _launch_headless
-    with _playwright_lock:
+    async with _playwright_lock:
         if _browser_instance is not None and _launch_headless == headless:
             return _browser_instance
         if _browser_instance is not None:
             try:
-                _browser_instance.close()
+                await _browser_instance.close()
             except Exception:
                 pass
             _browser_instance = None
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.async_api import async_playwright
         except ImportError as exc:
             raise RuntimeError(
                 "Playwright 未安装，无法打开网页。"
@@ -41,11 +40,12 @@ def _ensure_playwright(*, headless: bool = True):
                 "服务器: INSTALL_BROWSER=1 docker compose build api worker && docker compose up -d api worker"
             ) from exc
         if _playwright_instance is None:
-            _playwright_instance = sync_playwright().start()
+            _playwright_instance = await async_playwright().start()
         _launch_headless = headless
-        _browser_instance = _playwright_instance.chromium.launch(
+        _browser_instance = await _playwright_instance.chromium.launch(
             headless=headless,
             args=docker_launch_args(),
+            timeout=60_000,
         )
         return _browser_instance
 
@@ -68,14 +68,14 @@ class BrowserSessionManager:
 
     def __init__(self) -> None:
         self._sessions: dict[str, BrowserSessionState] = {}
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
 
     @staticmethod
     def session_key(user_id: str, conversation_id: str) -> str:
         conv = (conversation_id or "default").strip()
         return f"{user_id}:{conv}"
 
-    def get_session(
+    async def get_session(
         self,
         *,
         user_id: str,
@@ -84,12 +84,12 @@ class BrowserSessionManager:
         headless: bool = True,
     ) -> BrowserSessionState | None:
         key = self.session_key(user_id, conversation_id or "")
-        with self._lock:
+        async with self._lock:
             state = self._sessions.get(key)
             if state or not create:
                 return state
-            browser = _ensure_playwright(headless=headless)
-            context = browser.new_context(
+            browser = await _ensure_playwright(headless=headless)
+            context = await browser.new_context(
                 viewport={"width": 1280, "height": 720},
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -97,7 +97,7 @@ class BrowserSessionManager:
                     "Chrome/120.0.0.0 Safari/537.36"
                 ),
             )
-            page = context.new_page()
+            page = await context.new_page()
             state = BrowserSessionState(
                 session_id=uuid.uuid4().hex[:12],
                 user_id=user_id,
@@ -108,15 +108,15 @@ class BrowserSessionManager:
             self._sessions[key] = state
             return state
 
-    def close_session(self, *, user_id: str, conversation_id: str | None) -> None:
+    async def close_session(self, *, user_id: str, conversation_id: str | None) -> None:
         key = self.session_key(user_id, conversation_id or "")
-        with self._lock:
+        async with self._lock:
             state = self._sessions.pop(key, None)
         if not state:
             return
         try:
             if state.context:
-                state.context.close()
+                await state.context.close()
         except Exception as exc:
             _logger.debug("关闭浏览器 context 失败: %s", exc)
 
@@ -124,7 +124,7 @@ class BrowserSessionManager:
         state.step_count += 1
         state.workflow_steps.append(step)
 
-    def navigate(
+    async def navigate(
         self,
         state: BrowserSessionState,
         url: str,
@@ -132,41 +132,46 @@ class BrowserSessionManager:
         allowed_domains: str = "",
     ) -> dict[str, Any]:
         safe_url = validate_browser_url(url, allowed_domains=allowed_domains)
-        state.page.goto(safe_url, wait_until="domcontentloaded", timeout=30000)
+        await state.page.goto(safe_url, wait_until="domcontentloaded", timeout=30000)
         state.last_url = state.page.url
         step = {"action": "navigate", "url": safe_url}
         self._record_step(state, step)
-        return {"url": state.page.url, "title": state.page.title()}
+        return {"url": state.page.url, "title": await state.page.title()}
 
-    def snapshot(self, state: BrowserSessionState) -> dict[str, Any]:
+    async def snapshot(self, state: BrowserSessionState) -> dict[str, Any]:
         page = state.page
         refs: list[dict[str, Any]] = []
         ref_map: dict[str, Any] = {}
         idx = 0
 
-        for el in page.locator(
+        for el in await page.locator(
             "a, button, input, select, textarea, [role='button'], [role='link'], "
             "[role='textbox'], [role='combobox'], [role='checkbox'], [role='radio']"
         ).all():
             try:
-                if not el.is_visible():
+                if not await el.is_visible():
                     continue
             except Exception:
                 continue
             idx += 1
             ref = f"e{idx}"
-            role = el.evaluate(
+            role = await el.evaluate(
                 "el => el.getAttribute('role') || el.tagName.toLowerCase()"
             )
             name = (
-                el.get_attribute("aria-label")
-                or el.get_attribute("placeholder")
-                or el.get_attribute("name")
-                or (el.inner_text() or "")[:80]
-                or el.get_attribute("id")
+                await el.get_attribute("aria-label")
+                or await el.get_attribute("placeholder")
+                or await el.get_attribute("name")
+                or (await el.inner_text() or "")[:80]
+                or await el.get_attribute("id")
                 or ""
             )
-            value = el.input_value() if role in {"input", "textarea", "textbox"} else ""
+            value = ""
+            if str(role or "").lower() in {"input", "textarea", "textbox"}:
+                try:
+                    value = await el.input_value()
+                except Exception:
+                    value = ""
             entry = {
                 "ref": ref,
                 "role": str(role or "").lower(),
@@ -180,13 +185,13 @@ class BrowserSessionManager:
         state.ref_map = ref_map
         text_preview = ""
         try:
-            text_preview = (page.inner_text("body") or "")[:800]
+            text_preview = (await page.inner_text("body") or "")[:800]
         except Exception:
             pass
 
         return {
             "url": page.url,
-            "title": page.title(),
+            "title": await page.title(),
             "refs": refs[:80],
             "text_preview": text_preview,
         }
@@ -197,33 +202,35 @@ class BrowserSessionManager:
             raise ValueError(f"ref `{ref}` 已失效，请先 browser_snapshot 获取最新 ref")
         return el
 
-    def click(self, state: BrowserSessionState, ref: str) -> dict[str, Any]:
+    async def click(self, state: BrowserSessionState, ref: str) -> dict[str, Any]:
         el = self._resolve_ref(state, ref)
         hint = {}
         try:
             hint = {
                 "ref": ref,
                 "role": str(
-                    el.evaluate("el => el.getAttribute('role') || el.tagName.toLowerCase()")
+                    await el.evaluate(
+                        "el => el.getAttribute('role') || el.tagName.toLowerCase()"
+                    )
                     or ""
                 ).lower(),
                 "name": (
-                    el.get_attribute("aria-label")
-                    or el.get_attribute("placeholder")
-                    or el.get_attribute("name")
-                    or (el.inner_text() or "")[:80]
+                    await el.get_attribute("aria-label")
+                    or await el.get_attribute("placeholder")
+                    or await el.get_attribute("name")
+                    or (await el.inner_text() or "")[:80]
                     or ""
                 ).strip()[:120],
             }
         except Exception:
             hint = {"ref": ref}
-        el.click(timeout=10000)
+        await el.click(timeout=10000)
         state.last_url = state.page.url
         step = {"action": "click", **hint}
         self._record_step(state, step)
-        return {"url": state.page.url, "title": state.page.title()}
+        return {"url": state.page.url, "title": await state.page.title()}
 
-    def type_text(
+    async def type_text(
         self,
         state: BrowserSessionState,
         ref: str,
@@ -235,25 +242,27 @@ class BrowserSessionManager:
         hint = {"ref": ref}
         try:
             hint["role"] = str(
-                el.evaluate("el => el.getAttribute('role') || el.tagName.toLowerCase()")
+                await el.evaluate(
+                    "el => el.getAttribute('role') || el.tagName.toLowerCase()"
+                )
                 or ""
             ).lower()
             hint["name"] = (
-                el.get_attribute("aria-label")
-                or el.get_attribute("placeholder")
-                or el.get_attribute("name")
+                await el.get_attribute("aria-label")
+                or await el.get_attribute("placeholder")
+                or await el.get_attribute("name")
                 or ""
             ).strip()[:120]
         except Exception:
             pass
-        el.fill(text or "")
+        await el.fill(text or "")
         if submit:
-            el.press("Enter")
+            await el.press("Enter")
         step = {"action": "type", "text": text, "submit": submit, **hint}
         self._record_step(state, step)
-        return {"url": state.page.url, "title": state.page.title()}
+        return {"url": state.page.url, "title": await state.page.title()}
 
-    def fill_fields(
+    async def fill_fields(
         self,
         state: BrowserSessionState,
         fields: list[dict[str, Any]],
@@ -264,28 +273,28 @@ class BrowserSessionManager:
             if not ref:
                 continue
             el = self._resolve_ref(state, ref)
-            el.fill(value)
+            await el.fill(value)
             self._record_step(
                 state,
                 {"action": "fill", "ref": ref, "value": value},
             )
-        return {"url": state.page.url, "title": state.page.title(), "filled": len(fields)}
+        return {"url": state.page.url, "title": await state.page.title(), "filled": len(fields)}
 
-    def screenshot_png(
+    async def screenshot_png(
         self,
         state: BrowserSessionState,
         *,
         full_page: bool = False,
         max_kb: int = 800,
     ) -> tuple[bytes, str, str]:
-        raw = state.page.screenshot(full_page=full_page, type="png")
+        raw = await state.page.screenshot(full_page=full_page, type="png")
         limit = max(64, int(max_kb)) * 1024
         if len(raw) > limit and full_page:
-            raw = state.page.screenshot(full_page=False, type="png")
+            raw = await state.page.screenshot(full_page=False, type="png")
         self._record_step(state, {"action": "screenshot", "full_page": full_page})
         if len(raw) > limit:
             raw = raw[:limit]
-        return raw, state.page.url, state.page.title()
+        return raw, state.page.url, await state.page.title()
 
 
 # 全局单例
@@ -297,8 +306,3 @@ def get_browser_session_manager() -> BrowserSessionManager:
     if _manager is None:
         _manager = BrowserSessionManager()
     return _manager
-
-
-async def run_browser_sync(fn, *args, **kwargs):
-    """在 thread pool 中运行同步 Playwright API。"""
-    return await asyncio.to_thread(fn, *args, **kwargs)

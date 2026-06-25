@@ -45,3 +45,18 @@ def test_is_compareable_file():
     assert is_compareable_file("scan.png", "image/png")
     assert not is_compareable_file("bundle.zip")
     assert not is_compareable_file("archive.rar")
+
+
+def test_assert_allowed_upload_format():
+    from app.core.document_format import assert_allowed_upload_format, is_allowed_upload_format
+    import pytest
+    from app.core.exceptions import AppError
+
+    for name in ("a.pdf", "b.docx", "c.xlsx", "d.txt", "e.md"):
+        assert is_allowed_upload_format(name)
+        assert_allowed_upload_format(name)
+
+    assert not is_allowed_upload_format("slide.pptx")
+    assert not is_allowed_upload_format("photo.png", "image/png")
+    with pytest.raises(AppError):
+        assert_allowed_upload_format("slide.pptx")

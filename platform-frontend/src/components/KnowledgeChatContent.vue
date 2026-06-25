@@ -8,6 +8,12 @@ import {
   unbindEchartsResize,
 } from "../utils/richMarkdown.js";
 import { unmountMermaidInElement } from "../utils/mermaidRender.js";
+import {
+  hydrateAuthenticatedImagesInElement,
+  revokeAuthenticatedImagesInElement,
+} from "../utils/authenticatedImage.js";
+import { useRichMediaViewer } from "../composables/useRichMediaViewer.js";
+import RichMediaViewerModal from "./RichMediaViewerModal.vue";
 
 const props = defineProps({
   content: { type: String, default: "" },
@@ -19,6 +25,14 @@ const emit = defineEmits(["open-citation"]);
 const rootRef = ref(null);
 const domActive = ref(true);
 let refreshTimer = null;
+let refreshGeneration = 0;
+
+const {
+  viewerOpen,
+  viewerPayload,
+  bindRichMediaViewerOnRoot,
+  unbindRichMediaViewerOnRoot,
+} = useRichMediaViewer();
 
 const citationIndexes = computed(() => {
   const set = new Set((props.citations || []).map((c) => Number(c.index)).filter(Boolean));
@@ -64,12 +78,21 @@ function onClick(event) {
 
 async function refreshRichMedia() {
   if (!domActive.value) return;
-  await nextTick();
+  const gen = ++refreshGeneration;
   const root = rootRef.value;
-  if (!root) return;
-  disposeEchartsInElement(root);
-  unmountMermaidInElement(root);
-  await mountRichMediaInElement(root);
+  if (root) {
+    unbindRichMediaViewerOnRoot(root);
+    revokeAuthenticatedImagesInElement(root);
+  }
+  await nextTick();
+  if (gen !== refreshGeneration || !rootRef.value) return;
+  disposeEchartsInElement(rootRef.value);
+  unmountMermaidInElement(rootRef.value);
+  await mountRichMediaInElement(rootRef.value);
+  if (gen !== refreshGeneration || !rootRef.value) return;
+  await hydrateAuthenticatedImagesInElement(rootRef.value);
+  if (gen !== refreshGeneration || !rootRef.value) return;
+  bindRichMediaViewerOnRoot(rootRef.value);
   bindCiteButtons();
 }
 
@@ -84,6 +107,8 @@ function scheduleRefresh() {
 function releaseDom() {
   const root = rootRef.value;
   if (root) {
+    unbindRichMediaViewerOnRoot(root);
+    revokeAuthenticatedImagesInElement(root);
     disposeEchartsInElement(root);
     unmountMermaidInElement(root);
   }
@@ -105,6 +130,7 @@ onActivated(() => {
 onDeactivated(releaseDom);
 
 onBeforeUnmount(() => {
+  refreshGeneration += 1;
   if (refreshTimer) {
     clearTimeout(refreshTimer);
     refreshTimer = null;
@@ -124,6 +150,7 @@ function bindCiteButtons() {
 
 <template>
   <div ref="rootRef" class="knowledge-chat-content md-rich" v-html="html" @click="onClick" />
+  <RichMediaViewerModal v-model:show="viewerOpen" :payload="viewerPayload" />
 </template>
 
 <style scoped>

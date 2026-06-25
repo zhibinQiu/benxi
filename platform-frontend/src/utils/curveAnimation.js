@@ -117,7 +117,7 @@ export function curveConfigForBackground(presetName, pixelSize) {
   const speedFactor = 1.38;
   return {
     ...base,
-    particleCount: Math.max(24, Math.round(base.particleCount * 0.52)),
+    particleCount: Math.max(20, Math.round(base.particleCount * 0.4)),
     strokeWidth: Math.max(1.2, base.strokeWidth * 0.78),
     durationMs: Math.round(base.durationMs * speedFactor),
     rotationDurationMs: Math.round(base.rotationDurationMs * speedFactor),

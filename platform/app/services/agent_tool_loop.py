@@ -20,12 +20,14 @@ from app.services.agent_planner import (
     build_plan_context_instruction,
     filter_tool_specs_by_plan,
     resolve_execution_plan,
+    resolve_kg_planning_context,
 )
 from app.core.agent_tool_context import (
     compress_tool_result_for_loop,
     inject_retrieval_context_message,
     trim_agent_loop_messages,
 )
+from app.services.agent_skill_router import is_skill_management_message
 from app.services.agent_tools import (
     build_agent_tool_specs,
     execute_agent_tool,
@@ -93,25 +95,54 @@ async def iter_agent_tool_loop(
     tools: list[dict[str, Any]] | None = None,
     intent_plan: AgentToolPlan | None = None,
     chat_history: list[AiChatMessage] | None = None,
+    agent_id: str | None = None,
+    allowed_tool_names: set[str] | None = None,
+    allowed_skill_names: set[str] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """产出 workflow 事件；结束时 yield type=complete。"""
     working: list[dict[str, Any]] = [dict(m) for m in messages]
     loop_id = f"agent-tools-{uuid.uuid4().hex[:8]}"
     plan_id = f"agent-plan-{uuid.uuid4().hex[:8]}"
-    all_tool_specs = tools if tools is not None else build_agent_tool_specs(db, user)
+    if tools is not None:
+        all_tool_specs = tools
+    elif allowed_tool_names is not None:
+        all_tool_specs = build_agent_tool_specs(
+            db, user, allowed_names=allowed_tool_names
+        )
+    else:
+        all_tool_specs = build_agent_tool_specs(db, user)
     rounds = max_rounds if max_rounds is not None else _default_max_rounds()
-    loop_state: dict[str, Any] = {"citations": [], "kg_context": None}
+    loop_state: dict[str, Any] = {
+        "citations": [],
+        "kg_context": None,
+        "allowed_skill_names": allowed_skill_names,
+    }
 
     yield {
         "type": "workflow",
         "data": {
             "phase": "agent_thinking",
             "title": "规划执行策略",
-            "detail": (user_message or "").strip()[:160],
+            "detail": "",
             "tool": "planner",
             "step_id": plan_id,
         },
     }
+
+    kg_plan_text = resolve_kg_planning_context(db, user, user_message)
+    if kg_plan_text:
+        preview = kg_plan_text.replace("\n", " ")[:160]
+        yield {
+            "type": "workflow",
+            "data": {
+                "phase": "agent_thought",
+                "title": "本体图谱上下文",
+                "detail": preview,
+                "tool": "kg_context",
+                "step_id": plan_id,
+                "status": "done",
+            },
+        }
 
     execution_plan = await resolve_execution_plan(
         db,
@@ -120,6 +151,7 @@ async def iter_agent_tool_loop(
         history=chat_history,
         intent_plan=intent_plan,
         available_atomic_tools=_available_atomic_from_specs(all_tool_specs),
+        kg_planning_context=kg_plan_text or None,
     )
 
     if execution_plan.uploaded_skill:
@@ -130,7 +162,7 @@ async def iter_agent_tool_loop(
         "data": {
             "phase": "agent_thought",
             "title": "规划完成",
-            "detail": execution_plan.summary_for_ui(),
+            "detail": "",
             "tool": "planner",
             "step_id": plan_id,
             "status": "done",
@@ -138,25 +170,22 @@ async def iter_agent_tool_loop(
     }
 
     if execution_plan.direct_answer:
-        yield {
-            "type": "workflow",
-            "data": {
-                "phase": "agent_thinking",
-                "title": "直接回答",
-                "detail": execution_plan.intent or "无需调用工具",
-                "tool": "agent.direct",
-                "step_id": loop_id,
-            },
-        }
-        choice = await chat_completion_message_async(
+        from app.services.llm_workflow_stream import iter_llm_answer_events
+
+        reply_parts: list[str] = []
+        async for ev in iter_llm_answer_events(
             messages=working,
-            tools=None,
             temperature=0.5,
-        )
-        final_reply = (
-            (((choice or {}).get("message") or {}).get("content") or "").strip()
-            or None
-        )
+            think_title="直接回答",
+            think_detail=execution_plan.intent or "无需调用工具",
+            step_id=loop_id,
+        ):
+            if ev.get("type") == "workflow":
+                yield {"type": "workflow", "data": ev["data"]}
+            elif ev.get("type") == "delta" and ev.get("text"):
+                reply_parts.append(ev["text"])
+                yield {"type": "delta", "text": ev["text"]}
+        final_reply = "".join(reply_parts).strip() or None
         if final_reply:
             working.append({"role": "assistant", "content": final_reply})
             yield {
@@ -179,37 +208,50 @@ async def iter_agent_tool_loop(
         }
         return
 
-    plan_instruction = build_plan_context_instruction(execution_plan)
+    plan_has_script = None
+    if execution_plan.uploaded_skill:
+        from app.services.agent_skill_service import uploaded_skill_has_script
+
+        try:
+            plan_has_script = uploaded_skill_has_script(db, execution_plan.uploaded_skill)
+        except Exception:
+            plan_has_script = None
+    plan_instruction = build_plan_context_instruction(
+        execution_plan,
+        uploaded_skill_has_script=plan_has_script,
+    )
     working = _inject_plan_instruction(working, plan_instruction)
     initial_skill = (
         str(execution_plan.uploaded_skill or "").strip()
         or str(loop_state.get("planned_uploaded_skill") or "").strip()
     )
+    allowed_skills = loop_state.get("allowed_skill_names")
+    if (
+        initial_skill
+        and allowed_skills is not None
+        and initial_skill not in allowed_skills
+    ):
+        initial_skill = ""
     if initial_skill:
         working = maybe_inject_skill_md(db, user, loop_state, working, initial_skill)
-
-    yield {
-        "type": "workflow",
-        "data": {
-            "phase": "agent_thinking",
-            "title": "智能体工具调度",
-            "detail": f"按计划调用工具（最多 {rounds} 轮）",
-            "tool": "agent.tools",
-            "step_id": loop_id,
-        },
-    }
 
     final_reply: str | None = None
 
     for _ in range(max(1, rounds)):
         pending_skill = str(loop_state.get("pending_skill_md_inject") or "").strip()
+        allowed_skills = loop_state.get("allowed_skill_names")
+        if pending_skill and allowed_skills is not None and pending_skill not in allowed_skills:
+            loop_state.pop("pending_skill_md_inject", None)
+            pending_skill = ""
         if pending_skill:
             working = maybe_inject_skill_md(db, user, loop_state, working, pending_skill)
             loop_state.pop("pending_skill_md_inject", None)
 
         tool_specs = filter_tool_specs_by_plan(all_tool_specs, execution_plan)
+        keep_tools = 2 if is_skill_management_message(user_message) else 1
         llm_messages = trim_agent_loop_messages(
-            inject_retrieval_context_message(working, loop_state)
+            inject_retrieval_context_message(working, loop_state),
+            keep_full_tool_results=keep_tools,
         )
         choice = await chat_completion_message_async(
             messages=llm_messages,

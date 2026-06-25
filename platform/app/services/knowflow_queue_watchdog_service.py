@@ -91,10 +91,11 @@ def evaluate_knowflow_queue_watchdog(
             out["action"] = "internal_recovery"
             out["recovery"] = recovery
             logger.warning(
-                "KnowFlow 队列卡住 %.1f 分钟，已执行内部恢复 pending_removed=%s documents_reset=%s",
+                "KnowFlow 队列卡住 %.1f 分钟，已执行内部恢复 tasks_cleared=%s documents_reset=%s redis_cleared=%s",
                 stuck_minutes,
-                recovery.get("pending_removed"),
+                recovery.get("tasks_cleared"),
                 recovery.get("documents_reset"),
+                recovery.get("redis_queues_cleared"),
             )
             fresh = collect_knowflow_queue_metrics()
             out["metrics"] = fresh

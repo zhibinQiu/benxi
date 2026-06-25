@@ -54,9 +54,14 @@ def list_unified_skills(
     *,
     user: User | None = None,
     include_disabled: bool = True,
+    catalog_only: bool = True,
 ) -> list[UnifiedSkillOut]:
     rows = list_all_skill_definitions(
-        db, user=user, admin_view=True, include_disabled=include_disabled, catalog_only=True
+        db,
+        user=user,
+        admin_view=True,
+        include_disabled=include_disabled,
+        catalog_only=catalog_only,
     )
     return [_to_unified(defn) for defn in rows]
 

@@ -171,7 +171,11 @@ def get_merged_skill_definition(
 
 
 def build_agent_catalog_prompt(
-    db: Session, user: User | None = None, *, admin_view: bool = False
+    db: Session,
+    user: User | None = None,
+    *,
+    admin_view: bool = False,
+    skill_names: list[str] | None = None,
 ) -> str:
     """Discovery 阶段：注入 skill 描述符与选用规则（不含 SKILL.md 正文）。"""
     skills = list_all_skill_definitions(
@@ -182,6 +186,9 @@ def build_agent_catalog_prompt(
         for s in skills
         if s.readiness not in (SkillReadiness.DISABLED, SkillReadiness.NO_PERMISSION)
     ]
+    if skill_names is not None:
+        allow = {name.strip() for name in skill_names if (name or "").strip()}
+        visible = [s for s in visible if s.name in allow]
     if not visible:
         return ""
 
@@ -198,9 +205,15 @@ def build_agent_catalog_prompt(
         "- 查本体图谱 → `kg_query`",
         "- 查互联网 → `web_search`",
         "- 知识问答需多路资料 → 按「知识综合检索」技能编排，依次调用 `knowledge_retrieve` / `kg_query` / `web_search`（按需，非每问必调）",
-        "- 用户要**新建/编写 Skill** → `create_uploaded_skill`（系统会自动附带 SKILL.md）",
-        "- 用户任务匹配某发展技能 → 直接 `run_skill_script`（系统自动注入 SKILL.md，勿 load）",
-        "- 你判断任务需要某发展技能时也可自行调用 `run_skill_script`，无需用户明确要求",
+        "- 用户要**新建/编写 Skill** → 先调研，想清楚后再 `create_uploaded_skill`；"
+        "**爬取/数据/自动化类必须在 extra_files 提供 main.py**，运行时 `run_skill_script` 直接执行；"
+        "仅 mermaid/纯说明等极简任务可只有 SKILL.md；"
+        "涉及网页时用 `browser_navigate` + `browser_snapshot` 探结构，**勿** `browser_screenshot`（除非用户明确要求）；"
+        "勿猜测页面字段或重复创建已有同类技能\n",
+        "- 用户任务匹配某**含脚本**的发展技能 → `run_skill_script`（系统自动注入 SKILL.md，勿 load）",
+        "- 已有发展技能执行失败或无有效结论 → `update_uploaded_skill_file` 修复后重试，勿新建重复技能",
+        "- 用户任务匹配**指令型**发展技能（如 mermaid-diagram）→ 按 SKILL.md 直接作答，**勿** run_skill_script",
+        "- 你判断任务需要**含脚本**的发展技能时可调用 `run_skill_script`，无需用户明确要求",
     ]
     from app.integrations.browser_automation.browser_config import get_browser_rpa_config
 
@@ -208,7 +221,7 @@ def build_agent_catalog_prompt(
         lines.extend(
             [
                 "- 用户要**网页截图/可视化页面** → `browser_navigate` 后 `browser_screenshot`（**勿**用 `web-page-insight` 或 `run_skill_script`，脚本沙箱不能生成图片文件）",
-                "- 需**点击/填表/操作网页**或 JavaScript 渲染页 → `browser_navigate` + `browser_snapshot` + `browser_click`/`browser_type`/`browser_screenshot`（先 snapshot 再 act；页面变化后重新 snapshot）",
+                "- 需**点击/填表/操作网页**或 JavaScript 渲染页 → `browser_navigate` + `browser_snapshot` + `browser_click`/`browser_type`（先 snapshot 再 act；页面变化后重新 snapshot）；操作结果需展示给用户时才 `browser_screenshot`",
                 "- 用户要求**保存网页操作流程** → `browser_save_workflow` 固化为 Skill",
                 "- 回放已录制的 RPA Skill → `browser_replay_workflow` 或 `run_skill_script(entry=replay.py)`",
                 "- 复杂目标一键探索 → `browser_run_task`；定时执行 → `schedule_browser_workflow`",
@@ -239,13 +252,19 @@ def build_agent_catalog_prompt(
         lines.append("")
 
     if uploaded:
-        lines.append("### 发展技能（上传 / Agent 生成；匹配时直接 run_skill_script，系统自动加载 SKILL.md）")
+        from app.services.agent_skill_service import uploaded_skill_has_script
+
+        lines.append("### 发展技能（上传 / Agent 生成；匹配时系统自动加载 SKILL.md）")
         lines.append(
-            "含 Python 脚本的上传 Skill 可通过 `run_skill_script` 沙箱执行"
-            "（入口 main.py/run.py；须 skill_runtime.finish 输出结论，不保存抓取原文）"
+            "- **指令型**（仅 SKILL.md）：按说明直接作答，如图表用 ```mermaid`；**勿** run_skill_script"
+        )
+        lines.append(
+            "- **脚本型**（含 main.py/run.py）：用 `run_skill_script` 沙箱执行"
+            "（须 skill_runtime.finish 输出结论，不保存抓取原文）"
         )
         for skill in uploaded:
-            lines.append(f"- `{skill.name}` [uploaded]: {skill.description}")
+            tag = "[脚本型]" if uploaded_skill_has_script(db, skill.name) else "[指令型]"
+            lines.append(f"- `{skill.name}` {tag}: {skill.description}")
         lines.append("")
 
     return "\n".join(lines).rstrip()

@@ -9,8 +9,8 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   /** 智能体正在流式回复 */
   loading: { type: Boolean, default: false },
-  /** 流式回复时是否禁用输入（false 时可边生成边编辑下一条） */
-  disableInputWhileLoading: { type: Boolean, default: true },
+  /** 流式回复时是否禁用输入（false 时可边生成边编辑，发送需先停止） */
+  disableInputWhileLoading: { type: Boolean, default: false },
   minRows: { type: Number, default: 2 },
   maxRows: { type: Number, default: 6 },
   /** 在发送按钮旁展示上传附件（无背板图标按钮） */
@@ -128,6 +128,17 @@ defineExpose({ focus });
 .chat-composer__input :deep(.n-input__textarea-mirror) {
   padding-right: 52px !important;
   padding-bottom: 44px !important;
+}
+
+.chat-composer__input :deep(.n-input__textarea-el) {
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-composer__input :deep(.n-input__textarea-el)::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .chat-composer--single .chat-composer__input :deep(.n-input__textarea-el),

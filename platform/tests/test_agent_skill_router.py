@@ -7,6 +7,7 @@ from app.services.agent_skill_router import (
     is_skill_management_message,
     should_read_memory,
     should_write_memory,
+    skill_creation_requires_python_script,
     validate_uploaded_skill_load,
 )
 from app.skills.types import SkillSource
@@ -26,6 +27,24 @@ def test_memory_write_trigger_and_extract():
 def test_skill_management_message():
     assert is_skill_management_message("帮我创建一个 skills，计算三位数乘法") is True
     assert is_skill_management_message("画一个审批流程图") is False
+
+
+def test_skill_creation_requires_python_for_scraper():
+    msg = "生成一个 skill，帮我从https://www.tanshichang.cn 爬取最新的碳市场价格。"
+    assert skill_creation_requires_python_script(msg) is True
+
+
+def test_skill_creation_allows_instruction_only_mermaid():
+    msg = "生成一个纯指令 skill，只写 mermaid 流程图说明，不要脚本"
+    assert skill_creation_requires_python_script(msg) is False
+
+
+def test_parse_extra_files_helpers():
+    from app.services.agent_tools import _extra_files_has_python, _parse_extra_files
+
+    assert _parse_extra_files({"main.py": "print(1)"}) == {"main.py": "print(1)"}
+    assert _extra_files_has_python({"main.py": "x"}) is True
+    assert _extra_files_has_python({"README.md": "x"}) is False
 
 
 def test_validate_uploaded_skill_load_blocks_skill_creation():

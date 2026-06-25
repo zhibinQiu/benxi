@@ -71,7 +71,7 @@ export function clearTokens() {
 /** 文档库「个人级」分级（与后端 scope=personal 一致） */
 export const DOCUMENT_SCOPE_PERSONAL = "personal";
 
-/** 公众号 / RSS / 网站资讯导入文档库的默认请求体 */
+/** 公众号 / 网站资讯导入文档库的默认请求体 */
 export function buildImportToPersonalLibraryBody(overrides = {}) {
   return {
     scope: DOCUMENT_SCOPE_PERSONAL,

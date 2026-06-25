@@ -19,3 +19,91 @@
 .knowledge-chat-content p:has(> img:only-child) {
   margin: 0;
 }
+
+/* 可交互富媒体：放大查看 / 保存 / 导出 */
+.ai-home-bubble .md-rich-media-block,
+.assistant-bubble .md-rich-media-block,
+.knowledge-chat-content .md-rich-media-block,
+.md-rich-media-block {
+  position: relative;
+  cursor: zoom-in;
+}
+
+.ai-home-bubble .md-rich-media-block > img,
+.assistant-bubble .md-rich-media-block > img,
+.knowledge-chat-content .md-rich-media-block > img,
+.md-rich img,
+.md-rich-media-block > img {
+  cursor: zoom-in;
+}
+
+.md-rich-media-block:focus-visible {
+  outline: 2px solid var(--platform-accent, #18a058);
+  outline-offset: 2px;
+}
+
+.md-rich-media-block:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--platform-accent, #18a058) 35%, transparent);
+}
+
+.md-rich .md-mermaid-wrap,
+.md-rich .md-echart-wrap {
+  margin: 12px 0;
+  padding: 8px 4px 4px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--platform-bg, #fff) 55%, transparent);
+}
+
+.md-rich .md-mermaid-wrap :deep(svg),
+.md-rich .md-echart-wrap .md-echart {
+  display: block;
+  margin: 0 auto;
+}
+
+.md-rich-media-hint {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--platform-text-secondary, #64748b);
+  background: color-mix(in srgb, var(--platform-surface, #fff) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--platform-border, #e2e8f0) 70%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.md-rich-media-block:hover .md-rich-media-hint,
+.md-rich-media-block:focus-visible .md-rich-media-hint {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.md-rich pre.md-rich-media-block {
+  padding-bottom: 28px;
+}
+
+.md-rich .md-mermaid--error {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #ef4444 35%, var(--platform-border, #e2e8f0));
+  background: color-mix(in srgb, #ef4444 8%, var(--platform-bg, #fff));
+  color: var(--platform-text, #1e293b);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.md-rich .md-mermaid--loading {
+  min-height: 48px;
+  opacity: 0.45;
+}

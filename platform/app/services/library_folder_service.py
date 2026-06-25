@@ -30,7 +30,7 @@ WEB_FAVORITES_FOLDER_NAME = "网页收藏"
 SYSTEM_FOLDER_HINTS = {
     FOLDER_KIND_UNCATEGORIZED: "尚未归入自定义文件夹的文档；不可删除或重命名。",
     FOLDER_KIND_SHARED: "其他用户通过显式授权分享给您的文档；不可删除或重命名。",
-    FOLDER_KIND_WEB_FAVORITES: "通过网站收藏、公众号与 RSS 导入的文档会自动归入此文件夹。",
+    FOLDER_KIND_WEB_FAVORITES: "通过网站收藏、公众号导入的文档会自动归入此文件夹。",
 }
 
 
@@ -95,15 +95,17 @@ def _resolve_folder_params(
     *,
     scope: str,
     dept_id: uuid.UUID | None,
+    owner_id: uuid.UUID | None = None,
 ) -> tuple[str, uuid.UUID | None, uuid.UUID | None]:
-    norm_scope, norm_dept, owner_id = _normalize_folder_scope(
-        db, user, scope=scope, dept_id=dept_id
+    norm_scope, norm_dept, resolved_owner = _normalize_folder_scope(
+        db, user, scope=scope, dept_id=dept_id, owner_id=owner_id
     )
     norm_scope, norm_dept = resolve_create_params(
         db, user, scope=norm_scope, dept_id=norm_dept
     )
-    owner_id = user.id if norm_scope == SCOPE_PERSONAL else None
-    return norm_scope, norm_dept, owner_id
+    if norm_scope == SCOPE_PERSONAL:
+        return norm_scope, norm_dept, resolved_owner or user.id
+    return norm_scope, norm_dept, None
 
 
 def _doc_count_filters(
@@ -463,6 +465,7 @@ def create_kb_folder(
     description: str = "",
     scope: str,
     dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
 ) -> DocumentLibraryFolder:
     label = (name or "").strip()
     if not label:
@@ -473,7 +476,7 @@ def create_kb_folder(
         raise bad_request("文件夹名称过长")
 
     norm_scope, norm_dept, owner_id = _resolve_folder_params(
-        db, user, scope=scope, dept_id=dept_id
+        db, user, scope=scope, dept_id=dept_id, owner_id=owner_id
     )
     if not can_manage_library_folders(
         db, user, norm_scope, dept_id=norm_dept

@@ -1,8 +1,5 @@
 import { onMounted, onUnmounted, ref, unref, watch } from "vue";
-
-function prefersReducedMotion() {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-}
+import { prefersReducedMotion, subscribeMediaQuery } from "../utils/mediaQuery.js";
 
 /**
  * 逐字打字机效果，支持多行轮播；单行可通过 loopSingle 循环；尊重 prefers-reduced-motion。
@@ -118,7 +115,7 @@ export function useTypewriter(linesSource, options = {}) {
     tick();
   }
 
-  let motionQuery = null;
+  let unsubscribeMotion = null;
 
   function onMotionPreferenceChange() {
     reducedMotion.value = prefersReducedMotion();
@@ -127,15 +124,14 @@ export function useTypewriter(linesSource, options = {}) {
 
   onMounted(() => {
     reducedMotion.value = prefersReducedMotion();
-    motionQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    motionQuery?.addEventListener?.("change", onMotionPreferenceChange);
+    unsubscribeMotion = subscribeMediaQuery("(prefers-reduced-motion: reduce)", onMotionPreferenceChange);
     restart();
   });
 
   onUnmounted(() => {
     active = false;
     clearTimer();
-    motionQuery?.removeEventListener?.("change", onMotionPreferenceChange);
+    unsubscribeMotion?.();
   });
 
   watch(() => getLines(), restart, { deep: true });

@@ -417,8 +417,61 @@ def reset_stuck_parsing_documents(db: Session | None = None) -> dict[str, int]:
     return {"reset": reset}
 
 
+def clear_stuck_queue_tasks(db: Session | None = None) -> dict[str, int]:
+    """executor 长时间不消费时，清理 MySQL 中待处理/进行中的解析 task。"""
+    conn = _ragflow_mysql_conn(db)
+    if conn is None:
+        return {"removed": 0}
+    removed = 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM task
+                WHERE progress IS NULL OR (progress >= 0 AND progress < 1)
+                """
+            )
+            removed = int(cur.rowcount or 0)
+        conn.commit()
+    except Exception as exc:
+        logger.warning("KnowFlow 清理积压 task 失败: %s", exc)
+        conn.rollback()
+    finally:
+        conn.close()
+    if removed:
+        logger.info("KnowFlow 已清理积压 task %s 条", removed)
+    return {"removed": removed}
+
+
+def clear_redis_parse_queues() -> dict[str, int]:
+    """清空 Redis 解析队列 stream（配合 MySQL task 清理，便于 executor 重新消费）。"""
+    from app.config import get_settings
+
+    settings = get_settings()
+    cleared = 0
+    try:
+        import redis
+
+        client = redis.from_url(settings.redis_url, decode_responses=True)
+        for q in ("rag_flow_svr_queue", "rag_flow_svr_queue_1"):
+            try:
+                cleared += int(client.delete(q) or 0)
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.debug("Redis 解析队列清理失败: %s", exc)
+    if cleared:
+        logger.info("KnowFlow 已清空 Redis 解析队列 %s 个", cleared)
+    return {"cleared": cleared}
+
+
 def recover_knowflow_stuck_queue(db: Session | None = None) -> dict[str, Any]:
-    """轻量队列恢复：pending 去重 + 伪解析中 document 重置。"""
-    deduped = dedupe_pending_tasks(db)
+    """队列恢复：清理积压 task、重置卡住文档、清空 Redis 解析 stream。"""
+    cleared = clear_stuck_queue_tasks(db)
     reset = reset_stuck_parsing_documents(db)
-    return {"pending_removed": deduped["removed"], "documents_reset": reset["reset"]}
+    redis = clear_redis_parse_queues()
+    return {
+        "tasks_cleared": cleared["removed"],
+        "documents_reset": reset["reset"],
+        "redis_queues_cleared": redis["cleared"],
+    }

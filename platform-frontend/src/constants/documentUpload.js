@@ -2,21 +2,21 @@
 export const DOCUMENT_UPLOAD_MAX_FILES = 10;
 export const DOCUMENT_UPLOAD_MAX_MB_DEFAULT = 200;
 
-let _uploadMaxMb = DOCUMENT_UPLOAD_MAX_MB_DEFAULT;
+let uploadMaxMb = DOCUMENT_UPLOAD_MAX_MB_DEFAULT;
 
 export function setDocumentUploadMaxMb(mb) {
   const n = Number(mb);
   if (Number.isFinite(n) && n > 0) {
-    _uploadMaxMb = Math.floor(n);
+    uploadMaxMb = Math.floor(n);
   }
 }
 
 export function getDocumentUploadMaxMb() {
-  return _uploadMaxMb;
+  return uploadMaxMb;
 }
 
 export function getDocumentUploadMaxBytes() {
-  return _uploadMaxMb * 1024 * 1024;
+  return uploadMaxMb * 1024 * 1024;
 }
 
 export function applyUploadLimitsFromLibrary(lib) {
@@ -53,29 +53,15 @@ export function titleFromFileName(fileName) {
   return dot > 0 ? base.slice(0, dot) : base;
 }
 
-export function validateUploadFiles(
-  fileList,
-  { maxFiles = DOCUMENT_UPLOAD_MAX_FILES, maxBytes, maxMb } = {},
-) {
-  const limitBytes = maxBytes ?? getDocumentUploadMaxBytes();
-  const limitMb = maxMb ?? getDocumentUploadMaxMb();
-  const files = fileList.filter(Boolean);
-  if (!files.length) return { ok: false, message: "请选择要上传的文件" };
-  if (files.length > maxFiles) {
-    return { ok: false, message: `最多一次上传 ${maxFiles} 个文件` };
-  }
-  for (const file of files) {
-    if (file.size > limitBytes) {
-      return {
-        ok: false,
-        message: `「${file.name}」超过 ${limitMb}MB 限制`,
-      };
-    }
-  }
-  return { ok: true, files };
-}
+/** 文档中心允许上传的扩展名（文件选择器 accept） */
+export const DOCUMENT_UPLOAD_ACCEPT =
+  ".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.markdown";
 
-const _EXT_LABELS = {
+const UPLOAD_ALLOWED_LABELS = new Set(["pdf", "word", "excel", "txt", "md"]);
+
+export const DOCUMENT_UPLOAD_FORMAT_HINT = "PDF、Word、Excel、TXT、MD";
+
+const UPLOAD_EXT_TO_LABEL = {
   pdf: "pdf",
   doc: "word",
   docx: "word",
@@ -99,12 +85,14 @@ const _EXT_LABELS = {
   webp: "image",
 };
 
-const _MIME_LABELS = {
+const UPLOAD_MIME_TO_LABEL = {
   "application/pdf": "pdf",
   "application/msword": "word",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "word",
   "text/plain": "txt",
   "text/markdown": "md",
+  "application/vnd.ms-excel": "excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "excel",
 };
 
 /** 从文件名 / MIME 推断格式标签（与后端 document_format 对齐） */
@@ -112,19 +100,53 @@ export function fileFormatLabel(fileName, mimeType = "") {
   const name = String(fileName || "");
   if (name.includes(".")) {
     const ext = name.split(".").pop().toLowerCase().trim();
-    if (_EXT_LABELS[ext]) return _EXT_LABELS[ext];
+    if (UPLOAD_EXT_TO_LABEL[ext]) return UPLOAD_EXT_TO_LABEL[ext];
   }
   const mt = String(mimeType || "")
     .split(";")[0]
     .trim()
     .toLowerCase();
-  if (_MIME_LABELS[mt]) return _MIME_LABELS[mt];
+  if (UPLOAD_MIME_TO_LABEL[mt]) return UPLOAD_MIME_TO_LABEL[mt];
   if (mt.startsWith("image/")) return "image";
   if (name.includes(".")) {
     const ext = name.split(".").pop().toLowerCase().trim();
     if (ext && /^[a-z0-9]{1,8}$/i.test(ext)) return ext;
   }
   return null;
+}
+
+/** 是否为文档中心允许的上传格式 */
+export function isAllowedUploadFile(fileName, mimeType = "") {
+  const label = fileFormatLabel(fileName, mimeType);
+  return Boolean(label && UPLOAD_ALLOWED_LABELS.has(label));
+}
+
+export function validateUploadFiles(
+  fileList,
+  { maxFiles = DOCUMENT_UPLOAD_MAX_FILES, maxBytes, maxMb } = {},
+) {
+  const limitBytes = maxBytes ?? getDocumentUploadMaxBytes();
+  const limitMb = maxMb ?? getDocumentUploadMaxMb();
+  const files = fileList.filter(Boolean);
+  if (!files.length) return { ok: false, message: "请选择要上传的文件" };
+  if (files.length > maxFiles) {
+    return { ok: false, message: `最多一次上传 ${maxFiles} 个文件` };
+  }
+  for (const file of files) {
+    if (!isAllowedUploadFile(file.name, file.type)) {
+      return {
+        ok: false,
+        message: `「${file.name}」格式不支持，仅支持 ${DOCUMENT_UPLOAD_FORMAT_HINT}`,
+      };
+    }
+    if (file.size > limitBytes) {
+      return {
+        ok: false,
+        message: `「${file.name}」超过 ${limitMb}MB 限制`,
+      };
+    }
+  }
+  return { ok: true, files };
 }
 
 /** 新版本须与已有已上传版本格式一致 */

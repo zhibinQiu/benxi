@@ -1,10 +1,10 @@
-import { ensureMarked, marked, normalizeMarkdownInput } from "./markdown.js";
+import { ensureMarked, marked, normalizeMarkdownInput, sanitizeRenderedHtml } from "./markdown.js";
+import { loadEcharts } from "./echartsLoader.js";
 
 let echartSeq = 0;
 let mermaidSeq = 0;
 const chartInstances = new WeakMap();
 const chartPending = new WeakSet();
-let echartsLoader = null;
 let rendererRegistered = false;
 let chartObserver = null;
 
@@ -62,10 +62,12 @@ function ensureEchartsRenderer() {
         const language = (lang || "").trim().toLowerCase();
         if (language === "mermaid") {
           const id = `md-mermaid-${mermaidSeq++}`;
-          const encoded = encodeURIComponent(text || "");
+          const body = String(text || "").trim();
+          const encoded = encodeURIComponent(body);
+          const safe = escapeHtml(body);
           return (
             `<div class="md-mermaid-wrap">` +
-            `<pre class="md-mermaid" id="${id}" data-mermaid="${encoded}"></pre>` +
+            `<pre class="md-mermaid" id="${id}" data-mermaid="${encoded}">${safe}</pre>` +
             `</div>`
           );
         }
@@ -99,20 +101,13 @@ function ensureEchartsRenderer() {
   rendererRegistered = true;
 }
 
-async function loadEcharts() {
-  if (!echartsLoader) {
-    echartsLoader = import("echarts").then((mod) => mod.default ?? mod);
-  }
-  return echartsLoader;
-}
-
 export { normalizeMarkdownInput };
 
 export function renderRichMarkdown(text) {
   ensureEchartsRenderer();
   const source = normalizeMarkdownInput(text);
   try {
-    return marked.parse(source);
+    return sanitizeRenderedHtml(marked.parse(source));
   } catch {
     return `<p>${escapeHtml(source)}</p>`;
   }
@@ -164,6 +159,10 @@ export async function mountRichMediaInElement(root) {
   mountEchartsInElement(root);
   const { mountMermaidInElement } = await import("./mermaidRender.js");
   await mountMermaidInElement(root);
+}
+
+export function getEchartForElement(el) {
+  return chartInstances.get(el) || null;
 }
 
 export function disposeEchartsInElement(root) {

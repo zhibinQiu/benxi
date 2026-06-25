@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api import (
+    agent_profiles,
     agent_skills,
     assistant,
     auth,
@@ -39,6 +40,7 @@ from app.features.registry import ensure_plugins_loaded, mount_routers
 from app.models import (  # noqa: F401 — register ORM models
     agent_skill,
     agent_skill_binding,
+    agent_profile_binding,
     audit,
     carbon_market,
     compare,
@@ -65,6 +67,7 @@ from app.models import (  # noqa: F401 — register ORM models
 from app.schemas.common import ApiResponse
 from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
 from app.services.knowflow_queue_watchdog_service import start_knowflow_queue_watchdog
+from app.services.job_watchdog_service import start_background_job_watchdog
 
 _logger = logging.getLogger(__name__)
 
@@ -129,12 +132,15 @@ async def lifespan(_app: FastAPI):
     from app.core.redis_client import get_redis_client
 
     await asyncio.to_thread(get_redis_client)
-    from app.services.knowledge_sync_job_service import (
-        recover_interrupted_document_index_jobs,
-    )
 
     def _recover_index_jobs_background() -> None:
         try:
+            from app.services.job_watchdog_service import cancel_stale_background_jobs
+            from app.services.knowledge_sync_job_service import (
+                recover_interrupted_document_index_jobs,
+            )
+
+            cancel_stale_background_jobs()
             recover_interrupted_document_index_jobs()
         except Exception:
             _logger.exception("后台恢复文档索引任务失败")
@@ -158,9 +164,15 @@ async def lifespan(_app: FastAPI):
     )
     sync_task = start_cea_history_scheduler()
     watchdog_task = start_knowflow_queue_watchdog()
+    job_watchdog_task = start_background_job_watchdog()
     try:
         yield
     finally:
+        job_watchdog_task.cancel()
+        try:
+            await job_watchdog_task
+        except asyncio.CancelledError:
+            pass
         watchdog_task.cancel()
         try:
             await watchdog_task
@@ -341,6 +353,7 @@ def create_app() -> FastAPI:
     app.include_router(model_settings.router, prefix=prefix)
     app.include_router(menu_settings.router, prefix=prefix)
     app.include_router(agent_skills.router, prefix=prefix)
+    app.include_router(agent_profiles.router, prefix=prefix)
     from app.api import browser_rpa
 
     app.include_router(browser_rpa.router, prefix=prefix)

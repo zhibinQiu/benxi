@@ -21,6 +21,7 @@ from app.schemas.dashboard import PlatformDashboardStatsOut
 from app.schemas.model_settings import ClientConfigOut
 from app.services.model_settings_service import (
     get_frontend_app_title,
+    get_frontend_color_scheme,
     get_frontend_default_theme,
     get_platform_api_base_url,
 )
@@ -62,6 +63,7 @@ def client_config(
             api_base=get_platform_api_base_url(db),
             app_title=get_frontend_app_title(db),
             default_theme=get_frontend_default_theme(db),
+            color_scheme=get_frontend_color_scheme(db),
         ).model_dump()
 
     data = cache_get_or_set(client_config_cache_key(), _load, ttl=ttl)

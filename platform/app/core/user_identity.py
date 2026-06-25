@@ -111,12 +111,10 @@ def username_taken(
 
 
 def user_display_name(user: User) -> str:
-    """界面显示名：姓名 / 用户名 / 手机号，最后才回退「用户」。"""
-    for value in (user.display_name, user.username, user.phone, user.email):
-        text = (value or "").strip()
-        if text:
-            return text
-    return "用户"
+    """界面显示名（与文档/分享等模块共用 user_display）。"""
+    from app.core.user_display import user_display_name as _display
+
+    return _display(user)
 
 
 def phone_taken(

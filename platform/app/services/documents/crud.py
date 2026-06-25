@@ -277,8 +277,12 @@ def prepare_upload(
 
         raise forbidden("No permission to upload new version")
 
-    from app.core.document_format import assert_compatible_version_format
+    from app.core.document_format import (
+        assert_allowed_upload_format,
+        assert_compatible_version_format,
+    )
 
+    assert_allowed_upload_format(file_name, mime_type)
     baseline = get_baseline_uploaded_version(db, document)
     if baseline:
         assert_compatible_version_format(
@@ -333,6 +337,12 @@ def save_upload_blob(
         from app.core.exceptions import bad_request
 
         raise bad_request(f"单文件大小不能超过 {document_upload_max_label()}")
+    from app.core.document_format import assert_allowed_upload_format
+
+    assert_allowed_upload_format(
+        version.file_name,
+        content_type or version.mime_type,
+    )
     mime = (content_type or version.mime_type or "application/octet-stream").strip()
     store = get_object_store()
     store.put_object_bytes(version.file_key, data, mime)

@@ -12,31 +12,23 @@ import {
   dateEnUS } from "naive-ui";
 import { useAppPreferences } from "./composables/useAppPreferences";
 import { useAppDisplayName } from "./composables/usePlatformBranding";
-import { useLiquidGlassMotion } from "./composables/useLiquidGlassMotion";
 import { useI18n } from "./composables/useI18n";
 import { createThemeOverrides } from "./utils/platformTheme";
 import { PLATFORM_Z } from "./constants/zIndex.js";
 import { shellRouteKey } from "./utils/routeTransition";
 import { routeUsesVideoBackground } from "./utils/shellBackground";
-import { onSessionReplaced } from "./utils/sessionGuard";
 import PageVideoBackground from "./components/PageVideoBackground.vue";
 import AppSessionGuard from "./components/AppSessionGuard.vue";
-const { isDark } = useAppPreferences();
+const { isDark, colorScheme } = useAppPreferences();
 const { locale } = useI18n();
 const appDisplayName = useAppDisplayName();
-useLiquidGlassMotion();
-
 const naiveTheme = computed(() => (isDark.value ? darkTheme : null));
-const themeOverrides = computed(() => createThemeOverrides(isDark.value));
+const themeOverrides = computed(() => createThemeOverrides(isDark.value, colorScheme.value));
 const naiveLocale = computed(() => (locale.value === "en" ? enUS : zhCN));
 const naiveDateLocale = computed(() => (locale.value === "en" ? dateEnUS : dateZhCN));
 
 const route = useRoute();
 const shellVideoBg = computed(() => routeUsesVideoBackground(route));
-const shellVideoBgLite = computed(() => {
-  const name = String(route.name || "");
-  return name !== "ai-home" && name !== "login";
-});
 
 watch(
   [locale, appDisplayName],
@@ -58,7 +50,7 @@ watch(
       <n-dialog-provider>
         <AppSessionGuard />
         <div class="app-shell" :class="{ 'app-shell--video-bg': shellVideoBg }">
-          <PageVideoBackground v-if="shellVideoBg" fixed :lite="shellVideoBgLite" />
+          <PageVideoBackground v-if="shellVideoBg" fixed lite />
           <div v-if="!shellVideoBg" class="app-ambient" aria-hidden="true">
             <span class="app-ambient__orb app-ambient__orb--1" />
             <span class="app-ambient__orb app-ambient__orb--2" />
@@ -75,6 +67,7 @@ watch(
 
 <style>
 @import "./styles/tokens.css";
+@import "./styles/color-schemes.css";
 
 html,
 body,
@@ -128,8 +121,8 @@ h4,
 .app-ambient__orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(72px);
-  opacity: 0.75;
+  filter: blur(48px);
+  opacity: 0.65;
   animation: liquid-orb-drift 36s var(--platform-ease-fluid) infinite;
 }
 

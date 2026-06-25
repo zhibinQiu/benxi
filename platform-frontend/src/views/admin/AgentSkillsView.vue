@@ -3,6 +3,8 @@ import { computed, h, onActivated, onMounted, ref } from "vue";
 import {
   NButton,
   NCard,
+  NCheckbox,
+  NCheckboxGroup,
   NDataTable,
   NDrawer,
   NDrawerContent,
@@ -18,7 +20,11 @@ import {
   NUpload,
   NUploadDragger,
 } from "naive-ui";
-import { FolderOpenOutline, CloudUploadOutline, RefreshOutline } from "@vicons/ionicons5";
+import { FolderOpenOutline, CloudUploadOutline } from "@vicons/ionicons5";
+import ListRefreshButton from "../../components/ListRefreshButton.vue";
+import ListTableFooter from "../../components/ListTableFooter.vue";
+import { formatAgentDisplayName } from "../../utils/agentDisplay.js";
+import { useClientListPagination } from "../../composables/useClientListPagination.js";
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
 import {
@@ -31,7 +37,12 @@ import {
   fetchAgentSkillRegistry,
   fetchAgentSkills,
   fetchAgentTools,
+  fetchAgentProfiles,
+  fetchAgentProfile,
+  fetchAgentProfileFile,
+  updateAgentProfileFile,
   invokeAgentSkill,
+  patchAgentProfile,
   patchBuiltinSkill,
   updateAgentMemory,
   updateAgentSkill,
@@ -45,11 +56,28 @@ import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
 const ui = usePlatformUi();
 const { t } = useI18n();
 
-const activeTab = ref("tools");
+const activeTab = ref("agents");
 const registryLoading = ref(false);
 const registry = ref([]);
+const registryForPicker = ref([]);
 const toolsLoading = ref(false);
 const tools = ref([]);
+
+const agentsLoading = ref(false);
+const agents = ref([]);
+const skillDrawerOpen = ref(false);
+const skillDrawerAgent = ref(null);
+const selectedSkillNames = ref([]);
+const skillSaving = ref(false);
+
+const agentDetailOpen = ref(false);
+const agentDetailLoading = ref(false);
+const agentDetail = ref(null);
+const agentPreviewPath = ref("");
+const agentPreviewContent = ref("");
+const agentPreviewLoading = ref(false);
+const agentPreviewDirty = ref(false);
+const agentPreviewSaving = ref(false);
 
 const loading = ref(false);
 const uploading = ref(false);
@@ -83,6 +111,136 @@ const builtinSkills = computed(() =>
 const developedInRegistry = computed(() =>
   registry.value.filter((s) => s.kind === "developed" || s.source === "uploaded")
 );
+
+const {
+  page: builtinPage,
+  pageSize: builtinPageSize,
+  total: builtinTotal,
+  pagedItems: builtinPagedItems,
+  onPageChange: onBuiltinPageChange,
+} = useClientListPagination(builtinSkills);
+
+const {
+  page: toolsPage,
+  pageSize: toolsPageSize,
+  total: toolsTotal,
+  pagedItems: toolsPagedItems,
+  onPageChange: onToolsPageChange,
+} = useClientListPagination(tools);
+
+const skillPickerOptions = computed(() =>
+  registryForPicker.value.map((s) => ({
+    label: s.title ? `${s.title} (${s.name})` : s.name,
+    value: s.name,
+    disabled: !s.enabled,
+  }))
+);
+
+async function loadAgents() {
+  agentsLoading.value = true;
+  try {
+    agents.value = (await fetchAgentProfiles()) || [];
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.loadFailed"));
+  } finally {
+    agentsLoading.value = false;
+  }
+}
+
+function agentStatusLabel(agent) {
+  return agent.status === "running"
+    ? t("admin.agentSkills.statusRunning")
+    : t("admin.agentSkills.statusIdle");
+}
+
+function openSkillDrawer(agent) {
+  skillDrawerAgent.value = agent;
+  selectedSkillNames.value = [...(agent.skill_names || [])];
+  skillDrawerOpen.value = true;
+}
+
+async function saveAgentSkills() {
+  if (!skillDrawerAgent.value?.id) return;
+  skillSaving.value = true;
+  try {
+    const updated = await patchAgentProfile(skillDrawerAgent.value.id, {
+      skill_names: selectedSkillNames.value,
+    });
+    const idx = agents.value.findIndex((a) => a.id === updated.id);
+    if (idx >= 0) agents.value[idx] = updated;
+    skillDrawerAgent.value = updated;
+    ui.success(t("admin.agentSkills.saved"));
+    skillDrawerOpen.value = false;
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.saveFailed"));
+  } finally {
+    skillSaving.value = false;
+  }
+}
+
+async function toggleAgentEnabled(agent, enabled) {
+  try {
+    const updated = await patchAgentProfile(agent.id, { enabled });
+    const idx = agents.value.findIndex((a) => a.id === updated.id);
+    if (idx >= 0) agents.value[idx] = updated;
+    ui.success(t("admin.agentSkills.saved"));
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.saveFailed"));
+  }
+}
+
+async function openAgentDetail(agent) {
+  agentDetailOpen.value = true;
+  agentDetailLoading.value = true;
+  agentPreviewPath.value = "";
+  agentPreviewContent.value = "";
+  try {
+    agentDetail.value = await fetchAgentProfile(agent.id);
+    if (agentDetail.value?.files?.includes("AGENT.md")) {
+      await loadAgentPreview("AGENT.md");
+    }
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.loadFailed"));
+  } finally {
+    agentDetailLoading.value = false;
+  }
+}
+
+async function loadAgentPreview(path) {
+  if (!agentDetail.value?.id) return;
+  agentPreviewLoading.value = true;
+  agentPreviewPath.value = path;
+  agentPreviewDirty.value = false;
+  try {
+    const file = await fetchAgentProfileFile(agentDetail.value.id, path);
+    agentPreviewContent.value = file?.text || "";
+  } catch (e) {
+    agentPreviewContent.value = e.message || "";
+  } finally {
+    agentPreviewLoading.value = false;
+  }
+}
+
+async function saveAgentPreview() {
+  if (!agentDetail.value?.id || !agentPreviewPath.value) return;
+  agentPreviewSaving.value = true;
+  try {
+    await updateAgentProfileFile(
+      agentDetail.value.id,
+      agentPreviewPath.value,
+      agentPreviewContent.value
+    );
+    agentPreviewDirty.value = false;
+    ui.success(t("admin.agentSkills.saved"));
+    agentDetail.value = await fetchAgentProfile(agentDetail.value.id);
+    const idx = agents.value.findIndex((a) => a.id === agentDetail.value.id);
+    if (idx >= 0) agents.value[idx] = { ...agents.value[idx], ...agentDetail.value };
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.saveFailed"));
+  } finally {
+    agentPreviewSaving.value = false;
+  }
+}
 
 const ATOMIC_INVOKE_MAP = {
   web_search: { skillName: "web-search", toolName: "search", params: { query: "测试", max_items: 2 } },
@@ -126,7 +284,12 @@ async function loadTools() {
 async function loadRegistry() {
   registryLoading.value = true;
   try {
-    registry.value = (await fetchAgentSkillRegistry({ includeDisabled: true })) || [];
+    const [catalog, picker] = await Promise.all([
+      fetchAgentSkillRegistry({ includeDisabled: true, catalogOnly: true }),
+      fetchAgentSkillRegistry({ includeDisabled: true, catalogOnly: false }),
+    ]);
+    registry.value = catalog || [];
+    registryForPicker.value = picker || [];
   } catch (e) {
     ui.error(e.message || t("admin.agentSkills.loadFailed"));
   } finally {
@@ -157,7 +320,7 @@ async function loadUploadedList() {
 }
 
 async function reloadAll() {
-  await Promise.all([loadTools(), loadRegistry(), loadUploadedList()]);
+  await Promise.all([loadAgents(), loadTools(), loadRegistry(), loadUploadedList()]);
 }
 
 async function toggleBuiltin(row, enabled) {
@@ -546,57 +709,99 @@ onActivated(async () => {
 <template>
   <div class="agent-skills-view">
     <NTabs v-model:value="activeTab" type="line" animated>
-      <NTabPane name="tools" :tab="t('admin.agentSkills.tabTools')">
-        <NCard size="small" :title="t('admin.agentSkills.toolsTitle')">
+      <NTabPane name="agents" :tab="t('admin.agentSkills.tabAgents')">
+        <NCard size="small" :title="t('admin.agentSkills.agentsTitle')">
           <template #header-extra>
-            <NButton
-              quaternary
-              size="small"
-              :loading="toolsLoading"
-              @click="loadTools"
-            >
-              <template #icon>
-                <NIcon :component="RefreshOutline" />
-              </template>
-              {{ t("common.refresh") }}
-            </NButton>
+            <ListRefreshButton :loading="agentsLoading" @click="loadAgents" />
           </template>
-          <NText depth="3" style="display: block; margin-bottom: 12px">
-            {{ t("admin.agentSkills.toolsHint") }}
+          <NText depth="3" style="display: block; margin-bottom: 16px">
+            {{ t("admin.agentSkills.agentsHint") }}
           </NText>
-          <NDataTable
-            :loading="toolsLoading"
-            :columns="toolColumns"
-            :data="tools"
-            :pagination="{ pageSize: LIST_PAGE_SIZE }"
-          />
+          <div v-if="agentsLoading">{{ t("common.loading") }}</div>
+          <div v-else class="agent-card-grid">
+            <NCard
+              v-for="agent in agents"
+              :key="agent.id"
+              size="small"
+              class="agent-card agent-card--clickable"
+              :class="{ 'agent-card--disabled': !agent.enabled }"
+              @click="openAgentDetail(agent)"
+            >
+              <div class="agent-card-header">
+                <span
+                  class="agent-status-dot"
+                  :class="agent.status === 'running' ? 'agent-status-dot--running' : 'agent-status-dot--idle'"
+                  :title="agentStatusLabel(agent)"
+                />
+                <div class="agent-card-titles">
+                  <div class="agent-card-title">{{ formatAgentDisplayName(agent.title) }}</div>
+                  <NText depth="3" class="agent-card-id">{{ agent.id }}</NText>
+                </div>
+                <NSwitch
+                  v-if="agent.id !== 'orchestrator'"
+                  :value="agent.enabled"
+                  size="small"
+                  @click.stop
+                  @update:value="(v) => toggleAgentEnabled(agent, v)"
+                />
+              </div>
+              <NText depth="3" class="agent-card-desc">{{ agent.description }}</NText>
+              <NSpace :size="8" wrap class="agent-card-meta">
+                <NTag size="small" :bordered="false">
+                  {{ t("admin.agentSkills.toolsCount", { count: agent.tool_count }) }}
+                </NTag>
+                <NTag size="small" :bordered="false">
+                  {{ t("admin.agentSkills.skillsCount", { count: agent.skill_names?.length || 0 }) }}
+                </NTag>
+                <NTag
+                  v-if="agent.status === 'running'"
+                  size="small"
+                  type="success"
+                  :bordered="false"
+                >
+                  {{ t("admin.agentSkills.activeConversations", { count: agent.active_conversations }) }}
+                </NTag>
+                <NTag v-if="!agent.enabled" size="small" type="warning" :bordered="false">
+                  {{ t("admin.agentSkills.disabledAgent") }}
+                </NTag>
+              </NSpace>
+              <NButton
+                v-if="agent.skills_configurable"
+                size="small"
+                quaternary
+                type="primary"
+                class="agent-card-action"
+                @click.stop="openSkillDrawer(agent)"
+              >
+                {{ t("admin.agentSkills.configureSkills") }}
+              </NButton>
+            </NCard>
+          </div>
         </NCard>
       </NTabPane>
 
       <NTabPane name="skills" :tab="t('admin.agentSkills.tabSkills')">
         <NCard size="small" :title="t('admin.agentSkills.builtinTitle')" style="margin-bottom: 16px">
           <template #header-extra>
-            <NButton
-              quaternary
-              size="small"
-              :loading="registryLoading"
-              @click="loadRegistry"
-            >
-              <template #icon>
-                <NIcon :component="RefreshOutline" />
-              </template>
-              {{ t("common.refresh") }}
-            </NButton>
+            <ListRefreshButton :loading="registryLoading" @click="loadRegistry" />
           </template>
           <NText depth="3" style="display: block; margin-bottom: 12px">
             {{ t("admin.agentSkills.builtinHint") }}
           </NText>
-          <NDataTable
-            :loading="registryLoading"
-            :columns="builtinColumns"
-            :data="builtinSkills"
-            :pagination="{ pageSize: LIST_PAGE_SIZE }"
-          />
+          <div class="admin-list-table">
+            <NDataTable
+              :loading="registryLoading"
+              :columns="builtinColumns"
+              :data="builtinPagedItems"
+              :pagination="false"
+            />
+            <ListTableFooter
+              :page="builtinPage"
+              :page-size="builtinPageSize"
+              :item-count="builtinTotal"
+              @update:page="onBuiltinPageChange"
+            />
+          </div>
         </NCard>
 
         <NCard :title="t('admin.agentSkills.developedTitle')" size="small" style="margin-bottom: 16px">
@@ -648,12 +853,7 @@ onActivated(async () => {
             <NSpace justify="space-between" align="center" style="width: 100%">
               <span>{{ t("admin.agentSkills.listTitle") }}</span>
               <NSpace align="center" :size="8">
-                <NButton quaternary size="small" :loading="loading" @click="loadUploadedList">
-                  <template #icon>
-                    <NIcon :component="RefreshOutline" />
-                  </template>
-                  {{ t("common.refresh") }}
-                </NButton>
+                <ListRefreshButton :loading="loading" @click="loadUploadedList" />
                 <NInput
                   v-model:value="keyword"
                   clearable
@@ -665,18 +865,21 @@ onActivated(async () => {
               </NSpace>
             </NSpace>
           </template>
-          <NDataTable
-            remote
-            :loading="loading"
-            :columns="uploadedColumns"
-            :data="skills"
-            :pagination="{
-              page: page,
-              pageSize: LIST_PAGE_SIZE,
-              itemCount: total,
-              onUpdatePage: handlePageChange,
-            }"
-          />
+          <div class="admin-list-table">
+            <NDataTable
+              remote
+              :loading="loading"
+              :columns="uploadedColumns"
+              :data="skills"
+              :pagination="false"
+            />
+            <ListTableFooter
+              :page="page"
+              :page-size="LIST_PAGE_SIZE"
+              :item-count="total"
+              @update:page="handlePageChange"
+            />
+          </div>
         </NCard>
 
         <NCard
@@ -686,12 +889,7 @@ onActivated(async () => {
           :title="t('admin.agentSkills.developedInCatalog')"
         >
           <template #header-extra>
-            <NButton quaternary size="small" :loading="registryLoading" @click="loadRegistry">
-              <template #icon>
-                <NIcon :component="RefreshOutline" />
-              </template>
-              {{ t("common.refresh") }}
-            </NButton>
+            <ListRefreshButton :loading="registryLoading" @click="loadRegistry" />
           </template>
           <NSpace :size="8" wrap align="center">
             <NSpace
@@ -725,6 +923,31 @@ onActivated(async () => {
         </NCard>
       </NTabPane>
 
+      <NTabPane name="tools" :tab="t('admin.agentSkills.tabTools')">
+        <NCard size="small" :title="t('admin.agentSkills.toolsTitle')">
+          <template #header-extra>
+            <ListRefreshButton :loading="toolsLoading" @click="loadTools" />
+          </template>
+          <NText depth="3" style="display: block; margin-bottom: 12px">
+            {{ t("admin.agentSkills.toolsHint") }}
+          </NText>
+          <div class="admin-list-table">
+            <NDataTable
+              :loading="toolsLoading"
+              :columns="toolColumns"
+              :data="toolsPagedItems"
+              :pagination="false"
+            />
+            <ListTableFooter
+              :page="toolsPage"
+              :page-size="toolsPageSize"
+              :item-count="toolsTotal"
+              @update:page="onToolsPageChange"
+            />
+          </div>
+        </NCard>
+      </NTabPane>
+
       <NTabPane name="memory" :tab="t('admin.agentSkills.tabMemory')">
         <NCard size="small" :title="t('admin.agentSkills.memoryTitle')">
           <NText depth="3" style="display: block; margin-bottom: 12px">
@@ -742,7 +965,6 @@ onActivated(async () => {
               <NButton type="primary" :loading="memorySaving" @click="saveMemory">
                 {{ t("common.save") }}
               </NButton>
-              <NButton @click="loadMemory">{{ t("admin.agentSkills.reload") }}</NButton>
               <NButton type="error" quaternary @click="wipeMemory">
                 {{ t("admin.agentSkills.memoryClear") }}
               </NButton>
@@ -832,12 +1054,165 @@ onActivated(async () => {
         </template>
       </NDrawerContent>
     </NDrawer>
+
+    <NDrawer v-model:show="agentDetailOpen" :width="720" placement="right">
+      <NDrawerContent
+        :title="
+          t('admin.agentSkills.agentDetailTitle', { name: agentDetail?.title || '' })
+        "
+        closable
+      >
+        <div v-if="agentDetailLoading">{{ t("common.loading") }}</div>
+        <template v-else-if="agentDetail">
+          <NText depth="3">{{ agentDetail.description }}</NText>
+          <NText depth="3" style="display: block; margin: 12px 0">
+            {{ t("admin.agentSkills.agentConfigHint") }}
+          </NText>
+          <NSpace style="margin: 0 0 12px" :size="8" wrap>
+            <NTag
+              v-for="f in agentDetail.files || []"
+              :key="f"
+              size="small"
+              :bordered="false"
+              checkable
+              :checked="agentPreviewPath === f"
+              @click="loadAgentPreview(f)"
+            >
+              {{ f }}
+            </NTag>
+          </NSpace>
+          <NCard v-if="agentPreviewPath" size="small" :title="agentPreviewPath">
+            <div v-if="agentPreviewLoading">{{ t("common.loading") }}</div>
+            <template v-else>
+              <NInput
+                v-model:value="agentPreviewContent"
+                type="textarea"
+                :rows="18"
+                @update:value="agentPreviewDirty = true"
+              />
+              <NSpace style="margin-top: 8px">
+                <NButton
+                  type="primary"
+                  size="small"
+                  :loading="agentPreviewSaving"
+                  :disabled="!agentPreviewDirty"
+                  @click="saveAgentPreview"
+                >
+                  {{ t("common.save") }}
+                </NButton>
+                <NButton
+                  v-if="agentDetail.skills_configurable"
+                  size="small"
+                  quaternary
+                  @click="openSkillDrawer(agentDetail)"
+                >
+                  {{ t("admin.agentSkills.configureSkills") }}
+                </NButton>
+              </NSpace>
+            </template>
+          </NCard>
+        </template>
+      </NDrawerContent>
+    </NDrawer>
+
+    <NDrawer v-model:show="skillDrawerOpen" :width="480" placement="right">
+      <NDrawerContent
+        :title="
+          t('admin.agentSkills.skillPickerTitle', { name: skillDrawerAgent?.title || '' })
+        "
+        closable
+      >
+        <NText depth="3" style="display: block; margin-bottom: 16px">
+          {{ t("admin.agentSkills.skillPickerHint") }}
+        </NText>
+        <NCheckboxGroup v-model:value="selectedSkillNames">
+          <NSpace vertical :size="8">
+            <NCheckbox
+              v-for="opt in skillPickerOptions"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+              :disabled="opt.disabled"
+            />
+          </NSpace>
+        </NCheckboxGroup>
+        <NSpace style="margin-top: 16px" :size="8">
+          <NButton type="primary" :loading="skillSaving" @click="saveAgentSkills">
+            {{ t("common.save") }}
+          </NButton>
+          <NButton @click="skillDrawerOpen = false">{{ t("common.cancel") }}</NButton>
+        </NSpace>
+      </NDrawerContent>
+    </NDrawer>
   </div>
 </template>
 
 <style scoped>
 .agent-skills-view {
   max-width: 1200px;
+}
+.agent-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.agent-card--disabled {
+  opacity: 0.72;
+}
+.agent-card--clickable {
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.agent-card--clickable:hover {
+  box-shadow: var(--platform-shadow-sm);
+}
+.agent-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.agent-card-titles {
+  flex: 1;
+  min-width: 0;
+}
+.agent-card-title {
+  font-weight: 600;
+  line-height: 1.4;
+}
+.agent-card-id {
+  font-size: 12px;
+}
+.agent-card-desc {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.agent-card-meta {
+  margin-bottom: 8px;
+}
+.agent-card-action {
+  margin-top: 4px;
+}
+.agent-status-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  border: 2px solid var(--platform-bg-elevated-solid, #fff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--platform-border) 80%, transparent);
+}
+.agent-status-dot--running {
+  background: #22c55e;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--platform-border) 80%, transparent),
+    0 0 0 3px color-mix(in srgb, #22c55e 28%, transparent);
+}
+.agent-status-dot--idle {
+  background: var(--platform-text-quaternary, #8e8e93);
 }
 .folder-upload {
   display: inline-block;

@@ -14,7 +14,6 @@ import {
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
-  NAlert,
   NButton,
   NCard,
   NIcon,
@@ -34,8 +33,7 @@ import {
   DocumentsOutline,
   GitCompareOutline,
   LayersOutline,
-  SearchOutline,
-  RefreshOutline } from "@vicons/ionicons5";
+  SearchOutline } from "@vicons/ionicons5";
 import {
   createCompareJob,
   fetchCompareJob,
@@ -52,6 +50,7 @@ import {
 import { fetchDocument, fetchDocumentFileBlob } from "../api/documents.js";
 import CompareDocColumn from "../components/CompareDocColumn.vue";
 import CompareDocPicker from "../components/CompareDocPicker.vue";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
 import MarkdownRichContent from "../components/MarkdownRichContent.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import {
@@ -74,6 +73,7 @@ import {
   diffMatchesPara,
 } from "../utils/compareDocument.js";
 import { PREVIEW_KIND } from "../utils/documentPreview.js";
+import { openExternal } from "../utils/openExternal.js";
 import { PLATFORM_Z } from "../constants/zIndex.js";
 import {
   clearCompareViewSession,
@@ -1166,12 +1166,12 @@ async function openOriginalPdf(doc) {
     if (doc.version_id) {
       const blob = await fetchDocumentFileBlob(doc.id, doc.version_id);
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      openExternal(url);
       window.setTimeout(() => URL.revokeObjectURL(url), 60000);
       return;
     }
     const data = await getCompareDocumentDownload(doc.id);
-    if (data?.download_url) window.open(data.download_url, "_blank");
+    if (data?.download_url) openExternal(data.download_url);
   } catch (e) {
     ui.error(e.message);
   }
@@ -1478,31 +1478,19 @@ async function scrollToDiffItem(d) {
           </template>
           {{ t("compare.startCompare") }}
         </n-button>
-        <n-button
+        <ListRefreshButton
           v-if="compareMode === 'cross' && job?.status === 'done'"
-          size="small"
-          secondary
+          :label="t('compare.refreshDiff')"
           :disabled="!canCompare"
           :loading="comparing"
           @click="runCompare"
-        >
-          <template #icon>
-            <n-icon :component="RefreshOutline" />
-          </template>
-          {{ t("compare.refreshDiff") }}
-        </n-button>
-        <n-button
+        />
+        <ListRefreshButton
           v-if="compareMode === 'version'"
-          size="small"
-          secondary
+          :label="t('compare.refreshDiff')"
           :loading="comparing"
           @click="loadPrecomputedVersionTimeline()"
-        >
-          <template #icon>
-            <n-icon :component="RefreshOutline" />
-          </template>
-          {{ t("compare.refreshDiff") }}
-        </n-button>
+        />
       </n-space>
     </template>
 
@@ -2108,8 +2096,8 @@ async function scrollToDiffItem(d) {
   color: #2563eb;
 }
 .compare-mode-icon--cross {
-  background: rgba(139, 92, 246, 0.15);
-  color: #7c3aed;
+  background: color-mix(in srgb, var(--platform-accent) 15%, transparent);
+  color: var(--platform-accent-pressed);
 }
 .compare-mode-title {
   font-size: 16px;
@@ -2465,11 +2453,11 @@ async function scrollToDiffItem(d) {
 }
 .hit-item:hover,
 .hit-item.active {
-  border-color: rgba(139, 92, 246, 0.75);
-  background: rgba(139, 92, 246, 0.08);
+  border-color: color-mix(in srgb, var(--platform-accent) 75%, transparent);
+  background: color-mix(in srgb, var(--platform-accent) 8%, transparent);
 }
 .hit-snippet :deep(mark.hl-search) {
-  background: rgba(139, 92, 246, 0.35);
+  background: color-mix(in srgb, var(--platform-accent) 35%, transparent);
   border-radius: 2px;
   padding: 0 1px;
 }

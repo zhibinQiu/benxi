@@ -77,6 +77,35 @@ def test_safe_parse_documents_skips_in_progress():
     assert skipped == {"a": "解析任务进行中"}
 
 
+def test_recover_knowflow_stuck_queue_clears_tasks_and_resets_documents():
+    from app.services.knowflow_parse_guard import recover_knowflow_stuck_queue
+
+    with (
+        patch(
+            "app.services.knowflow_parse_guard.clear_stuck_queue_tasks",
+            return_value={"removed": 3},
+        ) as clear_tasks,
+        patch(
+            "app.services.knowflow_parse_guard.reset_stuck_parsing_documents",
+            return_value={"reset": 2},
+        ) as reset_docs,
+        patch(
+            "app.services.knowflow_parse_guard.clear_redis_parse_queues",
+            return_value={"cleared": 1},
+        ) as clear_redis,
+    ):
+        out = recover_knowflow_stuck_queue()
+
+    clear_tasks.assert_called_once_with(None)
+    reset_docs.assert_called_once_with(None)
+    clear_redis.assert_called_once_with()
+    assert out == {
+        "tasks_cleared": 3,
+        "documents_reset": 2,
+        "redis_queues_cleared": 1,
+    }
+
+
 def test_find_active_document_index_job_dedupes():
     import uuid
     from unittest.mock import MagicMock

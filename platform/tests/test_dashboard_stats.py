@@ -17,6 +17,8 @@ def test_dashboard_stats_ok(client, admin_token):
     assert "features_pending" in data
     assert "users_registered" in data
     assert "users_online" in data
+    assert "users_online_names" in data
+    assert isinstance(data["users_online_names"], list)
     assert data["features_total"] >= data["features_pending"] >= 0
     assert data["documents_total"] >= data["documents_indexed"] >= 0
     assert data["users_registered"] >= data["users_online"] >= 1

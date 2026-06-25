@@ -38,6 +38,7 @@ class AgentToolCategoryOut(StrEnum):
     MEMORY = "memory"
     DOCUMENT = "document"
     PLATFORM = "platform"
+    ADMIN = "admin"
     BROWSER = "browser"
 
 

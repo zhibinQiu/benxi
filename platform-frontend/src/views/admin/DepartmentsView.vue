@@ -22,7 +22,8 @@ import HintTooltip from "../../components/HintTooltip.vue";
 import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { deleteSequentially } from "../../utils/batchActions";
 import ListRefreshButton from "../../components/ListRefreshButton.vue";
-import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
+import ListTableFooter from "../../components/ListTableFooter.vue";
+import { useClientListPagination } from "../../composables/useClientListPagination.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -46,6 +47,19 @@ const {
   onCheckedRowKeysChange,
   clearSelection,
   selectionColumn} = useBatchTableSelection(items);
+
+const {
+  page,
+  pageSize,
+  total,
+  pagedItems,
+  onPageChange: onListPageChange,
+} = useClientListPagination(items);
+
+function onPageChange(p) {
+  onListPageChange(p);
+  clearSelection();
+}
 
 const canBatchDelete = computed(() => selectedRows.value.length > 0);
 
@@ -182,28 +196,36 @@ onMounted(load);
 </script>
 
 <template>
-  <n-card class="admin-page">
-    <div class="admin-table-toolbar">
-      <BatchTableToolbar
-        :count="selectedCount"
-        :disabled="!canBatchDelete"
-        @action="handleBatchDelete"
+  <div class="admin-list-table">
+    <n-card class="admin-page admin-page--list-table">
+      <div class="admin-table-toolbar">
+        <BatchTableToolbar
+          :count="selectedCount"
+          :disabled="!canBatchDelete"
+          @action="handleBatchDelete"
+        />
+        <n-space align="center" :size="8">
+          <ListRefreshButton :loading="loading" @click="load" />
+          <n-button type="primary" @click="openCreate">{{ t("admin.departments.create") }}</n-button>
+        </n-space>
+      </div>
+      <n-data-table
+        :columns="columns"
+        :data="pagedItems"
+        :loading="loading"
+        :row-key="(row) => row.id"
+        :checked-row-keys="checkedRowKeys"
+        :pagination="false"
+        @update:checked-row-keys="onCheckedRowKeysChange"
       />
-      <n-space align="center" :size="8">
-        <ListRefreshButton :loading="loading" @click="load" />
-        <n-button type="primary" @click="openCreate">{{ t("admin.departments.create") }}</n-button>
-      </n-space>
-    </div>
-    <n-data-table
-      :columns="columns"
-      :data="items"
-      :loading="loading"
-      :row-key="(row) => row.id"
-      :checked-row-keys="checkedRowKeys"
-      :pagination="{ pageSize: LIST_PAGE_SIZE }"
-      @update:checked-row-keys="onCheckedRowKeysChange"
+    </n-card>
+    <ListTableFooter
+      :page="page"
+      :page-size="pageSize"
+      :item-count="total"
+      @update:page="onPageChange"
     />
-  </n-card>
+  </div>
 
   <AdminFormModal
     v-model:show="showModal"

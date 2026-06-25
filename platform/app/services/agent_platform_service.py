@@ -123,7 +123,11 @@ def schedule_notification_for_agent(
         delay_minutes=delay_minutes,
         scheduled_at=parsed_at,
     )
-    when = row.scheduled_at.astimezone().strftime("%Y-%m-%d %H:%M") if row.scheduled_at else ""
+    when = (
+        notification_service.format_scheduled_at_local(row.scheduled_at)
+        if row.scheduled_at
+        else ""
+    )
     return {
         "message": f"已设置定时通知，将于 {when} 提醒：{row.title}",
         "scheduled": notification_service.serialize_scheduled_notification(row),

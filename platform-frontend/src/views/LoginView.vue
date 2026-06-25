@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -9,6 +9,7 @@ import {
   NInput,
   NModal,
   NSpace,
+  NIcon,
 } from "naive-ui";
 import { useAuth } from "../composables/useAuth";
 import { useAppPreferences } from "../composables/useAppPreferences";
@@ -18,11 +19,13 @@ import { usePlatformUi } from "../composables/usePlatformUi";
 import { loggingOut } from "../utils/sessionEpoch.js";
 import { DEFAULT_HOME_ROUTE } from "../utils/postLoginRoute.js";
 import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
-import { NIcon } from "naive-ui";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import LoginFeatureScroll from "../components/LoginFeatureScroll.vue";
+import { cleanupBlockingUiArtifacts } from "../utils/blockingUiCleanup.js";
+import { LOGIN_FLY_CLONE_CLASS } from "../constants/loginFlyAnimation.js";
+import { prefersReducedMotion } from "../utils/mediaQuery.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -78,7 +81,7 @@ function resolveCardElement() {
 }
 
 async function flyLoginCardToHeader() {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (prefersReducedMotion()) {
     exiting.value = true;
     await wait(100);
     return;
@@ -100,7 +103,7 @@ async function flyLoginCardToHeader() {
   const scale = 28 / Math.max(rect.width, 1);
 
   const clone = card.cloneNode(true);
-  clone.classList.add("login-card-fly-clone");
+  clone.classList.add(LOGIN_FLY_CLONE_CLASS);
   clone.setAttribute("aria-hidden", "true");
   Object.assign(clone.style, {
     position: "fixed",
@@ -135,9 +138,19 @@ async function flyLoginCardToHeader() {
 }
 
 async function navigateAfterAuth() {
+  loginModalOpen.value = false;
+  registerModalOpen.value = false;
+  await nextTick();
   await flyLoginCardToHeader();
+  cleanupBlockingUiArtifacts();
   await router.replace(DEFAULT_HOME_ROUTE);
+  await nextTick();
+  cleanupBlockingUiArtifacts();
 }
+
+onBeforeUnmount(() => {
+  cleanupBlockingUiArtifacts();
+});
 
 async function onSubmit() {
   if (!termsAccepted.value) {
@@ -472,13 +485,13 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
   box-sizing: border-box;
   border-bottom: 1px solid var(--platform-border, rgba(148, 163, 184, 0.18));
   background: rgba(255, 255, 255, 0.42);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
 }
 
 html[data-theme="dark"] .login-header {
   background: rgba(15, 15, 22, 0.72);
-  border-bottom-color: rgba(147, 197, 253, 0.1);
+  border-bottom-color: var(--platform-accent-border-soft);
 }
 
 .login-header__inner {
@@ -590,7 +603,7 @@ html[data-theme="dark"] .login-header {
 }
 
 html[data-theme="dark"] .login-header__vrule {
-  background: rgba(147, 197, 253, 0.16);
+  background: var(--platform-accent-border-soft);
 }
 
 .login-header__locale-label {
@@ -627,7 +640,7 @@ html[data-theme="dark"] .login-header__vrule {
 .login-page__orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(72px);
+  filter: blur(48px);
   opacity: 0.55;
   mix-blend-mode: soft-light;
 }
@@ -645,7 +658,7 @@ html[data-theme="dark"] .login-header__vrule {
   height: min(36vw, 360px);
   bottom: 10%;
   right: 8%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.28) 0%, transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--platform-accent) 28%, transparent) 0%, transparent 70%);
 }
 
 .login-page__intro {
@@ -894,8 +907,8 @@ html[data-theme="dark"] .login-header__vrule {
 
 .login-glass-panel.platform-glass-modal.n-modal .n-card {
   background: rgba(255, 255, 255, 0.38) !important;
-  backdrop-filter: blur(32px) saturate(190%);
-  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
   border: 1px solid rgba(255, 255, 255, 0.48) !important;
   border-radius: 18px !important;
   box-shadow:
@@ -906,7 +919,7 @@ html[data-theme="dark"] .login-header__vrule {
 
 html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card {
   background: rgba(22, 22, 32, 0.52) !important;
-  border-color: rgba(147, 197, 253, 0.18) !important;
+  border-color: var(--platform-accent-border) !important;
   box-shadow:
     0 12px 40px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;

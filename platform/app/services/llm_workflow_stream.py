@@ -19,6 +19,7 @@ async def iter_llm_answer_events(
     step_id: str | None = None,
     skip_initial_thinking: bool = False,
     unlimited_output: bool = False,
+    max_total_chars: int | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """产出 workflow / delta 结构化事件，供各流式 API 包装为 SSE。"""
     answer_think_id = step_id or f"answer-{uuid.uuid4().hex[:8]}"
@@ -41,6 +42,7 @@ async def iter_llm_answer_events(
         temperature=temperature,
         timeout=timeout,
         unlimited_output=unlimited_output,
+        max_total_chars=max_total_chars,
     ):
         kind = part.get("kind")
         text = part.get("text") or ""
@@ -60,9 +62,7 @@ async def iter_llm_answer_events(
         if kind != "content" or not text:
             continue
         if not answer_thought_done:
-            thought_detail = (
-                "推理完成，开始输出回答" if saw_reasoning else "开始输出回答"
-            )
+            thought_detail = ""
             yield {
                 "type": "workflow",
                 "data": {

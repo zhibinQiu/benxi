@@ -247,6 +247,7 @@ def test_platform_api_base_url_from_env(monkeypatch):
 def test_frontend_client_config_from_env(monkeypatch):
     from app.services.model_settings_service import (
         get_frontend_app_title,
+        get_frontend_color_scheme,
         get_frontend_default_theme,
     )
 
@@ -254,6 +255,7 @@ def test_frontend_client_config_from_env(monkeypatch):
         app_name="默认系统名",
         frontend_app_title="企业 AI 知识库平台",
         frontend_default_theme="light",
+        frontend_color_scheme="blue",
     )
     monkeypatch.setattr(
         "app.services.model_settings_service.get_settings",
@@ -266,7 +268,9 @@ def test_frontend_client_config_from_env(monkeypatch):
     out = get_model_settings(None)
     assert out.frontend_app_title == "企业 AI 知识库平台"
     assert out.frontend_default_theme == "light"
+    assert out.frontend_color_scheme == "blue"
     assert get_frontend_app_title(None) == "企业 AI 知识库平台"
+    assert get_frontend_color_scheme(None) == "blue"
 
 
 def test_frontend_app_title_falls_back_to_app_name(monkeypatch):

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "企业 AI 知识库平台"
-    platform_version: str = "4.3.1"
+    platform_version: str = "4.3.2"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -180,6 +180,10 @@ class Settings(BaseSettings):
     knowledge_parse_max_retries: int = 0
     # 每次自动重试解析前的等待（秒）
     knowledge_parse_retry_delay_sec: int = 90
+    # 后台任务超时：pending / running 超过阈值自动取消（避免 Celery 丢失后永久卡住）
+    background_job_stale_watchdog_enabled: bool = True
+    background_job_stale_minutes: int = 30
+    background_job_stale_watchdog_interval_sec: int = 120
     # KnowFlow 解析队列看门狗：积压且 executor 长时间未消费时自动去重/恢复
     knowflow_queue_watchdog_enabled: bool = True
     knowflow_queue_watchdog_interval_sec: int = 120
@@ -202,6 +206,13 @@ class Settings(BaseSettings):
     knowledge_agentic_max_rounds: int = 2
     # AI 首页智能体：思考 + 工具调用最大轮次，满足需求后应停止
     agent_max_tool_rounds: int = 40
+    # 多智能体：父智能体路由 + 子智能体专精 tool loop（关闭则回退单体 Agent）
+    agent_multi_agent_enabled: bool = True
+    agent_specialist_max_tool_rounds: int = 20
+    agent_max_sequential_handoffs: int = 2
+    agent_parallel_handoff_enabled: bool = True
+    agent_max_parallel_handoffs: int = 2
+    agent_routing_llm_enabled: bool = True
     # AI 首页：tool loop 前 LLM 规划（方案 A）；寒暄/附件等仍走规则 fast path
     agent_planning_enabled: bool = True
     # 问题规划缓存：归纳相似问题并复用已探索的执行方案，跳过重复 LLM 规划
@@ -295,6 +306,7 @@ class Settings(BaseSettings):
     platform_api_base_url: str = ""
     frontend_app_title: str = ""
     frontend_default_theme: str = "system"
+    frontend_color_scheme: str = "purple"
 
     # 智能问数（设计系统 iframe）
     # 设计系统（智能问数）— 经同源 Nginx/Vite 代理，避免 iframe 跨域

@@ -12,6 +12,7 @@ import {
   GridOutline,
 } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import { openExternal } from "../utils/openExternal.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -110,7 +111,7 @@ function openTool(tool) {
     ui.warning(t("aiTools.noUrl"));
     return;
   }
-  window.open(tool.url, "_blank", "noopener,noreferrer");
+  openExternal(tool.url);
 }
 </script>
 

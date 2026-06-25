@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from app.integrations.feed_fetcher import ParsedFeedEntry
+from app.integrations.web_article_fetcher import ParsedFeedEntry
 from app.integrations.wechat_mp_fetcher import ParsedArticle
 
 
@@ -168,10 +168,10 @@ def test_delete_item_hides_duplicate_link_entries(client, admin_token):
         user = db.scalar(select(User).where(User.username == "admin"))
         assert user is not None
         source_b = FeedSource(
-            feed_url="https://example.com/rss-dup-test.xml",
+            feed_url="https://example.com/link-dup-test",
             site_url="https://example.com",
-            name="示例 RSS",
-            kind="rss",
+            name="示例链接源",
+            kind="link",
             category="双碳",
         )
         db.add(source_b)
@@ -179,7 +179,7 @@ def test_delete_item_hides_duplicate_link_entries(client, admin_token):
         db.add(FeedSourceSubscription(user_id=user.id, source_id=source_b.id))
         entry_b = FeedEntry(
             source_id=source_b.id,
-            title="重复链接 RSS",
+            title="重复链接收录",
             summary="摘要",
             link="https://example.com/news/dup-link",
             content_html="<p>正文</p>",
@@ -237,7 +237,7 @@ def test_delete_item_after_import_keeps_document(client, admin_token):
         )
     ref = ing.json()["data"]["ref"]
     with patch(
-        "app.services.feed_subscription_service._try_sync_knowflow",
+        "app.services.subscription_service._try_sync_knowflow",
         return_value=False,
     ):
         imp = client.post(

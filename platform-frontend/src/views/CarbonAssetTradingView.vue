@@ -24,7 +24,9 @@ import {
   NText,
 } from "naive-ui";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
-import { LIST_PAGE_SIZE } from "../constants/listPage.js";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
+import ListTableFooter from "../components/ListTableFooter.vue";
+import { useClientListPagination } from "../composables/useClientListPagination.js";
 import {
   createCarbonAssetTrade,
   fetchCarbonAssetHoldings,
@@ -45,6 +47,31 @@ const holdings = ref([]);
 const marketSnap = ref(null);
 const market = computed(() => marketSnap.value?.quotes ?? []);
 const trades = ref([]);
+
+const {
+  page: holdingsPage,
+  pageSize: holdingsPageSize,
+  total: holdingsTotal,
+  pagedItems: holdingsPagedItems,
+  onPageChange: onHoldingsPageChange,
+} = useClientListPagination(holdings);
+
+const {
+  page: marketPage,
+  pageSize: marketPageSize,
+  total: marketTotal,
+  pagedItems: marketPagedItems,
+  onPageChange: onMarketPageChange,
+} = useClientListPagination(market);
+
+const {
+  page: tradesPage,
+  pageSize: tradesPageSize,
+  total: tradesTotal,
+  pagedItems: tradesPagedItems,
+  onPageChange: onTradesPageChange,
+} = useClientListPagination(trades);
+
 const tradeForm = ref({
   side: "buy",
   asset_code: "CEA",
@@ -326,13 +353,21 @@ onMounted(loadAll);
 
         <NTabs type="line" animated>
           <NTabPane name="holdings" :tab="t('carbonTrading.tabHoldings')">
-            <NDataTable
-              :columns="holdingColumns"
-              :data="holdings"
-              :bordered="false"
-              size="small"
-              :pagination="{ pageSize: LIST_PAGE_SIZE }"
-            />
+            <div class="admin-list-table">
+              <NDataTable
+                :columns="holdingColumns"
+                :data="holdingsPagedItems"
+                :bordered="false"
+                size="small"
+                :pagination="false"
+              />
+              <ListTableFooter
+                :page="holdingsPage"
+                :page-size="holdingsPageSize"
+                :item-count="holdingsTotal"
+                @update:page="onHoldingsPageChange"
+              />
+            </div>
           </NTabPane>
           <NTabPane name="market" :tab="t('carbonTrading.tabMarket')">
             <NSpace align="center" justify="space-between" style="margin-bottom: 8px">
@@ -352,14 +387,22 @@ onMounted(loadAll);
                 {{ t("carbonTrading.ceaHistory") }}
               </NButton>
             </NSpace>
-            <NDataTable
-              :columns="marketColumns"
-              :data="market"
-              :row-props="marketRowProps"
-              :bordered="false"
-              size="small"
-              :pagination="{ pageSize: LIST_PAGE_SIZE }"
-            />
+            <div class="admin-list-table">
+              <NDataTable
+                :columns="marketColumns"
+                :data="marketPagedItems"
+                :row-props="marketRowProps"
+                :bordered="false"
+                size="small"
+                :pagination="false"
+              />
+              <ListTableFooter
+                :page="marketPage"
+                :page-size="marketPageSize"
+                :item-count="marketTotal"
+                @update:page="onMarketPageChange"
+              />
+            </div>
           </NTabPane>
           <NTabPane name="trade" :tab="t('carbonTrading.tabTrade')">
             <NGrid :cols="2" :x-gap="16" item-responsive responsive="screen">
@@ -412,14 +455,22 @@ onMounted(loadAll);
               </NGi>
               <NGi span="2 m:1">
                 <NCard :title="t('carbonTrading.recentTrades')" size="small">
-                  <NDataTable
-                    :columns="tradeColumns"
-                    :data="trades"
-                    :bordered="false"
-                    size="small"
-                    :max-height="280"
-                    :pagination="{ pageSize: LIST_PAGE_SIZE }"
-                  />
+                  <div class="admin-list-table">
+                    <NDataTable
+                      :columns="tradeColumns"
+                      :data="tradesPagedItems"
+                      :bordered="false"
+                      size="small"
+                      :max-height="280"
+                      :pagination="false"
+                    />
+                    <ListTableFooter
+                      :page="tradesPage"
+                      :page-size="tradesPageSize"
+                      :item-count="tradesTotal"
+                      @update:page="onTradesPageChange"
+                    />
+                  </div>
                 </NCard>
               </NGi>
             </NGrid>
@@ -427,10 +478,11 @@ onMounted(loadAll);
         </NTabs>
 
         <NSpace>
-          <NButton quaternary size="small" @click="loadAll()">{{ t("carbonTrading.refresh") }}</NButton>
-          <NButton quaternary size="small" @click="loadAll({ refreshMarket: true })">
-            {{ t("carbonTrading.refreshMarket") }}
-          </NButton>
+          <ListRefreshButton :label="t('carbonTrading.refresh')" @click="loadAll()" />
+          <ListRefreshButton
+            :label="t('carbonTrading.refreshMarket')"
+            @click="loadAll({ refreshMarket: true })"
+          />
           <NButton quaternary size="small" @click="onResetDemo">{{ t("carbonTrading.resetDemo") }}</NButton>
         </NSpace>
       </NSpace>

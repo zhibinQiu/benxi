@@ -42,6 +42,8 @@ export default defineConfig({
   base: APP_BASE,
   resolve: {
     alias: {
+      // 显式 `import { NSpin } from "naive-ui"` 也走玫瑰加载动画
+      "naive-ui/es/spin/src/Spin.mjs": platformSpinPath,
       "naive-ui/es/_internal/loading/src/Loading.mjs": fileURLToPath(
         new URL("./src/integrations/naive-base-loading.js", import.meta.url)
       ),
@@ -68,10 +70,23 @@ export default defineConfig({
           if (id.includes("mermaid")) return "mermaid";
           if (id.includes("pdfjs-dist")) return "pdfjs";
           if (id.includes("mammoth")) return "mammoth";
-          if (id.includes("naive-ui")) return "naive-ui";
-          if (id.includes("vue") || id.includes("vue-router")) return "vue-vendor";
           if (id.includes("@vicons")) return "vicons";
           if (id.includes("marked")) return "markdown";
+          // Vue + naive-ui 须同 chunk，否则 Rollup 会生成 vue-vendor ↔ naive-ui 循环引用（TDZ 崩溃）
+          if (
+            id.includes("naive-ui") ||
+            id.includes("/vue/") ||
+            id.includes("vue-router") ||
+            id.includes("@vue/") ||
+            id.includes("vueuc") ||
+            id.includes("vooks") ||
+            id.includes("seemly") ||
+            id.includes("@css-render") ||
+            id.includes("treemate") ||
+            id.includes("evtd")
+          ) {
+            return "vue-vendor";
+          }
         },
       },
     },

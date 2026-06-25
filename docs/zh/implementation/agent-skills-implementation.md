@@ -1,7 +1,7 @@
 # Agent Skills 实现说明
 
 > **适用读者**：产品经理、运维、后端/前端开发  
-> **版本**：v4.3.1 · [开发说明书总览](../development/implementation-manual.md)  
+> **版本**：v4.3.2 · [开发说明书总览](../development/implementation-manual.md)  
 > **配套阅读**：[功能实现说明 §4.8 / §14](../operations/feature-implementation.md)（偏业务视角）
 
 ---
@@ -39,7 +39,7 @@
 
 ---
 
-## 1. 实现总览（v4.3.1）
+## 1. 实现总览（v4.3.2）
 
 AI 首页对话采用 **Discovery + Activation** 两阶段：
 
@@ -134,7 +134,17 @@ sequenceDiagram
 
 ### 3.2 前端看到的「步骤进度」
 
-后端通过 SSE 推送 `workflow` 事件（如「正在检索知识库」），由 `AiChatPanel` 展示。便于用户理解智能体在做什么，也便于排查超时或失败。
+后端通过 SSE 推送 `workflow` 事件（如「正在检索知识库」），由 `AiChatPanel` + `AgentWorkflowProgress` 展示。复合任务另有 checklist（`plan_tasks` / `task_started` / `task_done`）。过程在 workflow 区可见，回答区仅在全部步骤结束后输出一次最终 Markdown。
+
+### 3.3 Mermaid 富文本渲染
+
+| 模块 | 职责 |
+|------|------|
+| `markdown.js` | 识别裸 Mermaid 块、升级围栏为 ` ```mermaid ` |
+| `mermaidSanitize.js` | LLM 常见语法陷阱清洗（时序图引号、流程图标签等）；失败时激进模式重试 |
+| `mermaidRender.js` | 按需 `import('mermaid')`；视口内即时渲染；保留 `<pre>` 占位避免重挂载空白 |
+| `richMarkdown.js` | marked 渲染 + `mountRichMediaInElement` 统一挂载 |
+| `richContentLifecycle.js` | KeepAlive 失活时 `unmountMermaidInElement` 释放 DOM |
 
 ---
 
@@ -201,7 +211,8 @@ sequenceDiagram
 
 | 层 | 来源 | 内容 |
 |----|------|------|
-| 常驻骨架 | `agent_resident.build_ai_home_resident_prompt()` | 身份「小析」、引用格式 `[1][2]`、工具选用约定、绝对禁止项 |
+| 常驻骨架 | `agent_resident.build_ai_home_resident_prompt()` | 身份「小析」、记忆优先、工具选用约定、禁止项（短 prompt，细节交给 Skill 目录） |
+| 用户记忆 | `agent_memory_service.build_memory_prompt_context()` | 每轮注入 `MEMORY.md`；名称与偏好以记忆为准 |
 | 运行时 | `agent_runtime.build_runtime_context()` | 频道、用户 id、会话 id |
 | Discovery | `catalog.build_agent_catalog_prompt()` | Skills 目录与选用规则 |
 | 平台知识 | `assistant_knowledge.build_platform_knowledge()` | 用户问平台用法时注入（`is_platform_usage_message` 触发） |
@@ -209,21 +220,34 @@ sequenceDiagram
 
 ### 10.2 常驻 system 提示词（`agent_resident.py`）
 
+短 prompt 原则：身份 + 边界 + 「够用即停」；各专精域工具列表在 `agent_config.AGENT_INSTRUCTION_BLOCKS`。
+
 核心约定摘录：
 
 ```
-【常驻约定】
-- 使用简体中文；自称「小析」
-- 引用检索/附件/联网材料时在句末标注 [1]、[2]
-- 知识库、联网、本体图谱分别通过原子工具 knowledge_retrieve / web_search / kg_query 调用
-- 技能目录为选用摘要；发展技能在任务明确匹配时用 load_uploaded_skill
-- 图表类输出使用 ```mermaid 围栏
-- 思考与工具调用合计最多 40 轮
-
-【绝对禁止】
-- 不得访问、分享、删除用户无权限的文档或数据
-- 不得编造未提供的检索/附件/联网/记忆材料中的内容
+约定：简体中文；默认自称「小析」，【用户记忆】有名称则以记忆为准。
+工具：按会话 Skill 目录选用；够用即停，勿堆砌调用。
+禁止：操作用户本地文件；无工具却声称已完成；绕过权限。
 ```
+
+子任务编排时专精智能体启用 `task_mode`：只调用工具完成操作，面向用户的完整总结由父智能体 `_synthesize_from_task_results` 统一输出。
+
+### 10.2.1 多智能体编排（`agent_orchestrator.py` + `agent_supervisor.py`）
+
+| 组件 | 职责 |
+|------|------|
+| `tasks_from_routes` | 将 LLM 路由结果转为最小任务清单（一条路由一项） |
+| `_execute_orchestrated_tasks` | 顺序执行、规则验收、每任务最多 2 次重试 |
+| `workflow_plan_tasks` / `workflow_task_event` | SSE workflow 事件，驱动前端 checklist |
+| `_synthesize_from_task_results` | 全部子任务完成后生成唯一最终回答 |
+
+前端 `agentWorkflow.js` 的 `applyTaskPlan` / `upsertTaskPlanItem` 与 `AgentWorkflowProgress.vue` 展示 ○ / 转圈 / ✓ / !。
+
+### 10.2.2 流式回答区
+
+- 工具 loop 与多 hop 专精路径不向客户端推送中间 `replace`
+- 收尾顺序：`workflow_finished` → 一次 `replace`（最终 Markdown）→ `done`
+- 过程细节仅在 workflow 时间线可见（类似 Cursor Agent）
 
 ### 10.3 Discovery 目录提示词（`catalog.build_agent_catalog_prompt`）
 

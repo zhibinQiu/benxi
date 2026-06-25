@@ -55,6 +55,7 @@ def create_kb_folder(
         description=body.description,
         scope=body.scope,
         dept_id=body.dept_id,
+        owner_id=body.owner_id,
     )
     db.commit()
     invalidate_document_caches(str(user.id))

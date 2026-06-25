@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services.agent_document_service import (
+    create_kb_folder_for_agent,
+    create_library_document_for_agent,
     delete_document_for_agent,
     list_library_documents_for_agent,
     list_manageable_documents,
@@ -21,6 +23,9 @@ def test_document_tools_registered():
     names = agent_tool_names()
     assert "list_library_documents" in names
     assert "list_manageable_documents" in names
+    assert "list_document_folders" in names
+    assert "create_kb_folder" in names
+    assert "create_library_document" in names
     assert "rename_document" in names
     assert "move_document" in names
     assert "share_document" in names
@@ -147,3 +152,46 @@ def test_share_document_for_agent(mock_can_grant, mock_svc):
     )
     assert result["shared_with"] == ["张三"]
     mock_svc.set_document_shares.assert_called_once()
+
+
+@patch("app.services.agent_document_service.create_kb_folder")
+def test_create_kb_folder_for_agent(mock_create):
+    db = MagicMock()
+    user = MagicMock(id=uuid.uuid4())
+    folder_id = uuid.uuid4()
+    mock_create.return_value = MagicMock(
+        id=folder_id, name="项目资料", scope="personal"
+    )
+
+    result = create_kb_folder_for_agent(
+        db, user, name="项目资料", scope="personal"
+    )
+    assert result["id"] == str(folder_id)
+    assert "项目资料" in result["message"]
+    db.commit.assert_called_once()
+
+
+@patch("app.services.agent_document_service.document_service")
+def test_create_library_document_for_agent(mock_svc):
+    db = MagicMock()
+    user = MagicMock(id=uuid.uuid4())
+    doc_id = uuid.uuid4()
+    doc = MagicMock(
+        id=doc_id,
+        title="会议纪要",
+        scope="personal",
+        folder_id=None,
+    )
+    mock_svc.create_document.return_value = doc
+
+    result = create_library_document_for_agent(
+        db,
+        user,
+        title="会议纪要",
+        content="# 摘要\n内容",
+        scope="personal",
+    )
+    assert result["id"] == str(doc_id)
+    mock_svc.create_document.assert_called_once()
+    mock_svc.create_initial_uploaded_version.assert_called_once()
+    db.commit.assert_called_once()

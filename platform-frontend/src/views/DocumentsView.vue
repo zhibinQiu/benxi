@@ -8,7 +8,6 @@ import {
   NSpace,
   NDataTable,
   NInput,
-  NModal,
   NForm,
   NFormItem,
   NUpload,
@@ -21,7 +20,6 @@ import {
   NProgress,
   NText,
   NIcon,
-  NDropdown,
   NSpin } from "naive-ui";
 import {
   CreateOutline,
@@ -43,6 +41,7 @@ import ListTableFooter from "../components/ListTableFooter.vue";
 import AdminFormModal from "../components/AdminFormModal.vue";
 import FileDropZone from "../components/FileDropZone.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
+import { KNOWLEDGE_INDEX_UPDATED_EVENT } from "../constants/platformEvents.js";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
@@ -53,11 +52,12 @@ import {
   ORG_SCOPES,
   LIBRARY_FOLDER_ORDER } from "../constants/documentScope";
 import {
+  DOCUMENT_UPLOAD_ACCEPT,
   DOCUMENT_UPLOAD_MAX_FILES,
   formatDocumentFormatLabel,
   getDocumentUploadMaxMb,
   titleFromFileName,
-  validateUploadFiles } from "../constants/documentUpload";
+  validateUploadFiles } from "../constants/documentUpload.js";
 import {
   canBatchSelectDocument,
   canDeleteDocument,
@@ -69,9 +69,10 @@ import {
   readDocumentsListCache,
   writeDocumentsKbFoldersCache,
   writeDocumentsListCache } from "../utils/documentsViewCache.js";
-import { renderIconAction, renderIconActionGroup } from "../utils/tableIconActions";
+import { renderIconAction } from "../utils/tableIconActions";
 import { renderKnowledgeIndexTag, isDocumentIndexReady } from "../utils/knowledgeIndex.js";
 import { notifyKnowledgeScopeTreeStale } from "../utils/knowledgeScopeRefresh.js";
+import { isRouteAbortError } from "../api/requestScope.js";
 import {
   createDocument,
   createKbFolder,
@@ -421,7 +422,12 @@ const columns = computed(() => {
       type: "selection",
       disabled: (row) => !canBatchSelectDocument(row)});
   }
-  base.push({ title: t("documents.columns.title"), key: "title", ellipsis: { tooltip: true } });
+  base.push({
+    title: t("documents.columns.title"),
+    key: "title",
+    ellipsis: { tooltip: true },
+    render: (row) => h("span", { class: "documents-doc-title" }, row.title || "—"),
+  });
   base.push({
     title: t("documents.columns.format"),
     key: "file_format",
@@ -1456,7 +1462,9 @@ async function submitCreate() {
         /* 忽略回滚失败 */
       }
     }
-    ui.error(e);
+    if (!isRouteAbortError(e)) {
+      ui.error(e);
+    }
   } finally {
     creating.value = false;
   }
@@ -1535,7 +1543,7 @@ watch(libraryView, () => {
 
 onMounted(() => {
   applyRouteFromQuery();
-  window.addEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
+  window.addEventListener(KNOWLEDGE_INDEX_UPDATED_EVENT, onKnowledgeIndexUpdated);
   void syncLegacySharedScopeRoute().then(() => {
     void loadFolders();
     void loadKbFolders();
@@ -1547,7 +1555,7 @@ onUnmounted(() => {
   clearHeaderTitle();
   stopIndexStatusPoll();
   if (indexRefreshDebounceTimer) clearTimeout(indexRefreshDebounceTimer);
-  window.removeEventListener("platform:knowledge-index-updated", onKnowledgeIndexUpdated);
+  window.removeEventListener(KNOWLEDGE_INDEX_UPDATED_EVENT, onKnowledgeIndexUpdated);
 });
 
 watch(
@@ -1823,7 +1831,7 @@ watch(
     <n-form
       class="documents-upload-modal__form admin-form-modal__form admin-form-modal__form--compact"
       label-placement="top"
-      :show-require-mark="uploadMode === 'single'"
+      @submit.prevent
     >
       <DocumentUploadLocationPicker
         v-model:scope="createScope"
@@ -1844,6 +1852,7 @@ watch(
           <file-drop-zone
             class="documents-upload-modal__file-picker"
             compact
+            :accept="DOCUMENT_UPLOAD_ACCEPT"
             :title="t('documents.uploadDropHint')"
             :hint="t('documents.uploadSizeHint', { mb: uploadMaxMb })"
             :file-name="uploadFile?.name || ''"
@@ -1875,6 +1884,7 @@ watch(
             :key="batchUploadKey"
             v-model:file-list="batchUploadFileList"
             multiple
+            :accept="DOCUMENT_UPLOAD_ACCEPT"
             :default-upload="false"
             :show-file-list="false"
             @change="onBatchFileChange"

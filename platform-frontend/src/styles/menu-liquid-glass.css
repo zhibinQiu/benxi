@@ -21,7 +21,7 @@ html[data-theme="dark"] .sider-menu-wrap {
 .sider-menu {
   --menu-liquid-x: 0.46;
   --menu-liquid-y: 0.34;
-  --n-item-height: 38px;
+  --n-item-height: var(--platform-menu-item-height);
   --sider-menu-glass-inset-top: 1px;
   --sider-menu-glass-inset-right: 4px;
   --sider-menu-glass-inset-bottom: 1px;
@@ -33,7 +33,7 @@ html[data-theme="dark"] .sider-menu-wrap {
     var(--menu-glass-bg) 38%,
     var(--menu-glass-bg-bottom) 100%
   );
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
 }
 
 html[data-theme="dark"] .sider-menu {
@@ -51,10 +51,15 @@ html[data-theme="dark"] .sider-menu {
 
 .sider-menu .n-menu-item-content {
   border-radius: var(--platform-radius-sm) !important;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-medium);
   background-color: transparent !important;
   transition: color 0.12s ease !important;
+}
+
+.sider-menu .n-menu-item-content.n-menu-item-content--selected,
+.sider-menu .n-menu-item-content.n-menu-item-content--child-active {
+  font-weight: var(--platform-font-weight-strong);
 }
 
 .sider-menu .n-menu-item-content .n-icon {
@@ -74,8 +79,6 @@ html[data-theme="dark"] .sider-menu {
   background-color: transparent !important;
   background-image: var(--sider-menu-glass-fill-hover) !important;
   box-shadow: var(--menu-glass-rim-edge);
-  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(14px);
-  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(14px);
   transform: none !important;
   transition: opacity 0.12s ease !important;
 }
@@ -87,6 +90,8 @@ html[data-theme="dark"] .sider-menu {
 .sider-menu .n-menu-item-content:not(.n-menu-item-content--disabled):not(.n-menu-item-content--selected):not(.n-menu-item-content--child-active):hover::before,
 .sider-menu .n-menu-item-content.n-menu-item-content--hover:not(.n-menu-item-content--selected):not(.n-menu-item-content--child-active)::before {
   opacity: var(--menu-glass-hover-opacity) !important;
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(10px);
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(10px);
 }
 
 /* 选中态由滑动指示条绘制 */
@@ -118,7 +123,7 @@ html[data-theme="dark"] .sider-menu {
   align-items: center;
   box-sizing: border-box;
   border-radius: var(--platform-radius-xs) !important;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   font-weight: 500;
 }
 
@@ -145,13 +150,13 @@ html[data-theme="dark"] .sider-menu {
   opacity: 0;
   background: var(--sider-menu-glass-fill-hover, var(--platform-glass-fill-hover));
   box-shadow: var(--menu-glass-rim-edge);
-  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(8px);
-  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(8px);
   transition: opacity 0.12s ease;
 }
 
 .n-dropdown-menu .n-dropdown-option:hover .n-dropdown-option-body::before {
   opacity: 0.55;
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(8px);
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(8px);
 }
 
 .n-dropdown-menu .n-dropdown-option-body > * {

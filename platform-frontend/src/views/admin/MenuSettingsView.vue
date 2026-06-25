@@ -150,9 +150,7 @@ onMounted(load);
             <n-button type="primary" :loading="saving" @click="save">
               {{ t("common.save") }}
             </n-button>
-            <n-button :disabled="saving || loading" @click="load">
-              {{ t("admin.menuSettings.reload") }}
-            </n-button>
+            <ListRefreshButton :loading="loading || saving" :label="t('admin.menuSettings.reload')" @click="load" />
           </n-space>
         </template>
       </n-card>

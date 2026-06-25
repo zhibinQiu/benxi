@@ -1,14 +1,5 @@
 /* iOS 26 Liquid Glass — 静态通透底材（动画光效仅用于大容器背景） */
 
-:root {
-  --liquid-x: 0.5;
-  --liquid-y: 0.38;
-  --liquid-tilt-x: 0;
-  --liquid-tilt-y: 0;
-  --liquid-scroll: 0;
-  --liquid-drape-offset: 0px;
-}
-
 /* 结构层：磨砂玻璃（顶栏 .header 除外 — 浮层 n-popover/n-dropdown 不参与，避免 tooltip/菜单定位异常） */
 .n-card:not(.feature-local-nav),
 .glass-float-panel,
@@ -142,12 +133,11 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
     var(--menu-glass-bg) 0%,
     var(--menu-glass-bg-bottom) 100%
   );
-  backdrop-filter: saturate(150%) blur(8px);
-  -webkit-backdrop-filter: saturate(150%) blur(8px);
   box-shadow: var(--platform-glass-rim-edge);
   transition:
     opacity 0.2s var(--platform-ease-smooth),
-    box-shadow 0.2s var(--platform-ease-smooth);
+    box-shadow 0.2s var(--platform-ease-smooth),
+    backdrop-filter 0.2s var(--platform-ease-smooth);
 }
 
 .header-user-trigger::before {
@@ -179,6 +169,8 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
 .table-icon-action:not(:disabled):hover::before,
 .page-toolbar .icon-action:not(:disabled):hover::before {
   opacity: var(--menu-glass-hover-opacity, 0.38);
+  backdrop-filter: saturate(150%) blur(8px);
+  -webkit-backdrop-filter: saturate(150%) blur(8px);
   box-shadow: var(--platform-glass-rim-edge);
 }
 
@@ -236,16 +228,6 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   }
 }
 
-@keyframes liquid-ambient-shift {
-  0%,
-  100% {
-    filter: blur(72px);
-  }
-  50% {
-    filter: blur(80px);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .feature-card:hover,
   .n-button:active,
@@ -278,8 +260,8 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   min-height: 40px;
   padding: 0 16px !important;
   background: rgba(255, 255, 255, 0.28) !important;
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(12px) saturate(165%);
+  -webkit-backdrop-filter: blur(12px) saturate(165%);
   border: 1px solid rgba(255, 255, 255, 0.42) !important;
 }
 
@@ -332,7 +314,7 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
 
 html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-button--disabled) {
   background: rgba(28, 28, 36, 0.52) !important;
-  border-color: rgba(147, 197, 253, 0.16) !important;
+  border-color: var(--platform-accent-border-soft) !important;
 }
 
 .login-page .login-glass-btn.n-button:not(.n-button--disabled)::before {
@@ -348,21 +330,24 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
     var(--menu-glass-bg) 0%,
     var(--menu-glass-bg-bottom) 100%
   );
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
   box-shadow: var(--platform-glass-rim-edge);
   transition:
     opacity 0.22s var(--platform-ease-smooth),
-    box-shadow 0.22s var(--platform-ease-smooth);
+    box-shadow 0.22s var(--platform-ease-smooth),
+    backdrop-filter 0.22s var(--platform-ease-smooth);
 }
 
 .login-page .login-glass-btn.n-button:not(.n-button--primary-type):not(.n-button--disabled):hover::before {
   opacity: 0.62;
+  backdrop-filter: saturate(165%) blur(12px);
+  -webkit-backdrop-filter: saturate(165%) blur(12px);
   box-shadow: var(--platform-glass-rim-edge);
 }
 
 .login-page .login-glass-btn.n-button--primary-type:not(.n-button--disabled):hover::before {
   opacity: 0.72;
+  backdrop-filter: saturate(165%) blur(12px);
+  -webkit-backdrop-filter: saturate(165%) blur(12px);
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.36) 0%,
@@ -378,7 +363,9 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
 }
 
 .login-page .login-glass-btn.n-button--primary-type:not(.n-button--disabled):hover {
-  box-shadow: var(--platform-glass-rim-edge), 0 6px 20px rgba(91, 156, 245, 0.28);
+  box-shadow:
+    var(--platform-glass-rim-edge),
+    0 6px 20px color-mix(in srgb, var(--platform-accent) 28%, transparent);
   filter: brightness(1.06);
 }
 
@@ -412,12 +399,11 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
     var(--menu-glass-bg) 0%,
     var(--menu-glass-bg-bottom) 100%
   );
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
   box-shadow: var(--platform-glass-rim-edge);
   transition:
     opacity 0.22s var(--platform-ease-smooth),
-    box-shadow 0.22s var(--platform-ease-smooth);
+    box-shadow 0.22s var(--platform-ease-smooth),
+    backdrop-filter 0.22s var(--platform-ease-smooth);
 }
 
 .login-page .login-glass-link:not(:disabled) > * {
@@ -427,6 +413,8 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
 
 .login-page .login-glass-link:not(:disabled):hover::before {
   opacity: 0.72;
+  backdrop-filter: saturate(165%) blur(12px);
+  -webkit-backdrop-filter: saturate(165%) blur(12px);
   box-shadow:
     var(--platform-glass-rim-edge),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
@@ -438,7 +426,7 @@ html[data-theme="dark"] .login-page .login-glass-btn--pref.n-button:not(.n-butto
 }
 
 html[data-theme="dark"] .login-page .login-glass-link:not(:disabled):hover {
-  border-color: rgba(147, 197, 253, 0.22) !important;
+  border-color: var(--platform-accent-border) !important;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 
@@ -474,12 +462,11 @@ html[data-theme="dark"] .login-page .login-glass-link:not(:disabled):hover {
     var(--menu-glass-bg) 0%,
     var(--menu-glass-bg-bottom) 100%
   );
-  backdrop-filter: saturate(150%) blur(10px);
-  -webkit-backdrop-filter: saturate(150%) blur(10px);
   box-shadow: var(--platform-glass-rim-edge);
   transition:
     opacity 0.22s var(--platform-ease-smooth),
-    box-shadow 0.22s var(--platform-ease-smooth);
+    box-shadow 0.22s var(--platform-ease-smooth),
+    backdrop-filter 0.22s var(--platform-ease-smooth);
 }
 
 .glass-float-panel:hover {
@@ -491,6 +478,8 @@ html[data-theme="dark"] .login-page .login-glass-link:not(:disabled):hover {
 
 .glass-float-panel:hover::after {
   opacity: var(--menu-glass-hover-opacity, 0.42);
+  backdrop-filter: saturate(150%) blur(8px);
+  -webkit-backdrop-filter: saturate(150%) blur(8px);
 }
 
 .glass-float-panel:active {

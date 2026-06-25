@@ -17,7 +17,6 @@ def register_builtin_plugins() -> None:
         external_links,  # noqa: F401
         compare,  # noqa: F401
         data_analysis,  # noqa: F401
-        feed_subscriptions,  # noqa: F401
         knowledge_search,  # noqa: F401
         kg_palantir,  # noqa: F401
         ocr,  # noqa: F401

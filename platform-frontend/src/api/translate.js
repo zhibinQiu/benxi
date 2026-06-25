@@ -1,5 +1,6 @@
 /** PDF 翻译 REST API */
 import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
+import { downloadBlob } from "../utils/downloadBlob.js";
 
 export async function fetchTranslateMeta() {
   return api("/api/v1/translate/meta");
@@ -108,9 +109,5 @@ export async function downloadTranslateFile(jobId, kind, fallbackName = "downloa
   const disp = res.headers.get("Content-Disposition") || "";
   const match = disp.match(/filename="?([^";]+)"?/);
   const name = match ? match[1] : fallbackName;
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadBlob(blob, name);
 }

@@ -12,6 +12,8 @@ from app.models.org import User
 from app.schemas.agent_skill import AgentToolCategoryOut, AgentToolOut
 from app.services.agent_tools import (
     AGENT_TOOL_SPECS,
+    _ADMIN_DEPT_TOOL_SPECS,
+    _ADMIN_USER_TOOL_SPECS,
     _ATOMIC_RETRIEVAL_TOOL_SPECS,
     _BROWSER_TOOL_SPECS,
     _DOCUMENT_TOOL_SPECS,
@@ -33,6 +35,7 @@ class ToolCategory(StrEnum):
     MEMORY = "memory"
     DOCUMENT = "document"
     PLATFORM = "platform"
+    ADMIN = "admin"
     BROWSER = "browser"
 
 
@@ -50,6 +53,12 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "list_library_documents": ToolCategory.DOCUMENT,
     "list_manageable_documents": ToolCategory.DOCUMENT,
     "list_document_folders": ToolCategory.DOCUMENT,
+    "create_kb_folder": ToolCategory.DOCUMENT,
+    "create_library_document": ToolCategory.DOCUMENT,
+    "update_kb_folder": ToolCategory.DOCUMENT,
+    "delete_kb_folder": ToolCategory.DOCUMENT,
+    "sync_document_knowledge": ToolCategory.DOCUMENT,
+    "reindex_document": ToolCategory.DOCUMENT,
     "rename_document": ToolCategory.DOCUMENT,
     "move_document": ToolCategory.DOCUMENT,
     "share_document": ToolCategory.DOCUMENT,
@@ -62,6 +71,14 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "schedule_notification": ToolCategory.PLATFORM,
     "list_scheduled_notifications": ToolCategory.PLATFORM,
     "cancel_scheduled_notification": ToolCategory.PLATFORM,
+    "list_users": ToolCategory.ADMIN,
+    "create_user": ToolCategory.ADMIN,
+    "update_user": ToolCategory.ADMIN,
+    "delete_user": ToolCategory.ADMIN,
+    "list_departments": ToolCategory.ADMIN,
+    "create_department": ToolCategory.ADMIN,
+    "update_department": ToolCategory.ADMIN,
+    "delete_department": ToolCategory.ADMIN,
     "browser_navigate": ToolCategory.BROWSER,
     "browser_snapshot": ToolCategory.BROWSER,
     "browser_click": ToolCategory.BROWSER,
@@ -84,6 +101,8 @@ def _all_tool_specs() -> list[dict[str, Any]]:
         _RUN_SKILL_SCRIPT_SPEC,
         *_DOCUMENT_TOOL_SPECS,
         *_PLATFORM_TOOL_SPECS,
+        *_ADMIN_USER_TOOL_SPECS,
+        *_ADMIN_DEPT_TOOL_SPECS,
         *_BROWSER_TOOL_SPECS,
     ]
 

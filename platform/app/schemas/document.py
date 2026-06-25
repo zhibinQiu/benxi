@@ -104,6 +104,7 @@ class KbFolderCreate(BaseModel):
     description: str = Field(default="", max_length=2000)
     scope: str = Field(..., pattern="^(company|department|team|personal)$")
     dept_id: uuid.UUID | None = None
+    owner_id: uuid.UUID | None = None
 
 
 class KbFolderUpdate(BaseModel):

@@ -11,6 +11,8 @@ from app.core.text_utils import truncate_text
 _LARGE_DATA_KEYS = frozenset(
     {
         "screenshot_base64",
+        "screenshot_url",
+        "storage_key",
         "html",
         "snapshot",
         "raw_html",
@@ -146,6 +148,88 @@ def append_retrieval_context(loop_state: dict[str, Any] | None, context: str) ->
     loop_state["retrieval_context_parts"] = parts
 
 
+def append_skill_explore_context(loop_state: dict[str, Any] | None, block: str) -> None:
+    """Skill 编写前调研结论写入 loop_state，避免旧 tool 消息被压缩后丢失关键上下文。"""
+    if loop_state is None:
+        return
+    text = (block or "").strip()
+    if not text:
+        return
+    parts: list[str] = list(loop_state.get("skill_explore_parts") or [])
+    parts.append(text)
+    combined = "\n\n".join(parts)
+    if len(combined) > 2400:
+        combined = truncate_to_budget(combined, 2400)
+        parts = [combined]
+    loop_state["skill_explore_parts"] = parts
+
+
+def build_skill_explore_context_block(loop_state: dict[str, Any] | None) -> str:
+    parts = list((loop_state or {}).get("skill_explore_parts") or [])
+    if not parts:
+        return ""
+    body = "\n\n".join(parts)
+    return (
+        "【Skill 编写调研材料 · 创建前必读】\n"
+        "以下来自你对目标站点/数据源的探查；"
+        "编写 scrape 逻辑与 SKILL.md 时必须以此为准，"
+        "信息不足时继续探查，**勿**猜测页面结构或字段。\n\n"
+        f"{body}"
+    )
+
+
+def append_skill_repair_context(
+    loop_state: dict[str, Any] | None,
+    *,
+    skill_name: str,
+    reason: str,
+) -> None:
+    """已有 Skill 执行失败时写入修复指引，供后续 tool loop 轮次注入。"""
+    if loop_state is None:
+        return
+    name = (skill_name or "").strip()
+    detail = (reason or "").strip()
+    if not name or not detail:
+        return
+    attempts = dict(loop_state.get("skill_repair_attempts") or {})
+    attempts[name] = int(attempts.get(name) or 0) + 1
+    loop_state["skill_repair_attempts"] = attempts
+    loop_state["pending_skill_repair"] = name
+    parts: list[str] = list(loop_state.get("skill_repair_parts") or [])
+    parts.append(f"- `{name}`：{detail}")
+    loop_state["skill_repair_parts"] = parts[-4:]
+
+
+def build_skill_repair_context_block(loop_state: dict[str, Any] | None) -> str:
+    pending = str((loop_state or {}).get("pending_skill_repair") or "").strip()
+    parts = list((loop_state or {}).get("skill_repair_parts") or [])
+    if not pending or not parts:
+        return ""
+    body = "\n".join(parts)
+    return (
+        "【Skill 修复 · 务必遵守】\n"
+        f"发展技能 `{pending}` 执行失败或未产出有效结论。"
+        "请**优先**用 `update_uploaded_skill_file` 修复该技能的 `main.py` / `workflow.json` / `SKILL.md`，"
+        "依据上方调研材料或最新报错调整；修复后再次 `run_skill_script` 验证。"
+        "**禁止**为此重复 `create_uploaded_skill` 造新技能，除非用户明确要求新建。\n"
+        f"{body}"
+    )
+
+
+def has_skill_research_context(
+    loop_state: dict[str, Any] | None, *, needs_site_research: bool
+) -> bool:
+    """网页/抓取类 Skill 在 create 前须已有调研上下文。"""
+    if not needs_site_research:
+        return True
+    state = loop_state or {}
+    if state.get("skill_explore_parts"):
+        return True
+    if state.get("retrieval_context_parts"):
+        return True
+    return False
+
+
 def build_retrieval_context_block(loop_state: dict[str, Any] | None) -> str:
     parts = list((loop_state or {}).get("retrieval_context_parts") or [])
     if not parts:
@@ -163,18 +247,36 @@ def inject_retrieval_context_message(
     loop_state: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
     """用最新检索块替换/追加 system 消息，避免 tool 历史重复携带全文。"""
-    block = build_retrieval_context_block(loop_state)
+    blocks: list[str] = []
+    skill_block = build_skill_explore_context_block(loop_state)
+    if skill_block:
+        blocks.append(skill_block)
+    repair_block = build_skill_repair_context_block(loop_state)
+    if repair_block:
+        blocks.append(repair_block)
+    retrieval_block = build_retrieval_context_block(loop_state)
+    if retrieval_block:
+        blocks.append(retrieval_block)
+    block = "\n\n".join(blocks).strip()
     if not block:
         return messages
 
     marker = "【已检索材料】"
+    skill_marker = "【Skill 编写调研材料"
+    repair_marker = "【Skill 修复"
     out = [dict(m) for m in messages]
     for idx, msg in enumerate(out):
         if msg.get("role") != "system":
             continue
         content = str(msg.get("content") or "")
-        if marker in content:
-            head = content.split(marker, 1)[0].rstrip()
+        if marker in content or skill_marker in content or repair_marker in content:
+            head = content
+            if marker in head:
+                head = head.split(marker, 1)[0].rstrip()
+            if skill_marker in head:
+                head = head.split(skill_marker, 1)[0].rstrip()
+            if repair_marker in head:
+                head = head.split(repair_marker, 1)[0].rstrip()
             out[idx]["content"] = f"{head}\n\n{block}".strip() if head else block
             return out
 

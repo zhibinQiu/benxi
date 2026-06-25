@@ -312,7 +312,7 @@ const routes = [
         path: "system/agent-skills",
         name: "agent-skills",
         meta: {
-          title: "Agent Skills",
+          title: "多智能体",
           perm: "feature.agent_skills",
           featureIcon: "extension-puzzle",
           videoBg: true,
@@ -384,8 +384,22 @@ router.beforeEach(async (to) => {
 });
 
 router.afterEach((to, from) => {
+  sessionStorage.removeItem("platform:chunk-reload");
   if (from.meta?.public) return;
   releaseRouteMemory(from, to);
+});
+
+/** 发版后浏览器仍缓存旧 chunk 时，自动刷新一次以拉取新 index / assets */
+router.onError((error, to) => {
+  const msg = String(error?.message || error || "");
+  const isChunkLoadError =
+    msg.includes("Failed to fetch dynamically imported module") ||
+    msg.includes("Importing a module script failed") ||
+    msg.includes("error loading dynamically imported module");
+  if (!isChunkLoadError) return;
+  if (sessionStorage.getItem("platform:chunk-reload")) return;
+  sessionStorage.setItem("platform:chunk-reload", "1");
+  window.location.reload();
 });
 
 export default router;

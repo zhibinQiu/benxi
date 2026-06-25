@@ -20,8 +20,6 @@ export const SUBSYSTEM_PAGE_ROUTES = new Set([
   "subscription-item",
   "wechat-mp",
   "wechat-mp-article",
-  "feed-subscriptions",
-  "feed-entry",
   "document-detail",
   "chat-history",
   "carbon-assets-history",

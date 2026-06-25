@@ -17,7 +17,12 @@ from app.models.document import Document, DocumentStatus, DocumentVersion
 from app.models.org import User, UserStatus
 from app.models.ragflow_document_link import RagflowDocumentLink
 from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
-from app.services.online_presence_service import ONLINE_WINDOW_MINUTES, count_users_online
+from app.core.user_display import user_display_name
+from app.services.online_presence_service import (
+    ONLINE_WINDOW_MINUTES,
+    count_users_online,
+    list_online_user_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,19 +234,9 @@ def collect_platform_dashboard_stats(db: Session) -> dict:
 
     online_since = datetime.now(timezone.utc) - timedelta(minutes=ONLINE_WINDOW_MINUTES)
     users_online = count_users_online()
+    users_online_names = _collect_online_user_names(db, online_since)
     if users_online is None:
-        users_online = int(
-            db.scalar(
-                select(func.count())
-                .select_from(User)
-                .where(
-                    User.status == UserStatus.active.value,
-                    User.last_seen_at.is_not(None),
-                    User.last_seen_at >= online_since,
-                )
-            )
-            or 0
-        )
+        users_online = len(users_online_names)
 
     return {
         "documents_total": documents_total,
@@ -250,5 +245,32 @@ def collect_platform_dashboard_stats(db: Session) -> dict:
         "features_pending": features_pending,
         "users_registered": users_registered,
         "users_online": users_online,
+        "users_online_names": users_online_names,
         "collected_at": time.time(),
     }
+
+
+def _collect_online_user_names(db: Session, online_since: datetime) -> list[str]:
+    online_ids = list_online_user_ids()
+    if online_ids is not None:
+        if not online_ids:
+            return []
+        users = db.scalars(select(User).where(User.id.in_(online_ids))).all()
+        user_by_id = {user.id: user for user in users}
+        names: list[str] = []
+        for user_id in online_ids:
+            user = user_by_id.get(user_id)
+            if user and user.status == UserStatus.active.value:
+                names.append(user_display_name(user))
+        return names
+
+    users = db.scalars(
+        select(User)
+        .where(
+            User.status == UserStatus.active.value,
+            User.last_seen_at.is_not(None),
+            User.last_seen_at >= online_since,
+        )
+        .order_by(User.last_seen_at.desc())
+    ).all()
+    return [user_display_name(user) for user in users]

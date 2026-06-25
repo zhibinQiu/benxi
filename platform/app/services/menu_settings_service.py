@@ -91,7 +91,6 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "subscription-item": "knowledge-subscriptions",
     "wechat-mp": "knowledge-subscriptions",
     "wechat-mp-article": "knowledge-subscriptions",
-    "feed-subscriptions": "knowledge-subscriptions",
     "feed-entry": "knowledge-subscriptions",
     "admin-monitor": "admin-monitor",
     "admin-model-settings": "admin-model-settings",

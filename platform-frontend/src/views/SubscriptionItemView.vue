@@ -14,6 +14,7 @@ import {
 } from "../api/client";
 import { resolveArticleBody } from "../utils/articleContent";
 import { goBackToEntry } from "../utils/navigationReturn";
+import { openExternal } from "../utils/openExternal.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -79,7 +80,7 @@ async function onImport() {
 
 function openOriginal() {
   const url = item.value?.link;
-  if (url) window.open(url, "_blank", "noopener");
+  if (url) openExternal(url);
 }
 
 async function onDelete() {

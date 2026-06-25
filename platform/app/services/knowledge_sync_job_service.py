@@ -128,7 +128,9 @@ def stop_document_index_work(
     return stopped
 
 
-def cancel_document_index_job(db: Session, job: Job) -> Job:
+def cancel_document_index_job(
+    db: Session, job: Job, *, reason: str = "用户已终止"
+) -> Job:
     """用户从后台任务面板终止文档索引/解析（含解析续跑）。"""
     from app.core.exceptions import bad_request
 
@@ -147,7 +149,7 @@ def cancel_document_index_job(db: Session, job: Job) -> Job:
         db,
         job.id,
         JobStatus.cancelled.value,
-        error_message="用户已终止",
+        error_message=reason,
     )
 
 
@@ -2002,6 +2004,7 @@ def recover_interrupted_document_index_jobs() -> int:
     """服务启动时恢复中断的文档索引任务（pending / running）。"""
     from app.config import get_settings
     from app.database import SessionLocal
+    from app.services.job_watchdog_service import is_job_stale
 
     if not get_settings().knowflow_enabled:
         return 0
@@ -2018,6 +2021,10 @@ def recover_interrupted_document_index_jobs() -> int:
             )
         ).all()
         for job in jobs:
+            if is_job_stale(
+                job, stale_minutes=int(get_settings().background_job_stale_minutes)
+            ):
+                continue
             payload = job.payload or {}
             if payload.get("awaiting_parse"):
                 if _index_job_should_abort(db, job):

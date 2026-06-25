@@ -44,15 +44,14 @@ class GpuMetrics(BaseModel):
 class KnowflowQueueMetrics(BaseModel):
     enabled: bool = False
     available: bool = False
+    stuck: bool = False
+    watchdog_enabled: bool = False
+    watchdog_stuck_minutes: int = 10
     pending_tasks: int = 0
     running_tasks: int = 0
-    failed_tasks: int = 0
     parsing_documents: int = 0
-    unstarted_documents: int = 0
     queue_lag: int = 0
     executor_active: bool = False
-    duplicate_document_groups: int = 0
-    duplicate_documents_extra: int = 0
     top_backlog_documents: list[dict[str, str | int]] = []
     error: str | None = None
 

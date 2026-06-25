@@ -21,6 +21,7 @@ import {
 import AdminFormModal from "../components/AdminFormModal.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KgGraphCanvas from "../components/KgGraphCanvas.vue";
+import ListRefreshButton from "../components/ListRefreshButton.vue";
 import {
   createKgEntity,
   createKgEntityType,
@@ -777,7 +778,7 @@ onMounted(() => {
         />
         <n-button size="small" type="primary" @click="openCreateEntity">{{ t("kgPalantir.createEntity") }}</n-button>
         <n-button size="small" secondary @click="openCreateRelation">{{ t("kgPalantir.addRelation") }}</n-button>
-        <n-button size="small" quaternary @click="forceRefreshAll({ toast: true })">{{ t("common.refresh") }}</n-button>
+        <ListRefreshButton @click="forceRefreshAll({ toast: true })" />
       </div>
     </template>
 
@@ -940,14 +941,11 @@ onMounted(() => {
           <div class="kg-right-stack" :class="{ 'kg-right-stack--browse': isTypeBrowseMode }">
             <div class="kg-detail-toolbar">
               <span class="kg-detail-toolbar__title">{{ t("kgPalantir.info") }}</span>
-              <n-button
+              <ListRefreshButton
                 size="tiny"
-                quaternary
                 :loading="detailRefreshing"
                 @click="forceRefreshAll({ toast: true })"
-              >
-                {{ t("common.refresh") }}
-              </n-button>
+              />
             </div>
             <div
               ref="detailMainRef"

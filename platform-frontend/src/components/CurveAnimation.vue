@@ -9,6 +9,7 @@ import {
   getCurveParticle,
   getCurveRotation,
 } from "../utils/curveAnimation.js";
+import { prefersReducedMotion } from "../utils/mediaQuery.js";
 
 const props = defineProps({
   preset: {
@@ -158,7 +159,7 @@ watch(effectiveSize, () => {
 });
 
 onMounted(() => {
-  reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  reducedMotion = prefersReducedMotion();
   measureSize();
 
   if (props.fill && rootRef.value && typeof ResizeObserver !== "undefined") {

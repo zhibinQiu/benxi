@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NLayout,
@@ -41,6 +41,7 @@ import { startNotificationAlerts, stopNotificationAlerts } from "../composables/
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { goBackToEntry } from "../utils/navigationReturn";
+import { isBenignNavigationError } from "../api/requestScope.js";
 import { sessionEpoch } from "../utils/sessionEpoch.js";
 import ReleaseHighlightsModal from "../components/ReleaseHighlightsModal.vue";
 import { fetchReleaseHighlights } from "../api/system.js";
@@ -48,6 +49,10 @@ import {
   acknowledgeReleaseVersion,
   shouldShowReleaseHighlights,
 } from "../utils/releaseNotesAck.js";
+import { useBlockingUiCleanup } from "../composables/useBlockingUiCleanup.js";
+import { prefetchKnowledgeScopeTree } from "../composables/useKnowledgeScopeTree.js";
+import { getToken } from "../api/client.js";
+import { openExternal } from "../utils/openExternal.js";
 
 /** 对话 / 知识检索 / 报告生成保留实例；其余功能离开路由后销毁以释放内存 */
 const KEEP_ALIVE_VIEWS = ["AiHomeView", "KnowledgeFeatureLayout"];
@@ -65,6 +70,7 @@ function routeViewKey(viewRoute) {
 
 const route = useRoute();
 const router = useRouter();
+const { cleanupOnInteraction } = useBlockingUiCleanup();
 const { loadUser, hasPerm } = useAuth();
 const { t, routeTitle, featureLabel } = useI18n();
 const { loadMenuSettings, isMenuVisible } = useMenuSettings();
@@ -88,7 +94,9 @@ function favoriteMenuKey(feature) {
 
 const favoriteMenuFeatures = computed(() => {
   const byId = Object.fromEntries(systemFeatures.value.map((f) => [f.id, f]));
-  return favoriteIds.value.map((id) => byId[id]).filter((f) => f && f.enabled);
+  return favoriteIds.value
+    .map((id) => byId[id])
+    .filter((f) => f && f.enabled && f.accessible);
 });
 
 const favoriteActiveKey = computed(() => {
@@ -106,6 +114,12 @@ const favoriteActiveKey = computed(() => {
 onMounted(() => {
   startNotificationAlerts();
   Promise.allSettled([loadUser(), loadSystemFeatures(), loadMenuSettings()]).then(() => {
+    if (getToken()) prefetchKnowledgeScopeTree();
+    nextTick(() => {
+      const wrap = siderMenuWrapRef.value;
+      const selected = wrap?.querySelector(".n-menu-item-content.n-menu-item-content--selected");
+      if (selected) moveIndicatorToContent(selected);
+    });
     void tryShowReleaseHighlights();
   });
 });
@@ -241,9 +255,7 @@ const activeKey = computed(() => {
   if (favoriteActiveKey.value) return favoriteActiveKey.value;
   if (
     route.name === "knowledge-subscriptions" ||
-    route.name === "subscription-item" ||
-    route.name === "feed-subscriptions" ||
-    route.name === "feed-entry"
+    route.name === "subscription-item"
   ) {
     return "knowledge-subscriptions";
   }
@@ -371,19 +383,49 @@ watch(
   },
 );
 
+function siderMenuNodeProps(node) {
+  const key = node?.key;
+  if (key == null || key === "") return {};
+  return { "data-menu-key": String(key) };
+}
+
+function pushRoute(target) {
+  const p = typeof target === "string" ? router.push({ name: target }) : router.push(target);
+  if (p && typeof p.catch === "function") {
+    p.catch((err) => {
+      if (!isBenignNavigationError(err)) {
+        console.warn("[router]", err);
+      }
+    });
+  }
+}
+
+function resolveMenuKeyFromEvent(e) {
+  const item = e.target?.closest?.("[data-menu-key]");
+  const key = item?.getAttribute("data-menu-key");
+  return key || null;
+}
+
 function onSiderMenuWrapClick(e) {
+  cleanupOnInteraction();
+
   const content = e.target?.closest?.(".n-menu-item-content");
   if (!content || content.classList.contains("n-menu-item-content--disabled")) return;
   moveIndicatorToContent(content);
 
-  // 子功能页侧栏仍高亮「功能列表」，再点同一项时 Naive Menu 不会触发 update:value
-  if (
-    isSubsystemPage.value &&
-    resolvedActiveKey.value === "system-functions" &&
-    content.classList.contains("n-menu-item-content--selected")
-  ) {
-    router.push({ name: "system-functions" });
+  const key = resolveMenuKeyFromEvent(e);
+  if (!key || key === SETTINGS_KEY) return;
+
+  if (key === resolvedActiveKey.value) {
+    if (isSubsystemPage.value && key === "system-functions") {
+      pushRoute("system-functions");
+    } else if (route.name === "document-detail" && key === "documents") {
+      pushRoute("documents");
+    }
+    return;
   }
+
+  onMenuSelect(key);
 }
 
 function onMenuSelect(key) {
@@ -394,7 +436,7 @@ function onMenuSelect(key) {
     const featureId = key.slice("feature-ext:".length);
     const feature = systemFeatures.value.find((f) => f.id === featureId);
     if (feature?.external_url) {
-      window.open(feature.external_url, "_blank", "noopener,noreferrer");
+      openExternal(feature.external_url);
     }
     return;
   }
@@ -403,12 +445,12 @@ function onMenuSelect(key) {
     const featureId = key.slice("feature-fav:".length);
     const feature = systemFeatures.value.find((f) => f.id === featureId);
     if (feature?.route) {
-      router.push({ path: feature.route });
+      pushRoute({ path: feature.route });
     }
     return;
   }
 
-  router.push({ name: key });
+  pushRoute(key);
 }
 </script>
 
@@ -441,8 +483,8 @@ function onMenuSelect(key) {
             :value="resolvedActiveKey"
             :options="menuOptions"
             :expanded-keys="expandedKeys"
+            :node-props="siderMenuNodeProps"
             @update:expanded-keys="onExpandedKeysUpdate"
-            @update:value="onMenuSelect"
           />
         </div>
         <PlatformCopyright v-if="!siderCollapsed" class="sider-copyright" />
@@ -640,8 +682,8 @@ function onMenuSelect(key) {
   pointer-events: none;
   background: var(--sider-menu-glass-fill-active, var(--platform-glass-fill-active));
   box-shadow: var(--menu-glass-rim-edge-active);
-  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(16px);
-  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(16px);
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(10px);
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(10px);
   will-change: transform;
   transition:
     transform 0.24s cubic-bezier(0.22, 0.95, 0.32, 1),

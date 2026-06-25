@@ -18,6 +18,7 @@ from app.schemas.ai_chat import (
     AttachmentSessionOut,
     AttachmentUploadOut,
 )
+from app.schemas.agent_profile import AgentCatalogItemOut
 from app.schemas.agent_skill import AgentSkillCatalogItemOut
 from app.schemas.agent_skill import AgentMemoryOut, AgentMemoryUpdateIn
 from app.schemas.common import ApiResponse
@@ -55,6 +56,16 @@ def read_ai_chat_skill_catalog(
     from app.services.skill_chat_service import get_user_skill_catalog
 
     return ApiResponse(data=get_user_skill_catalog(db, user))
+
+
+@router.get("/agents/catalog", response_model=ApiResponse[list[AgentCatalogItemOut]])
+def read_ai_chat_agent_catalog(
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[AgentCatalogItemOut]]:
+    """本析智能对话：可选专精智能体目录。"""
+    from app.services import agent_profile_service as agent_profile_svc
+
+    return ApiResponse(data=agent_profile_svc.list_user_agent_catalog(db))
 
 
 @router.get("/agent-memory", response_model=ApiResponse[AgentMemoryOut])

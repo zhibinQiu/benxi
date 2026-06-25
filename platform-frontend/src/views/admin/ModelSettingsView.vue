@@ -16,7 +16,6 @@ import {
   NSelect,
   NSpace,
   NSwitch,
-  NTag,
   NText } from "naive-ui";
 import {
   GlobeOutline,
@@ -42,6 +41,7 @@ import { setApiBase } from "../../api/http";
 import { applyClientBranding } from "../../composables/usePlatformBranding";
 import { initAppFromServerConfig } from "../../composables/useAppPreferences";
 import { useI18n } from "../../composables/useI18n";
+import ListRefreshButton from "../../components/ListRefreshButton.vue";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -59,6 +59,7 @@ const form = reactive({
   platform_api_base_url: "",
   frontend_app_title: "",
   frontend_default_theme: "system",
+  frontend_color_scheme: "purple",
   llm_base_url: "",
   llm_model: "",
   llm_api_key: "",
@@ -145,6 +146,11 @@ const themeOptions = computed(() => [
   { label: t("admin.modelSettings.theme.dark"), value: "dark" },
 ]);
 
+const colorSchemeOptions = computed(() => [
+  { label: t("admin.modelSettings.colorScheme.purple"), value: "purple" },
+  { label: t("admin.modelSettings.colorScheme.blue"), value: "blue" },
+]);
+
 const resourceDefs = computed(() =>
   RESOURCE_IDS.map((id) => ({
     id,
@@ -183,6 +189,7 @@ function fillForm(data) {
   form.platform_api_base_url = data?.platform_api_base_url || "";
   form.frontend_app_title = data?.frontend_app_title || "";
   form.frontend_default_theme = data?.frontend_default_theme || "system";
+  form.frontend_color_scheme = data?.frontend_color_scheme || "purple";
   form.llm_base_url = data?.llm?.base_url || "";
   form.llm_model = data?.llm?.model_name || "";
   form.llm_api_key = data?.llm?.api_key_masked || "";
@@ -240,8 +247,11 @@ function resourceSummary(id) {
       const themeLabel =
         themeOptions.value.find((item) => item.value === data.frontend_default_theme)?.label ||
         t("admin.modelSettings.theme.systemShort");
+      const schemeLabel =
+        colorSchemeOptions.value.find((item) => item.value === data.frontend_color_scheme)
+          ?.label || t("admin.modelSettings.colorScheme.purpleShort");
       const title = data.frontend_app_title || t("admin.modelSettings.summary.systemName");
-      return `${title} · ${themeLabel}`;
+      return `${title} · ${schemeLabel} · ${themeLabel}`;
     }
     case "llm":
       return data.llm?.model_name
@@ -426,7 +436,8 @@ function buildPayloadFor(id) {
     case "frontend":
       return {
         frontend_app_title: form.frontend_app_title.trim(),
-        frontend_default_theme: form.frontend_default_theme || "system"};
+        frontend_default_theme: form.frontend_default_theme || "system",
+        frontend_color_scheme: form.frontend_color_scheme || "purple"};
     case "llm":
       return {
         llm_base_url: form.llm_base_url.trim(),
@@ -555,8 +566,11 @@ async function saveActive() {
     } else if (activeId.value === "frontend") {
       applyClientBranding({
         app_title: form.frontend_app_title.trim(),
-        default_theme: form.frontend_default_theme});
-      initAppFromServerConfig({ default_theme: form.frontend_default_theme });
+        default_theme: form.frontend_default_theme,
+        color_scheme: form.frontend_color_scheme});
+      initAppFromServerConfig({
+        default_theme: form.frontend_default_theme,
+        color_scheme: form.frontend_color_scheme});
       ui.success(t("admin.modelSettings.messages.savedFrontend"));
     } else {
       ui.success(t("admin.modelSettings.messages.savedDefault"));
@@ -578,12 +592,12 @@ onMounted(loadAll);
   <div class="resource-settings-page feature-page">
     <div class="page-toolbar feature-local-nav">
       <n-space>
-        <n-button :loading="loading" @click="loadAll">
-          {{ t("common.refresh") }}
-        </n-button>
-        <n-button :loading="healthLoading" @click="loadHealth">
-          {{ t("admin.modelSettings.refreshStatus") }}
-        </n-button>
+        <ListRefreshButton :loading="loading" @click="loadAll" />
+        <ListRefreshButton
+          :label="t('admin.modelSettings.refreshStatus')"
+          :loading="healthLoading"
+          @click="loadHealth"
+        />
       </n-space>
     </div>
 
@@ -687,6 +701,12 @@ onMounted(loadAll);
               <n-select
                 v-model:value="form.frontend_default_theme"
                 :options="themeOptions"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.colorScheme')">
+              <n-select
+                v-model:value="form.frontend_color_scheme"
+                :options="colorSchemeOptions"
               />
             </n-form-item>
             <div

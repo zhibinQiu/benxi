@@ -8,15 +8,15 @@ from app.features.registry import register
 register(
     FeaturePlugin(
         id="agent_skills",
-        title="Agent Skills",
-        description="管理平台内置能力与上传 SKILL.md 技能包，统一供智能体发现与调用",
+        title="多智能体",
+        description="管理系统智能体、技能、工具与记忆，供本析智能按需调度",
         icon="extension-puzzle",
         route="/system/agent-skills",
         permission_code="feature.agent_skills",
-        permission_name="Agent Skills",
+        permission_name="多智能体",
         enabled=True,
         category="tools",
         sort_order=5,
-        grant_to_roles=("sys_admin",),
+        grant_to_roles=("sys_admin", "member"),
     )
 )

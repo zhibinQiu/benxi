@@ -1,4 +1,6 @@
 import { computed, ref, watch } from "vue";
+import { normalizeColorScheme } from "../constants/colorSchemes.js";
+import { prefersDarkColorScheme, subscribeMediaQuery } from "../utils/mediaQuery.js";
 
 const STORAGE_THEME = "platform-theme";
 const STORAGE_THEME_EXPLICIT = "platform-theme-explicit";
@@ -7,9 +9,11 @@ const STORAGE_LOCALE = "platform-locale";
 let serverDefaultTheme = "system";
 let systemThemeListenerBound = false;
 
+const colorScheme = ref("purple");
+
 function resolveThemeFromDefault(defaultTheme) {
   if (defaultTheme === "light" || defaultTheme === "dark") return defaultTheme;
-  if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) return "dark";
+  if (prefersDarkColorScheme()) return "dark";
   return "light";
 }
 
@@ -21,9 +25,9 @@ function readInitialTheme() {
 }
 
 function bindSystemThemeListener() {
-  if (systemThemeListenerBound || !window.matchMedia) return;
+  if (systemThemeListenerBound) return;
   systemThemeListenerBound = true;
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
+  subscribeMediaQuery("(prefers-color-scheme: dark)", (event) => {
     if (localStorage.getItem(STORAGE_THEME_EXPLICIT) === "1") return;
     if (serverDefaultTheme !== "system") return;
     theme.value = event.matches ? "dark" : "light";
@@ -42,11 +46,20 @@ function applyThemeToDocument(value) {
   document.documentElement.setAttribute("data-theme", value);
 }
 
+function applyColorSchemeToDocument(value) {
+  const scheme = normalizeColorScheme(value);
+  if (scheme === "blue") {
+    document.documentElement.setAttribute("data-color-scheme", "blue");
+  } else {
+    document.documentElement.removeAttribute("data-color-scheme");
+  }
+}
+
 function applyLocaleToDocument(value) {
   document.documentElement.lang = value === "en" ? "en" : "zh-CN";
 }
 
-/** 启动时由 client-config 注入默认主题策略 */
+/** 启动时由 client-config 注入默认主题策略与系统配色 */
 export function initAppFromServerConfig(config) {
   const mode = String(config?.default_theme || "system").trim().toLowerCase();
   if (mode === "light" || mode === "dark" || mode === "system") {
@@ -55,6 +68,8 @@ export function initAppFromServerConfig(config) {
   if (localStorage.getItem(STORAGE_THEME_EXPLICIT) !== "1") {
     theme.value = resolveThemeFromDefault(serverDefaultTheme);
   }
+  colorScheme.value = normalizeColorScheme(config?.color_scheme);
+  applyColorSchemeToDocument(colorScheme.value);
   bindSystemThemeListener();
 }
 
@@ -106,6 +121,7 @@ export function useAppPreferences() {
   return {
     theme,
     locale,
+    colorScheme,
     isDark,
     toggleTheme,
     toggleLocale,

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.agent_runtime import build_runtime_context, normalize_channel
 from app.models.org import User
-from app.services.agent_memory_service import append_user_memory
+from app.services.agent_memory_service import append_user_memory, build_memory_prompt_context
 from app.services.agent_skill_router import (
     extract_memory_note,
     should_write_memory,
@@ -35,19 +35,21 @@ def resolve_agent_prompt_layers(
     channel: str = "ai-home",
     conversation_id: str | None = None,
 ) -> AgentPromptLayers:
-    """按层解析 prompt：Discovery 描述符常驻，Skill 正文与记忆由 tool 按需加载。"""
+    """按层解析 prompt：Discovery 描述符常驻，用户记忆每轮注入 system。"""
     runtime_context = build_runtime_context(
         channel=normalize_channel(channel),
         user=user,
         conversation_id=conversation_id,
     )
     skill_catalog = build_agent_catalog_prompt(db, user=user, admin_view=False)
+    memory_context = build_memory_prompt_context(user.id)
     platform_knowledge = ""
     if _needs_platform_knowledge(message):
         platform_knowledge = build_platform_knowledge(db, user)
     return AgentPromptLayers(
         skill_catalog=skill_catalog,
         runtime_context=runtime_context,
+        memory_context=memory_context,
         platform_knowledge=platform_knowledge,
     )
 

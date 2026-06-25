@@ -235,6 +235,7 @@ async def chat_completion_stream_parts(
     timeout: float = 90.0,
     max_user_chars: int | None = None,
     unlimited_output: bool = False,
+    max_total_chars: int | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     """流式 chat/completions；产出 kind=reasoning|content 的文本片段。"""
     if not is_configured():
@@ -243,7 +244,10 @@ async def chat_completion_stream_parts(
         api_key, base_url, model = resolve_credentials()
     except Exception:
         return
-    payload_messages = _prepare_messages_for_api(messages)
+    payload_messages = _prepare_messages_for_api(
+        messages,
+        max_total_chars=max_total_chars,
+    )
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
@@ -255,6 +259,7 @@ async def chat_completion_stream_parts(
                     messages=payload_messages,
                     temperature=temperature,
                     stream=True,
+                    max_total_chars=max_total_chars,
                     unlimited_output=unlimited_output,
                 ),
             ) as resp:

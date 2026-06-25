@@ -23,7 +23,8 @@ import {
   updateIssueReport,
 } from "../api/issueReports.js";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
-import { LIST_PAGE_SIZE } from "../constants/listPage.js";
+import ListTableFooter from "../components/ListTableFooter.vue";
+import { useClientListPagination } from "../composables/useClientListPagination.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -32,6 +33,14 @@ const { isSystemAdmin } = useAuth();
 const loading = ref(false);
 const saving = ref(false);
 const items = ref([]);
+const {
+  page,
+  pageSize,
+  total,
+  pagedItems,
+  onPageChange,
+  resetPage,
+} = useClientListPagination(items);
 const statusFilter = ref("");
 const showCreateModal = ref(false);
 const newDescription = ref("");
@@ -69,6 +78,7 @@ async function load() {
   try {
     const data = await fetchIssueReports(statusFilter.value || undefined);
     items.value = Array.isArray(data) ? data : [];
+    resetPage();
   } catch (e) {
     ui.error(e.message || t("issueReports.loadFailed"));
   } finally {
@@ -204,42 +214,51 @@ onMounted(load);
 <template>
   <div class="issue-reports-page feature-page">
     <n-spin :show="loading">
-      <n-card size="small">
-        <template #header>
-          <div class="issue-reports-page__header">
-            <div>
-              <n-text strong>{{ t("issueReports.title") }}</n-text>
-              <n-text depth="3" class="issue-reports-page__hint">
-                {{ t("issueReports.hint") }}
-              </n-text>
+      <div class="admin-list-table">
+        <n-card size="small" class="admin-page admin-page--list-table">
+          <template #header>
+            <div class="issue-reports-page__header">
+              <div>
+                <n-text strong>{{ t("issueReports.title") }}</n-text>
+                <n-text depth="3" class="issue-reports-page__hint">
+                  {{ t("issueReports.hint") }}
+                </n-text>
+              </div>
+              <n-space :size="12" align="center">
+                <ListRefreshButton :loading="loading" @click="load" />
+                <n-select
+                  v-model:value="statusFilter"
+                  :options="statusOptions"
+                  size="small"
+                  style="width: 120px"
+                  @update:value="load"
+                />
+                <n-button type="primary" size="small" @click="showCreateModal = true">
+                  {{ t("issueReports.register") }}
+                </n-button>
+              </n-space>
             </div>
-            <n-space :size="12" align="center">
-              <ListRefreshButton :loading="loading" @click="load" />
-              <n-select
-                v-model:value="statusFilter"
-                :options="statusOptions"
-                size="small"
-                style="width: 120px"
-                @update:value="load"
-              />
-              <n-button type="primary" size="small" @click="showCreateModal = true">
-                {{ t("issueReports.register") }}
-              </n-button>
-            </n-space>
-          </div>
-        </template>
+          </template>
 
-        <n-data-table
+          <n-data-table
+            v-if="items.length"
+            :columns="columns"
+            :data="pagedItems"
+            :bordered="false"
+            size="small"
+            :scroll-x="900"
+            :pagination="false"
+          />
+          <n-empty v-else :description="t('issueReports.empty')" style="padding: 32px 0" />
+        </n-card>
+        <ListTableFooter
           v-if="items.length"
-          :columns="columns"
-          :data="items"
-          :bordered="false"
-          size="small"
-          :scroll-x="900"
-          :pagination="{ pageSize: LIST_PAGE_SIZE }"
+          :page="page"
+          :page-size="pageSize"
+          :item-count="total"
+          @update:page="onPageChange"
         />
-        <n-empty v-else :description="t('issueReports.empty')" style="padding: 32px 0" />
-      </n-card>
+      </div>
     </n-spin>
 
     <n-modal

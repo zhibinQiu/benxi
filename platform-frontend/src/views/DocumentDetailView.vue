@@ -65,9 +65,10 @@ import { userLabel } from "../utils/orgUserTree";
 import { goBackToEntry, navigateWithReturn } from "../utils/navigationReturn";
 import { ORG_SCOPES } from "../constants/documentScope";
 import {
+  DOCUMENT_UPLOAD_ACCEPT,
   validateUploadFiles,
   validateVersionFormatMatch,
-} from "../constants/documentUpload";
+} from "../constants/documentUpload.js";
 import {
   canDeleteDocument,
   canModifyDocument,
@@ -925,6 +926,7 @@ onMounted(() => {
         <n-upload
           class="version-upload-bar__pick"
           :max="1"
+          :accept="DOCUMENT_UPLOAD_ACCEPT"
           :default-upload="false"
           :show-file-list="false"
           v-model:file-list="versionUploadFileList"

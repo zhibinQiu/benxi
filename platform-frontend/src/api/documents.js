@@ -8,6 +8,7 @@ import {
   LIST_API_TIMEOUT_MS,
   UPLOAD_API_TIMEOUT_MS,
 } from "./http.js";
+import { downloadBlob } from "../utils/downloadBlob.js";
 
 const listReadOpts = { timeoutMs: LIST_API_TIMEOUT_MS };
 
@@ -83,6 +84,8 @@ export async function createDocument(payload) {
   return api("/api/v1/documents", {
     method: "POST",
     body: JSON.stringify(payload),
+    preserveOnNavigate: true,
+    timeoutMs: UPLOAD_API_TIMEOUT_MS,
   });
 }
 
@@ -95,6 +98,8 @@ export async function prepareUpload(documentId, fileName, mimeType) {
   const q = new URLSearchParams({ file_name: fileName, mime_type: mimeType });
   return api(`/api/v1/documents/${documentId}/upload/prepare?${q}`, {
     method: "POST",
+    preserveOnNavigate: true,
+    timeoutMs: UPLOAD_API_TIMEOUT_MS,
   });
 }
 
@@ -130,6 +135,8 @@ export async function completeUpload(documentId, body) {
   return api(`/api/v1/documents/${documentId}/upload/complete`, {
     method: "POST",
     body: JSON.stringify(body),
+    preserveOnNavigate: true,
+    timeoutMs: UPLOAD_API_TIMEOUT_MS,
   });
 }
 
@@ -168,11 +175,7 @@ export async function downloadDocumentFile(
   } else if (plainMatch) {
     name = plainMatch[1];
   }
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadBlob(blob, name);
 }
 
 /** 拉取文档文件 blob（可选指定版本），供预览等场景 */

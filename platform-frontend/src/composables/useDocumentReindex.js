@@ -4,6 +4,7 @@ import { fetchParserOptions, reindexDocument } from "../api/knowledge.js";
 import { fetchDocument } from "../api/documents.js";
 import { fetchJob } from "../api/client.js";
 import { subscribePlatformJobEvents } from "../api/jobEvents.js";
+import { notifyKnowledgeScopeTreeStale } from "../utils/knowledgeScopeRefresh.js";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 120;
@@ -69,9 +70,7 @@ export function useDocumentReindex(documentId, onUpdated) {
 
   function notifyUpdated() {
     onUpdated?.();
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("platform:knowledge-index-updated"));
-    }
+    notifyKnowledgeScopeTreeStale();
   }
 
   function stopPoll() {

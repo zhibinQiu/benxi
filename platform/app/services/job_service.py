@@ -111,7 +111,7 @@ def _cancel_pdf2zh_remote(pdf2zh_id: str) -> None:
         pass
 
 
-def cancel_job(db: Session, job: Job) -> Job:
+def cancel_job(db: Session, job: Job, *, reason: str = "用户已终止") -> Job:
     """终止进行中的任务；翻译任务会同步请求 pdf2zh 取消。"""
     from app.core.exceptions import bad_request
 
@@ -128,13 +128,13 @@ def cancel_job(db: Session, job: Job) -> Job:
     if job.type == JobType.document_index.value:
         from app.services.knowledge_sync_job_service import cancel_document_index_job
 
-        return cancel_document_index_job(db, job)
+        return cancel_document_index_job(db, job, reason=reason)
 
     return update_job_status(
         db,
         job.id,
         JobStatus.cancelled.value,
-        error_message="用户已终止",
+        error_message=reason,
     )
 
 

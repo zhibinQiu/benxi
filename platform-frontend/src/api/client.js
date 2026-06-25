@@ -3,7 +3,7 @@
  * 新代码请按域引用各模块，例如 `api/http.js`、`api/documents.js`。
  */
 export * from "./http.js";
-export { isRouteAbortError } from "./requestScope.js";
+export { isRouteAbortError, isBenignNavigationError } from "./requestScope.js";
 export * from "./auth.js";
 export * from "./documents.js";
 export * from "./rag.js";
@@ -20,7 +20,6 @@ export * from "./system.js";
 export * from "./translate.js";
 export * from "./carbonAssets.js";
 export * from "./wechatMp.js";
-export * from "./feedSubscriptions.js";
 export * from "./subscriptions.js";
 export * from "./speech.js";
 export * from "./textToSpeech.js";

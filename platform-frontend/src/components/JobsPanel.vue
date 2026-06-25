@@ -4,7 +4,6 @@ import { useRouter } from "vue-router";
 import {
   NButton,
   NDataTable,
-  NDropdown,
   NEmpty,
   NIcon,
   NSpace,
@@ -17,8 +16,8 @@ import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { deleteSequentially } from "../utils/batchActions";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
+import ListTableFooter from "./ListTableFooter.vue";
 import {
-  ChevronDownOutline,
   ListOutline,
   RefreshOutline,
   StopCircleOutline,
@@ -124,17 +123,6 @@ const clearableSelectedRows = computed(() => selectedRows.value.filter(isClearab
 const canBatchCancel = computed(() => cancellableSelectedRows.value.length > 0);
 
 const canBatchDelete = computed(() => clearableSelectedRows.value.length > 0);
-
-const clearMenuOptions = computed(() => {
-  locale.value;
-  return [
-    { label: t("jobs.clearDone"), key: "finished" },
-    {
-      label: t("jobs.clearAll"),
-      key: "all",
-      props: { class: "platform-dropdown-option--danger" }},
-  ];
-});
 
 function documentTitle(row) {
   const payload = row?.payload || {};
@@ -301,9 +289,9 @@ function handleBatchCancel() {
     }});
 }
 
-async function doClear(scope) {
+async function doClearFinished() {
   try {
-    const { deleted } = await clearJobs(scope);
+    const { deleted } = await clearJobs("finished");
     ui.success(
       deleted ? "jobs.messages.cleared" : "jobs.messages.nothingToClear",
       { count: deleted || 0 }
@@ -313,19 +301,6 @@ async function doClear(scope) {
   } catch (e) {
     ui.error(e);
   }
-}
-
-function handleClearMenu(key) {
-  const scope = key === "finished" ? "finished" : "all";
-  confirmClear(scope);
-}
-
-function confirmClear(scope) {
-  ui.confirmAction({
-    title: scope === "finished" ? t("jobs.clearDone") : t("jobs.clearAll"),
-    content: t(scope === "finished" ? "jobs.confirm.clearDone" : "jobs.confirm.clearAll"),
-    positiveText: t("common.delete"),
-    onPositive: () => doClear(scope)});
 }
 
 let progressPollTimer = null;
@@ -403,19 +378,6 @@ defineExpose({ load, refresh: load });
           <template #trigger>
             <button
               type="button"
-              class="jobs-header-btn jobs-header-btn--clear-done"
-              :aria-label="t('jobs.clearDone')"
-              @click="confirmClear('finished')"
-            >
-              <n-icon :size="16" :component="TrashBinOutline" />
-            </button>
-          </template>
-          {{ t("jobs.clearDone") }}
-        </n-tooltip>
-        <n-tooltip placement="bottom">
-          <template #trigger>
-            <button
-              type="button"
               class="jobs-header-btn jobs-header-btn--view-all"
               :aria-label="t('jobs.viewAll')"
               @click="goJobsPage"
@@ -424,6 +386,19 @@ defineExpose({ load, refresh: load });
             </button>
           </template>
           {{ t("jobs.viewAll") }}
+        </n-tooltip>
+        <n-tooltip placement="bottom">
+          <template #trigger>
+            <button
+              type="button"
+              class="jobs-header-btn jobs-header-btn--clear-done"
+              :aria-label="t('jobs.clearDone')"
+              @click="doClearFinished"
+            >
+              <n-icon :size="16" :component="TrashBinOutline" />
+            </button>
+          </template>
+          {{ t("jobs.clearDone") }}
         </n-tooltip>
       </div>
     </header>
@@ -472,80 +447,78 @@ defineExpose({ load, refresh: load });
       </template>
 
       <template v-else>
-        <div class="jobs-panel__toolbar">
-          <div class="jobs-panel__toolbar-group">
-            <button
-              type="button"
-              class="jobs-toolbar-btn jobs-toolbar-btn--cancel"
-              :disabled="!canBatchCancel"
-              :aria-label="t('batch.cancel')"
-              @click="handleBatchCancel"
-            >
-              <n-icon :size="16" :component="StopCircleOutline" />
-              <span>{{ t("batch.cancel") }}</span>
-              <span v-if="cancellableSelectedRows.length > 0 && canBatchCancel" class="jobs-toolbar-btn__badge">
-                {{ cancellableSelectedRows.length }}
-              </span>
-            </button>
-            <button
-              type="button"
-              class="jobs-toolbar-btn jobs-toolbar-btn--clear"
-              :disabled="!canBatchDelete"
-              :aria-label="t('common.delete')"
-              @click="handleBatchDelete"
-            >
-              <n-icon :size="16" :component="TrashBinOutline" />
-              <span>{{ t("common.delete") }}</span>
-              <span v-if="clearableSelectedRows.length > 0 && canBatchDelete" class="jobs-toolbar-btn__badge">
-                {{ clearableSelectedRows.length }}
-              </span>
-            </button>
-            <span class="jobs-panel__toolbar-divider" aria-hidden="true" />
-            <n-dropdown
-              trigger="click"
-              placement="bottom-start"
-              :options="clearMenuOptions"
-              @select="handleClearMenu"
-            >
-              <button type="button" class="jobs-toolbar-btn jobs-toolbar-btn--clear">
-                <n-icon :size="16" :component="TrashBinOutline" />
-                <span>{{ t("jobs.clearRecords") }}</span>
-                <n-icon
-                  :size="14"
-                  :component="ChevronDownOutline"
-                  class="jobs-toolbar-btn__caret"
-                />
-              </button>
-            </n-dropdown>
-          </div>
-          <n-tooltip placement="bottom">
-            <template #trigger>
+        <div class="admin-list-table">
+          <div class="jobs-panel__table-body">
+            <div class="jobs-panel__toolbar">
+              <div class="jobs-panel__toolbar-group">
+                <button
+                  type="button"
+                  class="jobs-toolbar-btn jobs-toolbar-btn--cancel"
+                  :disabled="!canBatchCancel"
+                  :aria-label="t('batch.cancel')"
+                  @click="handleBatchCancel"
+                >
+                  <n-icon :size="16" :component="StopCircleOutline" />
+                  <span>{{ t("batch.cancel") }}</span>
+                  <span v-if="cancellableSelectedRows.length > 0 && canBatchCancel" class="jobs-toolbar-btn__badge">
+                    {{ cancellableSelectedRows.length }}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="jobs-toolbar-btn jobs-toolbar-btn--clear"
+                  :disabled="!canBatchDelete"
+                  :aria-label="t('common.delete')"
+                  @click="handleBatchDelete"
+                >
+                  <n-icon :size="16" :component="TrashBinOutline" />
+                  <span>{{ t("common.delete") }}</span>
+                  <span v-if="clearableSelectedRows.length > 0 && canBatchDelete" class="jobs-toolbar-btn__badge">
+                    {{ clearableSelectedRows.length }}
+                  </span>
+                </button>
+              </div>
+              <n-tooltip placement="bottom">
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="jobs-toolbar-btn jobs-toolbar-btn--icon"
+                    :aria-label="t('common.refresh')"
+                    :disabled="loading"
+                    @click="load"
+                  >
+                    <n-icon :size="16" :component="RefreshOutline" />
+                  </button>
+                </template>
+                {{ t("common.refresh") }}
+              </n-tooltip>
               <button
                 type="button"
-                class="jobs-toolbar-btn jobs-toolbar-btn--icon"
-                :aria-label="t('common.refresh')"
-                :disabled="loading"
-                @click="load"
+                class="jobs-toolbar-btn jobs-toolbar-btn--clear-done"
+                :aria-label="t('jobs.clearDone')"
+                @click="doClearFinished"
               >
-                <n-icon :size="16" :component="RefreshOutline" />
+                <n-icon :size="16" :component="TrashBinOutline" />
+                <span>{{ t("jobs.clearDone") }}</span>
               </button>
-            </template>
-            {{ t("common.refresh") }}
-          </n-tooltip>
+            </div>
+            <n-data-table
+              :columns="pageColumns"
+              :data="items"
+              :loading="loading"
+              :row-key="(row) => row.id"
+              :checked-row-keys="checkedRowKeys"
+              :pagination="false"
+              @update:checked-row-keys="onCheckedRowKeysChange"
+            />
+          </div>
+          <ListTableFooter
+            :page="page"
+            :page-size="LIST_PAGE_SIZE"
+            :item-count="total"
+            @update:page="onPageChange"
+          />
         </div>
-        <n-data-table
-          :columns="pageColumns"
-          :data="items"
-          :loading="loading"
-          :row-key="(row) => row.id"
-          :checked-row-keys="checkedRowKeys"
-          @update:checked-row-keys="onCheckedRowKeysChange"
-          :pagination="{
-            page,
-            pageSize: LIST_PAGE_SIZE,
-            itemCount: total,
-            onUpdatePage: onPageChange}"
-        />
       </template>
     </n-spin>
   </div>
@@ -666,14 +639,6 @@ defineExpose({ load, refresh: load });
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.jobs-panel__toolbar-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 2px;
-  background: var(--platform-border);
-  flex-shrink: 0;
-}
-
 .jobs-toolbar-btn {
   display: inline-flex;
   align-items: center;
@@ -718,8 +683,13 @@ defineExpose({ load, refresh: load });
   background: var(--platform-caution-soft);
 }
 
-.jobs-toolbar-btn--clear:not(:disabled):hover {
-  color: var(--platform-text);
+.jobs-toolbar-btn--clear-done:not(:disabled) {
+  color: var(--platform-danger);
+}
+
+.jobs-toolbar-btn--clear-done:not(:disabled):hover {
+  color: var(--platform-danger);
+  background: var(--platform-danger-soft);
 }
 
 .jobs-toolbar-btn--icon {
@@ -749,11 +719,6 @@ defineExpose({ load, refresh: load });
   text-align: center;
   background: color-mix(in srgb, var(--platform-caution-soft) 88%, var(--platform-caution) 12%);
   color: var(--platform-caution);
-}
-
-.jobs-toolbar-btn__caret {
-  opacity: 0.55;
-  margin-left: -2px;
 }
 
 .jobs-panel__item {

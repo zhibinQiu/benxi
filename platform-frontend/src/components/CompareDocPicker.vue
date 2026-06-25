@@ -7,12 +7,12 @@ import {
   NDataTable,
   NInput,
   NModal,
-  NPagination,
   NSpace } from "naive-ui";
 import { fetchCompareDocuments } from "../api/client";
 import { PLATFORM_Z } from "../constants/zIndex.js";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import ListRefreshButton from "./ListRefreshButton.vue";
+import ListTableFooter from "./ListTableFooter.vue";
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -31,9 +31,6 @@ const items = ref([]);
 const loading = ref(false);
 
 const modalTitle = computed(() => props.title || t("compare.pickerDefaultTitle"));
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / LIST_PAGE_SIZE)));
-const showPager = computed(() => total.value > LIST_PAGE_SIZE);
-
 function isRowDisabled(row) {
   if (props.excludeId && row.id === props.excludeId) return true;
   return props.excludeIds.includes(row.id);
@@ -127,20 +124,21 @@ watch(
       <n-button type="primary" @click="onSearch">{{ t("compare.searchBtn") }}</n-button>
       <ListRefreshButton :loading="loading" @click="loadDocs" />
     </n-space>
-    <n-data-table
-      :columns="columns"
-      :data="items"
-      :loading="loading"
-      :bordered="false"
-      size="small"
-    />
-    <n-space v-if="showPager" justify="center" style="margin-top: 12px">
-      <n-pagination
+    <div class="admin-list-table">
+      <n-data-table
+        :columns="columns"
+        :data="items"
+        :loading="loading"
+        :bordered="false"
+        size="small"
+        :pagination="false"
+      />
+      <ListTableFooter
         :page="page"
-        :page-count="pageCount"
-        :page-slot="7"
+        :page-size="LIST_PAGE_SIZE"
+        :item-count="total"
         @update:page="onPageChange"
       />
-    </n-space>
+    </div>
   </n-modal>
 </template>

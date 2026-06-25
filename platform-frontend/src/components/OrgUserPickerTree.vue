@@ -5,7 +5,7 @@ import {
   applyUserPickerCheckChange,
   applyUserPickerKeysDiff,
   buildOrgUserTree,
-  isUserTreeKey,
+  parseUserTreeKey,
   treeCheckedKeysFromUserIds,
   treeIndeterminateKeysFromUserIds } from "../utils/orgUserTree";
 
@@ -60,7 +60,7 @@ function onUpdateCheckedKeys(nextKeys, _option, meta) {
 }
 
 function onUpdateSelectedKeys(keys) {
-  const picked = (keys || []).find(isUserTreeKey);
+  const picked = (keys || []).map(parseUserTreeKey).find(Boolean);
   emit("update:selectedKey", picked || null);
 }
 </script>
@@ -93,3 +93,9 @@ function onUpdateSelectedKeys(keys) {
     @update:expanded-keys="expandedKeys = $event"
   />
 </template>
+
+<style scoped>
+:deep(.n-tree-node-content__text) {
+  line-height: 1.4;
+}
+</style>

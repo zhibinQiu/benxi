@@ -16,14 +16,15 @@ import {
   NStatistic,
   NProgress,
   NDataTable,
-  NButton,
   NSpace,
   NEmpty,
   NTag,
   NIcon } from "naive-ui";
 import { fetchAuditLogs, fetchDashboardStats, fetchSystemMetrics } from "../../api/client";
 import { sanitizeUserFacingMessage } from "../../utils/uiMessage.js";
-import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
+import ListRefreshButton from "../../components/ListRefreshButton.vue";
+import ListTableFooter from "../../components/ListTableFooter.vue";
+import { useClientListPagination } from "../../composables/useClientListPagination.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -55,7 +56,7 @@ const CARD_ICONS = {
 const CARD_ACCENTS = {
   documents_total: "#5b9cf5",
   documents_indexed: "#34d399",
-  features_total: "#a78bfa",
+  features_total: "var(--platform-accent)",
   features_pending: "#fbbf24",
   users_registered: "#60a5fa",
   users_online: "#f472b6",
@@ -129,6 +130,7 @@ const overviewCards = computed(() => {
       label: t(`admin.monitor.cards.${i18nKey}.label`),
       hint: t(`admin.monitor.cards.${i18nKey}.hint`),
       value: s[key],
+      names: key === "users_online" ? s.users_online_names || [] : [],
       icon: CARD_ICONS[key],
       accent: CARD_ACCENTS[key],
     };
@@ -153,6 +155,22 @@ const logColumns = computed(() => [
 ]);
 
 const gpuRows = computed(() => metrics.value?.gpus || []);
+
+const {
+  page: gpuPage,
+  pageSize: gpuPageSize,
+  total: gpuTotal,
+  pagedItems: gpuPagedItems,
+  onPageChange: onGpuPageChange,
+} = useClientListPagination(gpuRows);
+
+const {
+  page: logsPage,
+  pageSize: logsPageSize,
+  total: logsTotal,
+  pagedItems: logsPagedItems,
+  onPageChange: onLogsPageChange,
+} = useClientListPagination(logs);
 
 const gpuColumns = computed(() => [
   { title: "GPU", key: "index", width: 60, render: (r) => `#${r.index}` },
@@ -182,6 +200,10 @@ const gpuColumns = computed(() => [
     width: 90,
     render: (r) => (r.utilization_percent != null ? `${r.utilization_percent}%` : "—")},
 ]);
+
+const knowflowQueue = computed(() => metrics.value?.knowflow_queue || null);
+
+const knowflowQueueStuck = computed(() => Boolean(knowflowQueue.value?.stuck));
 
 const refreshing = computed(
   () => loadingLogs.value || loadingMetrics.value || loadingStats.value
@@ -236,12 +258,17 @@ onMounted(() => {
         {{ t("admin.monitor.dataUpdatedAt", { time: formatUnixTime(stats.collected_at) }) }}
       </span>
       <n-space :size="8">
-        <n-button quaternary :loading="loadingLogs" @click="loadLogs">
-          {{ t("admin.monitor.refreshLogs") }}
-        </n-button>
-        <n-button type="primary" :loading="refreshing" @click="refreshAll">
-          {{ t("admin.monitor.refreshAll") }}
-        </n-button>
+        <ListRefreshButton
+          :label="t('admin.monitor.refreshLogs')"
+          :loading="loadingLogs"
+          @click="loadLogs"
+        />
+        <ListRefreshButton
+          :label="t('admin.monitor.refreshAll')"
+          type="primary"
+          :loading="refreshing"
+          @click="refreshAll"
+        />
       </n-space>
     </div>
 
@@ -259,6 +286,16 @@ onMounted(() => {
           <div class="overview-card__body">
             <div class="overview-card__label">{{ card.label }}</div>
             <div class="overview-card__value">{{ formatNumber(card.value) }}</div>
+            <div v-if="card.names.length" class="overview-card__names">
+              <n-tag
+                v-for="(name, index) in card.names"
+                :key="`${name}-${index}`"
+                size="small"
+                :bordered="false"
+              >
+                {{ name }}
+              </n-tag>
+            </div>
             <div class="overview-card__hint">{{ card.hint }}</div>
           </div>
         </article>
@@ -349,78 +386,65 @@ onMounted(() => {
         </div>
         <div v-if="metrics.knowflow_queue" class="knowflow-queue-section">
           <div class="section-title">{{ t("admin.monitor.knowflowQueueTitle") }}</div>
-          <n-grid :cols="4" :x-gap="16" :y-gap="12" responsive="screen" item-responsive>
-            <n-gi span="4 m:2 l:1">
-              <n-statistic :label="t('admin.monitor.knowflowPendingTasks')">
-                <template #default>
-                  {{ formatNumber(metrics.knowflow_queue.pending_tasks) }}
-                </template>
-              </n-statistic>
-              <div class="metric-hint">
+          <div
+            v-if="metrics.knowflow_queue.error"
+            class="metric-hint metric-hint--warn knowflow-queue-section__error"
+          >
+            {{ formatQueueError(metrics.knowflow_queue.error) }}
+          </div>
+          <div class="knowflow-queue-status">
+            <n-tag
+              size="medium"
+              :type="
+                !metrics.knowflow_queue.available
+                  ? 'default'
+                  : knowflowQueueStuck
+                    ? 'warning'
+                    : 'success'
+              "
+              :bordered="false"
+            >
+              {{
+                !metrics.knowflow_queue.available
+                  ? t("admin.monitor.knowflowQueueUnknown")
+                  : knowflowQueueStuck
+                    ? t("admin.monitor.knowflowQueueStuck")
+                    : t("admin.monitor.knowflowQueueHealthy")
+              }}
+            </n-tag>
+            <p class="knowflow-queue-status__hint metric-hint">
+              {{
+                knowflowQueueStuck
+                  ? t("admin.monitor.knowflowQueueStuckDetail", {
+                      pending: metrics.knowflow_queue.pending_tasks || 0,
+                      lag: metrics.knowflow_queue.queue_lag || 0,
+                    })
+                  : metrics.knowflow_queue.watchdog_enabled
+                    ? t("admin.monitor.knowflowWatchdogHint", {
+                        minutes: metrics.knowflow_queue.watchdog_stuck_minutes || 10,
+                      })
+                    : t("admin.monitor.knowflowQueueHealthyHint")
+              }}
+            </p>
+            <div v-if="knowflowQueueStuck" class="knowflow-queue-status__detail">
+              <n-tag
+                size="small"
+                :type="metrics.knowflow_queue.executor_active ? 'success' : 'warning'"
+                :bordered="false"
+              >
                 {{
-                  t("admin.monitor.knowflowQueueLag", {
-                    lag: metrics.knowflow_queue.queue_lag || 0,
-                  })
+                  metrics.knowflow_queue.executor_active
+                    ? t("admin.monitor.knowflowExecutorActive")
+                    : t("admin.monitor.knowflowExecutorIdle")
                 }}
-              </div>
-            </n-gi>
-            <n-gi span="4 m:2 l:1">
-              <n-statistic :label="t('admin.monitor.knowflowParsingDocs')">
-                <template #default>
-                  {{ formatNumber(metrics.knowflow_queue.parsing_documents) }}
-                </template>
-              </n-statistic>
-              <div class="metric-hint">
-                <n-tag
-                  size="small"
-                  :type="metrics.knowflow_queue.executor_active ? 'success' : 'warning'"
-                  :bordered="false"
-                >
-                  {{
-                    metrics.knowflow_queue.executor_active
-                      ? t("admin.monitor.knowflowExecutorActive")
-                      : t("admin.monitor.knowflowExecutorIdle")
-                  }}
-                </n-tag>
-                <span
-                  v-if="
-                    !metrics.knowflow_queue.executor_active &&
-                    ((metrics.knowflow_queue.pending_tasks || 0) > 0 ||
-                      (metrics.knowflow_queue.queue_lag || 0) > 0)
-                  "
-                  class="metric-hint metric-hint--inline"
-                >
-                  {{ t("admin.monitor.knowflowExecutorStuckHint") }}
-                </span>
-              </div>
-            </n-gi>
-            <n-gi span="4 m:2 l:1">
-              <n-statistic :label="t('admin.monitor.knowflowDuplicateDocs')">
-                <template #default>
-                  {{ formatNumber(metrics.knowflow_queue.duplicate_documents_extra) }}
-                </template>
-              </n-statistic>
-              <div class="metric-hint">
-                {{
-                  t("admin.monitor.knowflowDuplicateGroups", {
-                    count: metrics.knowflow_queue.duplicate_document_groups || 0,
-                  })
-                }}
-              </div>
-            </n-gi>
-            <n-gi span="4 m:2 l:1">
-              <n-statistic :label="t('admin.monitor.knowflowFailedTasks')">
-                <template #default>
-                  {{ formatNumber(metrics.knowflow_queue.failed_tasks) }}
-                </template>
-              </n-statistic>
-              <div v-if="metrics.knowflow_queue.error" class="metric-hint metric-hint--warn">
-                {{ formatQueueError(metrics.knowflow_queue.error) }}
-              </div>
-            </n-gi>
-          </n-grid>
+              </n-tag>
+            </div>
+          </div>
           <ul
-            v-if="(metrics.knowflow_queue.top_backlog_documents || []).length"
+            v-if="
+              knowflowQueueStuck &&
+              (metrics.knowflow_queue.top_backlog_documents || []).length
+            "
             class="knowflow-backlog-list"
           >
             <li
@@ -436,35 +460,52 @@ onMounted(() => {
         </div>
         <div class="gpu-section">
           <div class="section-title">{{ t("admin.monitor.gpuSection") }}</div>
-          <n-data-table
-            v-if="gpuRows.length"
-            :columns="gpuColumns"
-            :data="gpuRows"
-            :bordered="false"
-            size="small"
-            :pagination="{ pageSize: LIST_PAGE_SIZE }"
-          />
+          <div v-if="gpuRows.length" class="admin-list-table">
+            <n-data-table
+              :columns="gpuColumns"
+              :data="gpuPagedItems"
+              :bordered="false"
+              size="small"
+              :pagination="false"
+            />
+            <ListTableFooter
+              :page="gpuPage"
+              :page-size="gpuPageSize"
+              :item-count="gpuTotal"
+              @update:page="onGpuPageChange"
+            />
+          </div>
           <n-empty v-else :description="t('admin.monitor.noGpu')" size="small" />
         </div>
       </template>
       <n-empty v-else :description="t('admin.monitor.loadingMetrics')" size="small" />
     </n-card>
 
-    <n-card class="monitor-section monitor-section--logs" :bordered="false">
-      <template #header-extra>
-        <n-button quaternary size="small" :loading="loadingLogs" @click="loadLogs">
-          {{ t("admin.monitor.refreshLogs") }}
-        </n-button>
-      </template>
-      <n-data-table
-        :columns="logColumns"
-        :data="logs"
-        :loading="loadingLogs"
-        :scroll-x="640"
-        size="small"
-        :pagination="{ pageSize: LIST_PAGE_SIZE }"
+    <div class="admin-list-table">
+      <n-card class="monitor-section monitor-section--logs" :bordered="false">
+        <template #header-extra>
+          <ListRefreshButton
+            :label="t('admin.monitor.refreshLogs')"
+            :loading="loadingLogs"
+            @click="loadLogs"
+          />
+        </template>
+        <n-data-table
+          :columns="logColumns"
+          :data="logsPagedItems"
+          :loading="loadingLogs"
+          :scroll-x="640"
+          size="small"
+          :pagination="false"
+        />
+      </n-card>
+      <ListTableFooter
+        :page="logsPage"
+        :page-size="logsPageSize"
+        :item-count="logsTotal"
+        @update:page="onLogsPageChange"
       />
-    </n-card>
+    </div>
   </div>
 </template>
 
@@ -553,6 +594,13 @@ onMounted(() => {
   line-height: 1.35;
 }
 
+.overview-card__names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
 .metric-hint {
   font-size: 12px;
   color: var(--n-text-color-3);
@@ -581,6 +629,23 @@ onMounted(() => {
   list-style: none;
   font-size: 12px;
   color: var(--n-text-color-2);
+}
+
+.knowflow-queue-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.knowflow-queue-status__hint {
+  margin: 0;
+}
+
+.knowflow-queue-status__detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .knowflow-backlog-list li {

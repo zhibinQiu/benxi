@@ -45,7 +45,7 @@ def _find_ref_by_hint(snapshot: dict[str, Any], hint: dict[str, Any]) -> str | N
     return None
 
 
-def replay_workflow_steps(
+async def replay_workflow_steps(
     mgr: BrowserSessionManager,
     state: BrowserSessionState,
     steps: list[dict[str, Any]],
@@ -62,24 +62,24 @@ def replay_workflow_steps(
         action = str(step.get("action") or "").strip()
         if action == "navigate":
             url = apply_params(str(step.get("url") or ""), params)
-            result = mgr.navigate(state, url, allowed_domains=allowed_domains)
+            result = await mgr.navigate(state, url, allowed_domains=allowed_domains)
             logs.append(f"#{idx + 1} navigate → {result.get('title')}")
             continue
 
-        snapshot = mgr.snapshot(state)
+        snapshot = await mgr.snapshot(state)
 
         if action == "click":
             ref = str(step.get("ref") or "")
             if not state.ref_map.get(ref):
                 ref = _find_ref_by_hint(snapshot, step) or ref
-            mgr.click(state, ref)
+            await mgr.click(state, ref)
             logs.append(f"#{idx + 1} click {ref}")
         elif action == "type":
             ref = str(step.get("ref") or "")
             if not state.ref_map.get(ref):
                 ref = _find_ref_by_hint(snapshot, step) or ref
             text = apply_params(str(step.get("text") or ""), params)
-            mgr.type_text(
+            await mgr.type_text(
                 state,
                 ref,
                 text,
@@ -100,10 +100,10 @@ def replay_workflow_steps(
                         "value": apply_params(str(item.get("value") or ""), params),
                     }
                 )
-            mgr.fill_fields(state, fields)
+            await mgr.fill_fields(state, fields)
             logs.append(f"#{idx + 1} fill x{len(fields)}")
         elif action == "screenshot":
-            last_shot, _, _ = mgr.screenshot_png(
+            last_shot, _, _ = await mgr.screenshot_png(
                 state,
                 full_page=bool(step.get("full_page")),
                 max_kb=screenshot_max_kb,
@@ -112,9 +112,14 @@ def replay_workflow_steps(
         else:
             logs.append(f"#{idx + 1} skip unknown action: {action}")
 
+    title = ""
+    url = ""
+    if state.page:
+        title = await state.page.title()
+        url = state.page.url
     return {
-        "url": state.page.url if state.page else "",
-        "title": state.page.title() if state.page else "",
+        "url": url,
+        "title": title,
         "logs": logs,
         "screenshot_png": last_shot,
     }

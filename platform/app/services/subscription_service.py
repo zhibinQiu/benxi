@@ -34,7 +34,6 @@ from app.models.wechat_mp import (
     WechatMpSource,
     WechatMpSourceSubscription,
 )
-from app.services import feed_subscription_service as feed_svc
 from app.services import subscription_summary_service as summary_svc
 from app.services import wechat_mp_service as wechat_svc
 
@@ -42,6 +41,188 @@ REF_WECHAT = "w"
 REF_FEED = "f"
 
 logger = logging.getLogger(__name__)
+
+
+def _user_feed_source_ids(db: Session, user: User) -> list[uuid.UUID]:
+    return list(
+        db.scalars(
+            select(FeedSourceSubscription.source_id).where(
+                FeedSourceSubscription.user_id == user.id
+            )
+        ).all()
+    )
+
+
+def _get_feed_entry_detail(db: Session, user: User, entry_id: uuid.UUID) -> dict:
+    row = db.execute(
+        select(FeedEntry, FeedSource)
+        .join(FeedSource, FeedSource.id == FeedEntry.source_id)
+        .where(FeedEntry.id == entry_id)
+    ).first()
+    if not row:
+        raise not_found("条目不存在")
+    entry, source = row
+    if source.id not in _user_feed_source_ids(db, user):
+        raise not_found("条目不存在")
+    imp = db.scalar(
+        select(FeedEntryImport).where(
+            FeedEntryImport.user_id == user.id,
+            FeedEntryImport.entry_id == entry.id,
+        )
+    )
+    return {
+        "id": entry.id,
+        "source_id": source.id,
+        "source_name": source.name,
+        "source_kind": source.kind,
+        "title": entry.title,
+        "summary": entry.summary,
+        "link": entry.link,
+        "publish_at": entry.publish_at,
+        "fetched_at": entry.fetched_at,
+        "imported": imp is not None,
+        "document_id": imp.document_id if imp else None,
+        "content_html": entry.content_html,
+    }
+
+
+def _import_feed_entry_to_document(
+    db: Session,
+    user: User,
+    entry_id: uuid.UUID,
+    *,
+    sync_knowflow: bool = True,
+) -> dict:
+    from app.services.document_service import (
+        create_document,
+        create_initial_uploaded_version,
+    )
+    from app.services.library_folder_service import (
+        assign_document_to_web_favorites_folder,
+        resolve_web_favorites_folder_id_for_user,
+    )
+    from app.services.subscription_import_service import (
+        enqueue_subscription_import_finalize,
+    )
+
+    scope = content_subscription_import_scope()
+    detail = _get_feed_entry_detail(db, user, entry_id)
+    existing = db.scalar(
+        select(FeedEntryImport).where(
+            FeedEntryImport.user_id == user.id,
+            FeedEntryImport.entry_id == entry_id,
+        )
+    )
+    if existing:
+        assign_document_to_web_favorites_folder(db, user, existing.document_id)
+        synced = False
+        if sync_knowflow:
+            synced = _try_sync_knowflow(db, user, existing.document_id)
+        return {
+            "document_id": existing.document_id,
+            "knowflow_synced": synced,
+            "queued": False,
+        }
+
+    entry = db.get(FeedEntry, entry_id)
+    if not entry:
+        raise not_found("条目不存在")
+
+    desc = (
+        f"来源：{detail['source_name']}（{detail['source_kind']}）\n"
+        f"链接：{detail['link']}"
+    )
+    doc = create_document(
+        db,
+        user,
+        title=detail["title"][:500],
+        description=desc,
+        scope=scope,
+        dept_id=None,
+        folder_id=resolve_web_favorites_folder_id_for_user(db, user),
+    )
+    from app.integrations.html_document_export import (
+        html_body_to_pdf_bytes,
+        resolve_article_html_body,
+    )
+
+    link = detail.get("link") or entry.link or ""
+    source_label = f"{detail['source_name']}（{detail['source_kind']}）"
+    html_body, summary_text = resolve_article_html_body(
+        entry.content_html or "",
+        summary=entry.summary or "",
+        link=link,
+        allow_refetch=True,
+    )
+    if html_body and html_body != (entry.content_html or ""):
+        entry.content_html = html_body
+    if summary_text and summary_text != (entry.summary or ""):
+        entry.summary = summary_text
+
+    file_name, content, mime_type = html_body_to_pdf_bytes(
+        doc.title,
+        html_body or f"<p>{entry.summary}</p>",
+        summary=summary_text or entry.summary or "",
+        link=link,
+        source_label=source_label,
+        fallback_stem="subscription-article",
+        allow_refetch=False,
+    )
+
+    create_initial_uploaded_version(
+        db,
+        doc,
+        user,
+        file_name=file_name,
+        mime_type=mime_type,
+        content=content,
+        schedule_post_upload=False,
+    )
+    db.refresh(doc)
+
+    db.add(FeedEntryImport(entry_id=entry_id, user_id=user.id, document_id=doc.id))
+    db.flush()
+
+    job = enqueue_subscription_import_finalize(
+        db,
+        user,
+        doc.id,
+        sync_knowflow=sync_knowflow,
+        source="feed_entry",
+        source_id=entry_id,
+        title=doc.title,
+        link=link,
+        source_label=source_label,
+        html_body=html_body or f"<p>{entry.summary}</p>",
+        summary=summary_text or entry.summary or "",
+        fallback_stem="subscription-article",
+    )
+    from app.core.platform_cache import invalidate_document_caches
+
+    invalidate_document_caches(str(user.id))
+    return {
+        "document_id": doc.id,
+        "knowflow_synced": False,
+        "queued": True,
+        "job_id": job.id,
+    }
+
+
+def _try_sync_knowflow(db: Session, user: User, document_id: uuid.UUID) -> bool:
+    from app.domains.knowledge.gateway import knowledge
+    from app.models.document import Document
+    from app.services.document_service import resolve_current_version
+
+    if not knowledge.enabled():
+        return False
+    doc = db.get(Document, document_id)
+    if not doc:
+        return False
+    db.refresh(doc)
+    if not resolve_current_version(db, doc):
+        return False
+    knowledge.enqueue_sync_after_ingest(document_id, user.id)
+    return True
 
 
 def make_ref(prefix: str, item_id: uuid.UUID) -> str:
@@ -155,12 +336,12 @@ def _clear_link_removed(db: Session, user: User, url: str) -> None:
 
 
 def _purge_user_items_for_link(db: Session, user: User, url: str) -> None:
-    """删除用户收藏中同一链接的全部条目（跨 RSS / 手动收录 / 公众号源）。"""
+    """删除用户收藏中同一链接的全部条目（跨手动收录 / 公众号源）。"""
     key = subscription_link_key(url)
     if not key:
         return
 
-    feed_source_ids = feed_svc._user_source_ids(db, user)
+    feed_source_ids = _user_feed_source_ids(db, user)
     if feed_source_ids:
         entries = list(
             db.scalars(
@@ -230,7 +411,7 @@ def _resolve_item_link(db: Session, user: User, ref: str) -> str:
     if not row:
         raise not_found("条目不存在")
     entry, source = row
-    if source.id not in feed_svc._user_source_ids(db, user):
+    if source.id not in _user_feed_source_ids(db, user):
         raise not_found("条目不存在")
     return entry.link or ""
 
@@ -431,10 +612,16 @@ def list_items(
                 )
             )
 
-    feed_rows = feed_svc.list_user_sources(db, user, kind=None)
-    feed_source_ids = [r["id"] for r in feed_rows]
+    feed_source_ids = _user_feed_source_ids(db, user)
     if feed_source_ids:
-        q = select(FeedEntry).where(FeedEntry.source_id.in_(feed_source_ids))
+        q = (
+            select(FeedEntry)
+            .join(FeedSource, FeedSource.id == FeedEntry.source_id)
+            .where(
+                FeedEntry.source_id.in_(feed_source_ids),
+                FeedSource.kind == SOURCE_KIND_LINK,
+            )
+        )
         for clause in _keyword_clause(
             keyword,
             FeedEntry.title,
@@ -510,7 +697,7 @@ def get_item_detail(db: Session, user: User, ref: str) -> dict:
             "author": data.get("author") or "",
         }
 
-    data = feed_svc.get_entry_detail(db, user, item_id)
+    data = _get_feed_entry_detail(db, user, item_id)
     content_html = data.get("content_html") or ""
     return {
         **_normalize_item(
@@ -538,22 +725,19 @@ def import_item_to_document(
     sync_knowflow: bool = True,
 ) -> dict:
     origin, item_id = parse_ref(ref)
-    scope = content_subscription_import_scope()
     if origin == "wechat":
         return wechat_svc.import_article_to_document(
             db,
             user,
             item_id,
-            scope=scope,
+            scope=content_subscription_import_scope(),
             dept_id=None,
             sync_knowflow=sync_knowflow,
         )
-    return feed_svc.import_entry_to_document(
+    return _import_feed_entry_to_document(
         db,
         user,
         item_id,
-        scope=scope,
-        dept_id=None,
         sync_knowflow=sync_knowflow,
     )
 

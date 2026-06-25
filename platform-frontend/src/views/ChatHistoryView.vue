@@ -12,7 +12,6 @@ import {
 import { ArrowBackOutline, ChatbubblesOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import {
-  clearChatConversations,
   deleteChatConversation,
   fetchChatConversations } from "../api/client";
 import { CHAT_SCOPES } from "../constants/chatScopes";
@@ -20,6 +19,7 @@ import { useI18n } from "../composables/useI18n.js";
 import { resolveReturnTarget } from "../utils/navigationReturn";
 import { deleteSequentially } from "../utils/batchActions";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
+import ListTableFooter from "../components/ListTableFooter.vue";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const route = useRoute();
@@ -33,20 +33,19 @@ const scope = computed(() => String(route.params.scope || ""));
 const pageTitle = computed(() => chatScopeTitle(scope.value));
 
 const loading = ref(false);
-const clearing = ref(false);
 const batchDeleting = ref(false);
 const items = ref([]);
 const selectedIds = ref([]);
 const page = ref(1);
 
-const pageCount = computed(() =>
-  Math.max(1, Math.ceil(items.value.length / LIST_PAGE_SIZE))
-);
-
 const pagedItems = computed(() => {
   const start = (page.value - 1) * LIST_PAGE_SIZE;
   return items.value.slice(start, start + LIST_PAGE_SIZE);
 });
+
+function onPageChange(next) {
+  page.value = next;
+}
 
 const backTarget = computed(() => {
   const fromReturn = resolveReturnTarget(route);
@@ -57,7 +56,6 @@ const backTarget = computed(() => {
   return { path: route.query.from || "/" };
 });
 
-const canClear = computed(() => !loading.value && items.value.length > 0);
 const selectedCount = computed(() => selectedIds.value.length);
 const canBatchDelete = computed(() => selectedCount.value > 0 && !batchDeleting.value);
 
@@ -155,25 +153,6 @@ function handleBatchDelete() {
     }});
 }
 
-function onClearAll() {
-  ui.confirmDelete({
-    title: t("chatHistory.clearAllTitle"),
-    content: t("chatHistory.clearAllContent"),
-    positiveText: t("chatHistory.permanentlyDelete"),
-    onPositive: async () => {
-      clearing.value = true;
-      try {
-        const res = await clearChatConversations(scope.value);
-        items.value = [];
-        selectedIds.value = [];
-        const n = res?.deleted ?? 0;
-        ui.success(n > 0 ? t("chatHistory.clearAllSuccess", { count: n }) : t("chatHistory.cleared"));
-      } finally {
-        clearing.value = false;
-      }
-    }});
-}
-
 function formatTime(value) {
   if (!value) return "";
   const d = new Date(value);
@@ -218,13 +197,6 @@ watch(scope, loadList);
           :disabled="!canBatchDelete"
           @click="handleBatchDelete"
         />
-        <IconAction
-          v-if="canClear"
-          :label="t('chatHistory.clearAll')"
-          :icon="TrashOutline"
-          type="error"
-          @click="onClearAll"
-        />
       </n-space>
     </header>
 
@@ -236,29 +208,32 @@ watch(scope, loadList);
       <div v-if="!loading && !items.length" class="chat-history-empty">
         <n-empty :description="t('chatHistory.empty')" />
       </div>
-      <ul v-else class="chat-history-list">
-        <li v-for="item in pagedItems" :key="item.id" class="chat-history-row">
-          <n-checkbox
-            :checked="isSelected(item.id)"
-            class="chat-history-select"
-            @update:checked="(v) => toggleSelected(item.id, v)"
-            @click.stop
-          />
-          <button type="button" class="chat-history-item" @click="openConversation(item)">
-            <span class="chat-history-item-icon" aria-hidden="true">
-              <n-icon :size="18" :component="ChatbubblesOutline" />
-            </span>
-            <span class="chat-history-item-body">
-              <span class="chat-history-item-title">{{ item.title || t("chatHistory.unnamedConversation") }}</span>
-              <span class="chat-history-item-time">{{ formatTime(item.updated_at) }}</span>
-            </span>
-          </button>
-        </li>
-      </ul>
-      <div v-if="items.length > LIST_PAGE_SIZE" class="chat-history-pagination">
-        <n-button size="small" :disabled="page <= 1" @click="page--">{{ t("common.prevPage") }}</n-button>
-        <n-text depth="3">{{ page }} / {{ pageCount }}</n-text>
-        <n-button size="small" :disabled="page >= pageCount" @click="page++">{{ t("common.nextPage") }}</n-button>
+      <div v-else class="admin-list-table">
+        <ul class="chat-history-list">
+          <li v-for="item in pagedItems" :key="item.id" class="chat-history-row">
+            <n-checkbox
+              :checked="isSelected(item.id)"
+              class="chat-history-select"
+              @update:checked="(v) => toggleSelected(item.id, v)"
+              @click.stop
+            />
+            <button type="button" class="chat-history-item" @click="openConversation(item)">
+              <span class="chat-history-item-icon" aria-hidden="true">
+                <n-icon :size="18" :component="ChatbubblesOutline" />
+              </span>
+              <span class="chat-history-item-body">
+                <span class="chat-history-item-title">{{ item.title || t("chatHistory.unnamedConversation") }}</span>
+                <span class="chat-history-item-time">{{ formatTime(item.updated_at) }}</span>
+              </span>
+            </button>
+          </li>
+        </ul>
+        <ListTableFooter
+          :page="page"
+          :page-size="LIST_PAGE_SIZE"
+          :item-count="items.length"
+          @update:page="onPageChange"
+        />
       </div>
     </n-spin>
   </div>
@@ -312,13 +287,23 @@ watch(scope, loadList);
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  border-radius: var(--platform-radius);
+  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-elevated));
+  border: 1px solid var(--platform-ui-glass-border, var(--platform-border));
+  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
+  overflow: hidden;
 }
 
 .chat-history-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 0 8px;
+}
+
+.chat-history-row:not(:last-child) .chat-history-item {
+  border-bottom: 1px solid color-mix(in srgb, var(--platform-divider) 72%, transparent);
 }
 
 .chat-history-select {
@@ -329,32 +314,29 @@ watch(scope, loadList);
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 12px;
-  background: #fff;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   cursor: pointer;
   text-align: left;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 .chat-history-item:hover {
-  border-color: var(--platform-accent-border);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--platform-accent) 8%, transparent);
+  background: var(--platform-toolbar-bg);
 }
 
 .chat-history-item-icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--platform-accent);
   background: var(--platform-accent-soft);
 }
@@ -364,13 +346,13 @@ watch(scope, loadList);
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .chat-history-item-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: #0f172a;
+  color: var(--platform-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -378,14 +360,6 @@ watch(scope, loadList);
 
 .chat-history-item-time {
   font-size: 12px;
-  color: #94a3b8;
-}
-
-.chat-history-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 16px;
+  color: var(--platform-text-tertiary);
 }
 </style>

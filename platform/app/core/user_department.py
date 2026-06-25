@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
 from app.models.org import UserDepartment
+from app.services import department_service
 
 SINGLE_DEPARTMENT_MESSAGE = "每个用户只能归属一个部门"
 
@@ -55,6 +56,7 @@ def set_user_departments(
     ids = validate_department_id_list(department_ids)
     db.query(UserDepartment).filter(UserDepartment.user_id == user_id).delete()
     if ids:
+        department_service.assert_department_exists(db, ids[0])
         db.add(
             UserDepartment(
                 user_id=user_id,

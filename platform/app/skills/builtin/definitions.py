@@ -38,7 +38,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="web-search",
             title="联网搜索",
-            description="搜索互联网实时信息、政策动态、市场行情与公开数据。用户问最新资讯、价格、新闻或明确要求联网时使用。",
+            description="用户问最新资讯、价格、新闻或明确要求联网时使用。",
             source=SkillSource.BUILTIN,
             feature_id="ai_home",
             permission_code=None,
@@ -69,7 +69,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="knowledge-search",
             title="知识库检索",
-            description="从用户权限内的企业文档库检索片段，回答内部资料、制度、报告、项目文档等问题。",
+            description="用户问企业内部资料、制度、报告或项目文档，且需从权限内文档库检索时使用。",
             source=SkillSource.BUILTIN,
             feature_id="knowledge_search",
             permission_code="feature.knowledge_search",
@@ -101,7 +101,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="kg-palantir",
             title="本体图谱",
-            description="查询企业知识图谱中的实体、关系与子图，适合概念关联、产业链、组织关系等问题。",
+            description="用户问实体关联、产业链、组织关系或需从本体图谱查概念时使用。",
             source=SkillSource.BUILTIN,
             feature_id="kg_palantir",
             permission_code="feature.kg_palantir",
@@ -128,8 +128,8 @@ def register_builtin_skills() -> None:
             name="knowledge-research",
             title="知识综合检索",
             description=(
-                "面向知识问答与资料检索：按需组合权限内文档检索、本体图谱与联网搜索，"
-                "一次任务内合并上下文；闲聊或无需外部资料时可不调用。"
+                "用户问题需同时或按需组合文档检索、本体图谱与联网搜索，"
+                "且非简单闲聊时使用；纯寒暄或无需外部资料时可不调用。"
             ),
             source=SkillSource.BUILTIN,
             feature_id="ai_home",
@@ -142,7 +142,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="pdf-translate",
             title="PDF 翻译",
-            description="提交 PDF 双语翻译任务，保留版式，支持术语表。用户提供 PDF 或要求翻译文档时使用。",
+            description="用户提供 PDF 或明确要求翻译/双语版文档时使用。",
             source=SkillSource.BUILTIN,
             feature_id="pdf_translate",
             permission_code="feature.translate",
@@ -165,7 +165,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="speech-to-text",
             title="会议助手",
-            description="会议录音转写、说话人区分与智能总结。用户上传音频或提及会议记录时使用。",
+            description="用户上传音频、提及会议记录或要求转写总结时使用。",
             source=SkillSource.BUILTIN,
             feature_id="speech_to_text",
             permission_code="feature.speech_to_text",
@@ -184,7 +184,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="text-to-speech",
             title="语音合成",
-            description="将文本合成为语音，适合播报、无障碍朗读场景。",
+            description="用户要求朗读、播报或生成语音时使用。",
             source=SkillSource.BUILTIN,
             feature_id="text_to_speech",
             permission_code="feature.text_to_speech",
@@ -202,7 +202,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="ocr",
             title="文件内容提取",
-            description="从图片或 PDF 中提取文字与结构化内容。",
+            description="用户上传图片/PDF 并要求提取文字或结构化内容时使用。",
             source=SkillSource.BUILTIN,
             feature_id="ocr",
             permission_code="feature.ocr",
@@ -220,7 +220,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="document-compare",
             title="文档对比",
-            description="对比两个文档版本的差异，支持 PDF/Word。",
+            description="用户要对比两个文档版本差异时使用。",
             source=SkillSource.BUILTIN,
             feature_id="compare",
             permission_code="feature.compare",
@@ -238,7 +238,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="report-generation",
             title="报告生成",
-            description="基于知识库多路召回，按章节扩写生成长报告，可导出思维导图。",
+            description="用户要求生成长篇研究报告、章节扩写或导出思维导图时使用。",
             source=SkillSource.BUILTIN,
             feature_id="report_generation",
             permission_code="feature.report_generation",
@@ -256,7 +256,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="data-analysis",
             title="数据分析",
-            description="上传 Excel/CSV，对话生成 pandas 统计与可视化代码。",
+            description="用户上传 Excel/CSV 并要求统计分析或可视化时使用。",
             source=SkillSource.BUILTIN,
             feature_id="data_analysis",
             permission_code="feature.data_analysis",
@@ -274,7 +274,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="assist-writing",
             title="辅助写作",
-            description="润色、扩写、改写与结构化写作辅助。",
+            description="用户要求润色、扩写、改写或结构化写作时使用。",
             source=SkillSource.BUILTIN,
             feature_id="assist_writing",
             permission_code="feature.assist_writing",
@@ -292,7 +292,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="smart-data-query",
             title="智能问数",
-            description="对结构化业务数据自然语言问数与图表分析。",
+            description="用户用自然语言查询业务数据库或要看统计图表时使用。",
             source=SkillSource.BUILTIN,
             feature_id="smart_data_query",
             permission_code="feature.smart_data_query",
@@ -310,7 +310,7 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="carbon-qa",
             title="双碳问答",
-            description="双碳政策、碳市场与减排领域专业问答。",
+            description="用户询问双碳政策、碳市场或减排相关问题时使用。",
             source=SkillSource.BUILTIN,
             feature_id="carbon_qa",
             permission_code="feature.carbon_qa",

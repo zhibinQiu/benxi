@@ -1,8 +1,10 @@
 import { api, fetchWithTimeout, getApiBase, getToken } from "./http.js";
+import { downloadBlob } from "../utils/downloadBlob.js";
 
-export async function fetchAgentSkillRegistry({ includeDisabled = true } = {}) {
+export async function fetchAgentSkillRegistry({ includeDisabled = true, catalogOnly = true } = {}) {
   const params = new URLSearchParams();
   if (!includeDisabled) params.set("include_disabled", "false");
+  if (!catalogOnly) params.set("catalog_only", "false");
   const qs = params.toString();
   return api(`/api/v1/admin/agent-skills/registry${qs ? `?${qs}` : ""}`);
 }
@@ -62,11 +64,7 @@ export async function downloadAgentSkillZip(skillId, filename = "skill.zip") {
     throw new Error(json?.message || res.statusText || "下载失败");
   }
   const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadBlob(blob, filename);
 }
 
 export async function uploadAgentSkillZip(file, { replaceExisting = true } = {}) {
@@ -140,4 +138,39 @@ export async function clearAgentMemory() {
 
 export async function deleteAgentSkill(skillId) {
   return api(`/api/v1/admin/agent-skills/${skillId}`, { method: "DELETE" });
+}
+
+export async function fetchAgentProfiles() {
+  return api("/api/v1/admin/agent-skills/agents");
+}
+
+export async function fetchAgentProfile(agentId) {
+  return api(`/api/v1/admin/agent-skills/agents/${encodeURIComponent(agentId)}`);
+}
+
+export async function fetchAgentProfileFile(agentId, filePath) {
+  const encoded = filePath.split("/").map(encodeURIComponent).join("/");
+  return api(
+    `/api/v1/admin/agent-skills/agents/${encodeURIComponent(agentId)}/files/${encoded}`
+  );
+}
+
+export async function updateAgentProfileFile(agentId, filePath, content) {
+  const encoded = filePath.split("/").map(encodeURIComponent).join("/");
+  return api(
+    `/api/v1/admin/agent-skills/agents/${encodeURIComponent(agentId)}/files/${encoded}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    }
+  );
+}
+
+export async function patchAgentProfile(agentId, payload) {
+  return api(`/api/v1/admin/agent-skills/agents/${encodeURIComponent(agentId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }

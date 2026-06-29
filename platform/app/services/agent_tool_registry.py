@@ -20,6 +20,7 @@ from app.services.agent_tools import (
     _PLATFORM_TOOL_SPECS,
     _RUN_SKILL_SCRIPT_SPEC,
 )
+from app.services.agent_tool_search import RUN_TOOL_BATCH_SPEC, SEARCH_TOOLS_SPEC
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
@@ -47,9 +48,13 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "create_uploaded_skill": ToolCategory.SKILL_MGMT,
     "update_uploaded_skill_file": ToolCategory.SKILL_MGMT,
     "delete_uploaded_skill": ToolCategory.SKILL_MGMT,
+    "list_agent_skills": ToolCategory.SKILL_MGMT,
     "run_skill_script": ToolCategory.SKILL_MGMT,
+    "search_tools": ToolCategory.PLATFORM,
+    "run_tool_batch": ToolCategory.PLATFORM,
     "read_agent_memory": ToolCategory.MEMORY,
     "append_agent_memory": ToolCategory.MEMORY,
+    "search_documents_by_name": ToolCategory.DOCUMENT,
     "list_library_documents": ToolCategory.DOCUMENT,
     "list_manageable_documents": ToolCategory.DOCUMENT,
     "list_document_folders": ToolCategory.DOCUMENT,
@@ -97,6 +102,8 @@ def _all_tool_specs() -> list[dict[str, Any]]:
     """管理页展示完整原子工具清单（含运行时按开关隐藏的项）。"""
     return [
         *_ATOMIC_RETRIEVAL_TOOL_SPECS,
+        SEARCH_TOOLS_SPEC,
+        RUN_TOOL_BATCH_SPEC,
         *AGENT_TOOL_SPECS,
         _RUN_SKILL_SCRIPT_SPEC,
         *_DOCUMENT_TOOL_SPECS,

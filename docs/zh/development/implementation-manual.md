@@ -190,7 +190,7 @@ pdf_trans/
 | `RAGFLOW_API_URL` / `KNOWFLOW_BACKEND_URL` | RAGFlow UI/API 与 KnowFlow 扩展 API |
 | `RAGFLOW_ACCOUNT_MODE` | `mapped`（推荐）/ `shared` |
 | `RAGFLOW_SYNC_ON_LOGIN` / `RAGFLOW_SYNC_ON_EMBED` | 同步时机 |
-| `DEEPSEEK_*` | 摘要、会议总结、辅助写作 |
+| `DEEPSEEK_*` | 摘要、会议总结 |
 | `SPEECH_SERVICE_URL` | 语音转写 |
 
 ---

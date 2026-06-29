@@ -18,6 +18,8 @@ import RichMediaViewerModal from "./RichMediaViewerModal.vue";
 const props = defineProps({
   content: { type: String, default: "" },
   citations: { type: Array, default: () => [] },
+  /** 流式输出期间仅更新 Markdown 文本，结束后再挂载 Mermaid / ECharts */
+  deferRichMedia: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["open-citation"]);
@@ -77,7 +79,7 @@ function onClick(event) {
 }
 
 async function refreshRichMedia() {
-  if (!domActive.value) return;
+  if (!domActive.value || props.deferRichMedia) return;
   const gen = ++refreshGeneration;
   const root = rootRef.value;
   if (root) {
@@ -116,15 +118,25 @@ function releaseDom() {
 }
 
 watch(() => props.content, scheduleRefresh);
+watch(
+  () => props.deferRichMedia,
+  (defer, wasDefer) => {
+    if (wasDefer && !defer) scheduleRefresh();
+  }
+);
 
 onMounted(() => {
   bindEchartsResize();
-  void refreshRichMedia();
+  if (!props.deferRichMedia) {
+    void refreshRichMedia();
+  }
 });
 
 onActivated(() => {
   domActive.value = true;
-  void refreshRichMedia();
+  if (!props.deferRichMedia) {
+    void refreshRichMedia();
+  }
 });
 
 onDeactivated(releaseDom);

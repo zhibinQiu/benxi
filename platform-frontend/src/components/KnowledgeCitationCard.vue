@@ -4,8 +4,10 @@ import { NSpin, NTag, NText } from "naive-ui";
 import {
   citationCanPreviewImage,
   citationPageLabel,
+  citationPreviewCacheKey,
   fetchKnowledgeCitationPreviewBlob,
   formatCitationSnippet,
+  isCitationPreviewUnavailableError,
 } from "../utils/knowledgeCitation.js";
 import { formatDocumentFormatLabel } from "../constants/documentUpload.js";
 import { useI18n } from "../composables/useI18n.js";
@@ -24,6 +26,9 @@ const router = useRouter();
 const imageLoading = ref(false);
 const imageError = ref("");
 const imageObjectUrl = ref("");
+const previewUnsupported = ref(false);
+let loadSeq = 0;
+let loadAbort = null;
 
 const pageLabel = computed(() => citationPageLabel(props.citation, t));
 
@@ -46,6 +51,7 @@ const snippetHtml = computed(() =>
 );
 
 const canPreviewImage = computed(() => citationCanPreviewImage(props.citation));
+const showPreviewImage = computed(() => canPreviewImage.value && !previewUnsupported.value);
 
 const textOnlyHint = computed(() => {
   if (props.citation?.source === "pageindex") {
@@ -69,38 +75,56 @@ function cleanupImage() {
   }
   imageLoading.value = false;
   imageError.value = "";
+  previewUnsupported.value = false;
 }
 
 async function loadImage(citation) {
+  loadAbort?.abort();
+  const ac = new AbortController();
+  loadAbort = ac;
+  const seq = ++loadSeq;
   cleanupImage();
   if (!citation || !citationCanPreviewImage(citation)) {
     return;
   }
   imageLoading.value = true;
   try {
-    const blob = await fetchKnowledgeCitationPreviewBlob(citation);
+    const blob = await fetchKnowledgeCitationPreviewBlob(citation, { signal: ac.signal });
+    if (seq !== loadSeq || ac.signal.aborted) return;
     imageObjectUrl.value = URL.createObjectURL(blob);
   } catch (e) {
+    if (ac.signal.aborted || seq !== loadSeq) return;
+    if (isCitationPreviewUnavailableError(e)) {
+      previewUnsupported.value = true;
+      imageError.value = "";
+      return;
+    }
     const fallback =
       props.citation?.source === "pageindex"
         ? t("knowledgeSearch.citations.loadFailedPageindex")
         : t("knowledgeSearch.citations.loadFailed");
     imageError.value = e?.message || fallback;
   } finally {
-    imageLoading.value = false;
+    if (seq === loadSeq) {
+      imageLoading.value = false;
+    }
   }
 }
 
 watch(
-  () => props.citation,
-  (citation) => {
-    if (citation) loadImage(citation);
+  () => citationPreviewCacheKey(props.citation),
+  (key) => {
+    if (key) loadImage(props.citation);
     else cleanupImage();
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 );
 
-onBeforeUnmount(cleanupImage);
+onBeforeUnmount(() => {
+  loadAbort?.abort();
+  loadAbort = null;
+  cleanupImage();
+});
 
 function openDocument() {
   const id = props.citation?.document_id;
@@ -150,11 +174,11 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
 
     <div v-if="snippetHtml" class="knowledge-citation-card__snippet" v-html="snippetHtml" />
 
-    <p v-if="!canPreviewImage && snippetHtml" class="knowledge-citation-card__text-only">
+    <p v-if="!showPreviewImage && snippetHtml" class="knowledge-citation-card__text-only">
       {{ textOnlyHint }}
     </p>
 
-    <div v-if="canPreviewImage" class="knowledge-citation-card__shot">
+    <div v-if="showPreviewImage" class="knowledge-citation-card__shot">
       <n-spin :show="imageLoading" local>
         <img
           v-if="imageObjectUrl"

@@ -11,6 +11,7 @@ from app.core.permissions import PermissionLevel
 from app.core.text_sanitize import sanitize_json_text
 from app.core.uuid_utils import parse_uuid_list
 from app.integrations.knowflow_client import get_knowflow_client_for_user
+from app.integrations.text_extract import ParsedDocument
 from app.models.org import User
 from app.models.rag import RagMessage, RagSession
 from app.services.compare_service import (
@@ -79,7 +80,33 @@ def create_session(
         required_level=PermissionLevel.query.value,
         allow_index_only=True,
     )
-    parsed = load_parsed_documents(db, docs)
+    from app.services.document_index_service import (
+        enrich_document_index_meta,
+        is_index_ready_meta,
+    )
+    from app.services.document_service import resolve_current_version
+
+    meta_by_doc = enrich_document_index_meta(
+        db, user, list(docs), live_ragflow=False
+    )
+    parsed: list = []
+    docs_needing_parse = []
+    for doc in docs:
+        if is_index_ready_meta(meta_by_doc.get(str(doc.id))):
+            version = resolve_current_version(db, doc)
+            parsed.append(
+                ParsedDocument(
+                    document_id=doc.id,
+                    file_name=(version.file_name if version else doc.title) or "",
+                    full_text="",
+                    parse_quality="indexed",
+                    warning=None,
+                )
+            )
+        else:
+            docs_needing_parse.append(doc)
+    if docs_needing_parse:
+        parsed.extend(load_parsed_documents(db, docs_needing_parse))
     ragflow_map = _sync_docs_to_knowflow(db, user, docs)
     session = RagSession(
         created_by=user.id,

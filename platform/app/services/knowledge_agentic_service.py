@@ -12,6 +12,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.agent_runtime import format_planning_datetime_block
 from app.core.llm_parse import parse_llm_json
 from app.core.workflow_events import (
     next_workflow_step_id,
@@ -153,6 +154,7 @@ def _plan_qa_sub_questions(
         f"sub_questions 数量 1～{max_q}，使用简体中文，不要重复原句。"
     )
     user_parts = [
+        format_planning_datetime_block(),
         f"用户问题：{question}",
         f"已选文档数：{document_count}",
     ]
@@ -540,6 +542,7 @@ def _plan_report_gathering(
     web_allowed: bool,
     kg_context: str,
     history_excerpt: str,
+    history: list[AiChatMessage] | None = None,
 ) -> tuple[list[str], list[str], str]:
     local_allowed = document_count > 0
     if not local_allowed and not web_allowed:
@@ -549,19 +552,23 @@ def _plan_report_gathering(
     max_local = max(2, min(int(settings.knowledge_agentic_report_max_sub_questions or 6), 8))
     system = (
         "你是研究报告材料检索规划助手。"
-        "用户可能已允许使用本地知识库和/或联网检索，但**允许不等于必须**——请根据意图与上下文**智能判断**是否需要检索。\n"
+        "用户已在界面勾选本地文档时，表示报告必须**限定在所选文档内**检索；"
+        "initial / follow_up 意图下 use_local 必须为 true，并给出覆盖主题的多条 local_queries。\n"
         "判断参考：\n"
         "- format_adjust（格式/结构调整）：对话中已有报告正文时，通常**无需**检索；\n"
-        "- follow_up（追问补充）：仅当需要**新的事实、数据或案例**时才检索；\n"
-        "- initial（新报告）：通常需要检索，但若主题宽泛且无本地文档、模型知识已足够，可跳过。\n"
+        "- follow_up（追问补充）：若用户已选文档，仍需在文档内检索以补充事实；\n"
+        "- initial（新报告）：本地查询宜覆盖背景、现状、政策、案例等多子主题；"
+        "联网查询可包含「最新动态/近期新闻/最新政策」等角度。\n"
         "仅返回 JSON："
         '{"reasoning":"策略说明","use_local":true|false,"local_queries":["..."],'
         '"use_web":true|false,"web_queries":["..."]}。\n'
-        f"约束：local_queries 0～{max_local} 条，web_queries 0～3 条；"
-        "决定不检索时 use_local/use_web 为 false 且对应 queries 为空数组；"
+        f"约束：local_queries 0～{max_local} 条，web_queries 0～4 条；"
+        "initial 意图下 web_queries 建议含最新新闻/政策类查询；"
+        "已选本地文档且 intent 非 format_adjust 时不得跳过 local_queries；"
         "use_local 仅当已选本地文档时可 true；use_web 仅当允许联网时可 true。"
     )
     user_parts = [
+        format_planning_datetime_block(),
         f"报告主题：{topic or message[:80]}",
         f"用户输入：{message}",
         f"意图：{intent}",
@@ -603,7 +610,23 @@ def _plan_report_gathering(
     local = (
         _unique_queries([str(x) for x in local_raw], limit=max_local) if use_local else []
     )
-    web = _unique_queries([str(x) for x in web_raw], limit=3) if use_web else []
+    web = _unique_queries([str(x) for x in web_raw], limit=4) if use_web else []
+    from app.services.report_generation_service import ensure_report_scoped_local_queries
+
+    prev_len = len(local)
+    local = ensure_report_scoped_local_queries(
+        message=message,
+        topic=topic,
+        intent=intent,
+        document_count=document_count,
+        planned_queries=local,
+        history=history,
+        max_queries=max_local,
+    )
+    if local_allowed and intent != "format_adjust" and local and prev_len == 0:
+        reasoning = (
+            f"{reasoning}；已在用户勾选的 {document_count} 份文档内检索"
+        ).strip("；")
     return local, web, reasoning
 
 
@@ -755,6 +778,7 @@ def iter_gather_for_report(
         include_kg=True,
         retrieve_limit=15,
         web_max_items=10,
+        narrow_by_name=False,
     )
     summaries: list[str] = []
     max_rounds = max(1, min(int(settings.knowledge_agentic_max_rounds or 2), 3))
@@ -779,6 +803,7 @@ def iter_gather_for_report(
         web_allowed=web_enabled,
         kg_context="",
         history_excerpt=hist_excerpt,
+        history=history,
     )
     plan_done = workflow_event(
         "agent_thought",

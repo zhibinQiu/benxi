@@ -1,4 +1,4 @@
-# 配置文件与脚本说明（v4.3.1）
+# 配置文件与脚本说明（v4.5.0）
 
 > 本文说明当前系统**仍在使用**的 Compose 编排文件、环境配置与脚本职责。  
 > 数据存储与数据库连接见 [组件位置与数据存储](components-and-storage.md)。
@@ -135,6 +135,8 @@ bash scripts/setup-stack-env.sh   # 合并 platform/.env → 根 .env
 | **`scripts/local-dev.sh`** | 本机 conda `pdf2zh` API + Vite（由 `dev.sh local` 调用） |
 | **`scripts/stack.sh`** | Compose 编排 |
 | **`scripts/deploy.sh`** | 生产镜像推送 |
+| **`./dev.sh sync` / `sync --all`** | 同步代码到服务器并重建 API/Worker（含档位 C compose） |
+| **`platform/scripts/stress_test_throughput.py`** | API 压测（自动清理测试文档）；见 [测试指南](testing.md#吞吐量--压力测试-v441) |
 
 ```bash
 # 本机 conda 开发（默认环境 pdf2zh）
@@ -150,20 +152,38 @@ bash scripts/setup-stack-env.sh   # 合并 platform/.env → 根 .env
 
 ---
 
-## 4. 文档站 Mermaid 图表
+## 4. 文档站（MkDocs）
 
-运维文档中的架构图使用 [Mermaid](https://mermaid.js.org/) 语法。本地预览：
+系统文档使用 [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) 构建，源码在 `docs/zh/`，导航见 `mkdocs.yml`。
+
+### 4.1 独立服务启动（推荐）
 
 ```bash
-pip install -r docs/requirements-docs.txt
-mkdocs serve -a 127.0.0.1:8765
+# Docker 容器（profile docs，默认 http://127.0.0.1:40100/）
+./dev.sh docs
+
+# 本机 venv（改 md 自动热重载，同上端口）
+./dev.sh docs local
+
+# 停止
+./dev.sh docs stop
 ```
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `DOCS_PORT` | 40100 | 文档站主机端口（勿与 speech-api 8765 混用） |
+
+Compose 服务名 `docs`，profile `docs`；挂载 `mkdocs.yml`、`docs/zh/`、`icon/` 实现改文档即生效。
+
+### 4.2 Mermaid 图表
+
+运维文档中的架构图使用 [Mermaid](https://mermaid.js.org/) 语法。
 
 配置要点（`mkdocs.yml`）：
 
 - 使用 **Material 主题内置 Mermaid**（`pymdownx.superfences` + `fence_code_format`）
 - **不要**再安装 `mkdocs-mermaid2-plugin`（与 Material 冲突会导致图表不渲染）
-- 须通过 `mkdocs serve` 或 `mkdocs build` 后由 HTTP 服务访问，**不要**直接双击 `index.html` 打开
+- 须通过 `./dev.sh docs` 或 `mkdocs serve` 由 HTTP 访问，**不要**直接双击 `index.html` 打开
 
 ---
 

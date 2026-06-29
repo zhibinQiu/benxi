@@ -111,7 +111,7 @@ kf = knowledge.client_for_user(db, user)
 
 #### `reindex_parser_id_raw(parser_id)`
 
-同上，但 fallback 链为 `knowledge_reindex_default_parser_id` → `PARSER_PAGEINDEX`。
+同上，但 fallback 链为 `knowledge_reindex_default_parser_id` → `naive`。
 
 #### `is_pageindex_parser(parser_id)`
 

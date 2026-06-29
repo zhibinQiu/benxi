@@ -14,9 +14,23 @@ export function emptyAgentWorkflow() {
     currentTitle: "",
     currentAgentTitle: "",
     currentAgentId: "",
+    executionMode: "",
     steps: [],
     taskPlan: [],
+    planResult: "",
   };
+}
+
+function formatTaskPlanResult(tasks) {
+  const titles = (tasks || []).map((task) => String(task?.title || "").trim()).filter(Boolean);
+  if (!titles.length) return "";
+  if (titles.length === 1) return `规划方案：${titles[0]}`;
+  return `规划方案：${titles.join(" → ")}`;
+}
+
+function applyPlanResult(state, text) {
+  const safe = sanitizeWorkflowDisplayText(text);
+  if (safe) state.planResult = safe;
 }
 
 function toolLabel(tool, t) {
@@ -102,23 +116,7 @@ function applyAgentMeta(state, ev) {
   if (ev?.agent_id) state.currentAgentId = ev.agent_id;
 }
 
-function agentKey(agentId) {
-  return agentId || "__default__";
-}
-
-/** 同一智能体只保留最新一步，避免工具调用反复堆叠。 */
-function removePriorStepsForAgent(steps, agentId, keepId) {
-  const key = agentKey(agentId);
-  for (let i = steps.length - 1; i >= 0; i -= 1) {
-    const step = steps[i];
-    if (step.id === keepId) continue;
-    if (agentKey(step.agentId) === key) {
-      steps.splice(i, 1);
-    }
-  }
-}
-
-function upsertStep(steps, step, { replaceSameAgent = false } = {}) {
+function upsertStep(steps, step) {
   const normalized = {
     ...step,
     detail: sanitizeWorkflowDisplayText(step.detail),
@@ -129,9 +127,6 @@ function upsertStep(steps, step, { replaceSameAgent = false } = {}) {
   if (idx >= 0) {
     steps[idx] = { ...steps[idx], ...normalized };
     return;
-  }
-  if (replaceSameAgent) {
-    removePriorStepsForAgent(steps, normalized.agentId, normalized.id);
   }
   steps.push(normalized);
 }
@@ -149,22 +144,26 @@ function findStep(steps, id) {
   return steps.find((s) => s.id === id) || null;
 }
 
-function normalizeTaskPlanItem(raw) {
+function normalizeTaskPlanItem(raw, prev = null) {
   if (!raw || typeof raw !== "object") return null;
   const id = String(raw.id || "").trim();
   if (!id) return null;
   return {
     id,
     title: String(raw.title || raw.agent_id || id).trim(),
-    agentId: String(raw.agent_id || "").trim(),
-    status: raw.status || "pending",
-    summary: sanitizeWorkflowDisplayText(raw.summary) || "",
+    agentId: String(raw.agent_id || prev?.agentId || "").trim(),
+    status: raw.status || prev?.status || "pending",
+    summary: sanitizeWorkflowDisplayText(raw.summary) || prev?.summary || "",
+    steps: Array.isArray(prev?.steps) ? prev.steps : [],
   };
 }
 
 function applyTaskPlan(state, tasks) {
   if (!Array.isArray(tasks)) return;
-  state.taskPlan = tasks.map(normalizeTaskPlanItem).filter(Boolean);
+  const prevById = Object.fromEntries(state.taskPlan.map((t) => [t.id, t]));
+  state.taskPlan = tasks
+    .map((raw) => normalizeTaskPlanItem(raw, prevById[raw?.id]))
+    .filter(Boolean);
 }
 
 function upsertTaskPlanItem(state, taskId, patch = {}) {
@@ -172,12 +171,27 @@ function upsertTaskPlanItem(state, taskId, patch = {}) {
   if (!id) return;
   let item = state.taskPlan.find((t) => t.id === id);
   if (!item) {
-    item = { id, title: id, agentId: "", status: "pending", summary: "" };
+    item = { id, title: id, agentId: "", status: "pending", summary: "", steps: [] };
     state.taskPlan.push(item);
   }
   if (patch.status) item.status = patch.status;
   if (patch.summary !== undefined) item.summary = sanitizeWorkflowDisplayText(patch.summary) || "";
   if (patch.title) item.title = String(patch.title).trim();
+  if (!Array.isArray(item.steps)) item.steps = [];
+}
+
+/** 有 task_id 时写入子任务步骤，否则写入全局步骤。 */
+function resolveStepList(state, taskId) {
+  const id = String(taskId || "").trim();
+  if (id) {
+    upsertTaskPlanItem(state, id);
+    const task = state.taskPlan.find((t) => t.id === id);
+    if (task) {
+      if (!Array.isArray(task.steps)) task.steps = [];
+      return task.steps;
+    }
+  }
+  return state.steps;
 }
 
 /** Skill 脚本运行失败等可恢复错误：展示详情但不标红整个流程。 */
@@ -200,6 +214,7 @@ export function applyAgentWorkflowEvent(state, ev, t) {
   const phase = ev?.phase;
   const tool = ev?.tool || "";
   const toolName = toolLabel(tool, t);
+  const taskId = ev?.task_id || "";
   applyAgentMeta(state, ev);
 
   if (phase === "workflow_started") {
@@ -208,6 +223,7 @@ export function applyAgentWorkflowEvent(state, ev, t) {
     state.currentTitle = ev.title || "Agent 开始";
     state.currentAgentTitle = "";
     state.currentAgentId = "";
+    state.executionMode = "";
     state.steps = [];
     state.taskPlan = [];
     return state;
@@ -216,7 +232,9 @@ export function applyAgentWorkflowEvent(state, ev, t) {
   if (phase === "plan_tasks") {
     state.running = true;
     state.failed = false;
+    state.executionMode = ev.mode === "parallel" ? "parallel" : "sequential";
     applyTaskPlan(state, ev.tasks);
+    applyPlanResult(state, formatTaskPlanResult(ev.tasks) || ev.detail || ev.title);
     setCurrentTitle(state, ev.title || "任务规划");
     return state;
   }
@@ -244,7 +262,7 @@ export function applyAgentWorkflowEvent(state, ev, t) {
       status: "done",
       summary: sanitizeWorkflowDisplayText(ev.detail) || "",
     });
-    const hasRunningTask = state.taskPlan.some((t) => t.status === "running");
+    const hasRunningTask = state.taskPlan.some((item) => item.status === "running");
     if (!hasRunningTask) state.currentTitle = "";
     return state;
   }
@@ -260,63 +278,60 @@ export function applyAgentWorkflowEvent(state, ev, t) {
     return state;
   }
 
+  const stepList = () => resolveStepList(state, taskId);
+
   if (phase === "thinking_delta") {
     state.running = true;
     state.failed = false;
     setCurrentTitle(state, ev.title || toolName, "思考中");
-    const id = ev.step_id || state.steps[state.steps.length - 1]?.id || nextStepId();
-    const existing = findStep(state.steps, id);
-    upsertStep(
-      state.steps,
-      {
-        id,
-        kind: "thinking",
-        tool,
-        title: ev.title || existing?.title || (toolName ? `${toolName}思考中` : "思考中"),
-        detail: `${existing?.detail || ""}${ev.delta || ""}`,
-        status: "running",
-        agentTitle: ev.agent_title || existing?.agentTitle || state.currentAgentTitle,
-        agentId: ev.agent_id || existing?.agentId || state.currentAgentId,
-      },
-      { replaceSameAgent: !existing }
-    );
+    const steps = stepList();
+    const id = ev.step_id || steps[steps.length - 1]?.id || nextStepId();
+    const existing = findStep(steps, id);
+    upsertStep(steps, {
+      id,
+      kind: "thinking",
+      tool,
+      title: ev.title || existing?.title || (toolName ? `${toolName}思考中` : "思考中"),
+      detail: `${existing?.detail || ""}${ev.delta || ""}`,
+      status: "running",
+      agentTitle: ev.agent_title || existing?.agentTitle || state.currentAgentTitle,
+      agentId: ev.agent_id || existing?.agentId || state.currentAgentId,
+    });
     return state;
   }
 
   if (phase === "agent_thinking") {
     state.running = true;
     state.failed = false;
+    const steps = stepList();
+    finishRunningSteps(steps, { kinds: ["node"] });
     setCurrentTitle(state, ev.title, "思考中");
-    finishRunningSteps(state.steps, { kinds: ["node"] });
     const id = ev.step_id || nextStepId();
-    upsertStep(
-      state.steps,
-      {
-        id,
-        kind: "thinking",
-        tool,
-        title: ev.title || (toolName ? `${toolName}…` : "思考中"),
-        detail: ev.detail || "",
-        status: "running",
-        agentTitle: ev.agent_title || state.currentAgentTitle,
-        agentId: ev.agent_id || state.currentAgentId,
-      },
-      { replaceSameAgent: true }
-    );
+    upsertStep(steps, {
+      id,
+      kind: "thinking",
+      tool,
+      title: ev.title || (toolName ? `${toolName}…` : "思考中"),
+      detail: ev.detail || "",
+      status: "running",
+      agentTitle: ev.agent_title || state.currentAgentTitle,
+      agentId: ev.agent_id || state.currentAgentId,
+    });
     return state;
   }
 
   if (phase === "agent_thought") {
     state.running = true;
-    const id = ev.step_id || state.steps[state.steps.length - 1]?.id || nextStepId();
+    const steps = stepList();
+    const id = ev.step_id || steps[steps.length - 1]?.id || nextStepId();
     const failed = ev.status === "failed";
-    const existing = findStep(state.steps, id);
+    const existing = findStep(steps, id);
     const nextDetail = ev.detail || "";
     const keepDetail =
       existing?.detail && existing.detail.length > nextDetail.length
         ? existing.detail
         : nextDetail || existing?.detail || "";
-    upsertStep(state.steps, {
+    upsertStep(steps, {
       id,
       kind: "thinking",
       tool,
@@ -326,10 +341,23 @@ export function applyAgentWorkflowEvent(state, ev, t) {
       agentTitle: ev.agent_title || existing?.agentTitle || state.currentAgentTitle,
       agentId: ev.agent_id || existing?.agentId || state.currentAgentId,
     });
+    if (!failed) {
+      const planLike =
+        tool === "supervisor.plan" ||
+        tool === "planner" ||
+        /规划/.test(String(ev.title || ""));
+      if (planLike) {
+        applyPlanResult(
+          state,
+          keepDetail || ev.title || (tool === "supervisor.plan" ? formatTaskPlanResult(ev.tasks) : "")
+        );
+      }
+    }
     if (failed) {
       setCurrentTitle(state, ev.title, state.currentTitle);
     } else {
-      const hasRunning = state.steps.some((s) => s.status === "running");
+      const allSteps = [...state.steps, ...state.taskPlan.flatMap((item) => item.steps || [])];
+      const hasRunning = allSteps.some((s) => s.status === "running");
       state.currentTitle = hasRunning ? state.currentTitle : "";
     }
     state.failed = failed;
@@ -338,11 +366,12 @@ export function applyAgentWorkflowEvent(state, ev, t) {
 
   if (phase === "tool_result") {
     state.running = true;
-    const id = ev.step_id || state.steps[state.steps.length - 1]?.id || nextStepId();
+    const steps = stepList();
+    const id = ev.step_id || steps[steps.length - 1]?.id || nextStepId();
     const failed = ev.status === "failed";
     const softFailure = isSoftToolFailure(ev, failed);
-    const existing = findStep(state.steps, id);
-    upsertStep(state.steps, {
+    const existing = findStep(steps, id);
+    upsertStep(steps, {
       id,
       kind: "tool",
       tool,
@@ -363,60 +392,55 @@ export function applyAgentWorkflowEvent(state, ev, t) {
   if (phase === "tool_call") {
     state.running = true;
     state.failed = false;
-    finishRunningSteps(state.steps, { kinds: ["node"] });
+    const steps = stepList();
+    finishRunningSteps(steps, { kinds: ["node"] });
     const id = ev.step_id || nextStepId();
     const title = ev.title || toolName || "工具调用";
     setCurrentTitle(state, title);
-    upsertStep(
-      state.steps,
-      {
-        id,
-        kind: "tool",
-        tool,
-        title,
-        callDetail: ev.detail || "",
-        resultDetail: "",
-        status: "running",
-        agentTitle: ev.agent_title || state.currentAgentTitle,
-        agentId: ev.agent_id || state.currentAgentId,
-      },
-      { replaceSameAgent: true }
-    );
+    upsertStep(steps, {
+      id,
+      kind: "tool",
+      tool,
+      title,
+      callDetail: ev.detail || "",
+      resultDetail: "",
+      status: "running",
+      agentTitle: ev.agent_title || state.currentAgentTitle,
+      agentId: ev.agent_id || state.currentAgentId,
+    });
     return state;
   }
 
   if (phase === "node_started") {
     state.running = true;
-    finishRunningSteps(state.steps, { kinds: ["node"] });
+    const steps = stepList();
+    finishRunningSteps(steps, { kinds: ["node"] });
     setCurrentTitle(state, ev.title, "处理中");
     if (ev.title) {
       const id = ev.step_id || nextStepId();
-      upsertStep(
-        state.steps,
-        {
-          id,
-          kind: "node",
-          tool,
-          title: ev.title,
-          detail: ev.detail || "",
-          status: "running",
-          agentTitle: ev.agent_title || state.currentAgentTitle,
-          agentId: ev.agent_id || state.currentAgentId,
-        },
-        { replaceSameAgent: true }
-      );
+      upsertStep(steps, {
+        id,
+        kind: "node",
+        tool,
+        title: ev.title,
+        detail: ev.detail || "",
+        status: "running",
+        agentTitle: ev.agent_title || state.currentAgentTitle,
+        agentId: ev.agent_id || state.currentAgentId,
+      });
     }
     return state;
   }
 
   if (phase === "node_finished") {
     const failed = ev.status === "failed" || ev.status === "exception";
+    const steps = stepList();
     if (failed) {
       state.failed = true;
       setCurrentTitle(state, `${ev.title || "节点"}（失败）`);
-      finishRunningSteps(state.steps, { failed: true });
+      finishRunningSteps(steps, { failed: true });
     } else {
-      finishRunningSteps(state.steps, { kinds: ["node"] });
+      finishRunningSteps(steps, { kinds: ["node"] });
     }
     return state;
   }
@@ -428,6 +452,9 @@ export function applyAgentWorkflowEvent(state, ev, t) {
     state.currentAgentTitle = "";
     state.currentAgentId = "";
     finishRunningSteps(state.steps);
+    for (const task of state.taskPlan) {
+      finishRunningSteps(task.steps || []);
+    }
     return state;
   }
 

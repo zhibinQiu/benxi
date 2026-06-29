@@ -208,6 +208,14 @@ sync_deploy_env() {
   set_kv "$tmp" DEPLOY_ARCH "$arch"
   set_kv "$tmp" AGENT_BROWSER_ENABLED true
   set_kv "$tmp" INSTALL_BROWSER 1
+  # 单机生产档位 C（与 compose.yaml / compose.server.yaml 对齐）
+  set_kv "$tmp" DB_POOL_SIZE 12
+  set_kv "$tmp" DB_MAX_OVERFLOW 8
+  set_kv "$tmp" DB_POOL_TIMEOUT 15
+  set_kv "$tmp" DB_POOL_RECYCLE 1800
+  set_kv "$tmp" STREAM_MAX_CONCURRENT_PER_WORKER 12
+  set_kv "$tmp" STREAM_ACQUIRE_TIMEOUT 5
+  set_kv "$tmp" BACKGROUND_JOBS_USE_CELERY true
   mv "$tmp" "$out_env"
 
   tmp="$(mktemp)"
@@ -540,6 +548,7 @@ rsync_stack_bundle() {
   ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/scripts' '${DEPLOY_PATH}/deploy/knowflow'"
   rsync -avz \
     "$ROOT/compose.yaml" \
+    "$ROOT/compose.server.yaml" \
     "$ROOT/compose.dev.yaml" \
     "$ROOT/.env.stack.example" \
     "$ROOT/deploy/" \

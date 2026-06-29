@@ -39,6 +39,33 @@ def infer_llm_factory(base_url: str, explicit: str = "") -> str:
     return "OpenAI-API-Compatible"
 
 
+def normalize_ragflow_rerank_api_base(base_url: str, factory: str = "") -> str:
+    """RAGFlow 写入 tenant_llm.api_base 时的 rerank 端点规范化。
+
+    - SILICONFLOW：使用完整 ``.../v1/rerank``（RAGFlow SILICONFLOWRerank 默认路径）。
+    - OpenAI-API-Compatible：在 ``/v1`` 基址上追加 ``/rerank``。
+    """
+    url = (base_url or "").strip().rstrip("/")
+    factory_name = (factory or infer_llm_factory(url)).strip()
+    if factory_name.upper() == "SILICONFLOW":
+        if not url:
+            return "https://api.siliconflow.cn/v1/rerank"
+        if url.endswith("/rerank"):
+            return url
+        if url.endswith("/v1"):
+            return f"{url}/rerank"
+        return f"{url}/v1/rerank"
+    if factory_name == "OpenAI-API-Compatible":
+        if not url:
+            return url
+        if url.endswith("/rerank"):
+            return url
+        if url.endswith("/v1"):
+            return f"{url}/rerank"
+        return f"{url}/v1/rerank"
+    return url
+
+
 def normalize_ragflow_embedding_api_base(base_url: str, factory: str = "") -> str:
     """RAGFlow 写入 tenant_llm.api_base 时的兼容规范化。
 
@@ -173,6 +200,60 @@ INSERT INTO tenant_llm (
     if ok and db is not None:
         synced = sync_all_tenant_llm_configs(db)
         logger.info("嵌入模型已写入模板租户并同步 %s 个用户", synced)
+    return ok
+
+
+def apply_rerank_to_template_tenant(
+    db: Session | None,
+    *,
+    base_url: str,
+    api_key: str,
+    model_name: str,
+    factory: str = "",
+) -> bool:
+    """写入 KnowFlow/RAGFlow 租户默认 RERANK 模型。"""
+    template_id = resolve_template_tenant_id(db)
+    if not template_id:
+        logger.warning("未找到 RAGFlow 模板租户，跳过 Rerank 模型同步")
+        return False
+
+    model = (model_name or "").strip()
+    key = (api_key or "").strip()
+    url = (base_url or "").strip()
+    if not model or not key:
+        logger.warning("Rerank 模型名称或 API Key 未配置，跳过 RAGFlow 同步")
+        return False
+
+    llm_factory = infer_llm_factory(url, factory)
+    url = normalize_ragflow_rerank_api_base(url, llm_factory)
+    safe_tid = _sql_literal(template_id)
+    safe_factory = _sql_literal(llm_factory)
+    safe_model = _sql_literal(model)
+    safe_key = _sql_literal(key)
+    safe_url = _sql_literal(url)
+    rerank_id = _sql_literal(f"{model}@{llm_factory}")
+
+    delete_sql = (
+        "DELETE FROM tenant_llm WHERE tenant_id = '{tid}' "
+        "AND model_type = 'rerank' AND llm_name = '{model}'"
+    ).format(tid=safe_tid, model=safe_model)
+
+    insert_sql = f"""
+INSERT INTO tenant_llm (
+  tenant_id, llm_factory, model_type, llm_name, api_key, api_base, max_tokens, used_tokens
+) VALUES (
+  '{safe_tid}', '{safe_factory}', 'rerank', '{safe_model}',
+  '{safe_key}', '{safe_url}', 8192, 0
+);
+"""
+    update_tenant_sql = (
+        f"UPDATE tenant SET rerank_id = '{rerank_id}' WHERE id = '{safe_tid}';"
+    )
+
+    ok = _mysql_exec(delete_sql) and _mysql_exec(insert_sql) and _mysql_exec(update_tenant_sql)
+    if ok and db is not None:
+        synced = sync_all_tenant_llm_configs(db)
+        logger.info("Rerank 模型已写入模板租户并同步 %s 个用户", synced)
     return ok
 
 

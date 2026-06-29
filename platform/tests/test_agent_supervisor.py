@@ -12,6 +12,7 @@ from app.services.agent_profile_service import resolve_agent_tool_names
 from app.services.agent_supervisor import (
     _best_reply_from_hops,
     _infer_route_mode,
+    _is_direct_conversation_fast_path,
     _parse_llm_route_plan,
     _pick_single_route_from_candidates,
     merge_hop_citations,
@@ -33,6 +34,7 @@ def test_route_chitchat_to_orchestrator():
         user = _admin_user(db)
         route = resolve_agent_route(db, user, "你好")
         assert route.agent_id == "orchestrator"
+        assert _is_direct_conversation_fast_path("你好", route, None) is True
     finally:
         db.close()
 
@@ -87,18 +89,99 @@ def test_route_research():
         db.close()
 
 
+def test_route_report_survey():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        route = resolve_agent_route(
+            db,
+            user,
+            "请撰写一份关于 AI 在制造业质检场景的应用调研报告",
+        )
+        assert route.agent_id == "report"
+    finally:
+        db.close()
+
+
+def test_route_report_feasibility():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        route = resolve_agent_route(
+            db,
+            user,
+            "帮我生成智慧园区项目的可研报告",
+        )
+        assert route.agent_id == "report"
+    finally:
+        db.close()
+
+
+def test_route_diagram_mindmap():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        route = resolve_agent_route(
+            db,
+            user,
+            "帮我生成把大象装进冰箱的思维导图",
+        )
+        assert route.agent_id == "diagram"
+    finally:
+        db.close()
+
+
+def test_route_diagram_flowchart():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        route = resolve_agent_route(
+            db,
+            user,
+            "画一个采购审批流程图",
+        )
+        assert route.agent_id == "diagram"
+    finally:
+        db.close()
+
+
 def test_specialist_tool_filter():
     db = SessionLocal()
     try:
         user = _admin_user(db)
         platform_tools = resolve_agent_tool_names(db, "platform")
         assert "list_document_folders" in platform_tools
+        assert "list_users" in platform_tools
+        assert "list_departments" in platform_tools
+        assert "kg_query" in platform_tools
         assert "web_search" not in platform_tools
 
         specs = build_agent_tool_specs(db, user, allowed_names=platform_tools)
         names = {s["function"]["name"] for s in specs}
         assert "list_document_folders" in names
+        assert "list_users" in names
+        assert "kg_query" in names
         assert "web_search" not in names
+
+        research_tools = resolve_agent_tool_names(db, "research")
+        assert "knowledge_retrieve" in research_tools
+        assert "search_documents_by_name" in research_tools
+        assert "web_search" in research_tools
+        assert "list_document_folders" not in research_tools
+        assert "list_users" not in research_tools
+    finally:
+        db.close()
+
+
+def test_route_platform_system_user_list():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        route = resolve_agent_route(db, user, "系统中有哪些用户")
+        assert route.agent_id == "platform"
+        tools = resolve_agent_tool_names(db, route.agent_id)
+        assert "list_users" in tools
+        assert "kg_query" in tools
     finally:
         db.close()
 
@@ -216,6 +299,16 @@ def test_simple_math_routes_to_orchestrator_not_research():
         db.close()
 
 
+def test_short_market_question_routes_to_research():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        route = resolve_agent_route(db, user, "韩国股市熔断对A股半导体影响？")
+        assert route.agent_id == "research"
+    finally:
+        db.close()
+
+
 def test_best_reply_from_hops_uses_last_non_empty():
     hops = [
         {"reply": "第一步结果"},
@@ -244,3 +337,46 @@ def test_pick_single_route_prefers_platform_on_platform_intent():
         intent,
     )
     assert picked.agent_id == "platform"
+
+
+def test_baidu_search_with_screenshot_routes_rpa_only():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        from app.services.agent_supervisor import _resolve_agent_routes_rule
+
+        routes = _resolve_agent_routes_rule(
+            db,
+            user,
+            "百度搜索双碳并查看结果截图。",
+        )
+        agent_ids = [r.agent_id for r in routes]
+        assert "rpa" in agent_ids
+        assert "research" not in agent_ids
+    finally:
+        db.close()
+
+
+def test_baidu_screenshot_prefers_rpa_over_skill_dev_with_skill_history():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        from app.schemas.ai_chat import AiChatMessage
+        from app.services.agent_supervisor import _resolve_agent_routes_rule
+
+        history = [
+            AiChatMessage(
+                role="assistant",
+                content="已创建 Skill `tanshichang-scraper`，可用 run_skill_script 验证。",
+            )
+        ]
+        routes = _resolve_agent_routes_rule(
+            db,
+            user,
+            "百度搜索双碳并查看结果截图",
+            chat_history=history,
+        )
+        assert len(routes) == 1
+        assert routes[0].agent_id == "rpa"
+    finally:
+        db.close()

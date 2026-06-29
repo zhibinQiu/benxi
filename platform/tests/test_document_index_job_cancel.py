@@ -14,6 +14,7 @@ from app.services.knowledge_sync_job_service import (
     _complete_knowledge_index_job,
     _index_job_should_abort,
     _index_target_exists,
+    _try_claim_index_job_terminal,
     cancel_document_index_job,
     stop_document_index_work,
 )
@@ -173,6 +174,35 @@ def test_complete_knowledge_index_job_skips_cancelled():
 
     update_status.assert_not_called()
     notify.assert_not_called()
+
+
+def test_try_claim_index_job_terminal_only_one_succeeds():
+    job = Job(
+        id=uuid.uuid4(),
+        type=JobType.document_index.value,
+        status=JobStatus.running.value,
+        document_id=uuid.uuid4(),
+        created_by=uuid.uuid4(),
+        payload={"awaiting_parse": True},
+    )
+    db = MagicMock()
+    db.scalar.return_value = job
+
+    with patch(
+        "app.services.knowledge_sync_job_service._index_job_should_abort",
+        return_value=False,
+    ):
+        first = _try_claim_index_job_terminal(
+            db, job, status=JobStatus.done.value
+        )
+        job.status = JobStatus.done.value
+        second = _try_claim_index_job_terminal(
+            db, job, status=JobStatus.done.value
+        )
+
+    assert first is job
+    assert second is None
+    assert job.payload.get("awaiting_parse") is None
 
 
 def test_detach_platform_version_knowflow_deletes_link_and_schedules_remote():

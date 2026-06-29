@@ -18,6 +18,8 @@ T = TypeVar("T")
 
 _local_cache: dict[str, tuple[float, str]] = {}
 _LOCAL_CACHE_MAX_ENTRIES = 512
+# 缓存失效后仍在执行的 factory 不应写回旧值
+_cache_factory_epoch: dict[str, int] = {}
 
 
 def _json_default(obj: Any) -> Any:
@@ -106,6 +108,9 @@ def cache_delete_prefix(prefix: str) -> None:
     doomed = [k for k in _local_cache if k.startswith(prefix)]
     for key in doomed:
         _local_cache.pop(key, None)
+    for key in list(_cache_factory_epoch):
+        if key.startswith(prefix):
+            _cache_factory_epoch[key] = _cache_factory_epoch.get(key, 0) + 1
 
 
 def cache_get_or_set(
@@ -114,10 +119,16 @@ def cache_get_or_set(
     *,
     ttl: int | None = None,
 ) -> T:
+    epoch_start = _cache_factory_epoch.get(key, 0)
     cached = cache_get_json(key, ttl=ttl)
     if cached is not None:
         return cached
     value = factory()
+    if _cache_factory_epoch.get(key, 0) != epoch_start:
+        cached = cache_get_json(key, ttl=ttl)
+        if cached is not None:
+            return cached
+        value = factory()
     cache_set_json(key, value, ttl=ttl)
     return value
 

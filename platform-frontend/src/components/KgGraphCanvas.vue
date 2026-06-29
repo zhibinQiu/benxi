@@ -496,7 +496,7 @@ onBeforeUnmount(() => {
               refY="4"
               orient="auto"
             >
-              <path d="M0,0 L8,4 L0,8 Z" fill="var(--platform-accent, #2563eb)" />
+              <path d="M0,0 L8,4 L0,8 Z" fill="var(--platform-accent, #0067ff)" />
             </marker>
           </defs>
           <g v-for="edge in displayEdges" :key="edge.id">

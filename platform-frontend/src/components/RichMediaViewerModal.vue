@@ -164,10 +164,11 @@ function onExportOpml() {
   <AdminFormModal
     :show="show"
     :title="modalTitle"
-    width="min(1200px, 96vw)"
+    width="min(880px, 92vw)"
     @update:show="emit('update:show', $event)"
   >
-    <div ref="viewportRef" class="rich-media-viewer__viewport">
+    <div class="rich-media-viewer">
+      <div ref="viewportRef" class="rich-media-viewer__viewport">
       <img
         v-if="payload?.type === 'image'"
         class="rich-media-viewer__image"
@@ -185,6 +186,7 @@ function onExportOpml() {
         class="rich-media-viewer__echart"
       />
       <pre v-else-if="payload?.type === 'code'" class="rich-media-viewer__code"><code>{{ payload.code }}</code></pre>
+      </div>
     </div>
 
     <template #footer>
@@ -208,9 +210,14 @@ function onExportOpml() {
 </template>
 
 <style scoped>
+.rich-media-viewer {
+  max-height: calc(66.67vh - 7.5rem);
+  min-height: 0;
+}
+
 .rich-media-viewer__viewport {
   overflow: auto;
-  max-height: min(80vh, 860px);
+  max-height: calc(66.67vh - 7.5rem);
   padding: 12px 8px 16px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--platform-bg) 45%, transparent);
@@ -218,24 +225,24 @@ function onExportOpml() {
 
 .rich-media-viewer__image {
   display: block;
-  max-width: none;
-  min-width: min(100%, 480px);
+  max-width: 100%;
+  height: auto;
   margin: 0 auto;
   border-radius: 8px;
 }
 
 .rich-media-viewer__mermaid :deep(svg) {
   display: block;
-  max-width: none;
-  min-width: min(100%, 720px);
+  max-width: 100%;
+  width: auto;
   height: auto;
   margin: 0 auto;
 }
 
 .rich-media-viewer__echart {
   width: 100%;
-  min-width: min(100%, 720px);
-  height: min(520px, 60vh);
+  height: min(360px, calc(66.67vh - 10rem));
+  min-height: 240px;
 }
 
 .rich-media-viewer__code {

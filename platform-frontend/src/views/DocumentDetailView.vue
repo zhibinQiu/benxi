@@ -290,7 +290,7 @@ const canPublishDept = computed(() => {
   if (canPublishDeptPerm.value) return true;
   return doc.value?.scope === "department" || doc.value?.scope === "company";
 });
-/** 部门/公司/小组级文档的创建人仍可调整至小组级 */
+/** 部门/公司/分部级文档的创建人仍可调整至分部级 */
 const showTeamPublish = computed(() => {
   if (!isOwner.value) return false;
   if (canPublishTeamPerm.value) return true;
@@ -1101,7 +1101,7 @@ onMounted(() => {
     :version="previewVersion"
     pdf-fit-mode="width"
     width="min(960px, 96vw)"
-    viewport-height="min(85vh, calc(100dvh - 160px))"
+    viewport-height="min(45vh, 480px)"
     @download="onPreviewDownload"
   />
 

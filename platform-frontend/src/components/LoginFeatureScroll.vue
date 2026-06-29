@@ -12,7 +12,6 @@ import {
   LeafOutline,
   SparklesOutline,
   CreateOutline,
-  WalletOutline,
   NewspaperOutline,
   SearchOutline,
   GitNetworkOutline,
@@ -39,7 +38,6 @@ const iconMap = {
   analytics: AnalyticsOutline,
   "trending-up": TrendingUpOutline,
   leaf: LeafOutline,
-  wallet: WalletOutline,
   mic: MicOutline,
   scan: ScanOutline,
   "git-network": GitNetworkOutline,
@@ -51,7 +49,7 @@ const iconMap = {
 };
 
 const iconStyles = {
-  "document-text": "linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)",
+  "document-text": "linear-gradient(135deg, #4d94ff 0%, #0067ff 100%)",
   search: "var(--platform-accent-gradient)",
   sparkles: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)",
   language: "linear-gradient(135deg, #22d3ee 0%, #0891b2 100%)",
@@ -60,7 +58,6 @@ const iconStyles = {
   analytics: "linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%)",
   "trending-up": "linear-gradient(135deg, #fb923c 0%, #ea580c 100%)",
   leaf: "linear-gradient(135deg, #4ade80 0%, #16a34a 100%)",
-  wallet: "linear-gradient(135deg, #f472b6 0%, #db2777 100%)",
   mic: "var(--platform-accent-gradient)",
   scan: "linear-gradient(135deg, #38bdf8 0%, #0284c7 100%)",
   "git-network": "linear-gradient(135deg, #e879f9 0%, #c026d3 100%)",

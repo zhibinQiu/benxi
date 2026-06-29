@@ -21,7 +21,9 @@ def test_enrich_doc_rows_meta_delegates_to_unified_reader():
         "app.services.document_index_service.enrich_knowledge_document_rows",
     ) as enrich:
         _enrich_doc_rows_meta(db, user, "ds-1", rows, documents=documents)
-    enrich.assert_called_once_with(db, user, rows, documents)
+    enrich.assert_called_once_with(
+        db, user, rows, documents, live_ragflow=False
+    )
 
 
 def test_ragflow_row_uses_canonical_link_without_dataset_id_equality():

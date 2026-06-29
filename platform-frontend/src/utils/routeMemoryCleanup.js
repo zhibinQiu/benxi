@@ -3,8 +3,6 @@
 import { clearChatSession } from "./chatSessionPersist.js";
 import { clearCompareViewSession } from "./compareViewPersist.js";
 import { clearDocumentsViewCache } from "./documentsViewCache.js";
-import { clearKgPalantirCache } from "./kgPalantirCache.js";
-
 const AI_HOME_ROUTE = "ai-home";
 
 const DOCUMENT_ROUTES = new Set(["documents", "document-detail"]);
@@ -38,10 +36,6 @@ export function releaseRouteMemory(fromRoute, toRoute) {
 
   if (leavesGroup(fromName, toName, DOCUMENT_ROUTES)) {
     clearDocumentsViewCache();
-  }
-
-  if (fromName === "kg-palantir" && toName !== "kg-palantir") {
-    clearKgPalantirCache();
   }
 
   if (leavesGroup(fromName, toName, COMPARE_ROUTES)) {

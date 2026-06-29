@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="wrapRef" class="compare-pdf-preview">
-    <n-spin :show="loading" class="compare-pdf-preview__spin">
+    <n-spin :show="loading" class="compare-pdf-preview__spin" local>
       <div v-if="error" class="compare-pdf-preview__error">
         <n-text depth="3">{{ error }}</n-text>
       </div>

@@ -68,7 +68,7 @@ remote() {
 rsync_to_server() {
   local dest="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
   info "同步后端 → ${dest}"
-  remote "mkdir -p '${DEPLOY_PATH}/platform/app' '${DEPLOY_PATH}/platform/workers' '${DEPLOY_PATH}/docs' '${DEPLOY_PATH}/scripts/lib'"
+  remote "mkdir -p '${DEPLOY_PATH}/platform/app' '${DEPLOY_PATH}/platform/workers' '${DEPLOY_PATH}/examples/agent-skills' '${DEPLOY_PATH}/docs' '${DEPLOY_PATH}/scripts/lib'"
   rsync "${RSYNC_OPTS[@]}" \
     --exclude '__pycache__/' --exclude '*.pyc' \
     "$ROOT/platform/app/" "${dest}platform/app/"
@@ -76,13 +76,17 @@ rsync_to_server() {
     --exclude '__pycache__/' \
     "$ROOT/platform/workers/" "${dest}platform/workers/"
   rsync -avz \
+    "$ROOT/examples/agent-skills/" "${dest}examples/agent-skills/"
+  rsync -avz \
     "$ROOT/docs/" "${dest}docs/" \
     "$ROOT/RELEASE.md" "${dest}RELEASE.md" \
     "$ROOT/运维部署指南.md" "${dest}运维部署指南.md" 2>/dev/null || true
   rsync -avz \
     "$ROOT/compose.yaml" "${dest}compose.yaml" \
     "$ROOT/compose.server.yaml" "${dest}compose.server.yaml" \
+    "$ROOT/.env.stack.example" "${dest}.env.stack.example" \
     "$ROOT/scripts/stack.sh" "${dest}scripts/stack.sh" \
+    "$ROOT/scripts/setup-stack-env.sh" "${dest}scripts/setup-stack-env.sh" \
     "$ROOT/scripts/setup-browser-rpa.sh" "${dest}scripts/setup-browser-rpa.sh" \
     "$ROOT/scripts/lib/browser-rpa.sh" "${dest}scripts/lib/browser-rpa.sh" \
     "$ROOT/platform/Dockerfile" "${dest}platform/Dockerfile" \
@@ -106,6 +110,7 @@ apply_on_server() {
   remote bash -s <<EOF
 set -euo pipefail
 cd '${DEPLOY_PATH}'
+[[ -f .env ]] && set -a && source .env && set +a
 proj="\${COMPOSE_PROJECT_NAME:-lvye}"
 
 wait_api_ready() {
@@ -120,8 +125,8 @@ wait_api_ready() {
     sleep 2
   done
   if [[ "\$ok" != 1 ]]; then
-    echo "[sync] 警告: API 未在 60s 内就绪，尝试强制重建 api 容器…"
-    SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up api 2>/dev/null || true
+    echo "[sync] 警告: API 未在 60s 内就绪，尝试 force-recreate api 容器…"
+    SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up -d --force-recreate api 2>/dev/null || true
     for i in \$(seq 1 15); do
       if curl -sf -o /dev/null --max-time 5 http://127.0.0.1:40005/ai/api/v1/system/client-config 2>/dev/null; then
         echo "[sync] API 已就绪（重试成功）"
@@ -135,16 +140,47 @@ wait_api_ready() {
 }
 
 if [[ "${api_flag}" == 1 ]]; then
-  echo "[sync] 重建 API / Worker（compose up -d + restart，加载挂载的新代码）…"
-  SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up api worker
-  # compose up -d 在配置未变时不会重启已运行容器，uvicorn 多 worker 会继续用旧内存代码
-  for svc in api worker; do
-    cid="\$(docker ps -q -f "name=\${proj}-\${svc}")"
-    if [[ -n "\$cid" ]]; then
-      docker restart \$cid
-      echo "[sync] restarted \${proj}-\${svc}"
+  compose_stamp=".sync-compose-server.sha256"
+  compose_changed=0
+  compose_hash=""
+  if [[ -f compose.server.yaml ]]; then
+    compose_hash="\$(sha256sum compose.server.yaml | awk '{print \$1}')"
+    old_hash="\$(cat "\${compose_stamp}" 2>/dev/null || true)"
+    [[ "\${compose_hash}" != "\${old_hash}" ]] && compose_changed=1
+  fi
+  if [[ "\${compose_changed}" == 1 ]]; then
+    echo "[sync] compose.server.yaml 已变更，compose up API / Worker…"
+  else
+    echo "[sync] 同步挂载代码，重启 API / Worker（6 worker + Celery 12，跳过 force-recreate）…"
+  fi
+  if [[ ! -f .env ]]; then
+    bash scripts/setup-stack-env.sh 2>/dev/null || cp -f .env.stack.example .env
+  fi
+  pg_cid="\$(docker ps -q -f "name=\${proj}-postgres" | head -1)"
+  if [[ -n "\$pg_cid" ]]; then
+    pg_max="\$(docker exec "\$pg_cid" psql -U "\${POSTGRES_USER:-platform}" -tAc "SHOW max_connections;" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [[ "\${pg_max}" != "220" ]]; then
+      echo "[sync] Postgres max_connections=\${pg_max:-?} → 应用 220（重建 postgres 容器，数据卷保留）…"
+      SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up -d --force-recreate postgres
     fi
-  done
+  fi
+  api_cid="\$(docker ps -q -f "name=\${proj}-api" | head -1)"
+  worker_cid="\$(docker ps -q -f "name=\${proj}-worker" | head -1)"
+  if [[ "\${compose_changed}" == 1 || -z "\${api_cid}" ]]; then
+    SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up -d api worker
+    [[ -n "\${compose_hash}" ]] && echo "\${compose_hash}" > "\${compose_stamp}"
+  else
+    restart_ids=""
+    [[ -n "\${api_cid}" ]] && restart_ids="\${api_cid}"
+    [[ -n "\${worker_cid}" ]] && restart_ids="\${restart_ids} \${worker_cid}"
+    if [[ -n "\${restart_ids}" ]]; then
+      # shellcheck disable=SC2086
+      docker restart \${restart_ids}
+    else
+      SERVER_MOUNT_CODE=1 COMPOSE_PROJECT_NAME="\${proj}" bash scripts/stack.sh server-up -d api worker
+      [[ -n "\${compose_hash}" ]] && echo "\${compose_hash}" > "\${compose_stamp}"
+    fi
+  fi
   wait_api_ready
 else
   echo "[sync] 跳过 API 重建（--no-restart-api）"

@@ -29,6 +29,16 @@ def test_system_features_lists_ai_tools(client, admin_token):
     assert ai.get("tag") == "需联网"
 
 
+def test_system_features_ai_home_in_tools(client, admin_token):
+    r = client.get("/api/v1/system/features", headers=_auth(admin_token))
+    assert r.status_code == 200
+    items = r.json()["data"]
+    home = next(x for x in items if x["id"] == "ai_home")
+    assert home["enabled"] is True
+    assert home.get("category") == "tools"
+    assert home.get("route") == "/ai-home"
+
+
 def test_system_features_enabled_before_disabled(client, admin_token):
     r = client.get("/api/v1/system/features", headers=_auth(admin_token))
     assert r.status_code == 200

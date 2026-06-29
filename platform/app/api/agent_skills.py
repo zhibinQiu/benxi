@@ -13,6 +13,11 @@ from app.api.deps import get_client_ip, require_permission
 from app.database import get_db
 from app.models.org import User
 from app.schemas.agent_profile import AgentProfileDetailOut, AgentProfileOut, AgentProfilePatchIn
+from app.schemas.aip_external_agent import (
+    AipExternalAgentCreateIn,
+    AipExternalAgentOut,
+    AipExternalAgentPatchIn,
+)
 from app.schemas.agent_skill import AgentSkillFileContentOut, AgentSkillFileUpdateIn
 from app.schemas.agent_skill import (
     AgentMemoryOut,
@@ -34,6 +39,7 @@ from app.schemas.agent_skill import (
 from app.schemas.common import ApiResponse, PageResult
 from app.services import agent_skill_service as svc
 from app.services import agent_profile_service as agent_profile_svc
+from app.services import aip_external_agent_service as ext_agent_svc
 from app.services import skill_registry_service as registry_svc
 from app.services.audit_service import write_audit
 
@@ -176,7 +182,7 @@ def update_system_agent_file(
     agent_id: str,
     file_path: str,
     body: AgentSkillFileUpdateIn,
-    user: Annotated[User, Depends(require_permission("admin.user"))],
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[AgentSkillFileContentOut]:
@@ -198,7 +204,7 @@ def update_system_agent_file(
 def patch_system_agent(
     agent_id: str,
     body: AgentProfilePatchIn,
-    user: Annotated[User, Depends(require_permission("admin.user"))],
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[AgentProfileOut]:
@@ -206,6 +212,7 @@ def patch_system_agent(
         db,
         agent_id,
         enabled=body.enabled,
+        service_enabled=body.service_enabled,
         skill_names=body.skill_names,
     )
     write_audit(
@@ -217,6 +224,88 @@ def patch_system_agent(
         ip_address=client_ip,
     )
     return ApiResponse(data=result)
+
+
+@router.get("/external-agents", response_model=ApiResponse[list[AipExternalAgentOut]])
+def list_external_agents_for_ui(
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[AipExternalAgentOut]]:
+    from app.core.aip.external_registry import load_config_external_agents
+
+    db_items = ext_agent_svc.list_external_agents_admin(db)
+    db_aids = {item.aid for item in db_items}
+    config_items = [
+        AipExternalAgentOut(
+            id=None,
+            aid=record.aid,
+            name=record.name,
+            description=record.description,
+            service_endpoint=record.service_endpoint,
+            enabled=record.enabled,
+            source="config",
+        )
+        for record in load_config_external_agents()
+        if record.aid not in db_aids
+    ]
+    return ApiResponse(data=[*db_items, *config_items])
+
+
+@router.post("/external-agents", response_model=ApiResponse[AipExternalAgentOut])
+def create_external_agent_for_ui(
+    body: AipExternalAgentCreateIn,
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
+    db: Annotated[Session, Depends(get_db)],
+    client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
+) -> ApiResponse[AipExternalAgentOut]:
+    result = ext_agent_svc.create_external_agent(db, body)
+    write_audit(
+        db,
+        user_id=user.id,
+        action="aip_external_agent.create",
+        resource_type="aip_external_agent",
+        detail={"id": str(result.id), "aid": result.aid},
+        ip_address=client_ip,
+    )
+    return ApiResponse(data=result)
+
+
+@router.patch("/external-agents/{agent_id}", response_model=ApiResponse[AipExternalAgentOut])
+def patch_external_agent_for_ui(
+    agent_id: uuid.UUID,
+    body: AipExternalAgentPatchIn,
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
+    db: Annotated[Session, Depends(get_db)],
+    client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
+) -> ApiResponse[AipExternalAgentOut]:
+    result = ext_agent_svc.patch_external_agent(db, agent_id, body)
+    write_audit(
+        db,
+        user_id=user.id,
+        action="aip_external_agent.patch",
+        resource_type="aip_external_agent",
+        detail={"id": str(agent_id), **body.model_dump(exclude_unset=True)},
+        ip_address=client_ip,
+    )
+    return ApiResponse(data=result)
+
+
+@router.delete("/external-agents/{agent_id}", response_model=ApiResponse[dict])
+def delete_external_agent_for_ui(
+    agent_id: uuid.UUID,
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
+    db: Annotated[Session, Depends(get_db)],
+    client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
+) -> ApiResponse[dict]:
+    ext_agent_svc.delete_external_agent(db, agent_id)
+    write_audit(
+        db,
+        user_id=user.id,
+        action="aip_external_agent.delete",
+        resource_type="aip_external_agent",
+        detail={"id": str(agent_id)},
+        ip_address=client_ip,
+    )
+    return ApiResponse(data={"deleted": True})
 
 
 @router.get("/{skill_id}", response_model=ApiResponse[AgentSkillDetailOut])

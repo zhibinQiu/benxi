@@ -15,6 +15,38 @@ const VITE_API_BASE =
 const platformSpinPath = fileURLToPath(
   new URL("./src/components/PlatformSpin.vue", import.meta.url)
 );
+const platformBaseLoadingPath = fileURLToPath(
+  new URL("./src/integrations/naive-base-loading.js", import.meta.url)
+);
+
+/**
+ * naive-ui 包内用相对路径引用 Spin / BaseLoading，字符串 alias 拦不住。
+ * 在 resolveId 阶段把这两条链路透传到玫瑰加载动画。
+ */
+function naiveUiLoaderAlias() {
+  const spinIndex = /naive-ui[\\/]es[\\/]spin[\\/]index\.mjs$/;
+  const loadingIndex = /naive-ui[\\/]es[\\/]_internal[\\/]loading[\\/]index\.mjs$/;
+  const spinSrc = /naive-ui[\\/]es[\\/]spin[\\/]src[\\/]Spin\.mjs$/;
+
+  return {
+    name: "naive-ui-loader-alias",
+    enforce: "pre",
+    resolveId(source, importer) {
+      if (!importer) return null;
+      const from = importer.replace(/\\/g, "/");
+      if (source === "./src/Spin.mjs" && spinIndex.test(from)) {
+        return platformSpinPath;
+      }
+      if (
+        source === "./src/Loading.mjs" &&
+        (loadingIndex.test(from) || spinSrc.test(from))
+      ) {
+        return platformBaseLoadingPath;
+      }
+      return null;
+    },
+  };
+}
 
 /** 设计系统内嵌路径（须与 platform EMBED 配置一致，且勿与平台前端路由冲突） */
 const DESIGN_SYSTEM_PATH_RE =
@@ -44,15 +76,14 @@ export default defineConfig({
     alias: {
       // 显式 `import { NSpin } from "naive-ui"` 也走玫瑰加载动画
       "naive-ui/es/spin/src/Spin.mjs": platformSpinPath,
-      "naive-ui/es/_internal/loading/src/Loading.mjs": fileURLToPath(
-        new URL("./src/integrations/naive-base-loading.js", import.meta.url)
-      ),
+      "naive-ui/es/_internal/loading/src/Loading.mjs": platformBaseLoadingPath,
     },
   },
   define: {
     "import.meta.env.VITE_API_BASE": JSON.stringify(VITE_API_BASE),
   },
   plugins: [
+    naiveUiLoaderAlias(),
     vue(),
     Components({
       resolvers: [platformNaiveResolver(), NaiveUiResolver()],

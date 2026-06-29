@@ -40,7 +40,7 @@
 |-------|----------|------------|-----------|
 | `company` | 公司级 | 0（根） | `doc.company.*` |
 | `department` | 部门级 | 1 | `doc.dept.*` |
-| `team` | 小组级 | 2 | `doc.team.*` |
+| `team` | 分部级 | 2 | `doc.team.*` |
 | `personal` | 个人级 | 不绑定 | `doc.personal.*` |
 
 另需 **`doc.read`** 才能默认访问组织文库文档。单文档另有 **ACL**（用户级 grant，档位 `visible` / `query` / `modify`）与 **deny** 规则；组织分级成员默认 **可修改**。deny 优先于 grant 与分级默认。

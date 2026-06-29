@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import get_current_user, require_feature
+from app.core.async_db import detach_request_db
 from app.core.exceptions import bad_request, forbidden, not_found
 from app.database import SessionLocal, get_db
 from app.models.compare import CompareJob
@@ -159,13 +160,15 @@ async def compare_job_events(
     db: Annotated[Session, Depends(get_db)],
 ):
     job = _require_job(db, job_id, user)
+    tracked_job_id = job.id
+    detach_request_db(db)
 
     async def generator():
         last_status = None
         for _ in range(600):
             poll_db = SessionLocal()
             try:
-                polled = get_user_compare_job(poll_db, job.id, user.id)
+                polled = get_user_compare_job(poll_db, tracked_job_id, user.id)
                 if not polled:
                     break
                 payload = job_to_dict(poll_db, polled)

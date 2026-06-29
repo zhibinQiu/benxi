@@ -33,8 +33,8 @@ def test_kg_meta_and_crud(client: TestClient, admin_token: str):
     assert res.status_code == 200
     data = res.json()["data"]
     assert data["entity_total"] >= 1
-    assert len(data["entity_types"]) >= 6
-    assert len(data["relation_types"]) >= 6
+    assert len(data["entity_types"]) >= 9
+    assert len(data["relation_types"]) >= 10
 
     types = data["entity_types"]
     type_id = types[0]["id"]
@@ -59,7 +59,7 @@ def test_kg_meta_and_crud(client: TestClient, admin_token: str):
 
 def test_kg_question_entity_match_and_context(client: TestClient, admin_token: str):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    client.get("/api/v1/kg/meta", headers=headers)
+    client.get("/api/v1/kg/meta?sync_system=true", headers=headers)
 
     db = SessionLocal()
     try:
@@ -87,7 +87,7 @@ def test_kg_question_entity_match_and_context(client: TestClient, admin_token: s
 
 def test_ai_home_resolves_kg_context(client: TestClient, admin_token: str):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    client.get("/api/v1/kg/meta", headers=headers)
+    client.get("/api/v1/kg/meta?sync_system=true", headers=headers)
 
     db = SessionLocal()
     try:
@@ -131,9 +131,11 @@ def test_merge_kg_qa_into_context_offsets_citations():
         ),
     )
     assert "本体图谱" in merged_ctx
+    assert merged_ctx.index("本体图谱") < merged_ctx.index("文档片段")
     assert merged_cites[0]["index"] == 1
+    assert merged_cites[0]["source"] == "kg"
     assert merged_cites[1]["index"] == 2
-    assert merged_cites[1]["source"] == "kg"
+    assert merged_cites[1]["source"] == "knowflow"
 
 
 def test_kg_graph_focus_isolated_entity(client: TestClient, admin_token: str):
@@ -166,7 +168,7 @@ def test_kg_graph_focus_isolated_entity(client: TestClient, admin_token: str):
 def test_kg_meta_syncs_platform_org(client: TestClient, admin_token: str):
     """加载 meta 时将平台用户/部门同步为图谱实体。"""
     headers = {"Authorization": f"Bearer {admin_token}"}
-    res = client.get("/api/v1/kg/meta", headers=headers)
+    res = client.get("/api/v1/kg/meta?sync_system=true", headers=headers)
     assert res.status_code == 200
 
     entities = client.get("/api/v1/kg/entities", headers=headers)
@@ -179,6 +181,51 @@ def test_kg_meta_syncs_platform_org(client: TestClient, admin_token: str):
         (e.get("properties") or {}).get("platform_user_id")
         for e in persons
     )
-    # 测试库可能无部门数据，有组织实体则校验属性键
-    for org in orgs:
+    platform_orgs = [
+        e for e in orgs if (e.get("properties") or {}).get("platform_department_id")
+    ]
+    for org in platform_orgs:
         assert (org.get("properties") or {}).get("platform_department_id")
+
+
+def test_kg_meta_syncs_platform_agents(client: TestClient, admin_token: str):
+    """加载 meta 时将平台智能体、工具、技能同步为图谱实体与关系。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    res = client.get("/api/v1/kg/meta?sync_system=true", headers=headers)
+    assert res.status_code == 200
+
+    entities = client.get("/api/v1/kg/entities", headers=headers)
+    assert entities.status_code == 200
+    rows = entities.json()["data"]
+    agents = [e for e in rows if e["type_code"] == "agent"]
+    tools = [e for e in rows if e["type_code"] == "tool"]
+    skills = [e for e in rows if e["type_code"] == "skill"]
+    assert len(agents) >= 5
+    assert len(tools) >= 5
+    assert len(skills) >= 3
+    assert any(e["name"] == "检索研究" for e in agents)
+    assert any((e.get("properties") or {}).get("platform_agent_id") == "research" for e in agents)
+    assert any(e["name"] == "kg_query" for e in tools)
+    assert any((e.get("properties") or {}).get("slug") == "knowledge-research" for e in skills)
+
+    relations = client.get("/api/v1/kg/relations", headers=headers)
+    assert relations.status_code == 200
+    rel_rows = relations.json()["data"]
+    rel_type_codes = {r["relation_type_code"] for r in rel_rows}
+    assert "has_tool" in rel_type_codes
+    assert "has_skill" in rel_type_codes
+    assert "orchestrates" in rel_type_codes
+
+
+def test_kg_list_platform_users_question():
+    """「有哪些用户」类问题应返回已同步的平台人员/组织实体。"""
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.phone == "admin"))
+        assert user is not None
+        ctx = retrieve_kg_context_for_question(db, user, "系统中有哪些用户")
+        assert ctx is not None
+        assert ctx.entity_count >= 1
+        assert "人员" in (ctx.context_text or "") or "组织" in (ctx.context_text or "")
+    finally:
+        db.close()

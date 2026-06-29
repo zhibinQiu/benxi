@@ -4,7 +4,8 @@ import { disposeRichContentInElement } from "../utils/richContentLifecycle.js";
 import { NIcon } from "naive-ui";
 import { SearchOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
-import ChatBubbleRetry from "./ChatBubbleRetry.vue";
+import ChatDisclaimer from "./ChatDisclaimer.vue";
+import ChatBubbleActions from "./ChatBubbleActions.vue";
 import KnowledgeChatContent from "./KnowledgeChatContent.vue";
 import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 const KnowledgeMindMap = defineAsyncComponent(() => import("./KnowledgeMindMap.vue"));
@@ -13,6 +14,7 @@ import { usePlatformUi } from "../composables/usePlatformUi.js";
 import { useI18n } from "../composables/useI18n.js";
 import { handleAgentWorkflowForNotifications } from "../composables/useNotificationAlerts.js";
 import { emptyAgentWorkflow, applyAgentWorkflowEvent } from "../utils/agentWorkflow.js";
+import { copyChatMessageText, shareChatMessageText } from "../utils/chatBubbleActions.js";
 import { alignCitationsWithContent } from "../utils/reportCitations.js";
 
 const props = defineProps({
@@ -42,6 +44,7 @@ const composerRef = ref(null);
 const mindmapRef = ref(null);
 /** KeepAlive 失活时不挂载检索结果 DOM（答案/引用/思维导图） */
 const resultsDomActive = ref(true);
+const answerFeedback = ref(null);
 let streamAbort = null;
 
 const hasResults = computed(() => phase.value === "results");
@@ -112,6 +115,7 @@ async function runSearch(content) {
 
   question.value = text;
   answer.value = "";
+  answerFeedback.value = null;
   citations.value = [];
   workflow.value = {
     ...emptyWorkflow(),
@@ -191,6 +195,22 @@ function useSuggestion(text) {
 function retryCurrentSearch() {
   if (sending.value || !question.value.trim()) return;
   runSearch(question.value);
+}
+
+async function copyCurrentAnswer() {
+  await copyChatMessageText(answer.value, { ui, t });
+}
+
+async function shareCurrentAnswer() {
+  await shareChatMessageText(answer.value, {
+    ui,
+    t,
+    title: t("knowledgeSearch.title"),
+  });
+}
+
+function setAnswerFeedback(value) {
+  answerFeedback.value = value;
 }
 
 function stopGeneration() {
@@ -325,6 +345,7 @@ onMounted(() => {
                 v-if="sending && (workflow.running || workflow.steps.length)"
                 :workflow="workflow"
                 :keep-visible-after-done="sending"
+                :awaiting-reply="sending && !answer"
                 compact
               />
               <div
@@ -349,10 +370,16 @@ onMounted(() => {
                 @open-citation="onCitationClick"
               />
             </template>
-            <ChatBubbleRetry
+            <ChatBubbleActions
               v-if="answer && !sending"
               align="start"
+              show-retry
+              :retry-disabled="sending || !question.trim()"
+              :feedback="answerFeedback"
+              @copy="copyCurrentAnswer"
+              @share="shareCurrentAnswer"
               @retry="retryCurrentSearch"
+              @feedback="setAnswerFeedback"
             />
           </div>
         </section>
@@ -397,6 +424,7 @@ onMounted(() => {
           @send="runSearch()"
           @stop="stopGeneration"
         />
+        <ChatDisclaimer />
         <div
           v-if="!hasResults && suggestions.length"
           class="knowledge-search-panel__suggestions"
@@ -533,16 +561,18 @@ onMounted(() => {
 .knowledge-search-panel__chip {
   padding: 6px 12px;
   font-size: 12px;
-  color: var(--platform-accent-pressed);
-  background: var(--platform-accent-muted);
-  border: 1px solid var(--platform-accent-border-soft);
+  color: var(--platform-text);
+  background: var(--platform-bg-secondary);
+  border: 1px solid var(--platform-border);
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .knowledge-search-panel__chip:hover:not(:disabled) {
-  background: var(--platform-accent-soft);
+  color: var(--platform-text);
+  background: var(--platform-bg-tertiary);
+  border-color: var(--platform-border);
 }
 
 .knowledge-search-panel__chip:disabled {
@@ -597,12 +627,11 @@ onMounted(() => {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding: 12px 16px 14px;
-  border-radius: 14px;
-  border-bottom-left-radius: 4px;
-  border: 1px solid var(--platform-border);
-  background: var(--platform-surface);
-  box-shadow: var(--platform-shadow);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   overflow: visible;
 }
 
@@ -671,7 +700,7 @@ onMounted(() => {
   min-width: 0;
   font-size: 14px;
   line-height: 1.6;
-  color: #334155;
+  color: var(--platform-text);
   overflow-wrap: anywhere;
   word-break: break-word;
 }

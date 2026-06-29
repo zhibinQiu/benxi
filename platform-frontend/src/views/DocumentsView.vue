@@ -19,8 +19,7 @@ import {
   NEmpty,
   NProgress,
   NText,
-  NIcon,
-  NSpin } from "naive-ui";
+  NIcon } from "naive-ui";
 import {
   CreateOutline,
   TrashOutline,
@@ -36,6 +35,7 @@ import DocumentUploadLocationPicker from "../components/DocumentUploadLocationPi
 import KbFolderCard from "../components/KbFolderCard.vue";
 import KbFolderCreateCard from "../components/KbFolderCreateCard.vue";
 import IconAction from "../components/IconAction.vue";
+import PlatformSpin from "../components/PlatformSpin.vue";
 import BatchTableToolbar from "../components/BatchTableToolbar.vue";
 import ListTableFooter from "../components/ListTableFooter.vue";
 import AdminFormModal from "../components/AdminFormModal.vue";
@@ -65,6 +65,7 @@ import {
 } from "../utils/documentCaps.js";
 import {
   clearDocumentsViewCache,
+  invalidateDocumentsKbFoldersCache,
   readDocumentsKbFoldersCache,
   readDocumentsListCache,
   writeDocumentsKbFoldersCache,
@@ -286,6 +287,50 @@ function sortKbFoldersForDisplay(items) {
       return a.index - b.index;
     })
     .map(({ item }) => item);
+}
+
+function kbFoldersCacheParams() {
+  const deptId =
+    ORG_SCOPES.includes(activeScope.value) && activeDeptId.value
+      ? activeDeptId.value
+      : null;
+  return { deptId, ownerId: personalOwnerParam() };
+}
+
+/** 将新建文件夹合并进列表，避免列表接口缓存尚未失效时 UI 不更新 */
+function mergeCreatedKbFolder(items, folder) {
+  if (!folder?.id) return items || [];
+  const id = String(folder.id);
+  const normalized = {
+    id: folder.id,
+    virtual_id: null,
+    name: folder.name,
+    description: folder.description || "",
+    scope: folder.scope || activeScope.value,
+    dept_id: folder.dept_id ?? null,
+    kind: folder.kind || "normal",
+    is_system: false,
+    system_hint: null,
+    document_count: folder.document_count ?? 0,
+    can_manage: folder.can_manage ?? true,
+  };
+  const rest = (items || []).filter(
+    (item) => item?.id == null || String(item.id) !== id
+  );
+  return [...rest, normalized];
+}
+
+function applyCreatedKbFolderToView(folder) {
+  kbFolders.value = sortKbFoldersForDisplay(
+    mergeCreatedKbFolder(kbFolders.value, folder)
+  );
+  const { deptId, ownerId } = kbFoldersCacheParams();
+  writeDocumentsKbFoldersCache(activeScope.value, deptId, ownerId, {
+    scope: activeScope.value,
+    dept_id: deptId,
+    can_manage_folders: kbCanManageFolders.value,
+    items: kbFolders.value,
+  });
 }
 
 const isMainView = computed(() => libraryView.value === "main");
@@ -750,8 +795,10 @@ async function loadKbFolders({ force = false, background = false } = {}) {
     if (ownerId) params.owner_id = ownerId;
     const data = await fetchKbFolders(params);
     if (seq !== kbFoldersLoadSeq) return;
+    const nextItems = sortKbFoldersForDisplay(data.items || []);
+    if (background && hadFolders && !nextItems.length) return;
     writeDocumentsKbFoldersCache(activeScope.value, deptId, ownerId, data);
-    kbFolders.value = sortKbFoldersForDisplay(data.items || []);
+    kbFolders.value = nextItems;
     kbCanManageFolders.value = !!data.can_manage_folders;
   } catch (e) {
     if (seq !== kbFoldersLoadSeq) return;
@@ -845,7 +892,6 @@ function applyCachedListForActiveFolder() {
 async function refreshDocumentsView() {
   if (refreshing.value) return;
   refreshing.value = true;
-  invalidateDocumentLibrary();
   clearDocumentsViewCache();
   notifyKnowledgeScopeTreeStale();
   try {
@@ -936,8 +982,11 @@ async function load({ force = false, background = false } = {}) {
       data = await fetchDocuments(docParams);
     }
     if (seq !== documentsLoadSeq) return;
-    items.value = data.items || [];
-    total.value = data.total ?? 0;
+    const nextItems = data.items || [];
+    const nextTotal = data.total ?? 0;
+    if (background && hadItems && !nextItems.length && nextTotal === 0) return;
+    items.value = nextItems;
+    total.value = nextTotal;
     writeDocumentsListCache(listCacheKey, data);
     scheduleIndexStatusPoll();
   } catch (e) {
@@ -1010,6 +1059,7 @@ function scheduleIndexStatusPoll() {
 }
 
 function onKnowledgeIndexUpdated() {
+  if (refreshing.value) return;
   if (indexRefreshDebounceTimer) clearTimeout(indexRefreshDebounceTimer);
   indexRefreshDebounceTimer = setTimeout(() => {
     indexRefreshDebounceTimer = null;
@@ -1128,6 +1178,7 @@ async function submitCreateFolder() {
     return;
   }
   savingFolder.value = true;
+  const { deptId, ownerId } = kbFoldersCacheParams();
   try {
     const payload = {
       name,
@@ -1136,10 +1187,14 @@ async function submitCreateFolder() {
     if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
       payload.dept_id = activeDeptId.value;
     }
-    await createKbFolder(payload);
+    const folder = await createKbFolder(payload);
+    applyCreatedKbFolderToView(folder);
+    invalidateDocumentsKbFoldersCache(activeScope.value, deptId, ownerId);
+    notifyKnowledgeScopeTreeStale();
     ui.success("documents.messages.folderCreated");
     showCreateFolder.value = false;
     await loadKbFolders({ force: true });
+    applyCreatedKbFolderToView(folder);
   } catch (e) {
     ui.error(e);
   } finally {
@@ -1682,6 +1737,7 @@ watch(
             :label="t('common.refresh')"
             :icon="RefreshOutline"
             :disabled="refreshing"
+            :loading="refreshing"
             @click="refreshDocumentsView"
           />
           <IconAction
@@ -1731,7 +1787,7 @@ watch(
     </div>
 
     <Transition name="doc-view" mode="out-in">
-    <n-spin
+    <PlatformSpin
       v-if="showKbFolderList"
       key="folder-grid"
       :show="kbFoldersLoading"
@@ -1767,7 +1823,7 @@ watch(
           <KbFolderCreateCard @create="openCreateFolder" />
         </div>
       </div>
-    </n-spin>
+    </PlatformSpin>
 
     <div v-else key="doc-list" class="documents-list-panel">
     <div v-if="showBottomBatchToolbar" class="doc-list-toolbar page-toolbar">
@@ -1788,7 +1844,7 @@ watch(
       </n-space>
     </div>
 
-    <n-spin :show="loading && !items.length" class="documents-view-spin" local>
+    <PlatformSpin :show="loading && !items.length" class="documents-view-spin" local>
       <n-data-table
         :columns="columns"
         :data="items"
@@ -1798,7 +1854,7 @@ watch(
         @update:checked-row-keys="onCheckedRowKeysChange"
         :pagination="false"
       />
-    </n-spin>
+    </PlatformSpin>
     </div>
     </Transition>
     </n-card>

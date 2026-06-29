@@ -65,7 +65,7 @@ def test_build_citations_synthesizes_image_id_when_chunk_ids_present():
     ]
     cites = build_citations(hits, {"11111111-1111-4111-8111-111111111111": "测试"})
     assert cites[0]["image_id"] == "ds-1-chunk-1"
-    assert cites[0]["preview_available"] is True
+    assert cites[0]["preview_available"] is False
 
 
 def test_build_citations_pageindex_page_preview():

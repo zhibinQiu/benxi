@@ -48,6 +48,44 @@ function formatMermaidRenderError(err) {
   return msg || "Mermaid 渲染失败";
 }
 
+/**
+ * Mermaid 圆形 mindmap 节点（root((…))）在 htmlLabels=false 时标签仅垂直居中、
+ * 文字仍左对齐，导致根节点文字偏右溢出。对未水平居中的 .label 补 text-anchor。
+ */
+function fixMindmapLabelAlignment(svg) {
+  if (!svg || typeof document === "undefined" || !/mindmap-node/.test(svg)) {
+    return svg;
+  }
+
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;";
+  host.innerHTML = svg;
+  document.body.appendChild(host);
+
+  try {
+    const svgEl = host.querySelector("svg");
+    if (!svgEl) return svg;
+
+    svgEl.querySelectorAll(".mindmap-node .label").forEach((labelGroup) => {
+      const transform = labelGroup.getAttribute("transform") || "";
+      const match = transform.match(/translate\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)/);
+      if (!match || Math.abs(Number.parseFloat(match[1])) > 0.5) return;
+
+      const textEl = labelGroup.querySelector("text");
+      if (!textEl) return;
+
+      textEl.setAttribute("text-anchor", "middle");
+      textEl.querySelectorAll("tspan").forEach((tspan) => {
+        tspan.setAttribute("text-anchor", "middle");
+      });
+    });
+
+    return svgEl.outerHTML;
+  } finally {
+    host.remove();
+  }
+}
+
 async function loadMermaid() {
   if (!mermaidLoader) {
     mermaidLoader = import("mermaid").then((mod) => {
@@ -55,10 +93,13 @@ async function loadMermaid() {
         startOnLoad: false,
         theme: document.documentElement.dataset.theme === "dark" ? "dark" : "default",
         securityLevel: "antiscript",
-        fontFamily: "var(--platform-font)",
+        fontFamily: "sans-serif",
+        htmlLabels: false,
         flowchart: { htmlLabels: false, useMaxWidth: true },
         sequence: { useMaxWidth: true },
         mindmap: { useMaxWidth: true },
+        er: { useMaxWidth: true },
+        class: { useMaxWidth: true },
       });
       return mod.default;
     });
@@ -124,7 +165,7 @@ async function renderMermaidAttempts(mermaid, source) {
     const renderId = `md-mermaid-render-${mermaidSeq++}`;
     try {
       const { svg } = await mermaid.render(renderId, candidate);
-      return { svg, source: candidate };
+      return { svg: fixMindmapLabelAlignment(svg), source: candidate };
     } catch (err) {
       lastErr = err;
       document.getElementById(renderId)?.remove();

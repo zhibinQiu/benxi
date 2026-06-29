@@ -1,6 +1,6 @@
 <script setup>
 defineOptions({ name: "KnowledgeFeatureLayout" });
-import { defineAsyncComponent, onActivated, provide, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onActivated, provide, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import KnowledgeScopeTree from "../components/KnowledgeScopeTree.vue";
@@ -9,6 +9,9 @@ import {
   readKnowledgeScopeSelection,
 } from "../utils/knowledgeScopeSelectionCache.js";
 
+/** 仅保留当前活跃面板，切换检索/报告时释放非活跃 AiChatPanel 实例 */
+const KEEP_ALIVE_MAX = 1;
+
 const KnowledgeSearchView = defineAsyncComponent(
   () => import("../views/KnowledgeSearchView.vue")
 );
@@ -16,7 +19,10 @@ const ReportGenerationView = defineAsyncComponent(
   () => import("../views/ReportGenerationView.vue")
 );
 
-const KEEP_ALIVE_PANELS = ["KnowledgeSearchView", "ReportGenerationView"];
+const PANEL_COMPONENTS = {
+  "knowledge-search": KnowledgeSearchView,
+  "report-generation": ReportGenerationView,
+};
 
 const route = useRoute();
 const activePanel = ref(String(route.name || ""));
@@ -28,6 +34,8 @@ watch(
   },
   { immediate: true }
 );
+
+const activePanelComponent = computed(() => PANEL_COMPONENTS[activePanel.value] || null);
 
 const selection = ref(readKnowledgeScopeSelection());
 provide(KNOWLEDGE_SCOPE_SELECTION_KEY, selection);
@@ -52,9 +60,12 @@ onActivated(() => {
         <KnowledgeScopeTree @selection-change="onSelectionChange" />
       </aside>
       <main class="knowledge-feature-page__main knowledge-search-page__main report-gen-page__main">
-        <KeepAlive :max="1" :include="KEEP_ALIVE_PANELS">
-          <KnowledgeSearchView v-if="activePanel === 'knowledge-search'" />
-          <ReportGenerationView v-else-if="activePanel === 'report-generation'" />
+        <KeepAlive :max="KEEP_ALIVE_MAX">
+          <component
+            :is="activePanelComponent"
+            v-if="activePanelComponent"
+            :key="activePanel"
+          />
         </KeepAlive>
       </main>
     </div>

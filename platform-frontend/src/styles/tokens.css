@@ -1,189 +1,154 @@
-/* iOS 26 — Liquid Glass design tokens (light purple) */
+/* OpenAI / ChatGPT — flat neutral design tokens */
 :root,
 html[data-theme="light"] {
   color-scheme: light;
 
-  /* 三级字号：lg 功能工作台 / base 正文 / sm 辅助 */
   --platform-font-size-lg: 17px;
-  --platform-font-size-base: 16px;
-  --platform-font-size-sm: 14px;
-  --platform-font-size-xs: 13px;
+  --platform-font-size-base: 15px;
+  --platform-font-size-sm: 13px;
+  --platform-font-size-xs: 12px;
   --platform-font-size-2xs: var(--platform-font-size-sm);
   --platform-font-size-3xs: var(--platform-font-size-sm);
   --platform-font-weight-normal: 400;
   --platform-font-weight-medium: 500;
   --platform-font-weight-strong: 600;
-  --platform-control-height-md: 38px;
+  --platform-control-height-md: 40px;
   --platform-control-height-sm: 32px;
-  --platform-menu-item-height: 42px;
+  --platform-menu-item-height: 40px;
 
   --platform-font:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC",
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Helvetica Neue", "Microsoft YaHei", sans-serif;
   --platform-font-display:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue",
-    "Microsoft YaHei", sans-serif;
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Helvetica Neue", "Microsoft YaHei", sans-serif;
   --platform-font-mono:
     ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --platform-tracking-tight: 0;
+  --platform-tracking-tight: -0.01em;
   --platform-tracking-normal: 0;
-  --platform-tracking-wide: 0;
-  --platform-line-body: 1.47;
-  --platform-line-heading: 1.2;
+  --platform-tracking-wide: 0.01em;
+  --platform-line-body: 1.5;
+  --platform-line-heading: 1.25;
 
-  --platform-ease-spring: cubic-bezier(0.32, 1.28, 0.54, 1);
-  --platform-ease-spring-soft: cubic-bezier(0.22, 1.18, 0.36, 1);
+  --platform-ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --platform-ease-spring-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --platform-ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --platform-ease-fluid: cubic-bezier(0.45, 0.05, 0.2, 1);
-  --platform-duration-spring: 0.42s;
-  --platform-duration-smooth: 0.28s;
+  --platform-ease-fluid: cubic-bezier(0.4, 0, 0.2, 1);
+  --platform-duration-spring: 0.32s;
+  --platform-duration-smooth: 0.2s;
 
-  --platform-glass-blur: 14px;
-  --platform-glass-saturate: 165%;
-  --platform-bg-glass: rgba(255, 255, 255, 0.48);
-  --platform-bg-glass-strong: rgba(255, 255, 255, 0.68);
-  --platform-bg-glass-subtle: rgba(255, 255, 255, 0.32);
-  --platform-glass-border: rgba(167, 139, 250, 0.14);
-  --platform-glass-rim: rgba(255, 255, 255, 0.88);
-  --platform-glass-outline: rgba(167, 139, 250, 0.18);
-  --platform-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.96);
-  --platform-glass-depth: 0 8px 24px rgba(139, 92, 246, 0.1);
-  --platform-glass-rim-edge:
-    inset 0 1px 0 var(--liquid-edge-highlight),
-    inset 0 -1px 0 var(--liquid-edge-shadow),
-    0 0 0 1px var(--platform-glass-outline);
-  --platform-glass-shadow: var(--platform-shadow-sm);
+  --platform-glass-blur: 0px;
+  --platform-glass-saturate: 100%;
+  --platform-bg-glass: #ffffff;
+  --platform-bg-glass-strong: #ffffff;
+  --platform-bg-glass-subtle: #f7f7f8;
+  --platform-glass-border: #e5e5e5;
+  --platform-glass-rim: #e5e5e5;
+  --platform-glass-outline: #e5e5e5;
+  --platform-glass-highlight: none;
+  --platform-glass-depth: none;
+  --platform-glass-rim-edge: none;
+  --platform-glass-shadow: none;
 
-  --liquid-specular-hot: rgba(255, 255, 255, 0.95);
-  --liquid-specular-mid: rgba(255, 255, 255, 0.42);
-  --liquid-flow-a: rgba(255, 255, 255, 0.38);
-  --liquid-flow-b: rgba(167, 139, 250, 0.16);
-  --liquid-flow-c: rgba(196, 181, 253, 0.14);
-  --liquid-rim-top: rgba(255, 255, 255, 0.88);
-  --liquid-edge-highlight: rgba(255, 255, 255, 1);
-  --liquid-edge-shadow: rgba(139, 92, 246, 0.12);
-  --liquid-inner-glow: rgba(255, 255, 255, 0.22);
-  --liquid-drape-gradient: rgba(255, 255, 255, 0.18);
+  --liquid-specular-hot: transparent;
+  --liquid-specular-mid: transparent;
+  --liquid-flow-a: transparent;
+  --liquid-flow-b: transparent;
+  --liquid-flow-c: transparent;
+  --liquid-rim-top: transparent;
+  --liquid-edge-highlight: transparent;
+  --liquid-edge-shadow: transparent;
+  --liquid-inner-glow: transparent;
+  --liquid-drape-gradient: transparent;
 
-  --menu-glass-bg: rgba(255, 255, 255, 0.28);
-  --menu-glass-bg-bottom: rgba(255, 255, 255, 0.14);
-  --menu-glass-bg-active: rgba(255, 255, 255, 0.34);
-  --menu-glass-bg-active-bottom: rgba(255, 255, 255, 0.18);
-  --menu-glass-bg-child: rgba(255, 255, 255, 0.2);
-  --menu-glass-flow-a: rgba(255, 255, 255, 0.3);
-  --menu-glass-flow-b: rgba(139, 92, 246, 0.1);
-  --menu-glass-accent-soft: rgba(167, 139, 250, 0.12);
-  --menu-glass-accent-mid: rgba(196, 181, 253, 0.08);
-  --menu-glass-accent-glow: rgba(167, 139, 250, 0.08);
-  --menu-glass-hover-opacity: 0.68;
-  --menu-glass-active-opacity: 0.76;
-  --menu-glass-rim-edge:
-    inset 0 1px 0 color-mix(in srgb, var(--liquid-edge-highlight) 72%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--liquid-edge-shadow) 24%, transparent),
-    0 4px 14px color-mix(in srgb, var(--menu-glass-accent-glow) 28%, transparent);
-  --menu-glass-rim-edge-active:
-    inset 0 1px 0 color-mix(in srgb, var(--liquid-edge-highlight) 84%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--liquid-edge-shadow) 30%, transparent),
-    0 6px 20px color-mix(in srgb, var(--menu-glass-accent-glow) 36%, transparent);
+  --menu-glass-bg: #ececf1;
+  --menu-glass-bg-bottom: #ececf1;
+  --menu-glass-bg-active: #ececf1;
+  --menu-glass-bg-active-bottom: #ececf1;
+  --menu-glass-bg-child: #f4f4f4;
+  --menu-glass-flow-a: #ececf1;
+  --menu-glass-flow-b: #ececf1;
+  --menu-glass-accent-soft: rgba(16, 163, 127, 0.12);
+  --menu-glass-accent-mid: rgba(16, 163, 127, 0.08);
+  --menu-glass-accent-glow: transparent;
+  --menu-glass-hover-opacity: 1;
+  --menu-glass-active-opacity: 1;
+  --menu-glass-rim-edge: none;
+  --menu-glass-rim-edge-active: none;
 
-  --platform-glass-fill-hover: linear-gradient(
-    180deg,
-    var(--menu-glass-bg) 0%,
-    var(--menu-glass-bg-bottom) 100%
-  );
-  --platform-glass-fill-active: linear-gradient(
-    180deg,
-    var(--menu-glass-bg-active) 0%,
-    var(--menu-glass-bg-active-bottom) 100%
-  );
+  --platform-glass-fill-hover: #ececf1;
+  --platform-glass-fill-active: #ececf1;
 
-  --platform-bg-base: #f5f3ff;
-  --platform-bg:
-    radial-gradient(ellipse 85% 65% at 8% 10%, rgba(196, 181, 253, 0.24) 0%, transparent 58%),
-    radial-gradient(ellipse 72% 58% at 92% 12%, rgba(167, 139, 250, 0.22) 0%, transparent 55%),
-    radial-gradient(ellipse 68% 55% at 78% 90%, rgba(139, 92, 246, 0.16) 0%, transparent 52%),
-    radial-gradient(ellipse 58% 48% at 38% 52%, rgba(221, 214, 254, 0.14) 0%, transparent 68%),
-    radial-gradient(ellipse 45% 40% at 55% 28%, rgba(255, 255, 255, 0.55) 0%, transparent 70%),
-    var(--platform-bg-base);
-  --platform-bg-elevated: var(--platform-bg-glass-strong);
-  --platform-bg-elevated-solid: rgba(255, 255, 255, 0.92);
-  /* 弹窗：浅色雾面遮罩 + 纯白内容背板（管理弹窗、确认框等） */
-  --platform-modal-mask: rgba(15, 23, 42, 0.18);
+  --platform-bg-base: #ffffff;
+  --platform-bg: #ffffff;
+  --platform-bg-elevated: #ffffff;
+  --platform-bg-elevated-solid: #ffffff;
+  --platform-modal-mask: rgba(0, 0, 0, 0.45);
   --platform-modal-bg: #ffffff;
   --platform-modal-shadow:
-    0 24px 48px rgba(139, 92, 246, 0.12),
-    0 8px 20px rgba(15, 23, 42, 0.06);
-  --platform-bg-secondary: rgba(245, 243, 255, 0.82);
-  --platform-bg-tertiary: rgba(237, 233, 254, 0.88);
-  --platform-text: #1c1c1e;
-  --platform-text-secondary: #3c3c43;
-  --platform-text-tertiary: #636366;
-  --platform-text-quaternary: #8e8e93;
-  --platform-border: rgba(139, 92, 246, 0.12);
-  --platform-border-strong: rgba(139, 92, 246, 0.2);
-  --platform-divider: rgba(139, 92, 246, 0.1);
+    0 0 0 1px rgba(0, 0, 0, 0.05),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+  --platform-bg-secondary: #f7f7f8;
+  --platform-bg-tertiary: #ececf1;
+  --platform-text: #0d0d0d;
+  --platform-text-secondary: #6e6e80;
+  --platform-text-tertiary: #8e8ea0;
+  --platform-text-quaternary: #acacbe;
+  --platform-border: #e5e5e5;
+  --platform-border-strong: #d9d9e3;
+  --platform-divider: #ececf1;
 
-  --platform-shadow: 0 2px 8px rgba(139, 92, 246, 0.08), 0 8px 24px rgba(167, 139, 250, 0.08);
-  --platform-shadow-sm: 0 1px 3px rgba(139, 92, 246, 0.06);
-  --platform-shadow-lg: 0 12px 48px rgba(139, 92, 246, 0.14);
+  --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --platform-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
 
-  --platform-accent: #a78bfa;
-  --platform-accent-hover: #9374f0;
-  --platform-accent-pressed: #7c3aed;
-  --platform-accent-secondary: #c4b5fd;
-  --platform-accent-secondary-hover: #a78bfa;
-  --platform-accent-soft: rgba(167, 139, 250, 0.14);
-  --platform-accent-soft-2: rgba(196, 181, 253, 0.16);
-  --platform-accent-gradient: linear-gradient(135deg, #b39df7 0%, #8b5cf6 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #9374f0 0%, #7c3aed 100%);
-  --platform-accent-gradient-soft: linear-gradient(160deg, #f5f3ff 0%, #ede9fe 100%);
-  --platform-accent-muted: rgba(167, 139, 250, 0.1);
-  --platform-accent-muted-strong: rgba(167, 139, 250, 0.16);
-  --platform-accent-border: rgba(167, 139, 250, 0.22);
-  --platform-accent-border-soft: rgba(167, 139, 250, 0.14);
+  --platform-accent: #10a37f;
+  --platform-accent-hover: #0d8c6c;
+  --platform-accent-pressed: #0a7a5e;
+  --platform-accent-secondary: #19c37d;
+  --platform-accent-secondary-hover: #10a37f;
+  --platform-accent-soft: rgba(16, 163, 127, 0.12);
+  --platform-accent-soft-2: rgba(16, 163, 127, 0.08);
+  --platform-accent-gradient: linear-gradient(180deg, #10a37f 0%, #0d8c6c 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #0d8c6c 0%, #0a7a5e 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #f7f7f8 0%, #ffffff 100%);
+  --platform-accent-muted: rgba(16, 163, 127, 0.08);
+  --platform-accent-muted-strong: rgba(16, 163, 127, 0.14);
+  --platform-accent-border: rgba(16, 163, 127, 0.35);
+  --platform-accent-border-soft: rgba(16, 163, 127, 0.2);
 
-  --platform-accent-stop-a: #ddd6fe;
-  --platform-accent-stop-b: #a78bfa;
-  --platform-accent-stop-c: #c4b5fd;
-  --platform-accent-stop-d: #8b5cf6;
-  --platform-accent-stop-e: #9374f0;
+  --platform-accent-stop-a: #d1fae5;
+  --platform-accent-stop-b: #10a37f;
+  --platform-accent-stop-c: #19c37d;
+  --platform-accent-stop-d: #0d8c6c;
+  --platform-accent-stop-e: #0a7a5e;
 
-  /* Rose 曲线 / 加载动画：偏淡紫 */
-  --platform-loader-gradient-start: #e9e0ff;
-  --platform-loader-gradient-mid: #c4b5fd;
-  --platform-loader-gradient-end: #a78bfa;
-  --platform-loader-path: rgba(167, 139, 250, 0.3);
-  --platform-loader-color: #b39df7;
+  --platform-loader-gradient-start: #d1fae5;
+  --platform-loader-gradient-mid: #6ee7b7;
+  --platform-loader-gradient-end: #10a37f;
+  --platform-loader-path: rgba(16, 163, 127, 0.28);
+  --platform-loader-color: #10a37f;
 
-  --platform-shell-gradient: linear-gradient(
-    135deg,
-    rgba(245, 243, 255, 0.88) 0%,
-    rgba(237, 233, 254, 0.86) 48%,
-    rgba(241, 238, 252, 0.88) 100%
-  );
-  --platform-chat-gradient: var(--platform-shell-gradient);
-  --platform-header-bg: var(--platform-shell-gradient);
-  --platform-sider-bg: var(--platform-bg-glass);
-  --platform-toolbar-bg: var(--platform-bg-glass-subtle);
+  --platform-shell-gradient: #ffffff;
+  --platform-chat-gradient: #ffffff;
+  --platform-header-bg: #ffffff;
+  --platform-sider-bg: #f7f7f8;
+  --platform-toolbar-bg: #f7f7f8;
 
-  --platform-ui-glass-fill: rgba(255, 255, 255, 0.52);
-  --platform-ui-glass-fill-strong: rgba(255, 255, 255, 0.68);
-  --platform-ui-glass-fill-subtle: rgba(255, 255, 255, 0.36);
-  --platform-ui-glass-border: rgba(139, 92, 246, 0.12);
-  --platform-ui-glass-rim: rgba(167, 139, 250, 0.18);
-  --platform-ui-layer-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.75) inset,
-    0 8px 24px rgba(139, 92, 246, 0.08),
-    0 2px 6px rgba(167, 139, 250, 0.05);
+  --platform-ui-glass-fill: #ffffff;
+  --platform-ui-glass-fill-strong: #ffffff;
+  --platform-ui-glass-fill-subtle: #f7f7f8;
+  --platform-ui-glass-border: #e5e5e5;
+  --platform-ui-glass-rim: #e5e5e5;
+  --platform-ui-layer-shadow: none;
 
-  --platform-radius-lg: 8px;
+  --platform-radius-lg: 12px;
   --platform-radius: 8px;
   --platform-radius-sm: 6px;
   --platform-radius-xs: 4px;
   --platform-radius-pill: 999px;
 
-  /* 浮层层级：系统确认框 > Toast > 功能弹窗 > 顶栏 flyout > Tooltip > 下拉 */
   --platform-z-loading: 10200;
   --platform-z-dropdown: 10000;
   --platform-z-flyout: 10050;
@@ -193,19 +158,19 @@ html[data-theme="light"] {
   --platform-z-message: 10900;
   --platform-z-system-dialog: 11000;
 
-  --platform-focus-ring: 0 0 0 4px rgba(167, 139, 250, 0.26);
+  --platform-focus-ring: 0 0 0 2px rgba(16, 163, 127, 0.35);
 
-  --platform-caution: #c93400;
-  --platform-caution-soft: rgba(201, 52, 0, 0.1);
-  --platform-danger: #ff3b30;
-  --platform-danger-soft: rgba(255, 59, 48, 0.12);
+  --platform-caution: #e25507;
+  --platform-caution-soft: rgba(226, 85, 7, 0.1);
+  --platform-danger: #ef4444;
+  --platform-danger-soft: rgba(239, 68, 68, 0.1);
 
-  --platform-surface: var(--platform-bg-elevated);
+  --platform-surface: #ffffff;
   --platform-muted: var(--platform-text-secondary);
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
-  --platform-green-soft: #c4b5fd;
+  --platform-green-soft: #19c37d;
   --platform-green-surface: var(--platform-accent-soft);
   --platform-green-surface-2: var(--platform-accent-soft-2);
 }
@@ -213,156 +178,125 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --platform-glass-outline: rgba(196, 181, 253, 0.16);
+  --platform-glass-outline: rgba(255, 255, 255, 0.1);
 
-  --platform-glass-blur: 18px;
-  --platform-glass-saturate: 170%;
-  --platform-bg-glass: rgba(28, 28, 36, 0.42);
-  --platform-bg-glass-strong: rgba(28, 28, 36, 0.56);
-  --platform-bg-glass-subtle: rgba(44, 44, 56, 0.36);
-  --platform-glass-border: rgba(196, 181, 253, 0.16);
-  --platform-glass-rim: rgba(255, 255, 255, 0.12);
-  --platform-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  --platform-glass-depth: 0 12px 32px rgba(0, 0, 0, 0.32);
-  --platform-glass-rim-edge:
-    inset 0 1px 0 var(--liquid-edge-highlight),
-    inset 0 -1px 0 var(--liquid-edge-shadow),
-    0 0 0 1px var(--platform-glass-rim);
-  --platform-glass-shadow: var(--platform-shadow-sm);
+  --platform-glass-blur: 0px;
+  --platform-glass-saturate: 100%;
+  --platform-bg-glass: #212121;
+  --platform-bg-glass-strong: #2f2f2f;
+  --platform-bg-glass-subtle: #171717;
+  --platform-glass-border: rgba(255, 255, 255, 0.1);
+  --platform-glass-rim: rgba(255, 255, 255, 0.1);
+  --platform-glass-highlight: none;
+  --platform-glass-depth: none;
+  --platform-glass-rim-edge: none;
+  --platform-glass-shadow: none;
 
-  --liquid-specular-hot: rgba(255, 255, 255, 0.42);
-  --liquid-specular-mid: rgba(255, 255, 255, 0.14);
-  --liquid-flow-a: rgba(255, 255, 255, 0.16);
-  --liquid-flow-b: rgba(167, 139, 250, 0.2);
-  --liquid-flow-c: rgba(196, 181, 253, 0.18);
-  --liquid-rim-top: rgba(255, 255, 255, 0.22);
-  --liquid-edge-highlight: rgba(255, 255, 255, 0.32);
-  --liquid-edge-shadow: rgba(0, 0, 0, 0.42);
-  --liquid-inner-glow: rgba(255, 255, 255, 0.06);
-  --liquid-drape-gradient: rgba(0, 0, 0, 0.22);
+  --liquid-specular-hot: transparent;
+  --liquid-specular-mid: transparent;
+  --liquid-flow-a: transparent;
+  --liquid-flow-b: transparent;
+  --liquid-flow-c: transparent;
+  --liquid-rim-top: transparent;
+  --liquid-edge-highlight: transparent;
+  --liquid-edge-shadow: transparent;
+  --liquid-inner-glow: transparent;
+  --liquid-drape-gradient: transparent;
 
   --menu-glass-bg: rgba(255, 255, 255, 0.08);
-  --menu-glass-bg-bottom: rgba(255, 255, 255, 0.04);
-  --menu-glass-bg-active: rgba(255, 255, 255, 0.12);
-  --menu-glass-bg-active-bottom: rgba(255, 255, 255, 0.07);
+  --menu-glass-bg-bottom: rgba(255, 255, 255, 0.08);
+  --menu-glass-bg-active: rgba(255, 255, 255, 0.1);
+  --menu-glass-bg-active-bottom: rgba(255, 255, 255, 0.1);
   --menu-glass-bg-child: rgba(255, 255, 255, 0.06);
-  --menu-glass-flow-a: rgba(255, 255, 255, 0.1);
-  --menu-glass-flow-b: rgba(167, 139, 250, 0.12);
-  --menu-glass-accent-soft: rgba(167, 139, 250, 0.14);
-  --menu-glass-accent-mid: rgba(196, 181, 253, 0.1);
-  --menu-glass-accent-glow: rgba(167, 139, 250, 0.12);
-  --menu-glass-hover-opacity: 0.64;
-  --menu-glass-active-opacity: 0.72;
-  --menu-glass-rim-edge:
-    inset 0 1px 0 color-mix(in srgb, var(--liquid-edge-highlight) 58%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--liquid-edge-shadow) 22%, transparent),
-    0 4px 16px color-mix(in srgb, var(--menu-glass-accent-glow) 32%, transparent);
-  --menu-glass-rim-edge-active:
-    inset 0 1px 0 color-mix(in srgb, var(--liquid-edge-highlight) 68%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--liquid-edge-shadow) 28%, transparent),
-    0 8px 24px color-mix(in srgb, var(--menu-glass-accent-glow) 38%, transparent);
+  --menu-glass-flow-a: rgba(255, 255, 255, 0.08);
+  --menu-glass-flow-b: rgba(255, 255, 255, 0.08);
+  --menu-glass-accent-soft: rgba(25, 195, 125, 0.14);
+  --menu-glass-accent-mid: rgba(25, 195, 125, 0.1);
+  --menu-glass-accent-glow: transparent;
+  --menu-glass-hover-opacity: 1;
+  --menu-glass-active-opacity: 1;
+  --menu-glass-rim-edge: none;
+  --menu-glass-rim-edge-active: none;
 
-  --platform-glass-fill-hover: linear-gradient(
-    180deg,
-    var(--menu-glass-bg) 0%,
-    var(--menu-glass-bg-bottom) 100%
-  );
-  --platform-glass-fill-active: linear-gradient(
-    180deg,
-    var(--menu-glass-bg-active) 0%,
-    var(--menu-glass-bg-active-bottom) 100%
-  );
+  --platform-glass-fill-hover: rgba(255, 255, 255, 0.08);
+  --platform-glass-fill-active: rgba(255, 255, 255, 0.1);
 
-  --platform-bg-base: #0a0a12;
-  --platform-bg:
-    radial-gradient(ellipse 90% 70% at 8% 14%, rgba(139, 92, 246, 0.22) 0%, transparent 58%),
-    radial-gradient(ellipse 75% 55% at 92% 18%, rgba(167, 139, 250, 0.2) 0%, transparent 55%),
-    radial-gradient(ellipse 70% 60% at 74% 88%, rgba(196, 181, 253, 0.14) 0%, transparent 52%),
-    radial-gradient(ellipse 50% 40% at 38% 48%, rgba(167, 139, 250, 0.08) 0%, transparent 70%),
-    var(--platform-bg-base);
-  --platform-bg-elevated: var(--platform-bg-glass-strong);
-  --platform-bg-elevated-solid: rgba(22, 22, 32, 0.94);
-  --platform-modal-mask: rgba(0, 0, 0, 0.38);
-  --platform-modal-bg: #ffffff;
+  --platform-bg-base: #212121;
+  --platform-bg: #212121;
+  --platform-bg-elevated: #2f2f2f;
+  --platform-bg-elevated-solid: #2f2f2f;
+  --platform-modal-mask: rgba(0, 0, 0, 0.65);
+  --platform-modal-bg: #2f2f2f;
   --platform-modal-shadow:
-    0 28px 56px rgba(0, 0, 0, 0.28),
-    0 12px 24px rgba(0, 0, 0, 0.18);
-  --platform-bg-secondary: rgba(36, 36, 52, 0.72);
-  --platform-bg-tertiary: rgba(48, 48, 68, 0.82);
-  --platform-text: #f5f5f7;
-  --platform-text-secondary: #ebebf0;
-  --platform-text-tertiary: #aeaeb2;
-  --platform-text-quaternary: #636366;
-  --platform-border: rgba(196, 181, 253, 0.1);
-  --platform-border-strong: rgba(196, 181, 253, 0.16);
-  --platform-divider: rgba(255, 255, 255, 0.06);
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.45);
+  --platform-bg-secondary: #171717;
+  --platform-bg-tertiary: #2f2f2f;
+  --platform-text: #ececec;
+  --platform-text-secondary: #c5c5d2;
+  --platform-text-tertiary: #8e8ea0;
+  --platform-text-quaternary: #6e6e80;
+  --platform-border: rgba(255, 255, 255, 0.1);
+  --platform-border-strong: rgba(255, 255, 255, 0.16);
+  --platform-divider: rgba(255, 255, 255, 0.08);
 
-  --platform-shadow: 0 2px 8px rgba(0, 0, 0, 0.32), 0 12px 32px rgba(139, 92, 246, 0.12);
-  --platform-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
-  --platform-shadow-lg: 0 16px 56px rgba(0, 0, 0, 0.52);
+  --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --platform-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
 
-  --platform-accent: #c4b5fd;
-  --platform-accent-hover: #ddd6fe;
-  --platform-accent-pressed: #a78bfa;
-  --platform-accent-secondary: #ddd6fe;
-  --platform-accent-secondary-hover: #c4b5fd;
-  --platform-accent-soft: rgba(196, 181, 253, 0.16);
-  --platform-accent-soft-2: rgba(167, 139, 250, 0.2);
-  --platform-accent-gradient: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #ddd6fe 0%, #c4b5fd 100%);
-  --platform-accent-gradient-soft: linear-gradient(160deg, rgba(46, 36, 72, 0.72) 0%, rgba(30, 24, 48, 0.68) 100%);
-  --platform-accent-muted: rgba(196, 181, 253, 0.14);
-  --platform-accent-muted-strong: rgba(196, 181, 253, 0.22);
-  --platform-accent-border: rgba(196, 181, 253, 0.28);
-  --platform-accent-border-soft: rgba(196, 181, 253, 0.18);
+  --platform-accent: #19c37d;
+  --platform-accent-hover: #1dd68a;
+  --platform-accent-pressed: #10a37f;
+  --platform-accent-secondary: #10a37f;
+  --platform-accent-secondary-hover: #19c37d;
+  --platform-accent-soft: rgba(25, 195, 125, 0.14);
+  --platform-accent-soft-2: rgba(25, 195, 125, 0.1);
+  --platform-accent-gradient: linear-gradient(180deg, #19c37d 0%, #10a37f 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #1dd68a 0%, #19c37d 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #2f2f2f 0%, #212121 100%);
+  --platform-accent-muted: rgba(25, 195, 125, 0.12);
+  --platform-accent-muted-strong: rgba(25, 195, 125, 0.18);
+  --platform-accent-border: rgba(25, 195, 125, 0.35);
+  --platform-accent-border-soft: rgba(25, 195, 125, 0.22);
 
-  --platform-accent-stop-a: #ddd6fe;
-  --platform-accent-stop-b: #c4b5fd;
-  --platform-accent-stop-c: #a78bfa;
-  --platform-accent-stop-d: #8b5cf6;
-  --platform-accent-stop-e: #9374f0;
+  --platform-accent-stop-a: #064e3b;
+  --platform-accent-stop-b: #19c37d;
+  --platform-accent-stop-c: #10a37f;
+  --platform-accent-stop-d: #0d8c6c;
+  --platform-accent-stop-e: #10a37f;
 
-  /* Rose 曲线 / 加载动画：偏淡紫 */
-  --platform-loader-gradient-start: #ede9fe;
-  --platform-loader-gradient-mid: #c4b5fd;
-  --platform-loader-gradient-end: #a78bfa;
-  --platform-loader-path: rgba(196, 181, 253, 0.26);
-  --platform-loader-color: #c4b5fd;
+  --platform-loader-gradient-start: #d1fae5;
+  --platform-loader-gradient-mid: #6ee7b7;
+  --platform-loader-gradient-end: #19c37d;
+  --platform-loader-path: rgba(25, 195, 125, 0.3);
+  --platform-loader-color: #19c37d;
 
-  --platform-shell-gradient: linear-gradient(
-    135deg,
-    rgba(22, 22, 36, 0.92) 0%,
-    rgba(30, 24, 48, 0.88) 50%,
-    rgba(26, 22, 40, 0.92) 100%
-  );
-  --platform-chat-gradient: var(--platform-shell-gradient);
-  --platform-header-bg: var(--platform-shell-gradient);
-  --platform-sider-bg: var(--platform-bg-glass);
-  --platform-toolbar-bg: var(--platform-bg-glass-subtle);
+  --platform-shell-gradient: #212121;
+  --platform-chat-gradient: #212121;
+  --platform-header-bg: #212121;
+  --platform-sider-bg: #171717;
+  --platform-toolbar-bg: #171717;
 
-  --platform-ui-glass-fill: rgba(28, 28, 40, 0.55);
-  --platform-ui-glass-fill-strong: rgba(32, 32, 48, 0.68);
-  --platform-ui-glass-fill-subtle: rgba(24, 24, 36, 0.38);
-  --platform-ui-glass-border: rgba(196, 181, 253, 0.12);
-  --platform-ui-glass-rim: rgba(196, 181, 253, 0.2);
-  --platform-ui-layer-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 10px 28px rgba(0, 0, 0, 0.26),
-    0 0 0 1px rgba(196, 181, 253, 0.06);
+  --platform-ui-glass-fill: #2f2f2f;
+  --platform-ui-glass-fill-strong: #2f2f2f;
+  --platform-ui-glass-fill-subtle: #212121;
+  --platform-ui-glass-border: rgba(255, 255, 255, 0.1);
+  --platform-ui-glass-rim: rgba(255, 255, 255, 0.1);
+  --platform-ui-layer-shadow: none;
 
-  --platform-focus-ring: 0 0 0 4px rgba(196, 181, 253, 0.28);
+  --platform-focus-ring: 0 0 0 2px rgba(25, 195, 125, 0.35);
 
-  --platform-caution: #ff9f0a;
-  --platform-caution-soft: rgba(255, 159, 10, 0.16);
-  --platform-danger: #ff453a;
-  --platform-danger-soft: rgba(255, 69, 58, 0.18);
+  --platform-caution: #f59e0b;
+  --platform-caution-soft: rgba(245, 158, 11, 0.16);
+  --platform-danger: #f87171;
+  --platform-danger-soft: rgba(248, 113, 113, 0.16);
 
-  --platform-surface: var(--platform-bg-elevated);
+  --platform-surface: #2f2f2f;
   --platform-muted: var(--platform-text-secondary);
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
-  --platform-green-soft: #c4b5fd;
+  --platform-green-soft: #19c37d;
   --platform-green-surface: var(--platform-accent-soft);
   --platform-green-surface-2: var(--platform-accent-soft-2);
 }

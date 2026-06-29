@@ -154,6 +154,17 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_AP
   }
 }
 
+/** 解析 fetch 失败时的 JSON 响应体（FastAPI detail / 平台 ApiResponse 等） */
+export async function readFetchErrorJson(res) {
+  const text = await res.text().catch(() => "");
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
 export function rejectHttpFailure(res, json = {}) {
   const msg = formatApiDetail(json?.detail) || json?.message || res.statusText;
   if (res.status === 401 && isSessionReplacedError(json, msg)) {

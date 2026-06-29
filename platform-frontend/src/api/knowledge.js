@@ -1,11 +1,19 @@
 /** 平台原生知识库 / 知识检索 API */
-import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
+import { api } from "./http.js";
+import { createPlatformChatStream } from "./rag.js";
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
+/** scope-tree 构建可能较慢（多库/多文档），统一放宽超时避免首次加载误报 */
+const SCOPE_TREE_TIMEOUT_MS = 60_000;
+
 export async function fetchKnowledgeScopeTree({ refresh = false } = {}) {
   const q = refresh ? "?refresh=1" : "";
-  return api(`/api/v1/knowledge/scope-tree${q}`);
+  return api(`/api/v1/knowledge/scope-tree${q}`, {
+    timeoutMs: SCOPE_TREE_TIMEOUT_MS,
+    /** 预取/建树耗时长，切换路由时不应 cancel，否则数据已到却无法渲染 */
+    preserveOnNavigate: true,
+  });
 }
 
 export async function fetchKnowledgeLibraries() {
@@ -90,74 +98,29 @@ export async function knowledgeQaChatSend({ message, conversationId, documentIds
   };
 }
 
+const _knowledgeQaStream = createPlatformChatStream(
+  "/api/v1/knowledge/qa/chat/stream",
+  {
+    sanitizeErrorMessage: (msg) =>
+      sanitizeUserFacingMessage(msg, "检索失败，请稍后重试"),
+  }
+);
+
 /** 流式问答，供知识检索 AiChatPanel 使用 */
 export async function knowledgeQaChatStream(
   { message, history = [], conversationId = null, documentIds = null, useAgentic = true },
-  { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
+  callbacks = {}
 ) {
-  const headers = { "Content-Type": "application/json" };
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const body = { message, history, use_agentic: useAgentic };
-  if (conversationId) body.conversation_id = conversationId;
-  if (documentIds?.length) body.document_ids = documentIds;
-
-  const res = await fetch(`${getApiBase()}/api/v1/knowledge/qa/chat/stream`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!res.ok) {
-    const json = await res.json().catch(() => ({}));
-    rejectHttpFailure(res, json);
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error("浏览器不支持流式响应");
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() || "";
-    for (const block of parts) {
-      const line = block
-        .split("\n")
-        .map((l) => l.trim())
-        .find((l) => l.startsWith("data:"));
-      if (!line) continue;
-      let payload;
-      try {
-        payload = JSON.parse(line.slice(5).trim());
-      } catch {
-        continue;
-      }
-      if (payload.error) {
-        onError?.(
-          new Error(
-            sanitizeUserFacingMessage(payload.error, "检索失败，请稍后重试")
-          )
-        );
-        return;
-      }
-      if (payload.workflow) onWorkflow?.(payload.workflow);
-      if (payload.citations) onCitations?.(payload.citations);
-      if (payload.replace != null) onReplace?.(payload.replace);
-      if (payload.delta) onDelta?.(payload.delta);
-      if (payload.done) {
-        onDone?.(payload);
-        return;
-      }
-    }
-  }
-  onDone?.({});
+  return _knowledgeQaStream(
+    {
+      message,
+      history,
+      conversationId,
+      use_agentic: useAgentic,
+      ...(documentIds?.length ? { document_ids: documentIds } : {}),
+    },
+    callbacks
+  );
 }
 
 export async function fetchKnowledgeMindmap({ question, answer }) {

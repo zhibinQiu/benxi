@@ -20,6 +20,40 @@ _PLATFORM_USAGE_RE = re.compile(
     r"|平台.{0,8}(功能|使用|操作|入口)"
 )
 
+# 平台用户/部门/组织等系统数据查询（走平台操作 Agent，勿误路由检索专精）
+_PLATFORM_SYS_DATA_RE = re.compile(
+    r"(?:系统|平台|组织|部门|成员|账号).{0,12}(?:用户|人员|成员|部门|组织)"
+    r"|(?:用户|人员|成员|部门|组织).{0,12}(?:列表|有哪些|多少|几个|查询|查看|管理|架构|树)"
+    r"|list_users|list_departments|"
+    r"有哪些用户|用户列表|部门列表|组织架构|组织树|"
+    r"谁在平台|平台上有谁",
+    re.I,
+)
+
+# 「咨询服务部有哪些人」类：指定部门/组织单元的成员清单
+_ORG_MEMBER_LIST_RE = re.compile(
+    r"(?:有哪些|有谁|多少|几个|列出|名单)(?:人|成员|员工|同事)?"
+    r"|(?:成员|人员|员工|同事)(?:列表|清单|有谁)?"
+    r"|谁(?:在|属于|是).{0,6}(?:部|组|中心|团队)",
+    re.I,
+)
+_ORG_UNIT_MARK_RE = re.compile(r"(?:部|部门|组|中心|团队|科室|处|室)", re.I)
+
+
+def is_org_member_list_question(message: str) -> bool:
+    """询问某部门/组织单元有哪些成员（须走 platform + 图谱，禁止 LLM 编造名单）。"""
+    msg = (message or "").strip()
+    if not msg or not _ORG_MEMBER_LIST_RE.search(msg):
+        return False
+    return bool(_ORG_UNIT_MARK_RE.search(msg) or _PLATFORM_SYS_DATA_RE.search(msg))
+
+
+def is_platform_system_data_message(message: str) -> bool:
+    """用户是否在查询/管理平台用户、部门等系统数据。"""
+    if is_org_member_list_question(message):
+        return True
+    return bool(_PLATFORM_SYS_DATA_RE.search((message or "").strip()))
+
 _SKILL_MANAGE_RE = re.compile(
     r"(?:创建|新建|编写|写一个|做一个|生成|更新|修改|删除).{0,16}(?:skill|技能|Skills?)"
     r"|(?:skill|技能|Skills?).{0,10}(?:创建|新建|编写|更新|修改|删除)"
@@ -41,6 +75,14 @@ _SKILL_INSTRUCTION_ONLY_RE = re.compile(
     r"mermaid|流程图说明|只写.{0,4}说明",
     re.I,
 )
+_DIAGRAM_INTENT_RE = re.compile(
+    r"(思维导图|流程图|时序图|状态图|架构图|关系图|组织结构图|"
+    r"mermaid|Mermaid|mindmap|flowchart|sequenceDiagram|stateDiagram|"
+    r"画.{0,4}(?:图|流程|导图)|生成.{0,8}(?:图|导图|流程图)|"
+    r"绘制.{0,6}(?:图|流程))",
+    re.I,
+)
+MERMAID_DIAGRAM_SKILL = "mermaid-diagram"
 _SCRIPT_TASK_RE = re.compile(
     r"爬取|抓取|拉取|脚本|执行|运行|数据|api|自动化|价格|行情|采集|同步|监控",
     re.I,
@@ -59,9 +101,38 @@ def is_platform_usage_message(message: str) -> bool:
     return bool(_PLATFORM_USAGE_RE.search((message or "").strip()))
 
 
+def is_platform_operation_message(message: str) -> bool:
+    """系统操作类诉求：文档库/待办/通知/用户部门等（非知识库内容调研）。"""
+    msg = (message or "").strip()
+    if not msg:
+        return False
+    if is_platform_usage_message(msg) or is_platform_system_data_message(msg):
+        return True
+    return bool(
+        re.search(
+            r"(?:文档库|文件夹|我的文件|待办|todo|"
+            r"list_document|list_library|list_manageable|list_todos|"
+            r"list_users|list_departments|"
+            r"用户管理|部门管理|系统设置|"
+            r"send_notification|schedule_notification|"
+            r"创建.{0,4}待办|分享.{0,4}文档|上传.{0,6}文档)",
+            msg,
+            re.I,
+        )
+    )
+
+
 def is_skill_management_message(message: str) -> bool:
     """用户是否在创建/更新/删除 Skill，而非使用已有 Skill 执行任务。"""
     return bool(_SKILL_MANAGE_RE.search((message or "").strip()))
+
+
+def is_diagram_generation_message(message: str) -> bool:
+    """用户是否要生成思维导图、流程图等 Mermaid 图表。"""
+    msg = (message or "").strip()
+    if not msg or is_skill_management_message(msg):
+        return False
+    return bool(_DIAGRAM_INTENT_RE.search(msg))
 
 
 def user_wants_browser_screenshot(message: str) -> bool:
@@ -142,7 +213,8 @@ def validate_uploaded_skill_load(
     return (
         False,
         f"用户请求与上传 Skill `{name}` 的用途不匹配（{short_desc}）。"
-        "请根据 Skills 目录摘要判断是否加载；无关时直接回答或使用 create_uploaded_skill",
+        "请根据 Skills 目录摘要查找可复用技能并 load/run；"
+        "无匹配且用户需要新能力时再 create_uploaded_skill，否则直接回答用户问题",
     )
 
 

@@ -1,6 +1,6 @@
 ---
 name: mermaid-diagram
-description: 根据用户描述或权限内文档内容，生成可在对话中渲染的 Mermaid 流程图、时序图、状态图与思维导图；支持在平台内预览与复制源码导出。
+description: Use when 用户要流程图/时序图/状态图/思维导图（mermaid） | Don't 闲聊、本地文件、无权限文档 | Output ```mermaid 围栏源码
 ---
 
 # Mermaid 图表生成

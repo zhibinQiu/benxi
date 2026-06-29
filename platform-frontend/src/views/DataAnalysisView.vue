@@ -15,7 +15,8 @@ import {
 import { CloudUploadOutline, SendOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import AnalysisNotebookPanel from "../components/AnalysisNotebookPanel.vue";
-import ChatBubbleRetry from "../components/ChatBubbleRetry.vue";
+import ChatBubbleActions from "../components/ChatBubbleActions.vue";
+import { copyChatMessageText, shareChatMessageText } from "../utils/chatBubbleActions.js";
 import {
   createDataAnalysisSession,
   dataAnalysisChat,
@@ -198,6 +199,30 @@ function canRetryMessage(index, message) {
   return findUserIndexBefore(index) >= 0;
 }
 
+function canShowMessageActions(index, message) {
+  if (chatting.value || message?.role !== "assistant") return false;
+  if (!String(message?.content || "").trim()) return false;
+  return findUserIndexBefore(index) >= 0;
+}
+
+async function copyAssistantMessage(message) {
+  await copyChatMessageText(message?.content, { ui, t });
+}
+
+async function shareAssistantMessage(message) {
+  await shareChatMessageText(message?.content, {
+    ui,
+    t,
+    title: t("dataAnalysis.chatTitle"),
+  });
+}
+
+function setMessageFeedback(index, value) {
+  const message = messages.value[index];
+  if (!message) return;
+  message.feedback = value;
+}
+
 async function retryMessage(index) {
   const message = messages.value[index];
   if (!message || !canRetryMessage(index, message)) return;
@@ -233,7 +258,7 @@ onMounted(async () => {
 
 <template>
   <FeatureSubsystemShell fill :show-intro="false">
-    <n-spin :show="loadingMeta" class="da-spin">
+    <n-spin :show="loadingMeta" class="da-spin" local>
       <div class="data-analysis-layout">
         <aside class="chat-pane">
           <div class="pane-head">
@@ -287,10 +312,16 @@ onMounted(async () => {
                 :class="msg.role === 'user' ? 'chat-item-stack--user' : 'chat-item-stack--bot'"
               >
                 <div class="bubble">{{ msg.content }}</div>
-                <ChatBubbleRetry
-                  v-if="msg.role === 'assistant' && canRetryMessage(idx, msg)"
+                <ChatBubbleActions
+                  v-if="canShowMessageActions(idx, msg)"
                   align="start"
+                  :show-retry="canRetryMessage(idx, msg)"
+                  :retry-disabled="chatting"
+                  :feedback="msg.feedback || null"
+                  @copy="copyAssistantMessage(msg)"
+                  @share="shareAssistantMessage(msg)"
                   @retry="retryMessage(idx)"
+                  @feedback="setMessageFeedback(idx, $event)"
                 />
               </div>
             </div>
@@ -473,12 +504,16 @@ onMounted(async () => {
 .chat-item.user .bubble {
   width: fit-content;
   max-width: 100%;
-  background: var(--n-primary-color);
-  color: #fff;
+  background: var(--platform-bg-tertiary);
+  color: var(--platform-text);
+  border: 1px solid var(--platform-border);
 }
 
 .chat-item.assistant .bubble {
-  background: #f4f5f7;
+  padding: 4px 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--platform-text);
 }
 
 .chat-item.system .bubble {

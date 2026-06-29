@@ -37,7 +37,8 @@ class ClientConfigOut(BaseModel):
     api_base: str = ""
     app_title: str = ""
     default_theme: str = "system"
-    color_scheme: str = "purple"
+    color_scheme: str = "blue"
+    primary_color: str = ""
 
 
 class ModelSettingsOut(BaseModel):
@@ -47,7 +48,8 @@ class ModelSettingsOut(BaseModel):
     platform_api_base_url: str = ""
     frontend_app_title: str = ""
     frontend_default_theme: str = "system"
-    frontend_color_scheme: str = "purple"
+    frontend_color_scheme: str = "blue"
+    frontend_primary_color: str = ""
     llm: ModelEndpointOut
     embedding: ModelEndpointOut
     vl: ModelEndpointOut
@@ -74,6 +76,7 @@ class ModelSettingsUpdate(BaseModel):
     frontend_app_title: str | None = None
     frontend_default_theme: str | None = None
     frontend_color_scheme: str | None = None
+    frontend_primary_color: str | None = None
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None

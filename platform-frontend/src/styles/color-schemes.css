@@ -1,81 +1,69 @@
-/* 蓝色系统配色 — 主色 rgb(45, 78, 157) / #2D4E9D */
+/* 蓝色系统配色 — 主色 #0067ff（扁平底，与 OpenAI 壳层一致） */
 
 html[data-color-scheme="blue"]:root,
 html[data-color-scheme="blue"][data-theme="light"] {
-  --platform-glass-border: rgba(45, 78, 157, 0.14);
-  --platform-glass-outline: rgba(45, 78, 157, 0.18);
-  --platform-glass-depth: 0 8px 24px rgba(45, 78, 157, 0.1);
-  --liquid-flow-b: rgba(45, 78, 157, 0.16);
-  --liquid-flow-c: rgba(107, 143, 199, 0.14);
-  --liquid-edge-shadow: rgba(45, 78, 157, 0.12);
-  --menu-glass-flow-b: rgba(45, 78, 157, 0.1);
-  --menu-glass-accent-soft: rgba(45, 78, 157, 0.12);
-  --menu-glass-accent-mid: rgba(107, 143, 199, 0.08);
-  --menu-glass-accent-glow: rgba(45, 78, 157, 0.08);
+  --platform-glass-border: #e5e5e5;
+  --platform-glass-outline: #e5e5e5;
+  --platform-glass-depth: none;
+  --liquid-flow-b: transparent;
+  --liquid-flow-c: transparent;
+  --liquid-edge-shadow: transparent;
+  --menu-glass-flow-b: #ececf1;
+  --menu-glass-accent-soft: rgba(0, 103, 255, 0.12);
+  --menu-glass-accent-mid: rgba(0, 103, 255, 0.08);
+  --menu-glass-accent-glow: transparent;
 
-  --platform-bg-base: #eef3fa;
-  --platform-bg:
-    radial-gradient(ellipse 85% 65% at 8% 10%, rgba(107, 143, 199, 0.24) 0%, transparent 58%),
-    radial-gradient(ellipse 72% 58% at 92% 12%, rgba(45, 78, 157, 0.22) 0%, transparent 55%),
-    radial-gradient(ellipse 68% 55% at 78% 90%, rgba(45, 78, 157, 0.16) 0%, transparent 52%),
-    radial-gradient(ellipse 58% 48% at 38% 52%, rgba(184, 203, 232, 0.14) 0%, transparent 68%),
-    radial-gradient(ellipse 45% 40% at 55% 28%, rgba(255, 255, 255, 0.55) 0%, transparent 70%),
-    var(--platform-bg-base);
+  --platform-bg-base: #ffffff;
+  --platform-bg: #ffffff;
   --platform-modal-shadow:
-    0 24px 48px rgba(45, 78, 157, 0.12),
-    0 8px 20px rgba(15, 23, 42, 0.06);
-  --platform-bg-secondary: rgba(238, 243, 250, 0.82);
-  --platform-bg-tertiary: rgba(224, 233, 247, 0.88);
-  --platform-border: rgba(45, 78, 157, 0.12);
-  --platform-border-strong: rgba(45, 78, 157, 0.2);
-  --platform-divider: rgba(45, 78, 157, 0.1);
+    0 0 0 1px rgba(0, 0, 0, 0.05),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+  --platform-bg-secondary: #f7f7f8;
+  --platform-bg-tertiary: #ececf1;
+  --platform-border: #e5e5e5;
+  --platform-border-strong: #d9d9e3;
+  --platform-divider: #ececf1;
 
-  --platform-shadow: 0 2px 8px rgba(45, 78, 157, 0.08), 0 8px 24px rgba(45, 78, 157, 0.08);
-  --platform-shadow-sm: 0 1px 3px rgba(45, 78, 157, 0.06);
-  --platform-shadow-lg: 0 12px 48px rgba(45, 78, 157, 0.14);
+  --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --platform-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
 
-  --platform-accent: #2d4e9d;
-  --platform-accent-hover: #3a60b8;
-  --platform-accent-pressed: #243f7e;
-  --platform-accent-secondary: #6b8fc7;
-  --platform-accent-secondary-hover: #4a6eaf;
-  --platform-accent-soft: rgba(45, 78, 157, 0.14);
-  --platform-accent-soft-2: rgba(107, 143, 199, 0.16);
-  --platform-accent-gradient: linear-gradient(135deg, #4a6eaf 0%, #2d4e9d 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #3a60b8 0%, #243f7e 100%);
-  --platform-accent-gradient-soft: linear-gradient(160deg, #eef3fa 0%, #e0e9f7 100%);
-  --platform-accent-muted: rgba(45, 78, 157, 0.1);
-  --platform-accent-muted-strong: rgba(45, 78, 157, 0.16);
-  --platform-accent-border: rgba(45, 78, 157, 0.22);
-  --platform-accent-border-soft: rgba(45, 78, 157, 0.14);
+  --platform-accent: #0067ff;
+  --platform-accent-hover: #0058db;
+  --platform-accent-pressed: #004abf;
+  --platform-accent-secondary: #3385ff;
+  --platform-accent-secondary-hover: #1a75ff;
+  --platform-accent-soft: rgba(0, 103, 255, 0.12);
+  --platform-accent-soft-2: rgba(0, 103, 255, 0.08);
+  --platform-accent-gradient: linear-gradient(180deg, #1a75ff 0%, #0067ff 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #3385ff 0%, #0058db 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #f7f7f8 0%, #ffffff 100%);
+  --platform-accent-muted: rgba(0, 103, 255, 0.08);
+  --platform-accent-muted-strong: rgba(0, 103, 255, 0.14);
+  --platform-accent-border: rgba(0, 103, 255, 0.35);
+  --platform-accent-border-soft: rgba(0, 103, 255, 0.2);
 
-  --platform-accent-stop-a: #b8cbe8;
-  --platform-accent-stop-b: #2d4e9d;
-  --platform-accent-stop-c: #6b8fc7;
-  --platform-accent-stop-d: #243f7e;
-  --platform-accent-stop-e: #3a60b8;
+  --platform-accent-stop-a: #cce0ff;
+  --platform-accent-stop-b: #0067ff;
+  --platform-accent-stop-c: #3385ff;
+  --platform-accent-stop-d: #004abf;
+  --platform-accent-stop-e: #0058db;
 
-  --platform-loader-gradient-start: #d4e2f4;
-  --platform-loader-gradient-mid: #6b8fc7;
-  --platform-loader-gradient-end: #2d4e9d;
-  --platform-loader-path: rgba(45, 78, 157, 0.3);
-  --platform-loader-color: #4a6eaf;
+  --platform-loader-gradient-start: #cce0ff;
+  --platform-loader-gradient-mid: #66a3ff;
+  --platform-loader-gradient-end: #0067ff;
+  --platform-loader-path: rgba(0, 103, 255, 0.28);
+  --platform-loader-color: #0067ff;
 
-  --platform-shell-gradient: linear-gradient(
-    135deg,
-    rgba(238, 243, 250, 0.88) 0%,
-    rgba(224, 233, 247, 0.86) 48%,
-    rgba(232, 239, 249, 0.88) 100%
-  );
+  --platform-shell-gradient: #ffffff;
+  --platform-header-bg: #ffffff;
+  --platform-sider-bg: #f7f7f8;
 
-  --platform-ui-glass-border: rgba(45, 78, 157, 0.12);
-  --platform-ui-glass-rim: rgba(45, 78, 157, 0.18);
-  --platform-ui-layer-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.75) inset,
-    0 8px 24px rgba(45, 78, 157, 0.08),
-    0 2px 6px rgba(45, 78, 157, 0.05);
+  --platform-ui-glass-border: #e5e5e5;
+  --platform-ui-glass-rim: #e5e5e5;
+  --platform-ui-layer-shadow: none;
 
-  --platform-focus-ring: 0 0 0 4px rgba(45, 78, 157, 0.26);
+  --platform-focus-ring: 0 0 0 2px rgba(0, 103, 255, 0.35);
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
@@ -85,76 +73,65 @@ html[data-color-scheme="blue"][data-theme="light"] {
 }
 
 html[data-color-scheme="blue"][data-theme="dark"] {
-  --platform-glass-outline: rgba(155, 181, 220, 0.16);
-  --platform-glass-border: rgba(155, 181, 220, 0.16);
-  --platform-glass-depth: 0 8px 24px rgba(45, 78, 157, 0.14);
-  --liquid-edge-shadow: rgba(45, 78, 157, 0.14);
-  --liquid-flow-b: rgba(45, 78, 157, 0.2);
-  --liquid-flow-c: rgba(107, 143, 199, 0.18);
-  --menu-glass-flow-b: rgba(45, 78, 157, 0.12);
-  --menu-glass-accent-soft: rgba(45, 78, 157, 0.14);
-  --menu-glass-accent-mid: rgba(107, 143, 199, 0.1);
-  --menu-glass-accent-glow: rgba(45, 78, 157, 0.12);
+  --platform-glass-outline: rgba(255, 255, 255, 0.1);
+  --platform-glass-border: rgba(255, 255, 255, 0.1);
+  --platform-glass-depth: none;
+  --liquid-edge-shadow: transparent;
+  --liquid-flow-b: transparent;
+  --liquid-flow-c: transparent;
+  --menu-glass-flow-b: rgba(255, 255, 255, 0.08);
+  --menu-glass-accent-soft: rgba(77, 148, 255, 0.14);
+  --menu-glass-accent-mid: rgba(77, 148, 255, 0.1);
+  --menu-glass-accent-glow: transparent;
 
-  --platform-bg-base: #0a1020;
-  --platform-bg:
-    radial-gradient(ellipse 90% 70% at 8% 14%, rgba(45, 78, 157, 0.22) 0%, transparent 58%),
-    radial-gradient(ellipse 75% 55% at 92% 18%, rgba(45, 78, 157, 0.2) 0%, transparent 55%),
-    radial-gradient(ellipse 70% 60% at 74% 88%, rgba(107, 143, 199, 0.14) 0%, transparent 52%),
-    radial-gradient(ellipse 50% 40% at 38% 48%, rgba(45, 78, 157, 0.08) 0%, transparent 70%),
-    var(--platform-bg-base);
-  --platform-bg-secondary: rgba(20, 28, 48, 0.72);
-  --platform-bg-tertiary: rgba(28, 38, 64, 0.82);
-  --platform-border: rgba(155, 181, 220, 0.1);
-  --platform-border-strong: rgba(155, 181, 220, 0.16);
-  --platform-divider: rgba(255, 255, 255, 0.06);
+  --platform-bg-base: #212121;
+  --platform-bg: #212121;
+  --platform-bg-secondary: #171717;
+  --platform-bg-tertiary: #2f2f2f;
+  --platform-border: rgba(255, 255, 255, 0.1);
+  --platform-border-strong: rgba(255, 255, 255, 0.16);
+  --platform-divider: rgba(255, 255, 255, 0.08);
 
-  --platform-shadow: 0 2px 8px rgba(0, 0, 0, 0.32), 0 12px 32px rgba(45, 78, 157, 0.12);
-  --platform-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
-  --platform-shadow-lg: 0 16px 56px rgba(0, 0, 0, 0.52);
+  --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --platform-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
 
-  --platform-accent: #9bb5dc;
-  --platform-accent-hover: #b8cbe8;
-  --platform-accent-pressed: #7ba3d4;
-  --platform-accent-secondary: #b8cbe8;
-  --platform-accent-secondary-hover: #9bb5dc;
-  --platform-accent-soft: rgba(155, 181, 220, 0.16);
-  --platform-accent-soft-2: rgba(45, 78, 157, 0.2);
-  --platform-accent-gradient: linear-gradient(135deg, #9bb5dc 0%, #2d4e9d 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #b8cbe8 0%, #9bb5dc 100%);
-  --platform-accent-gradient-soft: linear-gradient(160deg, rgba(24, 32, 56, 0.72) 0%, rgba(16, 22, 40, 0.68) 100%);
-  --platform-accent-muted: rgba(155, 181, 220, 0.14);
-  --platform-accent-muted-strong: rgba(155, 181, 220, 0.22);
-  --platform-accent-border: rgba(155, 181, 220, 0.28);
-  --platform-accent-border-soft: rgba(155, 181, 220, 0.18);
+  --platform-accent: #4d94ff;
+  --platform-accent-hover: #66a3ff;
+  --platform-accent-pressed: #3385ff;
+  --platform-accent-secondary: #66a3ff;
+  --platform-accent-secondary-hover: #4d94ff;
+  --platform-accent-soft: rgba(77, 148, 255, 0.14);
+  --platform-accent-soft-2: rgba(0, 103, 255, 0.2);
+  --platform-accent-gradient: linear-gradient(180deg, #66a3ff 0%, #0067ff 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #7ab0ff 0%, #4d94ff 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #2f2f2f 0%, #212121 100%);
+  --platform-accent-muted: rgba(77, 148, 255, 0.12);
+  --platform-accent-muted-strong: rgba(77, 148, 255, 0.18);
+  --platform-accent-border: rgba(77, 148, 255, 0.35);
+  --platform-accent-border-soft: rgba(77, 148, 255, 0.22);
 
-  --platform-accent-stop-a: #b8cbe8;
-  --platform-accent-stop-b: #9bb5dc;
-  --platform-accent-stop-c: #6b8fc7;
-  --platform-accent-stop-d: #2d4e9d;
-  --platform-accent-stop-e: #7ba3d4;
+  --platform-accent-stop-a: #cce0ff;
+  --platform-accent-stop-b: #4d94ff;
+  --platform-accent-stop-c: #3385ff;
+  --platform-accent-stop-d: #0067ff;
+  --platform-accent-stop-e: #66a3ff;
 
-  --platform-loader-gradient-start: #d4e2f4;
-  --platform-loader-gradient-mid: #9bb5dc;
-  --platform-loader-gradient-end: #2d4e9d;
-  --platform-loader-path: rgba(155, 181, 220, 0.26);
-  --platform-loader-color: #9bb5dc;
+  --platform-loader-gradient-start: #cce0ff;
+  --platform-loader-gradient-mid: #66a3ff;
+  --platform-loader-gradient-end: #0067ff;
+  --platform-loader-path: rgba(77, 148, 255, 0.26);
+  --platform-loader-color: #4d94ff;
 
-  --platform-shell-gradient: linear-gradient(
-    135deg,
-    rgba(14, 20, 36, 0.92) 0%,
-    rgba(18, 28, 52, 0.88) 50%,
-    rgba(12, 18, 34, 0.92) 100%
-  );
+  --platform-shell-gradient: #212121;
+  --platform-header-bg: #212121;
+  --platform-sider-bg: #171717;
 
-  --platform-ui-glass-border: rgba(155, 181, 220, 0.12);
-  --platform-ui-glass-rim: rgba(155, 181, 220, 0.2);
-  --platform-ui-layer-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 10px 28px rgba(0, 0, 0, 0.26),
-    0 0 0 1px rgba(45, 78, 157, 0.06);
+  --platform-ui-glass-border: rgba(255, 255, 255, 0.1);
+  --platform-ui-glass-rim: rgba(255, 255, 255, 0.1);
+  --platform-ui-layer-shadow: none;
 
-  --platform-focus-ring: 0 0 0 4px rgba(155, 181, 220, 0.28);
+  --platform-focus-ring: 0 0 0 2px rgba(77, 148, 255, 0.35);
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
@@ -162,6 +139,6 @@ html[data-color-scheme="blue"][data-theme="dark"] {
   --platform-green-surface: var(--platform-accent-soft);
   --platform-green-surface-2: var(--platform-accent-soft-2);
   --platform-modal-shadow:
-    0 24px 48px rgba(0, 0, 0, 0.36),
-    0 8px 20px rgba(45, 78, 157, 0.1);
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.45);
 }

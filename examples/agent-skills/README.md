@@ -129,3 +129,22 @@ web-rpa-demo/
 ```
 
 启用 `AGENT_BROWSER_ENABLED=true` 后，在 AI 首页对话即可探索网页并保存流程，无需上传本示例。
+
+## 示例：报告类型 Skills（report-*）
+
+用途：供 **「报告撰写」专精智能体**（`report`）在 AI 首页对话中，按用户诉求选择报告类型并输出结构化长文。每种类型含 `SKILL.md` + `templates/outline.md` 章节模板。
+
+| Skill 目录 | 报告类型 |
+|------------|----------|
+| `report-feasibility` | 可行性研究 / 可研报告 |
+| `report-requirements` | 需求分析报告 |
+| `report-construction-plan` | 建设 / 实施方案 |
+| `report-survey` | 调研 / 研究报告（默认） |
+| `report-test` | 测试报告 |
+| `report-work-plan` | 工作计划 |
+
+启动时 `ensure_report_type_skills` 会从本目录同步到数据库（与 `mermaid-diagram` 相同机制）。
+
+**与功能页「报告生成」的关系**：`/knowledge/report` 独立流水线（多路召回、引用、Word 导出）**保持不变**；本组 Skill 仅服务多智能体对话路径，二者并存。
+
+在 AI 首页发送例如：「撰写一份全国碳市场行业调研报告」→ Supervisor 路由到 `report` 智能体 → 规划器选择 `report-survey` → 检索后按模板输出长文。

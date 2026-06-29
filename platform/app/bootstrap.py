@@ -34,6 +34,7 @@ def bootstrap_db(db: Session) -> None:
     ensure_plugins_loaded()
     _seed_permissions_and_roles(db)
     _sync_plugin_role_grants(db)
+    _prune_orphan_feature_permissions(db)
     _seed_admin(db)
 
 
@@ -98,6 +99,28 @@ def _sync_plugin_role_grants(db: Session) -> None:
                 db.delete(rp)
 
     db.commit()
+
+
+def _prune_orphan_feature_permissions(db: Session) -> None:
+    """移除已下线功能插件遗留的 feature.* 权限及其角色绑定。"""
+    ensure_plugins_loaded()
+    active_codes = {code for code, _ in CORE_PERMISSIONS} | {
+        code for code, _ in feature_permission_codes()
+    }
+    orphans = [
+        perm
+        for perm in db.scalars(select(Permission)).all()
+        if perm.code.startswith("feature.") and perm.code not in active_codes
+    ]
+    if not orphans:
+        return
+    orphan_ids = [perm.id for perm in orphans]
+    db.query(RolePermission).filter(
+        RolePermission.permission_id.in_(orphan_ids)
+    ).delete(synchronize_session=False)
+    for perm in orphans:
+        db.delete(perm)
+    db.flush()
 
 
 def _seed_admin(db: Session) -> None:

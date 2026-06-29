@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from app.schemas.ai_chat import AiChatMessage
-from app.services.agent_skill_router import is_platform_usage_message
+from app.services.agent_skill_router import is_platform_usage_message, is_platform_operation_message, is_platform_system_data_message
+from app.core.conversation_turn_context import is_likely_follow_up
+
+from app.core.platform_assistant import assistant_conclusion_source_priority
 
 _ATTACHMENT_CONTEXT_INSTRUCTION = """以下是用户上传的临时附件正文（未写入知识库），请优先且主要依据附件内容回答。
 若附件不足以回答，请明确说明缺口，不要编造附件中不存在的内容，也不要引用未提供的知识库片段。"""
+
+_PREFETCH_RETRIEVAL_INSTRUCTION = (
+    "以下是系统预先检索到的参考材料（按优先级排列：本体图谱 → 文档库 → 联网检索）。\n"
+    + assistant_conclusion_source_priority()
+    + "\n请主要依据这些材料作答；"
+    "对关键事实可在句末标注（本体图谱）（知识库）（联网）；材料不足时说明缺口，勿编造。"
+)
 
 _EXPLICIT_KB_RE = re.compile(
     r"(知识库|文档库|我的文档|权限内.{0,6}(文档|资料)|"
@@ -71,13 +80,13 @@ _EXPLICIT_WEB_RE = re.compile(
     r"互联网(?:上)?(?:查|搜|检索)|在线(?:查|搜|搜索|检索))"
 )
 
-_REMINDER_ACTION_RE = re.compile(
-    r"(?:提醒|通知|叫我|告诉我|记得提醒|记得通知)",
-    re.I,
-)
-
-_REMINDER_DELAY_RE = re.compile(
-    r"(\d+)\s*(秒(?:钟)?|分钟?|分|小时?|时|个小时)(?:之)?后",
+# 短问题也通常需要联网：股市/宏观/时事/影响分析等
+_WEB_NEEDED_RE = re.compile(
+    r"(?:股市|证券|熔断|板块|半导体|芯片|A股|港股|美股|"
+    r"财经|行情|股价|指数|涨停|跌停|跌幅|涨幅|"
+    r"央行|利率|汇率|GDP|通胀|"
+    r"最新|今天|今日|近日|近期|当前|目前|"
+    r"新闻|事件|影响)",
     re.I,
 )
 
@@ -92,12 +101,15 @@ def _is_compound_chitchat(text: str) -> bool:
     )
 
 
-def is_chitchat_message(text: str) -> bool:
+def is_chitchat_message(
+    text: str,
+    history: list[AiChatMessage] | None = None,
+) -> bool:
     """日常寒暄或闲聊，通常无需检索与读附件。"""
     t = (text or "").strip()
     if not t:
         return True
-    if is_scheduled_reminder_request(t):
+    if history and is_likely_follow_up(t, history):
         return False
     if _EXPLICIT_KB_RE.search(t) or _EXPLICIT_KG_RE.search(t):
         return False
@@ -121,67 +133,24 @@ def _history_had_retrieval_question(history: list[AiChatMessage] | None) -> bool
     return False
 
 
-def is_scheduled_reminder_request(text: str) -> bool:
-    """用户是否在请求「N 秒后/分钟后提醒」。"""
-    return parse_scheduled_reminder_request(text) is not None
-
-
-def _extract_reminder_title(text: str) -> str:
-    remainder = _REMINDER_DELAY_RE.sub("", text, count=1).strip()
-    for prefix in ("提醒我", "通知我", "叫我", "告诉我", "记得提醒", "记得通知", "提醒", "通知"):
-        if remainder.startswith(prefix):
-            remainder = remainder[len(prefix) :].strip()
-            break
-    remainder = re.sub(r"[吧呢啊。！!？?，,\s]+$", "", remainder)
-    return (remainder or "提醒")[:80]
-
-
-def parse_scheduled_reminder_request(text: str) -> dict[str, Any] | None:
-    """解析明确的定时提醒请求，供服务端直接 schedule_notification。"""
-    raw = (text or "").strip()
-    if not raw:
-        return None
-    delay_match = _REMINDER_DELAY_RE.search(raw)
-    if not delay_match:
-        return None
-    if not _REMINDER_ACTION_RE.search(raw) and "后" not in raw:
-        return None
-
-    amount = int(delay_match.group(1))
-    if amount <= 0:
-        return None
-
-    unit = delay_match.group(2).lower()
-    delay_seconds: int | None = None
-    delay_minutes: int | None = None
-    if unit.startswith("秒"):
-        delay_seconds = amount
-    elif unit in ("分", "分钟"):
-        delay_minutes = amount
-    elif unit.startswith("时") or unit == "个小时":
-        delay_minutes = amount * 60
-    else:
-        return None
-
-    title = _extract_reminder_title(raw)
-    return {
-        "title": title,
-        "body": "",
-        "delay_seconds": delay_seconds,
-        "delay_minutes": delay_minutes,
-    }
-
-
 def needs_knowledge_retrieval(
     message: str,
     history: list[AiChatMessage] | None = None,
 ) -> bool:
     """问题是否像「查资料 / 问制度 / 问文档内容」。"""
     text = (message or "").strip()
+    from app.services.agent_skill_router import is_org_member_list_question
+
+    if is_org_member_list_question(text):
+        return False
+    if is_platform_system_data_message(text) or is_platform_operation_message(text):
+        return False
     if _RETRIEVAL_HINT_RE.search(text):
         return True
     if _EXPLICIT_KB_RE.search(text) or _EXPLICIT_KG_RE.search(text):
         return True
+    if is_likely_follow_up(text, history):
+        return _history_had_retrieval_question(history)
     return bool(_FOLLOWUP_RE.search(text) and _history_had_retrieval_question(history))
 
 
@@ -195,12 +164,15 @@ def _should_skip_web_search(
     text = (message or "").strip()
     if not text or _EXPLICIT_WEB_RE.search(text):
         return not bool(text)
+    if _WEB_NEEDED_RE.search(text):
+        return False
     if chitchat if chitchat is not None else is_chitchat_message(text):
         return True
     if platform_usage if platform_usage is not None else is_platform_usage_message(text):
         return True
     if (
         len(text) <= 20
+        and not is_likely_follow_up(text, history)
         and not _RETRIEVAL_HINT_RE.search(text)
         and not needs_knowledge_retrieval(text, history)
         and not _FOLLOWUP_RE.search(text)
@@ -227,6 +199,33 @@ class AgentToolPlan:
     context_instruction: str
 
 
+def should_prefetch_knowledge_context(
+    message: str,
+    history: list[AiChatMessage] | None,
+    plan: AgentToolPlan,
+) -> bool:
+    """本析首页：在 Agent 编排前预读知识库/本体图谱（浏览器截图类任务除外）。"""
+    from app.services.agent_routing_signals import (
+        matches_browser_intent,
+        matches_browser_site_search,
+    )
+    from app.services.agent_skill_router import user_wants_browser_screenshot
+
+    text = (message or "").strip()
+    if not text or is_chitchat_message(text, history):
+        return False
+    if is_platform_operation_message(text) or is_platform_system_data_message(text):
+        return False
+    if user_wants_browser_screenshot(text):
+        return False
+    if matches_browser_intent(text) and matches_browser_site_search(text):
+        if not _EXPLICIT_KB_RE.search(text) and not _EXPLICIT_KG_RE.search(text):
+            return False
+    if plan.use_attachment and not _EXPLICIT_KB_RE.search(text) and not _EXPLICIT_KG_RE.search(text):
+        return False
+    return needs_knowledge_retrieval(text, history)
+
+
 def plan_agent_tools(
     message: str,
     *,
@@ -236,17 +235,17 @@ def plan_agent_tools(
     web_enabled: bool,
     history: list[AiChatMessage] | None = None,
 ) -> AgentToolPlan:
-    """系统层 Hook：仅决定是否预读附件；检索由 tool loop 按需执行。"""
+    """系统层 Hook：决定是否预读附件；其余由统一 Agent 流程分析与规划。"""
+    _ = (kb_enabled, kg_enabled, web_enabled, history)
     text = (message or "").strip()
     explicit_kb = bool(_EXPLICIT_KB_RE.search(text))
     explicit_kg = bool(_EXPLICIT_KG_RE.search(text))
-    platform_usage = is_platform_usage_message(text)
-    chitchat = is_chitchat_message(text)
+    chitchat = is_chitchat_message(text, history)
 
     def _finish(
         *,
         use_attachment: bool,
-        intent_label: str,
+        intent_label: str = "处理用户请求",
         context_instruction: str = "",
     ) -> AgentToolPlan:
         return AgentToolPlan(
@@ -258,16 +257,10 @@ def plan_agent_tools(
             context_instruction=context_instruction,
         )
 
-    if chitchat and not explicit_kb and not explicit_kg:
-        return _finish(use_attachment=False, intent_label="日常交流，直接回答")
-    if is_scheduled_reminder_request(text) and not explicit_kb and not explicit_kg:
-        return _finish(use_attachment=False, intent_label="设置定时提醒")
-    if platform_usage and not explicit_kb and not explicit_kg:
-        return _finish(use_attachment=False, intent_label="解答平台使用问题")
-    if attach_count > 0 and not chitchat:
+    if attach_count > 0 and not chitchat and not explicit_kg:
         return _finish(
             use_attachment=True,
             intent_label="依据用户上传的附件回答",
             context_instruction=_ATTACHMENT_CONTEXT_INSTRUCTION,
         )
-    return _finish(use_attachment=False, intent_label="由智能体按需调用工具")
+    return _finish(use_attachment=False)

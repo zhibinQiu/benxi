@@ -109,7 +109,7 @@ defineExpose({ load, refresh: load });
           <template #trigger>
             <button
               type="button"
-              class="notif-header-btn notif-header-btn--refresh"
+              class="notif-header-btn"
               :aria-label="t('common.refresh')"
               :disabled="loading"
               @click="load"
@@ -135,7 +135,7 @@ defineExpose({ load, refresh: load });
       </div>
     </header>
 
-    <n-spin :show="loading">
+    <n-spin :show="loading" local>
       <div class="notifications-panel__body">
         <n-list v-if="items.length" bordered>
           <n-list-item
@@ -216,6 +216,8 @@ defineExpose({ load, refresh: load });
   padding: 0;
   border: none;
   border-radius: calc(var(--platform-radius-sm) - 2px);
+  color: var(--platform-text-secondary);
+  background: transparent;
   cursor: pointer;
   transition:
     transform 0.15s var(--platform-ease-smooth),
@@ -226,6 +228,8 @@ defineExpose({ load, refresh: load });
 
 .notif-header-btn:not(:disabled):hover {
   transform: translateY(-1px);
+  color: var(--platform-text);
+  background: var(--platform-toolbar-bg);
 }
 
 .notif-header-btn:not(:disabled):active {
@@ -235,17 +239,6 @@ defineExpose({ load, refresh: load });
 .notif-header-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.notif-header-btn--refresh {
-  color: var(--platform-accent);
-  background: var(--platform-accent-soft);
-}
-
-.notif-header-btn--refresh:not(:disabled):hover {
-  color: var(--platform-accent-hover, var(--platform-accent));
-  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 22%, transparent);
 }
 
 .notif-header-btn--read {

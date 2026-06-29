@@ -89,7 +89,7 @@ def ensure_platform_chat_schema(engine: Engine) -> None:
 
 
 def ensure_document_scope_tier_v2(engine: Engine) -> None:
-    """分级重划：原 company→department（部门级），原 department→team（小组级）。"""
+    """分级重划：原 company→department（部门级），原 department→team（分部级）。"""
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -340,6 +340,25 @@ def backfill_ragflow_version_links(engine: Engine) -> None:
             db.rollback()
 
 
+def backfill_ragflow_version_links_once(engine: Engine) -> None:
+    """一次性回填 canonical → 版本索引映射（升级兼容）。"""
+    patch_name = "backfill_ragflow_version_links_v1"
+    with engine.begin() as conn:
+        _ensure_schema_patches_table(conn)
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = :name"),
+            {"name": patch_name},
+        ).first()
+        if done:
+            return
+    backfill_ragflow_version_links(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO schema_patches (name) VALUES (:name)"),
+            {"name": patch_name},
+        )
+
+
 def ensure_todo_schema(engine: Engine) -> None:
     statements = [
         """
@@ -380,37 +399,6 @@ def ensure_issue_report_schema(engine: Engine) -> None:
         "CREATE INDEX IF NOT EXISTS ix_issue_reports_status ON issue_reports (status)",
         "CREATE INDEX IF NOT EXISTS ix_issue_reports_reporter ON issue_reports (reporter_id)",
         "CREATE INDEX IF NOT EXISTS ix_issue_reports_created ON issue_reports (created_at DESC)",
-    ]
-    with engine.begin() as conn:
-        for sql in statements:
-            conn.execute(text(sql))
-
-
-def ensure_carbon_market_schema(engine: Engine) -> None:
-    statements = [
-        """
-        CREATE TABLE IF NOT EXISTS cea_daily_quotes (
-            trade_date DATE PRIMARY KEY,
-            open_cny DOUBLE PRECISION,
-            high_cny DOUBLE PRECISION,
-            low_cny DOUBLE PRECISION,
-            close_cny DOUBLE PRECISION NOT NULL,
-            change_pct DOUBLE PRECISION,
-            volume_tco2 DOUBLE PRECISION,
-            fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS ccer_daily_quotes (
-            trade_date DATE PRIMARY KEY,
-            traded BOOLEAN NOT NULL DEFAULT FALSE,
-            close_cny DOUBLE PRECISION,
-            volume_tco2 DOUBLE PRECISION NOT NULL DEFAULT 0,
-            amount_cny DOUBLE PRECISION,
-            source_url VARCHAR(512),
-            fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-        """,
     ]
     with engine.begin() as conn:
         for sql in statements:
@@ -958,7 +946,7 @@ def ensure_ragflow_version_index_completed_schema(engine: Engine) -> None:
 
 
 # 新增 ensure_* 补丁时递增；启动时若库中无对应记录则自动跑全量 schema 迁移。
-PLATFORM_SCHEMA_REVISION = 3
+PLATFORM_SCHEMA_REVISION = 4
 
 
 def platform_schema_revision_patch() -> str:
@@ -1162,6 +1150,58 @@ def ensure_agent_profile_schema(engine: Engine) -> None:
         ALTER TABLE agent_profile_bindings
         ADD COLUMN IF NOT EXISTS config_md TEXT
         """,
+        """
+        ALTER TABLE agent_profile_bindings
+        ADD COLUMN IF NOT EXISTS service_enabled BOOLEAN NOT NULL DEFAULT TRUE
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_aip_external_agents_schema(engine: Engine) -> None:
+    """外部 AIP 智能体登记（管理员 UI 接入）。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS aip_external_agents (
+            id UUID PRIMARY KEY,
+            aid VARCHAR(256) NOT NULL UNIQUE,
+            name VARCHAR(256) NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            service_endpoint TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_aip_external_agents_aid
+        ON aip_external_agents (aid)
+        """,
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_aip_secret_keys_schema(engine: Engine) -> None:
+    """AIP Secret Key 登记表（GB/Z 185.3 SK 身份凭证）。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS aip_secret_keys (
+            id UUID PRIMARY KEY,
+            key_prefix VARCHAR(32) NOT NULL,
+            key_hash VARCHAR(64) NOT NULL UNIQUE,
+            purpose TEXT NOT NULL,
+            created_by_id UUID NOT NULL REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_aip_secret_keys_prefix
+        ON aip_secret_keys (key_prefix)
+        """,
     ]
     with engine.begin() as conn:
         for sql in statements:
@@ -1205,14 +1245,36 @@ def ensure_document_performance_indexes(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def drop_legacy_carbon_market_tables(engine: Engine) -> None:
+    """碳资产行情模块已移除，清理遗留表。"""
+    patch_name = "drop_carbon_market_tables_v1"
+    with engine.begin() as conn:
+        _ensure_schema_patches_table(conn)
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = :name"),
+            {"name": patch_name},
+        ).first()
+        if done:
+            return
+        conn.execute(text("DROP TABLE IF EXISTS cea_daily_quotes"))
+        conn.execute(text("DROP TABLE IF EXISTS ccer_daily_quotes"))
+        conn.execute(
+            text("INSERT INTO schema_patches (name) VALUES (:name)"),
+            {"name": patch_name},
+        )
+
+
 def run_light_schema_patches(engine: Engine) -> None:
     """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
+    drop_legacy_carbon_market_tables(engine)
     ensure_document_performance_indexes(engine)
     ensure_pageindex_schema(engine)
     ensure_issue_report_schema(engine)
     ensure_platform_menu_settings_schema(engine)
     ensure_agent_skill_schema(engine)
     ensure_agent_profile_schema(engine)
+    ensure_aip_external_agents_schema(engine)
+    ensure_aip_secret_keys_schema(engine)
     ensure_scheduled_notification_schema(engine)
     ensure_scheduled_rpa_task_schema(engine)
 
@@ -1228,7 +1290,6 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_document_scope_org_depth(engine)
     ensure_ragflow_schema(engine)
     drop_legacy_ragflow_account_dataset_columns(engine)
-    ensure_carbon_market_schema(engine)
     ensure_meeting_record_schema(engine)
     ensure_todo_schema(engine)
     ensure_wechat_mp_schema(engine)
@@ -1246,8 +1307,8 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_version_compare_schema(engine)
     ensure_version_compare_llm_summary_schema(engine)
     ensure_document_version_blocks_schema(engine)
-    ensure_document_performance_indexes(engine)
     ensure_permission_level_migration(engine)
     ensure_document_library_align_v1(engine)
     migrate_legacy_admin_roles(engine)
+    backfill_ragflow_version_links_once(engine)
     mark_platform_schema_current(engine)

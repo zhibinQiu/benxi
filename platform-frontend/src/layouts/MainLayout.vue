@@ -50,6 +50,7 @@ import {
   shouldShowReleaseHighlights,
 } from "../utils/releaseNotesAck.js";
 import { useBlockingUiCleanup } from "../composables/useBlockingUiCleanup.js";
+import { prefetchKgPalantir } from "../composables/useKgPalantirPrefetch.js";
 import { prefetchKnowledgeScopeTree } from "../composables/useKnowledgeScopeTree.js";
 import { getToken } from "../api/client.js";
 import { openExternal } from "../utils/openExternal.js";
@@ -111,10 +112,20 @@ const favoriteActiveKey = computed(() => {
   return null;
 });
 
+const KNOWLEDGE_ROUTES = new Set(["knowledge-search", "report-generation"]);
+const KG_ROUTES = new Set(["kg-palantir"]);
+
+function prefetchFeatureCaches() {
+  if (!getToken()) return;
+  prefetchKnowledgeScopeTree();
+  prefetchKgPalantir();
+}
+
 onMounted(() => {
   startNotificationAlerts();
+  prefetchFeatureCaches();
   Promise.allSettled([loadUser(), loadSystemFeatures(), loadMenuSettings()]).then(() => {
-    if (getToken()) prefetchKnowledgeScopeTree();
+    prefetchFeatureCaches();
     nextTick(() => {
       const wrap = siderMenuWrapRef.value;
       const selected = wrap?.querySelector(".n-menu-item-content.n-menu-item-content--selected");
@@ -127,6 +138,17 @@ onMounted(() => {
 onUnmounted(() => {
   stopNotificationAlerts();
 });
+
+watch(
+  () => route.name,
+  (name) => {
+    if (!getToken()) return;
+    const routeName = String(name || "");
+    if (KNOWLEDGE_ROUTES.has(routeName)) prefetchKnowledgeScopeTree();
+    if (KG_ROUTES.has(routeName)) prefetchKgPalantir();
+  },
+  { immediate: true }
+);
 
 async function tryShowReleaseHighlights() {
   try {
@@ -206,14 +228,6 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(GridOutline) })});
   }
 
-  for (const feature of favoriteMenuFeatures.value) {
-    const Icon = resolveFeatureIcon(feature.icon) || GridOutline;
-    items.push({
-      label: featureLabel(feature.id, "title", feature.title),
-      key: favoriteMenuKey(feature),
-      icon: () => h(NIcon, null, { default: () => h(Icon) })});
-  }
-
   if (isMenuVisible("documents")) {
     items.push({
       label: t("menu.documents"),
@@ -231,6 +245,14 @@ const menuOptions = computed(() => {
       label: t("menu.issueReports"),
       key: "issue-reports",
       icon: () => h(NIcon, null, { default: () => h(BugOutline) })});
+  }
+
+  for (const feature of favoriteMenuFeatures.value) {
+    const Icon = resolveFeatureIcon(feature.icon) || GridOutline;
+    items.push({
+      label: featureLabel(feature.id, "title", feature.title),
+      key: favoriteMenuKey(feature),
+      icon: () => h(NIcon, null, { default: () => h(Icon) })});
   }
 
   if (settingsChildren.value.length) {
@@ -265,7 +287,6 @@ const activeKey = computed(() => {
     route.name === "text-to-speech" ||
     route.name === "ocr" ||
     route.name === "compare" ||
-    route.name === "assist-writing" ||
     route.name === "agent-skills" ||
     route.name === "knowledge-search" ||
     route.name === "report-generation" ||
@@ -298,7 +319,7 @@ const flushFeatureNav = computed(
 
 /** 子功能页 Teleport 操作条：预留顶栏高度，避免注入后挤压正文 */
 const reservesHeaderExtension = computed(() => {
-  if (route.name === "documents") return true;
+  if (route.name === "documents" || route.name === "knowledge-subscriptions") return true;
   return flushFeatureNav.value;
 });
 
@@ -308,6 +329,7 @@ const headerTitle = computed(() => {
 });
 
 const appDisplayName = useAppDisplayName();
+const sidebarBrandTitle = computed(() => t("app.sidebarTitle"));
 
 const menuOptionKeys = computed(() => {
   const keys = new Set();
@@ -469,7 +491,7 @@ function onMenuSelect(key) {
         <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
           <PlatformBrandIcon :size="24" class="brand-logo" />
           <span v-if="!siderCollapsed" class="brand-name">
-            <PlatformBrandTitle :title="appDisplayName" />
+            <PlatformBrandTitle :title="sidebarBrandTitle" />
           </span>
         </div>
         <div ref="siderMenuWrapRef" class="sider-menu-wrap" @click="onSiderMenuWrapClick">
@@ -505,12 +527,12 @@ function onMenuSelect(key) {
                   v-if="showSubsystemBack"
                   quaternary
                   circle
-                  size="small"
+                  size="tiny"
                   class="header-back"
                   :aria-label="t('header.back')"
                   @click="goSubsystemBack"
                 >
-                  <n-icon :size="20" :component="ArrowBackOutline" />
+                  <n-icon :size="16" :component="ArrowBackOutline" />
                 </n-button>
                 <n-text strong class="header-title">{{ headerTitle }}</n-text>
               </n-space>
@@ -794,6 +816,8 @@ function onMenuSelect(key) {
 
 .header-back {
   flex-shrink: 0;
+  width: 26px;
+  height: 26px;
   color: var(--platform-accent);
 }
 

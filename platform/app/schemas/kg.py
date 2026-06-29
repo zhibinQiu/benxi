@@ -84,6 +84,22 @@ class KgEntityUpdate(BaseModel):
     properties: dict[str, Any] | None = None
 
 
+class KgEntityBatchDeleteIn(BaseModel):
+    entity_ids: list[UUID] = Field(default_factory=list)
+    type_id: UUID | None = None
+    q: str | None = Field(default=None, max_length=256)
+    """与列表 API 相同：按类型与关键词匹配当前用户实体并删除（entity_ids 为空时生效）。"""
+
+
+class KgEntityBatchDeleteOut(BaseModel):
+    deleted_count: int
+
+
+class KgGraphClearOut(BaseModel):
+    deleted_entities: int
+    deleted_relations: int
+
+
 class KgRelationOut(BaseModel):
     id: UUID
     relation_type_id: UUID
@@ -148,3 +164,24 @@ class KgExtractFromTextOut(BaseModel):
     entities_reused: int = 0
     relations_created: int = 0
     relations_skipped: int = 0
+
+
+class KgExtractBatchIn(BaseModel):
+    scope: str = Field(
+        default="knowledge",
+        pattern="^(knowledge|platform)$",
+        description="knowledge=清空后从拥有完全权限的已索引文档抽离；platform=平台文档库增量抽离",
+    )
+    force: bool = Field(
+        default=False,
+        description="是否强制重新抽离已标记版本（默认仅处理未抽离或版本变更文档）",
+    )
+
+
+class KgExtractBatchOut(BaseModel):
+    queued: bool = False
+    reason: str | None = None
+    scope: str
+    document_count: int = 0
+    already_extracted_count: int = 0
+    total_candidates: int = 0

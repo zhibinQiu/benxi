@@ -14,6 +14,7 @@ from app.services.agent_document_service import (
     list_library_documents_for_agent,
     list_manageable_documents,
     rename_document_for_agent,
+    search_documents_by_name_for_agent,
     share_document_for_agent,
 )
 from app.services.agent_tools import agent_tool_names, build_agent_tool_specs, tool_workflow_meta
@@ -21,6 +22,7 @@ from app.services.agent_tools import agent_tool_names, build_agent_tool_specs, t
 
 def test_document_tools_registered():
     names = agent_tool_names()
+    assert "search_documents_by_name" in names
     assert "list_library_documents" in names
     assert "list_manageable_documents" in names
     assert "list_document_folders" in names
@@ -47,6 +49,29 @@ def test_rename_document_workflow_meta():
     )
     assert meta["tool"] == "document.rename"
     assert "重命名" in meta["title"]
+
+
+@patch("app.services.agent_document_service.filter_accessible_documents")
+def test_search_documents_by_name(mock_filter):
+    db = MagicMock()
+    user = MagicMock(id=uuid.uuid4())
+    doc = MagicMock(
+        id=uuid.uuid4(),
+        title="采购管理制度",
+        scope="company",
+        folder_id=None,
+    )
+    mock_filter.return_value = [doc]
+    with patch(
+        "app.services.agent_document_service._serialize_document_summary",
+        return_value={"id": str(doc.id), "title": doc.title, "scope": "company"},
+    ):
+        rows = search_documents_by_name_for_agent(db, user, name="采购", limit=5)
+    assert len(rows) == 1
+    assert rows[0]["title"] == "采购管理制度"
+    mock_filter.assert_called_once()
+    assert mock_filter.call_args.kwargs["keyword"] == "采购"
+    assert mock_filter.call_args.kwargs["scope"] is None
 
 
 @patch("app.services.agent_document_service.filter_accessible_documents")

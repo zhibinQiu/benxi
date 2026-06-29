@@ -21,7 +21,6 @@ def test_builtin_plugins_registered():
     assert "ai_home" in ids
     assert "carbon_platform" in ids
     assert "carbon_ai_v1" in ids
-    assert "ai_digital_robot" in ids
     assert "emission_reduction_strategy" not in ids
 
 
@@ -98,26 +97,10 @@ def test_smart_forecast_plugin():
     assert p.route == "/system/smart-forecast"
 
 
-def test_carbon_qa_plugin():
-    p = get_plugin("carbon_qa")
-    assert p is not None
-    assert p.enabled is True
-    assert p.category == "carbon"
-    assert p.route == "/system/carbon-qa"
-
-
 def test_ai_home_plugin():
     p = get_plugin("ai_home")
     assert p is not None
     assert p.title == "本析智能"
-    assert p.category == "ai"
+    assert p.category == "tools"
     assert p.route == "/ai-home"
 
-
-def test_carbon_asset_trading_enabled():
-    p = get_plugin("carbon_asset_trading")
-    assert p is not None
-    assert p.title == "碳资产管理与交易"
-    assert p.category == "carbon"
-    assert p.enabled is False
-    assert p.tag == "Demo"

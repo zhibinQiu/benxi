@@ -1,5 +1,19 @@
 # 测试
 
+## v4.5.0 轻量化验证清单
+
+本次版本新增 AIP 智能体互联、UI 扁平化与功能收敛。发布前建议：
+
+| 层级 | 命令 / 检查 |
+|------|-------------|
+| 后端单元测试 | `cd platform && pytest tests/ -q` |
+| 前端 lint + 构建 | `cd platform-frontend && npm run lint && npm run build` |
+| 知识检索流式 | 知识检索页勾选文档 → 问答 → 引用与 workflow 正常 |
+| 双碳 / 问数 / 报告 | 各对话页流式输出与 `createPlatformChatStream` 一致 |
+| 对比任务 SSE | 发起文档对比 → 进度推送正常；长时间轮询不耗尽 DB 连接池 |
+| 知识双面板 | 检索 ↔ 报告切换流畅；会话状态由 sessionStorage 恢复 |
+| AIP | `pytest tests/test_aip_*.py -q`；Agent Skills 管理页登记外部智能体 |
+
 ## 平台后端
 
 ```bash
@@ -51,3 +65,30 @@ npm run build    # 生产构建
 - KnowFlow ES 冷启动：≤ 2min
 - embed-session：应 < 10s（`sync=false`）
 - 前端：Vite 生产构建 + Nginx gzip；Naive UI 按需加载
+
+## 吞吐量 / 压力测试（v4.5.0）
+
+脚本：`platform/scripts/stress_test_throughput.py`（依赖 `httpx`，随 platform 已安装）
+
+| 场景 | 说明 |
+|------|------|
+| health burst | `/health`、`/health/ready` 高并发（无 DB） |
+| mixed reads | 文档列表 / library / overview / monitor 混合读 |
+| sustained reads | 持续 N 秒维持固定并发 |
+| parse enqueue | 创建文档 → 上传 → 触发 reindex（解析入队） |
+
+```bash
+cd platform
+# 常规负载（期望 100% 成功、无 503）
+python scripts/stress_test_throughput.py --concurrency 40 --parse-jobs 50
+
+# 单机生产档位 C 验收（compose 默认 6 worker × 12+8）
+python scripts/stress_test_throughput.py --concurrency 80 --parse-jobs 80
+
+# 极限探测（超出档位 C 时预期可见 503）
+python scripts/stress_test_throughput.py --concurrency 200 --parse-jobs 200
+```
+
+测试文档标题前缀 `__stress_test__`，脚本结束时会 **batch-delete 自动清理**。可选环境变量：`STRESS_BASE_URL`、`STRESS_ACCOUNT`、`STRESS_PASSWORD`。
+
+发布前建议：常规负载通过 + `pytest tests/ -q`（可 `--ignore=tests/test_knowflow_queue_service.py` 若本地无 KnowFlow MySQL）。

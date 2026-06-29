@@ -37,16 +37,17 @@ def _binding_map(db: Session) -> dict[str, AgentProfileBinding]:
 
 
 def _profile_tool_names(defn: AgentProfileDef) -> set[str]:
+    names: set[str] = set()
     if defn.tool_names:
-        return set(defn.tool_names)
-    if not defn.tool_categories:
-        return set()
-    categories = set(defn.tool_categories)
-    return {
-        name
-        for name, category in _TOOL_CATEGORIES.items()
-        if category in categories
-    }
+        names.update(defn.tool_names)
+    if defn.tool_categories:
+        categories = set(defn.tool_categories)
+        names.update(
+            name
+            for name, category in _TOOL_CATEGORIES.items()
+            if category in categories
+        )
+    return names
 
 
 def _count_tools(db: Session, defn: AgentProfileDef) -> int:
@@ -89,6 +90,7 @@ def _to_out(
     binding: AgentProfileBinding | None,
 ) -> AgentProfileOut:
     enabled = binding.enabled if binding is not None else True
+    service_enabled = binding.service_enabled if binding is not None else True
     status, active_count = agent_runtime_status(defn.id)
     config_md = binding.config_md if binding is not None else None
     return AgentProfileOut(
@@ -96,6 +98,7 @@ def _to_out(
         title=defn.title,
         description=get_effective_description(defn, config_md),
         enabled=enabled,
+        service_enabled=service_enabled,
         status=AgentRuntimeStatusOut(status),
         skill_names=_effective_skill_names(defn, binding),
         default_skill_names=list(defn.default_skill_names),
@@ -229,6 +232,7 @@ def patch_agent_profile(
     agent_id: str,
     *,
     enabled: bool | None = None,
+    service_enabled: bool | None = None,
     skill_names: list[str] | None = None,
 ) -> AgentProfileOut:
     defn = get_agent_profile(agent_id)
@@ -248,6 +252,8 @@ def patch_agent_profile(
 
     if enabled is not None:
         row.enabled = enabled
+    if service_enabled is not None:
+        row.service_enabled = service_enabled
     if skill_names is not None:
         row.skill_names = _validate_skill_names(db, skill_names)
 
@@ -275,7 +281,14 @@ def resolve_agent_skill_names(db: Session, agent_id: str) -> list[str]:
     binding = _binding_map(db).get(defn.id)
     if binding is not None and not binding.enabled:
         return []
-    return _effective_skill_names(defn, binding)
+    names = _effective_skill_names(defn, binding)
+    known = {
+        skill.name
+        for skill in list_all_skill_definitions(
+            db, admin_view=False, catalog_only=True
+        )
+    }
+    return [name for name in names if name in known]
 
 
 def is_agent_enabled(db: Session, agent_id: str) -> bool:
@@ -286,3 +299,13 @@ def is_agent_enabled(db: Session, agent_id: str) -> bool:
     if binding is None:
         return True
     return bool(binding.enabled)
+
+
+def is_agent_service_enabled(db: Session, agent_id: str) -> bool:
+    """AIP 对外服务是否开放（需同时启用内部智能体）。"""
+    if not is_agent_enabled(db, agent_id):
+        return False
+    binding = _binding_map(db).get(agent_id)
+    if binding is None:
+        return True
+    return bool(binding.service_enabled)

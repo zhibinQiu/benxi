@@ -2,7 +2,7 @@
 
 基于 [BabelDOC](https://github.com/funstory-ai/BabelDOC) 的 PDF 科学文献翻译，以及企业级知识库与 AI 能力（文档权限、精准检索、智能问答、报告生成等）。
 
-**当前版本：v4.3.2**（见根目录 `VERSION`）
+**当前版本：v4.5.0**（见根目录 `VERSION`）
 
 ## 项目结构
 
@@ -53,6 +53,7 @@ bash scripts/verify-remote-deps.sh
 
 | 文档 | 说明 |
 |------|------|
+| **[系统文档站](http://127.0.0.1:40100/)** | `./dev.sh docs` 启动 MkDocs |
 | **[运维部署指南](运维部署指南.md)** | 启动 / 部署 / 迁移 |
 | [运维手册](docs/zh/operations/README.md) | 部署、配置、升级 |
 | [脚本说明](scripts/README.md) | dev / stack / deploy |

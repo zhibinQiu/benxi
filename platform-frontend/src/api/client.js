@@ -18,8 +18,6 @@ export * from "./menuSettings.js";
 export * from "./compare.js";
 export * from "./system.js";
 export * from "./translate.js";
-export * from "./carbonAssets.js";
-export * from "./wechatMp.js";
 export * from "./subscriptions.js";
 export * from "./speech.js";
 export * from "./textToSpeech.js";

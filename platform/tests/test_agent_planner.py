@@ -10,6 +10,7 @@ from app.services.agent_planner import (
     AgentExecutionPlan,
     _parse_llm_plan,
     _planning_system_prompt,
+    _rule_plan_for_chitchat,
     _rule_plan_for_skill_management,
     _rule_plan_from_intent,
     build_plan_context_instruction,
@@ -26,7 +27,7 @@ def _tool_spec(name: str) -> dict:
     return {"type": "function", "function": {"name": name}}
 
 
-def test_rule_chitchat_direct_answer():
+def test_rule_chitchat_direct_answer_fast_path():
     intent = plan_agent_tools(
         "你好",
         attach_count=0,
@@ -34,10 +35,12 @@ def test_rule_chitchat_direct_answer():
         kg_enabled=True,
         web_enabled=True,
     )
-    plan = _rule_plan_from_intent(intent)
+    assert _rule_plan_from_intent(intent) is None
+    plan = _rule_plan_for_chitchat("你好")
     assert plan is not None
     assert plan.direct_answer is True
-    assert plan.skip_tools == tuple(RETRIEVAL_ATOMIC_TOOLS)
+    assert plan.source == "rule"
+    assert intent.intent_label == "处理用户请求"
 
 
 def test_rule_attachment_blocks_retrieval():
@@ -219,8 +222,9 @@ def test_rule_skill_management_never_direct_answer():
     assert plan.direct_answer is False
     assert plan.source == "rule"
     assert "create_uploaded_skill" in " ".join(plan.steps)
-    assert "澄清" in plan.steps[0]
-    assert "main.py" in " ".join(plan.steps)
+    assert "list_agent_skills" in plan.steps[0]
+    assert "澄清" in " ".join(plan.steps)
+    assert "run_skill_script" in " ".join(plan.steps)
 
 
 def test_coerce_skill_management_overrides_direct_answer_llm_plan():
@@ -292,10 +296,107 @@ def test_planning_system_prompt_omits_kg_block_by_default():
     assert "消歧" not in text
 
 
-def test_resolve_execution_plan_rule_fast_path():
+def test_rule_simple_fetch_uses_web_search_not_skill():
+    from app.services.agent_planner import (
+        _rule_plan_for_simple_fetch,
+        match_uploaded_skill_for_message,
+    )
+
+    plan = _rule_plan_for_simple_fetch("帮我查全国碳市场最新价格")
+    assert plan is not None
+    assert plan.uploaded_skill is None
+    assert ATOMIC_TOOL_WEB_SEARCH in plan.atomic_tools
+
+    assert _rule_plan_for_simple_fetch(
+        "生成一个 skill，帮我从https://www.tanshichang.cn 爬取最新的碳市场价格。"
+    ) is None
+
+    skill = match_uploaded_skill_for_message(
+        "北京碳价多少",
+        None,
+        uploaded_names={"carbon-market-price"},
+    )
+    assert skill == "carbon-market-price"
+    assert _rule_plan_for_simple_fetch(
+        "北京碳价多少",
+        uploaded_names={"carbon-market-price"},
+    ) is None
+
+
+def test_skill_first_plan_before_web_search():
+    from app.services.agent_planner import _rule_plan_for_uploaded_skill_followup
+
+    plan = _rule_plan_for_uploaded_skill_followup(
+        "查一下广东最新碳价",
+        None,
+        {"carbon-market-price"},
+    )
+    assert plan is not None
+    assert plan.uploaded_skill == "carbon-market-price"
+    assert ATOMIC_TOOL_WEB_SEARCH not in plan.atomic_tools
+
+
+def test_rule_platform_system_data_requires_list_users():
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models.org import User
+    from app.services.agent_planner import _rule_plan_for_platform_system_data
+    from app.services.skill_chat_service import ATOMIC_TOOL_KNOWLEDGE_RETRIEVE
+
+    db = SessionLocal()
+    try:
+        admin = db.scalar(select(User).where(User.phone == "admin"))
+        assert admin is not None
+        plan = _rule_plan_for_platform_system_data(db, admin, "系统中有哪些用户")
+        assert plan is not None
+        assert plan.direct_answer is False
+        assert any("list_users" in step for step in plan.steps)
+        assert ATOMIC_TOOL_KNOWLEDGE_RETRIEVE in plan.skip_tools
+    finally:
+        db.close()
+
+
+def test_coerce_atomic_first_clears_unrequested_skill():
+    from app.services.agent_planner import _coerce_atomic_first_plan
+
+    plan = AgentExecutionPlan(
+        reasoning="",
+        intent="查询",
+        direct_answer=False,
+        atomic_tools=(),
+        skip_tools=(),
+        uploaded_skill="carbon-price-scraper",
+        builtin_orchestration=None,
+        steps=(),
+        source="llm",
+    )
+    fixed = _coerce_atomic_first_plan("查最新碳价", plan)
+    assert fixed.uploaded_skill is None
+    assert ATOMIC_TOOL_WEB_SEARCH in fixed.atomic_tools
+
+
+def test_filter_hides_run_skill_script_without_uploaded_skill():
+    specs = [_tool_spec("run_skill_script"), _tool_spec("web_search")]
+    plan = AgentExecutionPlan(
+        reasoning="",
+        intent="查询",
+        direct_answer=False,
+        atomic_tools=(ATOMIC_TOOL_WEB_SEARCH,),
+        skip_tools=(),
+        uploaded_skill=None,
+        builtin_orchestration=None,
+        steps=(),
+        source="rule",
+    )
+    names = {s["function"]["name"] for s in filter_tool_specs_by_plan(specs, plan)}
+    assert "run_skill_script" not in names
+
+
+def test_resolve_execution_plan_attachment_rule_fast_path():
     intent = plan_agent_tools(
-        "你是谁？",
-        attach_count=0,
+        "总结这篇论文的方法",
+        attach_count=1,
         kb_enabled=True,
         kg_enabled=True,
         web_enabled=True,
@@ -305,10 +406,35 @@ def test_resolve_execution_plan_rule_fast_path():
         return await resolve_execution_plan(
             None,  # type: ignore[arg-type]
             None,  # type: ignore[arg-type]
-            message="你是谁？",
+            message="总结这篇论文的方法",
             intent_plan=intent,
         )
 
     plan = asyncio.run(_run())
-    assert plan.direct_answer is True
+    assert plan.direct_answer is False
     assert plan.source == "rule"
+    assert "附件" in plan.intent
+
+
+def test_rule_uploaded_skill_followup_after_carbon_skill_creation():
+    from app.schemas.ai_chat import AiChatMessage
+    from app.services.agent_planner import _rule_plan_for_uploaded_skill_followup
+
+    history = [
+        AiChatMessage(
+            role="user",
+            content="生成一个 skill，帮我从https://www.tanshichang.cn 爬取最新的碳市场价格。",
+        ),
+        AiChatMessage(
+            role="assistant",
+            content="已为您创建 carbon-market-price 技能，可直接用自然语言查询各地碳价。",
+        ),
+    ]
+    plan = _rule_plan_for_uploaded_skill_followup(
+        "北京",
+        history,
+        {"carbon-market-price"},
+    )
+    assert plan is not None
+    assert plan.uploaded_skill == "carbon-market-price"
+    assert plan.direct_answer is False

@@ -92,6 +92,100 @@ export function isLegacyWordFile(fileName, mimeType = "") {
  * 将 Word 转为 HTML；失败时尝试后端已解析的全文（纯文本降级）。
  * @returns {{ html: string, text: string, messages: object[] }}
  */
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** 将后端提取的 Office 正文（## 标题 + 制表符行）渲染为 HTML。 */
+export function officeExtractToHtml(fullText) {
+  const text = String(fullText || "").trim();
+  if (!text) return "";
+
+  const sections = text.split(/\n(?=## )/);
+  const parts = [];
+
+  for (const section of sections) {
+    const lines = section.trim().split("\n");
+    if (!lines.length) continue;
+
+    let title = "";
+    let bodyLines = lines;
+    if (lines[0].startsWith("## ")) {
+      title = lines[0].slice(3).trim();
+      bodyLines = lines.slice(1);
+    }
+
+    if (title) {
+      parts.push(`<h2>${escapeHtml(title)}</h2>`);
+    }
+
+    const rows = bodyLines.map((line) => line.trim()).filter(Boolean);
+    if (!rows.length) continue;
+
+    const tabular = rows.every((row) => row.includes("\t"));
+    if (tabular) {
+      parts.push("<table><tbody>");
+      for (const row of rows) {
+        parts.push("<tr>");
+        for (const cell of row.split("\t")) {
+          parts.push(`<td>${escapeHtml(cell)}</td>`);
+        }
+        parts.push("</tr>");
+      }
+      parts.push("</tbody></table>");
+      continue;
+    }
+
+    for (const line of rows) {
+      parts.push(`<p>${escapeHtml(line)}</p>`);
+    }
+  }
+
+  return parts.join("\n");
+}
+
+async function loadParsedOfficeText(documentId, versionId) {
+  if (!documentId || !versionId) return "";
+  try {
+    const content = await fetchCompareDocumentContent(documentId, versionId);
+    return String(content?.full_text || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export async function loadOfficeStructuredPreview(
+  blob,
+  { documentId = "", versionId = null, fileName = "", mimeType = "" } = {},
+) {
+  let fullText = await loadParsedOfficeText(documentId, versionId);
+
+  if (!fullText && blob) {
+    const kind = resolveDocumentPreviewKind(fileName, mimeType);
+    if (kind === PREVIEW_KIND.TEXT) {
+      fullText = (await readTextBlob(blob)).trim();
+    }
+  }
+
+  if (!fullText) {
+    const lower = String(fileName || "").toLowerCase();
+    if (/\.(ppt|xls)$/.test(lower)) {
+      throw new Error("旧版 .ppt / .xls 格式暂不支持在线预览，请下载后查看或转换为 .pptx / .xlsx");
+    }
+    throw new Error("未能提取文档内容，请下载后在本地应用中打开");
+  }
+
+  const html = officeExtractToHtml(fullText);
+  if (html) {
+    return { html, text: "" };
+  }
+  return { html: "", text: fullText };
+}
+
 export async function loadWordPreview(
   blob,
   { documentId = "", versionId = null, fileName = "" } = {},
@@ -106,16 +200,13 @@ export async function loadWordPreview(
       messages: result.messages || [],
     };
   } catch (primaryError) {
-    if (documentId && versionId) {
-      try {
-        const content = await fetchCompareDocumentContent(documentId, versionId);
-        const text = String(content?.full_text || "").trim();
-        if (text) {
-          return { html: "", text, messages: [] };
-        }
-      } catch {
-        /* fallback below */
+    const text = await loadParsedOfficeText(documentId, versionId);
+    if (text) {
+      const html = officeExtractToHtml(text);
+      if (html) {
+        return { html, text: "", messages: [] };
       }
+      return { html: "", text, messages: [] };
     }
     const hint = isLegacyWordFile(fileName)
       ? "旧版 .doc 格式暂不支持在线预览，请下载后查看或转换为 .docx"

@@ -6,6 +6,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.core.agent_message_parse import DsmlStreamFilter
 from app.integrations.deepseek_client import chat_completion_stream_parts
 
 
@@ -37,6 +38,7 @@ async def iter_llm_answer_events(
 
     saw_reasoning = False
     answer_thought_done = False
+    dsml_filter = DsmlStreamFilter()
     async for part in chat_completion_stream_parts(
         messages=messages,
         temperature=temperature,
@@ -75,7 +77,13 @@ async def iter_llm_answer_events(
                 },
             }
             answer_thought_done = True
-        yield {"type": "delta", "text": text}
+        clean = dsml_filter.feed(text)
+        if clean:
+            yield {"type": "delta", "text": clean}
+
+    tail = dsml_filter.flush()
+    if tail:
+        yield {"type": "delta", "text": tail}
 
     if not answer_thought_done:
         yield {

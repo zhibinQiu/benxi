@@ -34,6 +34,8 @@
 | `./dev.sh deploy …` | 生产镜像部署 |
 | `./dev.sh db migrate to-local\|to-remote` | 平台 PostgreSQL 迁移 |
 | `./dev.sh speech local` | 宿主机 FunASR speech-api（开发 compose 可选） |
+| `./dev.sh docs` | MkDocs 文档站 Docker 容器（:40100） |
+| `./dev.sh docs local` | 本机 MkDocs 文档站（改 md 热重载） |
 
 ## 实现脚本（由 dev.sh 或 stack 调用）
 

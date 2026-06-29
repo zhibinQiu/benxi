@@ -41,4 +41,13 @@ else
   echo "提示: 复制 platform/.env.example → platform/.env 后再运行本脚本"
 fi
 
+# 生产栈：连接池档位 C（compose api/worker environment 会再覆盖 worker 池为 10/5）
+for key in DB_POOL_SIZE DB_MAX_OVERFLOW DB_POOL_TIMEOUT DB_POOL_RECYCLE \
+  STREAM_MAX_CONCURRENT_PER_WORKER STREAM_ACQUIRE_TIMEOUT BACKGROUND_JOBS_USE_CELERY; do
+  if ! grep -qE "^${key}=" "$OUT" 2>/dev/null; then
+    val="$(grep -E "^${key}=" "$STACK_EXAMPLE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\r' || true)"
+    [[ -n "$val" ]] && echo "${key}=${val}" >>"$OUT"
+  fi
+done
+
 echo "已生成 $OUT（请检查 KNOWFLOW_ENABLED、ZHITAN_VERSION、FRONTEND_PORT）"

@@ -1,5 +1,40 @@
 # 发布说明
 
+## 4.5.0（v4.5.0）— AIP 智能体互联、功能收敛与 UI 扁平化
+
+- **AIP（GB/Z 185）**：发现 `/aip/discover`、ACDL 读取、同步/流式 `interact`；SK 密钥管理（`/admin/aip/keys`）；外部智能体登记（Agent Skills 管理页）；`agent_aip_executor` 统一内置专精 hop 与外部 HTTP 调用
+- **报告类型 Skills**：6 种 `report-*` 示例包 + 启动种子，report 专精智能体在 AI 首页对话中选用
+- **功能收敛**：移除碳资产行情、辅助写作独立页；公众号 Feed 合并至「网站收藏」订阅页；清理碳市场遗留表与孤儿 `feature.*` 权限
+- **前端 UI**：ChatGPT 式 solid shell（`solid-shell.css` / `openai-style.css`）；结论区 `AssistantConclusionContent`；对话复制/分享；登录页独占视频背景
+- **Agent 增强**：`agent_message_parse` DSML 净化与流式过滤；`AgentLoopSession` 短 DB 会话（延续 4.4.1）
+- **代码收敛**：删除重复 `/admin/aip/external-agents` 路由（统一走 `/admin/agent-skills/external-agents`）；移除 TypewriterText、FeaturePageToolbar、ChatFloatingCitations 等废弃组件
+- **文档同步**：架构、测试、部署与版本号统一更新至 v4.5.0
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.5.0）
+
+## 4.4.1（v4.4.1）— 运行时瘦身与架构收敛
+
+- **连接池**：对比任务 SSE 鉴权后立即归还请求级 DB 连接；启动引导改在线程池执行，避免阻塞 asyncio 事件循环
+- **Agent 短会话**：`AgentLoopSession` 在 LLM/外部 I/O 前释放连接；`iter_agent_tool_loop` / `iter_supervised_agent_loop` 不再长占 `SessionLocal`；报告撰写流式路径对齐
+- **路由信号**：`agent_routing_signals` 集中浏览器/调度/复合句等 regex，planner 与 supervisor 共用
+- **Schema 修复**：补挂 `backfill_ragflow_version_links` 一次性回填补丁；全量迁移去除与 light 路径重复的索引 DDL；启动时清理未注册插件的孤儿 `feature.*` 权限
+- **启动优化**：示例 Agent Skill 种子在全部已启用时跳过磁盘扫描；进程退出时释放 `last_seen` 线程池
+- **死代码**：移除未使用的 `run_db_async_task`；清理已下线功能遗留配置（如碳市场同步 env）
+- **前端内存**：知识检索/报告生成视图异步分包加载；KeepAlive 仅保留 1 个活跃面板；Header 飞层面板异步加载；对话面板失活时中止流式请求
+- **前端请求**：知识库范围树改为进入知识功能路由后再预取；统一 Job SSE 订阅工厂；订阅页卸载时清理搜索 debounce 定时器
+- **压测工具**：新增 `platform/scripts/stress_test_throughput.py`，覆盖读 API 并发、持续读压与文档解析入队；自动清理 `__stress_test__` 测试数据
+- **容量说明**：文档补充连接池与 200 人在线/瞬时并发的规划建议（单 worker 约 40 连接上限）
+- **文档同步**：架构、测试、部署与版本号统一更新至 v4.4.1
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.4.1）
+
+## 4.4.0（v4.4.0）— 全栈轻量化与代码收敛
+
+- **依赖精简**：移除未使用的 `alembic`、`passlib`、`requests`；密码哈希改为显式 `bcrypt` 依赖
+- **死代码清理**：删除空服务/组件（`audit_display`、TypewriterText、FeaturePageToolbar 等 8 个文件）
+- **API 复用**：知识检索流式问答改用 `createPlatformChatStream` 工厂，消除 ~70 行重复 SSE 解析
+- **Locale 收敛**：移除已废弃的 `wechatMpFeed` / `wechatMpArticle` 国际化键（功能已合并至订阅页）
+- **文档同步**：版本号、架构说明、测试指南、升级手册统一更新至 v4.4.0
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.4.0）
+
 ## 4.3.2（v4.3.2）— 智能体编排、流式体验与 Mermaid 加固
 
 - **父智能体任务编排**：新增 `agent_orchestrator.py`，多路由复合任务默认顺序执行；workflow 推送 `plan_tasks` / `task_*` 事件；前端 checklist 展示子任务进度

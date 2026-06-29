@@ -27,7 +27,6 @@ onMounted(() => {
         },
       })
     );
-    router.replace({ name: "login" });
   });
 });
 </script>

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "企业 AI 知识库平台"
-    platform_version: str = "4.3.2"
+    platform_version: str = "4.5.0"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -153,6 +153,8 @@ class Settings(BaseSettings):
 
     # 文档中心单文件上传上限（MB）
     document_upload_max_file_mb: int = 200
+    # Gotenberg（LibreOffice）Office→PDF；KnowFlow 栈内为 http://knowflow-gotenberg:3000
+    gotenberg_url: str = ""
 
     # 单文档版本 Git 仓库存储根目录（每文档一个 repo，用于 git diff 版本对比）
     document_git_repos_root: str = ""
@@ -160,7 +162,7 @@ class Settings(BaseSettings):
     # 知识库默认解析配置（上传同步 / 自动推断）
     knowledge_default_parser_id: str = "naive"
     # 重新索引弹窗与后台任务的默认分块方式
-    knowledge_reindex_default_parser_id: str = "pageindex"
+    knowledge_reindex_default_parser_id: str = "naive"
     knowledge_default_layout_recognize: str = "DeepDOC"
     knowledge_default_chunk_token_num: int = 512
     # 文档列表是否实时拉 RAGFlow 解析进度（关闭后仅读库内 index_completed_at，1000+ 文档列表显著加快）
@@ -206,6 +208,8 @@ class Settings(BaseSettings):
     knowledge_agentic_max_rounds: int = 2
     # AI 首页智能体：思考 + 工具调用最大轮次，满足需求后应停止
     agent_max_tool_rounds: int = 40
+    # 工具 loop 外层：未达成用户目标时重规划并继续执行的最大轮次
+    agent_max_adaptive_passes: int = 2
     # 多智能体：父智能体路由 + 子智能体专精 tool loop（关闭则回退单体 Agent）
     agent_multi_agent_enabled: bool = True
     agent_specialist_max_tool_rounds: int = 20
@@ -213,6 +217,14 @@ class Settings(BaseSettings):
     agent_parallel_handoff_enabled: bool = True
     agent_max_parallel_handoffs: int = 2
     agent_routing_llm_enabled: bool = True
+    # AIP（GB/Z 185 智能体互联）：身份码与对外发现/调用
+    aip_enabled: bool = True
+    aip_country: str = "cn"
+    aip_org_type: str = "inst"
+    aip_org_id: str = "platform"
+    aip_agent_serial: str = "001"
+    aip_service_base_url: str = ""
+    aip_external_agents_json: str = "[]"
     # AI 首页：tool loop 前 LLM 规划（方案 A）；寒暄/附件等仍走规则 fast path
     agent_planning_enabled: bool = True
     # 问题规划缓存：归纳相似问题并复用已探索的执行方案，跳过重复 LLM 规划
@@ -306,7 +318,8 @@ class Settings(BaseSettings):
     platform_api_base_url: str = ""
     frontend_app_title: str = ""
     frontend_default_theme: str = "system"
-    frontend_color_scheme: str = "purple"
+    frontend_color_scheme: str = "blue"
+    frontend_primary_color: str = ""
 
     # 智能问数（设计系统 iframe）
     # 设计系统（智能问数）— 经同源 Nginx/Vite 代理，避免 iframe 跨域
@@ -330,22 +343,6 @@ class Settings(BaseSettings):
     smart_forecast_embed_mode: str = "direct"
     smart_forecast_upstream_url: str = "http://127.0.0.1:8501"
     smart_forecast_proxy_prefix: str = "/smart-forecast-ui"
-
-    # 碳资产行情（CEA：上海环交所官网；可选 JSON 覆盖）
-    carbon_market_live_enabled: bool = True
-    carbon_market_cneeex_base_url: str = "https://www.cneeex.com"
-    carbon_market_cache_ttl_seconds: int = 900
-    carbon_market_fetch_timeout_seconds: float = 15.0
-    carbon_market_quotes_json_url: str = ""
-    # CCER：全国温室气体自愿减排交易系统日行情（ccer.com.cn）
-    carbon_market_ccer_base_url: str = "https://www.ccer.com.cn"
-    carbon_market_ccer_use_llm_parse: bool = False
-    # 无 CCER 官方源时，按 CEA 收盘价比例生成参考价（0 表示不估算）
-    carbon_market_ccer_cea_ratio: float = 0.8
-    carbon_market_history_max_fetch: int = 30
-    # CEA 历史日行情：收盘后定时同步（上海时区）
-    carbon_market_history_sync_hour: int = 18
-    carbon_market_history_sync_minute: int = 0
 
     # 数据分析（Excel + Notebook 代码执行）
     data_analysis_storage_dir: str = ""

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import user_has_permission
+from app.core.report_skill_catalog import REPORT_SKILL_LABELS
 from app.features.registry import ensure_plugins_loaded, get_plugin
 from app.models.agent_skill import AgentSkill
 from app.models.org import User
 from app.skills.registry import all_builtin_skills, ensure_skills_loaded
+from app.skills.routing import SKILL_LOADING_RULES, format_skill_route_line, uploaded_skill_tag
 from app.skills.types import SkillDefinition, SkillReadiness, SkillSource
 
 
@@ -84,6 +87,10 @@ def resolve_skill_definition(
         route=defn.route,
         source_type=defn.source_type,
         catalog_visible=defn.catalog_visible,
+        catalog_tier=defn.catalog_tier,
+        use_when=defn.use_when,
+        dont_use_when=defn.dont_use_when,
+        output=defn.output,
     )
 
 
@@ -99,13 +106,14 @@ def list_uploaded_skill_definitions(
     return [
         SkillDefinition(
             name=row.name,
-            title=row.name,
+            title=REPORT_SKILL_LABELS.get(row.name, row.name),
             description=row.description,
             source=SkillSource.UPLOADED,
             tools=(),
             skill_id=row.id,
             readiness=SkillReadiness.READY if row.enabled else SkillReadiness.DISABLED,
             source_type=row.source_type,
+            catalog_tier="resident",
         )
         for row in rows
     ]
@@ -159,25 +167,65 @@ def get_merged_skill_definition(
     if row:
         return SkillDefinition(
             name=row.name,
-            title=row.name,
+            title=REPORT_SKILL_LABELS.get(row.name, row.name),
             description=row.description,
             source=SkillSource.UPLOADED,
             tools=(),
             skill_id=row.id,
             readiness=SkillReadiness.READY if row.enabled else SkillReadiness.DISABLED,
             source_type=row.source_type,
+            catalog_tier="resident",
         )
     return None
 
 
-def build_agent_catalog_prompt(
+def _skill_query_tokens(query: str) -> list[str]:
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    tokens: list[str] = []
+    parts = re.split(r"[\s,，、/]+", q)
+    for part in parts:
+        p = part.strip().lower()
+        if len(p) >= 2:
+            tokens.append(p)
+        if re.fullmatch(r"https?://[^\s]+", p):
+            tokens.extend(re.findall(r"[a-z][a-z0-9-]{2,}", p))
+    for run in re.findall(r"[\u4e00-\u9fff]+", q):
+        if len(run) >= 2:
+            tokens.append(run)
+            for i in range(len(run) - 1):
+                tokens.append(run[i : i + 2])
+    return list(dict.fromkeys(tokens))
+
+
+def _skill_search_haystack(skill: SkillDefinition) -> str:
+    return " ".join(
+        filter(
+            None,
+            (
+                skill.name,
+                skill.description,
+                skill.use_when or "",
+                skill.title or "",
+            ),
+        )
+    ).lower()
+
+
+def _visible_catalog_skills(
     db: Session,
-    user: User | None = None,
+    user: User | None,
     *,
     admin_view: bool = False,
     skill_names: list[str] | None = None,
-) -> str:
-    """Discovery 阶段：注入 skill 描述符与选用规则（不含 SKILL.md 正文）。"""
+    resident_only: bool = True,
+    query: str = "",
+    uploaded_only: bool = False,
+    limit: int | None = None,
+    tier: str | None = None,
+) -> list[SkillDefinition]:
+    """目录可见技能：白名单、常驻层、关键词与来源过滤的统一入口。"""
     skills = list_all_skill_definitions(
         db, user=user, admin_view=admin_view, catalog_only=True
     )
@@ -188,86 +236,132 @@ def build_agent_catalog_prompt(
     ]
     if skill_names is not None:
         allow = {name.strip() for name in skill_names if (name or "").strip()}
-        visible = [s for s in visible if s.name in allow]
-    if not visible:
-        return ""
+        if allow:
+            visible = [s for s in visible if s.name in allow]
+            resident_only = False
+    if tier:
+        visible = [s for s in visible if s.catalog_tier == tier]
+    elif resident_only:
+        visible = [s for s in visible if s.catalog_tier == "resident"]
+    if uploaded_only:
+        visible = [s for s in visible if s.source == SkillSource.UPLOADED]
 
+    tokens = _skill_query_tokens(query)
+    if tokens:
+        scored: list[tuple[int, SkillDefinition]] = []
+        for skill in visible:
+            hay = _skill_search_haystack(skill)
+            score = sum(2 if t in skill.name.lower() else 1 for t in tokens if t in hay)
+            if score > 0:
+                scored.append((score, skill))
+        scored.sort(key=lambda item: (-item[0], item[1].name))
+        visible = [skill for _, skill in scored]
+
+    if limit is not None and limit > 0:
+        visible = visible[:limit]
+    return visible
+
+
+def _format_agent_catalog_prompt(
+    db: Session,
+    visible: list[SkillDefinition],
+    *,
+    resident_only: bool,
+) -> str:
+    if not visible:
+        return SKILL_LOADING_RULES
+
+    from app.services.agent_skill_service import uploaded_skill_has_script
+
+    lines = [
+        "## available_skills（路由摘要，非 SKILL.md 正文）",
+        SKILL_LOADING_RULES,
+        "",
+    ]
     builtin = [s for s in visible if s.source == SkillSource.BUILTIN]
     uploaded = [s for s in visible if s.source == SkillSource.UPLOADED]
 
-    lines = [
-        "## Skills 目录（技能 · 选用规则）",
-        "技能是对原子工具的编排说明；下列仅为摘要，**勿在开篇或无关任务时盲目 load**.",
-        "",
-        "### 何时调用原子工具",
-        "- 闲聊、简单计算、直接可答的问题 → 不调工具，直接回答",
-        "- 查企业文档 → `knowledge_retrieve`",
-        "- 查本体图谱 → `kg_query`",
-        "- 查互联网 → `web_search`",
-        "- 知识问答需多路资料 → 按「知识综合检索」技能编排，依次调用 `knowledge_retrieve` / `kg_query` / `web_search`（按需，非每问必调）",
-        "- 用户要**新建/编写 Skill** → 先调研，想清楚后再 `create_uploaded_skill`；"
-        "**爬取/数据/自动化类必须在 extra_files 提供 main.py**，运行时 `run_skill_script` 直接执行；"
-        "仅 mermaid/纯说明等极简任务可只有 SKILL.md；"
-        "涉及网页时用 `browser_navigate` + `browser_snapshot` 探结构，**勿** `browser_screenshot`（除非用户明确要求）；"
-        "勿猜测页面字段或重复创建已有同类技能\n",
-        "- 用户任务匹配某**含脚本**的发展技能 → `run_skill_script`（系统自动注入 SKILL.md，勿 load）",
-        "- 已有发展技能执行失败或无有效结论 → `update_uploaded_skill_file` 修复后重试，勿新建重复技能",
-        "- 用户任务匹配**指令型**发展技能（如 mermaid-diagram）→ 按 SKILL.md 直接作答，**勿** run_skill_script",
-        "- 你判断任务需要**含脚本**的发展技能时可调用 `run_skill_script`，无需用户明确要求",
-    ]
-    from app.integrations.browser_automation.browser_config import get_browser_rpa_config
-
-    if get_browser_rpa_config(db).enabled:
-        lines.extend(
-            [
-                "- 用户要**网页截图/可视化页面** → `browser_navigate` 后 `browser_screenshot`（**勿**用 `web-page-insight` 或 `run_skill_script`，脚本沙箱不能生成图片文件）",
-                "- 需**点击/填表/操作网页**或 JavaScript 渲染页 → `browser_navigate` + `browser_snapshot` + `browser_click`/`browser_type`（先 snapshot 再 act；页面变化后重新 snapshot）；操作结果需展示给用户时才 `browser_screenshot`",
-                "- 用户要求**保存网页操作流程** → `browser_save_workflow` 固化为 Skill",
-                "- 回放已录制的 RPA Skill → `browser_replay_workflow` 或 `run_skill_script(entry=replay.py)`",
-                "- 复杂目标一键探索 → `browser_run_task`；定时执行 → `schedule_browser_workflow`",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "- 用户要**网页截图或浏览器交互** → 当前未启用浏览器 RPA，应说明需在「系统设置 → 模型设置 → 浏览器 RPA」开启；`web-page-insight` 仅能做文本摘要，**不能**截图或保存图片",
-            ]
-        )
-    lines.extend(
-        [
-        "- 内置技能为选用说明，**禁止**对 builtin 使用 `load_uploaded_skill`",
-        "- 发展技能（上传 / Agent 生成）才使用 `load_uploaded_skill`",
-        "",
-        ]
-    )
-
     if builtin:
-        lines.append("### 内置技能（编排原子工具；勿 load_uploaded_skill）")
+        lines.append("### 内置（勿 load）")
         for skill in builtin:
-            tools = "、".join(f"`{t}`" for t in skill.orchestrated_tools) or "—"
-            lines.append(
-                f"- `{skill.name}` [builtin]: {skill.description}"
-                + (f"（编排: {tools}）" if skill.orchestrated_tools else "")
-            )
+            lines.append(format_skill_route_line(skill, tag="[builtin]"))
         lines.append("")
 
     if uploaded:
-        from app.services.agent_skill_service import uploaded_skill_has_script
-
-        lines.append("### 发展技能（上传 / Agent 生成；匹配时系统自动加载 SKILL.md）")
-        lines.append(
-            "- **指令型**（仅 SKILL.md）：按说明直接作答，如图表用 ```mermaid`；**勿** run_skill_script"
-        )
-        lines.append(
-            "- **脚本型**（含 main.py/run.py）：用 `run_skill_script` 沙箱执行"
-            "（须 skill_runtime.finish 输出结论，不保存抓取原文）"
-        )
+        lines.append("### 发展技能")
         for skill in uploaded:
-            tag = "[脚本型]" if uploaded_skill_has_script(db, skill.name) else "[指令型]"
-            lines.append(f"- `{skill.name}` {tag}: {skill.description}")
+            tag = uploaded_skill_tag(
+                has_script=uploaded_skill_has_script(db, skill.name)
+            )
+            lines.append(format_skill_route_line(skill, tag=tag))
         lines.append("")
 
+    if resident_only:
+        lines.append(
+            "低频内置能力（翻译/报告/OCR 等）不在此列表；"
+            "用户明确点名或 search_tools 命中后再处理，极低频请引导至对应功能页文档。"
+        )
+
     return "\n".join(lines).rstrip()
+
+
+def search_skill_routes(
+    db: Session,
+    user: User | None,
+    query: str,
+    *,
+    tier: str | None = "extended",
+    limit: int = 6,
+) -> list[str]:
+    """搜索 extended 层 Skill 路由行（供 search_tools 或管理端）。"""
+    if not _skill_query_tokens(query):
+        return []
+    from app.services.agent_skill_service import uploaded_skill_has_script
+
+    visible = _visible_catalog_skills(
+        db,
+        user,
+        query=query,
+        tier=tier,
+        resident_only=False,
+        limit=limit,
+    )
+    lines: list[str] = []
+    for skill in visible:
+        tag = ""
+        if skill.source == SkillSource.UPLOADED:
+            tag = uploaded_skill_tag(
+                has_script=uploaded_skill_has_script(db, skill.name)
+            )
+        elif skill.source == SkillSource.BUILTIN:
+            tag = "[builtin]"
+        lines.append(format_skill_route_line(skill, tag=tag))
+    return lines
+
+
+def build_agent_catalog_prompt(
+    db: Session,
+    user: User | None = None,
+    *,
+    admin_view: bool = False,
+    skill_names: list[str] | None = None,
+    resident_only: bool = True,
+    query: str = "",
+    uploaded_only: bool = False,
+    limit: int | None = None,
+) -> str:
+    """Discovery 阶段：短路由目录 + 加载规则（不含 SKILL.md 正文）。"""
+    visible = _visible_catalog_skills(
+        db,
+        user,
+        admin_view=admin_view,
+        skill_names=skill_names,
+        resident_only=resident_only,
+        query=query,
+        uploaded_only=uploaded_only,
+        limit=limit,
+    )
+    return _format_agent_catalog_prompt(db, visible, resident_only=resident_only)
 
 
 def set_builtin_binding(db: Session, name: str, *, enabled: bool) -> None:

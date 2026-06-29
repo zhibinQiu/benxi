@@ -157,7 +157,7 @@ function goPdfPage(delta) {
       </n-space>
     </header>
     <div class="doc-panel-preview">
-      <n-spin :show="loading || comparing" class="preview-spin">
+      <n-spin :show="loading || comparing" class="preview-spin" local>
         <div v-if="showsPdfPreview" class="pdf-preview-wrap">
           <ComparePdfPreview
             :key="`pdf-col-${columnIndex}-${pdfSrc}`"
@@ -307,7 +307,7 @@ function goPdfPage(delta) {
   padding: 2px 8px;
   border-radius: 4px;
   background: rgba(96, 165, 250, 0.15);
-  color: #2563eb;
+  color: var(--platform-accent);
 }
 .doc-panel-badge--target {
   background: var(--platform-accent-muted);

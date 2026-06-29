@@ -213,7 +213,7 @@ onMounted(load);
 
 <template>
   <div class="issue-reports-page feature-page">
-    <n-spin :show="loading">
+    <n-spin :show="loading" local>
       <div class="admin-list-table">
         <n-card size="small" class="admin-page admin-page--list-table">
           <template #header>

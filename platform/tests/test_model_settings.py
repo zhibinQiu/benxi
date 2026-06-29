@@ -9,7 +9,10 @@ from app.integrations.paddleocr_client import (
     paddleocr_request_url,
     recognize_bytes,
 )
-from app.integrations.ragflow_model_apply import normalize_ragflow_embedding_api_base
+from app.integrations.ragflow_model_apply import (
+    normalize_ragflow_embedding_api_base,
+    normalize_ragflow_rerank_api_base,
+)
 from app.services.model_settings_service import (
     _endpoint_fields,
     get_llm_credentials,
@@ -246,6 +249,7 @@ def test_platform_api_base_url_from_env(monkeypatch):
 
 def test_frontend_client_config_from_env(monkeypatch):
     from app.services.model_settings_service import (
+        _merge_effective,
         get_frontend_app_title,
         get_frontend_color_scheme,
         get_frontend_default_theme,
@@ -265,12 +269,77 @@ def test_frontend_client_config_from_env(monkeypatch):
         "app.services.model_settings_service.fetch_template_embedding_defaults",
         lambda _db: {},
     )
+    monkeypatch.setattr(
+        "app.services.model_settings_service._effective_config",
+        lambda db, fill_embedding_from_ragflow=False: _merge_effective(
+            settings, None, fill_embedding_from_ragflow=fill_embedding_from_ragflow
+        ),
+    )
     out = get_model_settings(None)
     assert out.frontend_app_title == "企业 AI 知识库平台"
     assert out.frontend_default_theme == "light"
     assert out.frontend_color_scheme == "blue"
     assert get_frontend_app_title(None) == "企业 AI 知识库平台"
     assert get_frontend_color_scheme(None) == "blue"
+
+
+def test_frontend_client_config_custom_color(monkeypatch):
+    from app.services.model_settings_service import (
+        _merge_effective,
+        get_frontend_color_scheme,
+        get_frontend_primary_color,
+    )
+
+    settings = Settings(
+        frontend_color_scheme="custom",
+        frontend_primary_color="#0067FF",
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.fetch_template_embedding_defaults",
+        lambda _db: {},
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service._effective_config",
+        lambda db, fill_embedding_from_ragflow=False: _merge_effective(
+            settings, None, fill_embedding_from_ragflow=fill_embedding_from_ragflow
+        ),
+    )
+    out = get_model_settings(None)
+    assert out.frontend_color_scheme == "custom"
+    assert out.frontend_primary_color == "#0067ff"
+    assert get_frontend_color_scheme(None) == "custom"
+    assert get_frontend_primary_color(None) == "#0067ff"
+
+
+def test_frontend_primary_color_empty_when_not_custom(monkeypatch):
+    from app.services.model_settings_service import (
+        _merge_effective,
+        get_frontend_primary_color,
+    )
+
+    settings = Settings(
+        frontend_color_scheme="blue",
+        frontend_primary_color="#0067FF",
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.fetch_template_embedding_defaults",
+        lambda _db: {},
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service._effective_config",
+        lambda db, fill_embedding_from_ragflow=False: _merge_effective(
+            settings, None, fill_embedding_from_ragflow=fill_embedding_from_ragflow
+        ),
+    )
+    assert get_frontend_primary_color(None) == ""
 
 
 def test_frontend_app_title_falls_back_to_app_name(monkeypatch):
@@ -353,6 +422,41 @@ def test_vl_health_test_supported(client, admin_token, monkeypatch):
     )
     assert r.status_code == 200, r.text
     assert r.json()["data"]["healthy"] is True
+
+
+def test_normalize_ragflow_rerank_api_base_for_siliconflow():
+    assert (
+        normalize_ragflow_rerank_api_base("https://api.siliconflow.cn/v1", "SILICONFLOW")
+        == "https://api.siliconflow.cn/v1/rerank"
+    )
+    assert (
+        normalize_ragflow_rerank_api_base("https://api.siliconflow.cn/v1/rerank", "SILICONFLOW")
+        == "https://api.siliconflow.cn/v1/rerank"
+    )
+
+
+def test_rerank_falls_back_to_embedding(monkeypatch):
+    settings = Settings(
+        platform_rerank_base_url="",
+        platform_rerank_api_key="",
+        platform_rerank_model="Qwen/Qwen3-Reranker-8B",
+        platform_embedding_base_url="https://api.siliconflow.cn/v1",
+        platform_embedding_api_key="sk-emb-key",
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service.fetch_template_embedding_defaults",
+        lambda _db: {},
+    )
+    from app.services.model_settings_service import get_rerank_credentials
+
+    base, key, model = get_rerank_credentials(None)
+    assert base == "https://api.siliconflow.cn/v1"
+    assert key == "sk-emb-key"
+    assert model == "Qwen/Qwen3-Reranker-8B"
 
 
 def test_normalize_ragflow_embedding_api_base_for_siliconflow():

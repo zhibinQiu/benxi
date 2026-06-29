@@ -11,9 +11,9 @@ function isElementVisible(el) {
 }
 
 function shouldPreserveModalContainer(container) {
-  if (container.querySelector(".release-highlights")) return true;
-  if (container.querySelector(".platform-confirm-dialog")) return true;
-  return false;
+  const preserved = container.querySelector(".release-highlights, .platform-confirm-dialog");
+  if (!preserved) return false;
+  return isElementVisible(preserved);
 }
 
 function removeOrphanedModalContainer(container, { aggressive = false } = {}) {
@@ -40,13 +40,33 @@ function removeOrphanedModalContainer(container, { aggressive = false } = {}) {
 
 function clearBodyScrollLockIfNoOverlayMask() {
   const hasVisibleMask = Array.from(
-    document.querySelectorAll("body > .n-modal-container .n-modal-mask, body > .n-drawer-container .n-drawer-mask"),
+    document.querySelectorAll(
+      "body > .n-modal-container .n-modal-mask, body > .n-drawer-container .n-drawer-mask, body > .n-dialog-container .n-dialog-mask",
+    ),
   ).some(isElementVisible);
 
   if (!hasVisibleMask) {
     document.body.style.overflow = "";
     document.body.style.paddingRight = "";
     document.body.classList.remove("n-modal-body-lock-scroll");
+  }
+}
+
+function removeOrphanedDialogContainer(container, { aggressive = false } = {}) {
+  if (container.querySelector(".platform-confirm-dialog")) {
+    const dialog = container.querySelector(".platform-confirm-dialog");
+    if (dialog && isElementVisible(dialog)) return;
+  }
+
+  if (aggressive) {
+    container.remove();
+    return;
+  }
+
+  const mask = container.querySelector(".n-dialog-mask");
+  const card = container.querySelector(".n-dialog .n-card, .n-dialog");
+  if ((mask && !card) || (!mask && !card)) {
+    container.remove();
   }
 }
 
@@ -62,7 +82,8 @@ export function cleanupBlockingUiArtifacts({ aggressive = false } = {}) {
   });
 
   document.querySelectorAll("body > .n-drawer-container").forEach((el) => {
-    if (el.querySelector(".platform-confirm-dialog")) return;
+    const confirm = el.querySelector(".platform-confirm-dialog");
+    if (confirm && isElementVisible(confirm)) return;
     if (aggressive) {
       el.remove();
       return;
@@ -70,6 +91,10 @@ export function cleanupBlockingUiArtifacts({ aggressive = false } = {}) {
     const mask = el.querySelector(".n-drawer-mask");
     const body = el.querySelector(".n-drawer-body");
     if (mask && !body) el.remove();
+  });
+
+  document.querySelectorAll("body > .n-dialog-container").forEach((el) => {
+    removeOrphanedDialogContainer(el, { aggressive });
   });
 
   clearBodyScrollLockIfNoOverlayMask();

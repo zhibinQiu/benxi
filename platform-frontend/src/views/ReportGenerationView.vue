@@ -1,14 +1,13 @@
 <script setup>
 defineOptions({ name: "ReportGenerationView" });
-import { computed, inject, onMounted, ref } from "vue";
+import { computed, inject, onActivated, onMounted, ref } from "vue";
 import { CreateOutline } from "@vicons/ionicons5";
-import { NCheckbox } from "naive-ui";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import ChatSessionToolbarActions from "../components/ChatSessionToolbarActions.vue";
-import HintTooltip from "../components/HintTooltip.vue";
-import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
+import { isRouteAbortError } from "../api/client";
 import {
   downloadReportDocx,
+  fetchReportAgentSkills,
   fetchReportGenerationMeta,
   fetchReportMindmap,
   fetchReportOptimizePresets,
@@ -16,9 +15,10 @@ import {
   reportGenerationChatStream,
 } from "../api/reportGeneration.js";
 import { useI18n } from "../composables/useI18n.js";
+import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 import { KNOWLEDGE_SCOPE_SELECTION_KEY, readKnowledgeScopeSelection } from "../utils/knowledgeScopeSelectionCache.js";
 
-const { t, tm } = useI18n();
+const { t } = useI18n();
 const { headerExtensionActive } = usePageHeaderExtension();
 
 const selection = inject(
@@ -28,26 +28,26 @@ const selection = inject(
 const chatPanelRef = ref(null);
 const conversationId = ref(null);
 const optimizePresets = ref([]);
-const useWebSearch = ref(true);
-const useAgentic = ref(true);
+const reportAgentSkills = ref([]);
+const reportSkillsLoading = ref(false);
 const webSearchAvailable = ref(true);
 
-const suggestions = computed(() => tm("reportGeneration.suggestions") || []);
-
 const selectionHint = computed(() => {
-  const count = selection.value?.documentIds?.length || 0;
+  const sel = selection.value;
+  const total = sel?.totalSelected || sel?.documentIds?.length || 0;
+  const ready = sel?.indexReadyCount ?? total;
   const parts = [];
-  if (count) {
-    parts.push(t("reportGeneration.selectedDocsHint", { count }));
+  if (total) {
+    if (ready < total) {
+      parts.push(t("reportGeneration.selectedDocsIndexPendingHint", { total, ready }));
+    } else {
+      parts.push(t("reportGeneration.selectedDocsHint", { count: total }));
+    }
   } else {
     parts.push(t("reportGeneration.noLocalDocsHint"));
   }
-  if (useWebSearch.value && webSearchAvailable.value) {
-    parts.push(t("reportGeneration.webSearchOnHint"));
-  } else if (!webSearchAvailable.value) {
+  if (!webSearchAvailable.value) {
     parts.push(t("reportGeneration.webSearchUnavailableHint"));
-  } else {
-    parts.push(t("reportGeneration.webSearchOffHint"));
   }
   return parts.join(" · ");
 });
@@ -67,27 +67,39 @@ async function handleChatStream(params, callbacks) {
     {
       ...params,
       documentIds: selection.value?.documentIds || [],
-      useWebSearch: useWebSearch.value,
-      useAgentic: useAgentic.value,
     },
     callbacks
   );
 }
 
-onMounted(async () => {
+async function loadReportPageData() {
+  reportSkillsLoading.value = true;
   try {
-    const meta = await fetchReportGenerationMeta();
-    webSearchAvailable.value = Boolean(meta?.web_search_enabled);
-    if (!webSearchAvailable.value) {
-      useWebSearch.value = false;
+    try {
+      const meta = await fetchReportGenerationMeta();
+      webSearchAvailable.value = Boolean(meta?.web_search_enabled);
+    } catch (e) {
+      if (!isRouteAbortError(e)) webSearchAvailable.value = true;
     }
-  } catch {
-    webSearchAvailable.value = true;
+    try {
+      optimizePresets.value = (await fetchReportOptimizePresets()) || [];
+    } catch (e) {
+      if (!isRouteAbortError(e)) optimizePresets.value = [];
+    }
+    try {
+      reportAgentSkills.value = (await fetchReportAgentSkills()) || [];
+    } catch (e) {
+      if (!isRouteAbortError(e)) reportAgentSkills.value = [];
+    }
+  } finally {
+    reportSkillsLoading.value = false;
   }
-  try {
-    optimizePresets.value = (await fetchReportOptimizePresets()) || [];
-  } catch {
-    optimizePresets.value = [];
+}
+
+onMounted(loadReportPageData);
+onActivated(() => {
+  if (!reportAgentSkills.value.length && !reportSkillsLoading.value) {
+    void loadReportPageData();
   }
 });
 </script>
@@ -95,64 +107,49 @@ onMounted(async () => {
 <template>
   <div class="knowledge-feature-panel">
     <Teleport v-if="headerExtensionActive" to="#page-header-extension">
-    <div class="subsystem-extra-bar">
-      <div class="subsystem-extra-row">
-        <div class="report-gen-toolbar">
-          <label class="report-gen-toolbar__agent">
-            <n-checkbox v-model:checked="useAgentic" size="small">
-              {{ t("reportGeneration.useAgent") }}
-            </n-checkbox>
-            <HintTooltip
-              :text="t('reportGeneration.useAgentTooltip')"
-              variant="inline"
-              placement="bottom"
+      <div class="subsystem-extra-bar">
+        <div class="subsystem-extra-row">
+          <div class="report-gen-toolbar">
+            <span class="report-gen-toolbar-hint">{{ selectionHint }}</span>
+            <ChatSessionToolbarActions
+              :disabled="historyLoading"
+              @history="openHistory"
+              @new-chat="startNewChat"
             />
-          </label>
-          <n-checkbox
-            v-model:checked="useWebSearch"
-            class="report-gen-toolbar__web"
-            :disabled="!webSearchAvailable"
-          >
-            {{ t("reportGeneration.useWebSearch") }}
-          </n-checkbox>
-          <span class="report-gen-toolbar-hint">{{ selectionHint }}</span>
-          <ChatSessionToolbarActions
-            :disabled="historyLoading"
-            @history="openHistory"
-            @new-chat="startNewChat"
-          />
+          </div>
         </div>
       </div>
-    </div>
-  </Teleport>
+    </Teleport>
 
-  <AiChatPanel
-    ref="chatPanelRef"
-    v-model:conversation-id="conversationId"
-    chat-scope="report-generation"
-    class="report-gen-page__panel"
-    session-actions-in-toolbar
-    :streaming="true"
-    :rich-markdown="true"
-    :show-workflow-progress="true"
-    :show-citations="true"
-    :linkify-citations="true"
-    :title="t('reportGeneration.chatTitle')"
-    :description="t('reportGeneration.chatDescription')"
-    :subtitle="t('reportGeneration.chatSubtitle')"
-    :chat-header-sub="t('reportGeneration.chatHeaderSub')"
-    :reply-placeholder="t('reportGeneration.replyPlaceholder')"
-    :suggestions="suggestions"
-    :icon="CreateOutline"
-    :stream-chat="handleChatStream"
-    :show-report-tools="true"
-    :report-mindmap-fetch="fetchReportMindmap"
-    :report-word-export="downloadReportDocx"
-    :report-library-import="importReportToLibrary"
-    :report-optimize-presets="optimizePresets"
-    title-gradient
-    :show-chat-header-brand="false"
-  />
+    <AiChatPanel
+      ref="chatPanelRef"
+      v-model:conversation-id="conversationId"
+      chat-scope="report-generation"
+      class="report-gen-page__panel"
+      session-actions-in-toolbar
+      :streaming="true"
+      :rich-markdown="true"
+      :show-workflow-progress="true"
+      :show-citations="true"
+      :linkify-citations="true"
+      :title="t('reportGeneration.chatTitle')"
+      :description="t('reportGeneration.chatDescription')"
+      :subtitle="t('reportGeneration.chatSubtitle')"
+      :chat-header-sub="t('reportGeneration.chatHeaderSub')"
+      :reply-placeholder="t('reportGeneration.replyPlaceholder')"
+      :suggestions="[]"
+      :icon="CreateOutline"
+      :stream-chat="handleChatStream"
+      :show-report-tools="true"
+      :report-mindmap-fetch="fetchReportMindmap"
+      :report-word-export="downloadReportDocx"
+      :report-library-import="importReportToLibrary"
+      :report-optimize-presets="optimizePresets"
+      :report-agent-skills="reportAgentSkills"
+      :report-agent-skills-loading="reportSkillsLoading"
+      title-gradient
+      :show-chat-header-brand="false"
+    />
   </div>
 </template>
 
@@ -172,23 +169,6 @@ onMounted(async () => {
   gap: 8px;
   width: 100%;
   min-width: 0;
-}
-
-.report-gen-toolbar__web {
-  font-size: 13px;
-  color: var(--platform-text);
-  white-space: nowrap;
-}
-
-.report-gen-toolbar__agent {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  font-size: 13px;
-  color: var(--platform-text);
-  cursor: pointer;
-  user-select: none;
 }
 
 .report-gen-toolbar-hint {

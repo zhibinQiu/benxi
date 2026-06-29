@@ -122,15 +122,8 @@ def _enrich_doc_rows_meta(
     )
 
 
-def _scope_document_row(
-    db: Session,
-    document: Document,
-    dataset_id: str | None,
-) -> dict:
-    """与文档中心对齐：无 KnowFlow 映射的文档也展示（标记为未同步）。"""
-    rag_row = _ragflow_row_for_document(db, document, dataset_id)
-    if rag_row:
-        return rag_row
+def _base_scope_document_row(document: Document) -> dict:
+    """建树占位行；索引元数据由 enrich_knowledge_document_rows 批量填充。"""
     return {
         "document_id": str(document.id),
         "ragflow_document_id": None,
@@ -138,6 +131,24 @@ def _scope_document_row(
         "parse_status": "未同步",
         "chunk_count": None,
     }
+
+
+def _folder_matches_document_fast(
+    db: Session,
+    folder: DocumentLibraryFolder | None,
+    document: Document,
+) -> bool:
+    if folder is None:
+        return document.folder_id is None
+    doc_scope = (getattr(document, "scope", None) or "").strip()
+    folder_scope = (getattr(folder, "scope", None) or "").strip()
+    if doc_scope and folder_scope and doc_scope == folder_scope:
+        if doc_scope in ORG_SCOPES:
+            return bool(document.dept_id and folder.dept_id == document.dept_id)
+        if doc_scope == SCOPE_PERSONAL:
+            return folder.owner_id == document.owner_id
+        return True
+    return folder_matches_document(db, folder, document)
 
 
 def _map_scope_document_tree_node(
@@ -163,6 +174,28 @@ def _folder_group_key(
     return folder_id
 
 
+def _library_folders_for_unit(
+    db: Session,
+    *,
+    scope: str,
+    dept_id: uuid.UUID | None,
+    owner_id: uuid.UUID | None,
+) -> list[DocumentLibraryFolder]:
+    stmt = select(DocumentLibraryFolder).where(DocumentLibraryFolder.scope == scope)
+    if scope == SCOPE_PERSONAL and owner_id:
+        stmt = stmt.where(DocumentLibraryFolder.owner_id == owner_id)
+    elif scope in ORG_SCOPES and dept_id:
+        stmt = stmt.where(DocumentLibraryFolder.dept_id == dept_id)
+    return list(
+        db.scalars(
+            stmt.order_by(
+                DocumentLibraryFolder.sort_order.asc(),
+                DocumentLibraryFolder.created_at.asc(),
+            )
+        ).all()
+    )
+
+
 def _build_folder_nodes_for_unit(
     db: Session,
     user: User,
@@ -171,6 +204,7 @@ def _build_folder_nodes_for_unit(
     dept_id: uuid.UUID | None,
     owner_id: uuid.UUID | None,
     dataset_id: str | None,
+    shared_doc_ids: set[str] | None = None,
 ) -> list[dict]:
     docs = collect_aligned_library_documents(
         db,
@@ -179,11 +213,17 @@ def _build_folder_nodes_for_unit(
         dept_id=dept_id,
         owner_id=owner_id,
     )
-    shared_doc_ids = (
-        _shared_document_ids_for_user(db, user)
-        if scope == SCOPE_PERSONAL and owner_id == user.id
-        else set()
+    if shared_doc_ids is None:
+        shared_doc_ids = (
+            _shared_document_ids_for_user(db, user)
+            if scope == SCOPE_PERSONAL and owner_id == user.id
+            else set()
+        )
+
+    unit_folders = _library_folders_for_unit(
+        db, scope=scope, dept_id=dept_id, owner_id=owner_id
     )
+    folder_by_id = {str(folder.id): folder for folder in unit_folders}
 
     rows: list[dict] = []
     doc_by_id: dict[str, Document] = {}
@@ -192,15 +232,15 @@ def _build_folder_nodes_for_unit(
         did = str(doc.id)
         if did in seen_doc_ids:
             continue
-        rag_row = _scope_document_row(db, doc, dataset_id)
         seen_doc_ids.add(did)
         doc_by_id[did] = doc
         folder_id_str: str | None = None
         if doc.folder_id:
-            folder = db.get(DocumentLibraryFolder, doc.folder_id)
-            if folder_matches_document(db, folder, doc):
+            folder = folder_by_id.get(str(doc.folder_id))
+            if folder and _folder_matches_document_fast(db, folder, doc):
                 folder_id_str = str(doc.folder_id)
-        rag_row.update(
+        row = _base_scope_document_row(doc)
+        row.update(
             {
                 "title": (doc.title or "").strip() or "未命名文档",
                 "scope": doc.scope,
@@ -208,7 +248,7 @@ def _build_folder_nodes_for_unit(
                 "folder_id": folder_id_str,
             }
         )
-        rows.append(rag_row)
+        rows.append(row)
     _enrich_doc_rows_meta(
         db,
         user,
@@ -265,18 +305,7 @@ def _build_folder_nodes_for_unit(
             }
         )
 
-    stmt = select(DocumentLibraryFolder).where(DocumentLibraryFolder.scope == scope)
-    if scope == SCOPE_PERSONAL and owner_id:
-        stmt = stmt.where(DocumentLibraryFolder.owner_id == owner_id)
-    elif scope in ORG_SCOPES and dept_id:
-        stmt = stmt.where(DocumentLibraryFolder.dept_id == dept_id)
-
-    for folder in db.scalars(
-        stmt.order_by(
-            DocumentLibraryFolder.sort_order.asc(),
-            DocumentLibraryFolder.created_at.asc(),
-        )
-    ).all():
+    for folder in unit_folders:
         fid = str(folder.id)
         items.append(
             {
@@ -381,6 +410,7 @@ def _build_personal_scope_node(db: Session, user: User) -> dict | None:
     scope_doc_total = 0
     scope_ready_total = 0
     is_super = user_is_superuser(db, user)
+    shared_doc_ids = _shared_document_ids_for_user(db, user)
 
     if is_super:
         owner_ids = {
@@ -421,6 +451,7 @@ def _build_personal_scope_node(db: Session, user: User) -> dict | None:
             dept_id=None,
             owner_id=owner_id,
             dataset_id=dataset_id,
+            shared_doc_ids=shared_doc_ids if owner_id == user.id else set(),
         )
         doc_total, ready_total = _sum_folder_stats(folder_nodes)
         # 当前用户个人库始终展示（即使尚无已同步索引文档）；超管跳过他人空库
@@ -455,6 +486,7 @@ def _build_personal_scope_node(db: Session, user: User) -> dict | None:
             dept_id=None,
             owner_id=user.id,
             dataset_id=dataset_id,
+            shared_doc_ids=shared_doc_ids,
         )
         doc_total, ready_total = _sum_folder_stats(folder_nodes)
         from app.core.user_display import user_display_name

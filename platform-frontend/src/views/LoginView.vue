@@ -24,6 +24,7 @@ import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import LoginFeatureScroll from "../components/LoginFeatureScroll.vue";
 import { cleanupBlockingUiArtifacts } from "../utils/blockingUiCleanup.js";
+import { isBenignNavigationError } from "../api/requestScope.js";
 import { LOGIN_FLY_CLONE_CLASS } from "../constants/loginFlyAnimation.js";
 import { prefersReducedMotion } from "../utils/mediaQuery.js";
 
@@ -177,6 +178,7 @@ function isValidPhone(value) {
 }
 
 async function onRegister() {
+  if (registering.value) return;
   const mobile = regPhone.value.trim();
   const name = regDisplayName.value.trim();
   if (!isValidPhone(mobile)) {
@@ -202,6 +204,7 @@ async function onRegister() {
   }
   registering.value = true;
   flyPanelRef.value = registerPanelRef.value;
+  let authed = false;
   try {
     await register({
       phone: mobile,
@@ -209,12 +212,30 @@ async function onRegister() {
       displayName: name,
       password: regPassword.value,
     });
+    authed = true;
     ui.success(t("login.registerSuccess"));
-    await navigateAfterAuth();
   } catch (e) {
     ui.error(e.message || t("login.registerFailed"));
+    exiting.value = false;
+    return;
   } finally {
     registering.value = false;
+  }
+  if (!authed) return;
+  try {
+    await navigateAfterAuth();
+  } catch (e) {
+    if (!isBenignNavigationError(e)) {
+      exiting.value = false;
+    }
+    try {
+      await router.replace(DEFAULT_HOME_ROUTE);
+    } catch (navErr) {
+      if (!isBenignNavigationError(navErr)) {
+        ui.error(navErr.message || t("login.registerFailed"));
+        exiting.value = false;
+      }
+    }
   }
 }
 
@@ -420,7 +441,10 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
             <n-input v-model:value="regEmail" :placeholder="t('login.email')" />
           </n-form-item>
           <n-form-item :label="t('login.displayName')">
-            <n-input v-model:value="regDisplayName" :placeholder="t('login.displayName')" />
+            <n-input
+              v-model:value="regDisplayName"
+              :placeholder="t('login.displayNamePlaceholder')"
+            />
           </n-form-item>
           <n-form-item :label="t('login.password')">
             <n-input

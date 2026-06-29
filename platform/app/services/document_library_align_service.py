@@ -35,7 +35,6 @@ from app.models.ragflow_scope_dataset import (
     SCOPE_TEAM as REG_TEAM,
 )
 from app.models.ragflow_scope_dataset import RagflowScopeDataset
-from app.services.documents.crud import document_has_uploaded_version
 from app.services.ragflow_scope_service import COMPANY_SCOPE_KEY, _get_registry
 
 logger = logging.getLogger(__name__)
@@ -384,6 +383,41 @@ def repair_document_library_alignment(db: Session, *, actor: User | None = None)
     return {"platform": platform, "ragflow": ragflow}
 
 
+def _document_matches_library_unit_fast(
+    db: Session,
+    document: Document,
+    *,
+    scope: str,
+    dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
+) -> bool:
+    """对齐数据走内存比较，历史错位数据回退完整校验。"""
+    if document.deleted_at is not None:
+        return False
+    if document.status != DocumentStatus.active.value:
+        return False
+    doc_scope = (getattr(document, "scope", None) or "").strip()
+    if scope in ORG_SCOPES:
+        if not dept_id or document.dept_id != dept_id:
+            return False
+        if doc_scope == scope:
+            return True
+    elif scope == SCOPE_PERSONAL:
+        if owner_id is not None and document.owner_id != owner_id:
+            return False
+        if doc_scope == SCOPE_PERSONAL:
+            return True
+    elif doc_scope == scope:
+        return True
+    return document_matches_library_unit(
+        db,
+        document,
+        scope=scope,
+        dept_id=dept_id,
+        owner_id=owner_id,
+    )
+
+
 def collect_aligned_library_documents(
     db: Session,
     user: User,
@@ -393,11 +427,14 @@ def collect_aligned_library_documents(
     owner_id: uuid.UUID | None = None,
 ) -> list[Document]:
     """与文档中心相同分级筛选，且仅保留已上传文件的启用文档。"""
-    from app.core.document_scope import can_query_document
+    from app.core.permissions import PermissionLevel
+    from app.services.documents.access_batch import filter_documents_for_list
+    from app.services.documents.listing import _has_uploaded_version_exists
 
     stmt = select(Document).where(
         Document.deleted_at.is_(None),
         Document.status == DocumentStatus.active.value,
+        _has_uploaded_version_exists(),
     )
     if scope in ORG_SCOPES and dept_id is not None:
         stmt = stmt.where(Document.scope == scope, Document.dept_id == dept_id)
@@ -410,15 +447,17 @@ def collect_aligned_library_documents(
     else:
         stmt = stmt.where(Document.scope == scope)
 
-    out: list[Document] = []
-    for doc in db.scalars(stmt.order_by(Document.updated_at.desc())).all():
-        if not document_has_uploaded_version(db, doc.id):
-            continue
-        if not document_matches_library_unit(
+    candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
+    matched = [
+        doc
+        for doc in candidates
+        if _document_matches_library_unit_fast(
             db, doc, scope=scope, dept_id=dept_id, owner_id=owner_id
-        ):
-            continue
-        if not can_query_document(db, user, doc):
-            continue
-        out.append(doc)
-    return out
+        )
+    ]
+    return filter_documents_for_list(
+        db,
+        user,
+        matched,
+        required_level=PermissionLevel.query.value,
+    )

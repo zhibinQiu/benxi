@@ -8,6 +8,8 @@ import time
 import uuid
 from dataclasses import dataclass
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -176,6 +178,57 @@ def _index_job_should_abort(db: Session, job: Job) -> bool:
     if not _index_target_exists(db, doc_id, version_id):
         return True
     return False
+
+
+_ACTIVE_INDEX_JOB_STATUSES = (JobStatus.pending.value, JobStatus.running.value)
+
+
+def _clear_parse_watch_payload(payload: dict) -> dict:
+    out = dict(payload)
+    out.pop("awaiting_parse", None)
+    out.pop("parse_watch_started_at", None)
+    return out
+
+
+def _try_claim_index_job_terminal(
+    db: Session,
+    job: Job,
+    *,
+    status: str,
+    progress: int | None = None,
+    error_message: str | None = None,
+    clear_parse_watch: bool = True,
+) -> Job | None:
+    """将索引任务从 pending/running 迁入终态；仅一个并发执行者能成功（用于避免重复通知）。"""
+    locked = db.scalar(select(Job).where(Job.id == job.id).with_for_update())
+    if not locked or locked.status not in _ACTIVE_INDEX_JOB_STATUSES:
+        return None
+    if _index_job_should_abort(db, locked):
+        return None
+
+    payload = dict(locked.payload or {})
+    if clear_parse_watch:
+        payload = _clear_parse_watch_payload(payload)
+    locked.payload = payload
+    locked.status = status
+    locked.finished_at = datetime.now(timezone.utc)
+    if status == JobStatus.done.value:
+        locked.progress = 100
+    elif progress is not None:
+        locked.progress = progress
+    if error_message is not None:
+        locked.error_message = error_message
+    db.add(locked)
+    db.flush()
+    job.status = locked.status
+    job.payload = locked.payload
+    job.progress = locked.progress
+    job.error_message = locked.error_message
+    return locked
+
+
+def _index_job_still_awaiting_parse(job: Job) -> bool:
+    return bool((job.payload or {}).get("awaiting_parse"))
 
 
 @dataclass(frozen=True)
@@ -834,27 +887,32 @@ def _fail_parse_job(
 ) -> None:
     if _index_job_should_abort(db, job):
         return
-    payload = dict(job.payload or {})
-    payload.pop("awaiting_parse", None)
-    job.payload = payload
-    update_job_status(
+    claimed = _try_claim_index_job_terminal(
         db,
-        job.id,
-        JobStatus.failed.value,
+        job,
+        status=JobStatus.failed.value,
         error_message=error_text[:500],
     )
+    if not claimed:
+        return
     fail_title = "文档重新索引失败" if mode == "reindex" else "文档索引未完成"
+    if mode == "reindex":
+        fail_body = (
+            f"「{doc.title or '未命名文档'}」重新索引未完成：{error_text}"
+        )
+    else:
+        fail_body = (
+            f"「{doc.title or '未命名文档'}」知识库解析失败：{error_text}。"
+            "可在文档详情 → 知识索引中重试。"
+        )
     create_notification(
         db,
         user_id=user.id,
         title=fail_title,
-        body=(
-            f"「{doc.title or '未命名文档'}」知识库解析失败：{error_text}。"
-            "可在文档详情 → 知识索引中重试。"
-        ),
+        body=fail_body,
         link=f"/documents/{doc.id}",
     )
-    dataset_id = str(payload.get("dataset_id") or "").strip() or None
+    dataset_id = str((job.payload or {}).get("dataset_id") or "").strip() or None
     try:
         from app.services.knowledge_scope_tree_service import (
             notify_knowledge_index_state_changed,
@@ -927,24 +985,23 @@ def _complete_subscription_pipeline_after_deepdoc(
     version_id = uuid.UUID(str(version_id_raw)) if version_id_raw else None
     pi_reason = index_stack_block_reason(PARSER_PAGEINDEX, reindex=True)
     if pi_reason:
-        update_job_status(
+        claimed = _try_claim_index_job_terminal(
             db,
-            job.id,
-            JobStatus.failed.value,
+            job,
+            status=JobStatus.failed.value,
             error_message=pi_reason,
         )
-        create_notification(
-            db,
-            user_id=user.id,
-            title="文档索引失败",
-            body=f"「{doc.title or '未命名文档'}」DeepDOC 解析已完成，但 PageIndex 不可用：{pi_reason}",
-            link=f"/documents/{doc.id}",
-        )
+        if claimed:
+            create_notification(
+                db,
+                user_id=user.id,
+                title="文档索引失败",
+                body=f"「{doc.title or '未命名文档'}」DeepDOC 解析已完成，但 PageIndex 不可用：{pi_reason}",
+                link=f"/documents/{doc.id}",
+            )
         return
 
-    payload = dict(job.payload or {})
-    payload.pop("awaiting_parse", None)
-    payload.pop("parse_watch_started_at", None)
+    payload = _clear_parse_watch_payload(dict(job.payload or {}))
     job.payload = payload
     update_job_status(db, job.id, JobStatus.running.value, progress=82)
 
@@ -969,19 +1026,20 @@ def _complete_subscription_pipeline_after_deepdoc(
         from app.core.user_messages import background_job_error_message
 
         err_text = background_job_error_message(exc, fallback="PageIndex 索引失败")
-        update_job_status(
+        claimed = _try_claim_index_job_terminal(
             db,
-            job.id,
-            JobStatus.failed.value,
+            job,
+            status=JobStatus.failed.value,
             error_message=err_text[:500],
         )
-        create_notification(
-            db,
-            user_id=user.id,
-            title="文档索引失败",
-            body=f"「{doc.title or '未命名文档'}」PageIndex 索引未完成：{err_text}",
-            link=f"/documents/{doc.id}",
-        )
+        if claimed:
+            create_notification(
+                db,
+                user_id=user.id,
+                title="文档索引失败",
+                body=f"「{doc.title or '未命名文档'}」PageIndex 索引未完成：{err_text}",
+                link=f"/documents/{doc.id}",
+            )
         try:
             from app.services.knowledge_scope_tree_service import (
                 notify_knowledge_index_state_changed,
@@ -996,14 +1054,16 @@ def _complete_subscription_pipeline_after_deepdoc(
             )
         return
 
-    update_job_status(db, job.id, JobStatus.done.value, progress=100)
+    claimed = _try_claim_index_job_terminal(db, job, status=JobStatus.done.value)
+    if not claimed:
+        return
     create_notification(
         db,
         user_id=user.id,
         title="文档索引完成",
         body=(
             f"「{doc.title or '未命名文档'}」已完成 DeepDOC 解析与 PageIndex 索引，"
-            "可用于知识检索；本体图谱抽取在后台进行。"
+            "可用于知识检索。"
         ),
         link=f"/documents/{doc.id}",
     )
@@ -1015,16 +1075,6 @@ def _complete_subscription_pipeline_after_deepdoc(
         notify_knowledge_index_state_changed(user_id=user.id)
     except Exception as exc:
         logger.debug("资讯导入索引完成后刷新缓存跳过 job=%s: %s", job.id, exc)
-    try:
-        from app.services.kg_extraction_service import schedule_kg_extraction_after_index
-
-        schedule_kg_extraction_after_index(
-            document_id=doc.id,
-            user_id=user.id,
-            version_id=version_id,
-        )
-    except Exception as exc:
-        logger.debug("资讯导入 KG 抽取调度跳过 job=%s: %s", job.id, exc)
 
 
 def _complete_knowledge_index_job(
@@ -1036,6 +1086,9 @@ def _complete_knowledge_index_job(
     dataset_id: str | None,
     version_id_raw: str | None,
     mode: str,
+    notify_title: str | None = None,
+    notify_body: str | None = None,
+    notify_link: str | None = None,
 ) -> None:
     from app.models.document import DocumentVersion
     from app.services.document_service import resolve_current_version
@@ -1046,12 +1099,6 @@ def _complete_knowledge_index_job(
 
     if _index_job_should_abort(db, job):
         return
-
-    payload = dict(job.payload or {})
-    payload.pop("awaiting_parse", None)
-    payload.pop("parse_watch_started_at", None)
-    job.payload = payload
-    update_job_status(db, job.id, JobStatus.done.value, progress=100)
 
     version_id = uuid.UUID(str(version_id_raw)) if version_id_raw else None
     current = resolve_current_version(db, doc)
@@ -1064,8 +1111,14 @@ def _complete_knowledge_index_job(
                 db, document=doc, version=ver, version_link=vl
             )
 
-    done_title = "文档重新索引完成" if mode == "reindex" else "文档索引完成"
-    done_body = (
+    claimed = _try_claim_index_job_terminal(db, job, status=JobStatus.done.value)
+    if not claimed:
+        return
+
+    done_title = notify_title or (
+        "文档重新索引完成" if mode == "reindex" else "文档索引完成"
+    )
+    done_body = notify_body or (
         f"「{doc.title or '未命名文档'}」已应用新解析配置并完成索引，可用于问答检索。"
         if mode == "reindex"
         else f"「{doc.title or '未命名文档'}」已同步到知识库并完成解析，可用于问答检索。"
@@ -1075,7 +1128,7 @@ def _complete_knowledge_index_job(
         user_id=user.id,
         title=done_title,
         body=done_body,
-        link=f"/documents/{doc.id}",
+        link=notify_link or f"/documents/{doc.id}",
     )
     try:
         from app.services.knowledge_scope_tree_service import (
@@ -1088,17 +1141,6 @@ def _complete_knowledge_index_job(
         )
     except Exception as exc:
         logger.debug("知识检索树缓存刷新跳过 job=%s: %s", job.id, exc)
-
-    try:
-        from app.services.kg_extraction_service import schedule_kg_extraction_after_index
-
-        schedule_kg_extraction_after_index(
-            document_id=doc.id,
-            user_id=user.id,
-            version_id=indexed_version_id,
-        )
-    except Exception as exc:
-        logger.debug("KG 抽取调度跳过 job=%s: %s", job.id, exc)
 
 
 def _schedule_parse_watch(job_id: uuid.UUID) -> None:
@@ -1201,6 +1243,9 @@ def _run_parse_watch(job_id: uuid.UUID) -> None:
             return
 
         if completed:
+            db.refresh(job)
+            if not _index_job_still_awaiting_parse(job):
+                return
             if not _index_job_should_abort(db, job):
                 _finish_index_job_after_parse(
                     db,
@@ -1362,21 +1407,7 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                 from app.core.user_messages import background_job_error_message
 
                 err_text = background_job_error_message(e, fallback="重新索引失败")
-                update_job_status(
-                    db,
-                    job_id,
-                    JobStatus.failed.value,
-                    error_message=err_text[:500],
-                )
-                create_notification(
-                    db,
-                    user_id=user.id,
-                    title="文档重新索引失败",
-                    body=(
-                        f"「{doc.title or '未命名文档'}」重新索引未完成：{err_text}"
-                    ),
-                    link=f"/documents/{doc.id}",
-                )
+                _fail_parse_job(db, job, user, doc, err_text, mode=mode)
                 try:
                     from app.services.knowledge_scope_tree_service import (
                         notify_knowledge_index_state_changed,
@@ -1391,39 +1422,21 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                 return
 
             if result.get("index_engine") == "pageindex":
-                update_job_status(db, job_id, JobStatus.done.value, progress=100)
-                create_notification(
+                _complete_knowledge_index_job(
                     db,
-                    user_id=user.id,
-                    title="文档索引完成",
-                    body=(
+                    job,
+                    user,
+                    doc,
+                    dataset_id=None,
+                    version_id_raw=version_id_raw,
+                    mode=mode,
+                    notify_title="文档索引完成",
+                    notify_body=(
                         f"「{doc.title or '未命名文档'}」已完成索引，"
                         "可在「知识检索」中使用。"
                     ),
-                    link="/knowledge/search",
+                    notify_link="/knowledge/search",
                 )
-                try:
-                    from app.services.knowledge_scope_tree_service import (
-                        notify_knowledge_index_state_changed,
-                    )
-
-                    notify_knowledge_index_state_changed(user_id=user.id)
-                except Exception as exc:
-                    logger.debug(
-                        "PageIndex 索引完成后刷新缓存跳过 job=%s: %s", job_id, exc
-                    )
-                try:
-                    from app.services.kg_extraction_service import (
-                        schedule_kg_extraction_after_index,
-                    )
-
-                    schedule_kg_extraction_after_index(
-                        document_id=doc.id,
-                        user_id=user.id,
-                        version_id=version_id,
-                    )
-                except Exception as exc:
-                    logger.debug("KG 抽取调度跳过 job=%s: %s", job_id, exc)
                 db.commit()
                 return
 
@@ -1452,46 +1465,15 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
                         db.commit()
                         return
 
-                    update_job_status(db, job_id, JobStatus.done.value, progress=100)
-                    from app.models.document import DocumentVersion
-                    from app.services.document_service import resolve_current_version
-                    from app.services.ragflow_version_link_service import (
-                        bind_document_to_indexed_version,
-                        get_version_link_by_version_id,
-                    )
-
-                    indexed_version_id = version_id
-                    if not indexed_version_id:
-                        current = resolve_current_version(db, doc)
-                        indexed_version_id = current.id if current else None
-                    if indexed_version_id:
-                        vl = get_version_link_by_version_id(db, indexed_version_id)
-                        ver = db.get(DocumentVersion, indexed_version_id)
-                        if vl and ver:
-                            bind_document_to_indexed_version(
-                                db, document=doc, version=ver, version_link=vl
-                            )
-                    create_notification(
+                    _complete_knowledge_index_job(
                         db,
-                        user_id=user.id,
-                        title="文档索引完成",
-                        body=(
-                            f"「{doc.title or '未命名文档'}」已同步到知识库并完成解析，可用于问答检索。"
-                        ),
-                        link=f"/documents/{doc.id}",
+                        db.get(Job, job_id) or job,
+                        user,
+                        doc,
+                        dataset_id=dataset_id,
+                        version_id_raw=version_id_raw,
+                        mode=mode,
                     )
-                    try:
-                        from app.services.kg_extraction_service import (
-                            schedule_kg_extraction_after_index,
-                        )
-
-                        schedule_kg_extraction_after_index(
-                            document_id=doc.id,
-                            user_id=user.id,
-                            version_id=indexed_version_id,
-                        )
-                    except Exception as exc:
-                        logger.debug("KG 抽取调度跳过 job=%s: %s", job_id, exc)
                     db.commit()
                     return
 

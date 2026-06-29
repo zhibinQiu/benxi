@@ -102,7 +102,12 @@ export function useAuth() {
     bumpSessionEpoch();
     const tokens = await registerUser({ phone, email, displayName, password });
     setTokens(tokens.access_token, tokens.refresh_token);
-    return loadUser();
+    try {
+      await loadUser({ force: true });
+    } catch {
+      /* 已有 token；路由守卫会再次拉取 me */
+    }
+    return user.value;
   }
 
   function logout() {

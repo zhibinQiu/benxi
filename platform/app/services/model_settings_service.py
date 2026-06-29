@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from app.config import Settings, get_settings
@@ -10,6 +11,7 @@ from app.integrations.ragflow_model_apply import (
     apply_embedding_to_template_tenant,
     apply_image2text_to_template_tenant,
     apply_llm_to_template_tenant,
+    apply_rerank_to_template_tenant,
     fetch_template_embedding_defaults,
     infer_llm_factory,
     patch_knowflow_paddleocr_config,
@@ -31,7 +33,7 @@ logger = logging.getLogger(__name__)
 NOTICE_EFFECTIVE = (
     "所有模型（语言 / 嵌入 / VL / Rerank / OCR-VL）均在资源管理配置「API URL + 模型名 + Key」，"
     "保存后立即生效，无需改代码或重启；上线后仅改 URL 与模型名即可切换本地 vLLM/Ollama 等。"
-    "嵌入与 VL 保存后写入知识库模板租户并同步用户；OCR-VL 写入知识库服务配置。"
+    "嵌入 / VL / Rerank 保存后写入知识库模板租户并同步用户；OCR-VL 写入知识库服务配置。"
     ".env 中 PLATFORM_* 仅作首次部署引导，运行中以本页保存为准。"
 )
 
@@ -139,9 +141,38 @@ def _normalize_frontend_theme(value: str | None) -> str:
 
 def _normalize_frontend_color_scheme(value: str | None) -> str:
     v = (value or "").strip().lower()
-    if v in ("purple", "blue"):
+    if v in ("purple", "blue", "custom"):
         return v
-    return "purple"
+    return "blue"
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+_DEFAULT_PRIMARY_COLOR = "#0067ff"
+
+
+def _normalize_frontend_primary_color(value: str | None) -> str:
+    raw = (value or "").strip()
+    if _HEX_COLOR_RE.match(raw):
+        return raw.lower()
+    return _DEFAULT_PRIMARY_COLOR
+
+
+def _rerank_env_defaults(settings: Settings) -> tuple[str, str, str]:
+    """Rerank：显式 PLATFORM_RERANK_* 优先，否则回退嵌入 / VL（硅基流动等同 Key）。"""
+    base = (settings.platform_rerank_base_url or "").strip()
+    key = (settings.platform_rerank_api_key or "").strip()
+    model = (settings.platform_rerank_model or "").strip()
+
+    emb_base = (settings.platform_embedding_base_url or "").strip()
+    emb_key = (settings.platform_embedding_api_key or "").strip()
+    vl_base = (settings.platform_vl_base_url or "").strip()
+    vl_key = (settings.platform_vl_api_key or "").strip()
+
+    if not base:
+        base = emb_base or vl_base
+    if not key:
+        key = emb_key or vl_key
+    return base, key, model
 
 
 def _paddleocr_env_defaults(settings: Settings) -> tuple[str, str, str, str]:
@@ -201,6 +232,7 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
     llm_key = (settings.platform_llm_api_key or "").strip() or settings.deepseek_api_key
     llm_model = (settings.platform_llm_model or "").strip() or settings.deepseek_model
     paddle_base, paddle_key, paddle_model, paddle_legacy_url = _paddleocr_env_defaults(settings)
+    rerank_base, rerank_key, rerank_model = _rerank_env_defaults(settings)
     tts_base, tts_key, tts_model = _tts_env_defaults(settings)
     return {
         "llm_base_url": llm_url or "",
@@ -210,9 +242,9 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "embedding_api_key": (settings.platform_embedding_api_key or "").strip(),
         "embedding_model": (settings.platform_embedding_model or "").strip(),
         "embedding_factory": (settings.platform_embedding_factory or "").strip(),
-        "rerank_base_url": (settings.platform_rerank_base_url or "").strip(),
-        "rerank_api_key": (settings.platform_rerank_api_key or "").strip(),
-        "rerank_model": (settings.platform_rerank_model or "").strip(),
+        "rerank_base_url": rerank_base,
+        "rerank_api_key": rerank_key,
+        "rerank_model": rerank_model,
         "vl_base_url": (settings.platform_vl_base_url or "").strip(),
         "vl_api_key": (settings.platform_vl_api_key or "").strip(),
         "vl_model": (settings.platform_vl_model or "").strip(),
@@ -229,6 +261,7 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "frontend_app_title": (settings.frontend_app_title or "").strip(),
         "frontend_default_theme": _normalize_frontend_theme(settings.frontend_default_theme),
         "frontend_color_scheme": _normalize_frontend_color_scheme(settings.frontend_color_scheme),
+        "frontend_primary_color": _normalize_frontend_primary_color(settings.frontend_primary_color),
         "ragflow_api_url": (settings.ragflow_api_url or "").strip(),
         "ragflow_api_key": (settings.ragflow_api_key or "").strip(),
         "knowflow_backend_url": (settings.knowflow_backend_url or "").strip(),
@@ -299,7 +332,15 @@ def get_vl_credentials(db: Session | None = None) -> tuple[str, str, str]:
 
 def get_rerank_credentials(db: Session | None = None) -> tuple[str, str, str]:
     merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
-    return _endpoint_fields(merged, "rerank")
+    base, key, model = _endpoint_fields(merged, "rerank")
+    if not base or not key:
+        emb_base, emb_key, _ = _endpoint_fields(merged, "embedding")
+        vl_base, vl_key, _ = _endpoint_fields(merged, "vl")
+        if not base:
+            base = emb_base or vl_base
+        if not key:
+            key = emb_key or vl_key
+    return base, key, model
 
 
 def get_tts_credentials(db: Session | None = None) -> tuple[str, str, str]:
@@ -546,6 +587,14 @@ def get_frontend_color_scheme(db: Session | None = None) -> str:
     return _normalize_frontend_color_scheme(merged.get("frontend_color_scheme"))
 
 
+def get_frontend_primary_color(db: Session | None = None) -> str:
+    merged = _effective_config(db, fill_embedding_from_ragflow=False)
+    scheme = _normalize_frontend_color_scheme(merged.get("frontend_color_scheme"))
+    if scheme != "custom":
+        return ""
+    return _normalize_frontend_primary_color(merged.get("frontend_primary_color"))
+
+
 def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
     effective = _merge_effective(get_settings(), db)
     vl_base, vl_key, vl_model = _endpoint_fields(effective, "vl")
@@ -563,6 +612,11 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
         frontend_color_scheme=_normalize_frontend_color_scheme(
             effective.get("frontend_color_scheme")
         ),
+        frontend_primary_color=_normalize_frontend_primary_color(
+            effective.get("frontend_primary_color")
+        )
+        if _normalize_frontend_color_scheme(effective.get("frontend_color_scheme")) == "custom"
+        else "",
         llm=_endpoint(
             base_url=effective["llm_base_url"],
             api_key=effective["llm_api_key"],
@@ -721,6 +775,20 @@ def save_model_settings(
             if body.frontend_color_scheme is not None
             else _normalize_frontend_color_scheme(current.get("frontend_color_scheme"))
         ),
+        "frontend_primary_color": (
+            _normalize_frontend_primary_color(body.frontend_primary_color)
+            if body.frontend_primary_color is not None
+            else _normalize_frontend_primary_color(current.get("frontend_primary_color"))
+            if (
+                _normalize_frontend_color_scheme(
+                    body.frontend_color_scheme
+                    if body.frontend_color_scheme is not None
+                    else current.get("frontend_color_scheme")
+                )
+                == "custom"
+            )
+            else ""
+        ),
         "ragflow_api_url": (
             body.ragflow_api_url
             if body.ragflow_api_url is not None
@@ -855,6 +923,21 @@ def apply_saved_settings(db: Session, payload: dict[str, str]) -> None:
             api_key=vl_key,
             model_name=vl_model,
             factory=infer_llm_factory(vl_base, payload.get("embedding_factory", "")),
+        )
+    rerank_base, rerank_key, rerank_model = _endpoint_fields(payload, "rerank")
+    if not rerank_base or not rerank_key:
+        emb_base, emb_key, _ = _endpoint_fields(payload, "embedding")
+        if not rerank_base:
+            rerank_base = emb_base or vl_base
+        if not rerank_key:
+            rerank_key = emb_key or vl_key
+    if rerank_key and rerank_model:
+        apply_rerank_to_template_tenant(
+            db,
+            base_url=rerank_base,
+            api_key=rerank_key,
+            model_name=rerank_model,
+            factory=payload.get("embedding_factory", ""),
         )
     paddle_base, paddle_key, paddle_model = _endpoint_fields(payload, "paddleocr")
     if not paddle_base:

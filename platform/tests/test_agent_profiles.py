@@ -17,7 +17,10 @@ def test_list_builtin_agents(client, admin_token):
     assert "orchestrator" in ids
     assert "platform" in ids
     assert "research" in ids
+    assert "diagram" in ids
+    assert "report" in ids
     assert ids.index("orchestrator") < ids.index("platform")
+    assert ids.index("research") < ids.index("report")
 
 
 def test_patch_agent_skills(client, admin_token):
@@ -45,6 +48,38 @@ def test_orchestrator_skills_not_configurable(client, admin_token):
         json={"skill_names": ["web-search"]},
     )
     assert r.status_code == 400, r.text
+
+
+def test_list_external_agents_route(client, admin_token):
+    ensure_agent_profile_schema(engine)
+    from app.schema_migrate import ensure_aip_external_agents_schema
+
+    ensure_aip_external_agents_schema(engine)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = client.get("/api/v1/admin/agent-skills/external-agents", headers=headers)
+    assert r.status_code == 200, r.text
+    assert isinstance(r.json()["data"], list)
+
+
+def test_patch_agent_service_enabled(client, admin_token):
+    ensure_agent_profile_schema(engine)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = client.patch(
+        "/api/v1/admin/agent-skills/agents/research",
+        headers=headers,
+        json={"service_enabled": False},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["service_enabled"] is False
+
+    r2 = client.patch(
+        "/api/v1/admin/agent-skills/agents/research",
+        headers=headers,
+        json={"service_enabled": True},
+    )
+    assert r2.status_code == 200, r.text
+    assert r2.json()["data"]["service_enabled"] is True
 
 
 def test_runtime_status_exposed(client, admin_token):

@@ -1,13 +1,15 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
+import { usePlatformUi } from "../composables/usePlatformUi";
 import { useI18n } from "../composables/useI18n.js";
 import { messages as localeMessages } from "../locales";
 import { useAppPreferences } from "../composables/useAppPreferences";
 import { NButton, NIcon, NSpin } from "naive-ui";
 import { CloseOutline, SparklesOutline } from "@vicons/ionicons5";
 import ChatComposer from "./ChatComposer.vue";
-import ChatBubbleRetry from "./ChatBubbleRetry.vue";
+import ChatDisclaimer from "./ChatDisclaimer.vue";
+import ChatBubbleActions from "./ChatBubbleActions.vue";
 import ChatMarkdownBody from "./ChatMarkdownBody.vue";
 import { assistantChat, fetchChatConversationMessages } from "../api/client";
 import { PLATFORM_APP_NAME } from "../constants/platform";
@@ -20,6 +22,11 @@ import {
 import { MAX_CHAT_MESSAGES, MAX_VISIBLE_CHAT_MESSAGES, trimChatMessages } from "../utils/chatMessageLimits.js";
 import { trimHistoryForApi } from "../utils/chatHistoryBudget.js";
 import {
+  buildChatShareUrl,
+  copyChatMessageText,
+  shareChatMessageText,
+} from "../utils/chatBubbleActions.js";
+import {
   isPlainPreviewTruncated,
   plainMessagePreview,
   shouldRenderMessageRich,
@@ -28,6 +35,7 @@ import {
 const ASSISTANT_SCOPE = "assistant";
 
 const { t, chatScopeTitle } = useI18n();
+const ui = usePlatformUi();
 const { locale } = useAppPreferences();
 
 const open = defineModel("open", { type: Boolean, default: false });
@@ -285,6 +293,32 @@ function canRetryMessage(index, message) {
   return findUserIndexBefore(index) >= 0;
 }
 
+function canShowMessageActions(index, message) {
+  if (sending.value || loadingHistory.value) return false;
+  if (message?.role !== "assistant") return false;
+  if (!String(message?.content || "").trim()) return false;
+  return findUserIndexBefore(index) >= 0;
+}
+
+async function copyAssistantMessage(message) {
+  await copyChatMessageText(message?.content, { ui, t });
+}
+
+async function shareAssistantMessage(message) {
+  await shareChatMessageText(message?.content, {
+    ui,
+    t,
+    title: chatScopeTitle(ASSISTANT_SCOPE),
+    shareUrl: buildChatShareUrl(conversationId.value, ASSISTANT_SCOPE),
+  });
+}
+
+function setMessageFeedback(index, value) {
+  const message = messages.value[index];
+  if (!message) return;
+  message.feedback = value;
+}
+
 async function retryMessage(index) {
   const message = messages.value[index];
   if (!message || !canRetryMessage(index, message)) return;
@@ -480,10 +514,16 @@ onBeforeUnmount(() => {
               <div v-else class="assistant-bubble assistant-bubble--user">
                 {{ entry.message.content }}
               </div>
-              <ChatBubbleRetry
-                v-if="entry.message.role === 'assistant' && canRetryMessage(entry.index, entry.message)"
+              <ChatBubbleActions
+                v-if="canShowMessageActions(entry.index, entry.message)"
                 align="start"
+                :show-retry="canRetryMessage(entry.index, entry.message)"
+                :retry-disabled="sending || loadingHistory"
+                :feedback="entry.message.feedback || null"
+                @copy="copyAssistantMessage(entry.message)"
+                @share="shareAssistantMessage(entry.message)"
                 @retry="retryMessage(entry.index)"
+                @feedback="setMessageFeedback(entry.index, $event)"
               />
             </div>
           </div>
@@ -518,6 +558,7 @@ onBeforeUnmount(() => {
             @send="sendMessage()"
             @stop="stopGeneration"
           />
+          <ChatDisclaimer />
         </footer>
         </div>
       </Transition>
@@ -704,25 +745,28 @@ onBeforeUnmount(() => {
 .assistant-bubble--user {
   width: fit-content;
   max-width: 100%;
-  background: var(--platform-accent-gradient);
-  color: #fff;
+  background: var(--platform-bg-tertiary);
+  color: var(--platform-text);
+  border: 1px solid var(--platform-border);
   border-bottom-right-radius: 4px;
   white-space: pre-wrap;
 }
 
 .assistant-bubble--bot {
-  background: #fff;
-  color: #334155;
-  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
-  border-bottom-left-radius: 4px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--platform-text);
+  border: none;
+  box-shadow: none;
 }
 
 .assistant-bubble--typing {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #64748b;
+  padding: 0;
+  color: var(--platform-text-secondary);
 }
 
 .assistant-bubble--bot :deep(p) {
@@ -763,15 +807,17 @@ onBeforeUnmount(() => {
   font-size: 11px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid var(--platform-accent-border);
-  background: var(--platform-accent-muted);
-  color: var(--platform-accent-pressed);
+  border: 1px solid var(--platform-border);
+  background: var(--platform-bg-secondary);
+  color: var(--platform-text);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .assistant-chip:hover {
-  background: var(--platform-accent-soft);
+  color: var(--platform-text);
+  background: var(--platform-bg-tertiary);
+  border-color: var(--platform-border);
 }
 
 .assistant-footer {

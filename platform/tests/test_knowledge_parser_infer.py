@@ -44,6 +44,12 @@ def test_docx_uses_plain_text_layout():
     assert layout == LAYOUT_PLAIN_TEXT
 
 
+def test_csv_uses_table_parser():
+    parser, layout = infer_parser_for_upload_file("data.csv", "text/csv")
+    assert parser == "table"
+    assert layout == LAYOUT_PLAIN_TEXT
+
+
 def test_ppt_uses_presentation_parser():
     parser, layout = infer_parser_for_upload_file(
         "slides.pptx",

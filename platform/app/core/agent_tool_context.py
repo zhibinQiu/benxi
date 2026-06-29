@@ -210,8 +210,8 @@ def build_skill_repair_context_block(loop_state: dict[str, Any] | None) -> str:
         "【Skill 修复 · 务必遵守】\n"
         f"发展技能 `{pending}` 执行失败或未产出有效结论。"
         "请**优先**用 `update_uploaded_skill_file` 修复该技能的 `main.py` / `workflow.json` / `SKILL.md`，"
-        "依据上方调研材料或最新报错调整；修复后再次 `run_skill_script` 验证。"
-        "**禁止**为此重复 `create_uploaded_skill` 造新技能，除非用户明确要求新建。\n"
+        "依据上方调研材料或最新报错调整；修复后再次 `run_skill_script` 验证是否满足用户需求。"
+        "**禁止**为此重复 `create_uploaded_skill` 造新技能，除非改动过大或用户明确要求新建。\n"
         f"{body}"
     )
 
@@ -231,13 +231,16 @@ def has_skill_research_context(
 
 
 def build_retrieval_context_block(loop_state: dict[str, Any] | None) -> str:
+    from app.core.platform_assistant import assistant_conclusion_source_priority
+
     parts = list((loop_state or {}).get("retrieval_context_parts") or [])
     if not parts:
         return ""
     body = "\n\n".join(parts)
     return (
-        "【已检索材料】以下编号 [n] 可直接用于回答引用；"
-        "勿重复调用相同检索。\n\n"
+        "【已检索材料】上下文顺序与引用编号已按优先级排列：本体图谱 → 文档库 → 联网检索。\n"
+        f"{assistant_conclusion_source_priority()}\n\n"
+        "以下编号 [n] 可直接用于回答引用；勿重复调用相同检索。\n\n"
         f"{body}"
     )
 

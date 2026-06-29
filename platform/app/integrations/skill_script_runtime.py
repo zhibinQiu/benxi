@@ -8,7 +8,6 @@ import socket
 from urllib.parse import urlparse
 
 import httpx
-import requests
 
 _DEFAULT_TIMEOUT = 15.0
 _DEFAULT_MAX_BYTES = 512_000

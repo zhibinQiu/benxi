@@ -7,6 +7,7 @@ import uuid
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_intent import (
     is_chitchat_message,
+    needs_knowledge_retrieval,
     needs_web_search,
     plan_agent_tools,
 )
@@ -43,7 +44,7 @@ def test_chitchat_skips_all_tools_even_with_attachment_session():
         assert plan.use_doc_retrieval is False, message
         assert plan.use_kg is False, message
         assert plan.use_web_search is False, message
-        assert "日常" in plan.intent_label
+        assert plan.intent_label == "处理用户请求"
 
 
 def test_attachment_question_uses_attachment_only():
@@ -97,7 +98,7 @@ def test_business_question_defers_to_agent_tools():
     assert plan.use_doc_retrieval is False
     assert plan.use_kg is False
     assert plan.use_web_search is False
-    assert "按需" in plan.intent_label
+    assert plan.intent_label == "处理用户请求"
 
 
 def test_chitchat_skips_web_search():
@@ -117,6 +118,10 @@ def test_platform_usage_skips_web_search():
     assert plan.use_doc_retrieval is False
     assert plan.use_kg is False
     assert plan.use_web_search is False
+
+
+def test_platform_system_data_skips_knowledge_retrieval():
+    assert needs_knowledge_retrieval("系统中有哪些用户") is False
 
 
 def test_followup_after_business_question_defers_to_agent_tools():
@@ -146,7 +151,7 @@ def test_vague_message_skips_retrieval():
     )
     assert plan.use_doc_retrieval is False
     assert plan.use_web_search is False
-    assert "按需" in plan.intent_label
+    assert plan.intent_label == "处理用户请求"
 
 
 def test_delete_skill_removes_db_row_even_if_storage_fails():
@@ -181,6 +186,10 @@ def test_recent_carbon_price_heuristic_still_detects_web_need():
     )
     assert plan.use_web_search is False
     assert plan.use_doc_retrieval is False
+
+
+def test_short_market_question_needs_web_search():
+    assert _needs_web_search("韩国股市熔断对A股半导体影响？") is True
 
 
 def test_carbon_price_without_web_config():

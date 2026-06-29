@@ -265,7 +265,6 @@ onMounted(() => {
         />
         <ListRefreshButton
           :label="t('admin.monitor.refreshAll')"
-          type="primary"
           :loading="refreshing"
           @click="refreshAll"
         />

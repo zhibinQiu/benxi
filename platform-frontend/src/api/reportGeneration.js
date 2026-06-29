@@ -1,13 +1,18 @@
 import { api, getApiBase, getToken, rejectHttpFailure } from "./http.js";
+import { createPlatformChatStream } from "./rag.js";
 import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
 import { downloadBlob } from "../utils/downloadBlob.js";
 
 export async function fetchReportGenerationMeta() {
-  return api("/api/v1/report-generation/meta");
+  return api("/api/v1/report-generation/meta", { preserveOnNavigate: true });
 }
 
 export async function fetchReportOptimizePresets() {
-  return api("/api/v1/report-generation/presets");
+  return api("/api/v1/report-generation/presets", { preserveOnNavigate: true });
+}
+
+export async function fetchReportAgentSkills() {
+  return api("/api/v1/report-generation/skills", { preserveOnNavigate: true });
 }
 
 export async function fetchReportMindmap({ question, answer }) {
@@ -63,78 +68,21 @@ export async function importReportToLibrary({ title, markdown, syncKnowflow = tr
   });
 }
 
-export async function reportGenerationChatStream(
+const baseReportGenerationChatStream = createPlatformChatStream(
+  "/api/v1/report-generation/chat/stream",
   {
-    message,
-    history = [],
-    conversationId = null,
-    documentIds = null,
-    useWebSearch = true,
-    useAgentic = true,
+    sanitizeErrorMessage: (error) =>
+      sanitizeUserFacingMessage(error, "报告生成失败，请稍后重试"),
   },
-  { onDelta, onReplace, onWorkflow, onCitations, onDone, onError, signal } = {}
+);
+
+export function reportGenerationChatStream(
+  { message, history = [], conversationId = null, documentIds = null },
+  handlers,
 ) {
-  const headers = { "Content-Type": "application/json" };
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const body = { message, history, use_web_search: useWebSearch, use_agentic: useAgentic };
-  if (conversationId) body.conversation_id = conversationId;
-  if (documentIds?.length) body.document_ids = documentIds;
-
-  const res = await fetch(`${getApiBase()}/api/v1/report-generation/chat/stream`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!res.ok) {
-    const json = await res.json().catch(() => ({}));
-    rejectHttpFailure(res, json);
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error("浏览器不支持流式响应");
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() || "";
-    for (const block of parts) {
-      const line = block
-        .split("\n")
-        .map((l) => l.trim())
-        .find((l) => l.startsWith("data:"));
-      if (!line) continue;
-      let payload;
-      try {
-        payload = JSON.parse(line.slice(5).trim());
-      } catch {
-        continue;
-      }
-      if (payload.error) {
-        onError?.(
-          new Error(
-            sanitizeUserFacingMessage(payload.error, "报告生成失败，请稍后重试")
-          )
-        );
-        return;
-      }
-      if (payload.workflow) onWorkflow?.(payload.workflow);
-      if (payload.citations) onCitations?.(payload.citations);
-      if (payload.replace != null) onReplace?.(payload.replace);
-      if (payload.delta) onDelta?.(payload.delta);
-      if (payload.done) {
-        onDone?.(payload);
-        return;
-      }
-    }
-  }
-  onDone?.({});
+  const extraBody = documentIds?.length ? { document_ids: documentIds } : {};
+  return baseReportGenerationChatStream(
+    { message, history, conversationId, ...extraBody },
+    handlers,
+  );
 }

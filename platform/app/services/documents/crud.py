@@ -63,18 +63,19 @@ def create_initial_uploaded_version(
 ) -> DocumentVersion:
     """创建并落库首版文件（用于导入、订阅等服务端直传场景）。"""
     store = get_object_store()
+    mime = (mime_type or "application/octet-stream").strip()
     resolved_checksum = normalize_checksum(checksum) or compute_md5_hex(content)
     version = DocumentVersion(
         document_id=document.id,
         version_no=1,
         file_key=store.build_file_key(document.id, 1, file_name),
         file_name=file_name,
-        mime_type=mime_type or "application/octet-stream",
+        mime_type=mime,
         file_size=len(content),
         checksum=resolved_checksum,
         created_by=user.id,
     )
-    store.put_object_bytes(version.file_key, content, mime_type)
+    store.put_object_bytes(version.file_key, content, mime)
     db.add(version)
     db.flush()
     document.current_version_id = version.id
@@ -487,7 +488,7 @@ def publish_document_scope(
     scope: str,
     dept_id: uuid.UUID | None = None,
 ) -> Document:
-    """将文档发布到公司/部门/小组文库（改 scope，在对应 Tab 展示，不进「分享」）。"""
+    """将文档发布到公司/部门/分部文库（改 scope，在对应 Tab 展示，不进「分享」）。"""
     from app.core.document_scope import (
         ORG_SCOPES,
         SCOPE_PERSONAL,

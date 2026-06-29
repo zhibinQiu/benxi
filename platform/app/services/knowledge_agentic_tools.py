@@ -38,6 +38,7 @@ class KnowledgeAgenticToolkit:
     include_kg: bool = True
     retrieve_limit: int = 8
     web_max_items: int = 10
+    narrow_by_name: bool = True
 
     _local_hits: list[dict] = field(default_factory=list, init=False)
     _web_items: list[dict] = field(default_factory=list, init=False)
@@ -62,6 +63,7 @@ class KnowledgeAgenticToolkit:
                 q,
                 limit=limit or self.retrieve_limit,
                 merge_nearby=True,
+                narrow_by_name=self.narrow_by_name,
             )
             return self._finalize_retrieve_result(q, hits, mode)
         except Exception as exc:

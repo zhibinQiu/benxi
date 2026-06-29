@@ -60,7 +60,10 @@ async def handle_knowledge_retrieve(
             data={"query": query, "hits": hits, "mode": mode, "doc_ids": doc_ids},
         )
     except Exception as exc:
-        return SkillInvocationResult(False, f"知识库检索失败：{exc}", error=str(exc))
+        from app.core.user_messages import http_exception_message
+
+        msg = http_exception_message(exc, fallback="知识库检索失败，请稍后重试")
+        return SkillInvocationResult(False, f"知识库检索失败：{msg}", error=str(exc))
 
 
 async def handle_kg_query(
@@ -210,12 +213,17 @@ def _resolve_doc_ids(
 
 
 def _default_searchable_doc_ids(ctx: SkillInvocationContext) -> list[uuid.UUID]:
-    """无显式 doc_ids 时，取用户权限内少量已索引文档（后续可改为 agent 会话上下文）。"""
+    """无显式 doc_ids 时，取用户权限内少量已索引/有文件的文档。"""
     try:
         from sqlalchemy import select
 
         from app.core.permissions import PermissionLevel, can_access_document
         from app.models.document import Document
+        from app.services.compare_service import _document_retrieval_ready
+        from app.services.document_index_service import (
+            enrich_document_index_meta,
+            is_index_ready_meta,
+        )
 
         rows = ctx.db.scalars(
             select(Document.id)
@@ -223,11 +231,28 @@ def _default_searchable_doc_ids(ctx: SkillInvocationContext) -> list[uuid.UUID]:
             .order_by(Document.updated_at.desc())
             .limit(50)
         ).all()
-        out: list[uuid.UUID] = []
+        candidates: list[Document] = []
         for doc_id in rows:
             doc = ctx.db.get(Document, doc_id)
             if doc and can_access_document(
                 ctx.db, ctx.user, doc, PermissionLevel.query.value
+            ):
+                candidates.append(doc)
+        if not candidates:
+            return []
+        meta_by_doc = enrich_document_index_meta(
+            ctx.db, ctx.user, candidates, live_ragflow=False
+        )
+        index_ready_ids = {
+            did for did, meta in meta_by_doc.items() if is_index_ready_meta(meta)
+        }
+        out: list[uuid.UUID] = []
+        for doc in candidates:
+            if _document_retrieval_ready(
+                ctx.db,
+                doc,
+                index_ready_ids=index_ready_ids,
+                allow_index_only=True,
             ):
                 out.append(doc.id)
             if len(out) >= 10:

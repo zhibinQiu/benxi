@@ -8,9 +8,11 @@ import { fetchDocumentFileBlob } from "../api/documents.js";
 import { fetchCompareDocumentContent } from "../api/compare.js";
 import {
   PREVIEW_KIND,
+  isStructuredOfficePreviewKind,
   previewKindLabel,
 } from "../utils/documentPreview.js";
 import {
+  loadOfficeStructuredPreview,
   loadWordPreview,
   readTextBlob,
   resolvePreviewContent,
@@ -28,7 +30,7 @@ const props = defineProps({
   previewFileName: { type: String, default: "" },
   showDownloadAction: { type: Boolean, default: null },
   width: { type: [Number, String], default: "min(960px, 96vw)" },
-  viewportHeight: { type: String, default: "85vh" },
+  viewportHeight: { type: String, default: "min(45vh, 480px)" },
   /** PDF 预览缩放：width 按弹窗宽度铺满（竖版文档可读性更好）；page 整页缩放进视口 */
   pdfFitMode: { type: String, default: "width" },
 });
@@ -174,6 +176,30 @@ async function loadPreview() {
       return;
     }
 
+    if (
+      previewKind.value === PREVIEW_KIND.EXCEL ||
+      previewKind.value === PREVIEW_KIND.PRESENTATION
+    ) {
+      const { html, text } = await loadOfficeStructuredPreview(blob, {
+        documentId: props.documentId,
+        versionId: props.version?.id || null,
+        fileName,
+        mimeType,
+      });
+      if (token !== previewLoadToken.value) return;
+      if (html) {
+        wordHtml.value = html;
+        return;
+      }
+      if (text) {
+        previewKind.value = PREVIEW_KIND.TEXT;
+        textContent.value = text;
+        return;
+      }
+      error.value = t("documents.detail.previewOfficeEmpty");
+      return;
+    }
+
     if (previewKind.value === PREVIEW_KIND.UNSUPPORTED) {
       error.value = t("documents.detail.previewUnsupported");
       return;
@@ -273,7 +299,7 @@ function onAfterLeave() {
       </n-space>
     </div>
 
-    <n-spin :show="loading" class="document-preview-modal__spin">
+    <n-spin :show="loading" class="document-preview-modal__spin" local>
       <div
         class="document-preview-modal__viewport"
         :class="{ 'document-preview-modal__viewport--pdf': previewKind === PREVIEW_KIND.PDF && previewViewMode === 'pdf' }"
@@ -311,7 +337,7 @@ function onAfterLeave() {
           previewKind === PREVIEW_KIND.PDF ? textFallback : textContent
         }}</pre>
         <div
-          v-else-if="previewKind === PREVIEW_KIND.WORD && wordHtml"
+          v-else-if="isStructuredOfficePreviewKind(previewKind) && wordHtml"
           class="document-preview-modal__word"
           v-html="wordHtml"
         />
@@ -394,7 +420,7 @@ function onAfterLeave() {
   aspect-ratio: 210 / 297;
   width: min(720px, 100%, calc(v-bind(viewportHeight) * 210 / 297));
   max-height: v-bind(viewportHeight);
-  min-height: 280px;
+  min-height: 0;
   border-radius: calc(var(--platform-radius-sm) + 4px);
   border: 1px solid var(--platform-border);
   background: color-mix(in srgb, var(--platform-text) 3%, transparent);
@@ -404,11 +430,12 @@ function onAfterLeave() {
 .document-preview-modal__viewport--pdf {
   align-self: stretch;
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 240px;
-  max-height: v-bind(viewportHeight);
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
   height: auto;
   aspect-ratio: unset;
+  overflow: hidden;
 }
 
 .document-preview-modal__pdf {
@@ -420,7 +447,7 @@ function onAfterLeave() {
 .document-preview-modal__frame {
   width: 100%;
   height: 100%;
-  min-height: 360px;
+  min-height: 0;
   border: 0;
   background: #fff;
 }
@@ -517,21 +544,32 @@ function onAfterLeave() {
 </style>
 
 <style>
-.document-preview-modal.admin-form-modal.n-modal .n-card {
-  max-height: 96vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.document-preview-modal.admin-form-modal.n-modal .n-card__content {
-  flex: 1 1 auto;
-  min-height: 0;
+/* Naive UI card preset 将 attrs.class 合并在 .n-card.n-modal 同一节点，勿用 .n-modal .n-card 后代选择器 */
+.n-card.n-modal.document-preview-modal.admin-form-modal {
+  max-height: calc(100dvh - 32px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.document-preview-modal.admin-form-modal.n-modal .admin-form-modal__body {
+.n-card.n-modal.document-preview-modal.admin-form-modal > .n-card-header {
+  flex-shrink: 0;
+}
+
+.n-card.n-modal.document-preview-modal.admin-form-modal > .n-card-content,
+.n-card.n-modal.document-preview-modal.admin-form-modal > .n-card__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.n-card.n-modal.document-preview-modal.admin-form-modal > .n-card__footer {
+  flex-shrink: 0;
+}
+
+.n-card.n-modal.document-preview-modal.admin-form-modal .admin-form-modal__body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;

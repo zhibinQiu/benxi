@@ -95,10 +95,8 @@ def _begin_knowledge_qa_stream(
             or "请求失败"
         }
     except Exception:
-        import logging
-
-        logging.getLogger(__name__).exception("knowledge qa session begin failed")
-        return {"error": KNOWLEDGE_SERVICE_UNAVAILABLE}
+        logger.exception("knowledge qa session begin failed")
+        return {"error": "检索失败，请稍后重试。"}
 
     db.add(RagMessage(session_id=session.id, role="user", content=question))
     db.flush()

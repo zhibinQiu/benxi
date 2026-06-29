@@ -17,14 +17,15 @@ function parseEventData(event) {
 }
 
 /**
- * 订阅平台 Job SSE（/api/v1/jobs/{id}/events）
+ * 通用 Job SSE 订阅
+ * @param {string} eventsPath 如 `/api/v1/jobs/{id}/events`
  * @returns {() => void} close
  */
-export function subscribePlatformJobEvents(
-  jobId,
+export function subscribeJobEvents(
+  eventsPath,
   { onUpdate, onComplete, onError, onTimeout } = {}
 ) {
-  const es = new EventSource(buildSseUrl(`/api/v1/jobs/${jobId}/events`));
+  const es = new EventSource(buildSseUrl(eventsPath));
 
   es.addEventListener("status", (e) => {
     const data = parseEventData(e);
@@ -50,102 +51,57 @@ export function subscribePlatformJobEvents(
   return () => es.close();
 }
 
-/**
- * 订阅文档对比 Job SSE（/api/v1/compare/jobs/{id}/events）
- */
-export function subscribeCompareJobEvents(
-  jobId,
-  { onUpdate, onComplete, onError, onTimeout } = {}
-) {
-  const es = new EventSource(buildSseUrl(`/api/v1/compare/jobs/${jobId}/events`));
+/** 订阅平台 Job SSE（/api/v1/jobs/{id}/events） */
+export function subscribePlatformJobEvents(jobId, handlers = {}) {
+  return subscribeJobEvents(`/api/v1/jobs/${jobId}/events`, handlers);
+}
 
-  es.addEventListener("status", (e) => {
-    const data = parseEventData(e);
-    if (data) onUpdate?.(data);
+/** 订阅文档对比 Job SSE（/api/v1/compare/jobs/{id}/events） */
+export function subscribeCompareJobEvents(jobId, handlers = {}) {
+  return subscribeJobEvents(`/api/v1/compare/jobs/${jobId}/events`, handlers);
+}
+
+function waitJobViaSse(subscribe, jobId, { timeoutMs = 120000, timeoutMessage = "任务等待超时" } = {}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      close();
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    const close = subscribe(jobId, {
+      onComplete: (data) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(data);
+      },
+      onError: (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      },
+      onTimeout: () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(timeoutMessage));
+      },
+    });
   });
-
-  es.addEventListener("complete", (e) => {
-    const data = parseEventData(e);
-    if (data) onComplete?.(data);
-    es.close();
-  });
-
-  es.addEventListener("timeout", () => {
-    onTimeout?.();
-    es.close();
-  });
-
-  es.onerror = () => {
-    onError?.(new Error("SSE 连接中断"));
-    es.close();
-  };
-
-  return () => es.close();
 }
 
 /** Promise：等待 Job 进入终态（SSE 优先，失败时由调用方自行降级轮询） */
-export function waitPlatformJobViaSse(jobId, { timeoutMs = 120000 } = {}) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      close();
-      reject(new Error("任务等待超时"));
-    }, timeoutMs);
-
-    const close = subscribePlatformJobEvents(jobId, {
-      onComplete: (data) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(data);
-      },
-      onError: (err) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(err);
-      },
-      onTimeout: () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(new Error("任务等待超时"));
-      },
-    });
-  });
+export function waitPlatformJobViaSse(jobId, options = {}) {
+  return waitJobViaSse(subscribePlatformJobEvents, jobId, options);
 }
 
-export function waitCompareJobViaSse(jobId, { timeoutMs = 120000 } = {}) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      close();
-      reject(new Error("文档对比超时，请稍后重试"));
-    }, timeoutMs);
-
-    const close = subscribeCompareJobEvents(jobId, {
-      onComplete: (data) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(data);
-      },
-      onError: (err) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(err);
-      },
-      onTimeout: () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        reject(new Error("文档对比超时，请稍后重试"));
-      },
-    });
+export function waitCompareJobViaSse(jobId, options = {}) {
+  return waitJobViaSse(subscribeCompareJobEvents, jobId, {
+    timeoutMessage: "文档对比超时，请稍后重试",
+    ...options,
   });
 }

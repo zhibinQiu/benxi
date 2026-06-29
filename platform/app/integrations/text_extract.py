@@ -347,30 +347,39 @@ def _extract_pdf(data: bytes, *, document_id: uuid.UUID, file_name: str) -> Pars
             warning="未安装 pypdf，无法解析 PDF",
         )
 
-    reader = PdfReader(io.BytesIO(data))
-    pages: list[dict] = []
-    parts: list[str] = []
-    for i, page in enumerate(reader.pages, start=1):
-        text = (page.extract_text() or "").strip()
-        parts.append(text)
-        pages.append(
-            {
-                "page": i,
-                "text": text,
-                "blocks": [{"text": text, "bbox": None}] if text else [],
-            }
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        pages: list[dict] = []
+        parts: list[str] = []
+        for i, page in enumerate(reader.pages, start=1):
+            text = (page.extract_text() or "").strip()
+            parts.append(text)
+            pages.append(
+                {
+                    "page": i,
+                    "text": text,
+                    "blocks": [{"text": text, "bbox": None}] if text else [],
+                }
+            )
+        full = "\n\n".join(parts).strip()
+        quality = "text_layer" if full else "ocr_required"
+        warning = None if full else "PDF 无文本层，后续可进行文件内容提取"
+        return ParsedDocument(
+            document_id=document_id,
+            file_name=file_name,
+            full_text=full,
+            pages=pages,
+            parse_quality=quality,
+            warning=warning,
         )
-    full = "\n\n".join(parts).strip()
-    quality = "text_layer" if full else "ocr_required"
-    warning = None if full else "PDF 无文本层，后续可进行文件内容提取"
-    return ParsedDocument(
-        document_id=document_id,
-        file_name=file_name,
-        full_text=full,
-        pages=pages,
-        parse_quality=quality,
-        warning=warning,
-    )
+    except Exception as e:
+        return ParsedDocument(
+            document_id=document_id,
+            file_name=file_name,
+            full_text="",
+            parse_quality="failed",
+            warning=f"PDF 解析失败: {e}",
+        )
 
 
 def _extract_docx(

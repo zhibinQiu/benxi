@@ -33,8 +33,11 @@ from app.schemas.kg import (
 
 DEFAULT_ENTITY_TYPES: list[tuple[str, str, str, int]] = [
     ("org", "组织", "blue", 10),
+    ("agent", "智能体", "cyan", 15),
     ("person", "人员", "green", 20),
+    ("tool", "工具", "teal", 25),
     ("doc", "文档", "purple", 30),
+    ("skill", "技能", "indigo", 35),
     ("regulation", "法规/标准", "orange", 40),
     ("project", "项目", "pink", 50),
     ("metric", "指标", "yellow", 60),
@@ -52,6 +55,9 @@ def _invalidate_kg_cache(user_id: uuid.UUID | None = None) -> None:
 DEFAULT_RELATION_TYPES: list[tuple[str, str, int]] = [
     ("contains", "包含", 10),
     ("employs", "任职", 20),
+    ("has_tool", "拥有工具", 25),
+    ("has_skill", "绑定技能", 28),
+    ("orchestrates", "编排工具", 29),
     ("references", "引用", 30),
     ("based_on", "依据", 40),
     ("responsible", "负责", 50),
@@ -108,6 +114,20 @@ def ensure_platform_org_synced(db: Session, user: User) -> dict[str, int] | None
     from app.services.kg_system_sync_service import sync_platform_org_to_kg
 
     return sync_platform_org_to_kg(db, user)
+
+
+def ensure_platform_agent_synced(db: Session, user: User) -> dict[str, int] | None:
+    """将平台智能体及其工具、技能拓扑 upsert 到当前用户的图谱实体。"""
+    from app.services.kg_system_sync_service import sync_platform_agents_to_kg
+
+    return sync_platform_agents_to_kg(db, user)
+
+
+def ensure_platform_system_synced(db: Session, user: User) -> dict[str, int]:
+    """同步平台组织与智能体能力拓扑到图谱。"""
+    org_stats = ensure_platform_org_synced(db, user) or {}
+    agent_stats = ensure_platform_agent_synced(db, user) or {}
+    return {**org_stats, **agent_stats}
 
 
 def seed_demo_graph(db: Session, user: User) -> None:
@@ -195,7 +215,7 @@ def get_meta(db: Session, user: User, *, sync_system: bool = True) -> KgMetaOut:
 
     ensure_ontology_defaults(db)
     if sync_system:
-        ensure_platform_org_synced(db, user)
+        ensure_platform_system_synced(db, user)
     seed_demo_graph(db, user)
     db.commit()
 
@@ -361,6 +381,27 @@ def delete_entity(db: Session, user: User, entity_id: uuid.UUID) -> None:
     db.delete(row)
     db.commit()
     _invalidate_kg_cache(user.id)
+
+
+def batch_delete_entities(
+    db: Session,
+    user: User,
+    *,
+    entity_ids: list[uuid.UUID] | None = None,
+    type_id: uuid.UUID | None = None,
+    q: str | None = None,
+) -> int:
+    from app.services.kg.entity_commands import batch_delete_entities as _batch_delete
+
+    return _batch_delete(
+        db, user, entity_ids=entity_ids, type_id=type_id, q=q
+    )
+
+
+def clear_user_graph(db: Session, user: User) -> dict[str, int]:
+    from app.services.kg.entity_commands import clear_user_graph as _clear
+
+    return _clear(db, user)
 
 
 def _relation_out(db: Session, row: KgRelation) -> KgRelationOut:
@@ -798,6 +839,173 @@ def _question_entity_match_score(question: str, name: str, description: str = ""
     return score
 
 
+_PLATFORM_ORG_LIST_QUESTION_RE = re.compile(
+    r"(?:有哪些|列出|列表|全部|所有|多少|几个).{0,8}(?:用户|人员|成员|部门|组织|人)|"
+    r"(?:用户|人员|成员|部门|组织).{0,8}(?:有哪些|列表|清单|架构|树)|"
+    r"组织架构|组织树|部门架构|系统用户",
+    re.I,
+)
+
+
+def resolve_department_name_in_question(db: Session, question: str) -> str | None:
+    """从问题文本中匹配已知部门名称（最长匹配优先）。"""
+    from app.models.org import Department
+
+    q = (question or "").strip()
+    if not q:
+        return None
+    rows = list(db.scalars(select(Department).order_by(Department.name)).all())
+    matched = [d for d in rows if (d.name or "").strip() and (d.name or "").strip() in q]
+    if not matched:
+        return None
+    return max(matched, key=lambda d: len((d.name or "").strip())).name
+
+
+def list_kg_department_members(
+    db: Session,
+    user: User,
+    department_name: str,
+) -> list[tuple[str, str]]:
+    """从本体图谱 employs 关系读取部门成员（org --employs--> person）。"""
+    from app.models.kg import KgEntity, KgEntityType, KgRelation, KgRelationType
+    from app.services.kg_system_sync_service import sync_platform_org_to_kg
+
+    name = (department_name or "").strip()
+    if not name:
+        return []
+    ensure_ontology_defaults(db)
+    sync_platform_org_to_kg(db, user)
+    type_rows = {
+        t.code: t.id
+        for t in db.scalars(select(KgEntityType)).all()
+    }
+    org_type_id = type_rows.get("org")
+    person_type_id = type_rows.get("person")
+    employs_id = db.scalar(
+        select(KgRelationType.id).where(KgRelationType.code == "employs")
+    )
+    if not org_type_id or not person_type_id or not employs_id:
+        return []
+    org_ent = db.scalar(
+        select(KgEntity).where(
+            KgEntity.owner_id == user.id,
+            KgEntity.type_id == org_type_id,
+            KgEntity.name == name,
+        )
+    )
+    if not org_ent:
+        return []
+    rels = db.scalars(
+        select(KgRelation).where(
+            KgRelation.owner_id == user.id,
+            KgRelation.from_entity_id == org_ent.id,
+            KgRelation.relation_type_id == employs_id,
+        )
+    ).all()
+    members: list[tuple[str, str]] = []
+    for rel in rels:
+        person = db.get(KgEntity, rel.to_entity_id)
+        if not person or person.type_id != person_type_id:
+            continue
+        label = (person.name or "").strip()
+        if not label:
+            continue
+        desc = (person.description or "").strip()
+        members.append((label, desc))
+    return sorted(members, key=lambda item: item[0])
+
+
+def format_department_members_reply(
+    db: Session,
+    user: User,
+    question: str,
+) -> str | None:
+    """部门成员清单 — 仅输出图谱 employs 关系中的真实人员，禁止 LLM 补全。"""
+    from app.services.agent_skill_router import is_org_member_list_question
+
+    if not is_org_member_list_question(question):
+        return None
+    dept_name = resolve_department_name_in_question(db, question)
+    if not dept_name:
+        return (
+            "未能从问题中识别具体部门名称。"
+            "请说明完整部门名，例如「咨询服务部有哪些人」。"
+        )
+    members = list_kg_department_members(db, user, dept_name)
+    lines = [f"**{dept_name}成员**", ""]
+    if not members:
+        lines.append(f"在本体图谱中暂未登记 **{dept_name}** 的成员。")
+        lines.append("")
+        lines.append(
+            "若您有用户管理权限，可在「系统设置 → 用户管理」查看；"
+            "或请管理员确认该部门用户已同步至本体图谱。"
+        )
+        return "\n".join(lines)
+    for label, desc in members:
+        line = f"- {label}"
+        if desc:
+            line += f"（{desc}）"
+        lines.append(line)
+    lines.extend(["", f"共 **{len(members)}** 人（来源：本体图谱）"])
+    return "\n".join(lines)
+
+
+def try_department_members_deterministic_reply(
+    db: Session,
+    user: User,
+    question: str,
+) -> str | None:
+    """部门成员类问题：返回确定性回复，绕过 LLM 编造。"""
+    return format_department_members_reply(db, user, question)
+
+
+def build_platform_org_list_kg_context(db: Session, user: User) -> KgQaContext | None:
+    """列出图谱中已同步的平台组织/人员实体（无具体实体 mention 时）。"""
+    ensure_ontology_defaults(db)
+    ensure_platform_org_synced(db, user)
+    type_rows = {
+        t.code: t
+        for t in db.scalars(select(KgEntityType).order_by(KgEntityType.sort_order)).all()
+    }
+    org_type = type_rows.get("org")
+    person_type = type_rows.get("person")
+    if not org_type or not person_type:
+        return None
+    entities = list(
+        db.scalars(
+            select(KgEntity)
+            .where(
+                KgEntity.owner_id == user.id,
+                KgEntity.type_id.in_([org_type.id, person_type.id]),
+            )
+            .order_by(KgEntity.name)
+        ).all()
+    )
+    if not entities:
+        return None
+    entity_ids = {ent.id for ent in entities}
+    relations = list(
+        db.scalars(
+            select(KgRelation).where(
+                KgRelation.owner_id == user.id,
+                KgRelation.from_entity_id.in_(entity_ids),
+                KgRelation.to_entity_id.in_(entity_ids),
+            )
+        ).all()
+    )
+    type_map = {t.id: t for t in type_rows.values()}
+    rel_type_map = {
+        t.id: t for t in db.scalars(select(KgRelationType)).all()
+    }
+    return build_kg_qa_context(
+        entities=entities,
+        relations=relations,
+        type_map=type_map,
+        rel_type_map=rel_type_map,
+        matched_ids=entity_ids,
+    )
+
+
 def match_entities_in_question(
     db: Session,
     user: User,
@@ -981,20 +1189,21 @@ def merge_kg_qa_into_context(
     citations: list[dict],
     kg: KgQaContext | None,
 ) -> tuple[str, list[dict]]:
-    """将图谱子图上下文追加到问答检索结果后，引用编号顺延。"""
+    """合并图谱与文档检索上下文；**本体图谱优先于文档库**（顺序与引用编号）。"""
     if not kg or not (kg.context_text or "").strip():
         return context, citations
-    offset = len(citations)
-    merged_citations = list(citations)
-    for c in kg.citations:
+    kg_body = kg.context_text.strip()
+    kg_citations = [dict(c) for c in kg.citations]
+    if not context.strip() and not citations:
+        return kg_body, kg_citations
+
+    offset = len(kg_citations)
+    merged_citations = list(kg_citations)
+    for c in citations:
         item = dict(c)
         item["index"] = offset + int(c.get("index") or 0)
         merged_citations.append(item)
-    kg_body = kg.context_text.strip()
-    if context.strip():
-        merged = f"{context.strip()}\n\n{kg_body}"
-    else:
-        merged = kg_body
+    merged = f"{kg_body}\n\n{context.strip()}" if context.strip() else kg_body
     return merged, merged_citations
 
 
@@ -1008,9 +1217,14 @@ def retrieve_kg_context_for_question(
 ) -> KgQaContext | None:
     """解析问题中的实体 mention，扩展子图并格式化为问答上下文。"""
     ensure_ontology_defaults(db)
-    ensure_platform_org_synced(db, user)
+    ensure_platform_system_synced(db, user)
     seed_demo_graph(db, user)
     db.commit()
+
+    if _PLATFORM_ORG_LIST_QUESTION_RE.search(question or ""):
+        listed = build_platform_org_list_kg_context(db, user)
+        if listed is not None:
+            return listed
 
     matches = match_entities_in_question(db, user, question, limit=match_limit)
     if not matches:

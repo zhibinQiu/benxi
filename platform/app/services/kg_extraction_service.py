@@ -19,6 +19,13 @@ from app.models.document import Document, DocumentVersion
 from app.models.kg import KgEntity, KgEntityType, KgRelation, KgRelationType
 from app.models.org import User
 from app.services.compare_service import load_parsed_version
+from app.services.kg.entity_commands import clear_user_graph
+from app.services.kg.extraction_targets import (
+    SCOPE_KNOWLEDGE,
+    SCOPE_PLATFORM,
+    ExtractionTargetPlan,
+    collect_extraction_targets,
+)
 from app.services.kg_service import (
     DEFAULT_ENTITY_TYPES,
     DEFAULT_RELATION_TYPES,
@@ -171,6 +178,39 @@ def _already_extracted_for_version(
         return False
     props = row.properties or {}
     return str(props.get(EXTRACTED_VERSION_KEY) or "") == str(version_id)
+
+
+def document_kg_extraction_status(
+    db: Session,
+    user: User,
+    document_id: uuid.UUID,
+    *,
+    version_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    """文档本体抽离状态（按关联文档实体上的版本标记判断）。"""
+    from app.services.document_service import get_document
+
+    doc = get_document(db, document_id)
+    if not doc or doc.deleted_at:
+        return {"extracted": False, "reason": "document_not_found"}
+
+    version = _resolve_version(db, doc, version_id) if doc else None
+    if not version:
+        return {"extracted": False, "reason": "no_uploaded_version"}
+
+    row = find_entity_by_document_id(db, user, document_id)
+    props = dict(row.properties or {}) if row else {}
+    extracted_version_id = str(props.get(EXTRACTED_VERSION_KEY) or "") or None
+    extracted_at = props.get(EXTRACTED_AT_KEY)
+    extracted = extracted_version_id == str(version.id)
+    return {
+        "extracted": extracted,
+        "document_id": str(document_id),
+        "version_id": str(version.id),
+        "extracted_version_id": extracted_version_id,
+        "extracted_at": extracted_at,
+        "needs_update": not extracted,
+    }
 
 
 def _type_maps(db: Session) -> tuple[dict[str, KgEntityType], dict[str, KgRelationType]]:
@@ -613,7 +653,7 @@ def schedule_kg_extraction_after_index(
     user_id: uuid.UUID,
     version_id: uuid.UUID | None = None,
 ) -> None:
-    """索引成功后异步触发图谱抽取（不阻塞索引 Job）。"""
+    """单文档图谱抽取（供手动触发或兼容调用）。"""
     if not kg_extraction_enabled():
         return
     from app.core.background_executor import submit_background
@@ -625,3 +665,138 @@ def schedule_kg_extraction_after_index(
         user_id,
         version_id,
     )
+
+
+_SCOPE_LABELS = {
+    SCOPE_KNOWLEDGE: "知识库",
+    SCOPE_PLATFORM: "平台库",
+}
+
+
+def _run_kg_batch_extraction_job(
+    user_id: uuid.UUID,
+    scope: str,
+    *,
+    force: bool,
+) -> None:
+    from app.database import SessionLocal
+    from app.services.notification_service import create_notification
+
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if not user:
+            return
+        effective_force = force
+        if scope == SCOPE_KNOWLEDGE:
+            clear_user_graph(db, user)
+            effective_force = True
+        plan = collect_extraction_targets(db, user, scope=scope, force=effective_force)
+        if not plan.pending:
+            return
+        processed = 0
+        succeeded = 0
+        skipped = 0
+        for doc_id, version_id in plan.pending:
+            try:
+                result = extract_kg_from_document(
+                    db,
+                    user,
+                    doc_id,
+                    version_id=version_id,
+                    force=force,
+                )
+            except Exception:
+                logger.exception(
+                    "KG 批量抽离单文档失败 doc=%s scope=%s", doc_id, scope
+                )
+                db.rollback()
+                processed += 1
+                skipped += 1
+                continue
+            processed += 1
+            if result.get("skipped"):
+                skipped += 1
+            else:
+                succeeded += 1
+
+        label = _SCOPE_LABELS.get(scope, scope)
+        create_notification(
+            db,
+            user_id=user.id,
+            title="本体图谱抽离完成",
+            body=(
+                f"{label}增量抽离已结束：待处理 {processed} 份，"
+                f"成功 {succeeded} 份，跳过 {skipped} 份"
+                f"（已有标记 {plan.already_extracted_count} 份未重复处理）。"
+                "可在本体图谱中查看更新结果。"
+            ),
+            link="/kg-palantir",
+        )
+        db.commit()
+        logger.info(
+            "KG 批量抽离完成 scope=%s user=%s processed=%s succeeded=%s skipped=%s",
+            scope,
+            user_id,
+            processed,
+            succeeded,
+            skipped,
+        )
+    except Exception:
+        logger.exception("KG 批量抽离失败 scope=%s user=%s", scope, user_id)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def schedule_kg_batch_extraction(
+    db: Session,
+    user: User,
+    *,
+    scope: str,
+    force: bool = False,
+) -> dict[str, Any]:
+    """在本体图谱页手动触发批量抽离（后台异步执行，默认增量跳过已标记文档）。"""
+    if not kg_extraction_enabled():
+        return {"queued": False, "reason": "kg_extraction_disabled", "scope": scope}
+    if not _user_may_extract(db, user):
+        return {"queued": False, "reason": "no_kg_permission", "scope": scope}
+    if scope not in (SCOPE_KNOWLEDGE, SCOPE_PLATFORM):
+        return {"queued": False, "reason": "invalid_scope", "scope": scope}
+
+    plan = collect_extraction_targets(db, user, scope=scope, force=force)
+    if plan.total_candidates == 0:
+        return {
+            "queued": False,
+            "reason": "no_documents",
+            "scope": scope,
+            "document_count": 0,
+            "already_extracted_count": 0,
+            "total_candidates": 0,
+        }
+    if not plan.pending:
+        return {
+            "queued": False,
+            "reason": "all_extracted",
+            "scope": scope,
+            "document_count": 0,
+            "already_extracted_count": plan.already_extracted_count,
+            "total_candidates": plan.total_candidates,
+        }
+
+    from app.core.background_executor import submit_background
+
+    submit_background(
+        f"kg-batch-extract-{user.id}-{scope}",
+        _run_kg_batch_extraction_job,
+        user.id,
+        scope,
+        force=force,
+    )
+    return {
+        "queued": True,
+        "scope": scope,
+        "document_count": len(plan.pending),
+        "already_extracted_count": plan.already_extracted_count,
+        "total_candidates": plan.total_candidates,
+    }

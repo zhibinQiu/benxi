@@ -1,7 +1,8 @@
 <script setup>
 import { computed, h, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { NEmpty, NIcon, NInput, NSpin, NTag, NTree } from "naive-ui";
+import { NEmpty, NIcon, NInput, NTag, NTree } from "naive-ui";
+import PlatformSpin from "./PlatformSpin.vue";
 import {
   BusinessOutline,
   DocumentTextOutline,
@@ -18,7 +19,8 @@ import {
   knowledgeIndexTagProps,
   knowledgeScopeIndexSummary } from "../utils/knowledgeIndex.js";
 import {
-  clearKnowledgeScopeTreeCache,
+  hasKnowledgeScopeTreeItems,
+  isKnowledgeScopeTreeCacheFresh,
   readKnowledgeScopeTreeCache,
 } from "../utils/knowledgeScopeTreeCache.js";
 import {
@@ -26,6 +28,7 @@ import {
   writeKnowledgeScopeSelection,
 } from "../utils/knowledgeScopeSelectionCache.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
+import { isRouteAbortError } from "../api/client.js";
 import { KNOWLEDGE_INDEX_UPDATED_EVENT } from "../constants/platformEvents.js";
 
 const CHECKED_KEYS_STORAGE = "platform:knowledge-search-checked-keys:v2";
@@ -316,7 +319,7 @@ function syncSelectionAfterTreeUpdate() {
 function buildSelectionPayload(docNodes) {
   const totalSelected = docNodes.length;
   const readyNodes = docNodes.filter((n) => n.index_ready);
-  const documentIds = readyNodes.map((n) => n.document_id).slice(0, QA_DOC_LIMIT);
+  const documentIds = docNodes.map((n) => n.document_id).filter(Boolean).slice(0, QA_DOC_LIMIT);
   const labels = [...new Set(docNodes.map((n) => n.label).filter(Boolean))];
 
   let label = "";
@@ -351,7 +354,7 @@ async function fetchTree({
   refresh = false,
 } = {}) {
   const hadTree = treeData.value.length > 0;
-  if (background) {
+  if (background || refresh) {
     refreshing.value = true;
   }
   try {
@@ -365,6 +368,9 @@ async function fetchTree({
       syncSelectionAfterTreeUpdate();
     }
   } catch (e) {
+    if (isRouteAbortError(e)) {
+      return;
+    }
     if (!background && !treeData.value.length) {
       applyTreeData({ items: [] }, { resetSelection: true });
     }
@@ -381,12 +387,28 @@ async function loadTree() {
   if (cached) {
     applyTreeData(cached, { resetSelection: false });
     await restoreCheckedSelection();
-    void fetchTree({ background: true, refresh: false });
+    if (!isKnowledgeScopeTreeCacheFresh()) {
+      void loadKnowledgeScopeTree({ force: true, background: true }).catch(() => {});
+    }
+    return;
+  }
+  if (hasKnowledgeScopeTreeItems(treePayload.value)) {
+    await restoreCheckedSelection();
     return;
   }
   await fetchTree({ resetSelection: false });
   await restoreCheckedSelection();
 }
+
+/** 后台预取完成时 composable 已有数据，但 fetchTree 未跑过 — 补同步勾选 */
+watch(
+  () => treeData.value.length,
+  (len, prevLen) => {
+    if (len > 0 && !prevLen) {
+      syncSelectionAfterTreeUpdate();
+    }
+  }
+);
 
 async function reloadTree() {
   await fetchTree({ resetSelection: true, refresh: true });
@@ -394,11 +416,12 @@ async function reloadTree() {
 
 async function refreshTree() {
   if (loading.value || refreshing.value) return;
-  clearKnowledgeScopeTreeCache();
-  await fetchTree({ background: false, refresh: true });
+  const hadTree = treeData.value.length > 0;
+  await fetchTree({ background: hadTree, refresh: true });
 }
 
 function onKnowledgeIndexUpdated() {
+  if (refreshing.value) return;
   fetchTree({ background: true, refresh: true });
 }
 
@@ -416,14 +439,16 @@ onMounted(() => {
 
 onActivated(() => {
   const cached = readKnowledgeScopeTreeCache({ allowStale: true });
-  if (cached) {
+  if (cached && !hasKnowledgeScopeTreeItems(treePayload.value)) {
     applyTreeData(cached, { resetSelection: false });
+  }
+  if (hasKnowledgeScopeTreeItems(treePayload.value)) {
     syncSelectionAfterTreeUpdate();
-    if (!refreshing.value) {
-      void fetchTree({ background: true, refresh: false });
-    }
     if (syncCheckedKeysFromStorage()) return;
     if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
+    if (!isKnowledgeScopeTreeCacheFresh()) {
+      void loadKnowledgeScopeTree({ force: true, background: true }).catch(() => {});
+    }
     return;
   }
   if (syncCheckedKeysFromStorage()) return;
@@ -431,11 +456,7 @@ onActivated(() => {
     if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
     return;
   }
-  if (treeData.value.length) {
-    if (checkedKeys.value.length) emitSelectionForKeys(checkedKeys.value);
-    return;
-  }
-  void fetchTree({ background: true, refresh: false });
+  void fetchTree({ resetSelection: false });
 });
 
 onUnmounted(() => {
@@ -455,6 +476,7 @@ defineExpose({ reload: reloadTree });
           :tooltip="t('knowledgeSearch.tree.refreshTooltip')"
           :icon="RefreshOutline"
           :disabled="loading || refreshing"
+          :loading="refreshing"
           @click="refreshTree"
         />
       </div>
@@ -467,9 +489,10 @@ defineExpose({ reload: reloadTree });
       />
     </div>
 
-    <n-spin
+    <PlatformSpin
       :show="loading && !displayTree.length"
       class="knowledge-scope-tree__spin"
+      local
     >
       <n-tree
         v-if="displayTree.length"
@@ -489,9 +512,7 @@ defineExpose({ reload: reloadTree });
         size="small"
         :description="t('knowledgeSearch.tree.empty')"
       />
-    </n-spin>
-
-    <p v-if="refreshing" class="knowledge-scope-tree__hint">{{ t("knowledgeSearch.tree.refreshing") }}</p>
+    </PlatformSpin>
   </div>
 </template>
 
@@ -580,15 +601,5 @@ defineExpose({ reload: reloadTree });
 
 .knowledge-scope-tree__node-tag {
   flex-shrink: 0;
-}
-
-.knowledge-scope-tree__hint {
-  flex-shrink: 0;
-  margin: 0;
-  padding: 8px 12px 12px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--platform-text-tertiary);
-  border-top: 1px solid var(--platform-border);
 }
 </style>

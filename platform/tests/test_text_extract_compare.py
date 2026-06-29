@@ -41,3 +41,16 @@ def test_extract_image_requests_ocr():
     )
     assert parsed.parse_quality == "ocr_required"
     assert parsed.full_text == ""
+
+
+def test_extract_corrupt_pdf_returns_failed_not_raise():
+    doc_id = uuid.uuid4()
+    parsed = extract_text_from_bytes(
+        b"%PDF-1.4 not-a-real-pdf",
+        document_id=doc_id,
+        file_name="broken.pdf",
+        mime_type="application/pdf",
+    )
+    assert parsed.parse_quality == "failed"
+    assert parsed.full_text == ""
+    assert parsed.warning

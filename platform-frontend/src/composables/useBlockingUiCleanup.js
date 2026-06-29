@@ -11,7 +11,7 @@ export function useBlockingUiCleanup() {
   });
 
   watch(
-    () => route.name,
+    () => route.fullPath,
     () => {
       cleanupBlockingUiArtifacts({ aggressive: true });
     },

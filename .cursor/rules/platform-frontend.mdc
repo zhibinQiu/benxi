@@ -1,9 +1,6 @@
 ---
-description: 平台前端编码规范（Vue 3 + Naive UI）
-globs: platform-frontend/**
-alwaysApply: false
+alwaysApply: true
 ---
-
 # 平台前端编码规范
 
 ## 分层与导入

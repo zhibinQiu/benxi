@@ -14,6 +14,8 @@ from app import __version__
 from app.api import (
     agent_profiles,
     agent_skills,
+    aip,
+    aip_admin,
     assistant,
     auth,
     chat_history,
@@ -34,15 +36,14 @@ from app.api import (
 from app.api import embed_proxy as embed_proxy_api
 from app.config import get_settings
 from app.core.exceptions import AppError, service_unavailable
-from app.database import SessionLocal, engine
 from app.db_bootstrap import bootstrap_database
 from app.features.registry import ensure_plugins_loaded, mount_routers
 from app.models import (  # noqa: F401 — register ORM models
     agent_skill,
     agent_skill_binding,
     agent_profile_binding,
+    aip_secret_key,
     audit,
-    carbon_market,
     compare,
     document,
     document_version_compare,
@@ -65,7 +66,6 @@ from app.models import (  # noqa: F401 — register ORM models
     wechat_mp,
 )
 from app.schemas.common import ApiResponse
-from app.services.carbon_market_sync_scheduler import start_cea_history_scheduler
 from app.services.knowflow_queue_watchdog_service import start_knowflow_queue_watchdog
 from app.services.job_watchdog_service import start_background_job_watchdog
 
@@ -73,8 +73,6 @@ _logger = logging.getLogger(__name__)
 
 
 def _bootstrap_database_with_retry() -> None:
-    import time
-
     from sqlalchemy.exc import OperationalError
 
     settings = get_settings()
@@ -83,7 +81,7 @@ def _bootstrap_database_with_retry() -> None:
     last_exc: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
-            bootstrap_database(engine)
+            bootstrap_database()
             return
         except OperationalError as exc:
             last_exc = exc
@@ -124,7 +122,7 @@ def _check_database_cached() -> bool:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    _bootstrap_database_with_retry()
+    await asyncio.to_thread(_bootstrap_database_with_retry)
     from app.services.data_analysis_profile import warn_if_data_analysis_deps_missing
 
     warn_if_data_analysis_deps_missing()
@@ -162,7 +160,6 @@ async def lifespan(_app: FastAPI):
     submit_background(
         "recover-scheduled-notifications", _recover_scheduled_notifications_background
     )
-    sync_task = start_cea_history_scheduler()
     watchdog_task = start_knowflow_queue_watchdog()
     job_watchdog_task = start_background_job_watchdog()
     try:
@@ -178,13 +175,10 @@ async def lifespan(_app: FastAPI):
             await watchdog_task
         except asyncio.CancelledError:
             pass
-        sync_task.cancel()
-        try:
-            await sync_task
-        except asyncio.CancelledError:
-            pass
         from app.core.background_executor import shutdown_background_executor
+        from app.services.auth_session_service import shutdown_last_seen_executor
 
+        shutdown_last_seen_executor()
         shutdown_background_executor(wait=False)
 
 
@@ -354,6 +348,8 @@ def create_app() -> FastAPI:
     app.include_router(menu_settings.router, prefix=prefix)
     app.include_router(agent_skills.router, prefix=prefix)
     app.include_router(agent_profiles.router, prefix=prefix)
+    app.include_router(aip.router, prefix=prefix)
+    app.include_router(aip_admin.router, prefix=prefix)
     from app.api import browser_rpa
 
     app.include_router(browser_rpa.router, prefix=prefix)

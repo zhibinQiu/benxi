@@ -12,6 +12,7 @@ from app.main import create_app
 def _ensure_version_compare_tables():
     from app.database import engine
     from app.schema_migrate import (
+        ensure_aip_secret_keys_schema,
         ensure_document_version_change_description,
         ensure_kg_schema,
         ensure_subscription_item_removal_schema,
@@ -21,6 +22,7 @@ def _ensure_version_compare_tables():
         ensure_document_version_blocks_schema,
     )
 
+    ensure_aip_secret_keys_schema(engine)
     ensure_document_version_change_description(engine)
     ensure_version_compare_schema(engine)
     ensure_version_compare_llm_summary_schema(engine)

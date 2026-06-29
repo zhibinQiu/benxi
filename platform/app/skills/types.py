@@ -63,6 +63,11 @@ class SkillDefinition:
     source_type: str | None = None
     catalog_visible: bool = True
     """是否出现在技能目录与管理页；单原子工具映射为 False，仅保留内部 handler。"""
+    catalog_tier: str = "resident"
+    """resident=常驻目录；extended=按需 search_skills 或用户点名；hidden=不展示。"""
+    use_when: str = ""
+    dont_use_when: str = ""
+    output: str = ""
 
 
 @dataclass(slots=True)

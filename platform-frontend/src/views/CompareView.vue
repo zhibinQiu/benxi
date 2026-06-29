@@ -2093,7 +2093,7 @@ async function scrollToDiffItem(d) {
 }
 .compare-mode-icon--version {
   background: rgba(96, 165, 250, 0.18);
-  color: #2563eb;
+  color: var(--platform-accent);
 }
 .compare-mode-icon--cross {
   background: color-mix(in srgb, var(--platform-accent) 15%, transparent);

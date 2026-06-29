@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import bad_request
 from app.core.prompt_budget import build_bounded_chat_messages, llm_completion_extras
-from app.core.platform_assistant import assistant_support_persona
+from app.core.platform_assistant import assistant_support_persona, assistant_user_communication_style
 from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.models.org import User
 from app.schemas.assistant import AssistantChatMessage
@@ -34,7 +34,8 @@ async def chat_with_assistant(
             "【平台知识库】\n"
             f"{knowledge}\n\n"
             "请严格依据知识库回答。若问题超出平台使用范围，礼貌说明并建议联系系统管理员。"
-            "回答使用简体中文，结构清晰，可使用简短 Markdown；提及助手时统一自称「小析」。"
+            "提及助手时统一自称「小析」。\n"
+            f"{assistant_user_communication_style()}"
         ),
         history=history,
         user_message=message,

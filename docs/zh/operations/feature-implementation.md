@@ -1,4 +1,4 @@
-# 功能实现说明（v4.3.1）
+# 功能实现说明（v4.5.0）
 
 > **本文说明各功能如何运转**，含关键方法与提示词落点。  
 > 架构分层见 [系统架构](architecture.md)；Agent Skills 详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)（含 §10 Prompt、§11 调用链）。
@@ -15,6 +15,7 @@
 | [§4](#4-knowflow--知识库) | 知识库、检索、图谱、AI 智能体 |
 | [§5–§13](#5-pdf-翻译) | 翻译、对比、语音、任务等 |
 | [§14](#14-agent-skills-管理) | Agent Skills 管理 |
+| [§15](#15-aip-智能体互联v450) | AIP 智能体互联 |
 | [§16](#16-postgresql-读写分离) | PostgreSQL 读写分离 |
 
 **常见术语**：**JWT** = 登录后颁发的访问凭证；**RBAC** = 按角色分配功能权限；**MinIO** = 存文件的 object 存储；**Celery** = 后台异步任务 worker；**SSE** = 浏览器实时接收服务端推送（用于对话流式输出）。
@@ -96,7 +97,7 @@
 | scope | 界面 Tab | 组织绑定 | 可见规则（简述） |
 |-------|----------|----------|------------------|
 | personal | 个人级 | 不绑定组织 | 仅 owner；系统管理员可见全部 |
-| team | 小组级 | depth=2 | 绑定节点子孙子树 + `doc.read` |
+| team | 分部级 | depth=2 | 绑定节点子孙子树 + `doc.read` |
 | department | 部门级 | depth=1 | 同上 |
 | company | 公司级 | depth=0（根） | 同上 |
 | （虚拟）分享 | 分享 | — | 他人 grant 且非 scope 默认可见的文档 |
@@ -220,7 +221,7 @@ System 提示词、Agentic 规划 JSON、优化预设详见 [报告生成实现]
 2. 调用了检索时显示 workflow 步骤（`agent_thinking` / `tool_call` / `tool_result`）；  
 3. 回答中带 `[1][2]` 引用，底部展示来源卡片。
 
-**后端实现（v4.3.1）**：
+**后端实现（v4.5.0）**：
 
 | 环节 | 方法 / 模块 | 做法 |
 |------|-------------|------|
@@ -340,7 +341,6 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 | carbon_qa | 领域问答 |
 | ocr | 文件内容提取 |
 | speech_to_text | 会议转写 |
-| assist_writing | 辅助写作 |
 | data_analysis | 数据分析 Notebook |
 | agent_skills | Agent Skills 管理（内置启停、上传包、记忆） |
 | knowflow 相关 | 切片管理、编码管理等 |
@@ -415,6 +415,22 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 **上传后如何生效**：启用 → `build_agent_catalog_prompt` 写入 Discovery 目录 → 模型在任务匹配时调用 `load_uploaded_skill`。
 
 示例包：`examples/agent-skills/mermaid-diagram/`（教模型如何输出 Mermaid 图）。
+
+---
+
+## 15. AIP 智能体互联（v4.5.0）
+
+**面向谁**：需与外部智能体互通的部署方；管理员配置 SK 密钥与外部智能体登记。
+
+| 能力 | 说明 |
+|------|------|
+| 发现 | `GET /api/v1/aip/discover` — 列出内置专精与已登记外部智能体（ACDL） |
+| 调用 | `POST /api/v1/aip/interact` / `interact/stream` — 同步或流式 handoff |
+| SK 密钥 | `GET/POST/DELETE /api/v1/admin/aip/keys` — GB/Z 185.3 身份密钥 |
+| 外部登记 | Agent Skills 管理页 — `/admin/agent-skills/external-agents` |
+| 执行层 | `agent_aip_executor` — supervisor 调度内置 hop 或外部 HTTP |
+
+配置项：`AIP_ENABLED`、`AIP_SERVICE_BASE_URL`、`AIP_EXTERNAL_AGENTS_JSON`（见 `platform/.env.example`）。
 
 ---
 

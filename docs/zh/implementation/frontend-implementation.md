@@ -68,7 +68,7 @@ platform-frontend/src/
 |------|----------|
 | `fetchParserOptions` | `GET /knowledge/parsers` → 含 `defaults.parser_id`（后端重索引默认） |
 | `reindexDocument` | `POST .../reindex`；`parser_id` 仅在有值时写入 body，否则由后端 Schema `default_factory` 填充 |
-| `knowledgeQaChatSend` | 无 session 时先 `createKnowledgeQaSession` |
+| `knowledgeQaChatStream` | 复用 `createPlatformChatStream`（`api/rag.js`），参数映射 `documentIds` → `document_ids` |
 
 ### 4.2 `useDocumentReindex.js`
 

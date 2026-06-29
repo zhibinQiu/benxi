@@ -1,5 +1,14 @@
 import { computed, ref, watch } from "vue";
-import { normalizeColorScheme } from "../constants/colorSchemes.js";
+import {
+  COLOR_SCHEME_CUSTOM,
+  DEFAULT_COLOR_SCHEME,
+  normalizeColorScheme,
+} from "../constants/colorSchemes.js";
+import {
+  applyCustomColorTokens,
+  clearCustomColorTokens,
+  normalizePrimaryColor,
+} from "../utils/customColorTokens.js";
 import { prefersDarkColorScheme, subscribeMediaQuery } from "../utils/mediaQuery.js";
 
 const STORAGE_THEME = "platform-theme";
@@ -9,7 +18,8 @@ const STORAGE_LOCALE = "platform-locale";
 let serverDefaultTheme = "system";
 let systemThemeListenerBound = false;
 
-const colorScheme = ref("purple");
+const colorScheme = ref(DEFAULT_COLOR_SCHEME);
+const customPrimaryColor = ref(normalizePrimaryColor());
 
 function resolveThemeFromDefault(defaultTheme) {
   if (defaultTheme === "light" || defaultTheme === "dark") return defaultTheme;
@@ -46,8 +56,15 @@ function applyThemeToDocument(value) {
   document.documentElement.setAttribute("data-theme", value);
 }
 
-function applyColorSchemeToDocument(value) {
-  const scheme = normalizeColorScheme(value);
+function syncColorSchemeToDocument() {
+  const scheme = normalizeColorScheme(colorScheme.value);
+  const isDarkMode = theme.value === "dark";
+  clearCustomColorTokens();
+  if (scheme === COLOR_SCHEME_CUSTOM) {
+    document.documentElement.setAttribute("data-color-scheme", "custom");
+    applyCustomColorTokens(customPrimaryColor.value, isDarkMode);
+    return;
+  }
   if (scheme === "blue") {
     document.documentElement.setAttribute("data-color-scheme", "blue");
   } else {
@@ -69,7 +86,8 @@ export function initAppFromServerConfig(config) {
     theme.value = resolveThemeFromDefault(serverDefaultTheme);
   }
   colorScheme.value = normalizeColorScheme(config?.color_scheme);
-  applyColorSchemeToDocument(colorScheme.value);
+  customPrimaryColor.value = normalizePrimaryColor(config?.primary_color);
+  syncColorSchemeToDocument();
   bindSystemThemeListener();
 }
 
@@ -77,12 +95,17 @@ watch(
   theme,
   (value) => {
     applyThemeToDocument(value);
+    syncColorSchemeToDocument();
     if (localStorage.getItem(STORAGE_THEME_EXPLICIT) === "1") {
       localStorage.setItem(STORAGE_THEME, value);
     }
   },
   { immediate: true }
 );
+
+watch([colorScheme, customPrimaryColor], () => {
+  syncColorSchemeToDocument();
+});
 
 watch(
   locale,
@@ -122,6 +145,7 @@ export function useAppPreferences() {
     theme,
     locale,
     colorScheme,
+    customPrimaryColor,
     isDark,
     toggleTheme,
     toggleLocale,

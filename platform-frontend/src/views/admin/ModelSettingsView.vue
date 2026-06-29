@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import {
   NAlert,
   NButton,
+  NColorPicker,
   NDrawer,
   NDrawerContent,
   NForm,
@@ -40,6 +41,8 @@ import {
 import { setApiBase } from "../../api/http";
 import { applyClientBranding } from "../../composables/usePlatformBranding";
 import { initAppFromServerConfig } from "../../composables/useAppPreferences";
+import { COLOR_SCHEME_CUSTOM, DEFAULT_COLOR_SCHEME } from "../../constants/colorSchemes.js";
+import { DEFAULT_CUSTOM_PRIMARY, normalizePrimaryColor } from "../../utils/customColorTokens.js";
 import { useI18n } from "../../composables/useI18n";
 import ListRefreshButton from "../../components/ListRefreshButton.vue";
 
@@ -59,7 +62,8 @@ const form = reactive({
   platform_api_base_url: "",
   frontend_app_title: "",
   frontend_default_theme: "system",
-  frontend_color_scheme: "purple",
+  frontend_color_scheme: DEFAULT_COLOR_SCHEME,
+  frontend_primary_color: DEFAULT_CUSTOM_PRIMARY,
   llm_base_url: "",
   llm_model: "",
   llm_api_key: "",
@@ -149,6 +153,7 @@ const themeOptions = computed(() => [
 const colorSchemeOptions = computed(() => [
   { label: t("admin.modelSettings.colorScheme.purple"), value: "purple" },
   { label: t("admin.modelSettings.colorScheme.blue"), value: "blue" },
+  { label: t("admin.modelSettings.colorScheme.custom"), value: "custom" },
 ]);
 
 const resourceDefs = computed(() =>
@@ -189,7 +194,8 @@ function fillForm(data) {
   form.platform_api_base_url = data?.platform_api_base_url || "";
   form.frontend_app_title = data?.frontend_app_title || "";
   form.frontend_default_theme = data?.frontend_default_theme || "system";
-  form.frontend_color_scheme = data?.frontend_color_scheme || "purple";
+  form.frontend_color_scheme = data?.frontend_color_scheme || DEFAULT_COLOR_SCHEME;
+  form.frontend_primary_color = normalizePrimaryColor(data?.frontend_primary_color);
   form.llm_base_url = data?.llm?.base_url || "";
   form.llm_model = data?.llm?.model_name || "";
   form.llm_api_key = data?.llm?.api_key_masked || "";
@@ -248,8 +254,12 @@ function resourceSummary(id) {
         themeOptions.value.find((item) => item.value === data.frontend_default_theme)?.label ||
         t("admin.modelSettings.theme.systemShort");
       const schemeLabel =
-        colorSchemeOptions.value.find((item) => item.value === data.frontend_color_scheme)
-          ?.label || t("admin.modelSettings.colorScheme.purpleShort");
+        data.frontend_color_scheme === COLOR_SCHEME_CUSTOM
+          ? t("admin.modelSettings.colorScheme.customShort", {
+              color: normalizePrimaryColor(data.frontend_primary_color),
+            })
+          : colorSchemeOptions.value.find((item) => item.value === data.frontend_color_scheme)
+              ?.label || t("admin.modelSettings.colorScheme.blueShort");
       const title = data.frontend_app_title || t("admin.modelSettings.summary.systemName");
       return `${title} · ${schemeLabel} · ${themeLabel}`;
     }
@@ -437,7 +447,12 @@ function buildPayloadFor(id) {
       return {
         frontend_app_title: form.frontend_app_title.trim(),
         frontend_default_theme: form.frontend_default_theme || "system",
-        frontend_color_scheme: form.frontend_color_scheme || "purple"};
+        frontend_color_scheme: form.frontend_color_scheme || DEFAULT_COLOR_SCHEME,
+        frontend_primary_color:
+          form.frontend_color_scheme === COLOR_SCHEME_CUSTOM
+            ? normalizePrimaryColor(form.frontend_primary_color)
+            : "",
+      };
     case "llm":
       return {
         llm_base_url: form.llm_base_url.trim(),
@@ -567,10 +582,20 @@ async function saveActive() {
       applyClientBranding({
         app_title: form.frontend_app_title.trim(),
         default_theme: form.frontend_default_theme,
-        color_scheme: form.frontend_color_scheme});
+        color_scheme: form.frontend_color_scheme,
+        primary_color:
+          form.frontend_color_scheme === COLOR_SCHEME_CUSTOM
+            ? normalizePrimaryColor(form.frontend_primary_color)
+            : "",
+      });
       initAppFromServerConfig({
         default_theme: form.frontend_default_theme,
-        color_scheme: form.frontend_color_scheme});
+        color_scheme: form.frontend_color_scheme,
+        primary_color:
+          form.frontend_color_scheme === COLOR_SCHEME_CUSTOM
+            ? normalizePrimaryColor(form.frontend_primary_color)
+            : "",
+      });
       ui.success(t("admin.modelSettings.messages.savedFrontend"));
     } else {
       ui.success(t("admin.modelSettings.messages.savedDefault"));
@@ -591,14 +616,11 @@ onMounted(loadAll);
 <template>
   <div class="resource-settings-page feature-page">
     <div class="page-toolbar feature-local-nav">
-      <n-space>
-        <ListRefreshButton :loading="loading" @click="loadAll" />
-        <ListRefreshButton
-          :label="t('admin.modelSettings.refreshStatus')"
-          :loading="healthLoading"
-          @click="loadHealth"
-        />
-      </n-space>
+      <ListRefreshButton
+        :label="t('admin.modelSettings.refreshStatus')"
+        :loading="healthLoading"
+        @click="loadHealth"
+      />
     </div>
 
     <section
@@ -608,7 +630,7 @@ onMounted(loadAll);
       :style="{
         '--cat-accent':
           group.id === 'platform'
-            ? '#2563eb'
+            ? '#0067ff'
             : group.id === 'model'
               ? '#6366f1'
               : group.id === 'knowledge'
@@ -709,6 +731,16 @@ onMounted(loadAll);
                 :options="colorSchemeOptions"
               />
             </n-form-item>
+            <n-form-item
+              v-if="form.frontend_color_scheme === 'custom'"
+              :label="t('admin.modelSettings.labels.primaryColor')"
+            >
+              <n-color-picker
+                v-model:value="form.frontend_primary_color"
+                :modes="['hex']"
+                :show-alpha="false"
+              />
+            </n-form-item>
             <div
               class="drawer-hint"
               v-html="t('admin.modelSettings.hints.frontend')"
@@ -795,13 +827,13 @@ onMounted(loadAll);
             <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
               <n-input
                 v-model:value="form.rerank_base_url"
-                :placeholder="t('admin.modelSettings.placeholders.rerankOptional')"
+                :placeholder="t('admin.modelSettings.placeholders.rerankApiUrl')"
               />
             </n-form-item>
             <n-form-item :label="t('admin.modelSettings.labels.modelName')">
               <n-input
                 v-model:value="form.rerank_model"
-                :placeholder="t('admin.modelSettings.placeholders.rerankOptional')"
+                :placeholder="t('admin.modelSettings.placeholders.rerankModel')"
               />
             </n-form-item>
             <n-form-item :label="t('admin.modelSettings.labels.apiKey')">

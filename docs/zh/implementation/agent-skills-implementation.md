@@ -1,7 +1,7 @@
 # Agent Skills 实现说明
 
 > **适用读者**：产品经理、运维、后端/前端开发  
-> **版本**：v4.3.2 · [开发说明书总览](../development/implementation-manual.md)  
+> **版本**：v4.5.0 · [开发说明书总览](../development/implementation-manual.md)  
 > **配套阅读**：[功能实现说明 §4.8 / §14](../operations/feature-implementation.md)（偏业务视角）
 
 ---
@@ -39,7 +39,7 @@
 
 ---
 
-## 1. 实现总览（v4.3.2）
+## 1. 实现总览（v4.5.0）
 
 AI 首页对话采用 **Discovery + Activation** 两阶段：
 
@@ -251,14 +251,34 @@ sequenceDiagram
 
 ### 10.3 Discovery 目录提示词（`catalog.build_agent_catalog_prompt`）
 
-动态生成 Markdown 块，结构为：
+常驻目录仅含 **catalog_tier=resident** 的高频 Skill，格式为路由条件而非功能介绍：
 
-1. `## Skills 目录（技能 · 选用规则）`  
-2. `### 何时调用原子工具` — 列举 `web_search` / `knowledge_retrieve` / `kg_query` 及发展技能相关工具  
-3. `### 内置技能` — 每项含编排的原子工具列表  
-4. `### 发展技能` — 上传 / Agent 生成包摘要
+```
+- `knowledge-research` [builtin] — Use when: … | Don't: … | Output: …
+```
 
-仅包含 `readiness` 为 `ready` 或 `stub` 且用户有权限的 Skill；`disabled` / `no_permission` 不出现。
+加载规则（亦写入 `agent_resident`）：
+
+1. 每次回复前扫描 `available_skills`
+2. 明确匹配才加载 SKILL.md；多匹配取最具体；无匹配不加载
+3. 一次只加载一个
+
+低频内置能力不在常驻列表；`search_tools` 可返回 extended Skill 路由摘要。
+
+### 10.3.1 工具动态发现（`agent_tool_search.py`）
+
+| 机制 | 说明 |
+|------|------|
+| `search_tools` | 主 Agent 默认可见；按关键词返回工具定义 + 示例，并解锁工具名 |
+| `run_tool_batch` | 批量执行只读/检索工具，中间结果不进 LLM 上下文 |
+| `CORE_TOOL_NAMES` | 检索、记忆、run_skill_script 等高频工具默认可用 |
+| `TOOL_USE_EXAMPLES` | 各工具 1–5 条真实调用示例，附在 spec.examples |
+
+专精子 Agent 仍使用 `allowed_tool_names` 白名单（工具集较小，不强制 search）。
+
+### 10.3.2 外部写入限速
+
+常驻 system 提示要求：批量写入、避免逐条循环、HTTP 429 等待重试。
 
 ### 10.4 附件上下文指令（`agent_intent.py`）
 

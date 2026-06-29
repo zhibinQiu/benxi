@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.permissions import PermissionLevel, can_access_document
@@ -20,6 +20,29 @@ def _has_uploaded_version_exists():
             DocumentVersion.document_id == Document.id,
             DocumentVersion.file_size > 0,
         )
+    )
+
+
+def _document_title_or_filename_matches(keyword: str | None):
+    """标题或当前/任意版本文件名包含关键词。"""
+    kw = (keyword or "").strip()
+    if not kw:
+        return None
+    pattern = f"%{kw}%"
+    return or_(
+        Document.title.ilike(pattern),
+        exists(
+            select(1).where(
+                DocumentVersion.id == Document.current_version_id,
+                DocumentVersion.file_name.ilike(pattern),
+            )
+        ),
+        exists(
+            select(1).where(
+                DocumentVersion.document_id == Document.id,
+                DocumentVersion.file_name.ilike(pattern),
+            )
+        ),
     )
 
 
@@ -78,7 +101,9 @@ def list_shared_documents(
         Document.owner_id != user.id,
     )
     if keyword:
-        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+        title_filter = _document_title_or_filename_matches(keyword)
+        if title_filter is not None:
+            stmt = stmt.where(title_filter)
     stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible: list[tuple[Document, dict[str, str | None]]] = []
@@ -146,7 +171,9 @@ def filter_accessible_documents(
                 else:
                     stmt = stmt.where(Document.id.is_(None))
     if keyword:
-        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+        title_filter = _document_title_or_filename_matches(keyword)
+        if title_filter is not None:
+            stmt = stmt.where(title_filter)
     if uncategorized_only:
         stmt = stmt.where(Document.folder_id.is_(None))
     elif folder_id is not None:
@@ -207,7 +234,9 @@ def list_all_visible_documents(
         Document.status == DocumentStatus.active.value,
     )
     if keyword:
-        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+        title_filter = _document_title_or_filename_matches(keyword)
+        if title_filter is not None:
+            stmt = stmt.where(title_filter)
     stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible = filter_documents_for_list(
@@ -236,7 +265,9 @@ def list_queryable_documents(
         Document.status == DocumentStatus.active.value,
     )
     if keyword:
-        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+        title_filter = _document_title_or_filename_matches(keyword)
+        if title_filter is not None:
+            stmt = stmt.where(title_filter)
     stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible = filter_documents_for_list(
@@ -267,7 +298,9 @@ def list_my_shared_out_documents(
         Document.owner_id == user.id,
     )
     if keyword:
-        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+        title_filter = _document_title_or_filename_matches(keyword)
+        if title_filter is not None:
+            stmt = stmt.where(title_filter)
     stmt = stmt.where(_has_uploaded_version_exists())
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     visible: list[tuple[Document, dict]] = []
@@ -317,7 +350,9 @@ def list_recycle_documents(
         )
     )
     if keyword:
-        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+        title_filter = _document_title_or_filename_matches(keyword)
+        if title_filter is not None:
+            stmt = stmt.where(title_filter)
     candidates = list(
         db.scalars(stmt.order_by(Document.deleted_at.desc())).all()
     )
@@ -349,7 +384,9 @@ def _list_documents_with_current_version(
         )
     )
     if keyword:
-        stmt = stmt.where(Document.title.ilike(f"%{keyword}%"))
+        title_filter = _document_title_or_filename_matches(keyword)
+        if title_filter is not None:
+            stmt = stmt.where(title_filter)
     candidates = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
     filtered = filter_documents_for_list(
         db,

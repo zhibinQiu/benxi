@@ -26,7 +26,7 @@
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `ZHITAN_VERSION` | 4.3.1（见根目录 `VERSION`） | 自有镜像 tag |
+| `ZHITAN_VERSION` | 4.5.0（见根目录 `VERSION`） | 自有镜像 tag |
 | `DATA_ROOT` | ./data | 持久化根目录 |
 | `FRONTEND_PORT` | 40005 | 唯一对外 Web 端口 |
 | `STACK_USE_MIRROR` | 1 | 启用 compose.mirror.yaml |
@@ -39,8 +39,45 @@
 |------|------|
 | `POSTGRES_*` | 平台库账号（compose 注入 `DATABASE_URL`） |
 | `DATABASE_READ_URL` | 可选只读副本；留空则读写均走 `DATABASE_URL` |
-| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | SQLAlchemy 连接池（主库与副本各自独立池） |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | SQLAlchemy 连接池（主库与副本各自独立池）；**生产单机默认见下方档位 C** |
 | `MINIO_ROOT_*` | 对象存储；与 KnowFlow 对齐时可改 |
+
+### 单机生产档位 C（200 在线 / 瞬时 ~100–150 打 DB）
+
+`compose.yaml` 与 `compose.server.yaml` 已内置下列值（**覆盖** `platform/.env` 中同名变量）。本地 `dev.sh local` 仍用 `platform/.env` 的 20/20。
+
+| 组件 | 配置 | PG 连接预算 |
+|------|------|-------------|
+| **postgres** | `max_connections=220`，`shared_buffers=512MB` | 上限 220 |
+| **api** | uvicorn `--workers 6`，`mem_limit 4g` | 6×(12+8)=**120** |
+| **api 环境** | `DB_POOL_SIZE=12`，`DB_MAX_OVERFLOW=8`，`DB_POOL_TIMEOUT=15` | 同上 |
+| **api 流式** | `STREAM_MAX_CONCURRENT_PER_WORKER=12`，`STREAM_ACQUIRE_TIMEOUT=5` | 每 worker 独立计数 |
+| **worker** | Celery `--concurrency 12` | 1×(10+5)=**15** |
+| **worker 环境** | `DB_POOL_SIZE=10`，`DB_MAX_OVERFLOW=5` | 同上 |
+
+应用后重启：
+
+```bash
+./dev.sh sync              # 服务器：同步后端 + 重建 API/Worker（含档位 C）
+./dev.sh sync --all        # 同上 + 前端 build + nginx reload
+./dev.sh local restart     # 本机：重启 API + Vite + Worker
+```
+
+或手动：
+
+```bash
+bash scripts/stack.sh restart api worker   # 若 stack 支持
+bash scripts/stack.sh up -d --force-recreate postgres api worker
+```
+
+压测（需 API 已启动）：
+
+```bash
+cd platform
+python scripts/stress_test_throughput.py --concurrency 80 --parse-jobs 80
+```
+
+硬件建议：**≥8 核 CPU、≥16GB RAM**（含 KnowFlow profile 时建议 32GB）。
 
 ### KnowFlow
 

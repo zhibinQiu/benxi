@@ -17,8 +17,8 @@ register(
         permission_code="feature.ai_home",
         permission_name="本析智能",
         enabled=True,
-        category="ai",
-        sort_order=1,
+        category="tools",
+        sort_order=8,
         grant_to_roles=("sys_admin", "member", "member"),
     )
 )

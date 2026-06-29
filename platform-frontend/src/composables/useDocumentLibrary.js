@@ -10,6 +10,7 @@ const library = ref(null);
 const loading = ref(false);
 const loaded = ref(false);
 let loadPromise = null;
+let libraryLoadSeq = 0;
 
 function applyLibrarySideEffects(lib) {
   if (lib) applyUploadLimitsFromLibrary(lib);
@@ -34,22 +35,27 @@ export function useDocumentLibrary() {
     if (!background) {
       loading.value = true;
     }
+    const seq = ++libraryLoadSeq;
     loadPromise = (async () => {
       try {
         const lib = await fetchDocumentLibrary();
+        if (seq !== libraryLoadSeq) return library.value;
         library.value = lib;
         writeDocumentsLibraryCache(lib);
         applyLibrarySideEffects(lib);
         loaded.value = true;
         return lib;
       } catch (e) {
+        if (seq !== libraryLoadSeq) throw e;
         if (!background) {
           loaded.value = false;
         }
         throw e;
       } finally {
-        loading.value = false;
-        loadPromise = null;
+        if (seq === libraryLoadSeq) {
+          loading.value = false;
+          loadPromise = null;
+        }
       }
     })();
     return loadPromise;

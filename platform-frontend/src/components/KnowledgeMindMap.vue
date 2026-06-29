@@ -1,8 +1,9 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
-import { NIcon, NSpin } from "naive-ui";
+import { NIcon } from "naive-ui";
 import { ExpandOutline } from "@vicons/ionicons5";
 import AdminFormModal from "./AdminFormModal.vue";
+import PlatformSpin from "./PlatformSpin.vue";
 import { useI18n } from "../composables/useI18n.js";
 import { renderMermaidSvg } from "../utils/mermaidRender.js";
 import { buildMindmapFromAnswer } from "../utils/knowledgeMindmap.js";
@@ -129,6 +130,7 @@ watch(
     source.value = "";
     error.value = "";
     expandOpen.value = false;
+    loading.value = false;
     disconnectVisibilityObserver();
   }
 );
@@ -157,7 +159,7 @@ defineExpose({ loadMindmap, getMermaidSource });
 
 <template>
   <div ref="rootRef" class="knowledge-mindmap" @click="onBlankClick">
-    <n-spin :show="loading" local>
+    <PlatformSpin :show="loading" local class="knowledge-mindmap__spin">
       <div
         v-if="svgHtml"
         class="knowledge-mindmap__canvas knowledge-mindmap__canvas--expandable"
@@ -190,7 +192,7 @@ defineExpose({ loadMindmap, getMermaidSource });
       >
         点击生成思维导图
       </button>
-    </n-spin>
+    </PlatformSpin>
 
     <AdminFormModal
       v-model:show="expandOpen"
@@ -205,6 +207,16 @@ defineExpose({ loadMindmap, getMermaidSource });
 <style scoped>
 .knowledge-mindmap {
   width: 100%;
+  min-height: 200px;
+}
+
+.knowledge-mindmap__spin {
+  display: block;
+  width: 100%;
+  min-height: inherit;
+}
+
+.knowledge-mindmap__spin :deep(.n-spin-container) {
   min-height: 200px;
 }
 

@@ -19,11 +19,13 @@ import { shellRouteKey } from "./utils/routeTransition";
 import { routeUsesVideoBackground } from "./utils/shellBackground";
 import PageVideoBackground from "./components/PageVideoBackground.vue";
 import AppSessionGuard from "./components/AppSessionGuard.vue";
-const { isDark, colorScheme } = useAppPreferences();
+const { isDark, colorScheme, customPrimaryColor } = useAppPreferences();
 const { locale } = useI18n();
 const appDisplayName = useAppDisplayName();
 const naiveTheme = computed(() => (isDark.value ? darkTheme : null));
-const themeOverrides = computed(() => createThemeOverrides(isDark.value, colorScheme.value));
+const themeOverrides = computed(() =>
+  createThemeOverrides(isDark.value, colorScheme.value, customPrimaryColor.value)
+);
 const naiveLocale = computed(() => (locale.value === "en" ? enUS : zhCN));
 const naiveDateLocale = computed(() => (locale.value === "en" ? dateEnUS : dateZhCN));
 
@@ -50,12 +52,7 @@ watch(
       <n-dialog-provider>
         <AppSessionGuard />
         <div class="app-shell" :class="{ 'app-shell--video-bg': shellVideoBg }">
-          <PageVideoBackground v-if="shellVideoBg" fixed lite />
-          <div v-if="!shellVideoBg" class="app-ambient" aria-hidden="true">
-            <span class="app-ambient__orb app-ambient__orb--1" />
-            <span class="app-ambient__orb app-ambient__orb--2" />
-            <span class="app-ambient__orb app-ambient__orb--3" />
-          </div>
+          <PageVideoBackground v-if="shellVideoBg" fixed />
           <router-view v-slot="{ Component, route }">
             <component :is="Component" :key="shellRouteKey(route)" />
           </router-view>
@@ -110,66 +107,13 @@ h4,
   background: transparent;
 }
 
-.app-ambient {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.app-ambient__orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(48px);
-  opacity: 0.65;
-  animation: liquid-orb-drift 36s var(--platform-ease-fluid) infinite;
-}
-
-.app-ambient__orb--1 {
-  width: min(46vw, 480px);
-  height: min(46vw, 480px);
-  top: -8%;
-  left: -5%;
-  background: radial-gradient(circle, var(--platform-accent-soft-2) 0%, transparent 68%);
-  animation-duration: 32s;
-}
-
-.app-ambient__orb--2 {
-  width: min(38vw, 400px);
-  height: min(38vw, 400px);
-  bottom: -6%;
-  right: 4%;
-  background: radial-gradient(circle, var(--platform-accent-soft) 0%, transparent 68%);
-  animation-duration: 26s;
-  animation-delay: -8s;
-}
-
-.app-ambient__orb--3 {
-  width: min(30vw, 320px);
-  height: min(30vw, 320px);
-  top: 36%;
-  left: 40%;
-  background: radial-gradient(circle, var(--liquid-flow-c) 0%, transparent 70%);
-  animation: liquid-orb-drift 32s var(--platform-ease-fluid) infinite;
-  animation-delay: -12s;
-}
-
 .app-shell > .page-video-bg {
   z-index: 0;
 }
 
-.app-shell > .app-ambient {
-  z-index: 0;
-}
-
-.app-shell--video-bg > .app-ambient {
-  z-index: 1;
-}
-
-.app-shell > :not(.app-ambient):not(.page-video-bg) {
+.app-shell > :not(.page-video-bg) {
   position: relative;
-  z-index: 2;
+  z-index: 1;
 }
 </style>
 
@@ -185,3 +129,5 @@ h4,
 <style src="./styles/platform-spin.css"></style>
 <style src="./styles/video-background.css"></style>
 <style src="./styles/platform-ui-glass.css"></style>
+<style src="./styles/solid-shell.css"></style>
+<style src="./styles/openai-style.css"></style>

@@ -66,6 +66,16 @@ export function writeDocumentsKbFoldersCache(scope, deptId, ownerId, data) {
   );
 }
 
+export function invalidateDocumentsKbFoldersCache(scope, deptId, ownerId) {
+  try {
+    sessionStorage.removeItem(
+      `${KB_FOLDERS_PREFIX}${kbFoldersCacheKey(scope, deptId, ownerId)}`
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 export function readDocumentsListCache(cacheKey) {
   const mem = memListCache.get(cacheKey);
   if (mem?.data !== undefined && Date.now() - mem.savedAt <= DOC_LIST_MEM_TTL_MS) {

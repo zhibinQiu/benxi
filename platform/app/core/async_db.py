@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import TypeVar
 
@@ -45,27 +45,6 @@ async def run_db_task(fn: Callable[..., T], /, *args, **kwargs) -> T:
     except Exception as exc:
         record_db_outcome(exc)
         raise
-
-
-async def run_db_async_task(
-    fn: Callable[..., Awaitable[T]], /, *args, **kwargs
-) -> T:
-    """fn 签名: async fn(db: Session, *args, **kwargs) -> T"""
-
-    from app.core.db_circuit import guard_db_circuit, record_db_outcome
-    from app.database import SessionLocal
-
-    guard_db_circuit()
-    db = SessionLocal()
-    try:
-        result = await fn(db, *args, **kwargs)
-        record_db_outcome(None)
-        return result
-    except Exception as exc:
-        record_db_outcome(exc)
-        raise
-    finally:
-        db.close()
 
 
 async def run_db_read_task(fn: Callable[..., T], /, *args, **kwargs) -> T:

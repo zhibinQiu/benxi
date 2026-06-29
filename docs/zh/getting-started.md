@@ -40,6 +40,8 @@ cp platform/.env.example platform/.env
 | Web | http://127.0.0.1:40005/ai/ |
 | API | http://127.0.0.1:18000 |
 
+系统文档（可选）：`./dev.sh docs` → http://127.0.0.1:40100/
+
 ## 常用命令
 
 ```bash

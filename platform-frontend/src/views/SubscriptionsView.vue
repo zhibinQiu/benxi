@@ -2,17 +2,19 @@
 import { useI18n } from "../composables/useI18n";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
+import IconAction from "../components/IconAction.vue";
+import SubscriptionMonthRangeSlider from "../components/SubscriptionMonthRangeSlider.vue";
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, onActivated, onMounted, ref, watch } from "vue";
+import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
-  NDatePicker,
   NEmpty,
   NIcon,
   NInput,
+  NModal,
   NPagination,
-  NPopover,
   NSpin,
   NTag,
   NText,
@@ -26,7 +28,9 @@ import { siteFaviconUrl } from "../utils/siteFavicon.js";
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
-const { t, locale } = useI18n();
+const { t, locale, featureDescription } = useI18n();
+const { headerExtensionActive } = usePageHeaderExtension();
+const headerTeleportReady = ref(false);
 
 const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
@@ -39,14 +43,13 @@ const pageSize = LIST_PAGE_SIZE;
 
 const ingestUrl = ref("");
 const ingesting = ref(false);
-const ingestPopoverOpen = ref(false);
+const ingestModalOpen = ref(false);
 
 const searchKeyword = ref("");
 const createdRange = ref(null);
-const draftCreatedRange = ref(null);
-const filterPopoverOpen = ref(false);
 
 let searchTimer = null;
+let rangeTimer = null;
 
 const hasDateFilter = computed(
   () => Array.isArray(createdRange.value) && createdRange.value.length === 2
@@ -77,17 +80,6 @@ function fmtSerpDate(iso) {
   } catch {
     return "";
   }
-}
-
-function fmtFilterRange(range) {
-  if (!range || range.length !== 2) return "";
-  const fmt = (ts) =>
-    new Date(ts).toLocaleDateString(dateLocale.value, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-  return `${fmt(range[0])} — ${fmt(range[1])}`;
 }
 
 function siteLabel(item) {
@@ -185,24 +177,17 @@ function onPageChange(nextPage) {
   loadItems();
 }
 
-function openFilterPopover() {
-  draftCreatedRange.value = createdRange.value ? [...createdRange.value] : null;
-  filterPopoverOpen.value = true;
+function scheduleRangeFilter() {
+  if (rangeTimer) clearTimeout(rangeTimer);
+  rangeTimer = setTimeout(() => {
+    page.value = 1;
+    loadItems();
+  }, 200);
 }
 
-function applyDateFilter() {
-  createdRange.value = draftCreatedRange.value;
-  filterPopoverOpen.value = false;
-  page.value = 1;
-  loadItems();
-}
-
-function clearDateFilter() {
-  draftCreatedRange.value = null;
-  createdRange.value = null;
-  filterPopoverOpen.value = false;
-  page.value = 1;
-  loadItems();
+function onCreatedRangeChange(next) {
+  createdRange.value = next;
+  scheduleRangeFilter();
 }
 
 watch(searchKeyword, scheduleLocalSearch);
@@ -218,7 +203,7 @@ async function onIngest(urlInput) {
     const detail = await ingestSubscriptionUrl(url);
     ui.success(detail.summary ? t("subscriptions.ingestedWithSummary") : t("subscriptions.ingested"));
     ingestUrl.value = "";
-    ingestPopoverOpen.value = false;
+    ingestModalOpen.value = false;
     searchKeyword.value = "";
     await loadItems();
     openItem(detail.ref);
@@ -239,6 +224,15 @@ function openItem(ref) {
 
 onMounted(() => {
   reload();
+  nextTick(() => {
+    headerTeleportReady.value = true;
+  });
+});
+
+onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer);
+  if (rangeTimer) clearTimeout(rangeTimer);
+  ingestModalOpen.value = false;
 });
 
 onActivated(() => {
@@ -257,6 +251,60 @@ watch(
 
 <template>
   <FeatureSubsystemShell fill :show-intro="false">
+    <Teleport
+      v-if="headerTeleportReady && headerExtensionActive"
+      to="#page-header-extension"
+    >
+      <div class="subscriptions-actions-bar">
+        <div class="subscriptions-actions-toolbar">
+          <NText depth="3" class="subscriptions-actions-hint">
+            {{ featureDescription("knowledge-subscriptions") }}
+          </NText>
+          <div class="subscriptions-toolbar subscriptions-toolbar--secondary">
+            <IconAction
+              :label="t('subscriptions.ingest')"
+              :icon="LinkOutline"
+              type="primary"
+              :loading="ingesting"
+              @click="ingestModalOpen = true"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <NModal
+      v-model:show="ingestModalOpen"
+      preset="card"
+      :title="t('subscriptions.ingest')"
+      class="subscriptions-ingest-modal"
+      style="width: min(420px, 92vw)"
+      :mask-closable="!ingesting"
+      :close-on-esc="!ingesting"
+    >
+      <div class="subscriptions-ingest-panel">
+        <div class="subscriptions-ingest-panel__label">{{ t("subscriptions.ingestLabel") }}</div>
+        <NInput
+          v-model:value="ingestUrl"
+          placeholder="https://..."
+          clearable
+          @keyup.enter="onIngest()"
+        />
+        <NButton
+          type="primary"
+          block
+          :loading="ingesting"
+          style="margin-top: 10px"
+          @click="onIngest()"
+        >
+          {{ t("subscriptions.ingest") }}
+        </NButton>
+        <NText depth="3" class="subscriptions-ingest-panel__hint">
+          {{ t("subscriptions.ingestHint") }}
+        </NText>
+      </div>
+    </NModal>
+
     <div class="subscriptions-page">
       <header class="feature-top-strip subscriptions-chrome-head">
         <div class="subscriptions-search-hub feature-local-nav">
@@ -279,94 +327,26 @@ watch(
             </NButton>
           </div>
 
+          <SubscriptionMonthRangeSlider
+            :model-value="createdRange"
+            :locale="dateLocale"
+            :label="t('subscriptions.filterDateLabel')"
+            :clear-label="t('subscriptions.clear')"
+            @update:model-value="onCreatedRangeChange"
+          />
+
           <div class="subscriptions-search-hub__tools">
-            <NPopover
-              v-model:show="filterPopoverOpen"
-              trigger="click"
-              placement="bottom-start"
-              :show-arrow="false"
-            >
-              <template #trigger>
-                <NButton
-                  size="tiny"
-                  quaternary
-                  :type="hasDateFilter ? 'primary' : 'default'"
-                  @click="openFilterPopover"
-                >
-                  {{ t("subscriptions.filter") }}
-                </NButton>
-              </template>
-              <div class="subscriptions-filter-panel">
-                <div class="subscriptions-filter-panel__label">{{ t("subscriptions.filterDateLabel") }}</div>
-                <NDatePicker
-                  v-model:value="draftCreatedRange"
-                  type="daterange"
-                  clearable
-                  style="width: 100%"
-                  :start-placeholder="t('subscriptions.startDate')"
-                  :end-placeholder="t('subscriptions.endDate')"
-                />
-                <div class="subscriptions-filter-panel__actions">
-                  <NButton size="small" @click="clearDateFilter">{{ t("subscriptions.clear") }}</NButton>
-                  <NButton size="small" type="primary" @click="applyDateFilter">{{ t("subscriptions.apply") }}</NButton>
-                </div>
-              </div>
-            </NPopover>
-
-            <NPopover
-              v-model:show="ingestPopoverOpen"
-              trigger="click"
-              placement="bottom-end"
-              :show-arrow="false"
-            >
-              <template #trigger>
-                <NButton size="tiny" quaternary class="subscriptions-search-hub__ingest-trigger">
-                  <template #icon>
-                    <NIcon :component="LinkOutline" />
-                  </template>
-                  {{ t("subscriptions.ingestByLink") }}
-                </NButton>
-              </template>
-              <div class="subscriptions-ingest-panel">
-                <div class="subscriptions-ingest-panel__label">{{ t("subscriptions.ingestLabel") }}</div>
-                <NInput
-                  v-model:value="ingestUrl"
-                  placeholder="https://..."
-                  clearable
-                  @keyup.enter="onIngest()"
-                />
-                <NButton
-                  type="primary"
-                  block
-                  :loading="ingesting"
-                  style="margin-top: 10px"
-                  @click="onIngest()"
-                >
-                  {{ t("subscriptions.ingest") }}
-                </NButton>
-                <NText depth="3" class="subscriptions-ingest-panel__hint">
-                  {{ t("subscriptions.ingestHint") }}
-                </NText>
-              </div>
-            </NPopover>
-
             <ListRefreshButton :loading="itemsLoading || loading" size="tiny" @click="reload" />
 
             <NText v-if="resultCountLabel" depth="3" class="subscriptions-search-hub__count">
               {{ resultCountLabel }}
             </NText>
           </div>
-
-          <div v-if="hasDateFilter" class="subscriptions-active-filters">
-            <NTag size="small" closable :bordered="false" @close="clearDateFilter">
-              {{ t("subscriptions.filterActive", { range: fmtFilterRange(createdRange) }) }}
-            </NTag>
-          </div>
         </div>
       </header>
 
       <div class="subscriptions-body">
-        <NSpin :show="itemsLoading || loading" class="list-spin">
+        <NSpin :show="itemsLoading || loading" class="list-spin" local>
           <div class="subscriptions-list-scroll">
             <div v-if="items.length" class="subscriptions-serp-list" role="list">
               <article
@@ -450,7 +430,6 @@ watch(
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  --subscriptions-content-max: 680px;
 }
 
 .subscriptions-chrome-head {
@@ -459,7 +438,7 @@ watch(
 
 .subscriptions-search-hub {
   width: 100%;
-  max-width: var(--subscriptions-content-max);
+  max-width: none;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -525,11 +504,9 @@ watch(
 }
 
 .subscriptions-ingest-panel {
-  width: min(360px, 78vw);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 2px;
 }
 
 .subscriptions-ingest-panel__label {
@@ -540,32 +517,6 @@ watch(
 .subscriptions-ingest-panel__hint {
   font-size: 12px;
   line-height: 1.45;
-}
-
-.subscriptions-active-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-inline: 4px;
-}
-
-.subscriptions-filter-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(320px, 72vw);
-  padding: 4px 2px;
-}
-
-.subscriptions-filter-panel__label {
-  font-size: 13px;
-  color: var(--platform-text-secondary);
-}
-
-.subscriptions-filter-panel__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 .subscriptions-body {
@@ -606,14 +557,13 @@ watch(
   flex-direction: column;
   gap: 2px;
   width: 100%;
-  max-width: var(--subscriptions-content-max);
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
 .subscriptions-empty {
-  max-width: var(--subscriptions-content-max);
+  width: 100%;
   padding: 24px 0;
 }
 
@@ -774,7 +724,6 @@ html[data-theme="light"] .serp-result-item__snippet {
 
 .subscriptions-footer__inner {
   width: 100%;
-  max-width: var(--subscriptions-content-max);
   display: flex;
   justify-content: center;
 }

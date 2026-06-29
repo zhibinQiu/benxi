@@ -38,6 +38,48 @@ _FORBIDDEN_PATTERNS = (
 )
 
 _DEFAULT_ENTRIES = ("main.py", "run.py", "script.py")
+_SHELL_LIKE_ENTRIES = frozenset(
+    {"cat", "ls", "bash", "sh", "curl", "wget", "python", "python3", "node", "npm"}
+)
+
+
+def _normalize_entry_rel(entry: str) -> str:
+    return entry.replace("\\", "/").strip().lstrip("./")
+
+
+def _explicit_entry_invalid(entry: str, names: set[str]) -> bool:
+    rel = _normalize_entry_rel(entry)
+    if not rel:
+        return True
+    if rel.casefold() in _SHELL_LIKE_ENTRIES:
+        return True
+    if not rel.endswith(".py"):
+        return True
+    return rel not in names
+
+
+def resolve_entry_path(files: dict[str, bytes], entry: str = "") -> str:
+    names = set(files.keys())
+    if entry and not _explicit_entry_invalid(entry, names):
+        return _normalize_entry_rel(entry)
+    for candidate in _DEFAULT_ENTRIES:
+        if candidate in names:
+            return candidate
+    py_files = sorted(n for n in names if n.endswith(".py") and n != "skill_runtime.py")
+    if len(py_files) == 1:
+        return py_files[0]
+    if py_files:
+        raise bad_request(
+            f"请指定 entry（须为 .py 文件）；候选: {', '.join(py_files[:8])}"
+        )
+    listed = sorted(n for n in names if n != "skill_runtime.py")[:12]
+    hint = f"当前文件: {', '.join(listed)}" if listed else "当前仅有 SKILL.md 等说明文件"
+    raise bad_request(
+        "Skill 包内没有可执行的 .py 脚本（需要 main.py）。"
+        "请用 update_uploaded_skill_file 创建 main.py，"
+        "脚本末尾输出 JSON 结论（skill_runtime.finish）。"
+        f"{hint}"
+    )
 
 
 def validate_skill_script(code: str) -> None:
@@ -51,28 +93,6 @@ def validate_skill_script(code: str) -> None:
         ast.parse(stripped)
     except SyntaxError as exc:
         raise bad_request(f"Python 语法错误: {exc.msg}") from exc
-
-
-def resolve_entry_path(files: dict[str, bytes], entry: str = "") -> str:
-    names = set(files.keys())
-    if entry:
-        rel = entry.replace("\\", "/").strip().lstrip("./")
-        if rel not in names:
-            raise bad_request(f"入口脚本不存在: {rel}")
-        if not rel.endswith(".py"):
-            raise bad_request("入口必须是 .py 文件")
-        return rel
-    for candidate in _DEFAULT_ENTRIES:
-        if candidate in names:
-            return candidate
-    py_files = sorted(n for n in names if n.endswith(".py") and n != "skill_runtime.py")
-    if len(py_files) == 1:
-        return py_files[0]
-    if py_files:
-        raise bad_request(
-            f"请指定 entry；候选: {', '.join(py_files[:8])}"
-        )
-    raise bad_request("Skill 包内没有可执行的 .py 脚本")
 
 
 def probe_script_entry(files: dict[str, bytes], entry: str = "") -> str | None:

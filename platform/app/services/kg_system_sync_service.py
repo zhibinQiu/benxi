@@ -1,4 +1,4 @@
-"""将平台用户、部门组织树同步到当前用户的知识图谱实体。"""
+"""将平台用户、部门组织树与智能体能力拓扑同步到当前用户的知识图谱实体。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from app.services.kg_service import ensure_ontology_defaults
 
 USER_ID_PROP = "platform_user_id"
 DEPT_ID_PROP = "platform_department_id"
+AGENT_ID_PROP = "platform_agent_id"
+TOOL_NAME_PROP = "platform_tool_name"
+SKILL_NAME_PROP = "platform_skill_name"
 
 
 def _type_by_code(db: Session) -> dict[str, uuid.UUID]:
@@ -107,6 +110,27 @@ def _reconcile_employs(
             from_id=dept_entity_id,
             to_id=person_id,
         )
+
+
+def _reconcile_outgoing_relations(
+    db: Session,
+    user: User,
+    *,
+    from_id: uuid.UUID,
+    relation_type_id: uuid.UUID,
+    allowed_to_ids: set[uuid.UUID],
+) -> None:
+    """移除此节点上不在允许集合内的出边。"""
+    existing = db.scalars(
+        select(KgRelation).where(
+            KgRelation.owner_id == user.id,
+            KgRelation.relation_type_id == relation_type_id,
+            KgRelation.from_entity_id == from_id,
+        )
+    ).all()
+    for rel in existing:
+        if rel.to_entity_id not in allowed_to_ids:
+            db.delete(rel)
 
 
 def _ensure_relation(
@@ -231,5 +255,188 @@ def sync_platform_org_to_kg(db: Session, user: User) -> dict[str, int]:
     return {
         "departments": len(dept_rows),
         "users": len(user_rows),
+        "relations": rel_count,
+    }
+
+
+def _agent_bound_skill_names(db: Session, agent_id: str) -> list[str]:
+    """图谱同步用：返回智能体配置绑定的 Skill 名（含 catalog 未展示的项）。"""
+    from app.core.agent_profiles import get_agent_profile
+    from app.services.agent_profile_service import _binding_map, _effective_skill_names
+    from app.skills.catalog import list_all_skill_definitions
+
+    defn = get_agent_profile(agent_id)
+    if not defn:
+        return []
+    binding = _binding_map(db).get(defn.id)
+    if binding is not None and not binding.enabled:
+        return []
+    names = _effective_skill_names(defn, binding)
+    known = {
+        skill.name
+        for skill in list_all_skill_definitions(
+            db, admin_view=True, include_disabled=True, catalog_only=False
+        )
+    }
+    return [name for name in names if name in known]
+
+
+def sync_platform_agents_to_kg(db: Session, user: User) -> dict[str, int]:
+    """Upsert 平台智能体、原子工具、Skill 及 has_tool / has_skill / orchestrates 关系。"""
+    from app.core.agent_profiles import AGENT_PROFILES
+    from app.services.agent_profile_service import is_agent_enabled, resolve_agent_tool_names
+    from app.services.agent_tool_registry import list_agent_tools
+    from app.skills.catalog import list_all_skill_definitions
+
+    ensure_ontology_defaults(db)
+    type_ids = _type_by_code(db)
+    agent_type_id = type_ids.get("agent")
+    tool_type_id = type_ids.get("tool")
+    skill_type_id = type_ids.get("skill")
+    has_tool_id = _rel_type_id(db, "has_tool")
+    has_skill_id = _rel_type_id(db, "has_skill")
+    orchestrates_id = _rel_type_id(db, "orchestrates")
+    if (
+        not agent_type_id
+        or not tool_type_id
+        or not skill_type_id
+        or not has_tool_id
+        or not has_skill_id
+        or not orchestrates_id
+    ):
+        return {"agents": 0, "tools": 0, "skills": 0, "relations": 0}
+
+    skill_defs = list_all_skill_definitions(
+        db, admin_view=True, include_disabled=True, catalog_only=False
+    )
+
+    tool_entities: dict[str, KgEntity] = {}
+    for tool in list_agent_tools(db, user=None):
+        category = tool.category.value if hasattr(tool.category, "value") else str(tool.category)
+        tool_entities[tool.name] = _upsert_entity(
+            db,
+            user,
+            type_id=tool_type_id,
+            name=tool.name,
+            description=(tool.description or "").strip() or "平台原子工具",
+            prop_key=TOOL_NAME_PROP,
+            prop_value=tool.name,
+            extra_props={
+                "category": category,
+                "available": bool(tool.available),
+            },
+        )
+
+    skill_entities: dict[str, KgEntity] = {}
+    for skill in skill_defs:
+        extra_props: dict[str, str] = {
+            "source": skill.source.value,
+            "readiness": skill.readiness.value,
+            "slug": skill.name,
+        }
+        if skill.skill_id:
+            extra_props["skill_id"] = str(skill.skill_id)
+        skill_entities[skill.name] = _upsert_entity(
+            db,
+            user,
+            type_id=skill_type_id,
+            name=(skill.title or skill.name).strip()[:256],
+            description=(skill.description or "").strip() or "平台 Skill",
+            prop_key=SKILL_NAME_PROP,
+            prop_value=skill.name,
+            extra_props=extra_props,
+        )
+
+    rel_count = 0
+    for defn in AGENT_PROFILES:
+        enabled = is_agent_enabled(db, defn.id)
+        agent_ent = _upsert_entity(
+            db,
+            user,
+            type_id=agent_type_id,
+            name=defn.title,
+            description=defn.description,
+            prop_key=AGENT_ID_PROP,
+            prop_value=defn.id,
+            extra_props={
+                "agent_id": defn.id,
+                "enabled": enabled,
+                "skills_configurable": defn.skills_configurable,
+            },
+        )
+
+        tool_names = resolve_agent_tool_names(db, defn.id)
+        allowed_tool_ids = {
+            tool_entities[name].id for name in tool_names if name in tool_entities
+        }
+        _reconcile_outgoing_relations(
+            db,
+            user,
+            from_id=agent_ent.id,
+            relation_type_id=has_tool_id,
+            allowed_to_ids=allowed_tool_ids,
+        )
+        for tool_id in allowed_tool_ids:
+            _ensure_relation(
+                db,
+                user,
+                relation_type_id=has_tool_id,
+                from_id=agent_ent.id,
+                to_id=tool_id,
+            )
+            rel_count += 1
+
+        skill_names = _agent_bound_skill_names(db, defn.id)
+        allowed_skill_ids = {
+            skill_entities[name].id for name in skill_names if name in skill_entities
+        }
+        _reconcile_outgoing_relations(
+            db,
+            user,
+            from_id=agent_ent.id,
+            relation_type_id=has_skill_id,
+            allowed_to_ids=allowed_skill_ids,
+        )
+        for skill_id in allowed_skill_ids:
+            _ensure_relation(
+                db,
+                user,
+                relation_type_id=has_skill_id,
+                from_id=agent_ent.id,
+                to_id=skill_id,
+            )
+            rel_count += 1
+
+    for skill in skill_defs:
+        skill_ent = skill_entities.get(skill.name)
+        if not skill_ent:
+            continue
+        allowed_tool_ids = {
+            tool_entities[name].id
+            for name in skill.orchestrated_tools
+            if name in tool_entities
+        }
+        _reconcile_outgoing_relations(
+            db,
+            user,
+            from_id=skill_ent.id,
+            relation_type_id=orchestrates_id,
+            allowed_to_ids=allowed_tool_ids,
+        )
+        for tool_id in allowed_tool_ids:
+            _ensure_relation(
+                db,
+                user,
+                relation_type_id=orchestrates_id,
+                from_id=skill_ent.id,
+                to_id=tool_id,
+            )
+            rel_count += 1
+
+    db.flush()
+    return {
+        "agents": len(AGENT_PROFILES),
+        "tools": len(tool_entities),
+        "skills": len(skill_entities),
         "relations": rel_count,
     }

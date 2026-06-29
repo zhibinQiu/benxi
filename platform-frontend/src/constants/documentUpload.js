@@ -55,11 +55,11 @@ export function titleFromFileName(fileName) {
 
 /** 文档中心允许上传的扩展名（文件选择器 accept） */
 export const DOCUMENT_UPLOAD_ACCEPT =
-  ".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.markdown";
+  ".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.markdown";
 
-const UPLOAD_ALLOWED_LABELS = new Set(["pdf", "word", "excel", "txt", "md"]);
+const UPLOAD_ALLOWED_LABELS = new Set(["pdf", "word", "excel", "csv", "txt", "md", "ppt"]);
 
-export const DOCUMENT_UPLOAD_FORMAT_HINT = "PDF、Word、Excel、TXT、MD";
+export const DOCUMENT_UPLOAD_FORMAT_HINT = "PDF、Word、Excel、CSV、PPT、TXT、MD";
 
 const UPLOAD_EXT_TO_LABEL = {
   pdf: "pdf",
@@ -93,6 +93,9 @@ const UPLOAD_MIME_TO_LABEL = {
   "text/markdown": "md",
   "application/vnd.ms-excel": "excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "excel",
+  "text/csv": "csv",
+  "application/vnd.ms-powerpoint": "ppt",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "ppt",
 };
 
 /** 从文件名 / MIME 推断格式标签（与后端 document_format 对齐） */

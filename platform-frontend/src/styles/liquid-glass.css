@@ -120,7 +120,7 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
 .documents-scope-bookmarks__tab::before,
 .table-icon-action:not(:disabled)::before,
 .page-toolbar .icon-action:not(:disabled)::before,
-.n-button:not(.n-button--disabled):not(.header-icon-btn)::before {
+.n-button:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action)::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -161,7 +161,7 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
 
 .feature-card:not(.feature-card--disabled):not(.feature-card--locked):hover::before,
 .header-user-trigger:hover::before,
-.n-button:not(.n-button--disabled):not(.header-icon-btn):hover::before,
+.n-button:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action):hover::before,
 .kb-folder-create-card:hover::before,
 .kb-folder-card:hover::before,
 .assistant-chip:hover::before,
@@ -218,25 +218,11 @@ html[data-theme="light"] .feature-card:not(.feature-card--disabled):not(.feature
   transform: none;
 }
 
-@keyframes liquid-orb-drift {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(2vw, -1vh, 0);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .feature-card:hover,
   .n-button:active,
   .login-page .login-glass-btn:active {
     transform: none !important;
-  }
-
-  .app-ambient__orb {
-    animation: none !important;
   }
 }
 

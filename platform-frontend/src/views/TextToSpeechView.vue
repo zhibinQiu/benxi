@@ -197,7 +197,7 @@ onBeforeUnmount(revokeAudioUrl);
 
 <template>
   <FeatureSubsystemShell fill>
-    <NSpin :show="loadingMeta" class="tts-spin">
+    <NSpin :show="loadingMeta" class="tts-spin" local>
       <div class="tts-page">
         <NAlert
           v-if="!loadingMeta && !configured"

@@ -53,6 +53,26 @@ def file_supports_knowflow_original_upload(file_name: str, mime_type: str = "") 
 
 _OFFICE_SUFFIXES = (".doc", ".docx", ".rtf", ".xlsx", ".xls", ".ppt", ".pptx")
 
+# KnowFlow 有专用解析器：同步时上传原文件（PPT→presentation、Excel/CSV→table 等）
+_KNOWFLOW_NATIVE_UPLOAD_SUFFIXES = _OFFICE_SUFFIXES + (".csv",)
+
+
+def is_knowflow_native_upload(file_name: str, mime_type: str = "") -> bool:
+    """KnowFlow 可按原格式解析的文件：同步时不转 PDF。"""
+    lower = (file_name or "").lower()
+    mime = (mime_type or "").lower()
+    if any(lower.endswith(s) for s in _KNOWFLOW_NATIVE_UPLOAD_SUFFIXES):
+        return True
+    if mime == "text/csv":
+        return True
+    if "spreadsheet" in mime or "excel" in mime:
+        return True
+    if "presentation" in mime or "powerpoint" in mime:
+        return True
+    if "word" in mime or "wordprocessingml" in mime:
+        return True
+    return False
+
 
 def _is_office_like_file(file_name: str, mime_type: str = "") -> bool:
     lower = (file_name or "").lower()
@@ -472,11 +492,15 @@ def normalize_file_for_knowflow_upload(
         pdf_name = name if lower.endswith(".pdf") else f"{name.rsplit('.', 1)[0]}.pdf"
         return pdf_name, pdf, "application/pdf"
 
-    text_like_suffixes = (".txt", ".csv", ".log", ".json", ".xml", ".yaml", ".yml")
+    if is_knowflow_native_upload(name, mime):
+        return name, content, mime_type or "application/octet-stream"
+
+    text_like_suffixes = (".txt", ".log", ".json", ".xml", ".yaml", ".yml")
     if any(lower.endswith(s) for s in text_like_suffixes) or (
         mime.startswith("text/")
         and "html" not in mime
         and "markdown" not in mime
+        and mime != "text/csv"
     ):
         try:
             text = content.decode("utf-8", errors="replace")
@@ -488,32 +512,6 @@ def normalize_file_for_knowflow_upload(
             pdf = markdown_text_to_pdf_bytes(doc_title, text)
             stem = name.rsplit(".", 1)[0] if "." in name else name
             return f"{stem}.pdf", pdf, "application/pdf"
-
-    if _is_office_like_file(name, mime):
-        converted = convert_file_bytes_to_pdf_for_citation(
-            name,
-            content,
-            mime_type,
-            title=doc_title,
-        )
-        if converted:
-            logger.info(
-                "KnowFlow 上传：Office 转为 PDF 以生成引用页截图 file=%s",
-                name,
-            )
-            return converted
-        md_upload = office_bytes_to_markdown_upload(
-            name,
-            content,
-            mime_type,
-            title=doc_title,
-        )
-        if md_upload:
-            logger.info(
-                "KnowFlow 上传：Office 转 PDF 失败，改上传 Markdown file=%s",
-                name,
-            )
-            return md_upload
 
     if any(lower.endswith(s) for s in _INDEXABLE_SUFFIXES):
         return name, content, mime_type or "application/octet-stream"

@@ -1,7 +1,8 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
-import { computed, h, onMounted, ref } from "vue";
+import { CreateOutline } from "@vicons/ionicons5";
+import { computed, onMounted, ref } from "vue";
 import {
   NCard,
   NDataTable,
@@ -28,6 +29,7 @@ import { deleteSequentially } from "../../utils/batchActions";
 import ListRefreshButton from "../../components/ListRefreshButton.vue";
 import ListTableFooter from "../../components/ListTableFooter.vue";
 import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
+import { renderIconAction } from "../../utils/tableIconActions.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -179,14 +181,15 @@ const columns = computed(() => [
   {
     title: t("common.actions"),
     key: "actions",
-    width: 80,
-    render(row) {
-      return h(
-        NButton,
-        { size: "small", quaternary: true, type: "primary", onClick: () => openEdit(row) },
-        { default: () => t("common.edit") }
-      );
-    }},
+    width: 72,
+    render: (row) =>
+      renderIconAction({
+        label: t("common.edit"),
+        icon: CreateOutline,
+        type: "primary",
+        onClick: () => openEdit(row),
+      }),
+  },
 ]);
 
 async function loadAllUsersForOrgTree() {

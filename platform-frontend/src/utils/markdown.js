@@ -2,6 +2,7 @@
 
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { injectScreenshotMarkdownFromPlainUrls } from "./authenticatedImage.js";
 
 let configured = false;
 
@@ -142,6 +143,7 @@ export function normalizeMarkdownInput(text) {
   let raw = String(text || "").trim();
   const fenced = raw.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/i);
   if (fenced) raw = fenced[1].trim();
+  raw = injectScreenshotMarkdownFromPlainUrls(raw);
   raw = upgradeUntaggedMermaidFences(raw);
   raw = fenceBareMermaidInProse(raw);
   return raw;

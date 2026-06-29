@@ -75,3 +75,8 @@ def touch_user_last_seen_async(user_id: uuid.UUID) -> None:
             db.close()
 
     _last_seen_executor.submit(_run)
+
+
+def shutdown_last_seen_executor() -> None:
+    """进程退出时释放 last_seen 线程池。"""
+    _last_seen_executor.shutdown(wait=False)

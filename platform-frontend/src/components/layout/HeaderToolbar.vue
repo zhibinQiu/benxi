@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, h, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NAvatar,
@@ -21,14 +21,16 @@ import {
 import { useAuth } from "../../composables/useAuth";
 import { useAppPreferences } from "../../composables/useAppPreferences";
 import { useI18n } from "../../composables/useI18n";
+import { cleanupBlockingUiArtifacts } from "../../utils/blockingUiCleanup.js";
 import { fetchJobs, fetchTodos } from "../../api/client";
 import { refreshNotificationAlerts, useNotificationAlerts } from "../../composables/useNotificationAlerts.js";
 import { PLATFORM_Z } from "../../constants/zIndex.js";
-import AssistantChatFab from "../AssistantChatFab.vue";
 import HeaderFlyoutShell from "../HeaderFlyoutShell.vue";
-import JobsPanel from "../JobsPanel.vue";
-import NotificationsPanel from "../NotificationsPanel.vue";
-import TodosPanel from "../TodosPanel.vue";
+
+const AssistantChatFab = defineAsyncComponent(() => import("../AssistantChatFab.vue"));
+const JobsPanel = defineAsyncComponent(() => import("../JobsPanel.vue"));
+const NotificationsPanel = defineAsyncComponent(() => import("../NotificationsPanel.vue"));
+const TodosPanel = defineAsyncComponent(() => import("../TodosPanel.vue"));
 
 const route = useRoute();
 const router = useRouter();
@@ -52,6 +54,7 @@ const todosPanelMounted = ref(false);
 const jobsPanelMounted = ref(false);
 const notificationsPanelMounted = ref(false);
 const assistantMounted = ref(false);
+const userMenuOpen = ref(false);
 let badgeTimer = null;
 let todosUnmountTimer = null;
 let jobsUnmountTimer = null;
@@ -193,6 +196,7 @@ function closeAllFlyouts({ releasePanels = false } = {}) {
   notificationsPopoverOpen.value = false;
   assistantOpen.value = false;
   if (releasePanels) releaseFlyoutPanels();
+  cleanupBlockingUiArtifacts();
 }
 
 function toggleFlyout(target) {
@@ -359,9 +363,16 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
       :options="userMenuOptions"
       :render-option="renderUserMenuOption"
       :menu-props="headerShellMenuProps"
+      @update:show="(v) => (userMenuOpen = v)"
       @select="onUserMenuSelect"
     >
-      <button type="button" class="header-user-trigger" :aria-label="t('header.userMenu')">
+      <button
+        type="button"
+        class="header-user-trigger"
+        :class="{ 'header-user-trigger--active': userMenuOpen }"
+        :aria-label="t('header.userMenu')"
+        :aria-expanded="userMenuOpen"
+      >
         <n-avatar round size="small" class="header-user-avatar">
           {{ userDisplayName[0] || "U" }}
         </n-avatar>
@@ -468,36 +479,43 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: 180px;
-  padding: 4px 10px 4px 4px;
-  border: none;
+  max-width: 196px;
+  height: 36px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid transparent;
   background: transparent;
   border-radius: var(--platform-radius-pill);
   cursor: pointer;
   font: inherit;
   color: inherit;
   transition:
-    opacity var(--platform-duration-smooth) ease,
-    border-color var(--platform-duration-smooth) ease;
+    border-color var(--platform-duration-smooth) ease,
+    box-shadow var(--platform-duration-smooth) ease;
 }
 
-.header-user-trigger:hover {
-  opacity: 0.92;
+.header-user-trigger:hover,
+.header-user-trigger--active {
+  border-color: var(--platform-glass-border);
+  box-shadow: var(--platform-glass-rim-edge);
 }
 
-.header-user-trigger:active {
-  opacity: 0.82;
+.header-user-trigger--active .header-user-chevron {
+  color: var(--platform-text-secondary);
+  transform: rotate(180deg);
 }
 
 .header-user-avatar {
   flex-shrink: 0;
+  width: 28px !important;
+  height: 28px !important;
   background: var(--platform-accent-soft) !important;
   color: var(--platform-accent) !important;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .header-username {
-  max-width: 96px;
+  max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -509,5 +527,8 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
 .header-user-chevron {
   flex-shrink: 0;
   color: var(--platform-text-tertiary);
+  transition:
+    transform var(--platform-duration-smooth) ease,
+    color var(--platform-duration-smooth) ease;
 }
 </style>

@@ -1,4 +1,4 @@
-# 运维与部署手册（v4.3.1）
+# 运维与部署手册（v4.5.0）
 
 本目录为 **当前唯一推荐** 的部署与运维文档，基于根目录统一容器栈（`compose.yaml` + `scripts/stack.sh`）。
 
@@ -53,14 +53,15 @@ bash scripts/deploy.sh stack push
 | Web | http://127.0.0.1:40005/ai/ |
 | API（Docker dev） | http://127.0.0.1:18000 |
 | API（本机 venv） | http://127.0.0.1:8000 |
+| **系统文档站** | http://127.0.0.1:40100/（`./dev.sh docs`） |
 
 脚本职责见 [scripts/README.md](../../scripts/README.md)。
 
-本地预览文档站：
+启动文档站：
 
 ```bash
-pip install -r docs/requirements-docs.txt
-mkdocs serve -a 127.0.0.1:8765
+./dev.sh docs          # Docker 容器
+./dev.sh docs local    # 本机 MkDocs（开发改文档时）
 ```
 
 默认管理员：**账号 `admin`，密码 `admin123`**（见 `platform/.env.example` 中 `BOOTSTRAP_ADMIN_*`）。

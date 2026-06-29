@@ -115,12 +115,20 @@ defineExpose({ focus });
 .chat-composer__input :deep(.n-input__border),
 .chat-composer__input :deep(.n-input__state-border) {
   border-radius: 16px;
+  border-color: var(--platform-border) !important;
+  box-shadow: none !important;
 }
 
 .chat-composer__input :deep(.n-input-wrapper) {
   border-radius: 16px;
-  box-shadow: none;
-  background: #fff;
+  box-shadow: none !important;
+  background: var(--platform-bg-elevated) !important;
+}
+
+.chat-composer__input :deep(.n-input:not(.n-input--disabled):hover .n-input__state-border),
+.chat-composer__input :deep(.n-input.n-input--focus .n-input__state-border) {
+  border-color: var(--platform-border) !important;
+  box-shadow: none !important;
 }
 
 .chat-composer__input :deep(.n-input__textarea-el),
@@ -131,6 +139,7 @@ defineExpose({ focus });
 }
 
 .chat-composer__input :deep(.n-input__textarea-el) {
+  color: var(--platform-text);
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;

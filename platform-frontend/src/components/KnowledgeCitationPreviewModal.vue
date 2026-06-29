@@ -6,8 +6,10 @@ import { useI18n } from "../composables/useI18n.js";
 import {
   citationCanPreviewImage,
   citationPageLabel,
+  citationPreviewCacheKey,
   fetchKnowledgeCitationPreviewBlob,
   formatCitationSnippet,
+  isCitationPreviewUnavailableError,
 } from "../utils/knowledgeCitation.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
 import { useRoute, useRouter } from "vue-router";
@@ -28,6 +30,8 @@ const imageLoading = ref(false);
 const imageError = ref("");
 const imageOk = ref(false);
 const imageObjectUrl = ref("");
+let loadSeq = 0;
+let loadAbort = null;
 
 const visible = computed({
   get: () => props.show,
@@ -71,33 +75,45 @@ function resetImageState() {
 }
 
 async function loadCitationPreview(citation) {
+  loadAbort?.abort();
+  const ac = new AbortController();
+  loadAbort = ac;
+  const seq = ++loadSeq;
   resetImageState();
   if (!citation || !citationCanPreviewImage(citation)) {
     return;
   }
   imageLoading.value = true;
   try {
-    const blob = await fetchKnowledgeCitationPreviewBlob(citation);
+    const blob = await fetchKnowledgeCitationPreviewBlob(citation, { signal: ac.signal });
+    if (seq !== loadSeq || ac.signal.aborted) return;
     imageObjectUrl.value = URL.createObjectURL(blob);
     imageOk.value = true;
   } catch (e) {
+    if (ac.signal.aborted || seq !== loadSeq) return;
+    if (isCitationPreviewUnavailableError(e)) {
+      imageError.value = t("knowledgeSearch.citations.textOnlyHint");
+      return;
+    }
     imageError.value = e?.message || t("knowledgeSearch.citations.loadFailed");
   } finally {
-    imageLoading.value = false;
+    if (seq === loadSeq) {
+      imageLoading.value = false;
+    }
   }
 }
 
 watch(
-  () => [props.show, props.citation],
-  ([open, citation]) => {
+  () => [props.show, citationPreviewCacheKey(props.citation)],
+  ([open, key]) => {
     if (!open) {
+      loadAbort?.abort();
       resetImageState();
       return;
     }
-    if (citation) loadCitationPreview(citation);
+    if (key) loadCitationPreview(props.citation);
     else resetImageState();
-  },
-  { deep: true }
+  }
 );
 
 function openDocument() {

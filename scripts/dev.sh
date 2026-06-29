@@ -169,6 +169,41 @@ dev_speech_local() {
   exec bash "$SCRIPT_DIR/start-speech-local.sh"
 }
 
+dev_docs() {
+  case "${1:-}" in
+    local)
+      exec bash "$SCRIPT_DIR/start-docs.sh"
+      ;;
+    stop)
+      if [[ -f "$RUN_DIR/docs.pid" ]] && kill -0 "$(cat "$RUN_DIR/docs.pid")" 2>/dev/null; then
+        kill "$(cat "$RUN_DIR/docs.pid")" 2>/dev/null || true
+        rm -f "$RUN_DIR/docs.pid"
+        info "已停止本机文档站"
+      fi
+      docker compose -p "${COMPOSE_PROJECT_NAME:-zhitan}" --profile docs stop docs 2>/dev/null || true
+      ;;
+    *)
+      require_cmd docker
+      local port="${DOCS_PORT:-40100}"
+      if [[ -f "$ROOT/.env" ]]; then
+        port="$(grep -E '^DOCS_PORT=' "$ROOT/.env" | cut -d= -f2 | tr -d '\r' || echo "$port")"
+      fi
+      info "启动文档站容器（profile docs）…"
+      bash "$SCRIPT_DIR/setup-stack-env.sh" 2>/dev/null || true
+      bash "$SCRIPT_DIR/stack.sh" up --profile docs --build docs
+      cat <<EOF
+
+${GREEN}=== 系统文档站 ===${NC}
+
+  文档:    http://127.0.0.1:${port}/
+  日志:    ./dev.sh stack logs docs
+  停止:    ./dev.sh docs stop
+
+EOF
+      ;;
+  esac
+}
+
 dev_local() {
   exec bash "$SCRIPT_DIR/local-dev.sh" "$@"
 }
@@ -206,6 +241,7 @@ usage() {
   deploy …                                 透传 scripts/deploy.sh
   knowflow setup | build                   KnowFlow 源码
   speech setup | local                     speech-api（Docker profile / 宿主机）
+  docs [local|stop]                          MkDocs 文档站（Docker :40100 / 本机 local）
   browser setup [--docker|--server]                 Playwright Chromium（浏览器 RPA）
 
 示例:
@@ -261,6 +297,7 @@ main() {
         *) error "用法: ./dev.sh speech setup|local"; exit 1 ;;
       esac
       ;;
+    docs) dev_docs "$@" ;;
     browser)
       shift || true
       case "${1:-setup}" in

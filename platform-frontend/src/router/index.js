@@ -6,6 +6,7 @@ import { routeMenuKey, useMenuSettings, isConfigurableMenuKey } from "../composa
 import { useSystemFeatures } from "../composables/useSystemFeatures";
 import { DEFAULT_HOME_ROUTE } from "../utils/postLoginRoute.js";
 import { releaseRouteMemory } from "../utils/routeMemoryCleanup.js";
+import { cleanupBlockingUiArtifacts } from "../utils/blockingUiCleanup.js";
 
 const routes = [
   {
@@ -22,19 +23,19 @@ const routes = [
       {
         path: "ai-home",
         name: "ai-home",
-        meta: { title: "本析智能", fullHeight: true, featureIcon: "sparkles", videoBg: true, keepAlive: true },
+        meta: { title: "本析智能", fullHeight: true, featureIcon: "sparkles", keepAlive: true },
         component: () => import("../views/AiHomeView.vue"),
       },
       {
         path: "chat-history/:scope",
         name: "chat-history",
-        meta: { title: "历史对话", featureIcon: "chatbubbles", videoBg: true },
+        meta: { title: "历史对话", featureIcon: "chatbubbles" },
         component: () => import("../views/ChatHistoryView.vue"),
       },
       {
         path: "system/functions",
         name: "system-functions",
-        meta: { title: "功能列表", featureIcon: "grid", videoBg: true },
+        meta: { title: "功能列表", featureIcon: "grid" },
         component: () => import("../views/SystemFunctionsView.vue"),
       },
       {
@@ -52,7 +53,7 @@ const routes = [
       {
         path: "system/smart-data-query",
         name: "smart-data-query",
-        meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart", videoBg: true },
+        meta: { title: "智能问数", fullHeight: true, featureIcon: "stats-chart" },
         component: () => import("../views/SmartDataQueryV2View.vue"),
       },
       {
@@ -68,25 +69,8 @@ const routes = [
       {
         path: "system/carbon-qa",
         name: "carbon-qa",
-        meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles", videoBg: true },
+        meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles" },
         component: () => import("../views/CarbonQaV2View.vue"),
-      },
-      {
-        path: "system/carbon-assets",
-        name: "carbon-assets",
-        meta: { title: "碳资产管理与交易", fullHeight: true, featureIcon: "wallet" },
-        component: () => import("../views/CarbonAssetTradingView.vue"),
-      },
-      {
-        path: "system/carbon-assets/history",
-        name: "carbon-assets-history",
-        meta: {
-          title: "CEA 历史走势",
-          fullHeight: true,
-          featureIcon: "stats-chart",
-          backTo: "carbon-assets",
-        },
-        component: () => import("../views/CarbonMarketHistoryView.vue"),
       },
       {
         path: "system/wechat-mp",
@@ -99,7 +83,7 @@ const routes = [
       {
         path: "knowledge/subscriptions",
         name: "knowledge-subscriptions",
-        meta: { title: "网站收藏", fullHeight: true, featureIcon: "newspaper", videoBg: true },
+        meta: { title: "网站收藏", fullHeight: true, featureIcon: "newspaper" },
         component: () => import("../views/SubscriptionsView.vue"),
       },
       {
@@ -170,7 +154,6 @@ const routes = [
           fullHeight: true,
           featureIcon: "git-network",
           perm: "feature.kg_palantir",
-          videoBg: true,
         },
         component: () => import("../views/KgPalantirView.vue"),
       },
@@ -179,12 +162,6 @@ const routes = [
         name: "compare",
         meta: { title: "文档对比", fullHeight: true, featureIcon: "git-compare" },
         component: () => import("../views/CompareView.vue"),
-      },
-      {
-        path: "system/assist-writing",
-        name: "assist-writing",
-        meta: { title: "辅助写作", fullHeight: true, featureIcon: "create" },
-        component: () => import("../views/AssistWritingView.vue"),
       },
       {
         path: "knowledge/search",
@@ -197,7 +174,6 @@ const routes = [
           featureIcon: "search",
           backTo: "ai-home",
           perm: "feature.knowledge_search",
-          videoBg: true,
           keepAlive: true,
         },
         component: () => import("../layouts/KnowledgeFeatureLayout.vue"),
@@ -212,7 +188,6 @@ const routes = [
           flushEnd: true,
           featureIcon: "create",
           keepAlive: true,
-          videoBg: true,
         },
         component: () => import("../layouts/KnowledgeFeatureLayout.vue"),
       },
@@ -231,7 +206,7 @@ const routes = [
       {
         path: "documents",
         name: "documents",
-        meta: { title: "我的文件", featureIcon: "document-text", videoBg: true },
+        meta: { title: "我的文件", featureIcon: "document-text" },
         component: () => import("../views/DocumentsView.vue"),
       },
       {
@@ -287,25 +262,25 @@ const routes = [
       {
         path: "admin/users",
         name: "admin-users",
-        meta: { title: "用户管理", perm: "admin.user", videoBg: true },
+        meta: { title: "用户管理", perm: "admin.user" },
         component: () => import("../views/admin/UsersView.vue"),
       },
       {
         path: "admin/departments",
         name: "admin-departments",
-        meta: { title: "部门管理", perm: "admin.dept", videoBg: true },
+        meta: { title: "部门管理", perm: "admin.dept" },
         component: () => import("../views/admin/DepartmentsView.vue"),
       },
       {
         path: "admin/monitor",
         name: "admin-monitor",
-        meta: { title: "系统监控", videoBg: true },
+        meta: { title: "系统监控" },
         component: () => import("../views/admin/SystemMonitorView.vue"),
       },
       {
         path: "admin/model-settings",
         name: "admin-model-settings",
-        meta: { title: "资源管理", perm: "admin.user", featureLocalNav: true, videoBg: true },
+        meta: { title: "资源管理", perm: "admin.user", featureLocalNav: true },
         component: () => import("../views/admin/ModelSettingsView.vue"),
       },
       {
@@ -315,9 +290,19 @@ const routes = [
           title: "多智能体",
           perm: "feature.agent_skills",
           featureIcon: "extension-puzzle",
-          videoBg: true,
+          featureLocalNav: true,
         },
         component: () => import("../views/admin/AgentSkillsView.vue"),
+      },
+      {
+        path: "system/aip-keys",
+        name: "aip-keys",
+        meta: {
+          title: "AIP 密钥",
+          perm: "feature.agent_skills",
+          featureIcon: "key",
+        },
+        component: () => import("../views/admin/AipKeysView.vue"),
       },
       {
         path: "admin/agent-skills",
@@ -326,13 +311,13 @@ const routes = [
       {
         path: "admin/menu-settings",
         name: "admin-menu-settings",
-        meta: { title: "菜单管理", perm: "admin.user", videoBg: true },
+        meta: { title: "菜单管理", perm: "admin.user" },
         component: () => import("../views/admin/MenuSettingsView.vue"),
       },
       {
         path: "issue-reports",
         name: "issue-reports",
-        meta: { title: "问题登记", featureIcon: "list", videoBg: true },
+        meta: { title: "问题登记", featureIcon: "list" },
         component: () => import("../views/IssueReportsView.vue"),
       },
     ],
@@ -385,6 +370,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to, from) => {
   sessionStorage.removeItem("platform:chunk-reload");
+  cleanupBlockingUiArtifacts({ aggressive: true });
   if (from.meta?.public) return;
   releaseRouteMemory(from, to);
 });

@@ -6,8 +6,10 @@ import { formatCitationSnippet } from "../utils/knowledgeCitation.js";
 const props = defineProps({
   citations: { type: Array, default: () => [] },
   question: { type: String, default: "" },
-  /** 点击引用编号/标题时打开溯源弹窗（知识检索） */
+  /** 点击引用编号/标题时打开溯源弹窗（知识检索、报告生成） */
   previewOnClick: { type: Boolean, default: false },
+  showTitle: { type: Boolean, default: true },
+  hint: { type: String, default: "" },
 });
 
 const emit = defineEmits(["open-citation", "open-document"]);
@@ -55,7 +57,8 @@ function openDocument(citation, event) {
 
 <template>
   <div v-if="citations.length" class="chat-citations">
-    <div class="chat-citations-title">{{ t("knowledgeSearch.citations.title") }}</div>
+    <div v-if="showTitle" class="chat-citations-title">{{ t("knowledgeSearch.citations.title") }}</div>
+    <p v-if="hint" class="chat-citations-hint">{{ hint }}</p>
     <div
       v-for="c in citations"
       :key="`${c.index}-${c.document_id || c.title}`"
@@ -128,6 +131,13 @@ function openDocument(citation, event) {
   font-weight: 600;
   color: var(--platform-text-secondary);
   margin-bottom: 8px;
+}
+
+.chat-citations-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--platform-text-tertiary);
 }
 
 .chat-citation-item + .chat-citation-item {

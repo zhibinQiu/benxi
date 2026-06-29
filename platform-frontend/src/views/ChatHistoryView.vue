@@ -204,7 +204,7 @@ watch(scope, loadList);
       {{ t("common.selectedCount", { count: selectedCount }) }}
     </div>
 
-    <n-spin :show="loading">
+    <n-spin :show="loading" local>
       <div v-if="!loading && !items.length" class="chat-history-empty">
         <n-empty :description="t('chatHistory.empty')" />
       </div>

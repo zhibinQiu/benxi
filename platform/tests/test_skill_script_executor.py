@@ -25,6 +25,17 @@ def test_resolve_entry_default_main():
     assert resolve_entry_path(files) == "main.py"
 
 
+def test_resolve_entry_ignores_shell_command():
+    files = {"SKILL.md": b"# x", "main.py": b"print(1)"}
+    assert resolve_entry_path(files, entry="cat") == "main.py"
+
+
+def test_resolve_entry_missing_main_lists_files():
+    files = {"SKILL.md": b"# x", "references/guide.md": b"guide"}
+    with pytest.raises(AppError, match="main.py"):
+        resolve_entry_path(files, entry="cat")
+
+
 def test_probe_script_entry_none_for_instruction_only():
     files = {"SKILL.md": b"# mermaid", "references/guide.md": b"guide"}
     assert probe_script_entry(files) is None

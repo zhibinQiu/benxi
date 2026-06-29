@@ -15,6 +15,7 @@ class AgentProfileOut(BaseModel):
     title: str
     description: str
     enabled: bool = True
+    service_enabled: bool = True
     status: AgentRuntimeStatusOut = AgentRuntimeStatusOut.IDLE
     skill_names: list[str] = Field(default_factory=list)
     default_skill_names: list[str] = Field(default_factory=list)
@@ -30,6 +31,7 @@ class AgentProfileDetailOut(AgentProfileOut):
 
 class AgentProfilePatchIn(BaseModel):
     enabled: bool | None = None
+    service_enabled: bool | None = None
     skill_names: list[str] | None = None
 
 

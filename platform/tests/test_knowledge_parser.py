@@ -62,3 +62,8 @@ def test_build_parser_config_merges_layout():
 def test_list_parser_options_default_layout_is_deepdoc():
     defaults = list_parser_options()["defaults"]
     assert defaults["layout_recognize"] == "DeepDOC"
+
+
+def test_list_parser_options_default_parser_is_naive():
+    defaults = list_parser_options()["defaults"]
+    assert defaults["parser_id"] == "naive"

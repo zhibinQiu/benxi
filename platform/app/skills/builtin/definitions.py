@@ -76,7 +76,7 @@ def register_builtin_skills() -> None:
             readiness=SkillReadiness.READY,
             route="/knowledge/search",
             catalog_visible=False,
-            orchestrated_tools=("knowledge_retrieve",),
+            orchestrated_tools=("knowledge_retrieve", "search_documents_by_name"),
             tools=(
                 SkillToolSpec(
                     name="retrieve",
@@ -127,16 +127,22 @@ def register_builtin_skills() -> None:
         SkillDefinition(
             name="knowledge-research",
             title="知识综合检索",
-            description=(
-                "用户问题需同时或按需组合文档检索、本体图谱与联网搜索，"
-                "且非简单闲聊时使用；纯寒暄或无需外部资料时可不调用。"
-            ),
+            description="组合文档/图谱/联网检索回答企业问题。",
             source=SkillSource.BUILTIN,
             feature_id="ai_home",
             permission_code=None,
             readiness=SkillReadiness.READY,
             route="/ai-home",
-            orchestrated_tools=("knowledge_retrieve", "kg_query", "web_search"),
+            catalog_tier="resident",
+            use_when="需从文档库/图谱/联网组合取证答问，且非纯寒暄",
+            dont_use_when="闲聊、平台用法、附件已含答案、单源检索够用",
+            output="带 [n] 引用的检索结论",
+            orchestrated_tools=(
+                "knowledge_retrieve",
+                "kg_query",
+                "web_search",
+                "search_documents_by_name",
+            ),
             tools=(),
         ),
         SkillDefinition(
@@ -268,24 +274,6 @@ def register_builtin_skills() -> None:
                     "对数据集执行统计分析",
                     feature_title="数据分析",
                     route="/system/data-analysis",
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name="assist-writing",
-            title="辅助写作",
-            description="用户要求润色、扩写、改写或结构化写作时使用。",
-            source=SkillSource.BUILTIN,
-            feature_id="assist_writing",
-            permission_code="feature.assist_writing",
-            readiness=SkillReadiness.STUB,
-            route="/system/assist-writing",
-            tools=(
-                _stub_tool(
-                    "rewrite",
-                    "润色或改写文本",
-                    feature_title="辅助写作",
-                    route="/system/assist-writing",
                 ),
             ),
         ),

@@ -52,11 +52,8 @@ def test_assert_allowed_upload_format():
     import pytest
     from app.core.exceptions import AppError
 
-    for name in ("a.pdf", "b.docx", "c.xlsx", "d.txt", "e.md"):
+    for name in ("a.pdf", "b.docx", "c.xlsx", "d.txt", "e.md", "f.pptx", "g.csv"):
         assert is_allowed_upload_format(name)
         assert_allowed_upload_format(name)
 
-    assert not is_allowed_upload_format("slide.pptx")
     assert not is_allowed_upload_format("photo.png", "image/png")
-    with pytest.raises(AppError):
-        assert_allowed_upload_format("slide.pptx")

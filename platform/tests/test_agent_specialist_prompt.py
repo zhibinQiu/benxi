@@ -11,7 +11,10 @@ def test_specialist_prompt_shorter_than_monolith():
     ).build_ai_home_resident_prompt()
     research = build_specialist_resident_prompt("research")
     platform = build_specialist_resident_prompt("platform")
+    diagram = build_specialist_resident_prompt("diagram")
+    report = build_specialist_resident_prompt("report")
     assert len(research) < len(mono) + 80
     assert "knowledge_retrieve" in research
     assert "list_document_folders" in platform
-    assert len(platform) < 500
+    assert "mermaid-diagram" in diagram
+    assert "report-feasibility" in report or "templates/outline" in report

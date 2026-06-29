@@ -10,7 +10,6 @@ import {
   NForm,
   NFormItem,
   NInput,
-  NPagination,
   NSelect,
   NSpace,
   NSpin,
@@ -20,6 +19,8 @@ import {
 } from "naive-ui";
 import AdminFormModal from "../components/AdminFormModal.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
+import KgEntityListPanel from "../components/kg/KgEntityListPanel.vue";
+import KgPalantirStats from "../components/kg/KgPalantirStats.vue";
 import KgGraphCanvas from "../components/KgGraphCanvas.vue";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
 import {
@@ -27,6 +28,8 @@ import {
   createKgEntityType,
   createKgRelation,
   createKgRelationType,
+  batchDeleteKgEntities,
+  clearKgGraph,
   deleteKgEntity,
   deleteKgEntityType,
   deleteKgRelation,
@@ -36,14 +39,20 @@ import {
   fetchKgGraph,
   fetchKgMeta,
   fetchKgRelations,
+  extractKgBatch,
   updateKgEntity,
   updateKgEntityType,
   updateKgRelationType,
 } from "../api/kg.js";
 import {
   clearKgPalantirCache,
+  isKgEntityListCacheFresh,
+  isKgGraphCacheFresh,
+  isKgPalantirMetaCacheFresh,
+  readKgEntityListCache,
   readKgGraphCache,
   readKgMetaCache,
+  writeKgEntityListCache,
   writeKgGraphCache,
   writeKgMetaCache,
 } from "../utils/kgPalantirCache.js";
@@ -57,9 +66,12 @@ const router = useRouter();
 const ENTITY_PAGE_SIZE = LIST_PAGE_SIZE;
 
 const TYPE_COLORS = {
-  blue: "#2E79B5",
+  blue: "#0067ff",
+  cyan: "#2AA8C8",
   green: "#1F8A65",
+  teal: "#1F9E8F",
   purple: "#7B64B8",
+  indigo: "#5B6FD6",
   orange: "#F0A040",
   pink: "#C85898",
   yellow: "#E8C030",
@@ -85,6 +97,7 @@ const browseTypeEntities = ref([]);
 const browseTypeLoading = ref(false);
 const browseRelationTypeId = ref(null);
 const entityPage = ref(1);
+const checkedEntityIds = ref([]);
 
 const entityModal = ref(false);
 const entityForm = ref({ type_id: null, name: "", description: "" });
@@ -108,6 +121,8 @@ const editingRelationTypeId = ref(null);
 
 const entityDetail = ref(null);
 const detailRefreshing = ref(false);
+const extractingKnowledge = ref(false);
+const extractingPlatform = ref(false);
 
 let searchTimer = null;
 
@@ -305,18 +320,23 @@ function scrollDetailPanelToTop() {
   });
 }
 
-async function loadEntityList({ resetPage = true } = {}) {
-  listLoading.value = true;
+async function loadEntityList({ resetPage = true, background = false } = {}) {
+  if (!background) listLoading.value = true;
   try {
-    entityList.value = await fetchKgEntities({
+    const data = await fetchKgEntities({
       typeId: filterTypeId.value || undefined,
       q: searchQ.value.trim() || undefined,
     });
-    if (resetPage) entityPage.value = 1;
+    entityList.value = data;
+    writeKgEntityListCache(filterTypeId.value, searchQ.value, data);
+    if (resetPage) {
+      entityPage.value = 1;
+      checkedEntityIds.value = [];
+    }
   } catch (e) {
-    ui.error(e.message);
+    if (!background) ui.error(e.message);
   } finally {
-    listLoading.value = false;
+    if (!background) listLoading.value = false;
   }
 }
 
@@ -375,19 +395,44 @@ function browseRelationType(typeId) {
   scrollDetailPanelToTop();
 }
 
-async function loadAll() {
-  const cachedMeta = readKgMetaCache();
-  if (cachedMeta) meta.value = cachedMeta;
+function hydrateFromCache() {
+  let ready = false;
+  const cachedMeta = readKgMetaCache({ allowStale: true });
+  if (cachedMeta) {
+    meta.value = cachedMeta;
+    ready = true;
+  }
+
+  const cachedList = readKgEntityListCache(filterTypeId.value, searchQ.value, {
+    allowStale: true,
+  });
+  if (cachedList !== null) {
+    entityList.value = cachedList;
+    ready = ready && true;
+  } else {
+    ready = false;
+  }
 
   const sid = normalizeKgId(selectedId.value);
   if (sid) {
-    const cachedGraph = readKgGraphCache(sid, graphDepth.value);
+    const cachedGraph = readKgGraphCache(sid, graphDepth.value, { allowStale: true });
     if (cachedGraph?.graph) {
       graph.value = cachedGraph.graph;
       if (cachedGraph.relations) relations.value = cachedGraph.relations;
     }
   }
 
+  return ready;
+}
+
+async function loadAll() {
+  const hadCache = hydrateFromCache();
+  if (hadCache) {
+    loading.value = false;
+    void centerGraphOnSelection();
+    void refreshAll({ background: true });
+    return;
+  }
   await refreshAll({ fullPage: true, syncMeta: false });
 }
 
@@ -400,11 +445,14 @@ async function loadSelectionGraph({ force = false, background = false } = {}) {
   }
 
   if (!force) {
-    const cached = readKgGraphCache(sid, graphDepth.value);
+    const cached = readKgGraphCache(sid, graphDepth.value, { allowStale: true });
     if (cached?.graph) {
       graph.value = cached.graph;
       if (cached.relations) relations.value = cached.relations;
       await centerGraphOnSelection();
+      if (!isKgGraphCacheFresh(sid, graphDepth.value)) {
+        void loadSelectionGraph({ force: true, background: true });
+      }
       return;
     }
   }
@@ -440,24 +488,40 @@ async function loadSelectionGraph({ force = false, background = false } = {}) {
   }
 }
 
-async function refreshAll({ toast = false, fullPage = false, syncMeta = false } = {}) {
+async function refreshAll({
+  toast = false,
+  fullPage = false,
+  syncMeta = false,
+  background = false,
+  force = false,
+} = {}) {
   const sid = normalizeKgId(selectedId.value);
   const activeBrowseTypeId = browseTypeId.value;
   const prevEntityPage = entityPage.value;
+  const hasShell =
+    Boolean(meta.value) &&
+    readKgEntityListCache(filterTypeId.value, searchQ.value, { allowStale: true }) !== null;
 
-  if (fullPage) loading.value = true;
-  else detailRefreshing.value = true;
+  if (fullPage && !background && !hasShell) loading.value = true;
+  else if (!background && !hasShell) detailRefreshing.value = true;
 
   try {
     if (syncMeta) {
       meta.value = await fetchKgMeta({ syncSystem: true });
       writeKgMetaCache(meta.value);
-    } else if (!meta.value) {
+    } else if (!meta.value || force || !isKgPalantirMetaCacheFresh()) {
       meta.value = await fetchKgMeta({ syncSystem: false });
       writeKgMetaCache(meta.value);
     }
 
-    await loadEntityList({ resetPage: false });
+    const cachedList = readKgEntityListCache(filterTypeId.value, searchQ.value, {
+      allowStale: true,
+    });
+    if (force || cachedList === null) {
+      await loadEntityList({ resetPage: false, background });
+    } else if (!isKgEntityListCacheFresh(filterTypeId.value, searchQ.value)) {
+      void loadEntityList({ resetPage: false, background: true });
+    }
     entityPage.value = Math.min(prevEntityPage, entityPageCount.value);
 
     if (activeBrowseTypeId) {
@@ -470,7 +534,7 @@ async function refreshAll({ toast = false, fullPage = false, syncMeta = false } 
     }
 
     if (sid) {
-      await loadSelectionGraph({ force: true });
+      await loadSelectionGraph({ force, background });
     } else {
       clearGraph();
       relations.value = [];
@@ -479,7 +543,7 @@ async function refreshAll({ toast = false, fullPage = false, syncMeta = false } 
 
     if (toast) ui.success(t("kgPalantir.messages.refreshed"));
   } catch (e) {
-    ui.error(e.message);
+    if (!background) ui.error(e.message);
   } finally {
     detailRefreshing.value = false;
     if (fullPage) loading.value = false;
@@ -574,6 +638,117 @@ async function refreshAfterMutation() {
 async function forceRefreshAll({ toast = false } = {}) {
   clearKgPalantirCache();
   await refreshAll({ toast, syncMeta: true });
+}
+
+async function runBatchExtract(scope) {
+  if (scope === "knowledge") {
+    ui.confirmAction({
+      title: t("kgPalantir.confirmExtractKnowledgeTitle"),
+      content: t("kgPalantir.confirmExtractKnowledgeContent", {
+        count: meta.value?.entity_total || 0,
+      }),
+      positiveText: t("kgPalantir.extractKnowledge"),
+      onPositive: () => executeBatchExtract(scope),
+    });
+    return;
+  }
+  await executeBatchExtract(scope);
+}
+
+async function executeBatchExtract(scope) {
+  const loadingRef = scope === "knowledge" ? extractingKnowledge : extractingPlatform;
+  if (loadingRef.value) return;
+  loadingRef.value = true;
+  try {
+    const result = await extractKgBatch({ scope, force: false });
+    if (!result?.queued) {
+      if (result?.reason === "all_extracted") {
+        ui.info(
+          t("kgPalantir.messages.extractAllDone", {
+            count: result.already_extracted_count ?? 0,
+          })
+        );
+        return;
+      }
+      ui.warning(t("kgPalantir.messages.extractNothingPending"));
+      return;
+    }
+    const pending = result?.document_count ?? 0;
+    const skipped = result?.already_extracted_count ?? 0;
+    const key =
+      scope === "knowledge"
+        ? "kgPalantir.messages.extractKnowledgeQueued"
+        : "kgPalantir.messages.extractPlatformQueued";
+    ui.success(t(key, { count: pending, skipped }));
+    checkedEntityIds.value = [];
+    selectedId.value = null;
+    await refreshAfterMutation();
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    loadingRef.value = false;
+  }
+}
+
+async function deleteCheckedEntities() {
+  if (!checkedEntityIds.value.length) return;
+  ui.confirmDelete({
+    title: t("common.batchDelete"),
+    content: t("kgPalantir.confirmDeleteSelected", { count: checkedEntityIds.value.length }),
+    onPositive: async () => {
+      const deleted = await batchDeleteKgEntities({ entityIds: checkedEntityIds.value });
+      const count = deleted?.deleted_count ?? 0;
+      checkedEntityIds.value = [];
+      if (selectedId.value && !entityList.value.some((e) => idEq(e.id, selectedId.value))) {
+        selectedId.value = null;
+      }
+      ui.success(t("kgPalantir.messages.batchDeleted", { count }));
+      await refreshAfterMutation();
+    },
+  });
+}
+
+async function deleteSearchResultEntities() {
+  if (!entityList.value.length) return;
+  ui.confirmDelete({
+    title: t("kgPalantir.deleteSearchResultsTitle"),
+    content: t("kgPalantir.confirmDeleteSearchResults", { count: entityList.value.length }),
+    onPositive: async () => {
+      const deleted = await batchDeleteKgEntities({
+        typeId: filterTypeId.value || undefined,
+        q: searchQ.value.trim() || undefined,
+      });
+      const count = deleted?.deleted_count ?? 0;
+      checkedEntityIds.value = [];
+      selectedId.value = null;
+      ui.success(t("kgPalantir.messages.batchDeleted", { count }));
+      await refreshAfterMutation();
+    },
+  });
+}
+
+async function clearEntireGraph() {
+  ui.confirmDelete({
+    title: t("kgPalantir.clearGraphTitle"),
+    content: t("kgPalantir.confirmClearGraph", {
+      entities: meta.value?.entity_total || 0,
+      relations: meta.value?.relation_total || 0,
+    }),
+    onPositive: async () => {
+      const result = await clearKgGraph();
+      checkedEntityIds.value = [];
+      selectedId.value = null;
+      entityDetail.value = null;
+      clearGraph();
+      ui.success(
+        t("kgPalantir.messages.graphCleared", {
+          entities: result?.deleted_entities ?? 0,
+          relations: result?.deleted_relations ?? 0,
+        })
+      );
+      await refreshAfterMutation();
+    },
+  });
 }
 
 async function removeEntity() {
@@ -770,78 +945,68 @@ onMounted(() => {
   <FeatureSubsystemShell fill :show-intro="false">
     <template #extra>
       <div class="kg-toolbar">
-        <n-select
-          v-model:value="graphDepth"
-          size="small"
-          :options="graphDepthOptions"
-          class="kg-toolbar__depth"
-        />
-        <n-button size="small" type="primary" @click="openCreateEntity">{{ t("kgPalantir.createEntity") }}</n-button>
-        <n-button size="small" secondary @click="openCreateRelation">{{ t("kgPalantir.addRelation") }}</n-button>
-        <ListRefreshButton @click="forceRefreshAll({ toast: true })" />
+        <div class="kg-toolbar__group">
+          <span class="kg-toolbar__label">{{ t("kgPalantir.toolbarView") }}</span>
+          <n-select
+            v-model:value="graphDepth"
+            size="small"
+            :options="graphDepthOptions"
+            class="kg-toolbar__depth"
+          />
+        </div>
+        <div class="kg-toolbar__group kg-toolbar__group--actions">
+          <n-button size="small" type="primary" @click="openCreateEntity">
+            {{ t("kgPalantir.createEntity") }}
+          </n-button>
+          <n-button size="small" secondary @click="openCreateRelation">
+            {{ t("kgPalantir.addRelation") }}
+          </n-button>
+          <n-button
+            size="small"
+            secondary
+            :loading="extractingKnowledge"
+            @click="runBatchExtract('knowledge')"
+          >
+            {{ t("kgPalantir.extractKnowledge") }}
+          </n-button>
+          <n-button
+            size="small"
+            quaternary
+            :loading="extractingPlatform"
+            @click="runBatchExtract('platform')"
+          >
+            {{ t("kgPalantir.extractPlatform") }}
+          </n-button>
+          <ListRefreshButton @click="forceRefreshAll({ toast: true })" />
+        </div>
       </div>
     </template>
 
-    <n-spin :show="loading" class="kg-spin">
+    <n-spin :show="loading" class="kg-spin" local>
       <div class="kg-page">
         <aside class="kg-panel kg-panel--left">
+          <KgPalantirStats v-if="meta" :meta="meta" :type-color="typeColor" />
           <n-tabs v-model:value="leftTab" type="line" size="small" class="kg-tabs">
             <n-tab-pane name="entities" :tab="t('kgPalantir.tabEntities')">
-              <div class="kg-search-block">
-                <n-input
-                  v-model:value="searchQ"
-                  size="small"
-                  :placeholder="t('kgPalantir.searchPlaceholder')"
-                  clearable
-                />
-                <n-select
-                  v-model:value="filterTypeId"
-                  size="small"
-                  :options="typeFilterOptions"
-                  class="kg-search-block__type"
-                />
-              </div>
-              <div class="kg-list-meta">
-                {{ t("kgPalantir.entityTotal", { count: meta?.entity_total || 0 }) }}
-                <span v-if="searchQ.trim()"> · {{ t("kgPalantir.searchResults", { count: entityList.length }) }}</span>
-              </div>
-              <n-spin :show="listLoading" class="kg-list-spin">
-                <div v-if="entityList.length" class="kg-entity-list-wrap">
-                  <div class="kg-entity-list">
-                    <button
-                      v-for="item in paginatedEntityList"
-                      :key="item.id"
-                      type="button"
-                      class="kg-glass-item kg-entity-row"
-                      :class="{ 'is-active': idEq(selectedId, item.id) }"
-                      @click="selectEntity(item.id)"
-                    >
-                      <span
-                        class="kg-entity-row__dot"
-                        :style="{ background: typeColor(item.type_color) }"
-                      />
-                      <span class="kg-entity-row__body">
-                        <span class="kg-entity-row__name">{{ item.name }}</span>
-                        <span class="kg-entity-row__type">{{ item.type_label }}</span>
-                      </span>
-                    </button>
-                  </div>
-                  <div v-if="entityPageCount > 1" class="kg-list-pagination">
-                    <n-pagination
-                      v-model:page="entityPage"
-                      :page-count="entityPageCount"
-                      size="small"
-                      :page-slot="5"
-                    />
-                  </div>
-                </div>
-                <n-empty
-                  v-else
-                  size="small"
-                  :description="t('kgPalantir.noMatchingEntities')"
-                  class="kg-list-empty"
-                />
-              </n-spin>
+              <KgEntityListPanel
+                :meta="meta"
+                :entity-list="entityList"
+                :paginated-entity-list="paginatedEntityList"
+                :list-loading="listLoading"
+                v-model:search-q="searchQ"
+                v-model:filter-type-id="filterTypeId"
+                v-model:entity-page="entityPage"
+                v-model:checked-ids="checkedEntityIds"
+                :selected-id="selectedId"
+                :entity-page-count="entityPageCount"
+                :type-filter-options="typeFilterOptions"
+                :type-color="typeColor"
+                :id-eq="idEq"
+                @select="selectEntity"
+                @delete-checked="deleteCheckedEntities"
+                @delete-search-results="deleteSearchResultEntities"
+                @clear-graph="clearEntireGraph"
+              />
             </n-tab-pane>
 
             <n-tab-pane name="ontology" :tab="t('kgPalantir.tabOntology')">
@@ -964,6 +1129,12 @@ onMounted(() => {
                   <p v-if="entityDetail?.description" class="kg-detail-desc">
                     {{ entityDetail.description }}
                   </p>
+                  <p
+                    v-if="entityDetail?.properties?.kg_extracted_at"
+                    class="kg-detail-meta"
+                  >
+                    {{ t("kgPalantir.extractedAt") }}：{{ entityDetail.properties.kg_extracted_at }}
+                  </p>
                   <div class="kg-detail-actions">
                     <n-button size="small" type="primary" @click="openEditEntity">{{ t("common.edit") }}</n-button>
                     <n-button size="small" @click="openCreateRelation">{{ t("kgPalantir.addRelation") }}</n-button>
@@ -1054,7 +1225,7 @@ onMounted(() => {
                 </div>
                 <n-button size="tiny" quaternary @click="clearBrowseType">{{ t("common.close") }}</n-button>
               </div>
-              <n-spin :show="browseTypeLoading" class="kg-type-browse__spin">
+              <n-spin :show="browseTypeLoading" class="kg-type-browse__spin" local>
                 <div v-if="browseTypeEntities.length" class="kg-type-browse__body">
                   <div class="kg-type-browse__list">
                     <button
@@ -1238,10 +1409,28 @@ onMounted(() => {
 .kg-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px 16px;
   width: 100%;
   min-width: 0;
+}
+
+.kg-toolbar__group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kg-toolbar__group--actions {
+  margin-left: auto;
+}
+
+.kg-toolbar__label {
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+  white-space: nowrap;
 }
 
 .kg-toolbar__depth {
@@ -1255,9 +1444,10 @@ onMounted(() => {
   max-height: 100%;
   height: 100%;
   border: 1px solid var(--platform-border);
-  border-radius: var(--platform-radius);
+  border-radius: 14px;
   overflow: hidden;
   background: var(--platform-bg-elevated);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--platform-text-primary) 4%, transparent);
 }
 
 .kg-panel {
@@ -1267,10 +1457,33 @@ onMounted(() => {
 }
 
 .kg-panel--left {
-  width: min(300px, 34vw);
-  min-width: 260px;
+  width: min(320px, 36vw);
+  min-width: 280px;
   border-right: 1px solid var(--platform-border);
   background: var(--platform-bg-secondary);
+  display: flex;
+  flex-direction: column;
+}
+
+.kg-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kg-tabs :deep(.n-tabs-pane-wrapper) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kg-tabs :deep(.n-tab-pane) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .kg-panel--center {
@@ -1280,6 +1493,11 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: radial-gradient(
+    120% 80% at 50% 0%,
+    color-mix(in srgb, var(--platform-primary) 6%, var(--platform-bg-elevated)),
+    var(--platform-bg-elevated) 55%
+  );
 }
 
 .kg-panel--right {

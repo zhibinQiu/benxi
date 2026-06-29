@@ -36,6 +36,21 @@ export async function deleteKgEntity(entityId) {
   return api(`/api/v1/kg/entities/${entityId}`, { method: "DELETE" });
 }
 
+export async function batchDeleteKgEntities({ entityIds, typeId, q } = {}) {
+  return api("/api/v1/kg/entities/batch-delete", {
+    method: "POST",
+    body: JSON.stringify({
+      entity_ids: entityIds || [],
+      type_id: typeId || null,
+      q: q || null,
+    }),
+  });
+}
+
+export async function clearKgGraph() {
+  return api("/api/v1/kg/graph/clear", { method: "POST" });
+}
+
 export async function fetchKgRelations({ entityId } = {}) {
   const params = new URLSearchParams();
   if (entityId) params.set("entity_id", entityId);
@@ -92,5 +107,12 @@ export async function extractKgFromText({ title, text, sourceType, sourceId } = 
       source_type: sourceType || "meeting_summary",
       source_id: sourceId || null,
     }),
+  });
+}
+
+export async function extractKgBatch({ scope = "knowledge", force = false } = {}) {
+  return api("/api/v1/kg/extract/batch", {
+    method: "POST",
+    body: JSON.stringify({ scope, force }),
   });
 }

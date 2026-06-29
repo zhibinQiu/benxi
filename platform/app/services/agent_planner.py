@@ -3,22 +3,35 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.agent_runtime import format_planning_datetime_block
 from app.core.llm_parse import parse_llm_json
 from app.integrations.deepseek_client import chat_completion_message_async, is_configured
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_intent import AgentToolPlan, plan_agent_tools
+from app.core.report_skill_catalog import REPORT_SKILL_NAME_SET
+from app.services.agent_routing_signals import (
+    matches_research_signal,
+    message_has_page_intent,
+    message_has_url,
+)
 from app.services.agent_skill_router import (
-    _PAGE_INTENT_RE,
-    _URL_IN_MESSAGE_RE,
+    MERMAID_DIAGRAM_SKILL,
+    is_diagram_generation_message,
+    is_platform_system_data_message,
     is_skill_management_message,
     user_wants_browser_screenshot,
+)
+from app.services.report_agent_skills import (
+    is_report_generation_message,
+    pick_available_report_skill,
 )
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
@@ -39,6 +52,21 @@ RETRIEVAL_ATOMIC_TOOLS = frozenset(
 )
 SKILL_LOAD_TOOL = "load_uploaded_skill"
 SKILL_SCRIPT_TOOL = "run_skill_script"
+
+_SIMPLE_FETCH_RE = re.compile(
+    r"(爬取|抓取|获取|查询|查|看看).{0,24}(价格|价|行情|数据|汇率)|"
+    r"(最新|今天|今日).{0,12}(价格|价|行情)|"
+    r"(价格|行情).{0,12}(多少|是什么|怎么样)",
+    re.I,
+)
+_UPLOADED_SKILL_NAME_HINT_RE = re.compile(
+    r"carbon|market|price|碳价|行情|爬|fetch|scrape",
+    re.I,
+)
+_PRICE_OR_DATA_QUERY_RE = re.compile(
+    r"碳价|碳市场价格|行情|价格|报价|收盘|开盘|最新价|多少钱|查一下|查询",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -83,7 +111,11 @@ SKILL_MGMT_INTENT = "创建或管理 Agent 发展技能"
 
 
 def _skill_management_plan_instruction() -> str:
-    return "Skill：先调研再 create；数据类须 main.py；失败用 update 修复，勿重复 create。"
+    return (
+        "Skill：先查目录，已有则用 load/run；不够则 update，大改才 create；"
+        "先调研再动手；数据类须 main.py；改/建后 run_skill_script 验证；"
+        "失败 update 修复，勿重复 create。"
+    )
 
 
 def build_plan_context_instruction(
@@ -130,7 +162,12 @@ def filter_tool_specs_by_plan(
     for spec in specs:
         fn = spec.get("function") or {}
         name = str(fn.get("name") or "")
-        if not name or name in skip:
+        if not name:
+            continue
+        if name in ("search_tools", "run_tool_batch"):
+            filtered.append(spec)
+            continue
+        if name in skip:
             continue
         if name in RETRIEVAL_ATOMIC_TOOLS:
             if allow_retrieval is not None and name not in allow_retrieval:
@@ -139,6 +176,9 @@ def filter_tool_specs_by_plan(
                 continue
         # load_uploaded_skill 由系统自动注入 SKILL.md，不向 Agent 暴露
         if name == SKILL_LOAD_TOOL:
+            continue
+        needs_skill_script = bool(plan.uploaded_skill) or plan.intent == SKILL_MGMT_INTENT
+        if name == SKILL_SCRIPT_TOOL and not needs_skill_script:
             continue
         filtered.append(spec)
     return filtered
@@ -149,29 +189,32 @@ def _rule_plan_for_skill_management(message: str) -> AgentExecutionPlan | None:
     if not is_skill_management_message(message):
         return None
     msg = (message or "").strip()
-    needs_browser = bool(_URL_IN_MESSAGE_RE.search(msg) or _PAGE_INTENT_RE.search(msg))
+    needs_browser = bool(message_has_url(msg) or message_has_page_intent(msg))
     if needs_browser:
         steps = (
+            "list_agent_skills 查已有发展技能 slug，可复用则 run_skill_script",
             "澄清目标字段与验收标准",
             "browser_navigate → browser_snapshot 探查页面（勿截图）",
-            "确认能定位到价格/数据后再编写 main.py 与 SKILL.md",
-            "create_uploaded_skill（extra_files 含 main.py）",
-            "向用户说明用法与局限",
+            "不足则 update；大改或无匹配时再 create_uploaded_skill（含 main.py）",
+            "run_skill_script 验证满足用户需求",
+            "向用户说明结果与用法",
         )
     else:
         steps = (
+            "list_agent_skills 查已有发展技能 slug，可复用则 run_skill_script",
             "澄清需求、输入输出与验收标准",
             "必要时 web_search 或读文档验证可行性",
-            "编写 main.py 与 SKILL.md",
-            "create_uploaded_skill（含 extra_files 脚本）",
-            "向用户说明用法",
+            "不足则 update；大改或无匹配时再 create_uploaded_skill（含 main.py）",
+            "run_skill_script 验证满足用户需求",
+            "向用户说明结果与用法",
         )
     skip_tools: tuple[str, ...] = ()
     if not user_wants_browser_screenshot(msg):
         skip_tools = ("browser_screenshot",)
     return AgentExecutionPlan(
         reasoning=(
-            "发展技能须先调研验证、想清楚再 create_uploaded_skill，避免错误技能浪费用户时间；"
+            "发展技能：能用则用、不能用则改、改动大则新建；"
+            "须先调研验证再动手；新建/修改后须测试是否满足用户需求；"
             "探页用 browser_snapshot，勿臆造页面结构"
         ),
         intent=SKILL_MGMT_INTENT,
@@ -183,6 +226,323 @@ def _rule_plan_for_skill_management(message: str) -> AgentExecutionPlan | None:
         steps=steps,
         source="rule",
     )
+
+
+_SKILL_FOLLOWUP_CONTEXT_RE = re.compile(
+    r"碳|行情|价格|爬取|抓取|skill|技能|tanshichang|市场",
+    re.I,
+)
+_SKILL_FOLLOWUP_NAME_RE = re.compile(
+    r"carbon|market|price|碳|行情|爬|fetch|scrape",
+    re.I,
+)
+
+
+def _infer_uploaded_skill_followup(
+    message: str,
+    history: list[AiChatMessage] | None,
+    uploaded_names: set[str],
+) -> str | None:
+    """短跟贴：上文刚讨论某发展技能时，继承该技能执行。"""
+    msg = (message or "").strip()
+    if not msg or len(msg) > 24 or is_skill_management_message(msg):
+        return None
+    if not uploaded_names:
+        return None
+    recent = _history_snippet(history, limit=6)
+    if not recent:
+        return None
+    recent_fold = recent.casefold()
+    for name in sorted(uploaded_names, key=len, reverse=True):
+        if name.casefold() in recent_fold:
+            return name
+    if not _SKILL_FOLLOWUP_CONTEXT_RE.search(recent):
+        return None
+    for name in uploaded_names:
+        if _SKILL_FOLLOWUP_NAME_RE.search(name):
+            return name
+    return None
+
+
+def _rule_plan_for_uploaded_skill_followup(
+    message: str,
+    history: list[AiChatMessage] | None,
+    uploaded_names: set[str],
+) -> AgentExecutionPlan | None:
+    skill = match_uploaded_skill_for_message(
+        message,
+        history,
+        uploaded_names=uploaded_names,
+        exclude_research_context=True,
+    )
+    if not skill:
+        return None
+    return AgentExecutionPlan(
+        reasoning=f"已有发展技能 `{skill}`，优先 run_skill_script",
+        intent="执行发展技能",
+        direct_answer=False,
+        atomic_tools=(),
+        skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+        uploaded_skill=skill,
+        builtin_orchestration=None,
+        steps=(f"run_skill_script({skill}) 获取结果",),
+        source="rule",
+    )
+
+
+def match_uploaded_skill_for_message(
+    message: str,
+    history: list[AiChatMessage] | None,
+    *,
+    uploaded_names: set[str],
+    exclude_research_context: bool = True,
+) -> str | None:
+    """规则匹配已有发展技能 slug；复杂流程优先于原子工具。"""
+    msg = (message or "").strip()
+    if not msg or is_skill_management_message(msg) or not uploaded_names:
+        return None
+
+    def _hinted_data_skills() -> list[str]:
+        return [
+            name
+            for name in uploaded_names
+            if _UPLOADED_SKILL_NAME_HINT_RE.search(name)
+        ]
+
+    if _PRICE_OR_DATA_QUERY_RE.search(msg) or _SIMPLE_FETCH_RE.search(msg):
+        hinted = _hinted_data_skills()
+        if len(hinted) == 1:
+            return hinted[0]
+        if hinted and len(msg) <= 48:
+            return max(hinted, key=len)
+
+    if exclude_research_context and (
+        matches_research_signal(msg)
+        or re.search(r"知识库|文档库|政策|待办", msg, re.I)
+    ):
+        return None
+
+    skill = _infer_uploaded_skill_followup(msg, history, uploaded_names)
+    if skill:
+        return skill
+
+    msg_fold = msg.casefold()
+    for name in sorted(uploaded_names, key=len, reverse=True):
+        if name.casefold() in msg_fold:
+            return name
+
+    return None
+
+
+def _rule_plan_for_simple_fetch(
+    message: str,
+    *,
+    uploaded_names: set[str] | None = None,
+    history: list[AiChatMessage] | None = None,
+) -> AgentExecutionPlan | None:
+    """无匹配发展技能时的一次性公开数据查询 → web_search。"""
+    msg = (message or "").strip()
+    if not msg or is_skill_management_message(msg):
+        return None
+    if uploaded_names and match_uploaded_skill_for_message(
+        msg,
+        history,
+        uploaded_names=uploaded_names,
+        exclude_research_context=True,
+    ):
+        return None
+    if not _SIMPLE_FETCH_RE.search(msg):
+        return None
+    return AgentExecutionPlan(
+        reasoning="简单公开数据查询，优先原子工具 web_search，无需发展 Skill",
+        intent="查询公开数据",
+        direct_answer=False,
+        atomic_tools=(ATOMIC_TOOL_WEB_SEARCH,),
+        skip_tools=(),
+        uploaded_skill=None,
+        builtin_orchestration=None,
+        steps=("web_search 检索最新数据", "汇总结论"),
+        source="rule",
+    )
+
+
+def _rule_plan_for_report(
+    db: Session,
+    user: User,
+    message: str,
+) -> AgentExecutionPlan | None:
+    """结构化长报告：按报告类型加载对应 uploaded Skill 并允许检索。"""
+    if not is_report_generation_message(message):
+        return None
+    _, uploaded_names = _skill_name_sets(db, user)
+    available = uploaded_names & REPORT_SKILL_NAME_SET
+    skill = pick_available_report_skill(message, available)
+    if not skill:
+        return None
+    return AgentExecutionPlan(
+        reasoning=f"报告撰写：按 {skill} 技能模板收集材料并输出长文",
+        intent="撰写结构化报告",
+        direct_answer=False,
+        atomic_tools=(
+            ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
+            ATOMIC_TOOL_WEB_SEARCH,
+        ),
+        skip_tools=(),
+        uploaded_skill=skill,
+        builtin_orchestration=None,
+        steps=(
+            f"load_uploaded_skill({skill}) 读取模板",
+            "knowledge_retrieve / web_search 收集材料",
+            "按 templates/outline.md 输出 Markdown 长报告",
+        ),
+        source="rule",
+    )
+
+
+def _rule_plan_for_platform_system_data(
+    db: Session,
+    user: User,
+    message: str,
+) -> AgentExecutionPlan | None:
+    """平台用户/部门等系统数据：必须调 list_users / list_departments 或 kg_query。"""
+    from app.services.agent_skill_router import is_org_member_list_question
+
+    if not is_platform_system_data_message(message):
+        return None
+    if is_org_member_list_question(message):
+        return AgentExecutionPlan(
+            reasoning="部门成员须来自本体图谱 employs 关系，禁止臆造姓名",
+            intent="查询部门成员",
+            direct_answer=False,
+            atomic_tools=(ATOMIC_TOOL_KG_QUERY,),
+            skip_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE, ATOMIC_TOOL_WEB_SEARCH),
+            uploaded_skill=None,
+            builtin_orchestration=None,
+            steps=(
+                "kg_query 从本体图谱读取该部门 employs 关系",
+                "仅根据工具返回数据作答，禁止编造姓名或邮箱",
+            ),
+            source="rule",
+        )
+    from app.core.permissions import user_has_permission
+
+    msg = (message or "").strip().casefold()
+    dept_focus = any(k in msg for k in ("部门", "组织", "架构"))
+    can_admin_user = user_has_permission(db, user, "admin.user")
+    can_admin_dept = user_has_permission(db, user, "admin.dept")
+    steps: list[str] = []
+    if dept_focus and can_admin_dept:
+        steps.append("list_departments 获取部门列表")
+    elif can_admin_user:
+        steps.append("list_users（page_size=100）获取用户列表")
+    else:
+        steps.append("kg_query 从本体图谱读取已同步的组织/人员")
+    steps.append("仅根据工具返回数据作答，禁止编造姓名或邮箱")
+    return AgentExecutionPlan(
+        reasoning="系统数据须来自 list_users / list_departments / kg_query，禁止臆造",
+        intent="查询平台用户/组织数据",
+        direct_answer=False,
+        atomic_tools=(ATOMIC_TOOL_KG_QUERY,) if not can_admin_user else (),
+        skip_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE, ATOMIC_TOOL_WEB_SEARCH),
+        uploaded_skill=None,
+        builtin_orchestration=None,
+        steps=tuple(steps),
+        source="rule",
+    )
+
+
+def _rule_plan_for_diagram(
+    db: Session,
+    user: User,
+    message: str,
+) -> AgentExecutionPlan | None:
+    """思维导图/流程图等：走 mermaid-diagram 指令型技能。"""
+    if not is_diagram_generation_message(message):
+        return None
+    _, uploaded_names = _skill_name_sets(db, user)
+    if MERMAID_DIAGRAM_SKILL not in uploaded_names:
+        return None
+    return AgentExecutionPlan(
+        reasoning="图表生成：按 mermaid-diagram 技能在正文输出 Mermaid 围栏",
+        intent="生成 Mermaid 图表",
+        direct_answer=False,
+        atomic_tools=(),
+        skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+        uploaded_skill=MERMAID_DIAGRAM_SKILL,
+        builtin_orchestration=None,
+        steps=("按 mermaid-diagram SKILL.md 输出 ```mermaid 源码",),
+        source="rule",
+    )
+
+
+def _coerce_skill_first_plan(
+    message: str,
+    plan: AgentExecutionPlan,
+    *,
+    history: list[AiChatMessage] | None = None,
+    uploaded_names: set[str] | None = None,
+) -> AgentExecutionPlan:
+    """非 Skill 管理：先匹配已有发展技能，无匹配再保留原子工具路径。"""
+    msg = (message or "").strip()
+    if plan.intent == SKILL_MGMT_INTENT or is_skill_management_message(msg):
+        return plan
+
+    uploaded = plan.uploaded_skill
+    if not uploaded and uploaded_names:
+        uploaded = match_uploaded_skill_for_message(
+            msg,
+            history,
+            uploaded_names=uploaded_names,
+            exclude_research_context=True,
+        )
+
+    if uploaded and uploaded.lower() not in msg.lower():
+        keep = uploaded == MERMAID_DIAGRAM_SKILL and (
+            is_diagram_generation_message(msg) or plan.source == "rule"
+        )
+        if not keep and uploaded in REPORT_SKILL_NAME_SET:
+            keep = is_report_generation_message(msg) or plan.source == "rule"
+        if not keep and uploaded_names and uploaded in uploaded_names:
+            keep = bool(
+                match_uploaded_skill_for_message(
+                    msg,
+                    history,
+                    uploaded_names=uploaded_names,
+                    exclude_research_context=True,
+                )
+                == uploaded
+            )
+        if not keep:
+            uploaded = None
+
+    atomic = list(plan.atomic_tools)
+    skip = list(plan.skip_tools)
+    if uploaded:
+        if RETRIEVAL_ATOMIC_TOOLS.intersection(atomic):
+            atomic = [t for t in atomic if t not in RETRIEVAL_ATOMIC_TOOLS]
+        for tool in RETRIEVAL_ATOMIC_TOOLS:
+            if tool not in skip:
+                skip.append(tool)
+    elif _SIMPLE_FETCH_RE.search(msg) and ATOMIC_TOOL_WEB_SEARCH not in atomic:
+        atomic.insert(0, ATOMIC_TOOL_WEB_SEARCH)
+
+    if uploaded == plan.uploaded_skill and tuple(atomic) == plan.atomic_tools and tuple(skip) == plan.skip_tools:
+        return plan
+
+    return AgentExecutionPlan(
+        reasoning=plan.reasoning,
+        intent=plan.intent,
+        direct_answer=plan.direct_answer,
+        atomic_tools=tuple(atomic),
+        skip_tools=tuple(skip),
+        uploaded_skill=uploaded,
+        builtin_orchestration=plan.builtin_orchestration,
+        steps=plan.steps,
+        source=plan.source,
+    )
+
+
+_coerce_atomic_first_plan = _coerce_skill_first_plan
 
 
 def _coerce_skill_management_plan(
@@ -208,31 +568,6 @@ def _coerce_skill_management_plan(
 
 
 def _rule_plan_from_intent(intent_plan: AgentToolPlan) -> AgentExecutionPlan | None:
-    label = intent_plan.intent_label or ""
-    if "定时提醒" in label:
-        return AgentExecutionPlan(
-            reasoning="用户请求定时提醒，必须调用 schedule_notification",
-            intent=label,
-            direct_answer=False,
-            atomic_tools=(),
-            skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
-            uploaded_skill=None,
-            builtin_orchestration=None,
-            steps=("调用 schedule_notification 设置提醒", "向用户确认已安排"),
-            source="rule",
-        )
-    if "日常" in label or "平台使用" in label:
-        return AgentExecutionPlan(
-            reasoning=label,
-            intent=label,
-            direct_answer=True,
-            atomic_tools=(),
-            skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
-            uploaded_skill=None,
-            builtin_orchestration=None,
-            steps=(),
-            source="rule",
-        )
     if intent_plan.use_attachment:
         return AgentExecutionPlan(
             reasoning="用户已提供临时附件，优先依据附件正文作答",
@@ -243,6 +578,44 @@ def _rule_plan_from_intent(intent_plan: AgentToolPlan) -> AgentExecutionPlan | N
             uploaded_skill=None,
             builtin_orchestration=None,
             steps=("阅读附件上下文", "依据附件回答"),
+            source="rule",
+        )
+    return None
+
+
+def _rule_plan_for_chitchat(
+    message: str,
+    history: list[AiChatMessage] | None = None,
+) -> AgentExecutionPlan | None:
+    """寒暄 / 简单直答：跳过 LLM 规划，直接进入流式作答。"""
+    from app.services.agent_intent import is_chitchat_message
+    from app.services.agent_routing_signals import is_trivial_direct_question
+
+    text = (message or "").strip()
+    if not text:
+        return None
+    if is_chitchat_message(text, history):
+        return AgentExecutionPlan(
+            reasoning="日常寒暄或简短交流，无需检索与工具",
+            intent="日常交流",
+            direct_answer=True,
+            atomic_tools=(),
+            skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+            uploaded_skill=None,
+            builtin_orchestration=None,
+            steps=(),
+            source="rule",
+        )
+    if is_trivial_direct_question(text):
+        return AgentExecutionPlan(
+            reasoning="简单问题，模型可直接作答",
+            intent="简要回答",
+            direct_answer=True,
+            atomic_tools=(),
+            skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+            uploaded_skill=None,
+            builtin_orchestration=None,
+            steps=(),
             source="rule",
         )
     return None
@@ -363,13 +736,15 @@ def resolve_kg_planning_context(
     db: Session,
     user: User,
     question: str,
+    history: list[AiChatMessage] | None = None,
 ) -> str:
     """规划前从问题匹配实体并扩展子图，供消歧与工具选型参考。"""
+    from app.core.conversation_turn_context import effective_question_for_retrieval
     from app.core.permissions import user_has_permission
 
     if not user_has_permission(db, user, "feature.kg_palantir"):
         return ""
-    text = (question or "").strip()
+    text = effective_question_for_retrieval(question, history).strip()
     if not text:
         return ""
     try:
@@ -403,22 +778,20 @@ def _planning_system_prompt(
         '{"reasoning":"…","intent":"…","direct_answer":true|false,'
         '"atomic_tools":[],"skip_tools":[],"uploaded_skill":null,'
         '"builtin_orchestration":null,"steps":[]}\n'
-        "规则：闲聊/够答→direct_answer；仅 steps 覆盖用户明确诉求，勿加额外任务；"
-        "定时提醒→schedule_notification；查文档→knowledge_retrieve；"
+        "规则：闲聊/够答→direct_answer；"
+        "已有发展技能且任务匹配→uploaded_skill + run_skill_script，勿 web_search；"
+        "无匹配技能时简单查价/公开数据→web_search；"
+        "系统操作→platform 工具；调研检索→knowledge_retrieve/web_search；"
+        "创建 Skill 前先查已有技能，可复用则 run，勿重复 create；"
         "够用即停。"
+        "若存在近期对话，须结合上文理解当前短句/追问的真实意图，勿孤立看待本轮输入。"
     )
 
 
-def _history_snippet(history: list[AiChatMessage] | None, *, limit: int = 4) -> str:
-    if not history:
-        return ""
-    lines: list[str] = []
-    for msg in history[-limit:]:
-        role = "用户" if msg.role == "user" else "助手"
-        text = (msg.content or "").strip()[:160]
-        if text:
-            lines.append(f"{role}：{text}")
-    return "\n".join(lines)
+def _history_snippet(history: list[AiChatMessage] | None, *, limit: int = 8) -> str:
+    from app.core.conversation_turn_context import format_conversation_snippet
+
+    return format_conversation_snippet(history, limit=limit, per_message_chars=240)
 
 
 async def resolve_execution_plan(
@@ -430,8 +803,11 @@ async def resolve_execution_plan(
     intent_plan: AgentToolPlan | None = None,
     available_atomic_tools: set[str] | None = None,
     kg_planning_context: str | None = None,
+    prior_outcomes: list[str] | None = None,
+    prior_plan: AgentExecutionPlan | None = None,
+    force_replan: bool = False,
 ) -> AgentExecutionPlan:
-    """规则 fast path → 可选 LLM 规划 → fallback。"""
+    """规则 fast path → 可选 LLM 规划 → fallback。force_replan 时跳过缓存并根据上轮结果调整。"""
     settings = get_settings()
     if intent_plan is None:
         from app.core.permissions import user_has_permission
@@ -454,12 +830,48 @@ async def resolve_execution_plan(
     if rule_plan is not None:
         return rule_plan
 
+    chitchat_plan = _rule_plan_for_chitchat(message, history)
+    if chitchat_plan is not None and not force_replan:
+        return chitchat_plan
+
     skill_mgmt_plan = _rule_plan_for_skill_management(message)
-    if skill_mgmt_plan is not None:
+    if skill_mgmt_plan is not None and not force_replan:
         return skill_mgmt_plan
 
+    _, uploaded_names = _skill_name_sets(db, user)
+    followup_plan = _rule_plan_for_uploaded_skill_followup(
+        message, history, uploaded_names
+    )
+    if followup_plan is not None and not force_replan:
+        return followup_plan
+
+    simple_fetch_plan = _rule_plan_for_simple_fetch(
+        message,
+        uploaded_names=uploaded_names,
+        history=history,
+    )
+    if simple_fetch_plan is not None and not force_replan:
+        return simple_fetch_plan
+
+    report_plan = _rule_plan_for_report(db, user, message)
+    if report_plan is not None and not force_replan:
+        return report_plan
+
+    diagram_plan = _rule_plan_for_diagram(db, user, message)
+    if diagram_plan is not None and not force_replan:
+        return diagram_plan
+
+    platform_data_plan = _rule_plan_for_platform_system_data(db, user, message)
+    if platform_data_plan is not None and not force_replan:
+        return platform_data_plan
+
     if not settings.agent_planning_enabled or not is_configured():
-        return _fallback_plan(intent_plan.intent_label)
+        return _coerce_skill_first_plan(
+            message,
+            _fallback_plan(intent_plan.intent_label),
+            history=history,
+            uploaded_names=uploaded_names,
+        )
 
     allowed_atomic = set(available_atomic_tools or RETRIEVAL_ATOMIC_TOOLS)
     allowed_atomic &= RETRIEVAL_ATOMIC_TOOLS
@@ -481,11 +893,16 @@ async def resolve_execution_plan(
         builtin_skills=builtin_names,
         uploaded_skills=uploaded_names,
     )
-    cached = lookup_cached_payload(
-        scope_key,
-        message,
-        plan_type=PLAN_TYPE_AGENT_EXECUTION,
-    )
+    cached = None
+    if not force_replan:
+        from app.core.conversation_turn_context import plan_cache_applicable
+
+        if plan_cache_applicable(message, history):
+            cached = lookup_cached_payload(
+                scope_key,
+                message,
+                plan_type=PLAN_TYPE_AGENT_EXECUTION,
+            )
     if cached:
         plan = execution_plan_from_payload(cached["payload"], source="cache")
         cached["lookup_question"] = message
@@ -502,11 +919,16 @@ async def resolve_execution_plan(
                 steps=plan.steps,
                 source="cache",
             )
-        return _coerce_skill_management_plan(message, plan)
+        return _coerce_skill_first_plan(
+            message,
+            _coerce_skill_management_plan(message, plan),
+            history=history,
+            uploaded_names=uploaded_names,
+        )
 
     kg_text = (kg_planning_context or "").strip()
     if not kg_text:
-        kg_text = resolve_kg_planning_context(db, user, message)
+        kg_text = resolve_kg_planning_context(db, user, message, history=history)
 
     system = _planning_system_prompt(
         allowed_atomic=allowed_atomic,
@@ -514,10 +936,26 @@ async def resolve_execution_plan(
         uploaded_names=uploaded_names,
         include_kg_reference=bool(kg_text),
     )
-    user_parts = [f"用户问题：{(message or '').strip()[:800]}"]
-    hist = _history_snippet(history)
-    if hist:
-        user_parts.append(f"近期对话：\n{hist}")
+    from app.core.conversation_turn_context import build_turn_planning_context
+
+    user_parts = [
+        format_planning_datetime_block(),
+        build_turn_planning_context(message, history),
+    ]
+    if prior_plan is not None:
+        user_parts.append(
+            "上一轮规划："
+            f"intent={prior_plan.intent}；"
+            f"uploaded_skill={prior_plan.uploaded_skill or '无'}；"
+            f"direct_answer={prior_plan.direct_answer}"
+        )
+    if prior_outcomes:
+        lines = [str(x).strip() for x in prior_outcomes if str(x).strip()][-8:]
+        if lines:
+            user_parts.append(
+                "上一轮执行结果（用户任务若未完成，须据此调整方案并继续，禁止重复无效路径）：\n"
+                + "\n".join(f"- {line}" for line in lines)
+            )
     if kg_text:
         user_parts.append(f"{_KG_PLANNING_USER_LABEL}\n{kg_text}")
 
@@ -538,14 +976,27 @@ async def resolve_execution_plan(
         allowed_builtin=builtin_names,
     )
     if parsed:
-        parsed = _coerce_skill_management_plan(message, parsed)
-        store_cached_payload(
-            scope_key,
+        parsed = _coerce_skill_first_plan(
             message,
-            plan_type=PLAN_TYPE_AGENT_EXECUTION,
-            intent=parsed.intent,
-            payload=execution_plan_to_payload(parsed),
+            _coerce_skill_management_plan(message, parsed),
+            history=history,
+            uploaded_names=uploaded_names,
         )
+        from app.core.conversation_turn_context import plan_cache_applicable
+
+        if plan_cache_applicable(message, history):
+            store_cached_payload(
+                scope_key,
+                message,
+                plan_type=PLAN_TYPE_AGENT_EXECUTION,
+                intent=parsed.intent,
+                payload=execution_plan_to_payload(parsed),
+            )
         return parsed
     _logger.debug("Agent 规划 JSON 解析失败，回退按需执行")
-    return _fallback_plan(intent_plan.intent_label)
+    return _coerce_skill_first_plan(
+        message,
+        _fallback_plan(intent_plan.intent_label),
+        history=history,
+        uploaded_names=uploaded_names,
+    )

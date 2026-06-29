@@ -149,7 +149,7 @@ export function useDocumentReindex(documentId, onUpdated) {
         },
         { label: "纯文本", hint: "跳过复杂版面分析，适合已提取文本", value: "Plain Text" },
       ];
-      if (!parserId.value) parserId.value = "smart";
+      if (!parserId.value) parserId.value = "naive";
     }
   }
 

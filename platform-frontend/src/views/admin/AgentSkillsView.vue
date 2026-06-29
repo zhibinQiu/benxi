@@ -6,8 +6,11 @@ import {
   NCheckbox,
   NCheckboxGroup,
   NDataTable,
+  NDivider,
   NDrawer,
   NDrawerContent,
+  NForm,
+  NFormItem,
   NIcon,
   NInput,
   NModal,
@@ -17,12 +20,15 @@ import {
   NTabs,
   NTag,
   NText,
+  NTooltip,
   NUpload,
   NUploadDragger,
 } from "naive-ui";
-import { FolderOpenOutline, CloudUploadOutline } from "@vicons/ionicons5";
+import { AddOutline, CreateOutline, DownloadOutline, FolderOpenOutline, CloudUploadOutline, SettingsOutline, TrashOutline } from "@vicons/ionicons5";
 import ListRefreshButton from "../../components/ListRefreshButton.vue";
 import ListTableFooter from "../../components/ListTableFooter.vue";
+import IconAction from "../../components/IconAction.vue";
+import FeatureSubsystemShell from "../../components/FeatureSubsystemShell.vue";
 import { formatAgentDisplayName } from "../../utils/agentDisplay.js";
 import { useClientListPagination } from "../../composables/useClientListPagination.js";
 import { usePlatformUi } from "../../composables/usePlatformUi";
@@ -51,10 +57,40 @@ import {
   uploadAgentSkillFolder,
   uploadAgentSkillZip,
 } from "../../api/agentSkills.js";
+import {
+  createExternalAgent,
+  deleteExternalAgent,
+  fetchExternalAgents,
+  patchExternalAgent,
+} from "../../api/aipExternalAgents.js";
 import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
+import { renderIconActionGroup } from "../../utils/tableIconActions.js";
+import {
+  hasAgentsTabCacheData,
+  isAgentsTabCacheFresh,
+  readAgentsTabCache,
+  writeAgentsTabCache,
+} from "../../utils/agentSkillsAgentsTabCache.js";
+
+function normalizeBuiltinAgent(agent) {
+  if (!agent) return agent;
+  return {
+    ...agent,
+    service_enabled:
+      agent.service_enabled === undefined || agent.service_enabled === null
+        ? agent.enabled !== false
+        : Boolean(agent.service_enabled),
+  };
+}
+
+function mergeBuiltinAgent(existing, updated) {
+  return normalizeBuiltinAgent({ ...existing, ...updated });
+}
 
 const ui = usePlatformUi();
 const { t } = useI18n();
+
+const initialAgentsTabCache = readAgentsTabCache({ allowStale: true });
 
 const activeTab = ref("agents");
 const registryLoading = ref(false);
@@ -64,11 +100,28 @@ const toolsLoading = ref(false);
 const tools = ref([]);
 
 const agentsLoading = ref(false);
-const agents = ref([]);
-const skillDrawerOpen = ref(false);
-const skillDrawerAgent = ref(null);
+const agents = ref(
+  (initialAgentsTabCache?.agents || []).map((row) => normalizeBuiltinAgent(row))
+);
+const externalAgents = ref(initialAgentsTabCache?.externalAgents || []);
+const agentsTabHydrated = ref(hasAgentsTabCacheData(initialAgentsTabCache));
+const externalAgentsLoading = ref(false);
+const externalAgentModalOpen = ref(false);
+const externalAgentSaving = ref(false);
+const externalAgentForm = ref({
+  aid: "",
+  name: "",
+  description: "",
+  service_endpoint: "",
+  enabled: true,
+});
+const configDrawerOpen = ref(false);
+const configDrawerAgent = ref(null);
+const configDrawerKind = ref("builtin");
+const configEnabled = ref(true);
+const configServiceEnabled = ref(true);
 const selectedSkillNames = ref([]);
-const skillSaving = ref(false);
+const configSaving = ref(false);
 
 const agentDetailOpen = ref(false);
 const agentDetailLoading = ref(false);
@@ -108,10 +161,6 @@ const createForm = ref({ name: "", description: "", skillMdBody: "" });
 const builtinSkills = computed(() =>
   registry.value.filter((s) => s.kind === "builtin" || s.source === "builtin")
 );
-const developedInRegistry = computed(() =>
-  registry.value.filter((s) => s.kind === "developed" || s.source === "uploaded")
-);
-
 const {
   page: builtinPage,
   pageSize: builtinPageSize,
@@ -130,21 +179,144 @@ const {
 
 const skillPickerOptions = computed(() =>
   registryForPicker.value.map((s) => ({
-    label: s.title ? `${s.title} (${s.name})` : s.name,
+    title: s.title || s.name,
+    name: s.name,
+    description: s.description || "",
     value: s.name,
     disabled: !s.enabled,
   }))
 );
 
-async function loadAgents() {
-  agentsLoading.value = true;
-  try {
-    agents.value = (await fetchAgentProfiles()) || [];
-  } catch (e) {
-    ui.error(e.message || t("admin.agentSkills.loadFailed"));
-  } finally {
-    agentsLoading.value = false;
+const selectedSkillCount = computed(() => selectedSkillNames.value.length);
+
+function persistAgentsTabCache() {
+  writeAgentsTabCache({
+    agents: agents.value,
+    externalAgents: externalAgents.value,
+  });
+}
+
+const agentsTabRefreshing = computed(
+  () => agentsLoading.value || externalAgentsLoading.value
+);
+
+const agentsTabInitialLoading = computed(
+  () => agentsTabRefreshing.value && !agentsTabHydrated.value
+);
+
+async function refreshActiveTab() {
+  if (activeTab.value === "agents") {
+    await reloadAgentsTab({ foreground: true });
+    return;
   }
+  if (activeTab.value === "tools") {
+    await loadTools();
+    return;
+  }
+  if (activeTab.value === "skills") {
+    await Promise.all([loadRegistry(), loadUploadedList()]);
+    return;
+  }
+  if (activeTab.value === "memory") {
+    await loadMemory();
+  }
+}
+
+async function loadAgents({ background = false, foreground = false } = {}) {
+  const showLoading = foreground || (!background && !agentsTabHydrated.value);
+  if (showLoading) agentsLoading.value = true;
+  try {
+    const rows = (await fetchAgentProfiles()) || [];
+    agents.value = rows.map(normalizeBuiltinAgent);
+    agentsTabHydrated.value = true;
+    persistAgentsTabCache();
+  } catch (e) {
+    if (!background || !agentsTabHydrated.value) {
+      ui.error(e.message || t("admin.agentSkills.loadFailed"));
+    }
+  } finally {
+    if (showLoading) agentsLoading.value = false;
+  }
+}
+
+async function loadExternalAgents({ background = false, foreground = false } = {}) {
+  const showLoading = foreground || (!background && !agentsTabHydrated.value);
+  if (showLoading) externalAgentsLoading.value = true;
+  try {
+    externalAgents.value = (await fetchExternalAgents()) || [];
+    agentsTabHydrated.value = true;
+    persistAgentsTabCache();
+  } catch (e) {
+    if (!background || !agentsTabHydrated.value) {
+      externalAgents.value = [];
+      const msg = String(e?.message || "");
+      if (!/not found|404/i.test(msg)) {
+        ui.error(msg || t("admin.agentSkills.loadFailed"));
+      }
+    }
+  } finally {
+    if (showLoading) externalAgentsLoading.value = false;
+  }
+}
+
+async function reloadAgentsTab({ background = false, foreground = false } = {}) {
+  const bg = foreground ? false : background;
+  await Promise.all([
+    loadAgents({ background: bg, foreground }),
+    loadExternalAgents({ background: bg, foreground }),
+  ]);
+}
+
+function openExternalAgentModal() {
+  externalAgentForm.value = {
+    aid: "",
+    name: "",
+    description: "",
+    service_endpoint: "",
+    enabled: true,
+  };
+  externalAgentModalOpen.value = true;
+}
+
+async function submitExternalAgent() {
+  const form = externalAgentForm.value;
+  if (!form.aid.trim() || !form.name.trim() || !form.service_endpoint.trim()) {
+    ui.warning(t("admin.agentSkills.externalAgentFormRequired"));
+    return;
+  }
+  externalAgentSaving.value = true;
+  try {
+    await createExternalAgent({
+      aid: form.aid.trim(),
+      name: form.name.trim(),
+      description: form.description.trim(),
+      service_endpoint: form.service_endpoint.trim(),
+      enabled: form.enabled,
+    });
+    ui.success(t("admin.agentSkills.saved"));
+    externalAgentModalOpen.value = false;
+    await loadExternalAgents();
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.saveFailed"));
+  } finally {
+    externalAgentSaving.value = false;
+  }
+}
+
+async function removeExternalAgent(agent) {
+  if (agent.source === "config" || !agent.id) {
+    ui.info(t("admin.agentSkills.externalAgentConfigReadonly"));
+    return;
+  }
+  await ui.confirmDelete({
+    title: t("admin.agentSkills.externalAgentDeleteTitle"),
+    content: t("admin.agentSkills.externalAgentDeleteConfirm", { name: agent.name }),
+    onPositive: async () => {
+      await deleteExternalAgent(agent.id);
+      ui.success(t("admin.agentSkills.deleted"));
+      await loadExternalAgents();
+    },
+  });
 }
 
 function agentStatusLabel(agent) {
@@ -153,39 +325,65 @@ function agentStatusLabel(agent) {
     : t("admin.agentSkills.statusIdle");
 }
 
-function openSkillDrawer(agent) {
-  skillDrawerAgent.value = agent;
-  selectedSkillNames.value = [...(agent.skill_names || [])];
-  skillDrawerOpen.value = true;
+function configDrawerDisplayName() {
+  const agent = configDrawerAgent.value;
+  if (!agent) return "";
+  if (configDrawerKind.value === "external") return agent.name || agent.aid || "";
+  return formatAgentDisplayName(agent.title) || agent.id || "";
 }
 
-async function saveAgentSkills() {
-  if (!skillDrawerAgent.value?.id) return;
-  skillSaving.value = true;
+function openConfigDrawer(agent, kind = "builtin") {
+  configDrawerAgent.value = agent;
+  configDrawerKind.value = kind;
+  configEnabled.value = agent.enabled !== false;
+  configServiceEnabled.value =
+    kind === "builtin"
+      ? agent.service_enabled !== undefined && agent.service_enabled !== null
+        ? Boolean(agent.service_enabled)
+        : agent.enabled !== false
+      : agent.enabled !== false;
+  selectedSkillNames.value = [...(agent.skill_names || [])];
+  configDrawerOpen.value = true;
+}
+
+async function saveAgentConfig() {
+  if (!configDrawerAgent.value) return;
+  configSaving.value = true;
   try {
-    const updated = await patchAgentProfile(skillDrawerAgent.value.id, {
-      skill_names: selectedSkillNames.value,
-    });
-    const idx = agents.value.findIndex((a) => a.id === updated.id);
-    if (idx >= 0) agents.value[idx] = updated;
-    skillDrawerAgent.value = updated;
+    if (configDrawerKind.value === "external") {
+      const agent = configDrawerAgent.value;
+      if (agent.source === "config" || !agent.id) {
+        ui.info(t("admin.agentSkills.externalAgentConfigReadonly"));
+        return;
+      }
+      const updated = await patchExternalAgent(agent.id, { enabled: configEnabled.value });
+      const idx = externalAgents.value.findIndex((a) => a.id === updated.id);
+      if (idx >= 0) externalAgents.value[idx] = updated;
+    } else {
+      const agent = configDrawerAgent.value;
+      if (!agent.id) return;
+      const payload = {
+        enabled: configEnabled.value,
+        service_enabled: configServiceEnabled.value,
+      };
+      if (agent.skills_configurable) {
+        payload.skill_names = selectedSkillNames.value;
+      }
+      const updated = await patchAgentProfile(agent.id, payload);
+      const idx = agents.value.findIndex((a) => a.id === updated.id);
+      if (idx >= 0) agents.value[idx] = mergeBuiltinAgent(agents.value[idx], updated);
+      configDrawerAgent.value = mergeBuiltinAgent(configDrawerAgent.value, updated);
+      if (agentDetail.value?.id === updated.id) {
+        agentDetail.value = { ...agentDetail.value, ...updated };
+      }
+    }
     ui.success(t("admin.agentSkills.saved"));
-    skillDrawerOpen.value = false;
+    configDrawerOpen.value = false;
+    persistAgentsTabCache();
   } catch (e) {
     ui.error(e.message || t("admin.agentSkills.saveFailed"));
   } finally {
-    skillSaving.value = false;
-  }
-}
-
-async function toggleAgentEnabled(agent, enabled) {
-  try {
-    const updated = await patchAgentProfile(agent.id, { enabled });
-    const idx = agents.value.findIndex((a) => a.id === updated.id);
-    if (idx >= 0) agents.value[idx] = updated;
-    ui.success(t("admin.agentSkills.saved"));
-  } catch (e) {
-    ui.error(e.message || t("admin.agentSkills.saveFailed"));
+    configSaving.value = false;
   }
 }
 
@@ -235,6 +433,7 @@ async function saveAgentPreview() {
     agentDetail.value = await fetchAgentProfile(agentDetail.value.id);
     const idx = agents.value.findIndex((a) => a.id === agentDetail.value.id);
     if (idx >= 0) agents.value[idx] = { ...agents.value[idx], ...agentDetail.value };
+    persistAgentsTabCache();
   } catch (e) {
     ui.error(e.message || t("admin.agentSkills.saveFailed"));
   } finally {
@@ -320,7 +519,13 @@ async function loadUploadedList() {
 }
 
 async function reloadAll() {
-  await Promise.all([loadAgents(), loadTools(), loadRegistry(), loadUploadedList()]);
+  await Promise.all([
+    loadAgents(),
+    loadExternalAgents(),
+    loadTools(),
+    loadRegistry(),
+    loadUploadedList(),
+  ]);
 }
 
 async function toggleBuiltin(row, enabled) {
@@ -606,6 +811,7 @@ async function handleZipUpload({ file }) {
     const result = await uploadAgentSkillZip(file.file, { replaceExisting: replaceExisting.value });
     const names = (result?.skills || []).map((s) => s.name).join(", ");
     ui.success(t("admin.agentSkills.uploadOk", { names: names || "—" }));
+    createOpen.value = false;
     await reloadAll();
   } catch (e) {
     ui.error(e.message || t("admin.agentSkills.uploadFailed"));
@@ -623,6 +829,7 @@ async function onFolderChange(event) {
     const result = await uploadAgentSkillFolder(list, { replaceExisting: replaceExisting.value });
     const names = (result?.skills || []).map((s) => s.name).join(", ");
     ui.success(t("admin.agentSkills.uploadOk", { names: names || "—" }));
+    createOpen.value = false;
     await reloadAll();
   } catch (e) {
     ui.error(e.message || t("admin.agentSkills.uploadFailed"));
@@ -636,12 +843,7 @@ const uploadedColumns = computed(() => [
   {
     title: t("admin.agentSkills.colName"),
     key: "name",
-    render: (row) =>
-      h(
-        NButton,
-        { text: true, type: "primary", onClick: () => openDetail(row) },
-        { default: () => row.name }
-      ),
+    ellipsis: { tooltip: true },
   },
   {
     title: t("admin.agentSkills.colDescription"),
@@ -686,98 +888,213 @@ const uploadedColumns = computed(() => [
   {
     title: t("common.actions"),
     key: "actions",
-    width: 100,
+    width: 88,
     render: (row) =>
-      h(
-        NButton,
-        { size: "small", quaternary: true, type: "error", onClick: () => removeSkill(row) },
-        { default: () => t("common.delete") }
-      ),
+      renderIconActionGroup([
+        {
+          label: t("common.edit"),
+          icon: CreateOutline,
+          type: "primary",
+          onClick: () => openDetail(row),
+        },
+        {
+          label: t("common.delete"),
+          icon: TrashOutline,
+          type: "error",
+          onClick: () => removeSkill(row),
+        },
+      ]),
   },
 ]);
 
 onMounted(async () => {
-  await reloadAll();
+  if (agentsTabHydrated.value) {
+    void reloadAgentsTab({ background: !isAgentsTabCacheFresh() });
+  } else {
+    await reloadAgentsTab();
+  }
+  void Promise.all([loadTools(), loadRegistry(), loadUploadedList()]);
   await loadMemory();
 });
 
 onActivated(async () => {
-  await reloadAll();
+  if (agentsTabHydrated.value) {
+    void reloadAgentsTab({ background: !isAgentsTabCacheFresh() });
+    return;
+  }
+  await reloadAgentsTab();
 });
 </script>
 
 <template>
-  <div class="agent-skills-view">
+  <FeatureSubsystemShell :show-intro="false">
+    <template #extra>
+      <div class="agent-skills-toolbar">
+        <NText depth="3" class="agent-skills-toolbar__hint">
+          {{ t(`admin.agentSkills.toolbarHint.${activeTab}`) }}
+        </NText>
+        <NSpace align="center" :size="8" class="agent-skills-toolbar__actions">
+          <ListRefreshButton
+            :loading="
+              activeTab === 'agents'
+                ? agentsTabRefreshing
+                : activeTab === 'tools'
+                  ? toolsLoading
+                  : activeTab === 'skills'
+                    ? registryLoading || loading
+                    : memoryLoading
+            "
+            @click="refreshActiveTab"
+          />
+          <IconAction
+            v-if="activeTab === 'agents'"
+            type="primary"
+            :label="t('admin.agentSkills.connectExternalAgent')"
+            :icon="DownloadOutline"
+            @click="openExternalAgentModal"
+          />
+        </NSpace>
+      </div>
+    </template>
+
+    <div class="agent-skills-view">
     <NTabs v-model:value="activeTab" type="line" animated>
       <NTabPane name="agents" :tab="t('admin.agentSkills.tabAgents')">
-        <NCard size="small" :title="t('admin.agentSkills.agentsTitle')">
-          <template #header-extra>
-            <ListRefreshButton :loading="agentsLoading" @click="loadAgents" />
-          </template>
-          <NText depth="3" style="display: block; margin-bottom: 16px">
-            {{ t("admin.agentSkills.agentsHint") }}
-          </NText>
-          <div v-if="agentsLoading">{{ t("common.loading") }}</div>
-          <div v-else class="agent-card-grid">
-            <NCard
-              v-for="agent in agents"
-              :key="agent.id"
-              size="small"
-              class="agent-card agent-card--clickable"
-              :class="{ 'agent-card--disabled': !agent.enabled }"
-              @click="openAgentDetail(agent)"
-            >
-              <div class="agent-card-header">
-                <span
-                  class="agent-status-dot"
-                  :class="agent.status === 'running' ? 'agent-status-dot--running' : 'agent-status-dot--idle'"
-                  :title="agentStatusLabel(agent)"
-                />
-                <div class="agent-card-titles">
-                  <div class="agent-card-title">{{ formatAgentDisplayName(agent.title) }}</div>
-                  <NText depth="3" class="agent-card-id">{{ agent.id }}</NText>
-                </div>
-                <NSwitch
-                  v-if="agent.id !== 'orchestrator'"
-                  :value="agent.enabled"
-                  size="small"
-                  @click.stop
-                  @update:value="(v) => toggleAgentEnabled(agent, v)"
+        <NText depth="3" class="agents-tab-hint">
+          {{ t("admin.agentSkills.agentsHint") }}
+        </NText>
+        <div v-if="agentsTabInitialLoading">{{ t("common.loading") }}</div>
+        <div v-else class="agent-card-grid">
+          <NCard
+            v-for="agent in agents"
+            :key="agent.id"
+            size="small"
+            class="agent-card agent-card--clickable"
+            :class="{ 'agent-card--disabled': !agent.enabled }"
+            @click="openAgentDetail(agent)"
+          >
+            <div class="agent-card__head">
+              <span
+                class="agent-status-dot"
+                :class="agent.status === 'running' ? 'agent-status-dot--running' : 'agent-status-dot--idle'"
+                :title="agentStatusLabel(agent)"
+              />
+              <div class="agent-card__identity">
+                <div class="agent-card-title">{{ formatAgentDisplayName(agent.title) }}</div>
+              </div>
+              <span class="agent-card__badge agent-card__badge--builtin">
+                {{ t("admin.agentSkills.builtinAgentTag") }}
+              </span>
+            </div>
+
+            <div class="agent-card__desc-wrap">
+              <NText
+                v-if="agent.description"
+                depth="3"
+                class="agent-card__desc"
+                :title="agent.description"
+              >
+                {{ agent.description }}
+              </NText>
+            </div>
+
+            <div class="agent-card__bottom" @click.stop>
+              <div class="agent-card__meta">
+                <span class="agent-card__meta-item">
+                  {{ t("admin.agentSkills.toolsCount", { count: agent.tool_count }) }}
+                </span>
+                <span class="agent-card__meta-sep" aria-hidden="true">·</span>
+                <span class="agent-card__meta-item">
+                  {{ t("admin.agentSkills.skillsCount", { count: agent.skill_names?.length || 0 }) }}
+                </span>
+                <template v-if="!agent.enabled">
+                  <span class="agent-card__meta-sep" aria-hidden="true">·</span>
+                  <span class="agent-card__meta-item agent-card__meta-item--warn">
+                    {{ t("admin.agentSkills.disabledAgent") }}
+                  </span>
+                </template>
+                <template v-else-if="!agent.service_enabled">
+                  <span class="agent-card__meta-sep" aria-hidden="true">·</span>
+                  <span class="agent-card__meta-item agent-card__meta-item--warn">
+                    {{ t("admin.agentSkills.serviceClosed") }}
+                  </span>
+                </template>
+              </div>
+              <div class="agent-card__actions">
+                <IconAction
+                  variant="table"
+                  type="primary"
+                  :label="t('admin.agentSkills.configure')"
+                  :icon="SettingsOutline"
+                  @click="openConfigDrawer(agent)"
                 />
               </div>
-              <NText depth="3" class="agent-card-desc">{{ agent.description }}</NText>
-              <NSpace :size="8" wrap class="agent-card-meta">
-                <NTag size="small" :bordered="false">
-                  {{ t("admin.agentSkills.toolsCount", { count: agent.tool_count }) }}
-                </NTag>
-                <NTag size="small" :bordered="false">
-                  {{ t("admin.agentSkills.skillsCount", { count: agent.skill_names?.length || 0 }) }}
-                </NTag>
-                <NTag
-                  v-if="agent.status === 'running'"
-                  size="small"
-                  type="success"
-                  :bordered="false"
-                >
-                  {{ t("admin.agentSkills.activeConversations", { count: agent.active_conversations }) }}
-                </NTag>
-                <NTag v-if="!agent.enabled" size="small" type="warning" :bordered="false">
-                  {{ t("admin.agentSkills.disabledAgent") }}
-                </NTag>
-              </NSpace>
-              <NButton
-                v-if="agent.skills_configurable"
-                size="small"
-                quaternary
-                type="primary"
-                class="agent-card-action"
-                @click.stop="openSkillDrawer(agent)"
+            </div>
+          </NCard>
+
+          <NCard
+            v-for="agent in externalAgents"
+            :key="agent.aid"
+            size="small"
+            class="agent-card agent-card--external"
+            :class="{ 'agent-card--disabled': !agent.enabled }"
+          >
+            <div class="agent-card__head">
+              <div class="agent-card__identity">
+                <div class="agent-card-title">{{ agent.name }}</div>
+              </div>
+              <NTag size="small" type="info" :bordered="false" class="agent-card__badge">
+                {{ t("admin.agentSkills.externalAgentTag") }}
+              </NTag>
+            </div>
+
+            <div class="agent-card__desc-wrap">
+              <NText
+                v-if="agent.description || agent.service_endpoint"
+                depth="3"
+                class="agent-card__desc"
+                :title="agent.description || agent.service_endpoint"
               >
-                {{ t("admin.agentSkills.configureSkills") }}
-              </NButton>
-            </NCard>
-          </div>
-        </NCard>
+                {{ agent.description || agent.service_endpoint }}
+              </NText>
+            </div>
+
+            <div class="agent-card__bottom">
+              <div class="agent-card__meta">
+                <span v-if="agent.source === 'config'" class="agent-card__meta-item">
+                  {{ t("admin.agentSkills.externalAgentConfigSource") }}
+                </span>
+                <span
+                  v-if="agent.source === 'config' && !agent.enabled"
+                  class="agent-card__meta-sep"
+                  aria-hidden="true"
+                >
+                  ·
+                </span>
+                <span v-if="!agent.enabled" class="agent-card__meta-item agent-card__meta-item--warn">
+                  {{ t("admin.agentSkills.serviceClosed") }}
+                </span>
+              </div>
+              <div class="agent-card__actions">
+                <IconAction
+                  variant="table"
+                  type="primary"
+                  :label="t('admin.agentSkills.configure')"
+                  :icon="SettingsOutline"
+                  @click="openConfigDrawer(agent, 'external')"
+                />
+                <IconAction
+                  v-if="agent.source !== 'config'"
+                  variant="table"
+                  type="error"
+                  :label="t('common.delete')"
+                  :icon="TrashOutline"
+                  @click="removeExternalAgent(agent)"
+                />
+              </div>
+            </div>
+          </NCard>
+        </div>
       </NTabPane>
 
       <NTabPane name="skills" :tab="t('admin.agentSkills.tabSkills')">
@@ -804,55 +1121,25 @@ onActivated(async () => {
           </div>
         </NCard>
 
-        <NCard :title="t('admin.agentSkills.developedTitle')" size="small" style="margin-bottom: 16px">
-          <NSpace vertical :size="12">
-            <NText depth="3">{{ t("admin.agentSkills.developedHint") }}</NText>
-            <NSpace align="center">
-              <NButton size="small" @click="createOpen = true">
-                {{ t("admin.agentSkills.createSkill") }}
-              </NButton>
-            </NSpace>
-            <NSpace align="center">
-              <NText depth="3">{{ t("admin.agentSkills.replaceExisting") }}</NText>
-              <NSwitch v-model:value="replaceExisting" />
-            </NSpace>
-            <NSpace :size="16" wrap>
-              <NUpload
-                :show-file-list="false"
-                accept=".zip,application/zip"
-                :disabled="uploading"
-                @before-upload="handleZipUpload"
-              >
-                <NUploadDragger style="width: 280px">
-                  <NSpace vertical align="center" :size="8">
-                    <NIcon :size="36" :depth="3"><CloudUploadOutline /></NIcon>
-                    <NText>{{ t("admin.agentSkills.uploadZip") }}</NText>
-                  </NSpace>
-                </NUploadDragger>
-              </NUpload>
-              <label class="folder-upload">
-                <input
-                  type="file"
-                  webkitdirectory
-                  directory
-                  multiple
-                  :disabled="uploading"
-                  @change="onFolderChange"
-                />
-                <NSpace vertical align="center" :size="8" class="folder-upload-inner">
-                  <NIcon :size="36" :depth="3"><FolderOpenOutline /></NIcon>
-                  <NText>{{ t("admin.agentSkills.uploadFolder") }}</NText>
-                </NSpace>
-              </label>
-            </NSpace>
-          </NSpace>
-        </NCard>
-
-        <NCard size="small">
+        <NCard size="small" style="margin-bottom: 16px">
           <template #header>
             <NSpace justify="space-between" align="center" style="width: 100%">
               <span>{{ t("admin.agentSkills.listTitle") }}</span>
               <NSpace align="center" :size="8">
+                <NTooltip placement="bottom">
+                  <template #trigger>
+                    <NButton
+                      circle
+                      quaternary
+                      size="small"
+                      :aria-label="t('admin.agentSkills.developedTitle')"
+                      @click="createOpen = true"
+                    >
+                      <NIcon :component="AddOutline" />
+                    </NButton>
+                  </template>
+                  {{ t("admin.agentSkills.developedTitle") }}
+                </NTooltip>
                 <ListRefreshButton :loading="loading" @click="loadUploadedList" />
                 <NInput
                   v-model:value="keyword"
@@ -865,6 +1152,9 @@ onActivated(async () => {
               </NSpace>
             </NSpace>
           </template>
+          <NText depth="3" style="display: block; margin-bottom: 12px">
+            {{ t("admin.agentSkills.developedListHint") }}
+          </NText>
           <div class="admin-list-table">
             <NDataTable
               remote
@@ -880,46 +1170,6 @@ onActivated(async () => {
               @update:page="handlePageChange"
             />
           </div>
-        </NCard>
-
-        <NCard
-          v-if="developedInRegistry.length"
-          size="small"
-          style="margin-top: 16px"
-          :title="t('admin.agentSkills.developedInCatalog')"
-        >
-          <template #header-extra>
-            <ListRefreshButton :loading="registryLoading" @click="loadRegistry" />
-          </template>
-          <NSpace :size="8" wrap align="center">
-            <NSpace
-              v-for="s in developedInRegistry"
-              :key="s.name"
-              :size="4"
-              align="center"
-              inline
-            >
-              <NTag
-                size="small"
-                :bordered="false"
-                :type="s.source_type === 'generated' ? 'info' : 'default'"
-              >
-                {{ s.name }}
-                <template v-if="s.source_type === 'generated'">
-                  · {{ t("admin.agentSkills.sourceGenerated") }}
-                </template>
-              </NTag>
-              <NButton
-                v-if="s.skill_id"
-                text
-                size="tiny"
-                type="error"
-                @click="removeSkillById(s.skill_id, s.name)"
-              >
-                {{ t("common.delete") }}
-              </NButton>
-            </NSpace>
-          </NSpace>
         </NCard>
       </NTabPane>
 
@@ -977,10 +1227,45 @@ onActivated(async () => {
     <NModal
       v-model:show="createOpen"
       preset="card"
-      :title="t('admin.agentSkills.createSkill')"
+      :title="t('admin.agentSkills.developedTitle')"
       style="width: 640px"
     >
-      <NSpace vertical :size="12">
+      <NSpace vertical :size="16">
+        <NText depth="3">{{ t("admin.agentSkills.developedHint") }}</NText>
+        <NSpace align="center">
+          <NText depth="3">{{ t("admin.agentSkills.replaceExisting") }}</NText>
+          <NSwitch v-model:value="replaceExisting" />
+        </NSpace>
+        <NSpace :size="16" wrap>
+          <NUpload
+            :show-file-list="false"
+            accept=".zip,application/zip"
+            :disabled="uploading"
+            @before-upload="handleZipUpload"
+          >
+            <NUploadDragger style="width: 280px">
+              <NSpace vertical align="center" :size="8">
+                <NIcon :size="36" :depth="3"><CloudUploadOutline /></NIcon>
+                <NText>{{ t("admin.agentSkills.uploadZip") }}</NText>
+              </NSpace>
+            </NUploadDragger>
+          </NUpload>
+          <label class="folder-upload">
+            <input
+              type="file"
+              webkitdirectory
+              directory
+              multiple
+              :disabled="uploading"
+              @change="onFolderChange"
+            />
+            <NSpace vertical align="center" :size="8" class="folder-upload-inner">
+              <NIcon :size="36" :depth="3"><FolderOpenOutline /></NIcon>
+              <NText>{{ t("admin.agentSkills.uploadFolder") }}</NText>
+            </NSpace>
+          </label>
+        </NSpace>
+        <NText depth="3">{{ t("admin.agentSkills.createSkill") }}</NText>
         <NInput v-model:value="createForm.name" :placeholder="t('admin.agentSkills.createNamePh')" />
         <NInput
           v-model:value="createForm.description"
@@ -989,7 +1274,7 @@ onActivated(async () => {
         <NInput
           v-model:value="createForm.skillMdBody"
           type="textarea"
-          :rows="12"
+          :rows="10"
           :placeholder="t('admin.agentSkills.createBodyPh')"
         />
         <NSpace justify="end">
@@ -1010,9 +1295,13 @@ onActivated(async () => {
             <NButton size="small" @click="downloadSkill">
               {{ t("admin.agentSkills.downloadZip") }}
             </NButton>
-            <NButton size="small" type="error" quaternary @click="removeSkillById(detail.id, detail.name)">
-              {{ t("common.delete") }}
-            </NButton>
+            <IconAction
+              variant="table"
+              type="error"
+              :label="t('common.delete')"
+              :icon="TrashOutline"
+              @click="removeSkillById(detail.id, detail.name)"
+            />
           </NSpace>
           <NSpace style="margin: 0 0 12px" :size="8" wrap>
             <NTag
@@ -1100,14 +1389,13 @@ onActivated(async () => {
                 >
                   {{ t("common.save") }}
                 </NButton>
-                <NButton
-                  v-if="agentDetail.skills_configurable"
-                  size="small"
-                  quaternary
-                  @click="openSkillDrawer(agentDetail)"
-                >
-                  {{ t("admin.agentSkills.configureSkills") }}
-                </NButton>
+                <IconAction
+                  variant="table"
+                  type="primary"
+                  :label="t('admin.agentSkills.configure')"
+                  :icon="SettingsOutline"
+                  @click="openConfigDrawer(agentDetail)"
+                />
               </NSpace>
             </template>
           </NCard>
@@ -1115,49 +1403,229 @@ onActivated(async () => {
       </NDrawerContent>
     </NDrawer>
 
-    <NDrawer v-model:show="skillDrawerOpen" :width="480" placement="right">
+    <NDrawer v-model:show="configDrawerOpen" :width="420" placement="right">
       <NDrawerContent
-        :title="
-          t('admin.agentSkills.skillPickerTitle', { name: skillDrawerAgent?.title || '' })
-        "
+        :title="t('admin.agentSkills.configDrawerTitle', { name: configDrawerDisplayName() })"
         closable
+        :native-scrollbar="false"
+        body-content-style="padding: 16px 20px 12px; display: flex; flex-direction: column; gap: 0;"
       >
-        <NText depth="3" style="display: block; margin-bottom: 16px">
-          {{ t("admin.agentSkills.skillPickerHint") }}
-        </NText>
-        <NCheckboxGroup v-model:value="selectedSkillNames">
-          <NSpace vertical :size="8">
-            <NCheckbox
-              v-for="opt in skillPickerOptions"
-              :key="opt.value"
-              :value="opt.value"
-              :label="opt.label"
-              :disabled="opt.disabled"
-            />
+        <div class="agent-config-drawer">
+          <section class="agent-config-drawer__section">
+            <div class="agent-config-drawer__section-title">
+              {{ t("admin.agentSkills.configSectionGeneral") }}
+            </div>
+            <div class="agent-config-drawer__panel">
+            <div
+              v-if="configDrawerKind === 'builtin' && configDrawerAgent?.id !== 'orchestrator'"
+              class="agent-config-drawer__row"
+            >
+              <div class="agent-config-drawer__row-text">
+                <NText>{{ t("admin.agentSkills.agentEnabled") }}</NText>
+                <NText depth="3">{{ t("admin.agentSkills.agentEnabledHint") }}</NText>
+              </div>
+              <NSwitch v-model:value="configEnabled" size="small" />
+            </div>
+            <div class="agent-config-drawer__row">
+              <div class="agent-config-drawer__row-text">
+                <NText>{{ t("admin.agentSkills.serviceEnabled") }}</NText>
+                <NText depth="3">
+                  {{
+                    configDrawerKind === "external"
+                      ? t("admin.agentSkills.externalServiceHint")
+                      : t("admin.agentSkills.serviceEnabledHint")
+                  }}
+                </NText>
+              </div>
+              <NSwitch
+                v-if="configDrawerKind === 'external'"
+                v-model:value="configEnabled"
+                size="small"
+                :disabled="configDrawerAgent?.source === 'config'"
+              />
+              <NSwitch
+                v-else
+                v-model:value="configServiceEnabled"
+                size="small"
+                :disabled="
+                  configDrawerAgent?.id !== 'orchestrator' && !configEnabled
+                "
+              />
+            </div>
+            <NText
+              v-if="configDrawerKind === 'external' && configDrawerAgent?.source === 'config'"
+              depth="3"
+              class="agent-config-drawer__readonly-hint"
+            >
+              {{ t("admin.agentSkills.externalAgentConfigReadonly") }}
+            </NText>
+            </div>
+          </section>
+
+          <template
+            v-if="configDrawerKind === 'builtin' && configDrawerAgent?.skills_configurable"
+          >
+            <NDivider class="agent-config-drawer__divider" />
+            <section class="agent-config-drawer__section">
+              <div class="agent-config-drawer__section-head">
+                <div class="agent-config-drawer__section-title">
+                  {{ t("admin.agentSkills.configSectionSkills") }}
+                </div>
+                <NTag size="small" :bordered="false" class="agent-config-drawer__skill-count">
+                  {{ t("admin.agentSkills.skillsCount", { count: selectedSkillCount }) }}
+                </NTag>
+              </div>
+              <NText depth="3" class="agent-config-drawer__section-hint">
+                {{ t("admin.agentSkills.skillPickerHint") }}
+              </NText>
+              <NCheckboxGroup v-model:value="selectedSkillNames" class="agent-config-drawer__skills">
+                <div class="agent-config-drawer__skill-list">
+                  <div
+                    v-for="opt in skillPickerOptions"
+                    :key="opt.value"
+                    class="agent-skill-option"
+                    :class="{
+                      'agent-skill-option--checked': selectedSkillNames.includes(opt.value),
+                      'agent-skill-option--disabled': opt.disabled,
+                    }"
+                  >
+                    <NCheckbox :value="opt.value" :disabled="opt.disabled" class="agent-skill-option__checkbox">
+                      <div class="agent-skill-option__body">
+                        <span class="agent-skill-option__title">{{ opt.title }}</span>
+                        <span v-if="opt.title !== opt.name" class="agent-skill-option__name">
+                          {{ opt.name }}
+                        </span>
+                        <span v-if="opt.description" class="agent-skill-option__desc">
+                          {{ opt.description }}
+                        </span>
+                      </div>
+                    </NCheckbox>
+                  </div>
+                </div>
+              </NCheckboxGroup>
+            </section>
+          </template>
+        </div>
+        <template #footer>
+          <NSpace justify="end" :size="8">
+            <NButton @click="configDrawerOpen = false">{{ t("common.cancel") }}</NButton>
+            <NButton
+              type="primary"
+              :loading="configSaving"
+              :disabled="
+                configDrawerKind === 'external' && configDrawerAgent?.source === 'config'
+              "
+              @click="saveAgentConfig"
+            >
+              {{ t("common.save") }}
+            </NButton>
           </NSpace>
-        </NCheckboxGroup>
-        <NSpace style="margin-top: 16px" :size="8">
-          <NButton type="primary" :loading="skillSaving" @click="saveAgentSkills">
-            {{ t("common.save") }}
-          </NButton>
-          <NButton @click="skillDrawerOpen = false">{{ t("common.cancel") }}</NButton>
-        </NSpace>
+        </template>
       </NDrawerContent>
     </NDrawer>
-  </div>
+
+    <NModal
+      v-model:show="externalAgentModalOpen"
+      preset="card"
+      :title="t('admin.agentSkills.connectExternalAgent')"
+      style="width: 640px"
+      :mask-closable="false"
+    >
+      <NText depth="3" style="display: block; margin-bottom: 16px">
+        {{ t("admin.agentSkills.externalAgentModalHint") }}
+      </NText>
+      <NForm @submit.prevent="submitExternalAgent">
+        <NFormItem :label="t('admin.agentSkills.externalAgentAid')" required>
+          <NInput v-model:value="externalAgentForm.aid" :placeholder="t('admin.agentSkills.externalAgentAidPh')" />
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.externalAgentName')" required>
+          <NInput v-model:value="externalAgentForm.name" :placeholder="t('admin.agentSkills.externalAgentNamePh')" />
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.externalAgentEndpoint')" required>
+          <NInput
+            v-model:value="externalAgentForm.service_endpoint"
+            :placeholder="t('admin.agentSkills.externalAgentEndpointPh')"
+          />
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.colDescription')">
+          <NInput
+            v-model:value="externalAgentForm.description"
+            type="textarea"
+            :rows="3"
+            :placeholder="t('admin.agentSkills.externalAgentDescPh')"
+          />
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.serviceEnabled')">
+          <NSwitch v-model:value="externalAgentForm.enabled" />
+        </NFormItem>
+        <NSpace justify="end">
+          <NButton @click="externalAgentModalOpen = false">{{ t("common.cancel") }}</NButton>
+          <NButton type="primary" :loading="externalAgentSaving" @click="submitExternalAgent">
+            {{ t("common.save") }}
+          </NButton>
+        </NSpace>
+      </NForm>
+    </NModal>
+    </div>
+  </FeatureSubsystemShell>
 </template>
 
 <style scoped>
 .agent-skills-view {
   max-width: 1200px;
 }
+.agent-skills-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  width: 100%;
+  min-width: 0;
+}
+.agent-skills-toolbar__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.agent-skills-toolbar__actions {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.agents-tab-hint {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
 .agent-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.agent-card {
+  height: 100%;
+}
+.agent-card :deep(.n-card) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.agent-card :deep(.n-card__content) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  height: 100%;
+  padding: 10px 11px !important;
 }
 .agent-card--disabled {
   opacity: 0.72;
+}
+.agent-card--external {
+  border-style: dashed;
 }
 .agent-card--clickable {
   cursor: pointer;
@@ -1166,43 +1634,237 @@ onActivated(async () => {
 .agent-card--clickable:hover {
   box-shadow: var(--platform-shadow-sm);
 }
-.agent-card-header {
+.agent-card__head {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: 7px;
 }
-.agent-card-titles {
+.agent-card__identity {
   flex: 1;
   min-width: 0;
 }
 .agent-card-title {
+  font-size: 13px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.agent-card__head :deep(.agent-card__badge) {
+  font-size: 9px;
+  padding: 0 5px;
+  --n-height: 16px;
+}
+.agent-card__badge--builtin {
+  flex-shrink: 0;
+  font-size: 8px;
+  line-height: 1.2;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 500;
+  color: var(--platform-text-tertiary);
+  background: color-mix(in srgb, var(--platform-bg-muted, #f5f5f7) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--platform-border) 45%, transparent);
 }
 .agent-card-id {
-  font-size: 12px;
-}
-.agent-card-desc {
   display: block;
-  margin-bottom: 10px;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 11px;
+  word-break: break-all;
 }
-.agent-card-meta {
+.agent-card__desc-wrap {
+  flex: 1 1 auto;
+  min-height: calc(10px * 1.45 * 3);
+  margin-top: 4px;
+  padding-bottom: 8px;
+}
+.agent-card__desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.agent-card__bottom {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--platform-border) 50%, transparent);
+}
+.agent-card__actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.agent-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  font-size: 9px;
+  line-height: 1.35;
+  color: var(--platform-text-tertiary);
+}
+.agent-card__meta-item--warn {
+  color: var(--n-warning-color, #f0a020);
+}
+.agent-card__meta-sep {
+  color: color-mix(in srgb, var(--platform-text-tertiary) 55%, transparent);
+  user-select: none;
+}
+.agent-config-drawer__divider {
+  margin: 14px 0 !important;
+}
+.agent-config-drawer__section > .agent-config-drawer__section-title {
   margin-bottom: 8px;
 }
-.agent-card-action {
-  margin-top: 4px;
+.agent-config-drawer__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.agent-config-drawer__section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--platform-text-secondary);
+}
+.agent-config-drawer__skill-count :deep(.n-tag) {
+  font-size: 10px;
+  --n-height: 18px;
+}
+.agent-config-drawer__panel {
+  border: 1px solid color-mix(in srgb, var(--platform-border) 62%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--platform-bg-muted, #f5f5f7) 38%, transparent);
+}
+.agent-config-drawer__section-hint {
+  display: block;
+  font-size: 11px;
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+.agent-config-drawer__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+}
+.agent-config-drawer__row + .agent-config-drawer__row {
+  border-top: 1px solid color-mix(in srgb, var(--platform-border) 55%, transparent);
+}
+.agent-config-drawer__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.agent-config-drawer__row-text :deep(.n-text) {
+  font-size: 12px;
+}
+.agent-config-drawer__row-text :deep(.n-text--depth-3) {
+  font-size: 11px;
+  line-height: 1.35;
+}
+.agent-config-drawer__readonly-hint {
+  display: block;
+  padding: 0 12px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.agent-config-drawer__skills {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding-right: 2px;
+}
+.agent-config-drawer__skill-list {
+  border: 1px solid color-mix(in srgb, var(--platform-border) 62%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--platform-bg-muted, #f5f5f7) 28%, transparent);
+}
+.agent-skill-option {
+  border-bottom: 1px solid color-mix(in srgb, var(--platform-border) 50%, transparent);
+  transition: background 0.15s ease;
+}
+.agent-skill-option:last-child {
+  border-bottom: none;
+}
+.agent-skill-option--checked {
+  background: color-mix(in srgb, var(--platform-accent) 7%, transparent);
+}
+.agent-skill-option--disabled {
+  opacity: 0.58;
+}
+.agent-skill-option__checkbox {
+  width: 100%;
+  padding: 9px 12px;
+  margin: 0;
+}
+.agent-skill-option__checkbox :deep(.n-checkbox) {
+  align-items: flex-start;
+  width: 100%;
+}
+.agent-skill-option__checkbox :deep(.n-checkbox-box-wrapper) {
+  margin-top: 1px;
+}
+.agent-skill-option__checkbox :deep(.n-checkbox__label) {
+  flex: 1;
+  min-width: 0;
+  padding-right: 0;
+}
+.agent-skill-option__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.agent-skill-option__title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--platform-text);
+}
+.agent-skill-option__name {
+  font-size: 10px;
+  line-height: 1.35;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--platform-text-tertiary);
+}
+.agent-skill-option__desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--platform-text-secondary);
+}
+.agent-card__status-tags {
+  flex: 1;
+  min-width: 0;
 }
 .agent-status-dot {
   display: inline-block;
   flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  margin-top: 5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  border: 2px solid var(--platform-bg-elevated-solid, #fff);
+  border: 1.5px solid var(--platform-bg-elevated-solid, #fff);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--platform-border) 80%, transparent);
 }
 .agent-status-dot--running {

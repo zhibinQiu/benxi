@@ -1,77 +1,84 @@
 /** 系统全局配色方案（资源管理 · 前台配置） */
 
+import { buildCustomNaivePalette, normalizePrimaryColor } from "../utils/customColorTokens.js";
+
 export const COLOR_SCHEME_PURPLE = "purple";
 export const COLOR_SCHEME_BLUE = "blue";
+export const COLOR_SCHEME_CUSTOM = "custom";
 
-export const COLOR_SCHEME_IDS = [COLOR_SCHEME_PURPLE, COLOR_SCHEME_BLUE];
+export const COLOR_SCHEME_IDS = [COLOR_SCHEME_PURPLE, COLOR_SCHEME_BLUE, COLOR_SCHEME_CUSTOM];
+export const DEFAULT_COLOR_SCHEME = COLOR_SCHEME_BLUE;
 
 export function normalizeColorScheme(value) {
   const v = String(value || "").trim().toLowerCase();
-  return COLOR_SCHEME_IDS.includes(v) ? v : COLOR_SCHEME_PURPLE;
+  return COLOR_SCHEME_IDS.includes(v) ? v : DEFAULT_COLOR_SCHEME;
 }
 
 /** Naive UI 主题覆盖色板 */
 export const NAIVE_PALETTES = {
   purple: {
     light: {
-      primary: "#a78bfa",
-      primaryHover: "#9374f0",
-      primaryPressed: "#7c3aed",
-      primarySuppl: "#7c3aed",
-      focusBorder: "#a78bfa",
-      focusShadow: "0 0 0 3px rgba(167, 139, 250, 0.22)",
-      menuActiveBg: "rgba(167, 139, 250, 0.1)",
-      menuActiveBgHover: "rgba(167, 139, 250, 0.14)",
-      dropdownActiveBg: "rgba(167, 139, 250, 0.1)",
-      tabActive: "#a78bfa",
-      dropdownActiveText: "#a78bfa",
+      primary: "#10a37f",
+      primaryHover: "#0d8c6c",
+      primaryPressed: "#0a7a5e",
+      primarySuppl: "#0a7a5e",
+      focusBorder: "#10a37f",
+      focusShadow: "0 0 0 2px rgba(16, 163, 127, 0.35)",
+      menuActiveBg: "#ececf1",
+      menuActiveBgHover: "#e3e3e8",
+      dropdownActiveBg: "rgba(16, 163, 127, 0.1)",
+      tabActive: "#10a37f",
+      dropdownActiveText: "#10a37f",
     },
     dark: {
-      primary: "#c4b5fd",
-      primaryHover: "#ddd6fe",
-      primaryPressed: "#a78bfa",
-      primarySuppl: "#a78bfa",
-      focusBorder: "#c4b5fd",
-      focusShadow: "0 0 0 3px rgba(196, 181, 253, 0.24)",
-      menuActiveBg: "rgba(196, 181, 253, 0.14)",
-      menuActiveBgHover: "rgba(196, 181, 253, 0.18)",
-      dropdownActiveBg: "rgba(196, 181, 253, 0.14)",
-      tabActive: "#ddd6fe",
-      dropdownActiveText: "#ddd6fe",
+      primary: "#19c37d",
+      primaryHover: "#1dd68a",
+      primaryPressed: "#10a37f",
+      primarySuppl: "#10a37f",
+      focusBorder: "#19c37d",
+      focusShadow: "0 0 0 2px rgba(25, 195, 125, 0.35)",
+      menuActiveBg: "rgba(255, 255, 255, 0.1)",
+      menuActiveBgHover: "rgba(255, 255, 255, 0.14)",
+      dropdownActiveBg: "rgba(25, 195, 125, 0.14)",
+      tabActive: "#19c37d",
+      dropdownActiveText: "#19c37d",
     },
   },
   blue: {
     light: {
-      primary: "#2D4E9D",
-      primaryHover: "#3A60B8",
-      primaryPressed: "#243F7E",
-      primarySuppl: "#243F7E",
-      focusBorder: "#2D4E9D",
-      focusShadow: "0 0 0 3px rgba(45, 78, 157, 0.22)",
-      menuActiveBg: "rgba(45, 78, 157, 0.1)",
-      menuActiveBgHover: "rgba(45, 78, 157, 0.14)",
-      dropdownActiveBg: "rgba(45, 78, 157, 0.1)",
-      tabActive: "#2D4E9D",
-      dropdownActiveText: "#2D4E9D",
+      primary: "#0067ff",
+      primaryHover: "#0058db",
+      primaryPressed: "#004abf",
+      primarySuppl: "#004abf",
+      focusBorder: "#0067ff",
+      focusShadow: "0 0 0 2px rgba(0, 103, 255, 0.35)",
+      menuActiveBg: "#ececf1",
+      menuActiveBgHover: "#e3e3e8",
+      dropdownActiveBg: "rgba(0, 103, 255, 0.1)",
+      tabActive: "#0067ff",
+      dropdownActiveText: "#0067ff",
     },
     dark: {
-      primary: "#9BB5DC",
-      primaryHover: "#B8CBE8",
-      primaryPressed: "#7BA3D4",
-      primarySuppl: "#7BA3D4",
-      focusBorder: "#9BB5DC",
-      focusShadow: "0 0 0 3px rgba(155, 181, 220, 0.24)",
-      menuActiveBg: "rgba(155, 181, 220, 0.14)",
-      menuActiveBgHover: "rgba(155, 181, 220, 0.18)",
-      dropdownActiveBg: "rgba(155, 181, 220, 0.14)",
-      tabActive: "#B8CBE8",
-      dropdownActiveText: "#B8CBE8",
+      primary: "#4d94ff",
+      primaryHover: "#66a3ff",
+      primaryPressed: "#3385ff",
+      primarySuppl: "#3385ff",
+      focusBorder: "#4d94ff",
+      focusShadow: "0 0 0 2px rgba(77, 148, 255, 0.35)",
+      menuActiveBg: "rgba(255, 255, 255, 0.1)",
+      menuActiveBgHover: "rgba(255, 255, 255, 0.14)",
+      dropdownActiveBg: "rgba(77, 148, 255, 0.14)",
+      tabActive: "#4d94ff",
+      dropdownActiveText: "#4d94ff",
     },
   },
 };
 
-export function getNaivePalette(colorScheme, isDark) {
+export function getNaivePalette(colorScheme, isDark, customPrimaryColor) {
   const scheme = normalizeColorScheme(colorScheme);
+  if (scheme === COLOR_SCHEME_CUSTOM) {
+    return buildCustomNaivePalette(normalizePrimaryColor(customPrimaryColor), isDark);
+  }
   const mode = isDark ? "dark" : "light";
   return NAIVE_PALETTES[scheme][mode];
 }

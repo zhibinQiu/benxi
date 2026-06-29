@@ -54,10 +54,6 @@ html[data-theme="dark"] .app-shell--video-bg {
   z-index: 0 !important;
 }
 
-.app-shell--video-bg .app-ambient {
-  opacity: 0.22;
-}
-
 /* —— 通用玻璃面板（卡片 / 表格 / 列表） —— */
 .app-shell .n-card:not(.feature-local-nav),
 .app-shell .n-data-table,
@@ -167,8 +163,8 @@ html[data-theme="dark"] .app-shell--video-bg {
   -webkit-backdrop-filter: none;
 }
 
-.n-button.n-button--tertiary-type:not(.n-button--disabled):not(.header-icon-btn):hover,
-.n-button.n-button--quaternary-type:not(.n-button--disabled):not(.header-icon-btn):hover {
+.n-button.n-button--tertiary-type:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action):hover,
+.n-button.n-button--quaternary-type:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action):hover {
   background: color-mix(in srgb, var(--platform-accent-soft) 88%, rgba(255, 255, 255, 0.24)) !important;
   color: var(--platform-accent) !important;
   backdrop-filter: saturate(165%) blur(8px);

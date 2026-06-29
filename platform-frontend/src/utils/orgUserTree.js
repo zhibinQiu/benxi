@@ -143,7 +143,12 @@ function attachUsersToDeptNodes(deptById, users = [], { memberSelectable = true 
  * @param {Array<object>} params.users
  * @param {boolean} [params.deptOnly=false] 为 true 时成员仅展示、不可勾选（部门归属选择）
  */
-export function buildOrgUserTree({ departments = [], users = [], deptOnly = false }) {
+export function buildOrgUserTree({
+  departments = [],
+  users = [],
+  deptOnly = false,
+  includeUnassigned = true,
+}) {
   const deptList = sortDeptsByName(departments);
   const deptById = new Map();
   for (const d of deptList) {
@@ -170,7 +175,7 @@ export function buildOrgUserTree({ departments = [], users = [], deptOnly = fals
   });
 
   const unassigned = users.filter((u) => !placed.has(String(u.id)));
-  if (unassigned.length) {
+  if (includeUnassigned && unassigned.length) {
     roots.push({
       key: UNASSIGNED_KEY,
       label: "未分配部门",
@@ -187,7 +192,12 @@ export function buildOrgUserTree({ departments = [], users = [], deptOnly = fals
 
 /** 用户管理等部门选择：展示组织成员，但仅部门节点可勾选。 */
 export function buildOrgDeptAssignTree({ departments = [], users = [] }) {
-  return buildOrgUserTree({ departments, users, deptOnly: true });
+  return buildOrgUserTree({
+    departments,
+    users,
+    deptOnly: true,
+    includeUnassigned: false,
+  });
 }
 
 export function buildOrgDeptTree({ departments = [] }) {

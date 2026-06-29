@@ -1344,7 +1344,7 @@ def _sync_dept_kb_grants(
     *,
     doc_scope: str = SCOPE_DEPARTMENT,
 ) -> int:
-    """部门/小组库授权：授予对应组织单元成员。"""
+    """部门/分部库授权：授予对应组织单元成员。"""
     granted = 0
     rows = db.scalars(
         select(UserDepartment.user_id).where(UserDepartment.dept_id == dept_id)

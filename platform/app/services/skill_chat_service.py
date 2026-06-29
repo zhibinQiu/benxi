@@ -247,6 +247,30 @@ def resolve_kg_context_via_skill_sync(
     return _run_sync(resolve_kg_context_via_skill(db, user, message))
 
 
+def resolve_combined_research_sync(
+    db: Session,
+    user: User,
+    query: str,
+    *,
+    use_kb: bool | None = None,
+    use_kg: bool | None = None,
+    use_web: bool | None = None,
+    citation_start: int = 1,
+) -> tuple[str, list[dict], KgQaContext | None, dict[str, Any]]:
+    """同步入口，供本析首页预检索等非 async 上下文使用。"""
+    return _run_sync(
+        resolve_combined_research_async(
+            db,
+            user,
+            query,
+            use_kb=use_kb,
+            use_kg=use_kg,
+            use_web=use_web,
+            citation_start=citation_start,
+        )
+    )
+
+
 async def resolve_combined_research_async(
     db: Session,
     user: User,

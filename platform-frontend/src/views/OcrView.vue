@@ -302,7 +302,7 @@ onBeforeUnmount(() => fileItems.value.forEach(revokePreview));
       </n-space>
     </template>
 
-    <n-spin :show="loadingMeta" class="ocr-spin">
+    <n-spin :show="loadingMeta" class="ocr-spin" local>
       <div class="ocr-alerts">
         <n-alert
           v-if="!loadingMeta && !configured"

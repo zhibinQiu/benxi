@@ -13,6 +13,8 @@ const props = defineProps({
   size: { type: String, default: "small" },
   /** 表格内嵌操作：仅悬浮时显示选中衬底，与文档列表操作列一致 */
   variant: { type: String, default: "toolbar" },
+  /** 进行中：图标旋转，用于刷新等异步操作 */
+  loading: { type: Boolean, default: false },
 });
 
 const tooltipText = computed(() => props.tooltip || props.label);
@@ -46,8 +48,12 @@ const actionClass = computed(() => {
         :size="size"
         type="default"
         :disabled="disabled"
-        :class="isTableVariant ? actionClass : ['icon-action', actionClass]"
+        :class="[
+          isTableVariant ? actionClass : ['icon-action', actionClass],
+          { 'icon-action--loading': loading },
+        ]"
         :aria-label="label"
+        :aria-busy="loading || undefined"
         @click="$emit('click', $event)"
       >
         <n-icon :size="iconSize" :component="icon" />
@@ -62,13 +68,22 @@ const actionClass = computed(() => {
   width: 32px;
   height: 32px;
   color: var(--platform-text-secondary);
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   transition:
     color 0.15s ease,
     background 0.15s ease;
 }
 
-.icon-action:not(:disabled):hover {
+.icon-action:not(.icon-action--active):not(.icon-action--caution):not(.icon-action--danger):not(:disabled):hover {
   color: var(--platform-text);
+  background: var(--platform-toolbar-bg) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .icon-action.icon-action--active {
@@ -107,5 +122,24 @@ const actionClass = computed(() => {
   background: var(--platform-bg-glass-subtle);
   border-color: var(--platform-border);
   box-shadow: none;
+}
+
+.icon-action--loading :deep(.n-icon) {
+  animation: icon-action-spin 0.85s linear infinite;
+}
+
+@keyframes icon-action-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-action--loading :deep(.n-icon) {
+    animation: none;
+  }
 }
 </style>

@@ -4,18 +4,15 @@ import { getToken } from "../api/http";
 
 const POLL_MS = 5_000;
 const BOOST_POLL_MS = 2_500;
-const MAX_TOASTS = 4;
+const MAX_TOASTS = 2;
 const AUTO_DISMISS_MS = 14_000;
 const DEFAULT_BOOST_MS = 15 * 60 * 1000;
-/** 客户端与服务器时钟偏差容错（秒），避免新通知在 seed 阶段被误标为已处理 */
-const SESSION_CLOCK_SKEW_MS = 120_000;
 
 const activeToasts = ref([]);
 const unreadCount = ref(0);
-/** 本会话已弹过窗的通知 id（与「铃铛未读」解耦，避免时钟偏差吞掉 toast） */
+/** 本会话已弹过窗的通知 id（与「铃铛未读」解耦） */
 const toastedIds = new Set();
 let seeded = false;
-let sessionStartMs = 0;
 let pollTimer = null;
 let boostUntil = 0;
 let pollActive = false;
@@ -27,13 +24,6 @@ function currentPollMs() {
 }
 
 let pollLock = Promise.resolve();
-
-function parseNotificationCreatedAt(notification) {
-  const raw = notification?.created_at;
-  if (!raw) return 0;
-  const ts = Date.parse(raw);
-  return Number.isFinite(ts) ? ts : 0;
-}
 
 function vibrateAlert() {
   try {
@@ -97,13 +87,9 @@ async function executePollNotifications({ seedOnly = false } = {}) {
   unreadCount.value = data.total ?? items.length;
 
   if (!seeded || seedOnly) {
-    const start = sessionStartMs || Date.now();
+    // 进入会话时已有的未读只显示在铃铛，不弹窗（不依赖客户端/服务端时钟对齐）
     for (const n of items) {
-      const createdAt = parseNotificationCreatedAt(n);
-      // 仅抑制「进入页面前」就存在的旧未读；时钟慢的 server 上新建通知不会误入
-      if (!createdAt || createdAt < start - SESSION_CLOCK_SKEW_MS) {
-        markToasted(n);
-      }
+      markToasted(n);
     }
     seeded = true;
     if (seedOnly) return;
@@ -182,7 +168,6 @@ export function startNotificationAlerts() {
   toastedIds.clear();
   boostUntil = 0;
   pollActive = true;
-  sessionStartMs = Date.now();
   void pollNotifications({ seedOnly: true });
   onVisibilityChange = () => {
     if (!document.hidden) void pollNotifications();
@@ -203,7 +188,6 @@ export function stopNotificationAlerts() {
     onVisibilityChange = null;
   }
   seeded = false;
-  sessionStartMs = 0;
   toastedIds.clear();
   boostUntil = 0;
   activeToasts.value = [];

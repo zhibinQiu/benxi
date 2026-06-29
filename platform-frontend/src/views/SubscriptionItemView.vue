@@ -44,7 +44,7 @@ const showImportedActions = computed(
 const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 function fmtTime(iso) {
-  if (!iso) return t("carbonTrading.emDash");
+  if (!iso) return t("issueReports.emDash");
   try {
     return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
@@ -112,7 +112,7 @@ watch(
 <template>
   <FeatureSubsystemShell fill :show-intro="false">
     <div class="subscription-detail-page">
-      <NSpin :show="loading" class="detail-spin">
+      <NSpin :show="loading" class="detail-spin" local>
         <div v-if="item" class="detail-layout">
           <div class="detail-panel">
             <header class="detail-header">

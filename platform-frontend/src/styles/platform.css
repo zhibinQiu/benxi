@@ -336,6 +336,11 @@ body > .v-binder-follower-container .n-dropdown-menu {
   color: var(--platform-text);
 }
 
+.header-shell-menu {
+  min-width: 200px;
+  padding: 6px !important;
+}
+
 /* 顶栏 flyout 外壳负责 elevation，内层面板保持透明避免双边框 */
 .header-flyout .jobs-panel--popover,
 .header-flyout .notifications-panel,
@@ -437,8 +442,12 @@ body > .v-binder-follower-container .n-dropdown-menu {
   color: var(--platform-danger) !important;
 }
 
+.platform-dropdown-option--danger .n-dropdown-option-body::before {
+  background: var(--platform-danger-soft);
+}
+
 .platform-dropdown-option--danger:hover .n-dropdown-option-body {
-  background: var(--platform-danger-soft) !important;
+  background: transparent !important;
 }
 
 .platform-dropdown-option--danger .n-dropdown-option-body__prefix {
@@ -1138,6 +1147,8 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 
 .page-toolbar .icon-action:not(:disabled):hover {
   color: var(--platform-text);
+  background: var(--platform-toolbar-bg) !important;
+  box-shadow: none !important;
 }
 
 .page-toolbar .icon-action.icon-action--active {
@@ -1228,6 +1239,26 @@ html[data-theme="dark"] .documents-scope-bookmarks__tab--active {
 
 .documents-actions-hint {
   margin: 10px 0 0;
+}
+
+.subscriptions-actions-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.subscriptions-toolbar {
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.subscriptions-toolbar--secondary {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .documents-search-results-head {

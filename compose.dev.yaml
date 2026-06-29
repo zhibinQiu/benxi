@@ -10,7 +10,7 @@
 
 services:
   api:
-    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.3.1}
+    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.5.0}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -35,7 +35,7 @@ services:
       RAGFLOW_MYSQL_HOST: knowflow-mysql
 
   worker:
-    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.3.1}
+    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.5.0}
     shm_size: "512mb"
     volumes:
       - ./platform/app:/app/app:ro

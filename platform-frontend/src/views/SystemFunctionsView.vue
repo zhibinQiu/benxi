@@ -18,7 +18,6 @@ import {
   GridOutline,
   HardwareChipOutline,
   CreateOutline,
-  WalletOutline,
   NewspaperOutline,
   SearchOutline,
   GitNetworkOutline,
@@ -59,7 +58,6 @@ const iconMap = {
   sparkles: SparklesOutline,
   "hardware-chip": HardwareChipOutline,
   create: CreateOutline,
-  wallet: WalletOutline,
   newspaper: NewspaperOutline,
   search: SearchOutline,
   "git-network": GitNetworkOutline,
@@ -68,8 +66,28 @@ const iconMap = {
 
 const CATEGORY_ORDER = ["document", "tools", "ai"];
 
+const CATEGORY_ACCENTS = {
+  document: { accent: "#2563eb", soft: "rgba(37, 99, 235, 0.12)" },
+  tools: { accent: "var(--platform-accent)", soft: "var(--platform-accent-soft)" },
+  ai: { accent: "#7c3aed", soft: "rgba(124, 58, 237, 0.12)" },
+};
+
+function categoryAccentStyle(categoryId) {
+  const palette = CATEGORY_ACCENTS[categoryId] || CATEGORY_ACCENTS.tools;
+  return {
+    "--cat-accent": palette.accent,
+    "--cat-accent-soft": palette.soft,
+  };
+}
+
+/** 功能 id → 展示分类（与后端 plugin.category 对齐，避免缓存或未重启时仍落在旧分组） */
+const FEATURE_CATEGORY_OVERRIDES = {
+  ai_home: "tools",
+};
+
 /** 功能 id → 路由名（避免 path/redirect 循环） */
 const FEATURE_ROUTE_NAMES = {
+  ai_home: "ai-home",
   knowledge_search: "knowledge-search",
   report_generation: "report-generation",
 };
@@ -86,13 +104,20 @@ const categoryMeta = computed(() =>
             ? DocumentTextOutline
             : id === "tools"
               ? GridOutline
-              : SparklesOutline,
+              : LeafOutline,
       },
     ])
   )
 );
 
 const DEFAULT_CATEGORY = "tools";
+
+function resolveFeatureCategory(feature) {
+  const raw =
+    FEATURE_CATEGORY_OVERRIDES[feature.id] || feature.category || DEFAULT_CATEGORY;
+  if (raw === "external" || raw === "carbon" || raw === "ai") return "ai";
+  return raw;
+}
 
 function tagType(f) {
   if (!f.enabled) return "default";
@@ -113,15 +138,27 @@ function displayTag(f) {
 const groupedCategories = computed(() => {
   const buckets = Object.fromEntries(CATEGORY_ORDER.map((k) => [k, []]));
   for (const f of features.value) {
-    const raw = f.category || DEFAULT_CATEGORY;
-    let cat = raw === "external" || raw === "carbon" || raw === "ai" ? "ai" : raw;
+    let cat = resolveFeatureCategory(f);
     if (!buckets[cat]) cat = DEFAULT_CATEGORY;
     buckets[cat].push(f);
   }
+  const bySortOrder = (a, b) => {
+    const ao = Number(a.sort_order);
+    const bo = Number(b.sort_order);
+    const aOrder = Number.isFinite(ao) ? ao : 999;
+    const bOrder = Number.isFinite(bo) ? bo : 999;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return String(a.title || a.id).localeCompare(String(b.title || b.id), "zh-CN");
+  };
   return CATEGORY_ORDER.map((id) => ({
     id,
     ...categoryMeta.value[id],
-    features: buckets[id].sort((a, b) => Number(b.enabled) - Number(a.enabled)),
+    features: buckets[id].sort((a, b) => {
+      if (Boolean(b.enabled) !== Boolean(a.enabled)) {
+        return Number(b.enabled) - Number(a.enabled);
+      }
+      return bySortOrder(a, b);
+    }),
   })).filter((c) => c.features.length > 0);
 });
 
@@ -204,14 +241,18 @@ function openFeature(f) {
       <template #extra>
         <ListRefreshButton
           :label="t('systemFunctionsPage.reload')"
-          type="primary"
           @click="refreshFeatures"
         />
       </template>
     </n-empty>
 
     <template v-else-if="!showLoading">
-      <section v-for="cat in groupedCategories" :key="cat.id" class="category-block">
+      <section
+        v-for="cat in groupedCategories"
+        :key="cat.id"
+        class="category-block"
+        :style="categoryAccentStyle(cat.id)"
+      >
         <header class="category-block__head">
           <div class="category-block__icon">
             <n-icon :size="15">
@@ -290,7 +331,7 @@ function openFeature(f) {
       </section>
     </template>
 
-    <n-spin v-else :show="true" size="large" class="functions-page__loading">
+    <n-spin v-else :show="true" size="large" class="functions-page__loading" local>
       <n-grid
         cols="2 s:3 m:4 xl:5"
         :x-gap="8"
@@ -412,6 +453,7 @@ function openFeature(f) {
 }
 
 .feature-card {
+  position: relative;
   flex: 1;
   width: 100%;
   min-height: 112px;
@@ -423,6 +465,7 @@ function openFeature(f) {
   cursor: pointer;
   outline: none;
   overflow: hidden;
+  isolation: isolate;
   transition:
     transform 0.22s var(--platform-ease-smooth, cubic-bezier(0.22, 1, 0.36, 1)),
     box-shadow 0.22s var(--platform-ease-smooth, ease),
@@ -430,23 +473,59 @@ function openFeature(f) {
 }
 
 .feature-card:not(.feature-card--disabled):not(.feature-card--locked) {
-  background: var(--platform-ui-glass-fill, var(--platform-bg-glass)) !important;
-  border: 1px solid var(--platform-ui-glass-border, var(--platform-glass-border)) !important;
-  box-shadow: var(--platform-ui-layer-shadow, var(--platform-glass-shadow)) !important;
-  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
-  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
-}
-
-.feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) {
-  transform: translateY(-2px);
-  border-color: color-mix(
+  background: linear-gradient(
+    152deg,
+    color-mix(
+      in srgb,
+      var(--platform-ui-glass-fill-strong, var(--platform-bg-glass-strong)) 88%,
+      var(--cat-accent) 12%
+    ),
+    var(--platform-ui-glass-fill, var(--platform-bg-glass))
+  ) !important;
+  border: 1px solid color-mix(
     in srgb,
-    var(--cat-accent) 38%,
+    var(--cat-accent) 18%,
     var(--platform-ui-glass-border, var(--platform-glass-border))
   ) !important;
   box-shadow:
     var(--platform-ui-layer-shadow, var(--platform-glass-shadow)),
-    0 10px 28px color-mix(in srgb, var(--cat-accent) 10%, transparent) !important;
+    inset 0 1px 0 color-mix(in srgb, #fff 52%, transparent),
+    0 4px 18px color-mix(in srgb, var(--cat-accent) 9%, transparent) !important;
+  backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
+  -webkit-backdrop-filter: saturate(var(--platform-glass-saturate)) blur(var(--platform-glass-blur));
+}
+
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--cat-accent) 11%, transparent) 0%,
+    transparent 58%
+  );
+}
+
+.feature-card:not(.feature-card--disabled):not(.feature-card--locked) > * {
+  position: relative;
+  z-index: 1;
+}
+
+.feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) {
+  transform: translateY(-3px);
+  border-color: color-mix(
+    in srgb,
+    var(--cat-accent) 46%,
+    var(--platform-ui-glass-border, var(--platform-glass-border))
+  ) !important;
+  box-shadow:
+    var(--platform-ui-layer-shadow, var(--platform-glass-shadow)),
+    inset 0 1px 0 color-mix(in srgb, #fff 62%, transparent),
+    0 14px 34px color-mix(in srgb, var(--cat-accent) 16%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--cat-accent) 14%, transparent) !important;
 }
 
 .feature-card:focus-visible {
@@ -501,7 +580,12 @@ function openFeature(f) {
 }
 
 .feature-card__star--active {
-  color: #e8a317;
+  color: var(--platform-accent);
+}
+
+.feature-card__star--active:hover {
+  color: var(--platform-accent-hover);
+  background: var(--platform-accent-soft);
 }
 
 .feature-card__star:focus-visible {
@@ -525,22 +609,27 @@ function openFeature(f) {
 
 .feature-card__icon {
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 9px;
   color: var(--cat-accent, var(--platform-accent));
-  background: color-mix(in srgb, var(--cat-accent-soft, var(--platform-accent-soft)) 68%, transparent);
+  background: color-mix(in srgb, var(--cat-accent-soft, var(--platform-accent-soft)) 78%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 2px 8px color-mix(in srgb, var(--cat-accent) 14%, transparent);
-  transition: transform 0.2s ease;
+    inset 0 1px 0 rgba(255, 255, 255, 0.46),
+    0 3px 10px color-mix(in srgb, var(--cat-accent) 20%, transparent);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) .feature-card__icon {
-  transform: scale(1.04);
+  transform: scale(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    0 5px 14px color-mix(in srgb, var(--cat-accent) 28%, transparent);
 }
 
 .feature-card__tag {
@@ -562,6 +651,11 @@ function openFeature(f) {
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  transition: color 0.2s ease;
+}
+
+.feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) .feature-card__title {
+  color: color-mix(in srgb, var(--cat-accent) 28%, var(--platform-text));
 }
 
 .feature-card__desc {
@@ -612,10 +706,25 @@ function openFeature(f) {
 }
 
 .skeleton-block--icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   margin-bottom: 6px;
+}
+
+html[data-theme="dark"] .feature-card:not(.feature-card--disabled):not(.feature-card--locked) {
+  box-shadow:
+    var(--platform-ui-layer-shadow, var(--platform-glass-shadow)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 18px color-mix(in srgb, var(--cat-accent) 12%, transparent) !important;
+}
+
+html[data-theme="dark"] .feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) {
+  box-shadow:
+    var(--platform-ui-layer-shadow, var(--platform-glass-shadow)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 14px 34px color-mix(in srgb, var(--cat-accent) 20%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--cat-accent) 18%, transparent) !important;
 }
 
 .skeleton-block--title {

@@ -20,13 +20,18 @@ class ReportOptimizePresetOut(BaseModel):
     prompt: str
 
 
+class ReportAgentSkillOut(BaseModel):
+    name: str
+    title: str
+    description: str = ""
+    sample_prompt: str = ""
+
+
 class ReportGenerationChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=8000)
     history: list[AiChatMessage] = Field(default_factory=list, max_length=40)
     conversation_id: str | None = Field(None, max_length=128)
     document_ids: list[str] = Field(default_factory=list, max_length=20)
-    use_web_search: bool = True
-    use_agentic: bool = True
 
 
 class ReportExportDocxRequest(BaseModel):

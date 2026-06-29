@@ -9,4 +9,3 @@ def test_showcase_features_public(client):
     assert len(rows) > 0
     ids = {row["id"] for row in rows}
     assert "pdf_translate" in ids
-    assert "carbon_asset_trading" not in ids

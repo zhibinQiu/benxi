@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.core.permissions import PermissionLevel
 from app.domains.knowledge import knowledge
 from app.integrations.ragflow_client import RagflowClient, RagflowError
-from app.integrations.text_extract import local_search
+from app.integrations.text_extract import local_search, split_paragraphs
 from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.models.ragflow_document_link import RagflowDocumentLink
@@ -361,18 +361,25 @@ def _local_retrieve(
     limit: int,
 ) -> list[dict]:
     from app.services.compare_service import load_parsed_documents
+    from app.services.knowledge_qa.doc_name_match import (
+        extract_document_name_hints,
+        score_document_name_match,
+    )
 
     try:
         parsed = load_parsed_documents(db, docs)
     except Exception:
         return []
     scope_ids = [str(d.id) for d in docs]
+    docs_by_id = {str(d.id): d for d in docs}
+    hints = extract_document_name_hints(question)
     hits = local_search(
         [p for p in parsed if str(p.document_id) in scope_ids],
         question,
         limit=limit,
     )
     out: list[dict] = []
+    seen_keys: set[tuple] = set()
     for h in hits:
         pid = str(h.get("document_id", ""))
         if pid not in scope_ids:
@@ -380,6 +387,8 @@ def _local_retrieve(
         doc = get_document(db, uuid.UUID(pid))
         if not doc:
             continue
+        key = (pid, (h.get("snippet") or "")[:96])
+        seen_keys.add(key)
         out.append(
             {
                 "document_id": pid,
@@ -391,6 +400,50 @@ def _local_retrieve(
                 "source": "local",
             }
         )
+
+    if hints:
+        for doc in parsed:
+            pid = str(doc.document_id)
+            if pid not in scope_ids:
+                continue
+            platform_doc = docs_by_id.get(pid)
+            title = platform_doc.title if platform_doc else ""
+            best = max(
+                (
+                    score_document_name_match(hint, title=title, file_name=doc.file_name)
+                    for hint in hints
+                ),
+                default=0.0,
+            )
+            if best < 0.75:
+                continue
+            snippet = ""
+            for page in doc.pages or [{"page": 1, "text": doc.full_text}]:
+                for para in split_paragraphs(page.get("text") or ""):
+                    if para.strip():
+                        snippet = para[:500]
+                        break
+                if snippet:
+                    break
+            if not snippet:
+                continue
+            key = (pid, snippet[:96])
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            out.append(
+                {
+                    "document_id": pid,
+                    "snippet": snippet,
+                    "highlight": snippet,
+                    "score": float(best) + 2.0,
+                    "anchor_json": {"page": 1, "bbox": None, "kind": "text"},
+                    "preview_available": False,
+                    "source": "local_filename",
+                }
+            )
+
+    out.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
     return out[:limit]
 
 
@@ -489,6 +542,16 @@ def _retrieve_pi_branch(
         db.close()
 
 
+def _batch_doc_file_names(db: Session, docs: list[Document]) -> dict[str, str]:
+    from app.services.document_service import resolve_current_version
+
+    out: dict[str, str] = {}
+    for doc in docs:
+        version = resolve_current_version(db, doc)
+        out[str(doc.id)] = (version.file_name if version else "") or doc.title or ""
+    return out
+
+
 def _retrieve_hits_core(
     db: Session,
     user: User,
@@ -498,13 +561,22 @@ def _retrieve_hits_core(
     *,
     top_k: int,
     merge_nearby: bool,
+    narrow_by_name: bool = True,
 ) -> tuple[list[dict], str]:
+    from app.services.knowledge_qa.doc_name_match import resolve_retrieval_document_scope
     from app.services.pageindex_service import (
         partition_documents_by_retrieval_engine,
         retrieve_pageindex_hits_for_qa,
     )
 
-    pi_docs, kf_docs, skipped = partition_documents_by_retrieval_engine(db, docs)
+    file_names = _batch_doc_file_names(db, docs)
+    if narrow_by_name:
+        scoped_docs = resolve_retrieval_document_scope(docs, file_names, question)
+    else:
+        scoped_docs = docs
+    scoped_doc_ids = [doc.id for doc in scoped_docs]
+
+    pi_docs, kf_docs, skipped = partition_documents_by_retrieval_engine(db, scoped_docs)
     hits: list[dict] = []
     modes: list[str] = []
     kf_available = _knowflow_retrieval_available(db, user)
@@ -523,14 +595,14 @@ def _retrieve_hits_core(
             kf_future = pool.submit(
                 _retrieve_kf_branch,
                 user.id,
-                doc_ids,
+                scoped_doc_ids,
                 question,
                 limit=top_k,
             )
             pi_future = pool.submit(
                 _retrieve_pi_branch,
                 user.id,
-                doc_ids,
+                scoped_doc_ids,
                 question,
                 limit=top_k,
             )
@@ -611,6 +683,7 @@ def _retrieve_hits_worker(
     *,
     limit: int | None,
     merge_nearby: bool,
+    narrow_by_name: bool = True,
 ) -> tuple[list[dict], str]:
     from app.database import SessionLocal
 
@@ -626,6 +699,7 @@ def _retrieve_hits_worker(
             question,
             limit=limit,
             merge_nearby=merge_nearby,
+            narrow_by_name=narrow_by_name,
         )
     finally:
         db.close()
@@ -640,6 +714,7 @@ def retrieve_hits_by_queries(
     limit_per_query: int | None = None,
     merge_nearby: bool = True,
     max_workers: int | None = None,
+    narrow_by_name: bool = True,
 ) -> dict[str, tuple[list[dict], str]]:
     """并行检索多个 query，返回 query -> (hits, mode) 映射。"""
     unique_queries = list(
@@ -657,6 +732,7 @@ def retrieve_hits_by_queries(
             q,
             limit=limit_per_query,
             merge_nearby=merge_nearby,
+            narrow_by_name=narrow_by_name,
         )
         return {q: (hits, mode)}
 
@@ -675,6 +751,7 @@ def retrieve_hits_by_queries(
                 q,
                 limit=limit_per_query,
                 merge_nearby=merge_nearby,
+                narrow_by_name=narrow_by_name,
             ): q
             for q in unique_queries
         }
@@ -699,6 +776,7 @@ def retrieve_merged_hits_for_queries(
     merge_nearby: bool = False,
     max_total: int | None = None,
     max_workers: int | None = None,
+    narrow_by_name: bool = True,
 ) -> list[dict]:
     """并行执行多路检索 query，合并去重后返回 hit 列表。"""
     unique_queries = list(
@@ -719,6 +797,7 @@ def retrieve_merged_hits_for_queries(
         limit_per_query=limit_per_query,
         merge_nearby=merge_nearby,
         max_workers=max_workers,
+        narrow_by_name=narrow_by_name,
     )
     all_hits: list[dict] = []
     for q in unique_queries:
@@ -738,6 +817,7 @@ def retrieve_hits_for_qa(
     *,
     limit: int | None = None,
     merge_nearby: bool = True,
+    narrow_by_name: bool = True,
 ) -> tuple[list[dict], str]:
     settings = get_settings()
     top_k = limit if limit is not None else int(settings.knowledge_retrieval_top_k or 5)
@@ -752,6 +832,7 @@ def retrieve_hits_for_qa(
         max_count=20,
         required_level=PermissionLevel.query.value,
         allow_index_only=True,
+        omit_unready=len(doc_ids) > 1,
     )
 
     return _retrieve_hits_core(
@@ -762,6 +843,7 @@ def retrieve_hits_for_qa(
         question,
         top_k=top_k,
         merge_nearby=merge_nearby,
+        narrow_by_name=narrow_by_name,
     )
 
 

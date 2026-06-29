@@ -19,6 +19,7 @@ from app.integrations.markdown_docx_export import (
 from app.models.org import User
 from app.schemas.common import ApiResponse
 from app.schemas.report_generation import (
+    ReportAgentSkillOut,
     ReportExportDocxRequest,
     ReportGenerationChatRequest,
     ReportGenerationMetaOut,
@@ -57,6 +58,19 @@ def report_generation_presets(
     )
 
 
+@router.get("/skills", response_model=ApiResponse[list[ReportAgentSkillOut]])
+def report_generation_skills(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[ReportAgentSkillOut]]:
+    return ApiResponse(
+        data=[
+            ReportAgentSkillOut.model_validate(item)
+            for item in svc.list_report_agent_skills(db, user)
+        ]
+    )
+
+
 @router.post("/chat/stream")
 async def report_generation_chat_stream(
     body: ReportGenerationChatRequest,
@@ -72,8 +86,6 @@ async def report_generation_chat_stream(
             history=body.history,
             conversation_id=body.conversation_id,
             document_ids=body.document_ids,
-            use_web_search=body.use_web_search,
-            use_agentic=body.use_agentic,
         ):
             yield payload
 

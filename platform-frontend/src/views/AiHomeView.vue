@@ -4,7 +4,6 @@ import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import {
   CreateOutline,
-  GitNetworkOutline,
   SearchOutline,
   SparklesOutline,
 } from "@vicons/ionicons5";
@@ -36,11 +35,6 @@ const toolLinks = computed(() => {
       title: t("aiHome.toolLinks.reportGeneration"),
       route: { name: "report-generation", query: returnQuery },
       icon: CreateOutline,
-    },
-    {
-      title: t("aiHome.toolLinks.kgPalantir"),
-      route: { name: "kg-palantir", query: returnQuery },
-      icon: GitNetworkOutline,
     },
   ];
 });

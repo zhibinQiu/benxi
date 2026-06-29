@@ -49,7 +49,7 @@ def main() -> int:
         print(
             f"已修复文档部门：补全 dept_id {fixed_null} 条，"
             f"校正 personal/team 不一致 {fixed_mismatch} 条，"
-            f"公司库误挂改小组 {fixed_company} 条"
+            f"公司库误挂改分部 {fixed_company} 条"
         )
         return 0
     except Exception as exc:

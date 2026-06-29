@@ -1,9 +1,9 @@
-/** 平台原生对话流式 API（AI 智能体 / 智能问数 / 双碳问答） */
+/** 平台原生对话流式 API（AI 智能体 / 智能问数 / 双碳问答 / 报告生成） */
 import { getApiBase, getToken, rejectHttpFailure } from "./http.js";
 
-export function createPlatformChatStream(path) {
+export function createPlatformChatStream(path, { sanitizeErrorMessage = null } = {}) {
   return async function platformChatStream(
-    { message, history = [], conversationId = null, attachmentSessionId = null },
+    { message, history = [], conversationId = null, attachmentSessionId = null, ...extraBody },
     {
       onDelta,
       onReplace,
@@ -21,7 +21,7 @@ export function createPlatformChatStream(path) {
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const body = { message, history };
+    const body = { message, history, ...extraBody };
     if (conversationId) body.conversation_id = conversationId;
     if (attachmentSessionId) body.attachment_session_id = attachmentSessionId;
 
@@ -43,6 +43,7 @@ export function createPlatformChatStream(path) {
     const decoder = new TextDecoder();
     let buffer = "";
     let hasContent = false;
+    let streamFinished = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -63,12 +64,15 @@ export function createPlatformChatStream(path) {
           continue;
         }
         if (payload.error) {
+          const errText = sanitizeErrorMessage
+            ? sanitizeErrorMessage(payload.error)
+            : payload.error;
           // 正文已输出后的上游错误（常见于引用检索节点）不应覆盖成功回答
-          if (hasContent) {
+          if (hasContent && !sanitizeErrorMessage) {
             console.warn("[chat-stream] ignored post-answer error:", payload.error);
             continue;
           }
-          onError?.(new Error(payload.error));
+          onError?.(new Error(errText));
           return;
         }
         if (payload.workflow) onWorkflow?.(payload.workflow);
@@ -77,7 +81,12 @@ export function createPlatformChatStream(path) {
           onReplace?.(payload.replace);
         }
         if (payload.citations) onCitations?.(payload.citations);
-        if (payload.attachments) onAttachments?.(payload.attachments);
+        if (payload.attachments) {
+          if (Array.isArray(payload.attachments) && payload.attachments.length) {
+            hasContent = true;
+          }
+          onAttachments?.(payload.attachments);
+        }
         if (payload.delta) {
           hasContent = true;
           onDelta?.(payload.delta);
@@ -89,13 +98,18 @@ export function createPlatformChatStream(path) {
           onConversationId?.(payload.conversation_id);
         }
         if (payload.done) {
+          streamFinished = true;
+          if (Array.isArray(payload.attachments) && payload.attachments.length) {
+            onAttachments?.(payload.attachments);
+            hasContent = true;
+          }
           if ((payload.reply || "").trim()) hasContent = true;
           onDone?.(payload);
           continue;
         }
       }
     }
-    onDone?.({});
+    if (!streamFinished) onDone?.({});
   };
 }
 

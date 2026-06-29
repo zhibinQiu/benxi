@@ -78,7 +78,7 @@ def update_agent_file(
 def patch_agent(
     agent_id: str,
     body: AgentProfilePatchIn,
-    user: Annotated[User, Depends(require_permission("admin.user"))],
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[AgentProfileOut]:
@@ -86,6 +86,7 @@ def patch_agent(
         db,
         agent_id,
         enabled=body.enabled,
+        service_enabled=body.service_enabled,
         skill_names=body.skill_names,
     )
     write_audit(

@@ -113,50 +113,51 @@ def test_normalize_converts_plain_text_to_pdf():
     assert len(content) > 500
 
 
-def test_normalize_converts_docx_to_pdf(monkeypatch):
-    docx_text = "Word 文档正文内容。" * 40
-
-    class _Parsed:
-        full_text = docx_text
-
-    monkeypatch.setattr(
-        "app.integrations.text_extract.extract_text_from_bytes",
-        lambda *a, **k: _Parsed(),
-    )
+def test_normalize_keeps_docx_original():
     name, content, mime = normalize_file_for_knowflow_upload(
         "report.docx",
         b"PK fake",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         title="报告",
     )
-    assert name.endswith(".pdf")
-    assert mime == "application/pdf"
-    assert content.startswith(b"%PDF")
+    assert name == "report.docx"
+    assert mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert content == b"PK fake"
 
 
-def test_normalize_office_falls_back_to_markdown_when_pdf_fails(monkeypatch):
-    docx_text = "Word 文档正文内容。" * 40
-
-    class _Parsed:
-        full_text = docx_text
-
-    monkeypatch.setattr(
-        "app.integrations.text_extract.extract_text_from_bytes",
-        lambda *a, **k: _Parsed(),
-    )
-    monkeypatch.setattr(
-        "app.integrations.html_document_export.convert_file_bytes_to_pdf_for_citation",
-        lambda *a, **k: None,
-    )
+def test_normalize_keeps_pptx_original():
     name, content, mime = normalize_file_for_knowflow_upload(
-        "report.docx",
-        b"PK fake",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        title="报告",
+        "slides.pptx",
+        b"PK fake pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        title="演示",
     )
-    assert name.endswith(".md")
-    assert mime == "text/markdown"
-    assert "Word 文档正文" in content.decode("utf-8")
+    assert name == "slides.pptx"
+    assert content == b"PK fake pptx"
+
+
+def test_normalize_keeps_csv_original():
+    csv_bytes = b"col1,col2\na,b\n"
+    name, content, mime = normalize_file_for_knowflow_upload(
+        "data.csv",
+        csv_bytes,
+        "text/csv",
+        title="数据",
+    )
+    assert name == "data.csv"
+    assert content == csv_bytes
+    assert mime == "text/csv"
+
+
+def test_normalize_keeps_xlsx_original():
+    name, content, mime = normalize_file_for_knowflow_upload(
+        "sheet.xlsx",
+        b"PK fake xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        title="表格",
+    )
+    assert name == "sheet.xlsx"
+    assert content == b"PK fake xlsx"
 
 
 def test_convert_docx_to_pdf_for_citation_real():

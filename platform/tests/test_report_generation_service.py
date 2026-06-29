@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from app.schemas.ai_chat import AiChatMessage
 from app.services.report_generation_service import (
-    _SOURCE_PRIORITY_RULE,
-    _build_messages,
     _has_prior_assistant_turn,
     build_aligned_report_sources,
     build_local_retrieval_queries,
@@ -105,6 +103,19 @@ def test_build_search_queries_dedup():
     assert len(queries) >= 1
 
 
+def test_build_search_queries_initial_includes_latest_news():
+    queries = build_search_queries(
+        "请生成全国碳市场研究报告",
+        topic="全国碳市场",
+        intent="initial",
+    )
+    assert queries[0] == "全国碳市场"
+    assert any("最新动态" in q for q in queries)
+    assert any("近期新闻" in q for q in queries)
+    assert len(queries) >= 3
+
+
+
 def test_build_web_citations_index_offset():
     items = [
         {"title": "A", "url": "https://a.test", "snippet": "sa"},
@@ -196,46 +207,20 @@ def test_strip_report_reference_section():
     assert "结论" in answer
 
 
-def test_build_messages_includes_source_priority():
-    messages = _build_messages(
-        message="生成碳市场报告",
-        history=[],
+def test_build_report_context_instruction_scoped_docs():
+    from app.services.report_generation_agent_service import build_report_context_instruction
+
+    text = build_report_context_instruction(
+        message="撰写碳市场调研报告",
         intent="initial",
         topic="全国碳市场",
-        local_context="[1]\n本地片段",
-        web_context="[2]\n联网片段",
-        web_enabled=True,
-        local_enabled=True,
-        chunk_count=1,
+        doc_count=2,
+        web_available=True,
+        skill_name="report-survey",
     )
-    system = messages[0]["content"]
-    assert _SOURCE_PRIORITY_RULE in system
-    assert "优先级 1" in system and "本地知识库" in system
-    assert "优先级 2" in system and "联网检索" in system
-    assert "本地片段" in system and "联网片段" in system
-
-
-def test_build_messages_keeps_long_prior_report_for_follow_up():
-    long_report = "## 摘要\n" + ("全国碳市场分析段落。" * 800)
-    history = [
-        AiChatMessage(role="user", content="请生成全国碳市场研究报告"),
-        AiChatMessage(role="assistant", content=long_report),
-    ]
-    messages = _build_messages(
-        message="补充海外案例",
-        history=history,
-        intent="follow_up",
-        topic="全国碳市场",
-        local_context="",
-        web_context="",
-        web_enabled=False,
-        local_enabled=False,
-        chunk_count=0,
-    )
-    assistant_rows = [m for m in messages if m["role"] == "assistant"]
-    assert len(assistant_rows) == 1
-    # 旧默认 history 预算 6000 会截断到约 5985；扩大后应保留绝大部分上一版报告
-    assert len(assistant_rows[0]["content"]) > 7500
+    assert "report-survey" in text
+    assert "2 份本地文档" in text
+    assert "联网检索" in text
 
 
 def test_prepare_messages_for_report_uses_report_prompt_budget():
@@ -269,3 +254,74 @@ def test_generate_report_mindmap_local_fallback():
     assert mermaid
     assert "mindmap" in mermaid.lower()
     assert source in {"llm", "local"}
+
+
+def test_non_report_intent_returns_input_hint_not_error():
+    import json
+
+    from app.services.report_generation_agent_service import (
+        REPORT_INPUT_HINT,
+        _iter_report_input_hint_payloads,
+    )
+
+    payloads = _iter_report_input_hint_payloads()
+    assert len(payloads) == 2
+    delta = json.loads(payloads[0])
+    done = json.loads(payloads[1])
+    assert delta.get("delta") == REPORT_INPUT_HINT
+    assert "error" not in delta
+    assert done.get("done") is True
+    assert done.get("reply") == REPORT_INPUT_HINT
+    assert "error" not in done
+
+
+def test_ensure_report_scoped_local_queries_when_docs_selected():
+    from app.services.report_generation_service import ensure_report_scoped_local_queries
+
+    queries = ensure_report_scoped_local_queries(
+        message="请生成全国碳市场研究报告",
+        topic="全国碳市场",
+        intent="initial",
+        document_count=2,
+        planned_queries=[],
+    )
+    assert len(queries) >= 1
+    assert "全国碳市场" in queries[0]
+
+
+def test_ensure_report_scoped_local_queries_skips_format_adjust():
+    from app.services.report_generation_service import ensure_report_scoped_local_queries
+
+    queries = ensure_report_scoped_local_queries(
+        message="请改成表格",
+        topic="全国碳市场",
+        intent="format_adjust",
+        document_count=2,
+        planned_queries=[],
+    )
+    assert queries == []
+
+
+def test_plan_report_gathering_forces_local_when_llm_skips(monkeypatch):
+    from app.services.knowledge_agentic_service import _plan_report_gathering
+
+    monkeypatch.setattr(
+        "app.services.knowledge_agentic_service.chat_completion_sync",
+        lambda **_: (
+            '{"reasoning":"模型知识足够","use_local":false,"local_queries":[],'
+            '"use_web":false,"web_queries":[]}'
+        ),
+    )
+    local, web, reasoning = _plan_report_gathering(
+        message="请生成全国碳市场研究报告",
+        topic="全国碳市场",
+        intent="initial",
+        document_count=3,
+        web_allowed=False,
+        kg_context="",
+        history_excerpt="",
+        history=[],
+    )
+    assert len(local) >= 1
+    assert web == []
+    assert "3" in reasoning

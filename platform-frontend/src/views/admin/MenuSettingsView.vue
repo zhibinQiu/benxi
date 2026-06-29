@@ -90,7 +90,7 @@ onMounted(load);
 
 <template>
   <div class="menu-settings-page feature-page">
-    <n-spin :show="loading">
+    <n-spin :show="loading" local>
       <n-card :title="t('admin.menuSettings.title')" size="small">
         <template #header-extra>
           <ListRefreshButton :loading="loading" @click="load" />

@@ -12,7 +12,7 @@
 #   6. compose.expose-deps.yaml  ← EXPOSE_DEPS=1（远程依赖开发，每服务独立端口）
 #
 # 对外: 仅 frontend:${FRONTEND_PORT}（默认 40005）
-# profile: knowflow（MySQL/Infinity/RAGFlow）· speech（FunASR）
+# profile: knowflow（MySQL/Infinity/RAGFlow）· speech（FunASR）· docs（MkDocs 文档站）
 
 name: zhitan
 
@@ -33,6 +33,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # 单机生产档位 C：预留 API 6×(12+8) + Celery (10+5) + 余量
+    command: postgres -c max_connections=220 -c shared_buffers=512MB
     networks:
       - zhitan
 
@@ -82,7 +84,7 @@ services:
 
   # --- PDF 翻译 API（BabelDOC / pdf2zh_next）---
   pdf2zh-api:
-    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.3.1}}
+    image: ${PDF2ZH_IMAGE:-zhitan-pdf2zh:${ZHITAN_VERSION:-4.5.0}}
     build:
       context: .
       dockerfile: Dockerfile
@@ -119,7 +121,7 @@ services:
 
   # --- 平台 API（FastAPI）与 Celery Worker，共用 zhitan-api 镜像 ---
   api:
-    image: zhitan-api:${ZHITAN_VERSION:-4.3.1}
+    image: zhitan-api:${ZHITAN_VERSION:-4.5.0}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -146,6 +148,12 @@ services:
       KNOWFLOW_BACKEND_URL: http://knowflow-backend:5000
       RAGFLOW_API_URL: http://ragflow:80
       RAGFLOW_MYSQL_HOST: knowflow-mysql
+      # 单机生产档位 C（200 在线 / 瞬时 ~100–150 打 DB）；见 docs/zh/operations/configuration.md
+      DB_POOL_SIZE: "12"
+      DB_MAX_OVERFLOW: "8"
+      DB_POOL_TIMEOUT: "15"
+      STREAM_MAX_CONCURRENT_PER_WORKER: "12"
+      STREAM_ACQUIRE_TIMEOUT: "5"
     depends_on:
       postgres:
         condition: service_healthy
@@ -157,13 +165,14 @@ services:
         condition: service_healthy
     volumes:
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 6
+    mem_limit: 4g
     shm_size: "512mb"
     networks:
       - zhitan
 
   worker:
-    image: zhitan-api:${ZHITAN_VERSION:-4.3.1}
+    image: zhitan-api:${ZHITAN_VERSION:-4.5.0}
     build:
       context: .
       dockerfile: platform/Dockerfile
@@ -186,6 +195,8 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       PDF2ZH_API_URL: http://pdf2zh-api:7861
       SPEECH_SERVICE_URL: http://speech-api:8765
+      DB_POOL_SIZE: "10"
+      DB_MAX_OVERFLOW: "5"
     depends_on:
       postgres:
         condition: service_healthy
@@ -195,14 +206,14 @@ services:
         condition: service_started
     volumes:
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
-    command: celery -A workers.celery_app worker --loglevel=info --concurrency=4
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=12
     shm_size: "512mb"
     networks:
       - zhitan
 
   # --- 唯一对外 Web 入口（生产 Nginx；dev 见 compose.dev.yaml 的 Vite）---
   frontend:
-    image: zhitan-frontend:${ZHITAN_VERSION:-4.3.1}
+    image: zhitan-frontend:${ZHITAN_VERSION:-4.5.0}
     build:
       context: platform-frontend
       dockerfile: Dockerfile
@@ -229,7 +240,7 @@ services:
   # --- profile speech: FunASR 会议转写（模型卷 data/speech-models）---
   speech-api:
     profiles: ["speech"]
-    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.3.1}}
+    image: ${SPEECH_IMAGE:-zhitan-speech:${ZHITAN_VERSION:-4.5.0}}
     build:
       context: platform/speech-service
       dockerfile: Dockerfile
@@ -261,6 +272,36 @@ services:
       timeout: 15s
       retries: 15
       start_period: 300s
+    networks:
+      - zhitan
+
+  # --- profile docs: MkDocs Material 系统文档（开发/内网预览）---
+  docs:
+    profiles: ["docs"]
+    image: zhitan-docs:${ZHITAN_VERSION:-4.5.0}
+    build:
+      context: .
+      dockerfile: docs/Dockerfile
+      args:
+        PYTHON_IMAGE: ${DOCS_PYTHON_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DOCS_PORT:-40100}:8000"
+    volumes:
+      - ./mkdocs.yml:/site/mkdocs.yml:ro
+      - ./docs/zh:/site/docs/zh:ro
+      - ./icon:/site/icon:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - zhitan
 

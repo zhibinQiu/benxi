@@ -9,6 +9,11 @@ backups/
 *.tar.gz
 deploy/
 mkdocs.yml
+!mkdocs.yml
+docs/
+!docs/
+icon/
+!icon/
 site/
 .pre-commit-config.yaml
 uv.lock

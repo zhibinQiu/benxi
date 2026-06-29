@@ -30,6 +30,18 @@
 
 开发栈 `compose.dev.yaml` 可将 `SPEECH_SERVICE_URL` 指向 `host.docker.internal:8765`（宿主机 FunASR）。
 
+## Profile：`docs`
+
+| 容器 | 镜像 | 端口 | 职责 |
+|------|------|------|------|
+| `zhitan-docs-1` | zhitan-docs | **40100**（默认） | MkDocs Material 系统文档；挂载 `docs/zh` 热更新 |
+
+```bash
+./dev.sh docs              # 启动
+./dev.sh docs local        # 本机 venv（同端口）
+./dev.sh docs stop
+```
+
 ## Profile：`knowflow`（`deploy/knowflow.yml`）
 
 | 容器 | 镜像 | 端口 | 职责 |

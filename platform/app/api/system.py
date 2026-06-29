@@ -23,6 +23,7 @@ from app.services.model_settings_service import (
     get_frontend_app_title,
     get_frontend_color_scheme,
     get_frontend_default_theme,
+    get_frontend_primary_color,
     get_platform_api_base_url,
 )
 from app.services.platform_dashboard_service import collect_platform_dashboard_stats
@@ -64,6 +65,7 @@ def client_config(
             app_title=get_frontend_app_title(db),
             default_theme=get_frontend_default_theme(db),
             color_scheme=get_frontend_color_scheme(db),
+            primary_color=get_frontend_primary_color(db),
         ).model_dump()
 
     data = cache_get_or_set(client_config_cache_key(), _load, ttl=ttl)

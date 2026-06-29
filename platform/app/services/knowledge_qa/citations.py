@@ -34,7 +34,7 @@ def _normalize_highlight_snippet(text: str) -> str:
 
 
 def _citation_preview_available(h: dict) -> bool:
-    """是否可展示页级引用截图（真实 image_id、合成 ID、KnowFlow bbox，或 PageIndex 页码）。"""
+    """是否可展示页级引用截图（真实 image_id、KnowFlow bbox，或 PageIndex 页码）。"""
     if h.get("preview_available") is True:
         return True
     if h.get("preview_available") is False:
@@ -43,18 +43,16 @@ def _citation_preview_available(h: dict) -> bool:
         did = str(h.get("document_id") or "").strip()
         if did:
             return True
+    if RagflowClient.extract_chunk_image_id(h):
+        return True
     anchor = h.get("anchor_json") or {}
     bbox = anchor.get("bbox")
     if isinstance(bbox, list) and len(bbox) >= 4:
-        return True
-    if RagflowClient.extract_chunk_image_id(h):
-        return True
-    if RagflowClient.synthesize_chunk_image_id(h):
-        return True
-    cid = str(h.get("chunk_id") or "").strip()
-    ds_id = str(h.get("dataset_id") or "").strip()
-    rid = str(h.get("ragflow_document_id") or "").strip()
-    return bool(cid and ds_id and rid)
+        cid = str(h.get("chunk_id") or "").strip()
+        ds_id = str(h.get("dataset_id") or "").strip()
+        rid = str(h.get("ragflow_document_id") or "").strip()
+        return bool(cid and ds_id and rid)
+    return False
 
 
 def _citation_image_id(h: dict) -> str | None:

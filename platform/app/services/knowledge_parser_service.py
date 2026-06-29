@@ -109,11 +109,11 @@ def reindex_parser_id_raw(parser_id: str | None) -> str:
     """重新索引场景的原始 parser_id（未归一化）。
 
     实现思路：与 ``parser_id_raw`` 分离，默认读 ``KNOWLEDGE_REINDEX_DEFAULT_PARSER_ID``
-    （默认 pageindex），使「文档详情 → 重新索引」与上传默认解耦。
+    （默认 naive），使「文档详情 → 重新索引」与上传默认解耦。
     """
     settings = get_settings()
     return (
-        parser_id or settings.knowledge_reindex_default_parser_id or PARSER_PAGEINDEX
+        parser_id or settings.knowledge_reindex_default_parser_id or "naive"
     ).strip().lower()
 
 
@@ -253,7 +253,9 @@ def infer_parser_for_upload_file(
 
     if lower.endswith(".md") or "markdown" in mime:
         return parser, layout
-    if lower.endswith((".txt", ".csv", ".log", ".json", ".xml", ".yaml", ".yml")):
+    if lower.endswith(".csv") or mime == "text/csv":
+        return "table", LAYOUT_PLAIN_TEXT
+    if lower.endswith((".txt", ".log", ".json", ".xml", ".yaml", ".yml")):
         return parser, layout
     if mime.startswith("text/") or mime in ("application/json", "application/xml"):
         return parser, layout
@@ -330,6 +332,7 @@ def list_parser_options() -> dict:
         "chunk_token_num": settings.knowledge_default_chunk_token_num,
     }
     hints = [
+        "默认使用 Naive 索引；若失败，请尝试 PageIndex 索引",
         "解析失败时请确认文档可正常打开，或更换索引方式后重试",
         "仍失败请联系管理员",
     ]

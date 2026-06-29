@@ -83,6 +83,7 @@ def docker_launch_args(settings: Settings | None = None) -> list[str]:
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-gpu",
+        "--disable-blink-features=AutomationControlled",
     ]
     s = settings or get_settings()
     if s.agent_browser_headless:

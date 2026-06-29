@@ -51,8 +51,117 @@ function readSvgSize(svgEl) {
   return { width: Math.max(width, 320), height: Math.max(height, 240) };
 }
 
-function sanitizeSvgForExport(svg) {
-  svg.querySelectorAll("foreignObject").forEach((el) => el.remove());
+function extractForeignObjectText(fo) {
+  const root = fo.querySelector("div, span, p") || fo;
+  const lines = [];
+  root.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent?.trim();
+      if (text) lines.push(text);
+      return;
+    }
+    if (node.nodeName === "BR") {
+      lines.push("\n");
+      return;
+    }
+    const text = node.textContent?.trim();
+    if (text) lines.push(text);
+  });
+  const merged = lines.join("").replace(/\n+/g, "\n").trim();
+  return merged || (fo.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+function readForeignObjectStyle(fo, sourceFo) {
+  const live = sourceFo?.querySelector?.("div, span, p") || sourceFo;
+  const fallback = fo.querySelector("div, span, p") || fo;
+  const target = live?.isConnected ? live : fallback;
+  let fill = "#333333";
+  let fontSize = "14px";
+  let fontFamily = "sans-serif";
+  let fontWeight = "";
+  if (target && typeof window !== "undefined" && window.getComputedStyle) {
+    const cs = window.getComputedStyle(target);
+    if (cs.fill && cs.fill !== "none") fill = cs.fill;
+    if (cs.color && cs.color !== "rgba(0, 0, 0, 0)") fill = cs.color;
+    if (cs.fontSize) fontSize = cs.fontSize;
+    if (cs.fontFamily) fontFamily = cs.fontFamily;
+    if (cs.fontWeight && cs.fontWeight !== "normal") fontWeight = cs.fontWeight;
+  } else {
+    const inline = fallback?.getAttribute?.("style") || "";
+    const colorMatch = inline.match(/(?:^|;)\s*color:\s*([^;]+)/i);
+    const sizeMatch = inline.match(/font-size:\s*([^;]+)/i);
+    if (colorMatch) fill = colorMatch[1].trim();
+    if (sizeMatch) fontSize = sizeMatch[1].trim();
+  }
+  return { fill, fontSize, fontFamily, fontWeight };
+}
+
+/** Mermaid 标签常用 foreignObject + HTML，Canvas 无法渲染；转为原生 SVG text。 */
+function convertForeignObjectsToSvgText(svg, sourceSvg = svg) {
+  const ns = "http://www.w3.org/2000/svg";
+  const sourceObjects = [...sourceSvg.querySelectorAll("foreignObject")];
+  [...svg.querySelectorAll("foreignObject")].forEach((fo, index) => {
+    fo.setAttribute("overflow", "visible");
+    const text = extractForeignObjectText(fo);
+    if (!text) {
+      fo.remove();
+      return;
+    }
+    const { fill, fontSize, fontFamily, fontWeight } = readForeignObjectStyle(
+      fo,
+      sourceObjects[index]
+    );
+    const x = Number.parseFloat(fo.getAttribute("x") || "0");
+    const y = Number.parseFloat(fo.getAttribute("y") || "0");
+    const width = Number.parseFloat(fo.getAttribute("width") || "0");
+    const height = Number.parseFloat(fo.getAttribute("height") || "0");
+    const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+    const textEl = document.createElementNS(ns, "text");
+    textEl.setAttribute("x", String(x + width / 2));
+    textEl.setAttribute("y", String(y + height / 2));
+    textEl.setAttribute("text-anchor", "middle");
+    textEl.setAttribute("dominant-baseline", "middle");
+    textEl.setAttribute("font-family", fontFamily);
+    textEl.setAttribute("font-size", fontSize);
+    textEl.setAttribute("fill", fill);
+    if (fontWeight) textEl.setAttribute("font-weight", fontWeight);
+    if (lines.length <= 1) {
+      textEl.textContent = text;
+    } else {
+      const lineHeight = Number.parseFloat(fontSize) || 14;
+      textEl.setAttribute("y", String(y + height / 2 - ((lines.length - 1) * lineHeight) / 2));
+      lines.forEach((line, lineIndex) => {
+        const tspan = document.createElementNS(ns, "tspan");
+        tspan.setAttribute("x", String(x + width / 2));
+        tspan.setAttribute("dy", lineIndex === 0 ? "0" : String(lineHeight));
+        tspan.textContent = line;
+        textEl.appendChild(tspan);
+      });
+    }
+    fo.parentNode?.insertBefore(textEl, fo);
+    fo.remove();
+  });
+}
+
+function inlineComputedTextStyles(svg, sourceSvg) {
+  const srcTexts = sourceSvg.querySelectorAll("text");
+  const cloneTexts = svg.querySelectorAll("text");
+  cloneTexts.forEach((el, index) => {
+    const src = srcTexts[index];
+    if (!src?.isConnected || typeof window === "undefined") return;
+    const cs = window.getComputedStyle(src);
+    if (cs.fill && cs.fill !== "none") el.setAttribute("fill", cs.fill);
+    if (cs.fontSize) el.setAttribute("font-size", cs.fontSize);
+    if (cs.fontFamily) el.setAttribute("font-family", cs.fontFamily);
+    if (cs.fontWeight && cs.fontWeight !== "normal") {
+      el.setAttribute("font-weight", cs.fontWeight);
+    }
+  });
+}
+
+function sanitizeSvgForExport(svg, sourceSvg = svg) {
+  convertForeignObjectsToSvgText(svg, sourceSvg);
+  inlineComputedTextStyles(svg, sourceSvg);
   svg.querySelectorAll("image").forEach((el) => {
     const href = el.getAttribute("href") || el.getAttribute("xlink:href");
     if (href && !href.startsWith("data:")) el.remove();
@@ -60,7 +169,8 @@ function sanitizeSvgForExport(svg) {
   svg.querySelectorAll("style").forEach((styleEl) => {
     styleEl.textContent = (styleEl.textContent || "")
       .replace(/@import[\s\S]*?;/g, "")
-      .replace(/@font-face[\s\S]*?}/g, "");
+      .replace(/@font-face[\s\S]*?}/g, "")
+      .replace(/var\(--[^)]+\)/g, "sans-serif");
   });
   const html = svg.innerHTML || "";
   if (/var\(--/.test(html)) {
@@ -85,7 +195,7 @@ function prepareSvgClone(svgEl) {
   clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
   clone.setAttribute("width", String(width));
   clone.setAttribute("height", String(height));
-  sanitizeSvgForExport(clone);
+  sanitizeSvgForExport(clone, svgEl);
   return { clone, width, height };
 }
 
@@ -116,6 +226,18 @@ function isCanvasSecurityError(err) {
 }
 
 async function rasterizeSvgStringToPngBlob(svgString, width, height) {
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-10000px;top:0;pointer-events:none;opacity:0;";
+  host.innerHTML = svgString;
+  const svgNode = host.querySelector("svg");
+  document.body.appendChild(host);
+  try {
+    if (svgNode) {
+      return await rasterizeSvgNodeToPngBlob(svgNode, width, height);
+    }
+  } finally {
+    host.remove();
+  }
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.decoding = "sync";
@@ -136,6 +258,34 @@ async function rasterizeSvgStringToPngBlob(svgString, width, height) {
   return canvasToPngBlob(canvas);
 }
 
+async function rasterizeSvgNodeToPngBlob(svgNode, width, height) {
+  const scale = 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(width * scale);
+  canvas.height = Math.ceil(height * scale);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.scale(scale, scale);
+  const xml = new XMLSerializer().serializeToString(svgNode);
+  const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.decoding = "sync";
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("SVG 渲染失败"));
+      img.src = url;
+    });
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvasToPngBlob(canvas);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function downloadSvgElement(svgEl, filename = "diagram.svg") {
   const { clone } = prepareSvgClone(svgEl);
   const xml = new XMLSerializer().serializeToString(clone);
@@ -144,9 +294,12 @@ export function downloadSvgElement(svgEl, filename = "diagram.svg") {
 
 export async function downloadSvgAsPng(svgEl, filename = "diagram.png") {
   const { clone, width, height } = prepareSvgClone(svgEl);
-  const xml = new XMLSerializer().serializeToString(clone);
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-10000px;top:0;opacity:0;pointer-events:none;";
+  host.appendChild(clone);
+  document.body.appendChild(host);
   try {
-    const pngBlob = await rasterizeSvgStringToPngBlob(xml, width, height);
+    const pngBlob = await rasterizeSvgNodeToPngBlob(clone, width, height);
     downloadBlob(pngBlob, filename);
     return { ok: true, format: "png" };
   } catch (err) {
@@ -154,6 +307,8 @@ export async function downloadSvgAsPng(svgEl, filename = "diagram.png") {
     const svgName = filename.replace(/\.png$/i, ".svg");
     downloadSvgElement(svgEl, svgName);
     return { ok: true, format: "svg", fallback: true };
+  } finally {
+    host.remove();
   }
 }
 

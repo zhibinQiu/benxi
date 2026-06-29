@@ -77,11 +77,11 @@ flowchart TB
 
 详见 [知识服务实现](../implementation/knowledge-implementation.md)（实现细节）与本目录 [网络拓扑](network-topology.md)。
 
-## 启动与版本（v4.3.1）
+## 启动与版本（v4.5.0）
 
 | 项 | 说明 |
 |----|------|
-| 版本源 | 仓库根 `VERSION`（当前 4.3.1）→ `ZHITAN_VERSION` 镜像 tag |
+| 版本源 | 仓库根 `VERSION`（当前 4.5.0）→ `ZHITAN_VERSION` 镜像 tag |
 | 开发入口 | `./dev.sh docker`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
 | 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |
@@ -89,12 +89,56 @@ flowchart TB
 
 新增 **资源管理**（系统设置，需 `admin.user`）：在线配置 LLM / 语音合成 / KnowFlow / OCR 等，`GET /api/v1/system/client-config` 供前端启动拉取主题与 API 根地址。
 
+## 启动与资源（v4.5.0）
+
+| 机制 | 说明 |
+|------|------|
+| DB 启动 | `auto` / `light` / `full` 分流；light 仅跑增量 DDL + 权限种子 |
+| 流式 API | 鉴权后 `detach_request_db` 归还连接池；SSE 轮询用独立短会话 |
+| Agent 工具循环 | `AgentLoopSession`：LLM/外部 I/O 前 `release_before_io()`，工具执行前 `open()`；supervisor / report 流式路径不再长占 `SessionLocal` |
+| 路由信号 | `agent_routing_signals` 集中 regex（浏览器/调度/复合句等），planner 与 supervisor 共用 |
+| 前端内存 | 对话/知识壳 KeepAlive；知识双面板 max=1；重型 chunk 异步加载 |
+| 进程退出 | 关闭 `last_seen` 线程池与后台 executor |
+
+## AIP 智能体互联（v4.5.0）
+
+| 组件 | 说明 |
+|------|------|
+| 对外 API | `/api/v1/aip/discover`、`/agents/{aid}`、`/interact`、`/interact/stream` |
+| 管理 | `/admin/aip/keys`（SK 密钥）；外部智能体 CRUD 在 Agent Skills 管理 API |
+| 数据 | `aip_secret_keys`、`aip_external_agents` 表；配置 JSON 与 DB 双源合并 |
+| 执行 | `agent_aip_executor` 由 supervisor 调用，统一内置专精与外部 HTTP |
+
+## 容量与连接池（v4.5.0）
+
+约 **200 人在线**时，瓶颈通常在 **瞬时并发占用 DB 连接**，而非平均 QPS。
+
+| 部署形态 | 连接池配置 | 经验并发上限 |
+|----------|------------|--------------|
+| 本地 / 单 worker（`dev.sh local`） | `DB_POOL_SIZE=20` + `DB_MAX_OVERFLOW=20` | 约 **30–40** 个同时打 DB 的请求 |
+| **单机生产档位 C**（`compose.yaml` / `server-up`） | API 6×(12+8)=120 + Celery (10+5)；PG `max_connections=220` | 目标 **~100–150** 瞬时打 DB |
+
+**503「系统繁忙」**：连接池排队超过 `DB_POOL_TIMEOUT` 时触发；`/health` 不打 DB，仍可用于探活。
+
+**解析入队**：文档解析在 KnowFlow/Celery 异步执行；API 侧为鉴权 + 元数据 + 入队。档位 C 面向 200 人**同时**点解析入队；真正切片仍由 Celery/KnowFlow 排队执行。
+
+**压测回归**（自动清理测试文档）：
+
+```bash
+cd platform
+python scripts/stress_test_throughput.py --concurrency 40 --parse-jobs 50   # 常规
+python scripts/stress_test_throughput.py --concurrency 80 --parse-jobs 80   # 档位 C 验收
+```
+
+详见 [配置说明](configuration.md#单机生产档位-c200-在线--瞬时-100150-打-db) 与 [测试指南](testing.md#吞吐量--压力测试-v441)。
+
 ## 代码仓库布局
 
 ```
 pdf_trans/
-├── compose.yaml              # 统一栈（核心服务）
+├── compose.yaml              # 统一栈（核心服务；含档位 C 生产默认）
 ├── compose.dev.yaml          # 开发覆盖（热重载、18000）
+├── compose.server.yaml       # 服务器挂载源码；档位 C 与 compose 对齐
 ├── compose.mirror.yaml       # 国内镜像 build args
 ├── deploy/knowflow.yml       # profile knowflow
 ├── platform/                 # FastAPI + Celery

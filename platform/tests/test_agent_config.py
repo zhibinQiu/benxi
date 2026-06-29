@@ -18,6 +18,7 @@ def test_default_agent_md_has_frontmatter():
     assert "id: research" in md
     assert "description:" in md
     assert "knowledge_retrieve" in md
+    assert "search_documents_by_name" in md
 
 
 def test_validate_agent_md_requires_matching_id():

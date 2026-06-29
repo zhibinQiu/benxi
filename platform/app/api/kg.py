@@ -16,10 +16,15 @@ from app.schemas.common import ApiResponse
 from app.schemas.kg import (
     KgEntityIn,
     KgEntityOut,
+    KgEntityBatchDeleteIn,
+    KgEntityBatchDeleteOut,
+    KgGraphClearOut,
     KgEntityTypeIn,
     KgEntityTypeOut,
     KgEntityTypeUpdate,
     KgEntityUpdate,
+    KgExtractBatchIn,
+    KgExtractBatchOut,
     KgExtractFromTextIn,
     KgExtractFromTextOut,
     KgGraphOut,
@@ -31,7 +36,10 @@ from app.schemas.kg import (
     KgRelationTypeUpdate,
 )
 from app.services import kg_service
-from app.services.kg_extraction_service import extract_kg_from_text
+from app.services.kg_extraction_service import (
+    extract_kg_from_text,
+    schedule_kg_batch_extraction,
+)
 
 router = APIRouter(
     prefix="/kg",
@@ -44,7 +52,7 @@ router = APIRouter(
 def kg_meta(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-    sync_system: bool = Query(False, description="是否同步平台用户与部门到图谱（显式刷新时开启）"),
+    sync_system: bool = Query(False, description="是否同步平台组织与智能体能力拓扑到图谱（显式刷新时开启）"),
 ) -> ApiResponse[KgMetaOut]:
     return ApiResponse(data=kg_service.get_meta(db, user, sync_system=sync_system))
 
@@ -73,6 +81,32 @@ def kg_extract_from_text(
         }
         raise bad_request(messages.get(reason, reason))
     return ApiResponse(data=KgExtractFromTextOut(**result))
+
+
+@router.post("/extract/batch", response_model=ApiResponse[KgExtractBatchOut])
+def kg_extract_batch(
+    body: KgExtractBatchIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[KgExtractBatchOut]:
+    result = schedule_kg_batch_extraction(
+        db,
+        user,
+        scope=body.scope,
+        force=body.force,
+    )
+    if not result.get("queued"):
+        reason = str(result.get("reason") or "unknown")
+        if reason == "all_extracted":
+            return ApiResponse(data=KgExtractBatchOut(**result))
+        messages = {
+            "kg_extraction_disabled": "本体图谱抽取未启用，请联系管理员配置语言模型",
+            "no_kg_permission": "无本体图谱权限",
+            "invalid_scope": "无效的抽离范围",
+            "no_documents": "当前范围内没有可抽离的已索引文档",
+        }
+        raise bad_request(messages.get(reason, reason))
+    return ApiResponse(data=KgExtractBatchOut(**result))
 
 
 @router.get("/entities", response_model=ApiResponse[list[KgEntityOut]])
@@ -137,6 +171,31 @@ def kg_delete_entity(
 ) -> ApiResponse[None]:
     kg_service.delete_entity(db, user, entity_id)
     return ApiResponse(data=None)
+
+
+@router.post("/entities/batch-delete", response_model=ApiResponse[KgEntityBatchDeleteOut])
+def kg_batch_delete_entities(
+    body: KgEntityBatchDeleteIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[KgEntityBatchDeleteOut]:
+    deleted = kg_service.batch_delete_entities(
+        db,
+        user,
+        entity_ids=body.entity_ids or None,
+        type_id=body.type_id,
+        q=body.q,
+    )
+    return ApiResponse(data=KgEntityBatchDeleteOut(deleted_count=deleted))
+
+
+@router.post("/graph/clear", response_model=ApiResponse[KgGraphClearOut])
+def kg_clear_graph(
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[KgGraphClearOut]:
+    stats = kg_service.clear_user_graph(db, user)
+    return ApiResponse(data=KgGraphClearOut(**stats))
 
 
 @router.get("/relations", response_model=ApiResponse[list[KgRelationOut]])

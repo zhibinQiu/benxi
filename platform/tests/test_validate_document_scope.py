@@ -112,3 +112,49 @@ def test_validate_document_scope_index_only_rejects_unindexed():
             )
         else:
             raise AssertionError("expected bad_request")
+
+
+def test_validate_document_scope_omit_unready_skips_bad_docs():
+    user = MagicMock()
+    db = MagicMock()
+    good_id = uuid.uuid4()
+    bad_id = uuid.uuid4()
+    good = MagicMock()
+    good.id = good_id
+    good.deleted_at = None
+    good.title = "已索引文档"
+    bad = MagicMock()
+    bad.id = bad_id
+    bad.deleted_at = None
+    bad.title = "文件夹内文档"
+
+    def _get_document(_db, did):
+        return good if did == good_id else bad
+
+    with patch(
+        "app.services.compare_service.get_document",
+        side_effect=_get_document,
+    ), patch(
+        "app.services.compare_service.can_access_document",
+        return_value=True,
+    ), patch(
+        "app.services.document_service.resolve_current_version",
+        return_value=None,
+    ), patch(
+        "app.services.document_index_service.enrich_document_index_meta",
+        return_value={
+            str(good_id): {"knowledge_synced": True, "parse_status": "已索引"},
+            str(bad_id): {"knowledge_synced": False},
+        },
+    ):
+        docs = validate_document_scope(
+            db,
+            user,
+            [bad_id, good_id],
+            min_count=1,
+            max_count=20,
+            allow_index_only=True,
+            omit_unready=True,
+        )
+
+    assert docs == [good]

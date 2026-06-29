@@ -5,6 +5,8 @@ export async function login(account, password) {
   return api("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ account, password }),
+    preserveOnNavigate: true,
+    timeoutMs: 30_000,
   });
 }
 
@@ -18,6 +20,8 @@ export async function registerUser({ phone, email, displayName, password }) {
   return api("/api/v1/auth/register", {
     method: "POST",
     body: JSON.stringify(body),
+    preserveOnNavigate: true,
+    timeoutMs: 30_000,
   });
 }
 
@@ -30,7 +34,7 @@ export async function logout() {
 }
 
 export async function fetchMe() {
-  return api("/api/v1/auth/me");
+  return api("/api/v1/auth/me", { preserveOnNavigate: true });
 }
 
 export async function updateMe(body) {

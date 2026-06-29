@@ -1,7 +1,9 @@
 import { getApiBase, getToken, rejectHttpFailure, fetchWithTimeout } from "../api/http.js";
 
-const AUTH_API_IMAGE_RE = /\/api\/v1\/(?:browser-rpa\/screenshot|documents\/[^/]+\/file)\b/;
+const AUTH_API_IMAGE_RE = /(?:\/ai)?\/api\/v1\/(?:browser-rpa\/screenshot|documents\/[^/]+\/file)\b/;
 const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\(([^)]+)\)/g;
+const PLAIN_SCREENSHOT_URL_RE =
+  /(?:\/ai)?\/api\/v1\/browser-rpa\/screenshot\?key=[^\s<>"')\]]+/g;
 
 export function isAuthenticatedApiImageUrl(url) {
   return AUTH_API_IMAGE_RE.test(String(url || ""));
@@ -20,7 +22,44 @@ export function collectAuthImageUrlsFromMarkdown(content) {
     const src = normalizeAuthImageSrc(match[1] || "");
     if (src && isAuthenticatedApiImageUrl(src)) urls.push(src);
   }
+  for (const match of text.matchAll(PLAIN_SCREENSHOT_URL_RE)) {
+    const src = normalizeAuthImageSrc(match[0] || "");
+    if (src && isAuthenticatedApiImageUrl(src) && !urls.includes(src)) urls.push(src);
+  }
   return urls;
+}
+
+/** 将正文中的裸截图 API 路径转为 Markdown 图片，便于 marked 渲染。 */
+export function injectScreenshotMarkdownFromPlainUrls(content) {
+  let text = String(content || "");
+  for (const match of text.matchAll(PLAIN_SCREENSHOT_URL_RE)) {
+    const url = normalizeAuthImageSrc(match[0] || "");
+    if (!url || !isAuthenticatedApiImageUrl(url)) continue;
+    if (text.includes(`](${url})`) || text.includes(`](${match[0]})`)) continue;
+    text = text.replace(match[0], `\n\n![浏览器截图](${url})\n`);
+  }
+  return text;
+}
+
+export function collectScreenshotAttachmentCandidates(content, attachments = []) {
+  const seen = new Set();
+  const out = [];
+  for (const att of attachments) {
+    if (att?.type !== "image" || !att.url) continue;
+    const url = normalizeChatAttachmentUrl(att.url);
+    if (!url || !isAuthenticatedApiImageUrl(url) || seen.has(url)) continue;
+    seen.add(url);
+    out.push({
+      url,
+      title: String(att.title || "浏览器截图").trim() || "浏览器截图",
+    });
+  }
+  for (const url of collectAuthImageUrlsFromMarkdown(content)) {
+    if (seen.has(url)) continue;
+    seen.add(url);
+    out.push({ url, title: "浏览器截图" });
+  }
+  return out;
 }
 
 export function authImageUrlFingerprint(content) {
@@ -29,6 +68,48 @@ export function authImageUrlFingerprint(content) {
 
 export function markdownHasAuthScreenshot(content) {
   return collectAuthImageUrlsFromMarkdown(content).length > 0;
+}
+
+export function stripAuthScreenshotMarkdown(content, shots = []) {
+  let text = String(content || "");
+  const urls = new Set();
+  for (const shot of shots) {
+    if (shot?.url) urls.add(normalizeChatAttachmentUrl(shot.url));
+  }
+  for (const url of collectAuthImageUrlsFromMarkdown(text)) {
+    urls.add(url);
+  }
+  for (const url of urls) {
+    if (!url) continue;
+    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    text = text.replace(new RegExp(`!\\[[^\\]]*\\]\\(${escaped}\\)`, "g"), "");
+    text = text.replace(new RegExp(escaped, "g"), "");
+  }
+  text = text.replace(/###\s*页面截图\s*/g, "");
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export function mergeAuthScreenshotMarkdownBlocks(content, blocks = []) {
+  const mergedBlocks = [...blocks];
+  const seenUrls = new Set(
+    mergedBlocks
+      .map((block) => block.match(/\(([^)]+)\)/)?.[1] || "")
+      .filter(Boolean)
+  );
+  const enriched = injectScreenshotMarkdownFromPlainUrls(content);
+  for (const url of collectAuthImageUrlsFromMarkdown(enriched)) {
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    mergedBlocks.push(`![浏览器截图](${url})`);
+  }
+  let full = String(enriched || "").trim();
+  for (const block of mergedBlocks) {
+    const url = block.match(/\(([^)]+)\)/)?.[1] || "";
+    if (url && isAuthenticatedApiImageUrl(url) && !full.includes(url)) {
+      full = `${full}\n\n${block}\n`;
+    }
+  }
+  return full.trim();
 }
 
 export function resolveApiAssetUrl(url) {

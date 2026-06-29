@@ -808,7 +808,7 @@ onBeforeUnmount(() => {
       </n-drawer-content>
     </n-drawer>
 
-    <n-spin :show="loadingMeta" class="speech-spin">
+    <n-spin :show="loadingMeta" class="speech-spin" local>
       <div class="speech-alerts">
         <n-alert
           v-if="!loadingMeta && !configured"

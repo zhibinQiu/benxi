@@ -16,6 +16,7 @@ class AgentProfileBinding(Base):
 
     agent_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    service_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     skill_names: Mapped[list] = mapped_column(JSONB, default=list)
     config_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

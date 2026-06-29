@@ -1,4 +1,4 @@
-/** 助手、对话历史与辅助写作 REST API */
+/** 助手与对话历史 REST API */
 import { api } from "./http.js";
 
 export async function assistantChat({
@@ -14,15 +14,6 @@ export async function assistantChat({
     method: "POST",
     body: JSON.stringify(body),
     signal,
-  });
-}
-
-export async function aiHomeChat({ message, history = [], attachmentSessionId = null }) {
-  const body = { message, history };
-  if (attachmentSessionId) body.attachment_session_id = attachmentSessionId;
-  return api("/api/v1/ai-chat/chat", {
-    method: "POST",
-    body: JSON.stringify(body),
   });
 }
 
@@ -99,16 +90,5 @@ export async function deleteChatConversation(scope, conversationId) {
 export async function clearChatConversations(scope) {
   return api(`/api/v1/chat-history/${encodeURIComponent(scope)}/conversations`, {
     method: "DELETE",
-  });
-}
-
-export async function fetchAssistWritingPresets() {
-  return api("/api/v1/assist-writing/presets");
-}
-
-export async function assistWritingCompose(body) {
-  return api("/api/v1/assist-writing/compose", {
-    method: "POST",
-    body: JSON.stringify(body),
   });
 }

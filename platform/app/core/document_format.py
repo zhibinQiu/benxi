@@ -141,7 +141,7 @@ def format_label_display(label: str | None) -> str:
     return _FORMAT_DISPLAY.get(key, key.upper())
 
 
-_UPLOAD_ALLOWED_LABELS = frozenset({"pdf", "word", "excel", "txt", "md"})
+_UPLOAD_ALLOWED_LABELS = frozenset({"pdf", "word", "excel", "csv", "txt", "md", "ppt"})
 
 
 def is_allowed_upload_format(
@@ -158,7 +158,7 @@ def assert_allowed_upload_format(
         return
     from app.core.exceptions import bad_request
 
-    raise bad_request("仅支持上传 PDF、Word、Excel、TXT、MD 格式文件")
+    raise bad_request("仅支持上传 PDF、Word、Excel、CSV、PPT、TXT、MD 格式文件")
 
 
 def assert_compatible_version_format(

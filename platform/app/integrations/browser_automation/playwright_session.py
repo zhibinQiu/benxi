@@ -91,6 +91,7 @@ class BrowserSessionManager:
             browser = await _ensure_playwright(headless=headless)
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 720},
+                locale="zh-CN",
                 user_agent=(
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -132,8 +133,23 @@ class BrowserSessionManager:
         allowed_domains: str = "",
     ) -> dict[str, Any]:
         safe_url = validate_browser_url(url, allowed_domains=allowed_domains)
-        await state.page.goto(safe_url, wait_until="domcontentloaded", timeout=30000)
-        state.last_url = state.page.url
+        page = state.page
+        try:
+            await page.goto(safe_url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as exc:
+            current = (page.url or "").strip()
+            if not current or current in {"about:blank", ":"}:
+                raise
+            err_text = str(exc)
+            if "ERR_ABORTED" not in err_text and "Timeout" not in type(exc).__name__:
+                raise
+            _logger.warning(
+                "browser navigate continued after error: %s -> %s (%s)",
+                safe_url,
+                current,
+                exc,
+            )
+        state.last_url = page.url
         step = {"action": "navigate", "url": safe_url}
         self._record_step(state, step)
         return {"url": state.page.url, "title": await state.page.title()}
@@ -287,14 +303,24 @@ class BrowserSessionManager:
         full_page: bool = False,
         max_kb: int = 800,
     ) -> tuple[bytes, str, str]:
-        raw = await state.page.screenshot(full_page=full_page, type="png")
+        page = state.page
+        try:
+            raw = await page.screenshot(full_page=full_page, type="png", timeout=30000)
+        except Exception as exc:
+            err = str(exc)
+            if "Target crashed" in err or "has been closed" in err:
+                raise RuntimeError(
+                    "页面渲染进程已崩溃（常见于百度等站点拦截无头浏览器）。"
+                    "可尝试改用 Bing 搜索截图，或在管理后台关闭 headless 模式后重试。"
+                ) from exc
+            raise
         limit = max(64, int(max_kb)) * 1024
         if len(raw) > limit and full_page:
-            raw = await state.page.screenshot(full_page=False, type="png")
+            raw = await page.screenshot(full_page=False, type="png", timeout=30000)
         self._record_step(state, {"action": "screenshot", "full_page": full_page})
         if len(raw) > limit:
             raw = raw[:limit]
-        return raw, state.page.url, await state.page.title()
+        return raw, page.url, await page.title()
 
 
 # 全局单例

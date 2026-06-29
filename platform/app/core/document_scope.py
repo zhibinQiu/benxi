@@ -1,4 +1,4 @@
-"""文档库分级（公司 / 部门 / 小组 / 个人）与分级权限。"""
+"""文档库分级（公司 / 部门 / 分部 / 个人）与分级权限。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ SCOPE_TEAM = "team"
 SCOPE_PERSONAL = "personal"
 
 VALID_SCOPES = (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM, SCOPE_PERSONAL)
-# 文档库 Tab：个人级 → 小组级 → 部门级 → 公司级（分享另列）
+# 文档库 Tab：个人级 → 分部级 → 部门级 → 公司级（分享另列）
 LIBRARY_TAB_SCOPES = (
     SCOPE_PERSONAL,
     SCOPE_TEAM,
@@ -37,11 +37,11 @@ LIBRARY_TAB_SCOPES = (
 SCOPE_LABELS = {
     SCOPE_COMPANY: "公司级",
     SCOPE_DEPARTMENT: "部门级",
-    SCOPE_TEAM: "小组级",
+    SCOPE_TEAM: "分部级",
     SCOPE_PERSONAL: "个人级",
 }
 
-# 绑定组织节点的分级（根=公司，二级=部门，三级=小组）
+# 绑定组织节点的分级（根=公司，二级=部门，三级=分部）
 ORG_SCOPES = (SCOPE_COMPANY, SCOPE_DEPARTMENT, SCOPE_TEAM)
 DEPT_SCOPES = ORG_SCOPES
 
@@ -545,7 +545,7 @@ def library_departments_for_user(db: Session, user: User) -> list[dict]:
 
 
 def library_teams_for_user(db: Session, user: User) -> list[dict]:
-    """小组级 Tab：三级节点（depth=2）。"""
+    """分部级 Tab：三级节点（depth=2）。"""
     return _library_org_units_for_user(db, user, depth=2)
 
 
@@ -584,7 +584,7 @@ def personal_library_owners_for_user(db: Session, user: User) -> list[dict]:
 
 
 def library_folders(db: Session, user: User) -> list[dict]:
-    """前端文档库分级 Tab：个人级 / 小组级 / 部门级 / 公司级 / 分享。"""
+    """前端文档库分级 Tab：个人级 / 分部级 / 部门级 / 公司级 / 分享。"""
     folders = []
     for scope in LIBRARY_TAB_SCOPES:
         dept_for_perm = None

@@ -4,28 +4,30 @@ from __future__ import annotations
 
 import re
 
-from app.core.platform_assistant import assistant_knowledge_qa_persona
+from app.core.platform_assistant import assistant_knowledge_qa_persona, assistant_user_communication_style
+
+from app.core.platform_assistant import assistant_conclusion_source_priority
 
 KNOWLEDGE_QA_SYSTEM = (
     f"{assistant_knowledge_qa_persona()}。仅根据用户提供的编号检索片段回答问题。\n"
     "要求：\n"
-    "- 使用简体中文，条理清晰，可使用 Markdown 列表\n"
-    "- 自我介绍或提及助手时统一使用名称「小析」\n"
-    "- **信息优先级**：检索片段为唯一事实依据；若与模型自身常识冲突，**以片段为准**，不得用常识覆盖或修正片段表述\n"
+    f"{assistant_user_communication_style()}\n"
+    f"- {assistant_conclusion_source_priority()}\n"
     "- 引用规则：结论或要点句末标注 [1]、[2]；编号必须与下方片段 [n] **严格一一对应**，不得张冠李戴\n"
     "- 每个 [n] 只能标注确实来自该编号片段的内容；不确定时不要标注\n"
     "- 同一段落可标注多个编号；不要把每个短句都加引用\n"
     "- **禁止来源叙述**：回答中不得出现文档名、书名、「根据…文档」「参考了…」「据…显示」等；"
     "溯源只通过 [n] 完成，文档信息由界面引用区展示\n"
-    "- 不要编造片段中未出现的内容；信息不足时明确说明\n"
+    "- 不要编造片段中未出现的内容；信息不足时明确说明局限，**切忌猜测或编造**\n"
     "- 不要输出「以上内容来自…检索」等元信息脚注\n"
     "- 界面底部会展示本次检索到的全部片段来源；请在关键结论句末尽量标注 [n]，"
     "以便读者将正文与引用卡片对应"
 )
 
 KG_QA_SYSTEM_APPENDIX = (
-    "\n\n补充说明：部分编号片段来自【本体图谱实体与关系】，描述实体之间的结构化关联；"
-    "图谱事实与文档检索片段同等可作为依据，引用时同样使用 [n]。"
+    "\n\n补充说明：部分编号片段来自【本体图谱实体与关系】。"
+    "上下文与引用编号中，**本体图谱片段优先于文档库片段**；"
+    "引用图谱事实时同样使用 [n]。"
 )
 
 CITATION_REF_RE = re.compile(r"[\[【](\d{1,2})[\]】]")

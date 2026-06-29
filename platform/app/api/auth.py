@@ -50,12 +50,18 @@ def _display_name(user: User) -> str:
     return user_display_name(user)
 
 
-def _issue_tokens(db: Session, user: User, request: Request) -> TokenResponse:
+def _issue_tokens(
+    db: Session,
+    user: User,
+    request: Request,
+    *,
+    audit_action: str = "auth.login",
+) -> TokenResponse:
     token_version = bump_auth_token_version(db, user)
     write_audit(
         db,
         user_id=user.id,
-        action="auth.login",
+        action=audit_action,
         resource_type="user",
         resource_id=str(user.id),
         ip_address=get_client_ip(request),
@@ -90,7 +96,7 @@ def register(
 ) -> ApiResponse[TokenResponse]:
     settings = get_settings()
     if not settings.allow_public_register:
-        raise forbidden("Registration is disabled")
+        raise forbidden("公开注册已关闭")
 
     phone = body.phone
     email = body.email
@@ -103,7 +109,7 @@ def register(
 
     member_role = db.scalar(select(Role).where(Role.code == "member"))
     if not member_role:
-        raise bad_request("Member role not configured")
+        raise bad_request("系统未配置普通用户角色，请联系管理员")
 
     name = body.display_name.strip()
     if username_taken(db, name):
@@ -118,17 +124,9 @@ def register(
     db.add(user)
     db.flush()
     db.add(UserRole(user_id=user.id, role_id=member_role.id, scope_dept_id=None))
-    write_audit(
-        db,
-        user_id=user.id,
-        action="auth.register",
-        resource_type="user",
-        resource_id=str(user.id),
-        ip_address=get_client_ip(request),
+    return ApiResponse(
+        data=_issue_tokens(db, user, request, audit_action="auth.register")
     )
-    db.commit()
-    db.refresh(user)
-    return ApiResponse(data=_issue_tokens(db, user, request))
 
 
 @router.post("/refresh", response_model=ApiResponse[TokenResponse])

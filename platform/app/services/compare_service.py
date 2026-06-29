@@ -29,6 +29,20 @@ from app.storage.object_store import get_object_store
 logger = logging.getLogger(__name__)
 
 
+def _document_retrieval_ready(
+    db: Session,
+    doc: Document,
+    *,
+    index_ready_ids: set[str],
+    allow_index_only: bool,
+) -> bool:
+    from app.services.document_service import resolve_current_version
+
+    if resolve_current_version(db, doc, repair=True):
+        return True
+    return allow_index_only and str(doc.id) in index_ready_ids
+
+
 def validate_document_scope(
     db: Session,
     user: User,
@@ -38,6 +52,7 @@ def validate_document_scope(
     max_count: int = 4,
     required_level: str | None = None,
     allow_index_only: bool = False,
+    omit_unready: bool = False,
 ) -> list[Document]:
     if len(document_ids) < min_count or len(document_ids) > max_count:
         from app.core.exceptions import bad_request
@@ -52,7 +67,6 @@ def validate_document_scope(
         enrich_document_index_meta,
         is_index_ready_meta,
     )
-    from app.services.document_service import resolve_current_version
 
     index_ready_ids: set[str] = set()
     if allow_index_only:
@@ -72,6 +86,7 @@ def validate_document_scope(
             }
 
     docs: list[Document] = []
+    skipped_titles: list[str] = []
     for did in document_ids:
         doc = get_document(db, did)
         if not doc or doc.deleted_at:
@@ -84,14 +99,36 @@ def validate_document_scope(
 
             raise forbidden(f"无权使用文档: {doc.title}")
         title = (doc.title or "未命名文档").strip() or "未命名文档"
-        if resolve_current_version(db, doc, repair=True):
+        if _document_retrieval_ready(
+            db,
+            doc,
+            index_ready_ids=index_ready_ids,
+            allow_index_only=allow_index_only,
+        ):
             docs.append(doc)
             continue
-        if allow_index_only and str(doc.id) in index_ready_ids:
-            docs.append(doc)
+        if omit_unready:
+            skipped_titles.append(title)
+            logger.debug("知识检索跳过未就绪文档: %s (%s)", title, doc.id)
             continue
         from app.core.exceptions import bad_request
 
+        message = (
+            KNOWLEDGE_QA_DOC_UNAVAILABLE.format(title=title)
+            if allow_index_only
+            else DOCUMENT_COMPARE_NO_FILE.format(title=title)
+        )
+        raise bad_request(message)
+    if len(docs) < min_count:
+        from app.core.exceptions import bad_request
+
+        if skipped_titles and len(document_ids) > 1:
+            raise bad_request(
+                "所选文档均暂不可检索，请确认已上传文件并完成知识库索引。"
+                f"（已跳过：{'、'.join(skipped_titles[:5])}"
+                f"{'…' if len(skipped_titles) > 5 else ''}）"
+            )
+        title = skipped_titles[0] if skipped_titles else "文档"
         message = (
             KNOWLEDGE_QA_DOC_UNAVAILABLE.format(title=title)
             if allow_index_only
@@ -315,7 +352,16 @@ def load_parsed_documents(db: Session, docs: list[Document]) -> list[ParsedDocum
         version = resolve_current_version(session, doc)
         if not version:
             return None
-        return load_parsed_version(session, version)
+        try:
+            return load_parsed_version(session, version)
+        except Exception:
+            logger.warning(
+                "文档解析失败 doc=%s version=%s",
+                doc.id,
+                version.id,
+                exc_info=True,
+            )
+            return None
 
     if len(docs) == 1:
         one = _load_one(db, docs[0])

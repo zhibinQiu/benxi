@@ -15,8 +15,6 @@
 .subsystem-shell--fill .knowledge-feature-page,
 .subsystem-shell--fill [class$="-layout"],
 .subsystem-shell--fill [class$="-workspace"],
-.subsystem-shell--fill .assist-columns,
-.subsystem-shell--fill .assist-workspace,
 .subsystem-shell--fill .compare-workspace,
 .subsystem-shell--fill .compare-workspace-body,
 .subsystem-shell--fill .data-analysis-layout,
@@ -120,7 +118,8 @@
 
 /* 子功能操作条（Teleport 至系统顶栏 extension 槽） */
 .header-extension .subsystem-extra-bar,
-.header-extension .documents-actions-bar {
+.header-extension .documents-actions-bar,
+.header-extension .subscriptions-actions-bar {
   padding: 4px 20px 10px;
   width: 100%;
   box-sizing: border-box;
@@ -140,7 +139,12 @@
   background: transparent;
 }
 
-.header-extension .documents-actions-toolbar {
+.header-extension .subscriptions-actions-bar {
+  border-bottom: 1px solid var(--platform-border);
+}
+
+.header-extension .documents-actions-toolbar,
+.header-extension .subscriptions-actions-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -195,7 +199,7 @@
   min-height: 0;
 }
 
-/* 网站收藏：浏览器式搜索顶栏 + 列表共用水平内边距（与系统顶栏 20px 对齐） */
+/* 网站收藏：顶栏操作条 + 搜索顶栏 + 列表共用水平内边距（与系统顶栏 20px 对齐） */
 .feature-top-strip .subscriptions-search-hub.feature-local-nav {
   padding-top: 12px;
   padding-bottom: 12px;
@@ -255,8 +259,7 @@
 .subsystem-body > .feature-local-nav + .page-alerts,
 .subsystem-body > .feature-local-nav + .ocr-workspace,
 .subsystem-body > .feature-local-nav + .translate-workspace,
-.subsystem-body > .feature-local-nav + .assist-workspace,
-.subsystem-body > .assist-workspace:first-child {
+.subsystem-body > .compare-workspace:first-child {
   margin-top: 0;
 }
 

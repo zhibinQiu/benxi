@@ -80,6 +80,30 @@ def _resolve_agent_folder_filter(
     return (uuid.UUID(str(fid)) if fid else None), False
 
 
+def search_documents_by_name_for_agent(
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    scope: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """按文档标题关键词搜索当前用户可见的文档（默认跨分级）。"""
+    limit = max(1, min(int(limit or 20), 50))
+    kw = (name or "").strip()
+    if not kw:
+        raise bad_request("请提供文档名称关键词")
+    scope_val = (scope or "").strip() or None
+    docs = filter_accessible_documents(
+        db,
+        user,
+        keyword=kw,
+        scope=scope_val,
+        min_permission_level=PermissionLevel.visible.value,
+    )
+    return [_serialize_document_summary(db, user, d) for d in docs[:limit]]
+
+
 def list_library_documents_for_agent(
     db: Session,
     user: User,

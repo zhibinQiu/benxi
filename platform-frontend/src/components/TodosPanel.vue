@@ -311,7 +311,7 @@ defineExpose({ load, refresh: load });
           <template #trigger>
             <button
               type="button"
-              class="todos-header-btn todos-header-btn--refresh"
+              class="todos-header-btn"
               :aria-label="t('common.refresh')"
               :disabled="loading"
               @click="load"
@@ -374,7 +374,7 @@ defineExpose({ load, refresh: load });
         <n-button type="primary" :loading="adding" @click="addTodo">{{ t("todos.add") }}</n-button>
       </div>
 
-      <n-spin :show="loading">
+      <n-spin :show="loading" local>
         <div class="todos-columns">
           <section class="todo-column todo-column--pending">
             <header class="column-head">
@@ -492,7 +492,7 @@ defineExpose({ load, refresh: load });
         <n-button type="primary" size="small" :loading="adding" @click="addTodo">{{ t("todos.add") }}</n-button>
       </div>
 
-      <n-spin :show="loading">
+      <n-spin :show="loading" local>
         <div class="todos-panel__body">
           <div class="todos-columns">
             <section class="todo-column todo-column--pending">
@@ -691,6 +691,8 @@ defineExpose({ load, refresh: load });
   padding: 0;
   border: none;
   border-radius: calc(var(--platform-radius-sm) - 2px);
+  color: var(--platform-text-secondary);
+  background: transparent;
   cursor: pointer;
   transition:
     transform 0.15s var(--platform-ease-smooth),
@@ -701,6 +703,8 @@ defineExpose({ load, refresh: load });
 
 .todos-header-btn:not(:disabled):hover {
   transform: translateY(-1px);
+  color: var(--platform-text);
+  background: var(--platform-toolbar-bg);
 }
 
 .todos-header-btn:not(:disabled):active {
@@ -712,14 +716,12 @@ defineExpose({ load, refresh: load });
   cursor: not-allowed;
 }
 
-.todos-header-btn--refresh,
 .todos-header-btn--view-all,
 .todos-header-btn--ai {
   color: var(--platform-accent);
   background: var(--platform-accent-soft);
 }
 
-.todos-header-btn--refresh:not(:disabled):hover,
 .todos-header-btn--view-all:not(:disabled):hover,
 .todos-header-btn--ai:not(:disabled):hover {
   color: var(--platform-accent-hover, var(--platform-accent));

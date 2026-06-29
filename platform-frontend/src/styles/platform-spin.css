@@ -20,23 +20,14 @@
   pointer-events: none;
 }
 
-/* 默认：视口中心（页面级加载） */
-.n-spin-container:not(.platform-spin-local):not(.documents-view-spin):not(.knowledge-scope-tree__spin):not(.kg-list-spin):not(.kg-type-browse__spin):not(.preview-spin):not(.compare-pdf-preview__spin):not(.document-preview-modal__spin):not(.assist-compose-spin)
-  > .n-spin-body {
+/* 视口中心：整页级加载（默认，需显式不加 local） */
+.n-spin-container.platform-spin-global > .n-spin-body {
   position: fixed;
   z-index: var(--platform-z-loading, 10200);
 }
 
-/* 局部面板内居中：文档库、侧边栏树、预览区等 */
-.n-spin-container.platform-spin-local > .n-spin-body,
-.n-spin-container.documents-view-spin > .n-spin-body,
-.n-spin-container.knowledge-scope-tree__spin > .n-spin-body,
-.n-spin-container.kg-list-spin > .n-spin-body,
-.n-spin-container.kg-type-browse__spin > .n-spin-body,
-.n-spin-container.preview-spin > .n-spin-body,
-.n-spin-container.compare-pdf-preview__spin > .n-spin-body,
-.n-spin-container.document-preview-modal__spin > .n-spin-body,
-.n-spin-container.assist-compose-spin > .n-spin-body {
+/* 容器内居中：面板、预览、思维导图、侧栏浮层等 */
+.n-spin-container.platform-spin-local > .n-spin-body {
   position: absolute;
   z-index: 10;
 }

@@ -364,7 +364,7 @@ defineExpose({ load, refresh: load });
           <template #trigger>
             <button
               type="button"
-              class="jobs-header-btn jobs-header-btn--refresh"
+              class="jobs-header-btn"
               :aria-label="t('common.refresh')"
               :disabled="loading"
               @click="load"
@@ -403,7 +403,7 @@ defineExpose({ load, refresh: load });
       </div>
     </header>
 
-    <n-spin :show="loading">
+    <n-spin :show="loading" local>
       <template v-if="variant === 'popover'">
         <div class="jobs-panel__body">
         <div v-if="items.length" class="jobs-panel__list">
@@ -570,6 +570,8 @@ defineExpose({ load, refresh: load });
   padding: 0;
   border: none;
   border-radius: calc(var(--platform-radius-sm) - 2px);
+  color: var(--platform-text-secondary);
+  background: transparent;
   cursor: pointer;
   transition:
     transform 0.15s var(--platform-ease-smooth),
@@ -580,6 +582,8 @@ defineExpose({ load, refresh: load });
 
 .jobs-header-btn:not(:disabled):hover {
   transform: translateY(-1px);
+  color: var(--platform-text);
+  background: var(--platform-toolbar-bg);
 }
 
 .jobs-header-btn:not(:disabled):active {
@@ -591,13 +595,11 @@ defineExpose({ load, refresh: load });
   cursor: not-allowed;
 }
 
-.jobs-header-btn--refresh,
 .jobs-header-btn--view-all {
   color: var(--platform-accent);
   background: var(--platform-accent-soft);
 }
 
-.jobs-header-btn--refresh:not(:disabled):hover,
 .jobs-header-btn--view-all:not(:disabled):hover {
   color: var(--platform-accent-hover, var(--platform-accent));
   background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%);
@@ -696,16 +698,6 @@ defineExpose({ load, refresh: load });
   width: 32px;
   padding: 0;
   justify-content: center;
-  color: var(--platform-accent);
-  background: var(--platform-bg-elevated-solid);
-  border: 1px solid var(--platform-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.jobs-toolbar-btn--icon:not(:disabled):hover {
-  color: var(--platform-accent-hover, var(--platform-accent));
-  background: var(--platform-accent-soft);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 18%, transparent);
 }
 
 .jobs-toolbar-btn__badge {

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.agent_profiles import get_agent_profile
+from app.core.agent_profiles import get_agent_profile, resolve_agent_title
+from app.core.aip.messaging import reply_text_from_complete
+from app.core.aip.types import AipMessage
 
 MAX_TASK_ATTEMPTS = 2
 
@@ -50,15 +53,23 @@ def _task_to_json(task: OrchestratorTask) -> dict[str, Any]:
     }
 
 
-def workflow_plan_tasks(tasks: list[OrchestratorTask], *, step_id: str) -> dict[str, Any]:
+def workflow_plan_tasks(
+    tasks: list[OrchestratorTask],
+    *,
+    step_id: str,
+    mode: str = "sequential",
+) -> dict[str, Any]:
+    chain = " → ".join(t.title for t in tasks)
+    detail = chain or f"共 {len(tasks)} 项"
     return {
         "type": "workflow",
         "data": {
             "phase": "plan_tasks",
-            "title": "任务规划",
-            "detail": f"共 {len(tasks)} 项",
+            "title": "规划方案",
+            "detail": detail,
             "tool": "supervisor.plan",
             "step_id": step_id,
+            "mode": mode,
             "tasks": [_task_to_json(t) for t in tasks],
             "agent_id": "orchestrator",
             "agent_title": "小析调度",
@@ -95,8 +106,30 @@ def workflow_task_event(
 
 
 def _agent_title(agent_id: str) -> str:
-    profile = get_agent_profile(agent_id)
-    return profile.title if profile else agent_id
+    return resolve_agent_title(agent_id)
+
+
+def _successful_tool_summaries_in_events(events: list[dict[str, Any]]) -> list[str]:
+    from app.services.agent_reply_synth import is_internal_tool_outcome_line
+
+    summaries: list[str] = []
+    for event in events:
+        if event.get("type") != "workflow":
+            continue
+        data = event.get("data") or {}
+        if data.get("phase") != "tool_result":
+            continue
+        if data.get("status") == "failed":
+            continue
+        detail = str(data.get("detail") or "").strip()
+        title = str(data.get("result_title") or data.get("title") or "").strip()
+        text = detail or title
+        if not text or is_internal_tool_outcome_line(text):
+            continue
+        if title and is_internal_tool_outcome_line(f"{title}：{detail}"):
+            continue
+        summaries.append(text)
+    return summaries
 
 
 def _tool_failed_in_events(events: list[dict[str, Any]]) -> tuple[bool, str]:
@@ -112,12 +145,117 @@ def _tool_failed_in_events(events: list[dict[str, Any]]) -> tuple[bool, str]:
     return False, ""
 
 
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+_PLAIN_SCREENSHOT_URL_RE = re.compile(
+    r"(?:/ai)?/api/v1/browser-rpa/screenshot\?key=[^\s<>\"')\]]+"
+)
+
+
+def extract_image_attachments_from_markdown(
+    reply: str | None,
+) -> list[dict[str, Any]]:
+    """从回复 Markdown 或裸 URL 中解析浏览器截图附件。"""
+    text = str(reply or "")
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    def _append(url: str, title: str = "浏览器截图") -> None:
+        clean = url.strip()
+        if not clean or "/browser-rpa/screenshot" not in clean or clean in seen:
+            return
+        seen.add(clean)
+        out.append({"type": "image", "url": clean, "title": title or "浏览器截图"})
+
+    for match in _MARKDOWN_IMAGE_RE.finditer(text):
+        title = (match.group(1) or "浏览器截图").strip() or "浏览器截图"
+        _append(match.group(2) or "", title)
+    for match in _PLAIN_SCREENSHOT_URL_RE.finditer(text):
+        _append(match.group(0) or "")
+    return out
+
+
+def collect_screenshot_attachments_from_task_results(
+    results: list[Any],
+) -> list[dict[str, Any]]:
+    """合并子任务 attachment 事件与 hop complete 回复中的截图。"""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in results:
+        for att in collect_image_attachments_from_events(item.events):
+            url = str(att.get("url") or "").strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            out.append(att)
+        complete = item.complete or {}
+        for att in extract_image_attachments_from_markdown(
+            str(complete.get("reply") or "")
+        ):
+            url = str(att.get("url") or "").strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            out.append(att)
+    return out
+
+
+def collect_image_attachments_from_events(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """从子任务事件流中提取浏览器截图等图片附件（按 url 去重）。"""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for event in events:
+        if event.get("type") != "attachment":
+            continue
+        data = event.get("data") or {}
+        if data.get("type") != "image":
+            continue
+        url = str(data.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append(dict(data))
+    return out
+
+
+def append_screenshot_markdown_to_reply(
+    reply: str | None,
+    attachments: list[dict[str, Any]],
+) -> str | None:
+    """在最终回复末尾追加 Markdown 图片引用，便于持久化与前端展示。"""
+    if not attachments:
+        return reply
+    parts: list[str] = []
+    base = (reply or "").strip()
+    if base:
+        parts.append(base)
+    image_blocks: list[str] = []
+    for att in attachments:
+        url = str(att.get("url") or "").strip()
+        if not url or url in base:
+            continue
+        title = str(att.get("title") or "浏览器截图").strip() or "浏览器截图"
+        image_blocks.append(f"![{title}]({url})")
+    if not image_blocks:
+        return reply if not parts else "\n\n".join(parts).strip()
+    if base and "页面截图" not in base:
+        parts.append("### 页面截图")
+    parts.extend(image_blocks)
+    merged = "\n\n".join(parts).strip()
+    return merged or None
+
+
+def _reply_from_complete(complete: dict[str, Any] | None) -> str:
+    return reply_text_from_complete(complete)
+
+
 def verify_task_result(
     task: OrchestratorTask,
     events: list[dict[str, Any]],
     complete: dict[str, Any] | None,
 ) -> tuple[bool, str, str]:
-    """规则验收：无工具失败且有条理结果即通过。返回 (satisfied, summary, retry_hint)。"""
+    """规则验收：专精 handoff 可验收且非推脱即通过。"""
     failed, fail_detail = _tool_failed_in_events(events)
     if failed:
         return (
@@ -126,8 +264,24 @@ def verify_task_result(
             f"请修正后重试：{fail_detail}" if fail_detail else "上次工具调用失败，请换用正确工具重试",
         )
 
-    reply = str((complete or {}).get("reply") or "").strip()
+    reply = _reply_from_complete(complete)
+    if reply:
+        from app.services.agent_reply_synth import reply_looks_like_denial
+
+        if not reply_looks_like_denial(reply):
+            summary = reply.split("\n", 1)[0].strip()[:160]
+            if len(summary) < 8 and len(reply) > 8:
+                summary = reply[:160]
+            return True, summary, ""
+
     citations = list((complete or {}).get("citations") or [])
+    tool_summaries = _successful_tool_summaries_in_events(events)
+    if tool_summaries:
+        from app.services.agent_reply_synth import reply_looks_like_denial
+
+        if not reply or reply_looks_like_denial(reply):
+            return True, tool_summaries[-1], ""
+
     if not reply:
         return False, "", "请调用平台工具完成该步骤，勿仅口头说明无法操作"
 
@@ -184,3 +338,4 @@ class TaskExecutionResult:
     events: list[dict[str, Any]] = field(default_factory=list)
     complete: dict[str, Any] | None = None
     satisfied: bool = False
+    aip_handoff: AipMessage | None = None

@@ -1,6 +1,9 @@
 import { ref } from "vue";
 import { fetchKnowledgeScopeTree } from "../api/knowledge.js";
+import { isRouteAbortError } from "../api/client.js";
 import {
+  hasKnowledgeScopeTreeItems,
+  isKnowledgeScopeTreeCacheFresh,
   readKnowledgeScopeTreeCache,
   writeKnowledgeScopeTreeCache,
 } from "../utils/knowledgeScopeTreeCache.js";
@@ -8,72 +11,100 @@ import {
 const initialCached = readKnowledgeScopeTreeCache({ allowStale: true });
 
 const treePayload = ref(initialCached);
-const loading = ref(!initialCached);
-const loaded = ref(Boolean(initialCached));
+const loading = ref(!hasKnowledgeScopeTreeItems(initialCached));
+const loaded = ref(hasKnowledgeScopeTreeItems(initialCached));
 let loadPromise = null;
-
-function hasTreeItems(payload) {
-  return Array.isArray(payload?.items) && payload.items.length > 0;
-}
+let treeLoadSeq = 0;
 
 async function loadKnowledgeScopeTree({
   force = false,
   background = false,
   refresh = false,
 } = {}) {
-  if (loaded.value && treePayload.value && !force && !refresh && !background) {
+  if (
+    loaded.value &&
+    hasKnowledgeScopeTreeItems(treePayload.value) &&
+    !force &&
+    !refresh
+  ) {
     return treePayload.value;
   }
-  if (loadPromise && !force && !refresh) return loadPromise;
+  if (loadPromise && !force && !refresh) {
+    if (!background && !hasKnowledgeScopeTreeItems(treePayload.value)) {
+      loading.value = true;
+    }
+    return loadPromise;
+  }
 
-  if (!force && !refresh && !background) {
+  if (!force && !refresh) {
     const cached = readKnowledgeScopeTreeCache({ allowStale: true });
     if (cached) {
       treePayload.value = cached;
       loaded.value = true;
-      void loadKnowledgeScopeTree({ force: true, background: true, refresh: false }).catch(
-        () => {}
-      );
+      loading.value = false;
       return cached;
     }
   }
 
-  const hadTree = hasTreeItems(treePayload.value);
+  const seq = ++treeLoadSeq;
+  const hadTree = hasKnowledgeScopeTreeItems(treePayload.value);
   if (!background && !hadTree) {
     loading.value = true;
   }
 
   loadPromise = (async () => {
     try {
-      const data = await fetchKnowledgeScopeTree({ refresh: refresh || force });
+      const data = await fetchKnowledgeScopeTree({ refresh });
+      if (seq !== treeLoadSeq) {
+        if (
+          hasKnowledgeScopeTreeItems(data) &&
+          !hasKnowledgeScopeTreeItems(treePayload.value)
+        ) {
+          treePayload.value = data;
+          writeKnowledgeScopeTreeCache(data);
+          loaded.value = true;
+        }
+        return treePayload.value;
+      }
+      if ((background || refresh) && hadTree && !hasKnowledgeScopeTreeItems(data)) {
+        return treePayload.value;
+      }
       treePayload.value = data;
       writeKnowledgeScopeTreeCache(data);
-      loaded.value = true;
+      loaded.value = hasKnowledgeScopeTreeItems(data);
       return data;
     } catch (e) {
-      if (!background && !hasTreeItems(treePayload.value)) {
+      if (seq !== treeLoadSeq) throw e;
+      if (isRouteAbortError(e)) {
+        return treePayload.value;
+      }
+      if (!background && !hasKnowledgeScopeTreeItems(treePayload.value)) {
         loaded.value = false;
       }
       throw e;
     } finally {
-      loading.value = false;
-      loadPromise = null;
+      if (seq === treeLoadSeq) {
+        loading.value = false;
+        loadPromise = null;
+      }
     }
   })();
   return loadPromise;
 }
 
-/** 登录后或进入主壳时预取，减少首次点开知识检索/报告生成的等待 */
+/** 登录后或进入主壳时预取：有有效缓存则复用，过期或无缓存再后台拉取 */
 export function prefetchKnowledgeScopeTree() {
   const cached = readKnowledgeScopeTreeCache({ allowStale: true });
   if (cached) {
     treePayload.value = cached;
     loaded.value = true;
-    void loadKnowledgeScopeTree({ force: true, background: true, refresh: false }).catch(
-      () => {}
-    );
+    loading.value = false;
+    if (!isKnowledgeScopeTreeCacheFresh() && !loadPromise) {
+      void loadKnowledgeScopeTree({ force: true, background: true }).catch(() => {});
+    }
     return;
   }
+  if (loadPromise || loaded.value) return;
   void loadKnowledgeScopeTree({ background: true, refresh: false }).catch(() => {});
 }
 

@@ -1,4 +1,10 @@
-import { getApiBase, getToken, rejectHttpFailure } from "../api/http.js";
+import {
+  fetchWithTimeout,
+  getApiBase,
+  getToken,
+  readFetchErrorJson,
+  rejectHttpFailure,
+} from "../api/http.js";
 
 /** KnowFlow 切片引用截图 API（源 PDF 区域快照，非提取文本） */
 export function knowledgeCitationPreviewPath(citation) {
@@ -36,23 +42,58 @@ export function knowledgeCitationPreviewPath(citation) {
   return `${getApiBase()}/api/v1/knowledge/citations/preview?${params}`;
 }
 
-async function fetchCitationBlob(path) {
+/** 引用截图请求的稳定 cache key，避免父组件重渲染触发重复 fetch */
+export function citationPreviewCacheKey(citation) {
+  const c = citation || {};
+  const anchor = c.anchor_json || {};
+  const bbox = Array.isArray(anchor.bbox) ? anchor.bbox.map((n) => Number(n)).join(",") : "";
+  return [
+    c.index,
+    c.image_id,
+    c.chunk_id,
+    c.dataset_id,
+    c.ragflow_document_id,
+    c.document_id,
+    anchor.page,
+    bbox,
+    anchor.bbox_format,
+  ]
+    .map((v) => String(v ?? ""))
+    .join("\0");
+}
+
+/** 页级截图不可用（Markdown 分块等），应降级为仅展示文本片段 */
+export function isCitationPreviewUnavailableError(error) {
+  const msg = String(error?.message || "");
+  return (
+    msg.includes("未生成页级快照") ||
+    msg.includes("引用原文截图不可用") ||
+    msg.includes("Markdown 分块")
+  );
+}
+
+async function fetchCitationBlob(path, { signal } = {}) {
   if (!path) throw new Error("缺少引用溯源参数");
   const token = getToken();
-  const res = await fetch(path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetchWithTimeout(
+    path,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal,
+    },
+    60_000
+  );
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    rejectHttpFailure(res, { message: text });
+    const json = await readFetchErrorJson(res);
+    rejectHttpFailure(res, json);
   }
   return res.blob();
 }
 
 /** 按完整 citation 加载源 PDF 区域截图 */
-export async function fetchKnowledgeCitationPreviewBlob(citation) {
+export async function fetchKnowledgeCitationPreviewBlob(citation, { signal } = {}) {
   const path = knowledgeCitationPreviewPath(citation);
-  return fetchCitationBlob(path);
+  return fetchCitationBlob(path, { signal });
 }
 
 function escapeHtml(text) {
@@ -173,8 +214,9 @@ export function citationCanPreviewImage(citation) {
   if (c.preview_available === true) return true;
   if (c.preview_available === false) return false;
   if (c.source === "pageindex") {
-    if (String(c.document_id || "").trim()) return true;
+    return Boolean(String(c.document_id || "").trim());
   }
+  if (String(c.image_id || "").trim()) return true;
   const anchor = c.anchor_json || {};
   const bbox = anchor.bbox;
   if (Array.isArray(bbox) && bbox.length >= 4) {
@@ -184,10 +226,5 @@ export function citationCanPreviewImage(citation) {
         String(c.ragflow_document_id || "").trim()
     );
   }
-  if (String(c.image_id || "").trim()) return true;
-  return Boolean(
-    String(c.chunk_id || "").trim() &&
-      String(c.dataset_id || "").trim() &&
-      String(c.ragflow_document_id || "").trim()
-  );
+  return false;
 }

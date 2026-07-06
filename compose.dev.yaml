@@ -1,7 +1,7 @@
 # 开发覆盖（stack.sh dev-up / dev.sh docker 时自动叠加）
 #
 # 作用:
-#   - api: 挂载 platform/app、uvicorn --reload、映射 127.0.0.1:18000
+#   - api: 挂载 backend/app、uvicorn --reload、映射 127.0.0.1:18000
 #   - worker: 挂载源码
 #   - frontend: Node + Vite HMR（替代生产 Nginx 镜像）
 #
@@ -10,10 +10,10 @@
 
 services:
   api:
-    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.5.0}
+    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.6.0}
     build:
       context: .
-      dockerfile: platform/Dockerfile
+      dockerfile: backend/Dockerfile
       target: runtime
       args:
         INSTALL_PAGEINDEX: ${INSTALL_PAGEINDEX:-1}
@@ -23,8 +23,8 @@ services:
       # 开发时浏览器直连 API（8000 常被本机其它进程占用，默认用 18000）
       - "127.0.0.1:${STACK_DEV_API_PORT:-18000}:8000"
     volumes:
-      - ./platform/app:/app/app:ro
-      - ./platform/workers:/app/workers:ro
+      - ./backend/app:/app/app:ro
+      - ./backend/workers:/app/workers:ro
       - ./RELEASE.md:/app/RELEASE.md:ro
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -35,11 +35,11 @@ services:
       RAGFLOW_MYSQL_HOST: knowflow-mysql
 
   worker:
-    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.5.0}
+    image: zhitan-api-runtime:${ZHITAN_VERSION:-4.6.0}
     shm_size: "512mb"
     volumes:
-      - ./platform/app:/app/app:ro
-      - ./platform/workers:/app/workers:ro
+      - ./backend/app:/app/app:ro
+      - ./backend/workers:/app/workers:ro
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
     environment:
       SPEECH_SERVICE_URL: http://host.docker.internal:8765
@@ -48,7 +48,7 @@ services:
     image: ${NODE_IMAGE:-node:22-alpine}
     working_dir: /app
     volumes:
-      - ./platform-frontend:/app
+      - ./frontend:/app
       - frontend_node_modules:/app/node_modules
     command: sh -c "npm config set registry ${NPM_REGISTRY:-https://registry.npmmirror.com} && npm install --cache /tmp/npm-cache && npm run dev -- --host 0.0.0.0 --port 80"
     ports:

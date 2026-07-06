@@ -29,9 +29,9 @@ if [[ "$LOCAL" != 1 ]]; then
   DEPLOY_USER="${DEPLOY_USER:-root}"
   DEPLOY_HOST="${DEPLOY_HOST:-172.19.134.45}"
   WORK_DIR="${DEPLOY_PATH:-/root/qzb/lvye}"
-  if [[ -f "$ROOT/platform/deploy.target" ]]; then
+  if [[ -f "$ROOT/backend/deploy.target" ]]; then
     # shellcheck disable=SC1091
-    source "$ROOT/platform/deploy.target"
+    source "$ROOT/backend/deploy.target"
     WORK_DIR="${DEPLOY_PATH:-$WORK_DIR}"
   fi
   info "远程执行 → ${DEPLOY_USER}@${DEPLOY_HOST}:${WORK_DIR}"

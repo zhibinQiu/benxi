@@ -1,7 +1,7 @@
 # 报告生成实现说明
 
 > **适用读者**：产品、运维、后端开发  
-> **版本**：v4.5.0 · 入口 `ReportGenerationView` / `POST /api/v1/report-generation/stream`  
+> **版本**：v4.6.0 · 入口 `ReportGenerationView` / `POST /api/v1/report-generation/stream`  
 > **配套阅读**：[功能实现说明 §4.7](../operations/feature-implementation.md) · [知识库实现 §5](knowledge-implementation.md)
 
 ---

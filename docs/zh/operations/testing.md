@@ -1,6 +1,6 @@
 # 测试
 
-## v4.5.0 轻量化验证清单
+## v4.6.0 轻量化验证清单
 
 本次版本新增 AIP 智能体互联、UI 扁平化与功能收敛。发布前建议：
 
@@ -66,7 +66,7 @@ npm run build    # 生产构建
 - embed-session：应 < 10s（`sync=false`）
 - 前端：Vite 生产构建 + Nginx gzip；Naive UI 按需加载
 
-## 吞吐量 / 压力测试（v4.5.0）
+## 吞吐量 / 压力测试（v4.6.0）
 
 脚本：`platform/scripts/stress_test_throughput.py`（依赖 `httpx`，随 platform 已安装）
 

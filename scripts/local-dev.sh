@@ -14,7 +14,7 @@ source "$ROOT/scripts/lib/version.sh"
 
 RUN_DIR="$ROOT/.run"
 LOG_DIR="$RUN_DIR/logs"
-PLATFORM_DIR="$ROOT/platform"
+PLATFORM_DIR="$ROOT/backend"
 ENV_FILE="$PLATFORM_DIR/.env"
 HOST_BIND="${LOCAL_DEV_HOST:-127.0.0.1}"
 API_PORT="${LOCAL_DEV_API_PORT:-8000}"
@@ -438,7 +438,7 @@ start_local() {
       >>"$LOG_DIR/local-dev.log"
   fi
 
-  cd "$ROOT/platform-frontend"
+  cd "$ROOT/frontend"
   step "启动前端（Vite :${WEB_PORT}）…"
   web_pid="$(start_detached "$LOG_DIR/platform-frontend.log" \
     ./node_modules/.bin/vite --host "$HOST_BIND" --port "$WEB_PORT")"

@@ -1,0 +1,212 @@
+/*
+ * 全局字号规范（参考 Apple HIG / Material Design）
+ *
+ * 层级对照：
+ *   --platform-font-size-lg: 18px   → 功能工作台、大号正文（翻译、对比等重度操作页）
+ *   --platform-font-size-base: 16px → 标准正文（列表、表单、表格、弹窗）
+ *   --platform-font-size-sm: 15px   → 次要正文、说明文字、小标签
+ *   --platform-font-size-xs: 13px   → 辅助信息、元数据、脚注
+ *   --platform-font-size-2xs        → 等同 sm
+ *   12px                            → 标签栏、徽章、极简辅助文字（不设变量）
+ */
+
+.app-main,
+.app-content,
+.app-route-page,
+.app-view-host {
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-normal);
+}
+
+.app-shell .app-content :is(
+  .n-data-table-td,
+  .n-data-table-th,
+  .n-data-table-filter,
+  .n-data-table-sorter,
+  .n-form-item-label,
+  .n-form-item-label__text,
+  .n-form-item-feedback,
+  .n-descriptions-table-content,
+  .n-descriptions-table-header,
+  .n-empty__description,
+  .n-list-item__main,
+  .n-tabs-tab,
+  .n-pagination-item,
+  .n-input__input-el,
+  .n-input__textarea-el,
+  .n-input__placeholder,
+  .n-base-selection-input,
+  .n-base-selection-placeholder,
+  .n-base-selection-overlay__wrapper,
+  .n-statistic .n-statistic-value,
+  .n-statistic .n-statistic-label,
+  .n-alert-body,
+  .n-tag,
+  .n-breadcrumb-item__link,
+  .n-breadcrumb-item__separator,
+  .n-tree-node-content__text,
+  .n-collapse-item__header-main,
+  .n-timeline-item-content,
+  .n-step-content,
+  .n-radio-button,
+  .n-radio__label,
+  .n-checkbox__label,
+  .n-dropdown-option-body__label,
+  .n-drawer-body-content-wrapper
+) {
+  font-size: var(--platform-font-size-base) !important;
+}
+
+.app-shell .app-content .n-button:not(.n-button--tiny-type) {
+  font-size: var(--platform-font-size-base) !important;
+}
+
+.app-shell .app-content .feature-local-nav,
+.app-shell .app-content .feature-top-strip,
+.app-shell .app-content .list-table-footer {
+  font-size: var(--platform-font-size-base);
+}
+
+.app-shell .app-content .feature-local-nav :is(
+  .n-input__input-el,
+  .n-input__placeholder,
+  .n-base-selection-input,
+  .n-base-selection-placeholder
+) {
+  font-size: var(--platform-font-size-base) !important;
+}
+
+/* 功能列表 — 统一 base/sm */
+.app-content .functions-page .category-block__title {
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-medium);
+}
+
+.app-content .functions-page .feature-card__title {
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-medium);
+}
+
+.app-content .functions-page .feature-card__desc {
+  font-size: var(--platform-font-size-sm);
+}
+
+.app-content .documents-page :is(
+  .documents-format-overview__summary,
+  .documents-format-overview__item,
+  .documents-format-overview__empty,
+  .kb-folder-create-card__label,
+  .doc-list-toolbar__hint,
+  .batch-table-toolbar__hint
+) {
+  font-size: var(--platform-font-size-sm);
+}
+
+.app-content .documents-page .kb-folder-card__title {
+  font-size: var(--platform-font-size-xs);
+  font-weight: var(--platform-font-weight-strong);
+}
+
+.app-content .documents-page .documents-doc-title {
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
+}
+
+.app-content .documents-page .kb-folder-card__meta {
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
+}
+
+.app-content .documents-page .documents-folder-title {
+  font-size: var(--platform-font-size-sm);
+}
+
+/* =============================================
+ * 功能工作台（翻译、语音、TTS、OCR、对比等）
+ * 正文使用 --platform-font-size-base (16px)
+ * 仅需强调的标题/按钮使用 --platform-font-size-lg (18px)
+ * ============================================= */
+.app-content .subsystem-shell {
+  font-size: var(--platform-font-size-base);
+}
+
+.app-content .subsystem-shell :is(
+  .n-input__input-el,
+  .n-input__textarea-el,
+  .n-input__placeholder,
+  .n-base-selection-input,
+  .n-base-selection-placeholder,
+  .n-form-item-label,
+  .n-form-item-label__text,
+  .n-data-table-td,
+  .n-data-table-th,
+  .n-tabs-tab,
+  .n-button:not(.n-button--tiny-type),
+  .n-radio-button,
+  .n-checkbox__label
+) {
+  font-size: var(--platform-font-size-base) !important;
+}
+
+.app-content .subsystem-shell .markdown-rich-content,
+.app-content .subsystem-shell .rich-markdown-body {
+  font-size: var(--platform-font-size-base);
+}
+
+.app-content .markdown-rich-content,
+.app-content .rich-markdown-body {
+  font-size: var(--platform-font-size-base);
+}
+
+.app-content .markdown-rich-content :is(p, li, td, th),
+.app-content .rich-markdown-body :is(p, li, td, th) {
+  font-size: inherit;
+}
+
+/* 功能工作台大号元素：标题、状态文字、主按钮 */
+.app-content .subsystem-shell :is(
+  .wf-section-title,
+  .block-label,
+  .result-head,
+  .progress-pct
+) {
+  font-size: var(--platform-font-size-lg) !important;
+}
+
+.app-content .subsystem-shell :is(
+  .wf-section-desc,
+  .field-label,
+  .library-file-name,
+  .result-idle,
+  .stage-text,
+  .dl-group-hint,
+  .status-meta,
+  .status-detail,
+  .dl-item-text span
+) {
+  font-size: var(--platform-font-size-base) !important;
+}
+
+.app-content .subsystem-shell :is(
+  .wf-step-badge,
+  .dl-group-label,
+  .dl-item-text small
+) {
+  font-size: var(--platform-font-size-sm) !important;
+}
+
+.app-content .subsystem-shell .wf-section-title,
+.app-content .subsystem-shell .start-btn {
+  font-weight: var(--platform-font-weight-strong) !important;
+}
+
+.app-content .subsystem-shell :is(
+  .block-label,
+  .result-head
+) {
+  font-weight: var(--platform-font-weight-medium) !important;
+}
+
+.app-content .subsystem-shell .dl-group-label {
+  font-weight: var(--platform-font-weight-normal) !important;
+}

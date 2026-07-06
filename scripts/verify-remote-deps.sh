@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${ENV_FILE:-$ROOT/platform/.env}"
+ENV_FILE="${ENV_FILE:-$ROOT/backend/.env}"
 
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090

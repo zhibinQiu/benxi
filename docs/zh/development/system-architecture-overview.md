@@ -2,7 +2,7 @@
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
 > **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
-> **版本对齐**：平台 **v4.5.0** · Monorepo `pdf_trans/`  
+> **版本对齐**：平台 **v4.6.0** · Monorepo `pdf_trans/`  
 > **运维架构（推荐）**：[系统架构](../operations/architecture.md) · [运维手册](../operations/README.md)
 
 ---
@@ -223,7 +223,7 @@ sequenceDiagram
 
 已实现插件示例：`translate`、`compare`、`rag`、`speech`、`agent_skills`、`subscriptions` 等（见 `platform/app/features/builtin/`）。
 
-### 4.4 Agent Skills 与工具循环（v4.5.0）
+### 4.4 Agent Skills 与工具循环（v4.6.0）
 
 ```mermaid
 flowchart LR
@@ -248,7 +248,7 @@ flowchart LR
   EXEC --> MD[上传 SKILL.md]
 ```
 
-AI 首页对话不再 HTTP 层预检索；LLM 通过 `research` 按需调用内置 handler，通过 `load_uploaded_skill` 激活上传包。v4.4.1 起工具循环采用 **`AgentLoopSession` 短会话**：LLM / 外部 I/O 前释放 PostgreSQL 连接，工具执行前再打开，避免长流式占满连接池。v4.5.0 新增 **AIP 智能体互联**（发现/调用/外部登记）。路由 regex 收敛至 `agent_routing_signals`，planner 与 supervisor 共用。详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md) 与 [系统架构](../operations/architecture.md#容量与连接池v450)。
+AI 首页对话不再 HTTP 层预检索；LLM 通过 `research` 按需调用内置 handler，通过 `load_uploaded_skill` 激活上传包。v4.4.1 起工具循环采用 **`AgentLoopSession` 短会话**：LLM / 外部 I/O 前释放 PostgreSQL 连接，工具执行前再打开，避免长流式占满连接池。v4.6.0 新增 **AgentKit 包拆分**，将多智能体核心组件拆分为 11 个独立 Python 包。v4.5.0 新增 **AIP 智能体互联**（发现/调用/外部登记）。路由 regex 收敛至 `agent_routing_signals`，planner 与 supervisor 共用。详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md) 与 [系统架构](../operations/architecture.md#容量与连接池v460)。
 
 ---
 

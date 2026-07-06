@@ -1,6 +1,6 @@
 # 全栈 + 本机 remote-dev 共用数据：仅暴露 TCP 依赖端口（不与 frontend :40005 冲突）
 #
-# pdf2zh / speech / knowflow / ragflow 经 frontend Nginx /deps/… 访问（见 platform-frontend/nginx.conf）
+# pdf2zh / speech / knowflow / ragflow 经 frontend Nginx /deps/… 访问（见 frontend/nginx.conf）
 #
 # 用法（服务器 .env）:
 #   EXPOSE_DEPS=1

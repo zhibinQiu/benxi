@@ -8,7 +8,7 @@
 #   ./dev.sh local restart      # 重启
 #   ./dev.sh docker             # 全 Docker 热重载（compose dev-up）
 #   ./dev.sh stop               # 停止 Docker 栈 + 本机进程
-#   ./dev.sh remote-dev         # 生成本机 + 远程依赖 platform/.env
+#   ./dev.sh remote-dev         # 生成本机 + 远程依赖 backend/.env
 #
 #   ./dev.sh sync [--frontend|--all|--no-restart-api]  同步代码到服务器（默认重启 API/Worker）
 #   ./dev.sh sync-frp-uninstall                 卸载服务器 frps
@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/branding.sh
 source "$SCRIPT_DIR/lib/branding.sh"
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 RUN_DIR="$ROOT/.run"
 
 RED='\033[0;31m'
@@ -111,12 +111,12 @@ dev_stop() {
 dev_fix_local_env() {
   local ENV_FILE="$PLATFORM/.env"
   [[ -f "$ENV_FILE" ]] || cp "$PLATFORM/.env.example" "$ENV_FILE"
-  info "platform/.env 已就绪，请确认 DATABASE_URL / KnowFlow 地址"
+  info "backend/.env 已就绪，请确认 DATABASE_URL / KnowFlow 地址"
 }
 
 dev_remote_dev() {
   bash "$SCRIPT_DIR/setup-env.sh" remote-dev
-  info "已生成本机 remote-dev 用 platform/.env"
+  info "已生成本机 remote-dev 用 backend/.env"
   info "验证远程: bash scripts/verify-remote-deps.sh"
   info "启动本机: ./dev.sh local"
   info "（全 Docker 开发: ./dev.sh docker）"
@@ -231,12 +231,12 @@ usage() {
 
 环境与运维:
   stop                                     停止 Docker 栈 + 本机 dev 进程
-  remote-dev                               生成 REMOTE_DEPS platform/.env
+  remote-dev                               生成 REMOTE_DEPS backend/.env
   sync [--frontend|--all|--browser]                    同步代码到服务器并重启 API/Worker
   sync-frp-uninstall                       卸载服务器 frps
   db migrate to-local|to-remote          平台 PostgreSQL 迁移（透传 migrate-postgres.sh）
-  env remote-dev|local-db                  生成 platform/.env（同 ./dev.sh remote-dev）
-  fix-env                                  检查/初始化 platform/.env 模板
+  env remote-dev|local-db                  生成 backend/.env（同 ./dev.sh remote-dev）
+  fix-env                                  检查/初始化 backend/.env 模板
   stack …                                  透传 scripts/stack.sh（build / logs …）
   deploy …                                 透传 scripts/deploy.sh
   knowflow setup | build                   KnowFlow 源码

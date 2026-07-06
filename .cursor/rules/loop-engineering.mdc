@@ -1,0 +1,35 @@
+---
+description: Loop Engineering — 智能体六相循环；改 agent 循环/规划/工具/合成时必读
+globs:
+  - platform/app/services/agent*.py
+  - platform/app/core/agent*.py
+  - platform/app/core/loop_engineering.py
+  - platform/app/services/ai_chat_service.py
+alwaysApply: false
+---
+# Loop Engineering（循环工程）
+
+本项目的智能体核心是 **Loop Engineering**，不是 Prompt Engineering。
+
+## 原则
+
+- **少写静态提示词**：面向模型的任务指令优先来自 **规划器/智能体自身产出**（`AgentExecutionPlan`、`build_plan_context_instruction`、子任务交付摘要），系统只提供短 **循环契约**（角色边界、输出形态、禁止项）。
+- **改循环，不改散文**：优化应落在输入捕获、上下文组装、观测校验、记忆更新与退出条件，而非堆叠 system prompt。
+- **观测驱动迭代**：每轮 tool 结果写入 `loop_state`（`executed_tool_calls`、`tool_outcome_lines`、`retrieval_context_parts`），下一轮 `inject_retrieval_context_message` 自动注入，避免重复调用。
+
+## 六相循环 ↔ 代码映射
+
+| 阶段 | 职责 | 主要模块 |
+|------|------|----------|
+| 1 输入捕获 | 用户目标、业务规则、验收标准 | `user_message`、`AgentToolPlan`、`AgentExecutionPlan`、Supervisor 路由 |
+| 2 上下文组装 | 工具清单、记忆、约束 → 动态 Prompt | `resolve_agent_prompt_layers`、`inject_retrieval_context_message`、`build_plan_context_instruction`、`build_loop_exit_prompt_messages` |
+| 3 模型推理 | LLM + tool_calls | `chat_completion_message_async`、`iter_llm_answer_events` |
+| 4 动作执行 | 代码/DB/API/文件 | `execute_agent_tool`、`run_db_task` |
+| 5 观测校验 | 结果比对、错误捕获、是否满足退出 | `execution_goal_satisfied`、`request_fulfilled`、`assess_orchestrator_answer_coverage`、tool JSON `ok` |
+| 6 记忆更新 | 记录本轮结果/失败原因，回到 2 | `loop_state`、`record_executed_tool_call`、`resolve_adaptive_replan`、`_maybe_write_user_memory` |
+
+## 实现约束
+
+- 终稿/汇总阶段用 `build_loop_exit_prompt_messages()`：**system 仅循环契约**，user 块拼接 **目标 + 智能体计划 + 观测证据**。
+- 新增能力优先扩展 **工具 + loop_state 字段 + 校验函数**，不要新增大段手写 system prompt。
+- 禁止在 API 层串联多个独立「规划 LLM」；首页已规划时传 `skip_route_plan_ui=True`。

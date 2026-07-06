@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pageindex-selfhosted"
+version = "0.0.1"
+description = "Vendored self-hosted PageIndex (github.com/VectifyAI/PageIndex)"
+requires-python = ">=3.10"
+dependencies = [
+    "litellm>=1.83.0",
+    "PyPDF2>=3.0.0",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pageindex*"]
+
+[tool.setuptools.package-data]
+pageindex = ["config.yaml"]

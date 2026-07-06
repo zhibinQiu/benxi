@@ -1,0 +1,231 @@
+/* PlatformSpin / Rose Three — 全平台统一加载动画 */
+
+/* --- n-spin 容器基座 --- */
+.n-spin-container {
+  position: relative;
+}
+
+.n-spin-container > .n-spin-body {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  flex: none !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+/* 视口中心：整页级加载 */
+.n-spin-container.platform-spin-global > .n-spin-body {
+  position: fixed;
+  z-index: var(--platform-z-loading, 10200);
+}
+
+/* 容器内居中：面板、预览等 */
+.n-spin-container.platform-spin-local > .n-spin-body {
+  position: absolute;
+  z-index: var(--platform-z-loading-local, 20);
+}
+
+/* 面板内 local spin：撑满父级 */
+.platform-local-spin.n-spin-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.platform-local-spin > .n-spin-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.platform-local-spin > .n-spin-body {
+  z-index: var(--platform-z-loading-local, 20);
+}
+
+/* 本体图谱 */
+.kg-spin.platform-local-spin,
+.kg-graph-spin.platform-local-spin,
+.kg-type-browse__spin.platform-local-spin,
+.kg-entity-panel__spin.platform-local-spin {
+  position: relative;
+  overflow: visible;
+}
+
+.kg-spin.platform-local-spin > .n-spin-body,
+.kg-graph-spin.platform-local-spin > .n-spin-body,
+.kg-type-browse__spin.platform-local-spin > .n-spin-body,
+.kg-entity-panel__spin.platform-local-spin > .n-spin-body {
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* 文档对比 */
+.preview-spin.platform-local-spin,
+.compare-pdf-preview__spin.platform-local-spin,
+.compare-select-spin.platform-local-spin {
+  position: relative;
+  overflow: visible;
+  width: 100%;
+}
+
+.compare-select-spin.platform-local-spin {
+  min-height: 240px;
+}
+
+.preview-spin.platform-local-spin > .n-spin-body,
+.compare-pdf-preview__spin.platform-local-spin > .n-spin-body,
+.compare-select-spin.platform-local-spin > .n-spin-body {
+  z-index: var(--platform-z-loading-local, 20);
+  pointer-events: none;
+}
+
+.platform-local-spin .platform-spin__rose {
+  filter: drop-shadow(0 2px 10px color-mix(in srgb, var(--platform-accent) 12%, transparent));
+}
+
+/* 无 spin-body 默认内容时，用玫瑰恢复为内联插入 */
+.platform-local-spin .platform-spin__rose .rose-loader {
+  display: block;
+}
+
+/* --- n-spin-body 基座 --- */
+.n-spin-body {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.n-spin-body--inline {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+/* 加载时内容区淡化 */
+.n-spin-content {
+  opacity: 1;
+  transition: opacity 0.3s var(--platform-ease-smooth, ease);
+  pointer-events: all;
+}
+
+.n-spin-content--spinning {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.n-spin-description {
+  margin-top: 10px;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
+  color: var(--platform-text-secondary);
+  text-align: center;
+}
+
+/* 行内加载：文字 + 玫瑰 */
+.platform-inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.platform-inline-loading .n-spin-body--inline {
+  flex-shrink: 0;
+}
+
+/* 淡入过渡 */
+.fade-in-transition-enter-active,
+.fade-in-transition-leave-active {
+  transition: opacity 0.3s var(--platform-ease-smooth, ease);
+}
+
+.fade-in-transition-enter-from,
+.fade-in-transition-leave-to {
+  opacity: 0;
+}
+
+/* 按钮加载：玫瑰替换默认 spin */
+.n-button__icon .platform-base-loading,
+.n-button__icon .n-base-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 内容区加载状态 — 居中玫瑰 + 说明文字 */
+.loading-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex: 1;
+  min-height: 192px;
+  color: var(--platform-text-secondary);
+  font-size: var(--platform-font-size-sm);
+}
+
+.loading-center .rose-loader {
+  filter: drop-shadow(0 2px 12px color-mix(in srgb, var(--platform-accent) 14%, transparent));
+}
+
+/* 按钮加载中（独立于 n-spin，无需 /deep/ 穿透） */
+.btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-loading .rose-loader {
+  flex-shrink: 0;
+}
+
+/* 全屏遮罩加载 */
+.platform-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--platform-z-loading, 10200);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--platform-modal-mask);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.platform-loading-overlay .rose-loader {
+  filter: drop-shadow(0 2px 16px color-mix(in srgb, var(--platform-accent) 18%, transparent));
+}
+
+.platform-loading-overlay__text {
+  font-size: var(--platform-font-size-base);
+  font-weight: 500;
+  color: var(--platform-text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .n-spin-content,
+  .fade-in-transition-enter-active,
+  .fade-in-transition-leave-active {
+    transition: none;
+  }
+}

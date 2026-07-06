@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SVC="$ROOT/platform/speech-service"
+SVC="$ROOT/backend/speech-service"
 RUN_DIR="$ROOT/.run"
 LOG="$ROOT/.run/logs/speech-api.log"
 PID_FILE="$RUN_DIR/speech-api.pid"

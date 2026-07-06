@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 
 DEPLOY_USER="${DEPLOY_USER:-root}"
 DEPLOY_HOST="${DEPLOY_HOST:-172.19.134.45}"

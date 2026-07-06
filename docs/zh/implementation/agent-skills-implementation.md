@@ -1,7 +1,7 @@
 # Agent Skills 实现说明
 
 > **适用读者**：产品经理、运维、后端/前端开发  
-> **版本**：v4.5.0 · [开发说明书总览](../development/implementation-manual.md)  
+> **版本**：v4.6.0 · [开发说明书总览](../development/implementation-manual.md)  
 > **配套阅读**：[功能实现说明 §4.8 / §14](../operations/feature-implementation.md)（偏业务视角）
 
 ---
@@ -39,7 +39,7 @@
 
 ---
 
-## 1. 实现总览（v4.5.0）
+## 1. 实现总览（v4.6.0）
 
 AI 首页对话采用 **Discovery + Activation** 两阶段：
 
@@ -183,7 +183,7 @@ sequenceDiagram
 | 联网 | `web_search` | 互联网摘要检索 |
 | 知识库 | `knowledge_retrieve` | 权限内文档片段 |
 | 图谱 | `kg_query` | 本体实体与关系 |
-| 技能管理 | `load_uploaded_skill`、`create_uploaded_skill`、`run_skill_script`… | 发展技能 CRUD / 加载 |
+| 技能管理 | `load_uploaded_skill`、`create_skill`、`run_skill_script`… | 发展技能 CRUD / 加载 |
 | 记忆 | `read_agent_memory`、`append_agent_memory` | MEMORY.md |
 | 文档 | `rename_document`、`move_document`… | 文档库操作 |
 | 平台 | `create_todo`、`send_notification`… | 待办与通知 |

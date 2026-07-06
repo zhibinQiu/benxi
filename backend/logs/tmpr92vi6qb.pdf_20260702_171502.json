@@ -1,0 +1,45 @@
+[
+  {
+    "total_page_number": 2
+  },
+  {
+    "total_token": 2513
+  },
+  {
+    "toc_content": null,
+    "toc_page_list": [],
+    "page_index_given_in_toc": "no"
+  },
+  {
+    "message": "len(group_texts): 1"
+  },
+  {
+    "message": "generate_toc: [{'structure': '1', 'title': '\u80fd\u8017\u9884\u6d4b+\u5bfb\u4f18\u51b3\u7b56\uff1aAI\u8282\u80fd\u6280\u672f\u67b6\u6784\u62c6\u89e3', 'physical_index': '<physical_index_1>'}, {'structure': '1.1', 'title': '\u6458\u8981', 'physical_index': '<physical_index_1>'}, {'structure': '1.2', 'title': '\u5f15\u8a00', 'physical_index': '<physical_index_1>'}, {'structure': '1.3', 'title': '\u9884\u6d4b\u6a21\u578b\uff1a\u5148\u628a\u672a\u6765\u770b\u51c6', 'physical_index': '<physical_index_1>'}, {'structure': '1.4', 'title': '\u5bfb\u4f18\u7b97\u6cd5\uff1a\u771f\u6b63\u5f00\u59cb\u7701\u7535\u7684\u5730\u65b9', 'physical_index': '<physical_index_2>'}]"
+  },
+  {
+    "message": "convert_physical_index_to_int: [{'structure': '1', 'title': '\u80fd\u8017\u9884\u6d4b+\u5bfb\u4f18\u51b3\u7b56\uff1aAI\u8282\u80fd\u6280\u672f\u67b6\u6784\u62c6\u89e3', 'physical_index': 1}, {'structure': '1.1', 'title': '\u6458\u8981', 'physical_index': 1}, {'structure': '1.2', 'title': '\u5f15\u8a00', 'physical_index': 1}, {'structure': '1.3', 'title': '\u9884\u6d4b\u6a21\u578b\uff1a\u5148\u628a\u672a\u6765\u770b\u51c6', 'physical_index': 1}, {'structure': '1.4', 'title': '\u5bfb\u4f18\u7b97\u6cd5\uff1a\u771f\u6b63\u5f00\u59cb\u7701\u7535\u7684\u5730\u65b9', 'physical_index': 2}]"
+  },
+  {
+    "mode": "process_toc_with_page_numbers",
+    "accuracy": 1.0,
+    "incorrect_results": []
+  },
+  {
+    "message": "Checking title appearance in start concurrently"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '\u4e0aLSTM\u3002' followed by bullet points '\u25cf \u25cf' and then the section title '\u5bfb\u4f18\u7b97\u6cd5\uff1a\u771f\u6b63\u5f00\u59cb\u7701\u7535\u7684\u5730\u65b9'. Since there is content ('\u4e0aLSTM\u3002') before the section title appears, the section does not start at the beginning of the page_text. Even with fuzzy matching and ignoring space inconsistencies, the presence of '\u4e0aLSTM\u3002' before the section title is clear.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '\u80fd\u8017\u9884\u6d4b+\u5bfb\u4f18\u51b3\u7b56\uff1aAI\u8282\u80fd\u6280\u672f\u67b6\u6784\u62c6\u89e3' followed by '\u6b63\u6587', and then the section title '**\u6458\u8981**' appears on the third line. Since there are other contents (the document title and '\u6b63\u6587') before the section title '\u6458\u8981', the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u80fd\u8017\u9884\u6d4b+\u5bfb\u4f18\u51b3\u7b56\uff1aAI\u8282\u80fd\u6280\u672f\u67b6\u6784\u62c6\u89e3' is the very first content in the page_text. The page_text begins directly with this title, followed by a newline and then '\u6b63\u6587' (main text). There is no other content before the section title. According to the instructions, if the current section title is the first content in the given page_text, then the current section starts in the beginning of the page_text.\", 'start_begin': 'yes'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u9884\u6d4b\u6a21\u578b\uff1a\u5148\u628a\u672a\u6765\u770b\u51c6' does not appear at the beginning of the page_text. The page_text starts with '\u80fd\u8017\u9884\u6d4b+\u5bfb\u4f18\u51b3\u7b56\uff1aAI\u8282\u80fd\u6280\u672f\u67b6\u6784\u62c6\u89e3' followed by '\u6b63\u6587' and '**\u6458\u8981**'. The section title '\u9884\u6d4b\u6a21\u578b\uff1a\u5148\u628a\u672a\u6765\u770b\u51c6' appears much later in the text, after the introduction section. There is clearly other content before the section title, including the main title, '\u6b63\u6587', the abstract section, and the introduction section.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with a title '\u80fd\u8017\u9884\u6d4b+\u5bfb\u4f18\u51b3\u7b56\uff1aAI\u8282\u80fd\u6280\u672f\u67b6\u6784\u62c6\u89e3', followed by '\u6b63\u6587' and then the '**\u6458\u8981**' (Abstract) section with its content. The section '\u5f15\u8a00' (Introduction) appears later in the text as '- \u5f15\u8a00 -', which is clearly after the abstract section. Since there is substantial content (title, '\u6b63\u6587', and the entire abstract) before the '\u5f15\u8a00' section, it does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  }
+]

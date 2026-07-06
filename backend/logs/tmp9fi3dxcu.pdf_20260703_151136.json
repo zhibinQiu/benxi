@@ -1,0 +1,51 @@
+[
+  {
+    "total_page_number": 2
+  },
+  {
+    "total_token": 2208
+  },
+  {
+    "toc_content": null,
+    "toc_page_list": [],
+    "page_index_given_in_toc": "no"
+  },
+  {
+    "message": "len(group_texts): 1"
+  },
+  {
+    "message": "generate_toc: [{'structure': '1', 'title': '\u80fd\u6e90\u7ba1\u7406\u5e73\u53f0\uff08EMS\uff09\u5230\u5e95\u662f\u4ec0\u4e48\u2014\u2014\u5de5\u5382\u8282\u80fd\u7684\u300c\u5927\u8111\u300d', 'physical_index': '<physical_index_1>'}, {'structure': '1.1', 'title': '\u4e00\u3001EMS \u4e0d\u662f\u4ec0\u4e48', 'physical_index': '<physical_index_1>'}, {'structure': '1.2', 'title': '\u4e8c\u3001EMS \u7684\u6838\u5fc3\u67b6\u6784', 'physical_index': '<physical_index_1>'}, {'structure': '1.3', 'title': '\u4e09\u3001\u88c5\u4e86 EMS \u80fd\u7701\u591a\u5c11\u94b1', 'physical_index': '<physical_index_1>'}, {'structure': '1.4', 'title': '\u56db\u3001\u8c01\u9700\u8981 EMS', 'physical_index': '<physical_index_2>'}, {'structure': '1.5', 'title': '\u4e94\u3001\u56fd\u5185\u4e3b\u6d41 EMS \u5e73\u53f0\u901f\u89c8', 'physical_index': '<physical_index_2>'}, {'structure': '1.6', 'title': '\u7ed3\u5c3e', 'physical_index': '<physical_index_2>'}]"
+  },
+  {
+    "message": "convert_physical_index_to_int: [{'structure': '1', 'title': '\u80fd\u6e90\u7ba1\u7406\u5e73\u53f0\uff08EMS\uff09\u5230\u5e95\u662f\u4ec0\u4e48\u2014\u2014\u5de5\u5382\u8282\u80fd\u7684\u300c\u5927\u8111\u300d', 'physical_index': 1}, {'structure': '1.1', 'title': '\u4e00\u3001EMS \u4e0d\u662f\u4ec0\u4e48', 'physical_index': 1}, {'structure': '1.2', 'title': '\u4e8c\u3001EMS \u7684\u6838\u5fc3\u67b6\u6784', 'physical_index': 1}, {'structure': '1.3', 'title': '\u4e09\u3001\u88c5\u4e86 EMS \u80fd\u7701\u591a\u5c11\u94b1', 'physical_index': 1}, {'structure': '1.4', 'title': '\u56db\u3001\u8c01\u9700\u8981 EMS', 'physical_index': 2}, {'structure': '1.5', 'title': '\u4e94\u3001\u56fd\u5185\u4e3b\u6d41 EMS \u5e73\u53f0\u901f\u89c8', 'physical_index': 2}, {'structure': '1.6', 'title': '\u7ed3\u5c3e', 'physical_index': 2}]"
+  },
+  {
+    "mode": "process_toc_with_page_numbers",
+    "accuracy": 1.0,
+    "incorrect_results": []
+  },
+  {
+    "message": "Checking title appearance in start concurrently"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u80fd\u6e90\u7ba1\u7406\u5e73\u53f0\uff08EMS\uff09\u5230\u5e95\u662f\u4ec0\u4e48\u2014\u2014\u5de5\u5382\u8282\u80fd\u7684\u300c\u5927\u8111\u300d' is the very first line of the page_text. There is no other content before this title. The title appears exactly at the beginning of the page_text, followed by '\u6b63\u6587' and then the actual content. Since the section title is the first content in the page_text, the section starts at the beginning.\", 'start_begin': 'yes'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The page_text begins with '\u505a\u5f97\u597d\u7684\uff0c\u4e00\u5e74\u56de\u672c\u3002' which is content that appears before the section title '\u56db\u3001\u8c01\u9700\u8981 EMS'. The section title '\u56db\u3001\u8c01\u9700\u8981 EMS' appears after this introductory sentence, not at the very beginning of the page_text. Therefore, the current section does not start at the beginning of the given page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u4e00\u3001EMS \u4e0d\u662f\u4ec0\u4e48' does not appear at the beginning of the page_text. The page_text starts with '\u80fd\u6e90\u7ba1\u7406\u5e73\u53f0\uff08EMS\uff09\u5230\u5e95\u662f\u4ec0\u4e48\u2014\u2014\u5de5\u5382\u8282\u80fd\u7684\u300c\u5927\u8111\u300d', followed by '\u6b63\u6587', '**\u6458\u8981**', and a summary paragraph. The section '\u4e00\u3001EMS \u4e0d\u662f\u4ec0\u4e48' appears later in the text after the abstract section. Since there is other content before the section title, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u4e09\u3001\u88c5\u4e86 EMS \u80fd\u7701\u591a\u5c11\u94b1' does not appear at the beginning of the page_text. The page_text starts with '\u80fd\u6e90\u7ba1\u7406\u5e73\u53f0\uff08EMS\uff09\u5230\u5e95\u662f\u4ec0\u4e48\u2014\u2014\u5de5\u5382\u8282\u80fd\u7684\u300c\u5927\u8111\u300d' which is a different heading. The section title '\u4e09\u3001\u88c5\u4e86 EMS \u80fd\u7701\u591a\u5c11\u94b1' appears much later in the text, after sections '\u4e00\u3001EMS \u4e0d\u662f\u4ec0\u4e48' and '\u4e8c\u3001EMS \u7684\u6838\u5fc3\u67b6\u6784'. There is substantial content before the target section title, so the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u4e94\u3001\u56fd\u5185\u4e3b\u6d41 EMS \u5e73\u53f0\u901f\u89c8' does not appear at the beginning of the page_text. The page_text starts with '\u505a\u5f97\u597d\u7684\uff0c\u4e00\u5e74\u56de\u672c\u3002\u56db\u3001\u8c01\u9700\u8981 EMS\u4e0d\u662f\u6240\u6709\u4f01\u4e1a\u90fd\u9700\u8981EMS\u3002' which is content from a previous section (section \u56db). The target section '\u4e94\u3001\u56fd\u5185\u4e3b\u6d41 EMS \u5e73\u53f0\u901f\u89c8' appears later in the text after the content about who needs EMS. Since there is other content before the section title, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u4e8c\u3001EMS \u7684\u6838\u5fc3\u67b6\u6784' does not appear at the beginning of the page_text. The page_text starts with '\u80fd\u6e90\u7ba1\u7406\u5e73\u53f0\uff08EMS\uff09\u5230\u5e95\u662f\u4ec0\u4e48\u2014\u2014\u5de5\u5382\u8282\u80fd\u7684\u300c\u5927\u8111\u300d', followed by '\u6b63\u6587', '**\u6458\u8981**', and the abstract content. The section '\u4e8c\u3001EMS \u7684\u6838\u5fc3\u67b6\u6784' appears much later in the text, after the abstract and after the '\u4e00\u3001EMS \u4e0d\u662f\u4ec0\u4e48' section. There is clearly other content before the current section title, so the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  },
+  {
+    "message": "Response: {'thinking': \"The section title '\u7ed3\u5c3e' is not the first content in the page_text. The page_text begins with '\u505a\u5f97\u597d\u7684\uff0c\u4e00\u5e74\u56de\u672c\u3002\u56db\u3001\u8c01\u9700\u8981 EMS\u4e0d\u662f\u6240\u6709\u4f01\u4e1a\u90fd\u9700\u8981EMS\u3002' and contains multiple sections (\u56db\u3001\u8c01\u9700\u8981 EMS, \u4e94\u3001\u56fd\u5185\u4e3b\u6d41 EMS \u5e73\u53f0\u901f\u89c8) before reaching '\u7ed3\u5c3e'. The '\u7ed3\u5c3e' section appears after '\u4e00\u4e2a\u5c0f\u5382\u7528\u534e\u4e3a\u7684EMS\uff0c\u6740\u9e21\u7528\u725b\u5200\u3002', which means there is substantial content before it. Therefore, the section does not start at the beginning of the page_text.\", 'start_begin': 'no'}"
+  }
+]

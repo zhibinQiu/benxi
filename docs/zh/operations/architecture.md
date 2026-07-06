@@ -77,11 +77,11 @@ flowchart TB
 
 详见 [知识服务实现](../implementation/knowledge-implementation.md)（实现细节）与本目录 [网络拓扑](network-topology.md)。
 
-## 启动与版本（v4.5.0）
+## 启动与版本（v4.6.0）
 
 | 项 | 说明 |
 |----|------|
-| 版本源 | 仓库根 `VERSION`（当前 4.5.0）→ `ZHITAN_VERSION` 镜像 tag |
+| 版本源 | 仓库根 `VERSION`（当前 4.6.0）→ `ZHITAN_VERSION` 镜像 tag |
 | 开发入口 | `./dev.sh docker`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
 | 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |
@@ -89,7 +89,7 @@ flowchart TB
 
 新增 **资源管理**（系统设置，需 `admin.user`）：在线配置 LLM / 语音合成 / KnowFlow / OCR 等，`GET /api/v1/system/client-config` 供前端启动拉取主题与 API 根地址。
 
-## 启动与资源（v4.5.0）
+## 启动与资源（v4.6.0）
 
 | 机制 | 说明 |
 |------|------|
@@ -100,7 +100,7 @@ flowchart TB
 | 前端内存 | 对话/知识壳 KeepAlive；知识双面板 max=1；重型 chunk 异步加载 |
 | 进程退出 | 关闭 `last_seen` 线程池与后台 executor |
 
-## AIP 智能体互联（v4.5.0）
+## AIP 智能体互联（v4.6.0）
 
 | 组件 | 说明 |
 |------|------|
@@ -109,7 +109,7 @@ flowchart TB
 | 数据 | `aip_secret_keys`、`aip_external_agents` 表；配置 JSON 与 DB 双源合并 |
 | 执行 | `agent_aip_executor` 由 supervisor 调用，统一内置专精与外部 HTTP |
 
-## 容量与连接池（v4.5.0）
+## 容量与连接池（v4.6.0）
 
 约 **200 人在线**时，瓶颈通常在 **瞬时并发占用 DB 连接**，而非平均 QPS。
 

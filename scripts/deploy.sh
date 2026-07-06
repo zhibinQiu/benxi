@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 企业 AI 知识库平台 — 生产部署：镜像 save/load 推送到远程（不 rsync 源码）
 #
-# 配置: platform/deploy.target（由 deploy.target.example 复制）
+# 配置: backend/deploy.target（由 deploy.target.example 复制）
 #
 # 用法:
 #   bash scripts/stack.sh build --profile knowflow --profile speech
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 # shellcheck source=lib/version.sh
 source "$ROOT/scripts/lib/version.sh"
 # shellcheck source=lib/branding.sh
@@ -161,7 +161,7 @@ detect_host_ip() {
   echo "$ip"
 }
 
-# 生成本机 platform/.env.docker（不修改 .env）
+# 生成本机 backend/.env.docker（不修改 .env）
 sync_deploy_env() {
   local arch="${1:-amd64}"
   local host tmp
@@ -174,7 +174,7 @@ sync_deploy_env() {
   tmp="$(mktemp)"
   if [[ -f "$src_env" ]]; then
     cp "$src_env" "$tmp"
-    info "sync env ← platform/.env"
+    info "sync env ← backend/.env"
   elif [[ -f "$out_env" ]]; then
     cp "$out_env" "$tmp"
   elif [[ -f "$fallback_env" ]]; then
@@ -454,11 +454,11 @@ rsync_to_remote() {
     --exclude '.git/' --exclude '.venv/' --exclude '**/.venv/' \
     --exclude '**/node_modules/' --exclude '.run/' --exclude 'dist/' \
     --exclude '**/__pycache__/' --exclude '*.pyc' --exclude '.DS_Store' \
-    --exclude 'platform/.env' --exclude 'platform/knowflow.env' \
+    --exclude 'backend/.env' --exclude 'backend/knowflow.env' \
     "$ROOT/" "$dest"
-  rsync -avz "$PLATFORM/.env.docker" "${dest}platform/.env.docker"
+  rsync -avz "$PLATFORM/.env.docker" "${dest}backend/.env.docker"
   [[ -f "$PLATFORM/knowflow.env.docker" ]] && \
-    rsync -avz "$PLATFORM/knowflow.env.docker" "${dest}platform/knowflow.env.docker"
+    rsync -avz "$PLATFORM/knowflow.env.docker" "${dest}backend/knowflow.env.docker"
 }
 
 remote_deploy_background() {
@@ -488,7 +488,7 @@ remote_status() {
   ssh -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s <<EOF
 cd '${DEPLOY_PATH}'
 echo "=== 架构 / 部署进程 ==="
-grep -E '^DEPLOY_ARCH=' platform/.env.docker 2>/dev/null || true
+grep -E '^DEPLOY_ARCH=' backend/.env.docker 2>/dev/null || true
 pgrep -af 'deploy.sh local' || echo "(无)"
 echo ""
 echo "=== deploy.log (末 15 行) ==="
@@ -520,11 +520,11 @@ rsync_stack_bundle() {
       "$ROOT/compose.mirror.yaml" \
       "$ROOT/.env.stack.example" \
       "$ROOT/deploy/" \
-      "$ROOT/platform/app/" \
-      "${dest}platform/app/"
+      "$ROOT/backend/app/" \
+      "${dest}backend/app/"
     rsync -avz \
-      "$ROOT/platform/workers/" \
-      "${dest}platform/workers/"
+      "$ROOT/backend/workers/" \
+      "${dest}backend/workers/"
     rsync -avz \
       "$ROOT/scripts/stack.sh" \
       "$ROOT/scripts/setup-stack-env.sh" \
@@ -621,7 +621,7 @@ run_stack_local() {
 }
 
 run_stack_push() {
-  load_target || { error "缺少 platform/deploy.target"; exit 1; }
+  load_target || { error "缺少 backend/deploy.target"; exit 1; }
   DEPLOY_ARCH="$(detect_remote_arch)"
   info "stack 部署 arch=${DEPLOY_ARCH}（仅镜像+编排，不 rsync 源码）"
   rsync_stack_bundle
@@ -630,7 +630,7 @@ run_stack_push() {
 }
 
 run_push() {
-  load_target || { error "缺少 platform/deploy.target（可从 deploy.target.example 复制）"; exit 1; }
+  load_target || { error "缺少 backend/deploy.target（可从 deploy.target.example 复制）"; exit 1; }
   if [[ "$DO_STATUS" == 1 ]]; then
     remote_status
     exit 0

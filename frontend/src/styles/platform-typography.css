@@ -1,0 +1,50 @@
+/* 系统渐变字 — 用于标题/强调文字，非按钮背板 */
+
+.platform-text-gradient,
+.header-title--gradient {
+  background-image: var(--platform-accent-gradient);
+  background-size: 120% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-icon-btn--active {
+  color: var(--platform-accent) !important;
+  background: var(--platform-accent-muted) !important;
+}
+
+.header-icon-btn--active .n-icon {
+  color: var(--platform-accent) !important;
+}
+
+/* =============================================
+ * 全局字号工具类 — 统一所有页面的文字层级
+ * 使用示例：
+ *   class="text-lg"    → 18px  大号正文
+ *   class="text-base"  → 16px  标准正文
+ *   class="text-sm"    → 15px  次要文字
+ *   class="text-xs"    → 13px  辅助文字
+ *   class="text-micro" → 12px  标签/徽章
+ *
+ * 标题使用 h1-h6 或对应语义标签，不使用这些工具类。
+ * ============================================= */
+.text-lg { font-size: var(--platform-font-size-lg) !important; }
+.text-base { font-size: var(--platform-font-size-base) !important; }
+.text-sm { font-size: var(--platform-font-size-sm) !important; }
+.text-xs { font-size: var(--platform-font-size-xs) !important; }
+.text-micro { font-size: 12px !important; }
+
+/* 字重工具 */
+.text-strong { font-weight: var(--platform-font-weight-strong) !important; }
+.text-medium { font-weight: var(--platform-font-weight-medium) !important; }
+.text-normal { font-weight: var(--platform-font-weight-normal) !important; }
+
+/* 颜色工具 */
+.text-primary { color: var(--platform-text) !important; }
+.text-secondary { color: var(--platform-text-secondary) !important; }
+.text-tertiary { color: var(--platform-text-tertiary) !important; }
+.text-accent { color: var(--platform-accent) !important; }
+.text-danger { color: var(--platform-danger) !important; }

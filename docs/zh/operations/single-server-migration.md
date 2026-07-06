@@ -1,4 +1,4 @@
-# 单机迁移与热重载部署（v4.5.0）
+# 单机迁移与热重载部署（v4.6.0）
 
 > **目标**：将当前「本机开发 + 远程依赖」或「多机拆分」架构，迁移到 **同一台服务器** 运行完整栈；并在部署后仍支持 **改代码即生效**（所见即所得）。  
 > 不含代码，仅操作说明。
@@ -188,7 +188,7 @@ docker compose -p zhitan restart worker
 git clone <仓库> /opt/zhitan
 cd /opt/zhitan
 # 复制原 .env、platform/.env
-bash scripts/stack.sh load images/zhitan-4.5.0-amd64.tar.gz   # 可选，加速首次 build
+bash scripts/stack.sh load images/zhitan-4.6.0-amd64.tar.gz   # 可选，加速首次 build
 ./dev.sh docker --profile knowflow --profile speech
 ```
 

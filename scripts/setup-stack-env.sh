@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 生成仓库根 .env（合并 stack 模板 + platform/.env 密钥）
+# 生成仓库根 .env（合并 stack 模板 + backend/.env 密钥）
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 STACK_EXAMPLE=".env.stack.example"
-PLATFORM_ENV="platform/.env"
+PLATFORM_ENV="backend/.env"
 OUT=".env"
 
 if [[ ! -f "$STACK_EXAMPLE" ]]; then
@@ -36,9 +36,9 @@ if [[ -f "$PLATFORM_ENV" ]]; then
     BOOTSTRAP_ADMIN_PHONE BOOTSTRAP_ADMIN_PASSWORD APP_NAME; do
     append_if_set "$key" "$PLATFORM_ENV"
   done
-  echo "已合并 platform/.env 中的密钥到 $OUT"
+  echo "已合并 backend/.env 中的密钥到 $OUT"
 else
-  echo "提示: 复制 platform/.env.example → platform/.env 后再运行本脚本"
+  echo "提示: 复制 backend/.env.example → backend/.env 后再运行本脚本"
 fi
 
 # 生产栈：连接池档位 C（compose api/worker environment 会再覆盖 worker 池为 10/5）

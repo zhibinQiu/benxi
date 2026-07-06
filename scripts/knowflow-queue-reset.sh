@@ -35,9 +35,9 @@ run_remote() {
   DEPLOY_USER="${DEPLOY_USER:-root}"
   DEPLOY_HOST="${DEPLOY_HOST:-172.19.134.45}"
   DEPLOY_PATH="${DEPLOY_PATH:-/root/qzb/lvye}"
-  if [[ -f "$ROOT/platform/deploy.target" ]]; then
+  if [[ -f "$ROOT/backend/deploy.target" ]]; then
     # shellcheck disable=SC1091
-    source "$ROOT/platform/deploy.target"
+    source "$ROOT/backend/deploy.target"
   fi
   info "远程执行 → ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
   ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \

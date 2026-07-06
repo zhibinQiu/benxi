@@ -1,0 +1,85 @@
+[project]
+name = "doc-platform"
+version = "4.6.0"
+description = "Single-tenant document platform (IAM, documents, jobs, notifications)"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "agentkit-aip @ file:../packages/agentkit-aip",
+    "agentkit-interrupt @ file:../packages/agentkit-interrupt",
+    "agentkit-orchestrate @ file:../packages/agentkit-orchestrate",
+    "agentkit-loop @ file:../packages/agentkit-loop",
+    "agentkit-mcp @ file:../packages/agentkit-mcp",
+    "agentkit-message @ file:../packages/agentkit-message",
+    "agentkit-route @ file:../packages/agentkit-route",
+    "agentkit-skills @ file:../packages/agentkit-skills",
+    "agentkit-tools @ file:../packages/agentkit-tools",
+    "agentkit-subagent @ file:../packages/agentkit-subagent",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sqlalchemy>=2.0.36",
+    "psycopg2-binary>=2.9.10",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.8.0",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.2.0",
+    "python-multipart>=0.0.20",
+    "celery[redis]>=5.4.0",
+    "redis>=5.2.0",
+    "boto3>=1.35.0",
+    "httpx>=0.28.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "pymysql>=1.1.0",
+    "html2text>=2024.2.26",
+    "sse-starlette>=2.3.0",
+    "pycryptodomex>=3.21.0",
+    "pypdf>=5.0.0",
+    "pymupdf<1.25.3",
+    "reportlab>=4.2.0",
+    "python-docx>=1.1.0",
+    "psutil>=6.0.0",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.0",
+    "numpy>=1.26.0",
+    "orjson>=3.10.0",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "yt-dlp>=2024.12.0",
+]
+
+[project.optional-dependencies]
+pageindex = [
+    "pageindex-selfhosted @ file:third_party/pageindex-upstream",
+]
+browser = [
+    "playwright>=1.49.0",
+]
+
+[project.scripts]
+doc-platform = "app.main:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "workers"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "workers"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

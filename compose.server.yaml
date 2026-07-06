@@ -4,9 +4,9 @@
 #   export SERVER_MOUNT_CODE=1
 #   export REGISTRY_PREFIX=registry.cn-hangzhou.aliyuncs.com/your-namespace   # 可选，空则用本地 tag
 #   bash scripts/stack.sh pull-registry    # 从 ACR 拉 runtime 镜像
-#   bash scripts/stack.sh server-up        # 挂载 platform/app 启动 API
+#   bash scripts/stack.sh server-up        # 挂载 backend/app 启动 API
 #
-# 改 platform/app 后执行 ./dev.sh sync（默认重启 API / Worker，compose 变更时才 recreate）
+# 改 backend/app 后执行 ./dev.sh sync（默认重启 API / Worker，compose 变更时才 recreate）
 #
 # 连接池与 compose.yaml 对齐：单机生产档位 C（6 API worker × 12+8 + Celery 12 并发）
 
@@ -15,10 +15,10 @@ services:
     command: postgres -c max_connections=220 -c shared_buffers=512MB
 
   api:
-    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.5.0}
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.6.0}
     build:
       context: .
-      dockerfile: platform/Dockerfile
+      dockerfile: backend/Dockerfile
       target: runtime
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.11-slim}
@@ -31,8 +31,8 @@ services:
     ports:
       - "127.0.0.1:${STACK_DEV_API_PORT:-18000}:8000"
     volumes:
-      - ./platform/app:/app/app
-      - ./platform/workers:/app/workers:ro
+      - ./backend/app:/app/app
+      - ./backend/workers:/app/workers:ro
       - ./examples/agent-skills:/app/examples/agent-skills:ro
       - ./RELEASE.md:/app/RELEASE.md:ro
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
@@ -58,11 +58,11 @@ services:
       start_period: 45s
 
   worker:
-    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.5.0}
+    image: ${REGISTRY_IMAGE_PREFIX:-}zhitan-api-runtime:${ZHITAN_VERSION:-4.6.0}
     shm_size: "512mb"
     volumes:
-      - ./platform/app:/app/app:ro
-      - ./platform/workers:/app/workers:ro
+      - ./backend/app:/app/app:ro
+      - ./backend/workers:/app/workers:ro
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
     command: celery -A workers.celery_app worker --loglevel=info --concurrency=12
     environment:
@@ -71,5 +71,5 @@ services:
 
   frontend:
     volumes:
-      - ./platform-frontend/dist:/usr/share/nginx/html:ro
-      - ./platform-frontend/nginx.conf:/etc/nginx/http.d/default.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/http.d/default.conf:ro

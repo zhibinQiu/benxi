@@ -94,7 +94,7 @@ services:
     platform: ${RAGFLOW_PLATFORM:-linux/arm64}
     image: ${RAGFLOW_IMAGE:-knowflow-ragflow:source}
     build:
-      context: ./platform/third_party/KnowFlow
+      context: ./backend/third_party/KnowFlow
       dockerfile: Dockerfile
       args:
         LIGHTEN: ${KNOWFLOW_LIGHTEN:-1}
@@ -146,7 +146,7 @@ services:
     platform: ${KNOWFLOW_SERVER_PLATFORM:-linux/arm64}
     image: ${KNOWFLOW_SERVER_IMAGE:-knowflow-server:source}
     build:
-      context: ./platform/third_party/KnowFlow/knowflow
+      context: ./backend/third_party/KnowFlow/knowflow
       dockerfile: Dockerfile
       target: backend
       args:

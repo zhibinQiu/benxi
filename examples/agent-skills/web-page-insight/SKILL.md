@@ -67,7 +67,7 @@ web-page-insight/
 
 用户：「创建一个能拉网页的 Skill」
 
-应使用 `create_uploaded_skill` 新建包，或告知本示例已存在；**不要**对本 Skill 盲目 `load_uploaded_skill`。
+应使用 `create_skill` 新建包，或告知本示例已存在；**不要**对本 Skill 盲目 `load_uploaded_skill`。
 
 ## 安全边界
 

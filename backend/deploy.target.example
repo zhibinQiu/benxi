@@ -1,0 +1,16 @@
+# 复制为 deploy.target 并填写（本机推送用，勿提交含密码的副本到公开仓库）
+#   cp deploy.target.example platform/deploy.target
+#
+# 复制为 deploy.target 后填写（勿提交含密码的 deploy.target）
+
+DEPLOY_USER=root
+DEPLOY_HOST=192.168.1.100
+DEPLOY_PATH=/opt/benxi
+# auto：SSH 到目标机执行 uname -m 判断；也可写死 amd64 | arm64
+DEPLOY_ARCH=auto
+DEPLOY_USE_MIRROR=1
+DEPLOY_PARALLEL=1
+FRONTEND_PORT=40005
+# 生产栈 profile（KnowFlow + 语音，按实际裁剪）
+STACK_PROFILES=knowflow speech
+# 连接池档位 C 在 compose.yaml；改代码后: ./dev.sh sync  或  ./dev.sh sync --all

@@ -1,5 +1,20 @@
 # 发布说明
 
+## 4.6.0（v4.6.0）— AgentKit 包拆分、智能体开发套件与平台稳定增强
+
+- **AgentKit 包拆分**：将多智能体核心组件拆分为 11 个独立 Python 包（agentkit-aip、agentkit-loop、agentkit-mcp、agentkit-message、agentkit-orchestrate、agentkit-route、agentkit-skills、agentkit-subagent、agentkit-tools、agentkit-interrupt、agentkit 元包），支持按需 pip 安装、独立版本管理与 PyPI 发布
+- **AgentKit 文档**：新增各子包 README（含快速开始、API 概览与示例代码）、CHANGELOG（含版本演进追溯）与 py.typed 类型标记
+- **循环工程（Loop Engineering）**：`LoopExitRequest` 规划器集成、`dict_evidence_provider` 工厂、`build_loop_exit_prompt_messages` 动态 Prompt 组装，替代传统静态提示词工程
+- **AIP 协议层**：会话总线 `AipSessionBus` 支持顺序/并行 handoff、多 hop 编排辅助（`merge_hop_citations`、`best_reply_from_hops`）与外部智能体互操作
+- **MCP 客户端**：轻量 HTTP/SSE 异步客户端（`McpClient`），零平台耦合，支持 token 压缩与自定义传输
+- **Subagent 运行时**：隔离上下文子 Agent 并行 explore 与 tool 循环，Protocol 注入宿主能力（LLM、Tool、Skill）
+- **Skill 插件框架**：统一注册表、MCP 桥接、关键词搜索与路由格式化
+- **工具层**：声明式 `ToolRegistry`、Pydantic Schema 生成、参数校验与结果压缩
+- **中断管理**：`InterruptStore` Protocol + HITL 响应盒，支持 Checkpoint 持久化与恢复
+- **消息解析**：DSML 内嵌工具调用提取、流式过滤、多轮上下文裁剪与追问检测
+- **平台稳定**：文档同步、架构说明、运维手册与版本号统一更新至 v4.6.0
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.6.0）
+
 ## 4.5.0（v4.5.0）— AIP 智能体互联、功能收敛与 UI 扁平化
 
 - **AIP（GB/Z 185）**：发现 `/aip/discover`、ACDL 读取、同步/流式 `interact`；SK 密钥管理（`/admin/aip/keys`）；外部智能体登记（Agent Skills 管理页）；`agent_aip_executor` 统一内置专精 hop 与外部 HTTP 调用

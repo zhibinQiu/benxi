@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 LOCAL_DEV_CONDA_ENV="${LOCAL_DEV_CONDA_ENV:-pdf2zh}"
 
 GREEN='\033[0;32m'
@@ -82,7 +82,7 @@ setup_docker() {
   local dest="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
   info "同步构建文件 → ${dest}"
   ssh -o BatchMode=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" \
-    "mkdir -p '${DEPLOY_PATH}/platform/third_party/pageindex-upstream' '${DEPLOY_PATH}/scripts/lib'"
+    "mkdir -p '${DEPLOY_PATH}/backend/third_party/pageindex-upstream' '${DEPLOY_PATH}/scripts/lib'"
   rsync -avz "$ROOT/scripts/stack.sh" "${dest}scripts/stack.sh"
   rsync -avz "$ROOT/scripts/setup-browser-rpa.sh" "${dest}scripts/setup-browser-rpa.sh"
   rsync -avz "$ROOT/scripts/lib/browser-rpa.sh" "${dest}scripts/lib/browser-rpa.sh"
@@ -91,18 +91,17 @@ setup_docker() {
     "$ROOT/compose.server.yaml" \
     "${dest}"
   rsync -avz \
-    "$ROOT/platform/Dockerfile" \
-    "$ROOT/platform/pyproject.toml" \
-    "$ROOT/platform/README.md" \
-    "${dest}platform/"
+    "$ROOT/backend/Dockerfile" \
+    "$ROOT/backend/pyproject.toml" \
+    "${dest}backend/"
   rsync -avz \
-    "$ROOT/platform/third_party/pageindex-upstream/" \
-    "${dest}platform/third_party/pageindex-upstream/" 2>/dev/null || true
+    "$ROOT/backend/third_party/pageindex-upstream/" \
+    "${dest}backend/third_party/pageindex-upstream/" 2>/dev/null || true
 }
 
 setup_server() {
   load_deploy_target || {
-    error "未找到 platform/deploy.target，无法 SSH 到服务器"
+    error "未找到 backend/deploy.target，无法 SSH 到服务器"
     exit 1
   }
   info "目标服务器: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"

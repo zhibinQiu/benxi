@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 快速同步本机代码到服务器并生效（共用远程 Postgres/Redis/MinIO 与容器依赖）
 #
-# 服务器需 SERVER_MOUNT_CODE=1（stack.sh server-up）：挂载 platform/app，同步后自动重启容器
+# 服务器需 SERVER_MOUNT_CODE=1（stack.sh server-up）：挂载 backend/app，同步后自动重启容器
 #
 # 用法:
 #   ./dev.sh sync                  # 同步后端 + 重启 API / Worker
@@ -9,12 +9,12 @@
 #   ./dev.sh sync --all            # 后端 + 前端
 #   ./dev.sh sync --browser            # 同步后在服务器重建 Playwright runtime
 #
-# 配置: platform/deploy.target（可选，默认 172.19.134.45:/root/qzb/lvye）
+# 配置: backend/deploy.target（可选，默认 172.19.134.45:/root/qzb/lvye）
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -68,13 +68,13 @@ remote() {
 rsync_to_server() {
   local dest="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
   info "同步后端 → ${dest}"
-  remote "mkdir -p '${DEPLOY_PATH}/platform/app' '${DEPLOY_PATH}/platform/workers' '${DEPLOY_PATH}/examples/agent-skills' '${DEPLOY_PATH}/docs' '${DEPLOY_PATH}/scripts/lib'"
+  remote "mkdir -p '${DEPLOY_PATH}/backend/app' '${DEPLOY_PATH}/backend/workers' '${DEPLOY_PATH}/examples/agent-skills' '${DEPLOY_PATH}/docs' '${DEPLOY_PATH}/scripts/lib'"
   rsync "${RSYNC_OPTS[@]}" \
     --exclude '__pycache__/' --exclude '*.pyc' \
-    "$ROOT/platform/app/" "${dest}platform/app/"
+    "$ROOT/backend/app/" "${dest}backend/app/"
   rsync "${RSYNC_OPTS[@]}" \
     --exclude '__pycache__/' \
-    "$ROOT/platform/workers/" "${dest}platform/workers/"
+    "$ROOT/backend/workers/" "${dest}backend/workers/"
   rsync -avz \
     "$ROOT/examples/agent-skills/" "${dest}examples/agent-skills/"
   rsync -avz \
@@ -89,16 +89,16 @@ rsync_to_server() {
     "$ROOT/scripts/setup-stack-env.sh" "${dest}scripts/setup-stack-env.sh" \
     "$ROOT/scripts/setup-browser-rpa.sh" "${dest}scripts/setup-browser-rpa.sh" \
     "$ROOT/scripts/lib/browser-rpa.sh" "${dest}scripts/lib/browser-rpa.sh" \
-    "$ROOT/platform/Dockerfile" "${dest}platform/Dockerfile" \
-    "$ROOT/platform/pyproject.toml" "${dest}platform/pyproject.toml" \
+    "$ROOT/backend/Dockerfile" "${dest}backend/Dockerfile" \
+    "$ROOT/backend/pyproject.toml" "${dest}backend/pyproject.toml" \
     2>/dev/null || true
 
   if [[ "$SYNC_FRONTEND" == 1 ]]; then
     info "同步前端 → ${dest}"
     rsync "${RSYNC_OPTS[@]}" \
       --exclude 'node_modules/' --exclude 'dist/' \
-      "$ROOT/platform-frontend/" "${dest}platform-frontend/"
-    rsync -avz "$ROOT/platform-frontend/nginx.conf" "${dest}platform-frontend/nginx.conf"
+      "$ROOT/frontend/" "${dest}frontend/"
+    rsync -avz "$ROOT/frontend/nginx.conf" "${dest}frontend/nginx.conf"
     rsync -avz "$ROOT/compose.server.yaml" "${dest}compose.server.yaml"
   fi
 }
@@ -209,7 +209,7 @@ fi
 
 if [[ "${fe_flag}" == 1 ]]; then
   echo "[sync] 构建前端静态资源（挂载 dist，不重建 zhitan-frontend 镜像）…"
-  cd platform-frontend
+  cd frontend
   node_image="\${NODE_IMAGE:-node:22-alpine}"
   npm_registry="\${NPM_REGISTRY:-https://registry.npmmirror.com}"
   lock_stamp=".node_modules-lock.sha256"
@@ -261,7 +261,7 @@ main() {
   parse_args "$@"
   load_target
   [[ -n "${DEPLOY_HOST}" && -n "${DEPLOY_PATH}" ]] || {
-    error "请配置 DEPLOY_HOST / DEPLOY_PATH（platform/deploy.target）"
+    error "请配置 DEPLOY_HOST / DEPLOY_PATH（backend/deploy.target）"
     exit 1
   }
   info "目标: ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"

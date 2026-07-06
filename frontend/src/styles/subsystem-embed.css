@@ -1,0 +1,26 @@
+/* 内嵌子系统（知识问答 / 知识图谱 / 外链）共用容器 */
+.subsystem-embed-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+  border-radius: var(--platform-radius, 12px);
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+  overflow: hidden;
+}
+
+.subsystem-embed-frame {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 384px;
+  border: none;
+  background: #fff;
+}
+
+.subsystem-embed-frame--loading {
+  opacity: 0.72;
+  transition: opacity 0.2s ease;
+}

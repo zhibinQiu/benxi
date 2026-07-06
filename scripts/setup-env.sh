@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 生成本地开发用 platform/.env（remote-dev / 本机 PostgreSQL）
+# 生成本地开发用 backend/.env（remote-dev / 本机 PostgreSQL）
 #
 # 用法:
 #   bash scripts/setup-env.sh remote-dev
@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/envfile.sh
 source "$SCRIPT_DIR/lib/envfile.sh"
 
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 REMOTE_HOST="${REMOTE_HOST:-172.19.134.45}"
 
 REMOTE_DEV_KEYS=(
@@ -101,7 +101,7 @@ usage() {
   cat <<EOF
 用法: bash scripts/setup-env.sh <子命令>
 
-  remote-dev   生成本机 + 远程依赖 platform/.env（REMOTE_DEPS=1）
+  remote-dev   生成本机 + 远程依赖 backend/.env（REMOTE_DEPS=1）
   local-db     DATABASE_URL 指向本机 Docker postgres
 
 示例:

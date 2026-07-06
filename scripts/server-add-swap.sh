@@ -13,9 +13,9 @@ DEPLOY_HOST="${DEPLOY_HOST:-172.19.134.45}"
 SWAP_SIZE_GB="${SWAP_SIZE_GB:-8}"
 SWAP_FILE="${SWAP_FILE:-/swapfile}"
 
-if [[ -f "$ROOT/platform/deploy.target" ]]; then
+if [[ -f "$ROOT/backend/deploy.target" ]]; then
   # shellcheck disable=SC1091
-  source "$ROOT/platform/deploy.target"
+  source "$ROOT/backend/deploy.target"
 fi
 
 GREEN='\033[0;32m'

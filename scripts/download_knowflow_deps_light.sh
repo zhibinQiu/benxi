@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KF="$ROOT/platform/third_party/KnowFlow"
+KF="$ROOT/backend/third_party/KnowFlow"
 
 [[ -d "$KF" ]] || { echo "请先运行: ./dev.sh knowflow setup"; exit 1; }
 

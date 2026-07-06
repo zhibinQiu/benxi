@@ -1,0 +1,221 @@
+/** 平台原生对话流式 API（AI 智能体 / 智能问数 / 双碳问答 / 报告生成） */
+import { getApiBase, getToken, rejectHttpFailure } from "./http.js";
+
+export function createPlatformChatStream(path, { sanitizeErrorMessage = null } = {}) {
+  return async function platformChatStream(
+    { message, history = [], conversationId = null, attachmentSessionId = null, ...extraBody },
+    {
+      onDelta,
+      onReplace,
+      onWorkflow,
+      onCitations,
+      onAttachments,
+      onDone,
+      onFollowUpQuestions,
+      onConversationId,
+      onError,
+      signal,
+    } = {}
+  ) {
+    const headers = { "Content-Type": "application/json" };
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const body = { message, history, ...extraBody };
+    if (conversationId) body.conversation_id = conversationId;
+    if (attachmentSessionId) body.attachment_session_id = attachmentSessionId;
+
+    const res = await fetch(`${getApiBase()}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      rejectHttpFailure(res, json);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("浏览器不支持流式响应");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let hasContent = false;
+    let streamFinished = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+      for (const block of parts) {
+        const line = block
+          .split("\n")
+          .map((l) => l.trim())
+          .find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        let payload;
+        try {
+          payload = JSON.parse(line.slice(5).trim());
+        } catch {
+          continue;
+        }
+        if (payload.error) {
+          const errText = sanitizeErrorMessage
+            ? sanitizeErrorMessage(payload.error)
+            : payload.error;
+          // 正文已输出后的上游错误（常见于引用检索节点）不应覆盖成功回答
+          if (hasContent && !sanitizeErrorMessage) {
+            console.warn("[chat-stream] ignored post-answer error:", payload.error);
+            continue;
+          }
+          onError?.(new Error(errText));
+          return;
+        }
+        if (payload.workflow) onWorkflow?.(payload.workflow);
+        if (payload.replace != null) {
+          hasContent = Boolean(String(payload.replace).trim());
+          onReplace?.(payload.replace);
+        }
+        if (payload.citations) onCitations?.(payload.citations);
+        if (payload.attachments) {
+          if (Array.isArray(payload.attachments) && payload.attachments.length) {
+            hasContent = true;
+          }
+          onAttachments?.(payload.attachments);
+        }
+        if (payload.delta) {
+          hasContent = true;
+          onDelta?.(payload.delta);
+        }
+        if (payload.follow_up_questions) {
+          onFollowUpQuestions?.(payload.follow_up_questions);
+        }
+        if (payload.conversation_id && !payload.done) {
+          onConversationId?.(payload.conversation_id);
+        }
+        if (payload.done) {
+          streamFinished = true;
+          if (Array.isArray(payload.attachments) && payload.attachments.length) {
+            onAttachments?.(payload.attachments);
+            hasContent = true;
+          }
+          if ((payload.reply || "").trim()) hasContent = true;
+          onDone?.(payload);
+          continue;
+        }
+      }
+    }
+    if (!streamFinished) onDone?.({});
+  };
+}
+
+export const aiHomeChatStream = createPlatformChatStream("/api/v1/ai-chat/chat/stream");
+
+/**
+ * 创建 resume checkpoint 流式连接。
+ * 从 checkpoint 恢复 Agent 执行，返回一个 SSE 流读取器（与 createPlatformChatStream 兼容）。
+ */
+export function resumeCheckpointStream(checkpointId, { accepted = null, choice = null, signal } = {}) {
+  return async function resumeStream(
+    { onDelta, onReplace, onWorkflow, onCitations, onAttachments, onDone, onFollowUpQuestions, onConversationId, onError } = {}
+  ) {
+    const headers = { "Content-Type": "application/json" };
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const body = {};
+    if (accepted !== null) body.accepted = accepted;
+    if (choice !== null) body.choice = choice;
+
+    const res = await fetch(
+      `${getApiBase()}/api/v1/ai-chat/checkpoints/${encodeURIComponent(checkpointId)}/resume`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      }
+    );
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      rejectHttpFailure(res, json);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("浏览器不支持流式响应");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let streamFinished = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+      for (const block of parts) {
+        const line = block
+          .split("\n")
+          .map((l) => l.trim())
+          .find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        let payload;
+        try {
+          payload = JSON.parse(line.slice(5).trim());
+        } catch {
+          continue;
+        }
+        if (payload.error) {
+          onError?.(new Error(payload.error));
+          return;
+        }
+        if (payload.workflow) onWorkflow?.(payload.workflow);
+        if (payload.replace != null) onReplace?.(payload.replace);
+        if (payload.citations) onCitations?.(payload.citations);
+        if (payload.attachments) onAttachments?.(payload.attachments);
+        if (payload.delta) onDelta?.(payload.delta);
+        if (payload.follow_up_questions) onFollowUpQuestions?.(payload.follow_up_questions);
+        if (payload.conversation_id && !payload.done) {
+          onConversationId?.(payload.conversation_id);
+        }
+        if (payload.done) {
+          streamFinished = true;
+          onDone?.(payload);
+          continue;
+        }
+      }
+    }
+    if (!streamFinished) onDone?.({});
+  };
+}
+
+/**
+ * 获取用户的待处理 checkpoint 列表。
+ */
+export async function fetchPendingCheckpoints() {
+  const headers = { "Content-Type": "application/json" };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${getApiBase()}/api/v1/ai-chat/checkpoints/pending`, { headers });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    rejectHttpFailure(res, json);
+  }
+  const json = await res.json();
+  return json?.data || [];
+}
+
+export const smartDataQueryChatStream = createPlatformChatStream(
+  "/api/v1/smart-data-query/chat/stream"
+);
+
+export const carbonQaChatStream = createPlatformChatStream(
+  "/api/v1/carbon-qa/chat/stream"
+);

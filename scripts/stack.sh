@@ -39,7 +39,7 @@ COMPOSE_SERVER=0
 
 load_env() {
   if [[ ! -f .env ]]; then
-    if [[ -f platform/.env ]]; then
+    if [[ -f backend/.env ]]; then
       bash "$ROOT/scripts/setup-stack-env.sh"
     else
       warn "未找到 .env，执行: cp .env.stack.example .env"
@@ -172,7 +172,7 @@ cmd_build_runtime() {
   tag="$(registry_image zhitan-api-runtime)"
   info "构建 Python 运行时镜像（无业务代码）→ ${local_tag}"
   docker build \
-    -f platform/Dockerfile \
+    -f backend/Dockerfile \
     --target runtime \
     --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE:-python:3.11-slim}" \
     --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
@@ -225,7 +225,7 @@ cmd_push_registry() {
   docker buildx use zhitan-builder
   docker buildx build \
     --platform "${platforms}" \
-    -f platform/Dockerfile \
+    -f backend/Dockerfile \
     --target runtime \
     --build-arg "PYTHON_IMAGE=${PYTHON_IMAGE:-python:3.11-slim}" \
     --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
@@ -311,7 +311,7 @@ cmd_server_up() {
   export SERVER_MOUNT_CODE=1
   load_env
   default_profiles
-  info "服务器模式：runtime 镜像 + 挂载 platform/app"
+  info "服务器模式：runtime 镜像 + 挂载 backend/app"
   compose_cmd up -d --no-build "$@"
   browser_ensure_ready || true
   local port="${FRONTEND_PORT:-40005}"
@@ -320,7 +320,7 @@ cmd_server_up() {
 ${GREEN}=== 服务器挂载模式已启动 ===${NC}
   Web:  http://127.0.0.1:${port}/ai/
   API:  http://127.0.0.1:${STACK_DEV_API_PORT:-18000}
-  改 platform/app 后执行: ./dev.sh sync（默认重启 API / Worker）
+  改 backend/app 后执行: ./dev.sh sync（默认重启 API / Worker）
 
 EOF
 }
@@ -346,7 +346,7 @@ cmd_dev_up() {
 ${GREEN}=== ${app_name} 开发栈已启动 ===${NC}
   Web:     http://127.0.0.1:${port}/ai/
   API:     http://127.0.0.1:${STACK_DEV_API_PORT:-18000}（开发模式浏览器直连）
-  热更新:  改 platform/app、platform-frontend → 自动生效
+  热更新:  改 backend/app、frontend → 自动生效
   Worker:  改 workers 后执行: docker compose -p ${COMPOSE_PROJECT_NAME:-zhitan} restart worker
   生产式:  bash scripts/stack.sh up（需先 build）
 
@@ -451,7 +451,7 @@ usage() {
   build-browser         构建含 Playwright 的 runtime 并重启 api/worker（服务器 RPA）
   push-registry         buildx 推送 runtime 镜像到 REGISTRY_IMAGE_PREFIX（amd64+arm64）
   pull-registry         从 REGISTRY_IMAGE_PREFIX 拉 runtime 镜像
-  server-up             服务器模式：runtime 镜像 + 挂载 platform/app
+  server-up             服务器模式：runtime 镜像 + 挂载 backend/app
   up [-d]               启动栈
   dev-up                开发模式（挂载源码）
   down                  停止
@@ -462,7 +462,7 @@ usage() {
   restore <目录>        从 backup 目录恢复
   ps                    查看状态
   logs [服务名]         查看日志
-  init-env              生成 .env（合并 platform/.env）
+  init-env              生成 .env（合并 backend/.env）
 
 环境变量:
   REGISTRY_IMAGE_PREFIX  阿里云 ACR 前缀，如 registry.cn-hangzhou.aliyuncs.com/ns/

@@ -28,9 +28,9 @@ DEPLOY_USER="${DEPLOY_USER:-root}"
 DEPLOY_HOST="${DEPLOY_HOST:-172.19.134.45}"
 DEPLOY_PATH="${DEPLOY_PATH:-/root/qzb/lvye}"
 
-if [[ -f "$ROOT/platform/deploy.target" ]]; then
+if [[ -f "$ROOT/backend/deploy.target" ]]; then
   # shellcheck disable=SC1091
-  source "$ROOT/platform/deploy.target"
+  source "$ROOT/backend/deploy.target"
 fi
 
 DEPS_SERVICES=(
@@ -61,7 +61,7 @@ cmd_rebuild_amd64() {
   info "服务器 amd64 重建 pdf2zh / speech（复用 zhitanAI 源码与模型）"
   cmd_sync
   rsync -avz --exclude '.venv' --exclude '__pycache__' \
-    "$ROOT/platform/speech-service/" \
+    "$ROOT/backend/speech-service/" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/build/speech-service/"
   remote_shell <<REMOTE
 set -euo pipefail
@@ -101,7 +101,7 @@ cmd_build_images() {
   info "同步构建上下文 → ${DEPLOY_HOST}:${DEPLOY_PATH}/build"
   ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p '${DEPLOY_PATH}/build/speech-service' '${DEPLOY_PATH}/build/pdf2zh'"
   rsync -avz --exclude '.venv' --exclude '__pycache__' \
-    "$ROOT/platform/speech-service/" \
+    "$ROOT/backend/speech-service/" \
     "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/build/speech-service/"
   rsync -avz \
     "$ROOT/Dockerfile" "$ROOT/pyproject.toml" "$ROOT/uv.lock" \

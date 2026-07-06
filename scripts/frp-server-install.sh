@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 ENV_FILE="$PLATFORM/.env"
 FRP_TARGET="$PLATFORM/frp.target"
 FRP_VERSION="${FRP_VERSION:-0.69.1}"

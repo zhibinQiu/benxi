@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLATFORM="$ROOT/platform"
+PLATFORM="$ROOT/backend"
 RUN_DIR="$ROOT/.run"
 LOG_DIR="$RUN_DIR/logs"
 BIN_DIR="$RUN_DIR/frp"
@@ -126,7 +126,7 @@ start_frpc() {
     return 0
   fi
   [[ -n "$FRP_SERVER_ADDR" ]] || {
-    echo "未配置 FRP_SERVER_ADDR，请 cp platform/frp.target.example platform/frp.target" >&2
+    echo "未配置 FRP_SERVER_ADDR，请 cp backend/frp.target.example backend/frp.target" >&2
     return 1
   }
 
@@ -196,7 +196,7 @@ stop_frpc() {
 status_frpc() {
   load_config
   if [[ "$FRP_ENABLED" != "1" ]]; then
-    echo "—   frpc（未启用，配置 platform/frp.target 或 DEV_FRP=1）"
+    echo "—   frpc（未启用，配置 backend/frp.target 或 DEV_FRP=1）"
     return 0
   fi
   if frpc_running; then

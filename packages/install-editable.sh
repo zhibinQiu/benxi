@@ -14,13 +14,16 @@ PLATFORM_DIR="${PLATFORM_DIR:-${ROOT}/platform}"
 PY="${PYTHON:-python3.11}"
 
 AGENTKIT_PKGS=(
-  agentkit-skills
-  agentkit-mcp
   agentkit-aip
-  agentkit-route
+  agentkit-interrupt
   agentkit-loop
-  agentkit-subagent
+  agentkit-mcp
+  agentkit-message
   agentkit-orchestrate
+  agentkit-route
+  agentkit-skills
+  agentkit-subagent
+  agentkit-tools
 )
 
 for pkg in "${AGENTKIT_PKGS[@]}"; do

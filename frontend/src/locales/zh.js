@@ -712,7 +712,7 @@ export default {
     },
     showcaseTestimonials: {
       label: "用户反馈",
-      title: "用户的真实声音",
+      title: "企业的真实声音",
       subtitle: "来自企业团队的反馈",
       items: [
         {

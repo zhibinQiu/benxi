@@ -348,7 +348,7 @@ html[data-theme="dark"] .login-feature-scroll__body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 140px;
+  gap: 160px;
   margin-top: 9px;
 }
 
@@ -379,7 +379,7 @@ html[data-theme="dark"] .login-feature-scroll__body {
 
 .login-feature-scroll__image-backplate {
   position: relative;
-  padding: 16px;
+  padding: 16px 16px 0;
   border-radius: 20px;
   background: #f5f5f7;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);

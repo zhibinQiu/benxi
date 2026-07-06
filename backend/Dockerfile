@@ -68,7 +68,9 @@ RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 RUN python -c "\
-import agentkit_skills, agentkit_orchestrate, fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml; \
+import agentkit_aip, agentkit_interrupt, agentkit_loop, agentkit_mcp, agentkit_message, \
+       agentkit_orchestrate, agentkit_route, agentkit_skills, agentkit_subagent, agentkit_tools, \
+       fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml; \
 print('deps ok', fastapi.__version__)\
 "
 

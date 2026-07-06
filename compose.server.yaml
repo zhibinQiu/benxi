@@ -33,6 +33,7 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./backend/workers:/app/workers:ro
+      - ./packages:/packages
       - ./examples/agent-skills:/app/examples/agent-skills:ro
       - ./RELEASE.md:/app/RELEASE.md:ro
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
@@ -63,6 +64,7 @@ services:
     volumes:
       - ./backend/app:/app/app:ro
       - ./backend/workers:/app/workers:ro
+      - ./packages:/packages:ro
       - ${DATA_ROOT:-./data}/pageindex:/app/.run/pageindex
     command: celery -A workers.celery_app worker --loglevel=info --concurrency=12
     environment:

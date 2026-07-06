@@ -719,7 +719,7 @@ export default {
     },
     showcaseTestimonials: {
       label: "Testimonials",
-      title: "What users are saying",
+      title: "What enterprises are saying",
       subtitle: "Feedback from enterprise teams",
       items: [
         {

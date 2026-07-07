@@ -8,9 +8,38 @@
 
 **本析平台**是一个全栈开源的企业级 AI 知识管理平台，将 PDF 翻译、知识库构建、智能检索、报告生成等能力整合为统一闭环。
 
+- **在线体验**: [http://36.151.146.71:40005/ai/](http://36.151.146.71:40005/ai/)
 - **GitHub**: [https://github.com/zhibinQiu/benxi](https://github.com/zhibinQiu/benxi)
 - **AgentKit**: [https://github.com/zhibinQiu/Agentkit](https://github.com/zhibinQiu/Agentkit)
+- **文档站点**: [https://zhibinQiu.github.io/benxi/](https://zhibinQiu.github.io/benxi/)
 - **版本**: v4.6.0（见根目录 `VERSION`）
+
+---
+
+## 👀 界面预览
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="frontend/public/images/本析智能首页.png" alt="智能首页" width="360" /></td>
+      <td align="center"><img src="frontend/public/images/功能列表.png" alt="功能列表" width="360" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>智能首页</strong> — 平台入口与概览</td>
+      <td align="center"><strong>功能列表</strong> — 全功能导航</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="frontend/public/images/知识检索.png" alt="知识检索" width="360" /></td>
+      <td align="center"><img src="frontend/public/images/本体图谱.png" alt="本体图谱" width="360" /></td>
+    </tr>
+    <tr>
+      <td align="center"><strong>知识检索</strong> — 语义检索与智能问答</td>
+      <td align="center"><strong>本体图谱</strong> — 领域知识图谱</td>
+    </tr>
+  </table>
+</div>
+
+> 更多截图与演示请访问 [在线体验](http://36.151.146.71:40005/ai/)
 
 ---
 
@@ -38,10 +67,6 @@ pdf_trans/
 │   ├── agentkit/        # AgentKit 元包 — 多智能体框架
 │   ├── agentkit-*/      # 子包（aip / loop / mcp / message / tools …）
 │   └── ai-bridge/       # AI 网页操控桥接（Node.js）
-├── pdf2zh_next/         # PDF 翻译核心
-├── docs/                # 文档
-├── scripts/             # 开发/运维脚本
-├── deploy/              # 部署配置
 ├── compose.yaml         # Docker Compose
 └── VERSION              # 版本号
 ```
@@ -72,14 +97,6 @@ cp backend/.env.example backend/.env    # 按需编辑
 
 停止：`./scripts/dev.sh stop`
 
-### 远程依赖开发
-
-```bash
-REMOTE_HOST=你的服务器IP ./scripts/dev.sh remote-dev
-bash scripts/verify-remote-deps.sh
-./scripts/dev.sh local
-```
-
 ---
 
 ## 🔧 AgentKit — 多智能体框架
@@ -107,7 +124,6 @@ pip install -e packages/agentkit-mcp
 | [AgentKit 开发者指南](https://github.com/zhibinQiu/Agentkit) | AgentKit 开发文档 |
 | [API 参考](https://github.com/zhibinQiu/benxi/tree/main/backend) | 后端 API 说明 |
 | [运维部署指南](https://zhibinQiu.github.io/benxi/operations/README/) | 部署、配置、升级 |
-| [脚本说明](https://github.com/zhibinQiu/benxi/tree/main/scripts) | dev / stack / deploy |
 
 ---
 

@@ -1,0 +1,3210 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="PDF 科学文献翻译与企业 AI 知识库平台（中文文档）">
+      
+      
+      
+      
+        <link rel="prev" href="../development/rest-api.html">
+      
+      
+        <link rel="next" href="Language-Codes.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../icon/yezi.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>进阶选项 - 企业 AI 知识库平台</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#_1" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../index.html" title="企业 AI 知识库平台" class="md-header__button md-logo" aria-label="企业 AI 知识库平台" data-md-component="logo">
+      
+  <img src="../../../icon/yezi.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            企业 AI 知识库平台
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              进阶选项
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="pink" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/zhibinQiu/benxi" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="企业 AI 知识库平台" class="md-nav__button md-logo" aria-label="企业 AI 知识库平台" data-md-component="logo">
+      
+  <img src="../../../icon/yezi.svg" alt="logo">
+
+    </a>
+    企业 AI 知识库平台
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/zhibinQiu/benxi" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    主页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    运维与部署
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    运维与部署
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    手册索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/components-and-storage.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    组件与数据存储
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/knowledge-data-consistency.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    知识库数据一致性
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/config-and-scripts.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置与脚本
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    系统架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/docker-services.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker 容器
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/network-topology.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    网络拓扑
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/deployment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    部署指南
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/server-deps.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    远程依赖开发
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/single-server-migration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    单机迁移与热重载
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/feature-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能实现说明
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置说明
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/database-migration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据库迁移
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/permissions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    权限与账户
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    测试
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/upgrade.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    升级
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/security.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安全
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/operations-manual.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    日常操作
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    开发实现说明书
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    开发实现说明书
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/implementation-manual.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    说明书总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第一篇 总览与架构
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第一篇 总览与架构
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/system-architecture-overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    项目总体架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/platform-architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    平台架构索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/layered-architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    分层与代码组织
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第二篇 环境与部署
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第二篇 环境与部署
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    快速开始
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/stack-deployment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stack 命令速查
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第三篇 后端实现
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第三篇 后端实现
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/api-conventions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API 与约定
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/backend-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    应用服务与域
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/permission-model.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    权限模型与文档分级
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/documents-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    文档库实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/knowledge-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    知识服务实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/report-generation-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    报告生成实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/agent-skills-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Skills 实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/browser-rpa-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    浏览器 RPA 实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/async-and-jobs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    异步任务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第四篇 前端实现
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第四篇 前端实现
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/frontend-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    前端结构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第五篇 业务能力
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第五篇 业务能力
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/feature-plugins.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能插件
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/doc-compare-product-design.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    文档对比
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/speech-models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    语音转写
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第六篇 PDF 翻译
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第六篇 PDF 翻译
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/rest-api.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    进阶选项
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="advanced.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    进阶选项
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        命令行参数
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="命令行参数">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        参数
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GUI 参数
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        限流配置指南
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="限流配置指南">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rpm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RPM（每分钟请求数）速率限制
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        并发连接限制
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        最佳实践
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        部分翻译
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        指定源语言和目标语言
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        使用例外进行翻译
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        自定义提示词
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        自定义配置
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        跳过清理
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        翻译缓存
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        部署为公共服务
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        认证与欢迎页面
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        术语表支持
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Language-Codes.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    语言代码
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="Documentation-of-Translation-Services.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    翻译服务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="TranslationServices/Aliyun.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    阿里云翻译
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="TranslationServices/SiliconFlow.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SiliconFlow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    附录
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    附录
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../supported_languages.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    支持语言
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    常见问题
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        命令行参数
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="命令行参数">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        参数
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GUI 参数
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        限流配置指南
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="限流配置指南">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rpm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RPM（每分钟请求数）速率限制
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        并发连接限制
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        最佳实践
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        部分翻译
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        指定源语言和目标语言
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        使用例外进行翻译
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        自定义提示词
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        自定义配置
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        跳过清理
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        翻译缓存
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        部署为公共服务
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        认证与欢迎页面
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        术语表支持
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+  <h1>进阶选项</h1>
+
+<p><a href="../getting-started.html"><strong>快速开始</strong></a> · <strong>高级选项</strong></p>
+<hr />
+<h3 id="目录">目录</h3>
+
+<ul>
+<li><a href="#命令行参数">命令行参数</a></li>
+<li><a href="#限流配置指南">限流配置指南</a></li>
+<li><a href="#部分翻译">部分翻译</a></li>
+<li><a href="#指定源语言和目标语言">指定源语言和目标语言</a></li>
+<li><a href="#使用例外进行翻译">使用例外进行翻译</a></li>
+<li><a href="#自定义提示词">自定义提示词</a></li>
+<li><a href="#自定义配置">自定义配置</a></li>
+<li><a href="#跳过清理">跳过清理</a></li>
+<li><a href="#翻译缓存">翻译缓存</a></li>
+<li><a href="#部署为公共服务">部署为公共服务</a></li>
+<li><a href="#认证与欢迎页面">认证与欢迎页面</a></li>
+<li><a href="#术语表支持">术语表支持</a></li>
+</ul>
+<hr />
+<h4 id="_1">命令行参数</h4>
+<p>在命令行中执行翻译命令，在当前工作目录下生成翻译文档 <code>example-mono.pdf</code> 和双语文档 <code>example-dual.pdf</code>。默认使用 Google 作为翻译服务。更多支持的翻译服务可以在 <a href="https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/blob/main/docs/ADVANCED.md#services">这里</a> 找到。</p>
+<p><img src="./../../images/cmd_light.svg" width="580px"  alt="cmd"/></p>
+<p>在下面的表格中，我们列出了所有高级选项以供参考：</p>
+<h5 id="_2">参数</h5>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>功能</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>input-files</code></td>
+<td>要处理的输入 PDF 文件</td>
+<td><code>pdf2zh_next example.pdf</code></td>
+</tr>
+<tr>
+<td><code>--output</code></td>
+<td>输出文件的目录</td>
+<td><code>pdf2zh_next example.pdf --output /outputpath</code></td>
+</tr>
+<tr>
+<td><code>--&lt;Services&gt;</code></td>
+<td>使用 <a href="./翻译服务文档.md"><strong>特定服务</strong></a> 进行翻译</td>
+<td><code>pdf2zh_next example.pdf --openai</code><br><code>pdf2zh_next example.pdf --deepseek</code></td>
+</tr>
+<tr>
+<td><code>--help</code>, <code>-h</code></td>
+<td>显示帮助信息并退出</td>
+<td><code>pdf2zh_next -h</code></td>
+</tr>
+<tr>
+<td><code>--config-file</code></td>
+<td>配置文件路径</td>
+<td><code>pdf2zh_next --config-file /path/to/config/config.toml</code></td>
+</tr>
+<tr>
+<td><code>--report-interval</code></td>
+<td>进度报告间隔（秒）</td>
+<td><code>pdf2zh_next example.pdf --report-interval 5</code></td>
+</tr>
+<tr>
+<td><code>--debug</code></td>
+<td>使用调试日志级别</td>
+<td><code>pdf2zh_next example.pdf --debug</code></td>
+</tr>
+<tr>
+<td><code>--gui</code></td>
+<td>与 GUI 交互</td>
+<td><code>pdf2zh_next --gui</code></td>
+</tr>
+<tr>
+<td><code>--warmup</code></td>
+<td>仅下载并验证所需资源后退出</td>
+<td><code>pdf2zh_next example.pdf --warmup</code></td>
+</tr>
+<tr>
+<td><code>--generate-offline-assets</code></td>
+<td>在指定目录中生成离线资源包</td>
+<td><code>pdf2zh_next example.pdf --generate-offline-assets /path</code></td>
+</tr>
+<tr>
+<td><code>--restore-offline-assets</code></td>
+<td>从指定目录恢复离线资源包</td>
+<td><code>pdf2zh_next example.pdf --restore-offline-assets /path</code></td>
+</tr>
+<tr>
+<td><code>--version</code></td>
+<td>显示版本号后退出</td>
+<td><code>pdf2zh_next --version</code></td>
+</tr>
+<tr>
+<td><code>--pages</code></td>
+<td>部分文档翻译</td>
+<td><code>pdf2zh_next example.pdf --pages 1,2,1-,-3,3-5</code></td>
+</tr>
+<tr>
+<td><code>--lang-in</code></td>
+<td>源语言代码</td>
+<td><code>pdf2zh_next example.pdf --lang-in en</code></td>
+</tr>
+<tr>
+<td><code>--lang-out</code></td>
+<td>目标语言代码</td>
+<td><code>pdf2zh_next example.pdf --lang-out zh-CN</code></td>
+</tr>
+<tr>
+<td><code>--min-text-length</code></td>
+<td>最小翻译文本长度</td>
+<td><code>pdf2zh_next example.pdf --min-text-length 5</code></td>
+</tr>
+<tr>
+<td><code>--rpc-doclayout</code></td>
+<td>用于文档布局分析的 RPC 服务主机地址</td>
+<td><code>pdf2zh_next example.pdf --rpc-doclayout http://127.0.0.1:8000</code></td>
+</tr>
+<tr>
+<td><code>--qps</code></td>
+<td>翻译服务的 QPS 限制</td>
+<td><code>pdf2zh_next example.pdf --qps 200</code></td>
+</tr>
+<tr>
+<td><code>--ignore-cache</code></td>
+<td>忽略翻译缓存</td>
+<td><code>pdf2zh_next example.pdf --ignore-cache</code></td>
+</tr>
+<tr>
+<td><code>--custom-system-prompt</code></td>
+<td>用于翻译的自定义系统提示词。适用于 Qwen 3 中的 <code>/no_think</code></td>
+<td><code>pdf2zh_next example.pdf --custom-system-prompt "/no_think You are a professional, authentic machine translation engine"</code></td>
+</tr>
+<tr>
+<td><code>--glossaries</code></td>
+<td>术语表文件列表。</td>
+<td><code>pdf2zh_next example.pdf --glossaries "glossary1.csv,glossary2.csv,glossary3.csv"</code></td>
+</tr>
+<tr>
+<td><code>--save-auto-extracted-glossary</code></td>
+<td>保存自动提取的术语表</td>
+<td><code>pdf2zh_next example.pdf --save-auto-extracted-glossary</code></td>
+</tr>
+<tr>
+<td><code>--pool-max-workers</code></td>
+<td>翻译池的最大工作线程数。如果未设置，将使用 qps 作为工作线程数</td>
+<td><code>pdf2zh_next example.pdf --pool-max-workers 100</code></td>
+</tr>
+<tr>
+<td><code>--term-qps</code></td>
+<td>术语提取翻译服务的 QPS 限制。如果未设置，将遵循 qps。</td>
+<td><code>pdf2zh_next example.pdf --term-qps 20</code></td>
+</tr>
+<tr>
+<td><code>--term-pool-max-workers</code></td>
+<td>术语提取翻译池的最大工作线程数。如果未设置或为 0，将遵循 pool_max_workers。</td>
+<td><code>pdf2zh_next example.pdf --term-pool-max-workers 40</code></td>
+</tr>
+<tr>
+<td><code>--no-auto-extract-glossary</code></td>
+<td>禁用自动提取术语表</td>
+<td><code>pdf2zh_next example.pdf --no-auto-extract-glossary</code></td>
+</tr>
+<tr>
+<td><code>--primary-font-family</code></td>
+<td>覆盖翻译文本的主要字体族。选项：'serif' 表示衬线字体，'sans-serif' 表示无衬线字体，'script' 表示手写体/斜体字体。如果未指定，则根据原始文本属性使用自动字体选择。</td>
+<td><code>pdf2zh_next example.pdf --primary-font-family serif</code></td>
+</tr>
+<tr>
+<td><code>--no-dual</code></td>
+<td>不输出双语 PDF 文件</td>
+<td><code>pdf2zh_next example.pdf --no-dual</code></td>
+</tr>
+<tr>
+<td><code>--no-mono</code></td>
+<td>不输出单语种 PDF 文件</td>
+<td><code>pdf2zh_next example.pdf --no-mono</code></td>
+</tr>
+<tr>
+<td><code>--formular-font-pattern</code></td>
+<td>用于识别公式文本的字体模式</td>
+<td><code>pdf2zh_next example.pdf --formular-font-pattern "(MS.*)"</code></td>
+</tr>
+<tr>
+<td><code>--formular-char-pattern</code></td>
+<td>用于识别公式文本的字符模式</td>
+<td><code>pdf2zh_next example.pdf --formular-char-pattern "(MS.*)"</code></td>
+</tr>
+<tr>
+<td><code>--split-short-lines</code></td>
+<td>强制将短行拆分为不同段落</td>
+<td><code>pdf2zh_next example.pdf --split-short-lines</code></td>
+</tr>
+<tr>
+<td><code>--short-line-split-factor</code></td>
+<td>短行分割阈值因子</td>
+<td><code>pdf2zh_next example.pdf --short-line-split-factor 1.2</code></td>
+</tr>
+<tr>
+<td><code>--skip-clean</code></td>
+<td>跳过 PDF 清理步骤</td>
+<td><code>pdf2zh_next example.pdf --skip-clean</code></td>
+</tr>
+<tr>
+<td><code>--dual-translate-first</code></td>
+<td>在双 PDF 模式下将翻译后的页面放在前面</td>
+<td><code>pdf2zh_next example.pdf --dual-translate-first</code></td>
+</tr>
+<tr>
+<td><code>--disable-rich-text-translate</code></td>
+<td>禁用富文本翻译</td>
+<td><code>pdf2zh_next example.pdf --disable-rich-text-translate</code></td>
+</tr>
+<tr>
+<td><code>--enhance-compatibility</code></td>
+<td>启用所有兼容性增强选项</td>
+<td><code>pdf2zh_next example.pdf --enhance-compatibility</code></td>
+</tr>
+<tr>
+<td><code>--use-alternating-pages-dual</code></td>
+<td>使用交替页面模式处理双语 PDF</td>
+<td><code>pdf2zh_next example.pdf --use-alternating-pages-dual</code></td>
+</tr>
+<tr>
+<td><code>--watermark-output-mode</code></td>
+<td>PDF 文件的水印输出模式</td>
+<td><code>pdf2zh_next example.pdf --watermark-output-mode no_watermark</code></td>
+</tr>
+<tr>
+<td><code>--max-pages-per-part</code></td>
+<td>拆分翻译时每部分的最大页数</td>
+<td><code>pdf2zh_next example.pdf --max-pages-per-part 50</code></td>
+</tr>
+<tr>
+<td><code>--translate-table-text</code></td>
+<td>翻译表格文本（实验性功能）</td>
+<td><code>pdf2zh_next example.pdf --translate-table-text</code></td>
+</tr>
+<tr>
+<td><code>--skip-scanned-detection</code></td>
+<td>跳过扫描检测</td>
+<td><code>pdf2zh_next example.pdf --skip-scanned-detection</code></td>
+</tr>
+<tr>
+<td><code>--ocr-workaround</code></td>
+<td>强制将翻译后的文本设为黑色并添加白色背景</td>
+<td><code>pdf2zh_next example.pdf --ocr-workaround</code></td>
+</tr>
+<tr>
+<td><code>--auto-enable-ocr-workaround</code></td>
+<td>启用自动 OCR 变通方案。如果检测到文档为重度扫描件，将尝试启用 OCR 处理并跳过进一步的扫描检测。详见文档说明。（默认值：False）</td>
+<td><code>pdf2zh_next example.pdf --auto-enable-ocr-workaround</code></td>
+</tr>
+<tr>
+<td><code>--only-include-translated-page</code></td>
+<td>仅在输出 PDF 中包含已翻译的页面。仅在使用了 --pages 参数时生效。</td>
+<td><code>pdf2zh_next example.pdf --pages 1-5 --only-include-translated-page</code></td>
+</tr>
+<tr>
+<td><code>--no-merge-alternating-line-numbers</code></td>
+<td>禁用合并带有行号的文档中的交替行号和文本段落</td>
+<td><code>pdf2zh_next example.pdf --no-merge-alternating-line-numbers</code></td>
+</tr>
+<tr>
+<td><code>--no-remove-non-formula-lines</code></td>
+<td>禁用移除段落区域内的非公式行</td>
+<td><code>pdf2zh_next example.pdf --no-remove-non-formula-lines</code></td>
+</tr>
+<tr>
+<td><code>--non-formula-line-iou-threshold</code></td>
+<td>设置识别非公式行的 IoU 阈值 (0.0-1.0)</td>
+<td><code>pdf2zh_next example.pdf --non-formula-line-iou-threshold 0.85</code></td>
+</tr>
+<tr>
+<td><code>--figure-table-protection-threshold</code></td>
+<td>设置图表保护阈值（0.0-1.0）。图表内的行将不会被处理</td>
+<td><code>pdf2zh_next example.pdf --figure-table-protection-threshold 0.95</code></td>
+</tr>
+<tr>
+<td><code>--skip-formula-offset-calculation</code></td>
+<td>在处理过程中跳过公式偏移量计算</td>
+<td><code>pdf2zh_next example.pdf --skip-formula-offset-calculation</code></td>
+</tr>
+</tbody>
+</table>
+<h5 id="gui">GUI 参数</h5>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>功能</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--share</code></td>
+<td>启用共享模式</td>
+<td><code>pdf2zh_next --gui --share</code></td>
+</tr>
+<tr>
+<td><code>--auth-file</code></td>
+<td>认证文件的路径</td>
+<td><code>pdf2zh_next --gui --auth-file /path</code></td>
+</tr>
+<tr>
+<td><code>--welcome-page</code></td>
+<td>欢迎页面的 HTML 文件路径</td>
+<td><code>pdf2zh_next --gui --welcome-page /path</code></td>
+</tr>
+<tr>
+<td><code>--enabled-services</code></td>
+<td>启用的翻译服务</td>
+<td><code>pdf2zh_next --gui --enabled-services "Bing,OpenAI"</code></td>
+</tr>
+<tr>
+<td><code>--disable-gui-sensitive-input</code></td>
+<td>禁用 GUI 敏感输入</td>
+<td><code>pdf2zh_next --gui --disable-gui-sensitive-input</code></td>
+</tr>
+<tr>
+<td><code>--disable-config-auto-save</code></td>
+<td>禁用自动配置保存</td>
+<td><code>pdf2zh_next --gui --disable-config-auto-save</code></td>
+</tr>
+<tr>
+<td><code>--server-port</code></td>
+<td>WebUI 端口</td>
+<td><code>pdf2zh_next --gui --server-port 7860</code></td>
+</tr>
+<tr>
+<td><code>--ui-lang</code></td>
+<td>UI 语言</td>
+<td><code>pdf2zh_next --gui --ui-lang zh</code></td>
+</tr>
+</tbody>
+</table>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_3">限流配置指南</h4>
+<p>在使用翻译服务时，适当的限流配置对于避免 API 错误和优化性能至关重要。本指南解释了如何根据不同的上游服务限制来配置 <code>--qps</code> 和 <code>--pool-max-worker</code> 参数。</p>
+<blockquote>
+<p>[!TIP]</p>
+<p>建议 <code>pool_size</code> 不要超过 1000。如果通过以下方法计算出的 <code>pool_size</code> 超过 1000，请使用 1000。</p>
+</blockquote>
+<h5 id="rpm">RPM（每分钟请求数）速率限制</h5>
+<p>当上游服务有 RPM 限制时，使用以下计算方法：</p>
+<p><strong>计算公式：</strong>
+- <code>qps = floor(rpm / 60)</code>
+- <code>pool_size = qps * 10</code></p>
+<blockquote>
+<p>[!NOTE]
+系数 10 是一个经验系数，在大多数场景下通常表现良好。</p>
+</blockquote>
+<p><strong>示例：</strong>
+如果您的翻译服务有 600 RPM 的限制：
+- <code>qps = floor(600 / 60) = 10</code>
+- <code>pool_size = 10 * 10 = 100</code></p>
+<div class="highlight"><pre><span></span><code>pdf2zh<span class="w"> </span>example.pdf<span class="w"> </span>--qps<span class="w"> </span><span class="m">10</span><span class="w"> </span>--pool-max-worker<span class="w"> </span><span class="m">100</span>
+</code></pre></div>
+<h5 id="_4">并发连接限制</h5>
+<p>当上游服务有并发连接限制时（如 GLM 官方服务），使用此方法：</p>
+<p><strong>计算公式：</strong>
+- <code>pool_size = max(floor(0.9 * official_concurrent_limit), official_concurrent_limit - 20)</code>
+- <code>qps = pool_size</code></p>
+<p><strong>示例：</strong>
+如果您的翻译服务允许 50 个并发连接：
+- <code>pool_size = max(floor(0.9 * 50), 50 - 20) = max(45, 30) = 45</code>
+- <code>qps = 45</code></p>
+<div class="highlight"><pre><span></span><code>pdf2zh<span class="w"> </span>example.pdf<span class="w"> </span>--qps<span class="w"> </span><span class="m">45</span><span class="w"> </span>--pool-max-worker<span class="w"> </span><span class="m">45</span>
+</code></pre></div>
+<h5 id="_5">最佳实践</h5>
+<blockquote>
+<p>[!TIP]
+- 始终从保守值开始，如有需要再逐步增加
+- 监控您服务的响应时间和错误率
+- 不同的服务可能需要不同的优化策略
+- 在设置这些参数时，请考虑您的具体使用场景和文档大小</p>
+</blockquote>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_6">部分翻译</h4>
+<p>使用 <code>--pages</code> 参数来翻译文档的一部分。</p>
+<ul>
+<li>如果页码是连续的，你可以这样写：</li>
+</ul>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="m">1</span>-3
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="m">25</span>-
+</code></pre></div>
+<blockquote>
+<p>[!TIP]
+<code>25-</code> 包括第 25 页之后的所有页面。如果您的文档有 100 页，这相当于 <code>25-100</code>。</p>
+<p>类似地，<code>-25</code> 包括第 25 页之前的所有页面，这相当于 <code>1-25</code>。</p>
+</blockquote>
+<ul>
+<li>如果页面不连续，你可以使用逗号 <code>,</code> 来分隔它们。</li>
+</ul>
+<p>例如，如果您想要翻译第一页和第三页，可以使用以下命令：</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="s2">&quot;1,3&quot;</span>
+</code></pre></div>
+<ul>
+<li>如果页面同时包含连续和非连续范围，你也可以用逗号连接它们，像这样：</li>
+</ul>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--pages<span class="w"> </span><span class="s2">&quot;1,3,10-20,25-&quot;</span>
+</code></pre></div>
+<p>此命令将翻译第一页、第三页、第 10 到 20 页，以及从第 25 页开始的所有后续页面。</p>
+<p><a href="#目录">⬆️ 回到顶部</a></p>
+<hr />
+<h4 id="_7">指定源语言和目标语言</h4>
+<p>参见 <a href="https://developers.google.com/admin-sdk/directory/v1/languages">Google Languages Codes</a>、<a href="https://developers.deepl.com/docs/resources/supported-languages">DeepL Languages Codes</a></p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--lang-in<span class="w"> </span>en<span class="w"> </span>-lang-out<span class="w"> </span>ja
+</code></pre></div>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_8">使用例外进行翻译</h4>
+<p>使用正则表达式指定需要保留的公式字体和字符：</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--formular-font-pattern<span class="w"> </span><span class="s2">&quot;(CM[^RT].*|MS.*|.*Ital)&quot;</span><span class="w"> </span>--formular-char-pattern<span class="w"> </span><span class="s2">&quot;(\(|\||\)|\+|=|\d|[\u0080-\ufaff])&quot;</span>
+</code></pre></div>
+<p>默认保留 <code>Latex</code>、<code>Mono</code>、<code>Code</code>、<code>Italic</code>、<code>Symbol</code> 和 <code>Math</code> 字体：</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--formular-font-pattern<span class="w"> </span><span class="s2">&quot;(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|TeX-|rsfs|txsy|wasy|stmary|.*Mono|.*Code|.*Ital|.*Sym|.*Math)&quot;</span>
+</code></pre></div>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_9">自定义提示词</h4>
+<!-- Note: System prompt is currently not supported. See [this change](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/pull/637). -->
+
+<p>自定义翻译系统提示词。主要用于在提示词中添加 Qwen 3 的 '/no_think' 指令。</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--custom-system-prompt<span class="w"> </span><span class="s2">&quot;/no_think You are a professional and reliable machine translation engine responsible for translating the input text into zh_CN.When translating, strictly follow the instructions below to ensure translation quality and preserve all formatting, tags, and placeholders:&quot;</span>
+</code></pre></div>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_10">自定义配置</h4>
+<p>有多种方式可以修改和导入配置文件。</p>
+<blockquote>
+<p>[!NOTE]
+<strong>配置文件层级</strong></p>
+<p>当使用不同方法修改同一参数时，软件将按照以下优先级顺序应用更改。</p>
+<p>较高优先级的修改将覆盖较低优先级的修改。</p>
+<p><strong>cli/gui &gt; env &gt; 用户配置文件 &gt; 默认配置文件</strong></p>
+</blockquote>
+<ul>
+<li>通过 <strong>命令行参数</strong> 修改配置</li>
+</ul>
+<p>对于大多数情况，您可以直接通过命令行参数传递所需的设置。更多信息请参考 <a href="#命令行参数">命令行参数</a>。</p>
+<p>例如，如果您想要启用 GUI 窗口，可以使用以下命令：</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>--gui
+</code></pre></div>
+<ul>
+<li>通过 <strong>环境变量</strong> 修改配置</li>
+</ul>
+<p>您可以将命令行参数中的 <code>--</code> 替换为 <code>PDF2ZH_</code>，使用 <code>=</code> 连接参数，并将 <code>-</code> 替换为 <code>_</code> 作为环境变量。</p>
+<p>例如，如果您想要启用 GUI 窗口，可以使用以下命令：</p>
+<div class="highlight"><pre><span></span><code><span class="nv">PDF2ZH_GUI</span><span class="o">=</span>TRUE<span class="w"> </span>pdf2zh_next
+</code></pre></div>
+<p><img src="./../../images/ev_light.svg" width="580px"  alt="env"/></p>
+<ul>
+<li>用户指定的<strong>配置文件</strong></li>
+</ul>
+<p>您可以使用以下命令行参数指定配置文件：</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>--config-file<span class="w"> </span><span class="s1">&#39;/path/config.toml&#39;</span>
+</code></pre></div>
+<p>如果您不确定配置文件的格式，请参考下面描述的默认配置文件。</p>
+<ul>
+<li><strong>默认配置文件</strong></li>
+</ul>
+<p>默认配置文件位于 <code>~/.config/pdf2zh</code>。<br />
+请勿修改 <code>default</code> 目录中的配置文件。<br />
+强烈建议参考此配置文件的内容，并使用<strong>自定义配置</strong>来实现您自己的配置文件。</p>
+<blockquote>
+<p>[!TIP]
+- 默认情况下，pdf2zh 2.0 每次在 GUI 中点击翻译按钮时，会自动将当前配置保存到 <code>~/.config/pdf2zh/config.v3.toml</code>。此配置文件将在下次启动时默认加载。
+- <code>default</code> 目录中的配置文件由程序自动生成。您可以复制它们进行修改，但请不要直接修改它们。
+- 配置文件中可能包含 "v2"、"v3" 等版本号。这些是<strong>配置文件版本号</strong>，<strong>并非</strong> pdf2zh 本身的版本号。</p>
+</blockquote>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_11">跳过清理</h4>
+<p>当此参数设置为 True 时，将跳过 PDF 清理步骤，这可以提高兼容性并避免一些字体处理问题。</p>
+<p>使用方法：</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--skip-clean
+</code></pre></div>
+<p>或者使用环境变量：</p>
+<div class="highlight"><pre><span></span><code><span class="nv">PDF2ZH_SKIP_CLEAN</span><span class="o">=</span>TRUE<span class="w"> </span>pdf2zh_next<span class="w"> </span>example.pdf
+</code></pre></div>
+<blockquote>
+<p>[!TIP]
+当启用 <code>--enhance-compatibility</code> 时，跳过清理会自动启用。</p>
+</blockquote>
+<hr />
+<h4 id="_12">翻译缓存</h4>
+<p>PDFMathTranslate 会缓存已翻译的文本，以提高速度并避免对相同内容进行不必要的 API 调用。您可以使用 <code>--ignore-cache</code> 选项来忽略翻译缓存并强制重新翻译。</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--ignore-cache
+</code></pre></div>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_13">部署为公共服务</h4>
+<p>当在公共服务上部署 pdf2zh GUI 时，您应按照以下说明修改配置文件。</p>
+<blockquote>
+<p>[!WARNING]</p>
+<p>本项目尚未经过专业的安全审计，可能存在安全漏洞。请在公共网络部署前评估风险并采取必要的安全措施。</p>
+<p>[!TIP]
+- 公开部署时，应同时启用 <code>disable_gui_sensitive_input</code> 和 <code>disable_config_auto_save</code>。
+- 使用<em>英文逗号</em> <kbd>,</kbd> 分隔不同的可用服务。</p>
+</blockquote>
+<p>一个可用的配置如下：</p>
+<div class="highlight"><span class="filename">config.toml</span><pre><span></span><code><span class="k">[basic]</span>
+<span class="n">gui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="k">[gui_settings]</span>
+<span class="n">enabled_services</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Bing,OpenAI&quot;</span>
+<span class="n">disable_gui_sensitive_input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<span class="n">disable_config_auto_save</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+</code></pre></div>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_14">认证与欢迎页面</h4>
+<p>当使用认证与欢迎页面来指定哪些用户可以使用 Web UI 并自定义登录页面时：</p>
+<p>示例 auth.txt
+每行包含两个元素，用户名和密码，用逗号分隔。</p>
+<div class="highlight"><pre><span></span><code>admin,123456
+user1,password1
+user2,abc123
+guest,guest123
+test,test123
+</code></pre></div>
+<p>example welcome.html</p>
+<div class="highlight"><pre><span></span><code><span class="cp">&lt;!DOCTYPE html&gt;</span>
+<span class="p">&lt;</span><span class="nt">html</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">head</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">title</span><span class="p">&gt;</span>Simple HTML<span class="p">&lt;/</span><span class="nt">title</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">head</span><span class="p">&gt;</span>
+<span class="p">&lt;</span><span class="nt">body</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">h1</span><span class="p">&gt;</span>Hello, World!<span class="p">&lt;/</span><span class="nt">h1</span><span class="p">&gt;</span>
+    <span class="p">&lt;</span><span class="nt">p</span><span class="p">&gt;</span>Welcome to my simple HTML page.<span class="p">&lt;/</span><span class="nt">p</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">body</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">html</span><span class="p">&gt;</span>
+</code></pre></div>
+<blockquote>
+<p>[!NOTE]
+只有当认证文件不为空时，欢迎页面才会生效。
+如果认证文件为空，则不会有认证。 :)</p>
+</blockquote>
+<p>一个可用的配置如下：</p>
+<div class="highlight"><span class="filename">config.toml</span><pre><span></span><code><span class="k">[basic]</span>
+<span class="n">gui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+
+<span class="k">[gui_settings]</span>
+<span class="n">auth_file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/path/to/auth/file&quot;</span>
+<span class="n">welcome_page</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;/path/to/welcome/html/file&quot;</span>
+</code></pre></div>
+<p><a href="#toc">⬆️ 返回顶部</a></p>
+<hr />
+<h4 id="_15">术语表支持</h4>
+<p>PDFMathTranslate 支持术语表功能。术语表文件应为 <code>csv</code> 格式。
+文件中包含三列。以下是一个示例术语表文件：</p>
+<table>
+<thead>
+<tr>
+<th>source</th>
+<th>target</th>
+<th>tgt_lng</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AutoML</td>
+<td>自动 ML</td>
+<td>zh-CN</td>
+</tr>
+<tr>
+<td>a,a</td>
+<td>a</td>
+<td>zh-CN</td>
+</tr>
+<tr>
+<td>"</td>
+<td>"</td>
+<td>zh-CN</td>
+</tr>
+</tbody>
+</table>
+<p>对于 CLI 用户：
+您可以使用多个文件作为术语表。不同文件之间应使用 <code>,</code> 分隔。</p>
+<div class="highlight"><pre><span></span><code>pdf2zh_next<span class="w"> </span>example.pdf<span class="w"> </span>--glossaries<span class="w"> </span><span class="s2">&quot;glossary1.csv,glossary2.csv,glossary3.csv&quot;</span>
+</code></pre></div>
+<p>对于 WebUI 用户：</p>
+<p>您现在可以上传自己的术语表文件了。上传文件后，您可以通过点击文件名来查看它们，内容会显示在下方。</p>
+<p><a href="#目录">⬆️ 回到顶部</a></p>
+<div align="right"> 
+<h6><small>本页面的部分内容由 GPT 翻译，可能包含错误。</small></h6>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "navigation.expand", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

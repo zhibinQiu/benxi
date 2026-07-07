@@ -1,0 +1,4250 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="PDF 科学文献翻译与企业 AI 知识库平台（中文文档）">
+      
+      
+      
+      
+        <link rel="prev" href="single-server-migration.html">
+      
+      
+        <link rel="next" href="configuration.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../icon/yezi.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>功能实现说明 - 企业 AI 知识库平台</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#v460" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../index.html" title="企业 AI 知识库平台" class="md-header__button md-logo" aria-label="企业 AI 知识库平台" data-md-component="logo">
+      
+  <img src="../../../icon/yezi.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            企业 AI 知识库平台
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              功能实现说明
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="pink" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/zhibinQiu/benxi" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="企业 AI 知识库平台" class="md-nav__button md-logo" aria-label="企业 AI 知识库平台" data-md-component="logo">
+      
+  <img src="../../../icon/yezi.svg" alt="logo">
+
+    </a>
+    企业 AI 知识库平台
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/zhibinQiu/benxi" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    主页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    运维与部署
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    运维与部署
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    手册索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="components-and-storage.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    组件与数据存储
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="knowledge-data-consistency.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    知识库数据一致性
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="config-and-scripts.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置与脚本
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    系统架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="docker-services.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker 容器
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="network-topology.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    网络拓扑
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="deployment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    部署指南
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="server-deps.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    远程依赖开发
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="single-server-migration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    单机迁移与热重载
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能实现说明
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="feature-implementation.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能实现说明
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        阅读说明
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0. 知识沉淀闭环
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 总体原则
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 身份认证与会话
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. 身份认证与会话">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 登录
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 会话与踢人
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-rbac-acl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 权限模型（RBAC + 文档 ACL）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 文档中心
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. 文档中心">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 上传与版本
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 分级文档库
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 分享与禁止访问
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 回收站与删除
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 知识索引状态
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-knowflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. KnowFlow / 知识库
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. KnowFlow / 知识库">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 账号映射
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-dataset-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Dataset 与 scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 文档同步流程
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-uiiframe-sso" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 嵌入 UI（iframe + SSO）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 知识检索（原生页）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4.5 知识检索（原生页）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        检索引擎（区别于传统单向量 RAG）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        与本体图谱联动
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 本体图谱
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47-rag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 报告生成（区别于短答式 RAG）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#48-ai-agent-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.8 AI 智能体（Agent Skills）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#49" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.9 切片管理 / 编码管理
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-pdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. PDF 翻译
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. PDF 翻译">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 流程
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 状态与通知
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 文档对比
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. 文档对比">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 跨文档差异对比
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 单文档版本对比
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 自然语言检索（对比内）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. 语音转写
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. 订阅与内容导入
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. 异步任务与 Job 体系
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. 系统功能插件（前端入口）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. 系统设置与说明文档
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. 前端架构要点
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. 资源管理与语音合成
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. 资源管理与语音合成">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#131" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.1 资源管理（管理员）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#132" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.2 语音合成
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#133" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.3 远程代码同步
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-agent-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Agent Skills 管理
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-aip-v460" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. AIP 智能体互联（v4.6.0）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. PostgreSQL 读写分离
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. 与外部系统关系
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        相关文档
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置说明
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="database-migration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据库迁移
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="permissions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    权限与账户
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    测试
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="upgrade.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    升级
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="security.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安全
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="operations-manual.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    日常操作
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    开发实现说明书
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    开发实现说明书
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/implementation-manual.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    说明书总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第一篇 总览与架构
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第一篇 总览与架构
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/system-architecture-overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    项目总体架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/platform-architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    平台架构索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/layered-architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    分层与代码组织
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第二篇 环境与部署
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第二篇 环境与部署
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    快速开始
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/stack-deployment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stack 命令速查
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第三篇 后端实现
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第三篇 后端实现
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/api-conventions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API 与约定
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/backend-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    应用服务与域
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/permission-model.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    权限模型与文档分级
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/documents-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    文档库实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/knowledge-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    知识服务实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/report-generation-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    报告生成实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/agent-skills-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Skills 实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/browser-rpa-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    浏览器 RPA 实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/async-and-jobs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    异步任务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第四篇 前端实现
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第四篇 前端实现
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation/frontend-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    前端结构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第五篇 业务能力
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第五篇 业务能力
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/feature-plugins.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能插件
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/doc-compare-product-design.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    文档对比
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/speech-models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    语音转写
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第六篇 PDF 翻译
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第六篇 PDF 翻译
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/rest-api.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/advanced.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    进阶选项
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/Language-Codes.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    语言代码
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/Documentation-of-Translation-Services.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    翻译服务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/TranslationServices/Aliyun.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    阿里云翻译
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/TranslationServices/SiliconFlow.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SiliconFlow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    附录
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    附录
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../supported_languages.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    支持语言
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    常见问题
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        阅读说明
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0. 知识沉淀闭环
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 总体原则
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 身份认证与会话
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. 身份认证与会话">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 登录
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 会话与踢人
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-rbac-acl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 权限模型（RBAC + 文档 ACL）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 文档中心
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. 文档中心">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 上传与版本
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 分级文档库
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 分享与禁止访问
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 回收站与删除
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 知识索引状态
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-knowflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. KnowFlow / 知识库
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. KnowFlow / 知识库">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 账号映射
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-dataset-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Dataset 与 scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 文档同步流程
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-uiiframe-sso" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 嵌入 UI（iframe + SSO）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 知识检索（原生页）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4.5 知识检索（原生页）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        检索引擎（区别于传统单向量 RAG）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        与本体图谱联动
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 本体图谱
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47-rag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 报告生成（区别于短答式 RAG）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#48-ai-agent-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.8 AI 智能体（Agent Skills）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#49" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.9 切片管理 / 编码管理
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-pdf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. PDF 翻译
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. PDF 翻译">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 流程
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 状态与通知
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 文档对比
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. 文档对比">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 跨文档差异对比
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 单文档版本对比
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 自然语言检索（对比内）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. 语音转写
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. 订阅与内容导入
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. 异步任务与 Job 体系
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. 系统功能插件（前端入口）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. 系统设置与说明文档
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. 前端架构要点
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. 资源管理与语音合成
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="13. 资源管理与语音合成">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#131" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.1 资源管理（管理员）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#132" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.2 语音合成
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#133" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13.3 远程代码同步
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-agent-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Agent Skills 管理
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-aip-v460" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. AIP 智能体互联（v4.6.0）
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16. PostgreSQL 读写分离
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. 与外部系统关系
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        相关文档
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="v460">功能实现说明（v4.6.0）</h1>
+<blockquote>
+<p><strong>本文说明各功能如何运转</strong>，含关键方法与提示词落点。<br />
+架构分层见 <a href="architecture.html">系统架构</a>；Agent Skills 详见 <a href="../implementation/agent-skills-implementation.html">Agent Skills 实现</a>（含 §10 Prompt、§11 调用链）。</p>
+</blockquote>
+<hr />
+<h2 id="_1">阅读说明</h2>
+<table>
+<thead>
+<tr>
+<th>章节</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#0-知识沉淀闭环">§0</a></td>
+<td>文档从入库到问答的整体链路</td>
+</tr>
+<tr>
+<td><a href="#1-总体原则">§1</a></td>
+<td>平台设计原则（含术语解释）</td>
+</tr>
+<tr>
+<td><a href="#2-身份认证与会话">§2–§3</a></td>
+<td>登录、权限、文档中心</td>
+</tr>
+<tr>
+<td><a href="#4-knowflow--知识库">§4</a></td>
+<td>知识库、检索、图谱、AI 智能体</td>
+</tr>
+<tr>
+<td><a href="#5-pdf-翻译">§5–§13</a></td>
+<td>翻译、对比、语音、任务等</td>
+</tr>
+<tr>
+<td><a href="#14-agent-skills-管理">§14</a></td>
+<td>Agent Skills 管理</td>
+</tr>
+<tr>
+<td><a href="#15-aip-智能体互联v450">§15</a></td>
+<td>AIP 智能体互联</td>
+</tr>
+<tr>
+<td><a href="#16-postgresql-读写分离">§16</a></td>
+<td>PostgreSQL 读写分离</td>
+</tr>
+</tbody>
+</table>
+<p><strong>常见术语</strong>：<strong>JWT</strong> = 登录后颁发的访问凭证；<strong>RBAC</strong> = 按角色分配功能权限；<strong>MinIO</strong> = 存文件的 object 存储；<strong>Celery</strong> = 后台异步任务 worker；<strong>SSE</strong> = 浏览器实时接收服务端推送（用于对话流式输出）。</p>
+<hr />
+<h2 id="0">0. 知识沉淀闭环</h2>
+<p>平台在同一权限口径下贯通以下链路，减少多系统拼装与数据搬运：</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>用户入口</th>
+<th>后端要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>入库</td>
+<td>文档中心上传 / 订阅导入</td>
+<td>MinIO 存储 + 可选 KnowFlow 同步</td>
+</tr>
+<tr>
+<td>索引</td>
+<td>自动 Job / 文档详情「重新索引」</td>
+<td>上传默认 <strong>naive</strong> 向量分块；重索引默认 <strong>PageIndex</strong> 结构树</td>
+</tr>
+<tr>
+<td>本体</td>
+<td>本体图谱 · 本体设置</td>
+<td>LLM 从已索引文档抽取实体/关系；可手工编辑</td>
+</tr>
+<tr>
+<td>检索</td>
+<td>知识检索</td>
+<td>PageIndex 树 + 向量 <strong>混合召回</strong>；权限内白名单过滤</td>
+</tr>
+<tr>
+<td>问答</td>
+<td>AI 智能体 / 知识检索</td>
+<td>文档片段 + 图谱子图 <strong>合并引用</strong></td>
+</tr>
+<tr>
+<td>成稿</td>
+<td>报告生成</td>
+<td>Agent 多路召回 + 章节扩写；<strong>思维导图</strong> Tab 可导出</td>
+</tr>
+</tbody>
+</table>
+<p><strong>检索策略</strong>：长文档用 <strong>PageIndex</strong>（PDF/Word 章节目录树定位章节）+ 向量 <strong>混合召回</strong>；报告生成用 Agent 规划多轮子问题、分章节扩写。</p>
+<hr />
+<h2 id="1">1. 总体原则</h2>
+<table>
+<thead>
+<tr>
+<th>原则</th>
+<th>含义</th>
+<th>这样设计的原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平台是唯一控制面</td>
+<td>用户、组织、文档信息、权限在 <strong>PostgreSQL</strong>；文件在 <strong>MinIO</strong></td>
+<td>权限与元数据只维护一份，避免多系统数据不一致</td>
+</tr>
+<tr>
+<td>重计算外置</td>
+<td>翻译、向量检索、长任务交给独立服务或 Worker</td>
+<td>API 保持轻量，交互不被大任务阻塞</td>
+</tr>
+<tr>
+<td>功能插件化</td>
+<td>每项业务能力注册为插件，统一出现在「系统功能」</td>
+<td>新功能可插拔，菜单与权限自动对齐</td>
+</tr>
+<tr>
+<td>权限先于能力</td>
+<td>文档操作先校验 ACL，再调 KnowFlow</td>
+<td>防止「平台不让看但检索能搜到」</td>
+</tr>
+<tr>
+<td>异步不阻塞</td>
+<td>翻译、大删除、对比等走 <strong>Job</strong> + 轮询/SSE</td>
+<td>用户不必长时间等待 HTTP 响应</td>
+</tr>
+<tr>
+<td>读写分离（可选）</td>
+<td>配置 <code>DATABASE_READ_URL</code> 后，只读 API 走副本</td>
+<td>文档列表/详情、<code>/system/*</code> 读接口用 <code>get_read_db</code>；写操作仍走主库</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 身份认证与会话</h2>
+<h3 id="21">2.1 登录</h3>
+<ol>
+<li>用户在前端提交手机号/姓名 + 密码。  </li>
+<li>API 在 PostgreSQL 查用户、校验密码哈希与账号状态（<code>active</code>）。  </li>
+<li>成功后递增 <code>auth_token_version</code>，写入审计日志，签发 <strong>JWT access_token + refresh_token</strong>。  </li>
+<li>若启用 KnowFlow，登录时触发 <strong>知识库预热</strong>（后台 reconcile catalog，不阻塞响应）。  </li>
+<li>前端将 token 存入 localStorage，后续请求带 <code>Authorization: Bearer</code>。</li>
+</ol>
+<h3 id="22">2.2 会话与踢人</h3>
+<ul>
+<li>每个用户有 <code>auth_token_version</code>；JWT 内嵌版本号，API 校验不一致则 401。  </li>
+<li>新设备登录会 bump 版本，旧 token 失效（「账号已在别处登录」）。  </li>
+<li><code>GET /auth/me</code> 返回用户信息、权限码列表、是否系统管理员等。</li>
+</ul>
+<h3 id="23-rbac-acl">2.3 权限模型（RBAC + 文档 ACL）</h3>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>角色</td>
+<td><code>sys_admin</code>、<code>member</code> 等，绑定权限码如 <code>doc.read</code>、<code>feature.pdf_translate</code></td>
+</tr>
+<tr>
+<td>功能权限</td>
+<td><code>require_feature("xxx")</code> 控制能否进入某系统功能页</td>
+</tr>
+<tr>
+<td>文档 scope</td>
+<td><code>personal</code> / <code>department</code> / <code>team</code> / <code>company</code> 决定文档库 Tab 与默认可见范围</td>
+</tr>
+<tr>
+<td>单文档 grant/deny</td>
+<td>分享给个人、禁止访问；与 scope 叠加计算最终 <code>can_read / can_query / can_modify</code></td>
+</tr>
+</tbody>
+</table>
+<p>系统管理员拥有全部权限；普通用户按角色 + 文档 ACL 判定。</p>
+<hr />
+<h2 id="3">3. 文档中心</h2>
+<h3 id="31">3.1 上传与版本</h3>
+<ol>
+<li><strong>创建文档记录</strong>：前端 <code>POST /documents</code>，写入标题、scope、文件夹等元数据。  </li>
+<li><strong>预签名上传</strong>：<code>POST .../upload/prepare</code> 生成 MinIO <code>storage_key</code> 与 PUT 预签名 URL。  </li>
+<li><strong>直传 MinIO</strong>：浏览器将文件 PUT 到 MinIO，不经 API  body，支持大文件。  </li>
+<li><strong>完成上传</strong>：<code>POST .../upload/complete</code> 校验大小与 MIME，写入 <code>DocumentVersion</code>，设为当前版。  </li>
+<li><strong>可选 Git 版本</strong>：部分格式会同步写入 per-document Git 仓库，供版本对比与 diff 使用。  </li>
+<li><strong>可选 KnowFlow 同步</strong>：若 <code>sync_knowflow=true</code>，异步或同步将当前版上传到 RAGFlow dataset 并触发解析。</li>
+</ol>
+<h3 id="32">3.2 分级文档库</h3>
+<table>
+<thead>
+<tr>
+<th>scope</th>
+<th>界面 Tab</th>
+<th>组织绑定</th>
+<th>可见规则（简述）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>personal</td>
+<td>个人级</td>
+<td>不绑定组织</td>
+<td>仅 owner；系统管理员可见全部</td>
+</tr>
+<tr>
+<td>team</td>
+<td>分部级</td>
+<td>depth=2</td>
+<td>绑定节点子孙子树 + <code>doc.read</code></td>
+</tr>
+<tr>
+<td>department</td>
+<td>部门级</td>
+<td>depth=1</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>company</td>
+<td>公司级</td>
+<td>depth=0（根）</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>（虚拟）分享</td>
+<td>分享</td>
+<td>—</td>
+<td>他人 grant 且非 scope 默认可见的文档</td>
+</tr>
+</tbody>
+</table>
+<p>完整对应关系（组织树、用户部门、RBAC、分享/deny、KnowFlow dataset）见 <a href="../platform/permission-model.html">权限模型与文档分级</a>。</p>
+<p>列表、详情、下载、移动、回收站均先查 ACL 再返回数据。</p>
+<h3 id="33">3.3 分享与禁止访问</h3>
+<ul>
+<li><strong>分享给用户</strong>：写入 <code>DocumentPermission</code>，级别如 visible / query / modify。  </li>
+<li><strong>禁止访问</strong>：<code>DocumentDenial</code> 优先级高于 grant。  </li>
+<li>变更分享后，若启用 KnowFlow，会 <strong>同步 KB ACL</strong> 与 <strong>分享镜像</strong>（被分享者在个人 dataset 中可见可检索副本）。</li>
+</ul>
+<h3 id="34">3.4 回收站与删除</h3>
+<ul>
+<li>软删：设 <code>deleted_at</code>，列表 <code>in_recycle=1</code> 可见。  </li>
+<li>恢复：校验 <code>can_restore</code>。  </li>
+<li>永久删除：创建 Celery 任务，清理 MinIO 对象、KnowFlow 链接、Git 仓库、版本块等。</li>
+</ul>
+<h3 id="35">3.5 知识索引状态</h3>
+<p>文档详情展示 <strong>KnowFlow 索引状态</strong>（未同步 / 解析中 / 已索引 / 失败）。<br />
+用户可手动 <strong>重新同步</strong> 或 <strong>重新解析</strong>；管理员可配置默认解析器（DeepDOC / PaddleOCR 等）与分块策略。</p>
+<hr />
+<h2 id="4-knowflow">4. KnowFlow / 知识库</h2>
+<h3 id="41">4.1 账号映射</h3>
+<ul>
+<li>每个平台用户在 RAGFlow 侧有 <strong>mapped 账号</strong>（如 <code>zt-platform-{user_id}</code>），链接表存 <code>ragflow_user_id</code>、token 等。  </li>
+<li>登录时确保 RAGFlow 账号存在；管理员有 bootstrap 租户管理能力。</li>
+</ul>
+<h3 id="42-dataset-scope">4.2 Dataset 与 scope</h3>
+<table>
+<thead>
+<tr>
+<th>scope</th>
+<th>RAGFlow dataset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>personal</td>
+<td>用户个人 dataset</td>
+</tr>
+<tr>
+<td>department / team</td>
+<td>按组织 scope_key 绑定共享 dataset</td>
+</tr>
+<tr>
+<td>company</td>
+<td>公司级 dataset</td>
+</tr>
+</tbody>
+</table>
+<p>平台维护 <code>ragflow_scope_datasets</code> 注册表，避免重复创建。</p>
+<h3 id="43">4.3 文档同步流程</h3>
+<ol>
+<li>从 MinIO 读取当前版二进制。  </li>
+<li>HTML/Office 等经 <strong>normalize</strong> 转为 KnowFlow 可接受格式。  </li>
+<li>调用 RAGFlow API <strong>upload_document</strong>，写入 meta：<code>platform_document_id</code>、<code>platform_user_id</code>。  </li>
+<li>触发 <strong>parse_documents</strong>（切片、向量化）。  </li>
+<li>平台记录 <code>RagflowDocumentMirrorLink</code>（文档 id ↔ ragflow doc id ↔ dataset id）。</li>
+</ol>
+<p>分享文档时，为被分享者在个人 dataset 创建 <strong>镜像副本</strong>，检索时仍校验平台 ACL。</p>
+<h3 id="44-uiiframe-sso">4.4 嵌入 UI（iframe + SSO）</h3>
+<ol>
+<li>前端请求 <code>GET /rag/embed-session</code> 获取 SSO token。  </li>
+<li>iframe 加载 <code>/ragflow-ui/...</code>（生产经 Nginx 反代；开发经 API embed-proxy）。  </li>
+<li><strong>embed-proxy</strong> 反代 KnowFlow 静态与 API，注入 <strong>platform-branding</strong> CSS/JS，实现白标。  </li>
+<li>SPA 内 <code>/v1/*</code> 请求同源走 embed-proxy，避免跨域。</li>
+</ol>
+<h3 id="45">4.5 知识检索（原生页）</h3>
+<ul>
+<li>与 iframe 解耦的 <strong>原生问答页</strong>：左侧 scope 文档树，右侧对话。  </li>
+<li>检索前计算用户 <strong>可 query 文档白名单</strong>，再调用检索引擎，结果带 citation 回显。  </li>
+<li>权限过滤在平台侧完成，不暴露未授权 chunk。</li>
+</ul>
+<h4 id="rag">检索引擎（区别于传统单向量 RAG）</h4>
+<table>
+<thead>
+<tr>
+<th>引擎</th>
+<th>适用文档</th>
+<th>实现思路</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PageIndex 树检索</strong></td>
+<td>已做结构索引（reindex 默认 pageindex）</td>
+<td>LLM 在文档目录树中选 node_id，取对应章节正文；适合长 PDF/制度类文档的章节定位</td>
+</tr>
+<tr>
+<td><strong>KnowFlow 向量检索</strong></td>
+<td>已同步 KnowFlow 且栈可达</td>
+<td>hybrid 向量 + 关键词召回 chunk</td>
+</tr>
+<tr>
+<td><strong>本地 fallback</strong></td>
+<td>KnowFlow 不可达</td>
+<td>平台侧轻量检索，保证基本可用</td>
+</tr>
+</tbody>
+</table>
+<p><strong>问答实现</strong>：<code>knowledge_qa_service.iter_knowledge_qa_stream</code> → 召回 → <code>build_aligned_qa_context_and_citations</code> → <code>_build_qa_llm_messages</code>（system 含引用规则，<code>temperature=0.2</code>）→ 流式生成。Agentic 模式见 <code>knowledge_agentic_service</code>（规划子问题 + 充足性评估）。详见 <a href="../implementation/knowledge-implementation.html">知识库实现 §5</a>。</p>
+<p>同一问题可对不同文档 <strong>按引擎分区</strong> 后合并 hits（<code>retrieve_hits_for_qa</code>），可选 Agentic 模式由 <code>knowledge_agentic_service.iter_gather_for_knowledge_qa</code> 规划子问题多轮检索。回答可切换 <strong>思维导图</strong> Tab（<code>generate_knowledge_mindmap</code>）。实现细节见 <a href="../implementation/knowledge-implementation.html">知识库实现 §5</a>。</p>
+<h4 id="_2">与本体图谱联动</h4>
+<p>问答前若用户具备 <code>feature.kg_palantir</code>，会从问题中 <strong>匹配实体 mention</strong>，扩展 2 跳子图，将结构化关系追加到 LLM 上下文（引用编号与文档片段顺延）。</p>
+<h3 id="46">4.6 本体图谱</h3>
+<ol>
+<li><strong>本体建模</strong>：管理员/用户配置实体类型（组织、人员、法规、项目等）与关系类型（包含、引用、约束…）。  </li>
+<li><strong>自动抽取</strong>：文档索引完成后，可选 LLM 从正文抽取实体/关系写入 PostgreSQL（<code>kg_entities</code> / <code>kg_relations</code>）。  </li>
+<li><strong>工作台</strong>：<code>KgPalantirView</code> 三栏——实体查询、关系子图、详情编辑；支持按类型浏览、跳数控制子图范围。  </li>
+<li><strong>下游消费</strong>：知识检索、报告生成、<strong>AI 智能体</strong> 在回答前调用 <code>retrieve_kg_context_for_question</code>，将图谱事实与文档片段一并注入 prompt。</li>
+</ol>
+<h3 id="47-rag">4.7 报告生成（区别于短答式 RAG）</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>知识检索（短答）</th>
+<th>报告生成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标</td>
+<td>单轮精准回答 + 引用</td>
+<td>万字级长报告，分章节交付</td>
+</tr>
+<tr>
+<td>召回</td>
+<td>单次 top-k hits</td>
+<td>Agent 规划多轮子问题，多路召回后去重合并</td>
+</tr>
+<tr>
+<td>生成</td>
+<td>一次 LLM 归纳</td>
+<td>按章节 Agent 扩写，可联网补充（可选）</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>对话气泡 + 思维导图 Tab</td>
+<td>报告正文 Tab + <strong>思维导图 Tab</strong>，支持导出 Word / Markdown 大纲 / OPML（XMind）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>实现入口</strong>：<code>report_generation_service.iter_report_generation_stream()</code>。</p>
+<table>
+<thead>
+<tr>
+<th>环节</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>意图</td>
+<td><code>classify_intent</code></td>
+<td><code>initial</code> / <code>follow_up</code> / <code>format_adjust</code></td>
+</tr>
+<tr>
+<td>主题</td>
+<td><code>resolve_report_topic</code></td>
+<td>正则从用户句抽取报告主题</td>
+</tr>
+<tr>
+<td>多路召回</td>
+<td><code>build_local_retrieval_queries</code> + <code>retrieve_local_hits_for_report</code></td>
+<td>每查询 15 段，合并至多 28 段</td>
+</tr>
+<tr>
+<td>Agentic</td>
+<td><code>iter_gather_for_report</code></td>
+<td>LLM 规划 <code>local_queries</code> / <code>web_queries</code></td>
+</tr>
+<tr>
+<td>Prompt</td>
+<td><code>_build_messages</code></td>
+<td><code>_REPORT_SYSTEM</code> + 意图指令 + 编号材料块</td>
+</tr>
+<tr>
+<td>引用</td>
+<td><code>build_aligned_report_sources</code></td>
+<td>本地 [1..n] + 联网 [n+1..] 连续编号</td>
+</tr>
+<tr>
+<td>思维导图</td>
+<td><code>generate_report_mindmap</code></td>
+<td>复用 QA mindmap LLM，失败本地回退</td>
+</tr>
+</tbody>
+</table>
+<p>System 提示词、Agentic 规划 JSON、优化预设详见 <a href="../implementation/report-generation-implementation.html">报告生成实现</a>。</p>
+<h3 id="48-ai-agent-skills">4.8 AI 智能体（Agent Skills）</h3>
+<p><strong>入口</strong>：<code>POST /api/v1/ai-chat/stream</code> → <code>ai_chat_service.iter_chat_with_ai_agent_stream()</code>。</p>
+<p><strong>用户侧体验</strong>：</p>
+<ol>
+<li>输入问题 → SSE 流式显示回答；  </li>
+<li>调用了检索时显示 workflow 步骤（<code>agent_thinking</code> / <code>tool_call</code> / <code>tool_result</code>）；  </li>
+<li>回答中带 <code>[1][2]</code> 引用，底部展示来源卡片。</li>
+</ol>
+<p><strong>后端实现（v4.6.0）</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>环节</th>
+<th>方法 / 模块</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>意图预判</td>
+<td><code>agent_intent.plan_agent_tools</code></td>
+<td>寒暄/平台用法直接答；有附件则预读正文</td>
+</tr>
+<tr>
+<td>Prompt 组装</td>
+<td><code>prompt_budget.build_bounded_chat_messages</code></td>
+<td>常驻 system + Discovery 目录 + 历史 + 用户消息</td>
+</tr>
+<tr>
+<td>常驻提示词</td>
+<td><code>agent_resident.build_ai_home_resident_prompt</code></td>
+<td>身份、引用格式、工具约定、禁止越权</td>
+</tr>
+<tr>
+<td>Discovery</td>
+<td><code>catalog.build_agent_catalog_prompt</code></td>
+<td>注入 Skill 摘要与选用规则</td>
+</tr>
+<tr>
+<td>工具循环</td>
+<td><code>agent_tool_loop.iter_agent_tool_loop</code></td>
+<td>多轮 LLM tool-calling，默认最多 40 轮</td>
+</tr>
+<tr>
+<td>综合检索</td>
+<td><code>skill_chat_service.resolve_combined_research_async</code></td>
+<td><code>research</code> 工具内并行 KB + KG + Web</td>
+</tr>
+<tr>
+<td>上传 Skill</td>
+<td><code>execute_agent_tool</code> → <code>load_uploaded_skill</code></td>
+<td>从 MinIO 读 <code>SKILL.md</code> 全文</td>
+</tr>
+<tr>
+<td>记忆</td>
+<td><code>maybe_write_user_memory</code> / <code>read_agent_memory</code></td>
+<td>用户级 <code>MEMORY.md</code></td>
+</tr>
+</tbody>
+</table>
+<p>详细提示词片段与调用链见 <a href="../implementation/agent-skills-implementation.html">Agent Skills 实现 §10–§11</a>。</p>
+<p><strong>浏览器 RPA（Phase 1）</strong>：启用 <code>AGENT_BROWSER_ENABLED</code> 后，智能体可用内置 <code>browser_navigate</code> / <code>browser_snapshot</code> / <code>browser_click</code> / <code>browser_type</code> / <code>browser_screenshot</code> 操作网页并展示截图；<code>browser_save_workflow</code> 将探索过程固化为 upload Skill。详见 <a href="../implementation/browser-rpa-implementation.html">浏览器 RPA 实现</a>。</p>
+<h3 id="49">4.9 切片管理 / 编码管理</h3>
+<ul>
+<li><strong>切片管理</strong>：侧栏入口，iframe 或原生列表管理 chunk（管理员/有权限用户）。  </li>
+<li><strong>编码管理</strong>：系统设置内 KnowFlow 编码规则配置（管理员）。</li>
+</ul>
+<hr />
+<h2 id="5-pdf">5. PDF 翻译</h2>
+<h3 id="51">5.1 流程</h3>
+<ol>
+<li>用户在上传文件或从文档库选择 PDF，配置源语言、目标语言、翻译引擎。  </li>
+<li>API 将文件转发至 <strong>pdf2zh-api</strong> 创建远程 job，获得 <code>pdf2zh_job_id</code>。  </li>
+<li>平台创建 <strong>Job</strong> 记录（类型 <code>pdf_translate</code>，状态 running），并投递 Celery <strong><code>monitor_translate_job</code></strong>。  </li>
+<li>Worker 周期性拉取 pdf2zh 进度，更新 Job 的 <code>progress</code>、<code>stage</code>、输出文件路径。  </li>
+<li>完成后用户下载译稿，或 <strong>导入文档库</strong>（写入 MinIO + DocumentVersion，可选 sync KnowFlow）。</li>
+</ol>
+<h3 id="52">5.2 状态与通知</h3>
+<ul>
+<li>前端任务面板 / 翻译页轮询 Job 状态。  </li>
+<li>终态（done / failed / cancelled）写入通知（可选）。  </li>
+<li>pdf2zh 首次启动需 <strong>BabelDOC warmup</strong>（约数分钟）。</li>
+</ul>
+<hr />
+<h2 id="6">6. 文档对比</h2>
+<h3 id="61">6.1 跨文档差异对比</h3>
+<ol>
+<li>用户选择两份已有 <strong>query 权限</strong> 的文档（左右栏）。  </li>
+<li>创建 <strong>compare job</strong>（异步），后台抽取已解析正文。  </li>
+<li><strong>LLM 对比</strong>（<code>compare_llm_service</code>）或块级 diff 引擎归纳增删改，结果存 Job payload。  </li>
+<li>前端多栏预览 + 荧光高亮 + 侧栏差异列表联动滚动。  </li>
+<li><strong>不触发建索引</strong>：对比仅使用文档库已有解析/向量索引；须先完成上传与 KnowFlow 同步。</li>
+</ol>
+<h3 id="62">6.2 单文档版本对比</h3>
+<ul>
+<li>上传完成时后台预计算<strong>相邻版本对</strong> diff，前端经 <code>GET .../version-compare/adjacent</code> 只读加载。  </li>
+<li>支持版本差异问答（基于入库 diff + LLM 总结）。</li>
+</ul>
+<h3 id="63">6.3 自然语言检索（对比内）</h3>
+<ul>
+<li>在已选文档范围内，用 NL 问句检索。  </li>
+<li>平台先算 ACL 白名单 document_id 列表，再调 KnowFlow retrieval 或本地字段匹配。  </li>
+<li>命中 chunk 在预览栏高亮（与 diff 色系区分）。</li>
+</ul>
+<hr />
+<h2 id="7">7. 语音转写</h2>
+<ol>
+<li>用户上传音频或录音，请求 <strong>speech-api</strong>（FunASR）。  </li>
+<li>返回带时间轴的文本与说话人分离结果（视模型配置）。  </li>
+<li>可选调用 <strong>DeepSeek</strong> 生成会议摘要。  </li>
+<li>结果可保存为文档或订阅条目。</li>
+</ol>
+<p>模型文件位于 <code>data/speech-models</code>（Docker 卷或宿主机目录）；首次启动自动下载，体积较大。</p>
+<hr />
+<h2 id="8">8. 订阅与内容导入</h2>
+<table>
+<thead>
+<tr>
+<th>来源</th>
+<th>实现要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RSS / 网站</td>
+<td>定时或手动抓取 → HTML → Markdown → <code>subscription_items</code></td>
+</tr>
+<tr>
+<td>微信公众号</td>
+<td>专用抓取与解析流程</td>
+</tr>
+<tr>
+<td>导入文档库</td>
+<td><code>buildImportToPersonalLibraryBody</code>：scope=personal，可选 sync KnowFlow</td>
+</tr>
+</tbody>
+</table>
+<p>导入后走与普通上传相同的 MinIO + 可选索引流程。</p>
+<hr />
+<h2 id="9-job">9. 异步任务与 Job 体系</h2>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>执行方式</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pdf_translate</td>
+<td>Celery 监控 pdf2zh</td>
+<td><code>monitor_translate_job</code></td>
+</tr>
+<tr>
+<td>delete_document</td>
+<td>Celery</td>
+<td>清理存储与索引</td>
+</tr>
+<tr>
+<td>compare</td>
+<td>BackgroundTasks 或 Job 服务</td>
+<td>大 diff 不阻塞 HTTP</td>
+</tr>
+<tr>
+<td>KnowFlow catalog reconcile</td>
+<td>登录后后台 / 定时</td>
+<td>对齐 dataset 与文档</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Redis</strong> 作 Celery broker；Worker 与 API 共用 <code>platform/.env</code>。<br />
+远程开发时：若 Redis 上已有 Worker 则不再本地启动；否则本机 Worker 连远程 Redis（见 <code>./dev.sh local</code>）。</p>
+<p>Job 统一模型：<code>Job</code> 表存 type、status、progress、payload、error_message；前端 <strong>JobsPanel</strong> 与 SSE 事件推送进度。</p>
+<hr />
+<h2 id="10">10. 系统功能插件（前端入口）</h2>
+<p>后端 <code>platform/app/features/builtin/</code> 注册插件，前端 <code>SystemFunctionsView</code> 按 <strong>文档 / 工具 / 智能</strong> 分类展示。</p>
+<table>
+<thead>
+<tr>
+<th>功能 id</th>
+<th>用户可见能力</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pdf_translate</td>
+<td>PDF 科学翻译</td>
+</tr>
+<tr>
+<td>doc_compare</td>
+<td>文档对比</td>
+</tr>
+<tr>
+<td>knowledge_search</td>
+<td>知识检索</td>
+</tr>
+<tr>
+<td>ai_home</td>
+<td>AI 智能体</td>
+</tr>
+<tr>
+<td>kg_palantir</td>
+<td>本体图谱</td>
+</tr>
+<tr>
+<td>report_generation</td>
+<td>报告生成</td>
+</tr>
+<tr>
+<td>smart_data_query</td>
+<td>智能问数</td>
+</tr>
+<tr>
+<td>carbon_qa</td>
+<td>领域问答</td>
+</tr>
+<tr>
+<td>ocr</td>
+<td>文件内容提取</td>
+</tr>
+<tr>
+<td>speech_to_text</td>
+<td>会议转写</td>
+</tr>
+<tr>
+<td>data_analysis</td>
+<td>数据分析 Notebook</td>
+</tr>
+<tr>
+<td>agent_skills</td>
+<td>Agent Skills 管理（内置启停、上传包、记忆）</td>
+</tr>
+<tr>
+<td>knowflow 相关</td>
+<td>切片管理、编码管理等</td>
+</tr>
+</tbody>
+</table>
+<p>未授权的功能码不在列表出现；路由层 <code>require_feature</code> 与菜单双重拦截。</p>
+<hr />
+<h2 id="11">11. 系统设置与说明文档</h2>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户 / 部门 / 角色</td>
+<td>CRUD + RBAC 种子</td>
+</tr>
+<tr>
+<td>模型与资源配置</td>
+<td>在线配置 LLM、Embedding、Rerank、OCR、KnowFlow 地址；保存前可连通性测试</td>
+</tr>
+<tr>
+<td>系统说明文档</td>
+<td>读取仓库 <code>docs/</code> 与根目录《运维部署指南》；Markdown + <strong>Mermaid</strong> 渲染</td>
+</tr>
+<tr>
+<td>操作审计</td>
+<td>登录、文档、翻译等写 <code>audit_log</code></td>
+</tr>
+<tr>
+<td>在线用户</td>
+<td>Redis 会话 + 心跳（若启用）</td>
+</tr>
+</tbody>
+</table>
+<p>公开配置 <code>GET /system/client-config</code> 供前端启动拉取主题、API 根路径等。</p>
+<hr />
+<h2 id="12">12. 前端架构要点</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>路由</td>
+<td>Vue Router，<code>/ai/</code> base path</td>
+</tr>
+<tr>
+<td>API</td>
+<td>域模块拆分（<code>documents.js</code>、<code>translate.js</code> 等）；开发态走 Vite 代理 <code>/ai/api</code></td>
+</tr>
+<tr>
+<td>布局</td>
+<td>MainLayout + FeatureSubsystemShell；功能页统一顶栏与本地导航</td>
+</tr>
+<tr>
+<td>状态</td>
+<td>composables（<code>useAuth</code>、<code>usePlatformUi</code> 等）</td>
+</tr>
+<tr>
+<td>KnowFlow</td>
+<td>iframe + embed-session；Vite 代理 <code>/ragflow-ui</code>、<code>/v1</code></td>
+</tr>
+<tr>
+<td>UI</td>
+<td>Naive UI + Liquid Glass 主题；全局视频背景可选</td>
+</tr>
+</tbody>
+</table>
+<p>保存前端文件后 <strong>Vite HMR</strong> 即时刷新；改 API 后 <strong>uvicorn --reload</strong> 自动重载（开发模式）。</p>
+<hr />
+<h2 id="13">13. 资源管理与语音合成</h2>
+<h3 id="131">13.1 资源管理（管理员）</h3>
+<ul>
+<li>入口：<strong>系统设置 → 资源管理</strong>（需 <code>admin.user</code> 或系统管理员）。</li>
+<li>配置项：语言模型、嵌入、VL、Rerank、OCR-VL、<strong>语音合成</strong>、语音识别、PDF 翻译、RAGFlow/KnowFlow、SearXNG 等。</li>
+<li>数据存 <code>platform_model_settings</code> 单例 JSON；<code>.env</code> 中 <code>PLATFORM_*</code> 仅作首次引导，运行以页面保存为准。</li>
+<li>保存后可对单项做 <strong>连通性测试</strong>（<code>POST /admin/model-settings/health/test</code>）。</li>
+<li>普通成员侧栏不可见，API 无 <code>admin.user</code> 返回 403。</li>
+</ul>
+<h3 id="132">13.2 语音合成</h3>
+<ul>
+<li>功能页：<strong>系统功能 → 语音合成</strong>（<code>feature.text_to_speech</code>）。</li>
+<li>TTS 优先读资源管理 <code>tts_*</code>；未单独配置时从支持 <code>/audio/speech</code> 的兼容端点（如嵌入/VL）借用 URL/Key。</li>
+<li>合成接口：<code>POST /api/v1/text-to-speech/synthesize</code>；元数据 <code>GET .../meta</code>。</li>
+</ul>
+<h3 id="133">13.3 远程代码同步</h3>
+<ul>
+<li>本机 <code>./dev.sh sync</code>：rsync <code>platform/app</code> 到服务器并 <strong>重启 API / Worker</strong>。</li>
+<li><code>./dev.sh sync --frontend</code>：额外 build <code>dist</code> 并 nginx reload（挂载静态资源，不重建前端镜像）。</li>
+</ul>
+<hr />
+<h2 id="14-agent-skills">14. Agent Skills 管理</h2>
+<p><strong>面向谁</strong>：系统管理员或有 <code>feature.agent_skills</code> 权限的用户。</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内置 Skill</td>
+<td>14 项平台能力；4 项在对话中可执行（联网、文档、图谱、综合检索），其余引导去功能页</td>
+</tr>
+<tr>
+<td>上传包</td>
+<td>ZIP 或文件夹，含 <code>SKILL.md</code>；存对象存储，全员共享（scope=system）</td>
+</tr>
+<tr>
+<td>启停</td>
+<td>内置用 binding 表；上传包用 enabled 字段</td>
+</tr>
+<tr>
+<td>用户记忆</td>
+<td>每用户一份 <code>MEMORY.md</code>，对话中可「请记住…」或工具读写</td>
+</tr>
+</tbody>
+</table>
+<p><strong>上传后如何生效</strong>：启用 → <code>build_agent_catalog_prompt</code> 写入 Discovery 目录 → 模型在任务匹配时调用 <code>load_uploaded_skill</code>。</p>
+<p>示例包：<code>examples/agent-skills/mermaid-diagram/</code>（教模型如何输出 Mermaid 图）。</p>
+<hr />
+<h2 id="15-aip-v460">15. AIP 智能体互联（v4.6.0）</h2>
+<p><strong>面向谁</strong>：需与外部智能体互通的部署方；管理员配置 SK 密钥与外部智能体登记。</p>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>发现</td>
+<td><code>GET /api/v1/aip/discover</code> — 列出内置专精与已登记外部智能体（ACDL）</td>
+</tr>
+<tr>
+<td>调用</td>
+<td><code>POST /api/v1/aip/interact</code> / <code>interact/stream</code> — 同步或流式 handoff</td>
+</tr>
+<tr>
+<td>SK 密钥</td>
+<td><code>GET/POST/DELETE /api/v1/admin/aip/keys</code> — GB/Z 185.3 身份密钥</td>
+</tr>
+<tr>
+<td>外部登记</td>
+<td>Agent Skills 管理页 — <code>/admin/agent-skills/external-agents</code></td>
+</tr>
+<tr>
+<td>执行层</td>
+<td><code>agent_aip_executor</code> — supervisor 调度内置 hop 或外部 HTTP</td>
+</tr>
+</tbody>
+</table>
+<p>配置项：<code>AIP_ENABLED</code>、<code>AIP_SERVICE_BASE_URL</code>、<code>AIP_EXTERNAL_AGENTS_JSON</code>（见 <code>platform/.env.example</code>）。</p>
+<hr />
+<h2 id="16-postgresql">16. PostgreSQL 读写分离</h2>
+<p>平台在 <code>app/database.py</code> 实现可选读写分离：</p>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DATABASE_URL</code></td>
+<td>主库（读写）</td>
+</tr>
+<tr>
+<td><code>DATABASE_READ_URL</code></td>
+<td>只读副本；<strong>留空时读写均走主库</strong></td>
+</tr>
+<tr>
+<td><code>get_db()</code></td>
+<td>写路径：创建/更新/删除、事务提交</td>
+</tr>
+<tr>
+<td><code>get_read_db()</code></td>
+<td>读路径：列表、详情等只读查询</td>
+</tr>
+<tr>
+<td><code>read_session_factory()</code></td>
+<td>有副本用副本 Session，否则回退 <code>SessionLocal</code></td>
+</tr>
+<tr>
+<td><code>run_db_read_task()</code></td>
+<td>异步线程池中执行只读 DB 任务（同 <code>get_read_db</code> 路由）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>已接入 <code>get_read_db</code> 的 API</strong>（节选）：</p>
+<ul>
+<li><code>documents/listing.py</code> — 文档列表、文件夹树、回收站列表等  </li>
+<li><code>documents/crud.py</code> — <code>GET</code> 文档详情  </li>
+<li><code>system.py</code> — 客户端配置、功能列表等读接口  </li>
+</ul>
+<p>Celery Worker、流式对话中的写操作（如 <code>platform_chat_store.append_turn</code>）仍使用主库 <code>SessionLocal</code>。</p>
+<p>生产启用：在 <code>platform/.env</code> 配置 <code>DATABASE_READ_URL</code> 指向 PostgreSQL 只读副本（流复制或云厂商只读实例），连接池参数与主库共用 <code>DB_POOL_*</code>。</p>
+<hr />
+<h2 id="15">15. 与外部系统关系</h2>
+<table>
+<thead>
+<tr>
+<th>系统</th>
+<th>关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pdf2zh_next / BabelDOC</td>
+<td>独立 HTTP 服务，平台只调 REST</td>
+</tr>
+<tr>
+<td>KnowFlow / RAGFlow</td>
+<td>向量库 + 原厂 UI；平台 SSO + 同步 + ACL</td>
+</tr>
+<tr>
+<td>DeepSeek 等</td>
+<td>在线 LLM，API Key 在 <code>.env</code> 或资源管理</td>
+</tr>
+<tr>
+<td>设计系统（:40001）</td>
+<td>智能问数等 iframe 外链，独立 upstream</td>
+</tr>
+<tr>
+<td>Dify（若同机）</td>
+<td>端口 40001 预留，与平台栈分离</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="_3">相关文档</h2>
+<ul>
+<li><a href="architecture.html">系统架构</a></li>
+<li><a href="permissions.html">权限与账户</a></li>
+<li><a href="../implementation/knowledge-implementation.html">知识库实现</a></li>
+<li><a href="../implementation/report-generation-implementation.html">报告生成实现</a></li>
+<li><a href="../implementation/agent-skills-implementation.html">Agent Skills 实现</a></li>
+<li><a href="../platform/doc-compare-product-design.html">文档对比产品设计</a></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "navigation.expand", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

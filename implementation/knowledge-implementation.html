@@ -1,0 +1,3659 @@
+
+<!doctype html>
+<html lang="zh" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="PDF 科学文献翻译与企业 AI 知识库平台（中文文档）">
+      
+      
+      
+      
+        <link rel="prev" href="documents-implementation.html">
+      
+      
+        <link rel="next" href="report-generation-implementation.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../icon/yezi.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>知识服务实现 - 企业 AI 知识库平台</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#_1" class="md-skip">
+          跳转至
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="页眉">
+    <a href="../index.html" title="企业 AI 知识库平台" class="md-header__button md-logo" aria-label="企业 AI 知识库平台" data-md-component="logo">
+      
+  <img src="../../../icon/yezi.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            企业 AI 知识库平台
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              知识服务实现
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="red" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="pink" data-md-color-accent="indigo"  aria-hidden="true"  type="radio" name="__palette" id="__palette_1">
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="搜索" placeholder="搜索" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="查找">
+        
+        <button type="reset" class="md-search__icon md-icon" title="清空当前内容" aria-label="清空当前内容" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            正在初始化搜索引擎
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/zhibinQiu/benxi" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="导航栏" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../index.html" title="企业 AI 知识库平台" class="md-nav__button md-logo" aria-label="企业 AI 知识库平台" data-md-component="logo">
+      
+  <img src="../../../icon/yezi.svg" alt="logo">
+
+    </a>
+    企业 AI 知识库平台
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/zhibinQiu/benxi" title="前往仓库" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    主页
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    运维与部署
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    运维与部署
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    手册索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/components-and-storage.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    组件与数据存储
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/knowledge-data-consistency.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    知识库数据一致性
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/config-and-scripts.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置与脚本
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    系统架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/docker-services.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker 容器
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/network-topology.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    网络拓扑
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/deployment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    部署指南
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/server-deps.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    远程依赖开发
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/single-server-migration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    单机迁移与热重载
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/feature-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能实现说明
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    配置说明
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/database-migration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    数据库迁移
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/permissions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    权限与账户
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    测试
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/upgrade.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    升级
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/security.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    安全
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/operations-manual.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    日常操作
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    开发实现说明书
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    开发实现说明书
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/implementation-manual.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    说明书总览
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第一篇 总览与架构
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第一篇 总览与架构
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/system-architecture-overview.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    项目总体架构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/platform-architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    平台架构索引
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/layered-architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    分层与代码组织
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第二篇 环境与部署
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第二篇 环境与部署
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    快速开始
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/stack-deployment.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stack 命令速查
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第三篇 后端实现
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第三篇 后端实现
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="api-conventions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API 与约定
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="backend-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    应用服务与域
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/permission-model.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    权限模型与文档分级
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="documents-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    文档库实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    知识服务实现
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="knowledge-implementation.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    知识服务实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 能力总览
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-knowledgegatewayappdomainsknowledgegatewaypy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. KnowledgeGateway（app/domains/knowledge/gateway.py）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. KnowledgeGateway（app/domains/knowledge/gateway.py）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 职责
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 常用方法实现思路
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 调用示例
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-knowledge_parser_servicepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 解析器规则层（knowledge_parser_service.py）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. 解析器规则层（knowledge_parser_service.py）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-parser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 两套默认 parser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 核心函数实现思路
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.2 核心函数实现思路">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parser_id_rawparser_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        parser_id_raw(parser_id)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reindex_parser_id_rawparser_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reindex_parser_id_raw(parser_id)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is_pageindex_parserparser_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        is_pageindex_parser(parser_id)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolve_job_parser_idpayload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resolve_job_parser_id(payload)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#job_payload_uses_pageindexpayload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        job_payload_uses_pageindex(payload)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#index_stack_block_reasonparser_id-reindexfalse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        index_stack_block_reason(parser_id, *, reindex=False)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#infer_parser_for_upload_filefile_name-mime_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        infer_parser_for_upload_file(file_name, mime_type)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coerce_parser_layoutparser-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        coerce_parser_layout(parser, layout)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_parser_configparser_id-layout_recognize" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_parser_config(parser_id, layout_recognize, ...)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_parser_options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_parser_options()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 索引流程
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. 索引流程">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 上传后首次索引
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 重新索引
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-pageindex-pageindex_servicepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 PageIndex 结构索引（pageindex_service.py）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-appservicesknowledge_qa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 知识问答（app/services/knowledge_qa/）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. 知识问答（app/services/knowledge_qa/）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 流式入口与调用链
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-retrieve_hits_for_qa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 retrieve_hits_for_qa 实现思路
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-system-_knowledge_qa_system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 问答 System 提示词（_KNOWLEDGE_QA_SYSTEM）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 检索上下文与引用对齐
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-agentic-knowledge_agentic_servicepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Agentic 检索（knowledge_agentic_service.py）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5.5 Agentic 检索（knowledge_agentic_service.py）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_plan_qa_sub_questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        规划子问题（_plan_qa_sub_questions）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_evaluate_qa_sufficiency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        充足性评估（_evaluate_qa_sufficiency）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_plan_report_gathering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        报告侧规划（_plan_report_gathering）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-generate_knowledge_mindmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 思维导图提示词（generate_knowledge_mindmap）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-ai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 本体图谱与 AI 智能体
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 流式问答错误处理
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 配置项
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. 前端协作
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. 相关文档
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="report-generation-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    报告生成实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="agent-skills-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Skills 实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="browser-rpa-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    浏览器 RPA 实现
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="async-and-jobs.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    异步任务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第四篇 前端实现
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第四篇 前端实现
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="frontend-implementation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    前端结构
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第五篇 业务能力
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第五篇 业务能力
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/feature-plugins.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    功能插件
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/doc-compare-product-design.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    文档对比
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/speech-models.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    语音转写
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_7" id="__nav_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    第六篇 PDF 翻译
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    第六篇 PDF 翻译
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/rest-api.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/advanced.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    进阶选项
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/Language-Codes.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    语言代码
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/Documentation-of-Translation-Services.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    翻译服务
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/TranslationServices/Aliyun.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    阿里云翻译
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/TranslationServices/SiliconFlow.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SiliconFlow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    附录
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    附录
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../supported_languages.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    支持语言
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    常见问题
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="目录">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      目录
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. 能力总览
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-knowledgegatewayappdomainsknowledgegatewaypy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. KnowledgeGateway（app/domains/knowledge/gateway.py）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. KnowledgeGateway（app/domains/knowledge/gateway.py）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 职责
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 常用方法实现思路
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 调用示例
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-knowledge_parser_servicepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 解析器规则层（knowledge_parser_service.py）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. 解析器规则层（knowledge_parser_service.py）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-parser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 两套默认 parser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 核心函数实现思路
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3.2 核心函数实现思路">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#parser_id_rawparser_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        parser_id_raw(parser_id)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reindex_parser_id_rawparser_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reindex_parser_id_raw(parser_id)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#is_pageindex_parserparser_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        is_pageindex_parser(parser_id)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolve_job_parser_idpayload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resolve_job_parser_id(payload)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#job_payload_uses_pageindexpayload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        job_payload_uses_pageindex(payload)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#index_stack_block_reasonparser_id-reindexfalse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        index_stack_block_reason(parser_id, *, reindex=False)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#infer_parser_for_upload_filefile_name-mime_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        infer_parser_for_upload_file(file_name, mime_type)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coerce_parser_layoutparser-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        coerce_parser_layout(parser, layout)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_parser_configparser_id-layout_recognize" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_parser_config(parser_id, layout_recognize, ...)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_parser_options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_parser_options()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 索引流程
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. 索引流程">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 上传后首次索引
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 重新索引
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-pageindex-pageindex_servicepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 PageIndex 结构索引（pageindex_service.py）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-appservicesknowledge_qa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. 知识问答（app/services/knowledge_qa/）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. 知识问答（app/services/knowledge_qa/）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 流式入口与调用链
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-retrieve_hits_for_qa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 retrieve_hits_for_qa 实现思路
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-system-_knowledge_qa_system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 问答 System 提示词（_KNOWLEDGE_QA_SYSTEM）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 检索上下文与引用对齐
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-agentic-knowledge_agentic_servicepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Agentic 检索（knowledge_agentic_service.py）
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5.5 Agentic 检索（knowledge_agentic_service.py）">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#_plan_qa_sub_questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        规划子问题（_plan_qa_sub_questions）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_evaluate_qa_sufficiency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        充足性评估（_evaluate_qa_sufficiency）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#_plan_report_gathering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        报告侧规划（_plan_report_gathering）
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#56-generate_knowledge_mindmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.6 思维导图提示词（generate_knowledge_mindmap）
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#57-ai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.7 本体图谱与 AI 智能体
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#58" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.8 流式问答错误处理
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. 配置项
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. 前端协作
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. 相关文档
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="_1">知识服务实现</h1>
+<blockquote>
+<p>说明书 · 第三篇 §3.5 · <a href="../development/implementation-manual.html">开发实现说明书总览</a></p>
+</blockquote>
+<p>本文描述平台<strong>原生知识能力</strong>（非 KnowFlow 前端嵌入）的实现：文档同步、分块索引、PageIndex 结构索引、混合检索与问答。重点说明<strong>模块边界</strong>与<strong>关键函数的实现思路</strong>。</p>
+<hr />
+<h2 id="1">1. 能力总览</h2>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th>入口</th>
+<th>后端引擎</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文档上传后索引</td>
+<td>后台 <code>document_index</code> Job</td>
+<td>KnowFlow 向量分块（默认 naive）</td>
+</tr>
+<tr>
+<td>重新索引</td>
+<td><code>POST /knowledge/documents/{id}/reindex</code></td>
+<td>PageIndex（默认）或 KnowFlow 分块</td>
+</tr>
+<tr>
+<td>知识检索问答</td>
+<td><code>KnowledgeSearchView</code> / 流式 API</td>
+<td>PageIndex 树搜索 + KnowFlow 向量 + 本地 fallback</td>
+</tr>
+<tr>
+<td>切片浏览</td>
+<td><code>GET /knowledge/documents/{id}/chunks</code></td>
+<td>KnowFlow API</td>
+</tr>
+<tr>
+<td>引用预览</td>
+<td><code>GET /knowledge/citations/preview</code></td>
+<td>PDF 页截图 / bbox 高亮</td>
+</tr>
+</tbody>
+</table>
+<pre class="mermaid"><code>flowchart TB
+  subgraph facade [域 Facade]
+    KG[knowledge / KnowledgeGateway]
+  end
+
+  subgraph rules [规则层 — 唯一 parser/栈校验入口]
+    KPS[knowledge_parser_service]
+    UM[user_messages]
+  end
+
+  subgraph index [索引执行]
+    KSJ[knowledge_sync_job_service]
+    KLS[knowledge_library_service]
+    PIS[pageindex_service]
+  end
+
+  subgraph qa [检索问答]
+    KQS[knowledge_qa/*]
+  end
+
+  API[knowledge_embed.py API] --&gt; KLS
+  API --&gt; KQS
+  KLS --&gt; KPS
+  KLS --&gt; PIS
+  KSJ --&gt; KPS
+  KSJ --&gt; KLS
+  KSJ --&gt; UM
+  KQS --&gt; KG
+  KQS --&gt; PIS
+  KPS --&gt; KG
+  KG --&gt; INT[knowflow_client / ragflow_*]
+  PIS --&gt; BR[pageindex_bridge]</code></pre>
+<p><strong>高内聚低耦合原则</strong>：</p>
+<ul>
+<li><strong>KnowFlow 栈探活、客户端获取</strong>：经 <code>knowledge.stack_reachable()</code> / <code>knowledge.client_for_user()</code>，不在各 service 写 <code>settings.knowflow_enabled and knowflow_stack_reachable()</code>。</li>
+<li><strong>Parser ID 默认值、PageIndex 判定、索引栈就绪</strong>：经 <code>knowledge_parser_service</code>，不硬编码 <code>"pageindex"</code> / <code>"naive"</code>。</li>
+<li><strong>用户可见错误</strong>：经 <code>user_messages.sanitize_user_message</code> 或 <code>background_job_error_message</code>。</li>
+</ul>
+<hr />
+<h2 id="2-knowledgegatewayappdomainsknowledgegatewaypy">2. KnowledgeGateway（<code>app/domains/knowledge/gateway.py</code>）</h2>
+<h3 id="21">2.1 职责</h3>
+<p>Facade 模式：对外暴露稳定 API，内部 lazy import 具体 service，避免 <code>ragflow_sync</code> ↔ <code>ragflow_scope</code> 环依赖。</p>
+<h3 id="22">2.2 常用方法实现思路</h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>实现思路</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enabled()</code></td>
+<td>读 <code>Settings.knowflow_enabled</code>，表示功能开关；栈可达性由 <code>stack_reachable()</code> 单独判断</td>
+</tr>
+<tr>
+<td><code>stack_reachable()</code></td>
+<td>委托 <code>knowflow_stack_reachable()</code>：已 enabled 且 <code>RagflowClient().health_ok()</code></td>
+</tr>
+<tr>
+<td><code>client_for_user(db, user)</code></td>
+<td>按用户 RAGFlow 会话 / API Key 构造 <code>RagflowKnowflowClient</code>；无 KnowFlow 时返回 <code>LocalKnowflowClient</code></td>
+</tr>
+<tr>
+<td><code>client_probe(user_id)</code></td>
+<td>探活用，<strong>不触发</strong> RAGFlow 开户</td>
+</tr>
+<tr>
+<td><code>sync_document(...)</code></td>
+<td>委托 <code>sync_document_to_knowflow</code>：上传 bytes → dataset → parse</td>
+</tr>
+<tr>
+<td><code>reconcile_catalog(...)</code></td>
+<td>对齐平台文件夹与 KnowFlow dataset 登记</td>
+</tr>
+<tr>
+<td><code>meta_payload(...)</code></td>
+<td>委托 <code>meta_service.build_rag_meta_payload</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="23">2.3 调用示例</h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">app.domains.knowledge</span><span class="w"> </span><span class="kn">import</span> <span class="n">knowledge</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">knowledge</span><span class="o">.</span><span class="n">stack_reachable</span><span class="p">():</span>
+    <span class="k">raise</span> <span class="n">bad_request</span><span class="p">(</span><span class="s2">&quot;知识服务不可用&quot;</span><span class="p">)</span>
+
+<span class="n">kf</span> <span class="o">=</span> <span class="n">knowledge</span><span class="o">.</span><span class="n">client_for_user</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">user</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="3-knowledge_parser_servicepy">3. 解析器规则层（<code>knowledge_parser_service.py</code>）</h2>
+<h3 id="31-parser">3.1 两套默认 parser</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>配置项</th>
+<th>默认</th>
+<th>解析函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>上传 / 自动推断</td>
+<td><code>KNOWLEDGE_DEFAULT_PARSER_ID</code></td>
+<td><code>naive</code></td>
+<td><code>parser_id_raw()</code></td>
+</tr>
+<tr>
+<td>重新索引</td>
+<td><code>KNOWLEDGE_REINDEX_DEFAULT_PARSER_ID</code></td>
+<td><code>pageindex</code></td>
+<td><code>reindex_parser_id_raw()</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>为何分离</strong>：上传需稳定向量分块；重新索引默认走结构索引（PageIndex），二者产品策略不同，共用一套默认会误伤上传路径。</p>
+<h3 id="32">3.2 核心函数实现思路</h3>
+<h4 id="parser_id_rawparser_id"><code>parser_id_raw(parser_id)</code></h4>
+<ol>
+<li>若调用方传入非空字符串 → 去空格、小写后直接返回  </li>
+<li>否则读 <code>settings.knowledge_default_parser_id</code>，再 fallback <code>naive</code>  </li>
+<li>白名单校验由下游 <code>normalize_parser_id</code> 统一处理</li>
+</ol>
+<h4 id="reindex_parser_id_rawparser_id"><code>reindex_parser_id_raw(parser_id)</code></h4>
+<p>同上，但 fallback 链为 <code>knowledge_reindex_default_parser_id</code> → <code>naive</code>。</p>
+<h4 id="is_pageindex_parserparser_id"><code>is_pageindex_parser(parser_id)</code></h4>
+<p><strong>仅比较字面量</strong> <code>(parser_id or "").strip().lower() == "pageindex"</code>。<br />
+不经过 <code>parser_id_raw</code>，避免 <code>None</code> 被解析成 <code>naive</code> 导致误判。</p>
+<h4 id="resolve_job_parser_idpayload"><code>resolve_job_parser_id(payload)</code></h4>
+<ol>
+<li>读 <code>payload["mode"]</code>，默认 <code>"index"</code>（上传后索引）  </li>
+<li><code>mode == "reindex"</code> → <code>reindex_parser_id_raw(payload.get("parser_id"))</code>  </li>
+<li>否则 → <code>parser_id_raw(...)</code>  </li>
+</ol>
+<p><strong>关键</strong>：上传 Job 的 payload 通常无 <code>parser_id</code>，若误用 reindex 默认会得到 pageindex，故必须按 mode 分支。</p>
+<h4 id="job_payload_uses_pageindexpayload"><code>job_payload_uses_pageindex(payload)</code></h4>
+<p><code>is_pageindex_parser(resolve_job_parser_id(payload))</code>。<br />
+供 <code>background_job_dispatch.dispatch_document_index_job</code> 决定是否跳过 Celery。</p>
+<h4 id="index_stack_block_reasonparser_id-reindexfalse"><code>index_stack_block_reason(parser_id, *, reindex=False)</code></h4>
+<ol>
+<li>按 <code>reindex</code> 标志选择 raw 解析函数，得到 <code>pid</code>  </li>
+<li>若 <code>is_pageindex_parser(pid)</code>：只检查 <code>pageindex_enabled</code>，通过则返回 <code>None</code>  </li>
+<li>否则：<code>knowledge.enabled()</code> → <code>"知识库同步未启用"</code>；<code>knowledge.stack_reachable()</code> → <code>"知识服务不可用..."</code>  </li>
+<li>全部通过返回 <code>None</code>  </li>
+</ol>
+<p>API 层 <code>assert_index_stack_ready</code> 在此 reason 非空时 <code>raise bad_request(reason)</code>。</p>
+<h4 id="infer_parser_for_upload_filefile_name-mime_type"><code>infer_parser_for_upload_file(file_name, mime_type)</code></h4>
+<ol>
+<li>扩展名 + MIME 双判  </li>
+<li>xlsx → <code>table</code>；ppt → <code>presentation</code>；图片 → <code>picture</code>  </li>
+<li>其余（pdf/doc/md/txt…）→ <code>normalize_parser_id(knowledge_default_parser_id)</code> + 默认 layout  </li>
+<li><strong>不</strong>自动选 PageIndex</li>
+</ol>
+<h4 id="coerce_parser_layoutparser-layout"><code>coerce_parser_layout(parser, layout)</code></h4>
+<p>现代 OCR（PaddleOCR/MinerU/DOTS）需配合 smart/title/regex/parent_child；若用户选 naive + PaddleOCR，自动把 parser 提升为 <code>smart</code>，减少 KnowFlow 解析失败。</p>
+<h4 id="build_parser_configparser_id-layout_recognize"><code>build_parser_config(parser_id, layout_recognize, ...)</code></h4>
+<ol>
+<li>PageIndex → 返回 <code>("pageindex", {"index_engine": "pageindex"})</code>，不调 KnowFlow  </li>
+<li>其它 → <code>coerce_parser_layout</code> + 深拷贝 <code>_PARSER_DEFAULTS[parser]</code> + 写入 <code>chunk_token_num</code> / <code>layout_recognize</code></li>
+</ol>
+<h4 id="list_parser_options"><code>list_parser_options()</code></h4>
+<p>组装 <code>CHUNK_METHODS</code>、<code>LAYOUT_RECOGNIZERS</code> 与 <code>defaults</code>（<strong>重索引默认</strong> parser/layout）。<br />
+前端 <code>useDocumentReindex.loadParserOptions()</code> 拉取后写入 <code>parserId</code> ref。</p>
+<hr />
+<h2 id="4">4. 索引流程</h2>
+<h3 id="41">4.1 上传后首次索引</h3>
+<pre class="mermaid"><code>sequenceDiagram
+  participant Upload as post_upload
+  participant Dispatch as background_job_dispatch
+  participant Job as knowledge_sync_job_service
+  participant KF as KnowFlow
+
+  Upload-&gt;&gt;Dispatch: dispatch_post_upload_processing
+  Note over Upload: 可能 schedule_knowledge_index_after_upload
+  Dispatch-&gt;&gt;Job: run_document_knowledge_index_job
+  Job-&gt;&gt;Job: resolve_job_parser_id (mode=index)
+  Job-&gt;&gt;Job: index_stack_block_reason
+  Job-&gt;&gt;KF: sync + parse + parse_watch</code></pre>
+<p><strong>实现要点</strong>：</p>
+<ul>
+<li>Job payload：<code>mode</code> 缺省为 <code>index</code>，无 <code>parser_id</code> 时用上传默认 naive  </li>
+<li>OCR 失败：<code>_maybe_fallback_plain_text_parse</code> 先 DeepDOC，再 Plain Text（保留引用截图能力）</li>
+</ul>
+<h3 id="42">4.2 重新索引</h3>
+<pre class="mermaid"><code>sequenceDiagram
+  participant FE as DocumentDetailView
+  participant API as reindex_document
+  participant Job as enqueue_document_reindex
+  participant Exec as execute_document_reindex
+
+  FE-&gt;&gt;API: POST reindex (parser_id 可选)
+  API-&gt;&gt;API: reindex_parser_id_raw + assert_index_stack_ready
+  API-&gt;&gt;Job: 创建 mode=reindex Job
+  Job-&gt;&gt;Exec: run_document_knowledge_index_job
+  alt PageIndex
+    Exec-&gt;&gt;Exec: execute_pageindex_reindex
+  else KnowFlow
+    Exec-&gt;&gt;Exec: change_parser + parse (+ 可选 resync)
+  end</code></pre>
+<p><strong><code>execute_document_reindex</code> 实现思路</strong>：</p>
+<ol>
+<li><code>reindex_parser_id_raw(parser_id)</code> 归一化  </li>
+<li>PageIndex → 直接 <code>execute_pageindex_reindex</code>（不经 KnowFlow）  </li>
+<li>KnowFlow 路径：判断是否需要 <code>resync</code>（md 索引、block 派生、dataset 缺失等）  </li>
+<li><code>change_document_parser</code> + <code>parse_documents</code> + 更新 <code>RagflowDocumentVersionLink</code></li>
+</ol>
+<p><strong><code>create_document_reindex_job</code> 实现思路</strong>：</p>
+<ul>
+<li>启动前 <code>index_stack_block_reason(parser_id, reindex=True)</code>，不可用则<strong>不创建</strong> Job（PageIndex 在 KnowFlow 关闭时仍可创建）  </li>
+<li>payload 写入已解析的 <code>parser_id</code> 字符串，供 Worker 只读</li>
+</ul>
+<h3 id="43-pageindex-pageindex_servicepy">4.3 PageIndex 结构索引（<code>pageindex_service.py</code>）</h3>
+<p><strong><code>execute_pageindex_reindex</code> 实现思路</strong>：</p>
+<ol>
+<li><code>assert_index_stack_ready(PARSER_PAGEINDEX)</code>  </li>
+<li>校验文件格式（<code>is_pageindex_supported_file</code>）  </li>
+<li><code>read_document_file_bytes</code> → <code>prepare_pageindex_index_path</code>（必要时转 md）  </li>
+<li><code>index_file_with_pageindex</code> → 本地 workspace 存 JSON 树  </li>
+<li><code>_upsert_version_link</code> 写 <code>PageindexVersionLink</code>（与 KnowFlow link 并行存在）</li>
+</ol>
+<p><strong>检索引擎选择</strong>（<code>resolve_retrieval_engine_for_document</code>）：</p>
+<ul>
+<li>比较 PageIndex link 与 KnowFlow link 的 <code>index_completed_at</code>，取较新者  </li>
+<li><code>effective_retrieval_engine</code> 再考虑 <code>pageindex_retrieval_available()</code>（LLM 是否配置）</li>
+</ul>
+<hr />
+<h2 id="5-appservicesknowledge_qa">5. 知识问答（<code>app/services/knowledge_qa/</code>）</h2>
+<p>实现按职责拆分为子模块（<code>retrieval</code>、<code>citations</code>、<code>answer</code>、<code>preview</code>、<code>stream</code> 等），对外仍通过 <code>knowledge_qa_service</code> 兼容层导出。</p>
+<h3 id="51">5.1 流式入口与调用链</h3>
+<pre class="mermaid"><code>sequenceDiagram
+  participant API as knowledge_embed.py
+  participant QA as iter_knowledge_qa_stream
+  participant AG as knowledge_agentic_service
+  participant RET as retrieve_hits_for_qa
+  participant LLM as DeepSeek
+
+  API-&gt;&gt;QA: SSE 流式问答
+  QA-&gt;&gt;QA: _begin_knowledge_qa_stream（建会话、写 user 消息）
+  alt agentic_enabled 且 use_agentic
+    QA-&gt;&gt;AG: iter_gather_for_knowledge_qa
+    AG-&gt;&gt;AG: _plan_qa_sub_questions
+    AG-&gt;&gt;RET: 多轮子问题检索
+    AG-&gt;&gt;AG: _evaluate_qa_sufficiency
+  else 简单模式
+    QA-&gt;&gt;RET: retrieve_hits_for_qa（单次）
+  end
+  QA-&gt;&gt;QA: build_aligned_qa_context_and_citations
+  QA-&gt;&gt;QA: merge_kg_qa_into_context（若有图谱）
+  QA-&gt;&gt;LLM: _build_qa_llm_messages → chat_completion_stream
+  QA-&gt;&gt;QA: finalize_qa_answer_and_citations</code></pre>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>iter_knowledge_qa_stream</code></td>
+<td>SSE 主入口；Agentic / 简单两路召回</td>
+</tr>
+<tr>
+<td><code>_begin_knowledge_qa_stream</code></td>
+<td>解析 session、校验文档 scope、持久化 user 消息</td>
+</tr>
+<tr>
+<td><code>_gather_qa_agentic</code></td>
+<td>包装 <code>iter_gather_for_knowledge_qa</code>，产出 workflow 事件</td>
+</tr>
+<tr>
+<td><code>_gather_qa_simple</code></td>
+<td>单次 <code>retrieve_hits_for_qa</code> + 图谱上下文</td>
+</tr>
+<tr>
+<td><code>_prepare_qa_stream_bundle</code></td>
+<td>合并 hits、图谱、版本对比块，生成 context</td>
+</tr>
+<tr>
+<td><code>_build_qa_llm_messages</code></td>
+<td>组装 system + 检索片段 + 问题</td>
+</tr>
+<tr>
+<td><code>finalize_qa_answer_and_citations</code></td>
+<td>后处理引用编号、去来源叙述、裁剪展示用 citations</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-retrieve_hits_for_qa">5.2 <code>retrieve_hits_for_qa</code> 实现思路</h3>
+<ol>
+<li><code>validate_document_scope</code> 过滤无权文档  </li>
+<li><code>partition_documents_by_retrieval_engine</code> → PageIndex / KnowFlow / 不可检索  </li>
+<li>PageIndex 文档：<code>pageindex_tree_search</code>（LLM 选 node_id → 取正文片段）  </li>
+<li>KnowFlow 文档：<code>knowledge.stack_reachable()</code> 且 client enabled → 向量检索；否则 <code>_local_retrieve</code>  </li>
+<li>合并 hits，可选 <code>merge_nearby_retrieval_hits</code>，截断 <code>top_k</code>（默认 <code>knowledge_retrieval_top_k</code>，上限 20）</li>
+</ol>
+<p><strong>检索优先级</strong>：KnowFlow 向量文档优先 <code>_knowflow_retrieve</code>；PageIndex 文档走 <code>retrieve_pageindex_hits_for_qa</code>；PageIndex 未命中时回退 KnowFlow / <code>_local_retrieve</code>。</p>
+<h3 id="53-system-_knowledge_qa_system">5.3 问答 System 提示词（<code>_KNOWLEDGE_QA_SYSTEM</code>）</h3>
+<p>由 <code>assistant_knowledge_qa_persona()</code> + 固定规则拼接，经 <code>_qa_system_prompt(include_kg=…)</code> 输出：</p>
+<table>
+<thead>
+<tr>
+<th>规则类别</th>
+<th>内容要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>身份</td>
+<td>知识检索问答助手「小析」</td>
+</tr>
+<tr>
+<td>事实依据</td>
+<td>仅以编号检索片段为准；与模型常识冲突时以片段为准</td>
+</tr>
+<tr>
+<td>引用</td>
+<td>句末 <code>[1][2]</code>，与片段 <code>[n]</code> 严格一一对应</td>
+</tr>
+<tr>
+<td>禁止来源叙述</td>
+<td>正文不出现文档名、「根据…文档」「参考了…」等</td>
+</tr>
+<tr>
+<td>不足处理</td>
+<td>信息不足时明确说明；禁止元信息脚注</td>
+</tr>
+</tbody>
+</table>
+<p>含本体图谱时追加 <code>_KG_QA_SYSTEM_APPENDIX</code>：图谱片段与文档片段同等可作为依据。</p>
+<p><strong>材料不足追加段</strong>（<code>insufficient_note</code> 非空时）：</p>
+<div class="highlight"><pre><span></span><code>【材料不足】当前检索材料可能不足以完整回答。不足方面：{gaps}。
+请基于已有片段尽力回答；并在回答末尾友好提示用户可补充哪些具体信息。
+</code></pre></div>
+<p>LLM 调用：<code>temperature=0.2</code>；消息经 <code>build_bounded_qa_messages()</code> 受 <code>chat_prompt_max_chars</code> / <code>chat_context_max_chars</code> 约束。</p>
+<h3 id="54">5.4 检索上下文与引用对齐</h3>
+<p><code>build_aligned_qa_context_and_citations(hits, doc_titles)</code>：</p>
+<ol>
+<li>遍历 hits，提取正文 <code>_extract_qa_context_body</code>  </li>
+<li>按顺序编号：<code>[1]\n{body}</code>、<code>[2]\n{body}</code>…  </li>
+<li><code>build_citations</code> 生成前端引用卡片（snippet 高亮、页码、bbox、预览图 id）  </li>
+<li>回答生成后 <code>finalize_qa_answer_and_citations</code>：重排引用、合并同句多引用、过滤未使用 citations</li>
+</ol>
+<p>图谱合并：<code>kg_service.merge_kg_qa_into_context(doc_context, citations, kg_ctx)</code>，引用 index 在文档 citations 之后顺延。</p>
+<h3 id="55-agentic-knowledge_agentic_servicepy">5.5 Agentic 检索（<code>knowledge_agentic_service.py</code>）</h3>
+<p>开关：<code>knowledge_agentic_enabled=true</code> 且 DeepSeek 已配置（<code>agentic_enabled()</code>）。</p>
+<h4 id="_plan_qa_sub_questions">规划子问题（<code>_plan_qa_sub_questions</code>）</h4>
+<p><strong>System</strong>：</p>
+<div class="highlight"><pre><span></span><code>你是企业知识库检索规划助手。根据用户问题拆解为若干可独立检索的子问题。
+仅返回 JSON：{&quot;reasoning&quot;:&quot;简要策略&quot;,&quot;sub_questions&quot;:[&quot;子问题1&quot;,&quot;子问题2&quot;]}。
+sub_questions 数量 1～{max_q}，使用简体中文。
+</code></pre></div>
+<p><strong>User</strong>：用户问题、已选文档数、可选本体图谱规划参考。</p>
+<h4 id="_evaluate_qa_sufficiency">充足性评估（<code>_evaluate_qa_sufficiency</code>）</h4>
+<p><strong>System</strong>：</p>
+<div class="highlight"><pre><span></span><code>你是检索质量评估助手。判断材料是否足以回答。
+仅返回 JSON：{&quot;sufficient&quot;:true|false,&quot;gaps&quot;:&quot;…&quot;,&quot;extra_queries&quot;:[&quot;…&quot;]}。
+</code></pre></div>
+<p>不足时进入下一轮，用 <code>extra_queries</code> 补充检索（最多 <code>knowledge_agentic_qa_max_rounds</code> 轮）。</p>
+<h4 id="_plan_report_gathering">报告侧规划（<code>_plan_report_gathering</code>）</h4>
+<p>输出 JSON：<code>use_local</code>、<code>local_queries</code>、<code>use_web</code>、<code>web_queries</code>；按 <code>intent</code>（<code>initial</code> / <code>follow_up</code> / <code>format_adjust</code>）决定是否检索。</p>
+<h3 id="56-generate_knowledge_mindmap">5.6 思维导图提示词（<code>generate_knowledge_mindmap</code>）</h3>
+<p><strong>System（<code>_MINDMAP_SYSTEM</code>）</strong>：</p>
+<div class="highlight"><pre><span></span><code>你是知识结构分析助手。根据用户问题和 AI 回答，输出 Mermaid mindmap 语法。
+- 仅输出 mindmap 代码，不要使用 ``` 围栏
+- 第一行必须是 mindmap，根节点形如 root((问题摘要))
+- 提炼 2-3 层要点分支，节点文字简短，使用简体中文
+</code></pre></div>
+<p><code>temperature=0.1</code>；LLM 失败时 <code>_normalize_mindmap_source</code> 从回答文本本地回退生成简单 mindmap。</p>
+<h3 id="57-ai">5.7 本体图谱与 AI 智能体</h3>
+<p><strong><code>retrieve_kg_context_for_question</code></strong>（<code>kg_service.py</code>）：</p>
+<ol>
+<li>从问题文本 <strong>匹配实体名称</strong>（<code>match_entities_in_question</code>）  </li>
+<li>以 seed 实体为中心 <strong>BFS 扩展</strong> 指定跳数（默认 2）  </li>
+<li>格式化为带编号引用块的 <code>KgQaContext</code></li>
+</ol>
+<p><strong>消费方</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>合并方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>知识检索</td>
+<td><code>merge_kg_qa_into_context</code> 追加在文档 hits 之后，引用 index 顺延</td>
+</tr>
+<tr>
+<td>报告生成</td>
+<td><code>KnowledgeAgenticToolkit.retrieve_kg</code>；详见 <a href="report-generation-implementation.html">报告生成实现</a></td>
+</tr>
+<tr>
+<td>AI 智能体</td>
+<td><code>skill_chat_service.resolve_combined_research_async</code> 内合并 KB + KG + Web</td>
+</tr>
+</tbody>
+</table>
+<p>AI 智能体在无显式选文档时，自动在用户 <strong>可 query 的前 20 份文档</strong> 内检索（需 <code>feature.knowledge_search</code>）。</p>
+<h3 id="58">5.8 流式问答错误处理</h3>
+<p><code>_resolve_qa_session</code> 抛 <code>HTTPException</code> 时，用 <code>http_exception_message(exc, fallback=KNOWLEDGE_SERVICE_UNAVAILABLE)</code> 写入 SSE JSON，与 REST API 文案一致。</p>
+<hr />
+<h2 id="6">6. 配置项</h2>
+<table>
+<thead>
+<tr>
+<th>环境变量</th>
+<th>含义</th>
+<th>默认</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KNOWFLOW_ENABLED</code></td>
+<td>KnowFlow 功能总开关</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>KNOWLEDGE_DEFAULT_PARSER_ID</code></td>
+<td>上传/推断默认分块</td>
+<td><code>naive</code></td>
+</tr>
+<tr>
+<td><code>KNOWLEDGE_REINDEX_DEFAULT_PARSER_ID</code></td>
+<td>重新索引默认分块</td>
+<td><code>pageindex</code></td>
+</tr>
+<tr>
+<td><code>KNOWLEDGE_DEFAULT_LAYOUT_RECOGNIZE</code></td>
+<td>PDF OCR 引擎</td>
+<td><code>DeepDOC</code></td>
+</tr>
+<tr>
+<td><code>PAGEINDEX_ENABLED</code></td>
+<td>结构索引开关</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>PAGEINDEX_WORKSPACE_DIR</code></td>
+<td>树索引本地目录</td>
+<td><code>platform/.run/pageindex</code></td>
+</tr>
+<tr>
+<td><code>KNOWLEDGE_AGENTIC_ENABLED</code></td>
+<td>知识检索 Agentic 多轮召回</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>KNOWLEDGE_AGENTIC_QA_MAX_SUB_QUESTIONS</code></td>
+<td>问答子问题上限</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>KNOWLEDGE_AGENTIC_QA_MAX_ROUNDS</code></td>
+<td>问答充足性评估轮次</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>KNOWLEDGE_RETRIEVAL_TOP_K</code></td>
+<td>单次检索 hit 上限</td>
+<td>5</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7">7. 前端协作</h2>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api/knowledge.js</code></td>
+<td><code>fetchParserOptions</code>、<code>reindexDocument</code>（parser_id 可选，默认由后端 Schema 填充）</td>
+</tr>
+<tr>
+<td><code>composables/useDocumentReindex.js</code></td>
+<td>弹窗、轮询 Job / parse_status</td>
+</tr>
+<tr>
+<td><code>utils/knowledgeCitation.js</code></td>
+<td>PageIndex / KnowFlow 引用跳转</td>
+</tr>
+<tr>
+<td><code>composables/usePlatformUi.js</code></td>
+<td>统一 toast，错误经 <code>sanitizeUserFacingMessage</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8">8. 相关文档</h2>
+<ul>
+<li><a href="report-generation-implementation.html">报告生成实现</a></li>
+<li><a href="agent-skills-implementation.html">Agent Skills 实现</a></li>
+<li><a href="../development/layered-architecture.html">分层架构</a></li>
+<li><a href="async-and-jobs.html">异步任务</a></li>
+<li><a href="backend-implementation.html">应用服务与域</a></li>
+<li><a href="frontend-implementation.html">前端结构</a></li>
+<li><a href="../operations/knowledge-data-consistency.html">知识数据一致性</a></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  回到页面顶部
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "navigation.expand", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "\u5df2\u590d\u5236", "clipboard.copy": "\u590d\u5236", "search.result.more.one": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.more.other": "\u5728\u8be5\u9875\u4e0a\u8fd8\u6709 # \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.none": "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.one": "\u627e\u5230 1 \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.other": "# \u4e2a\u7b26\u5408\u6761\u4ef6\u7684\u7ed3\u679c", "search.result.placeholder": "\u952e\u5165\u4ee5\u5f00\u59cb\u641c\u7d22", "search.result.term.missing": "\u7f3a\u5c11", "select.version": "\u9009\u62e9\u5f53\u524d\u7248\u672c"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

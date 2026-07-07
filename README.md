@@ -95,7 +95,7 @@ pip install -e packages/agentkit-aip
 pip install -e packages/agentkit-mcp
 ```
 
-> 详细文档见 [AgentKit 仓库](https://github.com/zhibinQiu/Agentkit) 或 `packages/` 目录。
+> 详细文档见 [AgentKit 仓库](https://github.com/zhibinQiu/Agentkit) 或 [AgentKit 开发者指南](https://zhibinQiu.github.io/benxi/)。
 
 ---
 
@@ -103,11 +103,11 @@ pip install -e packages/agentkit-mcp
 
 | 文档 | 说明 |
 |------|------|
-| [产品文档](https://github.com/zhibinQiu/benxi/wiki) | Wiki — 使用指南与最佳实践 |
+| [产品文档](https://zhibinQiu.github.io/benxi/) | 在线文档 — 使用指南与最佳实践 |
 | [AgentKit 开发者指南](https://github.com/zhibinQiu/Agentkit) | AgentKit 开发文档 |
 | [API 参考](https://github.com/zhibinQiu/benxi/tree/main/backend) | 后端 API 说明 |
-| [运维部署指南](docs/zh/operations/README.md) | 部署、配置、升级 |
-| [脚本说明](scripts/README.md) | dev / stack / deploy |
+| [运维部署指南](https://zhibinQiu.github.io/benxi/operations/README/) | 部署、配置、升级 |
+| [脚本说明](https://github.com/zhibinQiu/benxi/tree/main/scripts) | dev / stack / deploy |
 
 ---
 
@@ -128,6 +128,23 @@ pip install -e packages/agentkit-mcp
 本平台全部开源，开发不易。如果项目对你有帮助，欢迎打赏支持～
 
 > 打赏 50 元以上，企业级部署享折扣 15%
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="images/weixin.jpg" alt="微信收款码" width="200" />
+        <br />
+        <strong>微信</strong>
+      </td>
+      <td align="center">
+        <img src="images/zhifubao.jpg" alt="支付宝收款码" width="200" />
+        <br />
+        <strong>支付宝</strong>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ---
 

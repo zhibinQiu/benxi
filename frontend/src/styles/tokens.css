@@ -178,6 +178,11 @@ html[data-theme="light"] {
   --platform-z-message: 10900;
   --platform-z-system-dialog: 11000;
 
+  /* === 响应式断点（CSS 层仅示意，JS 逻辑使用 matchMedia） === */
+  --bp-mobile: 768px;
+
+  --platform-touch-target: 44px;
+
   --platform-focus-ring: 0 0 0 3px rgba(10, 107, 255, 0.25);
 
   --platform-caution: #e25507;

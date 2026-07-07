@@ -291,6 +291,7 @@ export default {
     password: "Password",
     submit: "Sign In",
     register: "Register",
+    trial: "Try Demo",
     registerTitle: "Register",
     phone: "Phone",
     email: "Email",
@@ -304,7 +305,11 @@ export default {
     termsPrefix: "By signing in you agree to the ",
     termsLink: "platform terms",
     termsRequired: "Please agree to the platform terms first",
+    captchaRequired: "Please complete the slider verification first",
     brandName: "Benxi",
+    getStarted: "Get Started",
+    buyCoffee: "Buy me a coffee ☕",
+    buyCoffeeDesc: "Donate 50+ RMB, get 15% off for enterprise deployment",
     showcaseScrollHint: "Scroll to learn more",
     showcaseCompareLabel: "Compared to the market",
     showcaseVision: {
@@ -312,7 +317,7 @@ export default {
       title: "Knowledge goes further!",
       subtitle: "Ingest · clarify · put to work",
       body:
-        "Scattered files and incoming feeds — all ingested, clarified with ontology. AgentKit drives search, Q&A, and reports, putting knowledge to work.",
+        "Enterprise knowledge scattered across documents, feeds, and databases — hard to find, harder to connect. Benxi transforms fragments into structured knowledge, powering search, Q&A, and reports across the full chain.",
       image: "/images/home.png",
       flowTitle: "Knowledge loop",
       flowCenter: "Loop",
@@ -331,7 +336,7 @@ export default {
       label: "Multi-agent architecture",
       title: "AgentKit engine · Agent · Skill · Tool — specialists that collaborate",
       body:
-        "Benxi is more than a chat box. 小析 delegates research, reports, and platform tasks to the right specialists and synthesizes the answer — all within your permissions.\n\nPowered by AgentKit, which decouples LLM calls and tool execution via Protocol injection, providing routing, orchestration, communication, and Loop Engineering — 7 independent packages, zero ORM dependency.",
+        "AgentKit's four-layer architecture powers multi-agent collaboration: engine routing, Agent domain handoffs, Skill capability registration, Tool atomic execution. 小析 acts as the supervisor — decomposing research, reporting, and data queries across specialists, then synthesizing results with full permission control.",
       image: "/images/agent.png",
       layerChainTitle: "Four layers",
       layerChain: ["AgentKit engine", "Agent specialists", "Skill packages", "Tool handlers"],
@@ -381,19 +386,39 @@ export default {
       label: "Core features",
       title: "Platform capabilities",
       subtitle: "Ingest to reports · one workspace · each tool in its lane",
-      body: "Following GB/Z 185, built-in specialists and externals share one discovery catalog alongside the MCP tool ecosystem. Agents and tools are orchestrated through the Skill layer, with permissions and SK auth on every request.",
       image: "/images/features.png",
-      moreCard: {
-        title: "More…",
-        desc: "Always expanding — sign in to explore",
-        icon: "infinite",
-      },
+      items: [
+        {
+          title: "Document Translation",
+          body: "Upload PDF/Word/Excel or paste a URL — auto-detect language, translate while preserving layout. Bilingual comparison and download supported.",
+        },
+        {
+          title: "Report Generation",
+          body: "AI-powered research reports, summaries, and data analysis reports based on your knowledge base. Markdown and Word export with customizable templates.",
+        },
+        {
+          title: "Knowledge Q&A",
+          body: "Ask in natural language and get precise answers from your ontology graph and document library. Answers cite sources with traceable verification.",
+        },
+        {
+          title: "Data Analysis",
+          body: "Upload tables or connect databases — generate charts and insights in natural language. Supports trend analysis, comparison, and anomaly detection.",
+        },
+        {
+          title: "Multi-modal OCR",
+          body: "Extract text and structure from images, scanned PDFs, and handwritten documents. Auto-extract tables, formulas, and stamps — results searchable.",
+        },
+        {
+          title: "Agent Workflow",
+          body: "Orchestrate multi-step workflows — search, analysis, approval, and generation, all driven by the AgentKit engine for automated closed-loop execution.",
+        },
+      ],
     },
     showcaseOntology: {
       label: "Semantic foundation",
       title: "本 & 析: your semantic foundation",
       body:
-        "本 defines entities and their relationships; 析 extracts knowledge networks from documents. The ontology graph links search, Q&A, and reports — turning scattered facts into queryable, reason-ready knowledge.",
+        "本 defines domain entities and their relationships; 析 extracts knowledge networks automatically. The ontology graph structures ingested content — search resolves semantic relations, Q&A traces reasoning paths, reports assemble materials on demand. Scattered facts become queryable semantic assets.",
       image: "/images/ontology.png",
     },
     showcaseBadge: "Benxi",
@@ -569,15 +594,11 @@ export default {
     ],
     showcaseSummary: {
       title: "Key differentiators",
-      subtitle: "9 capabilities · 10 products compared (✓ = supported)",
       compareOrder: [
         "dify",
         "coze",
         "fastgpt",
-        "anythingllm",
-        "openclaw",
         "codex",
-        "cursor",
         "manus",
         "chatgpt",
         "ours",
@@ -737,15 +758,37 @@ export default {
           author: "Min Zhao",
           role: "Security Architect, Financial Services",
         },
+        {
+          quote: "As an energy research institute handling massive reports daily, Benxi's semantic foundation automatically extracts entity relations. Searching now hits knowledge connections directly — saving us at least 40% research time.",
+          author: "Feng Liu",
+          role: "KM Lead, Energy Research",
+        },
+        {
+          quote: "The built-in AIP and MCP standard interconnect made it trivial to connect our internal agent systems with the platform. Skill orchestration is flexible and configurable — cross-system workflows without touching code.",
+          author: "Xue Chen",
+          role: "Platform Architect, Technology",
+        },
+        {
+          quote: "From file ingestion to report generation, everything stays in one permission-scoped closed loop. Compared to pieced-together solutions, Benxi's all-in-one design slashed both our ops costs and compliance risks.",
+          author: "Lei Sun",
+          role: "IT Director, Government",
+        },
       ],
     },
     showcaseFooter: {
       label: "Links",
       links: [
-        { text: "Product Docs", url: "/docs", external: false },
-        { text: "AgentKit Developer Guide", url: "/agentkit", external: false },
-        { text: "API Reference", url: "/api/docs", external: false },
-        { text: "GitHub", url: "https://github.com/haiyi/benxi", external: true },
+        { text: "Product Docs", url: "https://github.com/zhibinQiu/benxi/wiki", external: true },
+        { text: "AgentKit Developer Guide", url: "https://github.com/zhibinQiu/Agentkit", external: true },
+        { text: "API Reference", url: "https://github.com/zhibinQiu/benxi/tree/main/backend", external: true },
+        { text: "GitHub", url: "https://github.com/zhibinQiu/benxi", external: true },
+      ],
+      social: [
+        { icon: "bilibili", url: "https://space.bilibili.com/", label: "Bilibili" },
+        { icon: "youtube", url: "https://youtube.com/", label: "YouTube" },
+        { icon: "github", url: "https://github.com/zhibinQiu/benxi", label: "GitHub" },
+        { icon: "douyin", url: "https://douyin.com/", label: "Douyin" },
+        { icon: "xiaohongshu", url: "https://xiaohongshu.com/", label: "Xiaohongshu" },
       ],
       legal: [
         { text: "Privacy Policy", url: "/privacy", external: false },
@@ -761,6 +804,8 @@ export default {
     invalidEmail: "Enter a valid email address",
     registerSuccess: "Registered and signed in",
     registerFailed: "Registration failed",
+    trialSuccess: "Welcome! Signed in with a demo account",
+    trialFailed: "Demo login failed",
   },
   common: {
     search: "Search",

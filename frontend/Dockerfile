@@ -1,7 +1,7 @@
 # 生产前端：Vite 构建 + Nginx 反代（最终阶段基于 node:alpine + apk nginx，兼容 1ms 无 nginx 镜像）
-ARG NODE_IMAGE=node:22-alpine
+ARG NODE_IMAGE=docker.1ms.run/library/node:22-alpine
 ARG NPM_REGISTRY=https://registry.npmmirror.com
-ARG ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG ALPINE_MIRROR=mirrors.aliyun.com
 
 FROM ${NODE_IMAGE} AS build
 ARG NPM_REGISTRY
@@ -19,7 +19,7 @@ RUN npm run build
 
 FROM ${NODE_IMAGE} AS runtime
 ARG ALPINE_MIRROR
-ENV ALPINE_MIRROR=${ALPINE_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+ENV ALPINE_MIRROR=${ALPINE_MIRROR:-mirrors.aliyun.com}
 RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR}/g" /etc/apk/repositories && \
     apk add --no-cache nginx gettext && \
     mkdir -p /run/nginx /etc/nginx/templates && \

@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str = "admin123"
     bootstrap_admin_email: str = "admin@local"
     allow_public_register: bool = True
+    allow_trial: bool = True
+    captcha_enabled: bool = True
 
     cors_origins: str = "*"
     # 经网关对外暴露时的路径前缀（如 http://<IP>/ai/api/v1）；后端仍注册 /api/v1

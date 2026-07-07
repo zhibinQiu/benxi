@@ -42,6 +42,7 @@ from app.services.auth_session_service import (
     bump_auth_token_version,
     validate_token_version,
 )
+from app.services.captcha_service import cleanup_expired, consume_verified, issue_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -74,12 +75,22 @@ def _issue_tokens(
     return build_token_response(user.id, token_version)
 
 
+def _verify_captcha(captcha_token: str | None) -> None:
+    if not get_settings().captcha_enabled:
+        return
+    if not captcha_token:
+        raise bad_request("请完成滑块验证")
+    if not consume_verified(captcha_token):
+        raise bad_request("滑块验证已过期或无效，请重新验证")
+
+
 @router.post("/login", response_model=ApiResponse[TokenResponse])
 def login(
     body: LoginRequest,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[TokenResponse]:
+    _verify_captcha(body.captcha_token)
     user = find_user_by_login_account(db, body.account)
     if not user or not verify_password(body.password, user.password_hash):
         raise unauthorized("手机号/姓名或密码错误")
@@ -94,6 +105,7 @@ def register(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[TokenResponse]:
+    _verify_captcha(body.captcha_token)
     settings = get_settings()
     if not settings.allow_public_register:
         raise forbidden("公开注册已关闭")
@@ -127,6 +139,49 @@ def register(
     return ApiResponse(
         data=_issue_tokens(db, user, request, audit_action="auth.register")
     )
+
+
+@router.post("/trial", response_model=ApiResponse[TokenResponse])
+def trial_login(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[TokenResponse]:
+    """创建体验账号并直接登录（无需注册，点击「立即试用」即可进入系统）。"""
+    settings = get_settings()
+    if not settings.allow_trial:
+        raise forbidden("体验登录已关闭")
+
+    member_role = db.scalar(select(Role).where(Role.code == "member"))
+    if not member_role:
+        raise bad_request("系统未配置普通用户角色，请联系管理员")
+
+    import uuid as _uuid
+
+    suffix = _uuid.uuid4().hex[:8]
+    username = f"trial_{suffix}"
+    display_name = f"体验用户_{suffix[:4]}"
+
+    user = User(
+        phone=None,
+        username=username,
+        display_name=display_name,
+        email=None,
+        password_hash=hash_password(username),
+    )
+    db.add(user)
+    db.flush()
+    db.add(UserRole(user_id=user.id, role_id=member_role.id, scope_dept_id=None))
+    return ApiResponse(
+        data=_issue_tokens(db, user, request, audit_action="auth.trial_login")
+    )
+
+
+@router.post("/captcha/issue", response_model=ApiResponse[dict])
+def captcha_issue() -> ApiResponse[dict]:
+    """前端滑块验证通过后，后端颁发验证 token（登录/注册时使用）。"""
+    cleanup_expired()
+    token = issue_token()
+    return ApiResponse(data={"token": token, "expires_in": 120})
 
 
 @router.post("/refresh", response_model=ApiResponse[TokenResponse])

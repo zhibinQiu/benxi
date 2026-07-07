@@ -10,9 +10,9 @@
 #   docker buildx build --platform linux/amd64,linux/arm64 --target runtime --push \
 #     -t registry.cn-hangzhou.aliyuncs.com/<ns>/benxi-api-runtime:4.0.4 .
 
-ARG PYTHON_IMAGE=python:3.11-slim
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG PYTHON_IMAGE=docker.1ms.run/library/python:3.11-slim
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG APT_MIRROR=mirrors.aliyun.com
 ARG INSTALL_PAGEINDEX=0
 ARG INSTALL_BROWSER=0
 

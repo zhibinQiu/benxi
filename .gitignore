@@ -195,6 +195,8 @@ uv.lock
 *.pdf
 *.docx
 CLAUDE.md
+packages/*/node_modules/
+platform-frontend/public/main.mp4
 
 # 统一栈数据与镜像包（v3.4+）
 /data/

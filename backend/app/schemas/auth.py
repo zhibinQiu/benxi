@@ -9,6 +9,7 @@ from app.core.user_identity import normalize_email, normalize_username
 class LoginRequest(BaseModel):
     account: str = Field(..., min_length=1, description="手机号或姓名")
     password: str
+    captcha_token: str | None = Field(default=None, description="滑块验证码 token")
 
     @model_validator(mode="before")
     @classmethod
@@ -37,6 +38,7 @@ class RegisterRequest(BaseModel):
         max_length=64,
         description="用户名（登录用，默认同显示名）",
     )
+    captcha_token: str | None = Field(default=None, description="滑块验证码 token")
 
     @field_validator("phone")
     @classmethod
@@ -96,6 +98,21 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = Field(default=None, min_length=2, max_length=64)
     email: str | None = None
     password: str | None = Field(default=None, min_length=6)
+
+
+class CaptchaRequest(BaseModel):
+    width: int = 280
+
+
+class CaptchaResponse(BaseModel):
+    token: str
+    offset: int
+    width: int = 280
+
+
+class CaptchaVerifyRequest(BaseModel):
+    token: str
+    offset: int
 
     @field_validator("email")
     @classmethod

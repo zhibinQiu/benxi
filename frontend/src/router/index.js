@@ -17,6 +17,18 @@ const routes = [
     meta: { public: true },
   },
   {
+    path: "/privacy",
+    name: "privacy",
+    component: () => import("../views/LegalPagesView.vue"),
+    meta: { public: true, title: "隐私政策" },
+  },
+  {
+    path: "/terms",
+    name: "terms",
+    component: () => import("../views/LegalPagesView.vue"),
+    meta: { public: true, title: "服务协议" },
+  },
+  {
     path: "/",
     component: () => import("../layouts/MainLayout.vue"),
     children: [

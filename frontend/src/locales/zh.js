@@ -283,6 +283,7 @@ export default {
     password: "密码",
     submit: "登录",
     register: "注册",
+    trial: "体验",
     registerTitle: "注册",
     phone: "手机号",
     email: "邮箱",
@@ -296,7 +297,11 @@ export default {
     termsPrefix: "登录即表示您同意",
     termsLink: "平台使用规范",
     termsRequired: "请先勾选同意平台使用规范",
+    captchaRequired: "请先完成滑块验证",
     brandName: "本析",
+    getStarted: "立即试用",
+    buyCoffee: "请开发者喝咖啡～",
+    buyCoffeeDesc: "内测期间打赏超过 100 RMB，享受企业级部署折扣 15%",
     showcaseScrollHint: "向下滚动了解更多",
     showcaseCompareLabel: "相比市面方案",
     showcaseVision: {
@@ -304,7 +309,7 @@ export default {
       title: "知识不止于此！",
       subtitle: "入库 · 析清 · 用起来",
       body:
-        "文件散落各处、资讯纷至沓来——统一入库，以本体梳理实体关联；AgentKit 引擎驱动检索、问答与报告，把知识真正用起来。",
+        "企业知识散落各处，查找费时、关联难寻。本析将碎片信息转化为结构化知识，贯通检索、问答、报告全链路，驱动业务决策与效率提升。",
       image: "/images/home.png",
       flowTitle: "知识闭环",
       flowCenter: "闭环",
@@ -323,7 +328,7 @@ export default {
       label: "多智能体架构",
       title: "AgentKit 引擎 · Agent · Skill · Tool 四层，专精分工协作",
       body:
-        "本析不只是一个聊天框。小析听懂问题后，把查资料、写报告、平台操作等交给各自专精来办，再整理成完整答复，每一步都在权限范围内。\n\n这套架构由 AgentKit 多智能体引擎驱动——以 Protocol 注入解耦 LLM 与工具执行，提供路由、编排、通信与 Loop Engineering 等能力，封装为 7 个独立子包零依赖组合。",
+        "AgentKit 引擎以四层架构驱动协作：引擎层路由编排，Agent 层领域 handoff，Skill 层注册能力，Tool 层执行原子操作。小析将查资料、写报告、问数据等任务分解给各自专精，分步执行后汇总上报，全程权限管控。",
       image: "/images/agent.png",
       layerChainTitle: "四层架构",
       layerChain: ["AgentKit 引擎", "Agent 专精智能体", "Skill 能力包", "Tool 原子工具"],
@@ -373,19 +378,39 @@ export default {
       label: "核心功能",
       title: "平台核心能力",
       subtitle: "入库到报告 · 同一工作台 · 各司其职",
-      body: "遵循 GB/Z 185 智能体互联规范，内置专精与外部智能体纳入统一发现目录；同时对接 MCP 工具生态。智能体与工具经 Skill 层统一编排，权限与 SK 鉴权贯穿每次请求。",
       image: "/images/features.png",
-      moreCard: {
-        title: "更多…",
-        desc: "持续拓展，登录探索",
-        icon: "infinite",
-      },
+      items: [
+        {
+          title: "文档翻译",
+          body: "上传 PDF/Word/Excel 文件或粘贴网址，自动识别语种并翻译为目标语言，保留原文排版与图表。支持双语对照与下载。",
+        },
+        {
+          title: "报告生成",
+          body: "基于知识库与 AI 自动生成研究报告、工作总结、数据分析报告等，支持 Markdown 与 Word 导出，可定制模板。",
+        },
+        {
+          title: "知识问答",
+          body: "基于本体图谱与文档库，自然语言提问即可获得精准答案。答案标注引用来源，支持多轮追问与溯源验证。",
+        },
+        {
+          title: "数据分析",
+          body: "上传表格或接入数据库，自然语言生成图表与分析结论。支持趋势分析、对比分析、异常检测等场景。",
+        },
+        {
+          title: "多模态 OCR",
+          body: "支持图片、PDF 扫描件、手写文档的图文识别与结构化抽取。自动提取表格、公式与印章，结果可检索。",
+        },
+        {
+          title: "智能体工作流",
+          body: "拖拽编排多步骤任务流——检索、分析、审批、生成等环节灵活组合，由 AgentKit 引擎驱动自动化闭环。",
+        },
+      ],
     },
     showcaseOntology: {
       label: "语义底座",
       title: "本与析：企业的语义底座",
       body:
-        "「本」定义实体与关系；「析」从文档中抽取知识网络。本体图谱贯通检索、问答与报告，让碎片信息成为可查询、可推理的语义底座。",
+        "「本」定义实体与关系模型，构建领域知识图谱；「析」从文档中自动抽取知识网络。检索直达语义关联，问答可追溯，报告自动组织素材，碎片信息转化为可查询的语义资产。",
       image: "/images/ontology.png",
     },
     showcaseBadge: "本析",
@@ -562,15 +587,11 @@ export default {
     ],
     showcaseSummary: {
       title: "核心差异对比",
-      subtitle: "9 项重点能力 · 10 款产品对照（✓ 表示支持）",
       compareOrder: [
         "dify",
         "coze",
         "fastgpt",
-        "anythingllm",
-        "openclaw",
         "codex",
-        "cursor",
         "manus",
         "chatgpt",
         "ours",
@@ -716,29 +737,51 @@ export default {
       subtitle: "来自企业团队的反馈",
       items: [
         {
-          quote: "本析将我们分散在云盘、邮件和钉群里的文件统一入库，本体图谱把碎片信息串成了可查询的知识网络。检索、问答、报告在同一平台闭环，效率提升非常明显。",
+          quote: "\u201c本析将我们分散在云盘、邮件和钉群里的文件统一入库，本体图谱把碎片信息串成了可查询的知识网络。检索、问答、报告在同一平台闭环，效率提升非常明显。\u201d",
           author: "王昊",
           role: "某制造业企业 · 信息化负责人",
         },
         {
-          quote: "AgentKit 的多智能体架构让 AI 不再只是一个聊天框。查资料、写报告、平台操作各司其职，引用可溯源。我们从概念验证到全部门推广只用了两周。",
+          quote: "\u201cAgentKit 的多智能体架构让 AI 不再只是一个聊天框。查资料、写报告、平台操作各司其职，引用可溯源。我们从概念验证到全部门推广只用了两周。\u201d",
           author: "林思远",
           role: "某咨询公司 · 技术总监",
         },
         {
-          quote: "四层架构清晰可审计，Skill 包上传与 MCP 接入让团队可以按需扩展能力。权限随组织继承这一条，就让我们的合规团队彻底放心了。",
+          quote: "\u201c四层架构清晰可审计，Skill 包上传与 MCP 接入让团队可以按需扩展能力。权限随组织继承这一条，就让我们的合规团队彻底放心了。\u201d",
           author: "赵敏",
           role: "某金融机构 · 安全架构师",
+        },
+        {
+          quote: "\u201c作为能源行业的研究机构，我们每天要处理大量报告和文献。本析的语义底座自动抽提实体关系，检索时直接命中知识关联，节省了至少 40% 的调研时间。\u201d",
+          author: "刘峰",
+          role: "某能源研究院 · 知识管理负责人",
+        },
+        {
+          quote: "\u201c平台内置的 AIP 和 MCP 标准互联能力，让我们轻松将内部智能体系统与平台对接。Skill 编排灵活可配，不用改一行代码就实现了跨系统工作流。\u201d",
+          author: "陈雪",
+          role: "某科技公司 · 平台架构师",
+        },
+        {
+          quote: "\u201c从文件入库到报告生成，全程在同一权限体系内闭环。对比市面上拼凑的方案，本析的一体化设计让我们的运维成本和合规风险都大幅降低。\u201d",
+          author: "孙磊",
+          role: "某政府单位 · 信息中心主任",
         },
       ],
     },
     showcaseFooter: {
       label: "相关链接",
       links: [
-        { text: "产品文档", url: "/docs", external: false },
-        { text: "AgentKit 开发者指南", url: "/agentkit", external: false },
-        { text: "API 参考", url: "/api/docs", external: false },
-        { text: "GitHub", url: "https://github.com/haiyi/benxi", external: true },
+        { text: "产品文档", url: "https://github.com/zhibinQiu/benxi/wiki", external: true },
+        { text: "AgentKit 开发者指南", url: "https://github.com/zhibinQiu/Agentkit", external: true },
+        { text: "API 参考", url: "https://github.com/zhibinQiu/benxi/tree/main/backend", external: true },
+        { text: "GitHub", url: "https://github.com/zhibinQiu/benxi", external: true },
+      ],
+      social: [
+        { icon: "bilibili", url: "https://space.bilibili.com/你的B站ID", label: "哔哩哔哩" },
+        { icon: "youtube", url: "https://youtube.com/@你的频道", label: "YouTube" },
+        { icon: "github", url: "https://github.com/zhibinQiu/benxi", label: "GitHub" },
+        { icon: "douyin", url: "https://douyin.com/user/你的抖音ID", label: "抖音" },
+        { icon: "xiaohongshu", url: "https://xiaohongshu.com/user/你的小红书ID", label: "小红书" },
       ],
       legal: [
         { text: "隐私政策", url: "/privacy", external: false },
@@ -754,6 +797,8 @@ export default {
     invalidEmail: "请输入有效的邮箱",
     registerSuccess: "注册成功，已自动登录",
     registerFailed: "注册失败",
+    trialSuccess: "欢迎体验，已自动登录",
+    trialFailed: "体验登录失败",
   },
   common: {
     search: "搜索",

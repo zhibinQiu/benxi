@@ -1,11 +1,12 @@
-# KnowFlow profile 镜像加速（与 compose.mirror.yaml 配合）
+# KnowFlow profile 镜像加速（阿里云 / 1ms 代理）
+# 使用: docker compose -f deploy/knowflow.yml -f deploy/knowflow.mirror.yaml up
 
 services:
   knowflow-mysql:
     image: docker.1ms.run/library/mysql:8.0.39
 
   knowflow-infinity:
-    image: ${INFINITY_IMAGE:-docker.m.daocloud.io/infiniflow/infinity:${INFINITY_VERSION:-v0.6.0-dev5}}
+    image: ${INFINITY_IMAGE:-registry.cn-hangzhou.aliyuncs.com/infiniflow/infinity:${INFINITY_VERSION:-v0.6.0-dev5}}
 
   knowflow-gotenberg:
     image: docker.1ms.run/gotenberg/gotenberg:8

@@ -38,6 +38,9 @@ importers:
       vue-router:
         specifier: ^4.5.0
         version: 4.6.4(vue@3.5.39)
+      vue3-slide-verify:
+        specifier: ^1.1.8
+        version: 1.1.8
     devDependencies:
       '@eslint/js':
         specifier: ^9.17.0
@@ -1660,6 +1663,9 @@ packages:
     peerDependencies:
       vue: ^3.5.0
 
+  vue3-slide-verify@1.1.8:
+    resolution: {integrity: sha512-qsGXM0w0pkPnI10p58neHQNAkMiGdX8ijGkvRo6eIYbFn3+6fQE05t8afdQsCY9llgG1chDrRD7H0XxV3Ts9Cw==}
+
   vue@3.5.39:
     resolution: {integrity: sha512-xmZCYabFGcirU8r0fTuvl/LICc1OU620rnqepaJDL/a141ZigkG7AyaxQLdqJ02ZRYzWe6YPaDHeQx7MfknQfA==}
     peerDependencies:
@@ -3212,6 +3218,12 @@ snapshots:
     dependencies:
       '@vue/devtools-api': 6.6.4
       vue: 3.5.39
+
+  vue3-slide-verify@1.1.8:
+    dependencies:
+      vue: 3.5.39
+    transitivePeerDependencies:
+      - typescript
 
   vue@3.5.39:
     dependencies:

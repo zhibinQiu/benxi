@@ -1,9 +1,9 @@
 ARG BASE_IMAGE=ghcr.io/astral-sh/uv:python3.13-bookworm-slim
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG APT_MIRROR=mirrors.aliyun.com
 FROM ${BASE_IMAGE}
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG APT_MIRROR=mirrors.aliyun.com
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 ENV APT_MIRROR=${APT_MIRROR}
 

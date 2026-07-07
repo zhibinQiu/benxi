@@ -7,6 +7,7 @@ import {
   logout as apiLogout,
   registerUser,
   setTokens,
+  trialLogin as apiTrialLogin,
 } from "../api/client";
 import { isAuthSilentError } from "../utils/authError.js";
 import { resetClientSessionState } from "../utils/resetClientSessionState.js";
@@ -87,11 +88,11 @@ export function useAuth() {
     return loadUserPromise;
   }
 
-  async function login(account, password) {
+  async function login(account, password, captchaToken) {
     loggingOut.value = false;
     resetClientSessionState();
     bumpSessionEpoch();
-    const tokens = await apiLogin(account, password);
+    const tokens = await apiLogin(account, password, captchaToken);
     setTokens(tokens.access_token, tokens.refresh_token);
     const profile = await loadUser();
     if (!profile) {
@@ -104,11 +105,28 @@ export function useAuth() {
     return profile;
   }
 
-  async function register({ phone, email, displayName, password }) {
+  async function trialLogin() {
     loggingOut.value = false;
     resetClientSessionState();
     bumpSessionEpoch();
-    const tokens = await registerUser({ phone, email, displayName, password });
+    const tokens = await apiTrialLogin();
+    setTokens(tokens.access_token, tokens.refresh_token);
+    const profile = await loadUser({ force: true });
+    if (!profile) {
+      throw new Error(
+        getToken()
+          ? "获取用户信息失败，请重试"
+          : "体验登录失败，请重试"
+      );
+    }
+    return profile;
+  }
+
+  async function register({ phone, email, displayName, password, captchaToken }) {
+    loggingOut.value = false;
+    resetClientSessionState();
+    bumpSessionEpoch();
+    const tokens = await registerUser({ phone, email, displayName, password, captchaToken });
     setTokens(tokens.access_token, tokens.refresh_token);
     const profile = await loadUser({ force: true });
     if (!profile) {
@@ -144,6 +162,7 @@ export function useAuth() {
     displayName,
     loadUser,
     login,
+    trialLogin,
     register,
     logout,
   };

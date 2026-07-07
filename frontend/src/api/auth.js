@@ -1,21 +1,22 @@
 /** 认证与用户管理 API */
 import { api } from "./http.js";
 
-export async function login(account, password) {
+export async function login(account, password, captchaToken) {
   return api("/api/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify({ account, password }),
+    body: JSON.stringify({ account, password, captcha_token: captchaToken || "" }),
     preserveOnNavigate: true,
     timeoutMs: 30_000,
   });
 }
 
-export async function registerUser({ phone, email, displayName, password }) {
+export async function registerUser({ phone, email, displayName, password, captchaToken }) {
   const body = {
     phone,
     email,
     display_name: displayName,
     password,
+    captcha_token: captchaToken || "",
   };
   return api("/api/v1/auth/register", {
     method: "POST",
@@ -31,6 +32,14 @@ export async function logout() {
   } catch {
     /* 退出以清本地 Token 为主；后台任务不依赖会话 */
   }
+}
+
+export async function trialLogin() {
+  return api("/api/v1/auth/trial", {
+    method: "POST",
+    preserveOnNavigate: true,
+    timeoutMs: 30_000,
+  });
 }
 
 export async function fetchMe() {
@@ -69,4 +78,11 @@ export async function deleteUser(userId) {
 
 export async function fetchRoles() {
   return api("/api/v1/roles");
+}
+
+export async function captchaIssue() {
+  return api("/api/v1/auth/captcha/issue", {
+    method: "POST",
+    preserveOnNavigate: true,
+  });
 }

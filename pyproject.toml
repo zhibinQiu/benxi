@@ -64,7 +64,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/PDFMathTranslate-next/PDFMathTranslate-next"
+Homepage = "https://github.com/zhibinQiu/benxi"
 
 [build-system]
 requires = ["hatchling"]

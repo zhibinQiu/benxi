@@ -1,6 +1,6 @@
 site_name: 企业 AI 知识库平台
 site_description: PDF 科学文献翻译与企业 AI 知识库平台（中文文档）
-repo_url: https://github.com/PDFMathTranslate-next/PDFMathTranslate-next
+repo_url: https://github.com/zhibinQiu/benxi
 edit_uri: edit/main/docs/zh/
 
 use_directory_urls: false

@@ -1,6 +1,16 @@
 # AgentKit
 
-AgentKit 是一个多智能体架构的 Python 工具包，提供从路由、编排、通信到执行的全链路组件。
+> 多智能体架构的 Python 工具包 — 路由 · 编排 · 通信 · 执行
+
+[![GitHub](https://img.shields.io/badge/GitHub-zhibinQiu/Agentkit-181717?logo=github)](https://github.com/zhibinQiu/Agentkit)
+[![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](../LICENSE)
+
+AgentKit 是本析平台（Benxi）的多智能体架构 Python 工具包，提供从路由、编排、通信到执行的全链路组件。设计上强调 **Protocol 注入** 与 **零平台耦合**，可独立使用。
+
+- **GitHub**: [https://github.com/zhibinQiu/Agentkit](https://github.com/zhibinQiu/Agentkit)
+- **本析平台**: [https://github.com/zhibinQiu/benxi](https://github.com/zhibinQiu/benxi)
+
+---
 
 ## 包架构
 
@@ -15,6 +25,7 @@ flowchart LR
     agentkit --> subagent["agentkit-subagent<br/>子 Agent 运行时"]
     agentkit --> tools["agentkit-tools<br/>工具注册/Schema/校验"]
     agentkit --> orchestrate["agentkit-orchestrate<br/>任务编排"]
+    agentkit --> interrupt["agentkit-interrupt<br/>中断/Checkpoint"]
 
     orchestrate --> aip
     orchestrate --> route
@@ -53,7 +64,44 @@ pip install -e packages/agentkit-message
 | [agentkit-skills](agentkit-skills) | 0.2.0 | 无 | Skill 插件框架 |
 | [agentkit-subagent](agentkit-subagent) | 0.2.0 | 无 | 隔离上下文子 Agent 运行时 |
 | [agentkit-tools](agentkit-tools) | 0.1.0 | pydantic | 工具注册、Schema 生成、参数校验、结果压缩 |
+| [agentkit-interrupt](agentkit-interrupt) | 0.1.0 | 无 | 中断与 Checkpoint、HITL 响应管理 |
+
+## 各子包详情
+
+### agentkit-aip
+AIP（Agent Interaction Protocol）消息类型定义、Agent handoff 与会话总线。
+
+### agentkit-loop
+Loop Engineering — 从自然语言目标指令出发，通过"发问→回答→规划→评估"的四步循环动态组装 Prompt。
+
+### agentkit-mcp
+MCP（Model Context Protocol）JSON-RPC 协议客户端实现，支持标准 MCP 工具调用。
+
+### agentkit-message
+LLM 消息解析、内嵌工具调用提取、内容过滤与格式化。
+
+### agentkit-orchestrate
+多专精任务编排，支持 Agent 间 handoff 与依赖管理。
+
+### agentkit-route
+路由类型与纯逻辑，定义 Agent 路由策略。
+
+### agentkit-skills
+Skill 插件框架 — 轻量级插件系统，支持动态加载与热更新。
+
+### agentkit-subagent
+隔离上下文的子 Agent 运行时，支持独立生命周期管理。
+
+### agentkit-tools
+工具注册、JSON Schema 生成、参数校验、结果压缩。
+
+### agentkit-interrupt
+中断与 Checkpoint 管理、Human-In-The-Loop 响应管理。
 
 ## 示例
 
 见 [examples/](examples/) 目录，每个子包都有独立的可运行示例。
+
+## 许可
+
+[AGPL v3](../LICENSE)

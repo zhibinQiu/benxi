@@ -10,7 +10,10 @@ import {
   NButton,
   NSpace,
   NText,
-  NIcon } from "naive-ui";
+  NIcon,
+  NDrawer,
+  NDrawerContent,
+  NLayoutFooter } from "naive-ui";
 import {
   DocumentTextOutline,
   PeopleOutline,
@@ -23,7 +26,8 @@ import {
   ArrowBackOutline,
   NewspaperOutline,
   BugOutline,
-  ListOutline } from "@vicons/ionicons5";
+  ListOutline,
+  MenuOutline } from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
@@ -92,9 +96,29 @@ const expandedKeys = ref([]);
 const siderMenuWrapRef = ref(null);
 
 const siderCollapsed = ref(false);
+const mobileDrawerOpen = ref(false);
+const isMobile = ref(window.innerWidth < 768);
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768;
+  if (!isMobile.value) mobileDrawerOpen.value = false;
+}
+let resizeTimer = null;
+function onResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(checkMobile, 100);
+}
 
 function toggleSider() {
   siderCollapsed.value = !siderCollapsed.value;
+}
+
+function openMobileDrawer() {
+  mobileDrawerOpen.value = true;
+}
+
+function closeMobileDrawer() {
+  mobileDrawerOpen.value = false;
 }
 const { features: systemFeatures, loadSystemFeatures } = useSystemFeatures();
 const { favoriteIds } = useFeatureFavorites();
@@ -135,6 +159,8 @@ function prefetchFeatureCaches() {
 onMounted(() => {
   startNotificationAlerts();
   prefetchFeatureCaches();
+  checkMobile();
+  window.addEventListener("resize", onResize);
   Promise.allSettled([loadUser(), loadSystemFeatures(), loadMenuSettings()]).then(() => {
     prefetchFeatureCaches();
     nextTick(() => {
@@ -148,6 +174,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopNotificationAlerts();
+  window.removeEventListener("resize", onResize);
 });
 
 watch(
@@ -535,7 +562,9 @@ function onMenuSelect(key) {
 
 <template>
   <n-layout class="main-layout" has-sider>
+    <!-- 桌面端侧栏 -->
     <n-layout-sider
+      v-if="!isMobile"
       v-model:collapsed="siderCollapsed"
       class="app-sider"
       bordered
@@ -618,12 +647,58 @@ function onMenuSelect(key) {
         <PlatformCopyright v-if="!siderCollapsed" class="sider-copyright" />
       </div>
     </n-layout-sider>
+    <!-- 移动端抽屉 -->
+    <n-drawer
+      v-else
+      :show="mobileDrawerOpen"
+      :width="264"
+      placement="left"
+      class="mob-sider-drawer"
+      @update:show="closeMobileDrawer"
+    >
+      <n-drawer-content :native-scrollbar="false" :body-content-style="{ padding: 0 }">
+        <div class="sider-inner sider-inner--mob">
+          <div class="brand">
+            <PlatformBrandIcon class="brand-logo" />
+            <div class="brand-head">
+              <span class="brand-name">
+                <PlatformBrandTitle :title="sidebarBrandTitle" />
+              </span>
+            </div>
+          </div>
+          <div ref="siderMenuWrapRef" class="sider-menu-wrap" @click="onSiderMenuWrapClick">
+            <n-menu
+              class="sider-menu"
+              :value="resolvedActiveKey"
+              :options="menuOptions"
+              :expanded-keys="expandedKeys"
+              :node-props="siderMenuNodeProps"
+              @update:expanded-keys="onExpandedKeysUpdate"
+              @update:value="closeMobileDrawer"
+            />
+          </div>
+          <PlatformCopyright class="sider-copyright" />
+        </div>
+      </n-drawer-content>
+    </n-drawer>
     <n-layout class="app-main">
-      <n-layout-header :bordered="!showAiHomeTabBar" :class="['header', { 'header--tab-mode': showAiHomeTabBar }]">
+      <n-layout-header :bordered="!showAiHomeTabBar" :class="['header', { 'header--tab-mode': showAiHomeTabBar }, { 'header--mob': isMobile }]">
         <div class="header-stack">
           <div class="header-primary">
             <n-space align="center" justify="space-between" style="width: 100%">
-              <n-space align="center" :size="10" class="header-leading">
+              <n-space align="center" :size="isMobile ? 6 : 10" class="header-leading">
+                <!-- 移动端汉堡菜单 -->
+                <n-button
+                  v-if="isMobile"
+                  quaternary
+                  circle
+                  size="tiny"
+                  class="mob-hamburger"
+                  aria-label="Open menu"
+                  @click="openMobileDrawer"
+                >
+                  <n-icon :size="22" :component="MenuOutline" />
+                </n-button>
                 <n-space
                 v-if="showSubsystemNav"
                 align="center"
@@ -893,8 +968,17 @@ function onMenuSelect(key) {
 
 .sider-copyright :deep(.platform-copyright) {
   padding: 2px 14px 5px;
-  font-size: 6px;
-  line-height: 1.25;
+}
+
+.sider-copyright :deep(.platform-copyright p) {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.sider-copyright :deep(.platform-copyright .coffee-invite) {
+  font-size: 11px;
+  line-height: 1.35;
+  margin-bottom: 2px;
 }
 .app-main {
   height: 100vh;
@@ -1094,5 +1178,55 @@ function onMenuSelect(key) {
   padding: 0 24px;
   box-sizing: border-box;
   background: var(--platform-bg-secondary);
+}
+
+/* === 移动端适配 === */
+.mob-hamburger {
+  flex-shrink: 0;
+  color: var(--platform-text-secondary);
+}
+
+.mob-sider-drawer :deep(.n-drawer-body) {
+  padding: 0;
+}
+
+.mob-sider-drawer :deep(.n-drawer-body-content-wrapper) {
+  display: flex;
+  flex-direction: column;
+}
+
+.sider-inner--mob {
+  height: 100%;
+}
+
+.header--mob {
+  min-height: 48px;
+}
+
+.header--mob .header-primary {
+  height: 48px;
+  padding: 0 12px;
+}
+
+.header--mob .header-title {
+  font-size: 15px;
+}
+
+@media (max-width: 768px) {
+  .header-primary {
+    padding: 0 12px;
+  }
+  .main-layout :deep(.app-content) {
+    padding: 0 !important;
+  }
+  .main-layout .app-content--full {
+    padding: 0 12px 14px !important;
+  }
+  .header-extension--reserved {
+    min-height: 40px;
+  }
+  .ai-home-tab-bar-wrap {
+    padding: 0 12px;
+  }
 }
 </style>

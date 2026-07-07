@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
@@ -23,6 +23,7 @@ import PlatformCopyright from "../components/PlatformCopyright.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import LoginFeatureScroll from "../components/LoginFeatureScroll.vue";
+import SlideCaptcha from "../components/SlideCaptcha.vue";
 import { cleanupBlockingUiArtifacts } from "../utils/blockingUiCleanup.js";
 import { isBenignNavigationError } from "../api/requestScope.js";
 import { LOGIN_FLY_CLONE_CLASS } from "../constants/loginFlyAnimation.js";
@@ -34,10 +35,12 @@ const router = useRouter();
 const ui = usePlatformUi();
 const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const heroBg = `${BASE}/images/bg.jpg`;
-const { login, register } = useAuth();
+const { login, register, trialLogin } = useAuth();
 const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
-const { t, localeLabel } = useI18n();
+const { t, tm, localeLabel } = useI18n();
 const appDisplayName = useAppDisplayName();
+
+const socialLinks = computed(() => (tm("login.showcaseFooter.social") || []).filter(s => s.icon !== 'xiaohongshu'));
 
 const pageRef = ref(null);
 
@@ -79,6 +82,10 @@ const regPassword2 = ref("");
 const registering = ref(false);
 const flyPanelRef = ref(null);
 const termsAccepted = ref(true);
+const coffeeModalOpen = ref(false);
+
+const captchaToken = ref("");
+const captchaRegisterToken = ref("");
 
 const FLY_DURATION_MS = 420;
 
@@ -165,6 +172,21 @@ async function navigateAfterAuth() {
   cleanupBlockingUiArtifacts();
 }
 
+async function onTrial() {
+  if (exiting.value) return;
+  loading.value = true;
+  try {
+    await trialLogin();
+    ui.success(t("login.trialSuccess"));
+    await navigateAfterAuth();
+  } catch (e) {
+    ui.error(e.message || t("login.trialFailed"));
+    exiting.value = false;
+  } finally {
+    loading.value = false;
+  }
+}
+
 onBeforeUnmount(() => {
   pageRef.value?.removeEventListener("scroll", onPageScroll);
   clearTimeout(scrollEndTimer);
@@ -177,10 +199,14 @@ async function onSubmit() {
     ui.warning(t("login.termsRequired"));
     return;
   }
+  if (!captchaToken.value) {
+    ui.warning(t("login.captchaRequired"));
+    return;
+  }
   loading.value = true;
   flyPanelRef.value = loginPanelRef.value;
   try {
-    await login(account.value.trim(), password.value);
+    await login(account.value.trim(), password.value, captchaToken.value);
     ui.success(t("login.loginSuccess"));
     await navigateAfterAuth();
   } catch (e) {
@@ -198,6 +224,10 @@ function isValidPhone(value) {
 
 async function onRegister() {
   if (registering.value) return;
+  if (!captchaRegisterToken.value) {
+    ui.warning(t("login.captchaRequired"));
+    return;
+  }
   const mobile = regPhone.value.trim();
   const name = regDisplayName.value.trim();
   if (!isValidPhone(mobile)) {
@@ -230,6 +260,7 @@ async function onRegister() {
       email,
       displayName: name,
       password: regPassword.value,
+      captchaToken: captchaRegisterToken.value,
     });
     authed = true;
     ui.success(t("login.registerSuccess"));
@@ -261,12 +292,14 @@ async function onRegister() {
 function openLoginModal() {
   if (exiting.value) return;
   registerModalOpen.value = false;
+  captchaToken.value = "";
   loginModalOpen.value = true;
 }
 
 function openRegisterModal() {
   if (exiting.value) return;
   loginModalOpen.value = false;
+  captchaRegisterToken.value = "";
   regPhone.value = "";
   regEmail.value = "";
   regDisplayName.value = "";
@@ -283,6 +316,15 @@ function onLoginModalUpdate(show) {
 function onRegisterModalUpdate(show) {
   if (!show && (registering.value || exiting.value)) return;
   registerModalOpen.value = show;
+}
+
+function openCoffeeModal() {
+  if (exiting.value) return;
+  coffeeModalOpen.value = true;
+}
+
+function openTermsPage() {
+  window.open("/terms", "_blank");
 }
 
 watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
@@ -332,20 +374,11 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
           <span class="login-header__vrule" aria-hidden="true" />
           <button
             type="button"
-            class="login-glass-link login-header__chip login-header__chip--text"
-            :disabled="exiting"
-            @click="openLoginModal"
-          >
-            {{ t("login.submit") }}
-          </button>
-          <span class="login-header__vrule" aria-hidden="true" />
-          <button
-            type="button"
             class="login-glass-link login-header__chip login-header__chip--text login-header__chip--accent"
-            :disabled="exiting"
-            @click="openRegisterModal"
+            :disabled="exiting || loading"
+            @click="onTrial"
           >
-            {{ t("login.register") }}
+            {{ t("login.getStarted") }}
           </button>
         </div>
       </div>
@@ -382,7 +415,21 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     </main>
 
     <footer class="login-page__copyright">
-      <PlatformCopyright compact />
+      <div class="login-page__social-inline">
+        <template v-for="(item, i) in socialLinks" :key="`sl-${i}`">
+          <a :href="item.url" target="_blank" rel="noopener noreferrer" class="login-page__social-link" :title="item.label">
+            <!-- Bilibili -->
+            <svg v-if="item.icon === 'bilibili'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.24.573-.36.92-.36.347 0 .653.12.92.36L9.653 4.44c.284.284.426.596.426.933 0 .338-.142.654-.426.947l-.187.16h4.773l-.16-.16c-.267-.293-.4-.605-.4-.934 0-.328.133-.64.4-.933l2.733-2.734c.267-.24.573-.36.92-.36.347 0 .653.12.92.36l.027.027c.249.249.373.551.373.907 0 .355-.124.657-.373.906zM6.667 16.347c.712 0 1.32-.247 1.827-.74.506-.493.76-1.1.76-1.82 0-.712-.254-1.32-.76-1.826s-1.115-.76-1.827-.76c-.711 0-1.319.254-1.826.76-.508.507-.761 1.114-.761 1.826 0 .72.253 1.327.76 1.82.508.493 1.116.74 1.827.74z"/></svg>
+            <!-- YouTube -->
+            <svg v-else-if="item.icon === 'youtube'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            <!-- GitHub -->
+            <svg v-else-if="item.icon === 'github'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+          <!-- 抖音 -->
+          <svg v-else-if="item.icon === 'douyin'" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
+        </a>
+          </template>
+        </div>
+      <PlatformCopyright compact @coffee-click="openCoffeeModal" />
     </footer>
 
     <n-modal
@@ -426,6 +473,9 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
               @keyup.enter="onSubmit"
             />
           </n-form-item>
+          <div class="login-form__captcha">
+            <SlideCaptcha v-model="captchaToken" />
+          </div>
           <n-space vertical :size="17" class="login-form__actions" style="width: 100%">
             <n-button
               type="primary"
@@ -440,7 +490,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
               <n-checkbox v-model:checked="termsAccepted" size="small" class="login-terms__checkbox" />
               <span class="login-terms__text">
                 {{ t("login.termsPrefix") }}
-                <button type="button" class="login-terms__link" @click.stop.prevent>
+                <button type="button" class="login-terms__link" @click.stop.prevent="openTermsPage">
                   {{ t("login.termsLink") }}
                 </button>
               </span>
@@ -499,6 +549,9 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
               @keyup.enter="onRegister"
             />
           </n-form-item>
+          <div class="login-form__captcha">
+            <SlideCaptcha v-model="captchaRegisterToken" />
+          </div>
           <n-space vertical :size="10" style="width: 100%">
             <n-button
               type="primary"
@@ -513,9 +566,44 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
         </n-form>
       </div>
     </n-modal>
+
+    <n-modal
+      :show="coffeeModalOpen"
+      preset="card"
+      class="login-coffee-modal platform-glass-modal login-glass-panel"
+      :style="{ width: 'min(440px, calc(100vw - 38px))' }"
+      :mask-closable="true"
+      transform-origin="center"
+      @update:show="coffeeModalOpen = $event"
+    >
+      <template #header>
+        <div class="login-coffee-modal__header">
+          <span class="login-coffee-modal__emoji">☕</span>
+          <div>
+            <h2 class="login-coffee-modal__title">{{ t("login.buyCoffee") }}</h2>
+          </div>
+        </div>
+      </template>
+      <div class="login-coffee-modal__body">
+        <p class="login-coffee-modal__desc">{{ t("login.buyCoffeeDesc") }}</p>
+        <div class="login-coffee-modal__qrcodes">
+          <div class="login-coffee-modal__qrcode">
+            <img :src="`${BASE}/images/coffee-wechat.svg`" alt="微信收款码" width="160" height="160" />
+            <span class="login-coffee-modal__qrcode-label">微信</span>
+          </div>
+          <div class="login-coffee-modal__qrcode">
+            <img :src="`${BASE}/images/coffee-alipay.svg`" alt="支付宝收款码" width="160" height="160" />
+            <span class="login-coffee-modal__qrcode-label">支付宝</span>
+          </div>
+        </div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+</style>
 <style scoped>
 .login-page {
   position: relative;
@@ -526,6 +614,8 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   background: transparent;
+  font-family: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
 }
 
 .login-header {
@@ -668,6 +758,37 @@ html[data-theme="dark"] .login-header__vrule {
   z-index: 4;
   padding: 29px 19px 38px;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-page__social-inline {
+  position: absolute;
+  left: 19px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  pointer-events: auto;
+}
+
+.login-page__social-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #000;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.login-page__social-link:hover {
+  color: var(--platform-accent);
+}
+
+html[data-theme="dark"] .login-page__social-link {
+  color: #e0e0e8;
 }
 
 .login-page--exit {
@@ -709,7 +830,7 @@ html[data-theme="dark"] .login-page--scrolling .login-header {
   justify-content: center;
   padding: 43px 29px 29px;
   box-sizing: border-box;
-  background-size: cover;
+  background-size: 120%;
   background-position: center;
   background-repeat: no-repeat;
   position: relative;
@@ -747,14 +868,17 @@ html[data-theme="dark"] .login-showcase__hero::before {
 
 .login-showcase__platform-title {
   margin: 0 0 17px;
-  font-size: clamp(2rem, 5.8vw, 3.35rem);
-  font-weight: 700;
+  font-size: clamp(1.8rem, 4.8vw, 2.8rem);
+  font-weight: 600;
   line-height: 1.1;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.04em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .login-showcase__platform-title :deep(.platform-brand-title--strong) {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .login-showcase__headline {
@@ -780,10 +904,12 @@ html[data-theme="dark"] .login-showcase__hero::before {
 .login-showcase__intro {
   margin: 0 0 29px;
   max-width: 34em;
-  font-size: clamp(14px, 1.25vw, 17px);
+  font-size: clamp(14px, 1.15vw, 16px);
   font-weight: 400;
-  line-height: 1.65;
-  color: var(--platform-text-secondary);
+  line-height: 1.6;
+  color: #000;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .login-showcase__scroll {
@@ -845,7 +971,7 @@ html[data-theme="dark"] .login-showcase__hero::before {
 }
 
 .login-form--placeholder-only :deep(.n-form-item:last-of-type) {
-  margin-bottom: 26px;
+  margin-bottom: 14px;
 }
 
 .login-form--placeholder-only :deep(.n-form-item-label) {
@@ -929,6 +1055,13 @@ html[data-theme="dark"] .login-showcase__hero::before {
   margin-top: 0;
 }
 
+.login-form__captcha {
+  margin-bottom: 14px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
 .login-form {
   margin-top: 0;
 }
@@ -997,13 +1130,73 @@ html[data-theme="dark"] .login-showcase__cta--secondary {
   transform: translateY(-1px);
 }
 
-html[data-theme="dark"] .login-showcase__cta--secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.09);
-}
-
 .login-showcase__cta:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.login-coffee-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 5px 0 2px;
+}
+
+.login-coffee-modal__emoji {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
+  border-radius: 12px;
+}
+
+.login-coffee-modal__title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  color: var(--platform-text);
+}
+
+.login-coffee-modal__body {
+  text-align: center;
+}
+
+.login-coffee-modal__desc {
+  margin: 0 0 24px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--platform-text-secondary);
+}
+
+.login-coffee-modal__qrcodes {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.login-coffee-modal__qrcode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.login-coffee-modal__qrcode img {
+  border-radius: 10px;
+  display: block;
+}
+
+.login-coffee-modal__qrcode-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--platform-text);
 }
 
 @media (max-width: 480px) {
@@ -1036,6 +1229,47 @@ html[data-theme="dark"] .login-showcase__cta--secondary:hover:not(:disabled) {
     padding: 0 7px;
   }
 }
+
+@media (max-width: 480px) {
+  .login-header__title {
+    display: none;
+  }
+
+  .login-header__brand {
+    gap: 0;
+  }
+
+  .login-showcase__hero {
+    padding: 54px 14px 19px;
+  }
+
+  .login-showcase__intro {
+    margin-bottom: 22px;
+    max-width: 100%;
+  }
+
+  .login-page__copyright {
+    flex-direction: column;
+    gap: 14px;
+    padding: 19px 14px 24px;
+    align-items: center;
+  }
+
+  .login-page__social-inline {
+    position: static;
+    transform: none;
+    justify-content: center;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 400px) {
+  .login-showcase__hero {
+    min-height: auto;
+    padding-top: 60px;
+    padding-bottom: 24px;
+  }
+}
 </style>
 
 <style>
@@ -1057,7 +1291,27 @@ html[data-theme="dark"] .login-showcase__cta--secondary:hover:not(:disabled) {
     inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
 }
 
+.login-coffee-modal.platform-glass-modal.n-modal .n-card {
+  background: rgba(255, 255, 255, 0.38) !important;
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.48) !important;
+  border-radius: 22px !important;
+  box-shadow:
+    0 24px 67px color-mix(in srgb, var(--platform-accent) 18%, transparent),
+    0 10px 29px color-mix(in srgb, var(--platform-accent) 8%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+}
+
 html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card {
+  background: rgba(22, 22, 32, 0.52) !important;
+  border-color: var(--platform-accent-border) !important;
+  box-shadow:
+    0 14px 48px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme="dark"] .login-coffee-modal.platform-glass-modal.n-modal .n-card {
   background: rgba(22, 22, 32, 0.52) !important;
   border-color: var(--platform-accent-border) !important;
   box-shadow:
@@ -1086,6 +1340,14 @@ html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card 
   padding-top: 10px !important;
   max-height: min(72vh, 672px);
   overflow-y: auto;
+}
+
+.login-coffee-modal.platform-glass-modal.n-modal .n-card-header {
+  padding: 28px 28px 0 !important;
+}
+
+.login-coffee-modal.platform-glass-modal.n-modal .n-card__content {
+  padding: 20px 28px 28px !important;
 }
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card {

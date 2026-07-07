@@ -133,12 +133,12 @@ pip install -e packages/agentkit-mcp
   <table>
     <tr>
       <td align="center">
-        <img src="images/weixin.jpg" alt="微信收款码" width="200" />
+        <img src="frontend/public/images/coffee-wechat.jpg" alt="微信收款码" width="200" />
         <br />
         <strong>微信</strong>
       </td>
       <td align="center">
-        <img src="images/zhifubao.jpg" alt="支付宝收款码" width="200" />
+        <img src="frontend/public/images/coffee-alipay.jpg" alt="支付宝收款码" width="200" />
         <br />
         <strong>支付宝</strong>
       </td>

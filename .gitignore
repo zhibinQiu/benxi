@@ -70,3 +70,4 @@ compose.expose-deps.db.yaml
 .env.server.deps.example
 .env.server.shared.example
 .env.stack.example
+运维部署指南.md

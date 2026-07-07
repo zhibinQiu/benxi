@@ -113,29 +113,3 @@ class CaptchaResponse(BaseModel):
 class CaptchaVerifyRequest(BaseModel):
     token: str
     offset: int
-
-    @field_validator("email")
-    @classmethod
-    def valid_email_optional(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        return normalize_email(str(v))
-
-    @field_validator("display_name")
-    @classmethod
-    def display_name_optional(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        s = v.strip()
-        if len(s) < 2:
-            raise ValueError("姓名至少 2 个字符")
-        return s
-
-    @field_validator("password")
-    @classmethod
-    def password_optional(cls, v: str | None) -> str | None:
-        if v is None or v == "":
-            return None
-        if len(v) < 6:
-            raise ValueError("密码至少 6 个字符")
-        return v

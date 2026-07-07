@@ -1,6 +1,0 @@
-# 本机仅暴露 PostgreSQL（remote-dev 时把 backend/.env 的 DATABASE_URL 改为 127.0.0.1:5432）
-# 用法: docker compose -f compose.yaml -f compose.local-db.yaml up -d postgres
-services:
-  postgres:
-    ports:
-      - "${LOCAL_POSTGRES_PORT:-5432}:5432"

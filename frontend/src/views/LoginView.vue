@@ -82,7 +82,6 @@ const regPassword2 = ref("");
 const registering = ref(false);
 const flyPanelRef = ref(null);
 const termsAccepted = ref(true);
-const coffeeModalOpen = ref(false);
 
 const captchaToken = ref("");
 const captchaRegisterToken = ref("");
@@ -318,11 +317,6 @@ function onRegisterModalUpdate(show) {
   registerModalOpen.value = show;
 }
 
-function openCoffeeModal() {
-  if (exiting.value) return;
-  coffeeModalOpen.value = true;
-}
-
 function openTermsPage() {
   window.open("/terms", "_blank");
 }
@@ -429,7 +423,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
         </a>
           </template>
         </div>
-      <PlatformCopyright compact @coffee-click="openCoffeeModal" />
+      <PlatformCopyright compact />
     </footer>
 
     <n-modal
@@ -564,38 +558,6 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
             </n-button>
           </n-space>
         </n-form>
-      </div>
-    </n-modal>
-
-    <n-modal
-      :show="coffeeModalOpen"
-      preset="card"
-      class="login-coffee-modal platform-glass-modal login-glass-panel"
-      :style="{ width: 'min(440px, calc(100vw - 38px))' }"
-      :mask-closable="true"
-      transform-origin="center"
-      @update:show="coffeeModalOpen = $event"
-    >
-      <template #header>
-        <div class="login-coffee-modal__header">
-          <span class="login-coffee-modal__emoji">☕</span>
-          <div>
-            <h2 class="login-coffee-modal__title">{{ t("login.buyCoffee") }}</h2>
-          </div>
-        </div>
-      </template>
-      <div class="login-coffee-modal__body">
-        <p class="login-coffee-modal__desc">{{ t("login.buyCoffeeDesc") }}</p>
-        <div class="login-coffee-modal__qrcodes">
-          <div class="login-coffee-modal__qrcode">
-            <img :src="`${BASE}/images/coffee-wechat.svg`" alt="微信收款码" width="160" height="160" />
-            <span class="login-coffee-modal__qrcode-label">微信</span>
-          </div>
-          <div class="login-coffee-modal__qrcode">
-            <img :src="`${BASE}/images/coffee-alipay.svg`" alt="支付宝收款码" width="160" height="160" />
-            <span class="login-coffee-modal__qrcode-label">支付宝</span>
-          </div>
-        </div>
       </div>
     </n-modal>
   </div>
@@ -1026,7 +988,7 @@ html[data-theme="dark"] .login-showcase__hero::before {
 }
 
 .login-terms__text {
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.55;
   text-align: center;
   color: var(--platform-text-tertiary);
@@ -1135,69 +1097,6 @@ html[data-theme="dark"] .login-showcase__cta--secondary {
   cursor: not-allowed;
 }
 
-.login-coffee-modal__header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 5px 0 2px;
-}
-
-.login-coffee-modal__emoji {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
-  border-radius: 12px;
-}
-
-.login-coffee-modal__title {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.3;
-  letter-spacing: -0.02em;
-  color: var(--platform-text);
-}
-
-.login-coffee-modal__body {
-  text-align: center;
-}
-
-.login-coffee-modal__desc {
-  margin: 0 0 24px;
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--platform-text-secondary);
-}
-
-.login-coffee-modal__qrcodes {
-  display: flex;
-  justify-content: center;
-  gap: 28px;
-  flex-wrap: wrap;
-}
-
-.login-coffee-modal__qrcode {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.login-coffee-modal__qrcode img {
-  border-radius: 10px;
-  display: block;
-}
-
-.login-coffee-modal__qrcode-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--platform-text);
-}
 
 @media (max-width: 480px) {
   .login-showcase__ctas {
@@ -1291,18 +1190,6 @@ html[data-theme="dark"] .login-showcase__cta--secondary {
     inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
 }
 
-.login-coffee-modal.platform-glass-modal.n-modal .n-card {
-  background: rgba(255, 255, 255, 0.38) !important;
-  backdrop-filter: blur(22px) saturate(170%);
-  -webkit-backdrop-filter: blur(22px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.48) !important;
-  border-radius: 22px !important;
-  box-shadow:
-    0 24px 67px color-mix(in srgb, var(--platform-accent) 18%, transparent),
-    0 10px 29px color-mix(in srgb, var(--platform-accent) 8%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
-}
-
 html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card {
   background: rgba(22, 22, 32, 0.52) !important;
   border-color: var(--platform-accent-border) !important;
@@ -1311,13 +1198,6 @@ html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card 
     inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 
-html[data-theme="dark"] .login-coffee-modal.platform-glass-modal.n-modal .n-card {
-  background: rgba(22, 22, 32, 0.52) !important;
-  border-color: var(--platform-accent-border) !important;
-  box-shadow:
-    0 14px 48px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
-}
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card-header {
   padding: 34px 38px 10px !important;
@@ -1342,13 +1222,6 @@ html[data-theme="dark"] .login-coffee-modal.platform-glass-modal.n-modal .n-card
   overflow-y: auto;
 }
 
-.login-coffee-modal.platform-glass-modal.n-modal .n-card-header {
-  padding: 28px 28px 0 !important;
-}
-
-.login-coffee-modal.platform-glass-modal.n-modal .n-card__content {
-  padding: 20px 28px 28px !important;
-}
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card {
   overflow: visible;

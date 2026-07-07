@@ -301,7 +301,7 @@ export default {
     brandName: "本析",
     getStarted: "立即试用",
     buyCoffee: "请开发者喝咖啡～",
-    buyCoffeeDesc: "内测期间打赏超过 100 RMB，享受企业级部署折扣 15%",
+    buyCoffeeDesc: "内测期间打赏 50 元以上，企业级部署享折扣 15%",
     showcaseScrollHint: "向下滚动了解更多",
     showcaseCompareLabel: "相比市面方案",
     showcaseVision: {

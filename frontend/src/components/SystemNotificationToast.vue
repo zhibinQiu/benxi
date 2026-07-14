@@ -134,9 +134,9 @@ function onOpen(toast) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 43px;
-  height: 43px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   background: var(--platform-accent-gradient-soft, rgba(24, 160, 88, 0.12));
   color: var(--platform-accent);
 }
@@ -149,14 +149,14 @@ function onOpen(toast) {
 }
 
 .system-notif-card__title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
   color: var(--platform-text);
 }
 
 .system-notif-card__desc {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--platform-text-secondary);
   word-break: break-word;

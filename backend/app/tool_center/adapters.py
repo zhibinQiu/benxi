@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import uuid
 from typing import Any
 
-from app.core.tool_skill_taxonomy import GLOBAL_ATOMIC_TOOL_NAMES
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
     ATOMIC_TOOL_WEB_SEARCH,
 )
 from app.tool_center.context import ToolRuntimeContext
+
+logger = logging.getLogger(__name__)
 
 
 def _tool_result(ok: bool, summary: str, data: Any = None) -> tuple[bool, str, dict[str, Any] | None]:
@@ -23,9 +26,66 @@ def _tool_result(ok: bool, summary: str, data: Any = None) -> tuple[bool, str, d
     return ok, summary, {}
 
 
+def _firecrawl_scrape(url: str) -> str | None:
+    """用 FireCrawl 抓取网页全文，返回 Markdown；FireCrawl 不可用时 fallback 到内置 web_article_fetcher。"""
+    from app.services.model_settings_service import get_effective_model_config
+
+    merged = get_effective_model_config()
+    api_key = (merged.get("firecrawl_api_key") or "").strip()
+    api_url = (merged.get("firecrawl_api_url") or "https://api.firecrawl.dev").rstrip("/")
+
+    if api_key:
+        try:
+            import requests
+            resp = requests.post(
+                f"{api_url}/v1/scrape",
+                json={"url": url, "formats": ["markdown"]},
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            md = data.get("data", {}).get("markdown") or data.get("markdown")
+            if md and isinstance(md, str) and md.strip():
+                return md.strip()
+        except Exception as exc:
+            logger.debug("FireCrawl scrape failed %s: %s", url, exc)
+
+    # Fallback: 内置 web_article_fetcher
+    try:
+        from app.integrations.web_article_fetcher import fetch_web_article
+        entry = fetch_web_article(url, timeout=15.0)
+        if entry and entry.content_html:
+            from app.integrations.html_markdown import html_to_markdown
+            return html_to_markdown(entry.content_html)
+    except Exception as exc:
+        logger.debug("web_article_fetcher fallback failed %s: %s", url, exc)
+    return None
+
+
+async def _enrich_items_with_full_text(items: list[dict], read_full: int) -> list[dict]:
+    """并行抓取前 read_full 条链接的全文，附加到 items。"""
+    targets = [(i, item) for i, item in enumerate(items[:read_full]) if item.get("url")]
+    if not targets:
+        return items
+
+    async def _fetch_one(idx: int, item: dict) -> None:
+        url = (item.get("url") or "").strip()
+        if not url:
+            return
+        loop = asyncio.get_running_loop()
+        full = await loop.run_in_executor(None, _firecrawl_scrape, url)
+        if full:
+            items[idx]["full_text"] = full
+
+    await asyncio.gather(*[_fetch_one(idx, it) for idx, it in targets], return_exceptions=True)
+    return items
+
+
 async def _run_web_search(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tuple[bool, str, dict | None]:
     query = str(params.get("query") or "").strip()
     max_items = int(params.get("max_items") or 8)
+    read_full = int(params.get("read_full") or 3)
     from app.services.searxng_service import (
         SearxngNotConfiguredError,
         SearxngSearchError,
@@ -34,11 +94,123 @@ async def _run_web_search(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tu
 
     try:
         items, _ = search_web(query, page_size=max_items, db=ctx.db)
-        return _tool_result(True, f"联网检索返回 {len(items)} 条", {"query": query, "items": items})
     except (SearxngNotConfiguredError, SearxngSearchError) as exc:
         return _tool_result(False, str(exc))
     except Exception as exc:
         return _tool_result(False, f"联网检索失败：{exc}")
+
+    # Phase 1: 读前 N 条全文
+    if read_full > 0 and items:
+        items = await _enrich_items_with_full_text(items, read_full)
+        read_count = sum(1 for it in items[:read_full] if it.get("full_text"))
+    else:
+        read_count = 0
+
+    result: dict[str, Any] = {
+        "query": query,
+        "items": items,
+        "read_full": read_count,
+        "read_full_enabled": read_full > 0,
+    }
+
+    # Phase 3: 交叉验证（仅当 read_full >= 2 条时有意义）
+    if read_full >= 2:
+        verification = _cross_validate_items(items, top_n=read_full)
+        if verification:
+            result["verification"] = verification
+
+    return _tool_result(
+        True,
+        f"联网检索返回 {len(items)} 条，已读全文 {read_count} 条",
+        result,
+    )
+
+
+# ── Phase 3: 信息交叉验证 ──
+
+
+def _extract_key_claims_from_text(text: str) -> list[dict]:
+    """从全文/snippet 中提取有数字/断言的关键行（快速规则法，无需 LLM）。"""
+    import re
+    claims: list[dict] = []
+    lines = re.split(r"[。\n]", text)
+    for line in lines:
+        line = line.strip()
+        if not line or len(line) < 12:
+            continue
+        # 提取包含数字的主张
+        if re.search(r"[百千万亿\d]+", line):
+            claims.append({
+                "text": line[:200],
+                "has_number": True,
+            })
+        # 提取含"是/为/达/突破/下降/增长"等断言动词的主张
+        elif re.search(r"(?:是|为|达|突破|达到|下降|增长|减少|预计|同比|环比)", line):
+            claims.append({
+                "text": line[:200],
+                "has_number": False,
+            })
+    return claims[:10]
+
+
+def _normalize_claim_text(text: str) -> str:
+    """归一化主张文本用于对比。"""
+    import re
+    t = re.sub(r"[^\u4e00-\u9fff\w\d.%-]", "", text)
+    t = re.sub(r"\s+", "", t)[:80]
+    return t
+
+
+def _cross_validate_items(items: list[dict], top_n: int = 3) -> list[dict]:
+    """对多条结果提取主张并交叉比对，返回一致性分析结果。"""
+    all_claims: list[dict] = []
+    for item in items[:top_n]:
+        source = (item.get("full_text") or item.get("snippet") or "").strip()
+        if not source:
+            continue
+        claims = _extract_key_claims_from_text(source)
+        for c in claims:
+            c["source_url"] = item.get("url", "")
+            c["source_title"] = item.get("title", "")
+        all_claims.extend(claims)
+
+    if not all_claims:
+        return []
+
+    # 按归一化文本分组
+    groups: dict[str, list[dict]] = {}
+    for c in all_claims:
+        key = _normalize_claim_text(c["text"])
+        if not key or len(key) < 6:
+            continue
+        groups.setdefault(key, []).append(c)
+
+    verifications: list[dict] = []
+    for norm_key, sources in groups.items():
+        if len(sources) < 2:
+            continue
+        unique_sources = list({s["source_url"] for s in sources if s.get("source_url")})
+        has_numbers = any(s["has_number"] for s in sources)
+        sample_text = sources[0]["text"]
+
+        # 检查数字一致性
+        import re
+        numbers = set()
+        for s in sources:
+            nums = re.findall(r"\d+[\.\d]*(?:万|亿|%|倍)?", s["text"])
+            numbers.update(nums)
+
+        verifications.append({
+            "claim": sample_text[:200],
+            "source_count": len(unique_sources),
+            "sources": unique_sources,
+            "has_number": has_numbers,
+            "value_count": len(numbers),
+            "consistent": len(numbers) <= 2,
+        })
+
+    verifications.sort(key=lambda v: -v["source_count"])
+    return verifications[:10]
 
 
 def _queryable_doc_ids(ctx: ToolRuntimeContext) -> list[uuid.UUID]:

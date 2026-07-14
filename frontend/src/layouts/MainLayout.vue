@@ -11,9 +11,7 @@ import {
   NSpace,
   NText,
   NIcon,
-  NDrawer,
-  NDrawerContent,
-  NLayoutFooter } from "naive-ui";
+} from "naive-ui";
 import {
   DocumentTextOutline,
   PeopleOutline,
@@ -26,8 +24,7 @@ import {
   ArrowBackOutline,
   NewspaperOutline,
   BugOutline,
-  ListOutline,
-  MenuOutline } from "@vicons/ionicons5";
+  ListOutline } from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
@@ -39,7 +36,6 @@ import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
-import PlatformCopyright from "../components/PlatformCopyright.vue";
 import SystemNotificationToast from "../components/SystemNotificationToast.vue";
 import { startNotificationAlerts, stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
@@ -96,12 +92,10 @@ const expandedKeys = ref([]);
 const siderMenuWrapRef = ref(null);
 
 const siderCollapsed = ref(false);
-const mobileDrawerOpen = ref(false);
 const isMobile = ref(window.innerWidth < 768);
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 768;
-  if (!isMobile.value) mobileDrawerOpen.value = false;
 }
 let resizeTimer = null;
 function onResize() {
@@ -113,13 +107,7 @@ function toggleSider() {
   siderCollapsed.value = !siderCollapsed.value;
 }
 
-function openMobileDrawer() {
-  mobileDrawerOpen.value = true;
-}
 
-function closeMobileDrawer() {
-  mobileDrawerOpen.value = false;
-}
 const { features: systemFeatures, loadSystemFeatures } = useSystemFeatures();
 const { favoriteIds } = useFeatureFavorites();
 
@@ -432,6 +420,7 @@ const {
   tabHasContent,
   createTab: createChatTab,
   closeTab: closeChatTab,
+  closeAllTabs,
   switchTab: switchChatTab,
   syncActiveTabFromRoute,
   updateTabTitle,
@@ -458,13 +447,57 @@ const contentStyle = computed(() => {
     return "flex: 1; min-height: 0; overflow: hidden; box-sizing: border-box";
   }
   if (route.name === "system-functions") {
-    return "padding: 0";
+    return "padding: 14px 24px";
   }
   if (flushFeatureNav.value) {
     return "padding: 0 24px 14px";
   }
   return "padding: 14px 24px";
 });
+
+/** 移动端底部导航栏：仅显示4个核心入口 */
+const mobileBottomTabs = computed(() => [
+  {
+    key: "ai-home",
+    label: t("menu.aiHome"),
+    icon: SparklesOutline,
+    routeName: "ai-home",
+  },
+  {
+    key: "documents",
+    label: t("menu.documents"),
+    icon: DocumentTextOutline,
+    routeName: "documents",
+  },
+  {
+    key: "system-functions",
+    label: t("menu.systemFunctions"),
+    icon: GridOutline,
+    routeName: "system-functions",
+  },
+  {
+    key: "knowledge-subscriptions",
+    label: t("menu.knowledgeSubscriptions"),
+    icon: NewspaperOutline,
+    routeName: "knowledge-subscriptions",
+  },
+]);
+
+const mobileTabActiveKey = computed(() => {
+  const name = String(route.name || "");
+  if (name === "ai-home" || name === "ai-home-tab") return "ai-home";
+  if (name === "documents" || name === "document-detail") return "documents";
+  if (name === "system-functions") return "system-functions";
+  if (name === "knowledge-subscriptions" || name === "subscription-item") return "knowledge-subscriptions";
+  return "ai-home";
+});
+
+function onMobileTabSelect(key) {
+  const tab = mobileBottomTabs.value.find((t) => t.key === key);
+  if (!tab) return;
+  if (key === String(route.name || "")) return;
+  pushRoute(tab.routeName);
+}
 
 function onExpandedKeysUpdate(keys) {
   expandedKeys.value = keys;
@@ -644,61 +677,15 @@ function onMenuSelect(key) {
             @update:expanded-keys="onExpandedKeysUpdate"
           />
         </div>
-        <PlatformCopyright v-if="!siderCollapsed" class="sider-copyright" />
       </div>
     </n-layout-sider>
-    <!-- 移动端抽屉 -->
-    <n-drawer
-      v-else
-      :show="mobileDrawerOpen"
-      :width="264"
-      placement="left"
-      class="mob-sider-drawer"
-      @update:show="closeMobileDrawer"
-    >
-      <n-drawer-content :native-scrollbar="false" :body-content-style="{ padding: 0 }">
-        <div class="sider-inner sider-inner--mob">
-          <div class="brand">
-            <PlatformBrandIcon class="brand-logo" />
-            <div class="brand-head">
-              <span class="brand-name">
-                <PlatformBrandTitle :title="sidebarBrandTitle" />
-              </span>
-            </div>
-          </div>
-          <div ref="siderMenuWrapRef" class="sider-menu-wrap" @click="onSiderMenuWrapClick">
-            <n-menu
-              class="sider-menu"
-              :value="resolvedActiveKey"
-              :options="menuOptions"
-              :expanded-keys="expandedKeys"
-              :node-props="siderMenuNodeProps"
-              @update:expanded-keys="onExpandedKeysUpdate"
-              @update:value="closeMobileDrawer"
-            />
-          </div>
-          <PlatformCopyright class="sider-copyright" />
-        </div>
-      </n-drawer-content>
-    </n-drawer>
+    <!-- 移动端无需抽屉，改用底部导航栏 -->
     <n-layout class="app-main">
       <n-layout-header :bordered="!showAiHomeTabBar" :class="['header', { 'header--tab-mode': showAiHomeTabBar }, { 'header--mob': isMobile }]">
         <div class="header-stack">
           <div class="header-primary">
             <n-space align="center" justify="space-between" style="width: 100%">
               <n-space align="center" :size="isMobile ? 6 : 10" class="header-leading">
-                <!-- 移动端汉堡菜单 -->
-                <n-button
-                  v-if="isMobile"
-                  quaternary
-                  circle
-                  size="tiny"
-                  class="mob-hamburger"
-                  aria-label="Open menu"
-                  @click="openMobileDrawer"
-                >
-                  <n-icon :size="22" :component="MenuOutline" />
-                </n-button>
                 <n-space
                 v-if="showSubsystemNav"
                 align="center"
@@ -756,6 +743,7 @@ function onMenuSelect(key) {
                 @close="closeChatTab"
                 @create="createChatTab"
                 @history="goToChatHistory"
+                @close-all="closeAllTabs"
               />
             </div>
           </div>
@@ -800,6 +788,19 @@ function onMenuSelect(key) {
     @acknowledge="onReleaseHighlightsAcknowledge"
   />
   <SystemNotificationToast />
+  <!-- 移动端底部导航栏 -->
+  <div v-if="isMobile" class="mobile-bottom-tabs">
+    <button
+      v-for="tab in mobileBottomTabs"
+      :key="tab.key"
+      class="mobile-tab-item"
+      :class="{ 'mobile-tab-item--active': mobileTabActiveKey === tab.key }"
+      @click="onMobileTabSelect(tab.key)"
+    >
+      <n-icon :size="22" :component="tab.icon" />
+      <span class="mobile-tab-label">{{ tab.label }}</span>
+    </button>
+  </div>
 </template>
 
 <style scoped>
@@ -831,16 +832,34 @@ function onMenuSelect(key) {
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
   border-bottom: 1px solid var(--platform-border) !important;
+  background: var(--platform-header-bg) !important;
+}
+
+/* Header 微妙的玻璃质感 — 仅在非 tab 模式 / 无 feature-local-nav 时生效 */
+.main-layout .header::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--platform-accent) 2%, transparent) 0%, transparent 100%);
+  opacity: 0.5;
 }
 
 /* ai-home 标签页模式：移除 header 底部边框，交由标签栏的标签下边框控制 */
 .main-layout .header.header--tab-mode {
   border-bottom: none !important;
 }
+.main-layout .header.header--tab-mode::after {
+  display: none;
+}
 
 .main-layout:has(.app-content .feature-local-nav) .header,
 .main-layout:has(.app-content .feature-top-strip) .header {
   border-bottom: none !important;
+}
+.main-layout:has(.app-content .feature-local-nav) .header::after,
+.main-layout:has(.app-content .feature-top-strip) .header::after {
+  display: none;
 }
 
 .app-sider {
@@ -868,11 +887,13 @@ function onMenuSelect(key) {
   border-radius: var(--platform-radius-sm);
   transition:
     color 0.2s ease,
-    background 0.2s ease;
+    background 0.2s ease,
+    transform 0.2s var(--platform-ease-smooth);
 }
 .sider-toggle:hover {
   color: var(--platform-text);
   background: var(--platform-bg-tertiary) !important;
+  transform: translateX(1px);
 }
 .sider-toggle-icon {
   width: 20px;
@@ -890,6 +911,7 @@ function onMenuSelect(key) {
   overflow: hidden;
   font-size: 0.9375rem;
   border-radius: 0;
+  transition: padding 0.25s var(--platform-ease-smooth);
 }
 .brand--collapsed {
   justify-content: center;
@@ -959,26 +981,6 @@ function onMenuSelect(key) {
   min-height: 0;
   overflow-y: auto;
   padding: 4px 12px 12px 17px;
-}
-.sider-copyright {
-  flex-shrink: 0;
-  margin-top: auto;
-  padding-bottom: 2px;
-}
-
-.sider-copyright :deep(.platform-copyright) {
-  padding: 2px 14px 5px;
-}
-
-.sider-copyright :deep(.platform-copyright p) {
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.sider-copyright :deep(.platform-copyright .coffee-invite) {
-  font-size: 11px;
-  line-height: 1.35;
-  margin-bottom: 2px;
 }
 .app-main {
   height: 100vh;
@@ -1083,6 +1085,7 @@ function onMenuSelect(key) {
   font-weight: 600;
   letter-spacing: var(--platform-tracking-tight);
   color: var(--platform-text);
+  line-height: 1.3;
 }
 
 .header-app-title {
@@ -1101,7 +1104,7 @@ function onMenuSelect(key) {
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
-  padding: 0 var(--feature-content-inset-x, 24px) 14px;
+  padding: 17px var(--feature-content-inset-x, 24px) 17px;
 }
 
 .app-content--full.app-content--flush-start {
@@ -1181,23 +1184,6 @@ function onMenuSelect(key) {
 }
 
 /* === 移动端适配 === */
-.mob-hamburger {
-  flex-shrink: 0;
-  color: var(--platform-text-secondary);
-}
-
-.mob-sider-drawer :deep(.n-drawer-body) {
-  padding: 0;
-}
-
-.mob-sider-drawer :deep(.n-drawer-body-content-wrapper) {
-  display: flex;
-  flex-direction: column;
-}
-
-.sider-inner--mob {
-  height: 100%;
-}
 
 .header--mob {
   min-height: 48px;
@@ -1214,20 +1200,149 @@ function onMenuSelect(key) {
 
 @media (max-width: 768px) {
   .header-primary {
-    padding: 0 12px;
+    padding: 0 10px;
+  }
+  .main-layout {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  .app-main {
+    max-width: 100vw;
+    overflow-x: hidden;
   }
   .main-layout :deep(.app-content) {
     padding: 0 !important;
+    font-size: 14px;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
   }
   .main-layout .app-content--full {
-    padding: 0 12px 14px !important;
+    padding: 0 10px 10px !important;
+  }
+  .app-content :deep(.n-layout-scroll-container) {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
   }
   .header-extension--reserved {
-    min-height: 40px;
+    min-height: 36px;
   }
   .ai-home-tab-bar-wrap {
-    padding: 0 12px;
+    padding: 0 10px;
   }
+  /* 移动端底部导航栏：预留空间 */
+  .main-layout .app-content {
+    padding-bottom: 60px !important;
+  }
+  .main-layout .app-content--full {
+    padding-bottom: calc(10px + 60px) !important;
+  }
+  /* 全局内容紧凑：缩小行距与标题字号 */
+  .main-layout .app-content {
+    --platform-mobile-content: 1;
+  }
+
+  /* === 防溢出 — 文本换行与媒体缩放 === */
+  .app-view-host,
+  .app-route-page,
+  .app-route-page--full {
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .main-layout .app-content :deep(img),
+  .main-layout .app-content :deep(video),
+  .main-layout .app-content :deep(iframe),
+  .main-layout .app-content :deep(pre),
+  .main-layout .app-content :deep(table),
+  .main-layout .app-content :deep(svg) {
+    max-width: 100% !important;
+    height: auto;
+  }
+
+  .main-layout .app-content :deep(.n-scrollbar),
+  .main-layout .app-content :deep(.n-scrollbar-content) {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .main-layout .app-content :deep(.n-space) {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .main-layout .app-content :deep(h1) {
+    font-size: 18px;
+  }
+  .main-layout .app-content :deep(h2) {
+    font-size: 16px;
+  }
+  .main-layout .app-content :deep(h3) {
+    font-size: 14px;
+  }
+  .main-layout .app-content :deep(p) {
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+  .main-layout .app-content :deep(.n-card) {
+    font-size: 13px;
+  }
+  .main-layout .app-content :deep(.n-card__content) {
+    padding: 10px 12px;
+  }
+  .main-layout .app-content :deep(.n-card__header) {
+    padding: 10px 12px 0;
+  }
+}
+
+/* === 移动端底部导航栏 === */
+.mobile-bottom-tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: stretch;
+  height: 56px;
+  background: var(--platform-sider-bg, #fff);
+  border-top: 1px solid var(--platform-border, #e5e5e5);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  box-sizing: content-box;
+}
+
+.mobile-tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: var(--platform-text-secondary, #999);
+  cursor: pointer;
+  padding: 4px 0;
+  min-width: 0;
+  transition: color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-tab-item--active {
+  color: var(--platform-accent, #0067ff);
+}
+
+.mobile-tab-label {
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 </style>
 

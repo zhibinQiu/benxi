@@ -1,6 +1,6 @@
 export default {
   app: {
-    name: "Benxi",
+    name: "BenXI",
     tagline: "Knowledge goes further — connected loop · ontology · Skills",
   },
   releaseHighlights: {
@@ -78,7 +78,7 @@ export default {
     },
     agent_skills: {
       title: "Multi-Agent",
-      description: "Manage system agents, skills, tools, and memory for Benxi",
+      description: "Manage system agents, skills, tools, and memory for BenXI",
     },
     pdf_translate: {
       title: "PDF Translate",
@@ -148,7 +148,7 @@ export default {
   },
   featureDescriptions: {
     "ai-home":
-      "Benxi agent: multi-turn chat with document retrieval and ontology graph enhancement.",
+      "BenXI agent: multi-turn chat with document retrieval and ontology graph enhancement.",
     "ai-tools": "Curated external AI tool links.",
     translate: "Layout-preserving PDF translation with bilingual output and glossaries; jobs run in background.",
     "knowledge-search": "Knowledge library search and Q&A with scoped libraries and citations.",
@@ -180,7 +180,7 @@ export default {
     "carbon-qa": { title: "Carbon Q&A" },
     "smart-data-query": { title: "Smart Query" },
     "report-generation": { title: "Report Generation" },
-    assistant: { title: "Benxi Platform Support" },
+    assistant: { title: "BenXI Platform Support" },
     "digital-robot": { title: "Digital Robot" },
   },
     aiHome: {
@@ -281,7 +281,7 @@ export default {
     todos: "Todos",
     jobs: "Jobs",
     notifications: "Notifications",
-    assistant: "Benxi Platform Support",
+    assistant: "BenXI Platform Support",
     digitalRobot: "Digital Robot",
     userMenu: "User menu",
   },
@@ -305,19 +305,19 @@ export default {
     termsPrefix: "By signing in you agree to the ",
     termsLink: "platform terms",
     termsRequired: "Please agree to the platform terms first",
-    captchaRequired: "Please complete the slider verification first",
-    brandName: "Benxi",
+    captchaRequired: "Please complete the captcha first",
+    brandName: "BenXI",
     getStarted: "Get Started",
-    buyCoffee: "Buy me a coffee ☕",
-    buyCoffeeDesc: "Donate 50+ RMB, get 15% off for enterprise deployment",
+    download: "Download",
+    noAccount: "No account?",
     showcaseScrollHint: "Scroll to learn more",
     showcaseCompareLabel: "Compared to the market",
     showcaseVision: {
       label: "Product vision",
-      title: "Knowledge goes further!",
+      title: "BenXI",
       subtitle: "Ingest · clarify · put to work",
       body:
-        "Enterprise knowledge scattered across documents, feeds, and databases — hard to find, harder to connect. Benxi transforms fragments into structured knowledge, powering search, Q&A, and reports across the full chain.",
+        "Enterprise knowledge scattered across documents, feeds, and databases — hard to find, harder to connect. BenXI transforms fragments into structured knowledge, powering search, Q&A, and reports across the full chain.",
       image: "/images/home.png",
       flowTitle: "Knowledge loop",
       flowCenter: "Loop",
@@ -414,19 +414,28 @@ export default {
         },
       ],
     },
+    showcaseKnowledgeSearch: {
+      label: "Knowledge Search",
+      title: "Enterprise Knowledge Search & Report Generation",
+      body: "Scope retrieval by org hierarchy, document library, or custom tags — each member searches only within their authorized boundary, no overreach, no omission. Report generation follows the same permission model: flexibly select knowledge scope and report templates, auto-assemble multi-source materials into structured reports with Markdown, Word, and mind map export.",
+      image: "/images/知识检索.png",
+    },
     showcaseOntology: {
       label: "Semantic foundation",
-      title: "本 & 析: your semantic foundation",
+      title: "BenXI",
       body:
         "本 defines domain entities and their relationships; 析 extracts knowledge networks automatically. The ontology graph structures ingested content — search resolves semantic relations, Q&A traces reasoning paths, reports assemble materials on demand. Scattered facts become queryable semantic assets.",
       image: "/images/ontology.png",
     },
-    showcaseBadge: "Benxi",
+    showcaseBadge: "BenXI",
     showcaseHeadline: "Knowledge goes further!",
     showcaseIntro:
       "Enterprise knowledge governance: AgentKit multi-agent engine drives ingest, clarify, search, Q&A, and reports in one permission-scoped workspace.",
     showcaseTaglines: [
       "Ingest → ontology → search → Q&A → reports — one connected loop.",
+      "From file ingest to report generation, full permission loop.",
+      "AgentKit-powered knowledge workspace, all in one place.",
+      "Multi-agent synergy, a new paradigm for enterprise knowledge.",
     ],
     showcaseHighlights: [
       "Knowledge loop: from file ingest to reports in one workspace",
@@ -614,7 +623,7 @@ export default {
         cursor: "Cursor",
         manus: "Manus",
         chatgpt: "ChatGPT",
-        ours: "Benxi",
+        ours: "BenXI",
       },
       rows: [
         {
@@ -744,7 +753,7 @@ export default {
       subtitle: "Feedback from enterprise teams",
       items: [
         {
-          quote: "Benxi unified all our files from cloud drives, email, and DingTalk groups. The ontology graph turns scattered fragments into a queryable knowledge network. Search, Q&A, and reports in one closed loop — a dramatic efficiency boost.",
+          quote: "BenXI unified all our files from cloud drives, email, and DingTalk groups. The ontology graph turns scattered fragments into a queryable knowledge network. Search, Q&A, and reports in one closed loop — a dramatic efficiency boost.",
           author: "Hao Wang",
           role: "IT Director, Manufacturing",
         },
@@ -759,7 +768,7 @@ export default {
           role: "Security Architect, Financial Services",
         },
         {
-          quote: "As an energy research institute handling massive reports daily, Benxi's semantic foundation automatically extracts entity relations. Searching now hits knowledge connections directly — saving us at least 40% research time.",
+          quote: "As an energy research institute handling massive reports daily, BenXI's semantic foundation automatically extracts entity relations. Searching now hits knowledge connections directly — saving us at least 40% research time.",
           author: "Feng Liu",
           role: "KM Lead, Energy Research",
         },
@@ -769,10 +778,25 @@ export default {
           role: "Platform Architect, Technology",
         },
         {
-          quote: "From file ingestion to report generation, everything stays in one permission-scoped closed loop. Compared to pieced-together solutions, Benxi's all-in-one design slashed both our ops costs and compliance risks.",
+          quote: "From file ingestion to report generation, everything stays in one permission-scoped closed loop. Compared to pieced-together solutions, BenXI's all-in-one design slashed both our ops costs and compliance risks.",
           author: "Lei Sun",
           role: "IT Director, Government",
         },
+      ],
+    },
+    showcaseAcknowledgments: {
+      label: "Acknowledgments",
+      title: "Acknowledgments",
+      subtitle: "Special thanks to the following companies and open-source projects",
+      items: [
+        { name: "Doubao", description: "ByteDance LLM capability", url: "https://www.doubao.com" },
+        { name: "Qwen", description: "Alibaba Tongyi LLM capability", url: "https://tongyi.aliyun.com" },
+        { name: "KIMI", description: "Moonshot AI long-context LLM", url: "https://kimi.moonshot.cn" },
+        { name: "DeepSeek", description: "DeepSeek LLM capability", url: "https://www.deepseek.com" },
+        { name: "Cursor", description: "AI-powered code editor", url: "https://www.cursor.com" },
+        { name: "RAGflow", description: "Open-source enterprise RAG engine", url: "https://ragflow.io" },
+        { name: "Knowflow", description: "Knowledge base extension backend", url: "https://github.com/zhibinQiu/knowflow" },
+        { name: "PageIndex", description: "Structured document indexing", url: "https://github.com/infiniflow/ragflow" },
       ],
     },
     showcaseFooter: {
@@ -926,6 +950,12 @@ export default {
     uploadSubmitSingle: "Upload",
     uploadSubmitBatch: "Upload {{count}} files",
     sharedAction: "Shared",
+    indexAction: "Index",
+    reindexUnindexedTitle: "Batch Re-index",
+    reindexUnindexedConfirm: "This will re-index all unindexed or failed documents in the current scope. Continue?",
+    reindexUnindexedConfirmAction: "Start Indexing",
+    reindexUnindexedSuccess: "{{count}} document(s) have been queued for re-indexing. Check progress in background jobs.",
+    reindexUnindexedNone: "No documents need indexing in the current scope.",
     recycleAction: "Recycle bin",
     emptyRecycle: "Empty recycle bin",
     backToFolders: "Back to folders",
@@ -1552,12 +1582,13 @@ export default {
     copyFailed: "Copy failed",
     shareCopied: "Share text copied to clipboard",
     shareFailed: "Share failed",
-    disclaimer: "Benxi may make mistakes. Please verify important information.",
-    disclaimerArch: "Benxi may make mistakes. Please verify important information. Multi-agent architecture powered by",
+    disclaimer: "BenXI may make mistakes. Please verify important information.",
+    disclaimerArch: "BenXI may make mistakes. Please verify important information. Multi-agent architecture powered by",
     viewHistory: "View chat history",
     history: "History",
     newChat: "New chat",
     closeTab: "Close tab",
+    closeAllTabs: "Close all tabs",
     loadingConversation: "Loading conversation…",
     thinking: "Thinking…",
     noAnswer: "No answer was generated",
@@ -1993,6 +2024,7 @@ export default {
       toolDetailTitle: "Tool details",
       toolInputSchema: "Input schema",
       toolOutputSchema: "Output schema",
+      toolUsageGuide: "Usage guide",
       colAvailable: "Available",
       colAvailabilityNote: "Note",
       availableYes: "Yes",
@@ -2021,6 +2053,7 @@ export default {
       uploadFolder: "Select folder",
       replaceExisting: "Replace if same name",
       searchPlaceholder: "Search name / description",
+      noSearchResults: "No matching results",
       colName: "Name",
       colDescription: "Description",
       colFiles: "Files",
@@ -2135,6 +2168,7 @@ export default {
         },
         frontend: { title: "Frontend settings", hint: "App title, color scheme, and default day/night theme" },
         llm: { title: "Language model (LLM)", hint: "Knowledge Q&A, meeting summaries, etc." },
+        multimodal: { title: "Multimodal Model", hint: "Image understanding, chart analysis, etc." },
         embedding: { title: "Embedding model", hint: "Document vectors and knowledge search" },
         vl: { title: "VL model", hint: "PDF chart enhancement (IMAGE2TEXT)" },
         rerank: { title: "Reranker model", hint: "Retrieval reranking (optional)" },
@@ -2142,7 +2176,7 @@ export default {
         speech: { title: "Speech recognition", hint: "Speech to text transcription" },
         tts: { title: "Text-to-speech", hint: "TTS (SiliconFlow / OpenAI-compatible)" },
         pdf2zh: { title: "PDF translation", hint: "pdf2zh document translation API" },
-        searxng: { title: "SearXNG web search", hint: "Report generation and AI agent web retrieval" },
+        searxng: { title: "Web Retrieval Service", hint: "SearXNG search engine + FireCrawl full-text extraction for report and AI agent retrieval" },
         browser_rpa: { title: "Browser RPA", hint: "AI agent web automation (headless Chromium)" },
         ragflow_api: { title: "Knowledge base API", hint: "Knowledge retrieval and document sync HTTP API" },
         knowflow_backend: {
@@ -2173,6 +2207,8 @@ export default {
         optionalNotConfigured: "Optional, not configured",
         noApiUrl: "{{model}} (no API URL)",
         noApiKey: "{{model}} (no API key)",
+        noLabel: "Unnamed source",
+        providersCount: "{{count}} sources",
         apiPrefix: "API {{url}}",
         uiPrefix: "UI {{url}}",
         dockerDefault: "Docker default (built-in MySQL)",
@@ -2211,6 +2247,12 @@ export default {
         modelName: "Model name",
         apiKey: "SK / API Key",
         provider: "Provider",
+        providers: "Service Sources",
+        addProvider: "Add Service Source",
+        removeProvider: "Remove this source",
+        activeProvider: "Active Service Source",
+        providerLabel: "Source name (optional)",
+        maxProviders: "Maximum 3 service sources",
         serviceUrl: "Service URL",
         requestTimeout: "Request timeout",
         apiAddress: "API address",
@@ -2229,6 +2271,9 @@ export default {
         browserRpaMaxSteps: "Max steps per session",
         browserRpaAutoTask: "Enable auto explore (browser_run_task)",
         browserRpaAutoTaskMaxSteps: "Auto explore max steps",
+        firecrawlApiKey: "FireCrawl API Key",
+        firecrawlApiUrl: "FireCrawl API URL",
+        firecrawlReadFullMaxUrls: "Full-text URLs per search",
       },
       placeholders: {
         apiRoot: "/ai or http://your-server:40005/ai",
@@ -2236,6 +2281,8 @@ export default {
         llmApiUrl: "https://host/v1 or local vLLM URL",
         modelName: "Model name",
         apiKeyMasked: "Leave blank or masked to keep current",
+        multimodalApiUrl: "https://api.siliconflow.cn/v1",
+        multimodalModel: "Qwen/Qwen3.5-9B",
         embeddingApiUrl: "Embedding API URL",
         embeddingModel: "e.g. BAAI/bge-large-zh-v1.5",
         embeddingFactory: "e.g. SILICONFLOW, OpenAI-API-Compatible",
@@ -2251,6 +2298,8 @@ export default {
         ttsModel: "FunAudioLLM/CosyVoice2-0.5B",
         pdf2zhUrl: "http://127.0.0.1:7861",
         searxngUrl: "http://your-server:40000",
+        firecrawlApiUrl: "https://api.firecrawl.dev or http://127.0.0.1:3002 (self-hosted)",
+        firecrawlApiKeyHint: "Leave empty = disable full-text extraction, use only SearXNG snippets",
         browserRpaDomains: "example.com,httpbin.org (empty = all public)",
         ragflowApiUrl: "http://127.0.0.1:9380",
         ragflowApiKey: "Blank/masked to keep; mapped mode may use user session",
@@ -2268,6 +2317,7 @@ export default {
         frontend:
           "With “follow system”, the UI follows OS day/night; after a manual theme change, local preference wins. Color scheme applies globally after refresh; choose “Custom theme color” to pick any primary color. Maps to <code>FRONTEND_APP_TITLE</code>, <code>FRONTEND_DEFAULT_THEME</code>, <code>FRONTEND_COLOR_SCHEME</code>, and <code>FRONTEND_PRIMARY_COLOR</code> in .env.",
         vl: "PDF chart enhancement (IMAGE2TEXT). Saved immediately to knowledge base; for local models, change API URL and model name only.",
+        multimodal: "Multimodal vision-language model (e.g. Qwen-VL). Defaults to SiliconFlow Qwen/Qwen3.5-9B. Takes effect immediately on save.",
         paddleocr:
           "OpenAI-compatible API (<code>/v1</code>) or self-hosted layout-parsing root. Written to knowledge service config on save; for local deploy, change URL and model name.",
         speech: "Speech to text calls this URL (FunASR speech-api).",
@@ -2275,7 +2325,9 @@ export default {
         pdf2zh:
           "Document translation uses pdf2zh API (<code>PDF2ZH_API_URL</code> in .env). Takes effect immediately.",
         searxng:
-          "Report generation and the AI agent use this SearXNG JSON API (<code>/search?format=json</code>). Maps to <code>SEARXNG_URL</code> and <code>SEARXNG_TIMEOUT_SECONDS</code>. Takes effect immediately.",
+          "Web retrieval uses SearXNG JSON API (<code>/search?format=json</code>) plus FireCrawl full-text extraction. " +
+          "Self-host FireCrawl via <code>deploy/firecrawl.yml</code>. " +
+          "Maps to <code>SEARXNG_URL</code>, <code>FIRECRAWL_API_KEY</code>, <code>FIRECRAWL_API_URL</code> in .env. Takes effect immediately.",
         browserRpa:
           "AI agent drives Playwright Chromium. <strong>Headless servers need no display</strong>; keep headless on. Docker image requires <code>INSTALL_BROWSER=1</code> (enabled in compose by default). Comma-separated domain allowlist; empty blocks intranet only.",
         ragflowApi:
@@ -2752,7 +2804,7 @@ export default {
   },
   assistantFab: {
     welcome:
-      "Hi, I'm Xiaoxi, the Benxi platform AI assistant. Ask about menus, uploading documents, PDF translation, permissions, background jobs, and more.",
+      "Hi, I'm Xiaoxi, the BenXI platform AI assistant. Ask about menus, uploading documents, PDF translation, permissions, background jobs, and more.",
     quickPrompts: [
       "How do I upload and manage documents?",
       "How does PDF translation work?",
@@ -2763,10 +2815,114 @@ export default {
     serviceError: "Service error",
     loadHistoryFailed: "Failed to load conversation: {{error}}",
     retryLater: "Please try again later",
-    ariaAssistant: "Benxi Platform Support",
-    ariaDialog: "Benxi Platform Support",
+    ariaAssistant: "BenXI Platform Support",
+    ariaDialog: "BenXI Platform Support",
     ariaClose: "Close",
     inputPlaceholder: "Describe your question — Enter to send",
+  },
+  promo: {
+    hero: {
+      badge: "Enterprise",
+      title: "Enterprise Knowledge Retrieval & Report Generation",
+      subtitle:
+        "Powered by AgentKit multi-agent engine, build a closed-loop enterprise knowledge governance. Ingestion, clarification, search, Q&A, and reports seamlessly connected within a unified permission system.",
+      ctaPrimary: "Get Started",
+      ctaSecondary: "Learn More",
+      stats: [
+        { value: "Multi-Dimension", label: "Search Scope" },
+        { value: "Multi-Path", label: "Recall Strategy" },
+        { value: "Multi-Format", label: "Report Export" },
+      ],
+    },
+    header: {
+      login: "Get Started",
+    },
+    detail: {
+      label: "Core Capabilities",
+      title: "Knowledge Retrieval & Report Generation",
+      subtitle: "From knowledge ingestion to report output, a complete pipeline secured by enterprise-grade permissions.",
+      features: [
+        {
+          title: "Precision Search",
+          body: "PageIndex structured tree search blended with vector recall. Filter by org hierarchy, doc library, or custom tags — each member searches only within their permission scope.",
+        },
+        {
+          title: "Report Generation",
+          body: "AgentKit Loop Engineering plans multi-round sub-questions, recalls enterprise knowledge fragments, and expands by chapter. Dual-pane Markdown supports polish, expansion, and continuation. One-click mind-map toggle.",
+        },
+        {
+          title: "Multi-Path Recall",
+          body: "PageIndex + vector hybrid recall strategy. Structured indexing excels at long-document chapter localization, outperforming single-embedding RAG in precision and coverage.",
+        },
+        {
+          title: "Mind-Map Export",
+          body: "Reports switch to mind-map visualization instantly. Export to Markdown, Word, or OPML for diverse delivery needs.",
+        },
+        {
+          title: "Tiered Permissions",
+          body: "Org-hierarchy inherited permission management. Doc-library and custom-tag level controls. Auditable sharing ensures knowledge security and compliance.",
+        },
+        {
+          title: "Multi-Format Ingestion",
+          body: "Ingest PDF, Word, Excel, images, web pages, and more. Auto-extract text and structure to build a unified enterprise knowledge base.",
+        },
+        {
+          title: "Private Deployment",
+          body: "On-premises deployment keeps data within your domain. Pure browser-based — no plugin required. Enterprise SLA guaranteed.",
+        },
+        {
+          title: "Agent Engine",
+          body: "AgentKit 4-layer multi-agent architecture drives orchestration and tool execution. AIP / MCP standard interconnect — internal and external agents and tools integrate seamlessly.",
+        },
+      ],
+    },
+    flow: {
+      title: "Workflow",
+      subtitle: "From knowledge ingestion to report output — one connected pipeline",
+      steps: [
+        { title: "Document Ingestion", body: "Upload PDF, Word, Excel, web pages — auto-parse text and structure" },
+        { title: "Knowledge Clarification", body: "Ontology graph auto-extracts entity relations, building domain knowledge networks" },
+        { title: "Precision Search", body: "PageIndex + vector hybrid recall — search accurately within permissions" },
+        { title: "Report Generation", body: "Loop Engineering multi-round planning — auto-compile structured reports" },
+      ],
+    },
+    arch: {
+      label: "Architecture",
+      title: "AgentKit Multi-Agent Engine",
+      subtitle: "4-layer architecture driving orchestration and tool execution",
+      layers: [
+        {
+          tag: "Orchestration",
+          title: "Agent Supervisor",
+          body: "Centralized routing, decomposing complex tasks into multi-round sub-problems, orchestrating multi-agent collaboration",
+        },
+        {
+          tag: "Skills",
+          title: "Skill Orchestration",
+          body: "Built-in standardized skills for search, analysis, generation — supports AIP external agents and MCP tool integration",
+        },
+        {
+          tag: "Retrieval",
+          title: "Knowledge Retrieval",
+          body: "PageIndex + vector hybrid search with permission filtering, snippet preview, and source tracing",
+        },
+        {
+          tag: "Export",
+          title: "Report Export",
+          body: "Dual-pane Markdown editing, mind-map visualization, Markdown / Word / OPML export",
+        },
+      ],
+    },
+    cta: {
+      badge: "Enterprise",
+      title: "Start a New Paradigm of Enterprise Knowledge Management",
+      body: "Closed-loop knowledge management, permission system, multi-format report output — the enterprise knowledge workspace, experience it now.",
+      button: "Get Started →",
+    },
+  },
+  copyright: {
+    about: "About Haiyi",
+    text: "Copyright © 2026 BenXI v4.6.0beta All rights reserved.",
   },
   digitalRobotFab: {
     welcome:

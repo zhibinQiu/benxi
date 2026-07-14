@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from agentkit_skills.routing import format_skill_route_line
+from app.agentkit.skills.routing import format_skill_route_line
 
-from app.skills.types import SkillDefinition
 
 # 路由描述统一维护于 app/skills/skills.md；调度层只读该文件。
 # Agent 路由描述见 app/core/agents.md。

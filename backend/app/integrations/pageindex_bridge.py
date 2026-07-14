@@ -43,7 +43,7 @@ def _vendored_pageindex_config_sources() -> list[Path]:
     if env_root:
         platform_roots.append(Path(env_root))
     for root in platform_roots:
-        candidate = root / "third_party/pageindex-upstream/pageindex/config.yaml"
+        candidate = root / "third_party/pageindex/pageindex/config.yaml"
         if candidate not in sources:
             sources.append(candidate)
     return sources
@@ -79,7 +79,7 @@ def _refresh_pageindex_state() -> None:
         if not (_PAGEINDEX_IMPORT_ERROR or "").strip():
             _PAGEINDEX_IMPORT_ERROR = (
                 "已安装 PyPI 版 pageindex（云端 SDK），缺少自托管 index()。"
-                "请执行: pip install -e ./third_party/pageindex-upstream"
+                "请执行: pip install -e ./third_party/pageindex"
             )
         return
 

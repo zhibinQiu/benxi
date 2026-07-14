@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
+
+from playwright.async_api import Browser, BrowserContext, Page
 
 from app.integrations.free_web_ai.adapters import (
-    ADAPTER_MAP,
     PROVIDER_CHAIN,
     get_adapter,
 )
@@ -32,9 +33,9 @@ class FreeWebAiManager:
 
     def __init__(self, config: FreeWebAiConfig | None = None) -> None:
         self._config = config or get_free_web_ai_config()
-        self._browser: Any = None  # Browser
-        self._context: Any = None  # BrowserContext
-        self._pages: dict[str, Any] = {}  # provider_key -> Page
+        self._browser: Browser | None = None
+        self._context: BrowserContext | None = None
+        self._pages: dict[str, Page] = {}
         self._lock = asyncio.Lock()
         self._initialized = False
         # 会话追踪：provider_key -> 是否已有活跃对话
@@ -82,7 +83,19 @@ class FreeWebAiManager:
                 logger.warning("CDP 连接失败, 回退启动独立浏览器: %s", exc)
 
         # 方式2: 启动独立浏览器（用 persistent context 保存登录态）
+        import os as _os
+
         pw = await async_playwright().start()
+
+        # 自动检测无头模式：当配置为非无头但 DISPLAY 不可用时强制回退
+        headless = cfg.headless
+        if not headless and not _os.environ.get("DISPLAY"):
+            logger.warning(
+                "DISPLAY 未设置，强制启用无头模式 (原配置 headless=%s)",
+                headless,
+            )
+            headless = True
+
         launch_args = [
             "--no-sandbox",
             "--disable-setuid-sandbox",
@@ -96,14 +109,13 @@ class FreeWebAiManager:
 
         launch_kwargs = dict(
             user_data_dir=cfg.profile_dir,
-            headless=cfg.headless,
+            headless=headless,
             args=launch_args,
             viewport={"width": 1280, "height": 720},
             locale="zh-CN",
             timeout=60000,
         )
         if cfg.chrome_path:
-            import os as _os
             if _os.path.isfile(cfg.chrome_path):
                 launch_kwargs["executable_path"] = cfg.chrome_path
             else:
@@ -120,7 +132,7 @@ class FreeWebAiManager:
             cfg.headless, cfg.profile_dir, cfg.chrome_path or "default",
         )
 
-    async def _get_page(self, adapter_key: str) -> Any:
+    async def _get_page(self, adapter_key: str) -> Page:
         """获取或创建 provider 标签页。"""
         await self._ensure_browser()
 

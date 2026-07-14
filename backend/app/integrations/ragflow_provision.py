@@ -93,6 +93,28 @@ def _not_registered_message(msg: str) -> bool:
     return "not registered" in lower or "未注册" in lower
 
 
+def _ensure_knowflow_superuser(ragflow_user_id: str) -> bool:
+    """确保 KnowFlow 用户拥有 superuser 权限（v2.1.8+ 上传文档需要）。"""
+    uid = (ragflow_user_id or "").strip()
+    if not uid:
+        return False
+    try:
+        from app.integrations.mysql_conn import execute_write
+        from app.services.model_settings_service import get_ragflow_mysql_settings
+
+        _, password, db_name, host, port = get_ragflow_mysql_settings(None)
+        sql = f"UPDATE user SET is_superuser = 1 WHERE id = '{uid}' AND (is_superuser IS NULL OR is_superuser = 0)"
+        ok = execute_write(
+            host=host, port=port, password=password, database=db_name, sql=sql
+        )
+        if ok:
+            logger.info("KnowFlow 用户 %s 已授予 superuser 权限", uid)
+        return bool(ok)
+    except Exception as e:
+        logger.warning("授予 KnowFlow superuser 权限失败 %s: %s", uid, e)
+        return False
+
+
 def finalize_ragflow_link(
     link: RagflowAccountLink,
     authorization: str,
@@ -125,6 +147,7 @@ def finalize_ragflow_link(
 
         release_db_connection(db)
     ensure_shared_llm_config(uid, db=db)
+    _ensure_knowflow_superuser(uid)
 
 
 def recover_ragflow_account(link: RagflowAccountLink, user: User) -> str:

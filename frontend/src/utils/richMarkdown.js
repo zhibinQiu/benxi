@@ -1,4 +1,4 @@
-import { ensureMarked, marked, normalizeMarkdownInput, sanitizeRenderedHtml } from "./markdown.js";
+import { ensureMarked, escapeHtml, marked, normalizeMarkdownInput, sanitizeRenderedHtml } from "./markdown.js";
 import { loadEcharts } from "./echartsLoader.js";
 
 let echartSeq = 0;
@@ -22,14 +22,6 @@ function getChartObserver() {
     { rootMargin: "288px 0px", threshold: 0.01 }
   );
   return chartObserver;
-}
-
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function isEchartsOption(obj) {

@@ -5,6 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from app.core.agent_loop_state import LoopState
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -102,7 +104,7 @@ def capture_admin_list_deterministic_reply(
     *,
     tool_name: str,
     result_text: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
 ) -> None:
     """工具成功后写入 deterministic_reply，供 synthesize 直接输出。"""
     if loop_state is None:

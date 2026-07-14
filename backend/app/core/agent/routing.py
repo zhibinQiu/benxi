@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from agentkit_route import RouteLimits, build_route_plan as _build_route_plan
-from agentkit_route import cap_routes as _cap_routes
-from agentkit_route import infer_route_mode as _infer_route_mode
-from agentkit_route import pick_route_with_fallback
+from app.agentkit.route import RouteLimits, build_route_plan as _build_route_plan
+from app.agentkit.route import cap_routes as _cap_routes
+from app.agentkit.route import infer_route_mode as _infer_route_mode
+from app.agentkit.route import pick_route_with_fallback
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.agent.types import AgentRoute, AgentRoutePlan, RouteMode, ROUTE_REASONS
 from app.models.org import User
 from app.services.agent_profile_service import is_agent_enabled
-from app.services.agent_routing_signals import (
+from app.services.agent_skill_router import (
     is_compound_parallel_message,
     is_compound_sequential_message,
 )

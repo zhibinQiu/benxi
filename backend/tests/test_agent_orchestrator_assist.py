@@ -11,7 +11,7 @@ from app.core.aip.handoff import (
     build_specialist_assist_handoff,
     orchestrator_assist_from_complete,
 )
-from app.core.aip.messaging import attach_handoff_to_complete
+from app.agentkit.aip.messaging import attach_handoff_to_complete
 from app.core.phone import bootstrap_login_id
 from app.database import SessionLocal, engine
 from app.models.org import User

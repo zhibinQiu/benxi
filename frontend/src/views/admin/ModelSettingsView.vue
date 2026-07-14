@@ -25,14 +25,14 @@ import {
   HardwareChipOutline,
   StatsChartOutline,
   ScanOutline,
-  ImageOutline,
+  EyeOutline,
   MicOutline,
   VolumeHighOutline,
   LanguageOutline,
   SearchOutline,
   ServerOutline,
   LibraryOutline,
-  ServerSharp } from "@vicons/ionicons5";
+} from "@vicons/ionicons5";
 import {
   fetchModelSettings,
   fetchResourceHealth,
@@ -58,6 +58,24 @@ const health = ref({});
 const drawerTestResult = ref(null);
 const drawerOpen = ref(false);
 const activeId = ref(null);
+const providerTestResults = ref({});
+
+const PROVIDER_RESOURCE_IDS = new Set(["llm", "multimodal", "embedding", "rerank", "paddleocr", "tts"]);
+
+let providerIdCounter = Date.now();
+function generateProviderId() {
+  return `prov_${providerIdCounter++}`;
+}
+
+function createEmptyProvider() {
+  return {
+    id: generateProviderId(),
+    label: "",
+    base_url: "",
+    model_name: "",
+    api_key: "",
+  };
+}
 
 const form = reactive({
   platform_api_base_url: "",
@@ -68,27 +86,42 @@ const form = reactive({
   llm_base_url: "",
   llm_model: "",
   llm_api_key: "",
+  llm_providers: [],
+  llm_active_provider: "",
+  multimodal_base_url: "",
+  multimodal_model: "",
+  multimodal_api_key: "",
+  multimodal_providers: [],
+  multimodal_active_provider: "",
   embedding_base_url: "",
   embedding_model: "",
   embedding_factory: "",
   embedding_api_key: "",
+  embedding_providers: [],
+  embedding_active_provider: "",
   rerank_base_url: "",
   rerank_model: "",
   rerank_api_key: "",
-  vl_base_url: "",
-  vl_model: "",
-  vl_api_key: "",
+  rerank_providers: [],
+  rerank_active_provider: "",
   paddleocr_base_url: "",
   paddleocr_model: "",
   paddleocr_api_key: "",
   paddleocr_url: "",
+  paddleocr_providers: [],
+  paddleocr_active_provider: "",
   tts_base_url: "",
   tts_model: "",
   tts_api_key: "",
+  tts_providers: [],
+  tts_active_provider: "",
   speech_service_url: "",
   pdf2zh_api_url: "",
   searxng_url: "",
   searxng_timeout_seconds: 15,
+  firecrawl_api_key: "",
+  firecrawl_api_url: "",
+  firecrawl_read_full_max_urls: 3,
   agent_browser_enabled: false,
   agent_browser_headless: true,
   agent_browser_allowed_domains: "",
@@ -111,8 +144,8 @@ const RESOURCE_ICON_MAP = {
   platform_api: GlobeOutline,
   frontend: ColorPaletteOutline,
   llm: ChatbubblesOutline,
+  multimodal: EyeOutline,
   embedding: HardwareChipOutline,
-  vl: ImageOutline,
   rerank: StatsChartOutline,
   paddleocr: ScanOutline,
   speech: MicOutline,
@@ -122,15 +155,15 @@ const RESOURCE_ICON_MAP = {
   browser_rpa: GlobeOutline,
   ragflow_api: LibraryOutline,
   knowflow_backend: ServerOutline,
-  ragflow_mysql: ServerSharp,
+  ragflow_mysql: ServerOutline,
 };
 
 const RESOURCE_CATEGORY_MAP = {
   platform_api: "platform",
   frontend: "platform",
   llm: "model",
+  multimodal: "model",
   embedding: "model",
-  vl: "model",
   rerank: "model",
   paddleocr: "service",
   speech: "service",
@@ -189,6 +222,31 @@ function modelEndpoint(data, key, legacyKey) {
   return data?.[key] || data?.[legacyKey] || null;
 }
 
+function activeProviderSummary(id, endpointName) {
+  const data = settings.value;
+  if (!data) return t("common.loading");
+  const ep = data[endpointName];
+  if (!ep) return t("admin.modelSettings.summary.notConfigured");
+  const providers = ep.providers;
+  const activeId = ep.active_provider;
+  if (Array.isArray(providers) && providers.length > 0) {
+    const active = providers.find((p) => p.id === activeId) || providers[0];
+    if (!active || (!active.base_url && !active.model_name)) {
+      return t("admin.modelSettings.summary.notConfigured");
+    }
+    const label = active.label || active.model_name || t("admin.modelSettings.summary.noLabel");
+    const url = truncate(active.base_url);
+    if (providers.length > 1) {
+      return `${label} · ${url} · ${t("admin.modelSettings.summary.providersCount", { count: providers.length })}`;
+    }
+    return `${label} · ${url}`;
+  }
+  // Backward compat: no providers array
+  return data[endpointName]?.model_name
+    ? `${data[endpointName].model_name} · ${truncate(data[endpointName].base_url)}`
+    : t("admin.modelSettings.summary.notConfigured");
+}
+
 function fillForm(data) {
   settings.value = data;
   form.platform_api_base_url = data?.platform_api_base_url || "";
@@ -199,28 +257,48 @@ function fillForm(data) {
   form.llm_base_url = data?.llm?.base_url || "";
   form.llm_model = data?.llm?.model_name || "";
   form.llm_api_key = data?.llm?.api_key_masked || "";
+  const llmProvs = extractProviders(data?.llm);
+  form.llm_providers = llmProvs;
+  form.llm_active_provider = ensureActiveProvider(llmProvs, data?.llm?.active_provider, form.llm_active_provider);
+  form.multimodal_base_url = data?.multimodal?.base_url || "";
+  form.multimodal_model = data?.multimodal?.model_name || "";
+  form.multimodal_api_key = data?.multimodal?.api_key_masked || "";
+  const mmProvs = extractProviders(data?.multimodal);
+  form.multimodal_providers = mmProvs;
+  form.multimodal_active_provider = ensureActiveProvider(mmProvs, data?.multimodal?.active_provider, form.multimodal_active_provider);
   form.embedding_base_url = data?.embedding?.base_url || "";
   form.embedding_model = data?.embedding?.model_name || "";
   form.embedding_factory = data?.embedding_factory || "";
   form.embedding_api_key = data?.embedding?.api_key_masked || "";
+  const embProvs = extractProviders(data?.embedding);
+  form.embedding_providers = embProvs;
+  form.embedding_active_provider = ensureActiveProvider(embProvs, data?.embedding?.active_provider, form.embedding_active_provider);
   form.rerank_base_url = data?.rerank?.base_url || "";
   form.rerank_model = data?.rerank?.model_name || "";
   form.rerank_api_key = data?.rerank?.api_key_masked || "";
-  const vl = modelEndpoint(data, "vl", "vision");
-  form.vl_base_url = vl?.base_url || "";
-  form.vl_model = vl?.model_name || "";
-  form.vl_api_key = vl?.api_key_masked || "";
+  const rerankProvs = extractProviders(data?.rerank);
+  form.rerank_providers = rerankProvs;
+  form.rerank_active_provider = ensureActiveProvider(rerankProvs, data?.rerank?.active_provider, form.rerank_active_provider);
   form.paddleocr_base_url = data?.paddleocr?.base_url || data?.paddleocr_url || "";
   form.paddleocr_model = data?.paddleocr?.model_name || "";
   form.paddleocr_api_key = data?.paddleocr?.api_key_masked || "";
   form.paddleocr_url = data?.paddleocr_url || "";
+  const ocrProvs = extractProviders(data?.paddleocr);
+  form.paddleocr_providers = ocrProvs;
+  form.paddleocr_active_provider = ensureActiveProvider(ocrProvs, data?.paddleocr?.active_provider, form.paddleocr_active_provider);
   form.tts_base_url = data?.tts?.base_url || "";
   form.tts_model = data?.tts?.model_name || "";
   form.tts_api_key = data?.tts?.api_key_masked || "";
+  const ttsProvs = extractProviders(data?.tts);
+  form.tts_providers = ttsProvs;
+  form.tts_active_provider = ensureActiveProvider(ttsProvs, data?.tts?.active_provider, form.tts_active_provider);
   form.speech_service_url = data?.speech_service_url || "";
   form.pdf2zh_api_url = data?.pdf2zh_api_url || "";
   form.searxng_url = data?.searxng_url || "";
   form.searxng_timeout_seconds = data?.searxng_timeout_seconds || 15;
+  form.firecrawl_api_key = data?.firecrawl_api_key || "";
+  form.firecrawl_api_url = data?.firecrawl_api_url || "https://api.firecrawl.dev";
+  form.firecrawl_read_full_max_urls = data?.firecrawl_read_full_max_urls || 3;
   form.agent_browser_enabled = Boolean(data?.agent_browser_enabled);
   form.agent_browser_headless = data?.agent_browser_headless !== false;
   form.agent_browser_allowed_domains = data?.agent_browser_allowed_domains || "";
@@ -265,38 +343,26 @@ function resourceSummary(id) {
       return `${title} · ${schemeLabel} · ${themeLabel}`;
     }
     case "llm":
-      return data.llm?.model_name
-        ? `${data.llm.model_name} · ${truncate(data.llm.base_url)}`
-        : t("admin.modelSettings.summary.notConfigured");
+      return activeProviderSummary(id, "llm");
+    case "multimodal":
+      return activeProviderSummary(id, "multimodal");
     case "embedding":
-      return data.embedding?.model_name
-        ? `${data.embedding.model_name} · ${truncate(data.embedding.base_url)}`
-        : t("admin.modelSettings.summary.notConfigured");
-    case "vl": {
-      const vl = modelEndpoint(data, "vl", "vision");
-      if (!vl?.model_name) return t("admin.modelSettings.summary.notConfigured");
-      if (!vl.base_url) return t("admin.modelSettings.summary.noApiUrl", { model: vl.model_name });
-      if (!vl.api_key_configured) return t("admin.modelSettings.summary.noApiKey", { model: vl.model_name });
-      return `${vl.model_name} · ${truncate(vl.base_url)}`;
-    }
+      return activeProviderSummary(id, "embedding");
     case "rerank":
-      return data.rerank?.model_name
-        ? `${data.rerank.model_name} · ${truncate(data.rerank.base_url)}`
-        : t("admin.modelSettings.summary.optionalNotConfigured");
-    case "paddleocr":
-      return data.paddleocr?.model_name
-        ? `${data.paddleocr.model_name} · ${truncate(data.paddleocr.base_url)}`
-        : data.paddleocr_url
-          ? truncate(data.paddleocr_url)
-          : t("admin.modelSettings.summary.notConfigured");
+      return activeProviderSummary(id, "rerank") || t("admin.modelSettings.summary.optionalNotConfigured");
+    case "paddleocr": {
+      const sum = activeProviderSummary(id, "paddleocr");
+      if (sum !== t("admin.modelSettings.summary.notConfigured")) return sum;
+      return data.paddleocr_url
+        ? truncate(data.paddleocr_url)
+        : t("admin.modelSettings.summary.notConfigured");
+    }
     case "speech":
       return data.speech_service_url
         ? truncate(data.speech_service_url)
         : t("admin.modelSettings.summary.notConfigured");
     case "tts":
-      return data.tts?.model_name
-        ? `${data.tts.model_name} · ${truncate(data.tts.base_url)}`
-        : t("admin.modelSettings.summary.notConfigured");
+      return activeProviderSummary(id, "tts");
     case "pdf2zh":
       return data.pdf2zh_api_url
         ? truncate(data.pdf2zh_api_url)
@@ -306,7 +372,7 @@ function resourceSummary(id) {
         ? t("admin.modelSettings.summary.seconds", {
             url: truncate(data.searxng_url),
             seconds: data.searxng_timeout_seconds || 15,
-          })
+          }) + (data.firecrawl_api_key ? " · FC" : " · 无全文")
         : t("admin.modelSettings.summary.notConfigured");
     case "browser_rpa":
       return data.agent_browser_enabled
@@ -352,6 +418,28 @@ function truncate(value) {
   return `${text.slice(0, 39)}…`;
 }
 
+function extractProviders(endpointData) {
+  if (!endpointData) return [];
+  const raw = endpointData.providers;
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.map((p) => ({
+      id: p.id || generateProviderId(),
+      label: p.label || "",
+      base_url: p.base_url || "",
+      model_name: p.model_name || "",
+      api_key: p.api_key_masked || "",
+    }));
+  }
+  return [];
+}
+
+function ensureActiveProvider(providers, activeId, existingActive) {
+  if (providers.length === 0) return "";
+  if (activeId && providers.find((p) => p.id === activeId)) return activeId;
+  if (existingActive && providers.find((p) => p.id === existingActive)) return existingActive;
+  return providers[0].id;
+}
+
 function healthState(id) {
   const item = health.value[id];
   if (!item) return healthLoading.value ? "checking" : "neutral";
@@ -374,6 +462,40 @@ const drawerHealthAlert = computed(() => {
   if (activeId.value) return health.value[activeId.value] || null;
   return null;
 });
+
+const activeProviderOptions = computed(() => {
+  if (!activeId.value || !PROVIDER_RESOURCE_IDS.has(activeId.value)) return [];
+  const providers = form[`${activeId.value}_providers`] || [];
+  return providers.map((p) => ({
+    label: p.label || p.model_name || `服务源 ${providers.indexOf(p) + 1}`,
+    value: p.id,
+  }));
+});
+
+function addProviderTo(id) {
+  const key = `${id}_providers`;
+  const provs = form[key] || [];
+  if (provs.length >= 3) return;
+  provs.push(createEmptyProvider());
+  // Setting array via index to trigger reactivity
+  form[key] = [...provs];
+  // Auto-select new provider if first
+  if (provs.length === 1) {
+    form[`${id}_active_provider`] = provs[0].id;
+  }
+}
+
+function removeProviderFrom(id, index) {
+  const key = `${id}_providers`;
+  const provs = form[key] || [];
+  if (provs.length <= 1) return;
+  const removedId = provs[index].id;
+  provs.splice(index, 1);
+  form[key] = [...provs];
+  if (form[`${id}_active_provider`] === removedId) {
+    form[`${id}_active_provider`] = provs[0]?.id || "";
+  }
+}
 
 const drawerHealthType = computed(() => {
   const item = drawerHealthAlert.value;
@@ -426,7 +548,7 @@ async function loadHealth() {
 }
 
 async function loadAll() {
-  await loadSettings();
+  await Promise.all([loadSettings(), loadHealth()]);
 }
 
 async function refreshAll() {
@@ -436,7 +558,30 @@ async function refreshAll() {
 function openResource(id) {
   activeId.value = id;
   drawerTestResult.value = null;
+  providerTestResults.value = {};
   drawerOpen.value = true;
+}
+
+function providerTestResult(providerId) {
+  const item = providerTestResults.value[providerId];
+  if (!item) return null;
+  return item;
+}
+
+function buildModelProviderPayload(prefix) {
+  const providers = form[`${prefix}_providers`] || [];
+  const activeProvider = form[`${prefix}_active_provider`] || (providers[0]?.id || "");
+  const mapped = providers.map((p) => ({
+    id: p.id,
+    label: p.label || "",
+    base_url: p.base_url || "",
+    model_name: p.model_name || "",
+    api_key: p.api_key && !p.api_key.includes("••••") ? p.api_key : "",
+  }));
+  return {
+    [`${prefix}_providers`]: mapped,
+    [`${prefix}_active_provider`]: activeProvider,
+  };
 }
 
 function buildPayloadFor(id) {
@@ -455,56 +600,36 @@ function buildPayloadFor(id) {
             : "",
       };
     case "llm":
-      return {
-        llm_base_url: form.llm_base_url.trim(),
-        llm_model: form.llm_model.trim(),
-        ...(form.llm_api_key && !form.llm_api_key.includes("••••")
-          ? { llm_api_key: form.llm_api_key.trim() }
-          : {})};
+      return buildModelProviderPayload("llm");
+    case "multimodal":
+      return buildModelProviderPayload("multimodal");
     case "embedding":
       return {
-        embedding_base_url: form.embedding_base_url.trim(),
-        embedding_model: form.embedding_model.trim(),
+        ...buildModelProviderPayload("embedding"),
         embedding_factory: form.embedding_factory.trim(),
-        ...(form.embedding_api_key && !form.embedding_api_key.includes("••••")
-          ? { embedding_api_key: form.embedding_api_key.trim() }
-          : {})};
+      };
     case "rerank":
-      return {
-        rerank_base_url: form.rerank_base_url.trim(),
-        rerank_model: form.rerank_model.trim(),
-        ...(form.rerank_api_key && !form.rerank_api_key.includes("••••")
-          ? { rerank_api_key: form.rerank_api_key.trim() }
-          : {})};
-    case "vl":
-      return {
-        vl_base_url: form.vl_base_url.trim(),
-        vl_model: form.vl_model.trim(),
-        ...(form.vl_api_key && !form.vl_api_key.includes("••••")
-          ? { vl_api_key: form.vl_api_key.trim() }
-          : {})};
+      return buildModelProviderPayload("rerank");
     case "paddleocr":
       return {
-        paddleocr_base_url: form.paddleocr_base_url.trim(),
-        paddleocr_model: form.paddleocr_model.trim(),
-        ...(form.paddleocr_api_key && !form.paddleocr_api_key.includes("••••")
-          ? { paddleocr_api_key: form.paddleocr_api_key.trim() }
-          : {})};
+        ...buildModelProviderPayload("paddleocr"),
+        paddleocr_url: form.paddleocr_url.trim(),
+      };
     case "speech":
       return { speech_service_url: form.speech_service_url.trim() };
     case "tts":
-      return {
-        tts_base_url: form.tts_base_url.trim(),
-        tts_model: form.tts_model.trim(),
-        ...(form.tts_api_key && !form.tts_api_key.includes("••••")
-          ? { tts_api_key: form.tts_api_key.trim() }
-          : {})};
+      return buildModelProviderPayload("tts");
     case "pdf2zh":
       return { pdf2zh_api_url: form.pdf2zh_api_url.trim() };
     case "searxng":
       return {
         searxng_url: form.searxng_url.trim(),
         searxng_timeout_seconds: Number(form.searxng_timeout_seconds) || 15,
+        ...(form.firecrawl_api_key && !form.firecrawl_api_key.includes("••••")
+          ? { firecrawl_api_key: form.firecrawl_api_key.trim() }
+          : {}),
+        firecrawl_api_url: form.firecrawl_api_url.trim() || "https://api.firecrawl.dev",
+        firecrawl_read_full_max_urls: Number(form.firecrawl_read_full_max_urls) || 3,
       };
     case "browser_rpa":
       return {
@@ -547,8 +672,9 @@ async function testActive() {
   if (!canTestActive.value) return;
   testing.value = true;
   drawerTestResult.value = null;
+  providerTestResults.value = {};
   try {
-    const probeTimeoutMs = ["vl", "llm", "embedding", "tts"].includes(activeId.value)
+    const probeTimeoutMs = ["multimodal", "llm", "embedding", "tts"].includes(activeId.value)
       ? 60000
       : undefined;
     const result = await testResourceHealth(
@@ -557,6 +683,18 @@ async function testActive() {
       probeTimeoutMs
     );
     drawerTestResult.value = result;
+    // 填充逐服务源（provider）连通性结果
+    if (result?.providers?.length) {
+      const map = {};
+      for (const p of result.providers) {
+        map[p.provider_id] = {
+          healthy: p.healthy,
+          message: p.message,
+          label: p.provider_label,
+        };
+      }
+      providerTestResults.value = map;
+    }
     if (result?.healthy) {
       ui.success(result.message || t("admin.modelSettings.messages.connectionOk"));
     } else if (result?.healthy === false) {
@@ -603,7 +741,8 @@ async function saveActive() {
     }
     drawerOpen.value = false;
     drawerTestResult.value = null;
-    await loadHealth();
+    // 后台静默刷新健康状态（不阻塞保存成功的提示）
+    loadHealth().catch(() => {});
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -733,125 +872,385 @@ onMounted(loadAll);
           </template>
 
           <template v-else-if="activeId === 'llm'">
-            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
-              <n-input
-                v-model:value="form.llm_base_url"
-                :placeholder="t('admin.modelSettings.placeholders.llmApiUrl')"
+            <n-form-item :label="t('admin.modelSettings.labels.activeProvider')">
+              <n-select
+                v-model:value="form.llm_active_provider"
+                :options="activeProviderOptions"
               />
             </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
-              <n-input
-                v-model:value="form.llm_model"
-                :placeholder="t('admin.modelSettings.placeholders.modelName')"
+            <n-space vertical size="large">
+              <div
+                v-for="(prov, idx) in form.llm_providers"
+                :key="prov.id"
+                class="provider-card"
+              >
+                <div class="provider-card__head">
+                  <n-text depth="3">{{ t('admin.modelSettings.summary.providersCount', { count: idx + 1 }) }}</n-text>
+                  <span
+                    v-if="providerTestResult(prov.id)"
+                    class="provider-test-badge"
+                    :class="providerTestResult(prov.id).healthy === true ? 'ok' : providerTestResult(prov.id).healthy === false ? 'bad' : 'skip'"
+                    :title="providerTestResult(prov.id).message"
+                  >
+                    {{ providerTestResult(prov.id).healthy === true ? '✓ 通' : providerTestResult(prov.id).healthy === false ? '✗ 不通' : '— 配置不完整' }}
+                  </span>
+                  <n-button
+                    v-if="form.llm_providers.length > 1"
+                    text
+                    type="warning"
+                    size="small"
+                    @click="removeProviderFrom('llm', idx)"
+                  >
+                    {{ t("admin.modelSettings.labels.removeProvider") }}
+                  </n-button>
+                </div>
+                <n-form-item :label="t('admin.modelSettings.labels.providerLabel')">
+                  <n-input v-model:value="prov.label" placeholder="如：硅基流动" />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+                  <n-input
+                    v-model:value="prov.base_url"
+                    :placeholder="t('admin.modelSettings.placeholders.llmApiUrl')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+                  <n-input
+                    v-model:value="prov.model_name"
+                    :placeholder="t('admin.modelSettings.placeholders.modelName')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
+                  <n-input
+                    v-model:value="prov.api_key"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
+                  />
+                </n-form-item>
+              </div>
+            </n-space>
+            <n-button
+              v-if="form.llm_providers.length < 3"
+              block
+              dashed
+              style="margin-top: 12px"
+              @click="addProviderTo('llm')"
+            >
+              {{ t("admin.modelSettings.labels.addProvider") }}
+            </n-button>
+            <div
+              v-if="form.llm_providers.length < 3"
+              class="drawer-hint"
+              style="margin-top: 6px"
+              v-html="t('admin.modelSettings.labels.maxProviders')"
+            />
+          </template>
+
+          <template v-else-if="activeId === 'multimodal'">
+            <n-form-item :label="t('admin.modelSettings.labels.activeProvider')">
+              <n-select
+                v-model:value="form.multimodal_active_provider"
+                :options="activeProviderOptions"
               />
             </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
-              <n-input
-                v-model:value="form.llm_api_key"
-                type="password"
-                show-password-on="click"
-                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
-              />
-            </n-form-item>
+            <n-space vertical size="large">
+              <div
+                v-for="(prov, idx) in form.multimodal_providers"
+                :key="prov.id"
+                class="provider-card"
+              >
+                <div class="provider-card__head">
+                  <n-text depth="3">{{ t('admin.modelSettings.summary.providersCount', { count: idx + 1 }) }}</n-text>
+                  <span
+                    v-if="providerTestResult(prov.id)"
+                    class="provider-test-badge"
+                    :class="providerTestResult(prov.id).healthy === true ? 'ok' : providerTestResult(prov.id).healthy === false ? 'bad' : 'skip'"
+                    :title="providerTestResult(prov.id).message"
+                  >
+                    {{ providerTestResult(prov.id).healthy === true ? '✓ 通' : providerTestResult(prov.id).healthy === false ? '✗ 不通' : '— 配置不完整' }}
+                  </span>
+                  <n-button
+                    v-if="form.multimodal_providers.length > 1"
+                    text
+                    type="warning"
+                    size="small"
+                    @click="removeProviderFrom('multimodal', idx)"
+                  >
+                    {{ t("admin.modelSettings.labels.removeProvider") }}
+                  </n-button>
+                </div>
+                <n-form-item :label="t('admin.modelSettings.labels.providerLabel')">
+                  <n-input v-model:value="prov.label" placeholder="如：硅基流动" />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+                  <n-input
+                    v-model:value="prov.base_url"
+                    :placeholder="t('admin.modelSettings.placeholders.multimodalApiUrl')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+                  <n-input
+                    v-model:value="prov.model_name"
+                    :placeholder="t('admin.modelSettings.placeholders.multimodalModel')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
+                  <n-input
+                    v-model:value="prov.api_key"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
+                  />
+                </n-form-item>
+              </div>
+            </n-space>
+            <n-button
+              v-if="form.multimodal_providers.length < 3"
+              block
+              dashed
+              style="margin-top: 12px"
+              @click="addProviderTo('multimodal')"
+            >
+              {{ t("admin.modelSettings.labels.addProvider") }}
+            </n-button>
+            <div
+              v-if="form.multimodal_providers.length < 3"
+              class="drawer-hint"
+              style="margin-top: 6px"
+              v-html="t('admin.modelSettings.labels.maxProviders')"
+            />
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.multimodal')" />
           </template>
 
           <template v-else-if="activeId === 'embedding'">
-            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
-              <n-input
-                v-model:value="form.embedding_base_url"
-                :placeholder="t('admin.modelSettings.placeholders.embeddingApiUrl')"
+            <n-form-item :label="t('admin.modelSettings.labels.activeProvider')">
+              <n-select
+                v-model:value="form.embedding_active_provider"
+                :options="activeProviderOptions"
               />
             </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
-              <n-input
-                v-model:value="form.embedding_model"
-                :placeholder="t('admin.modelSettings.placeholders.embeddingModel')"
-              />
-            </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.provider')">
-              <n-input
-                v-model:value="form.embedding_factory"
-                :placeholder="t('admin.modelSettings.placeholders.embeddingFactory')"
-              />
-            </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
-              <n-input
-                v-model:value="form.embedding_api_key"
-                type="password"
-                show-password-on="click"
-                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
-              />
-            </n-form-item>
-          </template>
-
-          <template v-else-if="activeId === 'vl'">
-            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
-              <n-input
-                v-model:value="form.vl_base_url"
-                :placeholder="t('admin.modelSettings.placeholders.vlApiUrl')"
-              />
-            </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
-              <n-input
-                v-model:value="form.vl_model"
-                :placeholder="t('admin.modelSettings.placeholders.vlModel')"
-              />
-            </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
-              <n-input
-                v-model:value="form.vl_api_key"
-                type="password"
-                show-password-on="click"
-                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
-              />
-            </n-form-item>
-            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.vl')" />
+            <n-space vertical size="large">
+              <div
+                v-for="(prov, idx) in form.embedding_providers"
+                :key="prov.id"
+                class="provider-card"
+              >
+                <div class="provider-card__head">
+                  <n-text depth="3">{{ t('admin.modelSettings.summary.providersCount', { count: idx + 1 }) }}</n-text>
+                  <span
+                    v-if="providerTestResult(prov.id)"
+                    class="provider-test-badge"
+                    :class="providerTestResult(prov.id).healthy === true ? 'ok' : providerTestResult(prov.id).healthy === false ? 'bad' : 'skip'"
+                    :title="providerTestResult(prov.id).message"
+                  >
+                    {{ providerTestResult(prov.id).healthy === true ? '✓ 通' : providerTestResult(prov.id).healthy === false ? '✗ 不通' : '— 配置不完整' }}
+                  </span>
+                  <n-button
+                    v-if="form.embedding_providers.length > 1"
+                    text
+                    type="warning"
+                    size="small"
+                    @click="removeProviderFrom('embedding', idx)"
+                  >
+                    {{ t("admin.modelSettings.labels.removeProvider") }}
+                  </n-button>
+                </div>
+                <n-form-item :label="t('admin.modelSettings.labels.providerLabel')">
+                  <n-input v-model:value="prov.label" placeholder="如：硅基流动" />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+                  <n-input
+                    v-model:value="prov.base_url"
+                    :placeholder="t('admin.modelSettings.placeholders.embeddingApiUrl')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+                  <n-input
+                    v-model:value="prov.model_name"
+                    :placeholder="t('admin.modelSettings.placeholders.embeddingModel')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
+                  <n-input
+                    v-model:value="prov.api_key"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.provider')">
+                  <n-input
+                    v-model:value="form.embedding_factory"
+                    :placeholder="t('admin.modelSettings.placeholders.embeddingFactory')"
+                  />
+                </n-form-item>
+              </div>
+            </n-space>
+            <n-button
+              v-if="form.embedding_providers.length < 3"
+              block
+              dashed
+              style="margin-top: 12px"
+              @click="addProviderTo('embedding')"
+            >
+              {{ t("admin.modelSettings.labels.addProvider") }}
+            </n-button>
+            <div
+              v-if="form.embedding_providers.length < 3"
+              class="drawer-hint"
+              style="margin-top: 6px"
+              v-html="t('admin.modelSettings.labels.maxProviders')"
+            />
           </template>
 
           <template v-else-if="activeId === 'rerank'">
-            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
-              <n-input
-                v-model:value="form.rerank_base_url"
-                :placeholder="t('admin.modelSettings.placeholders.rerankApiUrl')"
+            <n-form-item :label="t('admin.modelSettings.labels.activeProvider')">
+              <n-select
+                v-model:value="form.rerank_active_provider"
+                :options="activeProviderOptions"
               />
             </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
-              <n-input
-                v-model:value="form.rerank_model"
-                :placeholder="t('admin.modelSettings.placeholders.rerankModel')"
-              />
-            </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
-              <n-input
-                v-model:value="form.rerank_api_key"
-                type="password"
-                show-password-on="click"
-                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
-              />
-            </n-form-item>
+            <n-space vertical size="large">
+              <div
+                v-for="(prov, idx) in form.rerank_providers"
+                :key="prov.id"
+                class="provider-card"
+              >
+                <div class="provider-card__head">
+                  <n-text depth="3">{{ t('admin.modelSettings.summary.providersCount', { count: idx + 1 }) }}</n-text>
+                  <span
+                    v-if="providerTestResult(prov.id)"
+                    class="provider-test-badge"
+                    :class="providerTestResult(prov.id).healthy === true ? 'ok' : providerTestResult(prov.id).healthy === false ? 'bad' : 'skip'"
+                    :title="providerTestResult(prov.id).message"
+                  >
+                    {{ providerTestResult(prov.id).healthy === true ? '✓ 通' : providerTestResult(prov.id).healthy === false ? '✗ 不通' : '— 配置不完整' }}
+                  </span>
+                  <n-button
+                    v-if="form.rerank_providers.length > 1"
+                    text
+                    type="warning"
+                    size="small"
+                    @click="removeProviderFrom('rerank', idx)"
+                  >
+                    {{ t("admin.modelSettings.labels.removeProvider") }}
+                  </n-button>
+                </div>
+                <n-form-item :label="t('admin.modelSettings.labels.providerLabel')">
+                  <n-input v-model:value="prov.label" placeholder="如：硅基流动" />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+                  <n-input
+                    v-model:value="prov.base_url"
+                    :placeholder="t('admin.modelSettings.placeholders.rerankApiUrl')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+                  <n-input
+                    v-model:value="prov.model_name"
+                    :placeholder="t('admin.modelSettings.placeholders.rerankModel')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
+                  <n-input
+                    v-model:value="prov.api_key"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
+                  />
+                </n-form-item>
+              </div>
+            </n-space>
+            <n-button
+              v-if="form.rerank_providers.length < 3"
+              block
+              dashed
+              style="margin-top: 12px"
+              @click="addProviderTo('rerank')"
+            >
+              {{ t("admin.modelSettings.labels.addProvider") }}
+            </n-button>
+            <div
+              v-if="form.rerank_providers.length < 3"
+              class="drawer-hint"
+              style="margin-top: 6px"
+              v-html="t('admin.modelSettings.labels.maxProviders')"
+            />
           </template>
 
           <template v-else-if="activeId === 'paddleocr'">
-            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
-              <n-input
-                v-model:value="form.paddleocr_base_url"
-                :placeholder="t('admin.modelSettings.placeholders.paddleocrApiUrl')"
+            <n-form-item :label="t('admin.modelSettings.labels.activeProvider')">
+              <n-select
+                v-model:value="form.paddleocr_active_provider"
+                :options="activeProviderOptions"
               />
             </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
-              <n-input
-                v-model:value="form.paddleocr_model"
-                :placeholder="t('admin.modelSettings.placeholders.paddleocrModel')"
-              />
-            </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
-              <n-input
-                v-model:value="form.paddleocr_api_key"
-                type="password"
-                show-password-on="click"
-                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
-              />
-            </n-form-item>
+            <n-space vertical size="large">
+              <div
+                v-for="(prov, idx) in form.paddleocr_providers"
+                :key="prov.id"
+                class="provider-card"
+              >
+                <div class="provider-card__head">
+                  <n-text depth="3">{{ t('admin.modelSettings.summary.providersCount', { count: idx + 1 }) }}</n-text>
+                  <span
+                    v-if="providerTestResult(prov.id)"
+                    class="provider-test-badge"
+                    :class="providerTestResult(prov.id).healthy === true ? 'ok' : providerTestResult(prov.id).healthy === false ? 'bad' : 'skip'"
+                    :title="providerTestResult(prov.id).message"
+                  >
+                    {{ providerTestResult(prov.id).healthy === true ? '✓ 通' : providerTestResult(prov.id).healthy === false ? '✗ 不通' : '— 配置不完整' }}
+                  </span>
+                  <n-button
+                    v-if="form.paddleocr_providers.length > 1"
+                    text
+                    type="warning"
+                    size="small"
+                    @click="removeProviderFrom('paddleocr', idx)"
+                  >
+                    {{ t("admin.modelSettings.labels.removeProvider") }}
+                  </n-button>
+                </div>
+                <n-form-item :label="t('admin.modelSettings.labels.providerLabel')">
+                  <n-input v-model:value="prov.label" placeholder="如：硅基流动" />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+                  <n-input
+                    v-model:value="prov.base_url"
+                    :placeholder="t('admin.modelSettings.placeholders.paddleocrApiUrl')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+                  <n-input
+                    v-model:value="prov.model_name"
+                    :placeholder="t('admin.modelSettings.placeholders.paddleocrModel')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
+                  <n-input
+                    v-model:value="prov.api_key"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
+                  />
+                </n-form-item>
+              </div>
+            </n-space>
+            <n-button
+              v-if="form.paddleocr_providers.length < 3"
+              block
+              dashed
+              style="margin-top: 12px"
+              @click="addProviderTo('paddleocr')"
+            >
+              {{ t("admin.modelSettings.labels.addProvider") }}
+            </n-button>
+            <div
+              v-if="form.paddleocr_providers.length < 3"
+              class="drawer-hint"
+              style="margin-top: 6px"
+              v-html="t('admin.modelSettings.labels.maxProviders')"
+            />
             <div
               class="drawer-hint"
               v-html="t('admin.modelSettings.hints.paddleocr')"
@@ -869,26 +1268,78 @@ onMounted(loadAll);
           </template>
 
           <template v-else-if="activeId === 'tts'">
-            <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
-              <n-input
-                v-model:value="form.tts_base_url"
-                :placeholder="t('admin.modelSettings.placeholders.ttsApiUrl')"
+            <n-form-item :label="t('admin.modelSettings.labels.activeProvider')">
+              <n-select
+                v-model:value="form.tts_active_provider"
+                :options="activeProviderOptions"
               />
             </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.modelName')">
-              <n-input
-                v-model:value="form.tts_model"
-                :placeholder="t('admin.modelSettings.placeholders.ttsModel')"
-              />
-            </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
-              <n-input
-                v-model:value="form.tts_api_key"
-                type="password"
-                show-password-on="click"
-                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
-              />
-            </n-form-item>
+            <n-space vertical size="large">
+              <div
+                v-for="(prov, idx) in form.tts_providers"
+                :key="prov.id"
+                class="provider-card"
+              >
+                <div class="provider-card__head">
+                  <n-text depth="3">{{ t('admin.modelSettings.summary.providersCount', { count: idx + 1 }) }}</n-text>
+                  <span
+                    v-if="providerTestResult(prov.id)"
+                    class="provider-test-badge"
+                    :class="providerTestResult(prov.id).healthy === true ? 'ok' : providerTestResult(prov.id).healthy === false ? 'bad' : 'skip'"
+                    :title="providerTestResult(prov.id).message"
+                  >
+                    {{ providerTestResult(prov.id).healthy === true ? '✓ 通' : providerTestResult(prov.id).healthy === false ? '✗ 不通' : '— 配置不完整' }}
+                  </span>
+                  <n-button
+                    v-if="form.tts_providers.length > 1"
+                    text
+                    type="warning"
+                    size="small"
+                    @click="removeProviderFrom('tts', idx)"
+                  >
+                    {{ t("admin.modelSettings.labels.removeProvider") }}
+                  </n-button>
+                </div>
+                <n-form-item :label="t('admin.modelSettings.labels.providerLabel')">
+                  <n-input v-model:value="prov.label" placeholder="如：硅基流动" />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiUrl')">
+                  <n-input
+                    v-model:value="prov.base_url"
+                    :placeholder="t('admin.modelSettings.placeholders.ttsApiUrl')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.modelName')">
+                  <n-input
+                    v-model:value="prov.model_name"
+                    :placeholder="t('admin.modelSettings.placeholders.ttsModel')"
+                  />
+                </n-form-item>
+                <n-form-item :label="t('admin.modelSettings.labels.apiKey')">
+                  <n-input
+                    v-model:value="prov.api_key"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
+                  />
+                </n-form-item>
+              </div>
+            </n-space>
+            <n-button
+              v-if="form.tts_providers.length < 3"
+              block
+              dashed
+              style="margin-top: 12px"
+              @click="addProviderTo('tts')"
+            >
+              {{ t("admin.modelSettings.labels.addProvider") }}
+            </n-button>
+            <div
+              v-if="form.tts_providers.length < 3"
+              class="drawer-hint"
+              style="margin-top: 6px"
+              v-html="t('admin.modelSettings.labels.maxProviders')"
+            />
             <div class="drawer-hint" v-html="t('admin.modelSettings.hints.tts')" />
           </template>
 
@@ -918,6 +1369,32 @@ onMounted(loadAll);
               >
                 <template #suffix>{{ t("admin.modelSettings.secondsSuffix") }}</template>
               </n-input-number>
+            </n-form-item>
+            <hr style="border:none;border-top:1px solid var(--platform-border);margin:16px 0" />
+            <div class="drawer-hint" style="margin-bottom:12px;font-weight:600">
+              FireCrawl 全文提取
+            </div>
+            <n-form-item :label="t('admin.modelSettings.labels.firecrawlApiUrl')">
+              <n-input
+                v-model:value="form.firecrawl_api_url"
+                :placeholder="t('admin.modelSettings.placeholders.firecrawlApiUrl')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.firecrawlApiKey')">
+              <n-input
+                v-model:value="form.firecrawl_api_key"
+                type="password"
+                show-password-on="click"
+                :placeholder="t('admin.modelSettings.placeholders.firecrawlApiKeyHint')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.firecrawlReadFullMaxUrls')">
+              <n-input-number
+                v-model:value="form.firecrawl_read_full_max_urls"
+                :min="0"
+                :max="10"
+                style="width: 100%"
+              />
             </n-form-item>
             <div class="drawer-hint" v-html="t('admin.modelSettings.hints.searxng')" />
           </template>
@@ -1276,6 +1753,48 @@ onMounted(loadAll);
   display: block;
   font-size: 14px;
   line-height: 1.55;
+}
+
+.provider-card {
+  padding: 14px;
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius-sm, 10px);
+  background: var(--platform-bg);
+}
+
+.provider-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 6px;
+}
+
+.provider-test-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.provider-test-badge.ok {
+  background: color-mix(in srgb, var(--platform-accent) 14%, transparent);
+  color: var(--platform-accent);
+}
+
+.provider-test-badge.bad {
+  background: color-mix(in srgb, #ef4444 14%, transparent);
+  color: #ef4444;
+}
+
+.provider-test-badge.skip {
+  background: color-mix(in srgb, #94a3b8 14%, transparent);
+  color: #94a3b8;
 }
 
 @keyframes feature-card-in {

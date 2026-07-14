@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.agent_loop_state import LoopState
+
 from sqlalchemy.orm import Session
 
 from app.models.org import User
@@ -19,4 +21,4 @@ class ToolRuntimeContext:
     conversation_id: str | None = None
     attachment_session_id: str | None = None
     user_message: str = ""
-    loop_state: dict[str, Any] | None = field(default=None)
+    loop_state: LoopState | None = field(default=None)

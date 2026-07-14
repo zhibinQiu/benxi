@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Sequence
 
 from app.config import Settings, get_settings
@@ -9,6 +10,22 @@ from app.core.chat_context import trim_chat_history
 from app.core.text_utils import truncate_text
 
 _TRUNC_SUFFIX = "\n…（为控制 token 已截断）"
+
+# 中英文混排 Token 估算常量
+#   - 中文约 1.5-2 chars/token，英文约 3-4 chars/token
+#   - 取保守值 2.5，对多数模型（DeepSeek/Qwen/GPT）偏安全
+_CHARS_PER_TOKEN: float = 2.5
+
+# 为 tool_calls 预留的字符槽位（~6 个 tool calls + overhead）
+_TOOL_CALLS_RESERVED_CHARS: int = 3000
+
+
+def estimate_tokens(text: str) -> int:
+    """快速估算文本的 token 数（不依赖 tiktoken，基于 chars/token 比率）。
+
+    对中英文混排文本偏保守（~2.5 chars/token），保证不低估。
+    """
+    return max(0, math.ceil(len(text or "") / _CHARS_PER_TOKEN))
 
 
 def get_prompt_limits(settings: Settings | None = None) -> dict[str, int]:
@@ -22,6 +39,7 @@ def get_prompt_limits(settings: Settings | None = None) -> dict[str, int]:
         "report_context_max_chars": max(2000, s.chat_report_context_max_chars),
         "user_max_chars": max(500, s.chat_user_message_max_chars),
         "max_output_tokens": max(0, s.chat_max_output_tokens),
+        "tool_calls_reserved_chars": _TOOL_CALLS_RESERVED_CHARS,
     }
 
 
@@ -36,8 +54,15 @@ def _content_len(msg: dict[str, Any]) -> int:
 def fit_messages_to_total_budget(
     messages: list[dict[str, Any]],
     max_total: int,
+    *,
+    reserve_for_tool_calls: int = 0,
 ) -> list[dict[str, Any]]:
-    """在总字符上限内裁剪消息列表：优先保留 system 骨架、最近 history 与当前 user。"""
+    """在总字符上限内裁剪消息列表：优先保留 system 骨架、最近 history 与当前 user。
+
+    Args:
+        reserve_for_tool_calls: 为后续 tool_calls 预留的字符数，
+            实际消息内容仅占 (max_total - reserve_for_tool_calls)。
+    """
     if not messages:
         return []
 
@@ -53,20 +78,21 @@ def fit_messages_to_total_budget(
             row["tool_call_id"] = m["tool_call_id"]
         rows.append(row)
     total = sum(_content_len(m) for m in rows)
-    if total <= max_total:
+    available = max_total - reserve_for_tool_calls
+    if total <= available:
         return rows
 
     has_system = rows[0]["role"] == "system"
     history_start = 1 if has_system else 0
     user_idx = len(rows) - 1
 
-    while total > max_total and user_idx - history_start > 0:
+    while total > available and user_idx - history_start > 0:
         removed = _content_len(rows[history_start])
         rows.pop(history_start)
         user_idx -= 1
         total -= removed
 
-    while total > max_total and user_idx - history_start > 0:
+    while total > available and user_idx - history_start > 0:
         content = rows[history_start]["content"]
         if len(content) <= 120:
             removed = _content_len(rows[history_start])
@@ -77,15 +103,15 @@ def fit_messages_to_total_budget(
         rows[history_start]["content"] = truncate_to_budget(content, max(120, len(content) // 2))
         total = sum(_content_len(m) for m in rows)
 
-    if total > max_total and has_system:
+    if total > available and has_system:
         others = sum(_content_len(m) for m in rows[1:])
-        allowed = max(400, max_total - others)
+        allowed = max(400, available - others)
         rows[0]["content"] = truncate_to_budget(rows[0]["content"], allowed)
         total = sum(_content_len(m) for m in rows)
 
-    if total > max_total and rows:
+    if total > available and rows:
         others = sum(_content_len(m) for m in rows[:-1])
-        allowed = max(200, max_total - others)
+        allowed = max(200, available - others)
         rows[-1]["content"] = truncate_to_budget(rows[-1]["content"], allowed)
 
     return rows
@@ -103,9 +129,14 @@ def build_bounded_chat_messages(
     runtime_context: str = "",
     memory_context: str = "",
     context_instruction: str = "",
+    route_reason: str = "",
     settings: Settings | None = None,
 ) -> list[dict[str, str]]:
-    """构建受预算约束的多轮对话 messages（system + history + user）。"""
+    """构建受预算约束的多轮对话 messages（system + history + user）。
+
+    route_reason: 路由层分配的原因（如 "Skill 匹配（`web-search`）"），
+                  用于指导智能体优先使用哪类工具。
+    """
     limits = get_prompt_limits(settings)
     user = truncate_to_budget(user_message.strip(), limits["user_max_chars"])
 
@@ -126,6 +157,8 @@ def build_bounded_chat_messages(
         extras.append(memory_context.strip())
     if platform_knowledge.strip():
         extras.append(f"【平台操作知识库】\n{platform_knowledge.strip()}")
+    if route_reason.strip():
+        extras.append(f"【路由分配原因】\n{route_reason.strip()}")
     if retrieval_context.strip():
         instruction = (context_instruction or "").strip()
         body = retrieval_context.strip()

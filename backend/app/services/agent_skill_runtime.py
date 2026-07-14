@@ -44,12 +44,43 @@ def build_agent_runtime_tool_specs(
     agent_id: str | None = None,
     allowed_skill_names: list[str] | None = None,
     allowed_runtime_tools: set[str] | None = None,
+    runtime_tool_names: list[str] | None = None,
 ) -> list[dict]:
-    """专精 Agent 运行时：Skill 运行时层 Tool + 白名单原子 Tool。"""
+    """专精 Agent 运行时：Skill 运行时层 Tool + 白名单原子 Tool。
+
+    Args:
+        runtime_tool_names: 优先使用的完整工具名列表（动态配置）。为 None 时回退
+                            allowed_runtime_tools 或 skill_runtime_tools_for_agent 硬编码。
+    """
     from app.config import get_settings
-    from app.integrations.browser_automation.browser_config import get_browser_rpa_config
+    from app.core.agent_tool_args import build_tool_specs
 
     aid = (agent_id or "").strip()
+
+    if runtime_tool_names is not None:
+        # ── 动态工具列表模式（从 DB binding 或 AgentProfileDef 解析）──
+        names: list[str] = []
+        for tool in runtime_tool_names:
+            if tool == "invoke_skill":
+                skill_list = list(allowed_skill_names or [])
+                if _callable_skill_names(db, user, skill_list):
+                    names.append(tool)
+            elif tool == "run_skill_script" and not get_settings().agent_skill_script_enabled:
+                continue
+            else:
+                names.append(tool)
+        specs = build_tool_specs(names)
+        seen: set[str] = set()
+        out: list[dict] = []
+        for spec in specs:
+            fn = spec.get("function") or {}
+            n = str(fn.get("name") or "")
+            if n and n not in seen:
+                seen.add(n)
+                out.append(spec)
+        return out
+
+    # ── 旧硬编码回退模式（未传入 runtime_tool_names 时）──
     runtime_allow = (
         allowed_runtime_tools
         if allowed_runtime_tools is not None

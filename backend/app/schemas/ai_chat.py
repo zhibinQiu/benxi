@@ -11,6 +11,7 @@ class AiChatRequest(BaseModel):
     history: list[AiChatMessage] = Field(default_factory=list, max_length=40)
     conversation_id: str | None = Field(None, max_length=128)
     attachment_session_id: str | None = Field(None, max_length=64)
+    model_provider_id: str | None = Field(None, max_length=64)
 
 
 class AttachmentFileOut(BaseModel):
@@ -51,3 +52,12 @@ class AiChatResponse(BaseModel):
     conversation_id: str | None = None
     citations: list[ChatCitation] = Field(default_factory=list)
     follow_up_questions: list[str] = Field(default_factory=list)
+
+
+class ModelProviderItem(BaseModel):
+    """面向 AI 对话的模型提供商选择项（不含密钥）。"""
+
+    id: str
+    label: str = ""
+    model_name: str = ""
+    resource_type: str = "llm"  # "llm" | "multimodal"

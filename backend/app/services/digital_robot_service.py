@@ -8,7 +8,6 @@ import logging
 import re
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 import httpx
 from sqlalchemy import func as sa_func, select

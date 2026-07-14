@@ -29,6 +29,18 @@ const routes = [
     meta: { public: true, title: "服务协议" },
   },
   {
+    path: "/enterprise/knowledge",
+    name: "enterprise-knowledge",
+    component: () => import("../views/EnterprisePromoView.vue"),
+    meta: { public: true, title: "企业级知识检索与报告生成" },
+  },
+  {
+    path: "/agentkit-philosophy",
+    name: "agentkit-philosophy",
+    meta: { public: true, title: "AgentKit 设计哲学" },
+    component: () => import("../views/AgentkitPhilosophyView.vue"),
+  },
+  {
     path: "/",
     component: () => import("../layouts/MainLayout.vue"),
     children: [

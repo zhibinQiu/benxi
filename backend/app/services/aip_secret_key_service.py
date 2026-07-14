@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.aip.auth import generate_aip_sk, hash_aip_sk
+from app.agentkit.aip.auth import generate_aip_sk, hash_aip_sk
 from app.core.exceptions import bad_request, not_found, unauthorized
 from app.models.aip_secret_key import AipSecretKey
 from app.models.org import User

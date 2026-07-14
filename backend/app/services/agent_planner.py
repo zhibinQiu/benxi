@@ -16,16 +16,14 @@ from app.integrations.deepseek_client import chat_completion_message_async, is_c
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_intent import AgentToolPlan, plan_agent_tools
-from app.services.agent_routing_signals import (
-    matches_research_signal,
-    message_has_page_intent,
-    message_has_url,
-)
 from app.services.agent_skill_router import (
     MERMAID_DIAGRAM_SKILL,
     is_diagram_generation_message,
     is_platform_system_data_message,
     is_skill_management_message,
+    matches_research_signal,
+    message_has_page_intent,
+    message_has_url,
     user_wants_browser_screenshot,
 )
 from app.services.skill_chat_service import (
@@ -34,7 +32,7 @@ from app.services.skill_chat_service import (
     ATOMIC_TOOL_WEB_SEARCH,
 )
 from app.skills.catalog import list_all_skill_definitions
-from app.skills.types import SkillReadiness, SkillSource
+from app.skills.types import SkillReadiness
 
 _logger = logging.getLogger(__name__)
 
@@ -126,7 +124,6 @@ _SPECIALIST_DOMAIN_AGENTS = frozenset(
         "skill-dev",
         "platform",
         "rpa",
-        "scheduler",
     }
 )
 
@@ -284,6 +281,8 @@ def _infer_uploaded_skill_followup(
 
 
 def _rule_plan_for_uploaded_skill_followup(
+    db: Session,
+    user: User,
     message: str,
     history: list[AiChatMessage] | None,
     uploaded_names: set[str],
@@ -296,15 +295,27 @@ def _rule_plan_for_uploaded_skill_followup(
     )
     if not skill:
         return None
+    from app.services.agent_skill_service import uploaded_skill_has_script
+
+    try:
+        has_script = uploaded_skill_has_script(db, skill)
+    except Exception:
+        has_script = False
+    if has_script:
+        steps = (f"run_skill_script({skill}) 获取结果",)
+        reasoning = f"已有发展技能 `{skill}`（脚本型），run_skill_script 执行"
+    else:
+        steps = ("按 SKILL.md 指引直接回复，勿 run_skill_script",)
+        reasoning = f"已有发展技能 `{skill}`（指令型），按 SKILL.md 答复"
     return AgentExecutionPlan(
-        reasoning=f"已有发展技能 `{skill}`，优先 run_skill_script",
+        reasoning=reasoning,
         intent="执行发展技能",
         direct_answer=False,
         atomic_tools=(),
         skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
         uploaded_skill=skill,
         builtin_orchestration=None,
-        steps=(f"run_skill_script({skill}) 获取结果",),
+        steps=steps,
         source="rule",
     )
 
@@ -495,15 +506,12 @@ def _build_specialist_domain_plan(
             source="specialist",
         )
 
-    # 其他领域专精（rpa/scheduler 等）：使用默认 Skill，不 load 任何 SKILL.md
+    # 其他领域专精（rpa 等）：使用默认 Skill，不 load 任何 SKILL.md
     # 这些专精的 domain Skill（browser-automation/platform-ops）是纯编排型，
     # 无需 load_uploaded_skill，LLM 通过 invoke_skill 直接调用
     domain_intents = {
         "rpa": ("浏览器 RPA 专精", "浏览器操作",
                 ("browser_navigate → browser_snapshot → 交互",)),
-        "scheduler": ("定时任务专精", "定时提醒或定时 RPA",
-                      ("schedule_notification / send_notification / "
-                       "list_scheduled_notifications / cancel_scheduled_notification",)),
     }
     entry = domain_intents.get(aid)
     if entry is not None:
@@ -636,7 +644,7 @@ def _rule_plan_for_chitchat(
 ) -> AgentExecutionPlan | None:
     """寒暄 / 简单直答：跳过 LLM 规划，直接进入流式作答。"""
     from app.services.agent_intent import is_chitchat_message
-    from app.services.agent_routing_signals import is_trivial_direct_question
+    from app.services.agent_skill_router import is_trivial_direct_question
 
     text = (message or "").strip()
     if not text:
@@ -897,7 +905,7 @@ async def resolve_execution_plan(
 
     all_skill_names = _all_available_skill_names(db, user)
     followup_plan = _rule_plan_for_uploaded_skill_followup(
-        message, history, all_skill_names
+        db, user, message, history, all_skill_names
     )
     if followup_plan is not None and not force_replan:
         return followup_plan

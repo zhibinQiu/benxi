@@ -397,21 +397,57 @@ def _extract_docx(
         )
     try:
         doc = DocxDocument(io.BytesIO(data))
+
+        # Extract inline images and upload to MinIO
+        from app.storage.object_store import get_object_store
+
+        store = get_object_store()
+        image_map = {}  # rId -> minio_url
+
+        for rId, part in doc.part.related_parts.items():
+            ct = getattr(part, "content_type", "") or ""
+            if "image" not in ct:
+                continue
+            blob = getattr(part, "blob", None)
+            if not blob:
+                continue
+            ext_map = {
+                "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+                "image/gif": "gif", "image/bmp": "bmp", "image/tiff": "tiff",
+                "image/svg+xml": "svg", "image/webp": "webp",
+            }
+            ext = ext_map.get(ct, "png")
+            img_key = f"chunk_images/{document_id}/inline_{rId}.{ext}"
+            store.put_object_bytes(img_key, blob, content_type=ct)
+            presigned = store.presigned_get(img_key, expires=86400)
+            image_map[rId] = presigned
+
         parts: list[str] = []
         for p in doc.paragraphs:
+            # check for images in paragraph
+            xml = p._element.xml if hasattr(p._element, "xml") else ""
+            img_rIds = re.findall(r'r:embed="([^"]+)"', xml)
+
             line = p.text.strip()
-            if not line:
+            if not line and not img_rIds:
                 continue
-            style = (getattr(p.style, "name", None) or "").lower()
-            if style.startswith("heading"):
-                level = 1
-                for ch in style.replace("heading", "").strip():
-                    if ch.isdigit():
-                        level = max(1, min(6, int(ch)))
-                        break
-                parts.append(f"{'#' * level} {line}")
-            else:
-                parts.append(line)
+
+            # insert image tags before paragraph text
+            for rId in img_rIds:
+                if rId in image_map:
+                    parts.append(f'<img src="{image_map[rId]}" alt="embedded image">')
+
+            if line:
+                style = (getattr(p.style, "name", None) or "").lower()
+                if style.startswith("heading"):
+                    level = 1
+                    for ch in style.replace("heading", "").strip():
+                        if ch.isdigit():
+                            level = max(1, min(6, int(ch)))
+                            break
+                    parts.append(f"{'#' * level} {line}")
+                else:
+                    parts.append(line)
         for table in doc.tables:
             for row in table.rows:
                 cells = [c.text.strip() for c in row.cells if c.text.strip()]

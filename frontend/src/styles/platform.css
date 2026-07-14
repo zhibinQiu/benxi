@@ -52,18 +52,20 @@
 .n-card {
   border-radius: var(--platform-radius) !important;
   transition:
-    box-shadow 0.25s var(--platform-ease-smooth),
-    border-color 0.25s var(--platform-ease-smooth),
-    transform 0.25s var(--platform-ease-smooth) !important;
+    box-shadow 0.28s var(--platform-ease-smooth),
+    border-color 0.28s var(--platform-ease-smooth),
+    transform 0.28s var(--platform-ease-smooth) !important;
+  border: 1px solid var(--platform-border) !important;
 }
 
 .n-card:not(.n-card--embedded):hover {
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.04),
-    0 2px 4px rgba(0, 0, 0, 0.02),
-    0 8px 24px rgba(0, 0, 0, 0.08),
-    0 20px 48px rgba(0, 0, 0, 0.06) !important;
-  border-color: color-mix(in srgb, var(--platform-accent) 15%, var(--platform-border)) !important;
+  box-shadow: var(--platform-shadow-card-hover) !important;
+  border-color: color-mix(in srgb, var(--platform-accent) 18%, var(--platform-border-strong)) !important;
+  transform: translateY(-1px);
+}
+
+.n-card:not(.n-card--embedded):active {
+  transform: translateY(0);
 }
 
 .n-card > .n-card-header {
@@ -88,7 +90,7 @@
   overflow: hidden;
   background: var(--platform-ui-glass-fill-strong, var(--platform-bg-elevated)) !important;
   border: 1px solid var(--platform-ui-glass-border, var(--platform-border));
-  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow));
+  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow-card));
 }
 
 .n-data-table .n-data-table-wrapper {
@@ -175,10 +177,10 @@
 /* 确认弹窗按钮样式见 platform-buttons.css */
 
 .n-data-table .n-data-table-th {
-  padding: 12px 17px !important;
+  padding: 11px 17px !important;
   font-weight: 600 !important;
   font-size: 12px !important;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--platform-text-tertiary) !important;
   background: color-mix(in srgb, var(--platform-text) 3%, transparent) !important;
@@ -186,19 +188,19 @@
 }
 
 .n-data-table .n-data-table-td {
-  padding: 14px 17px !important;
-  font-size: 16px !important;
-  line-height: 1.55;
-  border-bottom: 1px solid color-mix(in srgb, var(--platform-divider) 45%, transparent);
+  padding: 13px 17px !important;
+  font-size: 15px !important;
+  line-height: 1.5;
+  border-bottom: 1px solid color-mix(in srgb, var(--platform-divider) 40%, transparent);
   transition: background-color 0.18s var(--platform-ease-smooth);
 }
 
 .n-data-table .n-data-table-tr:not(.n-data-table-tr--summary):hover .n-data-table-td {
-  background: color-mix(in srgb, var(--platform-accent) 6%, var(--platform-toolbar-bg)) !important;
+  background: color-mix(in srgb, var(--platform-accent) 5%, var(--platform-bg-elevated)) !important;
 }
 
 .n-data-table .n-data-table-tr:not(.n-data-table-tr--summary):hover .n-data-table-td:first-child {
-  box-shadow: inset 3px 0 0 var(--platform-accent);
+  box-shadow: inset 2px 0 0 var(--platform-accent);
 }
 
 .n-data-table .n-data-table-tr:last-child .n-data-table-td {
@@ -208,9 +210,15 @@
 .n-tabs .n-tabs-tab {
   font-weight: 500;
   letter-spacing: var(--platform-tracking-normal);
+  font-size: 15px;
   transition:
     color var(--platform-duration-smooth) var(--platform-ease-smooth),
     background-color 0.18s var(--platform-ease-smooth);
+}
+
+.n-tabs .n-tabs-tab.n-tabs-tab--active {
+  font-weight: 600;
+  letter-spacing: var(--platform-tracking-tight);
 }
 
 .n-button {
@@ -257,7 +265,19 @@
 .n-input,
 .n-select,
 .n-base-selection {
-  font-size: 17px;
+  font-size: 15px;
+}
+
+/* 更精致的输入框悬浮态 */
+.n-input:not(.n-input--disabled):hover .n-input__state-border,
+.n-base-selection:not(.n-base-selection--disabled):hover .n-base-selection__state-border {
+  border-color: color-mix(in srgb, var(--platform-accent) 30%, var(--platform-border-strong)) !important;
+}
+
+.n-input.n-input--focus .n-input__state-border,
+.n-base-selection.n-base-selection--focus .n-base-selection__state-border {
+  border-color: var(--platform-accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--platform-accent) 12%, transparent) !important;
 }
 
 /* 夜间模式：输入框 / 选择器使用深色玻璃底，避免白底 */

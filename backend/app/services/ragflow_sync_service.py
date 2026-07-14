@@ -184,7 +184,7 @@ def _configure_and_parse_uploaded_document(
         pid, layout = parser_id, layout_recognize
     else:
         pid, layout = infer_parser_for_upload_file(file_name, mime_type)
-    parser, parser_config = build_parser_config(pid, layout)
+    parser, parser_config = build_parser_config(pid, layout, db=db)
     clients = [getattr(kf, "_rag", None)]
     admin = _admin_rag_client()
     if admin and admin not in clients:

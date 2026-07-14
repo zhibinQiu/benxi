@@ -5,7 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from agentkit_aip.handoff import (
+from app.core.agent_loop_state import LoopState
+
+from app.agentkit.aip.handoff import (
     SpecialistHandoffResult,
     build_sequential_task_request as _build_sequential_task_request,
     build_specialist_handoff_message as _build_specialist_handoff_message,
@@ -14,7 +16,7 @@ from agentkit_aip.handoff import (
 )
 
 from app.core.aip._platform_config import platform_handoff_builder
-from app.core.aip.types import AipDataItem, AipMessage
+from app.agentkit.aip.types import AipDataItem, AipMessage
 
 __all__ = [
     "SpecialistHandoffResult",
@@ -59,7 +61,7 @@ def build_specialist_handoff_message(
     session_id: str,
     task_id: str,
     text: str,
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
     satisfied: bool = True,
     citations: list[dict[str, Any]] | None = None,
     kg_context: Any = None,
@@ -84,7 +86,7 @@ def build_specialist_handoff_result(
     agent_id: str,
     session_id: str,
     task_id: str,
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
     citations: list[dict[str, Any]] | None = None,
     kg_context: Any = None,
 ) -> SpecialistHandoffResult:
@@ -107,7 +109,7 @@ def build_specialist_handoff_result(
 
 
 def build_specialist_assist_handoff(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     *,
     agent_id: str,
     session_id: str,
@@ -150,7 +152,7 @@ def build_specialist_assist_handoff(
 
 def orchestrator_assist_from_complete(complete: dict[str, Any] | None) -> dict[str, Any] | None:
     """从 complete 事件解析专精向调度层发起的协助请求。"""
-    from app.core.aip.messaging import handoff_from_complete
+    from app.agentkit.aip.messaging import handoff_from_complete
 
     message = handoff_from_complete(complete)
     if message is None:

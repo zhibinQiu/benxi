@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.config import get_settings
 from app.core.agent_profiles import AGENT_PROFILES, AgentProfileDef, get_agent_profile
 from app.core.aip.aid import build_agent_aid
-from app.core.aip.types import AipAgentDescription, AipCapability
+from app.agentkit.aip.types import AipAgentDescription, AipCapability
 
 
 def _capability_for_profile(defn: AgentProfileDef) -> AipCapability:

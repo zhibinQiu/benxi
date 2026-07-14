@@ -1,0 +1,42 @@
+# KnowFlow 沙箱容器栈 — 补充 compose.override（非 profile knowflow）
+# 用法:  ln -s compose.sandbox.yaml compose.override.yaml
+#        bash scripts/stack.sh up -d
+#
+# 启用后 Skill 脚本通过 sandbox-executor-manager 在隔离容器中执行，
+# 而非在 API 容器内 subprocess.run。适合有 Docker 的生产/开发环境。
+
+services:
+  sandbox-base-python:
+    image: sandbox-base-python:latest
+    build:
+      context: ../../third_party/knowflow/sandbox/sandbox_base_image/python
+      dockerfile: Dockerfile
+    entrypoint: ["echo", "base image built"]
+
+  sandbox-executor-manager:
+    container_name: sandbox-executor-manager
+    build:
+      context: ../../third_party/knowflow/sandbox/executor_manager
+      dockerfile: Dockerfile
+    image: sandbox-executor-manager:latest
+    runtime: ${SANDBOX_CONTAINER_RUNTIME:-runc}
+    privileged: true
+    depends_on:
+      sandbox-base-python:
+        condition: service_completed_successfully
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - benxi
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - SANDBOX_EXECUTOR_MANAGER_POOL_SIZE=${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-3}
+      - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE:-sandbox-base-python:latest}
+      - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE:-sandbox-base-nodejs:latest}
+      - SANDBOX_ENABLE_SECCOMP=${SANDBOX_ENABLE_SECCOMP:-false}
+      - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
+      - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-30s}
+      # macOS Docker Desktop 无 gVisor，用 runc；Linux 生产可设 runsc
+      - SANDBOX_RUNTIME=${SANDBOX_RUNTIME:-runc}

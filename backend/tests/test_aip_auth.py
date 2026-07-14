@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.core.aip.auth import generate_aip_sk, hash_aip_sk, is_aip_sk_token
+from app.agentkit.aip.auth import generate_aip_sk, hash_aip_sk, is_aip_sk_token
 from app.database import SessionLocal
 from app.models.aip_secret_key import AipSecretKey
 from app.models.org import User

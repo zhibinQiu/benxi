@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agentkit_message import (
+from app.agentkit.message import (
     DsmlStreamFilter as _DsmlStreamFilter,
     content_has_tool_markup,
     extract_embedded_tool_calls as _extract_embedded_tool_calls,
@@ -17,9 +17,6 @@ from agentkit_message import (
 )
 
 # ── DSML 兼容常量（供外部引用） ──────────────────────────────────────────────
-from agentkit_message.parse import _DSML_PIPE_CHARS as DSML_PIPE_CHARS  # noqa: PLC2701
-from agentkit_message.parse import _DELIM_RE as DSML_DELIM_RE  # noqa: PLC2701
-from agentkit_message.parse import _INVOKE_RE as DSML_INVOKE_RE  # noqa: PLC2701
 
 _DSML_PIPE = "\uff5c"
 _DSML_TAG = f"{_DSML_PIPE}{_DSML_PIPE}DSML{_DSML_PIPE}{_DSML_PIPE}"
@@ -86,7 +83,7 @@ def looks_like_internal_agent_content(text: str) -> bool:
 
 def has_mermaid_deliverable(text: str) -> bool:
     """正文是否包含可渲染的 Mermaid 图表围栏。"""
-    from agentkit_message.filter import has_mermaid_deliverable as _check
+    from app.agentkit.message.filter import has_mermaid_deliverable as _check
 
     return _check(text)
 
@@ -106,6 +103,13 @@ def assistant_content_is_deliverable(
         return True
     if instruction_only_skill and not looks_like_internal_agent_content(text):
         return len(text) >= 24
+    # 通用直接回答：substantial 长度 + 非内部内容 = 可交付
+    if (
+        len(text) >= 12
+        and not content_has_tool_markup(text)
+        and not looks_like_internal_agent_content(text)
+    ):
+        return True
     return False
 
 

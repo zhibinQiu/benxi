@@ -13,7 +13,7 @@ from app.services.agent_routing_catalog import (
     build_supervisor_routing_catalog,
     message_targets_uploaded_skill,
 )
-from app.services.agent_supervisor import resolve_agent_route
+from app.services.agent_route_resolver import resolve_agent_route
 
 
 def _admin_user(db) -> User:
@@ -39,7 +39,10 @@ def test_build_supervisor_routing_catalog_includes_descriptions():
         db.close()
 
 
-def test_route_beijing_followup_to_skill_dev_with_history():
+def test_route_beijing_followup_uses_orchestrator_rather_than_skill_dev():
+    """Follow-up to use an existing skill should NOT route to skill-dev.
+    The planner handles skill follow-up matching via history. (Previous
+    behavior routed any message containing a skill name to skill-dev.)"""
     db = SessionLocal()
     try:
         user = _admin_user(db)
@@ -53,9 +56,9 @@ def test_route_beijing_followup_to_skill_dev_with_history():
                 content="已创建 carbon-market-price，可直接问北京碳价。",
             ),
         ]
-        assert message_targets_uploaded_skill(db, user, "北京", history)
+        assert not message_targets_uploaded_skill(db, user, "北京", history)
         route = resolve_agent_route(db, user, "北京", chat_history=history)
-        assert route.agent_id == "skill-dev"
+        assert route.agent_id == "orchestrator"
     finally:
         db.close()
 

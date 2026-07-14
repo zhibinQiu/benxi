@@ -1,7 +1,7 @@
 <script setup>
 defineOptions({ name: "ReportGenerationView" });
 import { computed, inject, onActivated, onMounted, ref } from "vue";
-import { CreateOutline } from "@vicons/ionicons5";
+import { AddOutline } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import ChatSessionToolbarActions from "../components/ChatSessionToolbarActions.vue";
 import { isRouteAbortError } from "../api/client";
@@ -138,7 +138,7 @@ onActivated(() => {
       :chat-header-sub="t('reportGeneration.chatHeaderSub')"
       :reply-placeholder="t('reportGeneration.replyPlaceholder')"
       :suggestions="[]"
-      :icon="CreateOutline"
+      :icon="AddOutline"
       :stream-chat="handleChatStream"
       :show-report-tools="true"
       :report-mindmap-fetch="fetchReportMindmap"

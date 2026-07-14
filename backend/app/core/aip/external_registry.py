@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from app.config import get_settings
-from app.core.aip.types import AipCapability
+from app.agentkit.aip.types import AipCapability
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

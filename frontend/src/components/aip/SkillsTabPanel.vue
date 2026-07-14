@@ -74,6 +74,7 @@ const registry = ref(initialCache?.registry || []);
 const keyword = ref("");
 
 const mcpSkills = ref(initialCache?.mcpSkills || []);
+const mcpKeyword = ref("");
 const mcpSkillsLoading = ref(false);
 const mcpServerInfo = ref(initialCache?.mcpServerInfo || null);
 const mcpSkillModalOpen = ref(false);
@@ -112,6 +113,15 @@ const filteredSkills = computed(() => {
   if (!q) return registry.value;
   return registry.value.filter((row) => {
     const hay = [row.name, row.title, row.description].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+});
+
+const filteredMcpSkills = computed(() => {
+  const q = mcpKeyword.value.trim().toLowerCase();
+  if (!q) return mcpSkills.value;
+  return mcpSkills.value.filter((s) => {
+    const hay = [s.name, s.title, s.description, s.endpoint].filter(Boolean).join(" ").toLowerCase();
     return hay.includes(q);
   });
 });
@@ -585,6 +595,14 @@ defineExpose({ reload, loadRegistry, loadMcpSkills, loading });
     <NText v-if="mcpServerInfo?.endpoint" depth="3" style="display: block; margin-bottom: 14px">
       {{ t("admin.agentSkills.mcpServerEndpoint", { endpoint: mcpServerInfo.endpoint }) }}
     </NText>
+    <div style="display: flex; justify-content: flex-end; margin-bottom: 14px">
+      <NInput
+        v-model:value="mcpKeyword"
+        clearable
+        :placeholder="t('admin.agentSkills.searchPlaceholder')"
+        style="width: 288px"
+      />
+    </div>
     <div v-if="mcpSkillsLoading && !hydrated" class="agent-card-grid agent-card-grid--skeleton">
       <div v-for="n in 3" :key="n" class="mcp-card mcp-card--skeleton">
         <div class="skeleton-line skeleton-line--title" />
@@ -592,12 +610,12 @@ defineExpose({ reload, loadRegistry, loadMcpSkills, loading });
         <div class="skeleton-line skeleton-line--meta" />
       </div>
     </div>
-    <div v-else-if="!mcpSkills.length" class="agent-card-grid agent-card-grid--empty">
-      <NText depth="3">{{ t("admin.agentSkills.mcpSkillsEmpty") }}</NText>
+    <div v-else-if="!filteredMcpSkills.length" class="agent-card-grid agent-card-grid--empty">
+      <NText depth="3">{{ mcpKeyword.trim() ? t("admin.agentSkills.noSearchResults") : t("admin.agentSkills.mcpSkillsEmpty") }}</NText>
     </div>
     <div v-else class="agent-card-grid">
       <NCard
-        v-for="skill in mcpSkills"
+        v-for="skill in filteredMcpSkills"
         :key="skill.id || skill.name"
         size="small"
         class="agent-card agent-card--external"

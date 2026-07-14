@@ -30,7 +30,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # 离线资源：Mac/服务器预先放入 assets/babeldoc 或 assets/offline_assets_*.zip
-COPY assets/ /assets/
+COPY third_party/assets/ /assets/
 
 COPY pyproject.toml .
 RUN uv pip install --system --no-cache --index-url "${PIP_INDEX_URL}" -r pyproject.toml && \

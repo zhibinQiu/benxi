@@ -199,6 +199,8 @@ export default {
       "8s 后提醒我喝水。",
       "帮我绘制把大象装进冰箱的流程图。",
       "#豆包 生成一张双碳项目图标。",
+      "请使用 zhangxuefeng-skill 技能：孩子想学金融怎么办？",
+      "最新的双碳政策有哪些？",
     ],
     toolLinks: {
       knowledgeSearch: "知识检索",
@@ -288,7 +290,7 @@ export default {
     phone: "手机号",
     email: "邮箱",
     displayName: "姓名",
-    displayNamePlaceholder: "请填写真实姓名",
+    displayNamePlaceholder: "企业成员请填写真实姓名",
     passwordConfirm: "确认密码",
     registerHint: "公开注册仅创建普通用户，如需管理员权限请联系系统管理员。",
     registerSubmit: "注册并登录",
@@ -297,11 +299,11 @@ export default {
     termsPrefix: "登录即表示您同意",
     termsLink: "平台使用规范",
     termsRequired: "请先勾选同意平台使用规范",
-    captchaRequired: "请先完成滑块验证",
+    captchaRequired: "请先完成验证码验证",
     brandName: "本析",
     getStarted: "立即试用",
-    buyCoffee: "请开发者喝咖啡～",
-    buyCoffeeDesc: "内测期间打赏 50 元以上，企业级部署享折扣 15%",
+    download: "客户端下载",
+    noAccount: "没有账号？",
     showcaseScrollHint: "向下滚动了解更多",
     showcaseCompareLabel: "相比市面方案",
     showcaseVision: {
@@ -406,6 +408,12 @@ export default {
         },
       ],
     },
+    showcaseKnowledgeSearch: {
+      label: "知识检索",
+      title: "企业级知识检索与报告生成",
+      body: "支持按组织架构、文档库范围、自定义标签等多维度划定检索范围，每位成员只在自己权限内检索知识，不越权、不漏检。报告生成遵循相同权限体系，可灵活选择知识库范围与报告模板，多路自动汇编材料生成结构化报告，支持 Markdown、Word 与思维导图多格式导出。",
+      image: "/images/知识检索.png",
+    },
     showcaseOntology: {
       label: "语义底座",
       title: "本与析：企业的语义底座",
@@ -419,6 +427,9 @@ export default {
       "企业知识治理工作台：AgentKit 多智能体引擎驱动，入库、析清、检索、问答与报告在同一权限体系内闭环。",
     showcaseTaglines: [
       "入库 → 本体 → 检索 → 问答 → 报告，一条链路贯通。",
+      "从文件入库到报告生成，全程权限闭环。",
+      "AgentKit 引擎驱动，知识工作台一站式搞定。",
+      "多智能体协同，企业知识治理新范式。",
     ],
     showcaseHighlights: [
       "知识闭环：从文件入库到报告输出，同一工作台完成",
@@ -768,6 +779,21 @@ export default {
         },
       ],
     },
+    showcaseAcknowledgments: {
+      label: "致谢",
+      title: "致谢",
+      subtitle: "感谢以下企业与开源项目对本平台的支持",
+      items: [
+        { name: "豆包", description: "字节跳动大模型能力支撑", url: "https://www.doubao.com" },
+        { name: "千问", description: "阿里云通义大模型能力支撑", url: "https://tongyi.aliyun.com" },
+        { name: "KIMI", description: "月之暗面长文本对话能力", url: "https://kimi.moonshot.cn" },
+        { name: "DeepSeek", description: "深度求索大模型能力支撑", url: "https://www.deepseek.com" },
+        { name: "Cursor", description: "AI 辅助编程 IDE", url: "https://www.cursor.com" },
+        { name: "RAGflow", description: "开源企业级知识库引擎", url: "https://ragflow.io" },
+        { name: "Knowflow", description: "知识库扩展后台与 RBAC 授权", url: "https://github.com/zhibinQiu/knowflow" },
+        { name: "PageIndex", description: "结构化文档索引技术", url: "https://github.com/infiniflow/ragflow" },
+      ],
+    },
     showcaseFooter: {
       label: "相关链接",
       links: [
@@ -919,6 +945,12 @@ export default {
     uploadSubmitSingle: "上传文档",
     uploadSubmitBatch: "上传 {{count}} 个文档",
     sharedAction: "分享",
+    indexAction: "索引",
+    reindexUnindexedTitle: "批量重新索引",
+    reindexUnindexedConfirm: "将索引当前范围内所有未索引或索引失败的文档，确定继续？",
+    reindexUnindexedConfirmAction: "开始索引",
+    reindexUnindexedSuccess: "已将 {{count}} 份文档加入索引队列，请稍后在「后台任务」查看进度。",
+    reindexUnindexedNone: "当前范围内没有需要索引的文档。",
     recycleAction: "回收站",
     emptyRecycle: "清空回收站",
     backToFolders: "返回文件夹",
@@ -1540,6 +1572,7 @@ export default {
     history: "历史对话",
     newChat: "新对话",
     closeTab: "关闭对话",
+    closeAllTabs: "关闭所有对话",
     loadingConversation: "正在加载对话…",
     thinking: "正在思考…",
     noAnswer: "未能生成回答",
@@ -1952,6 +1985,7 @@ export default {
       toolDetailTitle: "Tool 详情",
       toolInputSchema: "入参 schema",
       toolOutputSchema: "出参 schema",
+      toolUsageGuide: "使用说明",
       colAvailable: "可用",
       colAvailabilityNote: "说明",
       availableYes: "可用",
@@ -1980,6 +2014,7 @@ export default {
       uploadFolder: "选择文件夹",
       replaceExisting: "同名覆盖",
       searchPlaceholder: "搜索 name / description",
+      noSearchResults: "无匹配结果",
       colName: "名称",
       colDescription: "描述",
       colFiles: "文件数",
@@ -2077,14 +2112,14 @@ export default {
         platform_api: { title: "系统后台地址（前端）", hint: "浏览器请求平台后端的 API 根路径" },
         frontend: { title: "前台配置", hint: "系统大标题、配色方案与默认日/夜主题" },
         llm: { title: "语言模型（LLM）", hint: "知识问答、会议摘要等" },
+        multimodal: { title: "多模态模型", hint: "图文理解、图表分析等多模态对话" },
         embedding: { title: "Embedding 模型", hint: "文档向量与知识检索" },
-        vl: { title: "VL 模型", hint: "PDF 图表增强（IMAGE2TEXT）" },
         rerank: { title: "Reranker 模型", hint: "检索重排序（可选）" },
         paddleocr: { title: "PaddleOCR-VL", hint: "硅基流动 API 或自建 OCR 服务" },
         speech: { title: "语音识别服务", hint: "语音转写功能" },
         tts: { title: "语音合成", hint: "文本转语音（硅基流动 / OpenAI 兼容）" },
         pdf2zh: { title: "PDF 翻译服务", hint: "pdf2zh 文档翻译 API" },
-        searxng: { title: "SearXNG 联网搜索", hint: "报告生成与本析智能体联网检索" },
+        searxng: { title: "网络检索服务", hint: "SearXNG 搜索引擎 + FireCrawl 全文提取，供报告生成与智能体联网检索" },
         browser_rpa: { title: "浏览器 RPA", hint: "本析智能体网页自动化（无头 Chromium）" },
         ragflow_api: { title: "知识库 API", hint: "知识库检索、文档同步 HTTP API" },
         knowflow_backend: { title: "知识库扩展后台", hint: "知识库扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选" },
@@ -2109,6 +2144,8 @@ export default {
         optionalNotConfigured: "可选，未配置",
         noApiUrl: "{{model}}（未填 API 地址）",
         noApiKey: "{{model}}（未配置 Key）",
+        noLabel: "未命名服务源",
+        providersCount: "共 {{count}} 个服务源",
         apiPrefix: "API {{url}}",
         uiPrefix: "UI {{url}}",
         dockerDefault: "Docker 默认（内置 MySQL）",
@@ -2126,6 +2163,9 @@ export default {
         testFailed: "测试未通过：",
         connectionOk: "连接正常",
         connectionFailed: "连接失败",
+        providerPassed: "服务源「{{label}}」通过 ✓",
+        providerFailed: "服务源「{{label}}」不通 ✗",
+        providerSkipped: "服务源「{{label}}」配置不完整 —",
       },
       messages: {
         connectionOk: "连接正常",
@@ -2145,6 +2185,12 @@ export default {
         modelName: "模型名称",
         apiKey: "SK / API Key",
         provider: "供应商",
+        providers: "服务源",
+        addProvider: "添加服务源",
+        removeProvider: "移除此服务源",
+        activeProvider: "系统启用服务源",
+        providerLabel: "服务源名称（可选）",
+        maxProviders: "最多配置 3 个服务源",
         serviceUrl: "服务地址",
         requestTimeout: "请求超时",
         apiAddress: "API 地址",
@@ -2163,6 +2209,9 @@ export default {
         browserRpaMaxSteps: "单会话最大步数",
         browserRpaAutoTask: "启用自动探索（browser_run_task）",
         browserRpaAutoTaskMaxSteps: "自动探索最大步数",
+        firecrawlApiKey: "FireCrawl API Key",
+        firecrawlApiUrl: "FireCrawl API 地址",
+        firecrawlReadFullMaxUrls: "每次搜索读取全文条数",
       },
       placeholders: {
         apiRoot: "/ai 或 http://your-server:40005/ai",
@@ -2170,11 +2219,11 @@ export default {
         llmApiUrl: "https://host/v1 或本地 vLLM 地址",
         modelName: "模型名称",
         apiKeyMasked: "留空或掩码表示不修改",
+        multimodalApiUrl: "https://api.siliconflow.cn/v1",
+        multimodalModel: "Qwen/Qwen3.5-9B",
         embeddingApiUrl: "嵌入模型 API 地址",
         embeddingModel: "如 BAAI/bge-large-zh-v1.5",
         embeddingFactory: "如 SILICONFLOW、OpenAI-API-Compatible",
-        vlApiUrl: "https://host/v1 或本地推理服务",
-        vlModel: "VL 模型名称",
         rerankOptional: "可选",
         rerankApiUrl: "https://api.siliconflow.cn/v1",
         rerankModel: "Qwen/Qwen3-Reranker-8B",
@@ -2185,6 +2234,8 @@ export default {
         ttsModel: "FunAudioLLM/CosyVoice2-0.5B",
         pdf2zhUrl: "http://127.0.0.1:7861",
         searxngUrl: "http://your-server:40000",
+        firecrawlApiUrl: "https://api.firecrawl.dev 或 http://127.0.0.1:3002（自托管）",
+        firecrawlApiKeyHint: "留空=禁用全文提取，仅用 SearXNG 摘要",
         browserRpaDomains: "example.com,httpbin.org（留空=公网不限）",
         ragflowApiUrl: "http://127.0.0.1:9380",
         ragflowApiKey: "留空或掩码表示不修改；mapped 模式可留空走用户会话",
@@ -2201,7 +2252,7 @@ export default {
           "浏览器请求平台后端的根路径（不含 <code>/api/v1</code>）。同源部署填 <code>/ai</code>；跨域或远程开发填完整 URL。对应 .env 中 <code>PLATFORM_API_BASE_URL</code>，留空时使用 <code>API_PUBLIC_PATH_PREFIX</code>（默认 <code>/ai</code>）。保存后前端立即生效；若与当前页面访问方式不一致，请刷新页面。",
         frontend:
           "「跟随系统」时，前台根据操作系统日/夜模式自动切换；用户手动切换主题后将以本地偏好为准。系统配色为全局主色调，保存后所有用户刷新页面即可生效；选择「自定义主题色」时可指定任意主色。对应 .env 中 <code>FRONTEND_APP_TITLE</code>、<code>FRONTEND_DEFAULT_THEME</code>、<code>FRONTEND_COLOR_SCHEME</code>、<code>FRONTEND_PRIMARY_COLOR</code>。",
-        vl: "PDF 图表增强（IMAGE2TEXT）。保存后立即生效并同步到知识库；切换本地模型时仅改 API URL 与模型名即可。",
+        multimodal: "多模态图文理解模型（如 Qwen-VL）。默认使用硅基流动 Qwen/Qwen3.5-9B。保存后立即生效。",
         paddleocr:
           "OpenAI 兼容 API（<code>/v1</code>）或自建 layout-parsing 根地址。保存后立即写入知识库服务配置；本地部署时改 URL 与模型名即可。",
         speech: "「语音转写」调用此地址（FunASR speech-api）。",
@@ -2209,7 +2260,9 @@ export default {
         pdf2zh:
           "文档翻译任务调用 pdf2zh API（对应 .env 中的 <code>PDF2ZH_API_URL</code>）。保存后立即生效。",
         searxng:
-          "报告生成与本析智能体的联网检索通过此 SearXNG 实例的 JSON API（<code>/search?format=json</code>）调用。对应 .env 中 <code>SEARXNG_URL</code>、<code>SEARXNG_TIMEOUT_SECONDS</code>。保存后立即生效。",
+          "联网检索通过 SearXNG JSON API（<code>/search?format=json</code>）与 FireCrawl 网页全文提取配合使用。" +
+          "FireCrawl 自托管部署参考 <code>deploy/firecrawl.yml</code>。" +
+          "对应 .env 中 <code>SEARXNG_URL</code>、<code>FIRECRAWL_API_KEY</code>、<code>FIRECRAWL_API_URL</code> 等。保存后立即生效。",
         browserRpa:
           "本析智能体通过 Playwright Chromium 操作网页。<strong>无头服务器无需显示器</strong>，请保持「无头模式」开启。Docker 镜像需 <code>INSTALL_BROWSER=1</code>（compose 默认已开）。域名白名单逗号分隔，留空则仅拦截内网。",
         ragflowApi:
@@ -2678,6 +2731,110 @@ export default {
     ariaDialog: "本析平台客服",
     ariaClose: "关闭",
     inputPlaceholder: "描述你的问题，Enter 发送",
+  },
+  promo: {
+    hero: {
+      badge: "企业版功能",
+      title: "企业级知识检索与报告生成",
+      subtitle:
+        "基于 AgentKit 多智能体引擎，构建企业知识治理闭环。入库、析清、检索、问答与报告在同一权限体系内无缝贯通。",
+      ctaPrimary: "立即体验",
+      ctaSecondary: "了解更多",
+      stats: [
+        { value: "多维度", label: "检索范围" },
+        { value: "多路", label: "召回策略" },
+        { value: "多格式", label: "导出报告" },
+      ],
+    },
+    header: {
+      login: "立即体验",
+    },
+    detail: {
+      label: "核心能力",
+      title: "知识检索与报告生成",
+      subtitle: "从知识入库到报告输出的完整链路，企业级权限体系保障知识安全合规",
+      features: [
+        {
+          title: "精准检索",
+          body: "PageIndex 结构树检索与向量召回混合，支持按组织架构、文档库范围、自定义标签多维度划定检索范围，每位成员只在自己权限内检索知识，不越权、不漏检。",
+        },
+        {
+          title: "报告生成",
+          body: "AgentKit Loop Engineering 规划多轮子问题，多路召回企业知识片段后按章节扩写整合。双栏 Markdown 支持润色、扩写与续写，成稿可切换思维导图。",
+        },
+        {
+          title: "多路召回",
+          body: "PageIndex + 向量混合召回策略，结构索引更适合长文档章节定位，区别于单次 embedding 的传统 RAG，召回精准度与覆盖率显著提升。",
+        },
+        {
+          title: "思维导图导出",
+          body: "报告可一键切换为思维导图可视化视图，支持 Markdown、Word、OPML 多格式导出，满足不同场景的交付需求。",
+        },
+        {
+          title: "分级权限体系",
+          body: "组织架构继承式权限管理，文档库级、自定义标签级权限控制，分享可审计，确保知识安全合规。",
+        },
+        {
+          title: "多格式入库",
+          body: "支持 PDF、Word、Excel、图片、网页等多格式文档入库，自动解析提取文本与结构，构建企业统一知识库。",
+        },
+        {
+          title: "私有化部署",
+          body: "支持企业私有化部署，数据不出域。纯浏览器端即用，无需安装插件，提供企业级 SLA 保障。",
+        },
+        {
+          title: "智能体引擎",
+          body: "AgentKit 四层多智能体架构驱动，路由编排工具执行，AIP / MCP 标准互联，内外智能体与工具无缝集成。",
+        },
+      ],
+    },
+    flow: {
+      title: "工作流程",
+      subtitle: "从知识入库到报告输出，一条链路贯通",
+      steps: [
+        { title: "文档入库", body: "上传 PDF、Word、Excel、网页等格式，自动解析文本与结构" },
+        { title: "知识析清", body: "本体图谱自动抽取实体关系，构建领域知识网络" },
+        { title: "精准检索", body: "PageIndex + 向量混合召回，权限内搜准搜全" },
+        { title: "报告生成", body: "Loop Engineering 多轮规划，自动汇编生成结构化报告" },
+      ],
+    },
+    arch: {
+      label: "技术架构",
+      title: "AgentKit 多智能体引擎",
+      subtitle: "四层架构驱动，路由编排工具执行",
+      layers: [
+        {
+          tag: "编排层",
+          title: "Agent Supervisor",
+          body: "集中路由调度，分解复杂任务为多轮子问题，编排多智能体协作",
+        },
+        {
+          tag: "技能层",
+          title: "Skill 技能编排",
+          body: "内置搜索、分析、生成等标准化技能，支持 AIP 外部智能体与 MCP 工具集成",
+        },
+        {
+          tag: "检索层",
+          title: "Knowledge Retrieval",
+          body: "PageIndex + 向量混合检索，权限过滤，片段预览与溯源跳转",
+        },
+        {
+          tag: "输出层",
+          title: "Report Export",
+          body: "Markdown 双栏编辑，思维导图可视化，Markdown / Word / OPML 导出",
+        },
+      ],
+    },
+    cta: {
+      badge: "企业版功能",
+      title: "开启企业知识管理新范式",
+      body: "知识闭环管理，权限体系保障，多格式报告输出——企业级知识工作台，即刻体验。",
+      button: "立即体验 →",
+    },
+  },
+  copyright: {
+    about: "关于海颐",
+    text: "Copyright © 2026 本析 v4.6.0内测 烟台海颐软件保留所有权利。",
   },
   digitalRobotFab: {
     welcome: "你好，我是数字机器人小析！我可以帮你执行浏览器自动化操作。描述你想做的任务，我来规划并执行。\n\n例如：「帮我登录公司 OA 系统并查询我的报销单」，或「打开百度搜索今天天气」。",

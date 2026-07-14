@@ -18,7 +18,6 @@ def test_list_builtin_agents(client, admin_token):
     assert "platform" in ids
     assert "report" in ids
     assert "rpa" in ids
-    assert "scheduler" in ids
     assert "skill-dev" in ids
     assert ids.index("orchestrator") < ids.index("platform")
     assert ids.index("platform") < ids.index("report")

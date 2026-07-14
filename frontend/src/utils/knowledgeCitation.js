@@ -5,6 +5,7 @@ import {
   readFetchErrorJson,
   rejectHttpFailure,
 } from "../api/http.js";
+import { escapeHtml } from "./markdown.js";
 
 /** KnowFlow 切片引用截图 API（源 PDF 区域快照，非提取文本） */
 export function knowledgeCitationPreviewPath(citation) {
@@ -94,14 +95,6 @@ async function fetchCitationBlob(path, { signal } = {}) {
 export async function fetchKnowledgeCitationPreviewBlob(citation, { signal } = {}) {
   const path = knowledgeCitationPreviewPath(citation);
   return fetchCitationBlob(path, { signal });
-}
-
-function escapeHtml(text) {
-  return String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function escapeRegExp(text) {
@@ -213,6 +206,13 @@ export function citationCanPreviewImage(citation) {
   const c = citation || {};
   if (c.preview_available === true) return true;
   if (c.preview_available === false) return false;
+
+  // 有内嵌图片（inline_images）也算可预览
+  if (Array.isArray(c.inline_images) && c.inline_images.length > 0) {
+    const valid = c.inline_images.some((img) => Boolean(img?.url));
+    if (valid) return true;
+  }
+
   if (c.source === "pageindex") {
     return Boolean(String(c.document_id || "").trim());
   }

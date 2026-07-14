@@ -145,7 +145,8 @@ watch(
       resetState();
       void loadDepartments();
     }
-  }
+  },
+  { immediate: true }
 );
 
 /** 切换发布目标时，之前选的部门 ID 已不匹配新层级，自动清空。 */

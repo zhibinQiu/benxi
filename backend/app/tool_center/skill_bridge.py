@@ -6,9 +6,11 @@ import asyncio
 import logging
 from typing import Any
 
+from app.core.agent_loop_state import LoopState
+
 from app.skills.types import SkillInvocationContext, SkillInvocationResult
 from app.tool_center.context import ToolRuntimeContext
-from app.tool_center.errors import ToolErrorCode, business_message, is_retryable
+from app.tool_center.errors import business_message, is_retryable
 from app.tool_center.executor import execute_tool_call, new_call_id
 from app.tool_center.schemas import SkillMeta, ToolCallRequest, ToolResponse
 
@@ -22,7 +24,7 @@ def _runtime_ctx(
     ctx: SkillInvocationContext,
     *,
     user_message: str = "",
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
 ) -> ToolRuntimeContext:
     return ToolRuntimeContext(
         db=ctx.db,
@@ -65,7 +67,7 @@ async def invoke_atomic_tool(
     skill_id: str,
     belong_agent: str = "",
     user_message: str = "",
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
     trace_id: str | None = None,
     call_id: str | None = None,
     success_summary: str | None = None,

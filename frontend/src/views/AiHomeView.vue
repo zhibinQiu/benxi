@@ -3,14 +3,11 @@ defineOptions({ name: "AiHomeView" });
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import {
-  CreateOutline,
-  SearchOutline,
   SparklesOutline,
 } from "@vicons/ionicons5";
 import AiChatPanel from "../components/AiChatPanel.vue";
 import { aiHomeChatStream } from "../api/client";
 import { useI18n } from "../composables/useI18n.js";
-import { encodeReturnLocation } from "../utils/navigationReturn";
 import { useChatTabs } from "../composables/useChatTabs.js";
 
 const route = useRoute();
@@ -41,29 +38,10 @@ const sessionKey = computed(() => getSessionKey(tabId.value));
 function onChatStateChange({ streaming, hasContent, title }) {
   setTabStreaming(tabId.value, Boolean(streaming));
   setTabHasContent(tabId.value, Boolean(hasContent));
-  if (title) {
-    updateTabTitle(tabId.value, title);
-  }
+  updateTabTitle(tabId.value, title || "");
 }
 
 const suggestions = computed(() => tm("aiHome.suggestions") || []);
-
-const toolLinks = computed(() => {
-  const encoded = encodeReturnLocation(route);
-  const returnQuery = encoded ? { return: encoded } : {};
-  return [
-    {
-      title: t("aiHome.toolLinks.knowledgeSearch"),
-      route: { name: "knowledge-search", query: returnQuery },
-      icon: SearchOutline,
-    },
-    {
-      title: t("aiHome.toolLinks.reportGeneration"),
-      route: { name: "report-generation", query: returnQuery },
-      icon: CreateOutline,
-    },
-  ];
-});
 </script>
 
 <template>
@@ -79,7 +57,6 @@ const toolLinks = computed(() => {
       :architecture="tm('aiHome.architecture')"
       :chat-header-sub="t('aiHome.chatHeaderSub')"
       :suggestions="suggestions"
-      :tool-links="toolLinks"
       :icon="SparklesOutline"
       :stream-chat="aiHomeChatStream"
       :rich-markdown="true"

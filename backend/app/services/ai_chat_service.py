@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -33,7 +35,10 @@ from app.services.kg_service import KgQaContext
 from app.core.async_db import release_db, run_db_task
 from app.core.prompt_budget import build_bounded_chat_messages
 from app.core.session_chat_history import resolve_session_chat_history
+from app.core.agent_profiles import resolve_agent_title
 from app.services.agent_intent import AgentToolPlan, plan_agent_tools
+
+_logger = logging.getLogger(__name__)
 
 
 def _resolve_ai_home_history(
@@ -286,6 +291,38 @@ def _build_chat_messages(
 _FOLLOW_UP_SKIP_MARKERS = ("未能生成", "无法回复", "未配置", "暂时无法")
 
 
+def _fallback_follow_up_questions(answer: str, user_message: str) -> list[str]:
+    """LLM 超时或失败时，从回答中提取关键句作为追问候选。"""
+    import re
+
+    # 按句号、问号、感叹号、换行分割
+    parts = re.split(r"[。！？\n]+", answer)
+    candidates: list[str] = []
+    seen: set[str] = set()
+    user_lower = user_message.strip().lower()
+
+    for p in parts:
+        p = p.strip()
+        if not p or len(p) < 6:
+            continue
+        # 跳过与用户问题高度相似的内容
+        if p.lower().startswith(user_lower) or user_lower.startswith(p.lower()):
+            continue
+        key = p[:20].lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        # 截取前 30 字作为追问提示
+        q = p[:30].strip()
+        if not q.endswith("？") and not q.endswith("?"):
+            q += "？"
+        candidates.append(q)
+        if len(candidates) >= 3:
+            break
+
+    return candidates
+
+
 def generate_follow_up_questions(
     *,
     user_message: str,
@@ -329,17 +366,17 @@ def generate_follow_up_questions(
                 {"role": "user", "content": user},
             ],
             temperature=0.4,
-            timeout=25.0,
+            timeout=8.0,
         )
     except Exception:
-        return []
+        return _fallback_follow_up_questions(answer, user_message)
 
     data = parse_llm_json(raw)
     if not data:
-        return []
+        return _fallback_follow_up_questions(answer, user_message)
     raw_q = data.get("questions") or data.get("follow_up_questions") or []
     if not isinstance(raw_q, list):
-        return []
+        return _fallback_follow_up_questions(answer, user_message)
 
     seen: set[str] = set()
     out: list[str] = []
@@ -357,7 +394,7 @@ def generate_follow_up_questions(
         out.append(q[:80])
         if len(out) >= 3:
             break
-    return out
+    return out or _fallback_follow_up_questions(answer, user_message)
 
 
 async def _resolve_follow_up_questions(
@@ -479,15 +516,16 @@ async def _iter_stream_turn_tail(
     follow_ups: list[str] = []
     if follow_up_task is not None:
         try:
-            follow_ups = await follow_up_task
+            done_set, _ = await asyncio.wait(
+                [follow_up_task], timeout=3.0
+            )
+            if done_set:
+                follow_ups = follow_up_task.result()
         except Exception:
             follow_ups = []
     if not follow_ups:
-        follow_ups = await _resolve_follow_up_questions(
-            user_message=message,
-            assistant_answer=normalized_reply,
-            history=history,
-        )
+        # 超时或未启动：使用快速文本兜底（不调 LLM），不阻塞 SSE 流
+        follow_ups = _fallback_follow_up_questions(normalized_reply, message)
     if follow_ups:
         yield sse_follow_up(follow_ups)
 
@@ -506,7 +544,7 @@ async def _emit_workflow(phase: str, **kwargs: Any) -> AsyncIterator[str]:
     yield workflow_event_json(
         phase,
         agent_id="orchestrator",
-        agent_title="小析调度",
+        agent_title=resolve_agent_title("orchestrator"),
         **kwargs,
     )
     await asyncio.sleep(0)
@@ -563,20 +601,6 @@ def _resolve_ai_home_history_for_user(
     )
 
 
-def _probe_should_skip(
-    db: Session,
-    user_id: uuid.UUID,
-    message: str,
-    chat_history: list[AiChatMessage] | None,
-) -> bool:
-    """探针跳过条件：用户显式调用已有上传技能，直接走路由。"""
-    from app.core.db_after_commit import resolve_db_user
-    from app.services.agent_routing_catalog import message_targets_uploaded_skill
-
-    user = resolve_db_user(db, user_id)
-    if not user:
-        return False
-    return message_targets_uploaded_skill(db, user, message, chat_history)
 
 
 async def iter_chat_with_ai_agent_stream(
@@ -586,8 +610,13 @@ async def iter_chat_with_ai_agent_stream(
     history: list[AiChatMessage],
     conversation_id: str | None = None,
     attachment_session_id: str | None = None,
+    model_provider_id: str | None = None,
 ) -> AsyncIterator[str]:
     """逐块产出 SSE data 行（不含 event: 前缀，由 API 层包装）。"""
+    from app.integrations.deepseek_client import set_current_provider_id
+
+    set_current_provider_id(model_provider_id)
+
     if not is_configured():
         yield sse_error("AI 对话未配置，请联系管理员配置 DeepSeek API")
         return
@@ -707,169 +736,48 @@ async def iter_chat_with_ai_agent_stream(
         return
 
     # 初始化前端 workflow（探针的工具调用需要状态容器）
-    async for payload in _emit_workflow(
-        "workflow_started", title="小析正在快速分析"
-    ):
-        yield payload
-    async for payload in _emit_workflow(
-        "workflow_started", title="小析正在快速分析"
-    ):
+    # 初始化前端 workflow
+    _request_t0 = time.monotonic()
+    _logger.info("Agent stream start user=%s msg=%s", user_id, msg[:60])
+    async for payload in _emit_workflow("workflow_started", title="小析已经收到您的请求，正在规划方案"):
         yield payload
 
-    # ──────────────────────────────────────────────
-    # 🟢 QUICK SKILL CHECK：用户显式调用已有技能则跳过探针
-    # ──────────────────────────────────────────────
-    from app.services.agent_skill_router import is_skill_management_message
+    prep_plan_id = next_workflow_step_id("ai-p")
+    async for payload in _emit_workflow(
+        "agent_thinking",
+        title="正在规划方案",
+        tool="planner",
+        step_id=prep_plan_id,
+    ):
+        yield payload
 
-    probe_skipped = False
-    if msg and (is_skill_management_message(msg) or any(
-        kw in msg for kw in ("技能", "skill", "Skill")
-    )):
-        try:
-            skill_hit = await run_db_task(
-                _probe_should_skip, user_id, msg, history
-            )
-            if skill_hit:
-                probe_skipped = True
-        except Exception:
-            pass
-
-    # ──────────────────────────────────────────────
-    # 🟢 追问跳过探针：已有对话上下文的追问直接走调度，避免探针重复 LLM 调用
-    # ──────────────────────────────────────────────
-    skip_follow_up_probe = False
-    if not probe_skipped and conversation_id and history:
-        try:
-            from app.core.conversation_turn_context import is_likely_follow_up
-
-            if is_likely_follow_up(msg, history):
-                probe_skipped = True
-                skip_follow_up_probe = True
-        except Exception:
-            pass
-
-    # ──────────────────────────────────────────────
-    # 🟢 PROBE FIRST：不展示规划事件，直接用工具试答
-    # ──────────────────────────────────────────────
-    from app.services.agent_supervisor import (
-        ORCH_TOOL_PROBE_ROUTE_MARKER,
-        _try_orchestrator_tool_probe,
+    prep = await run_db_task(
+        _prepare_ai_chat_stream_plan,
+        user_id,
+        message,
+        attachment_session_id,
+        history,
     )
+    plan: AgentToolPlan = prep["plan"]
 
-    probe_route = True
-    probe_reply: str | None = None
-    probe_citations: list[dict] = []
-    probe_kg: KgQaContext | None = None
-    if not probe_skipped:
-        async for event in _try_orchestrator_tool_probe(
-            user_id,
-            [],
-            user_message=msg,
-            conversation_id=conversation_id,
-            chat_history=history,
-        ):
-            if event.get("type") == "complete":
-                reply = (event.get("reply") or "").strip()
-                if not reply.startswith(ORCH_TOOL_PROBE_ROUTE_MARKER):
-                    probe_reply = reply
-                    probe_citations = list(event.get("citations") or [])
-                    if event.get("kg_context") is not None:
-                        probe_kg = event.get("kg_context")
-                    probe_route = False
-                    break
-                probe_route = True
-                break
-            elif event.get("type") == "workflow":
-                yield sse_workflow(event["data"])
-                await asyncio.sleep(0)
+    from app.core.conversation_turn_context import follow_up_thinking_hint
 
-    # ✅ 探针直接回答
-    if not probe_route and probe_reply:
-        normalized_reply = _normalize_ai_home_reply(probe_reply, probe_citations)
-        normalized_reply = _append_ai_home_source_footer(
-            normalized_reply,
-            channels=None,
-            citations=[],
-            kg_context=probe_kg,
-            tool_citations=probe_citations,
-        )
-        # 提前启动 follow-up 生成任务，与 workflow 结尾事件并行执行
-        follow_up_task = asyncio.create_task(
-            _resolve_follow_up_questions(
-                user_message=message,
-                assistant_answer=normalized_reply,
-                history=history,
-            )
-        )
-        async for payload in _iter_stream_turn_tail(
-            user_id=user_id,
-            message=message,
-            history=history,
-            conversation_id=conversation_id,
-            normalized_reply=normalized_reply,
-            display_citations=[],
-            kg_context=probe_kg,
-            streamed_content=False,
-            tool_loop=True,
-            stream_attachments=[],
-            follow_up_task=follow_up_task,
-        ):
-            yield payload
-        return
+    prep_detail = (plan.context_instruction or plan.intent_label or "已分析请求").strip()
+    context_hint = follow_up_thinking_hint(message, history)
+    if context_hint:
+        prep_detail = f"{context_hint}；{prep_detail}" if prep_detail else context_hint
+    prep_title = f"规划方案：{plan.intent_label or '已分析请求'}"
+    async for payload in _emit_workflow(
+        "agent_thought",
+        title=prep_title,
+        detail=prep_detail[:240],
+        tool="planner",
+        status="done",
+        step_id=prep_plan_id,
+    ):
+        yield payload
 
-    # ──────────────────────────────────────────────
-    # 🟢 Normal flow：规划 + 附件 + 调度
-    # ──────────────────────────────────────────────
-    if skip_follow_up_probe:
-        # 追问场景：跳过规划事件，直接进入上下文准备与调度
-        prep = await run_db_task(
-            _prepare_ai_chat_stream_plan,
-            user_id,
-            message,
-            attachment_session_id,
-            history,
-        )
-        plan: AgentToolPlan = prep["plan"]
-    else:
-        async for payload in _emit_workflow("workflow_started", title="小析已经收到您的请求，正在规划方案"):
-            yield payload
-
-        prep_plan_id = next_workflow_step_id("ai-p")
-        async for payload in _emit_workflow(
-            "agent_thinking",
-            title="正在规划方案",
-            tool="planner",
-            step_id=prep_plan_id,
-        ):
-            yield payload
-
-        prep = await run_db_task(
-            _prepare_ai_chat_stream_plan,
-            user_id,
-            message,
-            attachment_session_id,
-            history,
-        )
-        plan: AgentToolPlan = prep["plan"]
-
-        from app.core.conversation_turn_context import follow_up_thinking_hint
-
-        prep_detail = (plan.context_instruction or plan.intent_label or "已分析请求").strip()
-        context_hint = follow_up_thinking_hint(message, history)
-        if context_hint:
-            prep_detail = f"{context_hint}；{prep_detail}" if prep_detail else context_hint
-        prep_title = f"规划方案：{plan.intent_label or '已分析请求'}"
-        async for payload in _emit_workflow(
-            "agent_thought",
-            title=prep_title,
-            detail=prep_detail[:240],
-            tool="planner",
-            status="done",
-            step_id=prep_plan_id,
-        ):
-            yield payload
-
-    # 上下文准备（无独立 UI 节点，由 Supervisor 的 orchestrator_progress 事件接管反馈）
+    # 上下文准备
     attachment_context = ""
     attach_count = int(prep.get("attach_count") or 0)
 
@@ -877,14 +785,6 @@ async def iter_chat_with_ai_agent_stream(
     merged_context = ""
     context_instruction = plan.context_instruction or ""
 
-    layers_task = asyncio.create_task(
-        run_db_task(
-            _resolve_prompt_layers,
-            user_id,
-            message,
-            conversation_id=conversation_id,
-        )
-    )
     asyncio.create_task(_defer_maybe_write_user_memory(user_id, message))
 
     attach_id = next_workflow_step_id("ai-s")
@@ -920,15 +820,11 @@ async def iter_chat_with_ai_agent_stream(
             yield payload
 
     merged_context = attachment_context.strip()
-    layers = await layers_task
-
-    messages = _build_chat_messages(
-        message=message,
-        history=history,
-        retrieval_context=merged_context,
-        layers=layers,
-        context_instruction=context_instruction,
-    )
+    # 不再预取 prompt layers（memory/runtime 由各专精 hop 的 build_specialist_chat_messages 自行构建）
+    messages = [{"role": "user", "content": message}]
+    if history:
+        for item in history:
+            messages.insert(0, {"role": str(item.role), "content": str(item.content or "")})
 
     from app.services.agent_supervisor import iter_supervised_agent_loop
 
@@ -985,6 +881,9 @@ async def iter_chat_with_ai_agent_stream(
         # 正常暂停，不等同于错误
         yield sse_done(suspended=True, checkpoint_id=_suspended_checkpoint_id)
         return
+
+    _elapsed = time.monotonic() - _request_t0
+    _logger.info("Agent stream done in %.1fs user=%s msg=%s", _elapsed, user_id, msg[:60])
 
     merged_attachments = _merge_stream_attachments(tool_reply, tool_stream_attachments)
     if (tool_reply or "").strip() or merged_attachments:
@@ -1046,7 +945,12 @@ async def chat_with_ai_agent(
     user: User | None = None,
     conversation_id: str | None = None,
     attachment_session_id: str | None = None,
+    model_provider_id: str | None = None,
 ) -> dict:
+    from app.integrations.deepseek_client import set_current_provider_id
+
+    set_current_provider_id(model_provider_id)
+
     if not is_configured():
         raise bad_request("AI 对话未配置，请联系管理员配置 DeepSeek API")
 

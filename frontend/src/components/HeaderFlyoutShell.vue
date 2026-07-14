@@ -12,6 +12,7 @@ const panelRef = ref(null);
 const position = ref({ top: "70px", right: "19px" });
 /** 等宿主布局稳定后再 Teleport，避免与路由 Transition 同时 patch 导致 parentNode 为 null */
 const teleportReady = ref(false);
+const isMobile = ref(window.innerWidth < 768);
 
 function resolveAnchorNode() {
   const raw = props.anchorEl;
@@ -30,15 +31,32 @@ function updatePosition() {
     return;
   }
   const rect = anchor.getBoundingClientRect();
-  position.value = {
-    top: `${Math.max(56, rect.bottom + 8)}px`,
-    right: `${Math.max(12, window.innerWidth - rect.right)}px`};
+  if (isMobile.value) {
+    position.value = {
+      top: `${Math.max(56, rect.bottom + 8)}px`,
+      left: "50%",
+      right: "auto",
+    };
+  } else {
+    position.value = {
+      top: `${Math.max(56, rect.bottom + 8)}px`,
+      right: `${Math.max(12, window.innerWidth - rect.right)}px`,
+    };
+  }
 }
 
 const panelStyle = computed(() => ({
   width: props.width,
   top: position.value.top,
-  right: position.value.right}));
+  ...(position.value.right !== undefined
+    ? { right: position.value.right }
+    : { left: "50%", transform: "translateX(-50%)" }),
+}));
+
+function onViewportResize() {
+  isMobile.value = window.innerWidth < 768;
+  if (show.value) updatePosition();
+}
 
 function onKeydown(event) {
   if (show.value && event.key === "Escape") {
@@ -92,12 +110,14 @@ onMounted(() => {
     teleportReady.value = true;
   });
   window.addEventListener("resize", onViewportChange, { passive: true });
+  window.addEventListener("resize", onViewportResize, { passive: true });
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKeydown);
   document.removeEventListener("pointerdown", onOutsidePointerDown, true);
   window.removeEventListener("resize", onViewportChange);
+  window.removeEventListener("resize", onViewportResize);
 });
 </script>
 

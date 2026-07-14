@@ -9,7 +9,6 @@ from app.core.permissions import PermissionLevel
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.org import User
 from app.services.documents.access_batch import filter_documents_for_list
-from app.services.documents.acl import _subject_user_label
 from app.services.documents.content import _is_compareable_version, _is_pdf_version
 from app.services.documents.crud import is_version_uploaded
 

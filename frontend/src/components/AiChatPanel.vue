@@ -14,7 +14,7 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { TimeOutline, DocumentTextOutline, DocumentOutline, GitNetworkOutline, FolderOpenOutline, SparklesOutline, LayersOutline, CloudOutline } from "@vicons/ionicons5";
+import { TimeOutline, DocumentTextOutline, GitNetworkOutline, FolderOpenOutline, SparklesOutline, LayersOutline, CloudOutline, ChevronDown } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
 import {
   collectScreenshotAttachmentCandidates,
@@ -400,6 +400,39 @@ const skillPopoverShow = ref(false);
 const skillCatalogLoaded = ref(false);
 const thirdPartyAiPopoverShow = ref(false);
 
+/** ── 模型切换 ───────────────────────────────────── */
+const MODEL_CACHE_KEY = "ai_chat_model_options";
+const MODEL_CACHE_TS_KEY = "ai_chat_model_options_ts";
+const MODEL_SELECTED_KEY = "ai_chat_model_provider_id";
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 分钟
+
+function loadModelCache() {
+  const raw = localStorage.getItem(MODEL_CACHE_KEY);
+  const ts = Number(localStorage.getItem(MODEL_CACHE_TS_KEY) || "0");
+  if (raw && Date.now() - ts < MODEL_CACHE_TTL_MS) {
+    try {
+      return JSON.parse(raw);
+    } catch { /* ignore */ }
+  }
+  return null;
+}
+
+function saveModelCache(groups) {
+  localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify(groups));
+  localStorage.setItem(MODEL_CACHE_TS_KEY, String(Date.now()));
+}
+
+function clearModelCache() {
+  localStorage.removeItem(MODEL_CACHE_KEY);
+  localStorage.removeItem(MODEL_CACHE_TS_KEY);
+}
+
+const modelSettingsLoading = ref(false);
+const modelOptions = ref([]);
+const selectedModelProviderId = ref(localStorage.getItem(MODEL_SELECTED_KEY) || "");
+const modelOptionsLoaded = ref(false);
+const modelPopoverShow = ref(false);
+
 const thirdPartyAiOptions = [
   { key: "doubao", label: "豆包", desc: "字节跳动自研 AI，通用对话能力强、支持文字生图、反应快、免费额度充足" },
   { key: "qwen", label: "通义千问", desc: "阿里云通义系列，擅长中文创作与知识问答、支持通义万相生图、输出质量高" },
@@ -419,6 +452,131 @@ async function loadAgentCatalog() {
   } finally {
     agentCatalogLoading.value = false;
   }
+}
+
+/** ── 模型切换 ───────────────────────────────────── */
+async function loadModelOptions() {
+  if (modelSettingsLoading.value) return;
+
+  // 1) 尝试从 localStorage 缓存恢复
+  const cached = loadModelCache();
+  if (cached) {
+    modelOptions.value = cached;
+    modelOptionsLoaded.value = true;
+    // 如果之前选中的 model 仍然在缓存列表中，保持选中；否则 fallback
+    _ensureSelectedValid();
+    // 后台静默刷新，避免用户感觉延迟
+    _refreshModelOptionsSilently();
+    return;
+  }
+
+  // 2) 无缓存，首次加载
+  modelSettingsLoading.value = true;
+  try {
+    await _doFetchModelOptions();
+  } catch (e) {
+    console.warn("[ai-home] 模型选项加载失败:", e);
+  } finally {
+    modelSettingsLoading.value = false;
+  }
+}
+
+async function _refreshModelOptionsSilently() {
+  try {
+    const { fetchAiChatModelProviders } = await import("../api/chat");
+    const items = await fetchAiChatModelProviders();
+    const groups = _buildGroups(items);
+    if (groups.length) {
+      modelOptions.value = groups;
+      saveModelCache(groups);
+    }
+    _ensureSelectedValid();
+  } catch {
+    // 静默失败，继续使用缓存
+  }
+}
+
+async function _doFetchModelOptions() {
+  const { fetchAiChatModelProviders } = await import("../api/chat");
+  const items = await fetchAiChatModelProviders();
+  const groups = _buildGroups(items);
+  modelOptions.value = groups;
+  if (groups.length) {
+    saveModelCache(groups);
+  }
+  _ensureSelectedValid();
+  modelOptionsLoaded.value = true;
+}
+
+function _buildGroups(items) {
+  const groups = [];
+  let llmGroup = null;
+  let mmGroup = null;
+
+  for (const item of items || []) {
+    const label = item.model_name || item.label || "模型";
+    const entry = { label, value: item.id };
+    if (item.resource_type === "multimodal") {
+      if (!mmGroup) {
+        mmGroup = { type: "group", label: "多模态模型", key: "multimodal", children: [] };
+        groups.push(mmGroup);
+      }
+      mmGroup.children.push(entry);
+    } else {
+      if (!llmGroup) {
+        llmGroup = { type: "group", label: "语言模型", key: "llm", children: [] };
+        groups.push(llmGroup);
+      }
+      llmGroup.children.push(entry);
+    }
+  }
+  return groups;
+}
+
+function _ensureSelectedValid() {
+  if (!selectedModelProviderId.value) {
+    const first = modelOptions.value?.[0]?.children?.[0];
+    if (first) {
+      selectedModelProviderId.value = first.value;
+      localStorage.setItem(MODEL_SELECTED_KEY, first.value);
+    }
+    return;
+  }
+  // 检查之前选中的是否还在列表中
+  const allValues = new Set();
+  for (const g of modelOptions.value) {
+    for (const c of g.children || []) {
+      allValues.add(c.value);
+    }
+  }
+  if (!allValues.has(selectedModelProviderId.value)) {
+    const first = modelOptions.value?.[0]?.children?.[0];
+    if (first) {
+      selectedModelProviderId.value = first.value;
+    } else {
+      selectedModelProviderId.value = "";
+    }
+    localStorage.setItem(MODEL_SELECTED_KEY, selectedModelProviderId.value);
+  }
+}
+
+/** 当前选中模型的显示名称 */
+const currentModelLabel = computed(() => {
+  for (const g of modelOptions.value) {
+    const found = g.children?.find((c) => c.value === selectedModelProviderId.value);
+    if (found) return found.label;
+  }
+  return "切换模型";
+});
+
+function selectModel(opt) {
+  selectedModelProviderId.value = opt.value;
+  localStorage.setItem(MODEL_SELECTED_KEY, opt.value);
+  modelPopoverShow.value = false;
+}
+
+async function onModelPopoverShowChange(show) {
+  modelPopoverShow.value = show;
 }
 
 async function onAgentPopoverShowChange(show) {
@@ -757,9 +915,14 @@ function emptyWorkflow() {
 
 const useCompactWorkflowProgress = computed(() => props.chatScope === "ai-home");
 
+/** 智能问数、双碳问答：新的思考过程替换上一个，不从上往下堆叠。 */
+const useThinkingReplaceScope = computed(() =>
+  props.chatScope === "smart-data-query" || props.chatScope === "carbon-qa"
+);
+
 function applyWorkflowEvent(workflow, ev) {
   return applyAgentWorkflowEvent(workflow, ev, t, {
-    currentStepOnly: useCompactWorkflowProgress.value,
+    currentStepOnly: useCompactWorkflowProgress.value || useThinkingReplaceScope.value,
   });
 }
 
@@ -870,39 +1033,41 @@ function buildChatHistory() {
   return trimHistoryForApi(messages.value);
 }
 
+const streamedScreenshotBlocks = [];
+
+function applyScreenshotAttachments(row, attachments) {
+  if (!row || !Array.isArray(attachments)) return;
+  if (!row.browserScreenshots) row.browserScreenshots = [];
+  for (const att of attachments) {
+    if (att?.type !== "image" || !att.url) continue;
+    const src = normalizeChatAttachmentUrl(att.url);
+    if (!src) continue;
+    const title = att.title || "浏览器截图";
+    const block = `![${title}](${src})`;
+    if (!streamedScreenshotBlocks.includes(block)) {
+      streamedScreenshotBlocks.push(block);
+    }
+    if (!row.browserScreenshots.some((shot) => shot.url === src)) {
+      row.browserScreenshots.push({ url: src, title });
+    }
+  }
+  row.content = mergeAuthScreenshotMarkdownBlocks(
+    row.content || "",
+    streamedScreenshotBlocks
+  );
+}
+
+function mergeScreenshotBlocksIntoContent(text) {
+  return mergeAuthScreenshotMarkdownBlocks(text, streamedScreenshotBlocks);
+}
+
 async function sendMessageStreaming(content, assistantIdx, history) {
   streamAbort?.abort();
   streamAbort = new AbortController();
 
   let scrollTick = 0;
   let typewriterActive = false;
-  const streamedScreenshotBlocks = [];
-
-  function applyScreenshotAttachments(row, attachments) {
-    if (!row || !Array.isArray(attachments)) return;
-    if (!row.browserScreenshots) row.browserScreenshots = [];
-    for (const att of attachments) {
-      if (att?.type !== "image" || !att.url) continue;
-      const src = normalizeChatAttachmentUrl(att.url);
-      if (!src) continue;
-      const title = att.title || "浏览器截图";
-      const block = `![${title}](${src})`;
-      if (!streamedScreenshotBlocks.includes(block)) {
-        streamedScreenshotBlocks.push(block);
-      }
-      if (!row.browserScreenshots.some((shot) => shot.url === src)) {
-        row.browserScreenshots.push({ url: src, title });
-      }
-    }
-    row.content = mergeAuthScreenshotMarkdownBlocks(
-      row.content || "",
-      streamedScreenshotBlocks
-    );
-  }
-
-  function mergeScreenshotBlocksIntoContent(text) {
-    return mergeAuthScreenshotMarkdownBlocks(text, streamedScreenshotBlocks);
-  }
+  streamedScreenshotBlocks.length = 0;
 
   try {
     await props.streamChat(
@@ -911,6 +1076,7 @@ async function sendMessageStreaming(content, assistantIdx, history) {
         history,
         conversationId: conversationId.value,
         attachmentSessionId: attachmentSessionId.value,
+        model_provider_id: selectedModelProviderId.value || undefined,
       },
       {
         signal: streamAbort.signal,
@@ -1020,6 +1186,8 @@ async function sendMessageStreaming(content, assistantIdx, history) {
           if (payload?.conversation_id) {
             conversationId.value = payload.conversation_id;
           }
+          /* 回复完成立即释放发送锁，用户可继续输入下个问题 */
+          sending.value = false;
           /* 每次智能体回复完毕后更新标签标题 */
           reportChatState();
         },
@@ -1217,7 +1385,9 @@ async function sendMessageBlocking(content, assistantIdx, history) {
   const data = await props.chatSend({
     message: content,
     history,
-    conversationId: conversationId.value});
+    conversationId: conversationId.value,
+    model_provider_id: selectedModelProviderId.value || undefined,
+  });
 
   const row = messages.value[assistantIdx];
   if (row) {
@@ -1359,12 +1529,6 @@ async function shareAssistantMessage(message) {
     title: props.title,
     shareUrl: buildChatShareUrl(conversationId.value, props.chatScope),
   });
-}
-
-function setMessageFeedback(index, value) {
-  const message = messages.value[index];
-  if (!message) return;
-  message.feedback = value;
 }
 
 async function retryMessage(index) {
@@ -1555,6 +1719,8 @@ onMounted(async () => {
     return;
   }
   await restorePersistedSession();
+  // 自动加载模型选项（不阻塞对话初始化）
+  loadModelOptions().catch(() => {});
 });
 
 onDeactivated(() => {
@@ -1758,6 +1924,23 @@ defineExpose({
                 :show-live-status="false"
                 compact
               />
+              <!-- 思考过程动画展示 -->
+              <div
+                v-if="
+                  useCompactWorkflowProgress &&
+                  entry.message.streaming &&
+                  !entry.message.content &&
+                  !workflowHasStepList(entry.message.workflow)
+                "
+                class="ai-std"
+              >
+                <div class="ai-std__dot-pulse">
+                  <span class="ai-std__dot"></span>
+                  <span class="ai-std__dot"></span>
+                  <span class="ai-std__dot"></span>
+                </div>
+                <div class="ai-std__elapsed">{{ formatElapsed(elapsedMs) }}</div>
+              </div>
               <div
                 v-else-if="
                   entry.message.streaming &&
@@ -1765,24 +1948,13 @@ defineExpose({
                   !(showWorkflowProgress && workflowAwaitingAnswer(entry.message)) &&
                   !useCompactWorkflowProgress
                 "
-                class="ai-answer-status platform-inline-loading ai-thinking"
+                class="ai-std"
               >
-                <RoseLoader class="ai-answer-status__rose" :size="24" />
-                <span class="ai-answer-status-text">{{ t("chat.thinking") }}</span>
-              </div>
-              <!-- 本析智能：已处理时长 + 分割线（ai-home 作用域，流式且无内容时显示） -->
-              <div
-                v-if="
-                  useCompactWorkflowProgress &&
-                  entry.message.streaming &&
-                  !entry.message.content
-                "
-                class="ai-thinking-elapsed"
-              >
-                <div class="ai-thinking-elapsed__header">
-                  <span class="ai-thinking-elapsed__time">{{ formatElapsed(elapsedMs) }}</span>
+                <div class="ai-std__dot-pulse">
+                  <span class="ai-std__dot"></span>
+                  <span class="ai-std__dot"></span>
+                  <span class="ai-std__dot"></span>
                 </div>
-                <div class="ai-thinking-elapsed__divider"></div>
               </div>
               <AgentWorkflowCompactProgress
                 v-if="showWorkflowProgress && workflowAwaitingAnswer(entry.message) && useCompactWorkflowProgress"
@@ -1995,7 +2167,7 @@ defineExpose({
                       @click="exportReportMindmap('md', entry.index)"
                     >
                       <n-spin v-if="exportingMindmap === 'md'" :size="17" />
-                      <n-icon v-else :size="18" :component="DocumentOutline" />
+                      <n-icon v-else :size="18" :component="DocumentTextOutline" />
                       <span>{{ t("reportGeneration.exportMindmapMd") }}</span>
                     </button>
                     <button
@@ -2085,11 +2257,9 @@ defineExpose({
               align="start"
               :show-retry="canRetryMessage(entry.index, entry.message)"
               :retry-disabled="sending || loadingHistory"
-              :feedback="entry.message.feedback || null"
               @copy="copyAssistantMessage(entry.message)"
               @share="shareAssistantMessage(entry.message)"
               @retry="retryMessage(entry.index)"
-              @feedback="setMessageFeedback(entry.index, $event)"
             />
             <div
               v-if="showFollowUpForMessage(entry.index, entry.message)"
@@ -2365,6 +2535,59 @@ defineExpose({
                       </button>
                     </div>
                   </n-popover>
+                  <!-- 模型切换 -->
+                  <n-popover
+                    v-if="modelOptionsLoaded && modelOptions.length"
+                    trigger="click"
+                    placement="top-start"
+                    :width="260"
+                    :show="modelPopoverShow"
+                    @update:show="onModelPopoverShowChange"
+                  >
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="ai-home-tool-link ai-home-tool-action ai-home-composer-tool"
+                        :disabled="sending"
+                      >
+                        <span>{{ currentModelLabel }}</span>
+                        <n-icon :size="12" :component="ChevronDown" class="ai-home-model-dropdown-icon" />
+                      </button>
+                    </template>
+                    <div class="ai-home-skills-popover">
+                      <div class="ai-home-skills-popover__title">切换模型</div>
+                      <div v-for="(g, gi) in modelOptions" :key="gi">
+                        <div class="ai-home-model-group__title">{{ g.label }}</div>
+                        <button
+                          v-for="opt in g.children"
+                          :key="opt.value"
+                          type="button"
+                          class="ai-home-skills-popover__item"
+                          :class="{ 'ai-home-skills-popover__item--active': opt.value === selectedModelProviderId }"
+                          @click="selectModel(opt)"
+                        >
+                          <span class="ai-home-skills-popover__item-name">{{ opt.label }}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </n-popover>
+                  <button
+                    v-else-if="modelSettingsLoading"
+                    type="button"
+                    class="ai-home-tool-link ai-home-tool-action ai-home-composer-tool"
+                    disabled
+                  >
+                    <n-spin :size="14" />
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="ai-home-tool-link ai-home-tool-action ai-home-composer-tool"
+                    title="暂无可用模型，请先配置资源管理"
+                    disabled
+                  >
+                    <span>暂无模型</span>
+                  </button>
                 </template>
               </ChatComposer>
             </div>
@@ -2372,10 +2595,11 @@ defineExpose({
           </div>
           <div v-if="!started && suggestions.length && !showReportTools" class="ai-home-suggestions">
             <button
-              v-for="s in suggestions"
+              v-for="(s, i) in suggestions"
               :key="s"
               type="button"
               class="ai-home-chip"
+              :style="{ '--i': i }"
               :disabled="sending"
               @click="useSuggestion(s)"
             >
@@ -2654,6 +2878,9 @@ defineExpose({
 
 /* 输入框内工具栏按钮 —— 更紧凑，与附件按钮水平对齐 */
 .ai-home-composer-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 3px 8px;
   font-size: 12px;
   line-height: 1.3;
@@ -2670,28 +2897,46 @@ defineExpose({
   background: var(--platform-bg-secondary);
 }
 
+.ai-home-model-dropdown-icon {
+  margin-left: 1px;
+  transition: transform var(--platform-duration-smooth) ease;
+}
+
 .ai-home-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
   width: 100%;
   padding-left: 2px;
-  margin-top: 2px;
+  margin-top: 12px;
 }
 
 .ai-home-chip {
-  padding: 7px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--platform-text-secondary);
-  background: var(--platform-accent-muted);
-  border: 1px solid var(--platform-accent-border-soft);
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--platform-border-color-tertiary, var(--platform-bg-tertiary));
   border-radius: var(--platform-radius-pill);
   cursor: pointer;
   white-space: nowrap;
+  opacity: 0;
+  animation: suggestionFadeIn 0.35s ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 0.06s);
   transition:
     all var(--platform-duration-smooth, 0.2s) var(--platform-ease-smooth, ease);
+}
+
+@keyframes suggestionFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .ai-home-chip:hover:not(:disabled) {
@@ -2802,6 +3047,23 @@ defineExpose({
   font-size: 14px;
   font-weight: 600;
   color: var(--platform-text);
+}
+
+.ai-home-model-group__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--platform-text-tertiary);
+  padding: 6px 10px 3px;
+}
+
+.ai-home-skills-popover__item--active {
+  background: var(--platform-accent-soft, color-mix(in srgb, var(--platform-accent) 12%, transparent));
+}
+
+.ai-home-skills-popover__item--active .ai-home-skills-popover__item-name {
+  color: var(--platform-accent);
 }
 
 .ai-home-skills-popover__item-desc {
@@ -3053,41 +3315,17 @@ defineExpose({
   letter-spacing: var(--platform-tracking-tight, -0.01em);
 }
 
-.ai-home-bubble--bot {
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--platform-text);
-  border: none;
-  box-shadow: none;
-}
-
-/* 高级感助手气泡：多层阴影 + 微渐变 + 精致排版 — 对标 ChatGPT/Claude 风格 */
+/* 助手气泡：对话气泡样式 — 与用户气泡风格一致 */
 .ai-home-bubble--bot {
   position: relative;
   width: 100%;
-  padding: 18px 22px;
-  border-radius: var(--platform-radius, 12px);
-  background: var(--platform-bg-elevated);
-  background-image:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--platform-accent) 0.8%, transparent) 0%,
-      transparent 48px
-    );
-  box-shadow: var(--platform-shadow);
+  padding: 16px 20px;
+  border-radius: 17px;
+  border-bottom-left-radius: 4px;
+  background: var(--platform-bg-secondary);
+  color: var(--platform-text);
   border: 1px solid var(--platform-border);
-  font-kerning: normal;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  transition:
-    box-shadow var(--platform-duration-smooth, 0.2s) var(--platform-ease-smooth),
-    border-color var(--platform-duration-smooth, 0.2s) var(--platform-ease-smooth);
-}
-
-/* Hover 时略微增强边框对比 */
-.ai-home-msg-stack--bot:hover .ai-home-bubble--bot {
-  border-color: var(--platform-border-strong);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .ai-home-bubble--error {
@@ -3302,6 +3540,54 @@ defineExpose({
 
 .ai-workflow-current {
   margin-top: 5px;
+}
+
+/* ── 思考过程动画 ── */
+.ai-std {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 10px;
+}
+
+.ai-std__dot-pulse {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-std__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--platform-accent);
+  animation: ai-std-bounce 1.2s ease-in-out infinite;
+}
+
+.ai-std__dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ai-std__dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes ai-std-bounce {
+  0%, 80%, 100% {
+    transform: scale(0.5);
+    opacity: 0.35;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.ai-std__elapsed {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--platform-text-quaternary);
+  letter-spacing: 0.3px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ai-answer-status {

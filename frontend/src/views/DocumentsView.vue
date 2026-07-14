@@ -30,6 +30,7 @@ import {
   CloudUploadOutline,
   RocketOutline,
   EyeOutline,
+  ReaderOutline,
   RefreshOutline } from "@vicons/ionicons5";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
 import BatchPublishModal from "../components/BatchPublishModal.vue";
@@ -88,6 +89,7 @@ import {
   batchDeleteDocuments,
   deleteDocument,
   updateKbFolder } from "../api/documents.js";
+import { reindexUnindexedDocuments } from "../api/knowledge.js";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const route = useRoute();
@@ -113,6 +115,7 @@ const kbFolders = ref([]);
 const kbFoldersLoading = ref(false);
 const kbCanManageFolders = ref(false);
 const refreshing = ref(false);
+const reindexingUnindexed = ref(false);
 const { headerExtensionActive } = usePageHeaderExtension();
 const headerTeleportReady = ref(false);
 
@@ -828,6 +831,46 @@ async function refreshDocumentsView() {
     ui.error(e);
   } finally {
     refreshing.value = false;
+  }
+}
+
+function handleReindexUnindexed() {
+  if (reindexingUnindexed.value) return;
+  ui.confirmAction({
+    title: t("documents.reindexUnindexedTitle"),
+    content: t("documents.reindexUnindexedConfirm"),
+    positiveText: t("documents.reindexUnindexedConfirmAction"),
+    onPositive: () => {
+      reindexingUnindexed.value = true;
+      doReindexUnindexed();
+    },
+  });
+}
+
+async function doReindexUnindexed() {
+  try {
+    const params = { scope: activeScope.value };
+    if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
+      params.deptId = activeDeptId.value;
+    }
+    if (activeScope.value === "personal") {
+      params.ownerId = activeOwnerId.value || user.value?.id;
+    }
+    const res = await reindexUnindexedDocuments(params);
+    const data = res.data || {};
+    const queued = data.queued ?? 0;
+    if (queued > 0) {
+      ui.success("documents.reindexUnindexedSuccess", { count: queued });
+      clearDocumentsViewCache();
+      notifyKnowledgeScopeTreeStale();
+      void load({ force: true, background: true });
+    } else {
+      ui.info("documents.reindexUnindexedNone");
+    }
+  } catch (e) {
+    ui.error(e);
+  } finally {
+    reindexingUnindexed.value = false;
   }
 }
 
@@ -1621,6 +1664,14 @@ watch(
               :icon="ShareSocialOutline"
               :active="isSharedScopeTab"
               @click="onTabChange('shared')"
+            />
+            <IconAction
+              :label="t('documents.indexAction')"
+              :tooltip="t('documents.reindexUnindexedTitle')"
+              :icon="ReaderOutline"
+              :loading="reindexingUnindexed"
+              :disabled="reindexingUnindexed"
+              @click="handleReindexUnindexed"
             />
           </template>
         </n-space>

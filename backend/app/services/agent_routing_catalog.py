@@ -9,14 +9,10 @@ from app.core.routing_catalog_md import (
     build_agents_catalog_text,
     load_agents_routing_md,
 )
-from app.core.tool_skill_taxonomy import BUILTIN_SKILL_NAMES
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
-from app.core.conversation_turn_context import effective_history_for_context
-from app.services.agent_planner import match_uploaded_skill_for_message, _skill_name_sets
 from app.services.agent_profile_service import is_agent_enabled
 
-from app.services.agent_routing_signals import matches_browser_intent
 from app.services.agent_skill_router import is_skill_management_message
 
 
@@ -26,29 +22,12 @@ def message_targets_uploaded_skill(
     message: str,
     chat_history: list[AiChatMessage] | None,
 ) -> bool:
-    """Skill 管理或已绑定 uploaded skill 名称匹配（无领域词表）。"""
+    """仅 Skill 管理意图（创建/更新/删除）路由到技能开发专精（skill-dev）。
+    提及技能名称但意图为「使用」时不触发此路由，交由正常技能评分路由处理。"""
     msg = (message or "").strip()
     if not msg:
         return False
-    if is_skill_management_message(msg):
-        return True
-    if matches_browser_intent(msg):
-        return False
-
-    all_skill_names = _skill_name_sets(db, user) or set()
-    uploaded_names = all_skill_names - BUILTIN_SKILL_NAMES
-    if not uploaded_names:
-        return False
-
-    return (
-        match_uploaded_skill_for_message(
-            msg,
-            effective_history_for_context(msg, chat_history),
-            uploaded_names=uploaded_names,
-            exclude_research_context=True,
-        )
-        is not None
-    )
+    return is_skill_management_message(msg)
 
 
 def build_supervisor_routing_catalog(

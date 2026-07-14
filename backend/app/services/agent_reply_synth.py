@@ -7,6 +7,8 @@ import re
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.core.agent_loop_state import LoopState
+
 from app.core.agent_message_parse import (
     looks_like_internal_agent_content,
 )
@@ -102,7 +104,7 @@ def is_substantive_deliverable(text: str, *, min_chars: int = 12) -> bool:
     return len(body) >= min_chars
 
 
-def has_deliverable_evidence(loop_state: dict[str, Any] | None) -> bool:
+def has_deliverable_evidence(loop_state: LoopState | None) -> bool:
     """工具循环是否已积累可合成交付物的证据（与交付物本身区分）。"""
     state = loop_state or {}
     if list(state.get("tool_outcome_lines") or []):
@@ -120,7 +122,7 @@ def has_deliverable_evidence(loop_state: dict[str, Any] | None) -> bool:
     return False
 
 
-def latest_subagent_summary(loop_state: dict[str, Any] | None) -> str:
+def latest_subagent_summary(loop_state: LoopState | None) -> str:
     """最近一次子智能体回传的摘要（invoke_context_subagent 合并）。"""
     summaries = (loop_state or {}).get("subagent_summaries") or []
     if not summaries:
@@ -131,7 +133,7 @@ def latest_subagent_summary(loop_state: dict[str, Any] | None) -> str:
     return str(last or "").strip()
 
 
-def build_deliverable_evidence_block(loop_state: dict[str, Any] | None) -> str:
+def build_deliverable_evidence_block(loop_state: LoopState | None) -> str:
     """将 loop_state 中的工具/材料证据格式化为合成 prompt 块（非交付物）。"""
     state = loop_state or {}
     parts: list[str] = []
@@ -176,7 +178,7 @@ def build_deliverable_evidence_block(loop_state: dict[str, Any] | None) -> str:
 async def synthesize_specialist_deliverable(
     *,
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     agent_id: str = "",
 ) -> str:
     """根据子任务诉求与工具证据合成专精交付摘要（供调度层汇总，非工具状态复述）。"""
@@ -213,7 +215,7 @@ async def synthesize_specialist_deliverable(
 
 
 async def finalize_specialist_handoff(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     user_message: str,
     *,
     agent_id: str = "",
@@ -263,7 +265,7 @@ def _outcome_line_failed(line: str) -> bool:
     return bool(text.endswith("失败") or "：失败" in text)
 
 
-def user_facing_tool_outcome_lines(loop_state: dict[str, Any] | None) -> list[str]:
+def user_facing_tool_outcome_lines(loop_state: LoopState | None) -> list[str]:
     lines: list[str] = []
     for raw in (loop_state or {}).get("tool_outcome_lines") or []:
         line = str(raw or "").strip()
@@ -273,7 +275,7 @@ def user_facing_tool_outcome_lines(loop_state: dict[str, Any] | None) -> list[st
     return lines
 
 
-def _has_successful_skill_run(loop_state: dict[str, Any] | None) -> bool:
+def _has_successful_skill_run(loop_state: LoopState | None) -> bool:
     state = loop_state or {}
     for line in user_facing_tool_outcome_lines(state):
         if any(marker in line for marker in _SKILL_RUN_OUTCOME_MARKERS):
@@ -284,7 +286,7 @@ def _has_successful_skill_run(loop_state: dict[str, Any] | None) -> bool:
 
 
 def skill_management_goal_satisfied(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     user_message: str,
 ) -> bool:
     """Skill 创建/更新/删除是否已产出可面向用户、响应诉求的结果。"""
@@ -335,7 +337,7 @@ def incomplete_skill_management_reply(user_message: str) -> str:
 
 
 def request_fulfilled(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     user_message: str,
 ) -> bool:
     """子任务是否已有可交付成果（工具执行记录本身不算完成）。"""
@@ -353,7 +355,7 @@ def request_fulfilled(
 
 
 def build_specialist_handoff(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     user_message: str,
     *,
     agent_id: str = "",
@@ -394,7 +396,7 @@ def _handoff_ok(
     agent_id: str,
     session_id: str,
     task_id: str,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     citations: list[dict[str, Any]] | None,
     kg_context: Any,
 ) -> SpecialistHandoffResult:
@@ -411,7 +413,7 @@ def _handoff_ok(
     )
 
 
-def loop_state_has_tool_success(loop_state: dict[str, Any] | None) -> bool:
+def loop_state_has_tool_success(loop_state: LoopState | None) -> bool:
     state = loop_state or {}
     if user_facing_tool_outcome_lines(state):
         return True
@@ -422,7 +424,7 @@ def loop_state_has_tool_success(loop_state: dict[str, Any] | None) -> bool:
 
 def reply_contradicts_tool_outcomes(
     content: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
 ) -> bool:
     if not loop_state_has_tool_success(loop_state):
         return False
@@ -459,7 +461,7 @@ def _format_skill_conclusion(conclusion: str) -> str | None:
     return None
 
 
-def presentable_skill_conclusion(loop_state: dict[str, Any] | None) -> str | None:
+def presentable_skill_conclusion(loop_state: LoopState | None) -> str | None:
     """脚本/工具已产出可直接展示的数据结论（带缓存）。"""
     state = loop_state or {}
     cached = state.get("_cached_presentable_conclusion")
@@ -495,7 +497,7 @@ def format_chat_history_excerpt(
     return "\n".join(lines)
 
 
-def skill_creation_user_reply(loop_state: dict[str, Any] | None) -> str | None:
+def skill_creation_user_reply(loop_state: LoopState | None) -> str | None:
     """发展技能创建完成后的固定用户话术。"""
     created = [
         str(x).strip()
@@ -527,7 +529,7 @@ def skill_creation_user_reply(loop_state: dict[str, Any] | None) -> str | None:
     return base
 
 
-def build_tool_outcome_summary(loop_state: dict[str, Any] | None) -> list[str]:
+def build_tool_outcome_summary(loop_state: LoopState | None) -> list[str]:
     state = loop_state or {}
     presentable = presentable_skill_conclusion(state)
     if presentable:
@@ -546,7 +548,7 @@ def build_tool_outcome_summary(loop_state: dict[str, Any] | None) -> list[str]:
     return lines[-12:]
 
 
-def fallback_tool_loop_reply(user_message: str, loop_state: dict[str, Any] | None) -> str:
+def fallback_tool_loop_reply(user_message: str, loop_state: LoopState | None) -> str:
     det = str((loop_state or {}).get("deterministic_reply") or "").strip()
     if det:
         return det
@@ -570,7 +572,7 @@ def fallback_tool_loop_reply(user_message: str, loop_state: dict[str, Any] | Non
 
 def _resolve_tool_loop_reply_fast(
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
 ) -> str | None:
     """无需 LLM 的用户可见回复（handoff / 规则 / 工具摘要）。"""
     state = dict(loop_state or {})
@@ -623,7 +625,7 @@ def _resolve_tool_loop_reply_fast(
 def build_tool_loop_user_synthesis_messages(
     *,
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     memory_context: str = "",
     chat_history: list[AiChatMessage] | None = None,
 ) -> list[dict[str, str]]:
@@ -640,7 +642,7 @@ def build_tool_loop_user_synthesis_messages(
 async def iter_synthesize_tool_loop_user_reply_events(
     *,
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     memory_context: str = "",
     chat_history: list[AiChatMessage] | None = None,
     step_id: str | None = None,
@@ -686,7 +688,7 @@ async def iter_synthesize_tool_loop_user_reply_events(
 async def synthesize_tool_loop_user_reply(
     *,
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     memory_context: str = "",
     chat_history: list[AiChatMessage] | None = None,
 ) -> str:

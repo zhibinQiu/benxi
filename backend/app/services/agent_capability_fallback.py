@@ -9,7 +9,7 @@ from typing import Any, Literal
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.core.agent.types import FALLBACK_AGENT_ID, AgentRoute, AgentRoutePlan
+from app.core.agent.types import FALLBACK_AGENT_ID, AgentRoutePlan
 from app.core.llm_parse import parse_llm_json
 from app.models.org import User
 from app.services.agent_skill_match import (

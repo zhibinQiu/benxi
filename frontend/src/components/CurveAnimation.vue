@@ -7,7 +7,6 @@ import {
   curveConfigForSize,
   getCurveDetailScale,
   getCurveParticle,
-  getCurveRotation,
 } from "../utils/curveAnimation.js";
 import { prefersReducedMotion } from "../utils/mediaQuery.js";
 
@@ -60,6 +59,16 @@ const props = defineProps({
   intensity: {
     type: Number,
     default: 1,
+  },
+  /** 覆盖预设的整体旋转周期（ms），越小越快 */
+  rotationDuration: {
+    type: Number,
+    default: undefined,
+  },
+  /** true = 顺时针（默认 counter-clockwise） */
+  clockwise: {
+    type: Boolean,
+    default: false,
   },
   label: {
     type: String,
@@ -141,6 +150,13 @@ function syncPauseState() {
   resumeLoop();
 }
 
+function computeRotation(time) {
+  if (!props.rotate || reducedMotion) return 0;
+  const duration = props.rotationDuration ?? animationConfig.value.rotationDurationMs;
+  const deg = ((time % duration) / duration) * 360;
+  return props.clockwise ? deg : -deg;
+}
+
 function render(now) {
   if (!groupRef.value || !pathRef.value || isPaused()) return;
 
@@ -151,7 +167,7 @@ function render(now) {
 
   groupRef.value.setAttribute(
     "transform",
-    reducedMotion ? "" : `rotate(${getCurveRotation(time, config)} 50 50)`
+    reducedMotion ? "" : `rotate(${computeRotation(time)} 50 50)`
   );
   pathRef.value.setAttribute("d", buildCurvePath(detailScale, config, props.pathSteps));
 

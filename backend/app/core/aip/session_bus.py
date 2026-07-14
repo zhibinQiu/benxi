@@ -1,6 +1,6 @@
 """AIP 会话消息总线 — agentkit 适配（注入平台 AidConfig）。"""
 
-from agentkit_aip import AipSessionBus
+from app.agentkit.aip import AipSessionBus
 
 from app.core.aip._platform_config import platform_handoff_builder
 

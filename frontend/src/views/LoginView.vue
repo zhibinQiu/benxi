@@ -18,10 +18,11 @@ import { useAppDisplayName } from "../composables/usePlatformBranding";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { loggingOut } from "../utils/sessionEpoch.js";
 import { DEFAULT_HOME_ROUTE } from "../utils/postLoginRoute.js";
-import { MoonOutline, SunnyOutline, LanguageOutline } from "@vicons/ionicons5";
+import { LanguageOutline, DownloadOutline } from "@vicons/ionicons5";
 import PlatformCopyright from "../components/PlatformCopyright.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
+import CurveAnimation from "../components/CurveAnimation.vue";
 import LoginFeatureScroll from "../components/LoginFeatureScroll.vue";
 import SlideCaptcha from "../components/SlideCaptcha.vue";
 import { cleanupBlockingUiArtifacts } from "../utils/blockingUiCleanup.js";
@@ -36,11 +37,15 @@ const ui = usePlatformUi();
 const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const heroBg = `${BASE}/images/bg.jpg`;
 const { login, register, trialLogin } = useAuth();
-const { isDark, toggleTheme, toggleLocale } = useAppPreferences();
-const { t, tm, localeLabel } = useI18n();
+const { toggleLocale } = useAppPreferences();
+const { t, tm, locale, localeLabel } = useI18n();
 const appDisplayName = useAppDisplayName();
 
 const socialLinks = computed(() => (tm("login.showcaseFooter.social") || []).filter(s => s.icon !== 'xiaohongshu'));
+
+function handleDownload() {
+  ui.info("敬请期待");
+}
 
 const pageRef = ref(null);
 
@@ -63,6 +68,7 @@ onMounted(() => {
   nextTick(() => {
     pageRef.value?.scrollTo({ top: 0, left: 0 });
     pageRef.value?.addEventListener("scroll", onPageScroll, { passive: true });
+    startTypewriter();
   });
 });
 
@@ -85,6 +91,59 @@ const termsAccepted = ref(true);
 
 const captchaToken = ref("");
 const captchaRegisterToken = ref("");
+const captchaRef = ref(null);
+const captchaRegisterRef = ref(null);
+
+const typewriterText = ref("");
+let typewriterTimer = null;
+let cursorTimer = null;
+
+function buildPhrases() {
+  const intro = tm("login.showcaseIntro");
+  const taglines = tm("login.showcaseTaglines") || [];
+  const pool = [intro, ...taglines].filter(Boolean);
+  return pool.length ? pool : [intro || ""];
+}
+
+function startTypewriter() {
+  const phrases = buildPhrases();
+  if (!phrases.length) return;
+  let phraseIdx = 0;
+  let charIdx = 0;
+  let deleting = false;
+
+  function tick() {
+    const phrase = phrases[phraseIdx] || "";
+    if (!deleting) {
+      charIdx++;
+      typewriterText.value = phrase.slice(0, charIdx);
+      if (charIdx >= phrase.length) {
+        deleting = true;
+        clearInterval(typewriterTimer);
+        typewriterTimer = setTimeout(() => {
+          typewriterTimer = setInterval(tick, 40);
+        }, 2200);
+        return;
+      }
+    } else {
+      charIdx--;
+      typewriterText.value = phrase.slice(0, charIdx);
+      if (charIdx <= 0) {
+        deleting = false;
+        phraseIdx = (phraseIdx + 1) % phrases.length;
+      }
+    }
+  }
+
+  typewriterTimer = setInterval(tick, 50);
+}
+
+function stopTypewriter() {
+  clearInterval(typewriterTimer);
+  clearTimeout(cursorTimer);
+  typewriterTimer = null;
+  cursorTimer = null;
+}
 
 const FLY_DURATION_MS = 420;
 
@@ -191,6 +250,7 @@ onBeforeUnmount(() => {
   clearTimeout(scrollEndTimer);
   loginShowcaseScrolling.value = false;
   cleanupBlockingUiArtifacts();
+  stopTypewriter();
 });
 
 async function onSubmit() {
@@ -199,8 +259,18 @@ async function onSubmit() {
     return;
   }
   if (!captchaToken.value) {
-    ui.warning(t("login.captchaRequired"));
-    return;
+    if (captchaRef.value) {
+      try {
+        await captchaRef.value.verify();
+      } catch (e) {
+        ui.warning(e.message || t("login.captchaRequired"));
+        return;
+      }
+    }
+    if (!captchaToken.value) {
+      ui.warning(t("login.captchaRequired"));
+      return;
+    }
   }
   loading.value = true;
   flyPanelRef.value = loginPanelRef.value;
@@ -210,6 +280,7 @@ async function onSubmit() {
     await navigateAfterAuth();
   } catch (e) {
     ui.error(e.message || t("login.loginFailed"));
+    captchaToken.value = "";
     exiting.value = false;
   } finally {
     loading.value = false;
@@ -224,8 +295,18 @@ function isValidPhone(value) {
 async function onRegister() {
   if (registering.value) return;
   if (!captchaRegisterToken.value) {
-    ui.warning(t("login.captchaRequired"));
-    return;
+    if (captchaRegisterRef.value) {
+      try {
+        await captchaRegisterRef.value.verify();
+      } catch (e) {
+        ui.warning(e.message || t("login.captchaRequired"));
+        return;
+      }
+    }
+    if (!captchaRegisterToken.value) {
+      ui.warning(t("login.captchaRequired"));
+      return;
+    }
   }
   const mobile = regPhone.value.trim();
   const name = regDisplayName.value.trim();
@@ -265,6 +346,7 @@ async function onRegister() {
     ui.success(t("login.registerSuccess"));
   } catch (e) {
     ui.error(e.message || t("login.registerFailed"));
+    captchaRegisterToken.value = "";
     exiting.value = false;
     return;
   } finally {
@@ -329,6 +411,11 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     });
   }
 });
+
+watch(locale, () => {
+  stopTypewriter();
+  startTypewriter();
+});
 </script>
 
 <template>
@@ -344,35 +431,25 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
       <div class="login-header__inner">
         <a class="login-header__brand" href="#" @click.prevent>
           <PlatformBrandIcon :size="26" class="login-header__logo" />
-          <span class="login-header__title platform-text-gradient">{{ t("login.brandName") }}</span>
+          <span class="login-header__title">{{ t("login.brandName") }}</span>
         </a>
 
         <div class="login-header__actions">
           <button
             type="button"
-            class="login-glass-link login-header__chip login-header__chip--icon"
-            :aria-label="isDark ? t('userMenu.lightMode') : t('userMenu.darkMode')"
-            @click="toggleTheme"
-          >
-            <n-icon :size="17" :component="isDark ? SunnyOutline : MoonOutline" />
-          </button>
-          <span class="login-header__vrule" aria-hidden="true" />
-          <button
-            type="button"
-            class="login-glass-link login-header__chip login-header__chip--locale"
+            class="login-header__chip login-header__chip--locale"
             @click="toggleLocale"
           >
             <n-icon :size="17" :component="LanguageOutline" />
             <span class="login-header__locale-label">{{ localeLabel }}</span>
           </button>
-          <span class="login-header__vrule" aria-hidden="true" />
           <button
             type="button"
-            class="login-glass-link login-header__chip login-header__chip--text login-header__chip--accent"
-            :disabled="exiting || loading"
-            @click="onTrial"
+            class="login-header__chip login-header__chip--black"
+            :disabled="exiting"
+            @click="openLoginModal"
           >
-            {{ t("login.getStarted") }}
+            {{ t("login.submit") }}
           </button>
         </div>
       </div>
@@ -381,26 +458,31 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
     <main class="login-page__main">
       <section class="login-showcase__hero" :style="{ backgroundImage: `url(${heroBg})` }">
         <div class="login-showcase__hero-content">
+          <div class="login-showcase__hero-icon-wrap">
+            <CurveAnimation preset="rose-three" :size="100" :clockwise="true" :rotation-duration="12000" />
+          </div>
           <h1 class="login-showcase__platform-title">
             <PlatformBrandTitle tag="span" strong :title="appDisplayName" />
           </h1>
-          <p class="login-showcase__intro">{{ t("login.showcaseIntro") }}</p>
-          <div class="login-showcase__ctas">
+          <p class="login-showcase__intro">
+            {{ typewriterText }}<span class="login-showcase__cursor">|</span>
+          </p>
+          <div class="login-showcase__ctas login-showcase__ctas--centered">
             <button
               type="button"
               class="login-showcase__cta login-showcase__cta--primary"
-              :disabled="exiting"
-              @click="openLoginModal"
+              :disabled="exiting || loading"
+              @click="onTrial"
             >
-              {{ t("login.submit") }}
+              {{ t("login.getStarted") }}
             </button>
             <button
               type="button"
-              class="login-showcase__cta login-showcase__cta--secondary"
-              :disabled="exiting"
-              @click="openRegisterModal"
+              class="login-showcase__cta login-showcase__cta--ghost"
+              @click="handleDownload"
             >
-              {{ t("login.register") }}
+              <n-icon :size="17" :component="DownloadOutline" />
+              <span>{{ t("login.download") }}</span>
             </button>
           </div>
         </div>
@@ -440,7 +522,6 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
           <PlatformBrandIcon :size="48" class="login-auth-modal__logo" />
           <div class="login-auth-modal__header-text">
             <h2 class="login-auth-modal__title">{{ t("login.title") }}</h2>
-            <p class="login-auth-modal__subtitle">{{ t("app.tagline") }}</p>
           </div>
         </div>
       </template>
@@ -468,7 +549,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
             />
           </n-form-item>
           <div class="login-form__captcha">
-            <SlideCaptcha v-model="captchaToken" />
+            <SlideCaptcha ref="captchaRef" v-model="captchaToken" />
           </div>
           <n-space vertical :size="17" class="login-form__actions" style="width: 100%">
             <n-button
@@ -490,6 +571,12 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
               </span>
             </label>
           </n-space>
+          <div class="login-modal__register-link">
+            <span>{{ t("login.noAccount") }}</span>
+            <button type="button" class="login-modal__register-btn" @click="openRegisterModal">
+              {{ t("login.register") }}
+            </button>
+          </div>
         </n-form>
       </div>
     </n-modal>
@@ -544,7 +631,7 @@ watch([loginModalOpen, registerModalOpen], ([loginOpen, registerOpen]) => {
             />
           </n-form-item>
           <div class="login-form__captcha">
-            <SlideCaptcha v-model="captchaRegisterToken" />
+            <SlideCaptcha ref="captchaRegisterRef" v-model="captchaRegisterToken" />
           </div>
           <n-space vertical :size="10" style="width: 100%">
             <n-button
@@ -623,6 +710,17 @@ html[data-theme="dark"] .login-header {
 
 .login-header__logo {
   flex-shrink: 0;
+  filter: brightness(0);
+  transition: filter 0.25s ease;
+}
+
+html[data-theme="dark"] .login-header__logo {
+  filter: brightness(0) invert(1);
+}
+
+.login-page--scrolling .login-header__logo,
+html[data-theme="dark"] .login-page--scrolling .login-header__logo {
+  filter: none;
 }
 
 .login-header__title {
@@ -632,6 +730,21 @@ html[data-theme="dark"] .login-header {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: #000;
+}
+
+html[data-theme="dark"] .login-header__title {
+  color: #e8e8ee;
+}
+
+.login-page--scrolling .login-header__title {
+  background-image: var(--platform-accent-gradient);
+  background-size: 120% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .login-header__actions {
@@ -660,7 +773,7 @@ html[data-theme="dark"] .login-header {
   font-size: 14px;
   font-weight: 500;
   line-height: 1;
-  color: var(--platform-text-secondary);
+  color: #000;
   cursor: pointer;
   transition:
     color 0.18s ease,
@@ -668,13 +781,16 @@ html[data-theme="dark"] .login-header {
     transform 0.18s var(--platform-ease-smooth);
 }
 
-.login-header__chip:hover:not(:disabled) {
-  color: var(--platform-text);
+html[data-theme="dark"] .login-header__chip {
+  color: #fff;
 }
 
-.login-header__chip--icon {
-  width: 26px;
-  padding: 0;
+.login-header__chip:hover:not(:disabled) {
+  color: #000;
+}
+
+html[data-theme="dark"] .login-header__chip:hover:not(:disabled) {
+  color: #fff;
 }
 
 .login-header__chip--locale {
@@ -694,21 +810,45 @@ html[data-theme="dark"] .login-header {
   color: color-mix(in srgb, var(--platform-accent) 82%, var(--platform-text));
 }
 
+.login-header__chip--black {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: #000;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  line-height: 1;
+  appearance: none;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.login-header__chip--black:hover:not(:disabled) {
+  opacity: 0.82;
+  transform: translateY(-1px);
+  color: #fff;
+}
+
+html[data-theme="dark"] .login-header__chip--black {
+  background: #fff;
+  color: #000;
+}
+
+html[data-theme="dark"] .login-header__chip--black:hover:not(:disabled) {
+  color: #000;
+}
+
+
 .login-header__chip:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-.login-header__vrule {
-  flex-shrink: 0;
-  width: 1px;
-  height: 17px;
-  margin: 0 4px;
-  background: var(--platform-border, rgba(148, 163, 184, 0.28));
-}
-
-html[data-theme="dark"] .login-header__vrule {
-  background: var(--platform-accent-border-soft);
 }
 
 .login-header__locale-label {
@@ -802,22 +942,10 @@ html[data-theme="dark"] .login-page--scrolling .login-header {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.72) 0%,
-    rgba(255, 255, 255, 0.72) 70%,
-    rgba(255, 255, 255, 1) 100%
-  );
   z-index: 0;
 }
 
 html[data-theme="dark"] .login-showcase__hero::before {
-  background: linear-gradient(
-    to bottom,
-    rgba(15, 15, 22, 0.78) 0%,
-    rgba(15, 15, 22, 0.78) 70%,
-    rgba(15, 15, 22, 1) 100%
-  );
 }
 
 .login-showcase__hero-content {
@@ -826,10 +954,14 @@ html[data-theme="dark"] .login-showcase__hero::before {
   max-width: 1152px;
   margin: 0 auto;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .login-showcase__platform-title {
-  margin: 0 0 17px;
+  margin: 14px 0 24px;
   font-size: clamp(1.8rem, 4.8vw, 2.8rem);
   font-weight: 600;
   line-height: 1.1;
@@ -839,8 +971,24 @@ html[data-theme="dark"] .login-showcase__hero::before {
   text-rendering: optimizeLegibility;
 }
 
-.login-showcase__platform-title :deep(.platform-brand-title--strong) {
-  font-weight: 600;
+.login-showcase__hero-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+  height: 90px;
+  padding: 0;
+  margin-bottom: 32px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="dark"] .login-showcase__hero-icon-wrap {
+  background: rgba(30, 30, 42, 0.65);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .login-showcase__headline {
@@ -864,14 +1012,29 @@ html[data-theme="dark"] .login-showcase__hero::before {
 }
 
 .login-showcase__intro {
-  margin: 0 0 29px;
+  margin: 0 auto 29px;
   max-width: 34em;
   font-size: clamp(14px, 1.15vw, 16px);
   font-weight: 400;
   line-height: 1.6;
+  text-align: center;
   color: #000;
+  min-height: calc(1.6em * 2);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.login-showcase__cursor {
+  display: inline-block;
+  margin-left: 2px;
+  font-weight: 300;
+  color: var(--platform-accent);
+  animation: cursor-blink 1s steps(1) infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .login-showcase__scroll {
@@ -881,152 +1044,7 @@ html[data-theme="dark"] .login-showcase__hero::before {
   box-sizing: border-box;
 }
 
-.login-auth-modal__header {
-  display: flex;
-  align-items: center;
-  gap: 19px;
-  padding: 5px 0 2px;
-}
-
-.login-auth-modal__logo {
-  flex-shrink: 0;
-}
-
-.login-auth-modal__header-text {
-  min-width: 0;
-}
-
-.login-auth-modal__title {
-  margin: 0 0 7px;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.03em;
-  color: var(--platform-text);
-}
-
-.login-auth-modal__subtitle {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.55;
-  color: var(--platform-text-secondary);
-}
-
-.login-auth-panel {
-  width: 100%;
-}
-
-.login-auth-panel--register {
-  overflow: visible;
-}
-
-.login-form--compact :deep(.n-form-item) {
-  margin-bottom: 22px;
-}
-
-.login-auth-panel--login {
-  padding: 10px 0 5px;
-}
-
-.login-form--placeholder-only :deep(.n-form-item) {
-  margin-bottom: 19px;
-}
-
-.login-form--placeholder-only :deep(.n-form-item:last-of-type) {
-  margin-bottom: 14px;
-}
-
-.login-form--placeholder-only :deep(.n-form-item-label) {
-  display: none;
-}
-
-.login-form--placeholder-only :deep(.n-form-item-blank) {
-  min-height: unset;
-}
-
-.login-form--compact :deep(.n-form-item-label) {
-  padding-bottom: 5px;
-  font-size: 16px;
-}
-
-.login-auth-panel :deep(.n-input) {
-  --n-height: 48px;
-  --n-font-size: 17px;
-  --n-padding-left: 17px;
-  --n-padding-right: 17px;
-  --n-border-radius: 10px;
-}
-
-.login-auth-panel :deep(.n-input .n-input__input-el::placeholder),
-.login-auth-panel :deep(.n-input .n-input__placeholder) {
-  color: var(--platform-text-tertiary);
-}
-
-.login-glass-btn--submit {
-  min-height: 48px !important;
-  height: 48px;
-  margin-top: 2px;
-  font-size: 17px;
-  font-weight: 600;
-  --n-border-radius: 10px;
-  --n-height: 48px;
-}
-
-.login-terms {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 5px;
-  padding-top: 2px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.login-terms__checkbox {
-  flex-shrink: 0;
-}
-
-.login-terms__text {
-  font-size: 13px;
-  line-height: 1.55;
-  text-align: center;
-  color: var(--platform-text-tertiary);
-}
-
-.login-terms__link {
-  appearance: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  background: none;
-  font: inherit;
-  font-size: inherit;
-  line-height: inherit;
-  color: var(--platform-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.login-terms__link:hover {
-  color: color-mix(in srgb, var(--platform-accent) 82%, var(--platform-text));
-}
-
-.login-register-form {
-  margin-top: 0;
-}
-
-.login-form__captcha {
-  margin-bottom: 14px;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-}
-
-.login-form {
-  margin-top: 0;
-}
+/* ========= Modal styles moved to non-scoped <style> for glass panel styling ========= */
 
 .login-showcase__ctas {
   display: flex;
@@ -1034,6 +1052,10 @@ html[data-theme="dark"] .login-showcase__hero::before {
   align-items: center;
   gap: 12px;
   margin-bottom: 29px;
+}
+
+.login-showcase__ctas--centered {
+  justify-content: center;
 }
 
 .login-showcase__cta {
@@ -1097,6 +1119,64 @@ html[data-theme="dark"] .login-showcase__cta--secondary {
   cursor: not-allowed;
 }
 
+.login-showcase__cta--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: var(--platform-text);
+  gap: 6px;
+}
+
+html[data-theme="dark"] .login-showcase__cta--ghost {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.login-showcase__cta--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ---------- dropdown menu ---------- */
+.login-page :deep(.n-dropdown-menu) {
+  min-width: 170px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.10);
+}
+
+html[data-theme="dark"] .login-page :deep(.n-dropdown-menu) {
+  background: rgba(30, 30, 40, 0.88);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.login-page :deep(.n-dropdown-option-body) {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--platform-text);
+  transition: background 0.15s ease;
+}
+
+.login-page :deep(.n-dropdown-option-body:hover) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="dark"] .login-page :deep(.n-dropdown-option-body:hover) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.login-page :deep(.n-dropdown-option-body .n-icon) {
+  color: var(--platform-text-secondary);
+  margin-right: 8px;
+}
+
 
 @media (max-width: 480px) {
   .login-showcase__ctas {
@@ -1122,10 +1202,6 @@ html[data-theme="dark"] .login-showcase__cta--secondary {
   .login-header__chip--locale {
     width: 26px;
     padding: 0;
-  }
-
-  .login-header__chip--text {
-    padding: 0 7px;
   }
 }
 
@@ -1178,29 +1254,75 @@ html[data-theme="dark"] .login-showcase__cta--secondary {
   will-change: transform, opacity;
 }
 
+/* =============================================
+ * 高级质感登录/注册弹窗 — Codex 级玻璃面板
+ * ============================================= */
+
+/* --- 弹窗遮罩 --- */
+.login-glass-panel.platform-glass-modal .n-modal-mask {
+  background: rgba(0, 0, 0, 0.48) !important;
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+}
+
+html[data-theme="dark"] .login-glass-panel.platform-glass-modal .n-modal-mask {
+  background: rgba(0, 0, 0, 0.62) !important;
+}
+
+/* --- 弹窗卡片主体：多层玻璃 + 环境光晕 --- */
 .login-glass-panel.platform-glass-modal.n-modal .n-card {
-  background: rgba(255, 255, 255, 0.38) !important;
-  backdrop-filter: blur(22px) saturate(170%);
-  -webkit-backdrop-filter: blur(22px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.48) !important;
-  border-radius: 22px !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
+  border-radius: 24px !important;
   box-shadow:
-    0 24px 67px color-mix(in srgb, var(--platform-accent) 18%, transparent),
-    0 10px 29px color-mix(in srgb, var(--platform-accent) 8%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+    0 0 0 1px rgba(255, 255, 255, 0.70),
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    0 16px 48px color-mix(in srgb, var(--platform-accent) 12%, transparent),
+    0 32px 80px color-mix(in srgb, var(--platform-accent) 8%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.80) !important;
+  overflow: visible;
 }
 
 html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card {
-  background: rgba(22, 22, 32, 0.52) !important;
-  border-color: var(--platform-accent-border) !important;
+  background: rgba(24, 24, 34, 0.58) !important;
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.10) !important;
   box-shadow:
-    0 14px 48px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 24px 64px rgba(0, 0, 0, 0.4),
+    0 48px 96px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
+/* --- 顶部渐变光条装饰 --- */
+.login-glass-panel.platform-glass-modal.n-modal .n-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 24px;
+  right: 24px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--platform-accent) 0%, transparent),
+    var(--platform-accent) 50%,
+    color-mix(in srgb, var(--platform-accent) 0%, transparent)
+  );
+  opacity: 0.6;
+  z-index: 1;
+}
 
+html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card::before {
+  opacity: 0.8;
+}
+
+/* --- Header 区域 --- */
 .login-auth-modal.platform-glass-modal.n-modal .n-card-header {
-  padding: 34px 38px 10px !important;
+  padding: 32px 36px 8px !important;
 }
 
 .login-auth-modal.platform-glass-modal.n-modal .n-card-header .n-card-header__main {
@@ -1208,28 +1330,337 @@ html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card 
   min-width: 0;
 }
 
+/* --- 内容区 --- */
 .login-auth-modal.platform-glass-modal.n-modal .n-card__content {
-  padding: 14px 38px 38px !important;
+  padding: 12px 36px 34px !important;
 }
 
 .login-auth-modal--login.platform-glass-modal.n-modal .n-card__content {
-  padding-top: 19px !important;
+  padding-top: 16px !important;
 }
 
 .login-auth-modal--register.platform-glass-modal.n-modal .n-card__content {
-  padding-top: 10px !important;
+  padding-top: 8px !important;
   max-height: min(72vh, 672px);
   overflow-y: auto;
 }
 
+/* --- Header 内部布局 --- */
+.login-auth-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 2px 0;
+}
 
-.login-auth-modal.platform-glass-modal.n-modal .n-card {
+.login-auth-modal__logo {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 10%, transparent);
+}
+
+html[data-theme="dark"] .login-auth-modal__logo {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.login-auth-modal__header-text {
+  min-width: 0;
+}
+
+.login-auth-modal__title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+  color: var(--platform-text);
+}
+
+.login-auth-modal__subtitle {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--platform-text-secondary);
+}
+
+/* --- 输入框在玻璃面板内的透底融合 --- */
+.login-auth-panel .n-input {
+  --n-height: 48px;
+  --n-font-size: 16px;
+  --n-padding-left: 17px;
+  --n-padding-right: 17px;
+  --n-border-radius: 11px;
+  --n-color: rgba(255, 255, 255, 0.50);
+}
+
+html[data-theme="dark"] .login-auth-panel .n-input {
+  --n-color: rgba(255, 255, 255, 0.04);
+}
+
+.login-auth-panel .n-input .n-input-wrapper {
+  backdrop-filter: blur(8px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
+}
+
+.login-auth-panel .n-input .n-input__state-border {
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+html[data-theme="dark"] .login-auth-panel .n-input .n-input__state-border {
+  border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+.login-auth-panel .n-input:not(.n-input--disabled):hover .n-input__state-border {
+  border-color: color-mix(in srgb, var(--platform-accent) 25%, transparent) !important;
+}
+
+.login-auth-panel .n-input.n-input--focus .n-input__state-border {
+  border-color: var(--platform-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-accent) 8%, transparent) !important;
+}
+
+.login-auth-panel .n-input .n-input__input-el::placeholder,
+.login-auth-panel .n-input .n-input__placeholder {
+  color: var(--platform-text-tertiary);
+}
+
+/* --- 登录表单间距 --- */
+.login-auth-panel {
+  width: 100%;
+}
+
+.login-auth-panel--login {
+  padding: 8px 0 2px;
+}
+
+.login-auth-panel--register {
   overflow: visible;
+}
+
+.login-form--compact .n-form-item {
+  margin-bottom: 20px;
+}
+
+.login-form--placeholder-only .n-form-item {
+  margin-bottom: 17px;
+}
+
+.login-form--placeholder-only .n-form-item:last-of-type {
+  margin-bottom: 12px;
+}
+
+.login-form--placeholder-only .n-form-item-label {
+  display: none;
+}
+
+.login-form--placeholder-only .n-form-item-blank {
+  min-height: unset;
+}
+
+.login-form--compact .n-form-item-label {
+  padding-bottom: 6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--platform-text-secondary);
+}
+
+/* --- 验证码 --- */
+.login-form__captcha {
+  margin-bottom: 12px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.login-form {
+  margin-top: 0;
+}
+
+.login-register-form {
+  margin-top: 0;
+}
+
+/* --- 提交按钮：渐变 + 光晕 --- */
+.login-glass-btn--submit {
+  min-height: 48px !important;
+  height: 48px;
+  margin-top: 0;
+  font-size: 17px;
+  font-weight: 600;
+  --n-border-radius: 11px;
+  --n-height: 48px;
+  letter-spacing: 0.01em;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-glass-btn--submit.n-button.n-button--primary-type:not(.n-button--disabled) {
+  background: var(--platform-accent-gradient) !important;
+  border: none !important;
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--platform-accent) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20) !important;
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.25s ease !important;
+}
+
+.login-glass-btn--submit.n-button.n-button--primary-type:not(.n-button--disabled):hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 24px color-mix(in srgb, var(--platform-accent) 32%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+
+.login-glass-btn--submit.n-button.n-button--primary-type:not(.n-button--disabled):active {
+  transform: translateY(0) scale(0.99);
+}
+
+html[data-theme="dark"] .login-glass-btn--submit.n-button.n-button--primary-type:not(.n-button--disabled) {
+  box-shadow:
+    0 4px 14px rgba(77, 148, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+}
+
+html[data-theme="dark"] .login-glass-btn--submit.n-button.n-button--primary-type:not(.n-button--disabled):hover {
+  box-shadow:
+    0 8px 24px rgba(77, 148, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
 }
 
 .login-auth-modal .login-glass-btn--submit.n-button {
   min-height: 48px;
   height: 48px;
   font-size: 17px;
+}
+
+/* --- 协议条款 --- */
+.login-terms {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.login-terms__checkbox {
+  flex-shrink: 0;
+}
+
+.login-terms__text {
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: center;
+  color: var(--platform-text-tertiary);
+}
+
+.login-terms__link {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--platform-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.login-terms__link:hover {
+  color: color-mix(in srgb, var(--platform-accent) 82%, var(--platform-text));
+}
+
+/* --- "没有账号？去注册" 链接区 --- */
+.login-modal__register-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 14px;
+  color: var(--platform-text-secondary);
+}
+
+html[data-theme="dark"] .login-modal__register-link {
+  border-top-color: rgba(255, 255, 255, 0.06);
+}
+
+.login-modal__register-btn {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--platform-accent);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.login-modal__register-btn:hover {
+  color: color-mix(in srgb, var(--platform-accent) 82%, var(--platform-text));
+}
+
+/* --- 表单操作区 --- */
+.login-form__actions {
+  width: 100%;
+}
+
+/* =============================================
+ * Dropdown 菜单（语言选择器等）
+ * ============================================= */
+.login-page .n-dropdown-menu {
+  min-width: 170px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.10);
+}
+
+html[data-theme="dark"] .login-page .n-dropdown-menu {
+  background: rgba(30, 30, 40, 0.88);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.login-page .n-dropdown-option-body {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--platform-text);
+  transition: background 0.15s ease;
+}
+
+.login-page .n-dropdown-option-body:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="dark"] .login-page .n-dropdown-option-body:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.login-page .n-dropdown-option-body .n-icon {
+  color: var(--platform-text-secondary);
+  margin-right: 8px;
 }
 </style>

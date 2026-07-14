@@ -134,8 +134,24 @@ async def browser_click(
 ) -> dict[str, Any]:
     cfg = _require_enabled(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
+    if not hasattr(state, "page") or state.page is None:
+        raise bad_request("浏览器会话未就绪，请先执行 browser_navigate 导航到目标页面")
+    # 如果 ref_map 为空但已有页面，提示用户先执行 snapshot
+    if not state.ref_map:
+        raise bad_request("未获取页面元素信息，请先执行 browser_snapshot 获取可交互元素列表")
+    if ref not in state.ref_map:
+        raise bad_request(
+            f"ref `{ref}` 不存在，可用 ref: {', '.join(list(state.ref_map.keys())[:10])}。"
+            "请先执行 browser_snapshot 获取最新页面的可交互元素"
+        )
     mgr = get_browser_session_manager()
-    return await mgr.click(state, ref)
+    try:
+        return await mgr.click(state, ref)
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        _logger.exception("browser_click unexpected error ref=%s", ref)
+        raise bad_request(f"点击元素 `{ref}` 失败: {exc}") from exc
 
 
 async def browser_type(

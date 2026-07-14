@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.api.deps import _resolve_token, get_current_user
-from app.core.aip.auth import is_aip_sk_token
+from app.agentkit.aip.auth import is_aip_sk_token
 from app.core.aip.aid import orchestrator_aid
 from app.database import get_db
 from app.models.aip_secret_key import AipSecretKey

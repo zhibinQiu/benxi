@@ -1,11 +1,9 @@
 <script setup>
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useI18n } from "../composables/useI18n";
 
 const route = useRoute();
 const router = useRouter();
-const {  } = useI18n();
 
 const pageType = computed(() => route.name === "privacy" ? "privacy" : "terms");
 

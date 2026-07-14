@@ -12,6 +12,7 @@ from app.core.document_upload_limits import (
     document_upload_max_label,
 )
 from app.core.permissions import PermissionLevel, can_access_document
+from app.config import get_settings
 from app.models.document import Document, DocumentVersion
 from app.models.org import User
 from app.storage.object_store import get_object_store
@@ -187,7 +188,7 @@ def delete_document_version(
         try:
             store.delete_object(key)
         except Exception:
-            pass
+            logger.warning("删除对象存储文件失败 key=%s", key, exc_info=True)
 
     db.delete(version)
     db.flush()
@@ -313,7 +314,7 @@ def prepare_upload(
     db.commit()
     db.refresh(version)
     # 浏览器经平台 API 代理写入 MinIO（presigned 内网地址浏览器无法访问）
-    upload_url = f"/api/v1/documents/{document.id}/upload/{version.id}/blob"
+    upload_url = f"{get_settings().api_prefix}/documents/{document.id}/upload/{version.id}/blob"
     return version, upload_url
 
 

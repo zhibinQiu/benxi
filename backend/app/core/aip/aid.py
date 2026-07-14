@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentkit_aip.aid import (
+from app.agentkit.aip.aid import (
     AidConfig,
     build_agent_aid as _build_agent_aid,
     orchestrator_aid as _orchestrator_aid,

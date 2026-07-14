@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from agentkit_skills.search import skill_query_tokens
+from app.agentkit.skills.search import skill_query_tokens
 
 _SKILLS_MD = Path(__file__).resolve().parent.parent / "skills" / "skills.md"
 _AGENTS_MD = Path(__file__).resolve().parent / "agents.md"

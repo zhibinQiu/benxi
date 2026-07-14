@@ -32,6 +32,7 @@ import {
   GitCompareOutline,
   LayersOutline,
   SearchOutline } from "@vicons/ionicons5";
+import { escapeHtml } from "../utils/markdown.js";
 import {
   createCompareJob,
   fetchCompareJob,
@@ -603,13 +604,6 @@ const searchTerms = computed(() => {
   if (!q) return [];
   return q.split(/\s+/).filter((t) => t.length >= 2 && !t.includes(":") && !t.includes("："));
 });
-
-function escapeHtml(s) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

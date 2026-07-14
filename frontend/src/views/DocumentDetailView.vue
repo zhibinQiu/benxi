@@ -8,6 +8,7 @@ import {
   NSpace,
   NDescriptions,
   NDescriptionsItem,
+  NIcon,
   NTag,
   NUpload,
   NTable,
@@ -23,10 +24,10 @@ import {
   NAlert,
 } from "naive-ui";
 import {
+  ChevronDownOutline,
   DownloadOutline,
   EyeOutline,
   GitCompareOutline,
-  LayersOutline,
   RefreshOutline,
   TrashOutline,
 } from "@vicons/ionicons5";
@@ -269,6 +270,8 @@ const publishTarget = ref("department");
 const publishDeptIds = ref([]);
 const publishLoading = ref(false);
 const accessMode = ref("publish");
+const publishSectionExpanded = ref(false);
+const restrictionSectionExpanded = ref(false);
 
 const canPublishCompanyPerm = computed(
   () => isOwner.value && hasPerm("doc.company.create")
@@ -741,7 +744,7 @@ onMounted(() => {
 <template>
   <n-card v-if="loading && !doc" :title="t('documents.detail.title')" :loading="true" />
   <n-space v-else-if="doc" vertical :size="19">
-    <n-card :loading="loading">
+    <n-card :loading="loading" class="detail-card">
       <template #header>
         <n-space align="center" :size="14" style="flex-wrap: wrap">
           <template v-if="titleEditing && canEditDoc">
@@ -821,7 +824,7 @@ onMounted(() => {
       </n-descriptions>
     </n-card>
 
-    <n-card :title="t('documents.detail.versionHistory')">
+    <n-card :title="t('documents.detail.versionHistory')" class="detail-card">
       <template #header-extra>
         <n-space :size="5" align="center">
           <IconAction
@@ -881,7 +884,7 @@ onMounted(() => {
                   v-if="v.uploaded && canReindexDoc"
                   variant="table"
                   :label="t('documents.detail.reindex')"
-                  :icon="LayersOutline"
+                  :icon="RefreshOutline"
                   :disabled="indexPolling || reparsing"
                   @click="openReindexModal(v)"
                 />
@@ -946,7 +949,17 @@ onMounted(() => {
       </div>
     </n-card>
 
-    <n-card v-if="showAccessCard" :title="t('documents.detail.publishAndShare')" :loading="aclLoading">
+    <n-card v-if="showAccessCard" :loading="aclLoading" class="detail-card collapsible-card">
+      <template #header>
+        <div class="expandable-header" @click="publishSectionExpanded = !publishSectionExpanded">
+          <span class="expandable-header__title">{{ t("documents.detail.publishAndShare") }}</span>
+          <n-icon :class="['expandable-header__icon', { 'icon-rotated': publishSectionExpanded }]" :size="18">
+            <ChevronDownOutline />
+          </n-icon>
+        </div>
+      </template>
+      <Transition name="slide">
+        <div v-show="publishSectionExpanded" class="collapsible-body">
       <div class="access-current-loc">
         <span class="access-current-loc__label">{{ t("documents.detail.currentLocation") }}</span>
         <n-tag type="info" size="small" :bordered="false">{{ currentScopeLabel }}</n-tag>
@@ -1037,15 +1050,29 @@ onMounted(() => {
         </n-table>
         <span v-else>{{ t("documents.detail.noPersonalShares") }}</span>
       </template>
-    </n-card>
+      </div>
+    </Transition>
+  </n-card>
 
-    <n-card v-if="canDenyAcl" :title="t('documents.detail.accessRestrictions')" :loading="aclLoading">
-      <p style="margin: 0 0 14px; color: #666; font-size: 16px">
+    <n-card v-if="canDenyAcl" :loading="aclLoading" class="detail-card collapsible-card">
+      <template #header>
+        <div class="expandable-header" @click="restrictionSectionExpanded = !restrictionSectionExpanded">
+          <span class="expandable-header__title">{{ t("documents.detail.accessRestrictions") }}</span>
+          <n-space :size="8" align="center">
+            <n-button size="tiny" quaternary @click.stop="openDenyModal">
+              {{ t("documents.detail.denyUserAccess") }}
+            </n-button>
+            <n-icon :class="['expandable-header__icon', { 'icon-rotated': restrictionSectionExpanded }]" :size="18">
+              <ChevronDownOutline />
+            </n-icon>
+          </n-space>
+        </div>
+      </template>
+      <Transition name="slide">
+        <div v-show="restrictionSectionExpanded" class="collapsible-body">
+      <p class="access-card-hint">
         {{ t("documents.detail.denyHint") }}
       </p>
-      <template #header-extra>
-        <n-button size="small" @click="openDenyModal">{{ t("documents.detail.denyUserAccess") }}</n-button>
-      </template>
       <n-table v-if="denials.length" :single-line="false">
         <thead>
           <tr>
@@ -1066,8 +1093,10 @@ onMounted(() => {
           </tr>
         </tbody>
       </n-table>
-      <span v-else>{{ t("documents.detail.noDenials") }}</span>
-    </n-card>
+      <span v-if="!denials.length">{{ t("documents.detail.noDenials") }}</span>
+      </div>
+    </Transition>
+  </n-card>
   </n-space>
 
   <AdminFormModal
@@ -1166,6 +1195,40 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* ========= Premium Card Base ========= */
+.detail-card {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 4px 16px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+.detail-card:hover {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* Gradient accent top bar for collapsible cards */
+.collapsible-card {
+  position: relative;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+.collapsible-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  z-index: 1;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
 .doc-title-input {
   min-width: 288px;
   max-width: min(672px, 100%);
@@ -1207,6 +1270,66 @@ onMounted(() => {
   .version-upload-bar {
     grid-template-columns: 1fr;
   }
+}
+
+/* ========= Expandable Header ========= */
+.expandable-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+  transition: background-color 0.2s ease;
+  border-radius: 6px;
+}
+.expandable-header:hover {
+  background: var(--platform-accent-muted, #f1f5f9);
+  margin: 0 -4px;
+  padding: 4px;
+}
+.expandable-header:active {
+  background: var(--platform-accent-pressed, #e2e8f0);
+}
+.expandable-header__title {
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  color: var(--platform-text-primary, #1e293b);
+}
+.expandable-header__icon {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--platform-text-tertiary, #94a3b8);
+  flex-shrink: 0;
+}
+.icon-rotated {
+  transform: rotate(180deg);
+}
+
+/* ========= Slide Transition ========= */
+.slide-enter-active {
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.slide-enter-to,
+.slide-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ========= Collapsible Body ========= */
+.collapsible-body {
+  padding-top: 2px;
 }
 
 .access-current-loc {

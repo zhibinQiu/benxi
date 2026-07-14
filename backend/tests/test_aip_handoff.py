@@ -10,7 +10,7 @@ from app.core.aip.handoff import (
     format_task_request_for_llm,
     handoff_text_from_message,
 )
-from app.core.aip.types import AipMessage
+from app.agentkit.aip.types import AipMessage
 
 
 def test_build_and_parse_aid():

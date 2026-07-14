@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from app.core.agent_loop_state import LoopState
+
 from sqlalchemy.orm import Session
 
 from app.core.agent_tool_context import append_retrieval_context
@@ -38,7 +40,7 @@ def _tool_result(ok: bool, summary: str, data: Any = None) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _citation_start(loop_state: dict[str, Any] | None) -> int:
+def _citation_start(loop_state: LoopState | None) -> int:
     if not loop_state:
         return 1
     return len(loop_state.get("citations") or []) + 1
@@ -62,7 +64,7 @@ def _offset_context_citations(
 
 
 def _record_retrieval(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     *,
     context: str,
     citations: list[dict],
@@ -82,7 +84,7 @@ def _prepare_retrieval_params(
     params: dict[str, Any],
     *,
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
 ) -> tuple[dict[str, Any], str] | None:
     query = str(
         params.get("query") or params.get("question") or user_message or ""
@@ -109,7 +111,7 @@ def _format_retrieval_json(
     *,
     result: SkillInvocationResult,
     query: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     db: Session,
 ) -> str:
     if tool_name == ATOMIC_TOOL_KNOWLEDGE_RETRIEVE and loop_state and loop_state.get(
@@ -154,7 +156,7 @@ async def execute_global_atomic_tool_json(
     conversation_id: str | None = None,
     attachment_session_id: str | None = None,
     user_message: str = "",
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
 ) -> str:
     """全局原子 Tool 经 ToolCenter 执行，返回 legacy JSON。"""
     name = (tool_name or "").strip()
@@ -172,9 +174,11 @@ async def execute_global_atomic_tool_json(
         if prepared is None:
             return _tool_result(False, "缺少 query / question")
         merged, query = prepared
-        cache_key = f"{name}:{query.casefold()}"
+        # 去重：web_search 允许不同 read_full 值再读一次（多轮搜索）
+        read_full = int(merged.get("read_full") or 3)
+        cache_key = f"{name}:{query.casefold()}:read_full={read_full}"
         if loop_state is not None:
-            done = loop_state.setdefault("atomic_retrieval_queries", set())
+            done: set[str] = loop_state.setdefault("atomic_retrieval_queries", set())
             if cache_key in done:
                 return _tool_result(
                     True,

@@ -27,10 +27,14 @@ const PANEL_COMPONENTS = {
 const route = useRoute();
 const activePanel = ref(String(route.name || ""));
 
+const VALID_PANEL_ROUTES = new Set(["knowledge-search", "report-generation"]);
+
 watch(
   () => route.name,
   (name) => {
-    activePanel.value = String(name || "");
+    if (VALID_PANEL_ROUTES.has(name)) {
+      activePanel.value = String(name);
+    }
   },
   { immediate: true }
 );

@@ -330,6 +330,28 @@ def _storage_prefix(skill_id: uuid.UUID) -> str:
     return f"skills/{skill_id}/"
 
 
+def _ensure_skill_mounted_to_agent(db: Session, skill_name: str, agent_id: str) -> None:
+    """将 Skill 添加到指定 Agent 的 ProfileBinding skill_names 中（重复则跳过）。"""
+    from app.core.agent_profiles import get_agent_profile
+    from app.models.agent_profile_binding import AgentProfileBinding
+
+    defn = get_agent_profile(agent_id)
+    if not defn:
+        return
+    binding = db.get(AgentProfileBinding, agent_id)
+    if binding is None:
+        binding = AgentProfileBinding(
+            agent_id=agent_id,
+            enabled=True,
+            skill_names=list(defn.default_skill_names),
+        )
+        db.add(binding)
+        db.flush()
+    current = list(binding.skill_names or [])
+    if skill_name not in current:
+        binding.skill_names = [*current, skill_name]
+
+
 def _persist_package(
     db: Session,
     user: User,
@@ -376,6 +398,8 @@ def _persist_package(
     for rel_path, payload in package.files.items():
         key = f"{skill.storage_prefix}{rel_path}"
         store.put_object_bytes(key, payload, _guess_content_type(rel_path))
+    if mount_agent:
+        _ensure_skill_mounted_to_agent(db, package.dir_name, mount_agent)
     db.commit()
     db.refresh(skill)
     return skill
@@ -391,6 +415,7 @@ def _to_summary(skill: AgentSkill) -> AgentSkillSummaryOut:
         file_count=skill.file_count,
         total_bytes=skill.total_bytes,
         source_type=skill.source_type,
+        mount_agent=skill.mount_agent,
         created_at=skill.created_at,
         updated_at=skill.updated_at,
     )
@@ -406,7 +431,8 @@ def upload_skill_zip(
     packages = extract_skills_from_zip(data)
     saved = [
         _persist_package(
-            db, user, pkg, source_type="zip", replace_existing=replace_existing
+            db, user, pkg, source_type="zip", replace_existing=replace_existing,
+            mount_agent="orchestrator",
         )
         for pkg in packages
     ]
@@ -426,7 +452,8 @@ def upload_skill_folder(
     packages = extract_skills_from_folder(entries)
     saved = [
         _persist_package(
-            db, user, pkg, source_type="folder", replace_existing=replace_existing
+            db, user, pkg, source_type="folder", replace_existing=replace_existing,
+            mount_agent="orchestrator",
         )
         for pkg in packages
     ]
@@ -662,7 +689,7 @@ def create_generated_skill(
     replace_existing: bool = False,
     extra_files: dict[str, str] | None = None,
     needs_review: bool = False,
-    mount_agent: str | None = None,
+    mount_agent: str | None = "orchestrator",
 ) -> AgentSkillSummaryOut:
     """智能体生成 Skill，与上传包同一存储结构。"""
     slug = normalize_skill_slug_for_create(name)
@@ -841,10 +868,10 @@ def run_uploaded_skill_script(
         return {
             "status": "instruction_only",
             "conclusion": (
-                f"技能 `{skill.name}` 为纯 SKILL.md 指令包，无 Python 脚本。"
-                "请按已注入的 SKILL.md 工作流程直接生成回答"
-                "（如图表类任务在回复中使用 ```mermaid 围栏）；"
-                "勿再次调用 run_skill_script。"
+                f"执行失败：`{skill.name}` 为指令型技能，无 Python 脚本。"
+                "SKILL.md 已注入供参考——若其中定义了明确的工作步骤则按描述执行，"
+                "否则仅将 SKILL.md 内容提供给用户。"
+                "**禁止**凭空编造数据或分析结果。"
             ),
             "entry": None,
             "hint": "instruction_only",

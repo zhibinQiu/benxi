@@ -2,6 +2,7 @@
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { NIcon, NInput, NSpin } from "naive-ui";
 import { ArrowUpOutline, AttachOutline, CloseOutline, DocumentTextOutline, StopOutline } from "@vicons/ionicons5";
+import { escapeHtml } from "../utils/markdown.js";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
@@ -20,7 +21,7 @@ const props = defineProps({
   /** 已上传附件，名称展示在输入框内 */
   attachments: { type: Array, default: () => [] },
   /** 是否对 #关键词 做行内高亮渲染（隐藏井号，为文字添加背景） */
-  highlightHashtags: { type: Boolean, default: true },
+  highlightHashtags: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:modelValue", "send", "stop", "keydown", "attach", "remove-attachment"]);
@@ -42,18 +43,10 @@ const autosize = computed(() => ({
 /** 单行紧凑布局：仅当 maxRows=1；否则允许从 1 行起自动增高 */
 const isSingleLine = computed(() => props.maxRows <= 1);
 
-/**
- * 将普通文本转为带 #关键词 高亮样式的 HTML。
+/** 将普通文本转为带 #关键词 高亮样式的 HTML。
  * - 隐藏井号（保留占位宽度）
  * - 关键词部分添加字体背景色
  */
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 const HASHTAG_REGEX = /(^|\s)(#)([\w\u4e00-\u9fff]+)/g;
 
@@ -517,9 +510,10 @@ defineExpose({ focus });
   box-decoration-break: clone;
 }
 
-/* 井号保留在 chip 内（可见，作为 chip 的一部分） */
+/* 井号在 chip 内不可见，让底层 textarea 的 # 透出（仅 chip 背景色可见） */
 .hashtag-chip .hashtag-hash {
   display: inline;
+  color: transparent;
 }
 
 /* 关键词文本继承 chip 样式 */

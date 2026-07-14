@@ -5,11 +5,34 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class ProviderEndpointOut(BaseModel):
+    """单个服务源配置（响应用户端）。"""
+
+    id: str = ""
+    label: str = ""
+    base_url: str = ""
+    api_key_configured: bool = False
+    api_key_masked: str = ""
+    model_name: str | None = None
+
+
+class ProviderEndpointUpdate(BaseModel):
+    """单个服务源配置（用户提交）。"""
+
+    id: str = ""
+    label: str = ""
+    base_url: str = ""
+    api_key: str = ""
+    model_name: str | None = None
+
+
 class ModelEndpointOut(BaseModel):
     base_url: str = ""
     api_key_configured: bool = False
     api_key_masked: str = ""
     model_name: str | None = None
+    providers: list[ProviderEndpointOut] = Field(default_factory=list)
+    active_provider: str = ""
 
 
 class KnowledgeInfraOut(BaseModel):
@@ -51,6 +74,7 @@ class ModelSettingsOut(BaseModel):
     frontend_color_scheme: str = "blue"
     frontend_primary_color: str = ""
     llm: ModelEndpointOut
+    multimodal: ModelEndpointOut
     embedding: ModelEndpointOut
     vl: ModelEndpointOut
     rerank: ModelEndpointOut
@@ -63,6 +87,9 @@ class ModelSettingsOut(BaseModel):
     embedding_factory: str | None = None
     searxng_url: str = ""
     searxng_timeout_seconds: float = 15.0
+    firecrawl_api_key: str = ""
+    firecrawl_api_url: str = "https://api.firecrawl.dev"
+    firecrawl_read_full_max_urls: int = 3
     agent_browser_enabled: bool = False
     agent_browser_headless: bool = True
     agent_browser_allowed_domains: str = ""
@@ -80,16 +107,29 @@ class ModelSettingsUpdate(BaseModel):
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
+    llm_providers: list[ProviderEndpointUpdate] | None = None
+    llm_active_provider: str | None = None
+    multimodal_base_url: str | None = None
+    multimodal_api_key: str | None = None
+    multimodal_model: str | None = None
+    multimodal_providers: list[ProviderEndpointUpdate] | None = None
+    multimodal_active_provider: str | None = None
     embedding_base_url: str | None = None
     embedding_api_key: str | None = None
     embedding_model: str | None = None
     embedding_factory: str | None = None
+    embedding_providers: list[ProviderEndpointUpdate] | None = None
+    embedding_active_provider: str | None = None
     rerank_base_url: str | None = None
     rerank_api_key: str | None = None
     rerank_model: str | None = None
+    rerank_providers: list[ProviderEndpointUpdate] | None = None
+    rerank_active_provider: str | None = None
     vl_base_url: str | None = None
     vl_api_key: str | None = None
     vl_model: str | None = None
+    vl_providers: list[ProviderEndpointUpdate] | None = None
+    vl_active_provider: str | None = None
     # 兼容旧字段名 vision_*（与 vl_* 等价）
     vision_base_url: str | None = None
     vision_api_key: str | None = None
@@ -98,9 +138,13 @@ class ModelSettingsUpdate(BaseModel):
     paddleocr_api_key: str | None = None
     paddleocr_model: str | None = None
     paddleocr_url: str | None = None
+    paddleocr_providers: list[ProviderEndpointUpdate] | None = None
+    paddleocr_active_provider: str | None = None
     tts_base_url: str | None = None
     tts_api_key: str | None = None
     tts_model: str | None = None
+    tts_providers: list[ProviderEndpointUpdate] | None = None
+    tts_active_provider: str | None = None
     speech_service_url: str | None = None
     pdf2zh_api_url: str | None = None
     ragflow_api_url: str | None = None
@@ -116,6 +160,9 @@ class ModelSettingsUpdate(BaseModel):
     ragflow_mysql_container: str | None = None
     searxng_url: str | None = None
     searxng_timeout_seconds: float | None = None
+    firecrawl_api_key: str | None = None
+    firecrawl_api_url: str | None = None
+    firecrawl_read_full_max_urls: int | None = None
     agent_browser_enabled: bool | None = None
     agent_browser_headless: bool | None = None
     agent_browser_allowed_domains: str | None = None
@@ -124,10 +171,21 @@ class ModelSettingsUpdate(BaseModel):
     agent_browser_auto_task_max_steps: int | None = None
 
 
+class ProviderHealthItemOut(BaseModel):
+    """单个服务源（provider）的连通性探测结果。"""
+
+    provider_id: str = ""
+    provider_label: str = ""
+    configured: bool = False
+    healthy: bool | None = None
+    message: str = ""
+
+
 class ResourceHealthItemOut(BaseModel):
     configured: bool = False
     healthy: bool | None = None
     message: str = ""
+    providers: list[ProviderHealthItemOut] = Field(default_factory=list)
 
 
 class ResourceHealthOut(BaseModel):

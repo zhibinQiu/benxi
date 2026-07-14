@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -39,3 +42,45 @@ async def stream_sse_payloads(
             fallback=KNOWLEDGE_SERVICE_UNAVAILABLE,
         )
         yield f"data: {_dumps({'error': message})}\n\n"
+
+
+_POLL_EVENT_TERMINAL = frozenset({"done", "failed", "cancelled"})
+
+
+async def poll_and_stream(
+    db_factory: Callable[[], Session],
+    fetch_payload: Callable[[Session], dict[str, Any] | None],
+    *,
+    terminal_statuses: frozenset[str] = _POLL_EVENT_TERMINAL,
+    max_polls: int = 600,
+    interval: float = 1.0,
+) -> AsyncIterator[dict[str, Any]]:
+    """通用 SSE 轮询生成器。
+
+    不断轮询后台任务的状态，通过 SSE event 流式输出。适用于 Job / CompareJob 等场景。
+
+    *db_factory* — 返回新 Session 的可调用（如 ``SessionLocal``）。
+    *fetch_payload* — 接收 Session，返回序列化的状态 dict；若返回 None 表示任务已不存在。
+    """
+    last_status = None
+    for _ in range(max_polls):
+        poll_db = db_factory()
+        try:
+            payload = fetch_payload(poll_db)
+            if payload is None:
+                break
+        finally:
+            poll_db.close()
+        status = payload.get("status")
+        if status != last_status:
+            last_status = status
+            yield {"event": "status", "data": json.dumps(payload, default=str)}
+        if status in terminal_statuses:
+            yield {"event": "complete", "data": json.dumps(payload, default=str)}
+            break
+        await asyncio.sleep(interval)
+    else:
+        yield {
+            "event": "timeout",
+            "data": json.dumps({"message": "poll timeout"}, default=str),
+        }

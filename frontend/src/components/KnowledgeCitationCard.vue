@@ -50,6 +50,12 @@ const snippetHtml = computed(() =>
   )
 );
 
+const inlineImages = computed(() => {
+  const imgs = props.citation?.inline_images;
+  if (!Array.isArray(imgs)) return [];
+  return imgs.filter((img) => Boolean(img?.url));
+});
+
 const canPreviewImage = computed(() => citationCanPreviewImage(props.citation));
 const showPreviewImage = computed(() => canPreviewImage.value && !previewUnsupported.value);
 
@@ -174,9 +180,29 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
 
     <div v-if="snippetHtml" class="knowledge-citation-card__snippet" v-html="snippetHtml" />
 
-    <p v-if="!showPreviewImage && snippetHtml" class="knowledge-citation-card__text-only">
+    <p v-if="!showPreviewImage && !inlineImages.length && snippetHtml" class="knowledge-citation-card__text-only">
       {{ textOnlyHint }}
     </p>
+
+    <!-- 内嵌图片（来自文档中的内联图片，如 DOCX/PDF 中的嵌入图） -->
+    <div v-if="inlineImages.length" class="knowledge-citation-card__inline-images">
+      <div
+        v-for="(img, imgIdx) in inlineImages"
+        :key="imgIdx"
+        class="knowledge-citation-card__inline-image-item"
+      >
+        <img
+          :src="img.url"
+          :alt="img.alt || 'inline image'"
+          class="knowledge-citation-card__inline-image"
+          loading="lazy"
+          @error="(e) => { e.target.style.display = 'none' }"
+        />
+        <span v-if="img.description" class="knowledge-citation-card__inline-image-desc">
+          {{ img.description }}
+        </span>
+      </div>
+    </div>
 
     <div v-if="showPreviewImage" class="knowledge-citation-card__shot">
       <n-spin :show="imageLoading" local>
@@ -298,6 +324,37 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
   font-size: 14px;
   line-height: 1.5;
   color: var(--platform-text-secondary);
+}
+
+.knowledge-citation-card__inline-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.knowledge-citation-card__inline-image-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.knowledge-citation-card__inline-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  border-radius: 8px;
+  border: 1px solid var(--platform-border);
+  object-fit: contain;
+  background: #f8f9fa;
+  cursor: zoom-in;
+}
+
+.knowledge-citation-card__inline-image-desc {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--platform-text-secondary);
+  font-style: italic;
 }
 
 .knowledge-citation-card__shot {

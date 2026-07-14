@@ -222,25 +222,42 @@ class BrowserSessionManager:
         el = self._resolve_ref(state, ref)
         hint = {}
         try:
+            role = await el.evaluate(
+                "el => el.getAttribute('role') || el.tagName.toLowerCase()"
+            )
+            name = (
+                await el.get_attribute("aria-label")
+                or await el.get_attribute("placeholder")
+                or await el.get_attribute("name")
+                or (await el.inner_text() or "")[:80]
+                or ""
+            )
             hint = {
                 "ref": ref,
-                "role": str(
-                    await el.evaluate(
-                        "el => el.getAttribute('role') || el.tagName.toLowerCase()"
-                    )
-                    or ""
-                ).lower(),
-                "name": (
-                    await el.get_attribute("aria-label")
-                    or await el.get_attribute("placeholder")
-                    or await el.get_attribute("name")
-                    or (await el.inner_text() or "")[:80]
-                    or ""
-                ).strip()[:120],
+                "role": str(role or "").lower(),
+                "name": name.strip()[:120],
             }
-        except Exception:
+        except Exception as exc:
+            _logger.debug("browser click collect hint failed: %s", exc)
             hint = {"ref": ref}
-        await el.click(timeout=10000)
+        try:
+            await el.click(timeout=10000)
+        except Exception as exc:
+            err = str(exc)
+            if "Target closed" in err or "has been closed" in err or "Target crashed" in err:
+                raise RuntimeError(
+                    "浏览器页面已关闭或崩溃，请重新 browser_navigate 导航到目标页面"
+                ) from exc
+            if "detached" in err or "not visible" in err or "hidden" in err:
+                raise RuntimeError(
+                    f"元素 `{ref}` 已从页面中移除或不可见，请先 browser_snapshot 获取最新的可交互元素"
+                ) from exc
+            if "Timeout" in err:
+                raise RuntimeError(
+                    f"点击元素 `{ref}` 超时，页面可能未完全加载或元素被遮挡"
+                ) from exc
+            _logger.warning("browser click failed ref=%s: %s", ref, exc)
+            raise RuntimeError(f"点击元素 `{ref}` 失败: {err[:200]}") from exc
         state.last_url = state.page.url
         step = {"action": "click", **hint}
         self._record_step(state, step)

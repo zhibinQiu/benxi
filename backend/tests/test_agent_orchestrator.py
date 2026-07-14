@@ -24,13 +24,13 @@ from app.services.agent_supervisor import AgentRoute
 def test_tasks_from_routes_one_per_route():
     routes = [
         AgentRoute(agent_id="platform", reason="平台"),
-        AgentRoute(agent_id="scheduler", reason="定时"),
+        AgentRoute(agent_id="rpa", reason="浏览器"),
     ]
     tasks = tasks_from_routes(routes)
     assert len(tasks) == 2
     assert tasks[0].id == "t1"
     assert tasks[0].agent_id == "platform"
-    assert tasks[1].agent_id == "scheduler"
+    assert tasks[1].agent_id == "rpa"
 
 
 def test_verify_rejects_tool_failure():

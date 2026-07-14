@@ -25,25 +25,21 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.agent_loop_session import AgentLoopSession
 from app.core.aip.handoff import build_specialist_assist_handoff
-from app.core.aip.messaging import attach_handoff_to_complete
-from app.integrations.deepseek_client import chat_completion_message_async, chat_completion_stream_choice
+from app.agentkit.aip.messaging import attach_handoff_to_complete
+from app.integrations.deepseek_client import chat_completion_stream_choice
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_reply_synth import (
-    build_specialist_handoff,
     finalize_specialist_handoff,
     iter_synthesize_tool_loop_user_reply_events,
 )
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
-    ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
-    ATOMIC_TOOL_WEB_SEARCH,
 )
 from app.services.agent_intent import AgentToolPlan
 from app.services.agent_planner import (
     RETRIEVAL_ATOMIC_TOOLS,
     AgentExecutionPlan,
-    SKILL_MGMT_INTENT,
     build_plan_context_instruction,
     filter_tool_specs_by_plan,
     resolve_execution_plan,
@@ -71,12 +67,13 @@ from app.services.agent_tools import (
     tool_workflow_meta,
 )
 from app.services.agent_skill_runtime import build_agent_runtime_tool_specs
+from app.services.agent_profile_service import resolve_effective_runtime_tool_names
 from app.core.agent_checkpoint import (
     clear_checkpoint,
     generate_checkpoint_id,
-    load_checkpoint,
     save_checkpoint,
 )
+from app.core.agent_loop_state import LoopState
 from app.core.human_in_the_loop import (
     build_confirmation_summary,
     clear_pending_choice,
@@ -86,7 +83,6 @@ from app.core.human_in_the_loop import (
     get_choice_response,
     get_confirm_response,
     is_confirmation_required,
-    set_choice_response,
     set_pending_choice,
     set_pending_confirmation,
 )
@@ -109,6 +105,29 @@ def _parse_tool_summary(result_text: str) -> tuple[bool, str]:
     return False, result_text[:200]
 
 
+def _tool_timeout() -> int:
+    from app.config import get_settings
+
+    return max(10, int(get_settings().agent_tool_timeout_sec or 60))
+
+
+def _is_retryable_error(result_text: str) -> bool:
+    """判断工具错误是否可能是临时故障（超时/网络/数据库），值得自动重试一次。"""
+    try:
+        body = json.loads(result_text)
+        summary = str(body.get("summary", "")).lower()
+    except (json.JSONDecodeError, TypeError):
+        return False
+    retryable_keywords = [
+        "timeout", "timed out", "超时",
+        "connection", "connect", "网络",
+        "database error", "数据库",
+        "temporary", "temporarily",
+        "too many requests", "rate limit",
+    ]
+    return any(kw in summary for kw in retryable_keywords)
+
+
 def _workflow_result_title(meta: dict[str, Any], *, ok: bool) -> str:
     if ok:
         return str(meta.get("result_title") or meta.get("title") or "完成")
@@ -119,7 +138,7 @@ def _workflow_result_title(meta: dict[str, Any], *, ok: bool) -> str:
     return f"{base}（失败）"
 
 
-def _finalize_loop_reply(reply: str | None, loop_state: dict[str, Any]) -> str | None:
+def _finalize_loop_reply(reply: str | None, loop_state: LoopState) -> str | None:
     from app.services.agent_orchestrator import append_screenshot_markdown_to_reply
 
     attachments = list(loop_state.get("collected_attachments") or [])
@@ -128,7 +147,7 @@ def _finalize_loop_reply(reply: str | None, loop_state: dict[str, Any]) -> str |
     return append_screenshot_markdown_to_reply(reply, attachments)
 
 
-def _streamed_attachment_urls(loop_state: dict[str, Any]) -> set[str]:
+def _streamed_attachment_urls(loop_state: LoopState) -> set[str]:
     return {
         str(url).strip()
         for url in (loop_state.get("streamed_attachment_urls") or [])
@@ -136,7 +155,7 @@ def _streamed_attachment_urls(loop_state: dict[str, Any]) -> set[str]:
     }
 
 
-def _mark_streamed_attachment(loop_state: dict[str, Any], att: dict[str, Any]) -> None:
+def _mark_streamed_attachment(loop_state: LoopState, att: dict[str, Any]) -> None:
     url = str(att.get("url") or "").strip()
     if not url:
         return
@@ -145,7 +164,7 @@ def _mark_streamed_attachment(loop_state: dict[str, Any], att: dict[str, Any]) -
     loop_state["streamed_attachment_urls"] = sorted(seen)
 
 
-def _pending_screenshot_attachments(loop_state: dict[str, Any]) -> list[dict[str, Any]]:
+def _pending_screenshot_attachments(loop_state: LoopState) -> list[dict[str, Any]]:
     """尚未通过 SSE attachment 下发的截图。"""
     streamed = _streamed_attachment_urls(loop_state)
     pending: list[dict[str, Any]] = []
@@ -166,7 +185,7 @@ async def _maybe_auto_browser_screenshot(
     user: User,
     *,
     conversation_id: str | None,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     user_message: str,
 ) -> None:
     """用户要求截图且已操作浏览器但未截图时，补拍一张。"""
@@ -213,8 +232,16 @@ def _narrow_execution_plan_for_specialist(
       1. 如果 plan 引用了不在 allowed_skill_names 中的 skill → 剥离
       2. 如果专精没有任何可用 skill 却需执行 → 转为直接回答，
          防止 LLM 在无边界约束下调用跨域工具
+
+    例外：规则生成的 plan 已经过 explicit skill 匹配，且 uploaded_skill 由
+    _rule_plan_for_uploaded_skill_followup 精确匹配产生，应予以信任，
+    不在 allowed_skill_names 中时不剥离。
     """
-    if allowed_skill_names is not None and plan.uploaded_skill:
+    if (
+        allowed_skill_names is not None
+        and plan.uploaded_skill
+        and plan.source != "rule"
+    ):
         if plan.uploaded_skill not in allowed_skill_names:
             plan = replace(plan, uploaded_skill=None)
 
@@ -227,6 +254,9 @@ def _narrow_execution_plan_for_specialist(
     ):
         # 当前专精没有任何可用 Skill 时强制直接回答，
         # 避免 LLM 调用不属于本域的全局 Tool
+        # 例外：plan 有 uploaded_skill 且由规则生成时信任该计划
+        if plan.uploaded_skill and plan.source == "rule":
+            return plan
         return replace(
             plan,
             intent=plan.intent or f"{aid} 专精",
@@ -279,20 +309,29 @@ def _build_nudge_cache(
             "load_uploaded_skill；content 留空即可。"
         ),
         "instruction": (
-            "【系统】请按 SKILL.md 在回复正文中完成作答"
-            "（图表用 ```mermaid 围栏），勿调用 run_skill_script。"
+            "【系统】必须通过 tool_calls 执行操作并拿到真实结果后再回答。"
+            "如果你写了「我来搜索」「已安排通知」等文字而没有实际调用工具，"
+            "请立即调用 web_search 等工具获取真实数据后再回答。"
+            "若工具/Skill 调用返回了失败信息，**必须**如实告知用户错误详情，"
+            "禁止编造数据来掩盖调用失败。宁可说「无法执行」也不可伪造结果。"
         ),
     }
     if is_platform_system_data_message(user_message):
         nudges["platform"] = (
-            "【系统】必须先调用 list_users（管理员）或 kg_query 获取真实数据；"
-            "禁止编造用户姓名、邮箱或部门。"
+            "【系统】必须先调用工具获取真实数据（如 search_documents_by_name / list_todos / send_notification 等）；"
+            "禁止编造数据或仅用文字描述来假装已完成操作。"
         )
     if execution_plan.uploaded_skill and plan_has_script:
         nudges["script"] = (
             f"【系统】必须调用 run_skill_script(skill_name="
             f"\"{execution_plan.uploaded_skill}\", args=...) 获取真实数据；"
             "禁止在正文作答或让用户自行执行命令。"
+        )
+    if execution_plan.uploaded_skill and plan_has_script is False:
+        nudges["instruction_only_skill"] = (
+            f"【系统】用户明确指定使用技能 `{execution_plan.uploaded_skill}`。"
+            f"请严格按照该技能 SKILL.md 中的角色设定和回答方式来回复用户，"
+            "禁止使用你默认的助手身份或你自身的知识来回答。"
         )
     return nudges
 
@@ -345,7 +384,7 @@ async def _emit_direct_reply_complete(
     loop_id: str,
     deliverable_reply: str,
     working: list[dict[str, Any]],
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
 ) -> AsyncIterator[dict[str, Any]]:
     """直接可交付回答：仅 yield complete。"""
     yield {
@@ -373,7 +412,7 @@ async def _emit_task_handoff_complete(
     db: Session,
     user: User,
     loop_id: str,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     working: list[dict[str, Any]],
     *,
     user_message: str,
@@ -444,7 +483,7 @@ async def _emit_synthesized_complete(
     loop_id: str,
     user_message: str,
     working: list[dict[str, Any]],
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     *,
     chat_history: list[AiChatMessage] | None,
 ) -> AsyncIterator[dict[str, Any]]:
@@ -463,6 +502,7 @@ async def _emit_synthesized_complete(
     from app.services.agent_memory_service import build_memory_prompt_context
 
     sess.release_before_io()
+    _synth_t0 = time.monotonic()
     synth_reply_parts: list[str] = []
     async for ev in iter_synthesize_tool_loop_user_reply_events(
         user_message=user_message,
@@ -482,6 +522,8 @@ async def _emit_synthesized_complete(
                 for chunk in _emit_report_reply_deltas(text):
                     synth_reply_parts.append(str(chunk["text"]))
                     yield chunk
+    _synth_elapsed = time.monotonic() - _synth_t0
+    _logger.info("synthesis LLM done in %.1fs", _synth_elapsed)
     final_reply = "".join(synth_reply_parts).strip() or None
     if final_reply:
         working.append({"role": "assistant", "content": final_reply})
@@ -586,20 +628,22 @@ async def _iter_agent_tool_loop_body(
     if tools is not None:
         all_tool_specs = tools
     elif agent_id and agent_id != "orchestrator":
+        tool_names = resolve_effective_runtime_tool_names(db, agent_id)
         all_tool_specs = build_agent_runtime_tool_specs(
             db,
             user,
             agent_id=agent_id,
             allowed_skill_names=list(allowed_skill_names) if allowed_skill_names else None,
+            runtime_tool_names=tool_names,
         )
     elif allowed_tool_names is not None:
         all_tool_specs = build_agent_tool_specs(
-            db, user, allowed_names=allowed_tool_names
+            db, user, allowed_names=allowed_tool_names, agent_id=agent_id
         )
     else:
-        all_tool_specs = build_agent_tool_specs(db, user)
+        all_tool_specs = build_agent_tool_specs(db, user, agent_id=agent_id)
     rounds = max_rounds if max_rounds is not None else _default_max_rounds()
-    loop_state: dict[str, Any] = {
+    loop_state: LoopState = {
         "citations": [],
         "kg_context": None,
         "allowed_skill_names": allowed_skill_names,
@@ -609,6 +653,7 @@ async def _iter_agent_tool_loop_body(
         "task_mode": task_mode,
         "agent_id": (agent_id or "").strip() or None,
         "auto_skill_creation": user_message.startswith("【调度自动补能力】"),
+        "_tool_failure_counts": {},
     }
 
     from app.services.kg_service import try_department_members_deterministic_reply
@@ -638,7 +683,7 @@ async def _iter_agent_tool_loop_body(
 
     kg_plan_text = ""
     from app.services.agent_intent import is_chitchat_message
-    from app.services.agent_routing_signals import is_trivial_direct_question
+    from app.services.agent_skill_router import is_trivial_direct_question
 
     skip_kg_plan = is_chitchat_message(user_message, chat_history) or is_trivial_direct_question(
         user_message
@@ -665,6 +710,7 @@ async def _iter_agent_tool_loop_body(
     }
     sess.release_before_io()
     db, user = sess.open()
+    _plan_t0 = time.monotonic()
     execution_plan = await resolve_execution_plan(
         db,
         user,
@@ -674,6 +720,11 @@ async def _iter_agent_tool_loop_body(
         available_atomic_tools=_available_atomic_from_specs(all_tool_specs),
         kg_planning_context=kg_plan_text or None,
         agent_id=agent_id,
+    )
+    _plan_elapsed = time.monotonic() - _plan_t0
+    _logger.info(
+        "execution_plan resolved in %.1fs agent=%s source=%s intent=%s",
+        _plan_elapsed, agent_id, execution_plan.source, execution_plan.intent,
     )
     loop_state["_execution_plan"] = execution_plan
     sess.release_before_io()
@@ -823,10 +874,13 @@ async def _iter_agent_tool_loop_body(
         or str(loop_state.get("planned_uploaded_skill") or "").strip()
     )
     allowed_skills = loop_state.get("allowed_skill_names")
+    # 规则生成的 plan 已通过 explicit skill 匹配，trust it
+    is_rule_plan = execution_plan.source == "rule" and bool(execution_plan.uploaded_skill)
     if (
         initial_skill
         and allowed_skills is not None
         and initial_skill not in allowed_skills
+        and not is_rule_plan
     ):
         initial_skill = ""
     if initial_skill:
@@ -863,6 +917,7 @@ async def _iter_agent_tool_loop_body(
                 break
             prior_plan = execution_plan
             sess.release_before_io()
+            _replan_t0 = time.monotonic()
             execution_plan = await resolve_adaptive_replan(
                 db,
                 user,
@@ -874,6 +929,10 @@ async def _iter_agent_tool_loop_body(
                 prior_plan=prior_plan,
                 loop_state=loop_state,
                 uploaded_names=all_skill_names,
+            )
+            _replan_elapsed = time.monotonic() - _replan_t0
+            _logger.info(
+                "adaptive replan in %.1fs pass=%d agent=%s", _replan_elapsed, adaptive_pass, agent_id,
             )
             loop_state["_execution_plan"] = execution_plan
             execution_plan = _narrow_execution_plan_for_specialist(
@@ -944,6 +1003,7 @@ async def _iter_agent_tool_loop_body(
             )
             sess.release_before_io()
             choice = None
+            _llm_t0 = time.monotonic()
             async for ev in chat_completion_stream_choice(
                 messages=llm_messages,
                 tools=tool_specs or None,
@@ -956,8 +1016,10 @@ async def _iter_agent_tool_loop_body(
                     }
                 elif ev["type"] == "choice":
                     choice = ev
+            _llm_elapsed = time.monotonic() - _llm_t0
             db, user = sess.open()
             if not choice:
+                _logger.info("LLM call empty choice in %.1fs agent=%s", _llm_elapsed, agent_id)
                 break
             message = normalize_llm_assistant_message(choice.get("message") or {})
             tool_calls = message.get("tool_calls") or []
@@ -971,7 +1033,14 @@ async def _iter_agent_tool_loop_body(
                     tool_id = str(tc.get("id") or uuid.uuid4())
                     raw_args = fn.get("arguments") or "{}"
                     step_id = f"agent-tool-{uuid.uuid4().hex[:8]}"
-                    meta = tool_workflow_meta(tool_name, raw_args)
+                    try:
+                        meta = tool_workflow_meta(tool_name, raw_args)
+                    except Exception:
+                        meta = {
+                            "title": tool_name, "result_title": tool_name,
+                            "failure_title": f"{tool_name}（失败）",
+                            "detail": "", "tool": tool_name,
+                        }
 
                     # ── Human-in-the-Loop: 用户确认检查 ──
                     if is_confirmation_required(tool_name) and not loop_state.get("_hitl_confirmed"):
@@ -1158,6 +1227,13 @@ async def _iter_agent_tool_loop_body(
                         continue
 
                     cached_result = lookup_cached_tool_result(loop_state, tool_name, raw_args)
+                    # 解析参数用于 callDetail 展示
+                    try:
+                        parsed_args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                        call_detail_str = json.dumps(parsed_args, ensure_ascii=False, default=str)[:300]
+                    except Exception:
+                        call_detail_str = str(raw_args or "")[:300]
+
                     if cached_result is not None:
                         result_text = cached_result
                         ok, summary = _parse_tool_summary(result_text)
@@ -1170,6 +1246,7 @@ async def _iter_agent_tool_loop_body(
                                 "phase": "tool_call",
                                 "title": meta["title"],
                                 "detail": cached_detail,
+                                "callDetail": call_detail_str,
                                 "tool": meta.get("tool") or tool_name,
                                 "tool_name": tool_name,
                                 "step_id": step_id,
@@ -1182,21 +1259,97 @@ async def _iter_agent_tool_loop_body(
                                 "phase": "tool_call",
                                 "title": meta["title"],
                                 "detail": meta.get("detail") or "",
+                                "callDetail": call_detail_str,
                                 "tool": meta.get("tool") or tool_name,
                                 "tool_name": tool_name,
                                 "step_id": step_id,
                             },
                         }
-                        result_text = await execute_agent_tool(
-                            db,
-                            user,
-                            tool_name=tool_name,
-                            arguments=raw_args,
-                            conversation_id=conversation_id,
-                            attachment_session_id=attachment_session_id,
-                            user_message=user_message,
-                            loop_state=loop_state,
-                        )
+                        # ── 断路器：同一工具连续失败 N 次后在本轮对话中禁用 ──
+                        tool_fails: dict[str, int] = loop_state.get("_tool_failure_counts") or {}
+                        if tool_fails.get(tool_name, 0) >= 3:
+                            result_text = json.dumps({
+                                "ok": False,
+                                "summary": f"工具 {tool_name} 连续失败 3 次，"
+                                           "本次对话中已禁用。请尝试换用其他工具或直接回答。",
+                            }, ensure_ascii=False)
+                        else:
+                            timeout = _tool_timeout()
+                            try:
+                                result_text = await asyncio.wait_for(
+                                    execute_agent_tool(
+                                        db,
+                                        user,
+                                        tool_name=tool_name,
+                                        arguments=raw_args,
+                                        conversation_id=conversation_id,
+                                        attachment_session_id=attachment_session_id,
+                                        user_message=user_message,
+                                        loop_state=loop_state,
+                                    ),
+                                    timeout=timeout,
+                                )
+                            except asyncio.TimeoutError:
+                                _logger.warning(
+                                    "工具执行超时 tool=%s timeout=%ss",
+                                    tool_name, timeout,
+                                )
+                                result_text = json.dumps(
+                                    {"ok": False, "summary": f"工具执行超时（{timeout} 秒）"},
+                                    ensure_ascii=False,
+                                )
+                            except Exception as exc:
+                                _logger.exception("工具执行异常 tool=%s", tool_name)
+                                result_text = json.dumps(
+                                    {"ok": False, "summary": f"工具执行异常：{exc}"},
+                                    ensure_ascii=False,
+                                )
+                            ok, summary = _parse_tool_summary(result_text)
+                            # ── 自动重试：临时故障（超时/网络/数据库）立即重试一次 ──
+                            if not ok and _is_retryable_error(result_text):
+                                yield {
+                                    "type": "workflow",
+                                    "data": {
+                                        "phase": "tool_call",
+                                        "title": f"{meta['title']}（重试）",
+                                        "detail": "临时故障，自动重试一次",
+                                        "tool": meta.get("tool") or tool_name,
+                                        "tool_name": tool_name,
+                                        "step_id": f"{step_id}-retry",
+                                    },
+                                }
+                                try:
+                                    result_text = await asyncio.wait_for(
+                                        execute_agent_tool(
+                                            db,
+                                            user,
+                                            tool_name=tool_name,
+                                            arguments=raw_args,
+                                            conversation_id=conversation_id,
+                                            attachment_session_id=attachment_session_id,
+                                            user_message=user_message,
+                                            loop_state=loop_state,
+                                        ),
+                                        timeout=timeout,
+                                    )
+                                except asyncio.TimeoutError:
+                                    result_text = json.dumps(
+                                        {"ok": False, "summary": f"工具执行超时（{timeout} 秒）"},
+                                        ensure_ascii=False,
+                                    )
+                                except Exception as exc:
+                                    result_text = json.dumps(
+                                        {"ok": False, "summary": f"工具执行异常：{exc}"},
+                                        ensure_ascii=False,
+                                    )
+                            # ── 追踪失败计数（仅对本次实际执行计数） ──
+                            ok2, _ = _parse_tool_summary(result_text)
+                            if not ok2:
+                                tool_fails[tool_name] = tool_fails.get(tool_name, 0) + 1
+                                loop_state["_tool_failure_counts"] = tool_fails
+                            else:
+                                # 成功后重置计数，允许工具继续使用
+                                tool_fails.pop(tool_name, None)
                         ok, summary = _parse_tool_summary(result_text)
                         record_executed_tool_call(
                             loop_state,
@@ -1250,10 +1403,16 @@ async def _iter_agent_tool_loop_body(
                             f"{meta.get('title') or tool_name}：{summary or ('完成' if ok else '失败')}"
                         )
                         loop_state["tool_outcome_lines"] = outcome_lines[-12:]
+                    try:
+                        result_text_parsed = json.loads(result_text) if isinstance(result_text, str) else {}
+                        result_detail_str = str(result_text_parsed.get("summary") or "")[:400]
+                    except Exception:
+                        result_detail_str = str(result_text or "")[:400]
                     result_data = {
                         "phase": "tool_result",
                         "title": _workflow_result_title(meta, ok=ok),
                         "detail": summary or ("完成" if ok else "失败"),
+                        "resultDetail": result_detail_str,
                         "tool": meta.get("tool") or tool_name,
                         "tool_name": tool_name,
                         "step_id": step_id,
@@ -1337,7 +1496,7 @@ async def _iter_agent_tool_loop_body(
             loop_state["content_only_nudges"] = (loop_state.get("content_only_nudges") or 0) + 1
 
             if instruction_only_skill:
-                nudge = nudge_cache["instruction"]
+                nudge = nudge_cache.get("instruction_only_skill") or nudge_cache["instruction"]
             elif "platform" in nudge_cache:
                 nudge = nudge_cache["platform"]
             elif "script" in nudge_cache:

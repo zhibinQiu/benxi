@@ -54,6 +54,7 @@ const jobsPanelMounted = ref(false);
 const notificationsPanelMounted = ref(false);
 const digitalRobotMounted = ref(false);
 const userMenuOpen = ref(false);
+const isMobile = ref(window.innerWidth < 768);
 let badgeTimer = null;
 let todosUnmountTimer = null;
 let jobsUnmountTimer = null;
@@ -153,11 +154,13 @@ onMounted(() => {
   badgeTimer = setInterval(() => {
     if (!document.hidden) refreshHeaderBadges();
   }, 15_000);
+  window.addEventListener("resize", onViewportResize, { passive: true });
 });
 
 onUnmounted(() => {
   if (badgeTimer) clearInterval(badgeTimer);
   releaseFlyoutPanels();
+  window.removeEventListener("resize", onViewportResize);
 });
 
 async function refreshActiveJobCount() {
@@ -195,6 +198,10 @@ function closeAllFlyouts({ releasePanels = false } = {}) {
   notificationsPopoverOpen.value = false;
   digitalRobotOpen.value = false;
   if (releasePanels) releaseFlyoutPanels();
+}
+
+function onViewportResize() {
+  isMobile.value = window.innerWidth < 768;
 }
 
 function toggleFlyout(target) {
@@ -355,7 +362,7 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
     </div>
     <n-dropdown
       trigger="click"
-      placement="bottom-end"
+      :placement="isMobile ? 'bottom' : 'bottom-end'"
       to="body"
       :z-index="PLATFORM_Z.dropdown"
       :options="userMenuOptions"
@@ -528,5 +535,13 @@ defineExpose({ refreshHeaderBadges, closeAllFlyouts });
   transition:
     transform var(--platform-duration-smooth) ease,
     color var(--platform-duration-smooth) ease;
+}
+
+/* 移动端：确保顶栏弹窗不超出屏幕 */
+@media (max-width: 768px) {
+  .header-actions :deep(.n-dropdown-menu) {
+    max-width: calc(100vw - 24px);
+    min-width: 140px;
+  }
 }
 </style>

@@ -80,9 +80,17 @@ export async function fetchRoles() {
   return api("/api/v1/roles");
 }
 
-export async function captchaIssue() {
-  return api("/api/v1/auth/captcha/issue", {
+export async function captchaGenerate() {
+  return api("/api/v1/auth/captcha/generate", {
     method: "POST",
+    preserveOnNavigate: true,
+  });
+}
+
+export async function captchaVerify(captchaId, answer) {
+  return api("/api/v1/auth/captcha/verify", {
+    method: "POST",
+    body: JSON.stringify({ captcha_id: captchaId, answer }),
     preserveOnNavigate: true,
   });
 }

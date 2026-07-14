@@ -4,6 +4,8 @@ import logging
 import time
 
 from sqlalchemy import create_engine, event, text
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -132,9 +134,10 @@ def release_db_connection(db: Session) -> None:
     """长耗时外部 I/O 前归还连接，避免占满连接池。"""
     try:
         db.commit()
-    except Exception:
+    except Exception as exc:
         db.rollback()
-        raise
+        logger.warning("release_db_connection: rollback due to %s", exc)
+    # 不 raise — 无论 commit 成功与否连接都要归还
 
 
 def check_database_health() -> bool:

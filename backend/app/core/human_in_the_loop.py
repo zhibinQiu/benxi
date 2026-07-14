@@ -13,7 +13,7 @@ import json
 import logging
 from typing import Any
 
-from agentkit_interrupt import HitlRequest, generate_hitl_request_id
+from app.agentkit.interrupt import HitlRequest, generate_hitl_request_id
 
 logger = logging.getLogger(__name__)
 

@@ -1,37 +1,48 @@
-"""上传 Skill Python 脚本沙箱 — 临时工作区执行，不落库、不持久化抓取内容。"""
+"""Skill Python 脚本执行 — 通过 KnowFlow 沙箱容器运行。
+
+支持单文件入口（main.py）和多文件 Skill 包。
+安全性由沙箱容器隔离保障，本模块只做语法校验和运行时注入。
+"""
 
 from __future__ import annotations
 
 import ast
+import base64
 import json
-import os
-import shutil
-import subprocess
-import sys
-import tempfile
+import re
 from pathlib import Path
+from typing import Any, Final
+
+import httpx
 
 from app.config import get_settings
 from app.core.exceptions import AppError, bad_request
 
-_FORBIDDEN_IMPORT_ROOTS = frozenset(
-    {
-        "subprocess",
-        "socket",
-        "sqlite3",
-        "boto3",
-        "pickle",
-        "shelve",
-        "requests",
-        "urllib",
-        "httpx",
-    }
-)
+# ── 常量 ─────────────────────────────────────────────────────────────────────
 
-_DEFAULT_ENTRIES = ("main.py", "run.py", "script.py")
-_SHELL_LIKE_ENTRIES = frozenset(
-    {"cat", "ls", "bash", "sh", "curl", "wget", "python", "python3", "node", "npm"}
+_DEFAULT_ENTRIES: Final[tuple[str, ...]] = ("main.py", "run.py", "script.py")
+_SHELL_LIKE_ENTRIES: Final[frozenset[str]] = frozenset({
+    "cat", "ls", "bash", "sh", "curl", "wget", "python", "python3", "node", "npm",
+})
+_RUNTIME_IMPORT_RE: Final[re.Pattern[str]] = re.compile(
+    r"^\s*(import skill_runtime|from skill_runtime\s+import)\s*",
+    re.MULTILINE,
 )
+_MAX_CONCLUSION_CHARS: Final[int] = 4000
+_MAX_HINT_CHARS: Final[int] = 400
+_MAX_STDERR_CHARS: Final[int] = 400
+_MAX_ERROR_CHARS: Final[int] = 800
+
+__all__ = [
+    "execute_skill_script",
+    "probe_script_entry",
+    "resolve_entry_path",
+    "skill_files_have_executable_script",
+    "validate_skill_script",
+]
+
+
+# ── 入口解析 ─────────────────────────────────────────────────────────────────
 
 
 def _normalize_entry_rel(entry: str) -> str:
@@ -50,6 +61,10 @@ def _explicit_entry_invalid(entry: str, names: set[str]) -> bool:
 
 
 def resolve_entry_path(files: dict[str, bytes], entry: str = "") -> str:
+    """从 Skill 包文件中解析可执行入口路径。
+
+    优先级：显式指定 entry > main.py > run.py > script.py > 唯一的 .py 文件。
+    """
     names = set(files.keys())
     if entry and not _explicit_entry_invalid(entry, names):
         return _normalize_entry_rel(entry)
@@ -61,84 +76,21 @@ def resolve_entry_path(files: dict[str, bytes], entry: str = "") -> str:
         return py_files[0]
     if py_files:
         raise bad_request(
-            f"请指定 entry（须为 .py 文件）；候选: {', '.join(py_files[:8])}"
+            f"Multiple .py files found — specify which one to run. Candidates: {', '.join(py_files[:8])}"
         )
     listed = sorted(n for n in names if n != "skill_runtime.py")[:12]
-    hint = f"当前文件: {', '.join(listed)}" if listed else "当前仅有 SKILL.md 等说明文件"
+    hint = (
+        f"Current files: {', '.join(listed)}"
+        if listed
+        else "Only SKILL.md or readme files present"
+    )
     raise bad_request(
-        "Skill 包内没有可执行的 .py 脚本（需要 main.py）。"
-        "请用 update_uploaded_skill_file 创建 main.py，"
-        "脚本末尾输出 JSON 结论（skill_runtime.finish）。"
-        f"{hint}"
+        "No executable .py script found (expected main.py). " + hint
     )
 
 
-_FORBIDDEN_BARE_CALLS = frozenset({"open", "eval", "exec", "compile", "__import__"})
-
-_FORBIDDEN_ATTR_CALLS = frozenset(
-    {"write_text", "write_bytes", "to_csv", "to_excel", "to_parquet", "to_pickle"}
-)
-
-
-def _validate_skill_script_ast(tree: ast.AST) -> None:
-    has_runtime_import = False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = (alias.name or "").split(".")[0]
-                if root == "skill_runtime":
-                    has_runtime_import = True
-                if root in _FORBIDDEN_IMPORT_ROOTS:
-                    raise bad_request(
-                        "脚本包含不允许的操作（写文件/子进程/网络库/数据库等）；"
-                        "公开网页请用 skill_runtime.fetch_text(url)，"
-                        "结论用 skill_runtime.finish(conclusion)"
-                    )
-        elif isinstance(node, ast.ImportFrom):
-            module = (node.module or "").split(".")[0]
-            if module == "skill_runtime":
-                has_runtime_import = True
-            if module in _FORBIDDEN_IMPORT_ROOTS:
-                raise bad_request(
-                    "脚本包含不允许的操作（写文件/子进程/网络库/数据库等）；"
-                    "公开网页请用 skill_runtime.fetch_text(url)，"
-                    "结论用 skill_runtime.finish(conclusion)"
-                )
-        elif isinstance(node, ast.Call):
-            func = node.func
-            if isinstance(func, ast.Name) and func.id in _FORBIDDEN_BARE_CALLS:
-                raise bad_request(
-                    "脚本包含不允许的操作（写文件/子进程/网络库/数据库等）；"
-                    "公开网页请用 skill_runtime.fetch_text(url)，"
-                    "结论用 skill_runtime.finish(conclusion)"
-                )
-            if isinstance(func, ast.Attribute) and func.attr in _FORBIDDEN_ATTR_CALLS:
-                raise bad_request(
-                    "脚本包含不允许的操作（写文件/子进程/网络库/数据库等）；"
-                    "公开网页请用 skill_runtime.fetch_text(url)，"
-                    "结论用 skill_runtime.finish(conclusion)"
-                )
-    if not has_runtime_import:
-        raise bad_request(
-            "脚本缺少 `import skill_runtime`（平台注入的运行模块）。"
-            "请确保入口脚本顶部有 `import skill_runtime`；"
-            "网页抓取用 skill_runtime.fetch_text(url)，结论用 skill_runtime.finish(conclusion)。"
-        )
-
-
-def validate_skill_script(code: str) -> None:
-    stripped = (code or "").strip()
-    if not stripped:
-        raise bad_request("脚本不能为空")
-    try:
-        tree = ast.parse(stripped)
-    except SyntaxError as exc:
-        raise bad_request(f"Python 语法错误: {exc.msg}") from exc
-    _validate_skill_script_ast(tree)
-
-
 def probe_script_entry(files: dict[str, bytes], entry: str = "") -> str | None:
-    """若存在可执行入口则返回相对路径，否则 None（不抛错）。"""
+    """返回可解析的入口相对路径，无法解析时返回 None（不抛错）。"""
     try:
         return resolve_entry_path(files, entry)
     except AppError:
@@ -146,43 +98,65 @@ def probe_script_entry(files: dict[str, bytes], entry: str = "") -> str | None:
 
 
 def skill_files_have_executable_script(files: dict[str, bytes]) -> bool:
-    """Skill 包是否含 Python 入口或 RPA workflow.json。"""
+    """检查 Skill 包是否有 Python 入口或 RPA workflow.json。"""
     if "workflow.json" in files:
         return True
     return probe_script_entry(files) is not None
 
 
-def _inject_runtime_py(files: dict[str, bytes]) -> dict[str, bytes]:
-    from app.integrations import skill_script_runtime as runtime_mod
+# ── 语法校验 ─────────────────────────────────────────────────────────────────
 
-    runtime_path = Path(runtime_mod.__file__).resolve()
-    out = dict(files)
-    out["skill_runtime.py"] = runtime_path.read_bytes()
-    return out
+
+def validate_skill_script(code: str) -> None:
+    """仅检查 Python 语法；安全性由沙箱容器隔离保障。"""
+    stripped = (code or "").strip()
+    if not stripped:
+        raise bad_request("Script must not be empty")
+    try:
+        ast.parse(stripped)
+    except SyntaxError as exc:
+        raise bad_request(f"Python syntax error: {exc.msg}") from exc
+
+
+# ── 运行时注入 ───────────────────────────────────────────────────────────────
+
+
+def _read_runtime_source() -> str:
+    """读取 skill_runtime.py 源码用于内联注入。"""
+    from app.integrations import skill_script_runtime as runtime_mod
+    return Path(runtime_mod.__file__).resolve().read_text("utf-8")
+
+
+def _build_sandbox_code(code: str, runtime_src: str) -> str:
+    """将 skill_runtime 内联到用户脚本，末尾追加 main() 以满足沙箱契约。
+
+    步骤：
+    1. 去掉用户代码中的 ``import skill_runtime``（由注入模块替代）
+    2. 前置运行时源码 + 合成 ``sys.modules["skill_runtime"]``
+    3. 追加 ``def main(**kwargs): pass``（KnowFlow runner 要求）
+    """
+    cleaned = _RUNTIME_IMPORT_RE.sub("", code)
+    mod_stub = """\
+# ── injected runtime module ──
+import sys as _sys, types as _types
+_skill_runtime_mod = _types.ModuleType("skill_runtime")
+_skill_runtime_mod.fetch_text = fetch_text
+_skill_runtime_mod.finish = finish
+_sys.modules["skill_runtime"] = _skill_runtime_mod
+skill_runtime = _skill_runtime_mod
+
+"""
+    return runtime_src + mod_stub + cleaned + "\n\n\ndef main(**kwargs):\n    pass\n"
+
+
+# ── 执行 ─────────────────────────────────────────────────────────────────────
 
 
 def _truncate(text: str, limit: int) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
         return text
-    return text[: max(0, limit - 1)] + "…"
-
-
-def _needs_runtime_import(code: str) -> bool:
-    """检查脚本是否缺少 `import skill_runtime`，需要自动注入。"""
-    try:
-        tree = ast.parse(code)
-    except SyntaxError:
-        return False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if (alias.name or "").split(".")[0] == "skill_runtime":
-                    return False
-        elif isinstance(node, ast.ImportFrom):
-            if (node.module or "").split(".")[0] == "skill_runtime":
-                return False
-    return True
+    return text[:max(0, limit - 1)] + "…"
 
 
 def execute_skill_script(
@@ -190,78 +164,100 @@ def execute_skill_script(
     files: dict[str, bytes],
     entry: str = "",
     args: list[str] | None = None,
-) -> dict:
-    """在临时目录执行 Skill 脚本，仅返回 conclusion（不持久化原始抓取内容）。"""
-    settings = get_settings()
-    if not settings.agent_skill_script_enabled:
-        raise bad_request("Skill 脚本执行未启用")
+) -> dict[str, Any]:
+    """通过 KnowFlow 沙箱容器执行 Skill 脚本。
 
-    workspace_files = _inject_runtime_py(files)
-    entry_rel = resolve_entry_path(workspace_files, entry)
-    code = workspace_files[entry_rel].decode("utf-8")
-    if _needs_runtime_import(code):
-        code = "import skill_runtime\n\n" + code
-        workspace_files[entry_rel] = code.encode("utf-8")
+    Args:
+        files: Skill 包文件映射（文件名 → bytes 内容）。
+        entry: 入口文件名（空时自动检测）。
+        args: 传递给脚本的 CLI 参数。
+
+    Returns:
+        {"status": "success", "conclusion": str, "entry": str, ...}
+
+    Raises:
+        AppError: 沙箱未配置、执行失败等。
+    """
+    settings = get_settings()
+
+    if not settings.agent_skill_script_enabled:
+        raise bad_request("Skill script execution is not enabled")
+
+    sandbox_url = (settings.sandbox_base_url or "").rstrip("/")
+    if not sandbox_url:
+        raise bad_request(
+            "Sandbox is not configured (SANDBOX_BASE_URL is empty). "
+            "Script-type Skills require a running sandbox container. "
+            "Deploy one and set the environment variable."
+        )
+
+    entry_rel = resolve_entry_path(files, entry)
+    code = files[entry_rel].decode("utf-8")
+
     validate_skill_script(code)
+
+    runtime_src = _read_runtime_source()
+    sandbox_code = _build_sandbox_code(code, runtime_src)
 
     timeout = max(int(settings.agent_skill_script_timeout_seconds), 5)
     max_conclusion = max(int(settings.agent_skill_script_max_conclusion_chars), 256)
     argv = [str(a) for a in (args or [])]
 
-    tmp_dir = tempfile.mkdtemp(prefix="skill-run-")
     try:
-        work = Path(tmp_dir)
-        for rel, data in workspace_files.items():
-            target = work / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-
-        env = os.environ.copy()
-        env["PYTHONPATH"] = str(work) + os.pathsep + env.get("PYTHONPATH", "")
-        env["SKILL_SCRIPT_EPHEMERAL"] = "1"
-
-        proc = subprocess.run(
-            [sys.executable, str(work / entry_rel), *argv],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-            cwd=str(work),
-            env=env,
+        response = httpx.post(
+            f"{sandbox_url}/run",
+            json={
+                "code_b64": base64.b64encode(sandbox_code.encode("utf-8")).decode("utf-8"),
+                "language": "python",
+                "arguments": {"args": argv},
+            },
+            timeout=timeout + 10,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise bad_request(f"脚本执行超时（>{timeout}s）") from exc
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        response.raise_for_status()
+    except httpx.TimeoutException:
+        raise bad_request(f"Sandbox execution timed out (>{timeout}s)") from None
+    except httpx.HTTPStatusError as exc:
+        raise bad_request(f"Sandbox request failed with HTTP {exc.response.status_code}") from exc
+    except httpx.RequestError as exc:
+        raise bad_request(
+            f"Cannot reach the sandbox ({exc.__class__.__name__}). "
+            "Make sure the sandbox service is up and SANDBOX_BASE_URL is correct."
+        ) from exc
 
-    stdout = (proc.stdout or "").strip()
-    stderr = (proc.stderr or "").strip()
-    if proc.returncode != 0 and not stdout:
-        raise bad_request(_truncate(stderr or f"脚本退出码 {proc.returncode}", 800))
+    result: dict[str, Any] = response.json()
+    status = result.get("status", "unknown")
+    stdout = (result.get("stdout") or "").strip()
+    stderr = (result.get("stderr") or "").strip()
+
+    if status != "success":
+        raise bad_request(
+            _truncate(stderr or f"Sandbox execution failed (status={status})", _MAX_ERROR_CHARS)
+        )
 
     payload_line = stdout.splitlines()[-1] if stdout else ""
     try:
         payload = json.loads(payload_line)
     except json.JSONDecodeError as exc:
         raise bad_request(
-            '脚本须在最后输出一行 JSON，例如 {"conclusion":"分析结论"}；'
-            "推荐使用 skill_runtime.finish(conclusion)"
+            'The script must print a JSON line as its final output, '
+            'e.g. {"conclusion": "analysis result"}. '
+            'Use skill_runtime.finish(conclusion) to produce it.'
         ) from exc
 
     if not isinstance(payload, dict):
-        raise bad_request("脚本输出必须是 JSON 对象")
+        raise bad_request("Script output must be a JSON object")
     conclusion = _truncate(str(payload.get("conclusion") or "").strip(), max_conclusion)
     if not conclusion:
-        raise bad_request("脚本 JSON 缺少非空 conclusion 字段")
+        raise bad_request("Script output JSON is missing a non-empty 'conclusion' field")
 
-    hint = _truncate(str(payload.get("hint") or "").strip(), 400)
-    result = {
+    hint = _truncate(str(payload.get("hint") or "").strip(), _MAX_HINT_CHARS)
+    out: dict[str, Any] = {
         "status": "success",
         "conclusion": conclusion,
         "entry": entry_rel,
     }
     if hint:
-        result["hint"] = hint
+        out["hint"] = hint
     if stderr:
-        result["stderr"] = _truncate(stderr, 400)
-    return result
+        out["stderr"] = _truncate(stderr, _MAX_STDERR_CHARS)
+    return out

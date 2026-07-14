@@ -21,6 +21,7 @@ from app.services.model_settings_service import get_model_settings, save_model_s
 from app.services.resource_health_service import (
     TESTABLE_RESOURCE_IDS,
     check_resource_health,
+    check_resource_providers,
     check_single_resource_health,
     merge_health_test_config,
     _normalize_resource_id,
@@ -78,4 +79,8 @@ def test_resource_health(
             draft[new] = draft[old]
     cfg = merge_health_test_config(db, draft)
     item = check_single_resource_health(rid, cfg, db)
+    # 追加逐 provider 连通性结果（仅支持多 provider 的资源有效）
+    provider_results = check_resource_providers(rid, cfg)
+    if provider_results:
+        item["providers"] = provider_results
     return ApiResponse(data=ResourceHealthItemOut(**item))

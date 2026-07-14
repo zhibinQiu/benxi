@@ -48,16 +48,27 @@
 .app-shell .n-pagination .n-pagination-item:not(.n-pagination-item--disabled) {
   background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle)) !important;
   border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
+  border-radius: var(--platform-radius-xs) !important;
+  font-weight: 500;
   transition:
     background 0.2s var(--platform-ease-smooth),
     border-color 0.2s var(--platform-ease-smooth),
     box-shadow 0.2s var(--platform-ease-smooth),
-    color 0.2s var(--platform-ease-smooth);
+    color 0.2s var(--platform-ease-smooth),
+    transform 0.15s var(--platform-ease-smooth);
 }
 
 .app-shell .n-pagination .n-pagination-item:not(.n-pagination-item--disabled):hover {
   border-color: var(--platform-accent-border) !important;
   color: var(--platform-accent) !important;
+  transform: translateY(-1px);
+}
+
+.app-shell .n-pagination .n-pagination-item.n-pagination-item--active {
+  background: var(--platform-accent) !important;
+  border-color: var(--platform-accent) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 25%, transparent) !important;
 }
 
 /* 常见页面容器 — 玻璃面板 */
@@ -115,5 +126,5 @@
 .n-base-selection.n-base-selection--focus .n-base-selection__state-border,
 .n-base-selection.n-base-selection--active .n-base-selection__state-border {
   border-color: var(--platform-accent) !important;
-  box-shadow: 0 0 0 4px var(--platform-accent-soft) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--platform-accent) 10%, transparent) !important;
 }

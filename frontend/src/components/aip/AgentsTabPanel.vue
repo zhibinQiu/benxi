@@ -56,6 +56,7 @@ const externalLoading = ref(false);
 const hydrated = ref(hasAgentsTabCacheData(initialCache));
 const agents = ref((initialCache?.agents || []).map((row) => normalizeBuiltinAgent(row)));
 const externalAgents = ref(initialCache?.externalAgents || []);
+const keyword = ref("");
 const registryForPicker = ref([]);
 
 const configDrawerOpen = ref(false);
@@ -98,7 +99,29 @@ const skillPickerOptions = computed(() =>
   }))
 );
 
+const filteredAgents = computed(() => {
+  const q = keyword.value.trim().toLowerCase();
+  if (!q) return agents.value;
+  return agents.value.filter((a) => {
+    const hay = [a.title, a.id, a.description].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+});
+
+const filteredExternalAgents = computed(() => {
+  const q = keyword.value.trim().toLowerCase();
+  if (!q) return externalAgents.value;
+  return externalAgents.value.filter((a) => {
+    const hay = [a.name, a.aid, a.description, a.service_endpoint].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+});
+
 const selectedSkillCount = computed(() => selectedSkillNames.value.length);
+
+const showAgentEmpty = computed(() =>
+  keyword.value.trim() && !filteredAgents.value.length && !filteredExternalAgents.value.length
+);
 
 function persistCache() {
   writeAgentsTabCache({
@@ -388,9 +411,17 @@ defineExpose({
 </script>
 
 <template>
-  <NText depth="3" class="agents-tab-hint">
-    {{ t("admin.agentSkills.agentsHint") }}
-  </NText>
+  <div class="agents-tab-header">
+    <NText depth="3" class="agents-tab-hint">
+      {{ t("admin.agentSkills.agentsHint") }}
+    </NText>
+    <NInput
+      v-model:value="keyword"
+      clearable
+      :placeholder="t('admin.agentSkills.searchPlaceholder')"
+      style="width: 288px; flex-shrink: 0"
+    />
+  </div>
   <!-- 首屏骨架：6 张卡片占位，避免白屏 -->
   <div v-if="initialLoading" class="agent-card-grid agent-card-grid--skeleton">
     <div v-for="n in 6" :key="n" class="agent-card agent-card--skeleton">
@@ -410,9 +441,12 @@ defineExpose({
       </div>
     </div>
   </div>
+  <div v-else-if="showAgentEmpty" class="agent-card-grid agent-card-grid--empty">
+    <NText depth="3">{{ t("admin.agentSkills.noSearchResults") }}</NText>
+  </div>
   <div v-else class="agent-card-grid">
     <NCard
-      v-for="agent in agents"
+      v-for="agent in filteredAgents"
       :key="agent.id"
       size="small"
       class="agent-card agent-card--clickable"
@@ -485,7 +519,7 @@ defineExpose({
     </NCard>
 
     <NCard
-      v-for="agent in externalAgents"
+      v-for="agent in filteredExternalAgents"
       :key="agent.aid"
       size="small"
       class="agent-card agent-card--external"
@@ -556,6 +590,24 @@ defineExpose({
       <div v-if="agentDetailLoading">{{ t("common.loading") }}</div>
       <template v-else-if="agentDetail">
         <NText depth="3">{{ agentDetail.description }}</NText>
+
+        <!-- 运行时工具列表 -->
+        <div v-if="agentDetail.runtime_tool_names?.length" style="margin: 14px 0">
+          <NText depth="2" style="font-weight: 600; display: block; margin-bottom: 6px">
+            {{ t("admin.agentSkills.toolsTitle") }}（{{ agentDetail.runtime_tool_names.length }}）
+          </NText>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px">
+            <NTag
+              v-for="tool in agentDetail.runtime_tool_names"
+              :key="tool"
+              size="small"
+              :bordered="false"
+            >
+              {{ tool }}
+            </NTag>
+          </div>
+        </div>
+
         <NText depth="3" style="display: block; margin: 14px 0">
           {{ t("admin.agentSkills.agentConfigHint") }}
         </NText>
@@ -765,6 +817,20 @@ defineExpose({
 </template>
 
 <style scoped>
+.agents-tab-hint {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.agents-tab-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
 .external-agent-modal__hint {
   display: block;
   margin-bottom: 19px;

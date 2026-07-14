@@ -10,10 +10,13 @@ import httpx
 from app.config import get_settings
 from app.integrations.paddleocr_client import paddleocr_request_url
 from app.integrations.ragflow_client import RagflowClient
+from app.integrations.mysql_conn import check_mysql_healthy
 from app.services.model_settings_service import (
     _endpoint_fields,
     _legacy_paddleocr_base_url,
     get_effective_model_config,
+    get_firecrawl_api_key,
+    get_firecrawl_api_url,
     get_searxng_timeout_seconds,
     mask_secret,
     resolve_ragflow_api_base,
@@ -27,6 +30,7 @@ TESTABLE_RESOURCE_IDS = frozenset(
     {
         "platform_api",
         "llm",
+        "multimodal",
         "embedding",
         "vl",
         "vision",
@@ -36,6 +40,7 @@ TESTABLE_RESOURCE_IDS = frozenset(
         "speech",
         "pdf2zh",
         "searxng",
+        "firecrawl",
         "ragflow_api",
         "knowflow_backend",
         "ragflow_mysql",
@@ -68,6 +73,17 @@ def merge_health_test_config(db, draft: dict[str, Any]) -> dict[str, str]:
             except (TypeError, ValueError):
                 continue
             continue
+        if key.endswith("_providers"):
+            # 将 providers 列表序列化为 JSON 字符串存储
+            import json
+            try:
+                merged[key] = json.dumps(val, ensure_ascii=False)
+            except (TypeError, ValueError):
+                pass
+            continue
+        if key.endswith("_active_provider"):
+            merged[key] = str(val).strip()
+            continue
         s = str(val).strip()
         if not s:
             continue
@@ -77,7 +93,41 @@ def merge_health_test_config(db, draft: dict[str, Any]) -> dict[str, str]:
         if prev and s == mask_secret(prev):
             continue
         merged[key] = s
+
+    # 根据 providers 计算 flat 字段值
+    _apply_providers_to_merged(merged)
     return merged
+
+
+def _apply_providers_to_merged(merged: dict[str, str]) -> None:
+    """从 providers + active_provider 计算 flat base_url/api_key/model 字段。"""
+    for prefix in ("llm", "multimodal", "embedding", "vl", "rerank", "paddleocr", "tts"):
+        providers_key = f"{prefix}_providers"
+        active_key = f"{prefix}_active_provider"
+        raw = merged.get(providers_key, "")
+        if not raw:
+            continue
+        try:
+            import json
+            providers = json.loads(raw) if isinstance(raw, str) else raw
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(providers, list) or len(providers) == 0:
+            continue
+        active_id = merged.get(active_key, "") or providers[0].get("id", "")
+        active_prov = None
+        for p in providers:
+            if p.get("id", "") == active_id:
+                active_prov = p
+                break
+        if active_prov is None:
+            active_prov = providers[0]
+        if active_prov.get("base_url"):
+            merged[f"{prefix}_base_url"] = active_prov["base_url"]
+        if active_prov.get("api_key"):
+            merged[f"{prefix}_api_key"] = active_prov["api_key"]
+        if active_prov.get("model_name"):
+            merged[f"{prefix}_model"] = active_prov["model_name"]
 
 
 def _endpoint_configured(*, base_url: str, api_key: str, model_name: str) -> bool:
@@ -300,28 +350,15 @@ def _resolve_mysql_from_cfg(cfg: dict[str, str]) -> tuple[str, str, str, int]:
 
 def _probe_ragflow_mysql_cfg(cfg: dict[str, str]) -> tuple[bool, str]:
     host, password, db_name, port = _resolve_mysql_from_cfg(cfg)
-    if not password:
-        return False, "未填写 MySQL 密码"
-    if not host:
-        return False, "未填写 MySQL 主机（Docker 栈可留空以使用 knowflow-mysql）"
-    try:
-        import pymysql
-
-        conn = pymysql.connect(
-            host=host,
-            port=port,
-            user="root",
-            password=password,
-            database=db_name or "rag_flow",
-            charset="utf8mb4",
-            connect_timeout=5,
-            read_timeout=5,
-            write_timeout=5,
-        )
-        conn.close()
-        return True, "连接正常"
-    except Exception as exc:
-        return False, f"无法连接：{exc}"
+    return check_mysql_healthy(
+        host=host,
+        port=port,
+        password=password,
+        database=db_name or "rag_flow",
+        connect_timeout=10,
+        read_timeout=10,
+        write_timeout=10,
+    )
 
 
 def _probe_platform_api_url(base: str) -> tuple[bool, str]:
@@ -432,6 +469,109 @@ def _probe_searxng_url(searxng_url: str, *, timeout: float | None = None) -> tup
         return False, "返回非 JSON"
 
 
+def _probe_firecrawl_url(api_url: str, api_key: str, *, timeout: float | None = None) -> tuple[bool, str]:
+    base = (api_url or "").strip().rstrip("/")
+    if not base:
+        return False, "未填写 API 地址"
+    probe_timeout = max(3.0, float(timeout or 10.0))
+    try:
+        with httpx.Client(timeout=probe_timeout, follow_redirects=True) as client:
+            if api_key:
+                r = client.get(
+                    f"{base}/v1/health",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            else:
+                r = client.get(f"{base}/v1/health")
+            if r.status_code == 200:
+                return True, "FireCrawl 服务正常"
+            detail = (r.text or "")[:120]
+            return False, f"HTTP {r.status_code}{(': ' + detail) if detail else ''}"
+    except httpx.TimeoutException:
+        return False, f"连接超时（>{probe_timeout:g}s）"
+    except httpx.HTTPError as exc:
+        return False, f"无法连接：{exc}"
+
+
+def check_resource_providers(resource_id: str, cfg: dict[str, str]) -> list[dict[str, Any]]:
+    """遍历一个资源的所有服务源（provider），逐个测试连通性。
+
+    只对支持多 provider 的资源类型生效（llm、multimodal、embedding、vl、rerank、paddleocr、tts）。
+    返回列表，每个元素包含 provider_id、provider_label、configured、healthy、message。
+    """
+    import json
+
+    rid = _normalize_resource_id(resource_id)
+    PROVIDER_PREFIXES = {"llm", "multimodal", "embedding", "vl", "rerank", "paddleocr", "tts"}
+    prefix = rid if rid in PROVIDER_PREFIXES else None
+    if prefix is None:
+        return []
+
+    providers_key = f"{prefix}_providers"
+    raw = cfg.get(providers_key, "")
+    if not raw:
+        return []
+
+    try:
+        providers = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    if not isinstance(providers, list) or len(providers) == 0:
+        return []
+
+    results: list[dict[str, Any]] = []
+    for idx, prov in enumerate(providers):
+        prov_id = prov.get("id", "")
+        prov_label = (
+            prov.get("label", "")
+            or prov.get("model_name", "")
+            or f"服务源 {idx + 1}"
+        )
+        base_url = (prov.get("base_url") or "").strip()
+        api_key = (prov.get("api_key") or "").strip()
+        model_name = (prov.get("model_name") or "").strip()
+
+        if not (base_url and api_key and model_name):
+            results.append(
+                {
+                    "provider_id": prov_id,
+                    "provider_label": prov_label,
+                    "configured": bool(base_url and api_key and model_name),
+                    "healthy": None,
+                    "message": "配置不完整",
+                }
+            )
+            continue
+
+        if rid in ("llm", "multimodal"):
+            healthy, msg = _probe_openai_compatible(base_url, api_key)
+        elif rid == "embedding":
+            healthy, msg = _probe_embedding(base_url, api_key, model_name)
+        elif rid == "vl":
+            healthy, msg = _probe_vl(base_url, api_key, model_name)
+        elif rid == "rerank":
+            healthy, msg = _probe_rerank(base_url, api_key, model_name)
+        elif rid == "paddleocr":
+            healthy, msg = _probe_paddleocr(base_url, api_key=api_key)
+        elif rid == "tts":
+            healthy, msg = _probe_tts(base_url, api_key, model_name)
+        else:
+            continue
+
+        results.append(
+            {
+                "provider_id": prov_id,
+                "provider_label": prov_label,
+                "configured": True,
+                "healthy": healthy,
+                "message": msg,
+            }
+        )
+
+    return results
+
+
 def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> dict[str, Any]:
     """按给定配置探测单项资源（用于保存前测试）。"""
     _ = db
@@ -459,6 +599,17 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
         if not llm_ok_cfg:
             return _item(configured=False, healthy=False, message="请填写 API 地址、模型与 Key")
         healthy, msg = _probe_openai_compatible(cfg["llm_base_url"], cfg["llm_api_key"])
+        return _item(configured=True, healthy=healthy, message=msg)
+
+    if rid == "multimodal":
+        mm_ok_cfg = _endpoint_configured(
+            base_url=cfg.get("multimodal_base_url", ""),
+            api_key=cfg.get("multimodal_api_key", ""),
+            model_name=cfg.get("multimodal_model", ""),
+        )
+        if not mm_ok_cfg:
+            return _item(configured=False, healthy=False, message="请填写 API 地址、模型与 Key")
+        healthy, msg = _probe_openai_compatible(cfg["multimodal_base_url"], cfg["multimodal_api_key"])
         return _item(configured=True, healthy=healthy, message=msg)
 
     if rid == "embedding":
@@ -547,6 +698,14 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
         healthy, msg = _probe_searxng_url(searxng_url, timeout=timeout)
         return _item(configured=True, healthy=healthy, message=msg)
 
+    if rid == "firecrawl":
+        firecrawl_api_url = (cfg.get("firecrawl_api_url") or "https://api.firecrawl.dev").strip()
+        firecrawl_api_key = (cfg.get("firecrawl_api_key") or "").strip()
+        if not firecrawl_api_url:
+            return _item(configured=False, healthy=False, message="未填写 API 地址")
+        healthy, msg = _probe_firecrawl_url(firecrawl_api_url, firecrawl_api_key)
+        return _item(configured=True, healthy=healthy, message=msg)
+
     if rid == "ragflow_api":
         ragflow_url = (cfg.get("ragflow_api_url") or "").strip()
         if not ragflow_url:
@@ -582,12 +741,33 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
     raise ValueError(f"unsupported resource_id: {resource_id}")
 
 
+def _check_one(rid: str, cfg: dict[str, str]) -> dict[str, Any]:
+    """包装 check_single_resource_health，用 None db 避免跨线程共享 session。"""
+    return check_single_resource_health(rid, cfg, None)
+
+
 def check_resource_health(db) -> dict[str, dict[str, Any]]:
     cfg = get_effective_model_config(db)
-    out: dict[str, dict[str, Any]] = {}
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    seen: set[str] = set()
+    tasks: list[tuple[str, str]] = []
     for rid in TESTABLE_RESOURCE_IDS:
         canonical = _normalize_resource_id(rid)
-        if canonical in out:
+        if canonical in seen:
             continue
-        out[canonical] = check_single_resource_health(canonical, cfg, db)
+        seen.add(canonical)
+        tasks.append((canonical, rid))
+
+    out: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as pool:
+        fut_map = {
+            pool.submit(_check_one, rid, cfg): canonical
+            for canonical, rid in tasks
+        }
+        for fut in as_completed(fut_map):
+            try:
+                out[fut_map[fut]] = fut.result()
+            except Exception as exc:
+                out[fut_map[fut]] = _item(configured=False, healthy=None, message=str(exc))
     return out

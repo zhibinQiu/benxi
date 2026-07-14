@@ -13,6 +13,22 @@ _QUEUE_NAMES = ("rag_flow_svr_queue", "rag_flow_svr_queue_1")
 _CONSUMER_GROUP = "rag_flow_svr_task_broker"
 
 
+def _classify_mysql_error(exc: Exception, host: str, port: int) -> str:
+    """将 MySQL 异常分类为用户可读的简短描述（不暴露密码/堆栈）。"""
+    msg = str(exc).lower()
+    if "access denied" in msg or "1045" in msg:
+        return "知识库 MySQL 账号或密码错误"
+    if "unknown database" in msg or "1049" in msg:
+        return "知识库数据库名（rag_flow）不存在"
+    if "can't connect" in msg or "connection refused" in msg or "2003" in msg:
+        return f"知识库 MySQL 服务不可达（{host}:{port}），请确认容器已启动"
+    if "timeout" in msg or "timed out" in msg:
+        return f"知识库 MySQL 连接超时（{host}:{port}）"
+    if "no route to host" in msg or "113" in msg:
+        return f"知识库 MySQL 网络不可达（{host}），请检查网络/DNS"
+    return "知识库 MySQL 连接异常"
+
+
 def collect_knowflow_queue_metrics(db: Session | None = None) -> dict[str, Any]:
     """采集解析队列健康状态：是否卡住、积压与 executor 活跃度。"""
     from app.config import get_settings
@@ -46,19 +62,17 @@ def collect_knowflow_queue_metrics(db: Session | None = None) -> dict[str, Any]:
         out["error"] = "未配置知识库 MySQL"
         return out
 
-    try:
-        import pymysql
+    from app.integrations.mysql_conn import get_mysql_connection
 
-        conn = pymysql.connect(
+    try:
+        conn = get_mysql_connection(
             host=host,
             port=port,
-            user="root",
             password=password,
             database=db_name,
-            charset="utf8mb4",
-            connect_timeout=settings.ragflow_mysql_connect_timeout,
-            read_timeout=settings.ragflow_mysql_read_timeout,
-            write_timeout=settings.ragflow_mysql_write_timeout,
+            connect_timeout=5,
+            read_timeout=8,
+            write_timeout=10,
         )
         with conn.cursor() as cur:
             cur.execute(
@@ -107,18 +121,20 @@ def collect_knowflow_queue_metrics(db: Session | None = None) -> dict[str, Any]:
         conn.close()
         out["available"] = True
     except Exception as exc:
-        logger.debug("KnowFlow 队列指标采集失败: %s", exc)
-        from app.core.user_messages import sanitize_user_message
-
-        out["error"] = sanitize_user_message(
-            str(exc)[:200], fallback="知识库队列指标采集失败"
-        )
+        logger.warning("KnowFlow 队列指标采集失败 (MySQL %s:%s): %s", host, port, exc)
+        out["error"] = _classify_mysql_error(exc, host, port)
         return out
 
     try:
         import redis
 
-        client = redis.from_url(settings.redis_url, decode_responses=True)
+        redis_timeout = max(0.5, float(settings.redis_socket_timeout_sec))
+        client = redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=redis_timeout,
+            socket_timeout=redis_timeout,
+        )
         total_lag = 0
         for q in _QUEUE_NAMES:
             try:
@@ -131,9 +147,9 @@ def collect_knowflow_queue_metrics(db: Session | None = None) -> dict[str, Any]:
                     break
         out["queue_lag"] = total_lag
     except Exception as exc:
-        logger.debug("Redis 队列 lag 采集失败: %s", exc)
+        logger.warning("Redis 队列 lag 采集失败: %s", exc)
         if not out.get("error"):
-            out["error"] = f"Redis: {exc}"[:200]
+            out["error"] = "知识库 Redis 连接异常"
 
     from app.services.knowflow_queue_watchdog_service import is_knowflow_queue_stuck
 

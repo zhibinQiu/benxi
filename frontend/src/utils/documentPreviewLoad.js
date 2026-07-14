@@ -2,6 +2,7 @@
 
 import { fetchCompareDocumentContent } from "../api/compare.js";
 import { PREVIEW_KIND, resolveDocumentPreviewKind } from "./documentPreview.js";
+import { escapeHtml } from "./markdown.js";
 
 function looksLikeUtf8(bytes) {
   try {
@@ -89,18 +90,9 @@ export function isLegacyWordFile(fileName, mimeType = "") {
 }
 
 /**
- * 将 Word 转为 HTML；失败时尝试后端已解析的全文（纯文本降级）。
- * @returns {{ html: string, text: string, messages: object[] }}
+ * 将后端提取的 Office 正文（## 标题 + 制表符行）渲染为 HTML。
+ * @param {string} fullText
  */
-function escapeHtml(text) {
-  return String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/** 将后端提取的 Office 正文（## 标题 + 制表符行）渲染为 HTML。 */
 export function officeExtractToHtml(fullText) {
   const text = String(fullText || "").trim();
   if (!text) return "";

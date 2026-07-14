@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -573,6 +574,34 @@ class RagflowClient:
             page += 1
         return None
 
+    @staticmethod
+    def _parse_inline_images(chunk: dict) -> list[dict]:
+        """从 chunk 中提取内嵌图片信息。
+
+        优先从 chunk 的 inline_images 字段读取（KnowFlow smart chunk 写入），
+        回退从 content 中解析 <img> 标签。
+        """
+        inline_images = chunk.get("inline_images") or []
+        if isinstance(inline_images, list) and inline_images:
+            return [
+                {"url": img["url"], "description": img.get("description", ""), "alt": img.get("alt", "")}
+                for img in inline_images
+                if isinstance(img, dict) and img.get("url")
+            ]
+
+        # 回退：从 content 中解析 <img> 标签
+        content = chunk.get("content") or ""
+        images = []
+        for m in re.finditer(r'<img\s+[^>]*src="([^"]+)"[^>]*>', content):
+            full_tag = m.group(0)
+            src = m.group(1)
+            alt_m = re.search(r'alt="([^"]*)"', full_tag)
+            alt_text = alt_m.group(1) if alt_m else ""
+            images.append({"url": src, "description": "", "alt": alt_text})
+        for m in re.finditer(r'!\[([^\]]*)\]\(([^)]+)\)', content):
+            images.append({"url": m.group(2), "description": "", "alt": m.group(1)})
+        return images
+
     def _chunk_to_retrieval_hit(
         self, ch: dict, *, question: str | None = None
     ) -> dict:
@@ -593,6 +622,7 @@ class RagflowClient:
         )
         real_image_id = self.extract_chunk_image_id(ch)
         has_bbox = isinstance(anchor.get("bbox"), list) and len(anchor["bbox"]) >= 4
+        inline_images = self._parse_inline_images(ch)
         return {
             "snippet": display_snippet,
             "highlight": highlight_raw or content,
@@ -605,7 +635,8 @@ class RagflowClient:
             "chunk_id": ch.get("id") or ch.get("chunk_id"),
             "dataset_id": ch.get("kb_id") or ch.get("dataset_id"),
             "image_id": real_image_id,
-            "preview_available": bool(real_image_id or has_bbox),
+            "inline_images": inline_images,
+            "preview_available": bool(real_image_id or has_bbox or inline_images),
             "anchor_json": anchor,
             "source": "knowflow",
         }

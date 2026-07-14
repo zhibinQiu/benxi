@@ -65,6 +65,20 @@ export async function reindexDocument(
   });
 }
 
+/** 重新索引当前用户指定范围内所有未索引或索引失败的文档 */
+export async function reindexUnindexedDocuments({
+  scope = "personal",
+  deptId,
+  ownerId,
+} = {}) {
+  const q = new URLSearchParams({ scope });
+  if (deptId) q.set("dept_id", deptId);
+  if (ownerId) q.set("owner_id", ownerId);
+  return api(`/api/v1/knowledge/documents/reindex-unindexed?${q}`, {
+    method: "POST",
+  });
+}
+
 export async function createKnowledgeQaSession(documentIds, title = "知识检索") {
   return api("/api/v1/knowledge/qa/sessions", {
     method: "POST",

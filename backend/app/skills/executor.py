@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentkit_skills.executor import (
+from app.agentkit.skills.executor import (
     SkillNotFoundError,
     SkillNotReadyError,
     invoke_skill_definition,
@@ -15,7 +15,6 @@ from app.skills.catalog import get_merged_skill_definition
 from app.skills.types import (
     SkillInvocationContext,
     SkillInvocationResult,
-    SkillReadiness,
     SkillSource,
 )
 

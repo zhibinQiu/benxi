@@ -7,6 +7,8 @@ import re
 from dataclasses import replace
 from typing import Any
 
+from app.core.agent_loop_state import LoopState
+
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -58,7 +60,7 @@ def tool_rounds_for_adaptive_pass(base_rounds: int, adaptive_pass: int) -> int:
 def resolve_target_uploaded_skill(
     *,
     execution_plan: AgentExecutionPlan,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     user_message: str,
     chat_history: list[AiChatMessage] | None,
     uploaded_names: set[str],
@@ -139,7 +141,7 @@ def execution_plan_needs_skill_data(
 
 def build_skill_management_continue_nudge(
     user_message: str,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
 ) -> str:
     """诉求尚未落实时，提示专精智能体继续调用工具（非用户可见）。"""
     created = [
@@ -162,7 +164,7 @@ def build_skill_management_continue_nudge(
 
 def execution_goal_satisfied(
     execution_plan: AgentExecutionPlan,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     user_message: str,
     *,
     plan_has_script: bool | None,
@@ -182,7 +184,7 @@ def replan_after_missing_skill_data(
     history: list[AiChatMessage] | None,
     uploaded_names: set[str],
     prior_plan: AgentExecutionPlan,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
 ) -> AgentExecutionPlan | None:
     """确定性重规划：上一轮未拿到脚本数据，必须执行发展技能。"""
     skill = resolve_target_uploaded_skill(
@@ -224,7 +226,7 @@ def build_adaptive_replan_notice(
     *,
     prior_plan: AgentExecutionPlan,
     new_plan: AgentExecutionPlan,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
 ) -> str:
     outcomes = loop_state.get("tool_outcome_lines") or []
     tail = "；".join(str(x) for x in outcomes[-3:]) if outcomes else "尚无有效结果"
@@ -238,7 +240,7 @@ def build_adaptive_replan_notice(
 
 def apply_execution_plan_unlocks(
     execution_plan: AgentExecutionPlan,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
 ) -> None:
     from app.services.agent_planner import SKILL_MGMT_INTENT
     from app.services.agent_tool_search import register_unlocked_tools
@@ -271,7 +273,7 @@ async def resolve_adaptive_replan(
     available_atomic_tools: set[str] | None,
     kg_planning_context: str | None,
     prior_plan: AgentExecutionPlan,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     uploaded_names: set[str],
 ) -> AgentExecutionPlan:
     """确定性重规划：仅补执行发展技能，不再二次 LLM 规划。"""
@@ -317,7 +319,7 @@ async def auto_execute_uploaded_skill(
     skill_name: str,
     user_message: str,
     chat_history: list[AiChatMessage] | None,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     conversation_id: str | None,
     attachment_session_id: str | None,
 ) -> tuple[bool, str]:

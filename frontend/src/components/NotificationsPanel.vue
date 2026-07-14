@@ -137,7 +137,7 @@ defineExpose({ load, refresh: load });
 
     <n-spin :show="loading" local>
       <div class="notifications-panel__body">
-        <n-list v-if="items.length" bordered>
+        <n-list v-if="items.length" class="notif-list">
           <n-list-item
             v-for="n in items"
             :key="n.id"
@@ -180,8 +180,8 @@ defineExpose({ load, refresh: load });
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 17px 12px;
+  gap: 10px;
+  padding: 12px 16px 10px;
   border-bottom: 1px solid var(--platform-border);
   background: linear-gradient(
     180deg,
@@ -191,7 +191,7 @@ defineExpose({ load, refresh: load });
 }
 
 .notifications-panel__title {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: var(--platform-tracking-tight);
 }
@@ -203,7 +203,7 @@ defineExpose({ load, refresh: load });
 .notifications-panel__body {
   max-height: 432px;
   overflow-y: auto;
-  padding: 12px 17px 17px;
+  padding: 8px 16px 14px;
 }
 
 .notifications-panel :deep(.n-list) {
@@ -211,10 +211,32 @@ defineExpose({ load, refresh: load });
   background: transparent;
 }
 
-.notifications-panel :deep(.n-list-item) {
+.notifications-panel :deep(.notif-list .n-list-item) {
   padding-left: 0;
   padding-right: 0;
   border-radius: var(--platform-radius-sm);
+  margin: 0 -4px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--platform-border);
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.notifications-panel :deep(.notif-list .n-list-item:last-child) {
+  border-bottom: none;
+}
+
+.notifications-panel :deep(.n-list-item:hover) {
+  background: var(--platform-toolbar-bg) !important;
+}
+
+.notifications-panel :deep(.n-thing .n-thing-header__title) {
+  font-size: 13px;
+}
+
+.notifications-panel :deep(.n-thing .n-thing-main__description) {
+  font-size: 12px;
 }
 
 .notifications-panel :deep(.n-empty) {
@@ -231,10 +253,22 @@ defineExpose({ load, refresh: load });
 
 .notif-unread {
   background: var(--platform-accent-soft);
+  position: relative;
+}
+
+.notif-unread::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--platform-accent);
 }
 
 .notif-time {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--platform-text-tertiary);
 }
 
@@ -243,7 +277,7 @@ defineExpose({ load, refresh: load });
   padding: 0 2px;
   background: transparent;
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--platform-accent);
   cursor: pointer;
@@ -255,7 +289,7 @@ defineExpose({ load, refresh: load });
 }
 
 .notif-read {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--platform-text-tertiary);
 }
 </style>

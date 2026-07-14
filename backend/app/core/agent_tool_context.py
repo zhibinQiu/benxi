@@ -1,13 +1,85 @@
-"""Agent 工具循环上下文管理 — 压缩 tool 输出、集中注入检索材料。"""
+"""Agent 工具循环上下文管理 — 压缩 tool 输出、检索材料注入、指纹去重。
+
+职责：
+  1. Tool 结果压缩（控制 prompt 预算）
+  2. 检索/调研/修复上下文注入到 system 消息
+  3. 工具调用指纹去重（相同调用不再重复执行）
+  4. 历史消息裁剪（预算约束）
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Final
 
-from agentkit_tools.compress import compress_tool_result as _compress_tool_result
+from app.core.agent_loop_state import LoopState
+
+from app.agentkit.tools.compress import compress_tool_result as _compress_tool_result
 from app.core.prompt_budget import fit_messages_to_total_budget, get_prompt_limits, truncate_to_budget
+
+# ── 常量 ──────────────────────────────────────────────────────────────────────
+
+_MAX_SKILL_EXPLORE_CHARS: Final[int] = 2400
+_MAX_SKILL_REPAIR_RECORDS: Final[int] = 4
+_MAX_TOOL_RECORDS: Final[int] = 16
+_MAX_CONCLUSION_CHARS: Final[int] = 4000
+
+_TURN_TOOLS_MARKER: Final[str] = "【本轮对话已执行工具】"
+_RETRIEVAL_MARKER: Final[str] = "【已检索材料】"
+_SKILL_EXPLORE_MARKER: Final[str] = "【Skill 编写调研材料"
+_REPAIR_MARKER: Final[str] = "【Skill 修复"
+_TURN_MARKERS: Final[tuple[str, ...]] = (
+    _TURN_TOOLS_MARKER, _RETRIEVAL_MARKER, _SKILL_EXPLORE_MARKER, _REPAIR_MARKER,
+)
+_SKILL_EXPLORE_HEADER: Final[str] = (
+    "【Skill 编写调研材料 · 创建前必读】\n"
+    "Below is what you discovered from probing the target site or data source. "
+    "Your scrape logic and SKILL.md must be grounded in this evidence. "
+    "When in doubt, probe deeper — **never** invent page structures or fields."
+)
+_REPAIR_HEADER: Final[str] = (
+    "【Skill 修复 · 务必遵守】\n"
+    "Skill `{}` either failed at runtime or produced no usable conclusion. "
+    "**Preferred fix**: edit `main.py` via `update_uploaded_skill_file`, "
+    "adjust according to research materials, then `run_skill_script` to re-verify. "
+    "**Do NOT** create a brand-new Skill via `create_skill` unless the change is "
+    "so large that patching is impractical — or the user explicitly asks for one.\n"
+    "{}"
+)
+_RETRIEVAL_HEADER: Final[str] = (
+    "【已检索材料】Context blocks are sorted by source priority: "
+    "Knowledge Graph → Document Library → Web Search. "
+    "Use bracketed numbers [n] to cite them in your answer. "
+    "Avoid re-fetching material you already have."
+)
+_TURN_TOOLS_HEADER: Final[str] = (
+    "These tool calls already finished during this turn's processing. "
+    "Their full outputs appear in the tool-role messages below. "
+    "**Do not re-invoke** unless the user changes their parameters or goal."
+)
+
+__all__ = [
+    "append_retrieval_context",
+    "append_skill_explore_context",
+    "append_skill_repair_context",
+    "build_retrieval_context_block",
+    "build_skill_explore_context_block",
+    "build_skill_repair_context_block",
+    "build_turn_executed_tools_context",
+    "compress_tool_result_for_loop",
+    "has_skill_research_context",
+    "inject_retrieval_context_message",
+    "lookup_cached_tool_result",
+    "normalize_tool_args_for_fingerprint",
+    "record_executed_tool_call",
+    "tool_call_args_preview",
+    "tool_call_fingerprint",
+    "trim_agent_loop_messages",
+]
+
+
+# ── Tool 结果压缩 ─────────────────────────────────────────────────────────────
 
 
 def compress_tool_result_for_loop(
@@ -17,15 +89,28 @@ def compress_tool_result_for_loop(
     context_preview_chars: int = 900,
 ) -> str:
     """将 tool JSON 压缩为要点：summary + 计数 + 短预览，避免撑爆 prompt。"""
-    return _compress_tool_result(
-        raw,
-        max_chars=max_chars,
-        context_preview_chars=context_preview_chars,
-    )
+    return _compress_tool_result(raw, max_chars=max_chars, context_preview_chars=context_preview_chars)
 
 
-def append_retrieval_context(loop_state: dict[str, Any] | None, context: str) -> None:
-    """将检索片段写入 loop_state，供 system 层集中注入（tool 消息不再重复全文）。"""
+# ── 上下文拼接（检索 / 调研 / 修复 / 工具记录）─────────────────────────────────
+
+
+def _concat_and_truncate(
+    parts: list[str],
+    *,
+    max_chars: int,
+    sep: str = "\n\n",
+) -> tuple[str, list[str]]:
+    """合并文本列表并截断；返回 (combined, new_parts)。超过预算时重置为截断后的单段。"""
+    combined = sep.join(parts)
+    if len(combined) <= max_chars:
+        return combined, parts
+    combined = truncate_to_budget(combined, max_chars)
+    return combined, [combined]
+
+
+def append_retrieval_context(loop_state: LoopState | None, context: str) -> None:
+    """将检索片段写入 loop_state，供 system 层集中注入。"""
     if loop_state is None:
         return
     block = (context or "").strip()
@@ -34,15 +119,12 @@ def append_retrieval_context(loop_state: dict[str, Any] | None, context: str) ->
     parts: list[str] = list(loop_state.get("retrieval_context_parts") or [])
     parts.append(block)
     limits = get_prompt_limits()
-    combined = "\n\n".join(parts)
-    if len(combined) > limits["context_max_chars"]:
-        combined = truncate_to_budget(combined, limits["context_max_chars"])
-        parts = [combined]
-    loop_state["retrieval_context_parts"] = parts
+    _, new_parts = _concat_and_truncate(parts, max_chars=limits["context_max_chars"])
+    loop_state["retrieval_context_parts"] = new_parts
 
 
-def append_skill_explore_context(loop_state: dict[str, Any] | None, block: str) -> None:
-    """Skill 编写前调研结论写入 loop_state，避免旧 tool 消息被压缩后丢失关键上下文。"""
+def append_skill_explore_context(loop_state: LoopState | None, block: str) -> None:
+    """Skill 编写前调研结论写入 loop_state，避免旧 tool 消息被压缩后丢失。"""
     if loop_state is None:
         return
     text = (block or "").strip()
@@ -50,34 +132,25 @@ def append_skill_explore_context(loop_state: dict[str, Any] | None, block: str) 
         return
     parts: list[str] = list(loop_state.get("skill_explore_parts") or [])
     parts.append(text)
-    combined = "\n\n".join(parts)
-    if len(combined) > 2400:
-        combined = truncate_to_budget(combined, 2400)
-        parts = [combined]
-    loop_state["skill_explore_parts"] = parts
+    _, new_parts = _concat_and_truncate(parts, max_chars=_MAX_SKILL_EXPLORE_CHARS)
+    loop_state["skill_explore_parts"] = new_parts
 
 
-def build_skill_explore_context_block(loop_state: dict[str, Any] | None) -> str:
+def build_skill_explore_context_block(loop_state: LoopState | None) -> str:
     parts = list((loop_state or {}).get("skill_explore_parts") or [])
     if not parts:
         return ""
     body = "\n\n".join(parts)
-    return (
-        "【Skill 编写调研材料 · 创建前必读】\n"
-        "以下来自你对目标站点/数据源的探查；"
-        "编写 scrape 逻辑与 SKILL.md 时必须以此为准，"
-        "信息不足时继续探查，**勿**猜测页面结构或字段。\n\n"
-        f"{body}"
-    )
+    return f"{_SKILL_EXPLORE_HEADER}\n\n{body}"
 
 
 def append_skill_repair_context(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     *,
     skill_name: str,
     reason: str,
 ) -> None:
-    """已有 Skill 执行失败时写入修复指引，供后续 tool loop 轮次注入。"""
+    """已有 Skill 执行失败时写入修复指引。"""
     if loop_state is None:
         return
     name = (skill_name or "").strip()
@@ -85,52 +158,42 @@ def append_skill_repair_context(
     if not name or not detail:
         return
     attempts = dict(loop_state.get("skill_repair_attempts") or {})
-    attempts[name] = int(attempts.get(name) or 0) + 1
+    attempts[name] = attempts.get(name, 0) + 1
     loop_state["skill_repair_attempts"] = attempts
     loop_state["pending_skill_repair"] = name
     parts: list[str] = list(loop_state.get("skill_repair_parts") or [])
     parts.append(f"- `{name}`：{detail}")
-    loop_state["skill_repair_parts"] = parts[-4:]
+    loop_state["skill_repair_parts"] = parts[-_MAX_SKILL_REPAIR_RECORDS:]
 
 
-def build_skill_repair_context_block(loop_state: dict[str, Any] | None) -> str:
+def build_skill_repair_context_block(loop_state: LoopState | None) -> str:
     pending = str((loop_state or {}).get("pending_skill_repair") or "").strip()
     parts = list((loop_state or {}).get("skill_repair_parts") or [])
     if not pending or not parts:
         return ""
     body = "\n".join(parts)
-    return (
-        "【Skill 修复 · 务必遵守】\n"
-        f"发展技能 `{pending}` 执行失败或未产出有效结论。"
-        "请**优先**用 `update_uploaded_skill_file` 修复 `main.py`"
-        "（文件顶部须 `import skill_runtime`，否则 `NameError`；"
-        "网页用 skill_runtime.fetch_text，结论用 skill_runtime.finish，禁 requests/open/subprocess）；"
-        "依据调研材料调整；修复后再次 `run_skill_script`。"
-        "**禁止**为此重复 `create_skill` 造新技能，除非改动过大或用户明确要求新建。\n"
-        f"{body}"
-    )
+    return _REPAIR_HEADER.format(pending, body)
 
 
 def has_skill_research_context(
-    loop_state: dict[str, Any] | None, *, needs_site_research: bool
+    loop_state: LoopState | None, *, needs_site_research: bool
 ) -> bool:
     """网页/抓取类 Skill 在 create 前须已有调研上下文。"""
     if not needs_site_research:
         return True
     state = loop_state or {}
-    if state.get("skill_explore_parts"):
-        return True
-    if state.get("retrieval_context_parts"):
-        return True
-    if state.get("subagent_summaries"):
-        return True
-    return False
+    return bool(
+        state.get("skill_explore_parts")
+        or state.get("retrieval_context_parts")
+        or state.get("subagent_summaries")
+    )
 
 
-_TURN_TOOLS_MARKER = "【本轮对话已执行工具】"
+# ── 工具调用指纹（去重）────────────────────────────────────────────────────────
 
 
 def normalize_tool_args_for_fingerprint(raw_args: str | dict | None) -> str:
+    """将工具参数规范化为排序后的 JSON 字符串，用于指纹比较。"""
     if raw_args is None:
         return "{}"
     if isinstance(raw_args, dict):
@@ -141,12 +204,11 @@ def normalize_tool_args_for_fingerprint(raw_args: str | dict | None) -> str:
             obj = json.loads(text)
         except json.JSONDecodeError:
             return text[:500]
-    if isinstance(obj, dict):
-        return json.dumps(obj, ensure_ascii=False, sort_keys=True)
     return json.dumps(obj, ensure_ascii=False, sort_keys=True)
 
 
 def tool_call_fingerprint(tool_name: str, raw_args: str | dict | None) -> str:
+    """生成工具调用的唯一指纹（SHA256 前 16 字符）。"""
     payload = f"{(tool_name or '').strip()}\0{normalize_tool_args_for_fingerprint(raw_args)}"
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
@@ -155,14 +217,15 @@ def tool_call_args_preview(raw_args: str | dict | None, *, max_len: int = 120) -
     preview = normalize_tool_args_for_fingerprint(raw_args)
     if len(preview) <= max_len:
         return preview
-    return preview[: max_len - 1] + "…"
+    return preview[:max_len-1] + "…"
 
 
 def lookup_cached_tool_result(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     tool_name: str,
     raw_args: str | dict | None,
 ) -> str | None:
+    """查询工具调用的缓存结果。"""
     fp = tool_call_fingerprint(tool_name, raw_args)
     cache = (loop_state or {}).get("executed_tool_cache") or {}
     hit = cache.get(fp)
@@ -170,7 +233,7 @@ def lookup_cached_tool_result(
 
 
 def record_executed_tool_call(
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     *,
     tool_name: str,
     raw_args: str | dict | None,
@@ -178,24 +241,23 @@ def record_executed_tool_call(
     summary: str,
     step_id: str,
 ) -> None:
+    """记录已执行的工具调用及其结果摘要。"""
     fp = tool_call_fingerprint(tool_name, raw_args)
-    records = list(loop_state.get("executed_tool_calls") or [])
-    records.append(
-        {
-            "fingerprint": fp,
-            "tool_name": (tool_name or "").strip(),
-            "args_preview": tool_call_args_preview(raw_args),
-            "summary": (summary or "").strip()[:240],
-            "step_id": (step_id or "").strip(),
-        }
-    )
-    loop_state["executed_tool_calls"] = records[-16:]
-    cache = dict(loop_state.get("executed_tool_cache") or {})
+    records: list[dict[str, Any]] = list(loop_state.get("executed_tool_calls") or [])
+    records.append({
+        "fingerprint": fp,
+        "tool_name": (tool_name or "").strip(),
+        "args_preview": tool_call_args_preview(raw_args),
+        "summary": (summary or "").strip()[:240],
+        "step_id": (step_id or "").strip(),
+    })
+    loop_state["executed_tool_calls"] = records[-_MAX_TOOL_RECORDS:]
+    cache: dict[str, str] = dict(loop_state.get("executed_tool_cache") or {})
     cache[fp] = result_text
     loop_state["executed_tool_cache"] = cache
 
 
-def build_turn_executed_tools_context(loop_state: dict[str, Any] | None) -> str:
+def build_turn_executed_tools_context(loop_state: LoopState | None) -> str:
     records = list((loop_state or {}).get("executed_tool_calls") or [])
     if not records:
         return ""
@@ -209,68 +271,58 @@ def build_turn_executed_tools_context(loop_state: dict[str, Any] | None) -> str:
         arg_part = f"({args})" if args and args != "{}" else ""
         lines.append(f"{idx}. {label}{name}{arg_part} → {summary}")
     return (
-        f"{_TURN_TOOLS_MARKER}以下调用在本轮用户消息处理中已完成，"
-        "完整结果已写入下方 tool 消息；除非参数或目标变化，**勿重复调用相同工具**。\n"
+        f"{_TURN_TOOLS_MARKER}{_TURN_TOOLS_HEADER}\n"
         + "\n".join(lines)
     )
 
 
-def build_retrieval_context_block(loop_state: dict[str, Any] | None) -> str:
+# ── 检索材料块 ────────────────────────────────────────────────────────────────
+
+
+def build_retrieval_context_block(loop_state: LoopState | None) -> str:
     from app.core.platform_assistant import assistant_conclusion_source_priority
 
     parts = list((loop_state or {}).get("retrieval_context_parts") or [])
     if not parts:
         return ""
     body = "\n\n".join(parts)
-    return (
-        "【已检索材料】上下文顺序与引用编号已按优先级排列：本体图谱 → 文档库 → 联网检索。\n"
-        f"{assistant_conclusion_source_priority()}\n\n"
-        "以下编号 [n] 可直接用于回答引用；勿重复调用相同检索。\n\n"
-        f"{body}"
-    )
+    source_priority = assistant_conclusion_source_priority()
+    return f"{_RETRIEVAL_HEADER}\n{source_priority}\n\n{body}"
+
+
+# ── 上下文注入（合并多块到 system 消息）────────────────────────────────────────
 
 
 def inject_retrieval_context_message(
     messages: list[dict[str, Any]],
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
 ) -> list[dict[str, Any]]:
-    """用最新检索块替换/追加 system 消息，避免 tool 历史重复携带全文。"""
+    """用最新检索/调研/修复/工具上下文替换或追加 system 消息。"""
     blocks: list[str] = []
-    skill_block = build_skill_explore_context_block(loop_state)
-    if skill_block:
-        blocks.append(skill_block)
-    repair_block = build_skill_repair_context_block(loop_state)
-    if repair_block:
-        blocks.append(repair_block)
-    turn_tools_block = build_turn_executed_tools_context(loop_state)
-    if turn_tools_block:
-        blocks.append(turn_tools_block)
-    retrieval_block = build_retrieval_context_block(loop_state)
-    if retrieval_block:
-        blocks.append(retrieval_block)
+    for builder in (
+        build_skill_explore_context_block,
+        build_skill_repair_context_block,
+        build_turn_executed_tools_context,
+        build_retrieval_context_block,
+    ):
+        block = builder(loop_state)
+        if block:
+            blocks.append(block)
+
     block = "\n\n".join(blocks).strip()
     if not block:
         return messages
 
-    marker = "【已检索材料】"
-    skill_marker = "【Skill 编写调研材料"
-    repair_marker = "【Skill 修复"
-    turn_marker = _TURN_TOOLS_MARKER
     out = [dict(m) for m in messages]
     for idx, msg in enumerate(out):
         if msg.get("role") != "system":
             continue
         content = str(msg.get("content") or "")
-        if (
-            marker in content
-            or skill_marker in content
-            or repair_marker in content
-            or turn_marker in content
-        ):
+        if any(marker in content for marker in _TURN_MARKERS):
             head = content
-            for split_marker in (marker, skill_marker, repair_marker, turn_marker):
-                if split_marker in head:
-                    head = head.split(split_marker, 1)[0].rstrip()
+            for marker in _TURN_MARKERS:
+                if marker in head:
+                    head = head.split(marker, 1)[0].rstrip()
             out[idx]["content"] = f"{head}\n\n{block}".strip() if head else block
             return out
 
@@ -278,13 +330,22 @@ def inject_retrieval_context_message(
     return out
 
 
+# ── 消息裁剪 ──────────────────────────────────────────────────────────────────
+
+
 def trim_agent_loop_messages(
     messages: list[dict[str, Any]],
     *,
     max_total_chars: int | None = None,
     keep_full_tool_results: int = 1,
+    reserve_for_tool_calls: int = 0,
 ) -> list[dict[str, Any]]:
-    """裁剪 agent 循环 messages：旧 tool 只留 summary，总长度受 prompt 预算约束。"""
+    """裁剪 agent 循环 messages：旧 tool 只留 summary，总长度受 prompt 预算约束。
+
+    Args:
+        reserve_for_tool_calls: 为后续 tool_calls 预留的字符数，
+            传递至 fit_messages_to_total_budget。
+    """
     budget = max_total_chars or get_prompt_limits()["prompt_max_chars"]
     rows = [dict(m) for m in messages]
 
@@ -296,4 +357,6 @@ def trim_agent_loop_messages(
             context_preview_chars=0,
         )
 
-    return fit_messages_to_total_budget(rows, budget)
+    return fit_messages_to_total_budget(
+        rows, budget, reserve_for_tool_calls=reserve_for_tool_calls,
+    )

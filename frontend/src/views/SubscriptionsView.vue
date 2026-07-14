@@ -442,6 +442,7 @@ watch(
   align-items: center;
   gap: 12px;
   width: 600px;
+  max-width: 100%;
   flex-shrink: 0;
   min-width: 0;
   padding: 5px 5px 5px 14px;
@@ -717,5 +718,17 @@ html[data-theme="light"] .serp-result-item__snippet {
 .subscriptions-footer__inner :deep(.n-pagination) {
   flex-wrap: wrap;
   justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .subscriptions-search-hub__bar {
+    width: 100%;
+    gap: 8px;
+    padding: 4px 4px 4px 10px;
+  }
+  .subscriptions-search-hub__submit {
+    padding-inline: 12px;
+    font-size: 13px;
+  }
 }
 </style>

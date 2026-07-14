@@ -10,7 +10,7 @@
 
 - **在线体验**: [http://36.151.146.71:40005/ai/](http://36.151.146.71:40005/ai/)
 - **GitHub**: [https://github.com/zhibinQiu/benxi](https://github.com/zhibinQiu/benxi)
-- **AgentKit**: [https://github.com/zhibinQiu/Agentkit](https://github.com/zhibinQiu/Agentkit)
+- **AgentKit** <sup>[¹](#设计哲学)</sup>: [https://github.com/zhibinQiu/Agentkit](https://github.com/zhibinQiu/Agentkit)
 - **文档站点**: [https://zhibinQiu.github.io/benxi/](https://zhibinQiu.github.io/benxi/)
 - **版本**: v4.6.0（见根目录 `VERSION`）
 
@@ -50,7 +50,7 @@
 | 📄 **PDF 翻译** | 科学文献全格式翻译，保留排版 |
 | 🧠 **AI 知识库** | 文档入库、语义检索、智能问答 |
 | 🔗 **本体构建** | 自动抽取实体关系，构建领域知识图谱 |
-| 🤖 **AgentKit** | 多智能体编排框架，支持工具注册与子 Agent |
+| 🤖 **AgentKit** <sup>[¹](#设计哲学)</sup> | 多智能体编排框架，支持工具注册与子 Agent |
 | 📊 **报告生成** | 基于知识库的自动报告与对比分析 |
 | 🔐 **权限体系** | 组织架构 + 角色权限 + 字段级管控 |
 | 🌐 **多语言** | 中英文界面，国际化支持 |
@@ -61,12 +61,9 @@
 
 ```
 pdf_trans/
-├── backend/             # FastAPI 后端（API / 认证 / 文档 / 知识库）
+├── backend/             # FastAPI 后端（API / 认证 / 文档 / 知识库 / AgentKit）
+│   └── app/agentkit/    # AgentKit 智能体工具箱（内置，无需额外安装）
 ├── frontend/            # Vue 3 + Naive UI 前端
-├── packages/
-│   ├── agentkit/        # AgentKit 元包 — 多智能体框架
-│   ├── agentkit-*/      # 子包（aip / loop / mcp / message / tools …）
-│   └── ai-bridge/       # AI 网页操控桥接（Node.js）
 ├── compose.yaml         # Docker Compose
 └── VERSION              # 版本号
 ```
@@ -99,17 +96,13 @@ cp backend/.env.example backend/.env    # 按需编辑
 
 ---
 
-## 🔧 AgentKit — 多智能体框架
+## 🔧 AgentKit — 多智能体框架 <sup>[¹](#设计哲学)</sup>
 
-AgentKit 是本析平台的多智能体架构 Python 工具包，提供从路由、编排、通信到执行的全链路组件。
+AgentKit <sup>[¹](#设计哲学)</sup> 是本析平台的多智能体架构 Python 工具包，提供从路由、编排、通信到执行的全链路组件。
 
 ```bash
-# 安装全部组件
-pip install -e packages/agentkit
-
-# 或按需安装
-pip install -e packages/agentkit-aip
-pip install -e packages/agentkit-mcp
+# AgentKit 已内置在 backend/app/agentkit/ 中，无需额外安装
+# 直接启动后端即可：cd backend && pip install -e . && doc-platform
 ```
 
 > 详细文档见 [AgentKit 仓库](https://github.com/zhibinQiu/Agentkit) 或 [AgentKit 开发者指南](https://zhibinQiu.github.io/benxi/)。
@@ -137,30 +130,9 @@ pip install -e packages/agentkit-mcp
 4. 推送 (`git push origin feature/amazing`)
 5. 提交 Pull Request
 
----
+## 📖 设计哲学
 
-## ☕ 请开发者喝咖啡
-
-本平台全部开源，开发不易。如果项目对你有帮助，欢迎打赏支持～
-
-> 打赏 50 元以上，企业级部署享折扣 15%
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center">
-        <img src="frontend/public/images/coffee-wechat.jpg" alt="微信收款码" width="200" />
-        <br />
-        <strong>微信</strong>
-      </td>
-      <td align="center">
-        <img src="frontend/public/images/coffee-alipay.jpg" alt="支付宝收款码" width="200" />
-        <br />
-        <strong>支付宝</strong>
-      </td>
-    </tr>
-  </table>
-</div>
+[¹](#设计哲学): 关于 AgentKit 的设计理念，请参阅 [我的智能体设计哲学](my-agent-philosophy.md) —— 深入理解 Tool、Skill、子智能体、专精智能体等核心概念的由来与取舍。
 
 ---
 

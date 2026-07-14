@@ -54,6 +54,12 @@ const snippetHtml = computed(() =>
   )
 );
 
+const inlineImages = computed(() => {
+  const imgs = props.citation?.inline_images;
+  if (!Array.isArray(imgs)) return [];
+  return imgs.filter((img) => Boolean(img?.url));
+});
+
 const canPreviewImage = computed(() => citationCanPreviewImage(props.citation));
 
 const relevanceLabel = computed(() => {
@@ -153,6 +159,29 @@ function openDocument() {
         </n-text>
       </div>
 
+      <!-- 内嵌图片 -->
+      <div v-if="inlineImages.length" class="knowledge-citation-preview__inline-images">
+        <div class="knowledge-citation-preview__snippet-title">
+          {{ t("knowledgeSearch.citations.inlineImagesTitle") || "内嵌图片" }}
+        </div>
+        <div
+          v-for="(img, imgIdx) in inlineImages"
+          :key="imgIdx"
+          class="knowledge-citation-preview__inline-image-item"
+        >
+          <img
+            :src="img.url"
+            :alt="img.alt || 'inline image'"
+            class="knowledge-citation-preview__inline-image"
+            loading="lazy"
+            @error="(e) => { e.target.style.display = 'none' }"
+          />
+          <n-text v-if="img.description" depth="3" class="knowledge-citation-preview__inline-image-desc">
+            {{ img.description }}
+          </n-text>
+        </div>
+      </div>
+
       <div v-if="canPreviewImage" class="knowledge-citation-preview__image-wrap">
         <n-spin :show="imageLoading" local>
           <img
@@ -242,6 +271,35 @@ function openDocument() {
 .knowledge-citation-preview__text-only {
   font-size: 14px;
   line-height: 1.5;
+}
+
+.knowledge-citation-preview__inline-images {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.knowledge-citation-preview__inline-image-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.knowledge-citation-preview__inline-image {
+  display: block;
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  border: 1px solid var(--platform-border);
+  object-fit: contain;
+  background: #f8f9fa;
+  margin: 0 auto;
+}
+
+.knowledge-citation-preview__inline-image-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .knowledge-citation-preview__image-wrap {

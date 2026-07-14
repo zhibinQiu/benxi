@@ -11,9 +11,6 @@ from app.services.agent_intent import plan_agent_tools
 from app.services.agent_profile_service import resolve_agent_tool_names
 from app.services.agent_supervisor import (
     AgentRoutePlan,
-    _build_global_retry_context_instruction,
-    _should_defer_orchestrator_synthesis,
-    _supervisor_max_global_rounds,
     _best_reply_from_hops,
     _infer_route_mode,
     _pick_single_route_from_candidates,
@@ -363,55 +360,3 @@ def test_baidu_screenshot_prefers_rpa_with_skill_history():
         db.close()
 
 
-def test_should_defer_synthesis_when_global_loop_enabled():
-    from app.services.agent_supervisor import AgentRoute
-
-    plan = AgentRoutePlan(
-        mode="single",
-        routes=(AgentRoute(agent_id="research", reason="调研"),),
-    )
-    assert (
-        _should_defer_orchestrator_synthesis(
-            plan,
-            user_message="全国碳市场最新政策有哪些？",
-            chat_history=None,
-            max_global_rounds=3,
-        )
-        is True
-    )
-
-
-def test_should_defer_synthesis_for_direct_orchestrator_plan():
-    from app.services.agent_supervisor import AgentRoute
-
-    route = AgentRoute(agent_id="orchestrator", reason="日常交流")
-    plan = AgentRoutePlan(mode="single", routes=(route,), source="direct")
-    assert (
-        _should_defer_orchestrator_synthesis(
-            plan,
-            user_message="你好",
-            chat_history=None,
-            max_global_rounds=3,
-        )
-        is True
-    )
-
-
-def test_build_global_retry_context_instruction():
-    out = _build_global_retry_context_instruction(
-        "基础说明",
-        "第 1 轮缺口：缺少总结",
-        global_round=2,
-    )
-    assert "调度全局反思 · 第 2 轮" in out
-    assert "缺少总结" in out
-    assert "基础说明" in out
-
-
-def test_supervisor_max_global_rounds_never_below_minimum(monkeypatch):
-    from app.config import get_settings
-    from app.services.agent_orchestrator import MIN_SUPERVISOR_GLOBAL_ROUNDS
-
-    settings = get_settings()
-    monkeypatch.setattr(settings, "agent_supervisor_max_global_rounds", 1)
-    assert _supervisor_max_global_rounds() == MIN_SUPERVISOR_GLOBAL_ROUNDS

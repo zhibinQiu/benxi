@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.core.tool_skill_taxonomy import AGENT_DEFAULT_SKILLS
+from app.core.report_skill_catalog import REPORT_SKILL_NAMES
+from app.core.tool_skill_taxonomy import AGENT_DEFAULT_SKILLS, DEFAULT_AGENT_TOOLS
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +17,7 @@ class AgentProfileDef:
     title: str
     description: str
     default_skill_names: tuple[str, ...] = ()
+    default_runtime_tool_names: tuple[str, ...] = ()
     skills_configurable: bool = True
     sort_order: int = 0
 
@@ -31,35 +33,45 @@ def _skills_for(agent_id: str, *extra: str) -> tuple[str, ...]:
     return tuple(merged)
 
 
+def _tools_for(agent_id: str) -> tuple[str, ...]:
+    return DEFAULT_AGENT_TOOLS.get(agent_id, ())
+
+
 AGENT_PROFILES: tuple[AgentProfileDef, ...] = (
     AgentProfileDef(
         id="orchestrator",
         title="小析",
         description="通用智能体：处理大多数日常任务——联网/知识库/图谱检索、AI对话/生图/识图、图表绘制。"
         "仅在需要领域专精操作（平台数据CRUD、浏览器自动化、定时通知、Skill开发、长报告撰写）时路由到对应专精。",
-        skills_configurable=False,
+        default_runtime_tool_names=_tools_for("orchestrator"),
+        skills_configurable=True,
         sort_order=0,
     ),
     AgentProfileDef(
         id="platform",
-        title="平台信息",
+        title="平台操作",
         description="文档库CRUD、待办、系统通知、用户与部门管理等平台内真实数据查询与写操作。",
         default_skill_names=_skills_for("platform"),
+        default_runtime_tool_names=_tools_for("platform"),
         sort_order=10,
+    ),
+    AgentProfileDef(
+        id="report",
+        title="报告撰写",
+        description="撰写可研、需求分析、建设方案、调研、测试报告或工作计划等结构化长文；"
+        "同时检索企业知识库与联网资讯，按模版输出 Markdown 长报告。",
+        default_skill_names=REPORT_SKILL_NAMES,
+        default_runtime_tool_names=_tools_for("report"),
+        skills_configurable=True,
+        sort_order=21,
     ),
     AgentProfileDef(
         id="rpa",
         title="浏览器自动化",
         description="无头浏览器：网页导航、搜索填表、点击截图、流程录制与回放。以浏览器操作为目的，非 Skill 开发调研。",
         default_skill_names=_skills_for("rpa"),
+        default_runtime_tool_names=_tools_for("rpa"),
         sort_order=30,
-    ),
-    AgentProfileDef(
-        id="scheduler",
-        title="时间调度",
-        description="延迟/定时提醒与定时浏览器流程安排，非立即执行类任务。",
-        default_skill_names=_skills_for("scheduler"),
-        sort_order=40,
     ),
     AgentProfileDef(
         id="skill-dev",
@@ -67,7 +79,24 @@ AGENT_PROFILES: tuple[AgentProfileDef, ...] = (
         description="上传型 Skill 生命周期管理（create/update/delete/run_skill_script/list）。"
         "浏览器仅作为创建抓取类 Skill 时的页面调研中间步骤。",
         default_skill_names=_skills_for("skill-dev"),
+        default_runtime_tool_names=_tools_for("skill-dev"),
         sort_order=50,
+    ),
+    AgentProfileDef(
+        id="carbon",
+        title="双碳智能体",
+        description="双碳领域：碳市场行情、碳交易、碳中和/碳达峰政策、CCER、碳排放核算、行业减排路径等所有双碳相关问题。",
+        default_skill_names=_skills_for("carbon"),
+        default_runtime_tool_names=_tools_for("carbon"),
+        sort_order=40,
+    ),
+    AgentProfileDef(
+        id="power-economy",
+        title="电力-经济耦合分析",
+        description="电力经济领域：电力市场行情/电价/用电数据分析、电力-经济耦合模型与预测、电力体制改革、发电侧经济性、电力规划与供需预测。",
+        default_runtime_tool_names=_tools_for("power-economy"),
+        skills_configurable=True,
+        sort_order=45,
     ),
 )
 

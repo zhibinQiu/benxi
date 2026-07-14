@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import uuid
 from typing import Annotated
 
@@ -122,30 +120,19 @@ async def job_events(
 
     detach_request_db(db)
 
-    async def generator():
-        from app.database import SessionLocal
+    from app.database import SessionLocal
+    from app.api.streaming_utils import poll_and_stream
 
-        last_status = None
-        for _ in range(600):
-            poll_db = SessionLocal()
-            try:
-                polled = poll_db.get(Job, job_id)
-                if not polled:
-                    break
-                payload = JobOut.model_validate(polled).model_dump(mode="json")
-            finally:
-                poll_db.close()
-            if payload["status"] != last_status:
-                last_status = payload["status"]
-                yield {"event": "status", "data": json.dumps(payload, default=str)}
-            if payload["status"] in ("done", "failed", "cancelled"):
-                yield {"event": "complete", "data": json.dumps(payload, default=str)}
-                break
-            await asyncio.sleep(1)
-        else:
-            yield {
-                "event": "timeout",
-                "data": json.dumps({"message": "poll timeout"}, default=str),
-            }
+    def _fetch_payload(poll_db: Session) -> dict | None:
+        polled = poll_db.get(Job, job_id)
+        if not polled:
+            return None
+        return JobOut.model_validate(polled).model_dump(mode="json")
 
-    return EventSourceResponse(generator())
+    return EventSourceResponse(
+        poll_and_stream(
+            SessionLocal,
+            _fetch_payload,
+            terminal_statuses=frozenset({"done", "failed", "cancelled"}),
+        )
+    )

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.integrations.mysql_conn import execute_query, execute_write
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -31,65 +32,6 @@ def _sql_literal(value: str) -> str:
     return (value or "").replace("\\", "\\\\").replace("'", "''")
 
 
-def _mysql_tcp_timeouts() -> tuple[int, int, int]:
-    settings = get_settings()
-    return (
-        settings.ragflow_mysql_connect_timeout,
-        settings.ragflow_mysql_read_timeout,
-        settings.ragflow_mysql_write_timeout,
-    )
-
-
-def _mysql_query_tcp(host: str, port: int, password: str, db: str, sql: str) -> list[str]:
-    import pymysql
-
-    connect_timeout, read_timeout, write_timeout = _mysql_tcp_timeouts()
-    conn = pymysql.connect(
-        host=host,
-        port=port,
-        user="root",
-        password=password,
-        database=db,
-        charset="utf8mb4",
-        connect_timeout=connect_timeout,
-        read_timeout=read_timeout,
-        write_timeout=write_timeout,
-    )
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-            rows = cur.fetchall()
-        return [str(row[0]).strip() for row in rows if row and row[0] is not None]
-    finally:
-        conn.close()
-
-
-def _mysql_exec_tcp(host: str, port: int, password: str, db: str, sql: str) -> bool:
-    import pymysql
-
-    connect_timeout, read_timeout, write_timeout = _mysql_tcp_timeouts()
-    conn = pymysql.connect(
-        host=host,
-        port=port,
-        user="root",
-        password=password,
-        database=db,
-        charset="utf8mb4",
-        connect_timeout=connect_timeout,
-        read_timeout=read_timeout,
-        write_timeout=write_timeout,
-    )
-    try:
-        with conn.cursor() as cur:
-            for statement in _split_sql_statements(sql):
-                cur.execute(statement)
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.warning("RAGFlow LLM 同步 MySQL 失败: %s", e)
-        return False
-    finally:
-        conn.close()
 
 
 def _split_sql_statements(sql: str) -> list[str]:
@@ -106,7 +48,7 @@ def _mysql_query(sql: str) -> list[str]:
 
     container, password, db, host, port = _mysql_settings()
     if host:
-        return _mysql_query_tcp(host, port, password, db, sql)
+        return [str(r[0]).strip() for r in execute_query(host=host, port=port, password=password, database=db, sql=sql) if r and r[0] is not None]
     proc = subprocess.run(
         [
             "docker",
@@ -136,7 +78,7 @@ def _mysql_exec(sql: str) -> bool:
 
     container, password, db, host, port = _mysql_settings()
     if host:
-        return _mysql_exec_tcp(host, port, password, db, sql)
+        return execute_write(host=host, port=port, password=password, database=db, sql=sql)
     try:
         proc = subprocess.run(
             [
@@ -318,7 +260,7 @@ WHERE t.id = '{safe_target}';
     delete_sql = f"DELETE FROM tenant_llm WHERE tenant_id = '{safe_target}';"
 
     llm_sql = f"""
-INSERT INTO tenant_llm (
+INSERT IGNORE INTO tenant_llm (
   tenant_id, llm_factory, model_type, llm_name, api_key, api_base, max_tokens, used_tokens
 )
 SELECT

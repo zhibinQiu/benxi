@@ -17,7 +17,7 @@ from app.skills.routing import (
     format_skill_route_line,
     uploaded_skill_tag,
 )
-from agentkit_skills.search import rank_skills_by_query, skill_query_tokens
+from app.agentkit.skills.search import rank_skills_by_query, skill_query_tokens
 from app.skills.types import SkillDefinition, SkillReadiness, SkillSource
 
 

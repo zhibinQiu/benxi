@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import TYPE_CHECKING
@@ -21,6 +22,7 @@ from app.models.platform_model_settings import SINGLETON_ID, PlatformModelSettin
 from app.schemas.model_settings import (
     KnowledgeInfraOut,
     ModelEndpointOut,
+    ProviderEndpointOut,
     ModelSettingsOut,
     ModelSettingsUpdate,
 )
@@ -122,6 +124,8 @@ def _endpoint(
     base_url: str,
     api_key: str,
     model_name: str | None = None,
+    providers: list[ProviderEndpointOut] | None = None,
+    active_provider: str = "",
 ) -> ModelEndpointOut:
     key = (api_key or "").strip()
     return ModelEndpointOut(
@@ -129,7 +133,186 @@ def _endpoint(
         api_key_configured=bool(key),
         api_key_masked=mask_secret(key),
         model_name=(model_name or "").strip() or None,
+        providers=providers or [],
+        active_provider=active_provider,
     )
+
+
+def _endpoint_with_providers(
+    effective: dict[str, str],
+    prefix: str,
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    model_name: str | None = None,
+) -> ModelEndpointOut:
+    """从 effective 配置构造 ModelEndpointOut，含 providers 信息。"""
+    b_url = base_url if base_url is not None else effective.get(f"{prefix}_base_url", "")
+    a_key = api_key if api_key is not None else effective.get(f"{prefix}_api_key", "")
+    m_name = model_name if model_name is not None else effective.get(f"{prefix}_model", "")
+    prov_raw, active_id = _providers_from_payload(effective, prefix)
+    if prov_raw:
+        out_providers, eff_base, eff_key, eff_model = _providers_to_endpoint_out(prov_raw, active_id)
+        b_url = b_url or eff_base
+        a_key = a_key or eff_key
+        m_name = m_name or eff_model
+        return _endpoint(
+            base_url=b_url,
+            api_key=a_key,
+            model_name=m_name,
+            providers=out_providers,
+            active_provider=active_id,
+        )
+    # 无 providers 时从 flat 字段构造默认 provider（兼容旧配置）
+    if b_url or a_key or m_name:
+        default_providers = _build_providers_from_flat(b_url, a_key, m_name)
+        out_providers, _, _, _ = _providers_to_endpoint_out(default_providers, "default")
+        return _endpoint(
+            base_url=b_url,
+            api_key=a_key,
+            model_name=m_name,
+            providers=out_providers,
+            active_provider="default",
+        )
+    return _endpoint(
+        base_url=b_url,
+        api_key=a_key,
+        model_name=m_name,
+    )
+
+
+def _providers_from_payload(
+    payload: dict[str, str], prefix: str,
+) -> tuple[list[dict], str]:
+    """从 payload 中读取 providers 列表和 active_provider ID。"""
+    providers_key = f"{prefix}_providers"
+    active_key = f"{prefix}_active_provider"
+    raw = payload.get(providers_key, "")
+    active_id = payload.get(active_key, "")
+    if raw:
+        try:
+            import json
+            providers = json.loads(raw)
+            if isinstance(providers, list) and len(providers) > 0:
+                return providers, active_id or providers[0].get("id", "")
+        except (json.JSONDecodeError, TypeError, IndexError):
+            pass
+    return [], ""
+
+
+def _providers_to_endpoint_out(
+    providers_raw: list[dict], active_id: str,
+) -> tuple[list[ProviderEndpointOut], str, str, str]:
+    """将 providers 原始列表转为 ProviderEndpointOut，计算有效 base_url/api_key/model。"""
+    out_providers = []
+    effective_base = ""
+    effective_key = ""
+    effective_model = ""
+    for p in providers_raw:
+        pid = p.get("id", "")
+        pwd = p.get("api_key", p.get("password", p.get("api_key_masked", "")))
+        model = p.get("model_name", p.get("model", "")) or ""
+        out_providers.append(
+            ProviderEndpointOut(
+                id=pid,
+                label=p.get("label", "") or "",
+                base_url=p.get("base_url", "") or "",
+                api_key_configured=bool(pwd.strip()),
+                api_key_masked=mask_secret(pwd),
+                model_name=model.strip() or None,
+            )
+        )
+    for p in providers_raw:
+        if p.get("id", "") == active_id:
+            effective_base = p.get("base_url", "") or ""
+            effective_key = p.get("api_key", p.get("password", p.get("api_key_masked", ""))) or ""
+            effective_model = p.get("model_name", p.get("model", "")) or ""
+            break
+    if not effective_base and providers_raw:
+        p0 = providers_raw[0]
+        effective_base = p0.get("base_url", "") or ""
+        effective_key = p0.get("api_key", p0.get("password", p0.get("api_key_masked", ""))) or ""
+        effective_model = p0.get("model_name", p0.get("model", "")) or ""
+    return out_providers, effective_base, effective_key, effective_model
+
+
+def _build_providers_from_flat(
+    base_url: str, api_key: str, model_name: str,
+) -> list[dict]:
+    """从平铺字段构造单个默认 provider。"""
+    return [
+        {
+            "id": "default",
+            "label": "",
+            "base_url": base_url,
+            "api_key": api_key,
+            "model_name": model_name,
+        }
+    ]
+
+
+def _provider_payload_from_update(
+    providers_in: list, active_in: str | None,
+    cur_base: str = "", cur_key: str = "", cur_model: str = "",
+    current: dict[str, str] | None = None,
+    prefix: str = "",
+) -> tuple[str, str, str, str, str]:
+    """处理 provider 更新：返回 (providers_json, active, flat_base, flat_key, flat_model)。
+
+    当 incoming providers 只携带 api_key_masked 时（前端不含真实 key 的保存请求），
+    从 current 中查找先前存储的真实 key 来保持原值。
+    """
+    import json
+
+    if not providers_in:
+        return "", "", cur_base, cur_key, cur_model
+
+    # 从 current 中加载当前已存储的 providers 索引，用于 key 还原
+    prev_providers: list[dict] = []
+    if current and prefix:
+        raw = current.get(f"{prefix}_providers") or "[]"
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+            prev_providers = list(parsed) if isinstance(parsed, list) else []
+        except (json.JSONDecodeError, TypeError):
+            prev_providers = []
+    prev_by_id: dict[str, dict] = {str(p.get("id", "")): p for p in prev_providers}
+
+    providers = list(providers_in)
+    # Masked api key handling: 从 current 还原真实 key
+    for p in providers:
+        key_raw = p.get("api_key", "") or ""
+        has_masked = "api_key_masked" in p
+        if has_masked and not key_raw:
+            prev = prev_by_id.get(str(p.get("id", "")))
+            prev_key = (prev.get("api_key") or "") if prev else ""
+            # 只有当 prev_key 是真实密钥（非 masked）时才使用它还原
+            if prev_key and not _is_masked_secret(prev_key):
+                p["api_key"] = prev_key
+                continue
+            # 否则不设 api_key（后续 fallback 到 cur_key）
+
+    effective_base = ""
+    effective_key = ""
+    effective_model = ""
+    active = active_in
+    if not active and providers:
+        active = providers[0].get("id", "")
+
+    for p in providers:
+        if p.get("id", "") == active:
+            effective_base = p.get("base_url", "") or cur_base
+            effective_key = p.get("api_key", "") or cur_key
+            effective_model = p.get("model_name", "") or cur_model
+            break
+    if not effective_base and providers:
+        p0 = providers[0]
+        effective_base = p0.get("base_url", "") or cur_base
+        effective_key = p0.get("api_key", "") or cur_key
+        effective_model = p0.get("model_name", "") or cur_model
+
+    providers_json = json.dumps(providers, ensure_ascii=False)
+    return providers_json, active, effective_base, effective_key, effective_model
 
 
 def _normalize_frontend_theme(value: str | None) -> str:
@@ -231,6 +414,9 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
     llm_url = (settings.platform_llm_base_url or "").strip() or settings.deepseek_base_url
     llm_key = (settings.platform_llm_api_key or "").strip() or settings.deepseek_api_key
     llm_model = (settings.platform_llm_model or "").strip() or settings.deepseek_model
+    multimodal_url = (settings.platform_multimodal_base_url or "").strip()
+    multimodal_key = (settings.platform_multimodal_api_key or "").strip()
+    multimodal_model = (settings.platform_multimodal_model or "").strip()
     paddle_base, paddle_key, paddle_model, paddle_legacy_url = _paddleocr_env_defaults(settings)
     rerank_base, rerank_key, rerank_model = _rerank_env_defaults(settings)
     tts_base, tts_key, tts_model = _tts_env_defaults(settings)
@@ -238,6 +424,9 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "llm_base_url": llm_url or "",
         "llm_api_key": llm_key or "",
         "llm_model": llm_model or "",
+        "multimodal_base_url": multimodal_url,
+        "multimodal_api_key": multimodal_key,
+        "multimodal_model": multimodal_model,
         "embedding_base_url": (settings.platform_embedding_base_url or "").strip(),
         "embedding_api_key": (settings.platform_embedding_api_key or "").strip(),
         "embedding_model": (settings.platform_embedding_model or "").strip(),
@@ -275,6 +464,9 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "ragflow_mysql_container": (settings.ragflow_mysql_container or "ragflow-mysql").strip(),
         "searxng_url": (settings.searxng_url or "").strip(),
         "searxng_timeout_seconds": str(float(settings.searxng_timeout_seconds or 15.0)),
+        "firecrawl_api_key": (settings.firecrawl_api_key or "").strip(),
+        "firecrawl_api_url": (settings.firecrawl_api_url or "https://api.firecrawl.dev").strip(),
+        "firecrawl_read_full_max_urls": str(int(settings.firecrawl_read_full_max_urls or 3)),
         "agent_browser_enabled": str(settings.agent_browser_enabled).lower(),
         "agent_browser_headless": str(settings.agent_browser_headless).lower(),
         "agent_browser_allowed_domains": (settings.agent_browser_allowed_domains or "").strip(),
@@ -298,15 +490,24 @@ def _merge_effective(
     settings: Settings, db: Session | None, *, fill_embedding_from_ragflow: bool = True
 ) -> dict[str, str]:
     merged = _env_defaults(settings)
+    # 先加载 DB 覆盖（用户已保存的配置），避免不必要的 RAGFlow 查询
+    db_payload = _load_db_payload(db)
+    for key, val in db_payload.items():
+        if val == "":
+            continue
+        # 跳过已损坏的 masked API key（如 sk-d••••b550），
+        # 避免覆盖 .env 中的真实密钥
+        if key.endswith("_api_key") and _is_masked_secret(val):
+            continue
+        if key.endswith("_password") and _is_masked_secret(val):
+            continue
+        merged[key] = val
+    # 仅当环境变量和 DB 都未配置 embedding_model 时，才从 RAGFlow 模板查询默认值
     if fill_embedding_from_ragflow and not merged.get("embedding_model"):
         rag_defaults = fetch_template_embedding_defaults(db)
         for key, val in rag_defaults.items():
             if val and not merged.get(key):
                 merged[key] = val
-    db_payload = _load_db_payload(db)
-    for key, val in db_payload.items():
-        if val != "":
-            merged[key] = val
     return merged
 
 
@@ -318,6 +519,43 @@ def get_llm_credentials(db: Session | None = None) -> tuple[str, str, str]:
     """语言模型凭证（资源管理 / .env 合并，每次调用读库）。"""
     merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
     return _endpoint_fields(merged, "llm")
+
+
+def _is_masked_secret(val: str) -> bool:
+    """检测值是否为 masked 格式（如 sk-d••••b550 或 sk-****550），非真实密钥。"""
+    if not val:
+        return False
+    # mask_secret() 用 •••• 或星号变体
+    return "••••" in val or "****" in val or "***" in val
+
+
+def get_provider_credentials_by_id(
+    provider_id: str, db: Session | None = None,
+) -> tuple[str, str, str] | None:
+    """按 provider_id 查凭证，跨 llm/multimodal 两种资源类型。
+
+    返回 (api_key, base_url, model_name)，未找到时返回 None。
+    当 provider 中的 api_key 为 masked 格式时，回退到 flat 字段的 {prefix}_api_key。
+    """
+    merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
+    for prefix in ("llm", "multimodal"):
+        raw_providers = json.loads(merged.get(f"{prefix}_providers") or "[]") if isinstance(merged.get(f"{prefix}_providers"), str) else (merged.get(f"{prefix}_providers") or [])
+        if not isinstance(raw_providers, list):
+            continue
+        active_id = merged.get(f"{prefix}_active_provider", "")
+        for p in raw_providers:
+            pid = p.get("id", "")
+            if pid == provider_id or (provider_id == "__active__" and pid == active_id):
+                key = p.get("api_key", p.get("password", p.get("api_key_masked", ""))) or ""
+                base = p.get("base_url", "") or ""
+                model = p.get("model_name", p.get("model", "")) or ""
+                # 如果 key 是 masked 格式（曾经因 bug 被误存），回退到 flat 字段
+                if key and _is_masked_secret(key):
+                    flat_key = (merged.get(f"{prefix}_api_key") or "").strip()
+                    if flat_key and not _is_masked_secret(flat_key):
+                        key = flat_key
+                return key, base, model
+    return None
 
 
 def get_embedding_credentials(db: Session | None = None) -> tuple[str, str, str]:
@@ -558,6 +796,27 @@ def get_searxng_timeout_seconds(db: Session | None = None) -> float:
         return 15.0
 
 
+def get_firecrawl_api_key(db: Session | None = None) -> str:
+    merged = _effective_config(db, fill_embedding_from_ragflow=False)
+    return (merged.get("firecrawl_api_key") or get_settings().firecrawl_api_key or "").strip()
+
+
+def get_firecrawl_api_url(db: Session | None = None) -> str:
+    merged = _effective_config(db, fill_embedding_from_ragflow=False)
+    return (merged.get("firecrawl_api_url") or get_settings().firecrawl_api_url or "https://api.firecrawl.dev").strip()
+
+
+def get_firecrawl_read_full_max_urls(db: Session | None = None) -> int:
+    merged = _effective_config(db, fill_embedding_from_ragflow=False)
+    raw = merged.get("firecrawl_read_full_max_urls")
+    if raw is None or raw == "":
+        return int(get_settings().firecrawl_read_full_max_urls or 3)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 3
+
+
 def get_platform_api_base_url(db: Session | None = None) -> str:
     """浏览器请求平台后端的根地址（相对 /ai 或完整 URL）。"""
     merged = _effective_config(db, fill_embedding_from_ragflow=False)
@@ -595,18 +854,28 @@ def get_frontend_primary_color(db: Session | None = None) -> str:
     return _normalize_frontend_primary_color(merged.get("frontend_primary_color"))
 
 
-def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
-    effective = _merge_effective(get_settings(), db)
+def _build_model_settings_out(effective: dict[str, str]) -> ModelSettingsOut:
+    """从有效配置字典构造 ModelSettingsOut（不读库，适用于保存后返回）。"""
     vl_base, vl_key, vl_model = _endpoint_fields(effective, "vl")
     paddle_base, paddle_key, paddle_model = _endpoint_fields(effective, "paddleocr")
     if not paddle_base:
         paddle_base = _legacy_paddleocr_base_url(effective)
-    tts_base, tts_key, tts_model = get_tts_credentials(db)
+    tts_base = (effective.get("tts_base_url") or "").strip()
+    tts_key = (effective.get("tts_api_key") or "").strip()
+    tts_model = (effective.get("tts_model") or "").strip()
+    if not tts_base or not tts_key:
+        fb_base, fb_key = _pick_tts_fallback_base_key(effective)
+        if not tts_base:
+            tts_base = fb_base
+        if not tts_key:
+            tts_key = fb_key
+    if not tts_model:
+        tts_model = _DEFAULT_TTS_MODEL
     return ModelSettingsOut(
         effective_source="platform_model_settings",
         editable=True,
         notice=NOTICE_EFFECTIVE,
-        platform_api_base_url=get_platform_api_base_url(db),
+        platform_api_base_url=(effective.get("platform_api_base_url") or "/ai").strip(),
         frontend_app_title=(effective.get("frontend_app_title") or "").strip(),
         frontend_default_theme=_normalize_frontend_theme(effective.get("frontend_default_theme")),
         frontend_color_scheme=_normalize_frontend_color_scheme(
@@ -617,42 +886,22 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
         )
         if _normalize_frontend_color_scheme(effective.get("frontend_color_scheme")) == "custom"
         else "",
-        llm=_endpoint(
-            base_url=effective["llm_base_url"],
-            api_key=effective["llm_api_key"],
-            model_name=effective["llm_model"],
-        ),
-        embedding=_endpoint(
-            base_url=effective["embedding_base_url"],
-            api_key=effective["embedding_api_key"],
-            model_name=effective["embedding_model"] or None,
-        ),
-        vl=_endpoint(
-            base_url=vl_base,
-            api_key=vl_key,
-            model_name=vl_model or None,
-        ),
-        rerank=_endpoint(
-            base_url=effective["rerank_base_url"],
-            api_key=effective["rerank_api_key"],
-            model_name=effective["rerank_model"] or None,
-        ),
-        paddleocr=_endpoint(
-            base_url=paddle_base,
-            api_key=paddle_key,
-            model_name=paddle_model or None,
-        ),
+        llm=_endpoint_with_providers(effective, "llm"),
+        multimodal=_endpoint_with_providers(effective, "multimodal"),
+        embedding=_endpoint_with_providers(effective, "embedding"),
+        vl=_endpoint_with_providers(effective, "vl", base_url=vl_base, api_key=vl_key, model_name=vl_model),
+        rerank=_endpoint_with_providers(effective, "rerank"),
+        paddleocr=_endpoint_with_providers(effective, "paddleocr", base_url=paddle_base, api_key=paddle_key, model_name=paddle_model),
         paddleocr_url=paddle_base or effective.get("paddleocr_url") or "",
-        tts=_endpoint(
-            base_url=tts_base,
-            api_key=tts_key,
-            model_name=tts_model or None,
-        ),
+        tts=_endpoint_with_providers(effective, "tts", base_url=tts_base, api_key=tts_key, model_name=tts_model),
         speech_service_url=effective.get("speech_service_url") or "",
         pdf2zh_api_url=effective.get("pdf2zh_api_url") or "",
         embedding_factory=effective.get("embedding_factory") or None,
         searxng_url=effective.get("searxng_url") or "",
         searxng_timeout_seconds=float(effective.get("searxng_timeout_seconds") or 15.0),
+        firecrawl_api_key=mask_secret(effective.get("firecrawl_api_key") or ""),
+        firecrawl_api_url=(effective.get("firecrawl_api_url") or "https://api.firecrawl.dev").strip(),
+        firecrawl_read_full_max_urls=int(effective.get("firecrawl_read_full_max_urls") or 3),
         agent_browser_enabled=(effective.get("agent_browser_enabled") or "false").lower()
         in {"1", "true", "yes", "on"},
         agent_browser_headless=(effective.get("agent_browser_headless") or "true").lower()
@@ -672,6 +921,13 @@ def get_model_settings(db: Session | None = None) -> ModelSettingsOut:
     )
 
 
+def get_model_settings(
+    db: Session | None = None, *, fill_embedding_from_ragflow: bool = True
+) -> ModelSettingsOut:
+    effective = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=fill_embedding_from_ragflow)
+    return _build_model_settings_out(effective)
+
+
 def _keep_secret(incoming: str | None, previous: str) -> str:
     if incoming is None:
         return previous
@@ -679,6 +935,57 @@ def _keep_secret(incoming: str | None, previous: str) -> str:
     if not val or val == mask_secret(previous):
         return previous
     return val
+
+
+def _apply_providers_to_payload(
+    payload: dict[str, str],
+    body: ModelSettingsUpdate,
+    current: dict[str, str],
+    prefix: str,
+) -> dict[str, str]:
+    """处理 provider 更新：如果 body 包含 providers，则计算 flat 字段并存储 providers/active_provider。"""
+    providers_attr = f"{prefix}_providers"
+    active_attr = f"{prefix}_active_provider"
+    providers_in = getattr(body, providers_attr, None)
+    active_in = getattr(body, active_attr, None)
+
+    if providers_in is None:
+        return payload
+
+    prov_json, active, eff_base, eff_key, eff_model = _provider_payload_from_update(
+        [p.model_dump() for p in providers_in],
+        active_in,
+        payload.get(f"{prefix}_base_url", ""),
+        payload.get(f"{prefix}_api_key", ""),
+        payload.get(f"{prefix}_model", ""),
+        current=current,
+        prefix=prefix,
+    )
+
+    if prov_json:
+        payload[f"{prefix}_providers"] = prov_json
+        payload[f"{prefix}_active_provider"] = active
+        if eff_base:
+            payload[f"{prefix}_base_url"] = eff_base
+        if eff_key:
+            for p in providers_in:
+                if p.id == active and p.api_key:
+                    payload[f"{prefix}_api_key"] = p.api_key
+                    break
+        if eff_model:
+            payload[f"{prefix}_model"] = eff_model
+    return payload
+
+
+def _sync_ragflow_after_save(payload: dict[str, str]) -> None:
+    """后台线程：将模型配置同步到 RAGFlow / KnowFlow（不阻塞平台 HTTP 响应）。"""
+    try:
+        from app.database import SessionLocal
+
+        with SessionLocal() as session:
+            apply_saved_settings(session, payload)
+    except Exception as exc:
+        logger.warning("后台同步配置到知识库失败: %s", exc, exc_info=True)
 
 
 def save_model_settings(
@@ -692,6 +999,19 @@ def save_model_settings(
         "llm_base_url": (body.llm_base_url if body.llm_base_url is not None else current["llm_base_url"]),
         "llm_model": (body.llm_model if body.llm_model is not None else current["llm_model"]),
         "llm_api_key": _keep_secret(body.llm_api_key, current["llm_api_key"]),
+        "multimodal_base_url": (
+            body.multimodal_base_url
+            if body.multimodal_base_url is not None
+            else current.get("multimodal_base_url", "")
+        ),
+        "multimodal_model": (
+            body.multimodal_model
+            if body.multimodal_model is not None
+            else current.get("multimodal_model", "")
+        ),
+        "multimodal_api_key": _keep_secret(
+            body.multimodal_api_key, current.get("multimodal_api_key", "")
+        ),
         "embedding_base_url": (
             body.embedding_base_url
             if body.embedding_base_url is not None
@@ -848,6 +1168,19 @@ def save_model_settings(
             if body.searxng_timeout_seconds is not None
             else current.get("searxng_timeout_seconds", "15.0")
         ),
+        "firecrawl_api_key": _keep_secret(
+            body.firecrawl_api_key, current.get("firecrawl_api_key", "")
+        ),
+        "firecrawl_api_url": (
+            (body.firecrawl_api_url or "https://api.firecrawl.dev").strip()
+            if body.firecrawl_api_url is not None
+            else current.get("firecrawl_api_url", "https://api.firecrawl.dev")
+        ),
+        "firecrawl_read_full_max_urls": (
+            str(max(0, int(body.firecrawl_read_full_max_urls)))
+            if body.firecrawl_read_full_max_urls is not None
+            else current.get("firecrawl_read_full_max_urls", "3")
+        ),
         "agent_browser_enabled": (
             str(bool(body.agent_browser_enabled)).lower()
             if body.agent_browser_enabled is not None
@@ -880,23 +1213,38 @@ def save_model_settings(
         ),
     }
 
+    # 处理各模型类型的 provider 更新（覆盖 flat 字段）
+    for prefix in ("llm", "multimodal", "embedding", "vl", "rerank", "paddleocr", "tts"):
+        payload = _apply_providers_to_payload(payload, body, current, prefix)
+
     row = db.get(PlatformModelSettings, SINGLETON_ID)
     if row is None:
         row = PlatformModelSettings(id=SINGLETON_ID, payload=payload)
         db.add(row)
     else:
         row.payload = payload
-    db.flush()
-
-    apply_saved_settings(db, payload)
     db.commit()
+
     try:
         from app.core.platform_cache import invalidate_system_config_cache
 
         invalidate_system_config_cache()
     except Exception:
         pass
-    return get_model_settings(db)
+
+    # 将配置同步到 RAGFlow/KnowFlow 在后台执行，不阻塞 HTTP 响应
+    try:
+        from app.core.background_executor import submit_background
+
+        submit_background("sync-model-settings", _sync_ragflow_after_save, payload)
+    except Exception:
+        logger.warning("提交后台同步任务失败", exc_info=True)
+
+    effective = dict(_env_defaults(get_settings()))
+    for k, v in payload.items():
+        if v:
+            effective[k] = v
+    return _build_model_settings_out(effective)
 
 
 def apply_saved_settings(db: Session, payload: dict[str, str]) -> None:

@@ -18,7 +18,9 @@ from __future__ import annotations
 import asyncio
 import re
 import logging
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
+
+from playwright.async_api import Locator, Page
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ def _normalize_text(s: str) -> str:
 # ── 原子操作 ──
 
 
-async def _find_editor(page: Any, selectors: list[str]) -> Any | None:
+async def _find_editor(page: Page, selectors: list[str]) -> Locator | None:
     """在页面中按选择器顺序查找可编辑元素。"""
     for sel in selectors:
         try:
@@ -39,16 +41,18 @@ async def _find_editor(page: Any, selectors: list[str]) -> Any | None:
             if el:
                 return el
         except Exception:
+            logger.warning("_find_editor: query_selector failed for %s", sel, exc_info=True)
             continue
     return None
 
 
-async def _input_text(page: Any, editor: Any, text: str) -> None:
+async def _input_text(page: Page, editor: Locator, text: str) -> None:
     """向编辑器输入文本 — fill / clipboard / 键盘兜底。"""
     try:
         await editor.evaluate("el => el.focus()")
-        tag = await editor.evaluate("el => el.tagName.toLowerCase()")
+        tag =         await editor.evaluate("el => el.tagName.toLowerCase()")
     except Exception:
+        logger.warning("_input_text: evaluate focus/tag failed", exc_info=True)
         tag = "div"
 
     # 所有类型的编辑器都先尝试 fill（对 textarea, input, contenteditable 都有效）
@@ -56,6 +60,7 @@ async def _input_text(page: Any, editor: Any, text: str) -> None:
         await editor.fill(text)
         return
     except Exception:
+        logger.warning("_input_text: fill failed, will try clipboard", exc_info=True)
         pass
 
     # contenteditable → clipboard paste
@@ -68,6 +73,7 @@ async def _input_text(page: Any, editor: Any, text: str) -> None:
                 await editor.evaluate("() => document.execCommand('paste')")
                 return
         except Exception:
+            logger.warning("_input_text: clipboard paste failed, will type", exc_info=True)
             pass
 
     # 键盘逐段输入
@@ -78,7 +84,7 @@ async def _input_text(page: Any, editor: Any, text: str) -> None:
         await asyncio.sleep(0.04)
 
 
-async def _click_send(page: Any, editor: Any, send_selectors: list[str]) -> bool:
+async def _click_send(page: Page, editor: Locator, send_selectors: list[str]) -> bool:
     """点击发送按钮或使用 Enter 兜底。"""
     # 先尝试指定的选择器
     for sel in send_selectors:
@@ -92,6 +98,7 @@ async def _click_send(page: Any, editor: Any, send_selectors: list[str]) -> bool
                     await btn.click()
                     return True
         except Exception:
+            logger.warning("_click_send: query_selector/click failed for %s", sel, exc_info=True)
             continue
 
     # Enter 键兜底
@@ -99,10 +106,11 @@ async def _click_send(page: Any, editor: Any, send_selectors: list[str]) -> bool
         await page.keyboard.press("Enter")
         return True
     except Exception:
+        logger.warning("_click_send: Enter key fallback failed", exc_info=True)
         return False
 
 
-async def _pre_input_deepseek_new_chat(page: Any) -> None:
+async def _pre_input_deepseek_new_chat(page: Page) -> None:
     """DeepSeek 新建对话 — 通过侧栏新对话按钮或顶部。"""
     new_chat_selectors = [
         "div:has-text('开启新对话')",
@@ -119,10 +127,11 @@ async def _pre_input_deepseek_new_chat(page: Any) -> None:
                 await asyncio.sleep(2)
                 return
         except Exception:
+            logger.warning("_pre_input_deepseek_new_chat: failed for selector %s", sel, exc_info=True)
             continue
 
 
-async def _pre_input_qwen_new_chat(page: Any) -> None:
+async def _pre_input_qwen_new_chat(page: Page) -> None:
     """千问新建对话 — 点击侧栏「新建对话」按钮。"""
     new_chat_selectors = [
         "button:has-text('新建对话')",
@@ -138,10 +147,11 @@ async def _pre_input_qwen_new_chat(page: Any) -> None:
                 await asyncio.sleep(2)
                 return
         except Exception:
+            logger.warning("_pre_input_qwen_new_chat: failed for selector %s", sel, exc_info=True)
             continue
 
 
-async def _dismiss_overlays(page: Any, patterns: list[str]) -> None:
+async def _dismiss_overlays(page: Page, patterns: list[str]) -> None:
     """尝试关闭弹窗。"""
     close_selectors = [
         'button[aria-label*="关闭"]',
@@ -157,10 +167,11 @@ async def _dismiss_overlays(page: Any, patterns: list[str]) -> None:
                 await btn.click()
                 await asyncio.sleep(0.5)
         except Exception:
+            logger.warning("_dismiss_overlays: failed for selector %s", sel, exc_info=True)
             continue
 
 
-async def _upload_image(page: Any, image_path: str) -> bool:
+async def _upload_image(page: Page, image_path: str) -> bool:
     """上传图片 — 通过文件选择器。"""
     upload_selectors = [
         'input[type="file"]',
@@ -186,15 +197,17 @@ async def _upload_image(page: Any, image_path: str) -> bool:
                 await asyncio.sleep(3)
                 return True
         except Exception:
+            logger.warning("_upload_image: failed for selector %s", sel, exc_info=True)
             continue
     return False
 
 
-async def _check_quota(page: Any, patterns: list[str]) -> bool:
+async def _check_quota(page: Page, patterns: list[str]) -> bool:
     """检查页面文本是否包含限流模式。返回 True 表示配额耗尽。"""
     try:
         body = await page.evaluate("() => document.body.innerText || ''")
     except Exception:
+        logger.warning("_check_quota: evaluate body text failed", exc_info=True)
         return False
     for pat in patterns:
         if re.search(pat, body, re.IGNORECASE):
@@ -203,90 +216,140 @@ async def _check_quota(page: Any, patterns: list[str]) -> bool:
     return False
 
 
-async def _get_body_text(page: Any) -> str:
+async def _get_body_text(page: Page) -> str:
     """获取页面 body 文本。"""
     try:
         return await page.evaluate("() => document.body.innerText || ''")
     except Exception:
+        logger.warning("_get_body_text: evaluate failed", exc_info=True)
         return ""
 
 
+# ── 已知 UI 噪声行（精确匹配，不是回答内容）──
+_UI_NOISE_LINES = frozenset({
+    "PPT 生成", "帮我写作", "图像生成", "视频生成",
+    "解题答疑", "音乐生成", "下载电脑版",
+})
+
+# ── 搜索元数据模式（不作为回答提取）──
+_SEARCH_META_PATTERNS = [
+    re.compile(r"找到\s*\d+\s*篇资料"),
+    re.compile(r"AI 生成.*可能有误"),
+    re.compile(r"关键词[：:]"),
+]
+
+
+def _is_ui_noise_line(line: str) -> bool:
+    """判断一行是否是已知 UI 噪声，不应作为回答内容。"""
+    if not line or len(line) <= 2:
+        return True
+    if line in _UI_NOISE_LINES:
+        return True
+    for pat in _SEARCH_META_PATTERNS:
+        if pat.search(line):
+            return True
+    return False
+
+
+def _extract_content_lines(lines: list[str]) -> list[str]:
+    """从行列表中过滤掉 UI 噪声，返回干净的内容行。"""
+    return [l.strip() for l in lines if l.strip() and not _is_ui_noise_line(l.strip())]
+
+
+async def _extract_body_content_after_prompt(page: Page) -> str | None:
+    """在 body 中找到提示词之后的所有内容行（过滤 UI 噪声），返回多行文本。"""
+    if not _last_prompt:
+        return None
+    try:
+        body = await _get_body_text(page)
+        idx = body.find(_last_prompt)
+        if idx < 0:
+            return None
+        after = body[idx + len(_last_prompt):].strip()
+        lines = [l.strip() for l in after.split("\n") if l.strip()]
+        content = _extract_content_lines(lines)
+        if content:
+            return "\n".join(content)
+    except Exception:
+        logger.warning("_extract_body_content_after_prompt failed", exc_info=True)
+        pass
+    return None
+
+
+async def _extract_body_diff(page: Page, prev_body: str) -> str | None:
+    """对比 body diff，返回新的内容行。"""
+    try:
+        current = await _get_body_text(page)
+        if not current or not prev_body:
+            return None
+        prev_lines = set(l.strip() for l in prev_body.split("\n") if l.strip())
+        new_raw = [
+            l.strip()
+            for l in current.split("\n")
+            if l.strip() and l.strip() not in prev_lines
+        ]
+        content = _extract_content_lines(new_raw)
+        if content:
+            return "\n".join(content)
+    except Exception:
+        logger.warning("_extract_body_diff failed", exc_info=True)
+        pass
+    return None
+
+
+async def _extract_body_fallback(page: Page) -> str | None:
+    """兜底：从 body 中提取所有内容行。"""
+    try:
+        body = await _get_body_text(page)
+        lines = [l.strip() for l in body.split("\n") if l.strip()]
+        content = _extract_content_lines(lines)
+        if content:
+            return "\n".join(content)
+    except Exception:
+        logger.warning("_extract_body_fallback failed", exc_info=True)
+        pass
+    return None
+
+
 async def _extract_newest_response(
-    page: Any, min_length: int = 5, prev_body: str = ""
+    page: Page, min_length: int = 5, prev_body: str = ""
 ) -> str | None:
-    """从页面中提取最新的 AI 回复内容。
+    """从页面中提取最新的 AI 回复内容（支持多行）。
 
     策略：
-    1. 先用适配器级别的 response_selectors 尝试提取
-    2. 在当前 body 中找「提示词之后的新文本」
-    3. diff 对比（找最长全新内容行）
-    4. 回退到 body 最后几行
+    1. 先用适配器级别的 response_selectors 尝试提取（完整元素文本）
+    2. 在 body 中找到提示词之后的所有内容（多行）
+    3. diff 对比（新内容多行）
+    4. 兜底
     """
-    # 1. 尝试适配器级选择器
+    # 1. 适配器级选择器（最佳方式 —— 取准确元素内的完整文本）
     try:
         for sel in _current_response_selectors:
             els = await page.query_selector_all(sel)
             if els:
                 text = await els[-1].evaluate("el => el.textContent || el.innerText || ''")
                 text = (text or "").strip()
-                if len(text) >= min_length and not any(
-                    n in text for n in ["搜索", "新对话", "复制"]
-                ):
+                if len(text) >= min_length:
                     return text
     except Exception:
+        logger.warning("_extract_newest_response: response_selectors failed", exc_info=True)
         pass
 
-    # 2. 找当前 prompt 在 body 中的位置，取其后的内容
-    if _last_prompt:
-        try:
-            body = await _get_body_text(page)
-            idx = body.find(_last_prompt)
-            if idx >= 0:
-                after = body[idx + len(_last_prompt):].strip()
-                lines = [l.strip() for l in after.split("\n") if l.strip()]
-                for l in lines:
-                    if len(l) >= min_length and not any(
-                        n in l for n in ["立即下载", "快捷键", "截屏", "千问快捷"]
-                    ):
-                        if len(l) >= 15:
-                            return l
-        except Exception:
-            pass
+    # 2. 提示词定位（取提示词之后过滤噪声的所有内容）
+    result = await _extract_body_content_after_prompt(page)
+    if result and len(result) >= min_length:
+        return result
 
     # 3. Diff 对比
-    try:
-        current = await _get_body_text(page)
-        if current and prev_body:
-            prev_lines = set(l.strip() for l in prev_body.split("\n") if l.strip())
-            new_lines = [
-                l.strip()
-                for l in current.split("\n")
-                if l.strip()
-                and l.strip() not in prev_lines
-                and len(l.strip()) >= min_length
-            ]
-            noise = {
-                "搜索", "更多", "新对话", "关闭", "取消", "返回", "复制", "分享",
-                "下载", "新建对话", "开始", "确认",
-            }
-            clean = [
-                l for l in new_lines
-                if l not in noise
-                and len(l) >= 15
-                and not any(n in l for n in ["⌘", "⇧", "截图", "下载体验", "快捷键"])
-            ]
-            if clean:
-                return max(clean, key=len)
-    except Exception:
-        pass
+    result = await _extract_body_diff(page, prev_body)
+    if result and len(result) >= min_length:
+        return result
 
-    # 4. 回退
-    try:
-        body = await _get_body_text(page)
-        lines = [l.strip() for l in body.split("\n") if l.strip() and len(l.strip()) >= 15]
-        return lines[-1] if lines else None
-    except Exception:
-        return None
+    # 4. 兜底
+    result = await _extract_body_fallback(page)
+    if result:
+        return result
+    return None
 
 
 # 全局变量，用于 set_current_selectors 和 set_last_prompt 注入上下文
@@ -314,7 +377,7 @@ def set_last_prompt(prompt: str) -> None:
 
 
 async def _wait_for_response(
-    page: Any,
+    page: Page,
     cfg: dict[str, Any],
     timeout_ms: float,
     *,
@@ -358,15 +421,22 @@ async def _wait_for_response(
                             try:
                                 stop_visible = await btn.is_visible()
                             except Exception:
+                                logger.warning("_wait_for_response: stop_btn is_visible failed for %s", sel, exc_info=True)
                                 stop_visible = False
                         if stop_visible:
                             break
                 except Exception:
+                    logger.warning("_wait_for_response: stop selector query failed for %s", sel, exc_info=True)
                     continue
 
         if ever_seen_stop and not stop_visible:
             text = await _extract_newest_response(page, min_length=min_len, prev_body=init_body)
-            return (text or ""), False
+            if text:
+                return (text or ""), False
+            # 停止按钮消失但提取内容为空 —— 可能是搜索阶段按钮，
+            # 并非真正的生成完毕；重置信号继续等待。
+            logger.debug("停止按钮消失但无可提取内容，续等真正回答")
+            ever_seen_stop = False
 
         if stop_visible:
             ever_seen_stop = True
@@ -390,6 +460,7 @@ async def _wait_for_response(
                     last_text = ""
                     stable_start = None
             except Exception:
+                logger.warning("_wait_for_response: image gen detection failed", exc_info=True)
                 pass
 
         # 文本稳定性检测
@@ -401,6 +472,9 @@ async def _wait_for_response(
                     stable_start = asyncio.get_event_loop().time()
                 elif asyncio.get_event_loop().time() - stable_start >= stability_window:
                     text = await _extract_newest_response(page, min_length=min_len, prev_body=init_body)
+                    if not text:
+                        stable_start = None
+                        continue
                     return (text or ""), False
             else:
                 last_text = current_body
@@ -416,7 +490,7 @@ async def _wait_for_response(
 
 
 async def _stream_wait_for_response(
-    page: Any,
+    page: Page,
     cfg: dict[str, Any],
     timeout_ms: float,
 ) -> AsyncIterator[tuple[str, bool]]:
@@ -459,17 +533,23 @@ async def _stream_wait_for_response(
                             try:
                                 stop_visible = await btn.is_visible()
                             except Exception:
+                                logger.warning("_stream_wait_for_response: stop_btn is_visible failed for %s", sel, exc_info=True)
                                 stop_visible = False
                         if stop_visible:
                             break
                 except Exception:
+                    logger.warning("_stream_wait_for_response: stop selector query failed for %s", sel, exc_info=True)
                     continue
 
         if ever_seen_stop and not stop_visible:
             text = (await _extract_newest_response(page, min_length=min_len, prev_body=init_body)) or ""
-            if text != last_yielded:
-                yield (text, False)
-            return
+            if text:
+                if text != last_yielded:
+                    yield (text, False)
+                return
+            # 搜索阶段按钮消失但无内容，续等真正回答
+            logger.debug("(stream) 停止按钮消失但无可提取内容，续等")
+            ever_seen_stop = False
 
         if stop_visible:
             ever_seen_stop = True
@@ -511,7 +591,7 @@ async def _post_process(text: str, adapter_key: str) -> str:
     return text.strip()
 
 
-async def _extract_image_urls(page: Any, adapter: dict) -> list[str]:
+async def _extract_image_urls(page: Page, adapter: dict) -> list[str]:
     """从页面中提取 AI 生成的图片 URL。
 
     优先用 response_selectors 缩小范围，找不到时改用尺寸过滤。
@@ -529,6 +609,7 @@ async def _extract_image_urls(page: Any, adapter: dict) -> list[str]:
                 if src and src.strip():
                     raw_srcs.append(src.strip())
         except Exception:
+            logger.warning("_extract_image_urls: response_selectors img query failed for %s", sel, exc_info=True)
             continue
         if raw_srcs:
             break
@@ -551,6 +632,7 @@ async def _extract_image_urls(page: Any, adapter: dict) -> list[str]:
             """)
             raw_srcs.extend(urls or [])
         except Exception:
+            logger.warning("_extract_image_urls: full page img scan failed", exc_info=True)
             pass
 
     # 3. blob: URL 转 base64 data URL；其它 URL 直接返回
@@ -580,6 +662,7 @@ async def _extract_image_urls(page: Any, adapter: dict) -> list[str]:
                 if data_url:
                     final.append(data_url)
             except Exception:
+                logger.warning("_extract_image_urls: blob to dataURL failed for %s", src[:50], exc_info=True)
                 continue
         else:
             final.append(src)
@@ -597,7 +680,7 @@ async def _extract_image_urls(page: Any, adapter: dict) -> list[str]:
 # ── 主流水线 ──
 
 
-async def _page_healthy(page: Any, adapter: dict[str, Any]) -> bool:
+async def _page_healthy(page: Page, adapter: dict[str, Any]) -> bool:
     """检查页面是否还停留在正确的 provider 域名上。"""
     try:
         url = page.url
@@ -614,11 +697,12 @@ async def _page_healthy(page: Any, adapter: dict[str, Any]) -> bool:
                 return False
         return False
     except Exception:
+        logger.warning("_page_healthy: url check failed", exc_info=True)
         return False
 
 
 async def run_pipeline(
-    page: Any,
+    page: Page,
     adapter: dict[str, Any],
     prompt: str,
     timeout_ms: float = 180000,
@@ -647,25 +731,12 @@ async def run_pipeline(
     # 注入提取模式
     set_current_extract_patterns(adapter.get("extract_patterns", []))
 
-    if fresh_conversation:
-        # ── Step 1: Navigate ──
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            nav_delay = adapter.get("nav_post_delay_ms", 0)
-            if nav_delay:
-                await asyncio.sleep(nav_delay / 1000.0)
-        except Exception as exc:
-            return {"success": False, "reason": f"导航失败: {exc}", "provider": name}
+    # ── Step 1: Navigate（优化——已在对的页面上则不跳转）──
+    current_url = page.url
+    already_on_page = url.rstrip("/") in current_url.rstrip("/")
 
-        # ── Step 2: Auth check ──
-        current_url = page.url
-        auth_domains = adapter.get("auth_domains", [])
-        if any(d in current_url for d in auth_domains):
-            logger.warning("%s 需要登录", name)
-            return {"success": False, "reason": "auth", "provider": name}
-    else:
-        if not await _page_healthy(page, adapter):
-            logger.info("%s 页面不健康，回退为新建对话", name)
+    if fresh_conversation:
+        if not already_on_page:
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 nav_delay = adapter.get("nav_post_delay_ms", 0)
@@ -673,6 +744,32 @@ async def run_pipeline(
                     await asyncio.sleep(nav_delay / 1000.0)
             except Exception as exc:
                 return {"success": False, "reason": f"导航失败: {exc}", "provider": name}
+        else:
+            logger.debug("%s 页面已在目标 URL，跳过导航", name)
+
+        # ── Step 2: Auth check ──
+        try:
+            current_url = page.url
+        except Exception:
+            logger.warning("run_pipeline: step2 auth check page.url failed", exc_info=True)
+            current_url = ""
+        auth_domains = adapter.get("auth_domains", [])
+        if any(d in current_url for d in auth_domains):
+            logger.warning("%s 需要登录", name)
+            return {"success": False, "reason": "auth", "provider": name}
+    else:
+        if not await _page_healthy(page, adapter):
+            if not already_on_page:
+                logger.info("%s 页面不健康，回退为新建对话", name)
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    nav_delay = adapter.get("nav_post_delay_ms", 0)
+                    if nav_delay:
+                        await asyncio.sleep(nav_delay / 1000.0)
+                except Exception as exc:
+                    return {"success": False, "reason": f"导航失败: {exc}", "provider": name}
+            else:
+                logger.debug("%s 页面健康检查失败但 URL 匹配，跳过导航", name)
             fresh_conversation = True
 
     # ── Step 3: Quota check ──
@@ -682,6 +779,7 @@ async def run_pipeline(
             if await _check_quota(page, quota_patterns):
                 return {"success": False, "reason": "quota", "provider": name}
         except Exception:
+            logger.warning("run_pipeline: step3 quota check failed", exc_info=True)
             pass
 
     # ── Step 4: Overlay dismiss ──
@@ -690,6 +788,7 @@ async def run_pipeline(
         try:
             await _dismiss_overlays(page, dismiss_patterns)
         except Exception:
+            logger.warning("run_pipeline: step4 overlay dismiss failed", exc_info=True)
             pass
 
     # ── Step 5: Pre-input hook（仅新建对话）──
@@ -774,7 +873,7 @@ async def run_pipeline(
 
 
 async def stream_run_pipeline(
-    page: Any,
+    page: Page,
     adapter: dict[str, Any],
     prompt: str,
     timeout_ms: float = 180000,
@@ -804,29 +903,14 @@ async def stream_run_pipeline(
     set_current_response_selectors(adapter.get("response_selectors", []))
     set_current_extract_patterns(adapter.get("extract_patterns", []))
 
-    yield {"type": "status", "message": f"正在连接 {name}…"}
+    yield {"type": "status", "message": f"小析正在呼叫 {name} 同学…"}
+
+    # ── Step 1: Navigate（优化——已在对的页面上则不跳转）──
+    current_url = page.url
+    already_on_page = url.rstrip("/") in current_url.rstrip("/")
 
     if fresh_conversation:
-        # ── Step 1: Navigate ──
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            nav_delay = adapter.get("nav_post_delay_ms", 0)
-            if nav_delay:
-                await asyncio.sleep(nav_delay / 1000.0)
-        except Exception as exc:
-            yield {"type": "error", "reason": f"导航失败: {exc}", "provider": name}
-            return
-
-        # ── Step 2: Auth check ──
-        current_url = page.url
-        auth_domains = adapter.get("auth_domains", [])
-        if any(d in current_url for d in auth_domains):
-            logger.warning("%s 需要登录", name)
-            yield {"type": "error", "reason": "auth", "provider": name}
-            return
-    else:
-        if not await _page_healthy(page, adapter):
-            logger.info("%s 页面不健康，回退为新建对话", name)
+        if not already_on_page:
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 nav_delay = adapter.get("nav_post_delay_ms", 0)
@@ -835,6 +919,34 @@ async def stream_run_pipeline(
             except Exception as exc:
                 yield {"type": "error", "reason": f"导航失败: {exc}", "provider": name}
                 return
+        else:
+            logger.debug("%s 页面已在目标 URL，跳过导航", name)
+
+        # ── Step 2: Auth check ──
+        try:
+            current_url = page.url
+        except Exception:
+            logger.warning("stream_run_pipeline: step2 auth check page.url failed", exc_info=True)
+            current_url = ""
+        auth_domains = adapter.get("auth_domains", [])
+        if any(d in current_url for d in auth_domains):
+            logger.warning("%s 需要登录", name)
+            yield {"type": "error", "reason": "auth", "provider": name}
+            return
+    else:
+        if not await _page_healthy(page, adapter):
+            if not already_on_page:
+                logger.info("%s 页面不健康，回退为新建对话", name)
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    nav_delay = adapter.get("nav_post_delay_ms", 0)
+                    if nav_delay:
+                        await asyncio.sleep(nav_delay / 1000.0)
+                except Exception as exc:
+                    yield {"type": "error", "reason": f"导航失败: {exc}", "provider": name}
+                    return
+            else:
+                logger.debug("%s 页面健康检查失败但 URL 匹配，跳过导航", name)
             fresh_conversation = True
 
     # ── Step 3: Quota check ──
@@ -845,6 +957,7 @@ async def stream_run_pipeline(
                 yield {"type": "error", "reason": "quota", "provider": name}
                 return
         except Exception:
+            logger.warning("stream_run_pipeline: step3 quota check failed", exc_info=True)
             pass
 
     # ── Step 4: Overlay dismiss ──
@@ -853,6 +966,7 @@ async def stream_run_pipeline(
         try:
             await _dismiss_overlays(page, dismiss_patterns)
         except Exception:
+            logger.warning("stream_run_pipeline: step4 overlay dismiss failed", exc_info=True)
             pass
 
     # ── Step 5: Pre-input hook（仅新建对话）──
@@ -912,8 +1026,8 @@ async def stream_run_pipeline(
         try:
             min_wait = min(25.0, timeout_ms / 1000.0)  # 最多等 25 秒
             start_ts = asyncio.get_event_loop().time()
-            # 先快速等几秒让 AI 开始生成
-            await asyncio.sleep(8)
+            # 先等几秒让 AI 开始生成（缩短到 4 秒，多数平台 2-3s 即开始输出）
+            await asyncio.sleep(4)
             # 然后轮询等待图片出现（最多到 min_wait 秒）
             while asyncio.get_event_loop().time() - start_ts < min_wait:
                 has_img = False
@@ -929,6 +1043,7 @@ async def stream_run_pipeline(
                         }
                     """)
                 except Exception:
+                    logger.warning("stream_run_pipeline: image_gen has_img evaluate failed", exc_info=True)
                     pass
                 if has_img:
                     break
@@ -937,7 +1052,7 @@ async def stream_run_pipeline(
                 if raw and _last_prompt and not _normalize_text(_last_prompt) in _normalize_text(raw):
                     response_text = raw
                     yield {"type": "text", "content": response_text}
-                await asyncio.sleep(3)
+                await asyncio.sleep(2)
             # 最终再提取一次文本
             final_text = await _extract_newest_response(page, min_length=1)
             if final_text and _last_prompt and not _normalize_text(_last_prompt) in _normalize_text(final_text):

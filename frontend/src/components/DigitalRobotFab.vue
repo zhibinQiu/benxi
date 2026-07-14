@@ -17,7 +17,7 @@ import {
   TimeOutline,
   RefreshOutline,
   TrashOutline,
-  AddSharp,
+  AddOutline,
   SettingsOutline,
 } from "@vicons/ionicons5";
 import {
@@ -547,7 +547,7 @@ watch(activeTab, (v) => { if (v === "tasks") loadTasks(); });
                 >{{ opt.label }}</button>
               </div>
               <n-button size="tiny" quaternary @click="openCreateTask(null)">
-                <template #icon><n-icon :component="AddSharp" /></template>
+                <template #icon><n-icon :component="AddOutline" /></template>
                 新建
               </n-button>
             </div>

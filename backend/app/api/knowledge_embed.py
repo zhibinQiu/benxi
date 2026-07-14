@@ -182,6 +182,107 @@ def knowledge_document_reindex(
     return ApiResponse(data=data)
 
 
+@router.post(
+    "/documents/reindex-unindexed",
+    dependencies=[_knowledge_search],
+)
+def knowledge_documents_reindex_unindexed(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: str = Query("personal", pattern="^(company|department|team|personal)$"),
+    dept_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
+) -> ApiResponse[dict]:
+    """重新索引当前用户指定范围内所有未索引或索引失败的文档。"""
+    from app.models.document import DocumentVersion
+    from app.models.ragflow_document_version_link import RagflowDocumentVersionLink
+    from app.services.knowledge_parser_service import (
+        assert_index_stack_ready,
+        reindex_parser_id_raw,
+    )
+    from app.services.knowledge_sync_job_service import enqueue_document_reindex
+    from app.services.documents.listing import filter_accessible_documents
+
+    docs = filter_accessible_documents(
+        db,
+        user,
+        scope=scope,
+        dept_id=dept_id,
+        owner_id=owner_id,
+    )
+    if not docs:
+        return ApiResponse(data={"total": 0, "queued": 0, "skipped": 0})
+
+    assert_index_stack_ready(reindex_parser_id_raw(None))
+
+    version_ids = [d.current_version_id for d in docs if d.current_version_id]
+    if not version_ids:
+        return ApiResponse(data={"total": 0, "queued": 0, "skipped": 0})
+
+    versions = {
+        v.id: v
+        for v in db.query(DocumentVersion)
+        .filter(
+            DocumentVersion.id.in_(version_ids),
+            DocumentVersion.file_size > 0,
+        )
+        .all()
+    }
+    doc_ids_with_upload = [
+        d.id
+        for d in docs
+        if d.current_version_id and d.current_version_id in versions
+    ]
+    if not doc_ids_with_upload:
+        return ApiResponse(data={"total": 0, "queued": 0, "skipped": 0})
+
+    links = {
+        l.platform_document_id: l
+        for l in db.query(RagflowDocumentVersionLink)
+        .filter(
+            RagflowDocumentVersionLink.platform_document_id.in_(
+                doc_ids_with_upload
+            )
+        )
+        .all()
+    }
+
+    queued = 0
+    skipped = 0
+    doc_map = {d.id: d for d in docs}
+
+    for doc_id in doc_ids_with_upload:
+        doc = doc_map[doc_id]
+        link = links.get(doc_id)
+        if link and link.platform_version_id == doc.current_version_id:
+            if link.index_completed_at:
+                skipped += 1
+                continue
+
+        version = versions[doc.current_version_id]
+        job = enqueue_document_reindex(
+            db,
+            user_id=user.id,
+            document_id=doc_id,
+            version_id=version.id,
+            parser_id=reindex_parser_id_raw(None),
+            document_title=doc.title,
+        )
+        if job:
+            queued += 1
+        else:
+            skipped += 1
+
+    db.commit()
+    return ApiResponse(
+        data={
+            "total": len(doc_ids_with_upload),
+            "queued": queued,
+            "skipped": skipped,
+        }
+    )
+
+
 @router.get(
     "/citations/preview",
     dependencies=[_knowledge_search],

@@ -60,17 +60,20 @@ watch(
 @import "./styles/tokens.css";
 @import "./styles/color-schemes.css";
 
+/* Inter 字体 — 与登录页统一，打造 Codex 级排版质感 */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 html,
 body,
 #app {
   margin: 0;
   min-height: 100vh;
   font-family: var(--platform-font);
-  font-size: 18px;
+  font-size: 15px;
   line-height: var(--platform-line-body);
   letter-spacing: var(--platform-tracking-normal);
-  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ss01" 1;
-  background: #f5f5f7;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ss01" 1, "cv05" 1;
+  background: var(--platform-bg-base, #f5f5f7);
   color: var(--platform-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -80,6 +83,11 @@ body,
 ::selection {
   background: var(--platform-accent-soft);
   color: var(--platform-text);
+}
+
+/* 选中区域高亮更高级：带一点主色透明感 */
+::-moz-selection {
+  background: color-mix(in srgb, var(--platform-accent) 25%, transparent);
 }
 
 h1,
@@ -97,14 +105,6 @@ h4,
   position: relative;
   min-height: 100vh;
   background: transparent;
-}
-
-.app-shell--video-bg {
-  background: transparent;
-}
-
-.app-shell > .page-video-bg {
-  z-index: 0;
 }
 
 .app-shell > :not(.page-video-bg) {

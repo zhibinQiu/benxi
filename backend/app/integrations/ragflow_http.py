@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
 import httpx
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _cooldown_until: float = 0.0
@@ -23,7 +26,15 @@ def ragflow_http_timeout() -> float:
 
 def should_attempt_ragflow_http() -> bool:
     with _lock:
-        return time.monotonic() >= _cooldown_until
+        ok = time.monotonic() >= _cooldown_until
+        if not ok:
+            remaining = _cooldown_until - time.monotonic()
+            logger.warning(
+                "RAGFlow HTTP 熔断中，剩余 %.0fs（连续失败 %d 次），跳过健康检查",
+                remaining,
+                _consecutive_failures,
+            )
+        return ok
 
 
 def mark_ragflow_http_success() -> None:
@@ -41,6 +52,11 @@ def mark_ragflow_http_failure() -> None:
         _consecutive_failures += 1
         sec = min(base * _consecutive_failures, 120)
         _cooldown_until = time.monotonic() + sec
+        logger.warning(
+            "RAGFlow HTTP 失败（连续 %d 次），冷却 %.0fs",
+            _consecutive_failures,
+            sec,
+        )
 
 
 def reset_ragflow_http_circuit_for_tests() -> None:

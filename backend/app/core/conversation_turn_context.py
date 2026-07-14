@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agentkit_message.context import (
+from app.agentkit.message.context import (
     is_likely_follow_up as _is_likely_follow_up,
 )
 from app.schemas.ai_chat import AiChatMessage
@@ -12,7 +12,7 @@ from app.schemas.ai_chat import AiChatMessage
 
 def is_explicit_greeting_or_chitchat(message: str) -> bool:
     """当前输入是否为独立寒暄（勿绑定上文业务话题）。"""
-    from agentkit_message.context import is_explicit_greeting_or_chitchat as _check
+    from app.agentkit.message.context import is_explicit_greeting_or_chitchat as _check
 
     return _check(message)
 
@@ -54,19 +54,9 @@ def first_user_message(history: list[AiChatMessage] | None) -> str:
 
 def is_standalone_question(message: str) -> bool:
     """当前输入是否像完整独立问题（非对上文的短跟贴）。"""
-    from agentkit_message.context import is_standalone_question as _check
+    from app.agentkit.message.context import is_standalone_question as _check
 
     return _check(message)
-
-
-def effective_history_for_context(
-    message: str,
-    history: list[AiChatMessage] | None,
-) -> list[AiChatMessage] | None:
-    """仅在上文相关时携带 history，避免无关新话题污染路由与技能匹配。"""
-    if not history or not is_likely_follow_up(message, history):
-        return None
-    return history
 
 
 def is_likely_follow_up(
@@ -90,7 +80,7 @@ def format_conversation_snippet(
     limit: int = 8,
     per_message_chars: int = 240,
 ) -> str:
-    from agentkit_message.context import format_conversation_snippet as _format
+    from app.agentkit.message.context import format_conversation_snippet as _format
 
     return _format(
         history,

@@ -67,7 +67,7 @@ function pushToast(notification) {
 
 /** 同步占位，避免并发轮询对同一通知重复弹窗 */
 function reserveToast(notification) {
-  if (!notification?.id || document.hidden) return false;
+  if (!notification?.id) return false;
   if (toastedIds.has(notification.id)) return false;
   toastedIds.add(notification.id);
   return true;
@@ -136,13 +136,20 @@ export function handleAgentWorkflowForNotifications(ev) {
   const boostSeconds = Number(ev.boost_seconds);
   const hasBoost = Number.isFinite(boostSeconds) && boostSeconds > 0;
 
-  // schedule_notification 直接调用，或有 boost_seconds 的都加速轮询
-  const isScheduledNotif = toolName === "schedule_notification" || hasBoost;
+  // schedule_notification / send_notification 直接调用，或有 boost_seconds 的都加速轮询
+  const isNotifTool = toolName === "schedule_notification"
+    || toolName === "send_notification"
+    || hasBoost;
 
   let boostMs = DEFAULT_BOOST_MS;
   if (hasBoost) {
     boostMs = (boostSeconds + 30) * 1000;
-  } else if (!isScheduledNotif) {
+  } else if (!isNotifTool) {
+    return;
+  }
+  // send_notification 已落库，只需立即轮询一次，无需长时间加速
+  if (toolName === "send_notification" && !hasBoost) {
+    void pollNotifications();
     return;
   }
   boostNotificationPolling(boostMs);
@@ -174,7 +181,14 @@ export function startNotificationAlerts() {
   pollActive = true;
   void pollNotifications({ seedOnly: true });
   onVisibilityChange = () => {
-    if (!document.hidden) void pollNotifications();
+    if (!document.hidden) {
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      void pollNotifications();
+      scheduleNextPoll();
+    }
   };
   document.addEventListener("visibilitychange", onVisibilityChange);
   scheduleNextPoll();

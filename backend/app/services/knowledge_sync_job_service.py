@@ -377,6 +377,7 @@ def _retrigger_ragflow_parse(
         try:
             content = get_object_store().get_object_bytes(version.file_key)
         except Exception:
+            logger.warning("从对象存储读取文件内容失败 version_key=%s", version.file_key, exc_info=True)
             content = None
     _configure_and_parse_uploaded_document(
         kf,
@@ -1657,7 +1658,7 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
             )
             db.commit()
         except Exception:
-            pass
+            logger.warning("KnowflowSyncError 异常处理后更新 Job 终态失败 job_id=%s", job_id, exc_info=True)
     except Exception as e:
         logger.exception("知识库索引任务失败 job=%s", job_id)
         db.rollback()
@@ -1670,7 +1671,7 @@ def run_document_knowledge_index_job(job_id: uuid.UUID) -> None:
             )
             db.commit()
         except Exception:
-            pass
+            logger.warning("外层异常处理后更新 Job 终态失败 job_id=%s", job_id, exc_info=True)
     finally:
         if execution_started:
             try:

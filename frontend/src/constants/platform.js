@@ -5,13 +5,13 @@
  */
 export const PLATFORM_APP_NAME = "本析";
 export const PLATFORM_AI_ASSISTANT_NAME = "小析";
-export const PLATFORM_COPYRIGHT_HOLDER = "本析";
+export const PLATFORM_COPYRIGHT_HOLDER = "烟台海颐软件";
 export const PLATFORM_VERSION = "4.6.0";
 export const PLATFORM_VERSION_LABEL = "v4.6.0";
 export const PLATFORM_RELEASE_LABEL = "内测";
 
 export function platformCopyrightText() {
-  return `Copyright © 2026 ${PLATFORM_COPYRIGHT_HOLDER} ${PLATFORM_VERSION_LABEL}${PLATFORM_RELEASE_LABEL} 保留所有权利。`;
+  return `Copyright © 2026 本析 ${PLATFORM_VERSION_LABEL}${PLATFORM_RELEASE_LABEL} ${PLATFORM_COPYRIGHT_HOLDER}保留所有权利。`;
 }
 
 /** 系统名：标题中的「AI」使用渐变色，其余为普通字色 */

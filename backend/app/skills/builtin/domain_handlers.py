@@ -20,7 +20,6 @@ from app.core.tool_skill_taxonomy import (
     SKILL_MGMT_TOOL_NAMES,
     SKILL_NOTIFICATION,
     SKILL_PLATFORM_OPS,
-    SKILL_SKILL_DEV,
     SKILL_USER_ADMIN,
     normalize_skill_mgmt_operation,
     skill_mgmt_operations_hint,

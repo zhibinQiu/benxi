@@ -19,6 +19,7 @@ class ToolDescriptor(BaseModel):
     tool_id: str = Field(min_length=1, max_length=120)
     tool_type: str = Field(min_length=1, max_length=64)
     description: str = Field(default="", max_length=2000)
+    doc_text: str = Field(default="", max_length=8000)
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
     rate_limit: RateLimitSpec = Field(default_factory=RateLimitSpec)

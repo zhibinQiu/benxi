@@ -1,6 +1,8 @@
 /** 模型与资源健康 REST API */
 import { api } from "./http.js";
 
+const SAVE_TIMEOUT_MS = 60_000;
+
 export async function fetchModelSettings() {
   return api("/api/v1/admin/model-settings");
 }
@@ -9,6 +11,7 @@ export async function updateModelSettings(payload) {
   return api("/api/v1/admin/model-settings", {
     method: "PUT",
     body: JSON.stringify(payload),
+    timeoutMs: SAVE_TIMEOUT_MS,
   });
 }
 

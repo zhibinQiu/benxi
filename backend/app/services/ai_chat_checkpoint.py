@@ -6,11 +6,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
+
+from app.core.agent_loop_state import LoopState
 
 from app.core.agent_checkpoint import clear_checkpoint, load_checkpoint
 from app.core.agent_loop_session import AgentLoopSession, coerce_user_id
@@ -51,7 +52,7 @@ async def iter_resumed_agent_stream(
         yield sse_error("无权操作此 checkpoint")
         return
 
-    loop_state: dict[str, Any] = cp.get("loop_state") or {}
+    loop_state: LoopState = cp.get("loop_state") or {}
     working: list[dict[str, Any]] = cp.get("working") or []
     pending_data: dict[str, Any] = cp.get("pending_data") or {}
     phase: str = cp.get("phase", "")

@@ -1,0 +1,47 @@
+# 远程依赖开发：暴露数据库/中间件端口（EXPOSE_DEPS=1 时由 stack.sh 自动叠加）
+#
+# 场景: 服务器跑依赖栈，本机跑 API+Vite（remote-dev 过渡方案）
+# 用法:
+#   cp configs/envs/.env.server.deps.example .env
+#   EXPOSE_DEPS=1 bash scripts/stack.sh up --profile knowflow --profile speech \
+#     postgres redis minio speech-api \
+#     knowflow-mysql knowflow-infinity knowflow-gotenberg ragflow knowflow-backend
+#
+# 端口映射：
+#   40002 postgres (TCP)
+#   40003 redis    (TCP)
+#   40004 minio    (TCP, S3 API)
+#   40006 MySQL    (TCP, RAGFlow)
+#   40008 speech   (TCP, FunASR)
+# pdf2zh / RAGFlow Web API / knowflow-backend 经 gateway /deps/ 代理，不直连
+#
+# 注意: knowflow-mysql / knowflow-backend 定义在 third_party/deploy/knowflow.yml 中，
+#       需同时加载该文件才能使用。此处仅暴露 compose.yaml 基础服务的端口。
+
+services:
+  postgres:
+    ports:
+      - "${REMOTE_POSTGRES_PORT:-40002}:5432"
+
+  redis:
+    ports:
+      - "${REMOTE_REDIS_PORT:-40003}:6379"
+
+  minio:
+    ports:
+      - "${REMOTE_MINIO_PORT:-40004}:9000"
+
+  # pdf2zh / speech 走 gateway /deps/ 代理，无需直连 TCP 端口
+  # pdf2zh-api 端口 40006 已释放给 knowflow-mysql
+
+  speech-api:
+    ports:
+      - "${REMOTE_SPEECH_PORT:-40008}:8765"
+
+  # knowflow-mysql 的定义在 knowflow.yml 中（third_party/deploy/），需要 --profile knowflow
+  # 端口映射已在 knowflow.yml 中通过条件 EXPOSE_DEPS 添加
+
+  # knowflow-backend 定义在 knowflow.yml 中，需要 --profile knowflow 和加载该文件
+  # knowflow-backend:
+  #   ports:
+  #     - "${REMOTE_KNOWFLOW_BACKEND_PORT:-40010}:5000"

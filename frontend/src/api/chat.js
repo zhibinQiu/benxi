@@ -135,6 +135,11 @@ export async function fetchAiChatAgentCatalog() {
   return api("/api/v1/ai-chat/agents/catalog");
 }
 
+/** 获取 AI 对话可选的模型提供商列表（不含密钥） */
+export async function fetchAiChatModelProviders() {
+  return api("/api/v1/ai-chat/model-providers");
+}
+
 export async function fetchChatConversations(scope, { limit = 30 } = {}) {
   const q = limit ? `?limit=${encodeURIComponent(limit)}` : "";
   return api(`/api/v1/chat-history/${encodeURIComponent(scope)}/conversations${q}`);

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentkit_mcp import McpClient, McpClientConfig
+from app.agentkit.mcp import McpClient, McpClientConfig
 
 from app import __version__
 from app.core.mcp.protocol import MCP_CLIENT_NAME, summarize_mcp_tool_result

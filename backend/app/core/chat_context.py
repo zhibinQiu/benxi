@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 
-from agentkit_message.context import trim_chat_history as _trim_chat_history
+from app.agentkit.message.context import trim_chat_history as _trim_chat_history
 
 DEFAULT_MAX_HISTORY_MESSAGES = 8
 DEFAULT_HISTORY_CHAR_BUDGET = 6_000

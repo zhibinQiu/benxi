@@ -34,6 +34,7 @@ RUN if [ -n "${APT_MIRROR}" ] && [ -f /etc/apt/sources.list.d/debian.sources ]; 
     fi && \
     apt-get update && apt-get install -y --no-install-recommends \
     fonts-wqy-microhei \
+    fonts-dejavu-core \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -43,22 +44,23 @@ ARG PIP_INDEX_URL
 ARG INSTALL_PAGEINDEX
 ARG INSTALL_BROWSER
 
-COPY packages /packages
 COPY backend/pyproject.toml backend/README.md ./
 
 # hatchling 打 wheel 需要包目录；runtime 由 volume 挂载真实 app/workers
 RUN mkdir -p app workers && touch app/__init__.py workers/__init__.py
 
+# 创建空 app/agentkit 目录（运行时由 volume 挂载真实代码）
+RUN mkdir -p app/agentkit && touch app/agentkit/__init__.py
+
 # PageIndex 可选；仅 INSTALL_PAGEINDEX=1 时安装 extra
-COPY backend/third_party/pageindex-upstream ./third_party/pageindex-upstream/
+COPY third_party/pageindex ./third_party/pageindex/
 
 RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
-    PACKAGES_DIR=/packages PLATFORM_DIR=/app INSTALL_PLATFORM_DEPS=1 \
-      bash /packages/install-editable.sh && \
+    pip install --no-cache-dir -i "${PIP_INDEX_URL}" . && \
     if [ "${INSTALL_PAGEINDEX}" = "1" ]; then \
       pip install --no-cache-dir -i "${PIP_INDEX_URL}" ".[pageindex]" && \
       cfg_dir="$(python -c 'import pageindex, pathlib; print(pathlib.Path(pageindex.__file__).parent)')" && \
-      cp third_party/pageindex-upstream/pageindex/config.yaml "${cfg_dir}/config.yaml"; \
+      cp third_party/pageindex/pageindex/config.yaml "${cfg_dir}/config.yaml"; \
     fi && \
     if [ "${INSTALL_BROWSER}" = "1" ]; then \
       pip install --no-cache-dir -i "${PIP_INDEX_URL}" ".[browser]" && \
@@ -68,9 +70,7 @@ RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
     find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 RUN python -c "\
-import agentkit_aip, agentkit_interrupt, agentkit_loop, agentkit_mcp, agentkit_message, \
-       agentkit_orchestrate, agentkit_route, agentkit_skills, agentkit_subagent, agentkit_tools, \
-       fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml; \
+import fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml; \
 print('deps ok', fastapi.__version__)\
 "
 

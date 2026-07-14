@@ -14,6 +14,7 @@ from app.core.exceptions import bad_request, forbidden, not_found
 from app.domains.knowledge import knowledge
 from app.integrations.knowflow_client import get_knowflow_client_for_user
 from app.integrations.ragflow_client import RagflowClient, RagflowError
+from app.integrations.mysql_conn import execute_query
 from app.core.document_scope import ORG_SCOPES
 from app.models.document import Document, DocumentLibraryFolder
 from app.models.org import User
@@ -671,31 +672,16 @@ def _fetch_document_run_map_from_mysql(
     if not password or not host:
         return {}
     try:
-        import pymysql
-
-        from app.config import get_settings
-
-        settings = get_settings()
-        conn = pymysql.connect(
+        placeholders = ",".join(["%s"] * len(ids))
+        rows = execute_query(
             host=host,
             port=port,
-            user="root",
             password=password,
             database=db_name,
-            charset="utf8mb4",
-            connect_timeout=settings.ragflow_mysql_connect_timeout,
-            read_timeout=settings.ragflow_mysql_read_timeout,
-            write_timeout=settings.ragflow_mysql_write_timeout,
+            sql=f"SELECT id, run, progress, progress_msg, chunk_num "
+                f"FROM document WHERE id IN ({placeholders})",
+            params=ids,
         )
-        placeholders = ",".join(["%s"] * len(ids))
-        sql = (
-            f"SELECT id, run, progress, progress_msg, chunk_num "
-            f"FROM document WHERE id IN ({placeholders})"
-        )
-        with conn.cursor() as cur:
-            cur.execute(sql, ids)
-            rows = cur.fetchall()
-        conn.close()
         out: dict[str, dict] = {}
         for rid, run, progress, msg, chunk_num in rows:
             out[str(rid)] = {
@@ -1112,7 +1098,7 @@ def execute_document_reindex(
             db, user, document_id, version_id=version.id
         )
 
-    parser, parser_config = build_parser_config(parser_id, layout_recognize)
+    parser, parser_config = build_parser_config(parser_id, layout_recognize, db=db)
 
     dataset_missing = False
     if version_link:

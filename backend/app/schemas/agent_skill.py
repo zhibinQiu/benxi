@@ -54,6 +54,7 @@ class AgentToolOut(BaseModel):
     tool_id: str = ""
     tool_type: str = ""
     description: str
+    doc_text: str = ""
     category: AgentToolCategoryOut
     available: bool = True
     availability_note: str = ""
@@ -72,6 +73,7 @@ class AgentSkillSummaryOut(BaseModel):
     file_count: int
     total_bytes: int
     source_type: str
+    mount_agent: str | None = None
     created_at: datetime
     updated_at: datetime
 

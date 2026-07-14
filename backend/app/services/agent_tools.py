@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import uuid
 from pathlib import Path
 from typing import Any
+
+from app.core.agent_loop_state import LoopState
 
 from sqlalchemy.orm import Session
 
 from app.core.permissions import user_has_permission
 from app.models.org import User
-from app.services.agent_skill_router import extract_memory_note
 
 _BROWSER_SESSION_TOOLS = frozenset(
     {
@@ -28,13 +28,13 @@ _BROWSER_SESSION_TOOLS = frozenset(
 )
 
 
-def mark_browser_session_used(loop_state: dict[str, Any] | None) -> None:
+def mark_browser_session_used(loop_state: LoopState | None) -> None:
     if loop_state is not None:
         loop_state["browser_session_used"] = True
 
 
 def record_stream_screenshot_attachment(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     data: dict[str, Any] | None,
 ) -> None:
     """记录浏览器截图供流式 attachment 与最终回复 Markdown 复用。"""
@@ -141,8 +141,10 @@ def build_skill_md_context_block(
     ]
     if has_script is False:
         lines.append(
-            "（本包为**指令型**技能：按上述流程直接作答；"
-            "图表用 ```mermaid 围栏；**勿**调用 run_skill_script）"
+            "（本包为**指令型**技能：SKILL.md 已包含完整答复指引——请直接按 SKILL.md 中的要求回答用户。"
+            "SKILL.md 的内容已在上下文中供你直接引用执行。"
+            "**禁止**脱离 SKILL.md 凭空编造未提及的信息和数据。"
+            "**禁止**调用 run_skill_script——本技能无可执行脚本）"
         )
     elif has_script is True:
         lines.append(
@@ -152,7 +154,7 @@ def build_skill_md_context_block(
 
 
 def maybe_inject_skill_dev_playbook(
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     messages: list[dict[str, Any]],
     *,
     agent_id: str | None,
@@ -175,7 +177,7 @@ def maybe_inject_skill_dev_playbook(
 def maybe_inject_skill_md(
     db: Session,
     user: User,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     messages: list[dict[str, Any]],
     skill_name: str,
 ) -> list[dict[str, Any]]:
@@ -230,34 +232,62 @@ def build_agent_tool_specs(
     user: User,
     *,
     allowed_names: set[str] | None = None,
+    agent_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """按用户权限与平台开关组装可用原子工具列表。"""
+    """按用户权限与平台开关组装可用原子工具列表。
+
+    设计原则：
+    - orchestrator（调度智能体）：仅挂载通用能力——技能运行时工具 + 编排工具 + 系统通知工具。
+      不挂载：联网检索(web_search)、本体图谱(kg_query)、知识库检索(knowledge_retrieve)、
+      文档CRUD、浏览器、用户/部门管理等专精工具。
+      这些专精操作由路由分配到对应的专精 Agent 执行。
+    - 其他 Agent：挂载完整工具集。
+    """
     from app.config import get_settings
 
-    specs: list[dict[str, Any]] = list(_ATOMIC_RETRIEVAL_TOOL_SPECS)
-    specs.extend(AGENT_TOOL_SPECS)
-    specs.extend(_DOCUMENT_TOOL_SPECS)
-    specs.extend(_PLATFORM_TOOL_SPECS)
-    if user_has_permission(db, user, "admin.user"):
-        specs.extend(_ADMIN_USER_TOOL_SPECS)
-    if user_has_permission(db, user, "admin.dept"):
-        specs.extend(_ADMIN_DEPT_TOOL_SPECS)
-    from app.domains.knowledge import knowledge
+    is_orchestrator = (agent_id or "").strip() == "orchestrator"
 
-    if not knowledge.enabled():
-        specs = [
-            s
-            for s in specs
-            if str((s.get("function") or {}).get("name") or "")
-            not in ("sync_document_knowledge", "reindex_document")
-        ]
-    if get_settings().agent_skill_script_enabled:
-        specs.append(_RUN_SKILL_SCRIPT_SPEC)
-    from app.integrations.browser_automation.browser_config import get_browser_rpa_config
-
-    if get_browser_rpa_config(db).enabled:
-        specs.extend(_BROWSER_TOOL_SPECS)
+    specs: list[dict[str, Any]] = list(AGENT_TOOL_SPECS)
     specs.extend(_ORCHESTRATION_TOOL_SPECS)
+
+    if is_orchestrator:
+        # ── 调度智能体：仅系统通知工具（待办/定时提醒） ──
+        NOTIFICATION_TOOL_NAMES = frozenset({
+            "send_notification",
+            "schedule_notification",
+            "list_scheduled_notifications",
+            "cancel_scheduled_notification",
+        })
+        for spec in _PLATFORM_TOOL_SPECS:
+            name = str((spec.get("function") or {}).get("name") or "")
+            if name in NOTIFICATION_TOOL_NAMES:
+                specs.append(spec)
+        if get_settings().agent_skill_script_enabled:
+            specs.append(_RUN_SKILL_SCRIPT_SPEC)
+    else:
+        # ── 专精/通用路径：挂载完整工具集 ──
+        specs.extend(_ATOMIC_RETRIEVAL_TOOL_SPECS)
+        specs.extend(_DOCUMENT_TOOL_SPECS)
+        specs.extend(_PLATFORM_TOOL_SPECS)
+        if user_has_permission(db, user, "admin.user"):
+            specs.extend(_ADMIN_USER_TOOL_SPECS)
+        if user_has_permission(db, user, "admin.dept"):
+            specs.extend(_ADMIN_DEPT_TOOL_SPECS)
+        from app.domains.knowledge import knowledge
+
+        if not knowledge.enabled():
+            specs = [
+                s
+                for s in specs
+                if str((s.get("function") or {}).get("name") or "")
+                not in ("sync_document_knowledge", "reindex_document")
+            ]
+        if get_settings().agent_skill_script_enabled:
+            specs.append(_RUN_SKILL_SCRIPT_SPEC)
+        from app.integrations.browser_automation.browser_config import get_browser_rpa_config
+
+        if get_browser_rpa_config(db).enabled:
+            specs.extend(_BROWSER_TOOL_SPECS)
     if allowed_names is not None:
         specs = [
             spec
@@ -353,7 +383,7 @@ async def _execute_invoke_skill(
     *,
     params: dict[str, Any],
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
 ) -> str:
     """Skill 运行时入口：LLM 调用 invoke_skill。"""
     from app.skills.catalog import get_merged_skill_definition
@@ -676,7 +706,7 @@ def _execute_platform_tool(
             title=str(params.get("title") or ""),
             body=str(params.get("body") or ""),
             link=str(params.get("link") or "") or None,
-            scheduled_at=str(params.get("scheduled_at") or "") or None,
+            scheduled_at=str(params.get("scheduled_at") or ""),
         ),
         "list_scheduled_notifications": lambda: plat_svc.list_scheduled_notifications_for_agent(
             db,
@@ -843,7 +873,7 @@ async def _execute_create_skill(
     *,
     params: dict[str, Any],
     user_message: str,
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
 ) -> str:
     """创建发展技能（create_skill tool 实现）。"""
     from app.core.agent_tool_context import has_skill_research_context
@@ -889,7 +919,7 @@ async def _execute_create_skill(
         replace_existing=bool(params.get("replace_existing")),
         extra_files=extra_files,
         needs_review=auto_creation,
-        mount_agent="skill-dev" if auto_creation else None,
+        mount_agent="orchestrator",
     )
     requested_slug = slugify_skill_name(str(params.get("name") or ""))
     create_summary = f"已创建 Skill `{skill.name}`"
@@ -925,7 +955,7 @@ async def _execute_browser_tool(
     tool_name: str,
     params: dict[str, Any],
     conversation_id: str | None,
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
     user_message: str = "",
 ) -> str | None:
     from app.core.agent_tool_context import append_skill_explore_context
@@ -1108,7 +1138,7 @@ async def execute_agent_tool(
     conversation_id: str | None = None,
     attachment_session_id: str | None = None,
     user_message: str = "",
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
     skill_name: str | None = None,
 ) -> str:
     name = (tool_name or "").strip()
@@ -1145,6 +1175,23 @@ async def execute_agent_tool(
     )
 
     try:
+        if name == "fetch_url_content":
+            url = str(params.get("url") or "").strip()
+            max_chars = int(params.get("max_chars") or 50000)
+            if not url:
+                return _tool_result(False, "缺少 url 参数")
+            from app.tool_center.adapters import _firecrawl_scrape
+
+            loop = asyncio.get_running_loop()
+            content = await loop.run_in_executor(None, _firecrawl_scrape, url)
+            if not content:
+                return _tool_result(False, f"无法获取网页内容: {url}")
+            trimmed = content[:max_chars]
+            return _tool_result(
+                True, f"已获取 {len(content)} 字符",
+                {"url": url, "content": trimmed, "char_count": len(trimmed)},
+            )
+
         if name == "search_tools":
             from app.services.agent_tool_search import execute_search_skills_compat
 
@@ -1169,6 +1216,14 @@ async def execute_agent_tool(
                 lines = [ln for ln in lines if any(f"`{s}`" in ln for s in allowed)]
             text = "\n".join(lines) if lines else "未匹配到 Skill"
             return _tool_result(True, f"匹配 {len(lines)} 条 Skill 路由", {"lines": lines, "text": text})
+
+        if tool_name == "describe_tool":
+            from app.services.agent_tool_search import execute_describe_tool
+
+            n = str(params.get("name") or "").strip()
+            return await execute_describe_tool(
+                db, user, name=n, loop_state=loop_state
+            )
 
         if tool_name == "invoke_skill":
             return await _execute_invoke_skill(
@@ -1347,8 +1402,10 @@ async def execute_agent_tool(
                 file_names = sorted(files.keys())[:12]
                 missing_msg = (
                     f"Skill `{skill_name}` 缺少 main.py，无法 run_skill_script。"
-                    "请用 update_uploaded_skill_file(skill_name, file_path='main.py', content=...) "
-                    "创建 Python 入口脚本后再验证。"
+                    "请如实告知用户该技能缺少可执行脚本。"
+                    "**禁止**根据技能名称或 SKILL.md 内容自行编造数据或分析结果。"
+                    "无脚本时可用 update_uploaded_skill_file(skill_name, file_path='main.py', content=...) "
+                    "创建入口脚本后再试。"
                 )
                 if file_names:
                     missing_msg += f" 当前文件: {', '.join(file_names)}"
@@ -1520,6 +1577,14 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
             "result_title": "工具搜索完成",
             "detail": query[:120],
             "tool": "search_tools",
+        }
+    if name == "fetch_url_content":
+        url = str(params.get("url") or "").strip() or "?"
+        return {
+            "title": "获取网页内容",
+            "result_title": "网页内容获取完成",
+            "detail": url[:120],
+            "tool": "fetch_url_content",
         }
     if name == "search_skills":
         query = str(params.get("query") or "").strip() or "?"
@@ -1783,7 +1848,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
 
         title = str(params.get("title") or "").strip()[:80]
         when, boost_seconds = preview_scheduled_display(
-            scheduled_at=str(params.get("scheduled_at") or "") or None,
+            scheduled_at=str(params.get("scheduled_at") or ""),
         )
         detail = f"{title} · {when}" if when else title
         meta = {

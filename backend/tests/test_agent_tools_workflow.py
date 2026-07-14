@@ -25,3 +25,13 @@ def test_schedule_notification_workflow_meta_includes_boost_seconds():
     assert " · " in meta["detail"]
     when_part = meta["detail"].split(" · ", 1)[1]
     assert len(when_part) >= 16
+
+
+def test_schedule_notification_workflow_meta():
+    meta = tool_workflow_meta(
+        "schedule_notification",
+        '{"title": "喝水", "scheduled_at": "2026-07-09T09:30:08+08:00"}',
+    )
+    assert meta["tool"] == "platform.notification"
+    assert "喝水" in meta["detail"]
+    assert meta.get("boost_seconds") is not None

@@ -34,11 +34,13 @@ def _normalize_highlight_snippet(text: str) -> str:
 
 
 def _citation_preview_available(h: dict) -> bool:
-    """是否可展示页级引用截图（真实 image_id、KnowFlow bbox，或 PageIndex 页码）。"""
+    """是否可展示页级引用截图或内嵌图片预览。"""
     if h.get("preview_available") is True:
         return True
     if h.get("preview_available") is False:
         return False
+    if h.get("inline_images"):
+        return True
     if str(h.get("source") or "").strip() == "pageindex":
         did = str(h.get("document_id") or "").strip()
         if did:
@@ -331,6 +333,7 @@ def build_citations(
                 "chunk_id": h.get("chunk_id"),
                 "dataset_id": h.get("dataset_id"),
                 "image_id": _citation_image_id(h),
+                "inline_images": h.get("inline_images") or [],
                 "preview_available": _citation_preview_available(h),
                 "highlight_terms": query_terms_for_highlight(question),
                 "ragflow_document_id": h.get("ragflow_document_id"),

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 
 import httpx
 
 from app.core.exceptions import bad_request
+
+logger = logging.getLogger(__name__)
 
 
 def _dumps(obj: dict) -> str:
@@ -465,6 +468,7 @@ async def iter_agent_chat_stream(
                     try:
                         event = _loads(raw)
                     except Exception:
+                        logger.warning("Dify SSE 事件 JSON 解析失败", exc_info=True)
                         continue
 
                     ev = event.get("event") or ""

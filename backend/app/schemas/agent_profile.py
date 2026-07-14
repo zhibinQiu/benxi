@@ -20,6 +20,8 @@ class AgentProfileOut(BaseModel):
     skill_names: list[str] = Field(default_factory=list)
     default_skill_names: list[str] = Field(default_factory=list)
     skills_configurable: bool = True
+    runtime_tool_names: list[str] = Field(default_factory=list)
+    default_runtime_tool_names: list[str] = Field(default_factory=list)
     tool_categories: list[str] = Field(default_factory=list)
     tool_count: int = 0
     active_conversations: int = 0
@@ -33,6 +35,7 @@ class AgentProfilePatchIn(BaseModel):
     enabled: bool | None = None
     service_enabled: bool | None = None
     skill_names: list[str] | None = None
+    runtime_tool_names: list[str] | None = None
 
 
 class AgentCatalogItemOut(BaseModel):

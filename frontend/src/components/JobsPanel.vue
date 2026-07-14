@@ -21,7 +21,7 @@ import {
   ListOutline,
   RefreshOutline,
   StopCircleOutline,
-  TrashBinOutline } from "@vicons/ionicons5";
+  TrashOutline } from "@vicons/ionicons5";
 
 const props = defineProps({
   variant: {
@@ -395,7 +395,7 @@ defineExpose({ load, refresh: load });
               :aria-label="t('jobs.clearDone')"
               @click="doClearFinished"
             >
-              <n-icon :size="19" :component="TrashBinOutline" />
+              <n-icon :size="19" :component="TrashOutline" />
             </button>
           </template>
           {{ t("jobs.clearDone") }}
@@ -471,7 +471,7 @@ defineExpose({ load, refresh: load });
                   :aria-label="t('common.delete')"
                   @click="handleBatchDelete"
                 >
-                  <n-icon :size="19" :component="TrashBinOutline" />
+                  <n-icon :size="19" :component="TrashOutline" />
                   <span>{{ t("common.delete") }}</span>
                   <span v-if="clearableSelectedRows.length > 0 && canBatchDelete" class="jobs-toolbar-btn__badge">
                     {{ clearableSelectedRows.length }}
@@ -498,7 +498,7 @@ defineExpose({ load, refresh: load });
                 :aria-label="t('jobs.clearDone')"
                 @click="doClearFinished"
               >
-                <n-icon :size="19" :component="TrashBinOutline" />
+                <n-icon :size="19" :component="TrashOutline" />
                 <span>{{ t("jobs.clearDone") }}</span>
               </button>
             </div>
@@ -534,8 +534,8 @@ defineExpose({ load, refresh: load });
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 17px 12px;
+  gap: 10px;
+  padding: 12px 16px 10px;
   border-bottom: 1px solid var(--platform-border);
   background: linear-gradient(
     180deg,
@@ -545,7 +545,7 @@ defineExpose({ load, refresh: load });
 }
 
 .jobs-panel__title {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: var(--platform-tracking-tight);
 }
@@ -557,7 +557,7 @@ defineExpose({ load, refresh: load });
 .jobs-panel__body {
   max-height: 432px;
   overflow-y: auto;
-  padding: 12px 17px 17px;
+  padding: 8px 16px 14px;
 }
 
 .jobs-panel__toolbar {
@@ -656,12 +656,21 @@ defineExpose({ load, refresh: load });
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 0;
+  padding: 10px 8px;
+  margin: 0 -8px;
+  border-radius: var(--platform-radius-sm);
   border-bottom: 1px solid var(--platform-border);
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .jobs-panel__item:last-child {
   border-bottom: none;
+}
+
+.jobs-panel__item:hover {
+  background: var(--platform-toolbar-bg);
 }
 
 .jobs-panel__item-main {
@@ -670,14 +679,17 @@ defineExpose({ load, refresh: load });
 }
 
 .jobs-panel__progress {
-  font-size: 14px;
-  color: var(--n-text-color-3);
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
 }
 
 .jobs-panel__meta {
-  margin-top: 5px;
-  font-size: 14px;
-  color: var(--n-text-color-3);
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .jobs-panel__item-actions {

@@ -6,8 +6,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from agentkit_tools.schema import compact_tool_parameters_schema as tool_parameters_schema
-from app.core.agent_tool_args import TOOL_ARG_MODELS, TOOL_DEFINITIONS
+from app.agentkit.tools.schema import compact_tool_parameters_schema as tool_parameters_schema
+from app.core.agent_tool_args import TOOL_DEFINITIONS
+from app.core.tool_def_loader import get_tool_description
 from app.core.tool_skill_taxonomy import GLOBAL_ATOMIC_TOOL_NAMES
 from app.core.tool_skill_taxonomy import ToolCategory, _TOOL_CATEGORIES
 from app.tool_center.schemas import ToolDescriptor
@@ -71,10 +72,13 @@ class ToolCenter:
             desc_text, model = TOOL_DEFINITIONS[tool_id]
             category = _TOOL_CATEGORIES.get(tool_id)
             tool_type = _CATEGORY_TOOL_TYPE.get(category, "io_generic") if category else "io_generic"
+            md_desc = get_tool_description(tool_id)
+            doc_text = md_desc if md_desc else ""
             descriptor = ToolDescriptor(
                 tool_id=tool_id,
                 tool_type=tool_type,
                 description=desc_text,
+                doc_text=doc_text,
                 input_schema=_build_input_schema(model),
                 output_schema=_default_output_schema(category),
             )

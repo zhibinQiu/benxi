@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentkit_skills.registry import get_default_registry, set_registry_loader
+from app.agentkit.skills.registry import get_default_registry, set_registry_loader
 
 from app.skills.types import SkillDefinition, SkillSource
 

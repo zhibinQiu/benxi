@@ -255,10 +255,15 @@ export function getWorkflowDoneSegments(workflow) {
 }
 
 export function getWorkflowRunningSegment(workflow) {
-  const running = resolveWorkflowDisplaySegments(workflow).find(
-    (segment) => segment.status === "running"
-  );
-  if (running) return running;
+  if (!workflow) return null;
+  // 优先检查子任务步骤（包含实际智能体操作）
+  for (const task of workflow.taskPlan || []) {
+    const running = (task.steps || []).find((s) => s.status === "running");
+    if (running) return running;
+  }
+  // 次检查全局步骤
+  const global = (workflow.steps || []).find((s) => s.status === "running");
+  if (global) return global;
   if (!workflow?.running) return null;
   const currentTitle = sanitizeWorkflowDisplayText(workflow.currentTitle);
   if (!currentTitle) return null;
@@ -542,7 +547,13 @@ export function applyAgentWorkflowEvent(state, ev, t, options = {}) {
        更新 currentTitle 并在步骤列表中创建一个正在运行的节点，
        让前端明确标注调度智能体正在工作而非等待。 */
     state.running = true;
-    setCurrentTitle(state, ev.detail || ev.title, "调度执行中");
+    // 如果有更具体的子智能体步骤在运行，不覆盖显示
+    const hasSpecificStep = state.taskPlan.some(
+      (t) => (t.steps || []).some((s) => s.status === "running" && s.kind !== "node")
+    );
+    if (!hasSpecificStep) {
+      setCurrentTitle(state, ev.detail || ev.title, "调度执行中");
+    }
     const steps = stepList();
     const id = ev.step_id || "orch-progress";
     const existing = findStep(steps, id);
@@ -584,10 +595,16 @@ export function applyAgentWorkflowEvent(state, ev, t, options = {}) {
     state.failed = false;
     const steps = stepList();
     finishRunningSteps(steps, { kinds: ["node"] });
+    // 也清理全局步骤中的调度进度节点
+    const globalSteps = resolveStepList(state, "");
+    if (globalSteps !== steps) {
+      finishRunningSteps(globalSteps, { kinds: ["node"] });
+    }
     setCurrentTitle(state, ev.title, "思考中");
     const id = resolveAgentThinkingId(steps);
     const existing = findStep(steps, id);
     putStep(steps, {
+      id,
       id,
       kind: "thinking",
       tool,
@@ -683,6 +700,11 @@ export function applyAgentWorkflowEvent(state, ev, t, options = {}) {
     state.failed = false;
     const steps = stepList();
     finishRunningSteps(steps, { kinds: ["node"] });
+    // 也清理全局步骤中的调度进度节点
+    const globalSteps = resolveStepList(state, "");
+    if (globalSteps !== steps) {
+      finishRunningSteps(globalSteps, { kinds: ["node"] });
+    }
     const id = ev.step_id || nextStepId();
     const title = ev.title || toolName || "工具调用";
     setCurrentTitle(state, title);
@@ -704,6 +726,11 @@ export function applyAgentWorkflowEvent(state, ev, t, options = {}) {
     state.running = true;
     const steps = stepList();
     finishRunningSteps(steps, { kinds: ["node"] });
+    // 也清理全局步骤中的调度进度节点
+    const globalSteps = resolveStepList(state, "");
+    if (globalSteps !== steps) {
+      finishRunningSteps(globalSteps, { kinds: ["node"] });
+    }
     setCurrentTitle(state, ev.title, "处理中");
     if (ev.title) {
       const id = ev.step_id || nextStepId();

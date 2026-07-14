@@ -1,0 +1,103 @@
+# FireCrawl 自托管 — 网页全文提取（固定内部服务）
+#
+# 已接入 benxi 网络供平台 API 内部调用（firecrawl-api:3002）
+#
+# 启动: docker compose -f deploy/firecrawl.yml up -d
+# 停止: docker compose -f deploy/firecrawl.yml down
+# API:   http://firecrawl-api:3002
+# 日志: docker compose -f deploy/firecrawl.yml logs -f --tail=50
+# 内部验证: docker run --rm --network benxi curlimages/curl \
+#            curl -s http://firecrawl-api:3002/v1/scrape ...
+
+name: zhitan-firecrawl
+
+x-common: &common
+  restart: unless-stopped
+  networks:
+    - benxi
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  firecrawl-api:
+    <<: *common
+    image: ghcr.io/firecrawl/firecrawl:latest
+    container_name: firecrawl-api
+    # ports:
+    #   - "3002:3002"   # 已注释 — 纯内网服务
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3002"
+      USE_DB_AUTHENTICATION: "false"
+      BULL_AUTH_KEY: "${BULL_AUTH_KEY:-change-me}"
+      REDIS_URL: "redis://firecrawl-redis:6379"
+      REDIS_RATE_LIMIT_URL: "redis://firecrawl-redis:6379"
+      RABBITMQ_URL: "amqp://guest:guest@firecrawl-rabbitmq:5672"
+      NUQ_RABBITMQ_URL: "amqp://firecrawl-rabbitmq:5672"
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_DB: "${POSTGRES_DB:-postgres}"
+      POSTGRES_HOST: "firecrawl-postgres"
+      POSTGRES_PORT: "5432"
+      STRIPE_CRON_ENABLED: "false"
+      OPENAI_API_KEY: ""
+      HARNESS_STARTUP_TIMEOUT_MS: "120000"
+    depends_on:
+      firecrawl-redis:
+        condition: service_started
+      firecrawl-rabbitmq:
+        condition: service_started
+      firecrawl-postgres:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+
+  firecrawl-redis:
+    <<: *common
+    image: docker.1ms.run/library/redis:7-alpine
+    container_name: firecrawl-redis
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  firecrawl-rabbitmq:
+    <<: *common
+    image: docker.1ms.run/library/rabbitmq:3-alpine
+    container_name: firecrawl-rabbitmq
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  firecrawl-postgres:
+    <<: *common
+    image: ghcr.io/firecrawl/nuq-postgres:latest
+    container_name: firecrawl-postgres
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+      POSTGRES_DB: "${POSTGRES_DB:-postgres}"
+    volumes:
+      - firecrawl-pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+volumes:
+  firecrawl-pgdata:
+
+networks:
+  benxi:
+    name: benxi
+    external: true

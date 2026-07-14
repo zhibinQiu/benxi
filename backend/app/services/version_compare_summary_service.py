@@ -99,6 +99,7 @@ def _call_llm_chat(*, system: str, user_content: str) -> str | None:
     try:
         api_key, base_url, model = resolve_credentials()
     except Exception:
+        logger.warning("版本对比 LLM resolve_credentials 失败", exc_info=True)
         return None
     settings = get_settings()
     try:

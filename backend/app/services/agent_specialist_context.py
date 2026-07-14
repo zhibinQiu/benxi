@@ -30,8 +30,13 @@ def build_specialist_chat_messages(
     retrieval_context: str = "",
     context_instruction: str = "",
     task_mode: bool = False,
+    route_reason: str = "",
 ) -> list[dict[str, Any]]:
-    """为指定专精智能体构建 bounded chat messages（system + history + user）。"""
+    """为指定专精智能体构建 bounded chat messages（system + history + user）。
+
+    route_reason: 路由层分配的该智能体被选中的原因（如 "Skill 匹配（`web-search`）"），
+                  会注入到 system prompt 的顶部以指导智能体优先使用哪类工具。
+    """
     skill_names = resolve_agent_skill_names(db, agent_id)
     if agent_id == "skill-dev":
         skill_catalog = build_agent_catalog_prompt(
@@ -72,4 +77,5 @@ def build_specialist_chat_messages(
         memory_context=memory_context,
         runtime_context=build_runtime_context(channel=agent_id, user=user),
         context_instruction=context_instruction or "",
+        route_reason=route_reason,
     )

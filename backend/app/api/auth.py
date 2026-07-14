@@ -4,6 +4,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -42,7 +43,16 @@ from app.services.auth_session_service import (
     bump_auth_token_version,
     validate_token_version,
 )
-from app.services.captcha_service import cleanup_expired, consume_verified, issue_token
+from app.services.captcha_service import (
+    consume_verified,
+    generate_text_captcha,
+    verify_text_captcha,
+)
+
+
+class CaptchaVerifyRequest(BaseModel):
+    captcha_id: str
+    answer: str
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -79,9 +89,9 @@ def _verify_captcha(captcha_token: str | None) -> None:
     if not get_settings().captcha_enabled:
         return
     if not captcha_token:
-        raise bad_request("请完成滑块验证")
+        raise bad_request("请完成验证码验证")
     if not consume_verified(captcha_token):
-        raise bad_request("滑块验证已过期或无效，请重新验证")
+        raise bad_request("验证码已过期或无效，请重新验证")
 
 
 @router.post("/login", response_model=ApiResponse[TokenResponse])
@@ -176,11 +186,19 @@ def trial_login(
     )
 
 
-@router.post("/captcha/issue", response_model=ApiResponse[dict])
-def captcha_issue() -> ApiResponse[dict]:
-    """前端滑块验证通过后，后端颁发验证 token（登录/注册时使用）。"""
-    cleanup_expired()
-    token = issue_token()
+@router.post("/captcha/generate", response_model=ApiResponse[dict])
+def captcha_generate() -> ApiResponse[dict]:
+    """生成 4 字符图片验证码，返回 captcha_id 和 base64 图片。"""
+    captcha_id, image = generate_text_captcha()
+    return ApiResponse(data={"captcha_id": captcha_id, "image": image})
+
+
+@router.post("/captcha/verify", response_model=ApiResponse[dict])
+def captcha_verify(body: CaptchaVerifyRequest) -> ApiResponse[dict]:
+    """校验验证码答案，正确则颁发验证 token。"""
+    token = verify_text_captcha(body.captcha_id, body.answer)
+    if not token:
+        raise bad_request("验证码错误或已过期")
     return ApiResponse(data={"token": token, "expires_in": 120})
 
 

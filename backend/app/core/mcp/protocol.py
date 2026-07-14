@@ -1,6 +1,6 @@
 """MCP JSON-RPC 协议 — agentkit 再导出 + 平台命名常量。"""
 
-from agentkit_mcp.protocol import (
+from app.agentkit.mcp.protocol import (
     MCP_PROTOCOL_VERSION,
     build_jsonrpc_notification,
     build_jsonrpc_request,

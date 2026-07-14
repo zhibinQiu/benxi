@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from app.core.agent_config import AGENT_INSTRUCTION_BLOCKS
+from app.core.agent_config import get_default_instruction_body
 from app.core.platform_assistant import (
     assistant_ai_home_persona,
     assistant_conclusion_source_priority,
+    assistant_search_strategy,
     assistant_user_communication_style,
     orchestrator_failure_communication_rule,
 )
@@ -14,13 +15,14 @@ from app.core.session_chat_history import SESSION_CONTEXT_RULE
 # 子任务专精：过程在 workflow 展示，正文由调度层最后汇总
 _SPECIALIST_TASK_MODE = (
     "本子任务：只调用工具完成操作；回复仅供系统记录，勿写面向用户的完整总结。"
+    "必须准确执行用户需求，不可偏离或遗漏。"
     "探索/试错细节勿写入回复，只返回可验收的结论或结构化结果。"
-    "本域无法完成时直接调用 tool request_orchestrator_assist（勿 invoke_skill），"
-    "向调度层反馈；勿直接调用其他专精；调度层协调后会再交还你续办。"
+    "本域无法完成时调用 tool request_orchestrator_assist，reason 写明困难与需求，"
+    "由调度层协助；勿直接调用其他专精。"
 )
 
 _USER_REPLY_RULE = (
-    "面向用户的最终结论必须准确回应用户问题与诉求，不可答非所问或只描述内部过程。"
+    "必须准确理解并回应用户的问题与诉求，不可答非所问、偏离用户意图或只描述内部过程。"
 )
 
 _USER_STYLE_RULES = assistant_user_communication_style()
@@ -36,15 +38,11 @@ _WRITE_RATE_RULES = (
 
 _GROUNDING_RULES = (
     assistant_conclusion_source_priority()
-    + "\n事实约束：只陈述工具返回、检索片段或用户在本会话明确提供的内容；"
-    "禁止编造用户/文档/数字/邮箱/部门等任何未验证数据。"
-    "信息不足、权限不明或存在多种理解时：说明不确定之处并请用户确认，勿猜测作答。"
+    + "\n事实约束：组织内部信息（用户/文档/数字/邮箱/部门/平台配置等）必须基于工具返回或检索"
+    "片段，禁止编造。通用常识可直接用模型知识回答。信息不足时说明不确定之处。"
 )
 
-_ROUTE_KIND_RULES = (
-    "任务分域见 agents.md：platform | research | skill-dev | report | diagram | rpa | scheduler | orchestrator。"
-    "禁止跨域混用 Skill。"
-)
+_SEARCH_STRATEGY_RULES = assistant_search_strategy()
 
 _HUMAN_IN_THE_LOOP_RULES = (
     "当已有信息不足以做决策，或存在多种合理方案时，使用 ask_user_choice 工具让用户选择。"
@@ -54,8 +52,9 @@ _HUMAN_IN_THE_LOOP_RULES = (
 
 _SPECIALIST_SCOPE_RULE = (
     "你已是专精子 Agent：只在本域内自主规划与 tool_calls。"
-    "本域无法完成时直接调用 tool request_orchestrator_assist（勿 invoke_skill）反馈调度层，"
-    "由调度协调其他专精；"
+    "本域无法完成时调用 tool request_orchestrator_assist，reason 写明你遇到了什么困难、"
+    "需要什么帮助（如需要其他智能体协助的具体事项），"
+    "由调度层重新分配或直接答复用户；"
     "收到调度交还的协助结果后继续完成本子任务。"
     "发展 Skill 的 playbook 见 available_skills；内置编排 Skill（如 knowledge-research）勿 load。"
 )
@@ -71,6 +70,7 @@ def _specialist_common_prefix(*, task_mode: bool = False) -> str:
         f"{assistant_ai_home_persona()}。",
         SESSION_CONTEXT_RULE,
         _GROUNDING_RULES,
+        _SEARCH_STRATEGY_RULES,
     ]
     if task_mode:
         parts.extend(
@@ -109,18 +109,27 @@ def build_specialist_resident_prompt(
     """子智能体 prompt — 仅本域约定。"""
     agent = (agent_id or "").strip()
     if agent == "orchestrator":
-        body = (config_body or AGENT_INSTRUCTION_BLOCKS["orchestrator"]).strip()
+        body = (config_body or get_default_instruction_body("orchestrator") or "").strip()
         return (
             f"{assistant_ai_home_persona()}。\n"
-            "- 简体中文；【用户记忆】名称优先；能直接答时直接答，不必为走流程而路由专精\n"
+            "- \u7b80\u4f53\u4e2d\u6587\uff1b\u3010\u7528\u6237\u8bb0\u5fc6\u3011\u540d\u79f0\u4f18\u5148\n"
+            "══════════════════════════════════════════\n"
+            "## 调度原则\n"
+            "⊙ 你是一个调度 Agent，职责：理解→分配→验收。\n"
+            "⊙ 你能直接做的：回答常识/寒暄（不用任何工具）、联网检索、知识库检索、知识图谱查询、图表绘制（mermaid_diagram）、双碳问答（carbon_qa_query）等。\n"
+            "⊙ 平台操作、浏览器自动化等 → 由路由系统自动分配给专精 Agent 处理。\n"
+            "⊙ 当专精 Agent 通过 request_orchestrator_assist 交还任务时，仔细阅读其反馈的问题描述，\n"
+            "   重新规划处理方式（直接回复、调用工具、或分配给其他专精）。\n"
+            "⊙ 不要自己执行专精工具，那是专精 Agent 的事。\n"
+            "⊙ 历史消息中的工具使用场景不代表当前问题也需要同样处理，每次独立判断。\n"
+            "══════════════════════════════════════════\n"
             f"- {SESSION_CONTEXT_RULE}\n"
             f"- {_GROUNDING_RULES}\n"
             f"- {_USER_REPLY_RULE}\n"
             f"- {_USER_STYLE_RULES}\n"
             f"- {orchestrator_failure_communication_rule()}\n"
-            f"- {_ROUTE_KIND_RULES}\n"
             f"- {_HUMAN_IN_THE_LOOP_RULES}\n"
-            "- 复合任务拆给专精子 Agent；你只收子任务结论，验收通过后再汇总给用户\n"
+            "- 复合任务拆子任务分发给专精子 Agent；你只收结论，验收通过后汇总给用户\n"
             f"{body}\n"
         )
     common = _specialist_common_prefix(task_mode=task_mode)
@@ -138,7 +147,7 @@ def build_specialist_resident_prompt(
         )
     if config_body:
         return common + config_body.strip() + "\n"
-    block = AGENT_INSTRUCTION_BLOCKS.get(agent)
+    block = get_default_instruction_body(agent)
     if block:
         return common + block
     return common

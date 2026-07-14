@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentkit_skills.mcp_bridge import McpSkillRecord
-from agentkit_skills.mcp_bridge import build_mcp_skill_definition as _build_mcp_skill
+from app.agentkit.skills.mcp_bridge import McpSkillRecord
+from app.agentkit.skills.mcp_bridge import build_mcp_skill_definition as _build_mcp_skill
 
 from app.core.mcp.client import mcp_call_tool
 from app.core.mcp.external_registry import McpExternalSkillRecord

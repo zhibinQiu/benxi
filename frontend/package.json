@@ -6,10 +6,21 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:mobile": "vite build --config vite.config.mobile.js && cp dist-mobile/index.mobile.html dist-mobile/index.html",
     "preview": "vite preview",
-    "lint": "eslint src --quiet"
+    "lint": "eslint src --quiet",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "mobile:build": "npm run build:mobile && npx cap sync",
+    "mobile:android": "npm run build:mobile && npx cap sync && npx cap open android",
+    "mobile:ios": "npm run build:mobile && npx cap sync && npx cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.7",
+    "@capacitor/cli": "^7.6.7",
+    "@capacitor/core": "^7.6.7",
+    "@capacitor/ios": "^7.6.7",
     "@vicons/ionicons5": "^0.12.0",
     "dompurify": "^3.4.11",
     "echarts": "^6.1.0",
@@ -19,8 +30,7 @@
     "naive-ui": "^2.40.5",
     "pdfjs-dist": "^4.10.38",
     "vue": "^3.5.13",
-    "vue-router": "^4.5.0",
-    "vue3-slide-verify": "^1.1.8"
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

@@ -5,7 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { encodeReturnLocation } from "../utils/navigationReturn";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
 import { categoryAccentStyle, FEATURE_CATEGORY_ACCENTS } from "../constants/categoryAccents.js";
-import { NEmpty, NGrid, NGi, NSpin, NTag, NIcon } from "naive-ui";
+import { NEmpty, NGrid, NGi, NTag, NIcon } from "naive-ui";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const functionsBg = `${BASE}/images/bg.jpg`;
@@ -21,7 +21,7 @@ import {
   SparklesOutline,
   GridOutline,
   HardwareChipOutline,
-  CreateOutline,
+  AddOutline,
   NewspaperOutline,
   SearchOutline,
   GitNetworkOutline,
@@ -31,6 +31,7 @@ import {
   VolumeHighOutline,
 } from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
+import PlatformSpin from "../components/PlatformSpin.vue";
 import { useFeatureFavorites } from "../composables/useFeatureFavorites";
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
@@ -61,7 +62,7 @@ const iconMap = {
   leaf: LeafOutline,
   sparkles: SparklesOutline,
   "hardware-chip": HardwareChipOutline,
-  create: CreateOutline,
+  create: AddOutline,
   newspaper: NewspaperOutline,
   search: SearchOutline,
   "git-network": GitNetworkOutline,
@@ -325,7 +326,7 @@ function openFeature(f) {
       </section>
     </template>
 
-    <n-spin v-else :show="true" size="large" class="functions-page__loading" local>
+    <PlatformSpin v-else :show="true" size="large" class="functions-page__loading" local>
       <n-grid
         cols="2 s:3 m:4 l:5 xl:6"
         :x-gap="10"
@@ -342,7 +343,7 @@ function openFeature(f) {
           </article>
         </n-gi>
       </n-grid>
-    </n-spin>
+    </PlatformSpin>
     </div>
   </div>
 </template>
@@ -368,7 +369,7 @@ function openFeature(f) {
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 10px 24px 14px;
+  padding: 0 24px 14px;
   box-sizing: border-box;
 }
 

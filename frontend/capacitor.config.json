@@ -1,0 +1,16 @@
+{
+  "appId": "com.benxi.knowledge",
+  "appName": "本析",
+  "webDir": "dist-mobile",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "capacitor"
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}

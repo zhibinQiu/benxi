@@ -508,6 +508,7 @@ def _boost_report_local_fulltext(
             omit_unready=len(doc_ids) > 1,
         )
     except Exception:
+        logger.warning("报告本地全文兜底：validate_document_scope 失败", exc_info=True)
         return hits
     if not docs:
         return hits
@@ -715,25 +716,68 @@ def _parse_document_ids(raw: list[str] | None) -> list[uuid.UUID]:
     return out[:20]
 
 
-def _format_web_context(items: list[dict], *, start_index: int) -> str:
+def _format_web_context(items: list[dict], *, start_index: int, verification: dict | list | None = None) -> str:
     if not items:
         return ""
     blocks: list[str] = []
     for i, row in enumerate(items, start=start_index):
-        snippet = (row.get("snippet") or "").strip()
-        if snippet:
-            blocks.append(f"[{i}]\n{snippet}")
+        # 优先使用全文，次选摘要
+        snippet = (row.get("full_text") or row.get("snippet") or "").strip()
+        if row.get("full_text"):
+            # 全文过长时截取前 3000 字
+            full = row["full_text"]
+            snippet = full[:3000]
+            if len(full) > 3000:
+                snippet += "\n…（以下省略）"
+            snippet += f"\n（来源：{row.get('title', '')} — 共约 {len(full)} 字）"
+        elif snippet:
+            pass
+        else:
+            continue
+        blocks.append(f"[{i}]\n{snippet}")
+
+    # 交叉验证摘要
+    if verification:
+        import re
+        if isinstance(verification, dict):
+            vlist = list(verification.values()) if verification else []
+        elif isinstance(verification, list):
+            vlist = verification
+        else:
+            vlist = []
+        vblocks = ["\n\n## 跨源交叉验证"]
+        for v in vlist[:8]:
+            if not isinstance(v, dict):
+                continue
+            claim = (v.get("claim") or "")[:120]
+            consistent = v.get("consistent", True)
+            sources = v.get("sources") or []
+            value_count = v.get("value_count", 0)
+            if consistent and value_count <= 1:
+                vblocks.append(f"- ✅ {claim}")
+            elif consistent:
+                vblocks.append(f"- ✅ {claim}（多源一致）")
+            else:
+                numbers = re.findall(r"\d+[\.\d]*(?:万|亿|%|倍)?", claim)
+                if numbers:
+                    vblocks.append(f"- ⚠️ {claim}（数值不一致，请核实）")
+                else:
+                    vblocks.append(f"- ℹ️ {claim}（{len(sources)} 个来源提及）")
+        if len(vblocks) > 1:
+            blocks.extend(vblocks)
+
     return "\n\n".join(blocks)
 
 
 def build_web_citations(items: list[dict], *, start_index: int = 1) -> list[dict]:
     citations: list[dict] = []
     for i, row in enumerate(items, start=start_index):
+        snippet = (row.get("full_text") or row.get("snippet") or "")[:2000]
         citations.append(
             {
                 "index": i,
                 "title": (row.get("title") or "网页").strip(),
-                "snippet": (row.get("snippet") or "")[:2000],
+                "snippet": snippet,
                 "url": (row.get("url") or "").strip() or None,
                 "source": "web",
                 "document_id": None,
@@ -946,7 +990,7 @@ def _gather_report_simple(
                     db, user, f"{topic} {message}".strip()
                 )
             except Exception:
-                pass
+                logger.warning("报告材料收集：本体图谱上下文检索失败", exc_info=True)
     kg_plan_text = kg_ctx_data.context_text if kg_ctx_data else ""
 
     local_queries, web_queries, reasoning = _plan_report_gathering(

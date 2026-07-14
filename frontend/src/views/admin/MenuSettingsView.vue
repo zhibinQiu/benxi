@@ -197,6 +197,11 @@ onMounted(load);
   gap: 2px;
   min-width: 0;
   flex: 1;
+  font-size: 13px;
+}
+
+.menu-row__info strong {
+  font-size: 14px;
 }
 
 .menu-row__select {

@@ -7,8 +7,8 @@ import re
 import uuid
 from typing import Any
 
-from agentkit_aip.types import AipMessage
-from agentkit_orchestrate import (
+from app.agentkit.aip.types import AipMessage
+from app.agentkit.orchestrate import (
     AssistRules,
     OrchestratorAnswerAssessment,
     OrchestratorTask,
@@ -40,23 +40,11 @@ from app.services.agent_skill_routing import format_routing_context_line
 
 _logger = logging.getLogger(__name__)
 
-MAX_TASK_ATTEMPTS = 2
-# 全局 Loop 最低轮次（不可关闭；配置项仅用于提高上限）
-MIN_SUPERVISOR_GLOBAL_ROUNDS = 2
-DEFAULT_SUPERVISOR_GLOBAL_ROUNDS = 3
-MAX_SUPERVISOR_GLOBAL_ROUNDS = 5
-
-
-def supervisor_max_global_rounds() -> int:
-    """调度全局 Loop 轮次；始终 >= MIN_SUPERVISOR_GLOBAL_ROUNDS。"""
-    from app.config import get_settings
-
-    raw = int(get_settings().agent_supervisor_max_global_rounds or DEFAULT_SUPERVISOR_GLOBAL_ROUNDS)
-    return max(MIN_SUPERVISOR_GLOBAL_ROUNDS, min(MAX_SUPERVISOR_GLOBAL_ROUNDS, raw))
+# 最大子任务尝试次数（内部使用，非导出）
 
 # 平台 agent 分类与 marker（注入 agentkit-orchestrate 规则层）
 _VERIFY_RULES = VerifyRules(
-    action_agent_ids=frozenset({"platform", "scheduler", "rpa"}),
+    action_agent_ids=frozenset({"platform", "rpa"}),
     skill_dev_agent_id="skill-dev",
     skill_outcome_markers=(
         "运行 Skill 脚本",
@@ -70,7 +58,7 @@ _VERIFY_RULES = VerifyRules(
 )
 _ASSIST_RULES = AssistRules(
     assistable_agent_ids=frozenset(
-        {"platform", "rpa", "scheduler", "skill-dev"}
+        {"platform", "rpa", "skill-dev"}
     ),
     skill_dev_agent_id="skill-dev",
     no_escalate_agent_ids=frozenset({"skill-dev", "orchestrator"}),
@@ -87,7 +75,7 @@ _ASSIST_RULES = AssistRules(
         "无定时提醒",
         "请调用平台工具",
     ),
-    action_agent_ids=frozenset({"platform", "scheduler", "rpa"}),
+    action_agent_ids=frozenset({"platform", "rpa"}),
 )
 
 
@@ -148,7 +136,7 @@ def workflow_plan_tasks(
         step_id=step_id,
         mode=mode,
         orchestrator_title="orchestrator",
-        orchestrator_label="小析调度",
+        orchestrator_label=resolve_agent_title("orchestrator"),
     )
 
 
@@ -383,19 +371,9 @@ def append_screenshot_markdown_to_reply(
 
 
 def build_task_plan_workflow_update(tasks: list[OrchestratorTask]) -> list[dict[str, Any]]:
-    from agentkit_orchestrate.events import task_to_json
+    from app.agentkit.orchestrate.events import task_to_json
 
     return [task_to_json(t) for t in tasks]
-
-
-async def assess_orchestrator_answer_coverage(
-    user_message: str,
-    results: list[TaskExecutionResult],
-    *,
-    memory_context: str = "",
-) -> OrchestratorAnswerAssessment:
-    """调度终稿前：规则验收，规则通过即直接返回（跳过 LLM 语义验收——规则已足够可靠）。"""
-    return assess_orchestrator_answer_coverage_rule(user_message, results)
 
 
 def _fallback_specialist_correction(
@@ -432,7 +410,7 @@ async def synthesize_specialist_correction_instruction(
     memory_context: str = "",
 ) -> str:
     """专精多轮失败后，由调度层生成面向专精的具体改正指引（非用户终稿）。"""
-    from agentkit_aip.messaging import reply_text_from_complete
+    from app.agentkit.aip.messaging import reply_text_from_complete
     from app.integrations.deepseek_client import chat_completion_message_async, is_configured
 
     failures = tool_failure_lines_in_events(events)
@@ -490,48 +468,10 @@ async def synthesize_specialist_correction_instruction(
     return fallback
 
 
-def append_supervisor_global_reflection(user_id: Any, note: str) -> bool:
-    from app.services.agent_memory_service import append_user_memory
-
-    text = (note or "").strip()
-    if not text:
-        return False
-    uid = user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(str(user_id))
-    return append_user_memory(uid, f"调度全局反思：{text}")
-
-
 # 兼容旧 import（TaskExecutionResult.aip_handoff 类型注解）
 __all__ = [
-    "MAX_TASK_ATTEMPTS",
-    "AipMessage",
-    "OrchestratorAnswerAssessment",
     "OrchestratorTask",
     "TaskExecutionResult",
     "append_screenshot_markdown_to_reply",
-    "append_supervisor_global_reflection",
-    "assess_orchestrator_answer_coverage",
-    "assess_orchestrator_answer_coverage_rule",
-    "build_assist_resume_message",
-    "build_deliverable_brief_for_assessment",
-    "build_global_round_reflection",
-    "build_helper_assist_message",
-    "build_orchestrator_corrected_retry_message",
-    "build_retry_user_message",
-    "build_skill_dev_escalation_message",
-    "build_task_plan_workflow_update",
-    "collect_image_attachments_from_events",
-    "collect_screenshot_attachments_from_task_results",
-    "extract_document_contexts_from_results",
     "extract_image_attachments_from_markdown",
-    "MIN_SUPERVISOR_GLOBAL_ROUNDS",
-    "new_plan_step_id",
-    "new_task_step_id",
-    "resolve_assist_agent_id",
-    "should_escalate_to_skill_dev",
-    "supervisor_max_global_rounds",
-    "synthesize_specialist_correction_instruction",
-    "tasks_from_routes",
-    "verify_task_result",
-    "workflow_plan_tasks",
-    "workflow_task_event",
 ]

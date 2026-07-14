@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from agentkit_skills.types import SkillDefinition as AgentSkillDefinition
-from agentkit_skills.types import SkillKind, SkillReadiness, SkillSource, SkillToolSpec
+from app.core.agent_loop_state import LoopState
+
+from app.agentkit.skills.types import SkillKind, SkillReadiness, SkillSource, SkillToolSpec
 from sqlalchemy.orm import Session
 
 from app.models.org import User
@@ -57,7 +58,7 @@ class SkillInvocationContext:
     belong_agent: str | None = None
     trace_id: str | None = None
     user_message: str = ""
-    loop_state: dict[str, Any] | None = None
+    loop_state: LoopState | None = None
 
 
 @dataclass(slots=True)
@@ -67,55 +68,7 @@ class SkillInvocationResult:
     data: Any = None
     error: str | None = None
 
-
-def to_agentkit_skill(defn: SkillDefinition) -> AgentSkillDefinition:
-    """将平台 SkillDefinition 转为 agentkit 泛化版本（skill_id 转 str）。"""
-    return AgentSkillDefinition(
-        name=defn.name,
-        title=defn.title,
-        description=defn.description,
-        source=defn.source,
-        tools=defn.tools,
-        orchestrated_tools=defn.orchestrated_tools,
-        feature_id=defn.feature_id,
-        permission_code=defn.permission_code,
-        readiness=defn.readiness,
-        skill_id=str(defn.skill_id) if defn.skill_id else None,
-        route=defn.route,
-        source_type=defn.source_type,
-        catalog_visible=defn.catalog_visible,
-        catalog_tier=defn.catalog_tier,
-        use_when=defn.use_when,
-        dont_use_when=defn.dont_use_when,
-        output=defn.output,
-    )
-
-
-def from_agentkit_skill(defn: AgentSkillDefinition) -> SkillDefinition:
-    """将 agentkit SkillDefinition 转为平台版本（skill_id 转 uuid.UUID）。"""
-    return SkillDefinition(
-        name=defn.name,
-        title=defn.title,
-        description=defn.description,
-        source=defn.source,
-        tools=defn.tools,
-        orchestrated_tools=defn.orchestrated_tools,
-        feature_id=defn.feature_id,
-        permission_code=defn.permission_code,
-        readiness=defn.readiness,
-        skill_id=uuid.UUID(defn.skill_id) if defn.skill_id else None,
-        route=defn.route,
-        source_type=defn.source_type,
-        catalog_visible=defn.catalog_visible,
-        catalog_tier=defn.catalog_tier,
-        use_when=defn.use_when,
-        dont_use_when=defn.dont_use_when,
-        output=defn.output,
-    )
-
-
 __all__ = [
-    "AgentSkillDefinition",
     "SkillDefinition",
     "SkillHandler",
     "SkillInvocationContext",

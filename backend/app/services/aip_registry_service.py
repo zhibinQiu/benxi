@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.core.aip.acdl import build_agent_acdl, list_builtin_agent_acdl
 from app.core.aip.aid import parse_agent_id_from_aid
 from app.core.aip.external_registry import list_external_agents
-from app.core.aip.types import AipInteractEnvelope
+from app.agentkit.aip.types import AipInteractEnvelope
 from app.core.exceptions import bad_request, not_found, service_unavailable
 from app.models.org import User
 from app.schemas.aip import AipAgentDetailOut, AipDiscoverItemOut, AipDiscoverOut

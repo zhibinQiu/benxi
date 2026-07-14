@@ -2,23 +2,7 @@
 
 from __future__ import annotations
 
-from app.core.agent_tool_args import (
-    ADMIN_DEPT_TOOL_NAMES,
-    ADMIN_USER_TOOL_NAMES,
-    BROWSER_TOOL_NAMES,
-    DOCUMENT_TOOL_NAMES,
-    PLATFORM_TOOL_NAMES,
-)
-from app.core.tool_skill_taxonomy import (
-    NOTIFICATION_TOOL_NAMES,
-    SKILL_BROWSER_AUTOMATION,
-    SKILL_DEPT_ADMIN,
-    SKILL_DOCUMENT_LIBRARY,
-    SKILL_NOTIFICATION,
-    SKILL_PLATFORM_OPS,
-    SKILL_SKILL_DEV,
-    SKILL_USER_ADMIN,
-)
+from app.core.tool_skill_taxonomy import SKILL_SKILL_DEV
 from app.skills.builtin import domain_handlers as dh
 from app.skills.builtin import handlers as h
 from app.skills.registry import register_skill
@@ -81,111 +65,8 @@ def _domain_call_spec(
 
 
 def register_builtin_skills() -> None:
-    _PLATFORM_TODO_TOOL_NAMES = tuple(
-        t for t in PLATFORM_TOOL_NAMES if t not in NOTIFICATION_TOOL_NAMES
-    )
     specs: list[SkillDefinition] = [
-        SkillDefinition(
-            name="web-search",
-            title="联网搜索",
-            description="联网检索公开资讯：政策、行情、新闻、价格等。",
-            source=SkillSource.BUILTIN,
-            feature_id="ai_home",
-            permission_code=None,
-            readiness=SkillReadiness.READY,
-            route="/ai-home",
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when="最新政策/行情/新闻/价格或需联网检索公开信息",
-            dont_use_when="企业内部文档库检索、平台系统操作、撰写长报告",
-            output="联网摘要与引用",
-            orchestrated_tools=("web_search",),
-            tools=(
-                SkillToolSpec(
-                    name="search",
-                    description="按关键词检索互联网摘要",
-                    parameters={
-                        "type": "object",
-                        "required": ["query"],
-                        "properties": {
-                            "query": {"type": "string", "description": "检索关键词或问句"},
-                            "max_items": {
-                                "type": "integer",
-                                "description": "最多返回条数",
-                                "default": 8,
-                            },
-                        },
-                    },
-                    handler=h.handle_web_search,
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name="knowledge-search",
-            title="知识库检索",
-            description="从企业知识库检索制度、文档片段与内部资料。",
-            source=SkillSource.BUILTIN,
-            feature_id="knowledge_search",
-            permission_code="feature.knowledge_search",
-            readiness=SkillReadiness.READY,
-            route="/knowledge/search",
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when="从企业知识库检索制度、文档片段或内部资料",
-            dont_use_when="最新公开资讯（用 web-search）、平台文档 CRUD、撰写长报告",
-            output="文档片段与 [n] 引用",
-            orchestrated_tools=("knowledge_retrieve", "search_documents_by_name", "read_document_content"),
-            tools=(
-                SkillToolSpec(
-                    name="retrieve",
-                    description="在权限内文档中检索相关片段",
-                    parameters={
-                        "type": "object",
-                        "required": ["query"],
-                        "properties": {
-                            "query": {"type": "string", "description": "检索问句"},
-                            "doc_ids": {
-                                "type": "array",
-                                "items": {"type": "string", "format": "uuid"},
-                                "description": "限定文档 ID，省略则使用会话上下文",
-                            },
-                            "limit": {"type": "integer", "default": 8},
-                        },
-                    },
-                    handler=h.handle_knowledge_retrieve,
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name="kg-palantir",
-            title="本体图谱",
-            description="查询实体关联、产业链、组织关系与本体概念。",
-            source=SkillSource.BUILTIN,
-            feature_id="kg_palantir",
-            permission_code="feature.kg_palantir",
-            readiness=SkillReadiness.READY,
-            route="/system/kg-palantir",
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when="实体关联、产业链、组织关系或本体图谱概念查询",
-            dont_use_when="最新新闻、平台用户/部门 CRUD、撰写长报告",
-            output="图谱实体与关系上下文",
-            orchestrated_tools=("kg_query",),
-            tools=(
-                SkillToolSpec(
-                    name="query_entities",
-                    description="根据问题检索图谱实体与关系上下文",
-                    parameters={
-                        "type": "object",
-                        "required": ["question"],
-                        "properties": {
-                            "question": {"type": "string", "description": "自然语言问题"},
-                        },
-                    },
-                    handler=h.handle_kg_query,
-                ),
-            ),
-        ),
+        # 以下为真正的技能（编排工作流 / 指令集），保留
         SkillDefinition(
             name="knowledge-research",
             title="知识综合检索",
@@ -198,6 +79,7 @@ def register_builtin_skills() -> None:
             permission_code=None,
             readiness=SkillReadiness.READY,
             route="/ai-home",
+            catalog_visible=False,
             catalog_tier="resident",
             use_when=(
                 "需组合图谱/联网/文档库取证；默认顺序图谱→联网→文档库，"
@@ -372,171 +254,24 @@ def register_builtin_skills() -> None:
                 ),
             ),
         ),
+        # --- 免费网页 AI Skill（真正的多步编排工作流） ---
         SkillDefinition(
-            name="carbon-qa",
-            title="双碳问答",
-            description="用户询问双碳政策、碳市场或减排相关问题时使用。",
-            source=SkillSource.BUILTIN,
-            feature_id="carbon_qa",
-            permission_code="feature.carbon_qa",
-            readiness=SkillReadiness.STUB,
-            route="/system/carbon-qa",
-            catalog_visible=False,
-            tools=(
-                _stub_tool(
-                    "ask",
-                    "双碳领域问答",
-                    feature_title="双碳问答",
-                    route="/system/carbon-qa",
-                ),
-            ),
-        ),
-        # --- 领域 Skill：封装全局原子 Tool，挂载专精 Agent ---
-        SkillDefinition(
-            name=SKILL_DOCUMENT_LIBRARY,
-            title="文档库操作",
-            description="文档库检索、读写、文件夹与分享等系统操作。",
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when="搜索/读取/创建/移动/分享/删除文档或文件夹",
-            dont_use_when="仅需知识库片段检索（用 knowledge-search）、联网调研、撰写长报告",
-            output="操作结果与结构化 data",
-            orchestrated_tools=DOCUMENT_TOOL_NAMES,
-            tools=(
-                _domain_call_spec(
-                    description="执行文档库原子操作",
-                    allowed_hint="search_documents_by_name, read_document_content, rename_document…",
-                    handler=dh.handle_document_library_call,
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name=SKILL_PLATFORM_OPS,
-            title="平台待办",
-            description="待办 CRUD。",
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when="待办 CRUD",
-            dont_use_when="文档库操作、知识检索、通知/定时提醒（用 notification）、浏览器自动化",
-            output="待办操作结果",
-            orchestrated_tools=_PLATFORM_TODO_TOOL_NAMES,
-            tools=(
-                _domain_call_spec(
-                    description="执行待办原子操作",
-                    allowed_hint="list_todos, create_todo, update_todo, delete_todo",
-                    handler=dh.handle_platform_ops_call,
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name=SKILL_NOTIFICATION,
-            title="系统通知",
-            description="即时通知与定时提醒。",
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when="即时通知（send_notification）、定时提醒（schedule_notification）、查看/取消定时通知",
-            dont_use_when="待办 CRUD（用 platform-ops）、文档库操作、知识检索、浏览器自动化",
-            output="通知/定时任务操作结果",
-            orchestrated_tools=NOTIFICATION_TOOL_NAMES,
-            tools=(
-                _domain_call_spec(
-                    description="执行通知原子操作",
-                    allowed_hint="send_notification, schedule_notification, list_scheduled_notifications, cancel_scheduled_notification",
-                    handler=dh.handle_notification_call,
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name=SKILL_BROWSER_AUTOMATION,
-            title="浏览器自动化",
+            name="free-web-ai",
+            title="免费 AI 工具",
             description=(
-                "网页导航、搜索填表、截图、流程录制与回放；"
-                "skill-dev 经 invoke_context_subagent(browser_digest) 调用本 Skill 调研页面结构。"
-            ),
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when=(
-                "网页导航/站点搜索/填表/点击/截图、录制或回放浏览器流程；"
-                "skill-dev 编写抓取类 Skill 前的页面结构取证"
-            ),
-            dont_use_when="平台文档/待办、纯主题调研（如仅「搜索 rpa」）、撰写长报告、定时安排（用时间调度）",
-            output="浏览器操作结果或截图路径",
-            orchestrated_tools=BROWSER_TOOL_NAMES,
-            tools=(
-                _domain_call_spec(
-                    description="执行浏览器自动化原子操作",
-                    allowed_hint="browser_navigate, browser_click, browser_replay_workflow…",
-                    handler=dh.handle_browser_automation_call,
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name=SKILL_USER_ADMIN,
-            title="用户管理",
-            description="用户列表与 CRUD（须 admin.user 权限）。",
-            source=SkillSource.BUILTIN,
-            permission_code="admin.user",
-            readiness=SkillReadiness.READY,
-            catalog_visible=False,
-            use_when="查询或管理系统用户、成员列表、账号 CRUD（须 admin.user）",
-            dont_use_when="部门架构 CRUD（用 dept-administration）、知识检索",
-            output="用户列表或 CRUD 结果",
-            orchestrated_tools=ADMIN_USER_TOOL_NAMES,
-            tools=(
-                _domain_call_spec(
-                    description="执行用户管理原子操作",
-                    allowed_hint="list_users, create_user…",
-                    handler=dh.handle_user_admin_call,
-                ),
-            ),
-        ),
-        SkillDefinition(
-            name=SKILL_DEPT_ADMIN,
-            title="部门管理",
-            description="组织架构部门 CRUD（须 admin.dept 权限）。",
-            source=SkillSource.BUILTIN,
-            permission_code="admin.dept",
-            readiness=SkillReadiness.READY,
-            catalog_visible=False,
-            use_when="查询或管理组织架构、部门树、部门 CRUD（须 admin.dept）",
-            dont_use_when="用户账号 CRUD（用 user-administration）、知识检索",
-            output="部门列表或 CRUD 结果",
-            orchestrated_tools=ADMIN_DEPT_TOOL_NAMES,
-            tools=(
-                _domain_call_spec(
-                    description="执行部门管理原子操作",
-                    allowed_hint="list_departments, create_department…",
-                    handler=dh.handle_dept_admin_call,
-                ),
-            ),
-        ),
-        # --- 免费网页 AI Skill ---
-        SkillDefinition(
-            name="free-web-ai-chat",
-            title="免费 AI 对话",
-            description=(
-                "通过浏览器桥接免费网页 AI 执行文本对话，无需付费 API key。"
-                "支持手动选择平台（DeepSeek 擅长代码/推理、"
-                "豆包通用、千问通用+生图），不指定时自动降级。支持连续对话（上下文记忆）。"
+                "通过浏览器桥接免费网页 AI 执行文本对话、生图、识图问答等任务，无需付费 API key。"
+                "支持手动选择平台，不指定时自动降级。支持连续对话（上下文记忆）。"
             ),
             source=SkillSource.BUILTIN,
             feature_id="free_web_ai",
             permission_code="feature.free_web_ai",
             readiness=SkillReadiness.READY,
             route="/system/free-web-ai",
-            catalog_visible=True,
+            catalog_visible=False,
             catalog_tier="resident",
-            use_when="需免费 AI 对话、代码生成、文案、翻译等文本任务，且不想用付费 API",
-            dont_use_when="企业内部知识库检索（用 knowledge-search）、平台 CRUD、需联网获取最新信息（用 web-search）",
-            output="AI 文本回复",
+            use_when="需要免费 AI 对话、代码生成、文案、翻译、生图、识图等任务，且不想用付费 API",
+            dont_use_when="企业内部知识库检索（用 knowledge-search）、平台 CRUD、需联网获取最新信息（用 web_search）、需要精确构图或高分辨率出图（推荐用专业工具）、纯 OCR 提取（用 ocr feature）",
+            output="AI 文本回复 / 图片 / 图片内容描述",
             tools=(
                 SkillToolSpec(
                     name="chat",
@@ -561,24 +296,6 @@ def register_builtin_skills() -> None:
                     },
                     handler=h.handle_free_web_ai_chat,
                 ),
-            ),
-        ),
-        SkillDefinition(
-            name="free-web-ai-image",
-            title="免费 AI 生图",
-            description=(
-                "通过浏览器桥接免费网页 AI（豆包/千问）进行文字生图。可将图片上传到平台。"
-            ),
-            source=SkillSource.BUILTIN,
-            feature_id="free_web_ai",
-            permission_code="feature.free_web_ai",
-            readiness=SkillReadiness.READY,
-            route="/system/free-web-ai",
-            catalog_visible=True,
-            use_when="用文字描述生成图片，且不想用付费 API",
-            dont_use_when="需要精确构图或高分辨率出图（推荐用专业生图工具）",
-            output="图片描述文本",
-            tools=(
                 SkillToolSpec(
                     name="generate",
                     description="文字生成图片（支持豆包 doubao 或千问 qwen）",
@@ -602,24 +319,6 @@ def register_builtin_skills() -> None:
                     },
                     handler=h.handle_free_web_ai_image_gen,
                 ),
-            ),
-        ),
-        SkillDefinition(
-            name="free-web-ai-ask-image",
-            title="免费 AI 识图问答",
-            description=(
-                "上传图片并进行问答（支持豆包/千问/DeepSeek）。"
-            ),
-            source=SkillSource.BUILTIN,
-            feature_id="free_web_ai",
-            permission_code="feature.free_web_ai",
-            readiness=SkillReadiness.READY,
-            route="/system/free-web-ai",
-            catalog_visible=True,
-            use_when="上传图片并询问图片内容、识别图片中的文字/物体/场景",
-            dont_use_when="纯文本对话（用 free-web-ai-chat）、OCR 提取（用 ocr feature）",
-            output="图片内容描述/回答",
-            tools=(
                 SkillToolSpec(
                     name="ask",
                     description="上传图片并提问（需提供服务器本地图片路径）",
@@ -655,6 +354,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
+            catalog_visible=False,
             catalog_tier="resident",
             use_when=(
                 "创建/修改/删除上传型 Skill 或 run_skill_script 取数验证；"

@@ -18,6 +18,7 @@ from app.schemas.ai_chat import (
     AiChatResponse,
     AttachmentSessionOut,
     AttachmentUploadOut,
+    ModelProviderItem,
 )
 from app.schemas.agent_profile import AgentCatalogItemOut
 from app.schemas.agent_skill import AgentSkillCatalogItemOut
@@ -142,6 +143,56 @@ def remove_ai_chat_attachment_file(
     )
 
 
+@router.get("/model-providers", response_model=ApiResponse[list[ModelProviderItem]])
+def list_ai_chat_model_providers(
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[ModelProviderItem]]:
+    """面向 AI 对话的模型提供商列表（不含密钥），用于输入框模型切换。"""
+    from app.services.model_settings_service import get_effective_model_config
+
+    merged = get_effective_model_config(db)
+    items: list[ModelProviderItem] = []
+
+    for prefix, rtype in (("llm", "llm"), ("multimodal", "multimodal")):
+        providers_key = f"{prefix}_providers"
+        active_key = f"{prefix}_active_provider"
+        raw = merged.get(providers_key, "")
+        if raw:
+            import json
+
+            try:
+                providers = json.loads(raw) if isinstance(raw, str) else raw
+            except (json.JSONDecodeError, TypeError):
+                providers = None
+            if isinstance(providers, list):
+                active_id = merged.get(active_key, "")
+                for p in providers:
+                    pid = p.get("id", "")
+                    label = p.get("label", "") or p.get("model_name", "") or ""
+                    model_name = p.get("model_name", "") or ""
+                    items.append(
+                        ModelProviderItem(id=pid, label=label, model_name=model_name, resource_type=rtype)
+                    )
+                continue
+
+        # 无 providers 数组时，从 flat 字段构造默认项（兼容旧配置）
+        base_url = (merged.get(f"{prefix}_base_url") or "").strip()
+        api_key = (merged.get(f"{prefix}_api_key") or "").strip()
+        model_name = (merged.get(f"{prefix}_model") or "").strip()
+        if base_url and api_key and model_name:
+            display = model_name
+            items.append(
+                ModelProviderItem(
+                    id=f"__flat__{prefix}",
+                    label=display,
+                    model_name=model_name,
+                    resource_type=rtype,
+                )
+            )
+
+    return ApiResponse(data=items)
+
+
 @router.post("/chat", response_model=ApiResponse[AiChatResponse])
 async def ai_home_chat(
     body: AiChatRequest,
@@ -155,6 +206,7 @@ async def ai_home_chat(
         user=user,
         conversation_id=body.conversation_id,
         attachment_session_id=body.attachment_session_id,
+        model_provider_id=body.model_provider_id,
     )
     return ApiResponse(data=AiChatResponse.model_validate(result))
 
@@ -174,6 +226,7 @@ async def ai_home_chat_stream(
             history=body.history,
             conversation_id=body.conversation_id,
             attachment_session_id=body.attachment_session_id,
+            model_provider_id=body.model_provider_id,
         ):
             yield payload
 

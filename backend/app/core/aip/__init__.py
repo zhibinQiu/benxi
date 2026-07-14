@@ -16,7 +16,7 @@ from app.core.aip.handoff import (
     format_task_request_for_llm,
     handoff_text_from_message,
 )
-from app.core.aip.messaging import (
+from app.agentkit.aip.messaging import (
     attach_handoff_to_complete,
     handoff_from_complete,
     parse_message,
@@ -24,7 +24,7 @@ from app.core.aip.messaging import (
     serialize_message,
 )
 from app.core.aip.session_bus import AipSessionBus, get_session_bus
-from app.core.aip.types import (
+from app.agentkit.aip.types import (
     AipAgentDescription,
     AipCapability,
     AipDataItem,

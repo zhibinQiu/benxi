@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -13,63 +14,95 @@ from sqlalchemy.orm import Session
 T = TypeVar("T")
 
 _stream_slot_sem: asyncio.Semaphore | None = None
+_db_thread_pool: concurrent.futures.ThreadPoolExecutor | None = None
+_db_op_sem: asyncio.Semaphore | None = None
 
 
 class StreamCapacityError(Exception):
     """本 worker 流式并发已达上限。"""
 
 
+def _get_pool_size() -> int:
+    from app.config import get_settings
+
+    return max(8, int(get_settings().db_pool_size or 15))
+
+
+def _get_db_thread_pool() -> concurrent.futures.ThreadPoolExecutor:
+    """专用 DB 线程池，大小与 DB 连接池稳态容量一致，避免过度排队。"""
+    global _db_thread_pool
+    if _db_thread_pool is None:
+        pool_size = _get_pool_size()
+        _db_thread_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=pool_size,
+            thread_name_prefix="db_task",
+        )
+    return _db_thread_pool
+
+
+def _get_db_op_semaphore() -> asyncio.Semaphore:
+    """限制并发 DB 操作数不超过连接池稳态容量，保护池不被耗尽。"""
+    global _db_op_sem
+    if _db_op_sem is None:
+        _db_op_sem = asyncio.Semaphore(_get_pool_size())
+    return _db_op_sem
+
+
 async def run_sync(func: Callable[..., T], /, *args, **kwargs) -> T:
-    return await asyncio.to_thread(func, *args, **kwargs)
+    """在专用 DB 线程池中执行同步函数。"""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_get_db_thread_pool(), func, *args, **kwargs)
+
+
+async def _run_db_with_slot(fn: Callable[..., T], factory, /) -> T:
+    """获取信号量后在线程池中执行 DB 操作。"""
+    sem = _get_db_op_semaphore()
+    async with sem:
+        from app.core.db_circuit import record_db_outcome
+
+        def _run() -> T:
+            db = factory()
+            try:
+                return fn(db)
+            finally:
+                db.close()
+
+        try:
+            result = await run_sync(_run)
+            record_db_outcome(None)
+            return result
+        except Exception as exc:
+            record_db_outcome(exc)
+            raise
 
 
 async def run_db_task(fn: Callable[..., T], /, *args, **kwargs) -> T:
     """fn 签名: fn(db: Session, *args, **kwargs) -> T"""
 
-    from app.core.db_circuit import guard_db_circuit, record_db_outcome
+    from app.core.db_circuit import guard_db_circuit
     from app.database import SessionLocal
 
     guard_db_circuit()
 
-    def _run() -> T:
-        db = SessionLocal()
-        try:
-            return fn(db, *args, **kwargs)
-        finally:
-            db.close()
+    def _run(db: Session) -> T:
+        return fn(db, *args, **kwargs)
 
-    try:
-        result = await run_sync(_run)
-        record_db_outcome(None)
-        return result
-    except Exception as exc:
-        record_db_outcome(exc)
-        raise
+    return await _run_db_with_slot(_run, SessionLocal)
 
 
 async def run_db_read_task(fn: Callable[..., T], /, *args, **kwargs) -> T:
     """只读 run_db_task：优先 DATABASE_READ_URL。"""
 
-    from app.core.db_circuit import guard_db_circuit, record_db_outcome
+    from app.core.db_circuit import guard_db_circuit
     from app.database import read_session_factory
 
     guard_db_circuit()
     factory = read_session_factory()
 
-    def _run() -> T:
-        db = factory()
-        try:
-            return fn(db, *args, **kwargs)
-        finally:
-            db.close()
+    def _run(db: Session) -> T:
+        return fn(db, *args, **kwargs)
 
-    try:
-        result = await run_sync(_run)
-        record_db_outcome(None)
-        return result
-    except Exception as exc:
-        record_db_outcome(exc)
-        raise
+    return await _run_db_with_slot(_run, factory)
 
 
 def release_db(db: Session | None) -> None:
@@ -78,8 +111,10 @@ def release_db(db: Session | None) -> None:
         return
     from app.database import release_db_connection
 
-    release_db_connection(db)
-    db.close()
+    try:
+        release_db_connection(db)
+    finally:
+        db.close()
 
 
 def detach_request_db(db: Session | None) -> None:

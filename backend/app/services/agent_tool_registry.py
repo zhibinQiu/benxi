@@ -49,6 +49,7 @@ def list_agent_tools(
                 tool_id=desc.tool_id,
                 tool_type=desc.tool_type,
                 description=desc.description,
+                doc_text=desc.doc_text,
                 category=AgentToolCategoryOut(category.value),
                 available=available,
                 availability_note=note,

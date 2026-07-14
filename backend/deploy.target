@@ -2,7 +2,7 @@
 
 DEPLOY_USER=root
 DEPLOY_HOST=172.19.134.45
-DEPLOY_PATH=/root/qzb/lvye
+DEPLOY_PATH=/root/qzb/benxi
 # auto：SSH 到目标机执行 uname -m 判断；也可写死 amd64 | arm64
 DEPLOY_ARCH=auto
 DEPLOY_USE_MIRROR=1

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentkit_loop import LoopEvidence, LoopExitRequest, build_loop_exit_prompt_messages as _build_loop_exit
+from app.core.agent_loop_state import LoopState
+
+from app.agentkit.loop import LoopEvidence, LoopExitRequest, build_loop_exit_prompt_messages as _build_loop_exit
 
 # 平台终稿契约（含简体中文要求）
 LOOP_SYSTEM_CONTRACT = (
@@ -14,9 +16,9 @@ LOOP_SYSTEM_CONTRACT = (
 )
 
 
-def build_agent_generated_instruction(loop_state: dict[str, Any] | None) -> str:
+def build_agent_generated_instruction(loop_state: LoopState | None) -> str:
     """从 loop_state 中的执行计划提取智能体自生成的任务指令。"""
-    from agentkit_loop import build_agent_instruction_from_plan
+    from app.agentkit.loop import build_agent_instruction_from_plan
     from app.services.agent_planner import AgentExecutionPlan, build_plan_context_instruction
 
     plan = (loop_state or {}).get("_execution_plan")
@@ -26,7 +28,7 @@ def build_agent_generated_instruction(loop_state: dict[str, Any] | None) -> str:
 
 
 def _platform_loop_evidence(
-    loop_state: dict[str, Any] | None,
+    loop_state: LoopState | None,
     *,
     extra_evidence: str = "",
     history_excerpt: str = "",
@@ -46,7 +48,7 @@ def _platform_loop_evidence(
 def build_loop_exit_prompt_messages(
     *,
     user_message: str,
-    loop_state: dict[str, Any] | None = None,
+    loop_state: LoopState | None = None,
     memory_context: str = "",
     extra_evidence: str = "",
     history_excerpt: str = "",

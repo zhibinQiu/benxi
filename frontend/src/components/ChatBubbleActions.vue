@@ -4,10 +4,6 @@ import {
   CopyOutline,
   RefreshOutline,
   ShareSocialOutline,
-  ThumbsDown,
-  ThumbsDownOutline,
-  ThumbsUp,
-  ThumbsUpOutline,
 } from "@vicons/ionicons5";
 import { useI18n } from "../composables/useI18n.js";
 
@@ -20,14 +16,9 @@ defineProps({
   disabled: { type: Boolean, default: false },
   showRetry: { type: Boolean, default: false },
   retryDisabled: { type: Boolean, default: false },
-  feedback: {
-    type: String,
-    default: null,
-    validator: (v) => v == null || v === "up" || v === "down",
-  },
 });
 
-const emit = defineEmits(["copy", "share", "retry", "feedback"]);
+const emit = defineEmits(["copy", "share", "retry"]);
 
 const { t } = useI18n();
 </script>
@@ -69,30 +60,6 @@ const { t } = useI18n();
       @click="emit('retry')"
     >
       <n-icon :size="16" :component="RefreshOutline" />
-    </button>
-    <button
-      type="button"
-      class="chat-bubble-actions__btn"
-      :class="{ 'chat-bubble-actions__btn--active': feedback === 'up' }"
-      :disabled="disabled"
-      :aria-label="t('chat.like')"
-      :title="t('chat.like')"
-      :aria-pressed="feedback === 'up'"
-      @click="emit('feedback', feedback === 'up' ? null : 'up')"
-    >
-      <n-icon :size="16" :component="feedback === 'up' ? ThumbsUp : ThumbsUpOutline" />
-    </button>
-    <button
-      type="button"
-      class="chat-bubble-actions__btn"
-      :class="{ 'chat-bubble-actions__btn--active': feedback === 'down' }"
-      :disabled="disabled"
-      :aria-label="t('chat.dislike')"
-      :title="t('chat.dislike')"
-      :aria-pressed="feedback === 'down'"
-      @click="emit('feedback', feedback === 'down' ? null : 'down')"
-    >
-      <n-icon :size="16" :component="feedback === 'down' ? ThumbsDown : ThumbsDownOutline" />
     </button>
   </div>
 </template>

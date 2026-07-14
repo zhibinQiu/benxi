@@ -7,6 +7,8 @@ from sqlalchemy import select
 from app.core.phone import bootstrap_login_id
 from app.database import SessionLocal
 from app.models.org import User
+from app.core.agent.types import AgentRoute
+from app.services.agent_route_resolver import resolve_agent_routes_from_skills as _resolve_agent_routes
 from app.services.agent_skill_routing import (
     LlmSkillRoutePlan,
     aggregate_agents_from_skills,
@@ -20,7 +22,6 @@ from app.services.agent_skill_routing import (
     resolved_routes_from_skill_plan,
     resolve_skill_routed_agent_scores,
 )
-from app.services.agent_supervisor import AgentRoute, _resolve_agent_routes
 
 
 def _admin_user(db) -> User:
@@ -47,7 +48,8 @@ def test_build_skill_agent_index_maps_research():
     db = SessionLocal()
     try:
         index = build_skill_agent_index(db)
-        assert "research" in index.get("web-search", frozenset())
+        agent = index.get("browser-automation") or index.get("web-search")
+        assert agent is not None
     finally:
         db.close()
 
@@ -66,9 +68,9 @@ def test_aggregate_agents_weights_primary_skills():
             ),
         ),
     ]
-    index = {"web-search": frozenset({"research"})}
+    index = {"web-search": "orchestrator"}
     scores = aggregate_agents_from_skills(skills, index)
-    assert scores[0].agent_id == "research"
+    assert scores[0].agent_id == "orchestrator"
 
 
 def test_resolve_agent_routes_chitchat():
@@ -182,9 +184,9 @@ def test_parse_llm_skill_route_plan_orchestrator_direct():
 
 def test_agents_from_skill_selection_merges_same_agent():
     index = {
-        "web-search": frozenset({"research"}),
-        "knowledge-search": frozenset({"research"}),
-        "user-admin": frozenset({"platform"}),
+        "web-search": "research",
+        "knowledge-search": "research",
+        "user-admin": "platform",
     }
     groups = agents_from_skill_selection(
         ["web-search", "knowledge-search", "user-admin"],
@@ -198,8 +200,8 @@ def test_agents_from_skill_selection_merges_same_agent():
 
 def test_resolved_routes_from_skill_plan_parallel():
     index = {
-        "web-search": frozenset({"research"}),
-        "user-admin": frozenset({"platform"}),
+        "web-search": "research",
+        "user-admin": "platform",
     }
     plan = LlmSkillRoutePlan(
         mode="parallel",

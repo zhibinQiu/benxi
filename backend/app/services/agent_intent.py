@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from agentkit_loop import AgentToolPlan
+from app.agentkit.loop import AgentToolPlan
 
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_skill_router import is_platform_usage_message, is_platform_operation_message, is_platform_system_data_message
@@ -34,7 +34,8 @@ _CHITCHAT_ONLY_RE = re.compile(
     r"好的|好哒|明白|知道了|收到|没问题|ok|okay|"
     r"在吗|在不在|"
     r"你能做什么|你会什么|你能帮我什么|有什么功能|"
-    r"(?:随便)?聊聊|闲聊一下|闲聊|讲个笑话"
+    r"(?:随便)?聊聊|闲聊一下|闲聊|讲个笑话|"
+    r"我是\S+|我叫\S+"
     r")(?:[!！?？呀啊吧呢嘛。.,，~～\s]*)$",
     re.I,
 )
@@ -86,28 +87,26 @@ def has_explicit_specialist_intent(
     *,
     history: list[AiChatMessage] | None = None,
 ) -> bool:
-    """用户是否明确要求专精 Agent（平台/报告/图谱/联网/Skill 等）。"""
-    from app.services.agent_routing_signals import (
-        matches_browser_intent,
-        matches_platform_ops_extra,
-        matches_scheduler_intent,
-    )
+    """用户是否明确要求专精 Agent（平台/浏览器/Skill 等）。
+
+    Orchestrator 可直接回复的仅有寒暄/极简问答/简单定义。
+    图表绘制、定时提醒、联网检索等需要执行的任务由路由分配专精 Agent。"""
     from app.services.agent_skill_router import (
-        is_diagram_generation_message,
         is_platform_operation_message,
         is_platform_system_data_message,
         is_skill_management_message,
+        matches_browser_intent,
+        matches_platform_ops_extra,
     )
     text = (message or "").strip()
     if not text:
         return False
     if is_skill_management_message(text):
         return True
-    if is_diagram_generation_message(text):
-        return True
+    # 以下均为专精 Agent 的领域，路由分配
     if is_platform_operation_message(text) or is_platform_system_data_message(text):
         return True
-    if matches_platform_ops_extra(text) or matches_scheduler_intent(text):
+    if matches_platform_ops_extra(text):
         return True
     if matches_browser_intent(text):
         return True
@@ -120,28 +119,62 @@ def has_explicit_specialist_intent(
     return False
 
 
+# 短消息中明确需要工具的动词 — Orchestrator 不直接处理，交由路由分配子智能体
+_ACTION_VERB_RE = re.compile(
+    r"(提醒|通知|定时|发送|分享|上传|下载|删除|创建|生成|写[一啊]?个|"
+    r"查[一一下]|搜索|检索|翻译|计算|转换|换算|设定|设置|配置|"
+    r"打开|关闭|启动|停止|爬取|抓取|同步|监控|"
+    r"使用|执行|运行|加载)",
+    re.I,
+)
+
+
 def should_orchestrator_reply_directly(
     message: str,
     history: list[AiChatMessage] | None = None,
 ) -> bool:
-    """寒暄、简单常识、短句闲聊 — 调度 Agent 直接作答，不走专精路由。"""
-    from app.services.agent_routing_signals import is_trivial_direct_question
+    """Orchestrator 是否可以直接回复（不进入任何工具循环或子智能体）。
+
+    设计原则：Orchestrator 仅能直接回复的场景：
+    - 纯寒暄（Step 1）
+    - 极简常识/计算题（Step 2）
+    - 短消息兜底（Step 6）
+
+    其他任何需要执行的任务（联网搜索、知识库检索、图谱查询、图表绘制、
+    定时/通知、平台操作、浏览器自动化等）全部路由到专精 Agent 或子智能体完成。
+    """
+    from app.services.agent_skill_router import (
+        is_trivial_direct_question,
+    )
 
     text = (message or "").strip()
     if not text:
         return True
+
+    # ── Step 1: 寒暄检查 ──
     if is_chitchat_message(text, history):
         return True
+
+    # ── Step 2: 极简计算题 ──
     if is_trivial_direct_question(text):
         return True
+
+    # ── Step 3: 专精意图检查（路由分配） ──
     if has_explicit_specialist_intent(text, history=history):
         return False
+
+    # ── Step 4: 追问检查 ──
     if is_likely_follow_up(text, history):
         return False
-    if _SIMPLE_DEFINE_RE.match(text):
-        return True
+
+    # ── Step 5: 动词检测 ──
+    if _ACTION_VERB_RE.search(text):
+        return False
+
+    # ── Step 7: 短消息兜底 ──
     if len(text) <= 14 and not _RETRIEVAL_HINT_RE.search(text):
         return True
+
     return False
 
 

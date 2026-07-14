@@ -49,6 +49,22 @@ def _audit_aip_call(
     )
 
 
+def _resolve_aip_auth(
+    db: Session,
+    request: Request,
+    body_auth_token: str | None = None,
+) -> AipAuthContext:
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    creds = None
+    auth_header = request.headers.get("Authorization") or ""
+    if auth_header.lower().startswith("bearer "):
+        creds = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=auth_header.split(" ", 1)[1]
+        )
+    return resolve_aip_auth_context(db, request, creds, body_auth_token=body_auth_token)
+
+
 @router.get("/discover", response_model=ApiResponse[AipDiscoverOut])
 def aip_discover(
     request: Request,
@@ -58,15 +74,7 @@ def aip_discover(
     include_orchestrator: bool = False,
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[AipDiscoverOut]:
-    from fastapi.security import HTTPAuthorizationCredentials
-
-    creds = None
-    auth_header = request.headers.get("Authorization") or ""
-    if auth_header.lower().startswith("bearer "):
-        creds = HTTPAuthorizationCredentials(
-            scheme="Bearer", credentials=auth_header.split(" ", 1)[1]
-        )
-    auth = resolve_aip_auth_context(db, request, creds)
+    auth = _resolve_aip_auth(db, request)
     settings = get_settings()
     if not settings.aip_enabled:
         return ApiResponse(data=AipDiscoverOut(total=0, items=[]))
@@ -94,15 +102,7 @@ def aip_read_agent(
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[AipAgentDetailOut]:
-    from fastapi.security import HTTPAuthorizationCredentials
-
-    creds = None
-    auth_header = request.headers.get("Authorization") or ""
-    if auth_header.lower().startswith("bearer "):
-        creds = HTTPAuthorizationCredentials(
-            scheme="Bearer", credentials=auth_header.split(" ", 1)[1]
-        )
-    auth = resolve_aip_auth_context(db, request, creds)
+    auth = _resolve_aip_auth(db, request)
     decoded = unquote(aid).strip()
     _audit_aip_call(
         db,
@@ -121,17 +121,7 @@ async def aip_interact(
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[AipInteractOut]:
-    from fastapi.security import HTTPAuthorizationCredentials
-
-    creds = None
-    auth_header = request.headers.get("Authorization") or ""
-    if auth_header.lower().startswith("bearer "):
-        creds = HTTPAuthorizationCredentials(
-            scheme="Bearer", credentials=auth_header.split(" ", 1)[1]
-        )
-    auth = resolve_aip_auth_context(
-        db, request, creds, body_auth_token=body.auth_token
-    )
+    auth = _resolve_aip_auth(db, request, body_auth_token=body.auth_token)
     if not body.source_aid and auth.source_aid:
         body = body.model_copy(update={"source_aid": auth.source_aid})
     result = await aip_svc.interact_with_agent(db, auth.user, body)
@@ -155,17 +145,7 @@ async def aip_interact_stream(
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> StreamingResponse:
-    from fastapi.security import HTTPAuthorizationCredentials
-
-    creds = None
-    auth_header = request.headers.get("Authorization") or ""
-    if auth_header.lower().startswith("bearer "):
-        creds = HTTPAuthorizationCredentials(
-            scheme="Bearer", credentials=auth_header.split(" ", 1)[1]
-        )
-    auth = resolve_aip_auth_context(
-        db, request, creds, body_auth_token=body.auth_token
-    )
+    auth = _resolve_aip_auth(db, request, body_auth_token=body.auth_token)
     if not body.source_aid and auth.source_aid:
         body = body.model_copy(update={"source_aid": auth.source_aid})
     _audit_aip_call(

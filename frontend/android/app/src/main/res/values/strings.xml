@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">本析</string>
+    <string name="title_activity_main">本析</string>
+    <string name="package_name">com.benxi.knowledge</string>
+    <string name="custom_url_scheme">com.benxi.knowledge</string>
+</resources>

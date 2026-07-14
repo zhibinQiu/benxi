@@ -1164,6 +1164,10 @@ def ensure_agent_profile_schema(engine: Engine) -> None:
         ALTER TABLE agent_profile_bindings
         ADD COLUMN IF NOT EXISTS style_md TEXT
         """,
+        """
+        ALTER TABLE agent_profile_bindings
+        ADD COLUMN IF NOT EXISTS runtime_tool_names JSONB NOT NULL DEFAULT '[]'::jsonb
+        """,
     ]
     with engine.begin() as conn:
         for sql in statements:
@@ -1389,4 +1393,3 @@ def run_all_schema_migrations(engine: Engine) -> None:
     migrate_legacy_admin_roles(engine)
     backfill_ragflow_version_links_once(engine)
     mark_platform_schema_current(engine)
-    ensure_digital_robot_task_schema(engine)

@@ -18,6 +18,8 @@ from app.core.agent_profiles import AGENT_PROFILES, AgentProfileDef, get_agent_p
 from app.core.exceptions import bad_request, not_found
 from app.core.tool_skill_taxonomy import (
     SKILL_RUNTIME_TOOL_NAMES,
+    ToolCategory,
+    _TOOL_CATEGORIES,
     skill_runtime_tools_for_agent,
 )
 from app.models.agent_profile_binding import AgentProfileBinding
@@ -30,7 +32,6 @@ from app.schemas.agent_profile import (
 from app.schemas.agent_skill import AgentSkillFileContentOut
 from app.skills.catalog import get_merged_skill_definition, list_all_skill_definitions
 from app.services.agent_runtime_service import agent_runtime_status
-from app.services.agent_tool_registry import list_agent_tools
 
 
 def _binding_map(db: Session) -> dict[str, AgentProfileBinding]:
@@ -50,6 +51,19 @@ def _effective_skill_names(defn: AgentProfileDef, binding: AgentProfileBinding |
     return list(defn.default_skill_names)
 
 
+def _effective_runtime_tool_names(defn: AgentProfileDef, binding: AgentProfileBinding | None) -> list[str]:
+    """动态工具名：优先从 DB binding 读取，无绑定或为空时回退 AgentProfileDef 默认值。
+
+    与 _effective_skill_names 一致：空列表视为"未设置"，回退默认值。
+    用户如需清空工具列表，应停用智能体或在多智能体界面管理。
+    """
+    if binding is not None and binding.runtime_tool_names is not None:
+        stored = [str(name).strip() for name in binding.runtime_tool_names if str(name).strip()]
+        if stored:
+            return stored
+    return list(defn.default_runtime_tool_names)
+
+
 def resolve_agent_internal_atomic_tools(db: Session, agent_id: str) -> set[str]:
     """专精 Agent 经 Skill 可触达的全局原子 Tool（管理/KG 同步用，非 LLM 暴露）。"""
     skill_names = resolve_agent_skill_names(db, agent_id)
@@ -65,49 +79,118 @@ def resolve_agent_internal_atomic_tools(db: Session, agent_id: str) -> set[str]:
     return atomic
 
 
-def _count_internal_tools(db: Session, defn: AgentProfileDef) -> int:
-    expected = resolve_agent_internal_atomic_tools(db, defn.id)
-    if not expected:
-        return 0
-    tools = list_agent_tools(db, user=None)
-    return sum(1 for tool in tools if tool.name in expected)
 
 
-def _count_internal_tools_prefetched(
+
+# ── 工具名 → 类别映射 ─────────────────────────────────
+
+_RUNTIME_TOOL_CATEGORY: dict[str, str] = {
+    "invoke_skill": "skill",
+    "load_uploaded_skill": "skill",
+    "run_skill_script": "skill",
+    "create_skill": "skill_mgmt",
+    "update_uploaded_skill_file": "skill_mgmt",
+    "delete_uploaded_skill": "skill_mgmt",
+    "list_agent_skills": "skill",
+    "search_skills": "skill",
+    "request_orchestrator_assist": "orchestration",
+}
+
+def _tool_names_to_categories(tool_names: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in tool_names:
+        cat = _RUNTIME_TOOL_CATEGORY.get(name)
+        if cat is None:
+            tc = _TOOL_CATEGORIES.get(name)
+            cat = tc.value if tc else "other"
+        if cat not in seen:
+            seen.add(cat)
+            result.append(cat)
+    return result
+
+
+# ── 实际运行时 LLM 可见的工具名称 ──────────────────────────
+
+def _resolve_runtime_tool_names(
     defn: AgentProfileDef,
-    tool_name_set: set[str],
-    known_skill_names: set[str],
-    skill_def_map: dict[str, object],
-) -> int:
-    """使用预取数据计算工具数，避免 N+1 查询。"""
-    expected = _resolve_atomic_tools_prefetched(defn.id, known_skill_names, skill_def_map)
-    if not expected:
-        return 0
-    return sum(1 for name in expected if name in tool_name_set)
+    *,
+    skill_names: list[str],
+    db: Session | None = None,
+    known_skill_names: set[str] | None = None,
+    skill_def_map: dict[str, object] | None = None,
+    binding: AgentProfileBinding | None = None,
+) -> list[str]:
+    """返回该 Agent 运行时 LLM 实际可见的工具名列表。
+
+    从 DB binding 或 AgentProfileDef 默认值读取完整工具列表，
+    再根据技能挂载情况过滤不可用的 invoke_skill。
+    """
+    aid = defn.id
+    # 动态解析工具列表（binding 优先，否则走 AgentProfileDef 默认值）
+    all_tools = _effective_runtime_tool_names(defn, binding)
+    if not all_tools:
+        return []
+
+    names: list[str] = []
+    for tool in all_tools:
+        if tool == "invoke_skill":
+            callable_skill_names = _callable_skill_names_for_names(
+                skill_names,
+                known_skill_names=known_skill_names,
+                skill_def_map=skill_def_map,
+                db=db,
+            )
+            if not callable_skill_names:
+                continue  # 无可调用 Skill 时隐藏 invoke_skill
+        names.append(tool)
+    return sorted(set(names))
 
 
-def _resolve_atomic_tools_prefetched(
-    agent_id: str,
-    known_skill_names: set[str],
-    skill_def_map: dict[str, object],
-) -> set[str]:
-    """使用预取数据解析原子工具，避免 N+1。"""
-    defn = get_agent_profile(agent_id)
-    if not defn:
-        return set()
-    skill_names = defn.default_skill_names
-    atomic: set[str] = set()
+def _callable_skill_names_for_names(
+    skill_names: list[str],
+    *,
+    known_skill_names: set[str] | None = None,
+    skill_def_map: dict[str, object] | None = None,
+    db: Session | None = None,
+) -> list[str]:
+    """返回有 handler 的可调用内置 Skill 名。"""
+    out: list[str] = []
     for name in skill_names:
-        if name not in known_skill_names:
+        slug = (name or "").strip()
+        if not slug:
             continue
-        skill_defn = skill_def_map.get(name)
-        if skill_defn and getattr(skill_defn, 'orchestrated_tools', None):
-            atomic.update(skill_defn.orchestrated_tools)
-    from app.core.agent_profiles import _SPECIALIST_AGENT_IDS
+        if known_skill_names is not None and slug not in known_skill_names:
+            continue
+        if skill_def_map is not None:
+            defn = skill_def_map.get(slug)
+        elif db is not None:
+            from app.skills.catalog import get_merged_skill_definition
+            defn = get_merged_skill_definition(db, slug, admin_view=True)
+        else:
+            defn = None
+        if defn and getattr(defn, "tools", None):
+            out.append(slug)
+    return out
 
-    if agent_id in _SPECIALIST_AGENT_IDS:
-        atomic.add("request_orchestrator_assist")
-    return atomic
+
+def _count_runtime_tools(
+    defn: AgentProfileDef,
+    *,
+    skill_names: list[str],
+    db: Session | None = None,
+    known_skill_names: set[str] | None = None,
+    skill_def_map: dict[str, object] | None = None,
+) -> int:
+    """统计运行时 LLM 可见的工具数量。"""
+    names = _resolve_runtime_tool_names(
+        defn,
+        skill_names=skill_names,
+        db=db,
+        known_skill_names=known_skill_names,
+        skill_def_map=skill_def_map,
+    )
+    return len(names)
 
 
 def _to_out_with_prefetched(
@@ -115,8 +198,6 @@ def _to_out_with_prefetched(
     defn: AgentProfileDef,
     binding: AgentProfileBinding | None,
     *,
-    all_tools: list[object],
-    tool_name_set: set[str],
     all_skill_defs: list[object],
     known_skill_names: set[str],
 ) -> AgentProfileOut:
@@ -127,6 +208,14 @@ def _to_out_with_prefetched(
     status, active_count = agent_runtime_status(defn.id)
     config_md = binding.config_md if binding is not None else None
     skill_names = _effective_skill_names(defn, binding)
+    runtime_names = _resolve_runtime_tool_names(
+        defn,
+        skill_names=skill_names,
+        db=db,
+        known_skill_names=known_skill_names,
+        skill_def_map=skill_def_map,
+        binding=binding,
+    )
     return AgentProfileOut(
         id=defn.id,
         title=defn.title,
@@ -137,10 +226,10 @@ def _to_out_with_prefetched(
         skill_names=skill_names,
         default_skill_names=list(defn.default_skill_names),
         skills_configurable=defn.skills_configurable,
-        tool_categories=[],
-        tool_count=_count_internal_tools_prefetched(
-            defn, tool_name_set, known_skill_names, skill_def_map
-        ),
+        runtime_tool_names=runtime_names,
+        default_runtime_tool_names=list(defn.default_runtime_tool_names),
+        tool_categories=_tool_names_to_categories(runtime_names),
+        tool_count=len(runtime_names),
         active_conversations=active_count,
     )
 
@@ -173,6 +262,12 @@ def _to_out(
     status, active_count = agent_runtime_status(defn.id)
     config_md = binding.config_md if binding is not None else None
     skill_names = _effective_skill_names(defn, binding)
+    runtime_names = _resolve_runtime_tool_names(
+        defn,
+        skill_names=skill_names,
+        db=db,
+        binding=binding,
+    )
     return AgentProfileOut(
         id=defn.id,
         title=defn.title,
@@ -183,8 +278,10 @@ def _to_out(
         skill_names=skill_names,
         default_skill_names=list(defn.default_skill_names),
         skills_configurable=defn.skills_configurable,
-        tool_categories=[],
-        tool_count=_count_internal_tools(db, defn),
+        runtime_tool_names=runtime_names,
+        default_runtime_tool_names=list(defn.default_runtime_tool_names),
+        tool_categories=_tool_names_to_categories(runtime_names),
+        tool_count=len(runtime_names),
         active_conversations=active_count,
     )
 
@@ -200,18 +297,13 @@ def _to_detail_out(
 
 def list_agent_profiles(db: Session) -> list[AgentProfileOut]:
     bindings = _binding_map(db)
-    # 预取全量数据，避免每个 Agent 重复扫描工具/技能注册表（N+1 优化）
-    all_tools = list_agent_tools(db, user=None)
     all_skill_defs = list_all_skill_definitions(
         db, admin_view=False, catalog_only=False
     )
     known_skill_names = {s.name for s in all_skill_defs}
-    tool_name_set = {t.name for t in all_tools}
     return [
         _to_out_with_prefetched(
             db, defn, bindings.get(defn.id),
-            all_tools=all_tools,
-            tool_name_set=tool_name_set,
             all_skill_defs=all_skill_defs,
             known_skill_names=known_skill_names,
         )
@@ -239,14 +331,6 @@ def list_user_agent_catalog(db: Session) -> list[AgentCatalogItemOut]:
             )
         )
     return items
-
-
-def get_agent_profile_out(db: Session, agent_id: str) -> AgentProfileOut:
-    defn = get_agent_profile(agent_id)
-    if not defn:
-        raise not_found(f"智能体不存在: {agent_id}")
-    bindings = _binding_map(db)
-    return _to_out(db, defn, bindings.get(defn.id))
 
 
 def get_agent_profile_detail(db: Session, agent_id: str) -> AgentProfileDetailOut:
@@ -370,6 +454,8 @@ def patch_agent_profile(
         row.service_enabled = service_enabled
     if skill_names is not None:
         row.skill_names = _validate_skill_names(db, skill_names)
+    if runtime_tool_names is not None:
+        row.runtime_tool_names = [str(name).strip() for name in runtime_tool_names if str(name).strip()]
 
     db.commit()
     db.refresh(row)
@@ -387,6 +473,20 @@ def resolve_agent_tool_names(db: Session, agent_id: str) -> set[str]:
     runtime = set(skill_runtime_tools_for_agent(defn.id))
     internal = resolve_agent_internal_atomic_tools(db, agent_id)
     return runtime | internal
+
+
+def resolve_effective_runtime_tool_names(db: Session | None, agent_id: str) -> list[str]:
+    """供外部调用：按 DB binding（优先）或 AgentProfileDef 默认值返回该智能体运行时工具名列表。"""
+    defn = get_agent_profile(agent_id)
+    if not defn:
+        return []
+    if db is not None:
+        try:
+            bindings = _binding_map(db)
+            return _effective_runtime_tool_names(defn, bindings.get(defn.id))
+        except Exception:
+            db.rollback()
+    return list(defn.default_runtime_tool_names)
 
 
 def resolve_agent_skill_names(db: Session, agent_id: str) -> list[str]:
@@ -408,21 +508,22 @@ def resolve_agent_skill_names(db: Session, agent_id: str) -> list[str]:
 
 
 def resolve_agent_runtime_tool_names(db: Session, agent_id: str) -> set[str]:
-    """LLM 可见的 Skill 运行时 Tool（不含全局原子 Tool）。"""
+    """LLM 可见的 Skill 运行时 Tool（不含全局原子 Tool，动态解析）。"""
     defn = get_agent_profile(agent_id)
     if not defn:
         return set()
     binding = _binding_map(db).get(defn.id)
     if binding is not None and not binding.enabled:
         return set()
-    names = set(skill_runtime_tools_for_agent(defn.id))
-    if "invoke_skill" in names:
+    all_tools = resolve_effective_runtime_tool_names(db, agent_id)
+    runtime_only = {n for n in all_tools if n in SKILL_RUNTIME_TOOL_NAMES}
+    if "invoke_skill" in runtime_only:
         from app.services.agent_skill_runtime import _callable_skill_names
 
         skills = resolve_agent_skill_names(db, agent_id)
         if not _callable_skill_names(db, user=None, skill_names=skills):  # type: ignore[arg-type]
-            names.discard("invoke_skill")
-    return {n for n in names if n in SKILL_RUNTIME_TOOL_NAMES or n in {"request_orchestrator_assist"}}
+            runtime_only.discard("invoke_skill")
+    return runtime_only
 
 
 def is_agent_enabled(db: Session, agent_id: str) -> bool:

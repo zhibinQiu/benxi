@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.config import get_settings
 
@@ -28,7 +28,7 @@ class FreeWebAiConfig:
     """免费网页 AI 配置。"""
 
     enabled: bool = False
-    headless: bool = False
+    headless: bool = True  # 默认无头模式，避免弹出浏览器窗口
     cdp_port: int = 0
     chrome_path: str = ""
     profile_dir: str = ""
@@ -58,7 +58,7 @@ def get_free_web_ai_config() -> FreeWebAiConfig:
 
     return FreeWebAiConfig(
         enabled=_parse_bool(_get("FREE_WEB_AI_ENABLED"), False),
-        headless=_parse_bool(_get("FREE_WEB_AI_HEADLESS"), False),
+        headless=_parse_bool(_get("FREE_WEB_AI_HEADLESS"), True),
         cdp_port=_parse_int(_get("FREE_WEB_AI_CDP_PORT"), 0),
         chrome_path=_get("FREE_WEB_AI_CHROME_PATH") or "",
         profile_dir=_get("FREE_WEB_AI_PROFILE_DIR") or os.path.expanduser("~/.free-web-ai-profile"),

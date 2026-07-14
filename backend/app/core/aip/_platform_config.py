@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentkit_aip import AidConfig, AipDataItem, HandoffBuilder
+from app.agentkit.aip import AidConfig, AipDataItem, HandoffBuilder
 
 from app.config import get_settings
 

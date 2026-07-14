@@ -216,6 +216,11 @@ export function useChatTabs() {
     tabHasContent[id] = val;
   }
 
+  /** 一键关闭所有标签，重置为单个新对话 */
+  function closeAllTabs() {
+    resetChatTabs();
+  }
+
   return {
     tabs,
     activeTabId,
@@ -226,6 +231,7 @@ export function useChatTabs() {
     tabHasContent,
     createTab,
     closeTab,
+    closeAllTabs,
     switchTab,
     updateTabTitle,
     syncActiveTabFromRoute,

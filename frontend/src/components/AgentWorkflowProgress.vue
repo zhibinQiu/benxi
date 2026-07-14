@@ -443,7 +443,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 .agent-workflow {
   margin-bottom: 10px;
   padding: 10px 12px;
-  border-radius: var(--platform-radius-sm, 8px);
   font-size: 15px;
   color: var(--platform-text);
 }
@@ -482,51 +481,68 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 .agent-workflow__step {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
 }
 
 .agent-workflow__checkbox {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid var(--platform-text-secondary, #94a3b8);
-  border-radius: 3px;
-  background: var(--platform-surface, #fff);
+  background: color-mix(in srgb, var(--platform-accent) 12%, transparent);
+  color: var(--platform-accent);
+  transition: background 0.2s, color 0.2s;
 }
 
 .agent-workflow__checkbox--sm {
-  width: 14px;
-  height: 14px;
-  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
 }
 
 .agent-workflow__checkbox--running {
-  border-color: var(--platform-text-tertiary, #94a3b8);
+  animation: awf-pulse 1.6s ease-in-out infinite;
 }
 
 .agent-workflow__checkbox--done {
-  border-color: var(--platform-text-secondary, #64748b);
-  background: rgba(15, 23, 42, 0.06);
+  background: color-mix(in srgb, var(--platform-accent) 12%, transparent);
+  color: var(--platform-accent);
 }
 
 .agent-workflow__checkbox--failed {
-  border-color: var(--platform-text-secondary, #64748b);
-  background: rgba(15, 23, 42, 0.06);
+  background: color-mix(in srgb, var(--platform-danger, #ef4444) 12%, transparent);
+  color: var(--platform-danger, #ef4444);
+}
+
+@keyframes awf-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--platform-accent) 20%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--platform-accent) 8%, transparent);
+  }
 }
 
 .agent-workflow__check-mark {
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--platform-text-secondary, #64748b);
 }
 
+.agent-workflow__checkbox--done .agent-workflow__check-mark {
+  color: var(--platform-accent);
+}
+
 .agent-workflow__checkbox--failed .agent-workflow__check-mark {
-  color: var(--platform-text-secondary, #64748b);
+  color: var(--platform-danger, #ef4444);
 }
 
 .agent-workflow__loader {
@@ -543,7 +559,8 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 
 .agent-workflow__step--running .agent-workflow__title,
 .agent-workflow__substep--running .agent-workflow__title {
-  color: var(--platform-text-secondary, #64748b);
+  color: var(--platform-text, #0f172a);
+  font-weight: 600;
 }
 
 .agent-workflow__body {
@@ -576,24 +593,26 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   font-size: 11px;
   font-weight: 600;
   line-height: 1.5;
-  color: var(--platform-text-secondary, #64748b);
-  background: rgba(15, 23, 42, 0.06);
+  color: var(--platform-danger, #ef4444);
+  background: color-mix(in srgb, var(--platform-danger, #ef4444) 10%, transparent);
 }
 
 .agent-workflow__agent-tag {
   flex-shrink: 0;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
-  line-height: 1.4;
-  color: var(--platform-text, #0f172a);
-  background: var(--platform-bg-tertiary, rgba(15, 23, 42, 0.06));
+  line-height: 1.5;
+  color: var(--platform-accent);
+  background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--platform-accent) 18%, transparent);
 }
 
 .agent-workflow__title {
   font-weight: 500;
   line-height: 1.35;
+  color: var(--platform-text-secondary, #64748b);
 }
 
 .agent-workflow__label {
@@ -614,11 +633,11 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 }
 
 .agent-workflow__detail--rich {
-  padding: 2px 6px;
+  padding: 4px 8px;
   margin-top: 4px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.02);
-  border-left: 2px solid var(--platform-border, rgba(15, 23, 42, 0.1));
+  background: color-mix(in srgb, var(--platform-accent) 4%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--platform-accent) 20%, transparent);
 }
 
 /* ── 工具类型统一灰色 ── */
@@ -628,8 +647,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   padding-top: 8px;
   border-top: 1px dashed var(--platform-border, rgba(15, 23, 42, 0.1));
   font-size: 14px;
-  max-width: 60%;
-  min-width: 480px;
 }
 
 .agent-workflow--compact {
@@ -648,7 +665,7 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 .agent-workflow__check-item {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
 }
 
 .agent-workflow__check-item--done > .agent-workflow__body > .agent-workflow__title {
@@ -666,13 +683,13 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-left: 2px solid var(--platform-border, rgba(15, 23, 42, 0.1));
+  border-left: 2px solid color-mix(in srgb, var(--platform-accent) 15%, transparent);
 }
 
 .agent-workflow__substep {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   padding-left: 8px;
 }
 

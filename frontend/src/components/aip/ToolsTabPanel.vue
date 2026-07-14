@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, onMounted, ref } from "vue";
+import { computed, h, onMounted, ref, watch } from "vue";
 import { NButton, NCard, NDataTable, NDivider, NDrawer, NDrawerContent, NInput, NSpace, NTag, NText } from "naive-ui";
 import ListRefreshButton from "../ListRefreshButton.vue";
 import ListTableFooter from "../ListTableFooter.vue";
@@ -22,8 +22,18 @@ const hydrated = ref(hasToolsTabCacheData(initialCache));
 
 const loading = ref(false);
 const tools = ref(initialCache?.tools || []);
+const keyword = ref("");
 const detailOpen = ref(false);
 const detail = ref(null);
+
+const filteredTools = computed(() => {
+  const q = keyword.value.trim().toLowerCase();
+  if (!q) return tools.value;
+  return tools.value.filter((t) => {
+    const hay = [t.tool_id, t.tool_type, t.category, t.description].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+});
 
 const {
   page,
@@ -31,7 +41,11 @@ const {
   total,
   pagedItems,
   onPageChange,
-} = useClientListPagination(tools);
+} = useClientListPagination(filteredTools);
+
+watch(keyword, () => {
+  onPageChange(1);
+});
 
 function toolCategoryLabel(category) {
   return t(`admin.agentSkills.toolCategory.${category}`, category);
@@ -121,6 +135,12 @@ defineExpose({ load, loading });
 <template>
   <NCard size="small" :title="t('admin.agentSkills.toolsTitle')">
     <template #header-extra>
+      <NInput
+        v-model:value="keyword"
+        clearable
+        :placeholder="t('admin.agentSkills.searchPlaceholder')"
+        style="width: 240px; margin-right: 8px"
+      />
       <ListRefreshButton :loading="loading" @click="load({ foreground: true })" />
     </template>
     <NText depth="3" style="display: block; margin-bottom: 14px">
@@ -153,6 +173,19 @@ defineExpose({ load, loading });
           <NTag size="small" :bordered="false">{{ detail.tool_version }}</NTag>
           <NTag size="small" :bordered="false">QPS {{ detail.rate_limit?.qps ?? "—" }}</NTag>
         </NSpace>
+
+        <template v-if="detail.doc_text">
+          <NDivider style="margin: 8px 0" />
+          <NText depth="3" style="font-weight: 600; margin-bottom: 4px">{{ t("admin.agentSkills.toolUsageGuide") }}</NText>
+          <NInput
+            type="textarea"
+            :rows="12"
+            :value="detail.doc_text"
+            readonly
+            :autosize="{ minRows: 8, maxRows: 30 }"
+          />
+        </template>
+
         <NDivider style="margin: 8px 0" />
         <NText depth="3">{{ t("admin.agentSkills.toolInputSchema") }}</NText>
         <NInput

@@ -20,8 +20,10 @@ function imgUrl(path) {
 const visionEl = ref(null);
 const ontologyEl = ref(null);
 const skillsEl = ref(null);
+const knowledgeSearchEl = ref(null);
 const featuresEl = ref(null);
 const testimonialsEl = ref(null);
+const acknowledgmentsEl = ref(null);
 const summaryEl = ref(null);
 const footerEl = ref(null);
 
@@ -30,10 +32,19 @@ const dict = computed(() => messages[locale.value] || messages.zh);
 const vision = computed(() => dict.value?.login?.showcaseVision || null);
 const ontology = computed(() => dict.value?.login?.showcaseOntology || null);
 const skills = computed(() => dict.value?.login?.showcaseSkills || null);
+const knowledgeSearch = computed(() => dict.value?.login?.showcaseKnowledgeSearch || null);
 const featuresMeta = computed(() => dict.value?.login?.showcaseFeatures || null);
 const summary = computed(() => dict.value?.login?.showcaseSummary || null);
 const testimonials = computed(() => dict.value?.login?.showcaseTestimonials || null);
+const acknowledgments = computed(() => dict.value?.login?.showcaseAcknowledgments || null);
 const footerData = computed(() => dict.value?.login?.showcaseFooter || null);
+
+// 为致谢卡片生成随机翻转延迟（每次数据变化重新生成）
+const ackFlipDelays = computed(() => {
+  const items = acknowledgments.value?.items;
+  if (!items?.length) return [];
+  return items.map(() => `${(Math.random() * 0.7 + 0.1).toFixed(2)}s`);
+});
 
 function onLegalClick(item) {
   if (item.external) return;
@@ -67,7 +78,7 @@ const testimonialsBgStyle = computed(() => {
 let revealObserver = null;
 
 function collectSectionEls() {
-  return [visionEl.value, ontologyEl.value, skillsEl.value, featuresEl.value, testimonialsEl.value, summaryEl.value, footerEl.value].filter(Boolean);
+  return [visionEl.value, ontologyEl.value, skillsEl.value, knowledgeSearchEl.value, featuresEl.value, testimonialsEl.value, acknowledgmentsEl.value, summaryEl.value, footerEl.value].filter(Boolean);
 }
 
 function bindObservers() {
@@ -151,6 +162,13 @@ watch(locale, () => nextTick(bindObservers));
           <div class="login-feature-scroll__text">
             <h2 class="login-feature-scroll__title">{{ skills.title }}</h2>
             <p class="login-feature-scroll__body">{{ skills.body }}</p>
+            <button
+              type="button"
+              class="login-feature-scroll__enterprise-link"
+              @click="router.push('/agentkit-philosophy')"
+            >
+              了解更多关于 AgentKit 的设计哲学 →
+            </button>
           </div>
           <div v-if="skills.image" class="login-feature-scroll__image-wrapper">
             <div class="login-feature-scroll__image-backplate">
@@ -161,6 +179,35 @@ watch(locale, () => nextTick(bindObservers));
     </div>
     </section>
 
+    <!-- 企业级知识检索与报告生成 -->
+    <section
+      v-if="knowledgeSearch"
+      ref="knowledgeSearchEl"
+      data-section="knowledge-search"
+      class="login-feature-scroll__section"
+    >
+      <div class="login-feature-scroll__inner login-feature-scroll__inner--wide">
+        <div class="login-feature-scroll__split login-feature-scroll__split--reverse">
+          <div class="login-feature-scroll__text">
+            <h2 class="login-feature-scroll__title">{{ knowledgeSearch.title }}</h2>
+            <p class="login-feature-scroll__body">{{ knowledgeSearch.body }}</p>
+            <button
+              type="button"
+              class="login-feature-scroll__enterprise-link"
+              @click="router.push('/enterprise/knowledge')"
+            >
+              了解更多企业版功能 →
+            </button>
+          </div>
+          <div v-if="knowledgeSearch.image" class="login-feature-scroll__image-wrapper">
+            <div class="login-feature-scroll__image-backplate">
+              <img :src="imgUrl(knowledgeSearch.image)" alt="" class="login-feature-scroll__img" loading="lazy" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 核心功能 -->
     <section
       v-if="featuresMeta"
@@ -169,7 +216,7 @@ watch(locale, () => nextTick(bindObservers));
       class="login-feature-scroll__section"
     >
       <div class="login-feature-scroll__inner login-feature-scroll__inner--wide">
-        <div class="login-feature-scroll__split login-feature-scroll__split--reverse">
+        <div class="login-feature-scroll__split">
           <div class="login-feature-scroll__text">
             <h2 class="login-feature-scroll__title">{{ featuresMeta.title }}</h2>
             <p v-if="featuresMeta.subtitle" class="login-feature-scroll__body login-feature-scroll__body--subtitle">{{ featuresMeta.subtitle }}</p>
@@ -240,6 +287,33 @@ watch(locale, () => nextTick(bindObservers));
               <span>{{ item.author }} · {{ item.role }}</span>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 致谢 -->
+    <section
+      v-if="acknowledgments?.items?.length"
+      ref="acknowledgmentsEl"
+      data-section="acknowledgments"
+      class="login-feature-scroll__section login-feature-scroll__section--acknowledgments"
+    >
+      <div class="login-feature-scroll__inner login-feature-scroll__inner--wide">
+        <h2 class="login-feature-scroll__title login-feature-scroll__acknowledgments-title">{{ acknowledgments.title }}</h2>
+        <p class="login-feature-scroll__acknowledgments-subtitle">{{ acknowledgments.subtitle }}</p>
+        <div class="login-feature-scroll__acknowledgments-grid">
+          <a
+            v-for="(item, i) in acknowledgments.items"
+            :key="`ack-${i}`"
+            :href="item.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="login-feature-scroll__acknowledgment-card"
+            :style="{ animationDelay: ackFlipDelays[i] }"
+          >
+            <span class="login-feature-scroll__acknowledgment-name">{{ item.name }}</span>
+            <span class="login-feature-scroll__acknowledgment-desc">{{ item.description }}</span>
+          </a>
         </div>
       </div>
     </section>
@@ -383,13 +457,13 @@ html[data-theme="dark"] .login-feature-scroll__body {
 .login-feature-scroll__split .login-feature-scroll__image-wrapper {
   flex: 0 1 auto;
   width: auto;
-  max-width: 55%;
+  max-width: 75%;
 }
 
 .login-feature-scroll__image-backplate {
   position: relative;
-  padding: 16px;
-  border-radius: 16px;
+  padding: 48px;
+  border-radius: 20px;
   background: #fff;
   background-image: var(--bg-url);
   background-size: cover;
@@ -492,7 +566,7 @@ html[data-theme="dark"] .login-feature-scroll__feature-body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  margin-top: 19px;
+  margin-top: 40px;
 }
 
 .login-feature-scroll__testimonial {
@@ -534,6 +608,113 @@ html[data-theme="dark"] .login-feature-scroll__testimonial-quote {
 
 html[data-theme="dark"] .login-feature-scroll__testimonial-author {
   color: #888;
+}
+
+/* ---------- acknowledgments ---------- */
+.login-feature-scroll__section--acknowledgments {
+  padding-bottom: 60px;
+}
+
+.login-feature-scroll__acknowledgments-title {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.login-feature-scroll__acknowledgments-subtitle {
+  margin: 0 auto 28px;
+  max-width: 34em;
+  font-size: clamp(14px, 1.15vw, 16px);
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: center;
+  color: #666;
+}
+
+html[data-theme="dark"] .login-feature-scroll__acknowledgments-subtitle {
+  color: #999;
+}
+
+.login-feature-scroll__acknowledgments-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.login-feature-scroll__acknowledgment-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 120px;
+  padding: 16px 22px;
+  border-radius: 12px;
+  background: #f8f8fa;
+  border: 1px solid #e8e8ee;
+  text-decoration: none;
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+html[data-theme="dark"] .login-feature-scroll__acknowledgment-card {
+  background: #181820;
+  border-color: #2a2a36;
+}
+
+.login-feature-scroll__acknowledgment-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  border-color: color-mix(in srgb, var(--platform-accent) 28%, transparent);
+}
+
+html[data-theme="dark"] .login-feature-scroll__acknowledgment-card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  border-color: color-mix(in srgb, var(--platform-accent) 40%, #2a2a36);
+}
+
+/* ---------- card flip animation ---------- */
+.login-feature-scroll__section--visible .login-feature-scroll__acknowledgment-card {
+  animation: ack-flip-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+@keyframes ack-flip-in {
+  0% {
+    opacity: 0;
+    transform: perspective(600px) rotateY(90deg) scale(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(600px) rotateY(0deg) scale(1);
+  }
+}
+
+.login-feature-scroll__acknowledgment-name {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #111;
+  white-space: nowrap;
+}
+
+html[data-theme="dark"] .login-feature-scroll__acknowledgment-name {
+  color: #e0e0e8;
+}
+
+.login-feature-scroll__acknowledgment-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #999;
+  text-align: center;
+  max-width: 140px;
+}
+
+html[data-theme="dark"] .login-feature-scroll__acknowledgment-desc {
+  color: #777;
 }
 
 /* ---------- compare table ---------- */
@@ -711,7 +892,7 @@ html[data-theme="dark"] .login-feature-scroll__footer-legal {
 }
 
 .login-feature-scroll__footer-link--legal {
-  font-size: 13px;
+  font-size: 12px;
   color: #bbb;
 }
 
@@ -723,6 +904,39 @@ html[data-theme="dark"] .login-feature-scroll__footer-legal {
   background: none;
   font: inherit;
   cursor: pointer;
+}
+
+/* ---------- enterprise link ---------- */
+.login-feature-scroll__enterprise-link {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
+  color: var(--platform-accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.18s var(--platform-ease-smooth);
+}
+
+.login-feature-scroll__enterprise-link:hover {
+  background: color-mix(in srgb, var(--platform-accent) 16%, transparent);
+  transform: translateX(3px);
+}
+
+html[data-theme="dark"] .login-feature-scroll__enterprise-link {
+  background: color-mix(in srgb, var(--platform-accent) 14%, transparent);
+}
+
+html[data-theme="dark"] .login-feature-scroll__enterprise-link:hover {
+  background: color-mix(in srgb, var(--platform-accent) 22%, transparent);
 }
 
 /* ---------- responsive ---------- */
@@ -794,8 +1008,8 @@ html[data-theme="dark"] .login-feature-scroll__footer-legal {
   }
 
   .login-feature-scroll__image-backplate {
-    padding: 8px;
-    border-radius: 10px;
+    padding: 28px;
+    border-radius: 14px;
   }
 
   .login-feature-scroll__img {
@@ -805,6 +1019,20 @@ html[data-theme="dark"] .login-feature-scroll__footer-legal {
   .login-feature-scroll__features-grid {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .login-feature-scroll__acknowledgment-card {
+    min-width: 100px;
+    padding: 12px 16px;
+  }
+
+  .login-feature-scroll__acknowledgment-name {
+    font-size: 14px;
+  }
+
+  .login-feature-scroll__acknowledgment-desc {
+    font-size: 10px;
+    max-width: 110px;
   }
 
   .login-feature-scroll__testimonial {
@@ -859,6 +1087,12 @@ html[data-theme="dark"] .login-feature-scroll__footer-legal {
     opacity: 1 !important;
     transform: none !important;
     transition: none !important;
+  }
+
+  .login-feature-scroll__acknowledgment-card {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 </style>

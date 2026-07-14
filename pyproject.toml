@@ -70,6 +70,9 @@ Homepage = "https://github.com/zhibinQiu/benxi"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["third_party/pdf2zh"]
+
 [project.scripts]
 pdf2zh = "pdf2zh_next.main:cli"
 pdf2zh2 = "pdf2zh_next.main:cli"
@@ -90,13 +93,13 @@ version_pattern = "MAJOR.MINOR.PATCH[.PYTAGNUM]"
     'current_version = "{version}"',
     'version = "{version}"'
 ]
-"pdf2zh_next/__init__.py" = [
+"third_party/pdf2zh/__init__.py" = [
     '__version__ = "{version}"'
 ]
-"pdf2zh_next/const.py" = [
+"third_party/pdf2zh/const.py" = [
     '__version__ = "{version}"'
 ]
-"pdf2zh_next/main.py" = [
+"third_party/pdf2zh/main.py" = [
     '__version__ = "{version}"'
 ]
 
@@ -159,7 +162,7 @@ convention = "google"
 max-complexity = 10 # 函数圈复杂度阈值
 
 [tool.ruff.lint.per-file-ignores]
-"pdf2zh_next/gui.py" = ["S104"] # 忽略命名规范
+"third_party/pdf2zh/gui.py" = ["S104"] # 忽略命名规范
 "tests/*" = ["S101"]            # 在测试文件中允许 assert
 "**/__init__.py" = ["F401"]     # 允许未使用的导入
 "docs/*" = ["A001"]

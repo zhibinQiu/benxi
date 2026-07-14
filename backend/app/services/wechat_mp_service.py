@@ -415,6 +415,7 @@ def _repair_source_biz(db: Session, source: WechatMpSource) -> bool:
         try:
             biz = parse_url(latest.original_url).biz
         except Exception:
+            logger.warning("公众号 Biz 回填：解析文章 URL 失败 url=%s", latest.original_url[:200], exc_info=True)
             return False
     if biz and biz != source.biz:
         conflict = db.scalar(

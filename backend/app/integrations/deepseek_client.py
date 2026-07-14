@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,40 @@ import tomllib
 
 from app.config import get_settings
 from app.core.exceptions import bad_request
+
+_current_provider_id: ContextVar[str | None] = ContextVar("_current_provider_id", default=None)
+
+# ── TTL 缓存：避免同步 DB 调用阻塞事件循环 ──
+_CRED_CACHE: dict[str, tuple[float, Any]] = {}
+_CRED_CACHE_TTL = 30.0  # 秒
+
+
+def _cache_get(key: str) -> Any | None:
+    entry = _CRED_CACHE.get(key)
+    if entry is None:
+        return None
+    ts, value = entry
+    if time.monotonic() - ts > _CRED_CACHE_TTL:
+        _CRED_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(key: str, value: Any) -> None:
+    _CRED_CACHE[key] = (time.monotonic(), value)
+
+
+def set_current_provider_id(provider_id: str | None) -> None:
+    """设置当前请求的 provider_id，供 resolve_credentials 读取。"""
+    if provider_id:
+        _current_provider_id.set(provider_id)
+    else:
+        _current_provider_id.set(None)
+
+
+def get_current_provider_id() -> str | None:
+    """获取当前请求的 provider_id。"""
+    return _current_provider_id.get()
 
 logger = logging.getLogger(__name__)
 
@@ -50,15 +86,44 @@ def _load_from_pdf2zh_config() -> tuple[str | None, str, str]:
 
 
 def _platform_llm_credentials() -> tuple[str, str, str]:
+    cached = _cache_get("_platform")
+    if cached is not None:
+        return cached
     from app.database import SessionLocal
     from app.services.model_settings_service import get_llm_credentials
 
     with SessionLocal() as db:
-        return get_llm_credentials(db)
+        result = get_llm_credentials(db)
+    _cache_set("_platform", result)
+    return result
 
 
 def resolve_credentials() -> tuple[str, str, str]:
-    """返回 (api_key, base_url, model)；优先资源管理中的语言模型配置。"""
+    """返回 (api_key, base_url, model)；优先资源管理中的语言模型配置。
+
+    如果通过 set_current_provider_id() 设置了 provider_id，则使用该 provider 的凭证。
+    """
+    provider_id = get_current_provider_id()
+    if provider_id:
+        cache_key = f"provider:{provider_id}"
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
+        from app.database import SessionLocal
+        from app.services.model_settings_service import get_provider_credentials_by_id
+
+        with SessionLocal() as db:
+            result = get_provider_credentials_by_id(provider_id, db)
+        if result is not None:
+            key, base, model = result
+            key_clean = _clean_key(key)
+            base_clean = (base or "").strip().rstrip("/")
+            model_clean = (model or "").strip()
+            if key_clean and base_clean and model_clean:
+                creds = (key_clean, base_clean, model_clean)
+                _cache_set(cache_key, creds)
+                return creds
+
     base, key, model = _platform_llm_credentials()
     key_clean = _clean_key(key)
     base_clean = (base or "").strip().rstrip("/")
@@ -81,11 +146,11 @@ def resolve_credentials() -> tuple[str, str, str]:
 
 
 def is_configured() -> bool:
-    base, key, model = _platform_llm_credentials()
-    if _clean_key(key) and (base or "").strip() and (model or "").strip():
+    try:
+        _, _, _ = resolve_credentials()
         return True
-    fk, _, _ = _load_from_pdf2zh_config()
-    return bool(fk)
+    except Exception:
+        return False
 
 
 def _chat_url(base_url: str) -> str:

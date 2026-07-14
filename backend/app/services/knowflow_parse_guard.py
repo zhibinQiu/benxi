@@ -9,6 +9,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.integrations.mysql_conn import get_mysql_connection
+
 logger = logging.getLogger(__name__)
 
 _PARSE_DONE_RUN = frozenset({"3", "DONE", "done"})
@@ -60,25 +62,19 @@ class KnowflowDocParseState:
 
 
 def _ragflow_mysql_conn(db: Session | None):
-    from app.config import get_settings
     from app.services.model_settings_service import get_ragflow_mysql_settings
-
-    import pymysql
 
     _, password, db_name, host, port = get_ragflow_mysql_settings(db)
     if not password or not host:
         return None
-    settings = get_settings()
-    return pymysql.connect(
+    return get_mysql_connection(
         host=host,
         port=port,
-        user="root",
         password=password,
         database=db_name,
-        charset="utf8mb4",
-        connect_timeout=settings.ragflow_mysql_connect_timeout,
-        read_timeout=settings.ragflow_mysql_read_timeout,
-        write_timeout=settings.ragflow_mysql_write_timeout,
+        connect_timeout=5,
+        read_timeout=30,
+        write_timeout=30,
     )
 
 
@@ -452,7 +448,13 @@ def clear_redis_parse_queues() -> dict[str, int]:
     try:
         import redis
 
-        client = redis.from_url(settings.redis_url, decode_responses=True)
+        redis_timeout = max(0.5, float(settings.redis_socket_timeout_sec))
+        client = redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=redis_timeout,
+            socket_timeout=redis_timeout,
+        )
         for q in ("rag_flow_svr_queue", "rag_flow_svr_queue_1"):
             try:
                 cleared += int(client.delete(q) or 0)

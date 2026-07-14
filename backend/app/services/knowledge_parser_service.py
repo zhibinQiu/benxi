@@ -10,8 +10,12 @@
 from __future__ import annotations
 
 from copy import copy
+from typing import TYPE_CHECKING
 
 from app.config import get_settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 # 与 KnowFlow DocumentParserType / ChunkMethod 对齐
 CHUNK_METHODS: list[dict[str, str]] = [
@@ -62,6 +66,8 @@ _PARSER_DEFAULTS: dict[str, dict] = {
     "smart": {
         "chunk_token_num": 256,
         "min_chunk_tokens": 10,
+        "enable_vision_enhancement": True,
+        "vision_description_format": "[图片描述]: {desc}",
         "raptor": {"use_raptor": False},
         "graphrag": {"use_graphrag": False},
     },
@@ -279,16 +285,31 @@ def infer_parser_for_upload_file(
     return parser, layout_for_upload_file(file_name, mime_type)
 
 
+def _multimodal_configured(db: Session | None = None) -> bool:
+    """VL / PaddleOCR 多模态模型是否已配置（有 base_url + api_key + model）。
+
+    实现思路：调用 ``get_paddleocr_credentials`` 获取有效凭据（DB 优先，回退 .env）。
+    若三字段均非空返回 True，否则返回 False — 保证 KnowFlow 解析时不做无意义的
+    图像增强调用。
+    """
+    from app.services.model_settings_service import get_paddleocr_credentials
+
+    base, key, model = get_paddleocr_credentials(db)
+    return bool(base and key and model)
+
+
 def build_parser_config(
     parser_id: str | None = None,
     layout_recognize: str | None = None,
     *,
     chunk_token_num: int | None = None,
+    db: Session | None = None,
 ) -> tuple[str, dict]:
     """生成 KnowFlow ``change_document_parser`` 所需的 (parser, parser_config)。
 
     实现思路：PageIndex 返回 ``{index_engine: pageindex}`` 占位，不走向量分块；
     其它 parser 合并 ``_PARSER_DEFAULTS``、``coerce_parser_layout`` 与 chunk_token 配置。
+    若多模态模型未配置，自动禁用 ``enable_vision_enhancement`` 避免 KnowFlow 解析失败。
     """
     if is_pageindex_parser(parser_id):
         return PARSER_PAGEINDEX, {"index_engine": PARSER_PAGEINDEX}
@@ -304,6 +325,9 @@ def build_parser_config(
     base["layout_recognize"] = layout
     if parser == "naive" and layout in _MODERN_LAYOUTS:
         base["layout_recognize"] = layout
+    if not _multimodal_configured(db):
+        base.pop("enable_vision_enhancement", None)
+        base.pop("vision_description_format", None)
     return parser, base
 
 

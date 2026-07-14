@@ -278,7 +278,6 @@ async def resolve_combined_research_async(
     """按默认优先级级联检索：图谱 → 联网 → 文档库（显式指定时不短路）。"""
     from app.services.kg_service import merge_kg_qa_into_context
     from app.services.retrieval_priority import (
-        _DOC_CITATION_SOURCES,
         _WEB_CITATION_SOURCES,
         citations_have_sources,
         context_text_sufficient,

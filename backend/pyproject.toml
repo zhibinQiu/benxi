@@ -5,16 +5,6 @@ description = "Single-tenant document platform (IAM, documents, jobs, notificati
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "agentkit-aip @ file:../packages/agentkit-aip",
-    "agentkit-interrupt @ file:../packages/agentkit-interrupt",
-    "agentkit-orchestrate @ file:../packages/agentkit-orchestrate",
-    "agentkit-loop @ file:../packages/agentkit-loop",
-    "agentkit-mcp @ file:../packages/agentkit-mcp",
-    "agentkit-message @ file:../packages/agentkit-message",
-    "agentkit-route @ file:../packages/agentkit-route",
-    "agentkit-skills @ file:../packages/agentkit-skills",
-    "agentkit-tools @ file:../packages/agentkit-tools",
-    "agentkit-subagent @ file:../packages/agentkit-subagent",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "sqlalchemy>=2.0.36",
@@ -45,12 +35,13 @@ dependencies = [
     "orjson>=3.10.0",
     "matplotlib>=3.8.0",
     "seaborn>=0.13.0",
+    "Pillow>=10.0.0",
     "yt-dlp>=2024.12.0",
 ]
 
 [project.optional-dependencies]
 pageindex = [
-    "pageindex-selfhosted @ file:third_party/pageindex-upstream",
+    "pageindex-selfhosted @ file:third_party/pageindex",
 ]
 browser = [
     "playwright>=1.49.0",

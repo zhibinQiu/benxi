@@ -24,18 +24,6 @@ LEVEL_ORDER: dict[str, int] = {
     PermissionLevel.modify.value: 2,
 }
 
-LEVEL_LABELS: dict[str, str] = {
-    PermissionLevel.visible.value: "可见",
-    PermissionLevel.query.value: "可查",
-    PermissionLevel.modify.value: "可修改",
-    PermissionLevel.read.value: "可见",
-    PermissionLevel.use.value: "可修改",
-    PermissionLevel.edit.value: "可修改",
-    PermissionLevel.full.value: "可修改",
-    PermissionLevel.delete.value: "可修改",
-}
-
-
 def normalize_permission_level(level: str) -> str:
     raw = (level or "").strip().lower()
     return LEVEL_ALIASES.get(raw, raw)

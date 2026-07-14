@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentkit_interrupt import (
+from app.core.agent_loop_state import LoopState
+
+from app.agentkit.interrupt import (
     clear_interrupt as _clear_interrupt,
     list_user_interrupts as _list_user_interrupts,
     load_interrupt as _load_interrupt,
@@ -32,7 +34,7 @@ def save_checkpoint(
     *,
     user_id: str,
     phase: str,
-    loop_state: dict[str, Any],
+    loop_state: LoopState,
     working: list[dict[str, Any]],
     pending_data: dict[str, Any],
     **extra: Any,
@@ -77,7 +79,7 @@ def clear_checkpoint(checkpoint_id: str) -> bool:
 
 def generate_checkpoint_id() -> str:
     """生成 checkpoint ID。"""
-    from agentkit_interrupt import generate_checkpoint_id as _gen
+    from app.agentkit.interrupt import generate_checkpoint_id as _gen
 
     return _gen()
 

@@ -10,7 +10,7 @@ import json
 import logging
 from typing import Any
 
-from agentkit_interrupt import HitlRequest, HitlResponseStore, InterruptState
+from app.agentkit.interrupt import HitlRequest, InterruptState
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,7 @@ class RedisInterruptStore:
         try:
             return bool(client.delete(_checkpoint_key(checkpoint_id)))
         except Exception:
+            logger.warning("Redis InterruptStore clear 失败 key=%s", _checkpoint_key(checkpoint_id), exc_info=True)
             return False
 
     def list_for_user(self, user_id: str) -> list[dict[str, Any]]:
@@ -203,6 +204,7 @@ class RedisHitlResponseStore:
                 options=_deserialize(raw.get("options")) or [],
             )
         except Exception:
+            logger.warning("HitlRequest get_request 反序列化失败 request_id=%s", request_id, exc_info=True)
             return None
 
     def get_response(self, request_id: str) -> str | None:
@@ -212,6 +214,7 @@ class RedisHitlResponseStore:
         try:
             return client.hget(_hitl_key(request_id), "response")
         except Exception:
+            logger.warning("HitlResponseStore get_response 失败 request_id=%s", request_id, exc_info=True)
             return None
 
     def set_response(self, request_id: str, response: str) -> bool:
@@ -231,6 +234,7 @@ class RedisHitlResponseStore:
         try:
             return bool(client.delete(_hitl_key(request_id)))
         except Exception:
+            logger.warning("Redis HITL clear 删除 key 失败 request_id=%s", request_id, exc_info=True)
             return False
 
     def validate_response(self, request_id: str, response: str) -> bool:

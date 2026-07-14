@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from "vue";
-import { CloseOutline, AddSharp, TimeOutline, CheckmarkOutline } from "@vicons/ionicons5";
+import { CloseOutline, AddOutline, TimeOutline, CheckmarkOutline, CloseCircleOutline } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import { useI18n } from "../composables/useI18n.js";
 import CurveAnimation from "./CurveAnimation.vue";
@@ -18,7 +18,7 @@ const props = defineProps({
   introText: { type: String, default: "" },
 });
 
-const emit = defineEmits(["switch", "close", "create", "history"]);
+const emit = defineEmits(["switch", "close", "create", "history", "closeAll"]);
 
 const { t } = useI18n();
 
@@ -92,10 +92,20 @@ onUnmounted(() => {
         :title="t('chat.newChat')"
         @click="emit('create')"
       >
-        <n-icon :size="16" :component="AddSharp" />
+        <n-icon :size="16" :component="AddOutline" />
       </button>
     </div>
     <div class="chat-tab-bar__actions">
+      <button
+        v-if="tabs.length > 1"
+        type="button"
+        class="chat-tab-action"
+        :aria-label="t('chat.closeAllTabs')"
+        :title="t('chat.closeAllTabs')"
+        @click="emit('closeAll')"
+      >
+        <n-icon :size="16" :component="CloseCircleOutline" />
+      </button>
       <span v-if="introText && !isOverflow" class="chat-tab-bar__intro">{{ introText }}</span>
       <button
         type="button"

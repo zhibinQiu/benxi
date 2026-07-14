@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import uuid
 from typing import Annotated
@@ -163,31 +161,21 @@ async def compare_job_events(
     tracked_job_id = job.id
     detach_request_db(db)
 
-    async def generator():
-        last_status = None
-        for _ in range(600):
-            poll_db = SessionLocal()
-            try:
-                polled = get_user_compare_job(poll_db, tracked_job_id, user.id)
-                if not polled:
-                    break
-                payload = job_to_dict(poll_db, polled)
-            finally:
-                poll_db.close()
-            if payload.get("status") != last_status:
-                last_status = payload.get("status")
-                yield {"event": "status", "data": json.dumps(payload, default=str)}
-            if payload.get("status") in ("done", "failed"):
-                yield {"event": "complete", "data": json.dumps(payload, default=str)}
-                break
-            await asyncio.sleep(1)
-        else:
-            yield {
-                "event": "timeout",
-                "data": json.dumps({"message": "poll timeout"}, default=str),
-            }
+    from app.api.streaming_utils import poll_and_stream
 
-    return EventSourceResponse(generator())
+    def _fetch_payload(poll_db: Session) -> dict | None:
+        polled = get_user_compare_job(poll_db, tracked_job_id, user.id)
+        if not polled:
+            return None
+        return job_to_dict(poll_db, polled)
+
+    return EventSourceResponse(
+        poll_and_stream(
+            SessionLocal,
+            _fetch_payload,
+            terminal_statuses=frozenset({"done", "failed"}),
+        )
+    )
 
 
 @router.post("/search", response_model=ApiResponse[list[CompareSearchHitOut]])

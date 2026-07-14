@@ -39,6 +39,9 @@ async def smart_data_query_v2_chat(
     body: AiChatRequest,
     user: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[AiChatResponse]:
+    from app.integrations.deepseek_client import set_current_provider_id
+
+    set_current_provider_id(body.model_provider_id)
     result = await chat_smart_data_query_v2(
         message=body.message,
         user_id=str(user.id),
@@ -53,6 +56,9 @@ async def smart_data_query_v2_chat_stream(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> StreamingResponse:
+    from app.integrations.deepseek_client import set_current_provider_id
+
+    set_current_provider_id(body.model_provider_id)
     user_id = str(user.id)
 
     async def payloads():

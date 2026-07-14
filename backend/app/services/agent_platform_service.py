@@ -103,23 +103,28 @@ def schedule_notification_for_agent(
     title: str,
     body: str = "",
     link: str | None = None,
-    scheduled_at: str | None = None,
+    scheduled_at: str,
 ) -> dict[str, Any]:
-    parsed_at: datetime | None = None
-    if scheduled_at:
-        text = scheduled_at.strip()
-        if text.endswith("Z"):
-            text = text[:-1] + "+00:00"
-        parsed_at = datetime.fromisoformat(text)
+    parsed_at = notification_service.parse_iso8601(scheduled_at)
     if parsed_at is None:
-        raise ValueError("定时通知须指定 scheduled_at（ISO 8601 格式绝对时间）")
+        # ISO 8601 解析失败时尝试解析相对时间表达式（如 "8s", "5分钟", "2小时后" 等）
+        delta = notification_service.parse_relative_delay(scheduled_at)
+        if delta is not None:
+            parsed_at = datetime.now(timezone.utc) + delta
+        else:
+            raise ValueError(
+                f"scheduled_at 须为 ISO 8601 绝对时间格式（含时区），"
+                f"收到：{scheduled_at}。也支持相对时间，如 '8s'（8秒后）、"
+                f"'5分钟'、'2小时'。"
+            )
+    target = notification_service._resolve_scheduled_at(scheduled_at=parsed_at)
     row = notification_service.schedule_notification(
         db,
         user_id=user.id,
         title=title,
         body=body,
         link=link,
-        scheduled_at=parsed_at,
+        scheduled_at=target,
     )
     when = (
         notification_service.format_scheduled_at_local(row.scheduled_at)

@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user as get_current_active_user
-from app.api.deps import require_permission
 from app.integrations.free_web_ai import get_free_web_ai_manager
 from app.integrations.free_web_ai.config import get_free_web_ai_config
 from app.models.org import User

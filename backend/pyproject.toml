@@ -43,6 +43,7 @@ dependencies = [
     "matplotlib>=3.8.0",
     "seaborn>=0.13.0",
     "yt-dlp>=2024.12.0",
+    "neo4j>=5.20.0",
 ]
 
 [project.optional-dependencies]

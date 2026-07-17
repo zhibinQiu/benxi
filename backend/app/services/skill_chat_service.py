@@ -21,7 +21,6 @@ SKILL_KB = "knowledge-search"
 TOOL_KB = "retrieve"
 SKILL_KG = "kg"
 TOOL_KG = "query_entities"
-SKILL_RESEARCH = "knowledge-research"
 
 # 暴露给模型的原子 Agent 工具名
 ATOMIC_TOOL_WEB_SEARCH = "web_search"

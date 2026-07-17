@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from app.agentkit.tools.schema import compact_tool_parameters_schema as tool_parameters_schema
 from app.core.agent_tool_args import TOOL_DEFINITIONS
 from app.core.tool_def_loader import get_tool_description
-from app.core.tool_skill_taxonomy import GLOBAL_ATOMIC_TOOL_NAMES
 from app.core.tool_skill_taxonomy import ToolCategory, _TOOL_CATEGORIES
 from app.tool_center.schemas import ToolDescriptor
 
@@ -22,6 +21,8 @@ _CATEGORY_TOOL_TYPE: dict[ToolCategory, str] = {
     ToolCategory.BROWSER: "io_browser",
     ToolCategory.ADMIN: "io_admin",
     ToolCategory.MEMORY: "io_memory",
+    ToolCategory.SKILL_MGMT: "io_skill",
+    ToolCategory.ORCHESTRATION: "io_orchestration",
 }
 
 def _default_output_schema(category: ToolCategory | None) -> dict[str, Any]:
@@ -66,9 +67,7 @@ class ToolCenter:
     def bootstrap(self) -> None:
         if self._bootstrapped:
             return
-        for tool_id in sorted(GLOBAL_ATOMIC_TOOL_NAMES):
-            if tool_id not in TOOL_DEFINITIONS:
-                continue
+        for tool_id in sorted(TOOL_DEFINITIONS):
             desc_text, model = TOOL_DEFINITIONS[tool_id]
             category = _TOOL_CATEGORIES.get(tool_id)
             tool_type = _CATEGORY_TOOL_TYPE.get(category, "io_generic") if category else "io_generic"

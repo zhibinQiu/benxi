@@ -22,7 +22,7 @@ def _callable_skill_names(
     user: User,
     skill_names: list[str],
 ) -> list[str]:
-    """返回带 handler 的可 invoke 内置 Skill（playbook-only 不在此列）。"""
+    """返回带 handler 的可 invoke 内置 Skill（无工具定义的不在此列）。"""
     out: list[str] = []
     for name in skill_names:
         slug = (name or "").strip()

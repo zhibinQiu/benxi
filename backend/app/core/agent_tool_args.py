@@ -122,23 +122,25 @@ class RunToolBatchArgs(_StrictArgs):
     steps: list[RunToolBatchStepArgs] = Field(min_length=1, max_length=6)
 
 
-ContextSubagentKind = Literal["explore", "browser_digest", "deep_research"]
+ContextSubagentKind = Literal["use", "search", "auto"]
 
 
 class InvokeContextSubagentArgs(_StrictArgs):
     kind: ContextSubagentKind = Field(
         description=(
-            "explore=子 Agent 调用 web-search/knowledge-search/kg 多源检索；"
-            "browser_digest=子 Agent 调用 browser-automation 取证页面（浏览器未开启时自动 explore）；"
-            "deep_research=子 Agent 自主分析意图并生成多关键词，调用 web_search 多轮深度检索、FireCrawl 读全文、"
-            "LLM 交叉验证矛盾，返回结构化研究结论"
+            "search=多源检索（文档+联网+本体+图谱）——子 Agent 自主分析意图，"
+            "调用 web_search / knowledge_retrieve / kg_query 等多源检索工具；"
+            "传入 queries 参数时并行检索多个关键词。"
+            "use=执行指定技能——子 Agent 调用 invoke_skill 完成具体技能任务。"
+            "auto=自主编排——子 Agent 继承父智能体的全部工具，"
+            "自主决定工作流程和工具调用顺序，适用于浏览器操作等复杂任务。"
         )
     )
     task: str = Field(default="", max_length=1200, description="单子任务描述")
     queries: list[str] | None = Field(
         default=None,
         max_length=4,
-        description="explore 专用：2–4 个 query 并行检索（省 token，优于多次调用）；deep_research 不需要此字段，子 Agent 会自主生成搜索关键词",
+        description="explore 专用：2–4 个 query 并行检索（省 token，优于多次调用）；deep_research 不需要此字段，子 Agent 会自主分析意图并生成搜索关键词",
     )
 
     @field_validator("queries", mode="before")
@@ -472,10 +474,9 @@ class ScheduleNotificationArgs(_StrictArgs):
     )
     scheduled_at: str = Field(
         min_length=1, max_length=64,
-        description="ISO 8601 绝对时间，如 2026-07-09T09:30:00+08:00。"
-        "用户说「X秒/分钟后」等相对时间时，你必须自己计算出绝对时间再传此字段。"
-        "不要传相对时间表达式，只传计算后的 ISO 8601 绝对时间。"
-        "时区偏移不可省略（如东八区用 +08:00，UTC 用 Z）。"
+        description="ISO 8601 绝对时间（含时区），如 2026-07-09T09:30:00+08:00；"
+        "或相对时间表达式，如 8s（8秒后）、5分钟、2小时、1天。"
+        "推荐直接用相对时间表达式（系统自动换算），更准确可靠。"
     )
 
 
@@ -682,9 +683,8 @@ ALL_TOOLS: list[ToolDef] = [
             "技能开发 invoke_skill(skill-development, call, {operation: create_skill, ...})"
         ),
         args_schema=InvokeSkillArgs,
-        authority=("skill_runtime",),
-    ),
-    ToolDef(
+        authority=tuple(),
+    ),    ToolDef(
         name="load_uploaded_skill",
         description="加载上传 Skill 的 SKILL.md",
         args_schema=LoadUploadedSkillArgs,
@@ -959,14 +959,11 @@ ALL_TOOLS: list[ToolDef] = [
         description=(
             "安排一条定时站内通知，在指定时间送达用户。"
             "当用户说「X秒/分钟后提醒我」「定时通知我」「设置提醒」时使用。"
-            "scheduled_at 参数必须传 ISO 8601 绝对时间（含时区），"
-            "如 ``2026-07-09T16:30:00+08:00``。"
-            "用户说相对时间（如'30秒后提醒我'）时你需自行计算出绝对时间再传。"
-            "具体转换方式："
-            "'30秒后提醒我' → 当前时间 + 30秒 → 计算后传入 ISO 8601；"
-            "'明天下午三点' → 次日 15:00 → 计算后传入 ISO 8601；"
-            "'大后天早上10点' → 当前日期 + 3天 10:00 → 计算后传入 ISO 8601。"
-            "⚠ 不要传相对时间字符串给工具，工具只接受 ISO 8601 绝对时间。"
+            "scheduled_at 参数推荐用相对时间表达式："
+            "'8s' / '8秒' / '8秒后' → 8 秒后；"
+            "'5分钟' / '5m' → 5 分钟后；"
+            "'2小时' / '2h' → 2 小时后。"
+            "也支持 ISO 8601 绝对时间（含时区），如 ``2026-07-09T16:30:00+08:00``。"
             "返回定时通知 ID 和计划发送时间。"
             "⚠ 不支持周期重复（如'每天提醒'需多次调用）。"
             "⚠ 如需立即发送请用 send_notification，不要用 schedule_nofication 传当前时间。"
@@ -1016,7 +1013,8 @@ ALL_TOOLS: list[ToolDef] = [
     ToolDef(
         name="invoke_context_subagent",
         description=(
-            "委托子 Agent 调用系统 Skill 或原子工具："
+            "联网检索/深度调研——委托子 Agent 执行联网检索。这是联网检索的唯一入口，"
+            "所有需要上网查信息/调研/研究的需求统一使用此工具。"
             "browser_digest→browser-automation 页面取证；"
             "explore→web-search/knowledge-search/kg 并行检索；"
             "deep_research→自主分析意图、生成多关键词、web_search 深度检索"

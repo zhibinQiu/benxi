@@ -56,7 +56,7 @@ const suggestions = computed(() => tm("aiHome.suggestions") || []);
       :icon="SparklesOutline"
       :stream-chat="aiHomeChatStream"
       :rich-markdown="true"
-      :show-citations="false"
+      :show-citations="true"
       :show-workflow-progress="true"
       :linkify-citations="false"
       :enable-attachments="true"

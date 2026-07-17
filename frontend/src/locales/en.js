@@ -1513,6 +1513,14 @@ export default {
       skillEmpty: "No skills available",
       skillLoadFailed: "Failed to load skill catalog",
     },
+    voice: {
+      input: "Voice input",
+      stop: "Stop recording",
+      processing: "Transcribing…",
+      noContent: "No speech content recognized, please try again",
+      failed: "Speech transcription failed, please try again",
+      micError: "Unable to access microphone",
+    },
   },
   reportGeneration: {
     chatTitle: "Report Generation",
@@ -2088,6 +2096,7 @@ export default {
         searxng: { title: "Web Retrieval Service", hint: "SearXNG search engine + FireCrawl full-text extraction for report and AI agent retrieval" },
         neo4j: { title: "Graph Database", hint: "Neo4j knowledge graph store (ontology + relation reasoning + entity management)" },
         browser_rpa: { title: "Browser RPA", hint: "AI agent web automation (headless Chromium)" },
+        sandbox: { title: "Sandbox Environment", hint: "Skill script execution container (KnowFlow sandbox)" },
         ragflow_api: { title: "Knowledge base API", hint: "Knowledge retrieval and document sync HTTP API" },
         knowflow_backend: {
           title: "Knowledge extension backend",
@@ -2188,6 +2197,7 @@ export default {
         browserRpaMaxSteps: "Max steps per session",
         browserRpaAutoTask: "Enable auto explore (browser_run_task)",
         browserRpaAutoTaskMaxSteps: "Auto explore max steps",
+        sandboxServiceUrl: "Sandbox URL",
         firecrawlApiKey: "FireCrawl API Key",
         firecrawlApiUrl: "FireCrawl API URL",
         firecrawlReadFullMaxUrls: "Full-text URLs per search",
@@ -2218,6 +2228,7 @@ export default {
         firecrawlApiUrl: "https://api.firecrawl.dev or http://127.0.0.1:3002 (self-hosted)",
         firecrawlApiKeyHint: "Leave empty = disable full-text extraction, use only SearXNG snippets",
         browserRpaDomains: "example.com,httpbin.org (empty = all public)",
+        sandboxServiceUrl: "http://your-sandbox:port",
         ragflowApiUrl: "http://127.0.0.1:9380",
         ragflowApiKey: "Blank/masked to keep; mapped mode may use user session",
         knowflowBackend: "http://127.0.0.1:5001",
@@ -2250,6 +2261,8 @@ export default {
           "Maps to <code>SEARXNG_URL</code>, <code>FIRECRAWL_API_KEY</code>, <code>FIRECRAWL_API_URL</code> in .env. Takes effect immediately.",
         browserRpa:
           "AI agent drives Playwright Chromium. <strong>Headless servers need no display</strong>; keep headless on. Docker image requires <code>INSTALL_BROWSER=1</code> (enabled in compose by default). Comma-separated domain allowlist; empty blocks intranet only.",
+        sandbox:
+          "The KnowFlow sandbox container <strong>executes Skill scripts online</strong> (Python). Deploy the sandbox service (<code>knowflow-sandbox</code>) on your server and enter the URL here, e.g. <code>http://your-server:5002</code>. Once configured, the AI agent can run Python scripts (scraping, computing, etc.) online. Without this, the agent will gracefully fall back to web search. Maps to <code>SANDBOX_BASE_URL</code> in .env.",
         ragflowApi:
           "Maps to knowledge base API URL and Key in .env. In-stack services are mapped to nginx :80.",
         knowflowBackend:

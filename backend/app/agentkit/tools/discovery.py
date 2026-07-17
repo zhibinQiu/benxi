@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 
 class ToolVisibility:

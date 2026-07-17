@@ -624,11 +624,27 @@ function openFeature(f) {
   .category-block__head {
     margin-bottom: 8px;
   }
+
+  /* 隐藏介绍提示按钮 */
+  .functions-page__intro {
+    display: none;
+  }
+
+  /* 空状态消息更紧凑 */
+  .functions-page__empty {
+    margin: 32px auto;
+    max-width: 90vw;
+  }
+
+  /* 网格列数调整为 2 列 */
+  .category-grid :deep(.n-grid) {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
 }
 
 @media (max-width: 400px) {
   .functions-page__content {
-    padding: 6px 8px 12px;
+    padding: 4px 8px 12px;
   }
 
   .feature-card {
@@ -648,7 +664,11 @@ function openFeature(f) {
   }
 
   .feature-card__title {
-    font-size: 14px;
+    font-size: 13px;
+  }
+
+  .feature-card__desc {
+    font-size: 11px;
   }
 
   .feature-card__star {

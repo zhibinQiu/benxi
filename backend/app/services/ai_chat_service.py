@@ -99,8 +99,6 @@ def _resolve_attachment_context(
     return build_attachment_context(files), len(files)
 
 
-_DOC_CITATION_SOURCES = frozenset({"local", "local_filename", "knowflow"})
-_WEB_CITATION_SOURCES = frozenset({"web", "searxng", "internet"})
 
 
 def build_ai_home_source_footer(
@@ -110,42 +108,10 @@ def build_ai_home_source_footer(
     kg_context: KgQaContext | None,
     tool_citations: list[dict] | None = None,
 ) -> str:
-    """在结论末尾追加紧凑的来源说明（本析不展示引用卡片）。"""
+    """在结论末尾追加紧凑的来源说明，仅显示引用总数。"""
     all_citations = list(citations or []) + list(tool_citations or [])
-    doc_count = sum(
-        1 for c in all_citations if str(c.get("source") or "") in _DOC_CITATION_SOURCES
-    )
-    web_count = sum(
-        1 for c in all_citations if str(c.get("source") or "") in _WEB_CITATION_SOURCES
-    )
-    ch = channels or {}
-    parts: list[str] = []
-    if kg_context and (
-        kg_context.entity_count
-        or kg_context.relation_count
-        or kg_context.matched_entity_ids
-        or (kg_context.context_text or "").strip()
-    ):
-        ec = kg_context.entity_count or len(kg_context.matched_entity_ids or [])
-        rc = kg_context.relation_count or 0
-        label = f"知识图谱（{ec} 实体"
-        if rc:
-            label += f" / {rc} 关系"
-        label += "）"
-        parts.append(label)
-    elif ch.get("kg"):
-        parts.append("知识图谱")
-    if web_count:
-        parts.append(f"联网检索（{web_count} 条）")
-    elif ch.get("web"):
-        parts.append("联网检索")
-    if doc_count:
-        parts.append(f"知识库（{doc_count} 条片段）")
-    elif ch.get("kb"):
-        parts.append("知识库")
-    if not parts:
-        return ""
-    return "\n\n---\n**参考来源**：" + " · ".join(parts)
+    total = len(all_citations)
+    return ""
 
 
 def _append_ai_home_source_footer(
@@ -457,6 +423,32 @@ def _merge_stream_attachments(
             continue
         seen.add(url)
         merged.append(dict(item))
+    return merged
+
+
+def _build_display_citations(
+    tool_citations: list[dict],
+    kg_context: KgQaContext | None,
+) -> list[dict]:
+    """合并所有来源的引用：工具循环引用 + 知识图谱/本体引用，按 index 去重。"""
+    seen: set[int] = set()
+    merged: list[dict] = []
+
+    for c in tool_citations:
+        idx = c.get("index")
+        if idx is not None:
+            seen.add(int(idx))
+        merged.append(c)
+
+    if kg_context:
+        for c in (kg_context.citations or []):
+            idx = c.get("index")
+            if idx is not None and int(idx) in seen:
+                continue
+            if idx is not None:
+                seen.add(int(idx))
+            merged.append(c)
+
     return merged
 
 
@@ -914,8 +906,7 @@ async def iter_chat_with_ai_agent_stream(
         )
         if tool_reply_streamed and normalized_reply and normalized_reply != tool_reply:
             yield sse_replace(normalized_reply)
-        # Only pass URL-based web citations as display_citations (deep research links)
-        display_citations = [c for c in tool_citations if c.get("url") and c.get("source") == "web"]
+        display_citations = _build_display_citations(tool_citations, kg_context)
         async for payload in _iter_stream_turn_tail(
             user_id=user_id,
             message=message,

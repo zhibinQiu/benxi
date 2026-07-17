@@ -1,11 +1,5 @@
 # Skills 路由目录（调度层只读 · 简约版）
 
-## knowledge-research
-- Title: 综合调研
-- Use when: 需组合图谱/联网/知识库多源取证；默认顺序图谱→联网→知识库，用户指定渠道时除外
-- Don't use when: 寒暄、平台系统操作、Skill 脚本执行、附件已含完整答案
-- Output: 带 [n] 引用的综合检索结论（内置编排 Skill，仅 playbook 不可 load）
-
 ## skill-development
 - Title: 技能开发
 - Use when: 创建/修改/删除上传型 Skill、run_skill_script 取数验证；调用方式为 invoke_skill(skill-development, call, {operation: ...})

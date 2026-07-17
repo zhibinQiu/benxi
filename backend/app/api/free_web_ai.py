@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user as get_current_active_user
 from app.integrations.free_web_ai import get_free_web_ai_manager
-from app.integrations.free_web_ai.config import get_free_web_ai_config
 from app.models.org import User
 
 logger = logging.getLogger(__name__)
@@ -55,12 +54,7 @@ async def free_web_ai_chat(
     current_user: User = Depends(get_current_active_user),
 ) -> WebAiResponse:
     """免费网页 AI 文本对话（自动 fallback 或指定 provider）。"""
-    cfg = get_free_web_ai_config()
-    if not cfg.enabled:
-        raise HTTPException(status_code=503, detail="免费网页 AI 功能未启用")
-
     _require_permission(current_user)
-
     mgr = get_free_web_ai_manager()
     result = await mgr.chat(req.prompt, provider=req.provider, timeout_ms=req.timeout_ms)
     return WebAiResponse(
@@ -78,12 +72,7 @@ async def free_web_ai_image(
     current_user: User = Depends(get_current_active_user),
 ) -> WebAiResponse:
     """文字生图（豆包/千问）。"""
-    cfg = get_free_web_ai_config()
-    if not cfg.enabled:
-        raise HTTPException(status_code=503, detail="免费网页 AI 功能未启用")
-
     _require_permission(current_user)
-
     mgr = get_free_web_ai_manager()
     result = await mgr.generate_image(req.prompt, provider=req.provider)
     return WebAiResponse(
@@ -101,12 +90,7 @@ async def free_web_ai_ask(
     current_user: User = Depends(get_current_active_user),
 ) -> WebAiResponse:
     """识图问答 — 上传图片并提问。"""
-    cfg = get_free_web_ai_config()
-    if not cfg.enabled:
-        raise HTTPException(status_code=503, detail="免费网页 AI 功能未启用")
-
     _require_permission(current_user)
-
     import os
     if not os.path.isfile(req.image_path):
         raise HTTPException(status_code=400, detail=f"图片文件不存在: {req.image_path}")
@@ -130,19 +114,6 @@ async def free_web_ai_smoke(
     _require_permission(current_user)
     mgr = get_free_web_ai_manager()
     return await mgr.smoke_test()
-
-
-@router.get("/status")
-async def free_web_ai_status() -> dict[str, Any]:
-    """获取功能启用状态。"""
-    cfg = get_free_web_ai_config()
-    return {
-        "enabled": cfg.enabled,
-        "default_provider": cfg.default_provider,
-        "chat_providers": list(cfg.chat_providers),
-        "image_gen_providers": list(cfg.image_gen_providers),
-        "image_ask_providers": list(cfg.image_ask_providers),
-    }
 
 
 def _require_permission(user: User) -> None:

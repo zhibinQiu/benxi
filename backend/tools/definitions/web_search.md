@@ -1,18 +1,12 @@
 ---
 name: web_search
 ---
-联网检索公开信息，返回各来源全文（Markdown）。
+【内部工具】联网检索公开信息，返回各来源全文（Markdown）。
+此工具不直接暴露给用户对话，由 deep_research 子智能体内部调用。
 可多次调用此工具实现多轮搜索：先宽泛搜索了解概貌，根据已读全文生成更具体的关键词继续深挖。
 
 ## When to use
-- 最新政策/行情/新闻/价格或需联网检索公开信息
-- 需要多轮搜索：先宽泛搜索了解概貌，再根据已读全文生成更具体的关键词继续深挖
-- 不同来源结论矛盾时追加搜索做交叉验证
-
-## When NOT to use
-- 企业内部知识库检索（用 knowledge_retrieve）
-- 用户已提供 URL（用 fetch_url_content）
-- 知识图谱查询（用 kg_query）
+- 仅供 deep_research 子智能体内部调用，不直接暴露给 LLM
 
 ## Returns
 - 搜索引擎摘要 + 前 N 条全文（Markdown 格式）

@@ -117,14 +117,13 @@ def schedule_notification_for_agent(
                 f"收到：{scheduled_at}。也支持相对时间，如 '8s'（8秒后）、"
                 f"'5分钟'、'2小时'。"
             )
-    target = notification_service._resolve_scheduled_at(scheduled_at=parsed_at)
     row = notification_service.schedule_notification(
         db,
         user_id=user.id,
         title=title,
         body=body,
         link=link,
-        scheduled_at=target,
+        scheduled_at=parsed_at,
     )
     when = (
         notification_service.format_scheduled_at_local(row.scheduled_at)

@@ -17,6 +17,7 @@ from app.agentkit.loop.core import (
     dict_evidence_provider,
 )
 from app.agentkit.loop.plan import AgentExecutionPlan, AgentToolPlan
+from app.agentkit.loop.state import LoopState
 
 __all__ = [
     "AgentExecutionPlan",
@@ -25,6 +26,7 @@ __all__ = [
     "LoopEvidence",
     "LoopEvidenceProvider",
     "LoopExitRequest",
+    "LoopState",
     "build_agent_instruction_from_plan",
     "build_loop_exit_prompt_messages",
     "build_turn_tools_context",

@@ -1447,6 +1447,10 @@ function onMenuSelect(key) {
   padding: 0 12px;
 }
 
+/* =============================================
+ * 移动端适配（< 768px）：缩小布局尺寸、
+ * 防溢出、隐藏次要元素
+ * ============================================= */
 @media (max-width: 768px) {
   .header-primary {
     padding: 0 10px;
@@ -1545,6 +1549,75 @@ function onMenuSelect(key) {
   }
   .main-layout .app-content :deep(.n-card__header) {
     padding: 10px 12px 0;
+  }
+
+  /* ── Header 移动端优化 ── */
+  .header--mob .header-primary {
+    height: 44px;
+    padding: 0 10px;
+  }
+  .header--mob .header-primary :deep(.n-space) {
+    gap: 4px !important;
+  }
+  .header--tab-mode.header--mob {
+    min-height: 0;
+  }
+
+  /* 标题栏优化 - 减小标题字号 */
+  .bare-feature-title {
+    font-size: 18px !important;
+  }
+  .bare-feature-description {
+    font-size: 11px !important;
+    max-width: 200px;
+  }
+  .bare-feature-title-row {
+    min-height: 40px;
+    padding: 0 10px;
+  }
+  .header-title-inline .header-title {
+    font-size: 15px;
+  }
+  .header-title-inline .header-title-desc {
+    font-size: 11px;
+  }
+
+  /* ── 隐藏操作栏中的描述文字 ── */
+  .bare-feature-description-row {
+    display: none;
+  }
+
+  /* ── content 内边距减小 ── */
+  .main-layout .app-content {
+    --feature-content-inset-x: 10px;
+  }
+  .main-layout .app-content--full {
+    padding: 0 10px 14px !important;
+  }
+
+  /* ── 底部导航栏安全区优化 ── */
+  .mobile-bottom-tabs {
+    height: 50px;
+    padding-bottom: 0;
+  }
+  .mobile-tab-item {
+    gap: 1px;
+    padding: 2px 0;
+  }
+  .mobile-tab-item :deep(.n-icon) {
+    font-size: 20px !important;
+  }
+  .mobile-tab-label {
+    font-size: 9px;
+  }
+
+  /* ── 隐藏侧栏相关的不必要元素 ── */
+  .header-back {
+    width: 28px;
+    height: 28px;
+  }
+  .header-back :deep(.n-icon) {
+    font-size: 17px !important;
   }
 }
 

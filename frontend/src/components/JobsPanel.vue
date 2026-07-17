@@ -571,8 +571,8 @@ defineExpose({ load, refresh: load });
 .jobs-panel__toolbar-group {
   display: inline-flex;
   align-items: center;
-  gap: 0;
-  padding: 4px;
+  gap: 2px;
+  padding: 3px;
   border-radius: var(--platform-radius-sm);
   background: var(--platform-bg-elevated-solid);
   border: 1px solid var(--platform-border);
@@ -582,22 +582,20 @@ defineExpose({ load, refresh: load });
 .jobs-toolbar-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 14px;
-  border: none;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid transparent;
   border-radius: calc(var(--platform-radius-sm) - 2px);
   background: transparent;
-  color: var(--platform-text-secondary);
-  font-size: 16px;
+  color: var(--platform-text-tertiary);
+  font-size: 14px;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   transition:
-    transform 0.15s var(--platform-ease-smooth),
     background-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
+    color 0.15s ease;
 }
 
 .jobs-toolbar-btn:not(:disabled):hover {
@@ -605,46 +603,86 @@ defineExpose({ load, refresh: load });
   color: var(--platform-text);
 }
 
-.jobs-toolbar-btn:not(:disabled):active {
-  transform: translateY(0);
-}
-
 .jobs-toolbar-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
+  background: var(--platform-bg);
+  border-color: var(--platform-border);
+  box-shadow: none;
 }
 
 .jobs-toolbar-btn--cancel:not(:disabled) {
   color: var(--platform-caution);
+  background: var(--platform-caution-soft);
+  border: 1px solid color-mix(in srgb, var(--platform-caution) 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
 }
 
 .jobs-toolbar-btn--cancel:not(:disabled):hover {
   color: var(--platform-caution);
-  background: var(--platform-caution-soft);
+  background: color-mix(in srgb, var(--platform-caution) 16%, var(--platform-caution-soft));
+  border-color: color-mix(in srgb, var(--platform-caution) 40%, transparent);
+}
+
+.jobs-toolbar-btn--cancel:disabled {
+  opacity: 0.42;
+  background: var(--platform-bg);
+  border-color: var(--platform-border);
+  box-shadow: none;
+}
+
+.jobs-toolbar-btn--clear:not(:disabled) {
+  color: var(--platform-danger);
+  background: var(--platform-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--platform-danger) 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+}
+
+.jobs-toolbar-btn--clear:not(:disabled):hover {
+  color: var(--platform-danger);
+  background: color-mix(in srgb, var(--platform-danger) 16%, var(--platform-danger-soft));
+  border-color: color-mix(in srgb, var(--platform-danger) 40%, transparent);
+}
+
+.jobs-toolbar-btn--clear:disabled {
+  opacity: 0.42;
+  background: var(--platform-bg);
+  border-color: var(--platform-border);
+  box-shadow: none;
 }
 
 .jobs-toolbar-btn--clear-done:not(:disabled) {
   color: var(--platform-danger);
+  background: var(--platform-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--platform-danger) 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
 }
 
 .jobs-toolbar-btn--clear-done:not(:disabled):hover {
   color: var(--platform-danger);
-  background: var(--platform-danger-soft);
+  background: color-mix(in srgb, var(--platform-danger) 16%, var(--platform-danger-soft));
+  border-color: color-mix(in srgb, var(--platform-danger) 40%, transparent);
 }
 
 .jobs-toolbar-btn--icon {
-  width: 38px;
+  width: 32px;
   padding: 0;
   justify-content: center;
 }
 
+.jobs-toolbar-btn--icon:not(:disabled):hover {
+  background: var(--platform-toolbar-bg);
+  color: var(--platform-text-secondary);
+  border-color: var(--platform-border);
+}
+
 .jobs-toolbar-btn__badge {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   border-radius: 1199px;
-  font-size: 13px;
-  line-height: 22px;
+  font-size: 12px;
+  line-height: 20px;
   text-align: center;
   background: color-mix(in srgb, var(--platform-caution-soft) 88%, var(--platform-caution) 12%);
   color: var(--platform-caution);
@@ -693,5 +731,33 @@ defineExpose({ load, refresh: load });
 
 .jobs-panel__item-actions {
   flex-shrink: 0;
+}
+
+/* 头部图标按钮 — 与通知/待办面板统一的轻量样式 */
+.jobs-panel__header .panel-header-btn {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  color: var(--platform-text-secondary);
+  border-radius: var(--platform-radius-sm, 6px);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.jobs-panel__header .panel-header-btn:not(:disabled):hover,
+.jobs-panel__header .panel-header-btn--accent:not(:disabled):hover {
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
+}
+
+.jobs-panel__header .panel-header-btn--danger:not(:disabled):hover {
+  background: color-mix(in srgb, var(--platform-error, #d03050) 12%, transparent);
+  color: var(--platform-error, #d03050);
+}
+
+/* 覆盖全局 panel-header-btn 的 hover 抬起效果，保持面板内一致的轻量交互 */
+.jobs-panel__header .panel-header-btn:not(:disabled):active {
+  transform: none;
 }
 </style>

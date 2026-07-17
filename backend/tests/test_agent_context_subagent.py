@@ -55,7 +55,7 @@ def test_research_has_context_subagent_tool():
 def test_invoke_context_subagent_args_validation():
     _, err = validate_tool_arguments(
         "invoke_context_subagent",
-        {"kind": "explore", "task": "检索双碳政策"},
+        {"kind": "search", "task": "检索双碳政策"},
     )
     assert err is None
     _, bad = validate_tool_arguments(
@@ -69,7 +69,7 @@ def test_invoke_context_subagent_args_parallel_queries():
     _, err = validate_tool_arguments(
         "invoke_context_subagent",
         {
-            "kind": "explore",
+            "kind": "search",
             "queries": ["双碳政策", "碳市场行情", "RPA 行业"],
         },
     )

@@ -42,9 +42,9 @@ def test_tool_call_request_structure():
         tool_id="web_search",
         params={"query": "test", "max_items": 8},
         trace_id="global_task_001",
-        skill_meta=SkillMeta(skill_id="knowledge-research", belong_agent="research"),
+        skill_meta=SkillMeta(skill_id="web_search", belong_agent="research"),
     )
-    assert req.skill_meta.skill_id == "knowledge-research"
+    assert req.skill_meta.skill_id == "web_search"
 
 
 def test_tool_response_success_and_failure():
@@ -80,7 +80,10 @@ def test_registry_bootstraps_global_atomic_tools():
     ids = {d.tool_id for d in center.list_descriptors()}
     assert "web_search" in ids
     assert "list_todos" in ids
-    assert ids <= GLOBAL_ATOMIC_TOOL_NAMES
+    # 现在注册所有 TOOL_DEFINITIONS 工具，包含 scope 工具名
+    assert GLOBAL_ATOMIC_TOOL_NAMES <= ids
+    assert "invoke_skill" in ids
+    assert "search_skills" in ids
 
     web = center.get("web_search")
     assert web is not None

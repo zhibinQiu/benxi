@@ -7,7 +7,7 @@ import logging
 import uuid
 from typing import Any
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 from app.agentkit.subagent.context import child_state_from_parent
 from app.agentkit.subagent.types import ExploreSkillStep, SkillInvokeFn

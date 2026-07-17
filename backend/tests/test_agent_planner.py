@@ -14,6 +14,7 @@ from app.services.agent_planner import (
     _rule_plan_for_skill_management,
     _rule_plan_from_intent,
     build_plan_context_instruction,
+    execution_plan_summary_for_ui,
     filter_tool_specs_by_plan,
     resolve_execution_plan,
 )
@@ -48,8 +49,8 @@ def test_rule_attachment_blocks_retrieval():
     plan = _rule_plan_from_intent(intent)
     assert plan is not None
     assert plan.direct_answer is False
-    assert plan.atomic_tools == ()
-    assert ATOMIC_TOOL_WEB_SEARCH in plan.skip_tools
+    assert plan.allowed_tools == ()
+    assert ATOMIC_TOOL_WEB_SEARCH not in plan.blocked_tools
 
 
 def test_filter_removes_skipped_retrieval_and_skill_load():
@@ -63,10 +64,9 @@ def test_filter_removes_skipped_retrieval_and_skill_load():
         reasoning="",
         intent="查文档",
         direct_answer=False,
-        atomic_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,),
-        skip_tools=(ATOMIC_TOOL_WEB_SEARCH,),
+        allowed_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,),
+        blocked_tools=(ATOMIC_TOOL_WEB_SEARCH,),
         uploaded_skill=None,
-        builtin_orchestration=None,
         steps=("检索",),
         source="test",
     )
@@ -88,10 +88,9 @@ def test_filter_always_hides_load_and_keeps_run_skill_script():
         reasoning="",
         intent="",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill="web-page-insight",
-        builtin_orchestration=None,
         steps=(),
         source="test",
     )
@@ -106,17 +105,15 @@ def test_plan_instruction_uploaded_skill_uses_run_script():
         reasoning="",
         intent="分析网页",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill="web-page-insight",
-        builtin_orchestration=None,
         steps=("执行脚本",),
         source="test",
     )
     text = build_plan_context_instruction(plan, uploaded_skill_has_script=True)
-    assert "run_skill_script" in text
+    assert "执行技能" in text
     assert "web-page-insight" in text
-    assert "勿 load" in text
 
 
 def test_plan_instruction_instruction_only_skill_no_run_script():
@@ -124,17 +121,14 @@ def test_plan_instruction_instruction_only_skill_no_run_script():
         reasoning="",
         intent="画流程图",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill="mermaid-diagram",
-        builtin_orchestration=None,
         steps=("按 SKILL.md 输出 mermaid",),
         source="test",
     )
     text = build_plan_context_instruction(plan, uploaded_skill_has_script=False)
     assert "mermaid-diagram" in text
-    assert "勿" in text and "run_skill_script" in text
-    assert "mermaid" in text
 
 
 def test_parse_llm_plan_distinguishes_tools_and_skills():
@@ -142,9 +136,8 @@ def test_parse_llm_plan_distinguishes_tools_and_skills():
         "reasoning": "需查内部制度",
         "intent": "查询碳配额流程",
         "direct_answer": False,
-        "atomic_tools": ["knowledge_retrieve", "web_search"],
-        "skip_tools": ["web_search"],
-        "builtin_orchestration": "knowledge-research",
+        "allowed_tools": ["knowledge_retrieve", "web_search"],
+        "blocked_tools": ["web_search"],
         "uploaded_skill": "web-page-insight",
         "steps": ["检索", "回答"],
     }
@@ -152,43 +145,24 @@ def test_parse_llm_plan_distinguishes_tools_and_skills():
         data,
         allowed_atomic=set(RETRIEVAL_ATOMIC_TOOLS),
         allowed_uploaded={"web-page-insight"},
-        allowed_builtin={"knowledge-research", "web-search"},
     )
     assert plan is not None
-    assert plan.atomic_tools == (ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,)
-    assert plan.builtin_orchestration is None
+    assert plan.allowed_tools == (ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,)
     assert plan.uploaded_skill == "web-page-insight"
-
-
-def test_plan_instruction_mentions_no_load_for_builtin():
-    plan = AgentExecutionPlan(
-        reasoning="多路检索",
-        intent="综合查资料",
-        direct_answer=False,
-        atomic_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,),
-        skip_tools=(),
-        uploaded_skill=None,
-        builtin_orchestration="knowledge-research",
-        steps=("检索文档", "作答"),
-        source="test",
-    )
-    text = build_plan_context_instruction(plan)
-    assert "勿 load" in text
-    assert "knowledge-research" in text
 
 
 def test_rule_skill_management_skips_screenshot_by_default():
     msg = "生成一个 skill，帮我从https://www.tanshichang.cn 爬取最新的碳市场价格。"
     plan = _rule_plan_for_skill_management(msg)
     assert plan is not None
-    assert "browser_screenshot" in plan.skip_tools
+    assert "browser_screenshot" in plan.blocked_tools
 
 
 def test_rule_skill_management_allows_screenshot_when_asked():
     msg = "生成一个 skill 爬取碳价，并截图给我看一下页面"
     plan = _rule_plan_for_skill_management(msg)
     assert plan is not None
-    assert "browser_screenshot" not in plan.skip_tools
+    assert "browser_screenshot" not in plan.blocked_tools
 
 
 def test_filter_hides_list_and_load_for_skill_management_plan():
@@ -243,7 +217,7 @@ def test_skill_management_summary_for_ui_hides_internal_tools():
     msg = "生成一个 skill，帮我从https://www.tanshichang.cn 爬取最新的碳市场价格。"
     plan = _rule_plan_for_skill_management(msg)
     assert plan is not None
-    summary = plan.summary_for_ui()
+    summary = execution_plan_summary_for_ui(plan)
     assert "list_agent_skills" not in summary
     assert "browser_snapshot" not in summary
     assert "create_skill" not in summary
@@ -258,13 +232,12 @@ def test_coerce_skill_management_overrides_direct_answer_llm_plan():
             "reasoning": "可直接说明做法",
             "intent": "生成爬取碳市场价格的发展技能",
             "direct_answer": True,
-            "atomic_tools": [],
-            "skip_tools": list(RETRIEVAL_ATOMIC_TOOLS),
+            "allowed_tools": [],
+            "blocked_tools": list(RETRIEVAL_ATOMIC_TOOLS),
             "steps": [],
         },
         allowed_atomic=set(RETRIEVAL_ATOMIC_TOOLS),
         allowed_uploaded=set(),
-        allowed_builtin=set(),
     )
     assert parsed is not None
     assert parsed.direct_answer is True
@@ -272,20 +245,16 @@ def test_coerce_skill_management_overrides_direct_answer_llm_plan():
 
     fixed = _coerce_skill_management_plan(msg, parsed)
     assert fixed.direct_answer is False
-    assert "browser_screenshot" in fixed.skip_tools
+    assert "browser_screenshot" in fixed.blocked_tools
 
 
 def test_planning_system_prompt_mentions_skill_creation():
-    from app.services.agent_planner import _skill_management_plan_instruction
-
     text = _planning_system_prompt(
         allowed_atomic=set(RETRIEVAL_ATOMIC_TOOLS),
-        builtin_names=set(),
         uploaded_names=set(),
     )
     assert "任务规划器" in text
     assert "direct_answer" in text
-    assert "main.py" in _skill_management_plan_instruction()
 
 
 def test_skill_management_plan_instruction_injected():
@@ -297,13 +266,12 @@ def test_skill_management_plan_instruction_injected():
     assert plan is not None
     text = build_plan_context_instruction(plan)
     assert "invoke_context_subagent" in text
-    assert "skill_runtime.finish" in text or "main.py" in text
+    assert "invoke_skill" in text
 
 
 def test_planning_system_prompt_includes_kg_disambiguation_when_requested():
     text = _planning_system_prompt(
         allowed_atomic=set(RETRIEVAL_ATOMIC_TOOLS),
-        builtin_names={"knowledge-research"},
         uploaded_names=set(),
         include_kg_reference=True,
     )
@@ -314,37 +282,11 @@ def test_planning_system_prompt_includes_kg_disambiguation_when_requested():
 def test_planning_system_prompt_omits_kg_block_by_default():
     text = _planning_system_prompt(
         allowed_atomic=set(RETRIEVAL_ATOMIC_TOOLS),
-        builtin_names=set(),
         uploaded_names=set(),
     )
     assert "消歧" not in text
 
 
-def test_rule_simple_fetch_uses_web_search_not_skill():
-    from app.services.agent_planner import (
-        _rule_plan_for_simple_fetch,
-        match_uploaded_skill_for_message,
-    )
-
-    plan = _rule_plan_for_simple_fetch("帮我查全国碳市场最新价格")
-    assert plan is not None
-    assert plan.uploaded_skill is None
-    assert ATOMIC_TOOL_WEB_SEARCH in plan.atomic_tools
-
-    assert _rule_plan_for_simple_fetch(
-        "生成一个 skill，帮我从https://www.tanshichang.cn 爬取最新的碳市场价格。"
-    ) is None
-
-    skill = match_uploaded_skill_for_message(
-        "carbon-market-price 北京",
-        None,
-        uploaded_names={"carbon-market-price"},
-    )
-    assert skill == "carbon-market-price"
-    assert _rule_plan_for_simple_fetch(
-        "carbon-market-price 北京",
-        uploaded_names={"carbon-market-price"},
-    ) is None
 
 
 def test_skill_first_plan_before_web_search():
@@ -368,7 +310,7 @@ def test_skill_first_plan_before_web_search():
     )
     assert plan is not None
     assert plan.uploaded_skill == "carbon-market-price"
-    assert ATOMIC_TOOL_WEB_SEARCH not in plan.atomic_tools
+    assert ATOMIC_TOOL_WEB_SEARCH not in plan.allowed_tools
 
 
 def test_rule_platform_system_data_requires_list_users():
@@ -387,28 +329,26 @@ def test_rule_platform_system_data_requires_list_users():
         assert plan is not None
         assert plan.direct_answer is False
         assert any("invoke_skill" in step and "list_users" in step for step in plan.steps)
-        assert ATOMIC_TOOL_KNOWLEDGE_RETRIEVE in plan.skip_tools
+        assert ATOMIC_TOOL_KNOWLEDGE_RETRIEVE in plan.blocked_tools
     finally:
         db.close()
 
 
-def test_coerce_atomic_first_clears_unrequested_skill():
-    from app.services.agent_planner import _coerce_atomic_first_plan
+def test_coerce_skill_first_clears_unrequested_skill():
+    from app.services.agent_planner import _coerce_skill_first_plan
 
     plan = AgentExecutionPlan(
         reasoning="",
         intent="查询",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill="carbon-price-scraper",
-        builtin_orchestration=None,
         steps=(),
         source="llm",
     )
-    fixed = _coerce_atomic_first_plan("查最新碳价", plan)
+    fixed = _coerce_skill_first_plan("查最新碳价", plan)
     assert fixed.uploaded_skill is None
-    assert ATOMIC_TOOL_WEB_SEARCH in fixed.atomic_tools
 
 
 def test_filter_hides_run_skill_script_without_uploaded_skill():
@@ -417,10 +357,9 @@ def test_filter_hides_run_skill_script_without_uploaded_skill():
         reasoning="",
         intent="查询",
         direct_answer=False,
-        atomic_tools=(ATOMIC_TOOL_WEB_SEARCH,),
-        skip_tools=(),
+        allowed_tools=(ATOMIC_TOOL_WEB_SEARCH,),
+        blocked_tools=(),
         uploaded_skill=None,
-        builtin_orchestration=None,
         steps=(),
         source="rule",
     )

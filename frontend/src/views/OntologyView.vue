@@ -60,7 +60,13 @@
       animated
     >
       <n-tab-pane name="architecture" tab="本体感知架构">
-        <SystemArchitectureDiagram />
+        <OntologyGraphMap
+          :entity-types="entityTypes"
+          :relation-types="relationTypes"
+          :axioms="axioms"
+          :loading="loading"
+          @navigate="(tab) => activeTab = tab"
+        />
       </n-tab-pane>
       <n-tab-pane name="entity-types" :tab="`实体类型 (${stats.entityTypeCount})`">
         <EntityTypesPanel
@@ -99,7 +105,7 @@ import { RefreshOutline, FlashOutline, CloudDownloadOutline } from "@vicons/ioni
 import EntityTypesPanel from "../components/ontology/EntityTypesPanel.vue";
 import RelationTypesPanel from "../components/ontology/RelationTypesPanel.vue";
 import AxiomsPanel from "../components/ontology/AxiomsPanel.vue";
-import SystemArchitectureDiagram from "../components/ontology/SystemArchitectureDiagram.vue";
+import OntologyGraphMap from "../components/ontology/OntologyGraphMap.vue";
 import {
   fetchOntologyEntityTypes,
   fetchOntologyRelationTypes,

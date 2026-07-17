@@ -58,24 +58,21 @@ async def _run_specialist_hop(
     context_instruction: str,
     conversation_id: str | None,
     attachment_session_id: str | None,
-    tools: list[dict[str, Any]] | None,
     intent_plan: AgentToolPlan | None,
     max_rounds: int | None,
     task_mode: bool = False,
-    task_id: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """执行单次专精 hop（委托 AIP 执行层）。"""
     ctx = SpecialistExecutionContext(
         agent_id=route.agent_id,
         user_message=user_message,
         session_id=(conversation_id or "").strip() or f"session-{uuid.uuid4().hex[:8]}",
-        task_id=(task_id or "").strip() or f"task-{uuid.uuid4().hex[:8]}",
+        task_id=f"task-{uuid.uuid4().hex[:8]}",
         reason=route.reason,
         chat_history=chat_history,
         retrieval_context=retrieval_context,
         context_instruction=context_instruction,
         attachment_session_id=attachment_session_id,
-        tools=tools,
         intent_plan=intent_plan,
         max_rounds=max_rounds,
         task_mode=task_mode,
@@ -128,7 +125,7 @@ async def _execute_auto_skill_dev_task_interactive(
     context_instruction: str,
     conversation_id: str | None,
     attachment_session_id: str | None,
-    tools: list[dict[str, Any]] | None,
+    tools: list[dict[str, Any]] | None = None,
     intent_plan: AgentToolPlan | None,
     max_rounds: int | None,
 ) -> AsyncIterator[dict[str, Any]]:
@@ -153,11 +150,9 @@ async def _execute_auto_skill_dev_task_interactive(
         context_instruction=context_instruction,
         conversation_id=conversation_id,
         attachment_session_id=attachment_session_id,
-        tools=tools,
         intent_plan=intent_plan,
         max_rounds=max_rounds,
         task_mode=True,
-        task_id=task.id,
     ):
         yield event
 
@@ -249,32 +244,56 @@ async def _execute_tasks_with_orchestrator_progress(
 
     timeout = getattr(get_settings(), "agent_subagent_timeout_sec", 600) or 600
     last_real_event_time = time.monotonic()
-    max_stalled_sec = 45  # 连续 45 秒仅收到心跳事件（无 delta/workflow/complete），判定为卡住
+    # 连续 N 秒仅收到心跳事件（无 delta/workflow/complete），判定为卡住。
+    # 须大于工具执行超时（agent_tool_timeout_sec，默认 60s），
+    # 因为 deep_research 子智能体执行多轮 web_search 时父工具循环被阻塞，
+    # 不会产生事件。若 stall 阈值小于工具超时，会在工具正常执行中被误触发。
+    max_stalled_sec = 120
+    stall_reason = ""
 
     try:
         while True:
             stall_elapsed = time.monotonic() - last_real_event_time
             if stall_elapsed >= max_stalled_sec:
-                _logger.warning(
-                    "子任务 %s 秒未产出有效事件，强制结束。已完成 %d/%d",
-                    max_stalled_sec, completed, total,
-                )
+                stall_reason = f"子任务 {max_stalled_sec}s 未产出有效事件，强制结束（已完成 {completed}/{total}）"
+                _logger.warning(stall_reason)
+                yield {
+                    "type": "complete",
+                    "reply": f"子任务执行卡住：{stall_reason}",
+                    "messages": [],
+                    "citations": [],
+                    "kg_context": None,
+                }
                 break
             try:
                 kind, payload = await asyncio.wait_for(queue.get(), timeout=timeout)
             except asyncio.TimeoutError:
-                _logger.warning(
-                    "子任务执行超时（%ss），强制结束。已完成 %d/%d",
-                    timeout, completed, total,
-                )
+                stall_reason = f"子任务执行超时（{timeout}s），强制结束（已完成 {completed}/{total}）"
+                _logger.warning(stall_reason)
+                yield {
+                    "type": "complete",
+                    "reply": f"子任务执行超时：{stall_reason}",
+                    "messages": [],
+                    "citations": [],
+                    "kg_context": None,
+                }
                 break
             if kind == "_done":
                 completed = total
                 break
             elif kind == "timeout":
-                _logger.warning("子任务生成器超时")
+                stall_reason = f"子任务生成器内部超时（已完成 {completed}/{total}）"
+                _logger.warning(stall_reason)
+                yield {
+                    "type": "complete",
+                    "reply": f"子任务内部超时：{stall_reason}",
+                    "messages": [],
+                    "citations": [],
+                    "kg_context": None,
+                }
                 break
             elif kind == "error":
+                stall_reason = f"子任务异常：{payload[:200]}"
                 _logger.error("子任务异常：%s", payload[:500])
                 yield {"type": "complete", "reply": f"子任务执行错误：{payload[:200]}", "messages": [], "citations": [], "kg_context": None}
                 break
@@ -319,7 +338,6 @@ async def _execute_route_plan(
     max_rounds: int | None,
     user_message: str,
     attachment_session_id: str | None,
-    tools: list[dict[str, Any]] | None,
     intent_plan: AgentToolPlan | None,
     chat_history: list[AiChatMessage] | None,
     retrieval_context: str,
@@ -346,7 +364,7 @@ async def _execute_route_plan(
     async for event in _execute_single_route(
         routes[0], sess, user_id, messages, conversation_id,
         max_rounds, user_message, attachment_session_id,
-        tools, intent_plan, chat_history, retrieval_context,
+        intent_plan, chat_history, retrieval_context,
         context_instruction, hop_context, plan,
     ):
         yield event
@@ -422,7 +440,6 @@ def _single_route_hop_kwargs(
     max_rounds: int | None,
     user_message: str,
     attachment_session_id: str | None,
-    tools: list[dict[str, Any]] | None,
     intent_plan: AgentToolPlan | None,
     chat_history: list[AiChatMessage] | None,
     retrieval_context: str,
@@ -438,7 +455,6 @@ def _single_route_hop_kwargs(
         context_instruction=context_instruction,
         conversation_id=conversation_id,
         attachment_session_id=attachment_session_id,
-        tools=tools,
         intent_plan=intent_plan,
         max_rounds=max_rounds,
     )
@@ -453,7 +469,6 @@ async def _execute_single_route(
     max_rounds: int | None,
     user_message: str,
     attachment_session_id: str | None,
-    tools: list[dict[str, Any]] | None,
     intent_plan: AgentToolPlan | None,
     chat_history: list[AiChatMessage] | None,
     retrieval_context: str,
@@ -465,7 +480,7 @@ async def _execute_single_route(
         kwargs = _single_route_hop_kwargs(
             route, sess, user_id, messages, conversation_id,
             max_rounds, user_message, attachment_session_id,
-            tools, intent_plan, chat_history, retrieval_context, context_instruction,
+            intent_plan, chat_history, retrieval_context, context_instruction,
         )
         async for event in _execute_auto_skill_dev_task_interactive(**kwargs):
             yield event
@@ -482,7 +497,6 @@ async def _execute_single_route(
         context_instruction=context_instruction,
         conversation_id=conversation_id,
         attachment_session_id=attachment_session_id,
-        tools=tools,
         intent_plan=intent_plan,
         max_rounds=max_rounds,
         task_mode=False,
@@ -519,9 +533,13 @@ async def _execute_single_route(
     # 安全兜底：如果 progress wrapper 未产出任何 complete（如异常吞没后退出），
     # 生成一个 fallback complete 事件，避免上游收不到循环结束信号
     if not got_complete and not needs_reroute:
+        _logger.warning(
+            "专精智能体 %s 未产出 complete 事件，触发安全兜底",
+            agent_title,
+        )
         yield {
             "type": "complete",
-            "reply": f"{agent_title} 执行未返回结果",
+            "reply": f"{agent_title} 执行异常中断（未收到完成信号）",
             "messages": [],
             "citations": [],
             "kg_context": None,
@@ -562,7 +580,6 @@ async def _execute_single_route(
         context_instruction=reroute_instruction,
         conversation_id=conversation_id,
         attachment_session_id=attachment_session_id,
-        tools=tools,
         intent_plan=intent_plan,
         max_rounds=max_rounds,
         task_mode=False,
@@ -578,7 +595,6 @@ async def iter_supervised_agent_loop(
     max_rounds: int | None = None,
     user_message: str = "",
     attachment_session_id: str | None = None,
-    tools: list[dict[str, Any]] | None = None,
     intent_plan: AgentToolPlan | None = None,
     chat_history: list[AiChatMessage] | None = None,
     retrieval_context: str = "",
@@ -643,7 +659,7 @@ async def iter_supervised_agent_loop(
             title = profile.title if profile else route.agent_id
             route_titles.append(title)
             if route.reason:
-                route_details.append(f"{title}：{route.reason}")
+                route_details.append(route.reason)
         if len(route_titles) == 1:
             plan_title = f"规划方案：{route_titles[0]}"
         elif route_titles:
@@ -651,7 +667,7 @@ async def iter_supervised_agent_loop(
         else:
             plan_title = "规划方案：调度智能体"
         plan_detail = (
-            "\n".join(route_details[:4]) if route_details else "、".join(route_titles[:4])
+            "；".join(route_details[:4]) if route_details else "、".join(route_titles[:4])
         )
         # 规划结果事件——始终发射，让前端能更新"正在分析"提示
         yield {
@@ -687,7 +703,6 @@ async def iter_supervised_agent_loop(
             max_rounds=max_rounds,
             user_message=effective_user_message,
             attachment_session_id=attachment_session_id,
-            tools=tools,
             intent_plan=intent_plan,
             chat_history=chat_history,
             retrieval_context=retrieval_context,

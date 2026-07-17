@@ -9,12 +9,6 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 
 
-def _parse_bool(raw: str | None, default: bool) -> bool:
-    if raw is None or raw == "":
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _parse_int(raw: str | None, default: int, *, minimum: int = 1) -> int:
     if raw is None or raw == "":
         return default
@@ -33,7 +27,6 @@ class BrowserRpaConfig:
     allowed_domains: str
     screenshot_max_kb: int
     auto_task_max_steps: int
-    auto_task_enabled: bool
 
 
 def get_browser_rpa_config(db: Session | None = None) -> BrowserRpaConfig:
@@ -49,8 +42,8 @@ def get_browser_rpa_config(db: Session | None = None) -> BrowserRpaConfig:
         return str(val).strip() if val not in (None, "") else fallback
 
     return BrowserRpaConfig(
-        enabled=_parse_bool(_get("agent_browser_enabled"), settings.agent_browser_enabled),
-        headless=_parse_bool(_get("agent_browser_headless"), settings.agent_browser_headless),
+        enabled=_get("agent_browser_enabled", "false").lower() not in {"0", "false", "no", "off"},
+        headless=(_get("agent_browser_headless") or "true").lower() not in {"0", "false", "no", "off"},
         session_ttl_seconds=_parse_int(
             _get("agent_browser_session_ttl_seconds"),
             settings.agent_browser_session_ttl_seconds,
@@ -68,10 +61,6 @@ def get_browser_rpa_config(db: Session | None = None) -> BrowserRpaConfig:
         auto_task_max_steps=_parse_int(
             _get("agent_browser_auto_task_max_steps"),
             settings.agent_browser_auto_task_max_steps,
-        ),
-        auto_task_enabled=_parse_bool(
-            _get("agent_browser_auto_task_enabled"),
-            settings.agent_browser_auto_task_enabled,
         ),
     )
 

@@ -22,10 +22,9 @@ class AgentExecutionPlan:
     reasoning: str
     intent: str
     direct_answer: bool
-    atomic_tools: tuple[str, ...]
-    skip_tools: tuple[str, ...]
+    allowed_tools: tuple[str, ...]
+    blocked_tools: tuple[str, ...]
     uploaded_skill: str | None
-    builtin_orchestration: str | None
     steps: tuple[str, ...]
     source: str
     metadata: dict[str, Any] | None = None

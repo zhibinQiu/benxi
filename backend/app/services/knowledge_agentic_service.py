@@ -381,8 +381,7 @@ def iter_gather_for_knowledge_qa(
             title = _retrieval_step_title(
                 round_idx,
                 kind="知识库检索",
-                query_index=qi,
-                query_total=len(queries),
+                query=q,
             )
             sid, ev = _tool_call_event(
                 "retrieve",
@@ -402,9 +401,7 @@ def iter_gather_for_knowledge_qa(
                 _retrieval_step_title(
                     round_idx,
                     kind="知识库检索",
-                    query_index=qi,
-                    query_total=len(queries),
-                    done=True,
+                    query=q,
                 ),
                 tr.summary,
                 sid,
@@ -634,16 +631,19 @@ def _retrieval_step_title(
     round_idx: int,
     *,
     kind: str,
-    query_index: int = 1,
-    query_total: int = 1,
-    done: bool = False,
+    query: str = "",
 ) -> str:
+    """生成检索步骤标题。
+
+    当提供 query 参数时，展示实际查询内容（如「知识库检索：电厂基本定义」），
+    替代旧版编号模式（「知识库检索 (1/4)」），让用户直观感知各路的检索主题。
+    """
     _ = round_idx
-    suffix = "完成" if done else ""
-    base = f"{kind}{suffix}"
-    if query_total > 1:
-        return f"{base} ({query_index}/{query_total})"
-    return base
+    if query:
+        label = f"{kind}：{query[:30]}"
+    else:
+        label = kind
+    return label
 
 
 def _evaluate_report_sufficiency(
@@ -922,23 +922,42 @@ def iter_gather_for_report(
         if not loc_q and not web_q:
             break
 
+        # 先发出所有 tool_call 事件，让用户立即感知全部计划
+        ret_call_meta: list[tuple[int, str, str, str]] = []
         if doc_ids and loc_q:
-            call_meta: list[tuple[int, str, str, str]] = []
             for qi, q in enumerate(loc_q, start=1):
                 title = _retrieval_step_title(
                     round_idx,
                     kind="知识库检索",
-                    query_index=qi,
-                    query_total=len(loc_q),
+                    query=q,
                 )
                 sid, ev = _tool_call_event("retrieve", title, q[:120])
                 _emit_wf(emit, ev)
                 yield ev
-                call_meta.append((qi, q, sid, title))
+                ret_call_meta.append((qi, q, sid, title))
 
-            batch_results = toolkit.retrieve_many(loc_q, limit=15)
+        research_sid: str = ""
+        combined = ""
+        if web_enabled and web_q:
+            combined = f"{topic} {' '.join(web_q)}".strip()
+            research_sid, ev = _tool_call_event(
+                "deep_research", "联网调研", combined[:120]
+            )
+            _emit_wf(emit, ev)
+            yield ev
+
+        # 顺序执行（同 one db session，不能跨线程共享）
+        batch_results: list[Any] = []
+        if doc_ids and loc_q:
+            batch_results = toolkit.retrieve_many(loc_q, limit=15) or []
+        research_result: Any = None
+        if web_enabled and web_q and combined:
+            research_result = toolkit.deep_research(combined)
+
+        # 发出 tool_result 事件（本地检索）
+        if ret_call_meta:
             for (qi, q, sid, title), tr in zip(
-                call_meta, batch_results, strict=False
+                ret_call_meta, batch_results, strict=False
             ):
                 summaries.append(tr.summary)
                 tre = _tool_result_event(
@@ -946,9 +965,7 @@ def iter_gather_for_report(
                     _retrieval_step_title(
                         round_idx,
                         kind="知识库检索",
-                        query_index=qi,
-                        query_total=len(loc_q),
-                        done=True,
+                        query=q,
                     ),
                     tr.summary,
                     sid,
@@ -956,75 +973,72 @@ def iter_gather_for_report(
                 )
                 _emit_wf(emit, tre)
                 yield tre
-        if web_enabled and web_q:
-            for qi, q in enumerate(web_q, start=1):
-                title = _retrieval_step_title(
+        # 发出 tool_result 事件（联网调研）
+        if web_enabled and research_result and research_sid:
+            summaries.append(research_result.summary)
+            wf_kind = "联网调研"
+            tre = _tool_result_event(
+                "deep_research",
+                _retrieval_step_title(
                     round_idx,
-                    kind="联网检索",
-                    query_index=qi,
-                    query_total=len(web_q),
-                )
-                sid, ev = _tool_call_event("web_search", title, q[:120])
-                _emit_wf(emit, ev)
-                yield ev
-                tr = toolkit.web_search(q)
-                summaries.append(tr.summary)
-                tre = _tool_result_event(
-                    "web_search",
-                    _retrieval_step_title(
-                        round_idx,
-                        kind="联网检索",
-                        query_index=qi,
-                        query_total=len(web_q),
-                        done=True,
-                    ),
-                    tr.summary,
-                    sid,
-                    ok=tr.ok,
-                )
-                _emit_wf(emit, tre)
-                yield tre
+                    kind=wf_kind,
+                ),
+                research_result.summary,
+                research_sid,
+                ok=research_result.ok,
+            )
+            _emit_wf(emit, tre)
+            yield tre
 
         if not agentic:
             break
 
         local_hits = toolkit.accumulated_local_hits
         web_items = toolkit.accumulated_web_items
-        preview_parts = [_hits_snippet_preview(local_hits)]
-        for i, w in enumerate(web_items[:5], start=1):
-            preview_parts.append(f"[W{i}] {(w.get('snippet') or '')[:200]}")
-        eval_id = next_workflow_step_id(_WF_PREFIX)
-        eval_think = workflow_event(
-            "agent_thinking",
-            title="评估报告材料是否充足",
-            detail="",
-            tool="evaluator",
-            step_id=eval_id,
-        )
-        _emit_wf(emit, eval_think)
-        yield eval_think
-        sufficient, gaps, next_local, next_web = _evaluate_report_sufficiency(
-            topic=topic,
-            message=message,
-            local_count=len(local_hits),
-            web_count=len(web_items),
-            snippet_preview="\n".join(preview_parts),
-            local_docs_available=bool(doc_ids),
-            web_allowed=web_enabled,
-            intent=intent,
-            retrieval_attempted=bool(loc_q or web_q),
-            history_available=bool(hist_excerpt.strip()),
-        )
-        eval_done = workflow_event(
-            "agent_thought",
-            title="评估完成",
-            detail="",
-            tool="evaluator",
-            step_id=eval_id,
-            status="done",
-        )
-        _emit_wf(emit, eval_done)
-        yield eval_done
+
+        # 材料充足时跳过 LLM 评估（节省 ~3-5s 的同步调用）
+        _sufficient_for_heuristic = len(local_hits) > 5 or len(web_items) > 3
+        if _sufficient_for_heuristic:
+            sufficient = True
+            gaps: str | None = None
+            next_local: list[str] = []
+            next_web: list[str] = []
+        else:
+            preview_parts = [_hits_snippet_preview(local_hits)]
+            for i, w in enumerate(web_items[:5], start=1):
+                preview_parts.append(f"[W{i}] {(w.get('snippet') or '')[:200]}")
+            eval_id = next_workflow_step_id(_WF_PREFIX)
+            eval_think = workflow_event(
+                "agent_thinking",
+                title="评估报告材料是否充足",
+                detail="",
+                tool="evaluator",
+                step_id=eval_id,
+            )
+            _emit_wf(emit, eval_think)
+            yield eval_think
+            sufficient, gaps, next_local, next_web = _evaluate_report_sufficiency(
+                topic=topic,
+                message=message,
+                local_count=len(local_hits),
+                web_count=len(web_items),
+                snippet_preview="\n".join(preview_parts),
+                local_docs_available=bool(doc_ids),
+                web_allowed=web_enabled,
+                intent=intent,
+                retrieval_attempted=bool(loc_q or web_q),
+                history_available=bool(hist_excerpt.strip()),
+            )
+            eval_done = workflow_event(
+                "agent_thought",
+                title="评估完成",
+                detail="",
+                tool="evaluator",
+                step_id=eval_id,
+                status="done",
+            )
+            _emit_wf(emit, eval_done)
+            yield eval_done
 
         if sufficient or round_idx >= max_rounds:
             if not sufficient and gaps:

@@ -127,15 +127,45 @@ def _read_runtime_source() -> str:
     return Path(runtime_mod.__file__).resolve().read_text("utf-8")
 
 
-def _build_sandbox_code(code: str, runtime_src: str) -> str:
+def _build_sandbox_code(code: str, runtime_src: str, files: dict[str, bytes] | None = None) -> str:
     """将 skill_runtime 内联到用户脚本，末尾追加 main() 以满足沙箱契约。
+
+    如果 files 中包含 requirements.txt，自动注入 pip install 安装依赖。
 
     步骤：
     1. 去掉用户代码中的 ``import skill_runtime``（由注入模块替代）
     2. 前置运行时源码 + 合成 ``sys.modules["skill_runtime"]``
-    3. 追加 ``def main(**kwargs): pass``（KnowFlow runner 要求）
+    3. （可选）前置自动安装 requirements.txt 依赖的代码
+    4. 追加 ``def main(**kwargs): pass``（KnowFlow runner 要求）
     """
     cleaned = _RUNTIME_IMPORT_RE.sub("", code)
+
+    # 自动安装依赖
+    deps_install = ""
+    if files and "requirements.txt" in files:
+        req_b64 = base64.b64encode(files["requirements.txt"]).decode("ascii")
+        if req_b64.strip():
+            deps_install = f"""\
+# ── auto-install dependencies from requirements.txt ──
+import base64 as _b64, subprocess as _sp, sys as _sys
+_req_b64 = \"\"\"{req_b64}\"\"\"
+_req_text = _b64.b64decode(_req_b64).decode("utf-8")
+_req_path = "/tmp/_skill_requirements.txt"
+with open(_req_path, "w") as _f:
+    _f.write(_req_text)
+_result = _sp.run(
+    [_sys.executable, "-m", "pip", "install", "--target", "/tmp/pkgs", "-r", _req_path],
+    capture_output=True, text=True, timeout=120,
+)
+if _result.returncode != 0:
+    print(f"[dep-warn] pip install exited {{_result.returncode}}: {{_result.stderr[:200]}}", file=_sys.stderr)
+else:
+    _sys.path.insert(0, "/tmp/pkgs")
+import os as _os
+_os.unlink(_req_path)
+
+"""
+
     mod_stub = """\
 # ── injected runtime module ──
 import sys as _sys, types as _types
@@ -146,7 +176,7 @@ _sys.modules["skill_runtime"] = _skill_runtime_mod
 skill_runtime = _skill_runtime_mod
 
 """
-    return runtime_src + mod_stub + cleaned + "\n\n\ndef main(**kwargs):\n    pass\n"
+    return runtime_src + deps_install + mod_stub + cleaned + "\n\n\ndef main(**kwargs):\n    pass\n"
 
 
 # ── 执行 ─────────────────────────────────────────────────────────────────────
@@ -197,9 +227,12 @@ def execute_skill_script(
     validate_skill_script(code)
 
     runtime_src = _read_runtime_source()
-    sandbox_code = _build_sandbox_code(code, runtime_src)
+    sandbox_code = _build_sandbox_code(code, runtime_src, files)
 
     timeout = max(int(settings.agent_skill_script_timeout_seconds), 5)
+    # 有 requirements.txt 时给额外的安装时间
+    if "requirements.txt" in files:
+        timeout = max(timeout, 120)
     max_conclusion = max(int(settings.agent_skill_script_max_conclusion_chars), 256)
     argv = [str(a) for a in (args or [])]
 

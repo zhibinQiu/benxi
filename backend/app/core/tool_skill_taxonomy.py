@@ -90,6 +90,22 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "fetch_url_content": ToolCategory.WEB,
     "mermaid_diagram": ToolCategory.ORCHESTRATION,
     "carbon_qa_query": ToolCategory.KNOWLEDGE,
+    # Skill 运行时层
+    "invoke_skill": ToolCategory.ORCHESTRATION,
+    "search_skills": ToolCategory.ORCHESTRATION,
+    "describe_tool": ToolCategory.ORCHESTRATION,
+    "search_tools": ToolCategory.ORCHESTRATION,
+    "run_tool_batch": ToolCategory.ORCHESTRATION,
+    "invoke_context_subagent": ToolCategory.ORCHESTRATION,
+    "ask_user_choice": ToolCategory.ORCHESTRATION,
+    "request_orchestrator_assist": ToolCategory.ORCHESTRATION,
+    # Skill 管理
+    "list_agent_skills": ToolCategory.SKILL_MGMT,
+    "load_uploaded_skill": ToolCategory.SKILL_MGMT,
+    "run_skill_script": ToolCategory.SKILL_MGMT,
+    "create_skill": ToolCategory.SKILL_MGMT,
+    "update_uploaded_skill_file": ToolCategory.SKILL_MGMT,
+    "delete_uploaded_skill": ToolCategory.SKILL_MGMT,
 }
 
 
@@ -147,7 +163,6 @@ GLOBAL_ATOMIC_TOOL_NAMES = GLOBAL_ATOMIC_TOOL_NAMES | frozenset(
 # --- Skill 运行时层（LLM 可见，非业务 Skill 本体）---
 
 SKILL_RUNTIME_TOOL_NAMES: tuple[str, ...] = (
-    "invoke_skill",
     "load_uploaded_skill",
     "run_skill_script",
     "create_skill",
@@ -207,13 +222,13 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
         "request_orchestrator_assist",
         # 编排
         "ask_user_choice",
+        "invoke_context_subagent",
         # 通知
         "send_notification",
         "schedule_notification",
         "list_scheduled_notifications",
         "cancel_scheduled_notification",
-        # 原子工具
-        "web_search",
+        # 原子工具（联网检索统一走 invoke_context_subagent(kind=deep_research)，web_search 仅内部使用）
         "knowledge_retrieve",
         "knowledge_folder_search",
         "list_mounted_folders",
@@ -249,7 +264,6 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
         "invoke_context_subagent",
         "request_orchestrator_assist",
         "carbon_qa_query",
-        "web_search",
         "knowledge_retrieve",
         "knowledge_folder_search",
         "list_mounted_folders",
@@ -272,7 +286,6 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
         "search_skills",
         "invoke_context_subagent",
         "request_orchestrator_assist",
-        "web_search",
         "knowledge_retrieve",
         "knowledge_folder_search",
         "list_mounted_folders",
@@ -283,8 +296,8 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
 }
 
 # orchestrator（通用调度智能体）：一步完成的原子工具直接暴露，无需 invoke_skill 间接层
+# 联网检索统一走 invoke_context_subagent(kind=deep_research)，web_search 仅内部使用
 _ORCHESTRATOR_ATOMIC_TOOLS: tuple[str, ...] = (
-    "web_search",
     "knowledge_retrieve",
     "knowledge_folder_search",
     "list_mounted_folders",
@@ -352,7 +365,6 @@ _AGENT_ATOMIC_TOOLS: dict[str, tuple[str, ...]] = {
     "rpa": BROWSER_TOOL_NAMES,
     "carbon": (
         "carbon_qa_query",
-        "web_search",
         "knowledge_retrieve",
         "knowledge_folder_search",
         "list_mounted_folders",
@@ -361,7 +373,6 @@ _AGENT_ATOMIC_TOOLS: dict[str, tuple[str, ...]] = {
         "append_agent_memory",
     ),
     "power-economy": (
-        "web_search",
         "knowledge_retrieve",
         "knowledge_folder_search",
         "list_mounted_folders",
@@ -382,7 +393,6 @@ SKILL_SKILL_DEV = "skill-development"
 
 SKILL_WEB_SEARCH = "web-search"
 SKILL_KNOWLEDGE_SEARCH = "knowledge-search"
-SKILL_KNOWLEDGE_RESEARCH = "knowledge-research"
 
 SKILL_CARBON_QA = "carbon-qa"
 SKILL_FREE_WEB_AI = "free-web-ai"
@@ -424,12 +434,6 @@ _CATEGORY_TO_DOMAIN_SKILL: dict[ToolCategory, str] = {
 
 # 检索类 Skill → 内部原子 Tool（保留仅作向后兼容）
 RETRIEVAL_SKILL_ATOMIC_MAP: dict[str, tuple[str, str]] = {}
-
-# 全局原子 Tool → 默认归属（用于 tool → agent 归因）
-TOOL_TO_SKILL_ID: dict[str, str] = {}
-# 检索工具 → 通用归类
-for name in ("web_search", "knowledge_retrieve", "knowledge_folder_search", "list_mounted_folders", "kg_query", "carbon_qa_query", "mermaid_diagram"):
-    TOOL_TO_SKILL_ID[name] = SKILL_KNOWLEDGE_RESEARCH
 
 # ── 工具可见性范围（分层控制） ──────────────────────────────────────────────
 # 控制 LLM 通过 describe_tool 能否发现该工具。
@@ -490,7 +494,8 @@ def is_tool_visible_to_agent(name: str, agent_id: str | None) -> bool:
 
 
 def skill_id_for_tool(tool_id: str) -> str:
-    return TOOL_TO_SKILL_ID.get((tool_id or "").strip(), SKILL_PLATFORM_OPS)
+    """工具归属 skill 标识。每个工具即其自身的 skill 标识，无需额外映射。"""
+    return (tool_id or "").strip()
 
 
 def is_global_atomic_tool(name: str) -> bool:

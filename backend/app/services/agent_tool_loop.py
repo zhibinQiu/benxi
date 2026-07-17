@@ -41,6 +41,7 @@ from app.services.agent_planner import (
     RETRIEVAL_ATOMIC_TOOLS,
     AgentExecutionPlan,
     build_plan_context_instruction,
+    execution_plan_summary_for_ui,
     filter_tool_specs_by_plan,
     resolve_execution_plan,
     resolve_kg_planning_context,
@@ -261,10 +262,9 @@ def _narrow_execution_plan_for_specialist(
             plan,
             intent=plan.intent or f"{aid} 专精",
             direct_answer=True,
-            atomic_tools=(),
-            skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+            allowed_tools=(),
+            blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
             uploaded_skill=None,
-            builtin_orchestration=None,
             steps=(),
         )
     return plan
@@ -671,6 +671,8 @@ async def _iter_agent_tool_loop_body(
             pass  # 静默失败，不阻塞工具循环
     rounds = max_rounds if max_rounds is not None else _default_max_rounds()
     loop_state: LoopState = {
+        "conversation_id": conversation_id,
+        "attachment_session_id": attachment_session_id,
         "citations": [],
         "kg_context": None,
         "allowed_skill_names": allowed_skill_names,
@@ -758,7 +760,7 @@ async def _iter_agent_tool_loop_body(
     loop_state["_execution_plan"] = execution_plan
     sess.release_before_io()
     db, user = sess.open()
-    plan_summary = execution_plan.summary_for_ui()
+    plan_summary = execution_plan_summary_for_ui(execution_plan)
     yield {
         "type": "workflow",
         "data": {
@@ -783,7 +785,7 @@ async def _iter_agent_tool_loop_body(
         and not allowed_tool_names
         and not execution_plan.direct_answer
         and (
-            execution_plan.atomic_tools
+            execution_plan.allowed_tools
             or any(
                 token in " ".join(execution_plan.steps).lower()
                 for token in ("web_search", "knowledge_retrieve", "kg_query", "invoke_skill")
@@ -794,8 +796,8 @@ async def _iter_agent_tool_loop_body(
             execution_plan,
             direct_answer=True,
             reasoning=(execution_plan.reasoning or "") + "（当前智能体无检索工具，改为直接作答）",
-            atomic_tools=(),
-            skip_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+            allowed_tools=(),
+            blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
             uploaded_skill=None,
             steps=(),
         )
@@ -822,11 +824,16 @@ async def _iter_agent_tool_loop_body(
     from app.services.agent_planner import SKILL_MGMT_INTENT
     from app.services.agent_tool_search import register_unlocked_tools
 
+    from app.core.agent_tool_args import BROWSER_TOOL_NAMES
+
     unlock_names: list[str] = []
     if execution_plan.uploaded_skill:
         unlock_names.append("run_skill_script")
     if execution_plan.intent == SKILL_MGMT_INTENT:
         unlock_names.append("invoke_skill")
+    if (agent_id or "").strip() == "rpa":
+        # RPA 专精：浏览器工具默认可见，LLM 才能实际调用 browser_navigate 等
+        unlock_names.extend(BROWSER_TOOL_NAMES)
     if unlock_names:
         register_unlocked_tools(loop_state, unlock_names)
 
@@ -839,7 +846,7 @@ async def _iter_agent_tool_loop_body(
         "data": {
             "phase": "agent_thinking",
             "title": exec_title,
-            "detail": execution_plan.summary_for_ui(),
+            "detail": execution_plan_summary_for_ui(execution_plan),
             "tool": "agent.execute",
             "step_id": loop_id,
         },
@@ -1259,9 +1266,9 @@ async def _iter_agent_tool_loop_body(
                     # 解析参数用于 callDetail 展示
                     try:
                         parsed_args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-                        call_detail_str = json.dumps(parsed_args, ensure_ascii=False, default=str)[:300]
+                        call_detail_str = json.dumps(parsed_args, ensure_ascii=False, default=str)[:600]
                     except Exception:
-                        call_detail_str = str(raw_args or "")[:300]
+                        call_detail_str = str(raw_args or "")[:600]
 
                     if cached_result is not None:
                         result_text = cached_result
@@ -1305,19 +1312,73 @@ async def _iter_agent_tool_loop_body(
                         else:
                             timeout = _tool_timeout()
                             try:
-                                result_text = await asyncio.wait_for(
-                                    execute_agent_tool(
-                                        db,
-                                        user,
-                                        tool_name=tool_name,
-                                        arguments=raw_args,
-                                        conversation_id=conversation_id,
-                                        attachment_session_id=attachment_session_id,
-                                        user_message=user_message,
-                                        loop_state=loop_state,
-                                    ),
-                                    timeout=timeout,
-                                )
+                                if tool_name in ("invoke_context_subagent", "invoke_skill"):
+                                    # ── 实时推送：长耗时工具使用 async queue + task ──
+                                    _progress_queue: asyncio.Queue = asyncio.Queue()
+                                    loop_state["_progress_queue"] = _progress_queue
+                                    _tool_task = asyncio.ensure_future(
+                                        execute_agent_tool(
+                                            db, user,
+                                            tool_name=tool_name,
+                                            arguments=raw_args,
+                                            conversation_id=conversation_id,
+                                            attachment_session_id=attachment_session_id,
+                                            user_message=user_message,
+                                            loop_state=loop_state,
+                                        )
+                                    )
+                                    _start_ts = time.monotonic()
+                                    while not _tool_task.done():
+                                        _elapsed = time.monotonic() - _start_ts
+                                        if _elapsed > timeout:
+                                            _tool_task.cancel()
+                                            result_text = json.dumps(
+                                                {"ok": False, "summary": f"子任务执行超时（{timeout} 秒）"},
+                                                ensure_ascii=False,
+                                            )
+                                            _tool_task = None
+                                            break
+                                        _get_task = asyncio.ensure_future(_progress_queue.get())
+                                        _done, _pending = await asyncio.wait(
+                                            [_tool_task, _get_task],
+                                            return_when=asyncio.FIRST_COMPLETED,
+                                            timeout=5.0,
+                                        )
+                                        if _tool_task in _done:
+                                            # 子智能体执行完毕
+                                            _get_task.cancel()
+                                            break
+                                        if _get_task in _done:
+                                            # 收到了进度事件
+                                            _ev = _get_task.result()
+                                            yield {"type": "workflow", "data": _ev}
+                                            continue
+                                        # 5s 心跳超时：无新事件但子智能体仍在运行
+                                        _get_task.cancel()
+                                    if _tool_task is not None:
+                                        result_text = _tool_task.result()
+                                    # 清理剩余队列事件
+                                    while not _progress_queue.empty():
+                                        try:
+                                            _ev = _progress_queue.get_nowait()
+                                            yield {"type": "workflow", "data": _ev}
+                                        except asyncio.QueueEmpty:
+                                            break
+                                    loop_state.pop("_progress_queue", None)
+                                else:
+                                    result_text = await asyncio.wait_for(
+                                        execute_agent_tool(
+                                            db,
+                                            user,
+                                            tool_name=tool_name,
+                                            arguments=raw_args,
+                                            conversation_id=conversation_id,
+                                            attachment_session_id=attachment_session_id,
+                                            user_message=user_message,
+                                            loop_state=loop_state,
+                                        ),
+                                        timeout=timeout,
+                                    )
                             except asyncio.TimeoutError:
                                 _logger.warning(
                                     "工具执行超时 tool=%s timeout=%ss",
@@ -1466,6 +1527,51 @@ async def _iter_agent_tool_loop_body(
                         "type": "workflow",
                         "data": result_data,
                     }
+
+                    # 发射子智能体内部工具调用步骤事件（工具输入参数 + 输出结果）
+                    # 使子智能体（deep_research/explore/browser_digest 等）的每一步在前台可见
+                    _child_steps = loop_state.pop("subagent_executed_steps", None)
+                    if _child_steps and tool_name in (
+                        "invoke_context_subagent", "invoke_skill",
+                    ):
+                        for _cs in _child_steps:
+                            _cs_tool = _cs.get("tool_name", "")
+                            _cs_args = _cs.get("args_preview", "")
+                            _cs_summary = _cs.get("summary", "")
+                            _cs_id = _cs.get("step_id", "") or uuid.uuid4().hex[:8]
+                            # web_search 显示为"检索"而非技术名
+                            if _cs_tool == "web_search":
+                                _call_title = "检索"
+                                _call_tool_key = "web.search"
+                            else:
+                                _call_title = f"子智能体 · {_cs_tool}"
+                                _call_tool_key = _cs_tool
+                            yield {
+                                "type": "workflow",
+                                "data": {
+                                    "phase": "tool_call",
+                                    "title": _call_title,
+                                    "detail": _cs_args[:400],
+                                    "callDetail": _cs_args[:600],
+                                    "tool": _call_tool_key,
+                                    "tool_name": _cs_tool,
+                                    "step_id": f"sub-{_cs_id}",
+                                },
+                            }
+                            yield {
+                                "type": "workflow",
+                                "data": {
+                                    "phase": "tool_result",
+                                    "title": f"{_call_title} 完成",
+                                    "detail": _cs_summary[:200] or "完成",
+                                    "resultDetail": (_cs_summary or "")[:400],
+                                    "tool": _call_tool_key,
+                                    "tool_name": _cs_tool,
+                                    "step_id": f"sub-{_cs_id}",
+                                    "status": "done" if _cs_summary else "failed",
+                                },
+                            }
+
                     working.append(
                         {
                             "role": "tool",
@@ -1498,7 +1604,9 @@ async def _iter_agent_tool_loop_body(
 
             if content:
                 working.append({"role": "assistant", "content": content})
-            if content and assistant_content_is_deliverable(
+            # 当 LLM 同时返回 content 和 tool_calls 时，content 只是思考过程，
+            # 不应作为交付内容输出给用户。tool_calls 已通过 thinking_delta 展示。
+            if content and not tool_calls and assistant_content_is_deliverable(
                 content, instruction_only_skill=instruction_only_skill
             ):
                 deliverable_reply = content.strip()

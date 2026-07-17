@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 from app.agentkit.interrupt.model import (
     InterruptState,

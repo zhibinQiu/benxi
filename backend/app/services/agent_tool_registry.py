@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.core.tool_skill_taxonomy import GLOBAL_ATOMIC_TOOL_NAMES, ToolCategory, _TOOL_CATEGORIES
+from app.core.tool_skill_taxonomy import ToolCategory, _TOOL_CATEGORIES
 from app.models.org import User
 from app.schemas.agent_skill import AgentToolCategoryOut, AgentToolOut, RateLimitOut
 from app.services.skill_chat_service import (
@@ -39,8 +39,6 @@ def list_agent_tools(
     """返回 ToolCenter 全局原子工具（完整 ToolDescriptor）。"""
     items: list[AgentToolOut] = []
     for desc in get_tool_center().list_descriptors():
-        if desc.tool_id not in GLOBAL_ATOMIC_TOOL_NAMES:
-            continue
         category = _TOOL_CATEGORIES.get(desc.tool_id, ToolCategory.PLATFORM)
         available, note = _availability(db, desc.tool_id, user=user)
         items.append(

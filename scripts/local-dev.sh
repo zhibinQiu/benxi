@@ -359,15 +359,8 @@ PY
   echo "  PageIndex 已就绪"
 }
 
-agent_browser_enabled_in_env() {
-  [[ -f "$ENV_FILE" ]] && grep -qE '^AGENT_BROWSER_ENABLED=(true|1|yes|True|TRUE)' "$ENV_FILE"
-}
-
 ensure_browser_rpa_deps() {
   if [[ "${SKIP_BROWSER_INSTALL:-0}" == "1" ]]; then
-    return 0
-  fi
-  if ! agent_browser_enabled_in_env; then
     return 0
   fi
   if "${PYTHON_CMD[@]}" -c "from playwright.sync_api import sync_playwright" 2>/dev/null; then

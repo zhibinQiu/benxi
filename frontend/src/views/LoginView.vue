@@ -34,14 +34,15 @@ import { loginShowcaseScrolling } from "../utils/loginScrollState.js";
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
-const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
-const heroBg = `${BASE}/images/bg.jpg`;
 const { login, register, trialLogin } = useAuth();
 const { toggleLocale } = useAppPreferences();
 const { t, tm, locale, localeLabel } = useI18n();
 const appDisplayName = useAppDisplayName();
 
 const socialLinks = computed(() => (tm("login.showcaseFooter.social") || []).filter(s => s.icon !== 'xiaohongshu'));
+
+const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const heroBg = `${BASE}/images/bg.jpg`;
 
 function handleDownload() {
   ui.info("敬请期待");
@@ -422,10 +423,7 @@ watch(locale, () => {
     <div
     ref="pageRef"
     class="login-page"
-    :class="{
-      'login-page--exit': exiting,
-      'login-page--scrolling': loginShowcaseScrolling,
-    }"
+    :class="{ 'login-page--exit': exiting, 'login-page--scrolling': loginShowcaseScrolling }"
   >
     <header class="login-header">
       <div class="login-header__inner">
@@ -655,7 +653,8 @@ watch(locale, () => {
 </style>
 <style scoped>
 .login-page {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   height: 100dvh;
   max-height: 100dvh;
   overflow-x: hidden;
@@ -718,10 +717,6 @@ html[data-theme="dark"] .login-header__logo {
   filter: brightness(0) invert(1);
 }
 
-.login-page--scrolling .login-header__logo,
-html[data-theme="dark"] .login-page--scrolling .login-header__logo {
-  filter: none;
-}
 
 .login-header__title {
   font-size: 14px;
@@ -734,16 +729,6 @@ html[data-theme="dark"] .login-page--scrolling .login-header__logo {
 
 html[data-theme="dark"] .login-header__title {
   color: #e8e8ee;
-}
-
-.login-page--scrolling .login-header__title {
-  background-image: var(--platform-accent-gradient);
-  background-size: 120% 100%;
-  background-position: 0% 50%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
 }
 
 .login-header__actions {
@@ -895,20 +880,10 @@ html[data-theme="dark"] .login-page__social-link {
   pointer-events: none;
 }
 
-.login-page--exit .login-page__intro,
 .login-page--exit .login-header,
 .login-page--exit :deep(.login-feature-scroll) {
   opacity: 0;
   transition: opacity 0.28s ease;
-}
-
-.login-page__main {
-  position: relative;
-  z-index: 3;
-}
-
-.login-page__main .login-showcase__hero {
-  width: 100%;
 }
 
 .login-page--scrolling .login-header {
@@ -923,34 +898,41 @@ html[data-theme="dark"] .login-page--scrolling .login-header {
   border-bottom-color: var(--platform-accent-border-soft);
 }
 
+.login-page__main {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+}
+
 .login-showcase__hero {
   min-height: calc(100dvh - 43px);
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
-  padding: 43px 29px 29px;
-  box-sizing: border-box;
-  background-size: 120%;
+  position: relative;
+  overflow: hidden;
+  background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  position: relative;
 }
 
 .login-showcase__hero::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
+  background: rgba(0, 0, 0, 0.15);
   z-index: 0;
 }
 
 html[data-theme="dark"] .login-showcase__hero::before {
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .login-showcase__hero-content {
   position: relative;
   z-index: 1;
-  max-width: 1152px;
-  margin: 0 auto;
+  max-width: 440px;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -1211,10 +1193,6 @@ html[data-theme="dark"] .login-page :deep(.n-dropdown-option-body:hover) {
     gap: 0;
   }
 
-  .login-showcase__hero {
-    padding: 54px 14px 19px;
-  }
-
   .login-showcase__intro {
     margin-bottom: 22px;
     max-width: 100%;
@@ -1232,14 +1210,6 @@ html[data-theme="dark"] .login-page :deep(.n-dropdown-option-body:hover) {
     transform: none;
     justify-content: center;
     gap: 14px;
-  }
-}
-
-@media (max-width: 400px) {
-  .login-showcase__hero {
-    min-height: auto;
-    padding-top: 60px;
-    padding-bottom: 24px;
   }
 }
 </style>

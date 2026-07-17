@@ -120,6 +120,10 @@ function effectiveTaskStatus(task, taskIndex) {
 function effectiveStepStatus(step, stepIndex, stepList) {
   const status = step.status || "pending";
   if (isParallelMode.value || !props.workflow?.running) return status;
+  // 当多个步骤同时处于 running 状态时（如并行检索），
+  // 全部显示为运行中，而非仅显示第一个
+  const runningCount = stepList.filter((s) => s.status === "running").length;
+  if (runningCount > 1) return status;
   const firstOpen = stepList.findIndex(
     (item) => item.status !== "done" && item.status !== "failed"
   );
@@ -451,7 +455,7 @@ const footerLabel = computed(() => {
 .agent-workflow {
   margin-bottom: 10px;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--platform-text);
 }
 
@@ -604,7 +608,7 @@ const footerLabel = computed(() => {
   flex-shrink: 0;
   padding: 1px 7px;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
   color: var(--platform-accent);
   background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
@@ -613,21 +617,21 @@ const footerLabel = computed(() => {
 
 .agent-workflow__title {
   font-weight: 400;
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--platform-text-secondary, #64748b);
 }
 
 .agent-workflow__label {
   margin-top: 4px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--platform-text-secondary, #64748b);
   letter-spacing: 0.02em;
 }
 
 .agent-workflow__detail {
   margin-top: 2px;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
   color: var(--platform-text-secondary, #64748b);
   word-break: break-word;

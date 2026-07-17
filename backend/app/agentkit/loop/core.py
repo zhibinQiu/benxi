@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 DEFAULT_LOOP_SYSTEM_CONTRACT = (
     "Agent 循环终稿阶段。依据下方「目标、智能体计划、观测证据」生成面向用户的答复。"

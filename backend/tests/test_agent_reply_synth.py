@@ -224,8 +224,8 @@ def test_build_deliverable_evidence_prioritizes_subagent():
     block = build_deliverable_evidence_block(
         {
             "subagent_summaries": [
-                {"kind": "explore", "task": "调研", "summary": "应忽略的旧摘要"},
-                {"kind": "browser_digest", "task": "页面", "summary": "最新子智能体：收盘 82.41"},
+                {"kind": "search", "task": "调研", "summary": "应忽略的旧摘要"},
+                {"kind": "auto", "task": "页面", "summary": "最新子智能体：收盘 82.41"},
             ],
             "retrieval_context_parts": ["早期检索：不应出现在终稿证据"],
             "tool_outcome_lines": ["Skills 目录：共 4 个技能"],
@@ -242,8 +242,8 @@ def test_skill_creation_user_reply_prefers_last_subagent():
         {
             "created_uploaded_skills": ["carbon-price-2"],
             "subagent_summaries": [
-                {"kind": "explore", "summary": "旧调研"},
-                {"kind": "browser_digest", "summary": "页面字段：日期、收盘价"},
+                {"kind": "search", "summary": "旧调研"},
+                {"kind": "auto", "summary": "页面字段：日期、收盘价"},
             ],
             "last_skill_conclusion": json.dumps(
                 {"数据名称": "碳市场", "最新记录": {"收盘": 99.0}},
@@ -269,7 +269,7 @@ def test_resolve_fast_skill_management_success():
                 ensure_ascii=False,
             ),
             "subagent_summaries": [
-                {"kind": "browser_digest", "summary": "已确认页面含收盘价字段"},
+                {"kind": "auto", "summary": "已确认页面含收盘价字段"},
             ],
         },
     )

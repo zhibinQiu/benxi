@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 
 def normalize_queries(

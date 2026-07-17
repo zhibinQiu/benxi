@@ -21,6 +21,8 @@ services:
     image: sandbox-executor-manager:latest
     runtime: ${SANDBOX_CONTAINER_RUNTIME:-runc}
     privileged: true
+    ports:
+      - "40010:9385"
     depends_on:
       sandbox-base-python:
         condition: service_completed_successfully

@@ -422,7 +422,9 @@ function upsertTaskPlanItem(state, taskId, patch = {}) {
   if (!id) return;
   let item = state.taskPlan.find((t) => t.id === id);
   if (!item) {
-    item = { id, title: id, agentId: "", status: "pending", summary: "", steps: [], attempts: 0, maxAttempts: 3, lastError: "" };
+    // 自动生成的 task-xxx 类 ID 不适合作为展示标题
+    const displayTitle = /^task-/i.test(id) ? "执行步骤" : id;
+    item = { id, title: displayTitle, agentId: "", status: "pending", summary: "", steps: [], attempts: 0, maxAttempts: 3, lastError: "" };
     state.taskPlan.push(item);
   }
   if (patch.status) item.status = patch.status;
@@ -681,6 +683,59 @@ export function applyAgentWorkflowEvent(state, ev, t, options = {}) {
     return state;
   }
 
+  if (phase === "llm_thinking") {
+    state.running = true;
+    state.failed = false;
+    const steps = stepList();
+    finishRunningSteps(steps, { kinds: ["node"] });
+    const globalSteps = resolveStepList(state, "");
+    if (globalSteps !== steps) {
+      finishRunningSteps(globalSteps, { kinds: ["node"] });
+    }
+    setCurrentTitle(state, ev.title, "思考中");
+    const id = ev.step_id || `llm-think-${nextStepId()}`;
+    const existing = findStep(steps, id);
+    putStep(steps, {
+      id,
+      kind: "thinking",
+      tool: ev.tool || "llm.thinking",
+      title: ev.title || existing?.title || "智能体思考中",
+      detail: ev.detail || existing?.detail || "",
+      callDetail: "",
+      status: "running",
+      agentTitle: ev.agent_title || state.currentAgentTitle,
+      agentId: ev.agent_id || state.currentAgentId,
+    });
+    return state;
+  }
+
+  if (phase === "llm_decision") {
+    state.running = true;
+    const steps = stepList();
+    // 更新最后一个 thinking 步骤或输出决策步骤
+    const id = ev.step_id || [...steps].reverse().find(s => s.kind === "thinking")?.id || nextStepId();
+    const existing = findStep(steps, id);
+    putStep(steps, {
+      id,
+      kind: ev.tool === "llm.thinking" ? "thinking" : "info",
+      tool: ev.tool || "llm.decision",
+      title: ev.title || existing?.title || "已决策",
+      detail: ev.detail || existing?.detail || "",
+      callDetail: "",
+      status: "done",
+      agentTitle: ev.agent_title || state.currentAgentTitle,
+      agentId: ev.agent_id || state.currentAgentId,
+    });
+    const allRunning = [
+      ...state.steps,
+      ...(state.taskPlan || []).flatMap((t) => t.steps || []),
+    ].filter((s) => s.status === "running");
+    if (allRunning.length === 0) {
+      state.currentTitle = "";
+    }
+    return state;
+  }
+
   if (phase === "tool_result") {
     state.running = true;
     const steps = stepList();
@@ -832,18 +887,16 @@ export function applyAgentWorkflowEvent(state, ev, t, options = {}) {
     } else {
       state.suspended = false;
     }
+    // 保留步骤列表（含思考过程文字），仅标记为已完成
+    // 避免清空后「思考过程」面板丢失 thinking_delta 累积的文本
+    finishRunningSteps(state.steps);
+    for (const task of state.taskPlan) {
+      finishRunningSteps(task.steps || []);
+    }
+    // compact 模式额外保留最后一次错误信息
     if (currentStepOnly) {
       const preservedError = getWorkflowLastError(state);
       if (preservedError) state.lastError = preservedError;
-      state.steps = [];
-      for (const task of state.taskPlan) {
-        task.steps = [];
-      }
-    } else {
-      finishRunningSteps(state.steps);
-      for (const task of state.taskPlan) {
-        finishRunningSteps(task.steps || []);
-      }
     }
     return state;
   }

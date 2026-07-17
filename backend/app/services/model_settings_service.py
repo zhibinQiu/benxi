@@ -470,16 +470,15 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "firecrawl_api_key": (settings.firecrawl_api_key or "").strip(),
         "firecrawl_api_url": (settings.firecrawl_api_url or "https://api.firecrawl.dev").strip(),
         "firecrawl_read_full_max_urls": str(int(settings.firecrawl_read_full_max_urls or 3)),
-        "agent_browser_enabled": str(settings.agent_browser_enabled).lower(),
         "agent_browser_headless": str(settings.agent_browser_headless).lower(),
         "agent_browser_allowed_domains": (settings.agent_browser_allowed_domains or "").strip(),
         "agent_browser_max_steps_per_session": str(settings.agent_browser_max_steps_per_session),
-        "agent_browser_auto_task_enabled": str(settings.agent_browser_auto_task_enabled).lower(),
         "agent_browser_auto_task_max_steps": str(settings.agent_browser_auto_task_max_steps),
         "neo4j_uri": (settings.neo4j_uri or "bolt://neo4j:7687").strip(),
         "neo4j_user": (settings.neo4j_user or "neo4j").strip(),
         "neo4j_password": (settings.neo4j_password or "").strip(),
         "neo4j_database": (settings.neo4j_database or "neo4j").strip(),
+        "sandbox_base_url": (settings.sandbox_base_url or "").strip(),
     }
 
 
@@ -909,18 +908,12 @@ def _build_model_settings_out(effective: dict[str, str]) -> ModelSettingsOut:
         firecrawl_api_key=mask_secret(effective.get("firecrawl_api_key") or ""),
         firecrawl_api_url=(effective.get("firecrawl_api_url") or "https://api.firecrawl.dev").strip(),
         firecrawl_read_full_max_urls=int(effective.get("firecrawl_read_full_max_urls") or 3),
-        agent_browser_enabled=(effective.get("agent_browser_enabled") or "false").lower()
-        in {"1", "true", "yes", "on"},
         agent_browser_headless=(effective.get("agent_browser_headless") or "true").lower()
         not in {"0", "false", "no", "off"},
         agent_browser_allowed_domains=effective.get("agent_browser_allowed_domains") or "",
         agent_browser_max_steps_per_session=int(
             effective.get("agent_browser_max_steps_per_session") or 50
         ),
-        agent_browser_auto_task_enabled=(
-            effective.get("agent_browser_auto_task_enabled") or "true"
-        ).lower()
-        not in {"0", "false", "no", "off"},
         agent_browser_auto_task_max_steps=int(
             effective.get("agent_browser_auto_task_max_steps") or 15
         ),
@@ -932,6 +925,7 @@ def _build_model_settings_out(effective: dict[str, str]) -> ModelSettingsOut:
             neo4j_database=effective.get("neo4j_database") or "neo4j",
         ),
         knowledge=_knowledge_infra_out(effective),
+        sandbox_base_url=effective.get("sandbox_base_url") or "",
     )
 
 
@@ -1195,11 +1189,6 @@ def save_model_settings(
             if body.firecrawl_read_full_max_urls is not None
             else current.get("firecrawl_read_full_max_urls", "3")
         ),
-        "agent_browser_enabled": (
-            str(bool(body.agent_browser_enabled)).lower()
-            if body.agent_browser_enabled is not None
-            else current.get("agent_browser_enabled", "false")
-        ),
         "agent_browser_headless": (
             str(bool(body.agent_browser_headless)).lower()
             if body.agent_browser_headless is not None
@@ -1214,11 +1203,6 @@ def save_model_settings(
             str(max(1, int(body.agent_browser_max_steps_per_session)))
             if body.agent_browser_max_steps_per_session is not None
             else current.get("agent_browser_max_steps_per_session", "50")
-        ),
-        "agent_browser_auto_task_enabled": (
-            str(bool(body.agent_browser_auto_task_enabled)).lower()
-            if body.agent_browser_auto_task_enabled is not None
-            else current.get("agent_browser_auto_task_enabled", "true")
         ),
         "agent_browser_auto_task_max_steps": (
             str(max(1, int(body.agent_browser_auto_task_max_steps)))
@@ -1242,6 +1226,11 @@ def save_model_settings(
         ),
         "neo4j_password": (
             _keep_secret(body.neo4j_password, current.get("neo4j_password", ""))
+        ),
+        "sandbox_base_url": (
+            (body.sandbox_base_url or "").strip()
+            if body.sandbox_base_url is not None
+            else current.get("sandbox_base_url", "")
         ),
     }
 

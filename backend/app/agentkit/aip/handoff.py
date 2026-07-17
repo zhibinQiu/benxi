@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 from app.agentkit.aip.aid import AidConfig, build_agent_aid, orchestrator_aid
 from app.agentkit.aip.types import AipDataItem, AipMessage, AipMessageType

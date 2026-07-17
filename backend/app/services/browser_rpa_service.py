@@ -48,13 +48,6 @@ def _cfg(db: Session | None = None) -> BrowserRpaConfig:
     return get_browser_rpa_config(db)
 
 
-def _require_enabled(db: Session | None = None) -> BrowserRpaConfig:
-    cfg = _cfg(db)
-    if not cfg.enabled:
-        raise bad_request("浏览器 RPA 未启用（AGENT_BROWSER_ENABLED 或管理后台配置）")
-    return cfg
-
-
 async def _session_for(
     user: User,
     conversation_id: str | None,
@@ -102,7 +95,7 @@ async def browser_navigate(
     conversation_id: str | None,
     url: str,
 ) -> dict[str, Any]:
-    cfg = _require_enabled(db)
+    cfg = _cfg(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
     return await mgr.navigate(
@@ -118,7 +111,6 @@ async def browser_snapshot(
     *,
     conversation_id: str | None,
 ) -> dict[str, Any]:
-    _require_enabled(db)
     cfg = _cfg(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
@@ -132,7 +124,7 @@ async def browser_click(
     conversation_id: str | None,
     ref: str,
 ) -> dict[str, Any]:
-    cfg = _require_enabled(db)
+    cfg = _cfg(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     if not hasattr(state, "page") or state.page is None:
         raise bad_request("浏览器会话未就绪，请先执行 browser_navigate 导航到目标页面")
@@ -163,7 +155,7 @@ async def browser_type(
     text: str,
     submit: bool = False,
 ) -> dict[str, Any]:
-    cfg = _require_enabled(db)
+    cfg = _cfg(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
     return await mgr.type_text(state, ref, text, submit=submit)
@@ -176,7 +168,7 @@ async def browser_fill(
     conversation_id: str | None,
     fields: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    cfg = _require_enabled(db)
+    cfg = _cfg(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
     return await mgr.fill_fields(state, fields)
@@ -189,7 +181,7 @@ async def browser_screenshot(
     conversation_id: str | None,
     full_page: bool = False,
 ) -> dict[str, Any]:
-    cfg = _require_enabled(db)
+    cfg = _cfg(db)
     state = await _session_for(user, conversation_id, cfg=cfg)
     mgr = get_browser_session_manager()
     png, page_url, title = await mgr.screenshot_png(
@@ -214,7 +206,7 @@ async def _replay_workflow_core(
     workflow: dict[str, Any],
     params: dict[str, str],
 ) -> dict[str, Any]:
-    cfg = _require_enabled(db)
+    cfg = _cfg(db)
     mgr = get_browser_session_manager()
     replay_conv = f"replay-{uuid.uuid4().hex[:8]}"
     state = await mgr.get_session(
@@ -337,7 +329,6 @@ async def browser_save_workflow(
     parameters: list[str] | None = None,
     replace_existing: bool = True,
 ) -> dict[str, Any]:
-    _require_enabled(db)
     mgr = get_browser_session_manager()
     state = await mgr.get_session(
         user_id=str(user.id),
@@ -426,9 +417,7 @@ async def browser_run_task(
     max_steps: int | None = None,
 ) -> dict[str, Any]:
     """Phase 3：LLM 驱动的多步浏览器探索（无需 browser-use 依赖）。"""
-    cfg = _require_enabled(db)
-    if not cfg.auto_task_enabled:
-        raise bad_request("浏览器自动探索未启用（AGENT_BROWSER_AUTO_TASK_ENABLED）")
+    cfg = _cfg(db)
     limit = max_steps if max_steps is not None else cfg.auto_task_max_steps
     limit = max(1, min(int(limit), cfg.max_steps_per_session))
 
@@ -521,7 +510,6 @@ def schedule_browser_workflow(
     scheduled_at: str,
 ) -> dict[str, Any]:
     """Phase 3：定时回放 RPA Skill，完成后发系统通知。"""
-    _require_enabled(db)
     _load_skill_workflow(db, skill_name)
 
     now = datetime.now(timezone.utc)

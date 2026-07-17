@@ -46,9 +46,12 @@ class RetrievalAppender(Protocol):
 
 
 class ToolSpecBuilder(Protocol):
-    """根据允许工具名集合构建 tool 规范列表。"""
+    """根据允许工具名集合构建 tool 规范列表。
 
-    def __call__(self, allowed_tools: set[str]) -> list[dict[str, Any]]: ...
+    None 表示继承父智能体的完整工具集（auto 模式）。
+    """
+
+    def __call__(self, allowed_tools: set[str] | None) -> list[dict[str, Any]]: ...
 
 
 # ── 配置类型 ──────────────────────────────────────────────────────
@@ -59,7 +62,8 @@ class SubagentKindConfig:
     """单种 subagent 的行为配置。"""
 
     kind: str
-    allowed_tools: frozenset[str]
+    allowed_tools: frozenset[str] | None
+    """None 表示继承父智能体工具集（auto 模式）。"""
     system_contract: str
     max_rounds: int = 8
 

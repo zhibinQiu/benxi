@@ -137,13 +137,11 @@ def agent_execution_scope_key(
     user_id: uuid.UUID,
     *,
     available_atomic_tools: set[str] | frozenset[str],
-    builtin_skills: set[str],
     uploaded_skills: set[str],
 ) -> str:
     atomic = ",".join(sorted(available_atomic_tools))
-    builtin = ",".join(sorted(builtin_skills))
     uploaded = ",".join(sorted(uploaded_skills))
-    digest = _scope_hash([atomic, builtin, uploaded])
+    digest = _scope_hash([atomic, uploaded])
     return f"{CACHE_PREFIX}:{PLAN_TYPE_AGENT_EXECUTION}:{user_id}:{digest}"
 
 
@@ -265,28 +263,24 @@ def execution_plan_to_payload(plan: Any) -> dict[str, Any]:
         "reasoning": plan.reasoning,
         "intent": plan.intent,
         "direct_answer": plan.direct_answer,
-        "atomic_tools": list(plan.atomic_tools),
-        "skip_tools": list(plan.skip_tools),
+        "allowed_tools": list(plan.allowed_tools),
+        "blocked_tools": list(plan.blocked_tools),
         "uploaded_skill": plan.uploaded_skill,
-        "builtin_orchestration": plan.builtin_orchestration,
         "steps": list(plan.steps),
     }
 
 
 def execution_plan_from_payload(data: dict[str, Any], *, source: str = "cache"):
-    from app.services.agent_planner import AgentExecutionPlan
+    from app.agentkit.loop import AgentExecutionPlan
 
     return AgentExecutionPlan(
         reasoning=str(data.get("reasoning") or "").strip(),
         intent=str(data.get("intent") or "").strip(),
         direct_answer=bool(data.get("direct_answer")),
-        atomic_tools=tuple(str(x) for x in (data.get("atomic_tools") or []) if str(x).strip()),
-        skip_tools=tuple(str(x) for x in (data.get("skip_tools") or []) if str(x).strip()),
+        allowed_tools=tuple(str(x) for x in (data.get("allowed_tools") or []) if str(x).strip()),
+        blocked_tools=tuple(str(x) for x in (data.get("blocked_tools") or []) if str(x).strip()),
         uploaded_skill=str(data.get("uploaded_skill")).strip()
         if data.get("uploaded_skill")
-        else None,
-        builtin_orchestration=str(data.get("builtin_orchestration")).strip()
-        if data.get("builtin_orchestration")
         else None,
         steps=tuple(str(x) for x in (data.get("steps") or []) if str(x).strip()),
         source=source,

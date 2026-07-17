@@ -180,6 +180,7 @@ cmd_build_runtime() {
     --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
     --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
     --build-arg "INSTALL_BROWSER=${INSTALL_BROWSER:-1}" \
+    --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST:-https://playwright.download.azure.cn}" \
     -t "${local_tag}" \
     .
   if [[ "${tag}" != "${local_tag}" ]]; then
@@ -233,6 +234,7 @@ cmd_push_registry() {
     --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
     --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
     --build-arg "INSTALL_BROWSER=${INSTALL_BROWSER:-1}" \
+    --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST:-https://playwright.download.azure.cn}" \
     -t "${image}" \
     -t "${prefix}benxi-api-runtime:latest" \
     --push \

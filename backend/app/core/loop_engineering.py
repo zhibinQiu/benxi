@@ -18,8 +18,8 @@ LOOP_SYSTEM_CONTRACT = (
 
 def build_agent_generated_instruction(loop_state: LoopState | None) -> str:
     """从 loop_state 中的执行计划提取智能体自生成的任务指令。"""
-    from app.agentkit.loop import build_agent_instruction_from_plan
-    from app.services.agent_planner import AgentExecutionPlan, build_plan_context_instruction
+    from app.agentkit.loop import AgentExecutionPlan, build_agent_instruction_from_plan
+    from app.services.agent_planner import build_plan_context_instruction
 
     plan = (loop_state or {}).get("_execution_plan")
     if not isinstance(plan, AgentExecutionPlan):

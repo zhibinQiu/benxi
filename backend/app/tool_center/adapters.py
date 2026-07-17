@@ -93,8 +93,12 @@ async def _run_web_search(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tu
         search_web,
     )
 
+    # search_web 使用同步 httpx.Client()，放在 executor 中执行以免阻塞事件循环
+    loop = asyncio.get_running_loop()
     try:
-        items, _ = search_web(query, page_size=max_items, db=ctx.db)
+        items, _ = await loop.run_in_executor(
+            None, lambda: search_web(query, page_size=max_items, db=ctx.db)
+        )
     except (SearxngNotConfiguredError, SearxngSearchError) as exc:
         return _tool_result(False, str(exc))
     except Exception as exc:

@@ -597,5 +597,37 @@ watch(
   .serp-result-item {
     padding: 12px;
   }
+
+  .serp-result-item__title {
+    font-size: 14px;
+  }
+  .serp-result-item__snippet {
+    font-size: 12px;
+    -webkit-line-clamp: 3;
+  }
+  .serp-result-item__actions {
+    opacity: 1;
+  }
+  .serp-result-item__meta {
+    font-size: 10px;
+  }
+  .serp-result-item__footer {
+    flex-wrap: wrap;
+  }
+
+  /* 分页紧凑 */
+  .subscriptions-footer {
+    padding: 8px 0 12px;
+  }
+  .subscriptions-footer__inner :deep(.n-pagination .n-pagination-item) {
+    min-width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+
+  /* 文章区域操作按钮显示 */
+  .serp-result-item__actions {
+    opacity: 1; /* 移动端无 hover，始终显示 */
+  }
 }
 </style>

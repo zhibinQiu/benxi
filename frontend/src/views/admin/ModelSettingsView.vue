@@ -34,6 +34,7 @@ import {
   ServerOutline,
   LibraryOutline,
   RefreshOutline,
+  TerminalOutline,
 } from "@vicons/ionicons5";
 import {
   fetchModelSettings,
@@ -123,16 +124,15 @@ const form = reactive({
   firecrawl_api_key: "",
   firecrawl_api_url: "",
   firecrawl_read_full_max_urls: 3,
-  agent_browser_enabled: false,
   agent_browser_headless: true,
   agent_browser_allowed_domains: "",
   agent_browser_max_steps_per_session: 50,
-  agent_browser_auto_task_enabled: true,
   agent_browser_auto_task_max_steps: 15,
   neo4j_uri: "",
   neo4j_user: "",
   neo4j_password: "",
   neo4j_database: "neo4j",
+  sandbox_base_url: "",
   ragflow_api_url: "",
   ragflow_api_key: "",
   knowflow_backend_url: "",
@@ -158,6 +158,7 @@ const RESOURCE_ICON_MAP = {
   pdf2zh: LanguageOutline,
   searxng: SearchOutline,
   browser_rpa: GlobeOutline,
+  sandbox: TerminalOutline,
   neo4j: CubeOutline,
   ragflow_api: LibraryOutline,
   knowflow_backend: ServerOutline,
@@ -177,6 +178,7 @@ const RESOURCE_CATEGORY_MAP = {
   pdf2zh: "service",
   searxng: "service",
   browser_rpa: "service",
+  sandbox: "service",
   neo4j: "service",
   ragflow_api: "knowledge",
   knowflow_backend: "knowledge",
@@ -278,17 +280,16 @@ function fillForm(data) {
   form.firecrawl_api_key = data?.firecrawl_api_key || "";
   form.firecrawl_api_url = data?.firecrawl_api_url || "https://api.firecrawl.dev";
   form.firecrawl_read_full_max_urls = data?.firecrawl_read_full_max_urls || 3;
-  form.agent_browser_enabled = Boolean(data?.agent_browser_enabled);
   form.agent_browser_headless = data?.agent_browser_headless !== false;
   form.agent_browser_allowed_domains = data?.agent_browser_allowed_domains || "";
   form.agent_browser_max_steps_per_session = data?.agent_browser_max_steps_per_session || 50;
-  form.agent_browser_auto_task_enabled = data?.agent_browser_auto_task_enabled !== false;
   form.agent_browser_auto_task_max_steps = data?.agent_browser_auto_task_max_steps || 15;
   const ng = data?.neo4j || {};
   form.neo4j_uri = ng.neo4j_uri || "";
   form.neo4j_user = ng.neo4j_user || "";
   form.neo4j_password = ng.neo4j_password_masked || "";
   form.neo4j_database = ng.neo4j_database || "neo4j";
+  form.sandbox_base_url = data?.sandbox_base_url || "";
   const kb = data?.knowledge || {};
   form.ragflow_api_url = kb.ragflow_api_url || "";
   form.ragflow_api_key = kb.ragflow_api_key_masked || "";
@@ -525,14 +526,16 @@ function buildPayloadFor(id) {
         ...(form.neo4j_password && !form.neo4j_password.includes("••••")
           ? { neo4j_password: form.neo4j_password.trim() }
           : {})};
+    case "sandbox":
+      return {
+        sandbox_base_url: form.sandbox_base_url.trim(),
+      };
     case "browser_rpa":
       return {
-        agent_browser_enabled: Boolean(form.agent_browser_enabled),
         agent_browser_headless: Boolean(form.agent_browser_headless),
         agent_browser_allowed_domains: form.agent_browser_allowed_domains.trim(),
         agent_browser_max_steps_per_session:
           Number(form.agent_browser_max_steps_per_session) || 50,
-        agent_browser_auto_task_enabled: Boolean(form.agent_browser_auto_task_enabled),
         agent_browser_auto_task_max_steps:
           Number(form.agent_browser_auto_task_max_steps) || 15,
       };
@@ -1304,9 +1307,6 @@ onMounted(loadAll);
           </template>
 
           <template v-else-if="activeId === 'browser_rpa'">
-            <n-form-item :label="t('admin.modelSettings.labels.browserRpaEnabled')">
-              <n-switch v-model:value="form.agent_browser_enabled" />
-            </n-form-item>
             <n-form-item :label="t('admin.modelSettings.labels.browserRpaHeadless')">
               <n-switch v-model:value="form.agent_browser_headless" />
             </n-form-item>
@@ -1324,9 +1324,6 @@ onMounted(loadAll);
                 style="width: 100%"
               />
             </n-form-item>
-            <n-form-item :label="t('admin.modelSettings.labels.browserRpaAutoTask')">
-              <n-switch v-model:value="form.agent_browser_auto_task_enabled" />
-            </n-form-item>
             <n-form-item :label="t('admin.modelSettings.labels.browserRpaAutoTaskMaxSteps')">
               <n-input-number
                 v-model:value="form.agent_browser_auto_task_max_steps"
@@ -1336,6 +1333,16 @@ onMounted(loadAll);
               />
             </n-form-item>
             <div class="drawer-hint" v-html="t('admin.modelSettings.hints.browserRpa')" />
+          </template>
+
+          <template v-else-if="activeId === 'sandbox'">
+            <n-form-item :label="t('admin.modelSettings.labels.sandboxServiceUrl')">
+              <n-input
+                v-model:value="form.sandbox_base_url"
+                :placeholder="t('admin.modelSettings.placeholders.sandboxServiceUrl')"
+              />
+            </n-form-item>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.sandbox')" />
           </template>
 
           <template v-else-if="activeId === 'neo4j'">

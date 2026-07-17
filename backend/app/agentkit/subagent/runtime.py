@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 from app.agentkit.subagent.config import SubagentConfig
 from app.agentkit.subagent.context import (
@@ -49,9 +49,10 @@ async def execute_subagent(
 
     agent = agent_id or str((loop_state or {}).get("agent_id") or "")
 
-    # 并行 explore 模式（多 query + 有 invoke_skill + 有 explore_steps）
+    # 并行检索模式（search + 多 query + invoke_skill + explore_steps）
+    # search 接收 queries 时走并行技能检索，否则走 LLM 隔离循环
     if (
-        sub_kind == "explore"
+        sub_kind == "search"
         and len(normalized) >= config.runtime.parallel_explore_min_queries
         and config.invoke_skill is not None
         and config.runtime.explore_steps
@@ -81,7 +82,8 @@ async def execute_subagent(
 
     sub_task = normalized[0]
     child_state = child_state_from_parent(loop_state, kind=sub_kind, agent_id=agent)
-    tool_specs = config.build_tool_specs(set(kind_config.allowed_tools))
+    allowed = set(kind_config.allowed_tools) if kind_config.allowed_tools is not None else None
+    tool_specs = config.build_tool_specs(allowed)
     summary = await run_subagent_tool_loop(
         kind_config=kind_config,
         task=sub_task,

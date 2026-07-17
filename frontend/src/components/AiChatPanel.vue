@@ -35,6 +35,7 @@ import {
 import { formatAgentDisplayName } from "../utils/agentDisplay.js";
 import RoseLoader from "./RoseLoader.vue";
 import CurveAnimation from "./CurveAnimation.vue";
+import { transcribeSpeech } from "../api/speech";
 import { NButton, NCollapse, NCollapseItem, NIcon, NPopover } from "naive-ui";
 import ChatComposer from "./ChatComposer.vue";
 import ChatDisclaimer from "./ChatDisclaimer.vue";
@@ -528,6 +529,7 @@ function _buildGroups(items) {
 
 function _ensureSelectedValid() {
   if (!selectedModelProviderId.value) {
+    // 首次访问：取第一个模型作为默认，并持久化
     const first = modelOptions.value?.[0]?.children?.[0];
     if (first) {
       selectedModelProviderId.value = first.value;
@@ -543,13 +545,10 @@ function _ensureSelectedValid() {
     }
   }
   if (!allValues.has(selectedModelProviderId.value)) {
+    // 之前选中的模型不在当前列表中（如列表变更），UI 回退到第一个可用模型，
+    // 但不覆写 localStorage，保留上次用户选择的记录，等模型恢复时自动恢复。
     const first = modelOptions.value?.[0]?.children?.[0];
-    if (first) {
-      selectedModelProviderId.value = first.value;
-    } else {
-      selectedModelProviderId.value = "";
-    }
-    localStorage.setItem(MODEL_SELECTED_KEY, selectedModelProviderId.value);
+    selectedModelProviderId.value = first?.value || "";
   }
 }
 
@@ -852,28 +851,15 @@ function onReportCitationClick(index, message, messageIndex) {
 const citationPanelOpen = ref([]);
 const thinkingPanelOpen = ref(false);
 
-function hasCitations(message) {
-  if (!props.showCitations && !props.showReportTools) return false;
-  return Array.isArray(message?.citations) && message.citations.length > 0;
-}
-
 function citationCount(message) {
   return Array.isArray(message?.citations) ? message.citations.length : 0;
 }
 
-function hasThinkingContent(message) {
-  const workflow = message?.workflow;
-  if (!workflow) return false;
-  if (Array.isArray(workflow.taskPlan) && workflow.taskPlan.length > 0) return true;
-  if (Array.isArray(workflow.steps) && workflow.steps.length > 0) return true;
-  return false;
-}
-
 function shouldShowFinalPanels(entry) {
-  if (entry.message.streaming) return false;
   if (!hasAssistantAnswer(entry.message)) return false;
   if (props.showReportTools) return false;
-  return hasCitations(entry.message) || hasThinkingContent(entry.message);
+  // AiHomeView 始终展示折叠面板（包含引用+思考过程）
+  return true;
 }
 
 function workflowPlanSteps(message) {
@@ -881,7 +867,16 @@ function workflowPlanSteps(message) {
 }
 
 function workflowExecSteps(message) {
-  return message?.workflow?.steps || [];
+  const workflow = message?.workflow;
+  if (!workflow) return [];
+  // 合并顶层步骤和所有子任务内部步骤，确保思考过程不丢失
+  const allSteps = [...(workflow.steps || [])];
+  for (const task of workflow.taskPlan || []) {
+    if (Array.isArray(task.steps) && task.steps.length > 0) {
+      allSteps.push(...task.steps);
+    }
+  }
+  return allSteps;
 }
 
 function useReportOptimizePreset(preset) {
@@ -949,9 +944,16 @@ const useThinkingReplaceScope = computed(() =>
   props.chatScope === "smart-data-query" || props.chatScope === "carbon-qa"
 );
 
+/** 报告生成：同一智能体的多个 tool_call 合并为一段滚动显示，不罗列全部子步骤。 */
+const useSingleStepWorkflow = computed(() =>
+  useCompactWorkflowProgress.value
+  || useThinkingReplaceScope.value
+  || props.chatScope === "report-generation"
+);
+
 function applyWorkflowEvent(workflow, ev) {
   return applyAgentWorkflowEvent(workflow, ev, t, {
-    currentStepOnly: useCompactWorkflowProgress.value || useThinkingReplaceScope.value,
+    currentStepOnly: useSingleStepWorkflow.value,
   });
 }
 
@@ -1530,6 +1532,36 @@ function onComposerKeydown(e) {
   }
 }
 
+/* ---- 语音输入 ---- */
+const voiceProcessing = ref(false);
+
+async function handleVoiceInput(blob, errMsg) {
+  if (errMsg) {
+    voiceProcessing.value = false;
+    ui.error(errMsg);
+    return;
+  }
+  if (!blob) {
+    voiceProcessing.value = false;
+    return;
+  }
+  voiceProcessing.value = true;
+  try {
+    const result = await transcribeSpeech({ file: blob, language: "zh", diarize: false });
+    const text = result?.text || result?.segments?.map((s) => s.text).join("") || "";
+    if (text.trim()) {
+      input.value = (input.value + text.trim()).trim();
+    } else {
+      ui.warning(t("chat.voice.noContent"));
+    }
+  } catch (e) {
+    ui.error(e.message || t("chat.voice.failed"));
+  } finally {
+    voiceProcessing.value = false;
+  }
+}
+/* ---- 语音输入结束 ---- */
+
 function findUserIndexBefore(index) {
   for (let i = index - 1; i >= 0; i -= 1) {
     if (messages.value[i]?.role === "user") return i;
@@ -2086,16 +2118,14 @@ defineExpose({
                   arrow-placement="right"
                   :accordion="false"
                 >
-                  <n-collapse-item
-                    v-if="hasCitations(entry.message)"
-                    name="citations"
-                  >
+                  <n-collapse-item name="citations">
                     <template #header>
                       <span class="ai-home-panel-header">
-                        引用了
-                        <span class="ai-home-panel-badge">{{ citationCount(entry.message) }}</span>
-                        条资料
+                        引用 {{ citationCount(entry.message) }} 个数据来源
                       </span>
+                    </template>
+                    <template #arrow>
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5.7 11.7 9.4 8 5.7 4.3a.7.7 0 0 1 1-1l4 4a.7.7 0 0 1 0 1l-4 4a.7.7 0 0 1-1-1z"/></svg>
                     </template>
                     <div class="ai-home-panel-body">
                       <div
@@ -2110,12 +2140,12 @@ defineExpose({
                       </div>
                     </div>
                   </n-collapse-item>
-                  <n-collapse-item
-                    v-if="hasThinkingContent(entry.message)"
-                    name="thinking"
-                  >
+                  <n-collapse-item name="thinking">
                     <template #header>
                       <span class="ai-home-panel-header">思考过程</span>
+                    </template>
+                    <template #arrow>
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5.7 11.7 9.4 8 5.7 4.3a.7.7 0 0 1 1-1l4 4a.7.7 0 0 1 0 1l-4 4a.7.7 0 0 1-1-1z"/></svg>
                     </template>
                     <div class="ai-home-panel-body">
                       <div v-for="(task, ti) in workflowPlanSteps(entry.message)" :key="`plan-${ti}`" class="ai-home-panel-plan-step">
@@ -2414,11 +2444,14 @@ defineExpose({
                 :attachment-loading="uploadingAttachments"
                 :attachment-disabled="uploadingAttachments || sending"
                 :attachments="enableAttachments ? attachmentFiles : []"
+                :show-voice-input="true"
+                :voice-processing="voiceProcessing"
                 @keydown="onComposerKeydown"
                 @send="sendMessage()"
                 @stop="stopGeneration"
                 @attach="openAttachmentPicker"
                 @remove-attachment="removeAttachment"
+                @voice-input="handleVoiceInput"
               >
                 <template v-if="toolLinks.length || enableAgentSkills || (showReportTools && (reportAgentSkillsLoading || reportAgentSkills.length || reportOptimizePresets.length))" #toolbar>
                   <RouterLink
@@ -2965,10 +2998,10 @@ defineExpose({
 .ai-home-composer-tool {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 8px;
-  font-size: 12px;
-  line-height: 1.3;
+  gap: 2px;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.2;
   border: none;
   background: transparent;
   color: var(--platform-text-tertiary);
@@ -2982,6 +3015,10 @@ defineExpose({
   background: var(--platform-bg-secondary);
 }
 
+.ai-home-composer-tool :deep(.n-icon) {
+  font-size: 12px !important;
+}
+
 .ai-home-model-dropdown-icon {
   margin-left: 1px;
   transition: transform var(--platform-duration-smooth) ease;
@@ -2990,15 +3027,15 @@ defineExpose({
 .ai-home-suggestions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 5px;
+  gap: 4px;
   width: 100%;
   padding-left: 2px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .ai-home-chip {
-  padding: 4px 12px;
-  font-size: 11px;
+  padding: 2px 8px;
+  font-size: 10px;
   font-weight: 400;
   color: var(--platform-text-tertiary);
   background: transparent;
@@ -3046,15 +3083,15 @@ defineExpose({
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 5px;
   width: 100%;
   max-width: min(100%, 864px);
-  padding: 4px 4px 0;
+  padding: 2px 4px 0;
   margin-top: 2px;
 }
 
 .ai-home-follow-ups__label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -3065,12 +3102,12 @@ defineExpose({
 .ai-home-follow-ups__list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px;
 }
 
 .ai-home-follow-ups .ai-home-chip {
-  padding: 6px 14px;
-  font-size: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
 }
 
 .ai-home-attachment-input {
@@ -3531,20 +3568,20 @@ defineExpose({
   font-size: 0.85em;
   padding: 2px 8px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--platform-accent) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--platform-accent) 12%, transparent);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
   font-weight: 500;
-  color: color-mix(in srgb, var(--platform-accent-pressed) 80%, var(--platform-text));
+  color: #1e293b;
 }
 
-/* 代码块（pre > code） — 更具高级感的深色背景 */
+/* 代码块（pre > code） — 白底黑字 */
 .ai-home-bubble--bot :deep(pre) {
   margin: 0.6em 0;
   padding: 16px 18px;
   border-radius: 10px;
-  background: #1a1a2e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -3554,7 +3591,7 @@ defineExpose({
   background: transparent;
   border: none;
   font-weight: 400;
-  color: #e4e4e7;
+  color: #1e293b;
   font-size: 0.82em;
   line-height: 1.55;
 }
@@ -3840,50 +3877,59 @@ defineExpose({
 
 /* ── 最终回复折叠面板 ── */
 .ai-home-final-panels {
-  margin-bottom: 12px;
-  font-size: var(--platform-font-size-base);
+  margin-bottom: 4px;
+  font-size: 11px;
 }
 
 .ai-home-final-panels :deep(.n-collapse-item__header) {
-  font-size: var(--platform-font-size-base);
+  font-size: 11px;
+  padding: 1px 0 !important;
+}
+
+.ai-home-final-panels :deep(.n-collapse-item__header .n-collapse-item__arrow) {
+  /* 用 #arrow slot 替换默认图标，slot 内 SVG 已设 10×10，此处只需对齐容器 */
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.ai-home-final-panels :deep(.n-collapse-item) {
+  border-bottom: none !important;
+  border-top: none !important;
+  margin: 0;
+}
+
+.ai-home-final-panels :deep(.n-collapse-item__border) {
+  display: none !important;
+}
+
+.ai-home-final-panels :deep(.n-collapse) {
+  border: none !important;
 }
 
 .ai-home-panel-header {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--platform-font-size-base);
+  font-size: 11px;
   color: var(--platform-text-secondary);
 }
 
-.ai-home-panel-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #fff;
-  background: var(--platform-accent);
-  line-height: 1;
-}
 
 .ai-home-panel-body {
-  padding: 4px 0 8px;
+  padding: 0;
+  font-size: 11px;
 }
 
 .ai-home-panel-citation {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: 4px;
+  padding: 1px 6px;
   margin: 0 -6px;
-  border-radius: 6px;
-  font-size: var(--platform-font-size-base);
-  line-height: 1.5;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--platform-text-secondary);
   cursor: pointer;
   transition: background-color 0.15s;
@@ -3910,27 +3956,27 @@ defineExpose({
   white-space: nowrap;
   max-width: 200px;
   color: var(--platform-text-tertiary);
-  font-size: var(--platform-font-size-sm);
+  font-size: 11px;
   direction: rtl;
   text-align: right;
 }
 
 .ai-home-panel-plan-step {
-  padding: 4px 0;
+  padding: 1px 0;
 }
 
 .ai-home-panel-plan-step-title {
-  font-size: var(--platform-font-size-base);
+  font-size: 11px;
   font-weight: 500;
   color: var(--platform-text);
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .ai-home-panel-plan-step-summary {
-  font-size: var(--platform-font-size-sm);
+  font-size: 11px;
   color: var(--platform-text-tertiary);
-  margin: 2px 0 4px;
-  line-height: 1.45;
+  margin: 1px 0 2px;
+  line-height: 1.4;
 }
 
 .ai-home-panel-plan-substeps {
@@ -3942,8 +3988,8 @@ defineExpose({
   align-items: flex-start;
   gap: 4px;
   padding: 1px 0;
-  font-size: var(--platform-font-size-sm);
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--platform-text-tertiary);
 }
 
@@ -3954,15 +4000,15 @@ defineExpose({
 }
 
 .ai-home-panel-thinking-text {
-  font-size: var(--platform-font-size-base);
-  line-height: 1.65;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--platform-text-tertiary);
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 6px 8px;
-  margin-top: 4px;
+  padding: 4px 8px;
+  margin-top: 2px;
   background: var(--platform-bg-tertiary);
-  border-radius: 6px;
+  border-radius: 4px;
   max-height: 400px;
   overflow-y: auto;
 }
@@ -4044,12 +4090,84 @@ defineExpose({
 
   /* 7. 首屏建议 chip 缩小 */
   .ai-home-suggestions {
-    gap: 6px;
+    gap: 4px;
     padding: 0 6px;
   }
   .ai-home-chip {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  /* 8. 消息气泡文字在移动端使用更小字号 */
+  .ai-home-messages :deep(.chat-markdown-body),
+  .ai-home-messages :deep(.markdown-body) {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .ai-home-messages :deep(.chat-markdown-body p),
+  .ai-home-messages :deep(.markdown-body p) {
+    margin-bottom: 6px;
+  }
+  .ai-home-messages :deep(.chat-markdown-body pre),
+  .ai-home-messages :deep(.markdown-body pre) {
     font-size: 12px;
-    padding: 5px 10px;
+    padding: 10px;
+  }
+
+  /* 9. 消息 header/avatar 组件变紧凑 */
+  .ai-home-messages :deep(.chat-bubble-header) {
+    font-size: 12px;
+    gap: 4px;
+  }
+  .ai-home-messages :deep(.chat-bubble-avatar) {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 10px !important;
+  }
+
+  /* 10. 建议 chips 不溢出屏幕 */
+  .ai-home-suggestions {
+    flex-wrap: wrap;
+    overflow: hidden;
+  }
+  .ai-home-chip {
+    max-width: calc(50vw - 16px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* 更小屏幕（< 400px）：进一步压缩 */
+@media (max-width: 400px) {
+  .ai-home-welcome {
+    padding: 12px 12px 2px;
+  }
+  .ai-home-title {
+    font-size: 18px;
+  }
+  .ai-home-desc,
+  .ai-home-sub {
+    font-size: 13px;
+  }
+  .ai-home-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+  .ai-home-messages {
+    padding: 0 6px 4px;
+  }
+  .ai-home-dock {
+    padding: 0 8px 14px;
+  }
+  .ai-home-dock--chat {
+    padding: 0 8px 14px;
+  }
+  .ai-home-chip {
+    max-width: calc(100vw - 24px);
+    font-size: 11px;
+    padding: 4px 8px;
   }
 }
 

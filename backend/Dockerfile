@@ -15,6 +15,7 @@ ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG APT_MIRROR=mirrors.aliyun.com
 ARG INSTALL_PAGEINDEX=0
 ARG INSTALL_BROWSER=0
+ARG PLAYWRIGHT_DOWNLOAD_HOST=https://playwright.download.azure.cn
 
 FROM ${PYTHON_IMAGE} AS base
 ARG PIP_INDEX_URL
@@ -43,6 +44,8 @@ FROM base AS deps
 ARG PIP_INDEX_URL
 ARG INSTALL_PAGEINDEX
 ARG INSTALL_BROWSER
+ARG PLAYWRIGHT_DOWNLOAD_HOST
+ENV PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST}
 
 COPY backend/pyproject.toml backend/README.md ./
 
@@ -54,6 +57,8 @@ RUN mkdir -p app/agentkit && touch app/agentkit/__init__.py
 
 # PageIndex 可选；仅 INSTALL_PAGEINDEX=1 时安装 extra
 COPY third_party/pageindex ./third_party/pageindex/
+# pyproject.toml 依赖路径为 pageindex-upstream，建立软链接兼容
+RUN ln -sf /app/third_party/pageindex /app/third_party/pageindex-upstream
 
 # agentkit 本地包（pip install 时 file:../packages/ 需要 /packages/）
 COPY packages /packages
@@ -67,10 +72,11 @@ RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
     fi && \
     if [ "${INSTALL_BROWSER}" = "1" ]; then \
       pip install --no-cache-dir -i "${PIP_INDEX_URL}" ".[browser]" && \
+      pip install --no-cache-dir -i "${PIP_INDEX_URL}" playwright && \
       python -m playwright install-deps chromium && \
       python -m playwright install chromium; \
-    fi && \
-    find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+    fi
+RUN find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 RUN python -c "\
 import fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml; \

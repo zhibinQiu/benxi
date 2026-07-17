@@ -16,7 +16,7 @@ from app.services.agent_plan_cache_service import (
     question_similarity,
     store_cached_payload,
 )
-from app.services.agent_planner import AgentExecutionPlan
+from app.agentkit.loop import AgentExecutionPlan
 
 
 def test_normalize_question_collapses_punctuation():
@@ -34,17 +34,15 @@ def test_store_and_lookup_agent_execution_plan():
     scope = agent_execution_scope_key(
         user_id,
         available_atomic_tools={"knowledge_retrieve", "web_search"},
-        builtin_skills={"knowledge-research"},
         uploaded_skills=set(),
     )
     plan = AgentExecutionPlan(
         reasoning="查内部制度",
         intent="查询碳配额流程",
         direct_answer=False,
-        atomic_tools=("knowledge_retrieve",),
-        skip_tools=("web_search",),
+        allowed_tools=("knowledge_retrieve",),
+        blocked_tools=("web_search",),
         uploaded_skill=None,
-        builtin_orchestration="knowledge-research",
         steps=("检索文档", "作答"),
         source="llm",
     )
@@ -62,8 +60,7 @@ def test_store_and_lookup_agent_execution_plan():
     )
     assert hit is not None
     restored = execution_plan_from_payload(hit["payload"])
-    assert restored.atomic_tools == plan.atomic_tools
-    assert restored.builtin_orchestration == plan.builtin_orchestration
+    assert restored.allowed_tools == plan.allowed_tools
     assert restored.source == "cache"
 
 

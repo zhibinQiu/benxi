@@ -3,8 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
   NButton,
   NCard,
-  NCheckbox,
-  NCheckboxGroup,
   NDivider,
   NDrawer,
   NDrawerContent,
@@ -48,7 +46,7 @@ import {
   readAgentsTabCache,
   writeAgentsTabCache,
 } from "../../utils/agentSkillsAgentsTabCache.js";
-import { mergeBuiltinAgent, normalizeBuiltinAgent } from "../../utils/agentSkillsHelpers.js";
+import { normalizeBuiltinAgent } from "../../utils/agentSkillsHelpers.js";
 
 const emit = defineEmits(["registry-changed"]);
 
@@ -87,12 +85,8 @@ const configSaving = ref(false);
 const configActiveTab = ref("agent-md");
 const configAgentMdContent = ref("");
 const configAgentMdLoading = ref(false);
-const configAgentMdDirty = ref(false);
-const configAgentMdSaving = ref(false);
 const configStyleMdContent = ref("");
 const configStyleMdLoading = ref(false);
-const configStyleMdDirty = ref(false);
-const configStyleMdSaving = ref(false);
 
 // ── 文件夹 tab（文档树勾选） ─────────────────────
 const configFolderTreeLoading = ref(false);
@@ -147,11 +141,19 @@ const filteredExternalAgents = computed(() => {
   });
 });
 
-const selectedSkillCount = computed(() => selectedSkillNames.value.length);
-
 const showAgentEmpty = computed(() =>
   keyword.value.trim() && !filteredAgents.value.length && !filteredExternalAgents.value.length
 );
+
+function toggleSkillOption(opt) {
+  if (opt.disabled) return;
+  const idx = selectedSkillNames.value.indexOf(opt.value);
+  if (idx >= 0) {
+    selectedSkillNames.value = selectedSkillNames.value.filter((v) => v !== opt.value);
+  } else {
+    selectedSkillNames.value = [...selectedSkillNames.value, opt.value];
+  }
+}
 
 function persistCache() {
   writeAgentsTabCache({
@@ -285,10 +287,13 @@ async function saveAgentConfig() {
       if (agent.skills_configurable) {
         payload.skill_names = selectedSkillNames.value;
       }
-      const updated = await patchAgentProfile(agent.id, payload);
-      const idx = agents.value.findIndex((a) => a.id === updated.id);
-      if (idx >= 0) agents.value[idx] = mergeBuiltinAgent(agents.value[idx], updated);
-      configDrawerAgent.value = mergeBuiltinAgent(configDrawerAgent.value, updated);
+      await patchAgentProfile(agent.id, payload);
+      // 同时保存 AGENT.md 和 STYLE.md
+      await Promise.all([
+        updateAgentProfileFile(agent.id, "AGENT.md", configAgentMdContent.value).catch(() => {}),
+        updateAgentProfileFile(agent.id, "STYLE.md", configStyleMdContent.value).catch(() => {}),
+      ]);
+      await loadAgents({ background: true });
       emit("registry-changed");
     }
     ui.success(t("admin.agentSkills.saved"));
@@ -306,7 +311,6 @@ async function loadConfigAgentMd() {
   if (!agent?.id) return;
   configAgentMdLoading.value = true;
   configAgentMdContent.value = "";
-  configAgentMdDirty.value = false;
   try {
     const file = await fetchAgentProfileFile(agent.id, "AGENT.md");
     configAgentMdContent.value = file?.text || "";
@@ -317,27 +321,11 @@ async function loadConfigAgentMd() {
   }
 }
 
-async function saveConfigAgentMd() {
-  const agent = configDrawerAgent.value;
-  if (!agent?.id) return;
-  configAgentMdSaving.value = true;
-  try {
-    await updateAgentProfileFile(agent.id, "AGENT.md", configAgentMdContent.value);
-    configAgentMdDirty.value = false;
-    ui.success(t("admin.agentSkills.saved"));
-  } catch (e) {
-    ui.error(e.message || t("admin.agentSkills.saveFailed"));
-  } finally {
-    configAgentMdSaving.value = false;
-  }
-}
-
 async function loadConfigStyleMd() {
   const agent = configDrawerAgent.value;
   if (!agent?.id) return;
   configStyleMdLoading.value = true;
   configStyleMdContent.value = "";
-  configStyleMdDirty.value = false;
   try {
     const file = await fetchAgentProfileFile(agent.id, "STYLE.md");
     configStyleMdContent.value = file?.text || "";
@@ -345,21 +333,6 @@ async function loadConfigStyleMd() {
     configStyleMdContent.value = "";
   } finally {
     configStyleMdLoading.value = false;
-  }
-}
-
-async function saveConfigStyleMd() {
-  const agent = configDrawerAgent.value;
-  if (!agent?.id) return;
-  configStyleMdSaving.value = true;
-  try {
-    await updateAgentProfileFile(agent.id, "STYLE.md", configStyleMdContent.value);
-    configStyleMdDirty.value = false;
-    ui.success(t("admin.agentSkills.saved"));
-  } catch (e) {
-    ui.error(e.message || t("admin.agentSkills.saveFailed"));
-  } finally {
-    configStyleMdSaving.value = false;
   }
 }
 
@@ -507,8 +480,7 @@ async function loadConfigAgentTools() {
   if (!agent?.id) return;
   configToolsLoading.value = true;
   try {
-    const res = await fetchAgentTools();
-    const allTools = res?.data ?? [];
+    const allTools = await fetchAgentTools() ?? [];
     const runtimeNames = new Set(agent.runtime_tool_names || []);
     configAgentTools.value = allTools.filter((t) => runtimeNames.has(t.tool_id));
   } catch (e) {
@@ -800,36 +772,36 @@ defineExpose({
       <NDrawerContent
         :title="t('admin.agentSkills.configDrawerTitle', { name: configDrawerDisplayName() })"
         closable
-        :native-scrollbar="false"
-        body-content-style="overflow-x: hidden;"
+        body-style="overflow: hidden;"
       >
+        <div class="agent-drawer-scroll">
         <div class="agent-config-drawer">
           <!-- 通用设置（始终显示在 tab 上方） -->
-          <section class="agent-config-drawer__section" style="margin-bottom: 16px;">
+          <section class="agent-config-drawer__section">
             <div class="agent-config-drawer__section-title">
               {{ t("admin.agentSkills.configSectionGeneral") }}
             </div>
-            <div class="agent-config-drawer__panel">
+            <div class="agent-config-drawer__toggles">
               <div
                 v-if="configDrawerKind === 'builtin' && configDrawerAgent?.id !== 'orchestrator'"
-                class="agent-config-drawer__row"
+                class="agent-config-drawer__toggle"
               >
-                <div class="agent-config-drawer__row-text">
-                  <NText>{{ t("admin.agentSkills.agentEnabled") }}</NText>
-                  <NText depth="3">{{ t("admin.agentSkills.agentEnabledHint") }}</NText>
+                <div class="agent-config-drawer__toggle-body">
+                  <span class="agent-config-drawer__toggle-label">{{ t("admin.agentSkills.agentEnabled") }}</span>
+                  <span class="agent-config-drawer__toggle-hint">{{ t("admin.agentSkills.agentEnabledHint") }}</span>
                 </div>
                 <NSwitch v-model:value="configEnabled" size="small" />
               </div>
-              <div class="agent-config-drawer__row">
-                <div class="agent-config-drawer__row-text">
-                  <NText>{{ t("admin.agentSkills.serviceEnabled") }}</NText>
-                  <NText depth="3">
+              <div class="agent-config-drawer__toggle">
+                <div class="agent-config-drawer__toggle-body">
+                  <span class="agent-config-drawer__toggle-label">{{ t("admin.agentSkills.serviceEnabled") }}</span>
+                  <span class="agent-config-drawer__toggle-hint">
                     {{
                       configDrawerKind === "external"
                         ? t("admin.agentSkills.externalServiceHint")
                         : t("admin.agentSkills.serviceEnabledHint")
                     }}
-                  </NText>
+                  </span>
                 </div>
                 <NSwitch
                   v-if="configDrawerKind === 'external'"
@@ -856,6 +828,7 @@ defineExpose({
 
           <!-- Tab 配置：AGENT.md / STYLE.md / 文件夹 / 技能 / 工具（仅内置智能体） -->
           <template v-if="configDrawerKind === 'builtin'">
+            <div class="agent-config-drawer__tabs-wrap">
             <n-tabs v-model:value="configActiveTab" type="line" size="small" style="margin-top: 4px;">
               <n-tab-pane name="agent-md" tab="AGENT.md">
                 <div v-if="configAgentMdLoading" style="padding: 20px 0;">
@@ -867,19 +840,7 @@ defineExpose({
                     type="textarea"
                     :rows="16"
                     :placeholder="t('admin.agentSkills.agentConfigHint')"
-                    @update:value="configAgentMdDirty = true"
                   />
-                  <NSpace style="margin-top: 10px">
-                    <NButton
-                      type="primary"
-                      size="small"
-                      :loading="configAgentMdSaving"
-                      :disabled="!configAgentMdDirty"
-                      @click="saveConfigAgentMd"
-                    >
-                      {{ t("common.save") }}
-                    </NButton>
-                  </NSpace>
                 </template>
               </n-tab-pane>
               <n-tab-pane name="style-md" tab="STYLE.md">
@@ -892,19 +853,7 @@ defineExpose({
                     type="textarea"
                     :rows="16"
                     :placeholder="t('admin.agentSkills.stylePlaceholder')"
-                    @update:value="configStyleMdDirty = true"
                   />
-                  <NSpace style="margin-top: 10px">
-                    <NButton
-                      type="primary"
-                      size="small"
-                      :loading="configStyleMdSaving"
-                      :disabled="!configStyleMdDirty"
-                      @click="saveConfigStyleMd"
-                    >
-                      {{ t("common.save") }}
-                    </NButton>
-                  </NSpace>
                 </template>
               </n-tab-pane>
               <n-tab-pane name="files" :tab="t('admin.agentSkills.tabFiles')">
@@ -967,34 +916,23 @@ defineExpose({
               <n-tab-pane name="skills" :tab="t('admin.agentSkills.tabSkills')">
                 <div class="agent-config-drawer__tab-content">
                   <template v-if="configDrawerAgent?.skills_configurable">
-                    <NText depth="3" class="agent-config-drawer__section-hint">
+                    <NText depth="3" class="agent-config-drawer__section-hint" style="margin-bottom: 8px; display: block;">
                       {{ t("admin.agentSkills.skillPickerHint") }}
                     </NText>
-                    <NCheckboxGroup v-model:value="selectedSkillNames" class="agent-config-drawer__skills">
-                      <div class="agent-config-drawer__skill-list">
-                        <div
-                          v-for="opt in skillPickerOptions"
-                          :key="opt.value"
-                          class="agent-skill-option"
-                          :class="{
-                            'agent-skill-option--checked': selectedSkillNames.includes(opt.value),
-                            'agent-skill-option--disabled': opt.disabled,
-                          }"
-                        >
-                          <NCheckbox :value="opt.value" :disabled="opt.disabled" class="agent-skill-option__checkbox">
-                            <div class="agent-skill-option__body">
-                              <span class="agent-skill-option__title">{{ opt.title }}</span>
-                              <span v-if="opt.title !== opt.name" class="agent-skill-option__name">
-                                {{ opt.name }}
-                              </span>
-                              <span v-if="opt.description" class="agent-skill-option__desc">
-                                {{ opt.description }}
-                              </span>
-                            </div>
-                          </NCheckbox>
-                        </div>
+                    <div class="agent-skills-picker">
+                      <div
+                        v-for="opt in skillPickerOptions"
+                        :key="opt.value"
+                        class="agent-skill-chip"
+                        :class="{
+                          'agent-skill-chip--checked': selectedSkillNames.includes(opt.value),
+                          'agent-skill-chip--disabled': opt.disabled,
+                        }"
+                        @click="toggleSkillOption(opt)"
+                      >
+                        <span class="agent-skill-chip__label">{{ opt.title || opt.name }}</span>
                       </div>
-                    </NCheckboxGroup>
+                    </div>
                   </template>
                   <NText v-else depth="3">
                     该智能体不支持技能配置
@@ -1034,7 +972,9 @@ defineExpose({
                 </div>
               </n-tab-pane>
             </n-tabs>
+            </div>
           </template>
+        </div>
         </div>
         <template #footer>
           <NSpace justify="end" :size="10">
@@ -1104,6 +1044,16 @@ defineExpose({
   margin-bottom: 0;
 }
 
+.agent-config-drawer {
+  padding: 0 2px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.agent-config-drawer__section {
+  margin-bottom: 16px;
+}
+
 .agents-tab-header {
   display: flex;
   align-items: flex-start;
@@ -1125,9 +1075,81 @@ defineExpose({
   margin-bottom: 12px;
 }
 
-/* ── 配置抽屉 tab 内容容器（防止左右滑动） ── */
-.agent-config-drawer__tab-content {
+/* ── 抽屉滚动容器（接管所有滚动，锁死横向） ── */
+.agent-drawer-scroll {
+  height: 100%;
+  overflow-y: auto;
   overflow-x: hidden;
+  min-height: 0;
+}
+
+/* ── 配置抽屉 tab 内容容器 ── */
+.agent-config-drawer__tabs-wrap {
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+
+.agent-drawer-scroll :deep(.n-tabs-nav-wrapper),
+.agent-drawer-scroll :deep(.n-tabs-scroll-wrapper) {
+  overflow: hidden !important;
+}
+
+.agent-config-drawer__tab-content {
+  overflow: hidden;
+}
+
+/* ── 运行设置（通用设置——简洁 toggle 列表） ── */
+.agent-config-drawer__section-title {
+  font-size: var(--platform-font-size-sm, 13px);
+  font-weight: 500;
+  color: var(--platform-text, #333);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.agent-config-drawer__toggles {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-config-drawer__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.agent-config-drawer__toggle-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-config-drawer__toggle-label {
+  font-size: var(--platform-font-size-sm, 13px);
+  font-weight: 500;
+  color: var(--platform-text, #333);
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.agent-config-drawer__toggle-hint {
+  font-size: var(--platform-font-size-xs, 12px);
+  color: var(--platform-text-tertiary, #999);
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.agent-config-drawer__readonly-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: var(--platform-font-size-xs, 12px);
+  color: var(--platform-text-tertiary, #999);
 }
 
 /* ── 文件夹树 ── */
@@ -1143,7 +1165,6 @@ defineExpose({
   gap: 6px;
   margin-bottom: 4px;
   padding: 4px 0;
-  border-bottom: 1px solid var(--platform-border-soft, #e8e8e8);
 }
 
 .folder-tree__library-label {
@@ -1224,5 +1245,58 @@ defineExpose({
   font-size: var(--platform-font-size-sm, 13px);
   color: var(--platform-text-tertiary, #999);
   line-height: 1.4;
+}
+
+/* ── 技能选择器（chips 网格） ── */
+.agent-skills-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-skill-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: var(--platform-font-size-sm, 13px);
+  line-height: 1.4;
+  cursor: pointer;
+  border: 1px solid var(--platform-border, #e0e0e0);
+  background: var(--platform-bg, #fff);
+  color: var(--platform-text, #333);
+  transition: all 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.agent-skill-chip:hover {
+  border-color: var(--primary-color, #18a058);
+  color: var(--primary-color, #18a058);
+}
+
+.agent-skill-chip--checked {
+  background: var(--primary-color, #18a058);
+  border-color: var(--primary-color, #18a058);
+  color: #fff;
+}
+
+.agent-skill-chip--checked:hover {
+  opacity: 0.85;
+}
+
+.agent-skill-chip--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.agent-skill-chip--disabled:hover {
+  border-color: var(--platform-border, #e0e0e0);
+  color: var(--platform-text, #333);
+}
+
+.agent-skill-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

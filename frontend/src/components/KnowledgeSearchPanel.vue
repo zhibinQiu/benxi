@@ -811,19 +811,19 @@ onMounted(() => {
   font-size: 0.85em;
   padding: 2px 8px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--platform-accent) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--platform-accent) 12%, transparent);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
   font-weight: 500;
-  color: color-mix(in srgb, var(--platform-accent-pressed) 80%, var(--platform-text));
+  color: #1e293b;
 }
 
 .knowledge-search-panel__summary-body :deep(pre) {
   margin: 0.6em 0;
   padding: 16px 18px;
   border-radius: 10px;
-  background: #1a1a2e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -833,7 +833,7 @@ onMounted(() => {
   background: transparent;
   border: none;
   font-weight: 400;
-  color: #e4e4e7;
+  color: #1e293b;
   font-size: 0.82em;
   line-height: 1.55;
 }

@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.skills.routing import SKILL_NO_LOAD_WARNING
+
 from app.core.agent_loop_state import LoopState
 
 from app.skills.types import SkillSource
@@ -117,6 +119,14 @@ BROWSER_SITE_SEARCH_RE = re.compile(
 RESEARCH_SIGNAL_RE = re.compile(
     r"(知识库|文档库|检索|联网|上网|知识图谱|本体图谱|"
     r"knowledge_retrieve|web_search|kg_query)",
+    re.I,
+)
+
+# 比 RESEARCH_SIGNAL_RE 更广泛：匹配日常"查"/"搜索"等需要联网获取信息的表达
+RESEARCH_INTENT_RE = re.compile(
+    r"(?:查一下|查查|帮我查|查下|查询|搜索下|搜一下|搜索一下|搜搜|"
+    r"查找|找一下|帮我找|找找|看看|给我查|给我找|上网查|网上搜|网上查|"
+    r"最新的|今日的|今天的|最近|近期|实时|现在)",
     re.I,
 )
 
@@ -453,6 +463,11 @@ def matches_browser_site_search(message: str) -> bool:
 
 def matches_research_signal(message: str) -> bool:
     return bool(RESEARCH_SIGNAL_RE.search((message or "").strip()))
+
+
+def matches_research_intent(message: str) -> bool:
+    """匹配日常查询/搜索意图（比 RESEARCH_SIGNAL_RE 更广泛）。"""
+    return bool(RESEARCH_INTENT_RE.search((message or "").strip()))
 
 
 def is_compound_sequential_message(message: str) -> bool:

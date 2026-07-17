@@ -100,13 +100,12 @@ class ModelSettingsOut(BaseModel):
     firecrawl_api_key: str = ""
     firecrawl_api_url: str = "https://api.firecrawl.dev"
     firecrawl_read_full_max_urls: int = 3
-    agent_browser_enabled: bool = False
     agent_browser_headless: bool = True
     agent_browser_allowed_domains: str = ""
     agent_browser_max_steps_per_session: int = 50
-    agent_browser_auto_task_enabled: bool = True
     agent_browser_auto_task_max_steps: int = 15
     neo4j: Neo4jConfigOut
+    sandbox_base_url: str = ""
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -174,16 +173,15 @@ class ModelSettingsUpdate(BaseModel):
     firecrawl_api_key: str | None = None
     firecrawl_api_url: str | None = None
     firecrawl_read_full_max_urls: int | None = None
-    agent_browser_enabled: bool | None = None
     agent_browser_headless: bool | None = None
     agent_browser_allowed_domains: str | None = None
     agent_browser_max_steps_per_session: int | None = None
-    agent_browser_auto_task_enabled: bool | None = None
     agent_browser_auto_task_max_steps: int | None = None
     neo4j_uri: str | None = None
     neo4j_user: str | None = None
     neo4j_password: str | None = None
     neo4j_database: str | None = None
+    sandbox_base_url: str | None = None
 
 
 class ProviderHealthItemOut(BaseModel):

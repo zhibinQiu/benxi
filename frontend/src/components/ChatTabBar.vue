@@ -357,4 +357,29 @@ onUnmounted(() => {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+@media (max-width: 768px) {
+  .chat-tab {
+    flex: 0 0 auto;
+    max-width: 120px;
+    min-width: 60px;
+    padding: 0 4px 0 6px;
+    font-size: 10px;
+    height: 26px;
+  }
+  .chat-tab__title {
+    max-width: 60px;
+  }
+  .chat-tab--new {
+    width: 30px;
+    height: 26px;
+  }
+  .chat-tab-bar__intro {
+    display: none;
+  }
+  .chat-tab-action {
+    width: 22px;
+    height: 26px;
+  }
+}
 </style>

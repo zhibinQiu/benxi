@@ -240,7 +240,6 @@ class Settings(BaseSettings):
     agent_browser_max_steps_per_session: int = 50
     agent_browser_allowed_domains: str = ""
     agent_browser_screenshot_max_kb: int = 800
-    agent_browser_auto_task_enabled: bool = True
     agent_browser_auto_task_max_steps: int = 15
 
     # ── 对话 LLM ──────────────────────────────────────────────────────────────
@@ -339,7 +338,6 @@ class Settings(BaseSettings):
     mcp_external_skills_json: str = "[]"
 
     # ── 免费网页 AI Bridge ────────────────────────────────────────────────────
-    free_web_ai_enabled: bool = False
     free_web_ai_headless: bool = False
     free_web_ai_cdp_port: int = 0
     free_web_ai_chrome_path: str = ""

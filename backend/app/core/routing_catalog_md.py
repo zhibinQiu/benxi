@@ -123,7 +123,7 @@ def routing_entry_haystack(entry: RoutingEntry) -> str:
 def format_skill_route_line(entry: RoutingEntry, *, tag: str = "") -> str:
     use = _truncate(entry.use_when or "任务明确匹配时")
     dont = _truncate(entry.dont_use_when or "闲聊、无关任务")
-    output = _truncate(entry.output or "按 Skill  playbook 或脚本结论作答")
+    output = _truncate(entry.output or "按 Skill 描述或脚本结论作答")
     prefix = f"`{entry.id}`"
     if tag:
         prefix = f"{prefix} {tag}"

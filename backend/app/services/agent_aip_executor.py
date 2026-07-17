@@ -48,7 +48,6 @@ class SpecialistExecutionContext:
     retrieval_context: str = ""
     context_instruction: str = ""
     attachment_session_id: str | None = None
-    tools: list[dict[str, Any]] | None = None
     intent_plan: AgentToolPlan | None = None
     max_rounds: int | None = None
     task_mode: bool = True
@@ -151,7 +150,6 @@ async def iter_builtin_specialist_hop(
         max_rounds=specialist_rounds,
         user_message=ctx.user_message,
         attachment_session_id=ctx.attachment_session_id,
-        tools=ctx.tools,
         intent_plan=ctx.intent_plan,
         chat_history=ctx.chat_history,
         agent_id=agent_id,

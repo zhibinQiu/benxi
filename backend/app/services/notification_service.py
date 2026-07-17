@@ -197,11 +197,16 @@ def preview_scheduled_display(
     *,
     scheduled_at: str,
 ) -> tuple[str, int | None]:
-    """将 ISO 8601 时间字符串转为本地时间文案，返回 boost_seconds（轮询加速用）。"""
+    """将 ISO 8601 时间字符串或相对时间表达式转为本地时间文案，返回 boost_seconds（轮询加速用）。"""
     try:
-        parsed_at = parse_iso8601(str(scheduled_at))
+        raw = str(scheduled_at)
+        parsed_at = parse_iso8601(raw)
         if parsed_at is None:
-            return "", None
+            delta = parse_relative_delay(raw)
+            if delta is not None:
+                parsed_at = datetime.now(timezone.utc) + delta
+            else:
+                return "", None
         target = _resolve_scheduled_at(scheduled_at=parsed_at)
         display = format_scheduled_at_local(target)
         boost = max(0, int((target - datetime.now(timezone.utc)).total_seconds()))
@@ -338,6 +343,10 @@ def deliver_scheduled_notification(notification_id: uuid.UUID) -> dict[str, Any]
         )
         row.sent_at = db_now
         db.commit()
+        _logger.info(
+            "定时通知已投递: id=%s user=%s title=%s",
+            notification_id, row.user_id, row.title,
+        )
         return {"ok": True, "reason": "delivered"}
     except Exception:
         db.rollback()

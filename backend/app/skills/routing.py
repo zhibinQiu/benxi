@@ -14,8 +14,7 @@ SKILL_DISCOVERY_RULES = """【Skill 按需发现 · 专精 Agent】
 2. 不确定用哪个 Skill 时先 search_skills(query) 发现路由，再 invoke_skill
 3. 发展技能：load_uploaded_skill / run_skill_script；外部 MCP：invoke_skill(mcp-name, tool, params)
 4. 复杂调研优先 deep_research：invoke_context_subagent(kind=deep_research, task=...) 委托子 Agent 生成多关键词深度检索；explore 多 query 并行检索
-5. 内置编排 Skill（knowledge-research）仅 playbook，勿 load
-6. 路由边界见 agents.md / skills.md；选 Skill 须与专精 Agent 域一致，勿跨域混用"""
+5. 路由边界见 agents.md / skills.md；选 Skill 须与专精 Agent 域一致，勿跨域混用"""
 
 SKILL_LOADING_RULES = """【Skill 优先 · 专精 Agent · 路由基线】
 1. 业务动作经 invoke_skill(skill_name, action, params) 调用已绑定 Skill
@@ -25,8 +24,9 @@ SKILL_LOADING_RULES = """【Skill 优先 · 专精 Agent · 路由基线】
 5. skill-dev 专精：包管理 invoke_skill(skill-development, call, {operation, params})；
    浏览器调研（创建抓取 Skill 中间步骤）直接 invoke_skill(browser-automation, call, ...)；
    纯主题检索调研 invoke_context_subagent(kind=explore, queries=[...])
-6. 内置编排 Skill（knowledge-research）仅 playbook，勿 load
-7. 路由边界见 skills.md / agents.md；选 Skill 须与专精 Agent 域一致，勿跨域混用"""
+6. 路由边界见 skills.md / agents.md；选 Skill 须与专精 Agent 域一致，勿跨域混用"""
+
+SKILL_NO_LOAD_WARNING = "勿 list/load/run 已有包——直接 create_skill 生成新包"
 
 
 def uploaded_skill_tag(*, has_script: bool) -> str:
@@ -36,6 +36,7 @@ def uploaded_skill_tag(*, has_script: bool) -> str:
 __all__ = [
     "SKILL_DISCOVERY_RULES",
     "SKILL_LOADING_RULES",
+    "SKILL_NO_LOAD_WARNING",
     "format_skill_route_line",
     "uploaded_skill_tag",
 ]

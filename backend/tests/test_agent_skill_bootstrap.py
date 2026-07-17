@@ -85,7 +85,7 @@ def test_rule_plan_for_report_survey():
         )
         assert plan is not None
         assert plan.uploaded_skill == REPORT_SKILL_SURVEY
-        assert "knowledge_retrieve" in plan.atomic_tools
-        assert "web_search" in plan.atomic_tools
+        assert "knowledge_retrieve" in plan.allowed_tools
+        assert "web_search" in plan.allowed_tools
     finally:
         db.close()

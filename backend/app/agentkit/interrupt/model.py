@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from app.core.agent_loop_state import LoopState
+from app.agentkit.loop.state import LoopState
 
 InterruptPhase = Literal[
     "awaiting_confirmation",  # 等待用户确认

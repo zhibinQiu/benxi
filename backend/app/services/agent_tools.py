@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -26,6 +27,38 @@ _BROWSER_SESSION_TOOLS = frozenset(
         "browser_replay_workflow",
     }
 )
+
+
+def push_intermediate_progress(
+    loop_state: LoopState | None,
+    phase: str,
+    title: str,
+    detail: str = "",
+    *,
+    tool: str = "",
+    tool_name: str = "",
+) -> None:
+    """工具内部调用的通用中间进度推送。
+
+    任何工具在执行过程中可调用此函数将进度推送至前端 SSE 流。
+    phase 取值: tool_call / tool_result / llm_thinking / llm_decision / info
+    """
+    if loop_state is None:
+        return
+    # 检查所有可能的 progress_queue 位置
+    q: asyncio.Queue | None = loop_state.get("_progress_queue")
+    if q is None:
+        q = loop_state.get("_parent_progress_queue")
+    if q is None:
+        return
+    q.put_nowait({
+        "phase": phase,
+        "title": title[:120],
+        "detail": detail[:240],
+        "tool": tool or tool_name,
+        "tool_name": tool_name,
+        "step_id": f"ip-{uuid.uuid4().hex[:8]}",
+    })
 
 
 def mark_browser_session_used(loop_state: LoopState | None) -> None:
@@ -226,6 +259,11 @@ _ADMIN_USER_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(ADMIN_USER_TOOL_
 
 _ADMIN_DEPT_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(ADMIN_DEPT_TOOL_NAMES)
 
+# 父子分离的委派工具集：invoke_skill / web_search 仅子智能体可见，
+# 父智能体的 build_agent_tool_specs（allowed_names=None）自然看不到，
+# 子智能体通过 allowed_names 显式申请，merge 时补入。
+_SUBCONTRACT_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(("invoke_skill", "web_search"))
+
 
 def build_agent_tool_specs(
     db: Session,
@@ -289,11 +327,18 @@ def build_agent_tool_specs(
         if get_browser_rpa_config(db).enabled:
             specs.extend(_BROWSER_TOOL_SPECS)
     if allowed_names is not None:
-        specs = [
-            spec
-            for spec in specs
-            if str((spec.get("function") or {}).get("name") or "") in allowed_names
-        ]
+        _spec_name = lambda s: str((s.get("function") or {}).get("name") or "")
+        specs = [s for s in specs if _spec_name(s) in allowed_names]
+        # 子智能体显式申请的委派工具（invoke_skill / web_search）补入
+        seen = {_spec_name(s) for s in specs}
+        specs.extend(
+            s for s in _SUBCONTRACT_TOOL_SPECS
+            if _spec_name(s) in allowed_names and _spec_name(s) not in seen
+        )
+    # ── 父智能体（allowed_names=None）路径 ──
+    # invoke_skill 不在 AGENT_TOOL_SPECS 中（已从 SKILL_RUNTIME_TOOL_NAMES 移除），
+    # 父路径自然看不到它。web_search 仍存在于 _ATOMIC_RETRIEVAL_TOOL_SPECS 中，
+    # 后续待整体迁移至委派列表后一并移除。
     return specs
 
 
@@ -420,7 +465,7 @@ async def _execute_invoke_skill(
                     "knowledge-search",
                     "kg",
                 }:
-                    kind = "browser_digest" if skill_name == "browser-automation" else "explore"
+                    kind = "auto" if skill_name == "browser-automation" else "search"
                     return _tool_result(
                         False,
                         f"请用 invoke_context_subagent(kind={kind}, task=...) 委托子 Agent 调用 "
@@ -429,7 +474,7 @@ async def _execute_invoke_skill(
             return _tool_result(
                 False,
                 f"当前智能体未绑定 Skill `{skill_name}`；"
-                "本域调研请用 invoke_context_subagent(kind=explore|browser_digest)，"
+                "本域调研请用 invoke_context_subagent(kind=search|auto)，"
                 "勿直接 invoke_skill 跨域检索 Skill",
             )
 
@@ -1154,6 +1199,12 @@ async def execute_agent_tool(
     tool_name = name
     params = _parse_tool_args(arguments)
 
+    # 从 loop_state 回退 conversation_id / attachment_session_id
+    if conversation_id is None and loop_state is not None:
+        conversation_id = loop_state.get("conversation_id")
+    if attachment_session_id is None and loop_state is not None:
+        attachment_session_id = loop_state.get("attachment_session_id")
+
     if is_global_atomic_tool(name):
         return await execute_global_atomic_tool_json(
             db,
@@ -1260,18 +1311,32 @@ async def execute_agent_tool(
             from app.core.agent_tool_context import append_skill_explore_context
             from app.services.agent_skill_router import is_skill_management_message
 
+            kind = str(params.get("kind") or "").strip()
+            task = str(params.get("task") or user_message or "").strip()
+
+            # 将子智能体开始信息存入 loop_state
+            if loop_state is not None:
+                subagent_progress = dict(loop_state.get("subagent_progress") or {})
+                subagent_progress[kind] = {
+                    "task": task[:400],
+                    "status": "running",
+                    "queries": [],
+                    "urls": [],
+                }
+                loop_state["subagent_progress"] = subagent_progress
+
             result = await execute_context_subagent(
                 db,
                 user,
-                kind=str(params.get("kind") or ""),
-                task=str(params.get("task") or user_message or ""),
+                kind=kind,
+                task=task,
                 queries=params.get("queries") if isinstance(params.get("queries"), list) else None,
                 conversation_id=conversation_id,
                 attachment_session_id=attachment_session_id,
-                user_message=user_message,
                 loop_state=loop_state,
-                agent_id=str((loop_state or {}).get("agent_id") or ""),
             )
+
+            # 技能管理消息的特殊处理（保持原有逻辑）
             if loop_state is not None and is_skill_management_message(user_message):
                 try:
                     payload = json.loads(result)
@@ -1281,6 +1346,33 @@ async def execute_agent_tool(
                     summary = str(payload.get("summary") or "").strip()
                     if summary:
                         append_skill_explore_context(loop_state, summary)
+
+            # 从子智能体执行步骤中提取搜索词和 URL，更新 loop_state
+            sub_queries = []
+            if loop_state is not None:
+                sub_steps = list(loop_state.get("subagent_executed_steps") or [])
+                for s in sub_steps:
+                    tn = (s.get("tool_name") or "").strip()
+                    ap = (s.get("args_preview") or "")
+                    if tn == "web_search":
+                        q = ap[:80]
+                        if q and q not in sub_queries:
+                            sub_queries.append(q)
+
+            if loop_state is not None:
+                sp = dict(loop_state.get("subagent_progress") or {})
+                try:
+                    payload = json.loads(result)
+                except json.JSONDecodeError:
+                    payload = {}
+                sp[kind] = {
+                    "task": task[:400],
+                    "status": "done" if payload.get("ok") else "failed",
+                    "queries": sub_queries[:5],
+                    "urls": [],
+                }
+                loop_state["subagent_progress"] = sp
+
             return result
 
         if tool_name == "request_orchestrator_assist":
@@ -1622,13 +1714,22 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
             "tool": "run_tool_batch",
         }
     if name == "invoke_context_subagent":
-        kind = str(params.get("kind") or "explore").strip()
-        task = str(params.get("task") or "").strip()[:80]
+        kind = str(params.get("kind") or "search").strip()
+        task = str(params.get("task") or "").strip()
+        task_short = task[:400]
+        if kind == "search":
+            return {
+                "title": "正在多源检索…",
+                "result_title": "检索完成",
+                "failure_title": "检索失败",
+                "detail": task_short or "并行检索多个关键词",
+                "tool": "subagent.search",
+            }
         return {
-            "title": f"使用子 Agent（{kind}）{task}",
-            "result_title": f"子 Agent 完成 · {kind}",
-            "failure_title": f"子 Agent 失败 · {kind}",
-            "detail": task or kind,
+            "title": f"子智能体 · {kind}：{task_short}",
+            "result_title": f"子智能体完成 · {kind}",
+            "failure_title": f"子智能体失败 · {kind}",
+            "detail": task_short or kind,
             "tool": f"subagent.{kind}",
         }
     if name == "request_orchestrator_assist":

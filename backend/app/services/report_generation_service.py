@@ -1030,8 +1030,7 @@ def _gather_report_simple(
         narrow_by_name=False,
     )
     if doc_ids and local_queries:
-        for q in local_queries:
-            toolkit.retrieve(q, limit=15)
+        toolkit.retrieve_many(local_queries, limit=15)
     local_hits = (
         toolkit.accumulated_local_hits
         if toolkit.accumulated_local_hits
@@ -1042,9 +1041,9 @@ def _gather_report_simple(
         )
     )
     web_items: list[dict] = []
-    if web_on and web_queries:
-        for q in web_queries:
-            toolkit.web_search(q)
+    if web_on and topic:
+        # 统一走 deep_research 子智能体进行联网调研，替代逐条 web_search 调用
+        toolkit.deep_research(f"{topic} {message}".strip())
         web_items = toolkit.accumulated_web_items
     from app.services.knowledge_qa_service import _doc_titles
 
@@ -1325,8 +1324,9 @@ async def iter_report_generation_stream(
     if gathered.kg_ctx is not None:
         from app.services.kg_service import merge_kg_qa_into_context
 
-        local_context, all_citations = merge_kg_qa_into_context(
-            local_context, all_citations, gathered.kg_ctx
+        # merge_kg_qa_into_context 返回单字符串，不可解包
+        local_context = merge_kg_qa_into_context(
+            None, None, gathered.kg_ctx, base_context=local_context
         )
 
     yield json.dumps(

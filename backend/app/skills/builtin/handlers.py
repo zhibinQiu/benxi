@@ -72,67 +72,6 @@ async def handle_kg_query(
     )
 
 
-async def handle_knowledge_research(
-    ctx: SkillInvocationContext, params: dict[str, Any]
-) -> SkillInvocationResult:
-    """综合知识库、知识图谱与联网检索（按需通道，复用 skill_chat_service）。"""
-    query = str(params.get("query") or params.get("question") or "").strip()
-    if not query:
-        return SkillInvocationResult(False, "缺少 query", error="missing_query")
-    use_kb = params.get("use_kb")
-    use_kg = params.get("use_kg")
-    use_web = params.get("use_web")
-    if use_kb is not None:
-        use_kb = bool(use_kb)
-    if use_kg is not None:
-        use_kg = bool(use_kg)
-    if use_web is not None:
-        use_web = bool(use_web)
-    citation_start = int(params.get("citation_start") or 1)
-    try:
-        from app.services.skill_chat_service import resolve_combined_research_async
-
-        context, citations, kg_ctx, channels = await resolve_combined_research_async(
-            ctx.db,
-            ctx.user,
-            query,
-            use_kb=use_kb,
-            use_kg=use_kg,
-            use_web=use_web,
-            citation_start=citation_start,
-        )
-        parts: list[str] = []
-        if channels.get("kb"):
-            parts.append("知识库")
-        if channels.get("kg"):
-            parts.append("图谱")
-        if channels.get("web"):
-            parts.append("联网")
-        label = "、".join(parts) if parts else "未启用检索通道"
-        summary = f"综合检索「{query[:40]}」({label})"
-        if citations:
-            summary += f"，共 {len(citations)} 条引用"
-        else:
-            summary += "，未命中有效材料"
-        return SkillInvocationResult(
-            True,
-            summary,
-            data={
-                "query": query,
-                "context": context,
-                "citations": citations,
-                "channels": channels,
-                "kg_context_text": kg_ctx.context_text if kg_ctx else "",
-                "kg_matched_entities": len(kg_ctx.matched_entity_ids)
-                if kg_ctx
-                else 0,
-                "kg_relation_count": kg_ctx.relation_count if kg_ctx else 0,
-            },
-        )
-    except Exception as exc:
-        return SkillInvocationResult(False, f"综合检索失败：{exc}", error=str(exc))
-
-
 async def handle_deep_research(
     ctx: SkillInvocationContext, params: dict[str, Any]
 ) -> SkillInvocationResult:
@@ -147,13 +86,11 @@ async def handle_deep_research(
     result_json = await execute_context_subagent(
         db=ctx.db,
         user=ctx.user,
-        kind="deep_research",
+        kind="search",
         task=task,
         conversation_id=ctx.conversation_id,
         attachment_session_id=ctx.attachment_session_id,
-        user_message=task,
         loop_state=loop_state,
-        agent_id=str(loop_state.get("agent_id") or ""),
     )
     try:
         payload = json.loads(result_json)
@@ -162,8 +99,10 @@ async def handle_deep_research(
 
     ok = payload.get("ok", False)
     summary = str(payload.get("summary") or "")
+    full_result = (payload.get("data") or {}).get("result") or ""
 
-    citations = _extract_deep_research_citations(summary)
+    # 从完整报告文本中提取引用链接
+    citations = _extract_deep_research_citations(full_result)
     return SkillInvocationResult(
         ok=ok,
         summary=summary[:200] if ok else f"深度研究失败：{summary[:200]}",

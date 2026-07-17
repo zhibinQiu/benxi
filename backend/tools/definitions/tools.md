@@ -1,21 +1,21 @@
-# Tools 路由目录（调度层只读 · 简约版）
+| Tools 路由目录（调度层只读 · 简约版）
 
 原子工具是智能体执行的最小动作单元。每个工具提供单一、可验证的操作。
 工具的选择由 LLM 根据工具定义（description）和当前上下文自动决策。
 
-## web_search
-- Use when: 最新政策/行情/新闻/价格或需联网检索公开信息
-- Don't use when: 企业内部知识库检索（用 knowledge_retrieve）、用户已提供 URL（用 fetch_url_content）
-- Output: 联网摘要与引用
+## invoke_context_subagent（联网检索与深度调研统一入口）
+- Use when: 所有需要联网获取信息的情况（唯一联网检索入口）；deep_research→深度调研；explore→内部多源检索
+- Don't use when: 企业内部知识库检索（用 knowledge_retrieve）；用户已提供 URL（用 fetch_url_content）
+- Output: 联网摘要、引用与研究结论
 
 ## knowledge_retrieve
 - Use when: 检索企业文档库，按关键词匹配文档片段
-- Don't use when: 需联网搜索公开信息（用 web_search）、需查询实体关系图（用 kg_query）
+- Don't use when: 需联网搜索公开信息（用 invoke_context_subagent(kind=deep_research)）、需查询实体关系图（用 kg_query）
 - Output: 匹配文档标题、片段及来源
 
 ## kg_query
 - Use when: 查询本体知识图谱，获取结构化实体关系
-- Don't use when: 需检索文档全文（用 knowledge_retrieve）、需搜索网络（用 web_search）
+- Don't use when: 需检索文档全文（用 knowledge_retrieve）、需搜索网络（用 invoke_context_subagent(kind=deep_research)）
 - Output: 匹配实体、关系及属性
 
 ## send_notification
@@ -40,7 +40,7 @@
 
 ## fetch_url_content
 - Use when: 用户已提供 URL，需要读取页面全文
-- Don't use when: 需要搜索公开信息（用 web_search）
+- Don't use when: 需要搜索公开信息（用 invoke_context_subagent(kind=deep_research)）
 - Output: 网页正文 Markdown
 
 ## invoke_skill
@@ -69,8 +69,8 @@
 - Output: 记忆已保存
 
 ## invoke_context_subagent
-- Use when: 需要多源并行检索（explore）、深度联网调研（deep_research）、页面取证（browser_digest）
-- Don't use when: 单次简单搜索
+- Use when: 所有需要联网获取信息的情况（唯一联网检索入口）；deep_research→深度联网调研；explore→内部知识多源并行检索；browser_digest→页面取证
+- Don't use when: 已知 Skill 名（直接用 invoke_skill）
 - Output: 结构化调研结果
 
 ## load_uploaded_skill

@@ -76,35 +76,6 @@ def register_builtin_skills() -> None:
     specs: list[SkillDefinition] = [
         # 以下为真正的技能（编排工作流 / 指令集），保留
         SkillDefinition(
-            name="knowledge-research",
-            title="知识综合检索",
-            description=(
-                "内置编排 Skill（非子 Agent）：指导 research 专精如何组合原子检索工具。"
-                "做「组合取证」这一 playbook，不承担跨域调度。"
-            ),
-            source=SkillSource.BUILTIN,
-            feature_id="ai_home",
-            permission_code=None,
-            readiness=SkillReadiness.READY,
-            route="/ai-home",
-            catalog_visible=False,
-            catalog_tier="resident",
-            use_when=(
-                "需组合图谱/联网/文档库取证；默认顺序图谱→联网→文档库，"
-                "前序渠道有材料即停以提速；用户显式指定渠道时按其要求"
-            ),
-            dont_use_when="寒暄、平台系统操作、Skill 脚本执行、附件已含完整答案",
-            output="带 [n] 引用的综合检索结论；事实优先级 图谱>联网>文档库>常识",
-            orchestrated_tools=(
-                "kg_query",
-                "web_search",
-                "knowledge_retrieve",
-                "search_documents_by_name",
-                "read_document_content",
-            ),
-            tools=(),
-        ),
-        SkillDefinition(
             name="deep-research",
             title="深度研究",
             description=(
@@ -157,7 +128,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.translate",
             readiness=SkillReadiness.STUB,
             route="/system/translate",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "submit_job",
@@ -181,7 +152,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.speech_to_text",
             readiness=SkillReadiness.STUB,
             route="/system/speech",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "transcribe",
@@ -201,7 +172,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.text_to_speech",
             readiness=SkillReadiness.STUB,
             route="/system/text-to-speech",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "synthesize",
@@ -220,7 +191,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.ocr",
             readiness=SkillReadiness.STUB,
             route="/system/ocr",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "extract",
@@ -239,7 +210,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.compare",
             readiness=SkillReadiness.STUB,
             route="/system/compare",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "compare_versions",
@@ -258,7 +229,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.report_generation",
             readiness=SkillReadiness.STUB,
             route="/knowledge/report",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "generate_outline",
@@ -277,7 +248,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.data_analysis",
             readiness=SkillReadiness.STUB,
             route="/system/data-analysis",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "analyze_dataset",
@@ -296,7 +267,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.smart_data_query",
             readiness=SkillReadiness.STUB,
             route="/system/smart-data-query",
-            catalog_visible=False,
+            catalog_visible=True,
             tools=(
                 _stub_tool(
                     "query",
@@ -319,7 +290,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.free_web_ai",
             readiness=SkillReadiness.READY,
             route="/system/free-web-ai",
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when="需要免费 AI 对话、代码生成、文案、翻译、生图、识图等任务，且不想用付费 API",
             dont_use_when="企业内部知识库检索（用 knowledge-search）、平台 CRUD、需联网获取最新信息（用 web_search）、需要精确构图或高分辨率出图（推荐用专业工具）、纯 OCR 提取（用 ocr feature）",
@@ -406,7 +377,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when=(
                 "创建/修改/删除上传型 Skill 或 run_skill_script 取数验证；"
@@ -446,7 +417,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when=(
                 "需要浏览器自动化操作：导航网页、点击元素、填表、截图、"
@@ -478,7 +449,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when=(
                 "需要操作文档库：搜索文档、读取内容、创建文档、移动/分享/删除文档、"
@@ -515,7 +486,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when="需要管理待办事项（创建/更新/删除/列出）",
             dont_use_when="浏览器操作、文档库操作、知识检索",
@@ -540,7 +511,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when=(
                 "需要发送立即通知、设置定时提醒、查看已安排的定时通知、取消定时通知"
@@ -569,7 +540,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when="需要管理平台用户（创建/更新/删除）",
             dont_use_when="部门管理、文档操作、浏览器操作",
@@ -594,7 +565,7 @@ def register_builtin_skills() -> None:
             ),
             source=SkillSource.BUILTIN,
             readiness=SkillReadiness.READY,
-            catalog_visible=False,
+            catalog_visible=True,
             catalog_tier="resident",
             use_when="需要管理平台部门（创建/更新/删除/列出）",
             dont_use_when="用户管理、文档操作、浏览器操作",

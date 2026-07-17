@@ -2157,5 +2157,181 @@ watch(
 .documents-scope-tabs :deep(.n-tabs-tab-panes) {
   display: none;
 }
+
+/* ── 文档中心 Tab 滚动容器 ── */
+.documents-scope-tabs :deep(.n-tabs-nav-scroll-wrapper) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.documents-scope-tabs :deep(.n-tabs-nav-scroll-wrapper)::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── 文件夹内操作按钮在移动端可横向滚动 ── */
+.documents-folder-toolbar .folder-action-pills {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
+}
+.documents-folder-toolbar .folder-action-pills::-webkit-scrollbar {
+  display: none;
+}
+
+/* =============================================
+ * 移动端适配
+ * ============================================= */
+@media (max-width: 768px) {
+  /* 1. 表格可水平滚动 */
+  .documents-list-card :deep(.n-card__content) {
+    padding: 8px 4px !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .documents-table :deep(.n-data-table-wrapper) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    min-width: auto;
+  }
+
+  /* 2. 隐藏非核心列（索引状态、状态、范围、文件夹等） */
+  .documents-table :deep(.n-data-table-th):nth-child(3), /* 索引 */
+  .documents-table :deep(.n-data-table-td):nth-child(3),
+  .documents-table :deep(.n-data-table-th):nth-child(4), /* 状态 */
+  .documents-table :deep(.n-data-table-td):nth-child(4) {
+    display: none;
+  }
+
+  /* 搜索结果或 all 范围模式下显示更多列，但也隐藏一些次要列 */
+  .documents-table :deep(.n-data-table-th):nth-child(7), /* 部门 */
+  .documents-table :deep(.n-data-table-td):nth-child(7),
+  .documents-table :deep(.n-data-table-th):nth-child(8), /* 权限 */
+  .documents-table :deep(.n-data-table-td):nth-child(8) {
+    display: none;
+  }
+
+  /* 3. 文件标题列宽度自适应 */
+  .documents-doc-title {
+    font-size: 13px !important;
+    max-width: 36vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
+  /* 4. 文件夹网格紧凑 */
+  .kb-folder-explorer {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important;
+    gap: 10px;
+    padding: 8px 0 16px;
+  }
+  .kb-folder-explorer__cell {
+    max-width: 100%;
+  }
+  .kb-folder-explorer__cell > * {
+    max-width: 100%;
+  }
+
+  /* 5. 工具栏折叠 */
+  .documents-actions-toolbar {
+    gap: 4px !important;
+    flex-wrap: wrap;
+  }
+  .documents-actions-core {
+    flex-wrap: wrap;
+    gap: 4px !important;
+  }
+
+  /* 6. 文件夹工具栏紧凑 */
+  .documents-folder-toolbar {
+    gap: 6px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .documents-folder-toolbar__name {
+    font-size: 14px;
+    min-width: 0;
+    max-width: 40vw;
+  }
+
+  /* 7. 搜索框全宽 */
+  .documents-search {
+    width: 100% !important;
+  }
+
+  /* 8. 分页脚紧凑 */
+  .list-table-footer {
+    padding: 10px;
+  }
+
+  /* 9. 上传弹窗全屏 */
+  .documents-upload-modal.n-modal :deep(.n-card) {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0 !important;
+    margin: 0;
+  }
+  .documents-upload-modal.n-modal :deep(.n-card__content) {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  /* 10. Tab 栏更紧凑 */
+  .documents-scope-tabs :deep(.n-tabs-nav) {
+    padding: 0 4px;
+  }
+  .documents-scope-tabs :deep(.n-tabs-tab) {
+    font-size: 12px;
+    padding: 8px 8px;
+  }
+  .documents-scope-tabs {
+    margin-bottom: 0;
+  }
+
+  /* 11. 操作栏筛选控件全宽 */
+  .documents-org-picker__select {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* 12. 文件夹创建卡片紧凑 */
+  .kb-folder-create-card {
+    padding: 8px 6px 10px;
+  }
+
+  /* 13. 桌面端的分页脚相对定位 */
+  .list-table-footer :deep(.n-pagination) {
+    gap: 2px;
+  }
+  .list-table-footer :deep(.n-pagination .n-pagination-item) {
+    min-width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 400px) {
+  .kb-folder-explorer {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+    padding: 6px 0 12px;
+  }
+
+  .documents-folder-toolbar .folder-action-btn.n-button.n-button--quaternary-type {
+    font-size: 11px !important;
+    padding: 0 6px !important;
+    height: 26px !important;
+  }
+
+  .documents-table :deep(.n-data-table-th):nth-child(5), /* scope */
+  .documents-table :deep(.n-data-table-td):nth-child(5),
+  .documents-table :deep(.n-data-table-th):nth-child(6), /* folder */
+  .documents-table :deep(.n-data-table-td):nth-child(6) {
+    display: none;
+  }
+}
 </style>
 

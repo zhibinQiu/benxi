@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import uuid
 from typing import Any
 
 from app.core.agent_loop_state import LoopState
@@ -109,9 +111,9 @@ TOOL_USE_EXAMPLES: dict[str, list[dict[str, Any]]] = {
         }
     ],
     "invoke_context_subagent": [
-        {"kind": "deep_research", "task": "2026年全球新能源车销量趋势，包含主要品牌数据对比"},
-        {"kind": "explore", "task": "了解某网站的技术架构", "queries": ["网站技术栈", "架构设计"]},
-        {"kind": "browser_digest", "task": "提取页面表单字段结构"},
+        {"kind": "search", "task": "2026年全球新能源车销量趋势，包含主要品牌数据对比"},
+        {"kind": "search", "task": "了解某网站的技术架构", "queries": ["网站技术栈", "架构设计"]},
+        {"kind": "auto", "task": "提取页面表单字段结构"},
     ],
     "list_users": [
         {"page": 1, "page_size": 20},
@@ -394,6 +396,87 @@ async def execute_search_skills_compat(
     )
 
 
+# ── 批量执行单步进度推送 ───────────────────────────────────────
+
+
+def _resolve_queue(loop_state: LoopState | None) -> asyncio.Queue | None:
+    """从 loop_state 解析 progress_queue：支持 _progress_queue 和 _parent_progress_queue。"""
+    if loop_state is None:
+        return None
+    q: asyncio.Queue | None = loop_state.get("_progress_queue")
+    if q is not None:
+        return q
+    q = loop_state.get("_parent_progress_queue")
+    return q
+
+
+def _push_batch_start(
+    loop_state: LoopState | None,
+    idx: int,
+    tool_name: str,
+    raw_args: dict[str, Any],
+) -> None:
+    q = _resolve_queue(loop_state)
+    if q is None:
+        return
+    from app.services.agent_tools import tool_workflow_meta
+
+    meta = tool_workflow_meta(tool_name, raw_args)
+    step_id = f"batch-start-{uuid.uuid4().hex[:8]}"
+    args_preview = _batch_args_preview(raw_args)
+    q.put_nowait({
+        "phase": "tool_call",
+        "title": f"开始并行检索 [{idx}]：{meta.get('detail') or tool_name}",
+        "detail": args_preview,
+        "callDetail": args_preview,
+        "tool": "web.search" if tool_name == "web_search" else tool_name,
+        "tool_name": tool_name,
+        "step_id": step_id,
+        "status": "running",
+    })
+
+
+def _push_batch_progress(
+    raw: str,
+    loop_state: LoopState | None,
+    tool_name: str,
+    raw_args: dict[str, Any],
+) -> None:
+    """将 run_tool_batch 中单个步骤的完成推送到父 loop_state 的 progress_queue。"""
+    q = _resolve_queue(loop_state)
+    if q is None:
+        return
+    from app.services.agent_tools import tool_workflow_meta
+
+    step_id = f"batch-progress-{uuid.uuid4().hex[:8]}"
+    try:
+        body = json.loads(raw)
+        ok = bool(body.get("ok"))
+        summary = str(body.get("summary") or "")[:240]
+    except json.JSONDecodeError:
+        ok = False
+        summary = str(raw)[:240]
+    meta = tool_workflow_meta(tool_name, raw_args)
+    q.put_nowait({
+        "phase": "tool_result",
+        "title": meta.get("result_title") or (f"{tool_name} 完成" if ok else f"{tool_name} 失败"),
+        "detail": summary or ("完成" if ok else "失败"),
+        "resultDetail": summary[:400],
+        "tool": "web.search" if tool_name == "web_search" else tool_name,
+        "tool_name": tool_name,
+        "step_id": step_id,
+        "status": "done" if ok else "failed",
+    })
+
+
+def _batch_args_preview(raw_args: dict[str, Any]) -> str:
+    parts = []
+    for k, v in raw_args.items():
+        vs = str(v)[:80]
+        parts.append(f"{k}={vs}")
+    return ", ".join(parts)[:200]
+
+
 async def execute_run_tool_batch(
     db: Session,
     user: User,
@@ -413,7 +496,9 @@ async def execute_run_tool_batch(
             {"ok": False, "summary": "单次 batch 最多 6 步"},
             ensure_ascii=False,
         )
-    summaries: list[str] = []
+
+    # 先校验所有步骤合法性
+    validated: list[tuple[int, str, dict[str, Any]]] = []
     for idx, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
             continue
@@ -427,23 +512,61 @@ async def execute_run_tool_batch(
                 },
                 ensure_ascii=False,
             )
+        validated.append((idx, tool, args if isinstance(args, dict) else {}))
+
+    if not validated:
+        return json.dumps({"ok": False, "summary": "无有效步骤"}, ensure_ascii=False)
+
+    # 并行执行所有步骤，依次记录每个完成的结果（as_completed 使各步骤按其完成顺序自然出现）
+    async def _run_one(idx: int, tool: str, args: dict[str, Any]) -> str:
+        from app.core.agent_tool_context import record_executed_tool_call
+
+        step_id = f"batch-{uuid.uuid4().hex[:8]}"
+        _push_batch_start(loop_state, idx, tool, args)
         raw = await execute_agent_tool(
             db,
             user,
             tool_name=tool,
-            arguments=args if isinstance(args, dict) else {},
+            arguments=args,
             conversation_id=conversation_id,
             attachment_session_id=attachment_session_id,
             user_message=user_message,
             loop_state=loop_state,
         )
+        # 记录到 loop_state，便于子智能体完成后展示为独立步骤
+        if loop_state is not None:
+            try:
+                body = json.loads(raw)
+                ok = bool(body.get("ok"))
+                summary = str(body.get("summary") or "")[:240]
+            except json.JSONDecodeError:
+                ok = False
+                summary = str(raw)[:240]
+            record_executed_tool_call(
+                loop_state,
+                tool_name=tool,
+                raw_args=args,
+                result_text=raw,
+                summary=summary or ("完成" if ok else "失败"),
+                step_id=step_id,
+            )
+        # 实时推送：单个 batch 步骤完成 → 父 loop_state 的 progress_queue
+        _push_batch_progress(raw, loop_state, tool, args)
         try:
             body = json.loads(raw)
-            summaries.append(
-                f"[{idx}] {tool}: {str(body.get('summary') or raw)[:240]}"
-            )
+            return f"[{idx}] {tool}: {str(body.get('summary') or raw)[:240]}"
         except json.JSONDecodeError:
-            summaries.append(f"[{idx}] {tool}: {raw[:240]}")
+            return f"[{idx}] {tool}: {raw[:240]}"
+
+    tasks = [_run_one(idx, tool, args) for idx, tool, args in validated]
+    summaries: list[str] = []
+    for coro in asyncio.as_completed(tasks):
+        try:
+            r = await coro
+            summaries.append(r)
+        except Exception as e:
+            summaries.append(f"[x] 执行异常：{e}")
+
     text = "\n".join(summaries)
     return json.dumps(
         {"ok": True, "summary": text[:1200], "step_count": len(summaries)},

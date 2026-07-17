@@ -158,20 +158,25 @@ onBeforeUnmount(() => {
   font-size: 0.9em;
   padding: 2px 7px;
   border-radius: 5px;
-  background: rgba(15, 23, 42, 0.06);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
 }
 
 .md-rich :deep(pre) {
   margin: 0.5em 0;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.05);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   overflow-x: auto;
 }
 
 .md-rich :deep(pre code) {
   padding: 0;
   background: transparent;
+  border: none;
+  color: #1e293b;
 }
 
 .md-rich :deep(.md-echart-wrap) {

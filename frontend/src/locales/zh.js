@@ -1501,6 +1501,14 @@ export default {
       skillEmpty: "暂无可用技能",
       skillLoadFailed: "加载技能目录失败",
     },
+    voice: {
+      input: "语音输入",
+      stop: "停止录音",
+      processing: "语音转写中…",
+      noContent: "未能识别到语音内容，请重试",
+      failed: "语音转写失败，请重试",
+      micError: "无法访问麦克风",
+    },
   },
   reportGeneration: {
     chatTitle: "报告生成",
@@ -2034,6 +2042,7 @@ export default {
         searxng: { title: "网络检索服务", hint: "SearXNG 搜索引擎 + FireCrawl 全文提取，供报告生成与智能体联网检索" },
         neo4j: { title: "图数据库", hint: "Neo4j 知识图谱存储（本体定义+关系推理+实体管理）" },
         browser_rpa: { title: "浏览器 RPA", hint: "本析智能体网页自动化（无头 Chromium）" },
+        sandbox: { title: "沙箱运行环境", hint: "Skill 脚本在线执行容器（KnowFlow 沙箱）" },
         ragflow_api: { title: "知识库 API", hint: "知识库检索、文档同步 HTTP API" },
         knowflow_backend: { title: "知识库扩展后台", hint: "知识库扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选" },
         ragflow_mysql: { title: "知识库 MySQL", hint: "知识库元数据与用户模型配置库" },
@@ -2126,6 +2135,7 @@ export default {
         browserRpaMaxSteps: "单会话最大步数",
         browserRpaAutoTask: "启用自动探索（browser_run_task）",
         browserRpaAutoTaskMaxSteps: "自动探索最大步数",
+        sandboxServiceUrl: "沙箱地址",
         firecrawlApiKey: "FireCrawl API Key",
         firecrawlApiUrl: "FireCrawl API 地址",
         firecrawlReadFullMaxUrls: "每次搜索读取全文条数",
@@ -2154,6 +2164,7 @@ export default {
         firecrawlApiUrl: "https://api.firecrawl.dev 或 http://127.0.0.1:3002（自托管）",
         firecrawlApiKeyHint: "留空=禁用全文提取，仅用 SearXNG 摘要",
         browserRpaDomains: "example.com,httpbin.org（留空=公网不限）",
+        sandboxServiceUrl: "http://your-sandbox:port",
         ragflowApiUrl: "http://127.0.0.1:9380",
         ragflowApiKey: "留空或掩码表示不修改；mapped 模式可留空走用户会话",
         knowflowBackend: "http://127.0.0.1:5001",
@@ -2185,6 +2196,8 @@ export default {
           "对应 .env 中 <code>SEARXNG_URL</code>、<code>FIRECRAWL_API_KEY</code>、<code>FIRECRAWL_API_URL</code> 等。保存后立即生效。",
         browserRpa:
           "本析智能体通过 Playwright Chromium 操作网页。<strong>无头服务器无需显示器</strong>，请保持「无头模式」开启。Docker 镜像需 <code>INSTALL_BROWSER=1</code>（compose 默认已开）。域名白名单逗号分隔，留空则仅拦截内网。",
+        sandbox:
+          "KnowFlow 沙箱容器用于<strong>在线执行 Skill 脚本</strong>（Python 代码）。需要在服务器部署沙箱服务（<code>knowflow-sandbox</code>）并在此填写地址，例如 <code>http://your-server:5002</code>。保存后智能体即可在线运行 Python 脚本（抓取、计算等）。未配置时智能体会自动降级为联网检索。对应 .env 中 <code>SANDBOX_BASE_URL</code>。",
         ragflowApi:
           "对应 .env 中知识库 API 地址与 Key 配置。Docker 栈内服务会自动映射到 nginx :80。",
         knowflowBackend:

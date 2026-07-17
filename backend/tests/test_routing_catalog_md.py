@@ -31,9 +31,8 @@ def test_parse_routing_md_sections():
 
 def test_load_skills_routing_md_has_core_skills():
     entries = load_skills_routing_md()
-    assert "web-search" in entries
-    assert "document-library" in entries
-    assert entries["knowledge-research"].use_when
+    assert "skill-development" in entries
+    assert "free-web-ai" in entries
 
 
 def test_load_agents_routing_md_has_specialists():

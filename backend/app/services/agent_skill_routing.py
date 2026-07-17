@@ -50,7 +50,7 @@ _SKILL_INDEX_TTL = 60.0  # 秒
 
 # ── 无专精声明的 Skill → 兜底 orchestrator ────────────────────────────────
 _ORCHESTRATOR_SKILLS: frozenset[str] = frozenset({
-    "knowledge-research", "free-web-ai", "mermaid-diagram",
+    "free-web-ai", "mermaid-diagram",
     "pdf-translate", "speech-to-text", "text-to-speech", "ocr",
     "document-compare", "report-generation", "data-analysis",
     "smart-data-query",
@@ -446,21 +446,6 @@ def pick_skill_route_scores(
 def skill_route_reason(score: AgentRoutingScore) -> str:
     skills = "、".join(f"`{n}`" for n in score.matched_skills[:4])
     return f"Skill 匹配（{skills}）" if skills else "Skill 能力匹配"
-
-
-def _find_direct_skill_match(
-    message: str,
-    index: dict[str, str],
-) -> str | None:
-    """快速路径：消息中直接包含已知 Skill 名 → O(1) 返回对应 Agent ID。
-
-    纯关键词匹配，比完整路由快 1000x。
-    """
-    msg = (message or "").strip().lower()
-    for skill_name in index:
-        if skill_name in msg:
-            return index[skill_name]
-    return None
 
 
 def resolve_agent_from_message_fast(

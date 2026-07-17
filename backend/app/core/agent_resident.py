@@ -56,7 +56,7 @@ _SPECIALIST_SCOPE_RULE = (
     "需要什么帮助（如需要其他智能体协助的具体事项），"
     "由调度层重新分配或直接答复用户；"
     "收到调度交还的协助结果后继续完成本子任务。"
-    "发展 Skill 的 playbook 见 available_skills；内置编排 Skill（如 knowledge-research）勿 load。"
+    "可用 Skill 见 available_skills 目录，按需 invoke_skill 调用。"
 )
 
 _SPECIALIST_TOOL_RULES = (
@@ -116,7 +116,7 @@ def build_specialist_resident_prompt(
             "══════════════════════════════════════════\n"
             "## 调度原则\n"
             "⊙ 你是一个调度 Agent，职责：理解→分配→验收。\n"
-            "⊙ 你能直接做的：回答常识/寒暄（不用任何工具）、联网检索、知识库检索、知识图谱查询、图表绘制（mermaid_diagram）、双碳问答（carbon_qa_query）等。\n"
+            "⊙ 你能直接做的：回答常识/寒暄（不用任何工具）、联网检索、知识库检索、知识图谱查询等。\n"
             "⊙ 平台操作、浏览器自动化等 → 由路由系统自动分配给专精 Agent 处理。\n"
             "⊙ 当专精 Agent 通过 request_orchestrator_assist 交还任务时，仔细阅读其反馈的问题描述，\n"
             "   重新规划处理方式（直接回复、调用工具、或分配给其他专精）。\n"
@@ -135,16 +135,7 @@ def build_specialist_resident_prompt(
     common = _specialist_common_prefix(task_mode=task_mode)
     if agent == "skill-dev":
         from app.core.tool_skill_taxonomy import build_skill_dev_system_access_hint
-
         common += build_skill_dev_system_access_hint() + "\n"
-        common += (
-            "- 用户要求**生成/创建** Skill 时直接 invoke_skill(skill-development, call, {operation: create_skill, ...})，"
-            "勿 list/load/run 已有包。\n"
-            "- 浏览器调研（创建抓取 Skill 的中间步骤）：直接 invoke_skill(browser-automation, call, "
-            "{operation: browser_navigate|browser_snapshot|browser_screenshot|..., params})，"
-            "调研完立即回到技能创建主流程。\n"
-            "- 纯主题检索调研：invoke_context_subagent(kind=explore, queries=[...]) 委托子 Agent。\n"
-        )
     if config_body:
         return common + config_body.strip() + "\n"
     block = get_default_instruction_body(agent)

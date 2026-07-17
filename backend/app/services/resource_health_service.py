@@ -40,6 +40,7 @@ TESTABLE_RESOURCE_IDS = frozenset(
         "searxng",
         "firecrawl",
         "neo4j",
+        "sandbox",
         "ragflow_api",
         "knowflow_backend",
         "ragflow_mysql",
@@ -746,6 +747,15 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
         configured = bool(neo4j_uri and neo4j_user)
         healthy, msg = _probe_neo4j(neo4j_uri, neo4j_user, neo4j_password, neo4j_database)
         return _item(configured=configured, healthy=healthy, message=msg)
+
+    if rid == "sandbox":
+        sandbox_url = (cfg.get("sandbox_base_url") or "").strip()
+        if not sandbox_url:
+            return _item(configured=False, healthy=False, message="未填写沙箱服务地址")
+        healthy, msg = _probe_http_get(f"{sandbox_url}/run", accept_405=True)
+        if not healthy:
+            healthy, msg = _probe_http_get(sandbox_url, accept_405=True)
+        return _item(configured=True, healthy=healthy, message=msg)
 
     if rid == "ragflow_api":
         ragflow_url = (cfg.get("ragflow_api_url") or "").strip()

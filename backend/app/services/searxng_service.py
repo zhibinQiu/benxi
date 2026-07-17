@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
@@ -12,6 +13,9 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+_MAX_RETRIES = 2
+_RETRY_DELAY_SEC = 1.0
 
 
 class SearxngNotConfiguredError(RuntimeError):
@@ -56,25 +60,32 @@ def search_web(
         "pageno": max(1, page),
     }
     timeout = get_searxng_timeout_seconds(db)
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "pdf-trans-platform/1.0",
+    }
 
-    try:
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            resp = client.get(
-                url,
-                params=params,
-                headers={
-                    "Accept": "application/json",
-                    "User-Agent": "pdf-trans-platform/1.0",
-                },
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                resp = client.get(url, params=params, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            logger.warning(
+                "searxng search failed q=%r page=%s attempt=%s/%s: %s",
+                q, page, attempt + 1, _MAX_RETRIES + 1, exc,
             )
-            resp.raise_for_status()
-            payload = resp.json()
-    except httpx.HTTPError as exc:
-        logger.warning("searxng search failed q=%r page=%s: %s", q, page, exc)
-        raise SearxngSearchError("联网搜索服务暂不可用") from exc
-    except ValueError as exc:
-        logger.warning("searxng invalid json q=%r: %s", q, exc)
-        raise SearxngSearchError("联网搜索返回格式异常") from exc
+            if attempt < _MAX_RETRIES:
+                time.sleep(_RETRY_DELAY_SEC)
+                continue
+            raise SearxngSearchError("联网搜索服务暂不可用") from exc
+        except ValueError as exc:
+            logger.warning("searxng invalid json q=%r: %s", q, exc)
+            raise SearxngSearchError("联网搜索返回格式异常") from exc
+        break
 
     raw_items = payload.get("results") or []
     items: list[dict] = []

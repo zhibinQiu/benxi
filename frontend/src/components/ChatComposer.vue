@@ -1,7 +1,10 @@
 <script setup>
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { NIcon, NInput, NSpin } from "naive-ui";
-import { ArrowUpOutline, AttachOutline, CloseOutline, DocumentTextOutline, StopOutline } from "@vicons/ionicons5";
+import {
+  ArrowUpOutline, AttachOutline, CloseOutline, DocumentTextOutline,
+  MicOutline, StopOutline,
+} from "@vicons/ionicons5";
 import { escapeHtml } from "../utils/markdown.js";
 
 const props = defineProps({
@@ -22,9 +25,13 @@ const props = defineProps({
   attachments: { type: Array, default: () => [] },
   /** 是否对 #关键词 做行内高亮渲染（隐藏井号，为文字添加背景） */
   highlightHashtags: { type: Boolean, default: false },
+  /** 显示语音输入按钮 */
+  showVoiceInput: { type: Boolean, default: false },
+  /** 语音正在转写中 */
+  voiceProcessing: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["update:modelValue", "send", "stop", "keydown", "attach", "remove-attachment"]);
+const emit = defineEmits(["update:modelValue", "send", "stop", "keydown", "attach", "remove-attachment", "voiceInput"]);
 
 const hasAttachments = computed(() => props.attachments.length > 0);
 
@@ -120,6 +127,59 @@ watch(
   },
 );
 
+/* ---- 语音输入 ---- */
+const recording = ref(false);
+let mediaRecorder = null;
+let audioChunks = [];
+
+async function startVoiceRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      // 释放麦克风
+      stream.getTracks().forEach((t) => t.stop());
+      mediaRecorder = null;
+      recording.value = false;
+      emit("voiceInput", blob);
+    };
+    mediaRecorder.onerror = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      mediaRecorder = null;
+      recording.value = false;
+    };
+    mediaRecorder.start();
+    recording.value = true;
+  } catch (err) {
+    recording.value = false;
+    // 权限被拒绝等错误由父组件处理
+    emit("voiceInput", null, err.message || "无法访问麦克风");
+  }
+}
+
+function stopVoiceRecording() {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+  }
+}
+
+function toggleVoiceRecording() {
+  if (props.voiceProcessing) return;
+  if (recording.value) {
+    stopVoiceRecording();
+  } else {
+    startVoiceRecording();
+  }
+}
+
+const micDisabled = computed(() => props.disabled || props.voiceProcessing);
+/* ---- 语音输入结束 ---- */
+
 function focus() {
   inputRef.value?.focus?.();
 }
@@ -134,6 +194,7 @@ defineExpose({ focus });
       'chat-composer--generating': loading,
       'chat-composer--single': isSingleLine,
       'chat-composer--with-attach': showAttachment,
+      'chat-composer--with-voice': showVoiceInput,
       'chat-composer--has-files': hasAttachments,
     }"
   >
@@ -192,6 +253,18 @@ defineExpose({ focus });
       >
         <n-spin v-if="attachmentLoading" :size="17" />
         <n-icon v-else :size="22" :component="AttachOutline" />
+      </button>
+      <button
+        v-if="showVoiceInput"
+        type="button"
+        class="chat-composer__voice"
+        :class="{ 'chat-composer__voice--recording': recording, 'chat-composer__voice--processing': voiceProcessing }"
+        :disabled="micDisabled"
+        :aria-label="recording ? '停止录音' : '语音输入'"
+        @click="toggleVoiceRecording"
+      >
+        <n-spin v-if="voiceProcessing" :size="17" />
+        <n-icon v-else :size="19" :component="MicOutline" />
       </button>
       <button
         v-if="loading"
@@ -371,10 +444,34 @@ defineExpose({ focus });
   padding-right: 96px !important;
 }
 
+.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
+.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
+.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
+  padding-right: 130px !important;
+}
+
+.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
+.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
+.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
+  padding-right: 162px !important;
+}
+
 .chat-composer--single.chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--single.chat-composer--with-attach .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--single.chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-mirror) {
   padding-right: 82px !important;
+}
+
+.chat-composer--single.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
+.chat-composer--single.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
+.chat-composer--single.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
+  padding-right: 114px !important;
+}
+
+.chat-composer--single.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
+.chat-composer--single.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
+.chat-composer--single.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
+  padding-right: 146px !important;
 }
 
 .chat-composer--single.chat-composer--has-files .chat-composer__actions {
@@ -482,6 +579,65 @@ defineExpose({ focus });
   box-shadow: 0 3px 10px color-mix(in srgb, var(--platform-accent) 28%, transparent);
 }
 
+.chat-composer__voice {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--platform-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--platform-duration-smooth) ease, background var(--platform-duration-smooth) ease, transform 0.18s ease;
+  position: relative;
+}
+
+.chat-composer__voice:hover:not(:disabled) {
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+}
+
+.chat-composer__voice:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 录音中状态——红色脉冲呼吸 */
+.chat-composer__voice--recording {
+  color: #e53e3e !important;
+  background: rgba(229, 62, 62, 0.1) !important;
+  animation: voice-record-pulse 1.4s ease-in-out infinite;
+}
+
+.chat-composer__voice--recording:hover {
+  background: rgba(229, 62, 62, 0.18) !important;
+}
+
+@keyframes voice-record-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229, 62, 62, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(229, 62, 62, 0); }
+}
+
+/* 转写中状态——使用 accent 色微呼吸 */
+.chat-composer__voice--processing {
+  color: var(--platform-accent) !important;
+  background: var(--platform-accent-soft) !important;
+  animation: voice-process-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-process-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* 当同时显示附件按钮和语音按钮时调整右侧间距 */
+.chat-composer--with-attach .chat-composer__voice {
+  /* 附件按钮 + 语音按钮按顺序排列 */
+}
+
 .chat-composer__toolbar {
   position: absolute;
   left: 10px;
@@ -489,12 +645,73 @@ defineExpose({ focus });
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   pointer-events: none;
 }
 
 .chat-composer__toolbar > * {
   pointer-events: auto;
+}
+
+/* ── 移动端紧凑模式 ── */
+@media (max-width: 768px) {
+  .chat-composer__input :deep(.n-input__textarea-el),
+  .chat-composer__input :deep(.n-input__placeholder),
+  .chat-composer__input :deep(.n-input__textarea-mirror) {
+    font-size: 15px !important;
+    padding-right: 52px !important;
+  }
+
+  .chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-el),
+  .chat-composer--with-attach .chat-composer__input :deep(.n-input__placeholder),
+  .chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-mirror) {
+    padding-right: 80px !important;
+  }
+
+  .chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
+  .chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
+  .chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
+    padding-right: 108px !important;
+  }
+
+  .chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
+  .chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
+  .chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
+    padding-right: 136px !important;
+  }
+
+  .chat-composer__send,
+  .chat-composer__attach,
+  .chat-composer__voice {
+    width: 28px;
+    height: 28px;
+  }
+  .chat-composer__send :deep(.n-icon),
+  .chat-composer__attach :deep(.n-icon),
+  .chat-composer__voice :deep(.n-icon) {
+    font-size: 16px !important;
+  }
+
+  .chat-composer__actions {
+    right: 4px;
+    gap: 0;
+  }
+  .chat-composer:not(.chat-composer--single) .chat-composer__actions {
+    bottom: 4px;
+  }
+
+  .chat-composer__toolbar {
+    left: 4px;
+    bottom: 4px;
+  }
+
+  .chat-composer__attachment-chip {
+    font-size: 12px;
+    padding: 2px 6px 2px 8px;
+  }
+  .chat-composer__attachment-name {
+    max-width: 120px;
+  }
 }
 </style>
 

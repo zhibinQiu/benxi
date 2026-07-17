@@ -75,7 +75,6 @@ def _match_agent_directly(message: str, *, min_score: int = 4) -> str | None:
 
     agents = load_agents_routing_md()
     ranked = rank_routing_entries(message, agents, limit=5)
-    msg = (message or "").lower()
 
     best_specialist: tuple[int, str] | None = None  # (score, agent_id)
     for score, agent_id in ranked:
@@ -85,15 +84,6 @@ def _match_agent_directly(message: str, *, min_score: int = 4) -> str | None:
 
     if best_specialist is not None:
         agent_id = best_specialist[1]
-        # skill-dev 安全守卫：仅当明确技能开发意图时路由
-        if agent_id == "skill-dev":
-            is_dev_intent = any(
-                kw in msg
-                for kw in ("创建技能", "生成技能", "开发技能", "编写技能",
-                           "创建一个skill", "生成一个skill", "开发一个skill")
-            )
-            if not is_dev_intent:
-                return None
         return agent_id
     return None
 
@@ -121,7 +111,7 @@ def resolve_agent_routes_from_skills(
     if not msg:
         return [pick_route(db, "orchestrator", ROUTE_REASONS["orchestrator"])]
 
-    # ── 1. Fast Path: 消息中直接包含技能名 → 精准匹配 ──
+    # ── 1. 上传技能名匹配 ──
     from app.services.agent_skill_routing import (
         build_skill_agent_index,
     )
@@ -173,15 +163,7 @@ def resolve_agent_routes_from_skills(
             non_orch = [s for s in scores if s.agent_id != "orchestrator"]
             if non_orch:
                 best = non_orch[0]
-                # skill-dev 安全守卫
-                if best.agent_id == "skill-dev":
-                    is_dev_intent = any(
-                        kw in msg_lower
-                        for kw in ("创建技能", "生成技能", "开发技能", "编写技能",
-                                   "创建一个skill", "生成一个skill", "开发一个skill")
-                    )
-                    if not is_dev_intent:
-                        return [pick_route(db, "orchestrator", "非技能开发请求，由调度智能体处理")]
+                # skill-dev：已由 is_skill_management_message 判断，无需二次守卫
 
                 return [pick_route(db, best.agent_id, skill_route_reason(best))]
 
@@ -243,18 +225,6 @@ async def resolve_agent_route_plan(
     from app.services.agent_skill_routing import build_skill_agent_index
 
     index = build_skill_agent_index(db)
-
-    # ── Fast Path: 直接匹配已知 Skill 名（O(1)，完全绕过后两阶段）──
-    msg_lower = msg.lower()
-    for skill_name, agent_id in index.items():
-        if skill_name in msg_lower:
-            routes = [pick_route(db, agent_id, f"直接匹配 Skill `{skill_name}`")]
-            plan = build_route_plan("single", routes, source="skill_fast", settings=settings)
-            _logger.info("Fast Path routing in %.1fs msg=%s skill=%s agent=%s",
-                         time.monotonic() - _t0, msg[:40], skill_name, agent_id)
-            if not force_replan:
-                _set_cached_route_plan(uid_str, msg, plan)
-            return plan
 
     # ── 关键词路由（Agent 优先 → Skill 兜底，始终返回单路由）──
     routes = resolve_agent_routes_from_skills(

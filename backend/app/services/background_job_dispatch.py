@@ -161,11 +161,18 @@ def dispatch_scheduled_notification(
     if countdown < 60:
         # 短倒计时走进程内 Timer，不依赖 Celery Worker
         if countdown > 0:
+            logger.info(
+                "定时通知 %s 将在 %ss 后投递（进程内 Timer）",
+                notification_id, countdown,
+            )
             threading.Timer(
                 countdown,
                 lambda: _dispatch_scheduled_notification_inprocess(notification_id),
             ).start()
         else:
+            logger.info(
+                "定时通知 %s 已到期，立即投递", notification_id,
+            )
             _dispatch_scheduled_notification_inprocess(notification_id)
         return
     if _try_celery(

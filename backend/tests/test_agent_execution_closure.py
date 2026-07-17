@@ -10,7 +10,7 @@ from app.services.agent_execution_closure import (
     replan_after_missing_skill_data,
     resolve_target_uploaded_skill,
 )
-from app.services.agent_planner import AgentExecutionPlan
+from app.agentkit.loop import AgentExecutionPlan
 
 
 def test_infer_skill_script_args_for_beijing():
@@ -23,10 +23,9 @@ def test_resolve_target_uploaded_skill_from_history():
         reasoning="",
         intent="执行发展技能",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill=None,
-        builtin_orchestration=None,
         steps=(),
         source="rule",
     )
@@ -52,10 +51,9 @@ def test_replan_after_missing_skill_data():
         reasoning="",
         intent="执行发展技能",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill="carbon-market-price",
-        builtin_orchestration=None,
         steps=(),
         source="rule",
     )
@@ -93,10 +91,9 @@ def test_execution_goal_not_satisfied_after_list_only():
         reasoning="",
         intent="创建或管理 Agent 发展技能",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill=None,
-        builtin_orchestration=None,
         steps=(),
         source="rule",
     )
@@ -111,10 +108,9 @@ def test_execution_goal_satisfied_after_create_and_run():
         reasoning="",
         intent="创建或管理 Agent 发展技能",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill=None,
-        builtin_orchestration=None,
         steps=(),
         source="rule",
     )
@@ -140,10 +136,9 @@ def test_execution_goal_not_satisfied_create_without_run():
         reasoning="",
         intent="创建或管理 Agent 发展技能",
         direct_answer=False,
-        atomic_tools=(),
-        skip_tools=(),
+        allowed_tools=(),
+        blocked_tools=(),
         uploaded_skill=None,
-        builtin_orchestration=None,
         steps=(),
         source="rule",
     )

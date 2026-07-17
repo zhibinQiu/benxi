@@ -8,7 +8,8 @@ import {
   GridOutline,
   ConstructOutline,
   PeopleOutline,
-  RadioOutline } from "@vicons/ionicons5";
+  RadioOutline,
+  RefreshOutline } from "@vicons/ionicons5";
 import {
   NCard,
   NGrid,
@@ -19,10 +20,10 @@ import {
   NSpace,
   NEmpty,
   NTag,
+  NButton,
   NIcon } from "naive-ui";
 import { fetchAuditLogs, fetchDashboardStats, fetchSystemMetrics } from "../../api/client";
 import { sanitizeUserFacingMessage } from "../../utils/uiMessage.js";
-import ListRefreshButton from "../../components/ListRefreshButton.vue";
 import ListTableFooter from "../../components/ListTableFooter.vue";
 import { useClientListPagination } from "../../composables/useClientListPagination.js";
 
@@ -258,18 +259,22 @@ onMounted(() => {
         {{ t("admin.monitor.dataUpdatedAt", { time: formatUnixTime(stats.collected_at) }) }}
       </span>
       <n-space :size="10">
-        <ListRefreshButton
-          :label="t('admin.monitor.refreshLogs')"
-          :loading="loadingLogs"
-          @click="loadLogs"
-        />
-        <ListRefreshButton
-          :label="t('admin.monitor.refreshAll')"
-          :loading="refreshing"
-          @click="refreshAll"
-        />
       </n-space>
     </div>
+    <Teleport to="#header-page-tools">
+      <n-button
+        quaternary
+        circle
+        size="small"
+        class="header-icon-btn"
+        :class="{ 'header-icon-btn--spinning': refreshing }"
+        :aria-label="t('admin.monitor.refreshAll')"
+        :disabled="refreshing"
+        @click="refreshAll"
+      >
+        <n-icon :size="14" :component="RefreshOutline" />
+      </n-button>
+    </Teleport>
 
     <n-card class="monitor-section" :bordered="false">
       <div v-if="overviewCards.length" class="overview-grid">
@@ -302,7 +307,6 @@ onMounted(() => {
       <n-empty v-else :description="t('admin.monitor.noStats')" size="small" />
     </n-card>
 
-    <n-card class="monitor-section" :bordered="false">
       <template v-if="metrics">
         <n-grid :cols="4" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
           <n-gi span="4 m:2 l:1">
@@ -478,18 +482,9 @@ onMounted(() => {
         </div>
       </template>
       <n-empty v-else :description="t('admin.monitor.loadingMetrics')" size="small" />
-    </n-card>
 
     <div class="admin-list-table">
-      <n-card class="monitor-section monitor-section--logs" :bordered="false">
-        <template #header-extra>
-          <ListRefreshButton
-            :label="t('admin.monitor.refreshLogs')"
-            :loading="loadingLogs"
-            @click="loadLogs"
-          />
-        </template>
-        <n-data-table
+          <n-data-table
           :columns="logColumns"
           :data="logsPagedItems"
           :loading="loadingLogs"
@@ -497,7 +492,6 @@ onMounted(() => {
           size="small"
           :pagination="false"
         />
-      </n-card>
       <ListTableFooter
         :page="logsPage"
         :page-size="logsPageSize"
@@ -546,15 +540,9 @@ onMounted(() => {
   min-height: 130px;
   box-sizing: border-box;
   padding: 17px 19px;
-  border-radius: 14px;
-  background: var(--platform-ui-glass-fill-subtle, rgba(255, 255, 255, 0.22));
-  border: 1px solid color-mix(in srgb, var(--card-accent) 18%, transparent);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
-}
-
-.overview-card:hover {
-  border-color: color-mix(in srgb, var(--card-accent) 32%, transparent);
-  box-shadow: 0 5px 17px color-mix(in srgb, var(--card-accent) 10%, transparent);
+  border-radius: var(--platform-card-radius);
+  background: var(--platform-card-bg);
+  border: 1px solid var(--platform-card-border-color);
 }
 
 .overview-card__icon {
@@ -581,7 +569,6 @@ onMounted(() => {
 .overview-card__value {
   margin-top: 5px;
   font-size: 1.625rem;
-  font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }

@@ -33,7 +33,6 @@ from app.services.knowledge_qa.prompts import (
 )
 from app.services.knowledge_qa.retrieval import (
     retrieve_hits_for_qa,
-    retrieval_workflow_title,
 )
 
 logger = logging.getLogger(__name__)
@@ -350,17 +349,11 @@ async def iter_knowledge_qa_stream(
             {
                 "workflow": {
                     "phase": "node_started",
-                    "title": "正在解析本体图谱关联",
+                    "title": "正在解析知识图谱关联",
                 }
             },
         ensure_ascii=False,
     )
-
-    yield json.dumps(
-        {"workflow": {"phase": "node_started", "title": retrieval_workflow_title(mode)}},
-        ensure_ascii=False,
-    )
-    await asyncio.sleep(0)
 
     answer_think_id = f"answer-{uuid.uuid4().hex[:8]}"
     yield json.dumps(

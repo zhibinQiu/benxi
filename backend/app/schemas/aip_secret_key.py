@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class AipSecretKeyCreateIn(BaseModel):
-    purpose: str = Field(..., min_length=1, max_length=500, description="密钥用途说明")
+    purpose: str = Field("", max_length=500, description="密钥用途说明")
 
 
 class AipSecretKeyOut(BaseModel):

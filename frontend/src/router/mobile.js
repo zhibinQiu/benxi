@@ -171,17 +171,30 @@ const routes = [
         component: () => import("../views/OcrView.vue"),
       },
       {
-        path: "system/kg-palantir",
-        name: "kg-palantir",
+        path: "system/ontology",
+        name: "ontology",
         meta: {
-          title: "本体图谱",
+          title: "本体定义",
           fullHeight: true,
           flushStart: true,
           flushEnd: true,
           featureIcon: "git-network",
-          perm: "feature.kg_palantir",
+          perm: "feature.ontology",
         },
-        component: () => import("../views/KgPalantirView.vue"),
+        component: () => import("../views/OntologyView.vue"),
+      },
+      {
+        path: "system/kg",
+        name: "kg",
+        meta: {
+          title: "知识图谱",
+          fullHeight: true,
+          flushStart: true,
+          flushEnd: true,
+          featureIcon: "cube-outline",
+          perm: "feature.kg",
+        },
+        component: () => import("../views/KgView.vue"),
       },
       {
         path: "system/compare",
@@ -232,7 +245,7 @@ const routes = [
       {
         path: "documents",
         name: "documents",
-        meta: { title: "我的文件", featureIcon: "document-text", keepAlive: true },
+        meta: { title: "文档管理", featureIcon: "document-text", keepAlive: true },
         component: () => import("../views/DocumentsView.vue"),
       },
       {
@@ -286,14 +299,20 @@ const routes = [
       {
         path: "admin/users",
         name: "admin-users",
-        meta: { title: "用户管理", perm: "admin.user" },
-        component: () => import("../views/admin/UsersView.vue"),
+        meta: { title: "组织管理" },
+        beforeEnter: (to, from) => {
+          const { hasPerm } = useAuth();
+          if (!hasPerm("admin.user") && !hasPerm("admin.dept")) {
+            const { firstVisibleRouteName } = useMenuSettings();
+            return { name: firstVisibleRouteName() };
+          }
+          return true;
+        },
+        component: () => import("../views/admin/OrgManagementView.vue"),
       },
       {
         path: "admin/departments",
-        name: "admin-departments",
-        meta: { title: "部门管理", perm: "admin.dept" },
-        component: () => import("../views/admin/DepartmentsView.vue"),
+        redirect: { name: "admin-users" },
       },
       {
         path: "admin/monitor",
@@ -374,11 +393,12 @@ router.beforeEach(async (to) => {
     return DEFAULT_HOME_ROUTE;
   }
   if (user.value) {
-    const { loadMenuSettings, isMenuVisible, firstVisibleRouteName } = useMenuSettings();
+    const { isMenuVisible, firstVisibleRouteName } = useMenuSettings();
     const { loadSystemFeatures } = useSystemFeatures();
-    await Promise.all([loadMenuSettings(), loadSystemFeatures()]);
+    await loadSystemFeatures();
     const menuKey = routeMenuKey(String(to.name || ""));
     if (
+      !to.meta.perm &&
       menuKey &&
       isConfigurableMenuKey(menuKey) &&
       !MENU_VISIBILITY_EXEMPT.has(String(to.name || "")) &&

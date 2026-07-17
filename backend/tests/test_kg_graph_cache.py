@@ -1,4 +1,4 @@
-"""本体图谱子图缓存。"""
+"""知识图谱子图缓存。"""
 
 from __future__ import annotations
 

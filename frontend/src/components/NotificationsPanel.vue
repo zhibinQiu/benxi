@@ -10,11 +10,12 @@ import {
   NSpin,
   NThing,
   NTooltip } from "naive-ui";
-import { RefreshOutline, CheckmarkDoneOutline } from "@vicons/ionicons5";
+import { RefreshOutline, CheckmarkDoneOutline, CloseOutline, TrashOutline } from "@vicons/ionicons5";
 import {
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead } from "../api/client";
+import { clearAllNotifications } from "../api/notifications";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
@@ -24,13 +25,14 @@ const props = defineProps({
     type: Boolean,
     default: true}});
 
-const emit = defineEmits(["updated", "navigate"]);
+const emit = defineEmits(["updated", "navigate", "close"]);
 
 const router = useRouter();
 const ui = usePlatformUi();
 const { t } = useI18n();
 const items = ref([]);
 const loading = ref(false);
+const clearing = ref(false);
 
 async function load({ notifyOnError = true } = {}) {
   loading.value = true;
@@ -56,7 +58,22 @@ async function markRead(id) {
 
 async function markAllRead() {
   try {
-    const { deleted } = await markAllNotificationsRead();
+    const { updated } = await markAllNotificationsRead();
+    if (updated > 0) {
+      ui.success("notifications.messages.markedRead", { count: updated });
+    } else {
+      ui.success("notifications.messages.noneUnread");
+    }
+    await load({ notifyOnError: false });
+  } catch (e) {
+    ui.error(e);
+  }
+}
+
+async function clearAll() {
+  clearing.value = true;
+  try {
+    const { deleted } = await clearAllNotifications();
     if (deleted > 0) {
       ui.success("notifications.messages.clearedAll", { count: deleted });
     } else {
@@ -65,6 +82,8 @@ async function markAllRead() {
     await load({ notifyOnError: false });
   } catch (e) {
     ui.error(e);
+  } finally {
+    clearing.value = false;
   }
 }
 
@@ -95,7 +114,7 @@ onMounted(() => {
   if (props.active) load();
 });
 
-defineExpose({ load, refresh: load });
+defineExpose({ load, refresh: load, markAllRead, clearAll });
 </script>
 
 <template>
@@ -114,7 +133,7 @@ defineExpose({ load, refresh: load });
               :disabled="loading"
               @click="load"
             >
-              <n-icon :size="19" :component="RefreshOutline" />
+              <n-icon :size="18" :component="RefreshOutline" />
             </button>
           </template>
           {{ t("common.refresh") }}
@@ -125,13 +144,37 @@ defineExpose({ load, refresh: load });
               type="button"
               class="panel-header-btn panel-header-btn--accent"
               :aria-label="t('notifications.markAllRead')"
+              :disabled="loading || clearing"
               @click="markAllRead"
             >
-              <n-icon :size="19" :component="CheckmarkDoneOutline" />
+              <n-icon :size="18" :component="CheckmarkDoneOutline" />
             </button>
           </template>
           {{ t("notifications.markAllRead") }}
         </n-tooltip>
+        <n-tooltip placement="bottom">
+          <template #trigger>
+            <button
+              type="button"
+              class="panel-header-btn panel-header-btn--danger"
+              :aria-label="t('notifications.actions.delete')"
+              :disabled="loading || clearing"
+              @click="clearAll"
+            >
+              <n-icon :size="18" :component="TrashOutline" />
+            </button>
+          </template>
+          {{ t("notifications.actions.delete") }}
+        </n-tooltip>
+        <div class="panel-header-sep" />
+        <button
+          type="button"
+          class="panel-header-btn"
+          aria-label="关闭"
+          @click="emit('close')"
+        >
+          <n-icon :size="18" :component="CloseOutline" />
+        </button>
       </div>
     </header>
 
@@ -180,8 +223,8 @@ defineExpose({ load, refresh: load });
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 12px 16px 10px;
+  gap: 12px;
+  padding: 14px 17px 12px;
   border-bottom: 1px solid var(--platform-border);
   background: linear-gradient(
     180deg,
@@ -191,13 +234,16 @@ defineExpose({ load, refresh: load });
 }
 
 .notifications-panel__title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: var(--platform-tracking-tight);
 }
 
 .notifications-panel__actions {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .notifications-panel__body {
@@ -291,5 +337,50 @@ defineExpose({ load, refresh: load });
 .notif-read {
   font-size: 12px;
   color: var(--platform-text-tertiary);
+}
+
+/* panel-header-btn — 通用头部图标按钮 */
+:deep(.panel-header-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--platform-radius-sm, 6px);
+  background: transparent;
+  color: var(--platform-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+:deep(.panel-header-btn:hover) {
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
+}
+
+:deep(.panel-header-btn:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+:deep(.panel-header-btn--accent:hover) {
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
+}
+
+:deep(.panel-header-btn--danger:hover) {
+  background: color-mix(in srgb, var(--platform-error, #d03050) 12%, transparent);
+  color: var(--platform-error, #d03050);
+}
+
+.panel-header-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--platform-border);
+  flex-shrink: 0;
+  margin: 0 2px;
 }
 </style>

@@ -42,7 +42,7 @@ def create_todo(
     user: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[TodoOut]:
     item = todo_service.create_todo(
-        db, user, title=body.title, note=body.note or ""
+        db, user, title=body.title, note=body.note or "", due_at=body.due_at
     )
     return ApiResponse(data=TodoOut.model_validate(item))
 
@@ -61,6 +61,7 @@ def update_todo(
         title=body.title,
         note=body.note,
         status=body.status,
+        due_at=body.due_at,
     )
     return ApiResponse(data=TodoOut.model_validate(item))
 
@@ -125,7 +126,10 @@ def batch_create_todos(
     created = todo_service.batch_create_todos(
         db,
         user,
-        [{"title": row.title, "note": row.note or ""} for row in body.items],
+        [
+            {"title": row.title, "note": row.note or "", "due_at": row.due_at}
+            for row in body.items
+        ],
     )
     return ApiResponse(data=[TodoOut.model_validate(t) for t in created])
 
@@ -139,6 +143,9 @@ def replace_pending_todos(
     created = todo_service.replace_pending_todos(
         db,
         user,
-        [{"title": row.title, "note": row.note or ""} for row in body.items],
+        [
+            {"title": row.title, "note": row.note or "", "due_at": row.due_at}
+            for row in body.items
+        ],
     )
     return ApiResponse(data=[TodoOut.model_validate(t) for t in created])

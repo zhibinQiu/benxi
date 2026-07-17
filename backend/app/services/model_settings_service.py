@@ -282,14 +282,16 @@ def _provider_payload_from_update(
     # Masked api key handling: 从 current 还原真实 key
     for p in providers:
         key_raw = p.get("api_key", "") or ""
-        has_masked = "api_key_masked" in p
-        if has_masked and not key_raw:
+        # 前端保存时不会发送 api_key_masked 字段，已有 provider 的 api_key
+        # 会被设为空字符串（因 masked 格式被过滤）。此时若该 provider 在旧记录中
+        # 存在真实 key，应从旧记录还原，避免 key 被空字符串覆盖。
+        if not key_raw:
             prev = prev_by_id.get(str(p.get("id", "")))
-            prev_key = (prev.get("api_key") or "") if prev else ""
-            # 只有当 prev_key 是真实密钥（非 masked）时才使用它还原
-            if prev_key and not _is_masked_secret(prev_key):
-                p["api_key"] = prev_key
-                continue
+            if prev:
+                prev_key = (prev.get("api_key") or "") if prev else ""
+                if prev_key and not _is_masked_secret(prev_key):
+                    p["api_key"] = prev_key
+                    continue
             # 否则不设 api_key（后续 fallback 到 cur_key）
 
     effective_base = ""

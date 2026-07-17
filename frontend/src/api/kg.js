@@ -1,73 +1,77 @@
-/** 知识图谱（本体）REST API */
+/** 知识图谱（KG）REST API — Neo4j 版实体/关系/图谱/抽取 */
 import { api } from "./http.js";
 
-export async function fetchKgMeta({ syncSystem = false } = {}) {
-  const params = new URLSearchParams();
-  if (syncSystem) params.set("sync_system", "true");
-  const qs = params.toString();
-  return api(`/api/v1/kg/meta${qs ? `?${qs}` : ""}`);
+// ── 元数据 ───────────────────────────────────────────────────────────────
+
+export function fetchKgMeta() {
+  return api("/api/v1/kg/meta");
 }
 
-export async function createKgEntityFromDocument(documentId) {
-  return api(`/api/v1/kg/entities/from-document/${documentId}`, { method: "POST" });
-}
+// ── 实体 CRUD ───────────────────────────────────────────────────────────
 
-export async function fetchKgEntities({ typeId, q } = {}) {
+export function fetchKgEntities({ typeCode, q, limit, offset } = {}) {
   const params = new URLSearchParams();
-  if (typeId) params.set("type_id", typeId);
+  if (typeCode) params.set("type_code", typeCode);
   if (q) params.set("q", q);
+  if (limit) params.set("limit", String(limit));
+  if (offset) params.set("offset", String(offset));
   const qs = params.toString();
   return api(`/api/v1/kg/entities${qs ? `?${qs}` : ""}`);
 }
 
-export async function fetchKgEntity(entityId) {
+export function fetchKgEntity(entityId) {
   return api(`/api/v1/kg/entities/${entityId}`);
 }
 
-export async function createKgEntity(body) {
-  return api("/api/v1/kg/entities", { method: "POST", body: JSON.stringify(body) });
-}
-
-export async function updateKgEntity(entityId, body) {
-  return api(`/api/v1/kg/entities/${entityId}`, { method: "PATCH", body: JSON.stringify(body) });
-}
-
-export async function deleteKgEntity(entityId) {
-  return api(`/api/v1/kg/entities/${entityId}`, { method: "DELETE" });
-}
-
-export async function batchDeleteKgEntities({ entityIds, typeId, q } = {}) {
-  return api("/api/v1/kg/entities/batch-delete", {
+export function createKgEntity(body) {
+  return api("/api/v1/kg/entities", {
     method: "POST",
-    body: JSON.stringify({
-      entity_ids: entityIds || [],
-      type_id: typeId || null,
-      q: q || null,
-    }),
+    body: JSON.stringify(body),
   });
 }
 
-export async function clearKgGraph() {
-  return api("/api/v1/kg/graph/clear", { method: "POST" });
+export function updateKgEntity(entityId, body) {
+  return api(`/api/v1/kg/entities/${entityId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
 }
 
-export async function fetchKgRelations({ entityId, relationTypeId } = {}) {
+export function deleteKgEntity(entityId) {
+  return api(`/api/v1/kg/entities/${entityId}`, { method: "DELETE" });
+}
+
+// ── 关系 CRUD ───────────────────────────────────────────────────────────
+
+export function fetchKgRelations({ entityId, typeCode } = {}) {
   const params = new URLSearchParams();
   if (entityId) params.set("entity_id", entityId);
-  if (relationTypeId) params.set("relation_type_id", relationTypeId);
+  if (typeCode) params.set("type_code", typeCode);
   const qs = params.toString();
   return api(`/api/v1/kg/relations${qs ? `?${qs}` : ""}`);
 }
 
-export async function createKgRelation(body) {
-  return api("/api/v1/kg/relations", { method: "POST", body: JSON.stringify(body) });
+export function createKgRelation(body) {
+  return api("/api/v1/kg/relations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
-export async function deleteKgRelation(relationId) {
+export function deleteKgRelation(relationId) {
   return api(`/api/v1/kg/relations/${relationId}`, { method: "DELETE" });
 }
 
-export async function fetchKgGraph({ focusEntityId, depth = 1 } = {}) {
+export function updateKgRelation(relationId, body) {
+  return api(`/api/v1/kg/relations/${relationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+// ── 图谱可视化 ───────────────────────────────────────────────────────────
+
+export function fetchKgGraph({ focusEntityId, depth } = {}) {
   const params = new URLSearchParams();
   if (focusEntityId) params.set("focus_entity_id", focusEntityId);
   if (depth) params.set("depth", String(depth));
@@ -75,45 +79,58 @@ export async function fetchKgGraph({ focusEntityId, depth = 1 } = {}) {
   return api(`/api/v1/kg/graph${qs ? `?${qs}` : ""}`);
 }
 
-export async function createKgEntityType(body) {
-  return api("/api/v1/kg/entity-types", { method: "POST", body: JSON.stringify(body) });
+export function clearKgGraph() {
+  return api("/api/v1/kg/graph/clear", { method: "POST" });
 }
 
-export async function updateKgEntityType(typeId, body) {
-  return api(`/api/v1/kg/entity-types/${typeId}`, { method: "PATCH", body: JSON.stringify(body) });
-}
-
-export async function deleteKgEntityType(typeId) {
-  return api(`/api/v1/kg/entity-types/${typeId}`, { method: "DELETE" });
-}
-
-export async function createKgRelationType(body) {
-  return api("/api/v1/kg/relation-types", { method: "POST", body: JSON.stringify(body) });
-}
-
-export async function updateKgRelationType(typeId, body) {
-  return api(`/api/v1/kg/relation-types/${typeId}`, { method: "PATCH", body: JSON.stringify(body) });
-}
-
-export async function deleteKgRelationType(typeId) {
-  return api(`/api/v1/kg/relation-types/${typeId}`, { method: "DELETE" });
-}
-
-export async function extractKgFromText({ title, text, sourceType, sourceId } = {}) {
-  return api("/api/v1/kg/extract-from-text", {
+export function reasonKgGraph(question, { depth = 3, includeInferred = true } = {}) {
+  return api("/api/v1/kg/graph/reason", {
     method: "POST",
     body: JSON.stringify({
-      title: title || "会议总结",
-      text,
-      source_type: sourceType || "meeting_summary",
-      source_id: sourceId || null,
+      question,
+      depth,
+      include_inferred: includeInferred,
     }),
   });
 }
 
-export async function extractKgBatch({ scope = "knowledge", force = false } = {}) {
-  return api("/api/v1/kg/extract/batch", {
+// ── 平台数据同步 ────────────────────────────────────────────────
+
+export function syncKgOrg() {
+  return api("/api/v1/kg/sync/org", { method: "POST" });
+}
+
+export function syncKgAgents() {
+  return api("/api/v1/kg/sync/agents", { method: "POST" });
+}
+
+export function syncKgMemory() {
+  return api("/api/v1/kg/sync/memory", { method: "POST" });
+}
+
+export function syncKgAll() {
+  return api("/api/v1/kg/sync/all", { method: "POST" });
+}
+
+// ── 文档内容抽取 ──────────────────────────────────────────────
+
+export function extractKgDocuments({ maxDocs = 20 } = {}) {
+  return api("/api/v1/kg/extract/documents", {
     method: "POST",
-    body: JSON.stringify({ scope, force }),
+    body: JSON.stringify({ max_docs: maxDocs, scope: "knowledge" }),
+  });
+}
+
+// ── LLM 抽取 ────────────────────────────────────────────────────────────
+
+export function extractKgFromText(title, text, { sourceType = "manual", sourceId = null } = {}) {
+  return api("/api/v1/kg/extract-from-text", {
+    method: "POST",
+    body: JSON.stringify({
+      title,
+      text,
+      source_type: sourceType,
+      source_id: sourceId,
+    }),
   });
 }

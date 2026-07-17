@@ -27,6 +27,7 @@ from app.schemas.knowledge_library import (
     KnowledgeQaSessionCreate,
     KnowledgeReindexRequest,
     KnowledgeScopeTreeOut,
+    MountableFolderOut,
 )
 from app.schemas.rag import RagSessionOut
 from app.services import rag_service
@@ -88,6 +89,48 @@ def knowledge_scope_tree(
 ) -> ApiResponse[KnowledgeScopeTreeOut]:
     data = build_knowledge_scope_tree(db, user, force_refresh=refresh)
     return ApiResponse(data=KnowledgeScopeTreeOut.model_validate(data))
+
+
+@router.get(
+    "/mountable-folders",
+    response_model=ApiResponse[list[MountableFolderOut]],
+    dependencies=[_knowledge_search],
+)
+def list_mountable_folders(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[MountableFolderOut]]:
+    """返回当前用户可挂载的扁平知识库文件夹列表。"""
+    tree = build_knowledge_scope_tree(db, user)
+    folder_list: list[MountableFolderOut] = []
+    _flatten_folder_nodes(tree.get("items", []), folder_list, library_label="")
+    return ApiResponse(data=folder_list)
+
+
+def _flatten_folder_nodes(
+    nodes: list[dict],
+    result: list[MountableFolderOut],
+    library_label: str,
+) -> None:
+    for node in nodes:
+        if node.get("type") == "folder":
+            ds_id = node.get("dataset_id")
+            if not ds_id:
+                continue
+            result.append(MountableFolderOut(
+                dataset_id=ds_id,
+                folder_id=node.get("folder_id"),
+                virtual_folder_id=node.get("virtual_folder_id"),
+                label=node.get("label", "文件夹"),
+                scope=node.get("scope") or "",
+                library_label=library_label,
+                document_count=node.get("document_count") or 0,
+            ))
+        # propagate library_label for child traversal
+        child_lib_label = node.get("label", "") if node.get("type") == "library" else library_label
+        children = node.get("children", [])
+        if children:
+            _flatten_folder_nodes(children, result, child_lib_label)
 
 
 @router.get(

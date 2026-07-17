@@ -541,8 +541,8 @@ defineExpose({ reload: reloadTree });
 
 .knowledge-scope-tree__title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 400;
   color: var(--platform-text);
 }
 

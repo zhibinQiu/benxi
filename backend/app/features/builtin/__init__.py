@@ -16,14 +16,16 @@ def register_builtin_plugins() -> None:
         data_analysis,  # noqa: F401
         free_web_ai,  # noqa: F401
         knowledge_search,  # noqa: F401
-        kg_palantir,  # noqa: F401
+        kg,  # noqa: F401 — 知识图谱（ABox 实例管理）
         ocr,  # noqa: F401
+        ontology,  # noqa: F401 — 本体定义（TBox 模式管理）
         report_generation,  # noqa: F401
         smart_data_query_v2,  # noqa: F401 — 注册 id=smart_data_query
         smart_forecast,  # noqa: F401
         speech,  # noqa: F401
         text_to_speech,  # noqa: F401
         subscriptions,  # noqa: F401
+        todos,  # noqa: F401
         translate,  # noqa: F401
         wechat_mp_feed,  # noqa: F401
     )

@@ -677,10 +677,11 @@ async def iter_synthesize_tool_loop_user_reply_events(
     async for ev in iter_llm_answer_events(
         messages=messages,
         temperature=0.4,
-        think_title="整理最终回答",
+        think_title="根据工具结果汇总回答",
         think_detail="根据工具结果生成结论…",
         step_id=step_id,
         skip_initial_thinking=True,
+        timeout=60.0,
     ):
         yield ev
 

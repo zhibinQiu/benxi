@@ -7,12 +7,14 @@ from pydantic import BaseModel, Field
 class TodoCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=512)
     note: str = ""
+    due_at: datetime | None = None
 
 
 class TodoUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=512)
     note: str | None = None
     status: str | None = None
+    due_at: datetime | None = None
 
 
 class TodoReorder(BaseModel):
@@ -26,6 +28,7 @@ class TodoOut(BaseModel):
     note: str
     status: str
     sort_order: int
+    due_at: datetime | None
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime

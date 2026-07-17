@@ -19,12 +19,11 @@ from app.services import platform_chat_store
 from app.services.carbon_qa_v2_service import _credentials as carbon_credentials
 
 CHAT_SCOPES = frozenset(
-    {"ai-home", "digital-robot", "assistant", "carbon-qa", "smart-data-query", "report-generation"}
+    {"ai-home", "assistant", "carbon-qa", "smart-data-query", "report-generation"}
 )
 
 _SCOPE_LABELS = {
     "ai-home": "本析智能",
-    "digital-robot": "数字机器人",
     "assistant": "本析平台客服",
     "carbon-qa": "双碳问答",
     "smart-data-query": "智能问数",

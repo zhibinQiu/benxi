@@ -38,6 +38,7 @@ const answerCitationView = computed(() =>
 const displayCitations = computed(() => answerCitationView.value.citations);
 const workflow = ref(emptyAgentWorkflow());
 const answerView = ref("answer");
+const citationsExpanded = ref(false);
 const resultsRef = ref(null);
 const composerRef = ref(null);
 const mindmapRef = ref(null);
@@ -91,6 +92,7 @@ function resetSearch() {
   citations.value = [];
   workflow.value = emptyWorkflow();
   answerView.value = "answer";
+  citationsExpanded.value = false;
 }
 
 defineExpose({ resetSearch });
@@ -122,6 +124,7 @@ async function runSearch(content) {
     currentTitle: t("knowledgeSearch.thinking"),
   };
   answerView.value = "answer";
+  citationsExpanded.value = false;
   phase.value = "results";
   sending.value = true;
   input.value = "";
@@ -280,7 +283,7 @@ onMounted(() => {
             <div class="knowledge-search-panel__icon">
               <n-icon :size="43" :component="SearchOutline" />
             </div>
-            <h1 class="knowledge-search-panel__title platform-text-gradient">
+            <h1 class="knowledge-search-panel__title">
               {{ t("knowledgeSearch.title") }}
             </h1>
             <p class="knowledge-search-panel__sub">{{ displaySubtitle }}</p>
@@ -354,13 +357,12 @@ onMounted(() => {
                 <n-spin size="tiny" />
                 {{ t("knowledgeSearch.thinking") }}
               </div>
-              <div v-if="sending && answer" class="knowledge-search-panel__streaming">
+              <div v-else-if="sending && answer" class="knowledge-search-panel__streaming">
                 <KnowledgeChatContent
                   :content="answerCitationView.content"
                   :citations="displayCitations"
                   @open-citation="onCitationClick"
                 />
-                <span class="knowledge-search-panel__cursor">▍</span>
               </div>
               <KnowledgeChatContent
                 v-else-if="answer"
@@ -383,14 +385,17 @@ onMounted(() => {
           </div>
         </section>
 
-        <section v-if="displayCitations.length" class="knowledge-search-panel__citations">
-          <div class="knowledge-search-panel__citations-head">
-            <span class="knowledge-search-panel__citations-icon" aria-hidden="true">📎</span>
-            <span class="knowledge-search-panel__citations-label">
-              {{ t("knowledgeSearch.citationsSection") }}
-            </span>
-          </div>
-          <div class="knowledge-search-panel__citation-list">
+        <div v-if="displayCitations.length" class="ks-cite-fold">
+          <button
+            type="button"
+            class="ks-cite-fold__toggle"
+            @click="citationsExpanded = !citationsExpanded"
+          >
+            <span class="ks-cite-fold__chevron">{{ citationsExpanded ? "▾" : "▸" }}</span>
+            <span class="ks-cite-fold__title">{{ t("knowledgeSearch.citationsSection") }}</span>
+            <span class="ks-cite-fold__count">{{ displayCitations.length }}</span>
+          </button>
+          <div v-if="citationsExpanded" class="ks-cite-fold__body">
             <KnowledgeCitationCard
               v-for="c in displayCitations"
               :id="`knowledge-cite-card-${c.index}`"
@@ -399,7 +404,7 @@ onMounted(() => {
               :question="question"
             />
           </div>
-        </section>
+        </div>
 
         <div v-else-if="!sending" class="knowledge-search-panel__no-cites">
           {{ t("knowledgeSearch.noCitations") }}
@@ -422,7 +427,11 @@ onMounted(() => {
           @keydown="onComposerKeydown"
           @send="runSearch()"
           @stop="stopGeneration"
-        />
+        >
+          <template v-if="$slots.toolbar" #toolbar>
+            <slot name="toolbar" />
+          </template>
+        </ChatComposer>
         <div
           v-if="!hasResults && suggestions.length"
           class="knowledge-search-panel__suggestions"
@@ -451,7 +460,7 @@ onMounted(() => {
   flex-direction: column;
   background: var(--platform-chat-gradient);
   overflow: hidden;
-  --knowledge-search-content-max: 768px;
+  --knowledge-search-content-max: 864px;
   --knowledge-search-content-gutter: 24px;
 }
 
@@ -516,14 +525,13 @@ onMounted(() => {
 
 .knowledge-search-panel__title {
   margin: 0 0 12px;
-  font-size: 34px;
-  font-weight: 700;
+  font-size: 30px;
   letter-spacing: 0.02em;
 }
 
 .knowledge-search-panel__sub {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   color: #94a3b8;
 }
 
@@ -557,7 +565,7 @@ onMounted(() => {
 }
 
 .knowledge-search-panel__chip {
-  padding: 7px 14px;
+  padding: 6px 12px;
   font-size: 14px;
   color: var(--platform-text);
   background: var(--platform-bg-secondary);
@@ -604,8 +612,7 @@ onMounted(() => {
 
 .knowledge-search-panel__question {
   margin: 0;
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--platform-text);
 }
@@ -613,8 +620,7 @@ onMounted(() => {
 .knowledge-search-panel__question-label,
 .knowledge-search-panel__summary-label,
 .knowledge-search-panel__citations-label {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--platform-text-secondary);
@@ -663,10 +669,9 @@ onMounted(() => {
   border: none;
   background: transparent;
   color: var(--platform-text-secondary);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 12px;
   line-height: 1;
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: 1199px;
   cursor: pointer;
   transition:
@@ -686,17 +691,16 @@ onMounted(() => {
 
 .knowledge-search-panel__summary-label {
   margin-bottom: 0;
-  font-size: 17px;
+  font-size: 12px;
   text-transform: none;
   letter-spacing: 0.02em;
   color: var(--platform-text);
-  font-weight: 700;
 }
 
 .knowledge-search-panel__summary-body {
   width: 100%;
   min-width: 0;
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.6;
   color: var(--platform-text);
   overflow-wrap: anywhere;
@@ -714,38 +718,11 @@ onMounted(() => {
   overflow-x: auto;
 }
 
-.knowledge-search-panel__citations {
-  margin-top: 5px;
-  padding-top: 24px;
-  border-top: 1px dashed color-mix(in srgb, var(--platform-border) 80%, transparent);
-}
-
-.knowledge-search-panel__citations-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.knowledge-search-panel__citations-icon {
-  font-size: 17px;
-  line-height: 1;
-  opacity: 0.85;
-}
-
-.knowledge-search-panel__citations-label {
-  margin-bottom: 0;
-  text-transform: none;
-  letter-spacing: 0.02em;
-  font-size: 16px;
-  color: var(--platform-text);
-}
-
 .knowledge-search-panel__loading {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 16px;
+  font-size: 12px;
   color: var(--platform-text-secondary);
 }
 
@@ -759,27 +736,8 @@ onMounted(() => {
   min-width: 0;
 }
 
-.knowledge-search-panel__cursor {
-  animation: knowledge-search-blink 1s step-end infinite;
-  color: var(--platform-accent);
-}
-
-@keyframes knowledge-search-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-.knowledge-search-panel__citation-list {
-  display: flex;
-  flex-direction: column;
-  gap: 17px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
 .knowledge-search-panel__no-cites {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--platform-text-secondary);
 }
 
@@ -787,13 +745,182 @@ onMounted(() => {
   --n-padding-left: 19px;
   --n-padding-right: 19px;
   --n-line-height-textarea: 1.55;
-  font-size: 18px;
+  font-size: 13px;
 }
 
 .knowledge-search-panel :deep(.ai-chat-textarea .n-input__textarea-el),
 .knowledge-search-panel :deep(.ai-chat-textarea .n-input__placeholder),
 .knowledge-search-panel :deep(.ai-chat-textarea .n-input__textarea-mirror) {
-  font-size: 18px;
+  font-size: 13px;
   line-height: 1.55;
+}
+
+/* ── 与本析智能保持同款的径向渐变背景 ── */
+.knowledge-search-panel__results {
+  background:
+    radial-gradient(ellipse at 20% 50%, color-mix(in srgb, var(--platform-accent) 2%, transparent) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 20%, color-mix(in srgb, var(--platform-accent) 1.5%, transparent) 0%, transparent 55%);
+}
+
+/* ── 与本析智能保持同款的 Markdown 排版 ── */
+.knowledge-search-panel__summary-body :deep(p) {
+  margin: 0 0 0.6em;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--platform-text);
+  font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.knowledge-search-panel__summary-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.knowledge-search-panel__summary-body :deep(ul),
+.knowledge-search-panel__summary-body :deep(ol) {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.knowledge-search-panel__summary-body :deep(li) {
+  margin-bottom: 0.2em;
+}
+
+.knowledge-search-panel__summary-body :deep(code) {
+  font-size: 0.85em;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--platform-accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--platform-accent) 12%, transparent);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--platform-accent-pressed) 80%, var(--platform-text));
+}
+
+.knowledge-search-panel__summary-body :deep(pre) {
+  margin: 0.6em 0;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.knowledge-search-panel__summary-body :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-weight: 400;
+  color: #e4e4e7;
+  font-size: 0.82em;
+  line-height: 1.55;
+}
+
+.knowledge-search-panel__summary-body :deep(h1),
+.knowledge-search-panel__summary-body :deep(h2),
+.knowledge-search-panel__summary-body :deep(h3),
+.knowledge-search-panel__summary-body :deep(h4) {
+  margin: 0.8em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--platform-text);
+}
+
+.knowledge-search-panel__summary-body :deep(h1) { font-size: 1.25em; }
+.knowledge-search-panel__summary-body :deep(h2) { font-size: 1.15em; }
+.knowledge-search-panel__summary-body :deep(h3) { font-size: 1.05em; }
+
+.knowledge-search-panel__summary-body :deep(blockquote) {
+  margin: 0.5em 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--platform-accent);
+  color: var(--platform-text-secondary);
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 30%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+.knowledge-search-panel__summary-body :deep(hr) {
+  margin: 1em 0;
+  border: none;
+  border-top: 1px solid var(--platform-border);
+}
+
+.knowledge-search-panel__summary-body :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6em 0;
+  font-size: 14px;
+}
+
+.knowledge-search-panel__summary-body :deep(th),
+.knowledge-search-panel__summary-body :deep(td) {
+  padding: 8px 12px;
+  border: 1px solid var(--platform-border);
+  text-align: left;
+}
+
+.knowledge-search-panel__summary-body :deep(th) {
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 50%, transparent);
+  font-weight: 600;
+}
+
+/* ── 与本析智能同款的折叠引用面板 ── */
+.ks-cite-fold {
+  margin: 5px 0;
+  border: 1px solid var(--platform-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--platform-bg-secondary);
+}
+
+.ks-cite-fold__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--platform-text-secondary);
+  text-align: left;
+  transition: background 0.15s ease;
+  font-family: inherit;
+}
+
+.ks-cite-fold__toggle:hover {
+  background: var(--platform-bg-tertiary);
+}
+
+.ks-cite-fold__chevron {
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+  flex-shrink: 0;
+}
+
+.ks-cite-fold__title {
+  color: var(--platform-text-secondary);
+}
+
+.ks-cite-fold__count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+  background: var(--platform-bg-tertiary);
+  padding: 1px 7px;
+  border-radius: 1199px;
+}
+
+.ks-cite-fold__body {
+  padding: 4px 12px 12px;
+  border-top: 1px solid var(--platform-border);
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
 }
 </style>

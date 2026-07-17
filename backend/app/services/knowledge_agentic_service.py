@@ -160,7 +160,7 @@ def _plan_qa_sub_questions(
         f"已选文档数：{document_count}",
     ]
     if kg_context.strip():
-        user_parts.append("【本体图谱关联（规划参考，非检索结果）】\n" + kg_context.strip())
+        user_parts.append("【知识图谱关联（规划参考，非检索结果）】\n" + kg_context.strip())
     raw = chat_completion_sync(
         messages=[
             {"role": "system", "content": system},
@@ -283,7 +283,7 @@ def iter_gather_for_knowledge_qa(
     )
     summaries: list[str] = []
 
-    sid, ev = _tool_call_event("kg_context", "加载本体图谱上下文", question[:80])
+    sid, ev = _tool_call_event("kg_context", "加载知识图谱上下文", question[:80])
     _emit_wf(emit, ev)
     yield ev
     kg_tool = toolkit.kg_planning_context(question)
@@ -294,7 +294,7 @@ def iter_gather_for_knowledge_qa(
         if preview:
             kg_detail = f"{kg_tool.summary}\n上下文预览：{preview}"
     result_ev = _tool_result_event(
-        "kg_context", "本体图谱上下文", kg_detail, sid, ok=kg_tool.ok
+        "kg_context", "知识图谱上下文", kg_detail, sid, ok=kg_tool.ok
     )
     _emit_wf(emit, result_ev)
     yield result_ev
@@ -578,7 +578,7 @@ def _plan_report_gathering(
     if history_excerpt.strip():
         user_parts.append(f"对话摘要：\n{history_excerpt[:1200]}")
     if kg_context.strip():
-        user_parts.append("【本体图谱（规划参考）】\n" + kg_context[:1800])
+        user_parts.append("【知识图谱（规划参考）】\n" + kg_context[:1800])
     raw = chat_completion_sync(
         messages=[
             {"role": "system", "content": system},
@@ -784,17 +784,17 @@ def iter_gather_for_report(
     max_rounds = max(1, min(int(settings.knowledge_agentic_max_rounds or 2), 3))
     hist_excerpt = _history_excerpt(history)
 
-    # --- 先加载本体图谱上下文（用于规划参考 + 最终写入 prompt） ---
+    # --- 先加载知识图谱上下文（用于规划参考 + 最终写入 prompt） ---
     kg_ctx_data = None
     if doc_ids:
         sid, ev = _tool_call_event(
-            "kg_context", "加载本体图谱上下文", f"{topic} {message}"[:80]
+            "kg_context", "加载知识图谱上下文", f"{topic} {message}"[:80]
         )
         _emit_wf(emit, ev)
         yield ev
         kg_tool = toolkit.kg_planning_context(f"{topic} {message}".strip())
         kg_ev = _tool_result_event(
-            "kg_context", "本体图谱上下文", kg_tool.summary, sid, ok=kg_tool.ok
+            "kg_context", "知识图谱上下文", kg_tool.summary, sid, ok=kg_tool.ok
         )
         _emit_wf(emit, kg_ev)
         yield kg_ev

@@ -12,7 +12,6 @@ const PREFIX = "platform:chat-session:";
 /** 后端 chat-history 已持久化消息的 scope */
 export const SERVER_HISTORY_SCOPES = new Set([
   "ai-home",
-  "digital-robot",
   "assistant",
   "carbon-qa",
   "smart-data-query",

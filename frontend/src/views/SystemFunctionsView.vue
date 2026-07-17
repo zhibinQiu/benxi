@@ -4,16 +4,14 @@ import { computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { encodeReturnLocation } from "../utils/navigationReturn";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
-import { categoryAccentStyle, FEATURE_CATEGORY_ACCENTS } from "../constants/categoryAccents.js";
-import { NEmpty, NGrid, NGi, NTag, NIcon } from "naive-ui";
+import { NEmpty, NGrid, NGi, NIcon } from "naive-ui";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/+$/, "");
-const functionsBg = `${BASE}/images/bg.jpg`;
 import {
   LanguageOutline,
   ChatbubblesOutline,
   GitCompareOutline,
   DocumentTextOutline,
+  ListOutline,
   MicOutline,
   ScanOutline,
   StatsChartOutline,
@@ -21,7 +19,8 @@ import {
   SparklesOutline,
   GridOutline,
   HardwareChipOutline,
-  AddOutline,
+  CreateOutline,
+  CubeOutline,
   NewspaperOutline,
   SearchOutline,
   GitNetworkOutline,
@@ -62,32 +61,29 @@ const iconMap = {
   leaf: LeafOutline,
   sparkles: SparklesOutline,
   "hardware-chip": HardwareChipOutline,
-  create: AddOutline,
+  create: CreateOutline,
+  "cube-outline": CubeOutline,
   newspaper: NewspaperOutline,
   search: SearchOutline,
   "git-network": GitNetworkOutline,
   "extension-puzzle": ExtensionPuzzleOutline,
+  list: ListOutline,
 };
 
-const CATEGORY_ORDER = ["document", "tools", "ai"];
-
-const CATEGORY_ACCENTS = FEATURE_CATEGORY_ACCENTS;
-
-function categoryAccentStyleFor(categoryId) {
-  return categoryAccentStyle(categoryId, CATEGORY_ACCENTS);
-}
+const CATEGORY_ORDER = ["tools"];
 
 /** 功能 id → 展示分类（与后端 plugin.category 对齐，避免缓存或未重启时仍落在旧分组） */
-const FEATURE_CATEGORY_OVERRIDES = {
-  ai_home: "tools",
-};
+const FEATURE_CATEGORY_OVERRIDES = {};
 
 /** 功能 id → 路由名（避免 path/redirect 循环） */
 const FEATURE_ROUTE_NAMES = {
-  ai_home: "ai-home",
   knowledge_search: "knowledge-search",
   report_generation: "report-generation",
+  todos: "todos",
 };
+
+/** 不在功能列表中显示的功能 ID */
+const HIDDEN_FEATURE_IDS = new Set(["ai_home", "agent_skills"]);
 
 const categoryMeta = computed(() =>
   Object.fromEntries(
@@ -135,6 +131,7 @@ function displayTag(f) {
 const groupedCategories = computed(() => {
   const buckets = Object.fromEntries(CATEGORY_ORDER.map((k) => [k, []]));
   for (const f of features.value) {
+    if (HIDDEN_FEATURE_IDS.has(f.id)) continue;
     let cat = resolveFeatureCategory(f);
     if (!buckets[cat]) cat = DEFAULT_CATEGORY;
     buckets[cat].push(f);
@@ -214,7 +211,7 @@ function openFeature(f) {
 </script>
 
 <template>
-  <div class="functions-page feature-page" :style="{ backgroundImage: `url(${functionsBg})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }">
+  <div class="functions-page feature-page">
     <div class="functions-page__content">
     <header class="functions-page__intro">
       <HintTooltip :text="t('systemFunctionsPage.introHint')" />
@@ -248,19 +245,9 @@ function openFeature(f) {
         v-for="cat in groupedCategories"
         :key="cat.id"
         class="category-block"
-        :style="categoryAccentStyleFor(cat.id)"
       >
         <header class="category-block__head">
-          <div class="category-block__icon">
-            <n-icon :size="18">
-              <component :is="cat.icon" />
-            </n-icon>
-          </div>
-          <div class="category-block__text">
-            <div class="category-block__row">
-              <h2 class="category-block__title">{{ cat.title }}</h2>
-            </div>
-          </div>
+          <h2 class="category-block__title">{{ cat.title }}</h2>
         </header>
 
         <n-grid
@@ -295,16 +282,6 @@ function openFeature(f) {
               <div class="feature-card__body">
                 <div class="feature-card__title-row">
                   <h3 class="feature-card__title">{{ featureTitle(f) }}</h3>
-                  <n-tag
-                    v-if="shouldShowTag(f)"
-                    size="tiny"
-                    round
-                    :bordered="false"
-                    :type="tagType(f)"
-                    class="feature-card__tag"
-                  >
-                    {{ displayTag(f) }}
-                  </n-tag>
                 </div>
                 <p class="feature-card__desc">{{ featureDescription(f) }}</p>
               </div>
@@ -316,7 +293,7 @@ function openFeature(f) {
                 :aria-pressed="isFavorite(f.id)"
                 @click="onFavoriteClick($event, f)"
               >
-                <n-icon :size="18">
+                <n-icon :size="14">
                   <component :is="isFavorite(f.id) ? Star : StarOutline" />
                 </n-icon>
               </button>
@@ -354,7 +331,7 @@ function openFeature(f) {
   width: 100%;
   flex: 1;
   min-height: 100%;
-  --feature-card-height: 112px;
+  --feature-card-height: 96px;
   --cat-accent: var(--platform-accent);
   --cat-accent-soft: var(--platform-accent-soft);
 }
@@ -398,41 +375,13 @@ function openFeature(f) {
 
 .category-block__head {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
   margin-bottom: 10px;
-  padding: 0 0 7px 7px;
-  border-left: 4px solid var(--cat-accent, var(--platform-accent));
-}
-
-.category-block__icon {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  color: var(--cat-accent, var(--platform-accent));
-  background: var(--cat-accent-soft, var(--platform-accent-soft));
-}
-
-
-.category-block__text {
-  min-width: 0;
-  flex: 1;
-}
-
-.category-block__row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .category-block__title {
   margin: 0;
-  font-size: var(--platform-font-size-base);
+  font-size: var(--platform-font-size-sm);
   font-weight: var(--platform-font-weight-medium);
   line-height: 1.35;
   color: var(--platform-text);
@@ -474,16 +423,15 @@ function openFeature(f) {
   flex-direction: row;
   align-items: center;
   gap: 12px;
-  padding: 12px 38px 12px 14px;
-  border-radius: var(--platform-radius-sm, 12px);
-  cursor: pointer;
+  padding: 12px 14px;
+  border-radius: var(--platform-card-radius);
   outline: none;
-  overflow: hidden;
+  cursor: pointer;
+  overflow: visible;
   isolation: isolate;
-  transition:
-    transform 0.22s var(--platform-ease-smooth, cubic-bezier(0.22, 1, 0.36, 1)),
-    box-shadow 0.22s var(--platform-ease-smooth, ease),
-    border-color 0.22s var(--platform-ease-smooth, ease);
+  transition: var(--platform-card-transition);
+  border: 1px solid var(--platform-card-border-color);
+  background: var(--platform-card-bg);
 }
 
 
@@ -494,28 +442,12 @@ function openFeature(f) {
   border-radius: inherit;
   pointer-events: none;
   z-index: 0;
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--cat-accent) 6%, transparent) 0%,
-    transparent 52%
-  );
+  background: transparent;
 }
 
 .feature-card:not(.feature-card--disabled):not(.feature-card--locked) > * {
   position: relative;
   z-index: 1;
-}
-
-.feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) {
-  transform: translateY(-2px);
-  border-color: color-mix(
-    in srgb,
-    var(--cat-accent) 32%,
-    var(--platform-border)
-  ) !important;
-  box-shadow:
-    var(--platform-shadow),
-    0 0 0 1px color-mix(in srgb, var(--cat-accent) 8%, transparent) !important;
 }
 
 .feature-card:focus-visible {
@@ -526,16 +458,16 @@ function openFeature(f) {
 
 
 .feature-card__star {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  position: absolute !important;
+  top: 6px !important;
+  right: 6px !important;
   z-index: 2;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 29px;
-  height: 29px;
+  width: 20px;
+  height: 20px;
   margin: 0;
   padding: 0;
   border: none;
@@ -551,7 +483,7 @@ function openFeature(f) {
 
 .feature-card__star:hover {
   color: var(--platform-text-secondary);
-  background: var(--platform-ui-glass-fill-subtle, rgba(255, 255, 255, 0.22));
+  background: var(--platform-bg);
   transform: scale(1.08);
 }
 
@@ -595,28 +527,16 @@ function openFeature(f) {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  color: var(--cat-accent, var(--platform-accent));
-  background: var(--cat-accent-soft, var(--platform-accent-soft));
-  transition: transform 0.2s ease;
-}
-
-.feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) .feature-card__icon {
-  transform: scale(1.04);
-}
-
-.feature-card__tag {
-  flex-shrink: 0;
-  max-width: 48%;
-  transform: scale(0.92);
-  transform-origin: center right;
+  color: #141414;
+  background: #f3f3f3;
 }
 
 .feature-card__title {
   margin: 0;
   flex: 1;
   min-width: 0;
-  font-size: var(--platform-font-size-base);
-  font-weight: var(--platform-font-weight-medium);
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
   line-height: 1.4;
   color: var(--platform-text);
   display: -webkit-box;
@@ -627,16 +547,16 @@ function openFeature(f) {
 }
 
 .feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) .feature-card__title {
-  color: color-mix(in srgb, var(--cat-accent) 28%, var(--platform-text));
+  color: var(--platform-text);
 }
 
 .feature-card__desc {
   margin: 0;
-  min-height: calc(11px * 1.5);
-  font-size: 11px;
+  min-height: calc(1em * 1.5);
+  font-size: var(--platform-font-size-nano);
   font-weight: var(--platform-font-weight-normal);
   line-height: 1.5;
-  color: var(--platform-text-secondary);
+  color: var(--platform-text-tertiary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -665,10 +585,8 @@ function openFeature(f) {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  background: var(--platform-ui-glass-fill-subtle) !important;
-  border: 1px solid var(--platform-ui-glass-border) !important;
-  backdrop-filter: saturate(165%) blur(calc(var(--platform-glass-blur) * 0.75));
-  -webkit-backdrop-filter: saturate(165%) blur(calc(var(--platform-glass-blur) * 0.75));
+  background: var(--platform-bg-tertiary) !important;
+  border: 1px solid transparent !important;
 }
 
 .skeleton-block {
@@ -713,7 +631,7 @@ function openFeature(f) {
 
 @media (max-width: 640px) {
   .functions-page {
-    --feature-card-height: 108px;
+    --feature-card-height: 92px;
   }
 
   .functions-page__content {
@@ -722,7 +640,7 @@ function openFeature(f) {
 
   .feature-card {
     gap: 10px;
-    padding: 10px 34px 10px 12px;
+    padding: 10px 12px;
   }
 
   .feature-card__icon {
@@ -731,15 +649,13 @@ function openFeature(f) {
   }
 
   .feature-card__star {
-    top: 6px;
-    right: 6px;
-    width: 26px;
-    height: 26px;
+    top: 3px;
+    right: 3px;
+    width: 20px;
+    height: 20px;
   }
 
   .category-block__head {
-    padding-left: 5px;
-    gap: 8px;
     margin-bottom: 8px;
   }
 }
@@ -751,7 +667,7 @@ function openFeature(f) {
 
   .feature-card {
     --feature-card-height: 98px;
-    padding: 8px 32px 8px 8px;
+    padding: 8px;
     gap: 8px;
   }
 
@@ -770,10 +686,10 @@ function openFeature(f) {
   }
 
   .feature-card__star {
-    top: 4px;
-    right: 4px;
-    width: 24px;
-    height: 24px;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
   }
 
   .category-block__title {

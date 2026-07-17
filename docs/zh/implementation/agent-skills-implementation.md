@@ -160,7 +160,7 @@ sequenceDiagram
 |------|------|----------|
 | knowledge-research | 知识综合检索 | `knowledge_retrieve` + `kg_query` + `web_search` |
 
-`web-search`、`knowledge-search`、`kg-palantir` 仍保留内部 handler（`catalog_visible=False`），供原子工具 `web_search` / `knowledge_retrieve` / `kg_query` 执行时调用。
+`web-search`、`knowledge-search` 仍保留内部 handler（`catalog_visible=False`），供原子工具 `web_search` / `knowledge_retrieve` 执行时调用。
 
 ### 4.2 发展技能（上传 / Agent 生成）
 

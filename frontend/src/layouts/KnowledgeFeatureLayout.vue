@@ -94,8 +94,8 @@ onActivated(() => {
 
 .knowledge-feature-page__sider {
   flex-shrink: 0;
-  width: min(360px, 36vw);
-  min-width: 274px;
+  width: min(300px, 30vw);
+  min-width: 220px;
   border-right: 1px solid var(--platform-border);
   background: var(--platform-bg-secondary);
   display: flex;

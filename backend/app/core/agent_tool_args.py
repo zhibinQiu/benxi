@@ -8,7 +8,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from app.agentkit.tools.schema import build_function_tool_spec as _build_function_tool_spec
 from app.agentkit.tools.schema import compact_tool_parameters_schema as tool_parameters_schema
-from app.agentkit.tools.validate import format_validation_error as _format_validation_error
+from app.agentkit.tools.validate import (
+    coerce_dict_field,
+    format_validation_error as _format_validation_error,
+)
 
 # 公开别名，供 agent_tool_search 等模块导入
 build_function_tool_spec = _build_function_tool_spec
@@ -18,6 +21,7 @@ from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
     ATOMIC_TOOL_WEB_SEARCH,
+    ATOMIC_TOOL_ONTOLOGY_QUERY,
 )
 
 DocumentScope = Literal["personal", "company", "department", "team"]
@@ -28,24 +32,6 @@ ContentFormat = Literal["markdown", "plain"]
 
 class _StrictArgs(BaseModel):
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
-
-
-def _coerce_dict_field(value: object) -> dict[str, Any]:
-    """LLM 常将 dict 参数序列化为 JSON 字符串；统一归一化为 dict。"""
-    if value is None:
-        return {}
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return {}
-        try:
-            parsed = json.loads(text)
-            return parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            return {}
-    return {}
 
 
 class EmptyArgs(_StrictArgs):
@@ -68,6 +54,15 @@ class KnowledgeRetrieveArgs(_StrictArgs):
     query: str = Field(min_length=1, max_length=500)
     doc_ids: list[str] | None = Field(default=None, max_length=20)
     limit: int = Field(default=8, ge=1, le=30)
+
+
+class KnowledgeFolderSearchArgs(_StrictArgs):
+    query: str = Field(min_length=1, max_length=500)
+    limit: int = Field(default=8, ge=1, le=30)
+
+
+class EmptyMountedFoldersArgs(_StrictArgs):
+    pass
 
 
 class KgQueryArgs(_StrictArgs):
@@ -95,7 +90,7 @@ class InvokeSkillArgs(_StrictArgs):
     @field_validator("params", mode="before")
     @classmethod
     def _coerce_params(cls, value: object) -> dict[str, Any]:
-        return _coerce_dict_field(value)
+        return coerce_dict_field(value)
 
 
 class DomainSkillCallArgs(_StrictArgs):
@@ -105,7 +100,7 @@ class DomainSkillCallArgs(_StrictArgs):
     @field_validator("params", mode="before")
     @classmethod
     def _coerce_params(cls, value: object) -> dict[str, Any]:
-        return _coerce_dict_field(value)
+        return coerce_dict_field(value)
 
 
 class SearchSkillsArgs(_StrictArgs):
@@ -120,7 +115,7 @@ class RunToolBatchStepArgs(_StrictArgs):
     @field_validator("arguments", mode="before")
     @classmethod
     def _coerce_arguments(cls, value: object) -> dict[str, Any]:
-        return _coerce_dict_field(value)
+        return coerce_dict_field(value)
 
 
 class RunToolBatchArgs(_StrictArgs):
@@ -133,7 +128,7 @@ ContextSubagentKind = Literal["explore", "browser_digest", "deep_research"]
 class InvokeContextSubagentArgs(_StrictArgs):
     kind: ContextSubagentKind = Field(
         description=(
-            "explore=子 Agent 调用 web-search/knowledge-search/kg-palantir 多源检索；"
+            "explore=子 Agent 调用 web-search/knowledge-search/kg 多源检索；"
             "browser_digest=子 Agent 调用 browser-automation 取证页面（浏览器未开启时自动 explore）；"
             "deep_research=子 Agent 自主分析意图并生成多关键词，调用 web_search 多轮深度检索、FireCrawl 读全文、"
             "LLM 交叉验证矛盾，返回结构化研究结论"
@@ -197,7 +192,7 @@ class CreateUploadedSkillArgs(_StrictArgs):
             out = {str(k).strip(): str(v) for k, v in value.items() if str(k).strip()}
             return out or None
         if isinstance(value, str):
-            coerced = _coerce_dict_field(value)
+            coerced = coerce_dict_field(value)
             out = {str(k).strip(): str(v) for k, v in coerced.items() if str(k).strip()}
             return out or None
         if isinstance(value, list):
@@ -619,6 +614,22 @@ ALL_TOOLS: list[ToolDef] = [
         args_schema=KgQueryArgs,
         authority=("retrieval",),
     ),
+    ToolDef(
+        name="knowledge_folder_search",
+        description=(
+            "在已挂载的知识库文件夹中检索文档。"
+            "仅检索 Agent 已挂载文件夹内的文档内容。"
+            "若未挂载任何文件夹则返回空结果。"
+        ),
+        args_schema=KnowledgeFolderSearchArgs,
+        authority=("knowledge_folder",),
+    ),
+    ToolDef(
+        name="list_mounted_folders",
+        description="列出当前 Agent 已挂载的知识库文件夹信息。",
+        args_schema=EmptyMountedFoldersArgs,
+        authority=("knowledge_folder",),
+    ),
     # ── 碳问答（原 carbon-qa skill 迁移） ──────────────
     ToolDef(
         name="carbon_qa_query",
@@ -1007,7 +1018,7 @@ ALL_TOOLS: list[ToolDef] = [
         description=(
             "委托子 Agent 调用系统 Skill 或原子工具："
             "browser_digest→browser-automation 页面取证；"
-            "explore→web-search/knowledge-search/kg-palantir 并行检索；"
+            "explore→web-search/knowledge-search/kg 并行检索；"
             "deep_research→自主分析意图、生成多关键词、web_search 深度检索"
             "（含 FireCrawl 全文读+交叉验证）。"
             "skill-dev 创建 Skill 时的纯主题检索（无浏览器操作）走本工具"

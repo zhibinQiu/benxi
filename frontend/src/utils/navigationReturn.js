@@ -19,7 +19,6 @@ export const VALID_RETURN_ROUTE_NAMES = new Set([
   "speech",
   "text-to-speech",
   "ocr",
-  "kg-palantir",
   "compare",
   "report-generation",
   "ai-tools",

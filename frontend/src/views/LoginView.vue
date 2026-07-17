@@ -725,7 +725,6 @@ html[data-theme="dark"] .login-page--scrolling .login-header__logo {
 
 .login-header__title {
   font-size: 14px;
-  font-weight: 700;
   letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
@@ -821,7 +820,6 @@ html[data-theme="dark"] .login-header__chip:hover:not(:disabled) {
   background: #000;
   color: #fff;
   font-size: 13px;
-  font-weight: 600;
   cursor: pointer;
   transition: opacity 0.2s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   line-height: 1;
@@ -915,8 +913,8 @@ html[data-theme="dark"] .login-page__social-link {
 
 .login-page--scrolling .login-header {
   background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(17px) saturate(150%);
-  -webkit-backdrop-filter: blur(17px) saturate(150%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -981,8 +979,8 @@ html[data-theme="dark"] .login-showcase__hero::before {
   margin-bottom: 32px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
@@ -1067,7 +1065,6 @@ html[data-theme="dark"] .login-showcase__hero-icon-wrap {
   border: none;
   border-radius: 1199px;
   font-size: 16px;
-  font-weight: 600;
   line-height: 1;
   cursor: pointer;
   transition:
@@ -1092,8 +1089,8 @@ html[data-theme="dark"] .login-showcase__hero-icon-wrap {
 
 .login-showcase__cta--secondary {
   background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid rgba(255, 255, 255, 0.32);
   color: var(--platform-text);
   box-shadow:
@@ -1143,8 +1140,8 @@ html[data-theme="dark"] .login-showcase__cta--ghost {
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.10);
 }
 
@@ -1261,8 +1258,8 @@ html[data-theme="dark"] .login-page :deep(.n-dropdown-option-body:hover) {
 /* --- 弹窗遮罩 --- */
 .login-glass-panel.platform-glass-modal .n-modal-mask {
   background: rgba(0, 0, 0, 0.48) !important;
-  backdrop-filter: blur(6px) saturate(120%);
-  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html[data-theme="dark"] .login-glass-panel.platform-glass-modal .n-modal-mask {
@@ -1272,8 +1269,8 @@ html[data-theme="dark"] .login-glass-panel.platform-glass-modal .n-modal-mask {
 /* --- 弹窗卡片主体：多层玻璃 + 环境光晕 --- */
 .login-glass-panel.platform-glass-modal.n-modal .n-card {
   background: rgba(255, 255, 255, 0.55) !important;
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid rgba(255, 255, 255, 0.55) !important;
   border-radius: 24px !important;
   box-shadow:
@@ -1287,8 +1284,8 @@ html[data-theme="dark"] .login-glass-panel.platform-glass-modal .n-modal-mask {
 
 html[data-theme="dark"] .login-glass-panel.platform-glass-modal.n-modal .n-card {
   background: rgba(24, 24, 34, 0.58) !important;
-  backdrop-filter: blur(32px) saturate(160%);
-  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-color: rgba(255, 255, 255, 0.10) !important;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06),
@@ -1400,8 +1397,8 @@ html[data-theme="dark"] .login-auth-panel .n-input {
 }
 
 .login-auth-panel .n-input .n-input-wrapper {
-  backdrop-filter: blur(8px) saturate(140%) !important;
-  -webkit-backdrop-filter: blur(8px) saturate(140%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .login-auth-panel .n-input .n-input__state-border {
@@ -1489,7 +1486,6 @@ html[data-theme="dark"] .login-auth-panel .n-input .n-input__state-border {
   height: 48px;
   margin-top: 0;
   font-size: 17px;
-  font-weight: 600;
   --n-border-radius: 11px;
   --n-height: 48px;
   letter-spacing: 0.01em;
@@ -1630,8 +1626,8 @@ html[data-theme="dark"] .login-modal__register-link {
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.20);
   background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.10);
 }
 

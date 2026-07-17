@@ -2102,10 +2102,10 @@ async function scrollToDiffItem(d) {
 }
 .compare-mode-card {
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: var(--platform-card-transition);
 }
 .compare-mode-card:hover {
-  transform: translateY(-2px);
+  transform: var(--platform-card-hover-transform);
 }
 .compare-mode-card :deep(.n-card__content) {
   display: flex;
@@ -2210,7 +2210,6 @@ async function scrollToDiffItem(d) {
   border-radius: 1199px;
   border: 2px solid var(--n-border-color);
   font-size: 14px;
-  font-weight: 600;
   margin: 0 auto 5px;
 }
 .version-timeline-date {

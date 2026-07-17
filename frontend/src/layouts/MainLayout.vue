@@ -8,9 +8,10 @@ import {
   NLayoutContent,
   NMenu,
   NButton,
-  NSpace,
-  NText,
   NIcon,
+  NSpace,
+  NAvatar,
+  NDropdown,
 } from "naive-ui";
 import {
   DocumentTextOutline,
@@ -24,7 +25,12 @@ import {
   ArrowBackOutline,
   NewspaperOutline,
   BugOutline,
-  ListOutline } from "@vicons/ionicons5";
+  ListOutline,
+  CubeOutline,
+  GitNetworkOutline,
+  ExtensionPuzzleOutline,
+  EllipsisHorizontal,
+} from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
@@ -37,7 +43,8 @@ import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import SystemNotificationToast from "../components/SystemNotificationToast.vue";
-import { startNotificationAlerts, stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
+import NotificationsPanel from "../components/NotificationsPanel.vue";
+import { startNotificationAlerts, stopNotificationAlerts, useNotificationAlerts } from "../composables/useNotificationAlerts.js";
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { goBackToEntry } from "../utils/navigationReturn";
@@ -50,7 +57,7 @@ import {
   shouldShowReleaseHighlights,
 } from "../utils/releaseNotesAck.js";
 import { useBlockingUiCleanup } from "../composables/useBlockingUiCleanup.js";
-import { prefetchKgPalantir } from "../composables/useKgPalantirPrefetch.js";
+import { useAppPreferences } from "../composables/useAppPreferences";
 import { prefetchKnowledgeScopeTree } from "../composables/useKnowledgeScopeTree.js";
 import { getToken } from "../api/client.js";
 import { openExternal } from "../utils/openExternal.js";
@@ -79,13 +86,16 @@ function routeViewKey(viewRoute) {
 const route = useRoute();
 const router = useRouter();
 useBlockingUiCleanup();
-const { loadUser, hasPerm } = useAuth();
-const { t, routeTitle, featureLabel } = useI18n();
+const { loadUser, hasPerm, user, displayName, logout } = useAuth();
+const { toggleTheme, toggleLocale, locale, isDark } = useAppPreferences();
+const { t, routeTitle, featureLabel, featureDescription } = useI18n();
 const { loadMenuSettings, isMenuVisible } = useMenuSettings();
 const pageHeaderOverride = getPageHeaderOverride();
+const { unreadCount } = useNotificationAlerts();
 const headerToolbarRef = ref(null);
 const releaseHighlightsOpen = ref(false);
 const releaseHighlights = ref(null);
+const notifDrawerOpen = ref(false);
 
 const SETTINGS_KEY = "system-settings";
 const expandedKeys = ref([]);
@@ -93,6 +103,59 @@ const siderMenuWrapRef = ref(null);
 
 const siderCollapsed = ref(false);
 const isMobile = ref(window.innerWidth < 768);
+const userMenuOpen = ref(false);
+
+const userDisplayName = computed(() => {
+  const d = displayName();
+  return d || user.value?.nickname || user.value?.phone || "";
+});
+
+const roleLabel = computed(() => {
+  const u = user.value;
+  if (!u) return "";
+  if (u.role === "admin" || u.is_system_admin) return "管理员";
+  if (u.role === "manager") return "经理";
+  return "成员";
+});
+
+const userMenuOptions = computed(() => [
+  {
+    label: "偏好设置",
+    key: "preferences-group",
+    children: [
+      {
+        label: locale.value === "zh" ? "English" : "中文",
+        key: "toggle_locale",
+      },
+      {
+        label: isDark.value ? "日间模式" : "夜间模式",
+        key: "toggle_theme",
+      },
+    ],
+  },
+  {
+    label: "退出登录",
+    key: "logout",
+  },
+]);
+
+const siderUserMenuProps = computed(() => ({}));
+
+function onSiderUserMenuSelect(key) {
+  userMenuOpen.value = false;
+  if (key === "toggle_locale") {
+    toggleLocale();
+  } else if (key === "toggle_theme") {
+    toggleTheme();
+  } else if (key === "logout") {
+    logout();
+  }
+}
+
+function toggleNotifDrawer() {
+  headerToolbarRef.value?.closeAllFlyouts?.();
+  notifDrawerOpen.value = !notifDrawerOpen.value;
+}
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 768;
@@ -136,12 +199,19 @@ const favoriteActiveKey = computed(() => {
 });
 
 const KNOWLEDGE_ROUTES = new Set(["knowledge-search", "report-generation"]);
-const KG_ROUTES = new Set(["kg-palantir"]);
+
+/** 标题在顶栏 primary 区域的路由（知识检索/报告生成） */
+const showTitleInPrimary = computed(() => KNOWLEDGE_ROUTES.has(String(route.name || "")));
+
+/** 隐藏顶栏 header-primary 行（仅本析智能用标签栏替代顶栏） */
+const HEADERLESS_PRIMARY_ROUTES = new Set(["ai-home", "ai-home-tab"]);
+const showHeaderPrimary = computed(() => !HEADERLESS_PRIMARY_ROUTES.has(String(route.name || "")));
+
+const EXCLUDED_BACK_ROUTES = new Set(["knowledge-search", "report-generation", "agent-skills", "knowledge-subscriptions"]);
 
 function prefetchFeatureCaches() {
   if (!getToken()) return;
   prefetchKnowledgeScopeTree();
-  prefetchKgPalantir();
 }
 
 onMounted(() => {
@@ -171,7 +241,6 @@ watch(
     if (!getToken()) return;
     const routeName = String(name || "");
     if (KNOWLEDGE_ROUTES.has(routeName)) prefetchKnowledgeScopeTree();
-    if (KG_ROUTES.has(routeName)) prefetchKgPalantir();
   },
   { immediate: true }
 );
@@ -226,6 +295,10 @@ const settingsChildren = computed(() => {
   }
   const memberSettingsMenus = [
     {
+      label: t("menu.issueReports"),
+      key: "issue-reports",
+      icon: () => h(NIcon, null, { default: () => h(BugOutline) })},
+    {
       label: t("menu.monitor"),
       key: "admin-monitor",
       icon: () => h(NIcon, null, { default: () => h(PulseOutline) })},
@@ -254,6 +327,13 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(GridOutline) })});
   }
 
+  if (isMenuVisible("agent-skills")) {
+    items.push({
+      label: t("menu.agentSkills"),
+      key: "agent-skills",
+      icon: () => h(NIcon, null, { default: () => h(ExtensionPuzzleOutline) })});
+  }
+
   if (isMenuVisible("documents")) {
     items.push({
       label: t("menu.documents"),
@@ -266,12 +346,6 @@ const menuOptions = computed(() => {
       key: "knowledge-subscriptions",
       icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) })});
   }
-  if (isMenuVisible("issue-reports")) {
-    items.push({
-      label: t("menu.issueReports"),
-      key: "issue-reports",
-      icon: () => h(NIcon, null, { default: () => h(BugOutline) })});
-  }
 
   for (const feature of favoriteMenuFeatures.value) {
     const Icon = resolveFeatureIcon(feature.icon) || GridOutline;
@@ -279,6 +353,20 @@ const menuOptions = computed(() => {
       label: featureLabel(feature.id, "title", feature.title),
       key: favoriteMenuKey(feature),
       icon: () => h(NIcon, null, { default: () => h(Icon) })});
+  }
+
+  // 本体定义 & 知识图谱
+  if (hasPerm("feature.ontology") && isMenuVisible("ontology")) {
+    items.push({
+      label: t("menu.ontology"),
+      key: "ontology",
+      icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) })});
+  }
+  if (hasPerm("feature.kg") && isMenuVisible("kg")) {
+    items.push({
+      label: t("menu.kg"),
+      key: "kg",
+      icon: () => h(NIcon, null, { default: () => h(CubeOutline) })});
   }
 
   if (settingsChildren.value.length) {
@@ -319,7 +407,6 @@ const activeKey = computed(() => {
     route.name === "text-to-speech" ||
     route.name === "ocr" ||
     route.name === "compare" ||
-    route.name === "agent-skills" ||
     route.name === "knowledge-search" ||
     route.name === "report-generation" ||
     route.name === "ai-tools" ||
@@ -333,6 +420,7 @@ const activeKey = computed(() => {
   if (
     route.name === "admin-users" ||
     route.name === "admin-departments" ||
+    route.name === "agent-skills" ||
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
     route.name === "admin-menu-settings" ||
@@ -351,21 +439,21 @@ const flushFeatureNav = computed(
 
 /** 子功能页 Teleport 操作条：预留顶栏高度，避免注入后挤压正文 */
 const reservesHeaderExtension = computed(() => {
-  if (
-    route.name === "documents" ||
-    route.name === "knowledge-subscriptions" ||
-    route.name === "subscription-item" ||
-    route.name === "translate"
-  ) {
-    return true;
-  }
-  return flushFeatureNav.value;
+  const name = String(route.name || "");
+  // ai-home 用标签栏替代顶栏
+  if (name === "ai-home" || name === "ai-home-tab") return flushFeatureNav.value;
+  // 知识检索/报告生成标题在顶栏，操作栏无需预留
+  if (name === "knowledge-search" || name === "report-generation") return false;
+  // 其余页面有标题行 + 操作栏，始终预留空间
+  return true;
 });
 
 const headerTitle = computed(() => {
   if (pageHeaderOverride.value) return pageHeaderOverride.value;
   return routeTitle(String(route.name || ""), String(route.meta?.title || "").trim());
 });
+
+const headerDescription = computed(() => featureDescription(String(route.name || "")));
 
 const appDisplayName = useAppDisplayName();
 const sidebarBrandTitle = useAppDisplayName();
@@ -396,18 +484,8 @@ const { indicatorStyle: menuIndicatorStyle, moveIndicatorToContent } = useSiderM
   collapsed: siderCollapsed,
   expandedKeys});
 
-const showSubsystemNav = computed(
-  () => isSubsystemPage.value && Boolean(headerTitle.value)
-);
-
-const showSubsystemBack = computed(() => showSubsystemNav.value);
-
-const showStandardFeatureTitle = computed(
-  () => Boolean(headerTitle.value) && !isSubsystemPage.value
-);
-
-const showAppTitle = computed(
-  () => !showSubsystemNav.value && !showStandardFeatureTitle.value
+const showSubsystemBack = computed(
+  () => isSubsystemPage.value && Boolean(headerTitle.value) && !EXCLUDED_BACK_ROUTES.has(String(route.name || ""))
 );
 
 /** ai-home 多标签页管理器 */
@@ -602,8 +680,8 @@ function onMenuSelect(key) {
       class="app-sider"
       bordered
       collapse-mode="width"
-      :collapsed-width="77"
-      :width="264"
+      :collapsed-width="56"
+      :width="220"
     >
       <div class="sider-inner">
         <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
@@ -677,50 +755,59 @@ function onMenuSelect(key) {
             @update:expanded-keys="onExpandedKeysUpdate"
           />
         </div>
+        <div class="sider-user-section" :class="{ 'sider-user-section--collapsed': siderCollapsed }">
+          <div class="sider-user-row">
+            <button
+              type="button"
+              class="sider-user-avatar-wrap"
+              aria-label="通知"
+              @click="toggleNotifDrawer"
+            >
+              <span class="sider-user-avatar-inner">
+                <n-avatar round size="small" class="sider-user-avatar">
+                  {{ (userDisplayName || 'U')[0] }}
+                </n-avatar>
+                <span v-if="unreadCount > 0" class="sider-user-badge-sup">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+              </span>
+            </button>
+            <div v-if="!siderCollapsed" class="sider-user-info">
+              <span class="sider-username">{{ userDisplayName }}</span>
+              <span class="sider-user-role">{{ roleLabel }}</span>
+            </div>
+            <div v-if="!siderCollapsed" class="sider-user-actions">
+              <n-dropdown
+                trigger="click"
+                placement="top-start"
+                to="body"
+                :z-index="1050"
+                :options="userMenuOptions"
+                @update:show="(v) => (userMenuOpen = v)"
+                @select="onSiderUserMenuSelect"
+              >
+                <n-button quaternary circle size="tiny" class="sider-user-more-btn">
+                  <template #icon>
+                    <n-icon :size="14"><EllipsisHorizontal /></n-icon>
+                  </template>
+                </n-button>
+              </n-dropdown>
+            </div>
+          </div>
+        </div>
       </div>
     </n-layout-sider>
     <!-- 移动端无需抽屉，改用底部导航栏 -->
     <n-layout class="app-main">
-      <n-layout-header :bordered="!showAiHomeTabBar" :class="['header', { 'header--tab-mode': showAiHomeTabBar }, { 'header--mob': isMobile }]">
+      <n-layout-header :bordered="!showAiHomeTabBar" :class="['header', { 'header--tab-mode': showAiHomeTabBar }, { 'header--bare': !showHeaderPrimary }, { 'header--mob': isMobile }]">
         <div class="header-stack">
-          <div class="header-primary">
+          <div v-if="showHeaderPrimary" class="header-primary">
             <n-space align="center" justify="space-between" style="width: 100%">
               <n-space align="center" :size="isMobile ? 6 : 10" class="header-leading">
-                <n-space
-                v-if="showSubsystemNav"
-                align="center"
-                :size="10"
-                class="header-title-wrap header-subsystem-nav"
-              >
-                <n-button
-                  v-if="showSubsystemBack"
-                  quaternary
-                  circle
-                  size="tiny"
-                  class="header-back"
-                  :aria-label="t('header.back')"
-                  @click="goSubsystemBack"
-                >
-                  <n-icon :size="19" :component="ArrowBackOutline" />
-                </n-button>
-                <n-text strong class="header-title">{{ headerTitle }}</n-text>
-              </n-space>
-              <n-space
-                v-else-if="showStandardFeatureTitle || showAppTitle"
-                align="center"
-                :size="12"
-                class="header-title-wrap"
-              >
-                <n-text v-if="showStandardFeatureTitle" strong class="header-title">
-                  {{ headerTitle }}
-                </n-text>
-                <PlatformBrandTitle
-                  v-else-if="showAppTitle && !siderCollapsed"
-                  tag="div"
-                  class="header-app-title"
-                  :title="appDisplayName"
-                />
-              </n-space>
+                <template v-if="showTitleInPrimary">
+                  <div class="header-title-inline">
+                    <span class="header-title">{{ headerTitle }}</span>
+                    <span v-if="headerDescription" class="header-title-desc">{{ headerDescription }}</span>
+                  </div>
+                </template>
               </n-space>
               <HeaderToolbar ref="headerToolbarRef" />
             </n-space>
@@ -745,6 +832,30 @@ function onMenuSelect(key) {
                 @history="goToChatHistory"
                 @close-all="closeAllTabs"
               />
+            </div>
+            <div v-else-if="!showTitleInPrimary" class="bare-feature-title-row">
+              <n-button
+                v-if="showSubsystemBack"
+                quaternary
+                circle
+                size="tiny"
+                class="header-back"
+                :aria-label="t('header.back')"
+                @click="goSubsystemBack"
+              >
+                <n-icon :size="19" :component="ArrowBackOutline" />
+              </n-button>
+              <div class="bare-feature-title-block">
+                <span class="bare-feature-title">{{ headerTitle }}</span>
+                <div class="bare-feature-description-row">
+                  <span v-if="headerDescription" class="bare-feature-description">{{ headerDescription }}</span>
+                </div>
+                <div class="bare-feature-tools-row">
+                  <div id="header-page-tools" class="header-page-tools"></div>
+                  <div id="header-actions" class="header-actions"></div>
+                  <div id="header-actions-row" class="bare-feature-actions-row"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -788,6 +899,21 @@ function onMenuSelect(key) {
     @acknowledge="onReleaseHighlightsAcknowledge"
   />
   <SystemNotificationToast />
+  <!-- 通知右侧抽屉 -->
+  <Teleport to="body">
+    <Transition name="notif-backdrop">
+      <div v-if="notifDrawerOpen" class="notif-drawer-backdrop" @click="notifDrawerOpen = false" />
+    </Transition>
+    <Transition name="notif-slide">
+      <div v-if="notifDrawerOpen" class="notif-drawer" role="dialog" aria-label="通知" @click.stop>
+        <NotificationsPanel
+          :active="notifDrawerOpen"
+          @close="notifDrawerOpen = false"
+          @navigate="notifDrawerOpen = false"
+        />
+      </div>
+    </Transition>
+  </Teleport>
   <!-- 移动端底部导航栏 -->
   <div v-if="isMobile" class="mobile-bottom-tabs">
     <button
@@ -831,40 +957,125 @@ function onMenuSelect(key) {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
-  border-bottom: 1px solid var(--platform-border) !important;
+  border-bottom: none !important;
   background: var(--platform-header-bg) !important;
 }
 
 /* Header 微妙的玻璃质感 — 仅在非 tab 模式 / 无 feature-local-nav 时生效 */
 .main-layout .header::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--platform-accent) 2%, transparent) 0%, transparent 100%);
-  opacity: 0.5;
+  display: none;
 }
 
 /* ai-home 标签页模式：移除 header 底部边框，交由标签栏的标签下边框控制 */
 .main-layout .header.header--tab-mode {
   border-bottom: none !important;
 }
-.main-layout .header.header--tab-mode::after {
-  display: none;
-}
 
-.main-layout:has(.app-content .feature-local-nav) .header,
-.main-layout:has(.app-content .feature-top-strip) .header {
-  border-bottom: none !important;
-}
-.main-layout:has(.app-content .feature-local-nav) .header::after,
-.main-layout:has(.app-content .feature-top-strip) .header::after {
-  display: none;
-}
+/* 已全局移除 header border-bottom，无需额外覆盖 */
+
 
 .app-sider {
   height: 100vh;
 }
+/* 侧栏底部用户信息 */
+.sider-user-section {
+  flex-shrink: 0;
+  padding: 4px 4px 8px;
+  margin: 0;
+  text-align: left;
+}
+.sider-user-section--collapsed {
+  text-align: center;
+}
+.sider-user-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  min-width: 0;
+  position: relative;
+}
+.sider-user-avatar-wrap {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  line-height: 0;
+  position: relative;
+}
+.sider-user-avatar-inner {
+  position: relative;
+  display: inline-block;
+}
+.sider-user-avatar {
+  flex-shrink: 0;
+  width: 26px !important;
+  height: 26px !important;
+  background: #0a6bff !important;
+  color: #fff !important;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sider-user-badge-sup {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  border-radius: 7px;
+  background: var(--platform-danger, #be1743);
+  color: #fff;
+  pointer-events: none;
+}
+.sider-user-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  line-height: 1.35;
+}
+.sider-username {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--platform-text);
+}
+.sider-user-role {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sider-user-chevron {
+  color: var(--platform-icon, #686868);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.sider-user-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.sider-user-more-btn {
+  color: var(--platform-icon, #686868) !important;
+  border: none !important;
+  outline: none !important;
+}
+
 .app-sider :deep(.n-layout-sider-scroll-container) {
   height: 100%;
   display: flex;
@@ -883,28 +1094,24 @@ function onMenuSelect(key) {
   flex-shrink: 0;
   width: 36px;
   height: 36px;
-  color: var(--platform-text-secondary);
+  color: var(--platform-icon);
+  border: none !important;
+  outline: none !important;
   border-radius: var(--platform-radius-sm);
-  transition:
-    color 0.2s ease,
-    background 0.2s ease,
-    transform 0.2s var(--platform-ease-smooth);
 }
 .sider-toggle:hover {
-  color: var(--platform-text);
-  background: var(--platform-bg-tertiary) !important;
-  transform: translateX(1px);
+  color: var(--platform-icon);
+  background: transparent !important;
 }
 .sider-toggle-icon {
   width: 20px;
   height: 20px;
-  display: block;
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px 12px 17px;
+  padding: 8px 12px 12px 12px;
   margin: 0 8px 4px;
   border-bottom: 1px solid var(--platform-divider);
   flex-shrink: 0;
@@ -929,7 +1136,7 @@ function onMenuSelect(key) {
 .brand-name {
   flex: 1;
   min-width: 0;
-  font-family: var(--platform-font-display);
+  font-family: var(--platform-font);
   font-size: inherit;
   font-weight: 700;
   line-height: 1.3;
@@ -937,13 +1144,11 @@ function onMenuSelect(key) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  background: var(--platform-accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--platform-text);
 }
 .brand-logo {
   flex-shrink: 0;
+  filter: hue-rotate(324deg) saturate(1.4);
 }
 .brand-logo :deep(.platform-brand-icon) {
   width: 1em;
@@ -959,14 +1164,14 @@ function onMenuSelect(key) {
 
 .sider-menu-indicator {
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: 8px;
+  right: 8px;
   top: 0;
   z-index: 0;
   border-radius: var(--platform-radius-sm);
   pointer-events: none;
-  background: var(--sider-menu-glass-fill-active, var(--platform-glass-fill-active));
-  box-shadow: var(--menu-glass-rim-edge-active);
+  background: var(--platform-bg-tertiary);
+  box-shadow: none;
   will-change: transform, height;
   transition:
     transform 0.3s cubic-bezier(0.22, 0.85, 0.32, 1),
@@ -980,7 +1185,7 @@ function onMenuSelect(key) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 12px 12px 17px;
+  padding: 4px 8px 12px 10px;
 }
 .app-main {
   height: 100vh;
@@ -1022,11 +1227,39 @@ function onMenuSelect(key) {
   flex-shrink: 0;
 }
 
+/* 隐藏顶栏标题行（本析智能标签栏模式）：由内容撑开高度 */
+.header--bare {
+  min-height: 0;
+}
+
 .header-stack {
   display: flex;
   flex-direction: column;
   width: 100%;
   min-width: 0;
+}
+/* 在顶栏 primary 区域显示的标题行（知识检索/报告生成） */
+.header-title-inline {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+.header-title-inline .header-title {
+  font-size: 18px;
+  font-weight: var(--platform-font-weight-strong);
+  color: var(--platform-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-title-inline .header-title-desc {
+  font-size: var(--platform-font-size-sm);
+  color: var(--platform-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-primary {
@@ -1038,16 +1271,46 @@ function onMenuSelect(key) {
   box-sizing: border-box;
 }
 
+/* 操作栏标题行（在顶栏下方，包含标题、介绍、按钮） */
+.bare-feature-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 24px;
+  min-height: 52px;
+  min-width: 0;
+}
+.bare-feature-title-block {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.bare-feature-description-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.bare-feature-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 .header-extension:empty:not(.header-extension--reserved) {
   display: none;
 }
-
 .header-extension--reserved {
   min-height: 52px;
   flex-shrink: 0;
   box-sizing: border-box;
 }
-
 .header-extension:not(:empty) {
   flex-shrink: 0;
   box-sizing: border-box;
@@ -1055,16 +1318,27 @@ function onMenuSelect(key) {
   border-top: none;
   border-bottom: none;
 }
+.bare-feature-title {
+  font-size: 24px;
+  font-weight: var(--platform-font-weight-strong);
+  color: var(--platform-text);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bare-feature-description {
+  font-size: var(--platform-font-size-sm);
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 480px;
+}
+
 .header-leading {
-  flex: 1;
-  min-width: 0;
-}
-
-.header-title-wrap {
-  min-width: 0;
-}
-
-.header-subsystem-nav {
   flex: 1;
   min-width: 0;
 }
@@ -1080,25 +1354,6 @@ function onMenuSelect(key) {
   color: var(--platform-accent-hover);
 }
 
-.header-title {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: var(--platform-tracking-tight);
-  color: var(--platform-text);
-  line-height: 1.3;
-}
-
-.header-app-title {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: var(--platform-tracking-tight);
-}
-
-.header-app-title :deep(.platform-brand-title) {
-  font-size: inherit;
-  font-weight: inherit;
-  letter-spacing: inherit;
-}
 .app-content--full {
   display: flex;
   flex-direction: column;
@@ -1192,10 +1447,6 @@ function onMenuSelect(key) {
 .header--mob .header-primary {
   height: 48px;
   padding: 0 12px;
-}
-
-.header--mob .header-title {
-  font-size: 15px;
 }
 
 @media (max-width: 768px) {
@@ -1299,6 +1550,70 @@ function onMenuSelect(key) {
   }
 }
 
+/* === 通知右侧抽屉 === */
+.notif-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10590;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.notif-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(420px, calc(100vw - 32px));
+  z-index: 10600;
+  display: flex;
+  flex-direction: column;
+  background: var(--platform-bg-elevated-solid);
+  border-left: 1px solid var(--platform-border);
+  box-shadow: var(--platform-shadow-lg);
+  overflow: hidden;
+}
+
+.notif-drawer :deep(.notifications-panel) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.notif-drawer :deep(.notifications-panel__body) {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+/* 滑入/滑出动画 */
+.notif-slide-enter-active {
+  transition: transform 0.28s cubic-bezier(0.22, 0.85, 0.32, 1);
+}
+
+.notif-slide-leave-active {
+  transition: transform 0.22s cubic-bezier(0.22, 0.85, 0.32, 1);
+}
+
+.notif-slide-enter-from,
+.notif-slide-leave-to {
+  transform: translateX(100%);
+}
+
+.notif-backdrop-enter-active {
+  transition: opacity 0.28s ease;
+}
+
+.notif-backdrop-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.notif-backdrop-enter-from,
+.notif-backdrop-leave-to {
+  opacity: 0;
+}
+
 /* === 移动端底部导航栏 === */
 .mobile-bottom-tabs {
   position: fixed;
@@ -1346,3 +1661,230 @@ function onMenuSelect(key) {
 }
 </style>
 
+
+<!-- 非 scoped：Teleport 到 #header-page-tools / #header-actions / #header-actions-row 的按钮样式 -->
+<style>
+/* 工具栏容器：所有按钮区在同一行 */
+.bare-feature-tools-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+#header-page-tools,
+#header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#header-actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  margin-top: 0;
+}
+#header-actions-row .documents-actions-bar {
+  padding: 0;
+}
+#header-actions-row .documents-actions-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* —— 统一工具栏按钮：24px 圆形，透明玻璃背景，强制覆盖 Naive UI 内部变量 —— */
+#header-page-tools .header-icon-btn,
+#header-actions .header-icon-btn,
+#header-actions-row .icon-action,
+#header-actions-row .n-button.n-button--quaternary:not(.agent-skills-action-btn),
+#header-page-tools .n-button.n-button--quaternary {
+  flex-shrink: 0 !important;
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border-radius: 50% !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 0 !important;
+  --n-height: 24px !important;
+  --n-icon-size: 14px !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent) !important;
+  color: var(--platform-text-tertiary) !important;
+  font-size: var(--platform-font-size-sm) !important;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease !important;
+}
+
+/* 工具栏按钮中的图标: 统一 14px */
+#header-page-tools .header-icon-btn .n-icon,
+#header-actions .header-icon-btn .n-icon,
+#header-actions-row .icon-action .n-icon,
+#header-actions-row .n-button .n-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 14px !important;
+  width: 14px !important;
+  height: 14px !important;
+}
+
+/* 刷新按钮：加载时图标旋转动画（替代 Naive UI 内置 loading spinner） */
+#header-page-tools .header-icon-btn--spinning .n-icon,
+#header-actions .header-icon-btn--spinning .n-icon {
+  animation: agent-header-spin 0.6s linear infinite;
+}
+#header-page-tools .header-icon-btn--spinning .n-icon svg,
+#header-actions .header-icon-btn--spinning .n-icon svg {
+  transform-origin: center center;
+}
+@keyframes agent-header-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 悬浮：更深玻璃背景 */
+#header-page-tools .header-icon-btn:not(:disabled):hover,
+#header-actions .header-icon-btn:not(:disabled):hover,
+#header-actions-row .icon-action:not(:disabled):hover,
+#header-actions-row .n-button.n-button--quaternary:not(.agent-skills-action-btn):not(:disabled):hover,
+#header-page-tools .n-button.n-button--quaternary:not(:disabled):hover {
+  color: var(--platform-text) !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
+}
+
+/* 选中/激活态 */
+#header-page-tools .header-icon-btn--active,
+#header-actions .header-icon-btn--active {
+  color: var(--platform-accent) !important;
+  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%) !important;
+}
+#header-actions-row .icon-action.icon-action--active {
+  color: var(--platform-accent) !important;
+  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%) !important;
+}
+
+/* 核心操作组 */
+#header-actions-row .documents-actions-core {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* caution/danger 在操作栏中保持透明玻璃背景 */
+#header-actions-row .icon-action.icon-action--caution:not(:disabled),
+#header-actions-row .icon-action.icon-action--danger:not(:disabled) {
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent) !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+#header-actions-row .icon-action.icon-action--caution:not(:disabled):hover {
+  color: var(--platform-caution) !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
+}
+#header-actions-row .icon-action.icon-action--danger:not(:disabled):hover {
+  color: var(--platform-danger) !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
+}
+#header-actions-row .icon-action.icon-action--caution:disabled,
+#header-actions-row .icon-action.icon-action--danger:disabled {
+  opacity: 0.42;
+}
+
+/* 清除 Naive UI 内部干扰元素 */
+#header-actions-row .n-button.n-button--quaternary::after,
+#header-page-tools .n-button.n-button--quaternary::after,
+#header-actions .n-button.n-button--quaternary::after,
+#header-actions-row .n-button.n-button--quaternary .n-button__border,
+#header-page-tools .n-button.n-button--quaternary .n-button__border,
+#header-actions .n-button.n-button--quaternary .n-button__border,
+#header-actions-row .n-button.n-button--quaternary .n-button__state-border,
+#header-page-tools .n-button.n-button--quaternary .n-button__state-border,
+#header-actions .n-button.n-button--quaternary .n-button__state-border {
+  display: none !important;
+}
+#header-actions-row .n-button,
+#header-page-tools .n-button,
+#header-actions .n-button {
+  --n-ripple-duration: 0s !important;
+  --n-ripple-color: transparent !important;
+}
+#header-page-tools .n-button,
+#header-actions .n-button {
+  --n-text-color: var(--platform-text-tertiary) !important;
+}
+#header-page-tools .n-button.n-button--quaternary,
+#header-actions .n-button.n-button--quaternary {
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent) !important;
+}
+#header-page-tools .n-button .n-button__content,
+#header-actions .n-button .n-button__content {
+  font-size: inherit !important;
+  line-height: 0 !important;
+}
+
+/* 操作栏搜索输入框 */
+#header-actions-row .n-input {
+  width: 180px !important;
+  flex-shrink: 0;
+}
+
+/* 侧栏按钮去掉边框，颜色与菜单图标一致 */
+.app-sider .sider-toggle,
+.app-sider .sider-toggle.n-button,
+.app-sider .sider-user-more-btn,
+.app-sider .sider-user-more-btn.n-button {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  --n-text-color: var(--platform-icon) !important;
+  --n-text-color-hover: var(--platform-icon) !important;
+  --n-text-color-pressed: var(--platform-icon) !important;
+  --n-text-color-focus: var(--platform-icon) !important;
+  color: var(--platform-icon) !important;
+}
+.app-sider .sider-toggle .n-button__border,
+.app-sider .sider-user-more-btn .n-button__border,
+.app-sider .sider-toggle .n-button__state-border,
+.app-sider .sider-user-more-btn .n-button__state-border {
+  display: none !important;
+}
+
+/* ── 侧栏菜单图标：统一系统灰色，无颜色/大小/动画变化 ── */
+.app-sider .sider-menu .n-menu-item-content {
+  transition: none !important;
+}
+.app-sider .sider-menu .n-menu-item-content__icon {
+  transition: none !important;
+  color: var(--platform-icon) !important;
+  font-size: 18px !important;
+  width: 18px !important;
+  height: 18px !important;
+}
+.app-sider .sider-menu .n-menu-item-content__icon .n-icon {
+  transition: none !important;
+  color: var(--platform-icon) !important;
+  font-size: 18px !important;
+  width: 18px !important;
+  height: 18px !important;
+}
+.app-sider .sider-menu .n-menu-item-content--selected .n-menu-item-content__icon,
+.app-sider .sider-menu .n-menu-item-content--selected .n-menu-item-content__icon .n-icon,
+.app-sider .sider-menu .n-menu-item-content--hovered .n-menu-item-content__icon,
+.app-sider .sider-menu .n-menu-item-content--hovered .n-menu-item-content__icon .n-icon,
+.app-sider .sider-menu .n-menu-item-content--child-active .n-menu-item-content__icon,
+.app-sider .sider-menu .n-menu-item-content--child-active .n-menu-item-content__icon .n-icon {
+  transition: none !important;
+  color: var(--platform-icon) !important;
+}
+</style>

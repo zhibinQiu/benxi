@@ -436,7 +436,6 @@ html[data-theme="dark"] .login-feature-scroll__body {
 
 .login-feature-scroll__body--subtitle {
   margin-bottom: 19px;
-  font-weight: 600;
 }
 
 /* ---------- split layout ---------- */
@@ -538,7 +537,6 @@ html[data-theme="dark"] .login-feature-scroll__img {
 .login-feature-scroll__feature-title {
   margin: 0 0 4px;
   font-size: 14px;
-  font-weight: 600;
   color: #000;
 }
 
@@ -651,31 +649,18 @@ html[data-theme="dark"] .login-feature-scroll__acknowledgments-subtitle {
   gap: 4px;
   min-width: 120px;
   padding: 16px 22px;
-  border-radius: 12px;
-  background: #f8f8fa;
-  border: 1px solid #e8e8ee;
+  border-radius: var(--platform-card-radius);
+  background: var(--platform-card-bg);
+  border: 1px solid var(--platform-card-border-color);
   text-decoration: none;
-  transition:
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
+  transition: var(--platform-card-transition);
 }
 
 html[data-theme="dark"] .login-feature-scroll__acknowledgment-card {
-  background: #181820;
-  border-color: #2a2a36;
+  background: var(--platform-card-bg);
+  border-color: var(--platform-card-border-color);
 }
 
-.login-feature-scroll__acknowledgment-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  border-color: color-mix(in srgb, var(--platform-accent) 28%, transparent);
-}
-
-html[data-theme="dark"] .login-feature-scroll__acknowledgment-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-  border-color: color-mix(in srgb, var(--platform-accent) 40%, #2a2a36);
-}
 
 /* ---------- card flip animation ---------- */
 .login-feature-scroll__section--visible .login-feature-scroll__acknowledgment-card {
@@ -695,7 +680,6 @@ html[data-theme="dark"] .login-feature-scroll__acknowledgment-card:hover {
 
 .login-feature-scroll__acknowledgment-name {
   font-size: 15px;
-  font-weight: 600;
   line-height: 1.3;
   color: #111;
   white-space: nowrap;
@@ -740,7 +724,6 @@ html[data-theme="dark"] .login-feature-scroll__acknowledgment-desc {
 .login-feature-scroll__compare-table thead th {
   padding: 10px 12px 12px;
   font-size: 13px;
-  font-weight: 700;
   letter-spacing: 0.04em;
   text-align: center;
   color: #999;
@@ -794,7 +777,6 @@ html[data-theme="dark"] .login-feature-scroll__compare-table tbody tr:hover {
 }
 
 .login-feature-scroll__compare-feature {
-  font-weight: 600;
   text-align: left;
   color: #111;
   white-space: nowrap;
@@ -919,7 +901,6 @@ html[data-theme="dark"] .login-feature-scroll__footer-legal {
   background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
   color: var(--platform-accent);
   font-size: 14px;
-  font-weight: 600;
   cursor: pointer;
   transition:
     background 0.2s ease,

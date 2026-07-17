@@ -1,7 +1,6 @@
 <script setup>
 import { computed } from "vue";
 import { NButton, NIcon, NTooltip } from "naive-ui";
-import RoseLoader from "./RoseLoader.vue";
 
 const props = defineProps({
   label: { type: String, required: true },
@@ -56,8 +55,7 @@ const actionClass = computed(() => {
         :aria-busy="loading || undefined"
         @click="$emit('click', $event)"
       >
-        <RoseLoader v-if="loading" :size="iconSize" class="icon-action__rose" />
-        <n-icon v-else :size="iconSize" :component="icon" />
+        <n-icon :size="iconSize" :component="icon" :class="{ 'icon-action__spin': loading }" />
       </n-button>
     </template>
     {{ tooltipText }}
@@ -68,7 +66,6 @@ const actionClass = computed(() => {
 .icon-action {
   width: 38px;
   height: 38px;
-  background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
@@ -122,7 +119,7 @@ const actionClass = computed(() => {
 .icon-action.icon-action--danger:disabled,
 .icon-action.icon-action--caution:disabled {
   opacity: 0.42;
-  background: var(--platform-bg-glass-subtle);
+  background: var(--platform-bg);
   border-color: var(--platform-border);
   box-shadow: none;
 }
@@ -131,15 +128,19 @@ const actionClass = computed(() => {
   pointer-events: none;
 }
 
-.icon-action__rose {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 0;
+/* loading 时图标原地旋转 */
+.icon-action__spin {
+  animation: icon-action-spin 0.8s linear infinite;
+}
+
+@keyframes icon-action-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .icon-action__rose :deep(.curve-animation) {
+  .icon-action__spin {
     animation: none;
   }
 }

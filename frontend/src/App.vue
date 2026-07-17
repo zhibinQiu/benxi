@@ -81,13 +81,13 @@ body,
 }
 
 ::selection {
-  background: var(--platform-accent-soft);
+  background: color-mix(in srgb, var(--platform-accent) 22%, transparent);
   color: var(--platform-text);
 }
 
 /* 选中区域高亮更高级：带一点主色透明感 */
 ::-moz-selection {
-  background: color-mix(in srgb, var(--platform-accent) 25%, transparent);
+  background: color-mix(in srgb, var(--platform-accent) 22%, transparent);
 }
 
 h1,
@@ -107,6 +107,34 @@ h4,
   background: transparent;
 }
 
+.app-shell::before {
+  content: '';
+  position: fixed;
+  top: -50%;
+  right: -25%;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--platform-accent) 2.5%, transparent) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.7;
+}
+
+.app-shell::after {
+  content: '';
+  position: fixed;
+  bottom: -40%;
+  left: -20%;
+  width: 60vmax;
+  height: 60vmax;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--platform-accent-secondary) 2%, transparent) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
 .app-shell > :not(.page-video-bg) {
   position: relative;
   z-index: 1;
@@ -116,14 +144,10 @@ h4,
 <style src="./styles/platform.css"></style>
 <style src="./styles/chat-message-media.css"></style>
 <style src="./styles/platform-typography.css"></style>
-<style src="./styles/liquid-glass.css"></style>
 <style src="./styles/feature-local-nav.css"></style>
-<style src="./styles/menu-liquid-glass.css"></style>
-<style src="./styles/selectable-glass.css"></style>
+<style src="./styles/sider-menu.css"></style>
 <style src="./styles/subsystem-embed.css"></style>
 <style src="./styles/motion.css"></style>
-<style src="./styles/platform-spin.css"></style>
 <style src="./styles/platform-ui-glass.css"></style>
-<style src="./styles/solid-shell.css"></style>
-<style src="./styles/openai-style.css"></style>
 <style src="./styles/platform-buttons.css"></style>
+<style src="./styles/components.css"></style>

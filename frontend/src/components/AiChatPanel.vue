@@ -34,7 +34,8 @@ import {
 } from "../api/chat.js";
 import { formatAgentDisplayName } from "../utils/agentDisplay.js";
 import RoseLoader from "./RoseLoader.vue";
-import { NButton, NIcon, NPopover } from "naive-ui";
+import CurveAnimation from "./CurveAnimation.vue";
+import { NButton, NCollapse, NCollapseItem, NIcon, NPopover } from "naive-ui";
 import ChatComposer from "./ChatComposer.vue";
 import ChatDisclaimer from "./ChatDisclaimer.vue";
 import ChatBubbleActions from "./ChatBubbleActions.vue";
@@ -155,10 +156,6 @@ const showPanelSessionActions = computed(
 );
 const route = useRoute();
 const router = useRouter();
-
-function goAgentkitDocs() {
-  router.push({ name: "agentkit-docs" });
-}
 
 const architectureData = computed(() => {
   const raw = props.architecture;
@@ -516,6 +513,7 @@ function _buildGroups(items) {
   for (const item of items || []) {
     const label = item.model_name || item.label || "模型";
     const entry = { label, value: item.id };
+    if (item.description) entry.desc = item.description;
     if (item.resource_type === "multimodal") {
       if (!mmGroup) {
         mmGroup = { type: "group", label: "多模态模型", key: "multimodal", children: [] };
@@ -855,6 +853,42 @@ function onReportCitationClick(index, message, messageIndex) {
   openCitationPreview(index, all, reportQuestionForMessage(messageIndex));
 }
 
+/* ── 最终回复折叠面板 ── */
+const citationPanelOpen = ref([]);
+const thinkingPanelOpen = ref(false);
+
+function hasCitations(message) {
+  if (!props.showCitations && !props.showReportTools) return false;
+  return Array.isArray(message?.citations) && message.citations.length > 0;
+}
+
+function citationCount(message) {
+  return Array.isArray(message?.citations) ? message.citations.length : 0;
+}
+
+function hasThinkingContent(message) {
+  const workflow = message?.workflow;
+  if (!workflow) return false;
+  if (Array.isArray(workflow.taskPlan) && workflow.taskPlan.length > 0) return true;
+  if (Array.isArray(workflow.steps) && workflow.steps.length > 0) return true;
+  return false;
+}
+
+function shouldShowFinalPanels(entry) {
+  if (entry.message.streaming) return false;
+  if (!hasAssistantAnswer(entry.message)) return false;
+  if (props.showReportTools) return false;
+  return hasCitations(entry.message) || hasThinkingContent(entry.message);
+}
+
+function workflowPlanSteps(message) {
+  return message?.workflow?.taskPlan || [];
+}
+
+function workflowExecSteps(message) {
+  return message?.workflow?.steps || [];
+}
+
 function useReportOptimizePreset(preset) {
   const prompt = (preset?.prompt || preset?.description || preset?.label || "").trim();
   if (!prompt) return;
@@ -879,7 +913,7 @@ function openCitationPreview(citationOrIndex, citations = [], question = "") {
   if (!citation) return;
   if (citation.source === "kg" && citation.entity_id) {
     router.push({
-      name: "kg-palantir",
+      name: "kg",
       query: { focusEntityId: citation.entity_id },
     });
     return;
@@ -1849,17 +1883,21 @@ defineExpose({
       <Transition name="ai-welcome">
         <div v-if="!started" key="welcome" class="ai-home-welcome">
           <div class="ai-home-hero">
-            <div class="ai-home-icon">
-              <n-icon :size="43" :component="icon" />
+            <div class="ai-home-icon" :class="{ 'ai-home-icon--dynamic': chatScope === 'ai-home' }">
+              <CurveAnimation
+                v-if="chatScope === 'ai-home'"
+                preset="rose-three"
+                :size="100"
+                :clockwise="true"
+                :rotation-duration="12000"
+              />
+              <n-icon v-else :size="43" :component="icon" />
             </div>
             <h1 class="ai-home-title" :class="{ 'platform-text-gradient': titleGradient }">
               {{ title }}
             </h1>
             <p v-if="description" class="ai-home-desc">{{ description }}</p>
             <p v-if="subtitle" class="ai-home-sub">{{ subtitle }}</p>
-            <div v-if="architectureData.summary" class="ai-home-arch">
-              <p class="ai-home-arch-summary">{{ architectureData.summary }}</p>
-            </div>
           </div>
         </div>
       </Transition>
@@ -2040,6 +2078,74 @@ defineExpose({
                 </div>
               </div>
               <template v-else-if="shouldRenderRich(entry)">
+              <!-- 数据来源 & 思考过程折叠面板 -->
+              <div
+                v-if="shouldShowFinalPanels(entry)"
+                class="ai-home-final-panels"
+              >
+                <n-collapse
+                  :default-value="[]"
+                  arrow-placement="right"
+                  :accordion="false"
+                >
+                  <n-collapse-item
+                    v-if="hasCitations(entry.message)"
+                    name="citations"
+                  >
+                    <template #header>
+                      <span class="ai-home-panel-header">
+                        引用了
+                        <span class="ai-home-panel-badge">{{ citationCount(entry.message) }}</span>
+                        条资料
+                      </span>
+                    </template>
+                    <div class="ai-home-panel-body">
+                      <div
+                        v-for="(cit, ci) in (entry.message.citations || [])"
+                        :key="ci"
+                        class="ai-home-panel-citation"
+                        @click="openCitationPreview(cit, entry.message.citations)"
+                      >
+                        <span class="ai-home-panel-citation-idx">{{ ci + 1 }}.</span>
+                        <span class="ai-home-panel-citation-title">{{ cit.title || cit.name || '来源' }}</span>
+                        <span v-if="cit.url" class="ai-home-panel-citation-url">({{ cit.url }})</span>
+                      </div>
+                    </div>
+                  </n-collapse-item>
+                  <n-collapse-item
+                    v-if="hasThinkingContent(entry.message)"
+                    name="thinking"
+                  >
+                    <template #header>
+                      <span class="ai-home-panel-header">思考过程</span>
+                    </template>
+                    <div class="ai-home-panel-body">
+                      <div v-for="(task, ti) in workflowPlanSteps(entry.message)" :key="`plan-${ti}`" class="ai-home-panel-plan-step">
+                        <div class="ai-home-panel-plan-step-title">{{ task.title }}</div>
+                        <div v-if="task.summary" class="ai-home-panel-plan-step-summary">{{ task.summary }}</div>
+                        <div v-if="task.substeps && task.substeps.length" class="ai-home-panel-plan-substeps">
+                          <div v-for="(sub, si) in task.substeps" :key="`sub-${si}`" class="ai-home-panel-plan-substep">
+                            <span class="ai-home-panel-plan-substep-dot">•</span>
+                            <span>{{ sub.title }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-for="(step, si) in workflowExecSteps(entry.message)" :key="`exec-${si}`" class="ai-home-panel-plan-step">
+                        <div class="ai-home-panel-plan-step-title">{{ step.title }}</div>
+                        <!-- 思考型步骤：完整显示思考文本内容 -->
+                        <div v-if="step.kind === 'thinking' && step.detail" class="ai-home-panel-thinking-text">{{ step.detail }}</div>
+                        <!-- 其他步骤：以列表形式展示详情 -->
+                        <div v-else-if="Array.isArray(step.detail) && step.detail.length" class="ai-home-panel-plan-substeps">
+                          <div v-for="(row, ri) in step.detail" :key="`det-${ri}`" class="ai-home-panel-plan-substep">
+                            <span class="ai-home-panel-plan-substep-dot">•</span>
+                            <span>{{ row.label || row.text || row }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </n-collapse-item>
+                </n-collapse>
+              </div>
               <template v-if="isReportMessage(entry.index, entry.message)">
                 <div v-if="!entry.message.streaming" class="ai-report-tools">
                   <div class="ai-report-tools__tabs" role="tablist">
@@ -2296,94 +2402,6 @@ defineExpose({
             @change="onAttachmentInputChange"
           />
           <div class="ai-home-composer-stack">
-            <div
-              v-if="
-                showReportTools
-                  && (
-                    reportAgentSkillsLoading
-                    || reportAgentSkills.length
-                    || (started && reportOptimizePresets.length)
-                  )
-              "
-              class="ai-home-tools ai-home-tools--stack"
-            >
-              <n-popover
-                v-if="reportAgentSkillsLoading || reportAgentSkills.length"
-                trigger="click"
-                placement="top-start"
-                :width="312"
-                :show="reportSkillPopoverShow"
-                @update:show="(v) => (reportSkillPopoverShow = v)"
-              >
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="ai-home-tool-link ai-home-tool-action"
-                    :disabled="(!composerInputWhileLoading && sending) || reportAgentSkillsLoading"
-                  >
-                    <n-icon :size="16" :component="LayersOutline" />
-                    <span>{{ t("reportGeneration.selectReportType") }}</span>
-                  </button>
-                </template>
-                <div class="ai-home-skills-popover">
-                  <div class="ai-home-skills-popover__title">{{ t("reportGeneration.reportSkills") }}</div>
-                  <div v-if="reportAgentSkillsLoading" class="ai-home-skills-popover__loading">
-                    <n-spin :size="19" />
-                  </div>
-                  <div v-else-if="!reportAgentSkills.length" class="ai-home-skills-popover__empty">
-                    {{ t("chat.agentSkills.skillEmpty") }}
-                  </div>
-                  <button
-                    v-for="skill in reportAgentSkills"
-                    :key="skill.name"
-                    type="button"
-                    class="ai-home-skills-popover__item"
-                    @click="useReportAgentSkill(skill)"
-                  >
-                    <span class="ai-home-skills-popover__item-name">
-                      {{ skill.title || skill.name }}
-                    </span>
-                    <span v-if="skill.description" class="ai-home-skills-popover__item-desc">
-                      {{ skill.description }}
-                    </span>
-                  </button>
-                </div>
-              </n-popover>
-              <n-popover
-                v-if="started && reportOptimizePresets.length"
-                trigger="click"
-                placement="top-start"
-                :width="312"
-                :show="reportOptimizePopoverShow"
-                @update:show="(v) => (reportOptimizePopoverShow = v)"
-              >
-                <template #trigger>
-                  <button
-                    type="button"
-                    class="ai-home-tool-link ai-home-tool-action"
-                    :disabled="!composerInputWhileLoading && sending"
-                  >
-                    <n-icon :size="16" :component="SparklesOutline" />
-                    <span>{{ t("reportGeneration.selectReportOptimize") }}</span>
-                  </button>
-                </template>
-                <div class="ai-home-skills-popover">
-                  <div class="ai-home-skills-popover__title">{{ t("reportGeneration.optimizePresets") }}</div>
-                  <button
-                    v-for="p in reportOptimizePresets"
-                    :key="p.id"
-                    type="button"
-                    class="ai-home-skills-popover__item"
-                    @click="useReportOptimizePreset(p)"
-                  >
-                    <span class="ai-home-skills-popover__item-name">{{ p.label }}</span>
-                    <span v-if="p.description" class="ai-home-skills-popover__item-desc">
-                      {{ p.description }}
-                    </span>
-                  </button>
-                </div>
-              </n-popover>
-            </div>
             <div class="ai-home-composer">
               <ChatComposer
                 ref="composerRef"
@@ -2404,7 +2422,7 @@ defineExpose({
                 @attach="openAttachmentPicker"
                 @remove-attachment="removeAttachment"
               >
-                <template v-if="toolLinks.length || enableAgentSkills" #toolbar>
+                <template v-if="toolLinks.length || enableAgentSkills || (showReportTools && (reportAgentSkillsLoading || reportAgentSkills.length || reportOptimizePresets.length))" #toolbar>
                   <RouterLink
                     v-for="tool in toolLinks"
                     :key="tool.title"
@@ -2414,6 +2432,82 @@ defineExpose({
                     <n-icon v-if="tool.icon" :size="14" :component="tool.icon" />
                     <span>{{ tool.title }}</span>
                   </RouterLink>
+                  <n-popover
+                    v-if="showReportTools && (reportAgentSkillsLoading || reportAgentSkills.length)"
+                    trigger="click"
+                    placement="top-start"
+                    :width="312"
+                    :show="reportSkillPopoverShow"
+                    @update:show="(v) => (reportSkillPopoverShow = v)"
+                  >
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="ai-home-tool-link ai-home-tool-action ai-home-composer-tool"
+                        :disabled="(!composerInputWhileLoading && sending) || reportAgentSkillsLoading"
+                      >
+                        <n-icon :size="14" :component="LayersOutline" />
+                        <span>{{ t("reportGeneration.selectReportType") }}</span>
+                      </button>
+                    </template>
+                    <div class="ai-home-skills-popover">
+                      <div class="ai-home-skills-popover__title">{{ t("reportGeneration.reportSkills") }}</div>
+                      <div v-if="reportAgentSkillsLoading" class="ai-home-skills-popover__loading">
+                        <n-spin :size="19" />
+                      </div>
+                      <div v-else-if="!reportAgentSkills.length" class="ai-home-skills-popover__empty">
+                        {{ t("chat.agentSkills.skillEmpty") }}
+                      </div>
+                      <button
+                        v-for="skill in reportAgentSkills"
+                        :key="skill.name"
+                        type="button"
+                        class="ai-home-skills-popover__item"
+                        @click="useReportAgentSkill(skill)"
+                      >
+                        <span class="ai-home-skills-popover__item-name">
+                          {{ skill.title || skill.name }}
+                        </span>
+                        <span v-if="skill.description" class="ai-home-skills-popover__item-desc">
+                          {{ skill.description }}
+                        </span>
+                      </button>
+                    </div>
+                  </n-popover>
+                  <n-popover
+                    v-if="showReportTools && started && reportOptimizePresets.length"
+                    trigger="click"
+                    placement="top-start"
+                    :width="312"
+                    :show="reportOptimizePopoverShow"
+                    @update:show="(v) => (reportOptimizePopoverShow = v)"
+                  >
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="ai-home-tool-link ai-home-tool-action ai-home-composer-tool"
+                        :disabled="!composerInputWhileLoading && sending"
+                      >
+                        <n-icon :size="14" :component="SparklesOutline" />
+                        <span>{{ t("reportGeneration.selectReportOptimize") }}</span>
+                      </button>
+                    </template>
+                    <div class="ai-home-skills-popover">
+                      <div class="ai-home-skills-popover__title">{{ t("reportGeneration.optimizePresets") }}</div>
+                      <button
+                        v-for="p in reportOptimizePresets"
+                        :key="p.id"
+                        type="button"
+                        class="ai-home-skills-popover__item"
+                        @click="useReportOptimizePreset(p)"
+                      >
+                        <span class="ai-home-skills-popover__item-name">{{ p.label }}</span>
+                        <span v-if="p.description" class="ai-home-skills-popover__item-desc">
+                          {{ p.description }}
+                        </span>
+                      </button>
+                    </div>
+                  </n-popover>
                   <n-popover
                     v-if="enableAgentSkills"
                     trigger="click"
@@ -2567,6 +2661,7 @@ defineExpose({
                           @click="selectModel(opt)"
                         >
                           <span class="ai-home-skills-popover__item-name">{{ opt.label }}</span>
+                          <span v-if="opt.desc" class="ai-home-skills-popover__item-desc">{{ opt.desc }}</span>
                         </button>
                       </div>
                     </div>
@@ -2693,6 +2788,12 @@ defineExpose({
   background: var(--platform-accent-gradient-soft);
   border: 1px solid var(--platform-accent-border-soft);
   box-shadow: 0 5px 19px color-mix(in srgb, var(--platform-accent) 10%, transparent);
+}
+
+.ai-home-icon--dynamic {
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .ai-home-icon--sm {
@@ -2826,20 +2927,6 @@ defineExpose({
   padding: 0 24px 14px;
   transform: none;
   background: transparent;
-}
-
-.ai-home-tools {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 7px;
-  width: 100%;
-  padding-left: 2px;
-  margin-bottom: 2px;
-}
-
-.ai-home-tools--stack {
-  margin-bottom: 0;
 }
 
 .ai-home-tool-link {
@@ -3003,7 +3090,6 @@ defineExpose({
 
 .ai-home-skills-popover__title {
   font-size: 11px;
-  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--platform-text-tertiary);
@@ -3013,7 +3099,7 @@ defineExpose({
 .ai-home-skills-popover__loading,
 .ai-home-skills-popover__empty {
   padding: 14px 10px;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--platform-text-tertiary);
   text-align: center;
 }
@@ -3044,14 +3130,12 @@ defineExpose({
 }
 
 .ai-home-skills-popover__item-name {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
   color: var(--platform-text);
 }
 
 .ai-home-model-group__title {
   font-size: 11px;
-  font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--platform-text-tertiary);
@@ -3067,13 +3151,9 @@ defineExpose({
 }
 
 .ai-home-skills-popover__item-desc {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
   color: var(--platform-text-tertiary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 /* ── Third-party AI badge row ── */
@@ -3096,7 +3176,7 @@ defineExpose({
   align-items: center;
   justify-content: center;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #fff;
 }
@@ -3160,7 +3240,7 @@ defineExpose({
 
 .ai-home-chat-header--minimal {
   justify-content: flex-end;
-  padding: 10px 19px 4px;
+  padding: 0 19px 4px;
   background: transparent;
   border-bottom: none;
 }
@@ -3204,7 +3284,7 @@ defineExpose({
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 24px 10px;
+  padding: 0 24px 10px;
   -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
   background:
@@ -3215,7 +3295,7 @@ defineExpose({
 .ai-home-messages-inner {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .ai-home-load-older {
@@ -3284,48 +3364,34 @@ defineExpose({
   max-width: 100%;
   padding: 14px 19px;
   border-radius: 17px;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.65;
   word-break: break-word;
 }
 
+/* 用户消息气泡：均匀圆角 */
 .ai-home-bubble--user {
   width: fit-content;
   max-width: 100%;
   background: var(--platform-bg-tertiary);
   color: var(--platform-text);
-  border: 1px solid var(--platform-border);
-  border-bottom-right-radius: 5px;
+  border: none;
+  border-radius: 17px;
   white-space: pre-wrap;
-  font-size: 15px;
+  font-size: 13px;
   padding: 10px 16px;
   backdrop-filter: blur(4px);
   transition: box-shadow 0.2s ease;
 }
 
-/* 用户消息气泡：渐变蓝色 + 精致圆角 + 深度感阴影 */
-.ai-home-bubble--user {
-  background: linear-gradient(135deg, var(--platform-accent-secondary) 0%, var(--platform-accent) 100%);
-  color: #fff;
-  border: none;
-  border-bottom-right-radius: 4px;
-  box-shadow: 0 1px 3px rgba(10, 107, 255, 0.2), 0 2px 8px rgba(10, 107, 255, 0.12);
-  font-kerning: normal;
-  -webkit-font-smoothing: antialiased;
-  letter-spacing: var(--platform-tracking-tight, -0.01em);
-}
-
-/* 助手气泡：对话气泡样式 — 与用户气泡风格一致 */
+/* 助手消息：无气泡无背板 */
 .ai-home-bubble--bot {
   position: relative;
   width: 100%;
-  padding: 16px 20px;
-  border-radius: 17px;
-  border-bottom-left-radius: 4px;
-  background: var(--platform-bg-secondary);
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.7;
   color: var(--platform-text);
-  border: 1px solid var(--platform-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .ai-home-bubble--error {
@@ -3391,8 +3457,6 @@ defineExpose({
   font-size: 16px;
   line-height: 1.55;
   color: var(--platform-text-secondary);
-  max-height: 8.5em;
-  overflow: hidden;
 }
 
 .ai-home-msg-collapsed {
@@ -3434,7 +3498,7 @@ defineExpose({
 
 .ai-home-bubble--bot :deep(p) {
   margin: 0 0 0.6em;
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1.7;
   color: var(--platform-text);
   font-kerning: normal;
@@ -3450,7 +3514,7 @@ defineExpose({
 .ai-home-bubble--bot :deep(ol) {
   margin: 0.5em 0;
   padding-left: 1.4em;
-  font-size: 15px;
+  font-size: 13px;
   line-height: 1.7;
 }
 
@@ -3769,7 +3833,137 @@ defineExpose({
   color: #fff;
 }
 
+/* ── 最终回复折叠面板 ── */
+.ai-home-final-panels {
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.ai-home-final-panels :deep(.n-collapse-item__header) {
+  font-size: 13px;
+}
+
+.ai-home-panel-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--platform-text-secondary);
+}
+
+.ai-home-panel-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--platform-accent);
+  line-height: 1;
+}
+
+.ai-home-panel-body {
+  padding: 4px 0 8px;
+}
+
+.ai-home-panel-citation {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--platform-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.ai-home-panel-citation:hover {
+  background: color-mix(in srgb, var(--platform-accent) 8%, transparent);
+}
+
+.ai-home-panel-citation-idx {
+  flex-shrink: 0;
+  color: var(--platform-text-tertiary);
+  min-width: 18px;
+}
+
+.ai-home-panel-citation-title {
+  flex: 1;
+  word-break: break-word;
+}
+
+.ai-home-panel-citation-url {
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  color: var(--platform-text-tertiary);
+  font-size: 12px;
+  direction: rtl;
+  text-align: right;
+}
+
+.ai-home-panel-plan-step {
+  padding: 4px 0;
+}
+
+.ai-home-panel-plan-step-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--platform-text);
+  margin-bottom: 2px;
+}
+
+.ai-home-panel-plan-step-summary {
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+  margin: 2px 0 4px;
+  line-height: 1.45;
+}
+
+.ai-home-panel-plan-substeps {
+  padding-left: 8px;
+}
+
+.ai-home-panel-plan-substep {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 1px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--platform-text-tertiary);
+}
+
+.ai-home-panel-plan-substep-dot {
+  flex-shrink: 0;
+  color: var(--platform-accent);
+  font-size: 10px;
+}
+
+.ai-home-panel-thinking-text {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--platform-text-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 6px 8px;
+  margin-top: 4px;
+  background: var(--platform-bg-tertiary);
+  border-radius: 6px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 .ai-report-citations {
   margin-top: 17px;
 }
+
 </style>

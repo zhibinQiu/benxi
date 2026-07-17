@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -154,12 +155,12 @@ class KnowledgeAgenticToolkit:
 
     def kg_planning_context(self, question: str) -> ToolResult:
         if not self.include_kg:
-            return ToolResult("kg_context", True, "未启用本体图谱", data=None)
+            return ToolResult("kg_context", True, "未启用知识图谱", data=None)
         try:
             from app.core.permissions import user_has_permission
             from app.services.kg_service import retrieve_kg_context_for_question
 
-            if not user_has_permission(self.db, self.user, "feature.kg_palantir"):
+            if not user_has_permission(self.db, self.user, "feature.kg"):
                 return ToolResult("kg_context", True, "无图谱权限", data=None)
             ctx = retrieve_kg_context_for_question(self.db, self.user, question)
             if not ctx or not ctx.context_text:
@@ -181,14 +182,10 @@ class KnowledgeAgenticToolkit:
         if not self.web_enabled:
             return ToolResult("web_search", True, "联网检索未开启", data=[])
         try:
-            from app.services.searxng_service import (
-                SearxngNotConfiguredError,
-                SearxngSearchError,
-                search_web,
-            )
-
             cap = max_items or self.web_max_items
-            items, _ = search_web(q, page_size=cap, db=self.db)
+            items = _web_search_via_skill_sync(self.db, self.user, q, max_items=cap)
+            if items is None:
+                raise RuntimeError("联网检索技能返回空")
             added = 0
             for row in items:
                 url = (row.get("url") or "").strip()
@@ -205,8 +202,6 @@ class KnowledgeAgenticToolkit:
                 f"联网「{q[:36]}」新增 {added} 条（累计 {len(self._web_items)} 条）",
                 data={"items": items, "query": q},
             )
-        except (SearxngNotConfiguredError, SearxngSearchError) as exc:
-            return ToolResult("web_search", False, str(exc), error=str(exc))
         except Exception as exc:
             logger.warning("Agentic web_search 失败 q=%r: %s", q, exc)
             return ToolResult("web_search", False, f"联网检索失败：{exc}", error=str(exc))
@@ -248,3 +243,41 @@ class KnowledgeAgenticToolkit:
 
 
 ToolRunner = Callable[[KnowledgeAgenticToolkit, str], ToolResult]
+
+
+def _web_search_via_skill_sync(
+    db: Session,
+    user: User,
+    query: str,
+    *,
+    max_items: int = 8,
+) -> list[dict] | None:
+    """Sync wrapper: invoke web-search skill and return raw items.
+
+    Runs via asyncio.run() since callers (report gathering, knowledge QA)
+    execute in thread pools (run_db_task) where no event loop is active.
+    """
+    from app.skills.executor import invoke_skill_tool
+    from app.skills.types import SkillInvocationContext
+
+    q = (query or "").strip()
+    if not q:
+        return None
+
+    ctx = SkillInvocationContext(db=db, user=user)
+    try:
+        result = asyncio.run(
+            invoke_skill_tool(
+                ctx,
+                skill_name="web-search",
+                tool_name="search",
+                params={"query": q, "max_items": max_items},
+            )
+        )
+    except Exception:
+        logger.warning("web-search skill 调用失败 q=%r", q, exc_info=True)
+        return None
+
+    if not result.ok or not result.data:
+        return None
+    return list(result.data.get("items") or [])

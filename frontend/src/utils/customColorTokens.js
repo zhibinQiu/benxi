@@ -160,7 +160,7 @@ export function buildCustomCssTokens(primaryHex, isDark) {
         "0 12px 34px rgba(0, 0, 0, 0.26)",
         `0 0 0 1px ${rgba(base, 0.06)}`,
       ].join(", "),
-      "--platform-focus-ring": `0 0 0 4px ${rgba(accent, 0.28)}`,
+      "--platform-focus-ring": `0 0 0 3px ${rgba(base, 0.18)}`,
       "--platform-modal-shadow": [
         "0 29px 58px rgba(0, 0, 0, 0.36)",
         `0 10px 24px ${rgba(base, 0.1)}`,
@@ -238,7 +238,7 @@ export function buildCustomCssTokens(primaryHex, isDark) {
       `0 10px 29px ${rgba(base, 0.08)}`,
       `0 2px 7px ${rgba(base, 0.05)}`,
     ].join(", "),
-    "--platform-focus-ring": `0 0 0 4px ${rgba(base, 0.26)}`,
+    "--platform-focus-ring": `0 0 0 3px ${rgba(base, 0.12)}`,
   };
 }
 

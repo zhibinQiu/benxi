@@ -65,13 +65,12 @@
   position: relative;
   flex-shrink: 0;
   box-sizing: border-box;
-  border: 1px solid var(--platform-ui-glass-border, var(--platform-border)) !important;
-  border-top: 1px solid var(--platform-ui-glass-border, var(--platform-divider)) !important;
+  border: 1px solid var(--platform-border) !important;
+  border-top: 1px solid var(--platform-divider) !important;
   border-radius: var(--platform-radius-md, 14px);
-  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-glass-strong)) !important;
-  box-shadow: var(--platform-ui-layer-shadow) !important;
-  backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
-  -webkit-backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
+  background: var(--platform-bg-elevated) !important;
+  box-shadow: none !important;
+
 }
 
 .feature-bottom-strip::before {
@@ -123,7 +122,7 @@
 .header-extension .documents-actions-bar,
 .header-extension .subscriptions-actions-bar,
 .header-extension .translate-actions-bar {
-  padding: 5px 24px 12px;
+  padding: 3px 24px 5px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -135,16 +134,11 @@
   flex-wrap: wrap;
   gap: 10px;
   width: 100%;
-  min-height: 43px;
+  min-height: 24px;
 }
 
 .header-extension .subsystem-extra-bar {
   background: transparent;
-}
-
-.header-extension .subscriptions-actions-bar,
-.header-extension .translate-actions-bar {
-  border-bottom: 1px solid var(--platform-border);
 }
 
 .header-extension .documents-actions-toolbar,
@@ -155,7 +149,11 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  min-height: 48px;
+  min-height: 32px;
+}
+
+.header-extension .translate-actions-bar {
+  border-bottom: 1px solid var(--platform-border);
 }
 
 /* 文档中心操作条（旧：内容区 feature-local-nav，保留兼容） */
@@ -196,7 +194,7 @@
 
 .page-toolbar.feature-local-nav {
   justify-content: flex-end;
-  min-height: 58px;
+  min-height: 32px;
 }
 
 .page-subheader.feature-local-nav,

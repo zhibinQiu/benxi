@@ -17,11 +17,6 @@ router = APIRouter(
     tags=["embed-proxy"],
 )
 
-public_router = APIRouter(
-    prefix="/embed-proxy",
-    tags=["embed-proxy"],
-)
-
 _HOP_BY_HOP = {
     "connection",
     "keep-alive",

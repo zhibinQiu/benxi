@@ -19,5 +19,5 @@ def test_source_footer_lists_kb_and_kg():
         ),
     )
     assert "知识库（2 条片段）" in footer
-    assert "本体图谱（2 实体 / 1 关系）" in footer
-    assert footer.index("本体图谱") < footer.index("知识库")
+    assert "知识图谱（2 实体 / 1 关系）" in footer
+    assert footer.index("知识图谱") < footer.index("知识库")

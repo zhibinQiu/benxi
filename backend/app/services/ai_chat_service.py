@@ -128,13 +128,13 @@ def build_ai_home_source_footer(
     ):
         ec = kg_context.entity_count or len(kg_context.matched_entity_ids or [])
         rc = kg_context.relation_count or 0
-        label = f"本体图谱（{ec} 实体"
+        label = f"知识图谱（{ec} 实体"
         if rc:
             label += f" / {rc} 关系"
         label += "）"
         parts.append(label)
     elif ch.get("kg"):
-        parts.append("本体图谱")
+        parts.append("知识图谱")
     if web_count:
         parts.append(f"联网检索（{web_count} 条）")
     elif ch.get("web"):
@@ -914,13 +914,15 @@ async def iter_chat_with_ai_agent_stream(
         )
         if tool_reply_streamed and normalized_reply and normalized_reply != tool_reply:
             yield sse_replace(normalized_reply)
+        # Only pass URL-based web citations as display_citations (deep research links)
+        display_citations = [c for c in tool_citations if c.get("url") and c.get("source") == "web"]
         async for payload in _iter_stream_turn_tail(
             user_id=user_id,
             message=message,
             history=history,
             conversation_id=conversation_id,
             normalized_reply=normalized_reply,
-            display_citations=[],
+            display_citations=display_citations,
             kg_context=kg_context,
             streamed_content=tool_reply_streamed or tool_reply_replaced,
             tool_loop=True,

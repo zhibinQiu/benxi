@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_client_ip, require_permission
 from app.database import get_db
 from app.models.org import User
-from app.schemas.agent_profile import AgentProfileDetailOut, AgentProfileOut, AgentProfilePatchIn
+from app.schemas.agent_profile import (
+    AgentProfileDetailOut,
+    AgentProfileOut,
+    AgentProfilePatchIn,
+    KnowledgeMountCreateIn,
+)
 from app.schemas.aip_external_agent import (
     AipExternalAgentCreateIn,
     AipExternalAgentOut,
@@ -246,6 +251,7 @@ def patch_system_agent(
         enabled=body.enabled,
         service_enabled=body.service_enabled,
         skill_names=body.skill_names,
+        runtime_tool_names=body.runtime_tool_names,
     )
     write_audit(
         db,
@@ -654,3 +660,75 @@ def delete_agent_skill(
         ip_address=client_ip,
     )
     return ApiResponse(data=None)
+
+
+# ── 知识库文件夹挂载 ─────────────────────────────────────
+
+
+@router.get(
+    "/agents/{agent_id}/knowledge-mounts",
+    response_model=ApiResponse[list[dict]],
+)
+def list_knowledge_mounts(
+    agent_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[list[dict]]:
+    from app.services.agent_knowledge_mount_service import list_mounts
+
+    return ApiResponse(data=list_mounts(db, agent_id))
+
+
+@router.post(
+    "/agents/{agent_id}/knowledge-mounts",
+    response_model=ApiResponse[dict],
+)
+def add_knowledge_mount(
+    agent_id: str,
+    body: KnowledgeMountCreateIn,
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
+    db: Annotated[Session, Depends(get_db)],
+    client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
+) -> ApiResponse[dict]:
+    from app.services.agent_knowledge_mount_service import add_mount
+
+    result = add_mount(
+        db, agent_id,
+        dataset_id=body.dataset_id,
+        folder_id=body.folder_id,
+        scope=body.scope,
+        label=body.label or None,
+    )
+    write_audit(
+        db,
+        user_id=user.id,
+        action="agent_knowledge_mount.add",
+        resource_type="agent_profile",
+        detail={"agent_id": agent_id, "mount": result},
+        ip_address=client_ip,
+    )
+    return ApiResponse(data=result)
+
+
+@router.delete(
+    "/agents/{agent_id}/knowledge-mounts/{mount_id}",
+    response_model=ApiResponse[None],
+)
+def remove_knowledge_mount(
+    agent_id: str,
+    mount_id: str,
+    user: Annotated[User, Depends(require_permission("feature.agent_skills"))],
+    db: Annotated[Session, Depends(get_db)],
+    client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
+) -> ApiResponse[None]:
+    from app.services.agent_knowledge_mount_service import remove_mount
+
+    remove_mount(db, agent_id, mount_id)
+    write_audit(
+        db,
+        user_id=user.id,
+        action="agent_knowledge_mount.remove",
+        resource_type="agent_profile",
+        detail={"agent_id": agent_id, "mount_id": mount_id},
+        ip_address=client_ip,
+    )
+    return ApiResponse()

@@ -7,6 +7,9 @@ from app.agentkit.tools.schema import (
     compact_tool_parameters_schema,
 )
 from app.agentkit.tools.validate import (
+    coerce_dict_field,
+    coerce_list_field,
+    coerce_string_list,
     format_validation_error,
     validate_tool_arguments,
 )
@@ -19,6 +22,9 @@ __all__ = [
     "validate_tool_arguments",
     "format_validation_error",
     "compress_tool_result",
+    "coerce_dict_field",
+    "coerce_list_field",
+    "coerce_string_list",
 ]
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401

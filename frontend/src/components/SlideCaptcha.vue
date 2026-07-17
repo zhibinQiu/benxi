@@ -220,7 +220,6 @@ html[data-theme="dark"] .text-captcha__image-placeholder {
   padding: 0 16px;
   text-align: center;
   font-size: 22px;
-  font-weight: 600;
   font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   letter-spacing: 10px;
   border: 2px solid var(--platform-border, rgba(148, 163, 184, 0.28));

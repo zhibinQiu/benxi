@@ -62,7 +62,7 @@ export function useSubscriptionImportFlow({ router, route, ui }) {
       }
       if (attempt >= INDEX_POLL_MAX) {
         indexing.value = false;
-        ui.info("索引仍在进行，请稍后在「我的文件」查看状态");
+        ui.info("索引仍在进行，请稍后在「文档管理」查看状态");
         return;
       }
       indexing.value = true;

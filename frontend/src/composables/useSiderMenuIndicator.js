@@ -1,6 +1,6 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
-/** 与 menu-liquid-glass.css 中 --sider-menu-glass-inset-* 保持一致 */
+/** 与 sider-menu.css 中指示条 inset 保持一致 */
 function readMenuGlassInset(contentEl) {
   const collapsed = contentEl.classList.contains("n-menu-item-content--collapsed");
   if (collapsed) {

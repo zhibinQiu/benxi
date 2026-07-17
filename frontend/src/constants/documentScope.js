@@ -21,6 +21,7 @@ export const LIBRARY_FOLDER_ORDER = Object.freeze([
   "team",
   "department",
   "company",
+  "shared",
 ]);
 
 /** 需选择组织节点的分级（根/二级/三级） */

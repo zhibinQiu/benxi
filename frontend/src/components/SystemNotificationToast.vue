@@ -1,9 +1,9 @@
 <script setup>
 import { useRouter } from "vue-router";
-import { NotificationsOutline, CloseOutline } from "@vicons/ionicons5";
+import { NotificationsOutline } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import { useI18n } from "../composables/useI18n";
-import { acknowledgeToast, dismissToast, useNotificationAlerts } from "../composables/useNotificationAlerts";
+import { acknowledgeToast, useNotificationAlerts } from "../composables/useNotificationAlerts";
 import { PLATFORM_Z } from "../constants/zIndex.js";
 
 const router = useRouter();
@@ -34,14 +34,6 @@ function onOpen(toast) {
       >
         <button
           type="button"
-          class="system-notif-card__close"
-          :aria-label="t('common.close')"
-          @click.stop="dismissToast(toast.key)"
-        >
-          <n-icon :size="19" :component="CloseOutline" />
-        </button>
-        <button
-          type="button"
           class="system-notif-card__body"
           @click="onOpen(toast)"
         >
@@ -49,7 +41,6 @@ function onOpen(toast) {
             <n-icon :size="24" :component="NotificationsOutline" />
           </span>
           <span class="system-notif-card__text">
-            <strong class="system-notif-card__title">{{ toast.notification.title }}</strong>
             <span v-if="toast.notification.body" class="system-notif-card__desc">
               {{ toast.notification.body }}
             </span>
@@ -64,7 +55,7 @@ function onOpen(toast) {
 <style scoped>
 .system-notif-stack {
   position: fixed;
-  top: calc(var(--platform-header-height, 67px) + 14px);
+  top: 0;
   right: 19px;
   display: flex;
   flex-direction: column;
@@ -76,9 +67,9 @@ function onOpen(toast) {
 .system-notif-card {
   position: relative;
   pointer-events: auto;
-  border-radius: var(--platform-radius-md, 14px);
+  border-radius: var(--platform-card-radius);
   border: 1px solid color-mix(in srgb, var(--platform-accent) 35%, var(--platform-border));
-  background: var(--platform-surface, #fff);
+  background: var(--platform-card-bg);
   box-shadow:
     0 14px 38px color-mix(in srgb, var(--platform-accent) 18%, transparent),
     0 2px 10px rgba(15, 23, 42, 0.08);
@@ -89,34 +80,12 @@ function onOpen(toast) {
   animation: system-notif-shake 0.62s cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
-.system-notif-card__close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 1199px;
-  background: transparent;
-  color: var(--platform-text-tertiary);
-  cursor: pointer;
-}
-
-.system-notif-card__close:hover {
-  background: var(--platform-accent-soft);
-  color: var(--platform-accent);
-}
-
 .system-notif-card__body {
   display: flex;
   align-items: flex-start;
   gap: 14px;
   width: 100%;
-  padding: 17px 48px 17px 17px;
+  padding: 17px;
   border: none;
   background: transparent;
   text-align: left;
@@ -146,13 +115,6 @@ function onOpen(toast) {
   display: flex;
   flex-direction: column;
   gap: 5px;
-}
-
-.system-notif-card__title {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--platform-text);
 }
 
 .system-notif-card__desc {

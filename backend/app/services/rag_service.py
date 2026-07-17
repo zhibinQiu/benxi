@@ -23,39 +23,12 @@ from app.services.document_service import get_document
 def _sync_docs_to_knowflow(
     db: Session, user: User, docs
 ) -> dict[str, str]:
-    """返回已有索引映射；仅对尚未完成索引的文档提交后台任务。"""
+    """返回已有索引映射。"""
     from app.domains.knowledge.gateway import knowledge
-    from app.services.document_index_service import (
-        enrich_document_index_meta,
-        is_index_ready_meta,
-    )
-    from app.services.document_service import resolve_current_version
-    from app.services.knowledge_sync_job_service import enqueue_document_knowledge_index
     from app.services.ragflow_sync_service import allowed_ragflow_doc_map
 
     ids = [str(d.id) for d in docs]
     mapping = allowed_ragflow_doc_map(db, user, ids)
-    if not knowledge.enabled():
-        return mapping
-
-    meta_by_doc = enrich_document_index_meta(
-        db, user, list(docs), live_ragflow=False
-    )
-    for doc in docs:
-        if is_index_ready_meta(meta_by_doc.get(str(doc.id))):
-            continue
-        version_id = None
-        version = resolve_current_version(db, doc)
-        if version:
-            version_id = version.id
-        enqueue_document_knowledge_index(
-            db,
-            user_id=user.id,
-            document_id=doc.id,
-            version_id=version_id,
-            force=False,
-            document_title=doc.title,
-        )
     return mapping
 
 

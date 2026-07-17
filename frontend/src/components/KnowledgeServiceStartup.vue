@@ -24,12 +24,11 @@ defineProps({
   gap: 17px;
   padding: 26px 34px;
   border-radius: var(--platform-radius-lg, 14px);
-  background: var(--platform-bg-glass-strong);
-  border: 1px solid var(--platform-glass-border);
-  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
-  backdrop-filter: blur(var(--platform-glass-blur, 26px)) saturate(var(--platform-glass-saturate, 185%));
-  -webkit-backdrop-filter: blur(var(--platform-glass-blur, 26px))
-    saturate(var(--platform-glass-saturate, 185%));
+  background: var(--platform-bg-elevated);
+  border: 1px solid var(--platform-border);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   animation: ks-startup-in 0.22s var(--platform-ease-smooth, ease-out);
 }
 

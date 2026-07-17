@@ -19,7 +19,7 @@ SKILL_WEB = "web-search"
 TOOL_WEB = "search"
 SKILL_KB = "knowledge-search"
 TOOL_KB = "retrieve"
-SKILL_KG = "kg-palantir"
+SKILL_KG = "kg"
 TOOL_KG = "query_entities"
 SKILL_RESEARCH = "knowledge-research"
 
@@ -27,6 +27,7 @@ SKILL_RESEARCH = "knowledge-research"
 ATOMIC_TOOL_WEB_SEARCH = "web_search"
 ATOMIC_TOOL_KNOWLEDGE_RETRIEVE = "knowledge_retrieve"
 ATOMIC_TOOL_KG_QUERY = "kg_query"
+ATOMIC_TOOL_ONTOLOGY_QUERY = "ontology_query"
 
 _MAX_QUERYABLE_DOCS = 100
 

@@ -4,7 +4,7 @@
 用于单进程或多服务场景下的专精智能体协作。
 """
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.aip.aid import AidConfig, build_agent_aid, orchestrator_aid, parse_agent_id_from_aid
 from app.agentkit.aip.auth import generate_aip_sk, hash_aip_sk, is_aip_sk_token, sk_display_prefix

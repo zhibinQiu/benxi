@@ -5,7 +5,7 @@ name: invoke_context_subagent
 browser_digest→浏览器自动化页面取证；explore→多源并行检索；deep_research→深度联网调研。
 
 ## When to use
-- explore：多源并行检索（web-search + knowledge-search + kg-palantir），省 Token
+- explore：多源并行检索（web-search + knowledge-search + kg），省 Token
 - deep_research：深度联网研究——子 Agent 自主分析意图、多关键词搜索、FireCrawl 读全文、交叉验证
 - browser_digest：浏览器页面取证，打开指定 URL 获取页面内容与结构
 - skill-dev 创建 Skill 时的纯主题检索（无浏览器操作）

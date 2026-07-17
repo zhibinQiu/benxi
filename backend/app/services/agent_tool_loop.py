@@ -493,7 +493,7 @@ async def _emit_synthesized_complete(
         "type": "workflow",
         "data": {
             "phase": "agent_thinking",
-            "title": "整理最终回答",
+            "title": "根据工具执行结果汇总回答",
             "detail": "",
             "tool": "agent.synthesize",
             "step_id": synth_id,
@@ -504,6 +504,7 @@ async def _emit_synthesized_complete(
     sess.release_before_io()
     _synth_t0 = time.monotonic()
     synth_reply_parts: list[str] = []
+    synth_failed = False
     async for ev in iter_synthesize_tool_loop_user_reply_events(
         user_message=user_message,
         loop_state=loop_state,
@@ -522,6 +523,18 @@ async def _emit_synthesized_complete(
                 for chunk in _emit_report_reply_deltas(text):
                     synth_reply_parts.append(str(chunk["text"]))
                     yield chunk
+        elif ev.get("type") == "error":
+            synth_failed = True
+            yield {"type": "error", "message": ev.get("message", "回答合成失败")}
+    if synth_failed:
+        _logger.warning("synthesis LLM failed after %.1fs", time.monotonic() - _synth_t0)
+        # 合成失败时用 fallback 回复兜底
+        from app.services.agent_reply_synth import fallback_tool_loop_reply
+
+        fallback = fallback_tool_loop_reply(user_message, loop_state)
+        if fallback:
+            yield {"type": "delta", "text": fallback}
+            synth_reply_parts.append(fallback)
     _synth_elapsed = time.monotonic() - _synth_t0
     _logger.info("synthesis LLM done in %.1fs", _synth_elapsed)
     final_reply = "".join(synth_reply_parts).strip() or None
@@ -642,6 +655,20 @@ async def _iter_agent_tool_loop_body(
         )
     else:
         all_tool_specs = build_agent_tool_specs(db, user, agent_id=agent_id)
+    # Agent 有知识库挂载且未显式传入 scoped_doc_ids 时自动注入
+    if scoped_doc_ids is None and agent_id:
+        try:
+            from app.services.agent_knowledge_mount_service import (
+                list_mounts,
+                resolve_mounts_to_doc_ids,
+            )
+            mounts = list_mounts(db, agent_id)
+            if mounts:
+                resolved = resolve_mounts_to_doc_ids(db, user, mounts)
+                if resolved:
+                    scoped_doc_ids = resolved
+        except Exception:
+            pass  # 静默失败，不阻塞工具循环
     rounds = max_rounds if max_rounds is not None else _default_max_rounds()
     loop_state: LoopState = {
         "citations": [],
@@ -665,7 +692,7 @@ async def _iter_agent_tool_loop_body(
             "type": "workflow",
             "data": {
                 "phase": "agent_thought",
-                "title": "已从本体图谱读取部门成员",
+                "title": "已从知识图谱读取部门成员",
                 "detail": "",
                 "tool": "kg.org_members",
                 "step_id": loop_id,
@@ -689,7 +716,9 @@ async def _iter_agent_tool_loop_body(
         user_message
     )
     if not skip_kg_plan and not _messages_have_prefetched_research(working):
-        kg_plan_text = resolve_kg_planning_context(
+        sess.release_before_io()
+        db, user = sess.open()
+        kg_plan_text = await resolve_kg_planning_context(
             db, user, user_message, history=chat_history
         )
 
@@ -1510,17 +1539,9 @@ async def _iter_agent_tool_loop_body(
             if instruction_only_skill:
                 # 指令型技能（如 mermaid-diagram）的正文输出即为完整交付
                 break
-            if execution_goal_satisfied(
-                execution_plan,
-                loop_state,
-                user_message,
-                plan_has_script=plan_has_script,
-            ):
-                break
-            # 有可交付文字但目标尚未全部完成（如先回答文字再生成图表），
-            # 将已交付内容加入 working 供自适应重规划后继续处理
-            working.append({"role": "assistant", "content": deliverable_reply})
-            continue
+            # LLM 在本次推理中选择了输出正文而不调用任何工具，
+            # 这意味着 LLM 认为答复已完整。无需自适应重规划。
+            break
 
         if execution_goal_satisfied(
             execution_plan,

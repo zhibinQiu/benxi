@@ -369,6 +369,7 @@ def ensure_todo_schema(engine: Engine) -> None:
             note TEXT NOT NULL DEFAULT '',
             status VARCHAR(16) NOT NULL DEFAULT 'pending',
             sort_order INTEGER NOT NULL DEFAULT 0,
+            due_at TIMESTAMPTZ,
             completed_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -376,6 +377,7 @@ def ensure_todo_schema(engine: Engine) -> None:
         """,
         "CREATE INDEX IF NOT EXISTS ix_todo_items_user_status ON todo_items (user_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_todo_items_user_sort ON todo_items (user_id, status, sort_order)",
+        "ALTER TABLE todo_items ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ",
     ]
     with engine.begin() as conn:
         for sql in statements:
@@ -1168,6 +1170,10 @@ def ensure_agent_profile_schema(engine: Engine) -> None:
         ALTER TABLE agent_profile_bindings
         ADD COLUMN IF NOT EXISTS runtime_tool_names JSONB NOT NULL DEFAULT '[]'::jsonb
         """,
+    """
+        ALTER TABLE agent_profile_bindings
+        ADD COLUMN IF NOT EXISTS knowledge_mounts JSONB NOT NULL DEFAULT '[]'::jsonb
+        """,
     ]
     with engine.begin() as conn:
         for sql in statements:
@@ -1309,40 +1315,6 @@ def drop_legacy_carbon_market_tables(engine: Engine) -> None:
         )
 
 
-def ensure_digital_robot_task_schema(engine: Engine) -> None:
-    statements = [
-        """
-        CREATE TABLE IF NOT EXISTS digital_robot_tasks (
-            id UUID PRIMARY KEY,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            title VARCHAR(256) NOT NULL,
-            description TEXT NOT NULL DEFAULT '',
-            plan_json JSONB,
-            schedule_mode VARCHAR(32) NOT NULL DEFAULT 'immediate',
-            scheduled_at TIMESTAMPTZ,
-            cron_expression VARCHAR(128),
-            interval_seconds INTEGER,
-            status VARCHAR(32) NOT NULL DEFAULT 'pending',
-            last_run_at TIMESTAMPTZ,
-            next_run_at TIMESTAMPTZ,
-            last_result_summary TEXT,
-            last_screenshot_key VARCHAR(512),
-            execution_count INTEGER NOT NULL DEFAULT 0,
-            error_message TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        """,
-        "CREATE INDEX IF NOT EXISTS ix_digital_robot_tasks_user ON digital_robot_tasks (user_id)",
-        "CREATE INDEX IF NOT EXISTS ix_digital_robot_tasks_status ON digital_robot_tasks (status)",
-        "CREATE INDEX IF NOT EXISTS ix_digital_robot_tasks_next_run ON digital_robot_tasks (next_run_at)",
-        "CREATE INDEX IF NOT EXISTS ix_digital_robot_tasks_scheduled_at ON digital_robot_tasks (scheduled_at)",
-    ]
-    with engine.begin() as conn:
-        for sql in statements:
-            conn.execute(text(sql))
-
-
 def run_light_schema_patches(engine: Engine) -> None:
     """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
     drop_legacy_carbon_market_tables(engine)
@@ -1356,7 +1328,6 @@ def run_light_schema_patches(engine: Engine) -> None:
     ensure_aip_secret_keys_schema(engine)
     ensure_scheduled_notification_schema(engine)
     ensure_scheduled_rpa_task_schema(engine)
-    ensure_digital_robot_task_schema(engine)
 
 
 def run_all_schema_migrations(engine: Engine) -> None:

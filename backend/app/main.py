@@ -16,8 +16,8 @@ from app.api import (
     aip,
     aip_admin,
     mcp,
-    digital_robot,
     auth,
+    browser_rpa,
     chat_history,
     departments,
     documents,
@@ -28,6 +28,7 @@ from app.api import (
     menu_settings,
     monitor,
     notifications,
+    ontology,
     roles,
     system,
     todos,
@@ -132,6 +133,14 @@ async def lifespan(_app: FastAPI):
 
     await asyncio.to_thread(get_redis_client)
 
+    # 初始化 Neo4j 图数据库连接与 Schema
+    try:
+        from app.core.neo4j import init_neo4j_schema, close_neo4j
+
+        await init_neo4j_schema()
+    except Exception:
+        _logger.exception("Neo4j 初始化失败（不影响启动，图谱功能将不可用）")
+
     def _recover_index_jobs_background() -> None:
         try:
             from app.services.document_index_coordinator import recover_interrupted_jobs
@@ -179,6 +188,13 @@ async def lifespan(_app: FastAPI):
 
         shutdown_last_seen_executor()
         shutdown_background_executor(wait=False)
+        # 关闭 Neo4j 连接池
+        try:
+            from app.core.neo4j import close_neo4j
+
+            await close_neo4j()
+        except Exception:
+            _logger.exception("Neo4j 关闭异常")
 
 
 def create_app() -> FastAPI:
@@ -326,7 +342,6 @@ def create_app() -> FastAPI:
     def root() -> ApiResponse[dict]:
         return ApiResponse(data={"name": settings.app_name, "version": __version__})
 
-    app.include_router(digital_robot.router, prefix=prefix)
     app.include_router(chat_history.router, prefix=prefix)
     app.include_router(auth.router, prefix=prefix)
     app.include_router(departments.router, prefix=prefix)
@@ -335,7 +350,6 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix=prefix)
     app.include_router(knowledge_embed.router, prefix=prefix)
     app.include_router(system.router, prefix=prefix)
-    app.include_router(embed_proxy_api.public_router, prefix=prefix)
     app.include_router(embed_proxy_api.router, prefix=prefix)
     mount_routers(app, prefix)
     app.include_router(jobs.router, prefix=prefix)
@@ -349,9 +363,8 @@ def create_app() -> FastAPI:
     app.include_router(aip.router, prefix=prefix)
     app.include_router(aip_admin.router, prefix=prefix)
     app.include_router(mcp.router, prefix=prefix)
-    from app.api import browser_rpa
-
     app.include_router(browser_rpa.router, prefix=prefix)
+    app.include_router(ontology.router, prefix=prefix)
 
     return app
 

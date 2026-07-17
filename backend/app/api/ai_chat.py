@@ -261,7 +261,7 @@ def confirm_tool_execution(
     前端通过此端点将用户选择通知后端的轮询循环。
     """
     from app.core.exceptions import bad_request, forbidden
-    from app.core.human_in_the_loop import confirm_key as _get_key
+    from app.core.human_in_the_loop import confirm_key as _get_key, set_confirm_response
     from app.core.redis_client import get_redis_client as _get_redis
 
     client = _get_redis()
@@ -438,7 +438,7 @@ def resume_from_checkpoint(
     return StreamingResponse(
         stream_sse_payloads(
             db,
-            iter_resumed_agent_stream(
+            lambda: iter_resumed_agent_stream(
                 user_id=user.id,
                 checkpoint_id=checkpoint_id,
                 conversation_id=None,

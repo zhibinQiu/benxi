@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from app.core.tool_skill_taxonomy import SKILL_SKILL_DEV
+from app.core.tool_skill_taxonomy import (
+    SKILL_BROWSER_AUTOMATION,
+    SKILL_DEPT_ADMIN,
+    SKILL_DOCUMENT_LIBRARY,
+    SKILL_NOTIFICATION,
+    SKILL_PLATFORM_OPS,
+    SKILL_SKILL_DEV,
+    SKILL_USER_ADMIN,
+)
 from app.skills.builtin import domain_handlers as dh
 from app.skills.builtin import handlers as h
 from app.skills.registry import register_skill
@@ -95,6 +103,50 @@ def register_builtin_skills() -> None:
                 "read_document_content",
             ),
             tools=(),
+        ),
+        SkillDefinition(
+            name="deep-research",
+            title="深度研究",
+            description=(
+                "对复杂课题进行多轮、多角度的互联网深度调研：分析问题、拆解子主题、"
+                "生成多组搜索关键词、FireCrawl 读取网页全文、跨源交叉验证矛盾数据、"
+                "输出带引用的结构化研究报告。适合需要深入调研的复杂问题。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id=None,
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            catalog_tier="resident",
+            use_when=(
+                "需对复杂课题进行深度调研、多个角度交叉验证、"
+                "获取最新数据和多方观点时使用"
+            ),
+            dont_use_when=(
+                "简单知识查询（直接用 web_search / knowledge_retrieve）、"
+                "内部知识库检索、浏览器自动化操作"
+            ),
+            output=(
+                "带引用的结构化研究报告（含研究概述、关键发现、多源数据对比、矛盾说明）"
+            ),
+            tools=(
+                SkillToolSpec(
+                    name="call",
+                    description=(
+                        "对指定课题进行深度联网调研，委托子 Agent 执行多轮搜索与交叉验证"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "required": ["task"],
+                        "properties": {
+                            "task": {
+                                "type": "string",
+                                "description": "研究课题/问题描述，应包含足够的上下文和具体需求",
+                            },
+                        },
+                    },
+                    handler=h.handle_deep_research,
+                ),
+            ),
         ),
         SkillDefinition(
             name="pdf-translate",
@@ -381,6 +433,180 @@ def register_builtin_skills() -> None:
                         "update_uploaded_skill_file, delete_uploaded_skill"
                     ),
                     handler=dh.handle_skill_development_call,
+                ),
+            ),
+        ),
+        # --- 浏览器自动化 ---
+        SkillDefinition(
+            name=SKILL_BROWSER_AUTOMATION,
+            title="浏览器自动化",
+            description=(
+                "浏览器自动化操作（导航/点击/填表/截图/RPA 流程录制回放）；"
+                "经 invoke_skill(browser-automation, call, {operation, params}) 调用。"
+            ),
+            source=SkillSource.BUILTIN,
+            readiness=SkillReadiness.READY,
+            catalog_visible=False,
+            catalog_tier="resident",
+            use_when=(
+                "需要浏览器自动化操作：导航网页、点击元素、填表、截图、"
+                "RPA 流程录制/回放、域名查询"
+            ),
+            dont_use_when="纯文本检索、平台文档操作、AI 对话、知识库检索",
+            output="浏览器操作结果或截图",
+            tools=(
+                _domain_call_spec(
+                    description="执行浏览器自动化操作",
+                    allowed_hint=(
+                        "browser_navigate, browser_snapshot, browser_click, "
+                        "browser_type, browser_fill, browser_screenshot, "
+                        "browser_save_workflow, browser_replay_workflow, "
+                        "browser_run_task, browser_close_session, "
+                        "schedule_browser_workflow"
+                    ),
+                    handler=dh.handle_browser_automation_call,
+                ),
+            ),
+        ),
+        # --- 文档库 ---
+        SkillDefinition(
+            name=SKILL_DOCUMENT_LIBRARY,
+            title="文档库操作",
+            description=(
+                "文档库管理：搜索、读取、创建、移动、分享、删除文档与文件夹；"
+                "经 invoke_skill(document-library, call, {operation, params}) 调用。"
+            ),
+            source=SkillSource.BUILTIN,
+            readiness=SkillReadiness.READY,
+            catalog_visible=False,
+            catalog_tier="resident",
+            use_when=(
+                "需要操作文档库：搜索文档、读取内容、创建文档、移动/分享/删除文档、"
+                "管理文件夹"
+            ),
+            dont_use_when=(
+                "纯知识库语义检索（用 knowledge_retrieve）、"
+                "浏览器自动化、AI 对话"
+            ),
+            output="文档操作结果",
+            tools=(
+                _domain_call_spec(
+                    description="执行文档库操作",
+                    allowed_hint=(
+                        "search_documents_by_name, read_document_content, "
+                        "list_library_documents, list_manageable_documents, "
+                        "list_document_folders, create_kb_folder, "
+                        "create_library_document, rename_document, "
+                        "move_document, share_document, delete_document, "
+                        "update_kb_folder, delete_kb_folder, "
+                        "sync_document_knowledge, reindex_document"
+                    ),
+                    handler=dh.handle_document_library_call,
+                ),
+            ),
+        ),
+        # --- 平台操作 ---
+        SkillDefinition(
+            name=SKILL_PLATFORM_OPS,
+            title="平台操作",
+            description=(
+                "待办事项管理；"
+                "经 invoke_skill(platform-ops, call, {operation, params}) 调用。"
+            ),
+            source=SkillSource.BUILTIN,
+            readiness=SkillReadiness.READY,
+            catalog_visible=False,
+            catalog_tier="resident",
+            use_when="需要管理待办事项（创建/更新/删除/列出）",
+            dont_use_when="浏览器操作、文档库操作、知识检索",
+            output="操作结果",
+            tools=(
+                _domain_call_spec(
+                    description="执行平台待办操作",
+                    allowed_hint=(
+                        "list_todos, create_todo, update_todo, delete_todo"
+                    ),
+                    handler=dh.handle_platform_ops_call,
+                ),
+            ),
+        ),
+        # --- 通知 ---
+        SkillDefinition(
+            name=SKILL_NOTIFICATION,
+            title="通知管理",
+            description=(
+                "发送系统站内通知与定时提醒；"
+                "经 invoke_skill(notification, call, {operation, params}) 调用。"
+            ),
+            source=SkillSource.BUILTIN,
+            readiness=SkillReadiness.READY,
+            catalog_visible=False,
+            catalog_tier="resident",
+            use_when=(
+                "需要发送立即通知、设置定时提醒、查看已安排的定时通知、取消定时通知"
+            ),
+            dont_use_when="待办管理、文档库操作、浏览器操作",
+            output="通知发送或操作结果",
+            tools=(
+                _domain_call_spec(
+                    description="执行通知操作",
+                    allowed_hint=(
+                        "send_notification, schedule_notification, "
+                        "list_scheduled_notifications, "
+                        "cancel_scheduled_notification"
+                    ),
+                    handler=dh.handle_notification_call,
+                ),
+            ),
+        ),
+        # --- 用户管理 ---
+        SkillDefinition(
+            name=SKILL_USER_ADMIN,
+            title="用户管理",
+            description=(
+                "平台用户管理：创建/更新/删除用户；"
+                "经 invoke_skill(user-administration, call, {operation, params}) 调用。"
+            ),
+            source=SkillSource.BUILTIN,
+            readiness=SkillReadiness.READY,
+            catalog_visible=False,
+            catalog_tier="resident",
+            use_when="需要管理平台用户（创建/更新/删除）",
+            dont_use_when="部门管理、文档操作、浏览器操作",
+            output="用户管理操作结果",
+            tools=(
+                _domain_call_spec(
+                    description="执行用户管理操作",
+                    allowed_hint=(
+                        "list_users, create_user, update_user, delete_user"
+                    ),
+                    handler=dh.handle_user_admin_call,
+                ),
+            ),
+        ),
+        # --- 部门管理 ---
+        SkillDefinition(
+            name=SKILL_DEPT_ADMIN,
+            title="部门管理",
+            description=(
+                "平台部门管理：创建/更新/删除部门；"
+                "经 invoke_skill(dept-administration, call, {operation, params}) 调用。"
+            ),
+            source=SkillSource.BUILTIN,
+            readiness=SkillReadiness.READY,
+            catalog_visible=False,
+            catalog_tier="resident",
+            use_when="需要管理平台部门（创建/更新/删除/列出）",
+            dont_use_when="用户管理、文档操作、浏览器操作",
+            output="部门管理操作结果",
+            tools=(
+                _domain_call_spec(
+                    description="执行部门管理操作",
+                    allowed_hint=(
+                        "list_departments, create_department, "
+                        "update_department, delete_department"
+                    ),
+                    handler=dh.handle_dept_admin_call,
                 ),
             ),
         ),

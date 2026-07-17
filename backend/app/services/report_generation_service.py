@@ -149,6 +149,19 @@ _REPORT_CITATION_RULE = (
     "勿在正文中提及材料来源名称或类型。"
 )
 
+_REPORT_TEMPLATE_INSTRUCTION = """用户上传了已有的报告或模板作为参考，请严格遵循其结构、章节设置和写作风格，
+根据用户当前需求生成新的报告内容。
+
+参考模板使用规则：
+1. **结构遵循**：保持与模板一致的章节层次、标题风格和逻辑结构，不要擅自增减或调整章节顺序
+2. **内容填充**：对模板中的具体内容（如数据、案例、分析、政策等），根据下方编号材料进行填充和完善；材料不足处在相应章节标注「待补充」
+3. **占位符处理**：若模板中含有占位符（如「{}」「待填写」「xxx」等），应替换为实际内容或根据上下文补充
+4. **沿用与升级**：模板中已有的实质性分析、判断和结论，可以在新报告中沿用或改写升级
+5. **格式一致**：保持与模板一致的格式风格（表格、列表、引用格式等）
+6. **不复制无效内容**：不要直接复制模板中的示例性/占位性文字到新报告正文中
+
+模板内容位于下方【上传的参考模板/报告】区域。"""
+
 REPORT_OPTIMIZE_PRESETS: dict[str, dict[str, str]] = {
     "expand": {
         "label": "扩写充实",
@@ -850,6 +863,7 @@ def _build_messages(
     insufficient_note: str | None = None,
     local_searched: bool = False,
     web_searched: bool = False,
+    attachment_context: str | None = None,
 ) -> list[dict]:
     limits = get_prompt_limits()
     local_context = truncate_to_budget(
@@ -871,6 +885,8 @@ def _build_messages(
         )
     if topic:
         parts.append(f"报告主题：{topic}")
+    if attachment_context:
+        parts.append(attachment_context)
     if intent in ("follow_up", "format_adjust") and _has_prior_assistant_turn(history):
         parts.append(
             "多轮说明：对话历史中 role=assistant 的消息为上一版报告正文；"
@@ -978,19 +994,19 @@ def _gather_report_simple(
 
     user = resolve_db_user(db, user_id)
 
-    # 加载本体图谱上下文（多跳推理），供规划器感知实体关系链
+    # 加载知识图谱上下文（多跳推理），供规划器感知实体关系链
     kg_ctx_data = None
     if doc_ids:
         from app.core.permissions import user_has_permission
         from app.services.kg_service import retrieve_kg_context_for_question
 
-        if user_has_permission(db, user, "feature.kg_palantir"):
+        if user_has_permission(db, user, "feature.kg"):
             try:
                 kg_ctx_data = retrieve_kg_context_for_question(
                     db, user, f"{topic} {message}".strip()
                 )
             except Exception:
-                logger.warning("报告材料收集：本体图谱上下文检索失败", exc_info=True)
+                logger.warning("报告材料收集：知识图谱上下文检索失败", exc_info=True)
     kg_plan_text = kg_ctx_data.context_text if kg_ctx_data else ""
 
     local_queries, web_queries, reasoning = _plan_report_gathering(
@@ -1095,6 +1111,7 @@ async def iter_report_generation_stream(
     document_ids: list[str] | None = None,
     use_web_search: bool = True,
     use_agentic: bool = True,
+    attachment_session_id: str | None = None,
 ) -> AsyncIterator[str]:
     """报告生成 SSE：确定性材料收集 + 纯撰写流式 LLM（无 tool_calls）。"""
     import json
@@ -1304,7 +1321,7 @@ async def iter_report_generation_stream(
             question=f"{topic} {message}".strip(),
         )
 
-    # 合并本体图谱上下文（多跳推理结果），图谱优先于文档库编号
+    # 合并知识图谱上下文（多跳推理结果），图谱优先于文档库编号
     if gathered.kg_ctx is not None:
         from app.services.kg_service import merge_kg_qa_into_context
 
@@ -1318,11 +1335,93 @@ async def iter_report_generation_stream(
     )
     await asyncio.sleep(0)
 
+    # 加载附件模板（用户上传的已有报告/模板）
+    attachment_context: str | None = None
+    if attachment_session_id:
+        yield json.dumps(
+            {
+                "workflow": {
+                    "phase": "node_started",
+                    "title": "加载参考模板",
+                    "detail": "正在读取用户上传的已有报告/模板…",
+                }
+            },
+            ensure_ascii=False,
+        )
+        await asyncio.sleep(0)
+        try:
+            from app.core.text_utils import truncate_text
+            from app.services.ai_chat_attachment_service import (
+                get_owned_session,
+            )
+
+            manifest = get_owned_session(user_id, attachment_session_id)
+            files = manifest.get("files") or []
+            usable = [f for f in files if isinstance(f, dict)]
+            if usable:
+                template_parts: list[str] = []
+                for idx, item in enumerate(usable, 1):
+                    title = str(item.get("file_name") or f"附件{idx}")
+                    text = truncate_text(str(item.get("full_text") or ""), 6000)
+                    warning = (item.get("warning") or "").strip()
+                    template_parts.append(f"### 模板 {idx}: {title}")
+                    if warning:
+                        template_parts.append(f"（提取说明: {warning}）")
+                    template_parts.append(text or "（未能提取正文）")
+                    template_parts.append("")
+                body = "\n".join(template_parts).strip()
+                if body:
+                    attachment_context = (
+                        _REPORT_TEMPLATE_INSTRUCTION
+                        + "\n\n【上传的参考模板/报告】\n"
+                        + body
+                    )
+                    yield json.dumps(
+                        {
+                            "workflow": {
+                                "phase": "agent_thought",
+                                "title": "参考模板已加载",
+                                "detail": f"已读取 {len(usable)} 个文件作为报告参考模板",
+                                "tool": "attachment_load",
+                                "status": "done",
+                            }
+                        },
+                        ensure_ascii=False,
+                    )
+                else:
+                    yield json.dumps(
+                        {
+                            "workflow": {
+                                "phase": "agent_thought",
+                                "title": "附件内容为空",
+                                "detail": "无法从上传的文件中提取正文内容",
+                                "tool": "attachment_load",
+                                "status": "done",
+                            }
+                        },
+                        ensure_ascii=False,
+                    )
+        except Exception:
+            logger.warning("报告生成加载附件模板失败", exc_info=True)
+            yield json.dumps(
+                {
+                    "workflow": {
+                        "phase": "agent_thought",
+                        "title": "附件模板加载失败",
+                        "detail": "已上传的参考模板读取失败，将继续使用其他材料生成",
+                        "tool": "attachment_load",
+                        "status": "done",
+                    }
+                },
+                ensure_ascii=False,
+            )
+
     db = SessionLocal()
     try:
         from app.core.async_db import resolve_db_user
 
         user = resolve_db_user(db, user_id)
+
         messages = _build_messages(
             db=db,
             user=user,
@@ -1339,6 +1438,7 @@ async def iter_report_generation_stream(
             insufficient_note=insufficient_note,
             local_searched=bool(gathered.local_queries),
             web_searched=bool(gathered.web_queries),
+            attachment_context=attachment_context,
         )
     finally:
         db.close()

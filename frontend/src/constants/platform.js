@@ -6,8 +6,8 @@
 export const PLATFORM_APP_NAME = "本析";
 export const PLATFORM_AI_ASSISTANT_NAME = "小析";
 export const PLATFORM_COPYRIGHT_HOLDER = "烟台海颐软件";
-export const PLATFORM_VERSION = "4.6.0";
-export const PLATFORM_VERSION_LABEL = "v4.6.0";
+export const PLATFORM_VERSION = "4.8.1";
+export const PLATFORM_VERSION_LABEL = "v4.8.1";
 export const PLATFORM_RELEASE_LABEL = "内测";
 
 export function platformCopyrightText() {

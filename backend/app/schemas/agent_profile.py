@@ -44,3 +44,18 @@ class AgentCatalogItemOut(BaseModel):
     id: str
     title: str
     description: str
+
+
+class KnowledgeMountCreateIn(BaseModel):
+    dataset_id: str
+    folder_id: str
+    scope: str
+    label: str | None = None
+
+
+class KnowledgeMountOut(BaseModel):
+    id: str
+    dataset_id: str
+    folder_id: str
+    scope: str
+    label: str

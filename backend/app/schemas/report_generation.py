@@ -32,6 +32,10 @@ class ReportGenerationChatRequest(BaseModel):
     history: list[AiChatMessage] = Field(default_factory=list, max_length=40)
     conversation_id: str | None = Field(None, max_length=128)
     document_ids: list[str] = Field(default_factory=list, max_length=20)
+    attachment_session_id: str | None = Field(
+        None, max_length=64,
+        description="临时附件会话 ID，上传已有报告/模板作为参考",
+    )
 
 
 class ReportExportDocxRequest(BaseModel):

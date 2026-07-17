@@ -28,4 +28,4 @@ AgentKit 是本析平台智能体系统的核心工具箱，按职责分层：
 详细设计理念见 docs/zh/agent-philosophy.md 与 AGENTS.md。
 """
 
-__version__ = "4.6.0"
+from app import __version__  # noqa: F401 — single source of truth

@@ -167,9 +167,6 @@ function openDocument(citation, event) {
   cursor: pointer;
 }
 
-.chat-citation-num {
-  font-weight: 600;
-}
 
 .chat-citation-score {
   font-size: 13px;
@@ -221,6 +218,5 @@ function openDocument(citation, event) {
   background: rgba(234, 179, 8, 0.55);
   padding: 0 4px;
   border-radius: 4px;
-  font-weight: 700;
 }
 </style>

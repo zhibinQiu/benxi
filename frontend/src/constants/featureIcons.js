@@ -9,7 +9,7 @@ import {
   GridOutline,
   DocumentTextOutline,
   ListOutline,
-  AddOutline,
+  CreateOutline,
   GitNetworkOutline,
   NewspaperOutline,
   SearchOutline,
@@ -17,6 +17,7 @@ import {
   ExtensionPuzzleOutline,
   HardwareChipOutline,
   LeafOutline,
+  CubeOutline,
 } from "@vicons/ionicons5";
 
 /** 与系统功能插件 icon 字段一致 */
@@ -32,13 +33,14 @@ export const FEATURE_ICON_MAP = Object.freeze({
   grid: GridOutline,
   "document-text": DocumentTextOutline,
   list: ListOutline,
-  create: AddOutline,
+  create: CreateOutline,
   "git-network": GitNetworkOutline,
   newspaper: NewspaperOutline,
   search: SearchOutline,
   "extension-puzzle": ExtensionPuzzleOutline,
   "hardware-chip": HardwareChipOutline,
   leaf: LeafOutline,
+  "cube-outline": CubeOutline,
 });
 
 export function resolveFeatureIcon(key) {

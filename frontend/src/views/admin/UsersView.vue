@@ -1,35 +1,31 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
-import { CreateOutline } from "@vicons/ionicons5";
+import { CreateOutline, RefreshOutline, TrashOutline } from "@vicons/ionicons5";
 import { computed, onMounted, ref } from "vue";
 import {
-  NCard,
   NDataTable,
   NButton,
   NForm,
   NFormItem,
   NInput,
+  NPagination,
   NSelect,
-  NSpace } from "naive-ui";
+  NSpace,
+  NIcon } from "naive-ui";
 import {
   fetchUsers,
   createUser,
   updateUser,
-  deleteUser,
   fetchDepartments,
   fetchRoles } from "../../api/client";
+import { deleteUser } from "../../api/auth";
 import OrgDeptPickerTree from "../../components/OrgDeptPickerTree.vue";
-import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
 import AdminFormModal from "../../components/AdminFormModal.vue";
 import HintTooltip from "../../components/HintTooltip.vue";
 import { useAuth } from "../../composables/useAuth";
-import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
-import { deleteSequentially } from "../../utils/batchActions";
-import ListRefreshButton from "../../components/ListRefreshButton.vue";
-import ListTableFooter from "../../components/ListTableFooter.vue";
 import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
-import { renderIconAction } from "../../utils/tableIconActions.js";
+import { renderIconActionGroup } from "../../utils/tableIconActions.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -39,6 +35,12 @@ const users = ref([]);
 const page = ref(1);
 const pageSize = LIST_PAGE_SIZE;
 const total = ref(0);
+const displayInfo = computed(() => {
+  if (!total.value) return "";
+  const start = (page.value - 1) * pageSize + 1;
+  const end = Math.min(page.value * pageSize, total.value);
+  return `${total.value}条数据中的 ${start}-${end} 条`;
+});
 const departments = ref([]);
 /** 组织树展示用（含各页用户，用于部门选择树中标注成员） */
 const orgUsers = ref([]);
@@ -129,45 +131,12 @@ function isBootstrapUser(row) {
   return String(row?.phone || "") === BOOTSTRAP_PHONE;
 }
 
-function canSelectUser(row) {
-  if (isBootstrapUser(row)) return false;
-  if (row.id === currentUser.value?.id) return false;
-  return true;
-}
-
-const {
-  checkedRowKeys,
-  selectedRows,
-  selectedCount,
-  onCheckedRowKeysChange,
-  clearSelection,
-  selectionColumn} = useBatchTableSelection(users, { canSelect: canSelectUser });
-
-const canBatchDelete = computed(
-  () => selectedRows.value.length > 0 && selectedRows.value.every(canSelectUser)
-);
-
 const columns = computed(() => [
-  selectionColumn(),
-  {
-    title: t("admin.users.phone"),
-    key: "phone",
-    width: 156,
-    render: (r) => r.phone || "—"},
   {
     title: t("admin.users.displayName"),
     key: "display_name",
     width: 144,
     render: (r) => r.display_name || r.username || "—"},
-  { title: t("admin.users.email"), key: "email", render: (r) => r.email || "—" },
-  {
-    title: t("admin.users.status"),
-    key: "status",
-    width: 96,
-    render: (r) =>
-      r.status === "active"
-        ? t("admin.users.statusActive")
-        : t("admin.users.statusDisabled")},
   {
     title: t("admin.users.department"),
     key: "department_ids",
@@ -181,14 +150,22 @@ const columns = computed(() => [
   {
     title: t("common.actions"),
     key: "actions",
-    width: 86,
+    width: 136,
     render: (row) =>
-      renderIconAction({
-        label: t("common.edit"),
-        icon: CreateOutline,
-        type: "primary",
-        onClick: () => openEdit(row),
-      }),
+      renderIconActionGroup([
+        {
+          label: t("common.edit"),
+          icon: CreateOutline,
+          type: "primary",
+          onClick: () => openEdit(row),
+        },
+        {
+          label: t("common.delete"),
+          icon: TrashOutline,
+          type: "error",
+          onClick: () => onDelete(row),
+        },
+      ]),
   },
 ]);
 
@@ -230,7 +207,6 @@ async function load() {
     }
     users.value = data.items;
     total.value = data.total;
-    clearSelection();
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -353,36 +329,14 @@ async function submit() {
   }
 }
 
-function handleBatchDelete() {
-  const rows = selectedRows.value;
-  if (!rows.length) return;
-  const content =
-    rows.length === 1
-      ? t("admin.users.batchDeleteContentSingle", {
-          name: rows[0].display_name || rows[0].username || rows[0].phone,
-        })
-      : t("admin.users.batchDeleteContentMulti", { count: rows.length });
-  ui.confirmDelete({
-    title: t("admin.users.batchDeleteTitle"),
-    content,
+async function onDelete(row) {
+  await ui.confirmDelete({
+    title: t("admin.users.deleteTitle"),
+    content: t("admin.users.deleteConfirm", { name: row.display_name || row.username || row.phone }),
     onPositive: async () => {
-      const { deleted, failed } = await deleteSequentially(rows, (row) => deleteUser(row.id));
-      if (failed.length) {
-        ui.warning(
-          t("admin.batchDeletePartial", {
-            success: deleted,
-            failed: failed.length,
-            error: failed[0].message || t("admin.unknownError"),
-          })
-        );
-      } else {
-        ui.success(
-          deleted > 1 ? t("admin.users.batchDeletedMulti", { count: deleted }) : t("admin.users.deleted")
-        );
-      }
-      clearSelection();
+      await deleteUser(row.id);
+      ui.success(t("admin.users.deleted"));
       await load();
-      return !failed.length;
     },
   });
 }
@@ -394,36 +348,42 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="admin-list-table">
-    <n-card class="admin-page admin-page--list-table">
-      <div class="admin-table-toolbar">
-        <BatchTableToolbar
-          :count="selectedCount"
-          :disabled="!canBatchDelete"
-          @action="handleBatchDelete"
-        />
-        <n-space align="center" :size="10">
-          <ListRefreshButton :loading="loading" @click="load" />
-          <n-button type="primary" @click="openCreate">{{ t("admin.users.create") }}</n-button>
-        </n-space>
-      </div>
+  <div class="users-card">
+    <div class="admin-list-table">
+      <Teleport to="#header-page-tools">
+        <n-button
+          quaternary
+          circle
+          size="small"
+          class="header-icon-btn"
+          :class="{ 'header-icon-btn--spinning': loading }"
+          :aria-label="t('common.refresh')"
+          :disabled="loading"
+          @click="load"
+        >
+          <n-icon :size="14" :component="RefreshOutline" />
+        </n-button>
+      </Teleport>
       <n-data-table
         :columns="columns"
         :data="users"
         :loading="loading"
         :scroll-x="900"
         :row-key="(row) => row.id"
-        :checked-row-keys="checkedRowKeys"
-        :pagination="false"
-        @update:checked-row-keys="onCheckedRowKeysChange"
       />
-    </n-card>
-    <ListTableFooter
-      :page="page"
-      :page-size="pageSize"
-      :item-count="total"
-      @update:page="onPageChange"
-    />
+    </div>
+    <div class="users-table-footer">
+      <span class="users-table-footer__info">{{ displayInfo }}</span>
+      <div class="users-table-footer__pages">
+        <NPagination
+          :page="page"
+          :page-size="pageSize"
+          :item-count="total"
+          :page-slot="7"
+          @update:page="onPageChange"
+        />
+      </div>
+    </div>
   </div>
 
   <AdminFormModal
@@ -529,3 +489,45 @@ onMounted(async () => {
     </template>
   </AdminFormModal>
 </template>
+
+<style scoped>
+.users-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  background: #fcfcfc;
+  padding: 12px 16px;
+  padding-top: 0;
+}
+
+.users-card :deep(.n-data-table-th),
+.users-card :deep(.n-data-table-td) {
+  padding: 6px 12px;
+}
+
+.users-card :deep(.n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-strong);
+  vertical-align: middle;
+}
+
+.users-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
+}
+
+.users-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid var(--platform-border-strong);
+  font-size: var(--platform-font-size-sm);
+  color: var(--platform-text-tertiary);
+}
+
+.users-table-footer__pages :deep(.n-pagination) {
+  justify-content: flex-end;
+}
+
+.users-table-footer__pages :deep(.n-pagination-item) {
+  font-size: var(--platform-font-size-sm);
+}
+</style>

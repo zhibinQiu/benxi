@@ -1,0 +1,126 @@
+/* =============================================================================
+ * 全局组件样式库（components.css）
+ *
+ * 平台所有通用 UI 组件（按钮、卡片、表格、输入框、标签页等）的全局样式。
+ * 在此文件中统一管理，确保修改一处即全局生效。
+ *
+ * 优先级：本文件在 App.vue 末尾引入，覆盖（override）前置 CSS 和 Naive UI 默认样式。
+ * ============================================================================= */
+
+/* =============================================================================
+ * 一、卡片系统（Card）
+ * ============================================================================= */
+/* =============================================================================
+ * 三、数据表格（DataTable）
+ * ============================================================================= */
+.n-data-table {
+  border-radius: 0;
+  overflow: visible;
+}
+
+/* =============================================================================
+ * 四、输入框（Input）
+ * ============================================================================= */
+.n-input {
+  border-radius: var(--platform-radius);
+}
+
+/* =============================================================================
+ * 五、菜单指示条（Menu / Sidebar）
+ * ============================================================================= */
+/* 选中指示条 — 覆盖 Naive UI 默认背景高亮，用滑动玻璃条替代 */
+.sider-menu .n-menu-item-content.n-menu-item-content--selected::before,
+.sider-menu .n-menu-item-content.n-menu-item-content--child-active::before {
+  opacity: 0 !important;
+}
+.sider-menu .n-menu-item-content.n-menu-item-content--selected > *,
+.sider-menu .n-menu-item-content.n-menu-item-content--child-active > * {
+  position: relative;
+  z-index: 2 !important;
+}
+
+/* =============================================================================
+ * 六、模态弹窗 & 气泡层全局覆盖
+ * ============================================================================= */
+/* 弹窗内的按钮统一使用无背景伪元素规则 */
+.admin-form-modal__footer .n-button::before,
+.n-modal .n-card__footer .n-button::before,
+.n-modal .n-card__content .n-button::before,
+.n-dialog .n-dialog__action .n-button::before,
+.n-drawer-footer .n-button::before {
+  display: none !important;
+  opacity: 0 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* =============================================================================
+ * 七、侧栏底部用户区域（左对齐修复）
+ * ============================================================================= */
+/* 按钮本身浏览器默认 text-align:center，强制左对齐 */
+.sider-user-trigger {
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+/* 用户信息容器及其子文本强制左对齐 */
+.sider-user-info,
+.sider-username,
+.sider-user-role {
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+/* 用户名本身是块级文本，确保文本靠左 */
+.sider-username {
+  text-align: left !important;
+}
+.sider-user-role {
+  text-align: left !important;
+}
+/* 缩小左边缘 padding，使文字起始位置与菜单项对齐 */
+.sider-user-section {
+  padding-left: 4px !important;
+}
+
+/* =============================================================================
+ * 八、搜索栏 / Pills（Pill 式输入条）
+ * ============================================================================= */
+/* Pill 式搜索条中的输入框去掉内置边框 */
+.pill-input .n-input,
+.pill-input :deep(.n-input),
+.subscriptions-search-hub__input :deep(.n-input),
+.subscriptions-search-hub__input :deep(.n-input) {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+.pill-input .n-input__border,
+.pill-input .n-input__state-border,
+.subscriptions-search-hub__input :deep(.n-input__border),
+.subscriptions-search-hub__input :deep(.n-input__state-border) {
+  display: none !important;
+}
+
+/* =============================================================================
+ * 九、开关（Switch / Toggle）
+ * ============================================================================= */
+/* 缩小所有开关尺寸（默认 medium 用 20px 高，约 38px 宽） */
+.n-switch {
+  --n-height: 20px !important;
+  --n-button-width: 16px !important;
+  --n-button-height: 16px !important;
+  --n-box-shadow-focus: none !important;
+}
+/* small 尺寸进一步缩小 */
+.n-switch.n-switch--small {
+  --n-height: 18px !important;
+  --n-button-width: 14px !important;
+  --n-button-height: 14px !important;
+}
+
+/* =============================================================================
+ * 十、全局焦点/悬浮描边统一样式 — 不使用主题色
+ * ============================================================================= */
+/* 覆盖浏览器默认的蓝色 :focus-visible 描边，改为灰色 */
+*:focus-visible {
+  outline-color: var(--platform-border-strong) !important;
+}

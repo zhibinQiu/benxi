@@ -1,69 +1,63 @@
-/* 蓝色系统配色 — 主色 #0067ff（扁平底，与 OpenAI 壳层一致） */
+/* 默认蓝色系统配色 — 蓝色系（扁平底） */
 
 html[data-color-scheme="blue"]:root,
 html[data-color-scheme="blue"][data-theme="light"] {
-  --platform-glass-border: #e5e5e5;
-  --platform-glass-outline: #e5e5e5;
-  --platform-glass-depth: none;
-  --liquid-flow-b: transparent;
-  --liquid-flow-c: transparent;
-  --liquid-edge-shadow: transparent;
-  --menu-glass-flow-b: #ececf1;
-  --menu-glass-accent-soft: rgba(0, 103, 255, 0.12);
-  --menu-glass-accent-mid: rgba(0, 103, 255, 0.08);
-  --menu-glass-accent-glow: transparent;
-
-  --platform-bg-base: #ffffff;
-  --platform-bg: #ffffff;
+  --platform-bg-base: #f8f8f8;
+  --platform-bg: #f8f8f8;
   --platform-modal-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.05),
-    0 10px 29px rgba(0, 0, 0, 0.12);
-  --platform-bg-secondary: #f7f7f8;
-  --platform-bg-tertiary: #ececf1;
-  --platform-border: #e5e5e5;
-  --platform-border-strong: #d9d9e3;
-  --platform-divider: #ececf1;
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.04),
+    0 20px 48px rgba(0, 0, 0, 0.08),
+    0 48px 96px rgba(0, 0, 0, 0.06);
+  --platform-bg-secondary: #eaeaea;
+  --platform-bg-tertiary: #eeeeee;
+  --platform-border: rgba(0, 0, 0, 0.05);
+  --platform-border-strong: rgba(0, 0, 0, 0.09);
+  --platform-divider: rgba(0, 0, 0, 0.03);
+  --platform-icon: #686868;
 
-  --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --platform-shadow-lg: 0 10px 29px rgba(0, 0, 0, 0.12);
+  --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.02);
+  --platform-shadow-lg:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.04),
+    0 20px 48px rgba(0, 0, 0, 0.08),
+    0 48px 96px rgba(0, 0, 0, 0.06);
 
-  --platform-accent: #0067ff;
-  --platform-accent-hover: #0058db;
-  --platform-accent-pressed: #004abf;
-  --platform-accent-secondary: #3385ff;
-  --platform-accent-secondary-hover: #1a75ff;
-  --platform-accent-soft: rgba(0, 103, 255, 0.12);
-  --platform-accent-soft-2: rgba(0, 103, 255, 0.08);
-  --platform-accent-gradient: linear-gradient(180deg, #1a75ff 0%, #0067ff 100%);
-  --platform-accent-gradient-hover: linear-gradient(180deg, #3385ff 0%, #0058db 100%);
-  --platform-accent-gradient-soft: linear-gradient(180deg, #f7f7f8 0%, #ffffff 100%);
-  --platform-accent-muted: rgba(0, 103, 255, 0.08);
-  --platform-accent-muted-strong: rgba(0, 103, 255, 0.14);
-  --platform-accent-border: rgba(0, 103, 255, 0.35);
-  --platform-accent-border-soft: rgba(0, 103, 255, 0.2);
+  --platform-accent: #0a6bff;
+  --platform-accent-hover: #0058e0;
+  --platform-accent-pressed: #004ac2;
+  --platform-accent-secondary: #3b82ff;
+  --platform-accent-secondary-hover: #1a6cff;
+  --platform-accent-soft: rgba(10, 107, 255, 0.12);
+  --platform-accent-soft-2: rgba(10, 107, 255, 0.08);
+  --platform-accent-gradient: linear-gradient(180deg, #3b82ff 0%, #0a6bff 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #5c96ff 0%, #0058e0 100%);
+  --platform-accent-gradient-soft: #f3f3f3;
+  --platform-accent-muted: rgba(10, 107, 255, 0.08);
+  --platform-accent-muted-strong: rgba(10, 107, 255, 0.14);
+  --platform-accent-border: rgba(10, 107, 255, 0.35);
+  --platform-accent-border-soft: rgba(10, 107, 255, 0.2);
 
-  --platform-accent-stop-a: #cce0ff;
-  --platform-accent-stop-b: #0067ff;
-  --platform-accent-stop-c: #3385ff;
-  --platform-accent-stop-d: #004abf;
-  --platform-accent-stop-e: #0058db;
+  --platform-accent-stop-a: #d0e1ff;
+  --platform-accent-stop-b: #0a6bff;
+  --platform-accent-stop-c: #3b82ff;
+  --platform-accent-stop-d: #004ac2;
+  --platform-accent-stop-e: #0058e0;
 
-  --platform-loader-gradient-start: #cce0ff;
-  --platform-loader-gradient-mid: #66a3ff;
-  --platform-loader-gradient-end: #0067ff;
-  --platform-loader-path: rgba(0, 103, 255, 0.28);
-  --platform-loader-color: #0067ff;
+  --platform-loader-gradient-start: #d0e1ff;
+  --platform-loader-gradient-mid: #6ea3ff;
+  --platform-loader-gradient-end: #0a6bff;
+  --platform-loader-path: rgba(10, 107, 255, 0.28);
+  --platform-loader-color: #0a6bff;
 
-  --platform-shell-gradient: #ffffff;
-  --platform-header-bg: #ffffff;
-  --platform-sider-bg: #f7f7f8;
+  --platform-shell-gradient: #f8f8f8;
+  --platform-header-bg: #f8f8f8;
+  --platform-sider-bg: #f3f3f3;
+  --platform-toolbar-bg: #f3f3f3;
 
-  --platform-ui-glass-border: #e5e5e5;
-  --platform-ui-glass-rim: #e5e5e5;
-  --platform-ui-layer-shadow: none;
-
-  --platform-focus-ring: 0 0 0 2px rgba(0, 103, 255, 0.35);
+  --platform-focus-ring: 0 0 0 2px rgba(0, 0, 0, 0.1);
+  --platform-link: #22507c;
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
@@ -73,17 +67,6 @@ html[data-color-scheme="blue"][data-theme="light"] {
 }
 
 html[data-color-scheme="blue"][data-theme="dark"] {
-  --platform-glass-outline: rgba(255, 255, 255, 0.1);
-  --platform-glass-border: rgba(255, 255, 255, 0.1);
-  --platform-glass-depth: none;
-  --liquid-edge-shadow: transparent;
-  --liquid-flow-b: transparent;
-  --liquid-flow-c: transparent;
-  --menu-glass-flow-b: rgba(255, 255, 255, 0.08);
-  --menu-glass-accent-soft: rgba(77, 148, 255, 0.14);
-  --menu-glass-accent-mid: rgba(77, 148, 255, 0.1);
-  --menu-glass-accent-glow: transparent;
-
   --platform-bg-base: #212121;
   --platform-bg: #212121;
   --platform-bg-secondary: #171717;
@@ -96,42 +79,39 @@ html[data-color-scheme="blue"][data-theme="dark"] {
   --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
   --platform-shadow-lg: 0 14px 38px rgba(0, 0, 0, 0.45);
 
-  --platform-accent: #4d94ff;
-  --platform-accent-hover: #66a3ff;
-  --platform-accent-pressed: #3385ff;
-  --platform-accent-secondary: #66a3ff;
-  --platform-accent-secondary-hover: #4d94ff;
-  --platform-accent-soft: rgba(77, 148, 255, 0.14);
-  --platform-accent-soft-2: rgba(0, 103, 255, 0.2);
-  --platform-accent-gradient: linear-gradient(180deg, #66a3ff 0%, #0067ff 100%);
-  --platform-accent-gradient-hover: linear-gradient(180deg, #7ab0ff 0%, #4d94ff 100%);
+  --platform-accent: #3094ff;
+  --platform-accent-hover: #4da3ff;
+  --platform-accent-pressed: #1a7ee6;
+  --platform-accent-secondary: #4da3ff;
+  --platform-accent-secondary-hover: #3094ff;
+  --platform-accent-soft: rgba(48, 148, 255, 0.14);
+  --platform-accent-soft-2: rgba(48, 148, 255, 0.2);
+  --platform-accent-gradient: linear-gradient(180deg, #4da3ff 0%, #3094ff 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #6eb7ff 0%, #1a7ee6 100%);
   --platform-accent-gradient-soft: linear-gradient(180deg, #2f2f2f 0%, #212121 100%);
-  --platform-accent-muted: rgba(77, 148, 255, 0.12);
-  --platform-accent-muted-strong: rgba(77, 148, 255, 0.18);
-  --platform-accent-border: rgba(77, 148, 255, 0.35);
-  --platform-accent-border-soft: rgba(77, 148, 255, 0.22);
+  --platform-accent-muted: rgba(48, 148, 255, 0.12);
+  --platform-accent-muted-strong: rgba(48, 148, 255, 0.18);
+  --platform-accent-border: rgba(48, 148, 255, 0.35);
+  --platform-accent-border-soft: rgba(48, 148, 255, 0.22);
 
-  --platform-accent-stop-a: #cce0ff;
-  --platform-accent-stop-b: #4d94ff;
-  --platform-accent-stop-c: #3385ff;
-  --platform-accent-stop-d: #0067ff;
-  --platform-accent-stop-e: #66a3ff;
+  --platform-accent-stop-a: #94c4ff;
+  --platform-accent-stop-b: #3094ff;
+  --platform-accent-stop-c: #4da3ff;
+  --platform-accent-stop-d: #1a7ee6;
+  --platform-accent-stop-e: #4da3ff;
 
-  --platform-loader-gradient-start: #cce0ff;
-  --platform-loader-gradient-mid: #66a3ff;
-  --platform-loader-gradient-end: #0067ff;
-  --platform-loader-path: rgba(77, 148, 255, 0.26);
-  --platform-loader-color: #4d94ff;
+  --platform-loader-gradient-start: #94c4ff;
+  --platform-loader-gradient-mid: #4da3ff;
+  --platform-loader-gradient-end: #3094ff;
+  --platform-loader-path: rgba(48, 148, 255, 0.26);
+  --platform-loader-color: #3094ff;
 
   --platform-shell-gradient: #212121;
   --platform-header-bg: #212121;
   --platform-sider-bg: #171717;
 
-  --platform-ui-glass-border: rgba(255, 255, 255, 0.1);
-  --platform-ui-glass-rim: rgba(255, 255, 255, 0.1);
-  --platform-ui-layer-shadow: none;
-
-  --platform-focus-ring: 0 0 0 2px rgba(77, 148, 255, 0.35);
+  --platform-focus-ring: 0 0 0 2px rgba(255, 255, 255, 0.08);
+  --platform-link: #6a9fcf;
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
@@ -141,4 +121,75 @@ html[data-color-scheme="blue"][data-theme="dark"] {
   --platform-modal-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08),
     0 14px 38px rgba(0, 0, 0, 0.45);
+}
+
+/* ── 主题色恢复（多智能体/本析智能/知识检索/报告生成等界面使用蓝色主题） ── */
+.accent-theme {
+  --platform-accent: #3094ff;
+  --platform-accent-hover: #4da3ff;
+  --platform-accent-pressed: #1a7ee6;
+  --platform-accent-secondary: #4da3ff;
+  --platform-accent-secondary-hover: #3094ff;
+  --platform-accent-soft: rgba(48, 148, 255, 0.14);
+  --platform-accent-soft-2: rgba(48, 148, 255, 0.2);
+  --platform-accent-gradient: linear-gradient(180deg, #4da3ff 0%, #3094ff 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #6eb7ff 0%, #1a7ee6 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #eaf0ff 0%, #dce8ff 100%);
+  --platform-accent-muted: rgba(48, 148, 255, 0.12);
+  --platform-accent-muted-strong: rgba(48, 148, 255, 0.18);
+  --platform-accent-border: rgba(48, 148, 255, 0.35);
+  --platform-accent-border-soft: rgba(48, 148, 255, 0.22);
+  --platform-accent-stop-a: #94c4ff;
+  --platform-accent-stop-b: #3094ff;
+  --platform-accent-stop-c: #4da3ff;
+  --platform-accent-stop-d: #1a7ee6;
+  --platform-accent-stop-e: #4da3ff;
+  --platform-link: #22507c;
+  --platform-loader-gradient-start: #94c4ff;
+  --platform-loader-gradient-mid: #4da3ff;
+  --platform-loader-gradient-end: #3094ff;
+  --platform-loader-path: rgba(48, 148, 255, 0.26);
+  --platform-loader-color: #3094ff;
+  --platform-green: #3094ff;
+  --platform-green-hover: #4da3ff;
+  --platform-green-deep: #1a7ee6;
+  --platform-green-soft: #4da3ff;
+  --platform-green-surface: rgba(48, 148, 255, 0.14);
+  --platform-green-surface-2: rgba(48, 148, 255, 0.2);
+  --platform-focus-ring: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .accent-theme {
+  --platform-accent: #3094ff;
+  --platform-accent-hover: #4da3ff;
+  --platform-accent-pressed: #1a7ee6;
+  --platform-accent-secondary: #4da3ff;
+  --platform-accent-secondary-hover: #3094ff;
+  --platform-accent-soft: rgba(48, 148, 255, 0.18);
+  --platform-accent-soft-2: rgba(48, 148, 255, 0.24);
+  --platform-accent-gradient: linear-gradient(180deg, #4da3ff 0%, #3094ff 100%);
+  --platform-accent-gradient-hover: linear-gradient(180deg, #6eb7ff 0%, #1a7ee6 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #2f2f2f 0%, #212121 100%);
+  --platform-accent-muted: rgba(48, 148, 255, 0.16);
+  --platform-accent-muted-strong: rgba(48, 148, 255, 0.22);
+  --platform-accent-border: rgba(48, 148, 255, 0.4);
+  --platform-accent-border-soft: rgba(48, 148, 255, 0.26);
+  --platform-accent-stop-a: #4da3ff;
+  --platform-accent-stop-b: #3094ff;
+  --platform-accent-stop-c: #4da3ff;
+  --platform-accent-stop-d: #1a7ee6;
+  --platform-accent-stop-e: #4da3ff;
+  --platform-link: #6a9fcf;
+  --platform-loader-gradient-start: #4da3ff;
+  --platform-loader-gradient-mid: #3094ff;
+  --platform-loader-gradient-end: #1a7ee6;
+  --platform-loader-path: rgba(48, 148, 255, 0.3);
+  --platform-loader-color: #3094ff;
+  --platform-green: #3094ff;
+  --platform-green-hover: #4da3ff;
+  --platform-green-deep: #1a7ee6;
+  --platform-green-soft: #4da3ff;
+  --platform-green-surface: rgba(48, 148, 255, 0.18);
+  --platform-green-surface-2: rgba(48, 148, 255, 0.24);
+  --platform-focus-ring: 0 0 0 2px rgba(255, 255, 255, 0.12);
 }

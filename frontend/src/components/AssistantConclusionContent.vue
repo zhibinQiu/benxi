@@ -62,8 +62,7 @@ const showScreenshotGallery = computed(() => shots.value.length > 0);
 
 .assistant-conclusion__screenshot-label {
   margin-bottom: 10px;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 14px;
   color: var(--platform-text, #1e293b);
 }
 </style>

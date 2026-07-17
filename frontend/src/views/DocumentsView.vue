@@ -3,7 +3,6 @@ defineOptions({ name: "DocumentsView" });
 import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
-  NCard,
   NButton,
   NSpace,
   NDataTable,
@@ -19,18 +18,18 @@ import {
   NEmpty,
   NProgress,
   NText,
-  NIcon } from "naive-ui";
+  NIcon,
+  NCard } from "naive-ui";
 import {
   CreateOutline,
   TrashOutline,
   MoveOutline,
   ArrowBackOutline,
   SearchOutline,
-  ShareSocialOutline,
   CloudUploadOutline,
   RocketOutline,
   EyeOutline,
-  ReaderOutline,
+  ConstructOutline,
   RefreshOutline } from "@vicons/ionicons5";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
 import BatchPublishModal from "../components/BatchPublishModal.vue";
@@ -89,7 +88,7 @@ import {
   batchDeleteDocuments,
   deleteDocument,
   updateKbFolder } from "../api/documents.js";
-import { reindexUnindexedDocuments } from "../api/knowledge.js";
+import { fetchReindexUnindexedDocuments as reindexUnindexedDocuments } from "../api/knowledge.js";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 const route = useRoute();
@@ -102,6 +101,8 @@ const { loadDocumentLibrary, invalidateDocumentLibrary } = useDocumentLibrary();
 
 const loading = ref(false);
 const keyword = ref("");
+const searchOpen = ref(false);
+const searchInputRef = ref(null);
 const appliedSearch = ref("");
 const page = ref(1);
 const pageSize = ref(LIST_PAGE_SIZE);
@@ -489,7 +490,11 @@ const columns = computed(() => {
       title: t("documents.columns.status"),
       key: "status",
       width: 108,
-      render: (row) => docStatusLabel(row.status) || row.status});
+      render: (row) => {
+        const label = docStatusLabel(row.status) || row.status;
+        if (!label || label === "—") return "—";
+        return h(NTag, { size: "small", bordered: false }, { default: () => label });
+      }});
   }
   if (isSearchMode.value || activeScope.value === "all") {
     base.push(
@@ -891,6 +896,18 @@ function clearSearch() {
   appliedSearch.value = "";
   page.value = 1;
   if (hadSearch && isMainView.value) load();
+}
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value;
+  if (searchOpen.value) {
+    nextTick(() => searchInputRef.value?.focus?.());
+  } else {
+    keyword.value = "";
+    appliedSearch.value = "";
+    page.value = 1;
+    if (isMainView.value) load();
+  }
 }
 
 async function load({ force = false, background = false } = {}) {
@@ -1601,11 +1618,45 @@ watch(
   <div class="documents-page feature-page">
     <Teleport
       v-if="headerTeleportReady && headerExtensionActive"
-      to="#page-header-extension"
+      to="#header-actions-row"
     >
       <div class="documents-actions-bar">
         <div class="documents-actions-toolbar">
-        <n-space align="center" :size="5" class="documents-toolbar documents-toolbar--primary">
+          <!-- 核心操作：上传 / 重新构建 + 搜索 -->
+          <div class="documents-actions-core">
+            <IconAction
+              v-if="isMainView && usesKbFolders && !isSearchMode && hasAnyCreatableScope"
+              :label="t('documents.uploadDoc')"
+              :icon="CloudUploadOutline"
+              @click="openUploadModal('single')"
+            />
+            <IconAction
+              v-if="isMainView && !isSearchMode"
+              :label="t('documents.indexAction')"
+              :tooltip="t('documents.reindexUnindexedTitle')"
+              :icon="ConstructOutline"
+              :loading="reindexingUnindexed"
+              :disabled="reindexingUnindexed"
+              @click="handleReindexUnindexed"
+            />
+            <IconAction
+              :label="t('common.search')"
+              :icon="SearchOutline"
+              @click="toggleSearch"
+            />
+            <n-input
+              v-show="searchOpen"
+              v-model:value="keyword"
+              :placeholder="t('documents.searchPlaceholder')"
+              clearable
+              size="small"
+              class="documents-search"
+              @keyup.enter="runSearch"
+              @clear="clearSearch"
+              ref="searchInputRef"
+            />
+          </div>
+          <!-- 导航/后退按钮 -->
           <IconAction
             v-if="!isMainView"
             :label="t('common.backToList')"
@@ -1622,112 +1673,48 @@ watch(
               {{ appliedSearch }}
             </span>
           </template>
-          <template v-else-if="showFolderNavInActions">
-            <IconAction
-              :label="t('documents.backToFolders')"
-              :icon="ArrowBackOutline"
-              @click="backToKbFolders"
+          <!-- 筛选控件 -->
+          <template v-if="isMainView && !isSearchMode">
+            <n-select
+              v-if="showOwnerPicker"
+              :value="activeOwnerId"
+              :options="ownerOptions"
+              size="small"
+              :placeholder="t('documents.ownerSelectPlaceholder')"
+              class="documents-org-picker__select"
+              @update:value="onOwnerChange"
             />
-            <span
-              v-if="activeKbFolderLabel"
-              class="documents-folder-title"
-              :title="activeKbFolderLabel"
-            >
-              {{ activeKbFolderLabel }}
-            </span>
-          </template>
-          <template v-if="showTopFolderBatchActions">
-            <IconAction
-              :label="t('documents.detail.publishToLibrary')"
-              :icon="RocketOutline"
-              :disabled="!canBatchPublish"
-              @click="openBatchPublish"
-            />
-            <IconAction
-              :label="t('common.move')"
-              :icon="MoveOutline"
-              :disabled="!canBatchMove"
-              @click="openBatchMove"
-            />
-            <BatchTableToolbar
-              :count="deletableSelectedRows.length || checkedRowKeys.length"
-              :disabled="!canBatchDelete"
-              :icon="TrashOutline"
-              action-type="warning"
-              @action="handleBatchDelete"
+            <n-select
+              v-if="showOrgPicker"
+              :value="activeDeptId"
+              :options="deptOptions"
+              size="small"
+              :placeholder="orgUnits.length > 1 ? t('documents.deptSelectPlaceholder') : undefined"
+              class="documents-org-picker__select"
+              @update:value="onDeptChange"
             />
           </template>
-          <template v-else-if="!isSearchMode">
-            <IconAction
-              :label="t('documents.sharedAction')"
-              :tooltip="t('documents.hints.shared')"
-              :icon="ShareSocialOutline"
-              :active="isSharedScopeTab"
-              @click="onTabChange('shared')"
-            />
-            <IconAction
-              :label="t('documents.indexAction')"
-              :tooltip="t('documents.reindexUnindexedTitle')"
-              :icon="ReaderOutline"
-              :loading="reindexingUnindexed"
-              :disabled="reindexingUnindexed"
-              @click="handleReindexUnindexed"
-            />
-          </template>
-        </n-space>
-        <n-space align="center" :size="10" class="documents-toolbar documents-toolbar--secondary">
-          <n-select
-            v-if="isMainView && showOwnerPicker && !isSearchMode"
-            :value="activeOwnerId"
-            :options="ownerOptions"
-            size="small"
-            :placeholder="t('documents.ownerSelectPlaceholder')"
-            class="documents-org-picker__select"
-            @update:value="onOwnerChange"
-          />
-          <n-select
-            v-if="isMainView && showOrgPicker && !isSearchMode"
-            :value="activeDeptId"
-            :options="deptOptions"
-            size="small"
-            :placeholder="orgUnits.length > 1 ? t('documents.deptSelectPlaceholder') : undefined"
-            class="documents-org-picker__select"
-            @update:value="onDeptChange"
-          />
-          <n-input
-            v-model:value="keyword"
-            :placeholder="t('documents.searchPlaceholder')"
-            clearable
-            size="small"
-            class="documents-search"
-            @keyup.enter="runSearch"
-            @clear="clearSearch"
-          />
-          <IconAction
-            :label="t('common.search')"
-            :icon="SearchOutline"
-            @click="runSearch"
-          />
-          <IconAction
-            :label="t('common.refresh')"
-            :icon="RefreshOutline"
-            :disabled="refreshing"
-            :loading="refreshing"
-            @click="refreshDocumentsView"
-          />
-          <IconAction
-            v-if="isMainView && usesKbFolders && !isSearchMode && hasAnyCreatableScope"
-            :label="t('documents.uploadDoc')"
-            :icon="CloudUploadOutline"
-            type="primary"
-            @click="openUploadModal('single')"
-          />
-        </n-space>
         </div>
       </div>
     </Teleport>
+    <Teleport
+      v-if="headerTeleportReady && headerExtensionActive"
+      to="#header-page-tools"
+    >
+      <n-button
+        quaternary
+        circle
+        size="tiny"
+        class="header-icon-btn"
+        :class="{ 'header-icon-btn--spinning': refreshing }"
+        :aria-label="t('common.refresh')"
+        :disabled="refreshing"
+        @click="refreshDocumentsView"
+      >
+        <n-icon :size="13" :component="RefreshOutline" />
+      </n-button>
+    </Teleport>
 
-    <n-card class="documents-list-card" size="small">
     <div v-if="isSearchMode" class="documents-search-results-head">
       <n-text depth="2">
         {{ t("documents.searchResults", { count: total, keyword: appliedSearch }) }}
@@ -1735,30 +1722,32 @@ watch(
     </div>
     <div
       v-if="isMainView && !isSearchMode"
-      class="documents-scope-bookmarks"
-      role="tablist"
-      :aria-label="t('documents.scopeSwitchLabel')"
+      class="documents-scope-tabs"
     >
-      <button
-        v-for="f in folders"
-        :key="f.scope"
-        type="button"
-        role="tab"
-        class="documents-scope-bookmarks__tab"
-        :class="{ 'documents-scope-bookmarks__tab--active': activeScope === f.scope }"
-        :aria-selected="activeScope === f.scope"
-        @click="onTabChange(f.scope)"
+      <n-tabs
+        v-model:value="activeScope"
+        type="line"
+        animated
+        @update:value="onTabChange"
       >
-        <span class="documents-scope-bookmarks__label">{{ f.label }}</span>
-        <n-tag
-          v-if="!f.can_create"
-          size="tiny"
-          :bordered="false"
-          class="documents-scope-bookmarks__tag"
+        <n-tab-pane
+          v-for="f in folders"
+          :key="f.scope"
+          :name="f.scope"
         >
-          {{ t("menu.readOnly") }}
-        </n-tag>
-      </button>
+          <template #tab>
+            <span>{{ scopeLabel(f.scope) || f.label }}</span>
+            <n-tag
+              v-if="!f.can_create"
+              size="tiny"
+              :bordered="false"
+              style="margin-left:4px;flex-shrink:0"
+            >
+              {{ t("menu.readOnly") }}
+            </n-tag>
+          </template>
+        </n-tab-pane>
+      </n-tabs>
     </div>
 
     <Transition name="doc-view" mode="out-in">
@@ -1801,6 +1790,24 @@ watch(
     </PlatformSpin>
 
     <div v-else key="doc-list" class="documents-list-panel">
+    <!-- 文件夹内操作栏：在卡片上方显示 -->
+    <div v-if="showTopFolderBatchActions" class="documents-folder-toolbar">
+      <IconAction :label="t('documents.backToFolders')" :icon="ArrowBackOutline" @click="backToKbFolders" />
+      <span class="documents-folder-toolbar__name">{{ activeKbFolderLabel }}</span>
+      <div class="folder-action-pills">
+        <NButton quaternary size="tiny" class="folder-action-btn" :disabled="!canBatchPublish" @click="openBatchPublish">
+          <template #icon><NIcon :component="RocketOutline" /></template>
+          {{ t("documents.detail.publishToLibrary") }}
+        </NButton>
+        <NButton quaternary size="tiny" class="folder-action-btn" :disabled="!canBatchMove" @click="openBatchMove">
+          {{ t("common.move") }}
+        </NButton>
+        <NButton quaternary size="tiny" class="folder-action-btn folder-action-btn--danger" :disabled="!canBatchDelete" @click="handleBatchDelete">
+          <template #icon><NIcon :component="TrashOutline" /></template>
+          {{ t("common.delete") }}
+        </NButton>
+      </div>
+    </div>
     <div v-if="showBottomBatchToolbar" class="doc-list-toolbar page-toolbar">
       <n-space align="center" :size="7">
         <IconAction
@@ -1825,8 +1832,10 @@ watch(
       </n-space>
     </div>
 
+        <n-card class="documents-list-card" :bordered="true">
     <PlatformSpin :show="loading && !items.length" class="documents-view-spin" local>
       <n-data-table
+        class="documents-table"
         :columns="columns"
         :data="items"
         :row-key="(row) => row.id"
@@ -1836,9 +1845,9 @@ watch(
         :pagination="false"
       />
     </PlatformSpin>
+    </n-card>
     </div>
     </Transition>
-    </n-card>
 
     <ListTableFooter
       v-if="!showKbFolderList"
@@ -2075,3 +2084,78 @@ watch(
     @moved="onDocumentMoved"
   />
 </template>
+
+<style scoped>
+.folder-action-pills {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.documents-folder-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.documents-folder-toolbar__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--platform-font-size-lg);
+  font-weight: 500;
+  color: var(--platform-text);
+  letter-spacing: -0.01em;
+}
+
+/* ── 文件夹内操作按钮 ── */
+.documents-folder-toolbar .folder-action-btn.n-button.n-button--quaternary-type {
+  width: auto !important;
+  padding: 0 10px !important;
+  border-radius: 6px !important;
+  font-size: var(--platform-font-size-sm) !important;
+  line-height: 1 !important;
+  --n-height: 28px;
+  border: 1px solid var(--platform-border-strong);
+  background: var(--platform-surface);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.documents-folder-toolbar .folder-action-btn.n-button.n-button--quaternary-type:not(:disabled):hover {
+  background: var(--platform-bg-tertiary);
+  border-color: var(--platform-accent);
+}
+.documents-folder-toolbar .folder-action-btn--danger.n-button.n-button--quaternary-type:not(:disabled) {
+  color: var(--platform-danger);
+}
+.documents-folder-toolbar .folder-action-btn--danger.n-button.n-button--quaternary-type:not(:disabled):hover {
+  color: var(--platform-danger);
+  background: var(--platform-danger-soft);
+  border-color: var(--platform-danger);
+}
+
+.documents-doc-title {
+  font-size: 15px;
+}
+
+/* 文档表格 — 参照多智能体技能表格样式 */
+.documents-table :deep(.n-data-table-thead .n-data-table-th) {
+  font-size: 15px !important;
+  font-weight: 500 !important;
+  color: var(--platform-text) !important;
+  border-bottom: 1px solid var(--platform-border-light, #e8e8e8) !important;
+}
+.documents-table :deep(.n-data-table-tbody .n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-light, #e8e8e8) !important;
+  font-size: 13px;
+}
+
+.documents-scope-tabs :deep(.n-tabs-tab-panes) {
+  display: none;
+}
+</style>
+

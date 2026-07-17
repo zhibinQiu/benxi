@@ -19,6 +19,7 @@ class AgentProfileBinding(Base):
     service_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     skill_names: Mapped[list] = mapped_column(JSONB, default=list)
     runtime_tool_names: Mapped[list] = mapped_column(JSONB, default=list)
+    knowledge_mounts: Mapped[list] = mapped_column(JSONB, default=list)
     config_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     style_md: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

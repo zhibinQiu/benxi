@@ -1,6 +1,6 @@
 <script setup>
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, h, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   NCard,
@@ -11,7 +11,7 @@ import {
   NIcon,
   NTag,
   NUpload,
-  NTable,
+  NDataTable,
   NForm,
   NFormItem,
   NInput,
@@ -239,7 +239,7 @@ function versionFileLabel(v) {
 
 function versionSizeLabel(v) {
   if (!v.uploaded || !v.file_size) return "—";
-  return `${(v.file_size / 1024).toFixed(1)} KB`;
+  return `${(v.file_size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const aclCaps = ref(emptyDocumentAclCaps());
@@ -359,6 +359,111 @@ const sharePermissionActions = computed(() => [
   },
 ]);
 
+const versionColumns = computed(() => [
+  {
+    title: t("documents.detail.version"),
+    key: "version_no",
+    width: 90,
+    render: (row) => {
+      const tag = row.is_current
+        ? h(NTag, { size: "small", type: "info", bordered: false }, { default: () => t("documents.detail.current") })
+        : null;
+      return h(NSpace, { size: 7, align: "center" }, {
+        default: () => [h("span", `v${row.version_no}`), tag].filter(Boolean),
+      });
+    },
+  },
+  {
+    title: t("documents.detail.fileName"),
+    key: "file_name",
+    ellipsis: { tooltip: true },
+    render: (row) => versionFileLabel(row),
+  },
+  {
+    title: t("documents.detail.versionDesc"),
+    key: "change_description",
+    ellipsis: { tooltip: true },
+    render: (row) => row.change_description || "—",
+  },
+  {
+    title: t("documents.detail.size"),
+    key: "file_size",
+    width: 100,
+    render: (row) => versionSizeLabel(row),
+  },
+  {
+    title: t("documents.detail.time"),
+    key: "created_at",
+    width: 180,
+    render: (row) => new Date(row.created_at).toLocaleString(),
+  },
+  {
+    title: t("documents.detail.index"),
+    key: "indexStatus",
+    width: 100,
+    render: (row) => {
+      if (!row.uploaded) return "—";
+      return h(NTag, {
+        size: "small",
+        type: knowledgeIndexTagProps(row).type,
+        bordered: false,
+      }, { default: () => knowledgeIndexTagProps(row).label });
+    },
+  },
+  {
+    title: t("documents.detail.indexMethod"),
+    key: "indexMethod",
+    width: 120,
+    ellipsis: { tooltip: true },
+    render: (row) => versionIndexMethodLabel(row, { t }) || "—",
+  },
+  ...(showVersionActions.value
+    ? [{
+        title: t("common.actions"),
+        key: "actions",
+        width: 130,
+        render: (row) => {
+          if (!row.uploaded) return null;
+          const children = [];
+          if (canReindexDoc.value) {
+            children.push(h(IconAction, {
+              variant: "table",
+              label: t("documents.detail.reindex"),
+              icon: RefreshOutline,
+              disabled: indexPolling.value || reparsing.value,
+              onClick: () => openReindexModal(row),
+            }));
+          }
+          if (canViewDoc.value) {
+            children.push(h(IconAction, {
+              variant: "table",
+              label: t("documents.detail.preview"),
+              icon: EyeOutline,
+              onClick: () => openVersionPreview(row),
+            }));
+            children.push(h(IconAction, {
+              variant: "table",
+              label: t("documents.detail.download"),
+              icon: DownloadOutline,
+              type: "primary",
+              onClick: () => downloadVersion(row),
+            }));
+          }
+          if (canDeleteDoc.value) {
+            children.push(h(IconAction, {
+              variant: "table",
+              label: t("common.delete"),
+              icon: TrashOutline,
+              type: "error",
+              onClick: () => confirmDeleteVersion(row),
+            }));
+          }
+          return h("div", { class: "table-icon-actions" }, children);
+        },
+      }]
+    : []),
+]);
+
 const userNameById = computed(() => {
   const m = {};
   for (const u of aclCandidates.value) {
@@ -371,6 +476,30 @@ const userNameById = computed(() => {
   }
   return m;
 });
+
+const shareColumns = computed(() => [
+  { title: t("documents.detail.user"), key: "user_name", ellipsis: { tooltip: true },
+    render: (row) => row.user_name || userNameById.value[row.user_id] || t("documents.unknownUser") },
+  { title: t("documents.columns.permission"), key: "level", width: 110,
+    render: (row) => docLevelLabel(row.level) || row.level },
+  { title: t("common.actions"), key: "actions", width: 90,
+    render: (row) => h(NButton, {
+      text: true, type: "error", size: "small",
+      onClick: () => removeShare(row.user_id),
+    }, { default: () => t("documents.detail.revokeShare") }) },
+]);
+
+const denialColumns = computed(() => [
+  { title: t("documents.detail.user"), key: "user_name", ellipsis: { tooltip: true },
+    render: (row) => row.user_name || userNameById.value[row.user_id] || t("documents.unknownUser") },
+  { title: t("documents.detail.reason"), key: "reason", ellipsis: { tooltip: true },
+    render: (row) => row.reason || "—" },
+  { title: t("common.actions"), key: "actions", width: 90,
+    render: (row) => h(NButton, {
+      text: true, type: "primary", size: "small",
+      onClick: () => removeDenial(row.user_id),
+    }, { default: () => t("common.restore") }) },
+]);
 
 function canLoadAclCandidates() {
   const docOwner = Boolean(
@@ -771,7 +900,7 @@ onMounted(() => {
             </n-button>
           </template>
           <template v-else>
-            <n-text strong style="font-size: 19px">{{ doc.title }}</n-text>
+            <n-text style="font-size: 16px; font-weight: 500">{{ doc.title }}</n-text>
             <n-button
               v-if="canEditDoc"
               text
@@ -801,7 +930,7 @@ onMounted(() => {
           </n-space>
         </n-descriptions-item>
         <n-descriptions-item :label="t('documents.columns.scope')">
-          <n-tag size="small">{{ scopeLabel(doc.scope) || doc.scope }}</n-tag>
+          <n-tag size="small" :bordered="false">{{ scopeLabel(doc.scope) || doc.scope }}</n-tag>
         </n-descriptions-item>
         <n-descriptions-item v-if="supportsKbFolder" :label="t('documents.detail.folder')">
           {{ doc.folder_name || t("documents.uncategorized") }}
@@ -841,81 +970,16 @@ onMounted(() => {
           />
         </n-space>
       </template>
-      <n-table :single-line="false">
-        <thead>
-          <tr>
-            <th>{{ t("documents.detail.version") }}</th>
-            <th>{{ t("documents.detail.fileName") }}</th>
-            <th>{{ t("documents.detail.versionDesc") }}</th>
-            <th>{{ t("documents.detail.size") }}</th>
-            <th>{{ t("documents.detail.time") }}</th>
-            <th>{{ t("documents.detail.index") }}</th>
-            <th>{{ t("documents.detail.indexMethod") }}</th>
-            <th v-if="showVersionActions">{{ t("common.actions") }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="v in displayVersions" :key="v.id">
-            <td>
-              <n-space :size="7" align="center">
-                <span>v{{ v.version_no }}</span>
-                <n-tag v-if="v.is_current" size="small" type="info">{{ t("documents.detail.current") }}</n-tag>
-              </n-space>
-            </td>
-            <td>{{ versionFileLabel(v) }}</td>
-            <td>{{ v.change_description || "—" }}</td>
-            <td>{{ versionSizeLabel(v) }}</td>
-            <td>{{ new Date(v.created_at).toLocaleString() }}</td>
-            <td>
-              <n-tag
-                v-if="v.uploaded"
-                size="small"
-                :type="knowledgeIndexTagProps(v).type"
-                :bordered="false"
-              >
-                {{ knowledgeIndexTagProps(v).label }}
-              </n-tag>
-              <span v-else>—</span>
-            </td>
-            <td>{{ versionIndexMethodLabel(v, { t }) || "—" }}</td>
-            <td v-if="showVersionActions">
-              <div class="table-icon-actions">
-                <IconAction
-                  v-if="v.uploaded && canReindexDoc"
-                  variant="table"
-                  :label="t('documents.detail.reindex')"
-                  :icon="RefreshOutline"
-                  :disabled="indexPolling || reparsing"
-                  @click="openReindexModal(v)"
-                />
-                <IconAction
-                  v-if="v.uploaded && canViewDoc"
-                  variant="table"
-                  :label="t('documents.detail.preview')"
-                  :icon="EyeOutline"
-                  @click="openVersionPreview(v)"
-                />
-                <IconAction
-                  v-if="v.uploaded && canViewDoc"
-                  variant="table"
-                  :label="t('documents.detail.download')"
-                  :icon="DownloadOutline"
-                  type="primary"
-                  @click="downloadVersion(v)"
-                />
-                <IconAction
-                  v-if="canDeleteDoc"
-                  variant="table"
-                  :label="t('common.delete')"
-                  :icon="TrashOutline"
-                  type="error"
-                  @click="confirmDeleteVersion(v)"
-                />
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </n-table>
+      <n-data-table
+        class="documents-table"
+        :columns="versionColumns"
+        :data="displayVersions"
+        :single-line="false"
+        :bordered="false"
+        size="small"
+        :row-key="(row) => row.id"
+        :loading="loading"
+      />
 
       <div v-if="canEditDoc" class="version-upload-bar">
         <n-input
@@ -949,15 +1013,13 @@ onMounted(() => {
       </div>
     </n-card>
 
-    <n-card v-if="showAccessCard" :loading="aclLoading" class="detail-card collapsible-card">
-      <template #header>
-        <div class="expandable-header" @click="publishSectionExpanded = !publishSectionExpanded">
+    <div v-if="showAccessCard" class="detail-section">
+      <div class="expandable-header" @click="publishSectionExpanded = !publishSectionExpanded">
           <span class="expandable-header__title">{{ t("documents.detail.publishAndShare") }}</span>
           <n-icon :class="['expandable-header__icon', { 'icon-rotated': publishSectionExpanded }]" :size="18">
             <ChevronDownOutline />
           </n-icon>
         </div>
-      </template>
       <Transition name="slide">
         <div v-show="publishSectionExpanded" class="collapsible-body">
       <div class="access-current-loc">
@@ -991,7 +1053,8 @@ onMounted(() => {
           style="margin-bottom: 14px"
         />
         <n-button
-          type="primary"
+          secondary
+          size="tiny"
           :loading="publishLoading"
           :disabled="ORG_SCOPES.includes(publishTarget) && !publishDeptIds.length"
           @click="publishToLibrary"
@@ -1016,7 +1079,8 @@ onMounted(() => {
           <n-button
             v-for="act in sharePermissionActions"
             :key="act.level"
-            size="small"
+            secondary
+            size="tiny"
             :loading="shareGranting"
             :disabled="!shareSelectedKeys.length"
             @click="grantShareLevel(act.level)"
@@ -1028,38 +1092,27 @@ onMounted(() => {
         <p v-if="shares.length" style="margin: 0 0 10px; font-weight: 500; font-size: 16px">
           {{ t("documents.detail.currentAuthorized") }}
         </p>
-        <n-table v-if="shares.length" :single-line="false">
-          <thead>
-            <tr>
-              <th>{{ t("documents.detail.user") }}</th>
-              <th>{{ t("documents.columns.permission") }}</th>
-              <th>{{ t("common.actions") }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in shares" :key="s.user_id">
-              <td>{{ s.user_name || userNameById[s.user_id] || t("documents.unknownUser") }}</td>
-              <td>{{ docLevelLabel(s.level) || s.level }}</td>
-              <td>
-                <n-button text type="error" size="small" @click="removeShare(s.user_id)">
-                  {{ t("documents.detail.revokeShare") }}
-                </n-button>
-              </td>
-            </tr>
-          </tbody>
-        </n-table>
+        <n-data-table
+          v-if="shares.length"
+          class="documents-table"
+          :columns="shareColumns"
+          :data="shares"
+          :single-line="false"
+          :bordered="false"
+          size="small"
+          :row-key="(row) => row.user_id"
+        />
         <span v-else>{{ t("documents.detail.noPersonalShares") }}</span>
       </template>
       </div>
     </Transition>
-  </n-card>
+  </div>
 
-    <n-card v-if="canDenyAcl" :loading="aclLoading" class="detail-card collapsible-card">
-      <template #header>
-        <div class="expandable-header" @click="restrictionSectionExpanded = !restrictionSectionExpanded">
+    <div v-if="canDenyAcl" class="detail-section">
+      <div class="expandable-header" @click="restrictionSectionExpanded = !restrictionSectionExpanded">
           <span class="expandable-header__title">{{ t("documents.detail.accessRestrictions") }}</span>
           <n-space :size="8" align="center">
-            <n-button size="tiny" quaternary @click.stop="openDenyModal">
+            <n-button size="tiny" secondary @click.stop="openDenyModal">
               {{ t("documents.detail.denyUserAccess") }}
             </n-button>
             <n-icon :class="['expandable-header__icon', { 'icon-rotated': restrictionSectionExpanded }]" :size="18">
@@ -1067,36 +1120,25 @@ onMounted(() => {
             </n-icon>
           </n-space>
         </div>
-      </template>
       <Transition name="slide">
         <div v-show="restrictionSectionExpanded" class="collapsible-body">
       <p class="access-card-hint">
         {{ t("documents.detail.denyHint") }}
       </p>
-      <n-table v-if="denials.length" :single-line="false">
-        <thead>
-          <tr>
-            <th>{{ t("documents.detail.user") }}</th>
-            <th>{{ t("documents.detail.reason") }}</th>
-            <th>{{ t("common.actions") }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="d in denials" :key="d.id">
-            <td>{{ d.user_name || userNameById[d.user_id] || t("documents.unknownUser") }}</td>
-            <td>{{ d.reason || "—" }}</td>
-            <td>
-              <n-button text type="primary" size="small" @click="removeDenial(d.user_id)">
-                {{ t("common.restore") }}
-              </n-button>
-            </td>
-          </tr>
-        </tbody>
-      </n-table>
+      <n-data-table
+        v-if="denials.length"
+        class="documents-table"
+        :columns="denialColumns"
+        :data="denials"
+        :single-line="false"
+        :bordered="false"
+        size="small"
+        :row-key="(row) => row.id"
+      />
       <span v-if="!denials.length">{{ t("documents.detail.noDenials") }}</span>
       </div>
     </Transition>
-  </n-card>
+  </div>
   </n-space>
 
   <AdminFormModal
@@ -1195,44 +1237,9 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* ========= Premium Card Base ========= */
-.detail-card {
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.03),
-    0 4px 16px rgba(0, 0, 0, 0.04);
-  transition: box-shadow 0.3s ease, transform 0.2s ease;
-}
-.detail-card:hover {
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.03),
-    0 8px 24px rgba(0, 0, 0, 0.06);
-}
-
-/* Gradient accent top bar for collapsible cards */
-.collapsible-card {
-  position: relative;
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
-}
-.collapsible-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-  z-index: 1;
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
-}
-
 .doc-title-input {
   min-width: 288px;
   max-width: min(672px, 100%);
-  font-weight: 600;
 }
 
 .version-upload-bar {
@@ -1292,8 +1299,8 @@ onMounted(() => {
   background: var(--platform-accent-pressed, #e2e8f0);
 }
 .expandable-header__title {
-  font-weight: 600;
-  font-size: 17px;
+  font-weight: 500;
+  font-size: 13px;
   letter-spacing: 0.02em;
   color: var(--platform-text-primary, #1e293b);
 }
@@ -1328,6 +1335,9 @@ onMounted(() => {
 }
 
 /* ========= Collapsible Body ========= */
+.detail-section {
+  margin-bottom: 0;
+}
 .collapsible-body {
   padding-top: 2px;
 }
@@ -1344,7 +1354,7 @@ onMounted(() => {
 }
 
 .access-current-loc__label {
-  font-size: 16px;
+  font-size: 13px;
   color: var(--platform-text-secondary, #64748b);
   flex-shrink: 0;
 }
@@ -1360,7 +1370,26 @@ onMounted(() => {
 .access-card-hint {
   margin: 0 0 14px;
   color: var(--platform-text-secondary, #666);
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1.55;
+}
+
+/* 文档表格 — 参照多智能体技能表格样式 */
+.documents-table :deep(.n-data-table-th),
+.documents-table :deep(.n-data-table-td) {
+  padding: 6px 12px;
+}
+.documents-table :deep(.n-data-table-thead .n-data-table-th) {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: var(--platform-text) !important;
+  border-bottom: 1px solid var(--platform-border-strong) !important;
+}
+.documents-table :deep(.n-data-table-tbody .n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-strong) !important;
+  vertical-align: middle;
+}
+.documents-table :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
 }
 </style>

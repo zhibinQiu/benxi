@@ -32,4 +32,4 @@ __all__ = [
     "format_conversation_snippet",
 ]
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401

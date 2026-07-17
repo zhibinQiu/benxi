@@ -10,22 +10,19 @@ const loading = ref(false);
 const loaded = ref(false);
 let loadPromise = null;
 
-/** 从 sessionStorage 还原菜单可见性（避免页面刷新后 beforeEach 阻塞） */
+/** 废弃 sessionStorage 冷启动缓存，始终从服务端拉取最新数据。
+ *
+ * 旧缓存可能包含过时的菜单键（如缺少新添加的 ontology/kg），
+ * 导致 visibleKeys 被设为一个真值 Set，永远不会走 MENU_FALLBACK_ORDER 降级路径，
+ * 路由守卫因此拦截并重定向到 ai-home。
+ *
+ * 初始阶段 visibleKeys=null → visibleSet 使用 MENU_FALLBACK_ORDER，
+ * 该降级列表始终包含最新功能菜单键，保证新功能不会被拦截。 */
 function _restoreCachedMenus() {
   try {
-    const raw = sessionStorage.getItem(MENU_CACHE_KEY);
-    if (!raw) return false;
-    const { data, savedAt } = JSON.parse(raw);
-    if (Date.now() - savedAt > MENU_CACHE_TTL) {
-      sessionStorage.removeItem(MENU_CACHE_KEY);
-      return false;
-    }
-    visibleKeys.value = new Set(data || []);
-    loaded.value = true;
-    return true;
-  } catch {
-    return false;
-  }
+    sessionStorage.removeItem(MENU_CACHE_KEY);
+  } catch { /* 安全忽略 */ }
+  return false;
 }
 _restoreCachedMenus();
 
@@ -45,35 +42,46 @@ export const ROUTE_MENU_KEYS = Object.freeze({
   "data-analysis": "system-functions",
   "carbon-qa": "system-functions",
   "smart-forecast": "system-functions",
-  "kg-palantir": "system-functions",
   "knowledge-search": "system-functions",
+  ontology: "ontology",
+  kg: "kg",
   documents: "documents",
   "document-detail": "documents",
   "knowledge-subscriptions": "knowledge-subscriptions",
   "subscription-item": "knowledge-subscriptions",
   "admin-monitor": "admin-monitor",
   "admin-model-settings": "admin-model-settings",
-  "agent-skills": "system-functions",
+  "menu-settings": "admin-menu-settings",
+  "admin-menu-settings": "admin-menu-settings",
   "issue-reports": "issue-reports",
+  "agent-skills": "agent-skills",
 });
 
 /** 管理员在「菜单管理」中可配置的侧栏项（不含权限控制的子页） */
 export const CONFIGURABLE_MENU_KEYS = new Set([
   "ai-home",
   "system-functions",
+  "ontology",
+  "kg",
   "documents",
   "knowledge-subscriptions",
   "issue-reports",
+  "agent-skills",
   "admin-monitor",
   "admin-model-settings",
+  "admin-menu-settings",
 ]);
 
 const MENU_FALLBACK_ORDER = Object.freeze([
   "ai-home",
   "system-functions",
+  "agent-skills",
+  "ontology",
+  "kg",
   "documents",
   "knowledge-subscriptions",
   "issue-reports",
+  "admin-menu-settings",
   "admin-monitor",
   "admin-model-settings",
 ]);

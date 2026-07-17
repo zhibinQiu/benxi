@@ -17,7 +17,7 @@ def _resolve_kg_qa_context(db: Session, user: User, question: str):
     from app.core.permissions import user_has_permission
     from app.services.kg_service import retrieve_kg_context_for_question
 
-    if not user_has_permission(db, user, "feature.kg_palantir"):
+    if not user_has_permission(db, user, "feature.kg"):
         return None
     return retrieve_kg_context_for_question(db, user, question)
 

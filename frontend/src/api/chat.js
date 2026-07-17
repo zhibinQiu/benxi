@@ -1,4 +1,4 @@
-/** 助手、数字机器人与对话历史 REST API */
+/** 助手与对话历史 REST API */
 import { api } from "./http.js";
 
 export async function assistantChat({
@@ -14,79 +14,6 @@ export async function assistantChat({
     method: "POST",
     body: JSON.stringify(body),
     signal,
-  });
-}
-
-/** 数字机器人对话 — 描述 RPA 任务，AI 生成执行计划 */
-export async function digitalRobotChat({
-  message,
-  history = [],
-  conversationId = null,
-  signal = null,
-}) {
-  const body = { message, history };
-  if (conversationId) body.conversation_id = conversationId;
-  return api("/api/v1/digital-robot/chat", {
-    method: "POST",
-    body: JSON.stringify(body),
-    signal,
-  });
-}
-
-/** 数字机器人确认执行 RPA 计划 */
-export async function digitalRobotConfirm({
-  conversationId,
-  plan,
-  taskId = null,
-}) {
-  const body = { conversation_id: conversationId, plan };
-  if (taskId) body.task_id = taskId;
-  return api("/api/v1/digital-robot/confirm", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-/** ── RPA 任务管理 ───────────────────────────────── */
-
-/** 列出当前用户的 RPA 任务 */
-export async function fetchDigitalRobotTasks({ status = "all", limit = 50, offset = 0 } = {}) {
-  const params = new URLSearchParams({ status, limit: String(limit), offset: String(offset) });
-  return api(`/api/v1/digital-robot/tasks?${params.toString()}`);
-}
-
-/** 获取单个 RPA 任务详情 */
-export async function fetchDigitalRobotTask(taskId) {
-  return api(`/api/v1/digital-robot/tasks/${encodeURIComponent(taskId)}`);
-}
-
-/** 创建 RPA 任务 */
-export async function createDigitalRobotTask(data) {
-  return api("/api/v1/digital-robot/tasks", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
-/** 更新 RPA 任务 */
-export async function updateDigitalRobotTask(taskId, data) {
-  return api(`/api/v1/digital-robot/tasks/${encodeURIComponent(taskId)}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-}
-
-/** 删除 RPA 任务 */
-export async function deleteDigitalRobotTask(taskId) {
-  return api(`/api/v1/digital-robot/tasks/${encodeURIComponent(taskId)}`, {
-    method: "DELETE",
-  });
-}
-
-/** 立即执行 RPA 任务 */
-export async function executeDigitalRobotTaskNow(taskId) {
-  return api(`/api/v1/digital-robot/tasks/${encodeURIComponent(taskId)}/execute`, {
-    method: "POST",
   });
 }
 

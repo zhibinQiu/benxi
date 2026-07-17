@@ -182,3 +182,28 @@ export async function patchAgentProfile(agentId, payload) {
     body: JSON.stringify(payload),
   });
 }
+
+// ── 知识库文件夹挂载 ──────────────────────────────────
+
+export async function fetchKnowledgeMounts(agentId) {
+  return api(`/api/v1/admin/agent-skills/agents/${encodeURIComponent(agentId)}/knowledge-mounts`);
+}
+
+export async function addKnowledgeMount(agentId, { datasetId, folderId, scope, label }) {
+  return api(`/api/v1/admin/agent-skills/agents/${encodeURIComponent(agentId)}/knowledge-mounts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dataset_id: datasetId,
+      folder_id: folderId,
+      scope,
+      label: label || undefined,
+    }),
+  });
+}
+
+export async function removeKnowledgeMount(agentId, mountId) {
+  return api(`/api/v1/admin/agent-skills/agents/${encodeURIComponent(agentId)}/knowledge-mounts/${mountId}`, {
+    method: "DELETE",
+  });
+}

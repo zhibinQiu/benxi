@@ -1,6 +1,6 @@
 """agentkit-orchestrate — 多专精任务编排引擎（Protocol 注入，无 DB/LLM）。"""
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.orchestrate.assist import AssistRules, resolve_assist_agent_id, should_escalate_to_skill_dev
 from app.agentkit.orchestrate.assessment import (

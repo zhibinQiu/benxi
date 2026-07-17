@@ -238,7 +238,7 @@ def build_agent_tool_specs(
 
     设计原则：
     - orchestrator（调度智能体）：仅挂载通用能力——技能运行时工具 + 编排工具 + 系统通知工具。
-      不挂载：联网检索(web_search)、本体图谱(kg_query)、知识库检索(knowledge_retrieve)、
+      不挂载：联网检索(web_search)、知识图谱(kg_query)、知识库检索(knowledge_retrieve)、
       文档CRUD、浏览器、用户/部门管理等专精工具。
       这些专精操作由路由分配到对应的专精 Agent 执行。
     - 其他 Agent：挂载完整工具集。
@@ -418,7 +418,7 @@ async def _execute_invoke_skill(
                     "browser-automation",
                     "web-search",
                     "knowledge-search",
-                    "kg-palantir",
+                    "kg",
                 }:
                     kind = "browser_digest" if skill_name == "browser-automation" else "explore"
                     return _tool_result(
@@ -449,6 +449,13 @@ async def _execute_invoke_skill(
     )
     if not result.ok:
         return _tool_result(False, result.summary or f"Skill `{skill_name}.{action}` 失败")
+
+    # Extract citations from deep-research skill and persist to loop_state
+    if result.ok and skill_name == "deep-research" and result.data and isinstance(result.data, dict):
+        citations = result.data.get("citations")
+        if isinstance(citations, list) and citations and loop_state is not None:
+            existing = loop_state.setdefault("citations", [])
+            existing.extend(citations)
 
     from app.core.tool_skill_taxonomy import RETRIEVAL_SKILL_ATOMIC_MAP
     from app.tool_center.agent_bridge import _format_retrieval_json, _prepare_retrieval_params
@@ -1549,7 +1556,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == ATOMIC_TOOL_WEB_SEARCH:
         query = str(params.get("query") or "").strip() or "?"
         return {
-            "title": "联网搜索",
+            "title": f"使用联网搜索查询「{query[:80]}」",
             "result_title": "联网搜索完成",
             "detail": query[:120],
             "tool": ATOMIC_TOOL_WEB_SEARCH,
@@ -1557,7 +1564,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == ATOMIC_TOOL_KNOWLEDGE_RETRIEVE:
         query = str(params.get("query") or "").strip() or "?"
         return {
-            "title": "知识库检索",
+            "title": f"使用知识库检索「{query[:80]}」",
             "result_title": "知识库检索完成",
             "detail": query[:120],
             "tool": ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
@@ -1565,7 +1572,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == ATOMIC_TOOL_KG_QUERY:
         question = str(params.get("question") or "").strip() or "?"
         return {
-            "title": "本体图谱查询",
+            "title": f"使用知识图谱查询「{question[:80]}」",
             "result_title": "图谱查询完成",
             "detail": question[:120],
             "tool": ATOMIC_TOOL_KG_QUERY,
@@ -1573,7 +1580,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == "search_tools":
         query = str(params.get("query") or "").strip() or "?"
         return {
-            "title": "搜索工具",
+            "title": f"搜索工具「{query[:80]}」",
             "result_title": "工具搜索完成",
             "detail": query[:120],
             "tool": "search_tools",
@@ -1581,7 +1588,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == "fetch_url_content":
         url = str(params.get("url") or "").strip() or "?"
         return {
-            "title": "获取网页内容",
+            "title": f"获取网页内容：{url[:80]}",
             "result_title": "网页内容获取完成",
             "detail": url[:120],
             "tool": "fetch_url_content",
@@ -1589,7 +1596,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == "search_skills":
         query = str(params.get("query") or "").strip() or "?"
         return {
-            "title": "搜索 Skill",
+            "title": f"搜索 Skill「{query[:80]}」",
             "result_title": "Skill 搜索完成",
             "detail": query[:120],
             "tool": "skill.search",
@@ -1598,7 +1605,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
         skill = str(params.get("skill_name") or "").strip() or "?"
         action = str(params.get("action") or "").strip() or "?"
         return {
-            "title": f"Skill: {skill}.{action}",
+            "title": f"使用 Skill「{skill}」{action}",
             "result_title": f"Skill 执行完成: {skill}",
             "failure_title": f"Skill 执行失败: {skill}",
             "detail": action,
@@ -1608,7 +1615,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
         steps = params.get("steps") or []
         count = len(steps) if isinstance(steps, list) else 0
         return {
-            "title": f"批量执行 ({count} 步)",
+            "title": f"批量执行 {count} 个步骤",
             "result_title": "批量执行完成",
             "failure_title": "批量执行失败",
             "detail": f"{count} 步",
@@ -1618,7 +1625,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
         kind = str(params.get("kind") or "explore").strip()
         task = str(params.get("task") or "").strip()[:80]
         return {
-            "title": f"子 Agent · {kind}",
+            "title": f"使用子 Agent（{kind}）{task}",
             "result_title": f"子 Agent 完成 · {kind}",
             "failure_title": f"子 Agent 失败 · {kind}",
             "detail": task or kind,
@@ -1636,7 +1643,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == "ask_user_choice":
         question = str(params.get("question") or "").strip()[:100]
         return {
-            "title": "方案选择",
+            "title": f"请用户选择：{question or '等待用户选择'}",
             "result_title": "用户已选择方案",
             "detail": question or "等待用户选择",
             "tool": "ask_user_choice",
@@ -1644,7 +1651,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == "list_agent_skills":
         query = str(params.get("query") or "").strip()
         return {
-            "title": "Skills 目录",
+            "title": f"列出 Skills 目录（{query[:60] or '全部'}）",
             "result_title": "Skills 目录已列出",
             "detail": query[:80] or "全部",
             "tool": "skill.catalog",
@@ -1652,9 +1659,9 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == "load_uploaded_skill":
         skill = str(params.get("skill_name") or "").strip() or "?"
         return {
-            "title": f"加载 Skill: {skill}",
-            "result_title": f"Skill 已加载: {skill}",
-            "failure_title": f"Skill 加载失败: {skill}",
+            "title": f"加载技能「{skill}」",
+            "result_title": f"技能已加载: {skill}",
+            "failure_title": f"技能加载失败: {skill}",
             "detail": skill,
             "tool": f"skill.{skill}",
         }
@@ -1662,7 +1669,7 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
         skill = str(params.get("skill_name") or "").strip() or "?"
         entry = str(params.get("entry") or "").strip() or "auto"
         return {
-            "title": f"运行 Skill 脚本: {skill}",
+            "title": f"运行技能脚本「{skill}」",
             "result_title": f"脚本执行完成: {skill}",
             "failure_title": f"脚本执行失败: {skill}",
             "detail": entry,

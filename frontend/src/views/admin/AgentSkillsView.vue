@@ -1,9 +1,9 @@
 <script setup>
 import { computed, defineAsyncComponent, nextTick, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { NTabPane, NTabs } from "naive-ui";
+import { SearchOutline, RefreshOutline, DownloadOutline } from "@vicons/ionicons5";
+import IconAction from "../../components/IconAction.vue";
 import FeatureSubsystemShell from "../../components/FeatureSubsystemShell.vue";
-import AgentSkillsToolbar from "../../components/aip/AgentSkillsToolbar.vue";
 import { resolveAgentSkillsTab } from "../../constants/agentSkillsTabs.js";
 import { useI18n } from "../../composables/useI18n";
 import { readPanelLoading } from "../../utils/panelExpose.js";
@@ -36,6 +36,7 @@ const route = useRoute();
 
 const activeTab = ref(resolveAgentSkillsTab(route.query.tab));
 const mountedTabs = reactive({ [activeTab.value]: true });
+let prevTab = activeTab.value;
 
 const agentsPanelRef = ref(null);
 const skillsPanelRef = ref(null);
@@ -66,14 +67,42 @@ const routingCatalogType = computed(() =>
   routingCatalogReady.value ? routingCatalogRef.value?.catalogType?.value ?? "" : ""
 );
 
-watch(activeTab, (tab) => {
-  mountedTabs[tab] = true;
-});
+const SEARCHABLE_TABS = new Set(["agents", "skills", "tools"]);
+const searchOpen = reactive({});
+
+function toggleSearchForTab(tabKey) {
+  searchOpen[tabKey] = !searchOpen[tabKey];
+  const panel = panelRefByTab[tabKey]?.value;
+  panel?.toggleSearch?.();
+}
+
+function onTabClick(key) {
+  if (key === prevTab) return;
+  // 切换 tab 前关闭旧 panel 的搜索
+  if (searchOpen[prevTab]) {
+    const oldPanel = panelRefByTab[prevTab]?.value;
+    oldPanel?.toggleSearch?.();
+    searchOpen[prevTab] = false;
+  }
+  activeTab.value = key;
+  mountedTabs[key] = true;
+  prevTab = key;
+}
 
 watch(
   () => route.query.tab,
   (tab) => {
-    activeTab.value = resolveAgentSkillsTab(tab);
+    const resolved = resolveAgentSkillsTab(tab);
+    if (resolved !== activeTab.value) {
+      if (searchOpen[activeTab.value]) {
+        const oldPanel = panelRefByTab[activeTab.value]?.value;
+        oldPanel?.toggleSearch?.();
+        searchOpen[activeTab.value] = false;
+      }
+      activeTab.value = resolved;
+      mountedTabs[resolved] = true;
+      prevTab = resolved;
+    }
   }
 );
 
@@ -102,10 +131,6 @@ function connectExternalAgent() {
   agentsPanelRef.value?.openExternalAgentModal?.();
 }
 
-function createAipKey() {
-  aipKeysPanelRef.value?.openCreate?.();
-}
-
 async function onRegistryChanged() {
   writeRoutingCatalogCache("skills.md", "");
   await routingCatalogRef.value?.refreshIfOpen?.();
@@ -114,71 +139,95 @@ async function onRegistryChanged() {
 
 <template>
   <FeatureSubsystemShell :show-intro="false">
-    <template #extra>
-      <AgentSkillsToolbar
-        :active-tab="activeTab"
-        :refreshing="refreshing"
-        :routing-catalog-loading="routingCatalogLoading"
-        :routing-catalog-type="routingCatalogType"
-        @refresh="refreshActiveTab"
-        @open-routing-catalog="openRoutingCatalog"
-        @connect-external-agent="connectExternalAgent"
-        @create-aip-key="createAipKey"
-      />
-    </template>
-
     <div class="agent-skills-view">
-      <NTabs v-model:value="activeTab" type="line" class="agent-skills-tabs" :tabs-padding="0">
-        <NTabPane name="agents" :tab="t('admin.agentSkills.tabAgents')">
+      <n-tabs v-model:value="activeTab" type="line" animated @update:value="onTabClick">
+        <!-- ── agents tab ── -->
+        <n-tab-pane name="agents" :tab="t('admin.agentSkills.tabAgents')">
+          <div class="agents-tab-header-inline">
+            <div class="agents-tab-actions">
+              <IconAction
+                :label="t('common.refresh')"
+                :icon="RefreshOutline"
+                :loading="refreshing"
+                @click="refreshActiveTab"
+              />
+              <IconAction
+                :label="t('admin.agentSkills.connectExternalAgent')"
+                :icon="DownloadOutline"
+                @click="connectExternalAgent"
+              />
+              <IconAction
+                :label="t('common.search')"
+                :icon="SearchOutline"
+                :active="searchOpen.agents"
+                @click="toggleSearchForTab('agents')"
+              />
+            </div>
+            <n-button
+              quaternary
+              size="small"
+              class="agent-skills-inline-btn"
+              :loading="routingCatalogLoading && routingCatalogType === 'agents.md'"
+              @click="openRoutingCatalog('agents.md')"
+            >
+              agents.md
+            </n-button>
+          </div>
           <AgentsTabPanel
             v-if="mountedTabs.agents"
-            v-show="activeTab === 'agents'"
             ref="agentsPanelRef"
             @registry-changed="onRegistryChanged"
           />
-        </NTabPane>
+        </n-tab-pane>
 
-        <NTabPane name="skills" :tab="t('admin.agentSkills.tabSkills')">
+        <!-- ── skills tab ── -->
+        <n-tab-pane name="skills" :tab="t('admin.agentSkills.tabSkills')">
           <SkillsTabPanel
             v-if="mountedTabs.skills"
-            v-show="activeTab === 'skills'"
             ref="skillsPanelRef"
+            :refreshing="refreshing"
+            :on-refresh="refreshActiveTab"
+            :on-connect-mcp="() => skillsPanelRef?.openMcpSkillModal?.()"
             @registry-changed="onRegistryChanged"
           />
-        </NTabPane>
+        </n-tab-pane>
 
-        <NTabPane name="tools" :tab="t('admin.agentSkills.tabTools')">
+        <!-- ── tools tab ── -->
+        <n-tab-pane name="tools" :tab="t('admin.agentSkills.tabTools')">
           <ToolsTabPanel
             v-if="mountedTabs.tools"
-            v-show="activeTab === 'tools'"
             ref="toolsPanelRef"
+            :refreshing="refreshing"
+            :on-refresh="refreshActiveTab"
           />
-        </NTabPane>
+        </n-tab-pane>
 
-        <NTabPane name="styles" :tab="t('admin.agentSkills.tabStyles')">
+        <!-- ── styles tab ── -->
+        <n-tab-pane name="styles" :tab="t('admin.agentSkills.tabStyles')">
           <StyleTabPanel
             v-if="mountedTabs.styles"
-            v-show="activeTab === 'styles'"
             ref="stylePanelRef"
           />
-        </NTabPane>
+        </n-tab-pane>
 
-        <NTabPane name="memory" :tab="t('admin.agentSkills.tabMemory')">
+        <!-- ── memory tab ── -->
+        <n-tab-pane name="memory" :tab="t('admin.agentSkills.tabMemory')">
           <MemoryTabPanel
             v-if="mountedTabs.memory"
-            v-show="activeTab === 'memory'"
             ref="memoryPanelRef"
           />
-        </NTabPane>
+        </n-tab-pane>
 
-        <NTabPane name="aip-keys" :tab="t('admin.agentSkills.tabAipKeys')">
+        <!-- ── aip-keys tab ── -->
+        <n-tab-pane name="aip-keys" :tab="t('admin.agentSkills.tabAipKeys')">
           <AipKeysPanel
             v-if="mountedTabs['aip-keys']"
-            v-show="activeTab === 'aip-keys'"
             ref="aipKeysPanelRef"
+            :refreshing="refreshing"
+            :on-refresh="refreshActiveTab"
           />
-        </NTabPane>
-      </NTabs>
+        </n-tab-pane>
+      </n-tabs>
 
       <RoutingCatalogDrawer v-if="routingCatalogReady" ref="routingCatalogRef" />
     </div>
@@ -187,31 +236,51 @@ async function onRegistryChanged() {
 
 <style scoped>
 .agent-skills-view {
-  max-width: 1440px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  height: 100%;
+}
+.agent-skills-view :deep(.n-tabs) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.agent-skills-view :deep(.n-tabs .n-tabs-tab-panes) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.agent-skills-view :deep(.n-tab-pane) {
+  height: auto;
+  min-height: 100%;
 }
 
-/* ── Tabs ── */
-.agent-skills-tabs {
-  margin-top: 18px;
+.agents-tab-header-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
 
-.agent-skills-tabs :deep(.n-tabs-tab),
-.agent-skills-tabs :deep(.n-tabs-tab .n-tabs-tab__label) {
-  font-size: var(--platform-font-size-sm) !important;
+.agents-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.agent-skills-tabs :deep(.n-tabs-nav) {
-  padding-bottom: 2px;
-}
-
-.agent-skills-tabs :deep(.n-tabs-tab) {
-  padding: 8px 0 12px;
-  margin-right: 24px;
-  transition: color 0.18s ease;
+.agent-skills-inline-btn {
+  width: auto !important;
+  padding: 0 8px !important;
+  border-radius: 4px !important;
 }
 </style>
 
 <style>
-/* 共享样式：AgentsTabPanel / SkillsTabPanel / AgentSkillsToolbar 等子组件依赖 */
+/* 共享样式（非 scoped） */
 @import "../../styles/agent-skills.css";
 </style>

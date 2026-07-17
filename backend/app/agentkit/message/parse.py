@@ -180,7 +180,7 @@ class DsmlStreamFilter:
         yield filter.flush()
     """
 
-    _TAIL_HOLD = 80
+    _TAIL_HOLD = 10
 
     def __init__(self) -> None:
         self._raw = ""

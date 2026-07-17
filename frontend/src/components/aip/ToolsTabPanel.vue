@@ -1,8 +1,8 @@
 <script setup>
-import { computed, h, onMounted, ref, watch } from "vue";
-import { NButton, NCard, NDataTable, NDivider, NDrawer, NDrawerContent, NInput, NSpace, NTag, NText } from "naive-ui";
-import ListRefreshButton from "../ListRefreshButton.vue";
-import ListTableFooter from "../ListTableFooter.vue";
+import { computed, h, nextTick, onMounted, ref, watch } from "vue";
+import { NButton, NDataTable, NDivider, NDrawer, NDrawerContent, NIcon, NInput, NPagination, NSpace, NTag, NText } from "naive-ui";
+import { EyeOutline, RefreshOutline, SearchOutline } from "@vicons/ionicons5";
+import IconAction from "../IconAction.vue";
 import { useClientListPagination } from "../../composables/useClientListPagination.js";
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
@@ -17,14 +17,30 @@ import {
 const ui = usePlatformUi();
 const { t } = useI18n();
 
+const props = defineProps({
+  refreshing: { type: Boolean, default: false },
+  onRefresh: { type: Function, default: null },
+});
+
 const initialCache = readToolsTabCache({ allowStale: true });
 const hydrated = ref(hasToolsTabCacheData(initialCache));
 
 const loading = ref(false);
 const tools = ref(initialCache?.tools || []);
 const keyword = ref("");
+const searchOpen = ref(false);
+const searchInputRef = ref(null);
 const detailOpen = ref(false);
 const detail = ref(null);
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value;
+  if (searchOpen.value) {
+    nextTick(() => searchInputRef.value?.focus?.());
+  } else {
+    keyword.value = "";
+  }
+}
 
 const filteredTools = computed(() => {
   const q = keyword.value.trim().toLowerCase();
@@ -43,6 +59,13 @@ const {
   onPageChange,
 } = useClientListPagination(filteredTools);
 
+const displayInfo = computed(() => {
+  if (!total.value) return "";
+  const start = (page.value - 1) * pageSize + 1;
+  const end = Math.min(page.value * pageSize, total.value);
+  return `${total.value}条数据中的 ${start}-${end} 条`;
+});
+
 watch(keyword, () => {
   onPageChange(1);
 });
@@ -57,7 +80,17 @@ function openDetail(row) {
 }
 
 const columns = computed(() => [
-  { title: t("admin.agentSkills.colName"), key: "tool_id", width: 176, ellipsis: { tooltip: true } },
+  {
+    title: t("admin.agentSkills.colName"),
+    key: "tool_id",
+    minWidth: 220,
+    ellipsis: { tooltip: true },
+    render: (row) =>
+      h("div", { style: "display:flex;flex-direction:column;gap:2px;padding:2px 0;" }, [
+        h("div", { style: "font-size:var(--platform-font-size-sm);font-weight:500;color:var(--platform-text);line-height:1.4;" }, row.tool_id),
+        h("div", { style: "font-size:var(--platform-font-size-sm);color:var(--platform-text-tertiary);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" }, row.description || ""),
+      ]),
+  },
   {
     title: t("admin.agentSkills.colToolType"),
     key: "tool_type",
@@ -70,12 +103,6 @@ const columns = computed(() => [
     width: 128,
     ellipsis: { tooltip: true },
     render: (row) => toolCategoryLabel(row.category),
-  },
-  {
-    title: t("admin.agentSkills.colDescription"),
-    key: "description",
-    minWidth: 220,
-    ellipsis: { tooltip: true },
   },
   {
     title: t("admin.agentSkills.colAvailable"),
@@ -95,12 +122,12 @@ const columns = computed(() => [
   {
     title: "",
     key: "actions",
-    width: 76,
+    width: 56,
     render: (row) =>
       h(
         NButton,
-        { size: "tiny", quaternary: true, type: "primary", onClick: () => openDetail(row) },
-        { default: () => t("common.view") }
+        { size: "tiny", quaternary: true, circle: true, onClick: () => openDetail(row) },
+        { default: () => h(NIcon, null, { default: () => h(EyeOutline) }) }
       ),
   },
 ]);
@@ -129,38 +156,61 @@ onMounted(() => {
   }
 });
 
-defineExpose({ load, loading });
+defineExpose({ load, toggleSearch, loading });
 </script>
 
 <template>
-  <NCard size="small" :title="t('admin.agentSkills.toolsTitle')">
-    <template #header-extra>
-      <NInput
-        v-model:value="keyword"
-        clearable
-        :placeholder="t('admin.agentSkills.searchPlaceholder')"
-        style="width: 240px; margin-right: 8px"
-      />
-      <ListRefreshButton :loading="loading" @click="load({ foreground: true })" />
-    </template>
-    <NText depth="3" style="display: block; margin-bottom: 14px">
-      {{ t("admin.agentSkills.toolsHint") }}
-    </NText>
-    <div class="admin-list-table tools-tab-table">
-      <NDataTable
-        :loading="loading && !hydrated"
-        :columns="columns"
-        :data="pagedItems"
-        :pagination="false"
-      />
-      <ListTableFooter
-        :page="page"
-        :page-size="pageSize"
-        :item-count="total"
-        @update:page="onPageChange"
-      />
+    <div class="tools-card__header">
+      <div class="tools-card__title-row">
+        <div class="tools-card__title">{{ t('admin.agentSkills.tabTools') }}</div>
+        <div class="tools-card__actions">
+          <IconAction
+            :label="t('common.search')"
+            :icon="SearchOutline"
+            :active="searchOpen"
+            @click="toggleSearch"
+          />
+          <IconAction
+            v-if="onRefresh"
+            :label="t('common.refresh')"
+            :icon="RefreshOutline"
+            :loading="refreshing"
+            @click="onRefresh"
+          />
+          <NInput
+            v-show="searchOpen"
+            ref="searchInputRef"
+            v-model:value="keyword"
+            clearable
+            :placeholder="t('admin.agentSkills.searchPlaceholder')"
+            style="width: 240px"
+          />
+        </div>
+      </div>
+      <div class="tools-card__hint">{{ t('admin.agentSkills.toolbarHint.tools') }}</div>
     </div>
-  </NCard>
+    <div class="tools-card">
+      <div class="admin-list-table tools-tab-table">
+        <NDataTable
+          :loading="loading && !hydrated"
+          :columns="columns"
+          :data="pagedItems"
+          :pagination="false"
+        />
+      </div>
+      <div class="tools-table-footer">
+        <span class="tools-table-footer__info">{{ displayInfo }}</span>
+        <div class="tools-table-footer__pages">
+          <NPagination
+            :page="page"
+            :page-size="pageSize"
+            :item-count="total"
+            :page-slot="7"
+            @update:page="onPageChange"
+          />
+        </div>
+      </div>
+    </div>
 
   <NDrawer v-if="detailOpen" v-model:show="detailOpen" :width="520" placement="right">
     <NDrawerContent v-if="detail" :title="t('admin.agentSkills.toolDetailTitle')">
@@ -176,7 +226,7 @@ defineExpose({ load, loading });
 
         <template v-if="detail.doc_text">
           <NDivider style="margin: 8px 0" />
-          <NText depth="3" style="font-weight: 600; margin-bottom: 4px">{{ t("admin.agentSkills.toolUsageGuide") }}</NText>
+          <NText depth="3" style="margin-bottom: 4px">{{ t("admin.agentSkills.toolUsageGuide") }}</NText>
           <NInput
             type="textarea"
             :rows="12"
@@ -210,5 +260,82 @@ defineExpose({ load, loading });
 .tools-tab-table :deep(.n-data-table-th),
 .tools-tab-table :deep(.n-data-table-td) {
   white-space: nowrap;
+}
+
+.tools-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  background: #fcfcfc;
+  padding: 12px 16px;
+  padding-top: 0;
+}
+
+.tools-card__header {
+  margin: 0 0 8px;
+  padding-left: 16px;
+}
+
+.tools-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tools-card__title {
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
+  color: var(--platform-text);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.tools-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.tools-card__hint {
+  margin-top: 2px;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+  line-height: 1.4;
+}
+
+.tools-card :deep(.n-data-table-th),
+.tools-card :deep(.n-data-table-td) {
+  padding: 6px 12px;
+}
+
+.tools-card :deep(.n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-strong);
+  vertical-align: middle;
+}
+
+.tools-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
+}
+
+
+.tools-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid var(--platform-border-strong);
+  font-size: var(--platform-font-size-sm);
+  color: var(--platform-text-tertiary);
+}
+
+.tools-table-footer__pages :deep(.n-pagination) {
+  justify-content: flex-end;
+}
+
+.tools-table-footer__pages :deep(.n-pagination-item) {
+  font-size: var(--platform-font-size-sm);
 }
 </style>

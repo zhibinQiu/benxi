@@ -1,20 +1,22 @@
-"""默认检索优先级 — 提速：直答 > 本体图谱 > 联网 > 文档库；用户显式指定时不走级联。"""
+"""默认检索优先级 — 提速：直答 > 本体查询 > 图谱查询 > 联网 > 文档库；用户显式指定时不走级联。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.kg_service import KgQaContext
+from app.schemas.kg import KgQaContext
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
     ATOMIC_TOOL_WEB_SEARCH,
+    ATOMIC_TOOL_ONTOLOGY_QUERY,
 )
 
 # 执行顺序（快→慢）；事实引用优先级与 platform_assistant 保持一致
 DEFAULT_RETRIEVAL_TOOL_ORDER: tuple[str, ...] = (
-    ATOMIC_TOOL_KG_QUERY,
+    ATOMIC_TOOL_ONTOLOGY_QUERY,  # 第 0 优先 — 先查本体理解领域语义
+    ATOMIC_TOOL_KG_QUERY,        # 第 1 优先 — 再查图谱实例
     ATOMIC_TOOL_WEB_SEARCH,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
 )

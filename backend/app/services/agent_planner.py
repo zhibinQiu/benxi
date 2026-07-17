@@ -395,7 +395,7 @@ def _rule_plan_for_platform_system_data(
         return None
     if is_org_member_list_question(message):
         return AgentExecutionPlan(
-            reasoning="部门成员须来自本体图谱 employs 关系，禁止臆造姓名",
+            reasoning="部门成员须来自知识图谱 employs 关系，禁止臆造姓名",
             intent="查询部门成员",
             direct_answer=False,
             atomic_tools=(ATOMIC_TOOL_KG_QUERY,),
@@ -403,7 +403,7 @@ def _rule_plan_for_platform_system_data(
             uploaded_skill=None,
             builtin_orchestration=None,
             steps=(
-                "kg_query 从本体图谱读取该部门 employs 关系",
+                "kg_query 从知识图谱读取该部门 employs 关系",
                 "仅根据工具返回数据作答，禁止编造姓名或邮箱",
             ),
             source="rule",
@@ -425,11 +425,11 @@ def _rule_plan_for_platform_system_data(
         )
     else:
         steps.append(
-            "invoke_skill(kg-palantir, query_entities, {question: ...})"
+            "invoke_skill(kg, query_entities, {question: ...})"
         )
     steps.append("仅根据 Skill 返回数据作答，禁止编造姓名或邮箱")
     return AgentExecutionPlan(
-        reasoning="系统数据须经 user-administration / dept-administration / kg-palantir Skill，禁止臆造",
+        reasoning="系统数据须经 user-administration / dept-administration / kg Skill，禁止臆造",
         intent="查询平台用户/组织数据",
         direct_answer=False,
         atomic_tools=(ATOMIC_TOOL_KG_QUERY,) if not can_admin_user else (),
@@ -789,10 +789,10 @@ def _all_available_skill_names(db: Session, user: User) -> set[str]:
 _skill_name_sets = _all_available_skill_names  # type: ignore[assignment]
 
 
-_KG_PLANNING_USER_LABEL = "【本体图谱关联（规划参考，非检索结果）】"
+_KG_PLANNING_USER_LABEL = "【知识图谱关联（规划参考，非检索结果）】"
 
 
-def resolve_kg_planning_context(
+async def resolve_kg_planning_context(
     db: Session,
     user: User,
     question: str,
@@ -802,19 +802,19 @@ def resolve_kg_planning_context(
     from app.core.conversation_turn_context import effective_question_for_retrieval
     from app.core.permissions import user_has_permission
 
-    if not user_has_permission(db, user, "feature.kg_palantir"):
+    if not user_has_permission(db, user, "feature.kg"):
         return ""
     text = effective_question_for_retrieval(question, history).strip()
     if not text:
         return ""
     try:
-        from app.services.kg_service import retrieve_kg_context_for_question
+        from app.services.kg_service import retrieve_kg_context_for_question_async
 
-        ctx = retrieve_kg_context_for_question(db, user, text)
+        ctx = await retrieve_kg_context_for_question_async(db, user, text)
         if ctx and ctx.context_text:
             return ctx.context_text.strip()[:1800]
     except Exception as exc:
-        _logger.warning("Agent 规划前本体图谱加载失败: %s", exc)
+        _logger.warning("Agent 规划前知识图谱加载失败: %s", exc)
     return ""
 
 

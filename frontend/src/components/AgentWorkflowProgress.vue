@@ -149,7 +149,8 @@ function stepBody(step) {
   const callText = sanitizeWorkflowDisplayText(step.callDetail);
   const resultText = sanitizeWorkflowDisplayText(step.resultDetail);
   const detailText = sanitizeWorkflowDisplayText(step.detail);
-  if (callText) {
+  const titleText = sanitizeWorkflowDisplayText(step.title) || "";
+  if (callText && !titleText.includes(callText)) {
     lines.push({ label: t("agentWorkflow.call"), text: callText });
   }
   if (resultText) {
@@ -197,7 +198,14 @@ const showFooterLoading = computed(() => {
   return false;
 });
 
-const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executing"));
+const footerLabel = computed(() => {
+  const ft = footerTitle.value;
+  if (!ft) return t("agentWorkflow.executing");
+  // 如果已有 running 步骤的 title 与 currentTitle 相同，不重复显示
+  const runningDup = steps.value.some((s) => s.status === "running" && s.title === ft);
+  if (runningDup) return t("agentWorkflow.executing");
+  return ft;
+});
 </script>
 
 <template>
@@ -209,7 +217,7 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
     aria-live="polite"
   >
     <div
-      v-if="showLiveStatus && footerTitle && !steps.length && !taskPlan.length"
+      v-if="showLiveStatus && footerTitle && !steps.length && !taskPlan.length && !awaitingReply"
       class="agent-workflow__current platform-inline-loading"
     >
       <RoseLoader class="agent-workflow__loader" :size="14" />
@@ -443,14 +451,13 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 .agent-workflow {
   margin-bottom: 10px;
   padding: 10px 12px;
-  font-size: 15px;
+  font-size: 12px;
   color: var(--platform-text);
 }
 
 .agent-workflow__mode {
   margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
   letter-spacing: 0.02em;
   color: var(--platform-text-secondary, #64748b);
 }
@@ -529,7 +536,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 
 .agent-workflow__check-mark {
   font-size: 10px;
-  font-weight: 700;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -560,7 +566,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 .agent-workflow__step--running .agent-workflow__title,
 .agent-workflow__substep--running .agent-workflow__title {
   color: var(--platform-text, #0f172a);
-  font-weight: 600;
 }
 
 .agent-workflow__body {
@@ -580,7 +585,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   padding: 0 5px;
   border-radius: 3px;
   font-size: 11px;
-  font-weight: 600;
   line-height: 1.5;
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.12);
@@ -591,7 +595,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   padding: 0 5px;
   border-radius: 3px;
   font-size: 11px;
-  font-weight: 600;
   line-height: 1.5;
   color: var(--platform-danger, #ef4444);
   background: color-mix(in srgb, var(--platform-danger, #ef4444) 10%, transparent);
@@ -601,8 +604,7 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   flex-shrink: 0;
   padding: 1px 7px;
   border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
   line-height: 1.5;
   color: var(--platform-accent);
   background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
@@ -610,26 +612,50 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 }
 
 .agent-workflow__title {
-  font-weight: 500;
+  font-weight: 400;
+  font-size: 11px;
   line-height: 1.35;
   color: var(--platform-text-secondary, #64748b);
 }
 
 .agent-workflow__label {
   margin-top: 4px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
   color: var(--platform-text-secondary, #64748b);
   letter-spacing: 0.02em;
 }
 
 .agent-workflow__detail {
   margin-top: 2px;
-  font-size: 13.5px;
+  font-size: 10px;
   line-height: 1.5;
   color: var(--platform-text-secondary, #64748b);
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+/* 正在执行的步骤详情：扫描动效 */
+.agent-workflow__step--running .agent-workflow__detail,
+.agent-workflow__substep--running .agent-workflow__detail {
+  background: linear-gradient(
+    to right,
+    var(--platform-text-tertiary) 0%,
+    var(--platform-text-tertiary) 15%,
+    var(--platform-text) 35%,
+    var(--platform-text) 55%,
+    var(--platform-text-tertiary) 75%,
+    var(--platform-text-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: agent-wf-scan 3s ease-in-out infinite;
+}
+
+@keyframes agent-wf-scan {
+  0% { background-position: 200% 0%; }
+  100% { background-position: -200% 0%; }
 }
 
 .agent-workflow__detail--rich {
@@ -637,7 +663,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   margin-top: 4px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--platform-accent) 4%, transparent);
-  border-left: 2px solid color-mix(in srgb, var(--platform-accent) 20%, transparent);
 }
 
 /* ── 工具类型统一灰色 ── */
@@ -646,7 +671,7 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--platform-border, rgba(15, 23, 42, 0.1));
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .agent-workflow--compact {
@@ -725,7 +750,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   justify-content: center;
   border-radius: 50%;
   font-size: 12px;
-  font-weight: 700;
   background: rgba(59, 130, 246, 0.15);
   color: #3b82f6;
 }
@@ -747,14 +771,14 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 
 .agent-workflow__confirmation-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--platform-text, #0f172a);
 }
 
 .agent-workflow__confirmation-detail {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--platform-text-secondary, #64748b);
   word-break: break-word;
@@ -774,7 +798,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   border: none;
   border-radius: 6px;
   font-size: 13px;
-  font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
   line-height: 1.4;
@@ -832,7 +855,6 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
   justify-content: center;
   border-radius: 50%;
   font-size: 12px;
-  font-weight: 700;
   background: rgba(139, 92, 246, 0.15);
   color: #8b5cf6;
 }
@@ -848,8 +870,7 @@ const footerLabel = computed(() => footerTitle.value || t("agentWorkflow.executi
 }
 
 .agent-workflow__choice-question {
-  font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--platform-text, #0f172a);
   margin-bottom: 8px;

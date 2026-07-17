@@ -1,12 +1,12 @@
 .agents-tab-hint {
   display: block;
   margin-bottom: 14px;
-  font-size: 14px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.45;
 }
 .routing-catalog-link {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
+  font-size: var(--platform-font-size-xs);
 }
 .routing-catalog-drawer__body {
   max-height: calc(100vh - 180px);
@@ -21,19 +21,21 @@
 .agent-card {
   height: 100%;
 }
-.agent-card :deep(.n-card) {
+.app-shell .subsystem-shell .agent-card.n-card {
   display: flex;
   flex-direction: column;
   height: 100%;
+  --n-color: #ffffff;
+  background: #ffffff !important;
+  border: 1px solid var(--platform-border-strong) !important;
 }
-.agent-card :deep(.n-card__content) {
+.agent-card .n-card__content {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
   height: 100%;
-  padding: 14px 16px !important;
 }
 .agent-card--disabled {
   opacity: 0.72;
@@ -43,10 +45,6 @@
 }
 .agent-card--clickable {
   cursor: pointer;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
-}
-.agent-card--clickable:hover {
-  box-shadow: var(--platform-shadow-sm);
 }
 .agent-card__head {
   display: flex;
@@ -58,19 +56,18 @@
   min-width: 0;
 }
 .agent-card-title {
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 13px;
   line-height: 1.35;
   letter-spacing: -0.01em;
 }
 .agent-card__head :deep(.agent-card__badge) {
-  font-size: 12px;
+  font-size: var(--platform-font-size-micro);
   padding: 0 7px;
   --n-height: 21px;
 }
 .agent-card__badge--builtin {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--platform-font-size-nano);
   line-height: 1.2;
   padding: 2px 6px;
   border-radius: 5px;
@@ -81,9 +78,9 @@
 }
 .agent-card__desc-wrap {
   flex: 1 1 auto;
-  min-height: calc(13px * 1.45 * 3);
-  margin-top: 6px;
-  padding-bottom: 11px;
+  min-height: calc(12px * 1.5 * 3);
+  margin-top: 3px;
+  padding-bottom: 6px;
 }
 .agent-card__desc {
   display: -webkit-box;
@@ -92,7 +89,7 @@
   line-clamp: 3;
   overflow: hidden;
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 .agent-card__bottom {
   display: flex;
@@ -117,7 +114,7 @@
   flex: 1;
   min-width: 0;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--platform-font-size-xs);
   line-height: 1.35;
   color: var(--platform-text-tertiary);
 }
@@ -169,8 +166,7 @@
   align-items: center;
   gap: 4px;
   margin-top: 3px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-nano);
   line-height: 1;
   color: var(--platform-accent, #18a058);
 }
@@ -207,14 +203,13 @@
   margin-bottom: 7px;
 }
 .agent-config-drawer__section-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-sm);
   letter-spacing: 0.02em;
   text-transform: none;
   color: var(--platform-text-secondary);
 }
 .agent-config-drawer__skill-count :deep(.n-tag) {
-  font-size: 12px;
+  font-size: var(--platform-font-size-micro);
   --n-height: 22px;
 }
 .agent-config-drawer__panel {
@@ -225,7 +220,7 @@
 }
 .agent-config-drawer__section-hint {
   display: block;
-  font-size: 13px;
+  font-size: var(--platform-font-size-xs);
   line-height: 1.45;
   margin-bottom: 10px;
 }
@@ -247,21 +242,22 @@
   flex: 1;
 }
 .agent-config-drawer__row-text :deep(.n-text) {
-  font-size: 14px;
+  font-size: var(--platform-font-size-sm);
 }
 .agent-config-drawer__row-text :deep(.n-text--depth-3) {
-  font-size: 13px;
+  font-size: var(--platform-font-size-xs);
   line-height: 1.35;
 }
 .agent-config-drawer__readonly-hint {
   display: block;
   padding: 0 14px 12px;
-  font-size: 13px;
+  font-size: var(--platform-font-size-xs);
   line-height: 1.45;
 }
 .agent-config-drawer__skills {
   max-height: min(52vh, 504px);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 2px;
 }
 .agent-config-drawer__skill-list {
@@ -290,33 +286,38 @@
 }
 .agent-skill-option__checkbox :deep(.n-checkbox) {
   align-items: flex-start;
-  width: 100%;
+  max-width: 100%;
 }
 .agent-skill-option__checkbox :deep(.n-checkbox-box-wrapper) {
   margin-top: 1px;
+  flex-shrink: 0;
 }
 .agent-skill-option__checkbox :deep(.n-checkbox__label) {
   flex: 1;
   min-width: 0;
   padding-right: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 .agent-skill-option__body {
   display: flex;
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  max-width: 100%;
 }
 .agent-skill-option__title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.35;
   color: var(--platform-text);
+  word-break: break-word;
 }
 .agent-skill-option__name {
-  font-size: 12px;
+  font-size: var(--platform-font-size-micro);
   line-height: 1.35;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   color: var(--platform-text-tertiary);
+  word-break: break-all;
 }
 .agent-skill-option__desc {
   display: -webkit-box;
@@ -324,7 +325,7 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
   margin-top: 2px;
-  font-size: 13px;
+  font-size: var(--platform-font-size-xs);
   line-height: 1.4;
   color: var(--platform-text-secondary);
 }
@@ -349,7 +350,7 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 14px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.5;
   max-height: 576px;
   overflow: auto;
@@ -380,4 +381,46 @@
 @keyframes skeleton-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* ── 卡片表格标题栏按钮：统一缩小 ── */
+.skills-card__actions .icon-action,
+.tools-card__actions .icon-action,
+.aip-keys-card__actions .icon-action {
+  width: 22px !important;
+  height: 22px !important;
+}
+.skills-card__actions .icon-action :deep(.n-icon),
+.tools-card__actions .icon-action :deep(.n-icon),
+.aip-keys-card__actions .icon-action :deep(.n-icon) {
+  font-size: 13px !important;
+}
+.skills-card__actions .n-button,
+.tools-card__actions .n-button,
+.aip-keys-card__actions .n-button {
+  width: 22px !important;
+  height: 22px !important;
+  --n-height: 22px !important;
+  --n-width: 22px !important;
+  --n-icon-size: 13px !important;
+}
+.skills-card__actions .n-button .n-icon,
+.tools-card__actions .n-button .n-icon,
+.aip-keys-card__actions .n-button .n-icon {
+  font-size: 13px !important;
+}
+
+/* ── 配置抽屉 ── */
+/* 根因1：body-content-style 的 padding 加在 Naive UI 内部 wrapper 的 width:100% 之上，
+   即使传了 box-sizing 也可能被内部样式覆盖。所以 body-content-style 只设 "display: block; overflow: hidden"，
+   padding 由内层容器承载。
+   根因2：:native-scrollbar="false" 时 Naive UI 用 NScrollbar 包裹内容，
+   滚动发生在 .n-scrollbar-content 上而非 body-content-wrapper。
+   所以必须在此层级设 overflow-x: hidden。 */
+.agent-config-drawer {
+  word-break: break-word;
+  padding: 19px 24px 14px;
+}
+body .n-drawer .n-scrollbar-content {
+  overflow-x: hidden !important;
 }

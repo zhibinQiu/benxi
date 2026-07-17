@@ -79,8 +79,11 @@ def ensure_report_type_skills(db: Session) -> int:
     return seeded
 
 
+CARBON_CONSULTING_SKILL = "carbon-consulting"
+
+
 def _example_skill_names() -> tuple[str, ...]:
-    return (MERMAID_DIAGRAM_SKILL, *REPORT_SKILL_NAMES)
+    return (MERMAID_DIAGRAM_SKILL, CARBON_CONSULTING_SKILL, *REPORT_SKILL_NAMES)
 
 
 def _all_example_skills_ready(db: Session) -> bool:
@@ -95,8 +98,13 @@ def _all_example_skills_ready(db: Session) -> bool:
     return len(set(rows)) >= len(names)
 
 
+def ensure_carbon_consulting_skill(db: Session) -> bool:
+    return ensure_example_skill(db, CARBON_CONSULTING_SKILL)
+
+
 def ensure_example_agent_skills(db: Session) -> None:
     if _all_example_skills_ready(db):
         return
     ensure_mermaid_diagram_skill(db)
+    ensure_carbon_consulting_skill(db)
     ensure_report_type_skills(db)

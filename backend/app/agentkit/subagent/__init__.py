@@ -1,6 +1,6 @@
 """agentkit-subagent — 隔离上下文子 Agent 运行时。"""
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.subagent.config import SubagentConfig
 from app.agentkit.subagent.context import (

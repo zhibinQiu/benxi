@@ -5,6 +5,7 @@ import {
   NButton,
   NCard,
   NCheckbox,
+  NDatePicker,
   NEmpty,
   NIcon,
   NInput,
@@ -17,10 +18,12 @@ import {
   NTooltip } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
 import {
+  CalendarClearOutline,
   ListOutline,
-  ReorderThreeOutline,
   RefreshOutline,
+  ReorderThreeOutline,
   SparklesOutline,
+  TimeOutline,
   TrashOutline } from "@vicons/ionicons5";
 import IconAction from "./IconAction.vue";
 import HintTooltip from "./HintTooltip.vue";
@@ -36,7 +39,6 @@ import {
   todoLlmPreview,
   updateTodo } from "../api/client";
 import { deleteSequentially } from "../utils/batchActions";
-import ListRefreshButton from "./ListRefreshButton.vue";
 
 const props = defineProps({
   variant: {
@@ -58,7 +60,12 @@ const pending = ref([]);
 const done = ref([]);
 
 const newTitle = ref("");
+const newDueAt = ref(null);
+const showDuePicker = ref(false);
 const adding = ref(false);
+
+const editingDueId = ref(null);
+const editingDueValue = ref(null);
 
 const llmText = ref("");
 const llmMode = ref("parse");
@@ -122,8 +129,14 @@ async function addTodo() {
   }
   adding.value = true;
   try {
-    await createTodo({ title, note: "" });
+    const body = { title, note: "" };
+    if (newDueAt.value != null) {
+      body.due_at = new Date(newDueAt.value).toISOString();
+    }
+    await createTodo(body);
     newTitle.value = "";
+    newDueAt.value = null;
+    showDuePicker.value = false;
     await load();
     ui.success(t("todos.messages.added"));
   } catch (e) {
@@ -135,7 +148,10 @@ async function addTodo() {
 
 async function toggleDone(item, checked) {
   try {
-    await updateTodo(item.id, { status: checked ? "done" : "pending" });
+    await updateTodo(item.id, {
+      status: checked ? "done" : "pending",
+      due_at: item.due_at ?? null,
+    });
     await load();
   } catch (e) {
     ui.error(e.message);
@@ -272,6 +288,68 @@ function formatDoneTime(iso) {
   }
 }
 
+function formatDueTime(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const todayStr = d.toDateString() === now.toDateString();
+    const tomorrow = new Date(now.getTime() + 86400000);
+    const tomorrowStr = d.toDateString() === tomorrow.toDateString();
+    const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (todayStr) return timeStr;
+    if (tomorrowStr) return t("todos.tomorrow") + " " + timeStr;
+    const dateStr = d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return dateStr + " " + timeStr;
+  } catch {
+    return "";
+  }
+}
+
+function isOverdue(iso) {
+  if (!iso) return false;
+  try {
+    return new Date(iso) < new Date();
+  } catch {
+    return false;
+  }
+}
+
+function startEditDue(item) {
+  editingDueId.value = item.id;
+  editingDueValue.value = item.due_at ? new Date(item.due_at).getTime() : Date.now();
+}
+
+function cancelEditDue() {
+  editingDueId.value = null;
+  editingDueValue.value = null;
+}
+
+async function saveDue(item) {
+  const val = editingDueValue.value;
+  editingDueId.value = null;
+  editingDueValue.value = null;
+  if (val == null) return;
+  try {
+    const dueAt = new Date(val).toISOString();
+    await updateTodo(item.id, { due_at: dueAt });
+    await load();
+  } catch (e) {
+    ui.error(e.message);
+  }
+}
+
+async function clearDue(item) {
+  editingDueId.value = null;
+  editingDueValue.value = null;
+  try {
+    await updateTodo(item.id, { due_at: null });
+    await load();
+  } catch (e) {
+    ui.error(e.message);
+  }
+}
+
 function isDragging(index, status) {
   return dragFrom.value === index && dragStatus.value === status;
 }
@@ -352,7 +430,6 @@ defineExpose({ load, refresh: load });
     <n-card v-if="variant === 'page'" size="small" class="todos-card">
       <template #header-extra>
         <n-space align="center" :size="5">
-          <ListRefreshButton :loading="loading" @click="load" />
           <HintTooltip :text="t('todos.pageHint')" />
           <n-button size="small" quaternary @click="openLlm">
             <template #icon>
@@ -364,13 +441,41 @@ defineExpose({ load, refresh: load });
       </template>
 
       <div class="add-row">
-        <n-input
-          v-model:value="newTitle"
-          :placeholder="t('todos.addPlaceholderEnter')"
-          clearable
-          @keyup.enter="addTodo"
-        />
-        <n-button type="primary" :loading="adding" @click="addTodo">{{ t("todos.add") }}</n-button>
+        <div class="add-row__input-group">
+          <n-input
+            v-model:value="newTitle"
+            :placeholder="t('todos.addPlaceholderEnter')"
+            clearable
+            @keyup.enter="addTodo"
+          />
+          <n-tooltip placement="top">
+            <template #trigger>
+              <n-button
+                size="small"
+                quaternary
+                :class="{ 'add-due-btn--active': showDuePicker }"
+                class="add-due-btn"
+                @click="showDuePicker = !showDuePicker"
+              >
+                <template #icon><n-icon :component="TimeOutline" :size="18" /></template>
+              </n-button>
+            </template>
+            {{ newDueAt ? t("todos.setDueDateTime") : t("todos.setDueDate") }}
+          </n-tooltip>
+          <n-button type="primary" :loading="adding" @click="addTodo">{{ t("todos.add") }}</n-button>
+        </div>
+        <div v-if="showDuePicker" class="add-row__picker">
+          <n-date-picker
+            v-model:value="newDueAt"
+            type="datetime"
+            :placeholder="t('todos.setDueDateTime')"
+            clearable
+            style="width: 100%"
+          />
+          <n-tag v-if="newDueAt" closable size="tiny" @close="newDueAt = null" style="margin-top: 6px">
+            {{ formatDueTime(new Date(newDueAt).toISOString()) }}
+          </n-tag>
+        </div>
       </div>
 
       <n-spin :show="loading" local>
@@ -419,6 +524,26 @@ defineExpose({ load, refresh: load });
                 <div class="todo-body">
                   <n-text class="todo-title">{{ item.title }}</n-text>
                   <n-text v-if="item.note" depth="3" class="todo-note">{{ item.note }}</n-text>
+                  <div v-if="editingDueId === item.id" class="todo-due-edit">
+                    <n-date-picker
+                      v-model:value="editingDueValue"
+                      type="datetime"
+                      size="small"
+                      style="width: 220px"
+                    />
+                    <n-button size="tiny" type="primary" @click="saveDue(item)">{{ t("todos.confirmApply") }}</n-button>
+                    <n-button size="tiny" quaternary @click="cancelEditDue">{{ t("common.cancel") }}</n-button>
+                    <n-button v-if="item.due_at" size="tiny" quaternary @click="clearDue(item)">{{ t("todos.clearDueDate") }}</n-button>
+                  </div>
+                  <div
+                    v-else-if="item.due_at"
+                    class="todo-due"
+                    :class="{ 'todo-due--overdue': isOverdue(item.due_at) && item.status === 'pending' }"
+                    @click.stop="startEditDue(item)"
+                  >
+                    <n-icon :component="CalendarClearOutline" :size="14" />
+                    <span>{{ formatDueTime(item.due_at) }}</span>
+                  </div>
                 </div>
               </li>
             </ul>
@@ -471,6 +596,15 @@ defineExpose({ load, refresh: load });
                   <n-text v-if="item.completed_at" depth="3" class="todo-time">
                     {{ formatDoneTime(item.completed_at) }}
                   </n-text>
+                  <div
+                    v-if="item.due_at"
+                    class="todo-due"
+                    :class="{ 'todo-due--done': true }"
+                    @click.stop="startEditDue(item)"
+                  >
+                    <n-icon :component="CalendarClearOutline" :size="14" />
+                    <span>{{ formatDueTime(item.due_at) }}</span>
+                  </div>
                 </div>
               </li>
             </ul>
@@ -481,14 +615,43 @@ defineExpose({ load, refresh: load });
 
     <template v-else>
       <div class="add-row add-row--popover">
-        <n-input
-          v-model:value="newTitle"
-          :placeholder="t('todos.addPlaceholderEnter')"
-          clearable
-          size="small"
-          @keyup.enter="addTodo"
-        />
-        <n-button type="primary" size="small" :loading="adding" @click="addTodo">{{ t("todos.add") }}</n-button>
+        <div class="add-row__input-group">
+          <n-input
+            v-model:value="newTitle"
+            :placeholder="t('todos.addPlaceholderEnter')"
+            clearable
+            size="small"
+            @keyup.enter="addTodo"
+          />
+          <n-tooltip placement="top">
+            <template #trigger>
+              <n-button
+                size="tiny"
+                quaternary
+                :class="{ 'add-due-btn--active': showDuePicker }"
+                class="add-due-btn"
+                @click="showDuePicker = !showDuePicker"
+              >
+                <template #icon><n-icon :component="TimeOutline" :size="16" /></template>
+              </n-button>
+            </template>
+            {{ newDueAt ? t("todos.setDueDateTime") : t("todos.setDueDate") }}
+          </n-tooltip>
+          <n-button type="primary" size="small" :loading="adding" @click="addTodo">{{ t("todos.add") }}</n-button>
+        </div>
+        <div v-if="showDuePicker" class="add-row__picker add-row__picker--popover">
+          <n-date-picker
+            v-model:value="newDueAt"
+            type="datetime"
+            :placeholder="t('todos.setDueDateTime')"
+            clearable
+            size="small"
+            style="width: 100%"
+          />
+          <n-tag v-if="newDueAt" closable size="tiny" @close="newDueAt = null" style="margin-top: 4px">
+            {{ formatDueTime(new Date(newDueAt).toISOString()) }}
+          </n-tag>
+        </div>
       </div>
 
       <n-spin :show="loading" local>
@@ -537,6 +700,15 @@ defineExpose({ load, refresh: load });
                   />
                   <div class="todo-body">
                     <n-text class="todo-title">{{ item.title }}</n-text>
+                    <div
+                      v-if="item.due_at"
+                      class="todo-due"
+                      :class="{ 'todo-due--overdue': isOverdue(item.due_at) && item.status === 'pending' }"
+                      @click.stop="startEditDue(item)"
+                    >
+                      <n-icon :component="CalendarClearOutline" :size="12" />
+                      <span>{{ formatDueTime(item.due_at) }}</span>
+                    </div>
                   </div>
                 </li>
               </ul>
@@ -585,6 +757,13 @@ defineExpose({ load, refresh: load });
                   />
                   <div class="todo-body">
                     <n-text delete class="todo-title">{{ item.title }}</n-text>
+                    <div
+                      v-if="item.due_at"
+                      class="todo-due todo-due--done"
+                    >
+                      <n-icon :component="CalendarClearOutline" :size="12" />
+                      <span>{{ formatDueTime(item.due_at) }}</span>
+                    </div>
                   </div>
                 </li>
               </ul>
@@ -682,8 +861,15 @@ defineExpose({ load, refresh: load });
 
 .add-row {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 10px;
+}
+
+.add-row__input-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .add-row--popover {
@@ -692,6 +878,26 @@ defineExpose({ load, refresh: load });
 
 .add-row :deep(.n-input) {
   flex: 1;
+}
+
+.add-row__picker {
+  padding: 8px 10px;
+  background: var(--platform-bg-elevated, #f8fafb);
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+  border-radius: var(--platform-radius-sm, 10px);
+}
+
+.add-row__picker--popover {
+  padding: 6px 8px;
+}
+
+.add-due-btn {
+  flex-shrink: 0;
+  color: var(--n-text-color-3) !important;
+}
+
+.add-due-btn--active {
+  color: var(--platform-accent) !important;
 }
 
 .todos-columns {
@@ -821,6 +1027,50 @@ defineExpose({ load, refresh: load });
 .todo-time {
   display: block;
   font-size: 14px;
+  margin-top: 2px;
+}
+
+.todo-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  margin-top: 4px;
+  color: var(--n-text-color-3);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.todo-due:hover {
+  background: var(--platform-bg-tertiary, rgba(15, 23, 42, 0.04));
+}
+
+.todo-due--overdue {
+  color: var(--platform-danger, #d03050) !important;
+  font-weight: 500;
+}
+
+.todo-due--done {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+.todo-due-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px;
+  background: var(--platform-bg-elevated, #f8fafb);
+  border: 1px solid var(--platform-border, rgba(15, 23, 42, 0.08));
+  border-radius: var(--platform-radius-sm, 10px);
+}
+
+.todos-panel--popover .todo-due {
+  font-size: 12px;
   margin-top: 2px;
 }
 

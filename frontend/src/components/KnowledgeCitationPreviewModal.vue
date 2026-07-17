@@ -263,7 +263,6 @@ function openDocument() {
   background: rgba(234, 179, 8, 0.55);
   padding: 0 4px;
   border-radius: 4px;
-  font-weight: 700;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }

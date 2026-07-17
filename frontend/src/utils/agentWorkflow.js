@@ -54,7 +54,7 @@ function toolLabel(tool, t) {
     planner: "规划",
     evaluator: "评估",
     retrieve: "知识库检索",
-    kg_context: "本体图谱",
+    kg_context: "知识图谱",
     version_metadata: "版本元数据",
     llm: "语言模型",
     "agent.tools": "智能体工具",
@@ -72,7 +72,7 @@ function toolLabel(tool, t) {
     "supervisor.task": "子任务",
     web_search: "联网搜索",
     knowledge_retrieve: "知识库检索",
-    kg_query: "本体图谱查询",
+    kg_query: "知识图谱查询",
     update_uploaded_skill_file: "更新 Skill 文件",
     delete_uploaded_skill: "删除 Skill",
     read_agent_memory: "读取记忆",
@@ -224,7 +224,15 @@ export function getWorkflowSegmentContent(step) {
     { text: resultDetail, priority: 2 }, // 结果其次
     { text: detail, priority: 1 },
     { text: title, priority: 0 },
-  ].filter((c) => c.text);
+  ]
+    .filter((c) => c.text)
+    // 如果标题已包含某个字段，该字段不占优势
+    .map((c) => {
+      if (c.priority > 0 && title && title.includes(c.text)) {
+        return { ...c, priority: Math.min(c.priority, 0) };
+      }
+      return c;
+    });
 
   if (!candidates.length) return "";
 
@@ -286,8 +294,11 @@ export function getWorkflowFullDetails(step) {
   const resultDetail = sanitizeWorkflowDisplayText(step.resultDetail) || "";
   const tool = step.tool || "";
 
+  // 如果标题已经包含 callDetail 的内容，跳过重复展示
+  const effectiveCall = callDetail && title.includes(callDetail) ? "" : callDetail;
+
   // 主要展示行：调用参数 > 详情 > 标题
-  const primary = callDetail || detail || title;
+  const primary = effectiveCall || detail || title;
   // 次要展示行：结果详情（与主要行不同时）
   const secondary = resultDetail && resultDetail !== primary ? resultDetail : "";
   return { primary, secondary, tool };
@@ -604,7 +615,6 @@ export function applyAgentWorkflowEvent(state, ev, t, options = {}) {
     const id = resolveAgentThinkingId(steps);
     const existing = findStep(steps, id);
     putStep(steps, {
-      id,
       id,
       kind: "thinking",
       tool,

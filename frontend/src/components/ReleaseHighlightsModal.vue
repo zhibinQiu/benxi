@@ -90,7 +90,6 @@ function onAcknowledge() {
 .release-highlights__heading {
   margin: 0;
   font-size: 17px;
-  font-weight: 600;
   color: var(--platform-text);
 }
 
@@ -109,11 +108,11 @@ function onAcknowledge() {
   gap: 5px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle));
-  border: 1px solid var(--platform-ui-glass-border, var(--platform-border));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--liquid-edge-highlight, #fff) 48%, transparent);
-  backdrop-filter: saturate(165%) blur(12px);
-  -webkit-backdrop-filter: saturate(165%) blur(12px);
+  background: var(--platform-bg);
+  border: 1px solid var(--platform-border);
+  box-shadow: inset 0 1px 0 transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .release-highlights__item-title {

@@ -79,7 +79,9 @@ def mark_read(db: Session, user_id: uuid.UUID, notification_id: uuid.UUID) -> No
 
 
 def mark_all_read(db: Session, user_id: uuid.UUID) -> dict[str, int]:
-    """将全部未读标为已读，并清除该用户全部通知。"""
+    """将全部未读标为已读（不清除通知）。"""
+    from sqlalchemy import update
+
     unread = (
         db.scalar(
             select(func.count())
@@ -88,6 +90,18 @@ def mark_all_read(db: Session, user_id: uuid.UUID) -> dict[str, int]:
         )
         or 0
     )
+    if unread:
+        db.execute(
+            update(Notification)
+            .where(Notification.user_id == user_id, Notification.read_at.is_(None))
+            .values(read_at=datetime.now(timezone.utc))
+        )
+        db.commit()
+    return {"updated": int(unread)}
+
+
+def clear_all(db: Session, user_id: uuid.UUID) -> dict[str, int]:
+    """清除该用户全部通知。"""
     total = (
         db.scalar(
             select(func.count())
@@ -99,7 +113,7 @@ def mark_all_read(db: Session, user_id: uuid.UUID) -> dict[str, int]:
     if total:
         db.execute(delete(Notification).where(Notification.user_id == user_id))
         db.commit()
-    return {"updated": int(unread), "deleted": int(total)}
+    return {"deleted": int(total)}
 
 
 def format_scheduled_at_local(dt: datetime) -> str:

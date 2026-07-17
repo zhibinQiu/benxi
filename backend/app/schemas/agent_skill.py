@@ -41,6 +41,7 @@ class AgentToolCategoryOut(StrEnum):
     PLATFORM = "platform"
     ADMIN = "admin"
     BROWSER = "browser"
+    ORCHESTRATION = "orchestration"
 
 
 class RateLimitOut(BaseModel):

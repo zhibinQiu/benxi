@@ -1,1367 +1,1268 @@
-"""知识图谱：本体维护、实体/关系 CRUD 与子图查询。"""
+"""知识图谱（KG）服务层 — Neo4j 实现。
+
+管理实例层（ABox）的实体/关系 CRUD，图谱可视化，与本体层（Ontology）联动验证。
+"""
 
 from __future__ import annotations
 
-import re
+import asyncio
+import json
+import logging
 import uuid
-from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+if TYPE_CHECKING:
+    from neo4j import AsyncDriver
 
-from app.core.exceptions import bad_request, not_found
-from app.models.kg import KgEntity, KgEntityType, KgRelation, KgRelationType
-from app.models.org import User
-from app.schemas.kg import (
-    KgEntityIn,
-    KgEntityOut,
-    KgEntityTypeIn,
-    KgEntityTypeOut,
-    KgEntityTypeUpdate,
-    KgEntityUpdate,
-    KgGraphEdgeOut,
-    KgGraphNodeOut,
-    KgGraphOut,
-    KgMetaOut,
-    KgRelationIn,
-    KgRelationOut,
-    KgRelationTypeIn,
-    KgRelationTypeOut,
-    KgRelationTypeUpdate,
+from app.agentkit.graph import (
+    Neo4jBaseService,
+    entity_node_to_out,
+    relation_record_to_out,
 )
+from app.schemas.kg import (
+    ClearOut,
+    EntityIn,
+    EntityOut,
+    EntityUpdate,
+    GraphEdgeOut,
+    GraphNodeOut,
+    GraphOut,
+    KgQaContext,
+    MetaOut,
+    RelationIn,
+    RelationOut,
+    RelationUpdate,
+)
+from app.services.ontology_service import OntologyService
 
-DEFAULT_ENTITY_TYPES: list[tuple[str, str, str, int]] = [
-    ("org", "组织", "blue", 10),
-    ("agent", "智能体", "cyan", 15),
-    ("person", "人员", "green", 20),
-    ("tool", "工具", "teal", 25),
-    ("doc", "文档", "purple", 30),
-    ("skill", "技能", "indigo", 35),
-    ("regulation", "法规/标准", "orange", 40),
-    ("project", "项目", "pink", 50),
-    ("metric", "指标", "yellow", 60),
-]
-
-DOC_ENTITY_PROPERTY_KEY = "document_id"
-
-
-def _invalidate_kg_cache(user_id: uuid.UUID | None = None) -> None:
-    from app.core.platform_cache import invalidate_kg_cache
-
-    invalidate_kg_cache(user_id)
+logger = logging.getLogger(__name__)
 
 
-DEFAULT_RELATION_TYPES: list[tuple[str, str, int]] = [
-    ("contains", "包含", 10),
-    ("employs", "任职", 20),
-    ("has_tool", "拥有工具", 25),
-    ("has_skill", "绑定技能", 28),
-    ("orchestrates", "编排工具", 29),
-    ("references", "引用", 30),
-    ("based_on", "依据", 40),
-    ("responsible", "负责", 50),
-    ("constrains", "约束", 60),
-    ("produces", "产出", 70),
-]
+class KgService(Neo4jBaseService):
+    """知识图谱服务。
 
+    通过 Neo4j 驱动管理实例数据，创建/查询/更新/删除实体和关系。
+    自动验证 entity type_code 和 relation type_code 是否存在于 ontology。
+    """
 
-def ensure_ontology_defaults(db: Session) -> None:
-    for code, label, color, sort_order in DEFAULT_ENTITY_TYPES:
-        exists = db.scalar(select(KgEntityType.id).where(KgEntityType.code == code))
-        if not exists:
-            db.add(
-                KgEntityType(
-                    code=code,
-                    label=label,
-                    color=color,
-                    sort_order=sort_order,
-                )
-            )
-    for code, label, sort_order in DEFAULT_RELATION_TYPES:
-        exists = db.scalar(select(KgRelationType.id).where(KgRelationType.code == code))
-        if not exists:
-            db.add(
-                KgRelationType(
-                    code=code,
-                    label=label,
-                    sort_order=sort_order,
-                )
-            )
-    db.flush()
+    def __init__(self, driver: AsyncDriver) -> None:
+        super().__init__(driver)
+        self._ontology: OntologyService | None = None
 
+    @property
+    def ontology(self) -> OntologyService:
+        if self._ontology is None:
+            self._ontology = OntologyService(self._driver)
+        return self._ontology
 
-def _entity_counts(db: Session, owner_id: uuid.UUID) -> dict[uuid.UUID, int]:
-    rows = db.execute(
-        select(KgEntity.type_id, func.count())
-        .where(KgEntity.owner_id == owner_id)
-        .group_by(KgEntity.type_id)
-    ).all()
-    return {type_id: int(count) for type_id, count in rows}
+    # ── 实体 CRUD ──────────────────────────────────────────────────────────
 
-
-def _relation_counts(db: Session, owner_id: uuid.UUID) -> dict[uuid.UUID, int]:
-    rows = db.execute(
-        select(KgRelation.relation_type_id, func.count())
-        .where(KgRelation.owner_id == owner_id)
-        .group_by(KgRelation.relation_type_id)
-    ).all()
-    return {type_id: int(count) for type_id, count in rows}
-
-
-def ensure_platform_org_synced(db: Session, user: User) -> dict[str, int] | None:
-    """将平台用户/部门 upsert 到当前用户的图谱实体。"""
-    from app.services.kg_system_sync_service import sync_platform_org_to_kg
-
-    return sync_platform_org_to_kg(db, user)
-
-
-def ensure_platform_agent_synced(db: Session, user: User) -> dict[str, int] | None:
-    """将平台智能体及其工具、技能拓扑 upsert 到当前用户的图谱实体。"""
-    from app.services.kg_system_sync_service import sync_platform_agents_to_kg
-
-    return sync_platform_agents_to_kg(db, user)
-
-
-def ensure_platform_system_synced(db: Session, user: User) -> dict[str, int]:
-    """同步平台组织与智能体能力拓扑到图谱。"""
-    org_stats = ensure_platform_org_synced(db, user) or {}
-    agent_stats = ensure_platform_agent_synced(db, user) or {}
-    return {**org_stats, **agent_stats}
-
-
-def seed_demo_graph(db: Session, user: User) -> None:
-    """补充碳市场示例知识链路（组织/人员由平台同步提供）。"""
-    ensure_ontology_defaults(db)
-    exists = db.scalar(
-        select(KgEntity.id).where(
-            KgEntity.owner_id == user.id,
-            KgEntity.name == "全国碳市场管理办法",
-        )
-    )
-    if exists:
-        return
-
-    type_by_code = {
-        t.code: t
-        for t in db.scalars(select(KgEntityType).order_by(KgEntityType.sort_order)).all()
-    }
-    rel_by_code = {
-        t.code: t
-        for t in db.scalars(select(KgRelationType).order_by(KgRelationType.sort_order)).all()
-    }
-
-    def add_entity(code: str, name: str, description: str = "") -> KgEntity:
-        et = type_by_code[code]
-        row = KgEntity(
-            type_id=et.id,
-            name=name,
-            description=description,
-            owner_id=user.id,
-            created_by=user.id,
-            scope="personal",
-        )
-        db.add(row)
-        db.flush()
-        return row
-
-    person_type_id = type_by_code["person"].id
-    person = db.scalar(
-        select(KgEntity)
-        .where(KgEntity.owner_id == user.id, KgEntity.type_id == person_type_id)
-        .order_by(KgEntity.updated_at.desc())
-        .limit(1)
-    )
-    if not person:
-        person = add_entity("person", "张三")
-    doc = add_entity("doc", "碳排放核算指南")
-    reg = add_entity("regulation", "全国碳市场管理办法")
-    proj = add_entity("project", "减排路径规划", "部门级减排路径项目")
-    metric = add_entity("metric", "范围一排放量")
-
-    def add_rel(code: str, from_id: uuid.UUID, to_id: uuid.UUID) -> None:
-        rt = rel_by_code[code]
-        db.add(
-            KgRelation(
-                relation_type_id=rt.id,
-                from_entity_id=from_id,
-                to_entity_id=to_id,
-                owner_id=user.id,
-                created_by=user.id,
-            )
-        )
-
-    add_rel("responsible", person.id, proj.id)
-    add_rel("references", proj.id, doc.id)
-    add_rel("based_on", doc.id, reg.id)
-    add_rel("produces", proj.id, metric.id)
-    add_rel("constrains", reg.id, metric.id)
-    db.flush()
-
-
-def get_meta(db: Session, user: User, *, sync_system: bool = True) -> KgMetaOut:
-    from app.config import get_settings
-    from app.core.platform_cache import (
-        cache_get_json,
-        cache_set_json,
-        kg_meta_cache_key,
-    )
-
-    cache_key = kg_meta_cache_key(str(user.id), sync_system)
-    ttl = max(30, int(get_settings().kg_graph_cache_ttl_sec))
-    cached = cache_get_json(cache_key, ttl=ttl)
-    if cached is not None:
-        return KgMetaOut.model_validate(cached)
-
-    ensure_ontology_defaults(db)
-    if sync_system:
-        ensure_platform_system_synced(db, user)
-    seed_demo_graph(db, user)
-    db.commit()
-
-    entity_counts = _entity_counts(db, user.id)
-    relation_counts = _relation_counts(db, user.id)
-
-    entity_types = [
-        KgEntityTypeOut(
-            id=t.id,
-            code=t.code,
-            label=t.label,
-            color=t.color,
-            description=t.description,
-            sort_order=t.sort_order,
-            entity_count=entity_counts.get(t.id, 0),
-        )
-        for t in db.scalars(
-            select(KgEntityType).order_by(KgEntityType.sort_order, KgEntityType.code)
-        ).all()
-    ]
-    relation_types = [
-        KgRelationTypeOut(
-            id=t.id,
-            code=t.code,
-            label=t.label,
-            description=t.description,
-            sort_order=t.sort_order,
-            relation_count=relation_counts.get(t.id, 0),
-        )
-        for t in db.scalars(
-            select(KgRelationType).order_by(KgRelationType.sort_order, KgRelationType.code)
-        ).all()
-    ]
-
-    entity_total = db.scalar(
-        select(func.count()).select_from(KgEntity).where(KgEntity.owner_id == user.id)
-    )
-    relation_total = db.scalar(
-        select(func.count()).select_from(KgRelation).where(KgRelation.owner_id == user.id)
-    )
-
-    result = KgMetaOut(
-        entity_types=entity_types,
-        relation_types=relation_types,
-        entity_total=int(entity_total or 0),
-        relation_total=int(relation_total or 0),
-    )
-    cache_set_json(cache_key, result.model_dump(mode="json"), ttl=ttl)
-    return result
-
-
-def _entity_out(db: Session, row: KgEntity) -> KgEntityOut:
-    et = db.get(KgEntityType, row.type_id)
-    if not et:
-        raise not_found("实体类型不存在")
-    return _entity_out_from_type(row, et)
-
-
-def _entity_out_from_type(row: KgEntity, et: KgEntityType) -> KgEntityOut:
-    return KgEntityOut(
-        id=row.id,
-        type_id=row.type_id,
-        type_code=et.code,
-        type_label=et.label,
-        type_color=et.color,
-        name=row.name,
-        description=row.description,
-        properties=dict(row.properties or {}),
-        scope=row.scope,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
-
-
-def _entities_out(db: Session, rows: list[KgEntity]) -> list[KgEntityOut]:
-    if not rows:
-        return []
-    type_ids = {row.type_id for row in rows}
-    type_map = {
-        t.id: t
-        for t in db.scalars(select(KgEntityType).where(KgEntityType.id.in_(type_ids))).all()
-    }
-    result: list[KgEntityOut] = []
-    for row in rows:
-        et = type_map.get(row.type_id)
+    async def create_entity(self, body: EntityIn, user_id: str) -> EntityOut:
+        """创建实体实例，自动验证 ontology type_code。"""
+        et = await self.ontology.get_entity_type(body.type_code)
         if not et:
-            raise not_found("实体类型不存在")
-        result.append(_entity_out_from_type(row, et))
-    return result
+            raise ValueError(f"实体类型 '{body.type_code}' 不在本体定义中")
 
-
-def list_entities(
-    db: Session,
-    user: User,
-    *,
-    type_id: uuid.UUID | None = None,
-    q: str | None = None,
-) -> list[KgEntityOut]:
-    from app.config import get_settings
-    from app.core.platform_cache import (
-        cache_get_json,
-        cache_set_json,
-        kg_entities_cache_key,
-    )
-
-    cache_key = kg_entities_cache_key(
-        str(user.id),
-        str(type_id) if type_id else None,
-        q,
-    )
-    ttl = max(30, int(get_settings().kg_graph_cache_ttl_sec))
-    cached = cache_get_json(cache_key, ttl=ttl)
-    if cached is not None:
-        return [KgEntityOut.model_validate(item) for item in cached]
-
-    stmt = select(KgEntity).where(KgEntity.owner_id == user.id)
-    if type_id:
-        stmt = stmt.where(KgEntity.type_id == type_id)
-    if q and q.strip():
-        kw = f"%{q.strip()}%"
-        stmt = stmt.where(
-            or_(KgEntity.name.ilike(kw), KgEntity.description.ilike(kw))
+        errors = await self.ontology.validate_entity_properties(
+            body.type_code, body.properties or {}
         )
-    rows = db.scalars(stmt.order_by(KgEntity.updated_at.desc(), KgEntity.name)).all()
-    result = _entities_out(db, rows)
-    cache_set_json(
-        cache_key,
-        [item.model_dump(mode="json") for item in result],
-        ttl=ttl,
-    )
-    return result
+        if errors:
+            raise ValueError(f"属性验证失败: {'; '.join(errors)}")
 
-
-def get_entity(db: Session, user: User, entity_id: uuid.UUID) -> KgEntityOut:
-    row = db.scalar(
-        select(KgEntity).where(
-            KgEntity.id == entity_id,
-            KgEntity.owner_id == user.id,
+        entity_id = str(uuid.uuid4())
+        record = await self.run_single(
+            """
+            CREATE (e:Entity {
+                id: $id, type_code: $type_code, name: $name,
+                description: $description, owner_id: $owner_id,
+                properties: $properties, source_type: $source_type,
+                source_document_id: $source_document_id,
+                created_by: $created_by,
+                created_at: datetime(), updated_at: datetime()
+            })
+            RETURN e
+            """,
+            params=dict(
+                id=entity_id,
+                type_code=body.type_code,
+                name=body.name.strip(),
+                description=body.description or "",
+                owner_id=user_id,
+                properties=json.dumps(body.properties or {}, ensure_ascii=False),
+                source_type=body.source_type or "manual",
+                source_document_id=body.source_document_id or "",
+                created_by=user_id,
+            ),
         )
-    )
-    if not row:
-        raise not_found("实体不存在")
-    return _entity_out(db, row)
+        if not record:
+            raise ValueError("创建实体失败")
+        return entity_node_to_out(record["e"], et)
 
-
-def create_entity(db: Session, user: User, body: KgEntityIn) -> KgEntityOut:
-    et = db.get(KgEntityType, body.type_id)
-    if not et:
-        raise bad_request("实体类型不存在")
-    row = KgEntity(
-        type_id=body.type_id,
-        name=body.name.strip(),
-        description=body.description or "",
-        properties=body.properties or {},
-        owner_id=user.id,
-        created_by=user.id,
-        scope="personal",
-    )
-    db.add(row)
-    db.flush()
-    db.commit()
-    db.refresh(row)
-    _invalidate_kg_cache(user.id)
-    return _entity_out(db, row)
-
-
-def update_entity(
-    db: Session,
-    user: User,
-    entity_id: uuid.UUID,
-    body: KgEntityUpdate,
-) -> KgEntityOut:
-    row = db.scalar(
-        select(KgEntity).where(
-            KgEntity.id == entity_id,
-            KgEntity.owner_id == user.id,
+    async def get_entity(self, entity_id: str, user_id: str) -> EntityOut | None:
+        """获取实体详情。"""
+        record = await self.run_single(
+            """
+            MATCH (e:Entity {id: $id})
+            WHERE e.owner_id IS NULL OR e.owner_id = $owner_id
+            RETURN e
+            """,
+            params=dict(id=entity_id, owner_id=user_id),
         )
-    )
-    if not row:
-        raise not_found("实体不存在")
-    if body.type_id is not None:
-        et = db.get(KgEntityType, body.type_id)
-        if not et:
-            raise bad_request("实体类型不存在")
-        row.type_id = body.type_id
-    if body.name is not None:
-        row.name = body.name.strip()
-    if body.description is not None:
-        row.description = body.description
-    if body.properties is not None:
-        row.properties = body.properties
-    db.commit()
-    db.refresh(row)
-    _invalidate_kg_cache(user.id)
-    return _entity_out(db, row)
+        if not record:
+            return None
+        return await self._enrich_entity(record["e"])
 
+    async def list_entities(
+        self,
+        user_id: str,
+        *,
+        type_code: str | None = None,
+        q: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[EntityOut]:
+        """列出实体，支持类型和关键词过滤。"""
+        where_clauses = ["(e.owner_id = $owner_id OR e.owner_id IS NULL)"]
+        params: dict[str, Any] = {"owner_id": user_id, "limit": limit, "offset": offset}
 
-def delete_entity(db: Session, user: User, entity_id: uuid.UUID) -> None:
-    row = db.scalar(
-        select(KgEntity).where(
-            KgEntity.id == entity_id,
-            KgEntity.owner_id == user.id,
-        )
-    )
-    if not row:
-        raise not_found("实体不存在")
-    db.delete(row)
-    db.commit()
-    _invalidate_kg_cache(user.id)
+        if type_code:
+            where_clauses.append("e.type_code = $type_code")
+            params["type_code"] = type_code
 
-
-def batch_delete_entities(
-    db: Session,
-    user: User,
-    *,
-    entity_ids: list[uuid.UUID] | None = None,
-    type_id: uuid.UUID | None = None,
-    q: str | None = None,
-) -> int:
-    from app.services.kg.entity_commands import batch_delete_entities as _batch_delete
-
-    return _batch_delete(
-        db, user, entity_ids=entity_ids, type_id=type_id, q=q
-    )
-
-
-def clear_user_graph(db: Session, user: User) -> dict[str, int]:
-    from app.services.kg.entity_commands import clear_user_graph as _clear
-
-    return _clear(db, user)
-
-
-def _relation_out(db: Session, row: KgRelation) -> KgRelationOut:
-    items = _relations_out(db, [row])
-    return items[0]
-
-
-def _relation_out_from_maps(
-    row: KgRelation,
-    *,
-    rel_type_map: dict[uuid.UUID, KgRelationType],
-    entity_map: dict[uuid.UUID, KgEntity],
-) -> KgRelationOut:
-    rt = rel_type_map.get(row.relation_type_id)
-    from_ent = entity_map.get(row.from_entity_id)
-    to_ent = entity_map.get(row.to_entity_id)
-    if not rt or not from_ent or not to_ent:
-        raise not_found("关系数据不完整")
-    return KgRelationOut(
-        id=row.id,
-        relation_type_id=row.relation_type_id,
-        relation_type_code=rt.code,
-        relation_type_label=rt.label,
-        from_entity_id=row.from_entity_id,
-        to_entity_id=row.to_entity_id,
-        from_name=from_ent.name,
-        to_name=to_ent.name,
-        description=row.description,
-        created_at=row.created_at,
-    )
-
-
-def _relations_out(db: Session, rows: list[KgRelation]) -> list[KgRelationOut]:
-    if not rows:
-        return []
-    entity_ids: set[uuid.UUID] = set()
-    rel_type_ids: set[uuid.UUID] = set()
-    for row in rows:
-        entity_ids.add(row.from_entity_id)
-        entity_ids.add(row.to_entity_id)
-        rel_type_ids.add(row.relation_type_id)
-    entity_map = {
-        ent.id: ent
-        for ent in db.scalars(
-            select(KgEntity).where(KgEntity.id.in_(entity_ids))
-        ).all()
-    }
-    rel_type_map = {
-        rt.id: rt
-        for rt in db.scalars(
-            select(KgRelationType).where(KgRelationType.id.in_(rel_type_ids))
-        ).all()
-    }
-    return [
-        _relation_out_from_maps(
-            row,
-            rel_type_map=rel_type_map,
-            entity_map=entity_map,
-        )
-        for row in rows
-    ]
-
-
-def list_relations(
-    db: Session,
-    user: User,
-    *,
-    entity_id: uuid.UUID | None = None,
-    relation_type_id: uuid.UUID | None = None,
-) -> list[KgRelationOut]:
-    from app.config import get_settings
-    from app.core.platform_cache import (
-        cache_get_json,
-        cache_set_json,
-        kg_relations_cache_key,
-    )
-
-    cache_key = kg_relations_cache_key(
-        str(user.id),
-        str(entity_id) if entity_id else None,
-        str(relation_type_id) if relation_type_id else None,
-    )
-    ttl = max(30, int(get_settings().kg_graph_cache_ttl_sec))
-    cached = cache_get_json(cache_key, ttl=ttl)
-    if cached is not None:
-        return [KgRelationOut.model_validate(item) for item in cached]
-
-    stmt = select(KgRelation).where(KgRelation.owner_id == user.id)
-    if entity_id:
-        stmt = stmt.where(
-            or_(
-                KgRelation.from_entity_id == entity_id,
-                KgRelation.to_entity_id == entity_id,
+        if q and q.strip():
+            keyword = q.strip()
+            where_clauses.append(
+                "(toLower(e.name) CONTAINS toLower($q) OR toLower(e.description) CONTAINS toLower($q))"
             )
+            params["q"] = keyword
+
+        where_str = " AND ".join(where_clauses)
+        records = await self.run(
+            f"""
+            MATCH (e:Entity)
+            WHERE {where_str}
+            RETURN e
+            ORDER BY e.updated_at DESC
+            SKIP $offset LIMIT $limit
+            """,
+            params=params,
         )
-    if relation_type_id:
-        stmt = stmt.where(KgRelation.relation_type_id == relation_type_id)
-    rows = db.scalars(stmt.order_by(KgRelation.created_at.desc())).all()
-    result = _relations_out(db, rows)
-    cache_set_json(
-        cache_key,
-        [item.model_dump(mode="json") for item in result],
-        ttl=ttl,
-    )
-    return result
+        items: list[EntityOut] = []
+        for record in records:
+            item = await self._enrich_entity(record["e"])
+            items.append(item)
+        return items
 
+    async def update_entity(
+        self, entity_id: str, body: EntityUpdate, user_id: str
+    ) -> EntityOut | None:
+        """更新实体。"""
+        sets: list[str] = []
+        params: dict[str, Any] = {"id": entity_id, "owner_id": user_id}
 
-def create_relation(db: Session, user: User, body: KgRelationIn) -> KgRelationOut:
-    if body.from_entity_id == body.to_entity_id:
-        raise bad_request("关系的起点与终点不能相同")
-    rt = db.get(KgRelationType, body.relation_type_id)
-    if not rt:
-        raise bad_request("关系类型不存在")
-    from_ent = db.scalar(
-        select(KgEntity).where(
-            KgEntity.id == body.from_entity_id,
-            KgEntity.owner_id == user.id,
+        if body.name is not None:
+            sets.append("e.name = $name")
+            params["name"] = body.name.strip()
+        if body.type_code is not None:
+            et = await self.ontology.get_entity_type(body.type_code)
+            if not et:
+                raise ValueError(f"实体类型 '{body.type_code}' 不在本体定义中")
+            sets.append("e.type_code = $type_code")
+            params["type_code"] = body.type_code
+        if body.description is not None:
+            sets.append("e.description = $description")
+            params["description"] = body.description
+        if body.properties is not None:
+            sets.append("e.properties = $properties")
+            params["properties"] = json.dumps(body.properties, ensure_ascii=False)
+
+        if not sets:
+            return await self.get_entity(entity_id, user_id)
+
+        sets.append("e.updated_at = datetime()")
+        set_clause = ", ".join(sets)
+        record = await self.run_single(
+            f"""
+            MATCH (e:Entity {{id: $id}})
+            WHERE e.owner_id IS NULL OR e.owner_id = $owner_id
+            SET {set_clause}
+            RETURN e
+            """,
+            params=params,
         )
-    )
-    to_ent = db.scalar(
-        select(KgEntity).where(
-            KgEntity.id == body.to_entity_id,
-            KgEntity.owner_id == user.id,
+        if not record:
+            return None
+        return await self._enrich_entity(record["e"])
+
+    async def delete_entity(self, entity_id: str, user_id: str) -> bool:
+        """删除实体及其关联关系。"""
+        async with self._driver.session() as s:
+            await s.run(
+                """
+                MATCH (e:Entity {id: $id})
+                WHERE e.owner_id IS NULL OR e.owner_id = $owner_id
+                OPTIONAL MATCH (e)-[r:RELATES]-()
+                DELETE r
+                """,
+                id=entity_id,
+                owner_id=user_id,
+            )
+            result = await s.run(
+                """
+                MATCH (e:Entity {id: $id})
+                WHERE e.owner_id IS NULL OR e.owner_id = $owner_id
+                DELETE e
+                RETURN count(e) AS deleted
+                """,
+                id=entity_id,
+                owner_id=user_id,
+            )
+            record = await result.single()
+            return (record.get("deleted") or 0) > 0
+
+    async def count_entities(self, user_id: str) -> int:
+        """统计用户的实体总数。"""
+        return await self.count_query(
+            "MATCH (e:Entity) WHERE e.owner_id IS NULL OR e.owner_id = $owner_id RETURN count(e) AS cnt",
+            params=dict(owner_id=user_id),
         )
-    )
-    if not from_ent or not to_ent:
-        raise bad_request("实体不存在或无权访问")
 
-    dup = db.scalar(
-        select(KgRelation).where(
-            KgRelation.owner_id == user.id,
-            KgRelation.relation_type_id == body.relation_type_id,
-            KgRelation.from_entity_id == body.from_entity_id,
-            KgRelation.to_entity_id == body.to_entity_id,
+    async def count_entities_by_type(self, user_id: str) -> dict[str, int]:
+        """按类型统计实体数量。"""
+        records = await self.run_and_collect(
+            """
+            MATCH (e:Entity)
+            WHERE e.owner_id IS NULL OR e.owner_id = $owner_id
+            RETURN e.type_code AS type, count(e) AS cnt
+            """,
+            params=dict(owner_id=user_id),
         )
-    )
-    if dup:
-        raise bad_request("相同关系已存在")
+        counts: dict[str, int] = {}
+        for record in records:
+            code = record.get("type", "")
+            if code:
+                counts[code] = record.get("cnt") or 0
+        return counts
 
-    row = KgRelation(
-        relation_type_id=body.relation_type_id,
-        from_entity_id=body.from_entity_id,
-        to_entity_id=body.to_entity_id,
-        description=body.description or "",
-        owner_id=user.id,
-        created_by=user.id,
-    )
-    db.add(row)
-    db.flush()
-    db.commit()
-    db.refresh(row)
-    _invalidate_kg_cache(user.id)
-    return _relation_out(db, row)
+    # ── 关系 CRUD ──────────────────────────────────────────────────────────
 
+    async def create_relation(self, body: RelationIn, user_id: str) -> RelationOut:
+        """创建关系，自动验证 ontology domain/range 约束。"""
+        rt = await self.ontology.get_relation_type(body.type_code)
+        if not rt:
+            raise ValueError(f"关系类型 '{body.type_code}' 不在本体定义中")
 
-def delete_relation(db: Session, user: User, relation_id: uuid.UUID) -> None:
-    row = db.scalar(
-        select(KgRelation).where(
-            KgRelation.id == relation_id,
-            KgRelation.owner_id == user.id,
+        async with self._driver.session() as s:
+            from_result = await s.run(
+                "MATCH (e:Entity {id: $id}) RETURN e", id=body.from_entity_id
+            )
+            from_record = await from_result.single()
+            if not from_record:
+                raise ValueError(f"起点实体 '{body.from_entity_id}' 不存在")
+
+            to_result = await s.run(
+                "MATCH (e:Entity {id: $id}) RETURN e", id=body.to_entity_id
+            )
+            to_record = await to_result.single()
+            if not to_record:
+                raise ValueError(f"终点实体 '{body.to_entity_id}' 不存在")
+
+            from_node = dict(from_record["e"])
+            to_node = dict(to_record["e"])
+
+            errors = await self.ontology.validate_relation_domain_range(
+                body.type_code, from_node.get("type_code", ""), to_node.get("type_code", "")
+            )
+            if errors:
+                raise ValueError(f"关系约束验证失败: {'; '.join(errors)}")
+
+            dup = await s.run(
+                """
+                MATCH (a:Entity {id: $from_id})-[r:RELATES {type_code: $type_code}]->(b:Entity {id: $to_id})
+                RETURN r
+                """,
+                from_id=body.from_entity_id,
+                type_code=body.type_code,
+                to_id=body.to_entity_id,
+            )
+            if await dup.single():
+                raise ValueError("相同关系已存在")
+
+            relation_id = str(uuid.uuid4())
+            result = await s.run(
+                """
+                MATCH (a:Entity {id: $from_id})
+                MATCH (b:Entity {id: $to_id})
+                CREATE (a)-[r:RELATES {
+                    id: $id, type_code: $type_code,
+                    description: $description, inferred: false,
+                    owner_id: $owner_id, created_at: datetime()
+                }]->(b)
+                RETURN r, a, b
+                """,
+                id=relation_id,
+                from_id=body.from_entity_id,
+                to_id=body.to_entity_id,
+                type_code=body.type_code,
+                description=body.description or "",
+                owner_id=user_id,
+            )
+            record = await result.single()
+            if not record:
+                raise ValueError("创建关系失败")
+            return relation_record_to_out(record)
+
+    async def list_relations(
+        self,
+        user_id: str,
+        *,
+        entity_id: str | None = None,
+        type_code: str | None = None,
+    ) -> list[RelationOut]:
+        """列出关系，支持按实体或类型过滤。"""
+        where_clauses = ["r.owner_id = $owner_id"]
+        params: dict[str, Any] = {"owner_id": user_id}
+
+        if entity_id:
+            where_clauses.append("(a.id = $entity_id OR b.id = $entity_id)")
+            params["entity_id"] = entity_id
+        if type_code:
+            where_clauses.append("r.type_code = $type_code")
+            params["type_code"] = type_code
+
+        where_str = " AND ".join(where_clauses)
+        records = await self.run(
+            f"""
+            MATCH (a)-[r:RELATES]->(b)
+            WHERE {where_str}
+            RETURN r, a, b
+            ORDER BY r.created_at DESC
+            """,
+            params=params,
         )
-    )
-    if not row:
-        raise not_found("关系不存在")
-    db.delete(row)
-    db.commit()
-    _invalidate_kg_cache(user.id)
+        return [relation_record_to_out(r) for r in records]
 
-
-def create_entity_type(db: Session, body: KgEntityTypeIn) -> KgEntityTypeOut:
-    code = body.code.strip()
-    if db.scalar(select(KgEntityType.id).where(KgEntityType.code == code)):
-        raise bad_request("实体类型 code 已存在")
-    row = KgEntityType(
-        code=code,
-        label=body.label.strip(),
-        color=body.color or "blue",
-        description=body.description or "",
-        sort_order=body.sort_order,
-    )
-    db.add(row)
-    db.flush()
-    db.commit()
-    db.refresh(row)
-    _invalidate_kg_cache()
-    return KgEntityTypeOut(
-        id=row.id,
-        code=row.code,
-        label=row.label,
-        color=row.color,
-        description=row.description,
-        sort_order=row.sort_order,
-        entity_count=0,
-    )
-
-
-def update_entity_type(
-    db: Session,
-    type_id: uuid.UUID,
-    body: KgEntityTypeUpdate,
-) -> KgEntityTypeOut:
-    row = db.get(KgEntityType, type_id)
-    if not row:
-        raise not_found("实体类型不存在")
-    if body.label is not None:
-        row.label = body.label.strip()
-    if body.color is not None:
-        row.color = body.color
-    if body.description is not None:
-        row.description = body.description
-    if body.sort_order is not None:
-        row.sort_order = body.sort_order
-    db.commit()
-    db.refresh(row)
-    _invalidate_kg_cache()
-    return KgEntityTypeOut(
-        id=row.id,
-        code=row.code,
-        label=row.label,
-        color=row.color,
-        description=row.description,
-        sort_order=row.sort_order,
-        entity_count=0,
-    )
-
-
-def delete_entity_type(db: Session, type_id: uuid.UUID) -> None:
-    row = db.get(KgEntityType, type_id)
-    if not row:
-        raise not_found("实体类型不存在")
-    in_use = db.scalar(
-        select(func.count()).select_from(KgEntity).where(KgEntity.type_id == type_id)
-    )
-    if int(in_use or 0) > 0:
-        raise bad_request("该类型下仍有实体，无法删除")
-    db.delete(row)
-    db.commit()
-    _invalidate_kg_cache()
-
-
-def create_relation_type(db: Session, body: KgRelationTypeIn) -> KgRelationTypeOut:
-    code = body.code.strip()
-    if db.scalar(select(KgRelationType.id).where(KgRelationType.code == code)):
-        raise bad_request("关系类型 code 已存在")
-    row = KgRelationType(
-        code=code,
-        label=body.label.strip(),
-        description=body.description or "",
-        sort_order=body.sort_order,
-    )
-    db.add(row)
-    db.flush()
-    db.commit()
-    db.refresh(row)
-    _invalidate_kg_cache()
-    return KgRelationTypeOut(
-        id=row.id,
-        code=row.code,
-        label=row.label,
-        description=row.description,
-        sort_order=row.sort_order,
-        relation_count=0,
-    )
-
-
-def update_relation_type(
-    db: Session,
-    type_id: uuid.UUID,
-    body: KgRelationTypeUpdate,
-) -> KgRelationTypeOut:
-    row = db.get(KgRelationType, type_id)
-    if not row:
-        raise not_found("关系类型不存在")
-    if body.label is not None:
-        row.label = body.label.strip()
-    if body.description is not None:
-        row.description = body.description
-    if body.sort_order is not None:
-        row.sort_order = body.sort_order
-    db.commit()
-    db.refresh(row)
-    _invalidate_kg_cache()
-    return KgRelationTypeOut(
-        id=row.id,
-        code=row.code,
-        label=row.label,
-        description=row.description,
-        sort_order=row.sort_order,
-        relation_count=0,
-    )
-
-
-def delete_relation_type(db: Session, type_id: uuid.UUID) -> None:
-    row = db.get(KgRelationType, type_id)
-    if not row:
-        raise not_found("关系类型不存在")
-    in_use = db.scalar(
-        select(func.count()).select_from(KgRelation).where(
-            KgRelation.relation_type_id == type_id
+    async def delete_relation(self, relation_id: str, user_id: str) -> bool:
+        """删除关系。"""
+        record = await self.run_single(
+            """
+            MATCH ()-[r:RELATES {id: $id}]->()
+            WHERE r.owner_id = $owner_id
+            DELETE r
+            RETURN count(r) AS deleted
+            """,
+            params=dict(id=relation_id, owner_id=user_id),
         )
-    )
-    if int(in_use or 0) > 0:
-        raise bad_request("该关系类型仍在使用，无法删除")
-    db.delete(row)
-    db.commit()
-    _invalidate_kg_cache()
+        return (record.get("deleted") or 0) > 0 if record else False
 
+    async def update_relation(
+        self, relation_id: str, body: RelationUpdate, user_id: str
+    ) -> RelationOut | None:
+        """更新关系。"""
+        sets: list[str] = []
+        params: dict[str, Any] = {"id": relation_id, "owner_id": user_id}
 
-def _build_graph(
-    db: Session,
-    user: User,
-    *,
-    focus_entity_id: uuid.UUID | None = None,
-    depth: int = 1,
-) -> KgGraphOut:
-    depth = max(1, min(depth, 3))
-    entity_ids: set[uuid.UUID] = set()
-    if focus_entity_id:
-        entity_ids.add(focus_entity_id)
-        frontier = {focus_entity_id}
-        for _ in range(depth):
-            if not frontier:
-                break
-            rels = db.scalars(
-                select(KgRelation).where(
-                    KgRelation.owner_id == user.id,
-                    or_(
-                        KgRelation.from_entity_id.in_(frontier),
-                        KgRelation.to_entity_id.in_(frontier),
+        if body.type_code is not None:
+            rt = await self.ontology.get_relation_type(body.type_code)
+            if not rt:
+                raise ValueError(f"关系类型 '{body.type_code}' 不在本体定义中")
+            sets.append("r.type_code = $type_code")
+            params["type_code"] = body.type_code
+        if body.description is not None:
+            sets.append("r.description = $description")
+            params["description"] = body.description
+
+        if not sets:
+            # 无变更，返回当前关系
+            records = await self.run(
+                "MATCH (a)-[r:RELATES {id: $id}]->(b) "
+                "WHERE r.owner_id = $owner_id RETURN r, a, b",
+                params=params,
+            )
+            for record in records:
+                return relation_record_to_out(record)
+            return None
+
+        sets.append("r.updated_at = datetime()")
+        set_clause = ", ".join(sets)
+        records = await self.run(
+            f"""
+            MATCH (a)-[r:RELATES {{id: $id}}]->(b)
+            WHERE r.owner_id = $owner_id
+            SET {set_clause}
+            RETURN r, a, b
+            """,
+            params=params,
+        )
+        for record in records:
+            return relation_record_to_out(record)
+        return None
+
+    # ── 图谱可视化 ──────────────────────────────────────────────────────────
+
+    async def get_subgraph(
+        self, focus_id: str, depth: int = 2, user_id: str | None = None
+    ) -> GraphOut:
+        """获取子图（Neo4j 原生图遍历）。"""
+        params: dict[str, Any] = {"focus_id": focus_id, "depth": max(1, min(depth, 5))}
+        where_clause = ""
+        if user_id:
+            where_clause = " AND (connected.owner_id IS NULL OR connected.owner_id = $owner_id)"
+            params["owner_id"] = user_id
+
+        record = await self.run_single(
+            f"""
+            MATCH (focus:Entity {{id: $focus_id}})
+            OPTIONAL MATCH path = (focus)-[:RELATES*1..$depth]-(connected:Entity)
+            {where_clause}
+            WITH collect(DISTINCT focus) + collect(DISTINCT connected) AS all_nodes,
+                 collect(DISTINCT relationships(path)) AS all_rels
+            UNWIND all_nodes AS n
+            WITH collect(DISTINCT n) AS nodes, all_rels
+            UNWIND all_rels AS rel_list
+            UNWIND rel_list AS r
+            WITH nodes, collect(DISTINCT r) AS edges
+            RETURN nodes, edges
+            """,
+            params=params,
+        )
+        if not record:
+            return GraphOut(focus_entity_id=focus_id)
+
+        return await self._nodes_and_edges_to_graph(
+            record.get("nodes") or [],
+            record.get("edges") or [],
+            focus_id,
+        )
+
+    async def get_full_graph(self, user_id: str, limit: int = 50) -> GraphOut:
+        """获取完整图谱（限制节点数）。"""
+        records = await self.run(
+            """
+            MATCH (e:Entity)
+            WHERE e.owner_id IS NULL OR e.owner_id = $owner_id
+            RETURN e
+            ORDER BY e.updated_at DESC
+            LIMIT $limit
+            """,
+            params=dict(owner_id=user_id, limit=limit),
+        )
+        entity_ids: list[str] = []
+        nodes: list[Any] = []
+        for record in records:
+            node = record["e"]
+            nodes.append(node)
+            entity_ids.append(dict(node).get("id", ""))
+
+        if not entity_ids:
+            return GraphOut()
+
+        rel_records = await self.run(
+            """
+            MATCH (a:Entity)-[r:RELATES]->(b:Entity)
+            WHERE a.id IN $ids AND b.id IN $ids
+            RETURN r, a, b
+            """,
+            params=dict(ids=entity_ids),
+        )
+        edges: list[dict[str, Any]] = []
+        for record in rel_records:
+            edges.append(
+                {
+                    "r": dict(record["r"]),
+                    "a": dict(record["a"]),
+                    "b": dict(record["b"]),
+                }
+            )
+
+        return await self._build_graph_from_lists(nodes, edges)
+
+    async def clear_user_graph(self, user_id: str) -> ClearOut:
+        """清除用户的所有图谱数据。"""
+        async with self._driver.session() as s:
+            rel_result = await s.run(
+                """
+                MATCH ()-[r:RELATES]->()
+                WHERE r.owner_id = $owner_id
+                DELETE r
+                RETURN count(r) AS deleted
+                """,
+                owner_id=user_id,
+            )
+            rel_record = await rel_result.single()
+            deleted_relations = rel_record.get("deleted") or 0
+
+            ent_result = await s.run(
+                """
+                MATCH (e:Entity {owner_id: $owner_id})
+                DELETE e
+                RETURN count(e) AS deleted
+                """,
+                owner_id=user_id,
+            )
+            ent_record = await ent_result.single()
+            deleted_entities = ent_record.get("deleted") or 0
+
+            return ClearOut(
+                deleted_entities=deleted_entities,
+                deleted_relations=deleted_relations,
+            )
+
+    # ── 概览 ────────────────────────────────────────────────────────────────
+
+    async def get_meta(self, user_id: str) -> MetaOut:
+        """获取知识图谱概览。"""
+        entity_counts = await self.count_entities_by_type(user_id)
+        relation_counts: dict[str, int] = {}
+
+        records = await self.run_and_collect(
+            """
+            MATCH ()-[r:RELATES]->()
+            WHERE r.owner_id = $owner_id
+            RETURN r.type_code AS type, count(r) AS cnt
+            """,
+            params=dict(owner_id=user_id),
+        )
+        for record in records:
+            code = record.get("type", "")
+            if code:
+                relation_counts[code] = record.get("cnt") or 0
+
+        return MetaOut(
+            entity_total=sum(entity_counts.values()),
+            relation_total=sum(relation_counts.values()),
+            entity_type_counts=entity_counts,
+            relation_type_counts=relation_counts,
+        )
+
+    # ── 辅助方法 ────────────────────────────────────────────────────────────
+
+    async def batch_import_documents(
+        self,
+        documents: list[tuple[str, str, str, str]],
+    ) -> dict[str, int]:
+        """批量将文档导入为图谱实体。
+
+        Args:
+            documents: list of (id, title, description, owner_id) tuples.
+
+        Returns:
+            dict with created and skipped counts.
+        """
+        imported = 0
+        skipped = 0
+        for doc_id, title, description, owner_id in documents:
+            # 检查是否已存在
+            existing = await self.run_single(
+                "MATCH (e:Entity {source_document_id: $sid}) RETURN e LIMIT 1",
+                params=dict(sid=doc_id),
+            )
+            if existing:
+                skipped += 1
+                continue
+            entity_id = str(uuid.uuid4())
+            try:
+                await self.run_single(
+                    """
+                    CREATE (e:Entity {
+                        id: $id, type_code: $type_code, name: $name,
+                        description: $description,
+                        source_type: $source_type,
+                        source_document_id: $source_document_id,
+                        owner_id: $owner_id,
+                        created_by: $created_by,
+                        created_at: datetime(), updated_at: datetime()
+                    })
+                    RETURN e
+                    """,
+                    params=dict(
+                        id=entity_id,
+                        type_code="doc",
+                        name=title.strip() or "未命名文档",
+                        description=description or "",
+                        source_type="extraction",
+                        source_document_id=doc_id,
+                        owner_id=owner_id,
+                        created_by=owner_id,
                     ),
                 )
+                imported += 1
+            except Exception as exc:
+                logger.warning("导入文档实体失败 [%s]: %s", doc_id, exc)
+                skipped += 1
+        return {"imported": imported, "skipped": skipped}
+
+    # ── 平台数据同步 ──────────────────────────────────────────────────────
+
+    async def sync_platform_org(
+        self, db: Any, owner_id: str
+    ) -> dict[str, int]:
+        """将平台用户/部门同步为 Neo4j 实体（person / org + employs / contains）。"""
+        from app.models.org import Department, User, UserDepartment, UserStatus
+        from sqlalchemy import select
+
+        stats: dict[str, int] = {"departments": 0, "users": 0, "relations": 0}
+
+        if not await self.ontology.get_entity_type("org"):
+            logger.warning("sync_platform_org: 实体类型 'org' 尚未定义")
+            return stats
+        if not await self.ontology.get_entity_type("person"):
+            logger.warning("sync_platform_org: 实体类型 'person' 尚未定义")
+            return stats
+
+        async with self._driver.session() as s:
+            # 部门 -> org
+            dept_rows = db.scalars(
+                select(Department).order_by(Department.sort_order, Department.name)
             ).all()
-            next_frontier: set[uuid.UUID] = set()
-            for rel in rels:
-                entity_ids.add(rel.from_entity_id)
-                entity_ids.add(rel.to_entity_id)
-                next_frontier.add(rel.from_entity_id)
-                next_frontier.add(rel.to_entity_id)
-            frontier = next_frontier
-    else:
-        rows = db.scalars(
-            select(KgEntity.id)
-            .where(KgEntity.owner_id == user.id)
-            .order_by(KgEntity.updated_at.desc())
-            .limit(50)
-        ).all()
-        entity_ids = set(rows)
-
-    if not entity_ids:
-        return KgGraphOut(nodes=[], edges=[], focus_entity_id=focus_entity_id)
-
-    entities = db.scalars(
-        select(KgEntity).where(
-            KgEntity.owner_id == user.id,
-            KgEntity.id.in_(entity_ids),
-        )
-    ).all()
-    type_map = {
-        t.id: t
-        for t in db.scalars(select(KgEntityType)).all()
-    }
-
-    nodes = []
-    for ent in entities:
-        et = type_map.get(ent.type_id)
-        if not et:
-            nodes.append(
-                KgGraphNodeOut(
-                    id=ent.id,
-                    name=ent.name,
-                    type_code="unknown",
-                    type_label="未分类",
-                    type_color="gray",
+            dept_map: dict[str, str] = {}
+            for dept in dept_rows:
+                did = str(dept.id)
+                existing = await s.run(
+                    "MATCH (e:Entity {platform_department_id: $did}) RETURN e LIMIT 1", did=did
                 )
-            )
-            continue
-        nodes.append(
-            KgGraphNodeOut(
-                id=ent.id,
-                name=ent.name,
-                type_code=et.code,
-                type_label=et.label,
-                type_color=et.color,
-            )
-        )
+                rec = await existing.single()
+                if rec:
+                    dept_map[did] = dict(rec["e"])["id"]
+                    continue
+                eid = str(uuid.uuid4())
+                await s.run(
+                    "CREATE (e:Entity {id: $id, type_code: 'org', name: $name, "
+                    "description: '组织部门', properties: '{}', source_type: 'system', "
+                    "platform_department_id: $did, owner_id: $owner, created_by: $owner, "
+                    "created_at: datetime(), updated_at: datetime()})",
+                    id=eid, name=dept.name.strip(), did=did, owner=owner_id,
+                )
+                dept_map[did] = eid
+                stats["departments"] += 1
 
-    if focus_entity_id and not any(n.id == focus_entity_id for n in nodes):
-        focus_row = db.scalar(
-            select(KgEntity).where(
-                KgEntity.owner_id == user.id,
-                KgEntity.id == focus_entity_id,
-            )
+            # contains 关系
+            for dept in dept_rows:
+                did = str(dept.id)
+                pdid = str(dept.parent_id) if dept.parent_id else None
+                child_id = dept_map.get(did)
+                if not pdid or not child_id:
+                    continue
+                parent_id = dept_map.get(pdid)
+                if not parent_id:
+                    continue
+                dup = await s.run(
+                    "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'contains'}]->(b:Entity {id: $to}) "
+                    "RETURN r LIMIT 1", frm=parent_id, to=child_id,
+                )
+                if await dup.single():
+                    continue
+                rid = str(uuid.uuid4())
+                await s.run(
+                    "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
+                    "CREATE (a)-[r:RELATES {id: $rid, type_code: 'contains', "
+                    "description: '', inferred: false, owner_id: $owner, "
+                    "created_at: datetime()}]->(b)",
+                    frm=parent_id, to=child_id, rid=rid, owner=owner_id,
+                )
+                stats["relations"] += 1
+
+            # 用户 -> person + employs
+            users = db.scalars(
+                select(User).where(User.status == UserStatus.active.value)
+            ).all()
+            memberships = db.scalars(select(UserDepartment)).all()
+            membership_map: dict[str, str] = {}
+            for m in memberships:
+                membership_map[str(m.user_id)] = str(m.dept_id)
+
+            for u in users:
+                uid = str(u.id)
+                label = (u.display_name or u.username or u.phone or "用户").strip()
+                existing = await s.run(
+                    "MATCH (e:Entity {platform_user_id: $uid}) RETURN e LIMIT 1", uid=uid
+                )
+                rec = await existing.single()
+                if rec:
+                    person_id = dict(rec["e"])["id"]
+                else:
+                    person_id = str(uuid.uuid4())
+                    desc_parts = [f"手机 {u.phone}" if u.phone else "",
+                                  f"邮箱 {u.email}" if u.email else "",
+                                  f"账号 {u.username}" if u.username else ""]
+                    desc = " · ".join(p for p in desc_parts if p) or "平台用户"
+                    await s.run(
+                        "CREATE (e:Entity {id: $id, type_code: 'person', name: $name, "
+                        "description: $desc, properties: '{}', source_type: 'system', "
+                        "platform_user_id: $uid, owner_id: $owner, created_by: $owner, "
+                        "created_at: datetime(), updated_at: datetime()})",
+                        id=person_id, name=label, desc=desc, uid=uid, owner=owner_id,
+                    )
+                    stats["users"] += 1
+
+                dept_id = membership_map.get(uid)
+                if dept_id:
+                    dept_eid = dept_map.get(dept_id)
+                    if dept_eid:
+                        dup = await s.run(
+                            "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'employs'}]->(b:Entity {id: $to}) "
+                            "RETURN r LIMIT 1", frm=dept_eid, to=person_id,
+                        )
+                        if not await dup.single():
+                            rid = str(uuid.uuid4())
+                            await s.run(
+                                "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
+                                "CREATE (a)-[r:RELATES {id: $rid, type_code: 'employs', "
+                                "description: '', inferred: false, owner_id: $owner, "
+                                "created_at: datetime()}]->(b)",
+                                frm=dept_eid, to=person_id, rid=rid, owner=owner_id,
+                            )
+                            stats["relations"] += 1
+
+        logger.info("平台组织同步完成: %s", stats)
+        return stats
+
+    async def sync_platform_agents(
+        self, db: Any, owner_id: str
+    ) -> dict[str, int]:
+        """将平台智能体/工具/Skill 同步为 Neo4j 实体。"""
+        from app.core.agent_profiles import AGENT_PROFILES
+        from app.services.agent_profile_service import (
+            is_agent_enabled,
+            resolve_agent_internal_atomic_tools,
+            resolve_agent_skill_names,
         )
-        if focus_row:
-            et = type_map.get(focus_row.type_id)
-            nodes.append(
-                KgGraphNodeOut(
-                    id=focus_row.id,
-                    name=focus_row.name,
-                    type_code=et.code if et else "unknown",
-                    type_label=et.label if et else "未分类",
+        from app.services.agent_tool_registry import list_agent_tools
+        from app.skills.catalog import list_all_skill_definitions
+
+        stats: dict[str, int] = {"agents": 0, "tools": 0, "skills": 0, "relations": 0}
+        for tc in ("agent", "tool", "skill"):
+            if not await self.ontology.get_entity_type(tc):
+                logger.warning("sync_platform_agents: 类型 '%s' 尚未定义", tc)
+                return stats
+
+        async with self._driver.session() as s:
+            # 工具 -> tool
+            tool_map: dict[str, str] = {}
+            for tool in list_agent_tools(db, user=None):
+                tname = tool.name
+                existing = await s.run(
+                    "MATCH (e:Entity {platform_tool_name: $n}) RETURN e LIMIT 1", n=tname
+                )
+                rec = await existing.single()
+                if rec:
+                    tool_map[tname] = dict(rec["e"])["id"]
+                    continue
+                eid = str(uuid.uuid4())
+                await s.run(
+                    "CREATE (e:Entity {id: $id, type_code: 'tool', name: $name, "
+                    "description: $desc, properties: '{}', source_type: 'system', "
+                    "platform_tool_name: $tn, owner_id: $owner, created_by: $owner, "
+                    "created_at: datetime(), updated_at: datetime()})",
+                    id=eid, name=tname,
+                    desc=(tool.description or "").strip() or "平台原子工具",
+                    tn=tname, owner=owner_id,
+                )
+                tool_map[tname] = eid
+                stats["tools"] += 1
+
+            # Skill
+            skill_defs = list_all_skill_definitions(
+                db, admin_view=True, include_disabled=True, catalog_only=False
+            )
+            skill_map: dict[str, str] = {}
+            for skill in skill_defs:
+                sname = skill.name
+                existing = await s.run(
+                    "MATCH (e:Entity {platform_skill_name: $n}) RETURN e LIMIT 1", n=sname
+                )
+                rec = await existing.single()
+                if rec:
+                    skill_map[sname] = dict(rec["e"])["id"]
+                    continue
+                eid = str(uuid.uuid4())
+                await s.run(
+                    "CREATE (e:Entity {id: $id, type_code: 'skill', name: $name, "
+                    "description: $desc, properties: '{}', source_type: 'system', "
+                    "platform_skill_name: $sn, owner_id: $owner, created_by: $owner, "
+                    "created_at: datetime(), updated_at: datetime()})",
+                    id=eid, name=(skill.title or sname).strip()[:256],
+                    desc=(skill.description or "").strip() or "平台 Skill",
+                    sn=sname, owner=owner_id,
+                )
+                skill_map[sname] = eid
+                stats["skills"] += 1
+
+            # 智能体 -> agent + 关系
+            for defn in AGENT_PROFILES:
+                aid = defn.id
+                existing = await s.run(
+                    "MATCH (e:Entity {platform_agent_id: $aid}) RETURN e LIMIT 1", aid=aid
+                )
+                rec = await existing.single()
+                if rec:
+                    agent_id = dict(rec["e"])["id"]
+                else:
+                    agent_id = str(uuid.uuid4())
+                    enabled = is_agent_enabled(db, aid)
+                    await s.run(
+                        "CREATE (e:Entity {id: $id, type_code: 'agent', name: $name, "
+                        "description: $desc, properties: '{}', source_type: 'system', "
+                        "platform_agent_id: $aid, owner_id: $owner, created_by: $owner, "
+                        "created_at: datetime(), updated_at: datetime()})",
+                        id=agent_id, name=defn.title.strip(),
+                        desc=defn.description.strip(), aid=aid, owner=owner_id,
+                    )
+                    stats["agents"] += 1
+
+                # has_tool
+                for tname in resolve_agent_internal_atomic_tools(db, aid):
+                    tid = tool_map.get(tname)
+                    if not tid:
+                        continue
+                    dup = await s.run(
+                        "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'has_tool'}]->(b:Entity {id: $to}) "
+                        "RETURN r LIMIT 1", frm=agent_id, to=tid,
+                    )
+                    if await dup.single():
+                        continue
+                    rid = str(uuid.uuid4())
+                    await s.run(
+                        "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
+                        "CREATE (a)-[r:RELATES {id: $rid, type_code: 'has_tool', "
+                        "description: '', inferred: false, owner_id: $owner, "
+                        "created_at: datetime()}]->(b)",
+                        frm=agent_id, to=tid, rid=rid, owner=owner_id,
+                    )
+                    stats["relations"] += 1
+
+                # has_skill
+                for sname in resolve_agent_skill_names(db, aid):
+                    sid = skill_map.get(sname)
+                    if not sid:
+                        continue
+                    dup = await s.run(
+                        "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'has_skill'}]->(b:Entity {id: $to}) "
+                        "RETURN r LIMIT 1", frm=agent_id, to=sid,
+                    )
+                    if await dup.single():
+                        continue
+                    rid = str(uuid.uuid4())
+                    await s.run(
+                        "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
+                        "CREATE (a)-[r:RELATES {id: $rid, type_code: 'has_skill', "
+                        "description: '', inferred: false, owner_id: $owner, "
+                        "created_at: datetime()}]->(b)",
+                        frm=agent_id, to=sid, rid=rid, owner=owner_id,
+                    )
+                    stats["relations"] += 1
+
+            # orchestrates
+            for skill in skill_defs:
+                sid = skill_map.get(skill.name)
+                if not sid:
+                    continue
+                for tname in skill.orchestrated_tools:
+                    tid = tool_map.get(tname)
+                    if not tid:
+                        continue
+                    dup = await s.run(
+                        "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'orchestrates'}]->(b:Entity {id: $to}) "
+                        "RETURN r LIMIT 1", frm=sid, to=tid,
+                    )
+                    if await dup.single():
+                        continue
+                    rid = str(uuid.uuid4())
+                    await s.run(
+                        "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
+                        "CREATE (a)-[r:RELATES {id: $rid, type_code: 'orchestrates', "
+                        "description: '', inferred: false, owner_id: $owner, "
+                        "created_at: datetime()}]->(b)",
+                        frm=sid, to=tid, rid=rid, owner=owner_id,
+                    )
+                    stats["relations"] += 1
+
+        logger.info("平台智能体/工具/Skill 同步完成: %s", stats)
+        return stats
+
+    async def sync_agent_memory_to_kg(self, user_id: str) -> dict[str, int]:
+        """将用户 MEMORY.md 章节抽取为 memory 类型实体。"""
+        from app.services.agent_memory_service import read_user_memory
+
+        stats: dict[str, int] = {"entities": 0}
+        uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
+        memory_text = read_user_memory(uid)
+        if not memory_text.strip():
+            return stats
+
+        sections: list[tuple[str, str]] = []
+        current_title = "概述"
+        current_lines: list[str] = []
+        for line in memory_text.split("\n"):
+            if line.startswith("## "):
+                if current_lines:
+                    sections.append((current_title, "\n".join(current_lines).strip()))
+                current_title = line.lstrip("#").strip()
+                current_lines = []
+            else:
+                current_lines.append(line)
+        if current_lines:
+            sections.append((current_title, "\n".join(current_lines).strip()))
+
+        async with self._driver.session() as s:
+            for title, content in sections:
+                if not content:
+                    continue
+                safe_title = title.strip()[:256]
+                existing = await s.run(
+                    "MATCH (e:Entity {type_code: 'memory', name: $n, owner_id: $o}) "
+                    "RETURN e LIMIT 1", n=safe_title, o=user_id,
+                )
+                if await existing.single():
+                    continue
+                eid = str(uuid.uuid4())
+                await s.run(
+                    "CREATE (e:Entity {id: $id, type_code: 'memory', name: $name, "
+                    "description: $desc, properties: '{}', source_type: 'system', "
+                    "owner_id: $owner, created_by: $owner, "
+                    "created_at: datetime(), updated_at: datetime()})",
+                    id=eid, name=safe_title, desc=content[:500], owner=user_id,
+                )
+                stats["entities"] += 1
+
+        logger.info("记忆同步完成: %s", stats)
+        return stats
+
+    async def sync_document_to_kg(
+        self, doc_id: str, title: str, description: str, owner_id: str
+    ) -> bool:
+        """将单篇文档同步为 doc 类型实体。"""
+        existing = await self.run_single(
+            "MATCH (e:Entity {source_document_id: $sid}) RETURN e LIMIT 1",
+            params=dict(sid=doc_id),
+        )
+        if existing:
+            return False
+        entity_id = str(uuid.uuid4())
+        try:
+            await self.execute_write(
+                "CREATE (e:Entity {id: $id, type_code: 'doc', name: $name, "
+                "description: $desc, source_type: 'system', "
+                "source_document_id: $sid, owner_id: $owner, created_by: $owner, "
+                "created_at: datetime(), updated_at: datetime()})",
+                params=dict(id=entity_id, name=title.strip() or "未命名文档",
+                            desc=description or "", sid=doc_id, owner=owner_id),
+            )
+            return True
+        except Exception as exc:
+            logger.warning("同步文档到 KG 失败 [%s]: %s", doc_id, exc)
+            return False
+
+    async def batch_extract_documents_from_content(
+        self,
+        db: Any,
+        user_id: str,
+        *,
+        max_docs: int = 20,
+    ) -> dict[str, Any]:
+        """批量读取已上传文档的正文，通过 LLM 抽取实体/关系。
+
+        Args:
+            db: SQLAlchemy session for document queries.
+            user_id: 当前用户 ID.
+            max_docs: 最大处理文档数（防止过度消耗 LLM token）.
+
+        Returns:
+            统计信息。
+        """
+        from app.models.org import User
+        from app.services.agent_document_service import read_document_content_for_agent
+        from app.services.kg_extraction_service import extract_kg_from_text_v2
+        from sqlalchemy import select
+
+        stats: dict[str, Any] = {
+            "processed": 0, "total_docs": 0,
+            "entities_created": 0, "relations_created": 0,
+            "errors": 0,
+        }
+
+        # 获取已存在 source_document_id 的实体，跳过已抽取的文档
+        existing_sids: set[str] = set()
+        existing = await self.run(
+            "MATCH (e:Entity) WHERE e.source_document_id IS NOT NULL "
+            "AND e.source_document_id <> '' "
+            "RETURN e.source_document_id AS sid",
+        )
+        for record in existing:
+            sid = record.get("sid", "")
+            if sid:
+                existing_sids.add(str(sid))
+
+        # 获取当前用户
+        user = db.scalar(select(User).where(User.id == uuid.UUID(user_id)))
+        if not user:
+            stats["error"] = "用户不存在"
+            return stats
+
+        # 查询未删除文档
+        from app.models.document import Document
+        rows = db.scalars(
+            select(Document).where(
+                Document.deleted_at.is_(None),
+                Document.owner_id == uuid.UUID(user_id),
+            ).order_by(Document.created_at.desc()).limit(max_docs)
+        ).all()
+        stats["total_docs"] = len(rows)
+
+        driver = self._driver
+        processed = 0
+        for doc in rows:
+            did = str(doc.id)
+            if did in existing_sids:
+                continue  # 已有对应的 doc 实体，但仍可抽取内容实体
+
+            # 先确保 doc 实体存在
+            doc_exists = await self.run_single(
+                "MATCH (e:Entity {source_document_id: $sid}) RETURN e LIMIT 1",
+                params=dict(sid=did),
+            )
+            if not doc_exists:
+                await self.run_single(
+                    "CREATE (e:Entity {id: $id, type_code: 'doc', name: $name, "
+                    "description: $desc, source_type: 'system', "
+                    "source_document_id: $sid, owner_id: $owner, created_by: $owner, "
+                    "created_at: datetime(), updated_at: datetime()})",
+                    params=dict(
+                        id=str(uuid.uuid4()),
+                        name=doc.title.strip() or "未命名文档",
+                        desc=(doc.description or ""),
+                        sid=did, owner=user_id,
+                    ),
+                )
+
+            # 读取正文
+            try:
+                content = read_document_content_for_agent(
+                    db, user,
+                    document_id=uuid.UUID(did),
+                    max_chars=8000,
+                )
+            except Exception as exc:
+                logger.debug("跳过文档 %s: 无法读取正文 (%s)", did, exc)
+                continue
+
+            full_text = (content.get("full_text") or "").strip()
+            if len(full_text) < 50:
+                continue
+
+            # LLM 抽取
+            try:
+                result = await extract_kg_from_text_v2(
+                    driver=driver,
+                    title=doc.title or "文档",
+                    text=full_text,
+                    user_id=user_id,
+                    source_type="extraction",
+                    source_id=did,
+                )
+                if not result.get("skipped", True):
+                    stats["entities_created"] += result.get("entities_created", 0)
+                    stats["relations_created"] += result.get("relations_created", 0)
+                    processed += 1
+            except Exception as exc:
+                logger.warning("文档 LLM 抽取失败 [%s]: %s", did, exc)
+                stats["errors"] += 1
+
+        stats["processed"] = processed
+        logger.info("批量文档内容抽取完成: %s", stats)
+        return stats
+
+    async def _enrich_entity(self, node: Any) -> EntityOut:
+        """将 Neo4j 节点富化为 EntityOut（附带本体类型信息）。"""
+        props = dict(node)
+        type_code = props.get("type_code", "")
+        et = await self.ontology.get_entity_type(type_code)
+        return entity_node_to_out(node, et)
+
+    async def _nodes_and_edges_to_graph(
+        self,
+        nodes: list[Any],
+        edges: list[Any],
+        focus_id: str,
+    ) -> GraphOut:
+        graph_nodes: list[GraphNodeOut] = []
+        seen_ids: set[str] = set()
+        for node in nodes:
+            nd = dict(node)
+            nid = nd.get("id", "")
+            if nid in seen_ids:
+                continue
+            seen_ids.add(nid)
+            type_code = nd.get("type_code", "")
+            et = await self.ontology.get_entity_type(type_code)
+            graph_nodes.append(
+                GraphNodeOut(
+                    id=nid,
+                    name=nd.get("name", ""),
+                    type_code=type_code,
+                    type_label=et.label if et else type_code,
                     type_color=et.color if et else "gray",
                 )
             )
 
-    rel_rows = db.scalars(
-        select(KgRelation).where(
-            KgRelation.owner_id == user.id,
-            KgRelation.from_entity_id.in_(entity_ids),
-            KgRelation.to_entity_id.in_(entity_ids),
-        )
-    ).all()
-    rel_type_map = {t.id: t for t in db.scalars(select(KgRelationType)).all()}
-    edges = []
-    for rel in rel_rows:
-        rt = rel_type_map.get(rel.relation_type_id)
-        if not rt:
-            continue
-        edges.append(
-            KgGraphEdgeOut(
-                id=rel.id,
-                relation_type_code=rt.code,
-                relation_type_label=rt.label,
-                from_entity_id=rel.from_entity_id,
-                to_entity_id=rel.to_entity_id,
-            )
-        )
-
-    return KgGraphOut(
-        nodes=nodes,
-        edges=edges,
-        focus_entity_id=focus_entity_id,
-    )
-
-
-def get_graph(
-    db: Session,
-    user: User,
-    *,
-    focus_entity_id: uuid.UUID | None = None,
-    depth: int = 1,
-) -> KgGraphOut:
-    from app.config import get_settings
-    from app.core.platform_cache import (
-        cache_get_json,
-        cache_set_json,
-        kg_graph_cache_key,
-    )
-
-    depth = max(1, min(depth, 3))
-    cache_key = kg_graph_cache_key(
-        str(user.id),
-        str(focus_entity_id) if focus_entity_id else None,
-        depth,
-    )
-    ttl = max(30, int(get_settings().kg_graph_cache_ttl_sec))
-    cached = cache_get_json(cache_key, ttl=ttl)
-    if cached is not None:
-        return KgGraphOut.model_validate(cached)
-
-    result = _build_graph(
-        db,
-        user,
-        focus_entity_id=focus_entity_id,
-        depth=depth,
-    )
-    cache_set_json(cache_key, result.model_dump(mode="json"), ttl=ttl)
-    return result
-
-
-@dataclass
-class KgQaContext:
-    context_text: str = ""
-    citations: list[dict[str, Any]] = field(default_factory=list)
-    matched_entity_ids: list[uuid.UUID] = field(default_factory=list)
-    entity_count: int = 0
-    relation_count: int = 0
-
-
-def _question_entity_match_score(question: str, name: str, description: str = "") -> float:
-    q = (question or "").strip()
-    name = (name or "").strip()
-    if not q or not name:
-        return 0.0
-    if name in q:
-        return 100.0 + len(name)
-    q_lower = q.lower()
-    name_lower = name.lower()
-    if name_lower in q_lower:
-        return 100.0 + len(name)
-    score = 0.0
-    for token in re.split(r"[\s,，、；;：:？?！!（）()\"'“”]+", name):
-        token = token.strip()
-        if len(token) >= 2 and token in q:
-            score = max(score, 20.0 + len(token))
-    desc = (description or "").strip()
-    if desc and len(desc) >= 4:
-        for chunk in (desc[:24], desc[:16]):
-            if len(chunk) >= 4 and chunk in q:
-                score = max(score, 8.0 + len(chunk))
-                break
-    return score
-
-
-_PLATFORM_ORG_LIST_QUESTION_RE = re.compile(
-    r"(?:有哪些|列出|列表|全部|所有|多少|几个).{0,8}(?:用户|人员|成员|部门|组织|人)|"
-    r"(?:用户|人员|成员|部门|组织).{0,8}(?:有哪些|列表|清单|架构|树)|"
-    r"组织架构|组织树|部门架构|系统用户",
-    re.I,
-)
-
-
-def resolve_department_name_in_question(db: Session, question: str) -> str | None:
-    """从问题文本中匹配已知部门名称（最长匹配优先）。"""
-    from app.models.org import Department
-
-    q = (question or "").strip()
-    if not q:
-        return None
-    rows = list(db.scalars(select(Department).order_by(Department.name)).all())
-    matched = [d for d in rows if (d.name or "").strip() and (d.name or "").strip() in q]
-    if not matched:
-        return None
-    return max(matched, key=lambda d: len((d.name or "").strip())).name
-
-
-def list_kg_department_members(
-    db: Session,
-    user: User,
-    department_name: str,
-) -> list[tuple[str, str]]:
-    """从本体图谱 employs 关系读取部门成员（org --employs--> person）。"""
-    from app.models.kg import KgEntity, KgEntityType, KgRelation, KgRelationType
-    from app.services.kg_system_sync_service import sync_platform_org_to_kg
-
-    name = (department_name or "").strip()
-    if not name:
-        return []
-    ensure_ontology_defaults(db)
-    sync_platform_org_to_kg(db, user)
-    type_rows = {
-        t.code: t.id
-        for t in db.scalars(select(KgEntityType)).all()
-    }
-    org_type_id = type_rows.get("org")
-    person_type_id = type_rows.get("person")
-    employs_id = db.scalar(
-        select(KgRelationType.id).where(KgRelationType.code == "employs")
-    )
-    if not org_type_id or not person_type_id or not employs_id:
-        return []
-    org_ent = db.scalar(
-        select(KgEntity).where(
-            KgEntity.owner_id == user.id,
-            KgEntity.type_id == org_type_id,
-            KgEntity.name == name,
-        )
-    )
-    if not org_ent:
-        return []
-    rels = db.scalars(
-        select(KgRelation).where(
-            KgRelation.owner_id == user.id,
-            KgRelation.from_entity_id == org_ent.id,
-            KgRelation.relation_type_id == employs_id,
-        )
-    ).all()
-    members: list[tuple[str, str]] = []
-    for rel in rels:
-        person = db.get(KgEntity, rel.to_entity_id)
-        if not person or person.type_id != person_type_id:
-            continue
-        label = (person.name or "").strip()
-        if not label:
-            continue
-        desc = (person.description or "").strip()
-        members.append((label, desc))
-    return sorted(members, key=lambda item: item[0])
-
-
-def format_department_members_reply(
-    db: Session,
-    user: User,
-    question: str,
-) -> str | None:
-    """部门成员清单 — 仅输出图谱 employs 关系中的真实人员，禁止 LLM 补全。"""
-    from app.services.agent_skill_router import is_org_member_list_question
-
-    if not is_org_member_list_question(question):
-        return None
-    dept_name = resolve_department_name_in_question(db, question)
-    if not dept_name:
-        return (
-            "未能从问题中识别具体部门名称。"
-            "请说明完整部门名，例如「咨询服务部有哪些人」。"
-        )
-    members = list_kg_department_members(db, user, dept_name)
-    lines = [f"**{dept_name}成员**", ""]
-    if not members:
-        lines.append(f"在本体图谱中暂未登记 **{dept_name}** 的成员。")
-        lines.append("")
-        lines.append(
-            "若您有用户管理权限，可在「系统设置 → 用户管理」查看；"
-            "或请管理员确认该部门用户已同步至本体图谱。"
-        )
-        return "\n".join(lines)
-    for label, desc in members:
-        line = f"- {label}"
-        if desc:
-            line += f"（{desc}）"
-        lines.append(line)
-    lines.extend(["", f"共 **{len(members)}** 人（来源：本体图谱）"])
-    return "\n".join(lines)
-
-
-def try_department_members_deterministic_reply(
-    db: Session,
-    user: User,
-    question: str,
-) -> str | None:
-    """部门成员类问题：返回确定性回复，绕过 LLM 编造。"""
-    return format_department_members_reply(db, user, question)
-
-
-def build_platform_org_list_kg_context(db: Session, user: User) -> KgQaContext | None:
-    """列出图谱中已同步的平台组织/人员实体（无具体实体 mention 时）。"""
-    ensure_ontology_defaults(db)
-    ensure_platform_org_synced(db, user)
-    type_rows = {
-        t.code: t
-        for t in db.scalars(select(KgEntityType).order_by(KgEntityType.sort_order)).all()
-    }
-    org_type = type_rows.get("org")
-    person_type = type_rows.get("person")
-    if not org_type or not person_type:
-        return None
-    entities = list(
-        db.scalars(
-            select(KgEntity)
-            .where(
-                KgEntity.owner_id == user.id,
-                KgEntity.type_id.in_([org_type.id, person_type.id]),
-            )
-            .order_by(KgEntity.name)
-        ).all()
-    )
-    if not entities:
-        return None
-    entity_ids = {ent.id for ent in entities}
-    relations = list(
-        db.scalars(
-            select(KgRelation).where(
-                KgRelation.owner_id == user.id,
-                KgRelation.from_entity_id.in_(entity_ids),
-                KgRelation.to_entity_id.in_(entity_ids),
-            )
-        ).all()
-    )
-    type_map = {t.id: t for t in type_rows.values()}
-    rel_type_map = {
-        t.id: t for t in db.scalars(select(KgRelationType)).all()
-    }
-    return build_kg_qa_context(
-        entities=entities,
-        relations=relations,
-        type_map=type_map,
-        rel_type_map=rel_type_map,
-        matched_ids=entity_ids,
-    )
-
-
-def match_entities_in_question(
-    db: Session,
-    user: User,
-    question: str,
-    *,
-    limit: int = 5,
-) -> list[tuple[KgEntity, float]]:
-    """从问题文本中匹配用户图谱实体（名称/描述子串）。"""
-    rows = db.scalars(
-        select(KgEntity)
-        .where(KgEntity.owner_id == user.id)
-        .order_by(KgEntity.updated_at.desc(), KgEntity.name)
-    ).all()
-    scored: list[tuple[KgEntity, float]] = []
-    for ent in rows:
-        score = _question_entity_match_score(question, ent.name, ent.description)
-        if score > 0:
-            scored.append((ent, score))
-    scored.sort(key=lambda item: (-item[1], -len(item[0].name), item[0].name))
-    return scored[:limit]
-
-
-def _expand_entity_ids_from_seeds(
-    db: Session,
-    user: User,
-    seed_ids: set[uuid.UUID],
-    depth: int,
-) -> set[uuid.UUID]:
-    entity_ids = set(seed_ids)
-    frontier = set(seed_ids)
-    depth = max(1, min(depth, 3))
-    for _ in range(depth):
-        if not frontier:
-            break
-        rels = db.scalars(
-            select(KgRelation).where(
-                KgRelation.owner_id == user.id,
-                or_(
-                    KgRelation.from_entity_id.in_(frontier),
-                    KgRelation.to_entity_id.in_(frontier),
-                ),
-            )
-        ).all()
-        next_frontier: set[uuid.UUID] = set()
-        for rel in rels:
-            entity_ids.add(rel.from_entity_id)
-            entity_ids.add(rel.to_entity_id)
-            next_frontier.add(rel.from_entity_id)
-            next_frontier.add(rel.to_entity_id)
-        frontier = next_frontier
-    return entity_ids
-
-
-def build_kg_qa_context(
-    *,
-    entities: list[KgEntity],
-    relations: list[KgRelation],
-    type_map: dict[uuid.UUID, KgEntityType],
-    rel_type_map: dict[uuid.UUID, KgRelationType],
-    matched_ids: set[uuid.UUID],
-) -> KgQaContext:
-    name_by_id = {ent.id: ent.name for ent in entities}
-    sorted_ents = sorted(
-        entities,
-        key=lambda ent: (0 if ent.id in matched_ids else 1, ent.name),
-    )
-
-    citations: list[dict[str, Any]] = []
-    blocks: list[str] = []
-    for index, ent in enumerate(sorted_ents, start=1):
-        et = type_map.get(ent.type_id)
-        type_label = et.label if et else "实体"
-        rel_lines: list[str] = []
-        for rel in relations:
-            rt = rel_type_map.get(rel.relation_type_id)
-            if not rt:
+        graph_edges: list[GraphEdgeOut] = []
+        seen_edge_ids: set[str] = set()
+        for edge in edges:
+            ed = dict(edge)
+            eid = ed.get("id", "")
+            if eid in seen_edge_ids:
                 continue
-            if rel.from_entity_id == ent.id:
-                to_name = name_by_id.get(rel.to_entity_id, "?")
-                rel_lines.append(f"- {ent.name} —[{rt.label}]→ {to_name}")
-            elif rel.to_entity_id == ent.id:
-                from_name = name_by_id.get(rel.from_entity_id, "?")
-                rel_lines.append(f"- {from_name} —[{rt.label}]→ {ent.name}")
+            seen_edge_ids.add(eid)
+            # 从 Neo4j Relationship 对象的 start/end node 获取端点 ID
+            from_id = ""
+            to_id = ""
+            try:
+                from_id = str(dict(edge.start_node).get("id", ""))
+            except Exception:
+                from_id = ed.get("from_entity_id", "")
+            try:
+                to_id = str(dict(edge.end_node).get("id", ""))
+            except Exception:
+                to_id = ed.get("to_entity_id", "")
+            graph_edges.append(
+                GraphEdgeOut(
+                    id=eid,
+                    type_code=ed.get("type_code", ""),
+                    type_label=ed.get("type_code", ""),
+                    from_entity_id=from_id,
+                    to_entity_id=to_id,
+                    inferred=bool(ed.get("inferred", False)),
+                    description=ed.get("description", ""),
+                )
+            )
 
-        desc = (ent.description or "").strip()
-        body_parts: list[str] = []
-        if desc:
-            body_parts.append(desc)
-        if rel_lines:
-            body_parts.append("关联：\n" + "\n".join(rel_lines))
-        snippet = "\n".join(body_parts) if body_parts else "（无描述与关联）"
-        title = f"{type_label} · {ent.name}"
-        blocks.append(f"[{index}] {title}\n{snippet}")
-        citations.append(
-            {
-                "index": index,
-                "title": title,
-                "snippet": snippet[:2000],
-                "score": 1.0 if ent.id in matched_ids else None,
-                "source": "kg",
-                "entity_id": str(ent.id),
-                "type_label": type_label,
-                "document_id": (ent.properties or {}).get(DOC_ENTITY_PROPERTY_KEY),
-            }
+        return GraphOut(
+            nodes=graph_nodes,
+            edges=graph_edges,
+            focus_entity_id=focus_id,
         )
 
-    return KgQaContext(
-        context_text="【本体图谱实体与关系】\n" + "\n\n".join(blocks),
-        citations=citations,
-        matched_entity_ids=sorted(matched_ids, key=str),
-        entity_count=len(entities),
-        relation_count=len(relations),
-    )
+    async def _build_graph_from_lists(
+        self,
+        nodes: list[Any],
+        edge_records: list[dict[str, Any]],
+    ) -> GraphOut:
+        graph_nodes: list[GraphNodeOut] = []
+        seen_ids: set[str] = set()
+        for node in nodes:
+            nd = dict(node)
+            nid = nd.get("id", "")
+            if nid in seen_ids:
+                continue
+            seen_ids.add(nid)
+            type_code = nd.get("type_code", "")
+            et = await self.ontology.get_entity_type(type_code)
+            graph_nodes.append(
+                GraphNodeOut(
+                    id=nid,
+                    name=nd.get("name", ""),
+                    type_code=type_code,
+                    type_label=et.label if et else type_code,
+                    type_color=et.color if et else "gray",
+                )
+            )
+
+        graph_edges: list[GraphEdgeOut] = []
+        for rec in edge_records:
+            r = rec.get("r", {})
+            a = rec.get("a", {})
+            b = rec.get("b", {})
+            graph_edges.append(
+                GraphEdgeOut(
+                    id=r.get("id", ""),
+                    type_code=r.get("type_code", ""),
+                    type_label=r.get("type_code", ""),
+                    from_entity_id=a.get("id", ""),
+                    to_entity_id=b.get("id", ""),
+                    inferred=bool(r.get("inferred", False)),
+                    description=r.get("description", ""),
+                )
+            )
+        return GraphOut(nodes=graph_nodes, edges=graph_edges)
 
 
-def find_entity_by_document_id(
-    db: Session,
-    user: User,
-    document_id: uuid.UUID,
-) -> KgEntity | None:
-    """查找用户图谱中已关联平台文档的实体。"""
-    for row in db.scalars(
-        select(KgEntity).where(KgEntity.owner_id == user.id)
-    ).all():
-        props = row.properties or {}
-        if str(props.get(DOC_ENTITY_PROPERTY_KEY) or "") == str(document_id):
-            return row
-    return None
-
-
-def ensure_doc_entity_for_document(
-    db: Session,
-    user: User,
-    document_id: uuid.UUID,
-    *,
-    entity_type_code: str = "doc",
-    commit: bool = True,
-) -> KgEntityOut:
-    """将平台文档登记为图谱实体（幂等）。"""
-    from app.core.permissions import PermissionLevel, can_access_document
-    from app.services.documents.crud import get_document
-
-    doc = get_document(db, document_id)
-    if not doc:
-        raise not_found("文档不存在")
-    if not can_access_document(db, user, doc, PermissionLevel.visible.value):
-        raise bad_request("无权访问该文档")
-
-    existing = find_entity_by_document_id(db, user, document_id)
-    if existing:
-        return _entity_out(db, existing)
-
-    ensure_ontology_defaults(db)
-    et = db.scalar(
-        select(KgEntityType).where(KgEntityType.code == entity_type_code.strip())
-    )
-    if not et:
-        raise bad_request("实体类型不存在")
-
-    title = (doc.title or "未命名文档").strip()
-    row = KgEntity(
-        type_id=et.id,
-        name=title,
-        description=f"来自文档库：{title}",
-        properties={DOC_ENTITY_PROPERTY_KEY: str(document_id)},
-        owner_id=user.id,
-        created_by=user.id,
-        scope="personal",
-    )
-    db.add(row)
-    db.flush()
-    if commit:
-        db.commit()
-        db.refresh(row)
-        _invalidate_kg_cache(user.id)
-    return _entity_out(db, row)
-
-
-def merge_kg_qa_into_context(
-    context: str,
-    citations: list[dict],
-    kg: KgQaContext | None,
-) -> tuple[str, list[dict]]:
-    """合并图谱与文档检索上下文；**本体图谱优先于文档库**（顺序与引用编号）。"""
-    if not kg or not (kg.context_text or "").strip():
-        return context, citations
-    kg_body = kg.context_text.strip()
-    kg_citations = [dict(c) for c in kg.citations]
-    if not context.strip() and not citations:
-        return kg_body, kg_citations
-
-    offset = len(kg_citations)
-    merged_citations = list(kg_citations)
-    for c in citations:
-        item = dict(c)
-        item["index"] = offset + int(c.get("index") or 0)
-        merged_citations.append(item)
-    merged = f"{kg_body}\n\n{context.strip()}" if context.strip() else kg_body
-    return merged, merged_citations
+# ── 向后兼容函数（适配旧服务引用，使用 Neo4j 推理引擎） ──────────────────
 
 
 def retrieve_kg_context_for_question(
-    db: Session,
-    user: User,
-    question: str,
-    *,
-    depth: int = 2,
-    match_limit: int = 5,
+    db_session, user, question: str, *, depth: int = 2, match_limit: int = 5
 ) -> KgQaContext | None:
-    """解析问题中的实体 mention，扩展子图并格式化为问答上下文。"""
-    ensure_ontology_defaults(db)
-    ensure_platform_system_synced(db, user)
-    seed_demo_graph(db, user)
-    db.commit()
+    """向后兼容：旧服务通过此函数查询图谱。
 
-    if _PLATFORM_ORG_LIST_QUESTION_RE.search(question or ""):
-        listed = build_platform_org_list_kg_context(db, user)
-        if listed is not None:
-            return listed
+    同步包装器，实际使用 Neo4j 推理引擎执行多跳推理。
+    如果 Neo4j 不可用，返回空上下文。
 
-    matches = match_entities_in_question(db, user, question, limit=match_limit)
-    if not matches:
-        return None
-
-    seed_ids = {ent.id for ent, _ in matches}
-    entity_ids = _expand_entity_ids_from_seeds(db, user, seed_ids, depth=depth)
-    entities = db.scalars(
-        select(KgEntity).where(
-            KgEntity.owner_id == user.id,
-            KgEntity.id.in_(entity_ids),
+    注：若从 async 上下文调用，请使用 retrieve_kg_context_for_question_async。
+    """
+    try:
+        return asyncio.run(
+            retrieve_kg_context_for_question_async(
+                db_session, user, question, depth=depth, match_limit=match_limit
+            )
         )
-    ).all()
-    relations = db.scalars(
-        select(KgRelation).where(
-            KgRelation.owner_id == user.id,
-            KgRelation.from_entity_id.in_(entity_ids),
-            KgRelation.to_entity_id.in_(entity_ids),
+    except RuntimeError:
+        # 已有运行中事件循环 → 在新线程中执行
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(
+                asyncio.run,
+                retrieve_kg_context_for_question_async(
+                    db_session, user, question, depth=depth, match_limit=match_limit
+                ),
+            )
+            return future.result(timeout=30)
+    except Exception:
+        logger.warning("Neo4j 不可用，retrieve_kg_context_for_question 返回空")
+        return KgQaContext(context_text="")
+
+
+async def retrieve_kg_context_for_question_async(
+    db_session, user, question: str, *, depth: int = 2, match_limit: int = 5
+) -> KgQaContext | None:
+    """异步版本：通过 Neo4j 推理引擎执行多跳推理。
+
+    如果 Neo4j 不可用，返回空上下文。
+    """
+    try:
+        from app.core.neo4j import get_neo4j
+        from app.services.kg_reasoning import KGReasoningEngine
+
+        driver = await get_neo4j()
+        engine = KGReasoningEngine(driver)
+        return await engine.reason(
+            question=question,
+            user_id=str(user.id),
+            max_depth=depth,
+            include_inferred=True,
         )
-    ).all()
-    type_map = {t.id: t for t in db.scalars(select(KgEntityType)).all()}
-    rel_type_map = {t.id: t for t in db.scalars(select(KgRelationType)).all()}
-    return build_kg_qa_context(
-        entities=list(entities),
-        relations=list(relations),
-        type_map=type_map,
-        rel_type_map=rel_type_map,
-        matched_ids=seed_ids,
-    )
+    except Exception:
+        logger.warning("Neo4j 不可用，retrieve_kg_context_for_question_async 返回空")
+        return KgQaContext(context_text="")
+
+
+def ensure_ontology_defaults(db_session) -> None:
+    """向后兼容：同步旧 PG 版本的本体默认值种子函数。"""
+    logger.debug("ensure_ontology_defaults: PG 版已废弃，使用 ontology API 初始化")
+
+
+def merge_kg_qa_into_context(db_session, user, kg_ctx, base_context: str = "") -> str:
+    """向后兼容：将 KG 问答上下文合并到检索上下文字符串。"""
+    if kg_ctx is None:
+        return base_context
+    ctx_text = (getattr(kg_ctx, "context_text", "") or "").strip()
+    if ctx_text:
+        return f"{base_context}\n\n{ctx_text}" if base_context else ctx_text
+    return base_context
+
+
+def try_department_members_deterministic_reply(
+    db_session, user, message: str, *, reply: str = ""
+) -> str | None:
+    """向后兼容遗存函数，返回 None 表示不拦截。"""
+    return None

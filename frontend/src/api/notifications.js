@@ -14,3 +14,7 @@ export async function markNotificationRead(id) {
 export async function markAllNotificationsRead() {
   return api("/api/v1/notifications/read-all", { method: "PATCH" });
 }
+
+export async function clearAllNotifications() {
+  return api("/api/v1/notifications/all", { method: "DELETE" });
+}

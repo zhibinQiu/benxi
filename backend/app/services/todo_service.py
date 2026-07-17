@@ -47,6 +47,7 @@ def serialize_todo(item: TodoItem) -> dict[str, Any]:
         "note": item.note,
         "status": item.status,
         "sort_order": item.sort_order,
+        "due_at": item.due_at.isoformat() if item.due_at else None,
         "completed_at": item.completed_at.isoformat() if item.completed_at else None,
         "created_at": item.created_at.isoformat() if item.created_at else None,
         "updated_at": item.updated_at.isoformat() if item.updated_at else None,
@@ -59,6 +60,7 @@ def create_todo(
     *,
     title: str,
     note: str = "",
+    due_at: datetime | None = None,
 ) -> TodoItem:
     title = (title or "").strip()
     if not title:
@@ -68,6 +70,7 @@ def create_todo(
         title=title,
         note=(note or "").strip(),
         status="pending",
+        due_at=due_at,
         sort_order=next_sort_order(db, user.id, "pending"),
     )
     db.add(item)
@@ -84,6 +87,7 @@ def update_todo(
     title: str | None = None,
     note: str | None = None,
     status: str | None = None,
+    due_at: datetime | None = None,
 ) -> TodoItem:
     item = db.get(TodoItem, todo_id)
     if not item or item.user_id != user.id:
@@ -95,6 +99,7 @@ def update_todo(
         item.title = title
     if note is not None:
         item.note = note.strip()
+    item.due_at = due_at
     if status is not None:
         if status not in ("pending", "done"):
             raise bad_request("无效的状态")
@@ -132,11 +137,15 @@ def batch_create_todos(
         title = str(row.get("title") or "").strip()
         if not title:
             raise bad_request("待办标题不能为空")
+        due_at = row.get("due_at")
+        if due_at is not None and not isinstance(due_at, datetime):
+            due_at = None
         item = TodoItem(
             user_id=user.id,
             title=title,
             note=str(row.get("note") or "").strip(),
             status="pending",
+            due_at=due_at,
             sort_order=base + i,
         )
         db.add(item)
@@ -161,11 +170,15 @@ def replace_pending_todos(
         title = str(row.get("title") or "").strip()
         if not title:
             raise bad_request("待办标题不能为空")
+        due_at = row.get("due_at")
+        if due_at is not None and not isinstance(due_at, datetime):
+            due_at = None
         item = TodoItem(
             user_id=user.id,
             title=title,
             note=str(row.get("note") or "").strip(),
             status="pending",
+            due_at=due_at,
             sort_order=i,
         )
         db.add(item)

@@ -443,8 +443,8 @@ html[data-theme="dark"] .philosophy-page {
 
 .philosophy-page--scrolling .philosophy-header {
   background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(17px) saturate(150%);
-  -webkit-backdrop-filter: blur(17px) saturate(150%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -505,7 +505,6 @@ html[data-theme="dark"] .philosophy-header__chip:hover {
 
 .philosophy-header__title {
   font-size: 14px;
-  font-weight: 600;
   color: #333;
   white-space: nowrap;
   overflow: hidden;
@@ -757,7 +756,6 @@ html[data-theme="dark"] .philosophy-principles li {
   background: linear-gradient(135deg, #4a9eff, #9b59b6);
   color: #fff;
   font-size: 12px;
-  font-weight: 700;
 }
 
 /* ── Epilogue ── */
@@ -798,8 +796,8 @@ html[data-theme="dark"] .philosophy-chapter--epilogue {
 @media (prefers-reduced-motion: reduce) {
   .philosophy-header {
     background: rgba(255, 255, 255, 0.82) !important;
-    backdrop-filter: blur(17px) saturate(150%) !important;
-    -webkit-backdrop-filter: blur(17px) saturate(150%) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
   }
   html[data-theme="dark"] .philosophy-header {

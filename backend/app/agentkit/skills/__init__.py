@@ -1,6 +1,6 @@
 """agentkit-skills — Agent Skill 插件框架。"""
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.skills.executor import (
     SkillNotFoundError,

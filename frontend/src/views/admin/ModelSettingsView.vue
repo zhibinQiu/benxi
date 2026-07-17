@@ -32,6 +32,7 @@ import {
   SearchOutline,
   ServerOutline,
   LibraryOutline,
+  RefreshOutline,
 } from "@vicons/ionicons5";
 import {
   fetchModelSettings,
@@ -45,7 +46,6 @@ import { COLOR_SCHEME_CUSTOM, DEFAULT_COLOR_SCHEME, normalizeColorScheme } from 
 import { adminResourceGroupAccentStyle } from "../../constants/categoryAccents.js";
 import { DEFAULT_CUSTOM_PRIMARY, normalizePrimaryColor } from "../../utils/customColorTokens.js";
 import { useI18n } from "../../composables/useI18n";
-import ListRefreshButton from "../../components/ListRefreshButton.vue";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -756,12 +756,21 @@ onMounted(loadAll);
 <template>
   <div class="resource-settings-page feature-page">
     <div class="page-toolbar feature-local-nav">
-      <ListRefreshButton
-        :label="t('admin.modelSettings.refreshStatus')"
-        :loading="healthLoading"
-        @click="loadHealth"
-      />
     </div>
+    <Teleport to="#header-page-tools">
+      <n-button
+        quaternary
+        circle
+        size="small"
+        class="header-icon-btn"
+        :class="{ 'header-icon-btn--spinning': healthLoading }"
+        :aria-label="t('admin.modelSettings.refreshStatus')"
+        :disabled="healthLoading"
+        @click="loadHealth"
+      >
+        <n-icon :size="14" :component="RefreshOutline" />
+      </n-button>
+    </Teleport>
 
     <section
       v-for="group in groupedResources"
@@ -1371,7 +1380,7 @@ onMounted(loadAll);
               </n-input-number>
             </n-form-item>
             <hr style="border:none;border-top:1px solid var(--platform-border);margin:16px 0" />
-            <div class="drawer-hint" style="margin-bottom:12px;font-weight:600">
+            <div class="drawer-hint" style="margin-bottom:12px">
               FireCrawl 全文提取
             </div>
             <n-form-item :label="t('admin.modelSettings.labels.firecrawlApiUrl')">
@@ -1575,8 +1584,7 @@ onMounted(loadAll);
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 12px;
-  padding: 0 0 10px 12px;
-  border-left: 4px solid var(--cat-accent, var(--platform-accent));
+  padding: 0 0 10px 0;
 }
 
 .category-block__text {
@@ -1593,8 +1601,8 @@ onMounted(loadAll);
 
 .category-block__title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
   line-height: 1.35;
   color: var(--platform-text);
 }
@@ -1602,7 +1610,7 @@ onMounted(loadAll);
 .category-block__hint {
   display: block;
   margin-top: 2px;
-  font-size: 14px;
+  font-size: var(--platform-font-size-nano);
 }
 
 .category-grid :deep(> *) {
@@ -1663,26 +1671,13 @@ onMounted(loadAll);
   display: flex;
   flex-direction: column;
   padding: 13px 14px;
-  border-radius: var(--platform-radius-sm, 12px);
-  background: var(--platform-bg-elevated);
-  border: 1px solid var(--platform-border);
-  box-shadow: var(--platform-shadow-sm);
+  border-radius: var(--platform-card-radius);
+  background: var(--platform-card-bg);
+  border: 1px solid var(--platform-card-border-color);
   cursor: pointer;
   outline: none;
   animation: feature-card-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: var(--enter-delay, 0ms);
-  transition:
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.feature-card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--cat-accent) 35%, transparent);
-  box-shadow:
-    var(--platform-shadow),
-    0 0 0 1px color-mix(in srgb, var(--cat-accent) 10%, transparent);
 }
 
 .resource-card--readonly {
@@ -1691,8 +1686,7 @@ onMounted(loadAll);
 
 .resource-card--readonly:hover {
   transform: none;
-  border-color: var(--platform-border);
-  box-shadow: var(--platform-shadow-sm);
+  border-color: var(--platform-card-border-color);
 }
 
 .feature-card:focus-visible {
@@ -1711,32 +1705,28 @@ onMounted(loadAll);
 
 .feature-card__icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  color: var(--cat-accent, var(--platform-accent));
-  background: var(--cat-accent-soft, var(--platform-accent-soft));
-  transition: transform 0.2s ease;
-}
-
-.feature-card:hover .feature-card__icon {
-  transform: scale(1.04);
+  color: #141414;
+  background: #f3f3f3;
 }
 
 .feature-card__title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 400;
   line-height: 1.35;
   color: var(--platform-text);
 }
 
 .feature-card__desc {
   margin: 5px 0 0;
-  font-size: 13px;
+  font-size: var(--platform-font-size-nano);
+  font-weight: 400;
   line-height: 1.45;
   color: var(--platform-text-tertiary);
 }

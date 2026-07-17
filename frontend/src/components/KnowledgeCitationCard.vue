@@ -142,7 +142,7 @@ function openKgEntity() {
   const entityId = props.citation?.entity_id;
   if (!entityId) return;
   router.push({
-    name: "kg-palantir",
+    name: "kg",
     query: { focusEntityId: entityId },
   });
 }
@@ -160,7 +160,7 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
         class="knowledge-citation-card__title"
         @click="openKgEntity"
       >
-        {{ citation.title || "本体图谱实体" }}
+        {{ citation.title || "知识图谱实体" }}
       </button>
       <button
         v-else-if="citation.document_id"
@@ -255,8 +255,8 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
   gap: 12px;
   padding: 17px 19px;
   border-radius: calc(var(--platform-radius-sm) + 5px);
-  border: 1px solid var(--platform-border);
-  background: var(--platform-bg-elevated);
+  border: 1px solid var(--platform-card-border-color);
+  background: var(--platform-card-bg);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
   box-sizing: border-box;
   width: 100%;
@@ -271,7 +271,6 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
 
 .knowledge-citation-card__index {
   font-size: 16px;
-  font-weight: 700;
   color: var(--platform-accent-pressed);
 }
 
@@ -314,7 +313,6 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
   background: rgba(234, 179, 8, 0.55);
   padding: 0 4px;
   border-radius: 4px;
-  font-weight: 700;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -445,7 +443,6 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
   margin-left: auto;
   flex-shrink: 0;
   font-size: 13px;
-  font-weight: 600;
   letter-spacing: 0.02em;
 }
 </style>

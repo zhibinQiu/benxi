@@ -5,12 +5,11 @@ import {
   getToken,
   fetchWithTimeout,
   rejectHttpFailure,
-  LIST_API_TIMEOUT_MS,
   UPLOAD_API_TIMEOUT_MS,
 } from "./http.js";
 import { downloadBlob } from "../utils/downloadBlob.js";
 
-const listReadOpts = { timeoutMs: LIST_API_TIMEOUT_MS };
+const listReadOpts = { timeoutMs: 12_000 };
 
 export async function fetchDocumentLibrary() {
   return api("/api/v1/documents/library", listReadOpts);

@@ -4,7 +4,7 @@
 语言/平台相关的意图检测由宿主通过 ``SignalDetector`` Protocol 注入。
 """
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.route.routing import (
     RouteLimits,

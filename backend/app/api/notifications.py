@@ -47,6 +47,15 @@ def mark_all_read(
     return ApiResponse(data=result)
 
 
+@router.delete("/all", response_model=ApiResponse[dict])
+def clear_all(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict]:
+    result = notification_service.clear_all(db, user.id)
+    return ApiResponse(data=result)
+
+
 @router.patch("/{notification_id}/read", response_model=ApiResponse[None])
 def mark_read(
     notification_id: uuid.UUID,

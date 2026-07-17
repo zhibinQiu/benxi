@@ -6,7 +6,7 @@
 HITL 响应管理通过 ``HitlResponseStore`` 协议完成确认/选择的"响应盒"模式。
 """
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.interrupt.hitl import (
     HitlRequest,

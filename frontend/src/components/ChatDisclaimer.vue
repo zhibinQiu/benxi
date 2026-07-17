@@ -2,10 +2,6 @@
 import { useI18n } from "../composables/useI18n.js";
 import { useRouter } from "vue-router";
 
-defineProps({
-  started: { type: Boolean, default: false },
-});
-
 const { t } = useI18n();
 const router = useRouter();
 
@@ -15,10 +11,7 @@ function goAgentkitDocs() {
 </script>
 
 <template>
-  <p v-if="!started" class="chat-disclaimer">
-    {{ t("chat.disclaimer") }}
-  </p>
-  <p v-else class="chat-disclaimer">
+  <p class="chat-disclaimer">
     {{ t("chat.disclaimerArch") }}
     <a class="agentkit-link" @click.prevent="goAgentkitDocs" href="/agentkit-docs">AgentKit</a>
   </p>
@@ -28,11 +21,12 @@ function goAgentkitDocs() {
 .chat-disclaimer {
   width: 100%;
   margin: 0;
-  padding: 2px 5px 0;
-  font-size: 11px;
+  padding: 6px 24px;
+  font-size: 10px;
   line-height: 1.4;
   text-align: center;
   color: var(--platform-text-tertiary);
+  flex-shrink: 0;
 }
 
 .agentkit-link {

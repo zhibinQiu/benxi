@@ -2,13 +2,12 @@ import { ref, watch } from "vue";
 
 const STORAGE_KEY = "platform-feature-favorites";
 const MIGRATION_KEY = "platform-feature-favorites-defaults-v1";
+const CLEANUP_MIGRATION_KEY = "platform-feature-favorites-cleanup-v1";
 
-/** 侧栏默认收藏：知识检索、报告生成、Agent Skills、本体图谱 */
+/** 侧栏默认收藏：知识检索、报告生成 */
 export const DEFAULT_FEATURE_FAVORITE_IDS = [
   "knowledge_search",
   "report_generation",
-  "agent_skills",
-  "kg_palantir",
 ];
 
 function mergeDefaultFavorites(ids) {
@@ -30,6 +29,14 @@ function loadFavorites() {
       ids = mergeDefaultFavorites(ids);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
       localStorage.setItem(MIGRATION_KEY, "1");
+      localStorage.setItem(CLEANUP_MIGRATION_KEY, "1");
+      return ids;
+    }
+    /* 迁移：移除侧栏中已独立入口的 agent_skills（避免菜单重复出现"多智能体"） */
+    if (localStorage.getItem(CLEANUP_MIGRATION_KEY) !== "1") {
+      ids = ids.filter((id) => id !== "agent_skills");
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+      localStorage.setItem(CLEANUP_MIGRATION_KEY, "1");
       return ids;
     }
     if (!raw) {

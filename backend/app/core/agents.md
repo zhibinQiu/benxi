@@ -2,7 +2,7 @@
 
 ## orchestrator
 - Title: 小析
-- Use when: 所有日常任务 — 联网检索、知识库检索、本体图谱查询、AI对话/生图/识图、图表绘制（流程图/思维导图/架构图/时序图/关系图等）、双碳问答。除非下面的专精场景，否则默认走本智能体
+- Use when: 所有日常任务 — 联网检索、知识库检索、知识图谱查询、AI对话/生图/识图、图表绘制（流程图/思维导图/架构图/时序图/关系图等）、双碳问答。除非下面的专精场景，否则默认走本智能体
 - Don't use when: 平台文档/待办/通知/用户部门 CRUD（走 platform）、撰写正式长报告（走 report）、浏览器自动化操作（走 rpa）、Skill 创建/修改/删除（走 skill-dev）
 - Skills: 无（通过原子工具直接执行：web_search, knowledge_retrieve, kg_query, mermaid_diagram, read_agent_memory 等）
 - Output: 根据任务类型直接输出结果（检索结论、AI回复、图表、综合解答等）

@@ -1,440 +1,196 @@
-/* 系统级按钮规范：登录页玻璃实心 / 业务页与弹层 ChatGPT 扁平 */
+/* =============================================================================
+ * 系统级按钮规范（Button System）
+ *
+ * 本文件是按钮样式的唯一来源。所有按钮（primary/default/tertiary/error 等）的
+ * 颜色、背景、边框、hover/active/disabled 状态在此统一管理。
+ *
+ * 设计原则：
+ * 1. 所有颜色使用 `--platform-*` CSS 变量，禁止硬编码
+ * 2. 扁平极简风格：无渐变、无毛玻璃、无厚重阴影
+ * 3. 排除特定的特殊按钮类（header-icon-btn、icon-action、table-icon-action 等）
+ * ============================================================================= */
 
-/* —— 业务页 + 弹层（与 .app-shell 无祖先关系的 teleport 层） —— */
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button:not(.login-glass-btn):not(.header-icon-btn):not(.icon-action)::before {
+/* ── 所有按钮统一切换动画 + 点击反馈 ── */
+.n-button:not(.n-button--disabled) {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease !important;
+}
+.n-button:not(.n-button--disabled):active {
+  transform: scale(0.97);
+}
+
+/* 隐藏 Naive UI 内部样式干扰 */
+.n-button > .n-button__border,
+.n-button > .n-button__state-border,
+.n-button > .n-base-wave {
   display: none !important;
-  opacity: 0 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
 
-/* 主按钮 / 信息确认（Dialog 常用 info） */
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action),
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--info-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action) {
-  background: var(--platform-accent) !important;
-  border: 1px solid var(--platform-accent) !important;
-  color: #ffffff !important;
+/* ── 1. 主按钮（primary / info）：深色背景，白字，无边框 ── */
+.n-button.n-button--primary-type:not(.n-button--disabled),
+.n-button.n-button--info-type:not(.n-button--disabled) {
+  background: var(--platform-text) !important;
+  border: none !important;
+  color: var(--platform-bg-elevated-solid, #ffffff) !important;
   box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+}
+.n-button.n-button--primary-type:not(.n-button--disabled):hover,
+.n-button.n-button--info-type:not(.n-button--disabled):hover {
+  background: var(--platform-text-secondary) !important;
+  border: none !important;
+  color: var(--platform-bg-elevated-solid, #ffffff) !important;
+}
+.n-button.n-button--primary-type:not(.n-button--disabled):active,
+.n-button.n-button--info-type:not(.n-button--disabled):active {
+  background: var(--platform-text) !important;
 }
 
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):hover,
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--info-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):hover {
-  background: var(--platform-accent-hover) !important;
-  border-color: var(--platform-accent-hover) !important;
-  color: #ffffff !important;
+/* 弹层/弹窗中的主按钮保持黑色 */
+.admin-form-modal__footer .n-button.n-button--primary-type:not(.n-button--disabled),
+.n-modal .n-card__footer .n-button.n-button--primary-type:not(.n-button--disabled),
+.n-dialog .n-dialog__action .n-button.n-button--primary-type:not(.n-button--disabled),
+.n-drawer-footer .n-button.n-button--primary-type:not(.n-button--disabled),
+.admin-form-modal__footer .n-button.n-button--info-type:not(.n-button--disabled),
+.n-modal .n-card__footer .n-button.n-button--info-type:not(.n-button--disabled),
+.n-dialog .n-dialog__action .n-button.n-button--info-type:not(.n-button--disabled),
+.n-drawer-footer .n-button.n-button--info-type:not(.n-button--disabled) {
+  background: var(--platform-text) !important;
+  border: none !important;
+  color: var(--platform-bg-elevated-solid, #ffffff) !important;
+}
+.admin-form-modal__footer .n-button.n-button--primary-type:not(.n-button--disabled):hover,
+.n-modal .n-card__footer .n-button.n-button--primary-type:not(.n-button--disabled):hover,
+.n-dialog .n-dialog__action .n-button.n-button--primary-type:not(.n-button--disabled):hover,
+.n-drawer-footer .n-button.n-button--primary-type:not(.n-button--disabled):hover,
+.admin-form-modal__footer .n-button.n-button--info-type:not(.n-button--disabled):hover,
+.n-modal .n-card__footer .n-button.n-button--info-type:not(.n-button--disabled):hover,
+.n-dialog .n-dialog__action .n-button.n-button--info-type:not(.n-button--disabled):hover,
+.n-drawer-footer .n-button.n-button--info-type:not(.n-button--disabled):hover {
+  background: var(--platform-text-secondary) !important;
 }
 
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):active,
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--info-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):active {
-  background: var(--platform-accent-pressed) !important;
-  border-color: var(--platform-accent-pressed) !important;
-  color: #ffffff !important;
-}
-
-/* 默认 / 次要：描边浅底 */
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--default-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type),
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--secondary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type) {
-  background: var(--platform-bg-elevated, #ffffff) !important;
-  border: 1px solid var(--platform-border) !important;
+/* ── 2. 次要按钮（default / secondary）：透明底 + 描边 ── */
+.n-button.n-button--default-type:not(.n-button--disabled),
+.n-button.n-button--secondary-type:not(.n-button--disabled) {
+  background: transparent !important;
+  border: 1px solid var(--platform-border-strong) !important;
   color: var(--platform-text) !important;
   box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--default-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):hover,
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--secondary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):hover {
+.n-button.n-button--default-type:not(.n-button--disabled):hover,
+.n-button.n-button--secondary-type:not(.n-button--disabled):hover {
   background: var(--platform-bg-tertiary) !important;
-  border-color: var(--platform-border) !important;
-  color: var(--platform-text) !important;
+  border-color: var(--platform-border-strong) !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--default-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):active,
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--secondary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):active {
+.n-button.n-button--default-type:not(.n-button--disabled):active,
+.n-button.n-button--secondary-type:not(.n-button--disabled):active {
   background: var(--platform-bg-secondary) !important;
-  border-color: var(--platform-border) !important;
 }
 
-/* 轻量：tertiary / quaternary */
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--tertiary-type:not(.n-button--disabled):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action),
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--quaternary-type:not(.n-button--disabled):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action) {
+/* ── 3. 轻量按钮（tertiary / quaternary）：透明无边框 ── */
+.n-button.n-button--tertiary-type:not(.n-button--disabled),
+.n-button.n-button--quaternary-type:not(.n-button--disabled) {
   background: transparent !important;
   border-color: transparent !important;
   color: var(--platform-text-secondary) !important;
   box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--tertiary-type:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action):hover,
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--quaternary-type:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action):hover {
+.n-button.n-button--tertiary-type:not(.n-button--disabled):hover,
+.n-button.n-button--quaternary-type:not(.n-button--disabled):hover {
   background: var(--platform-bg-tertiary) !important;
   border-color: transparent !important;
   color: var(--platform-text) !important;
 }
 
-/* 语义色：warning / error / success（Naive 不暴露 --n-warning-color 等全局变量） */
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--warning-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type) {
-  background: var(--platform-caution) !important;
+/* ── 4. 语义色按钮 ── */
+
+/* 警告（warning）：描边风格 */
+.n-button.n-button--warning-type:not(.n-button--disabled) {
+  background: transparent !important;
   border: 1px solid var(--platform-caution) !important;
-  color: #ffffff !important;
+  color: var(--platform-caution) !important;
   box-shadow: none !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--warning-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):hover {
-  background: var(--platform-caution-hover) !important;
+.n-button.n-button--warning-type:not(.n-button--disabled):hover {
+  background: var(--platform-caution-soft) !important;
   border-color: var(--platform-caution-hover) !important;
-  color: #ffffff !important;
+  color: var(--platform-caution-hover) !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--warning-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):active {
-  background: var(--platform-caution-pressed) !important;
+.n-button.n-button--warning-type:not(.n-button--disabled):active {
+  background: color-mix(in srgb, var(--platform-caution) 15%, transparent) !important;
   border-color: var(--platform-caution-pressed) !important;
-  color: #ffffff !important;
+  color: var(--platform-caution-pressed) !important;
 }
 
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--error-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type) {
-  background: var(--platform-danger) !important;
+/* 错误/删除（error）：描边风格 */
+.n-button.n-button--error-type:not(.n-button--disabled) {
+  background: transparent !important;
   border: 1px solid var(--platform-danger) !important;
-  color: #ffffff !important;
+  color: var(--platform-danger) !important;
   box-shadow: none !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--error-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):hover {
-  background: var(--platform-danger-hover) !important;
+.n-button.n-button--error-type:not(.n-button--disabled):hover {
+  background: var(--platform-danger-soft) !important;
   border-color: var(--platform-danger-hover) !important;
-  color: #ffffff !important;
+  color: var(--platform-danger-hover) !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--error-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):active {
-  background: var(--platform-danger-pressed) !important;
+.n-button.n-button--error-type:not(.n-button--disabled):active {
+  background: color-mix(in srgb, var(--platform-danger) 15%, transparent) !important;
   border-color: var(--platform-danger-pressed) !important;
-  color: #ffffff !important;
+  color: var(--platform-danger-pressed) !important;
 }
 
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--success-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type) {
+/* 成功（success）：实色填充 */
+.n-button.n-button--success-type:not(.n-button--disabled) {
   background: var(--platform-accent) !important;
   border: 1px solid var(--platform-accent) !important;
   color: #ffffff !important;
   box-shadow: none !important;
 }
-
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--success-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):hover {
+.n-button.n-button--success-type:not(.n-button--disabled):hover {
   background: var(--platform-accent-hover) !important;
   border-color: var(--platform-accent-hover) !important;
-  color: #ffffff !important;
 }
 
-:is(
-  .app-shell:not(.app-shell--video-bg),
-  .admin-form-modal__footer,
-  .n-modal:not(.login-auth-modal) .n-card__footer,
-  .n-modal:not(.login-auth-modal) .n-card__content,
-  .n-modal:not(.login-auth-modal) .admin-form-modal__body,
-  .n-dialog .n-dialog__action,
-  .n-drawer .n-drawer-footer
-)
-  .n-button.n-button--success-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type):active {
-  background: var(--platform-accent-pressed) !important;
-  border-color: var(--platform-accent-pressed) !important;
-  color: #ffffff !important;
+/* ── 5. 内容区操作图标按钮（IconAction 工具栏变体）：灰色背板，卡片圆角 ── */
+.n-button.icon-action:not(.table-icon-action):not(.header-icon-btn) {
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent) !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.n-button.icon-action:not(.table-icon-action):not(.header-icon-btn):hover {
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
+}
+.n-button.icon-action:not(.table-icon-action):not(.header-icon-btn):active {
+  background: var(--platform-bg-tertiary) !important;
+}
+/* 内容区图标按钮：覆盖圆形为卡片圆角矩形 */
+.n-button.icon-action.n-button--circle:not(.table-icon-action):not(.header-icon-btn) {
+  border-radius: var(--platform-card-radius) !important;
+}
+/* theme 变体：hover 时主题色背景 */
+.n-button.icon-action.icon-action--theme:not(.table-icon-action):not(.header-icon-btn):hover {
+  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%) !important;
 }
 
-/* 系统确认弹窗：取消按钮（ghost）保持描边可读 */
+/* ── 6. 禁用按钮 ── */
+.n-button.n-button--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── 7. 系统确认弹窗取消按钮（ghost） ── */
 .platform-confirm-dialog .n-dialog__action .n-button.n-button--ghost:not(.n-button--disabled):not(.icon-action) {
   background: var(--platform-bg-elevated, #ffffff) !important;
   border: 1px solid var(--platform-border) !important;
   color: var(--platform-text) !important;
   box-shadow: none !important;
 }
-
 .platform-confirm-dialog .n-dialog__action .n-button.n-button--ghost:not(.n-button--disabled):not(.icon-action):hover {
   background: var(--platform-bg-tertiary) !important;
   border-color: var(--platform-border) !important;
-  color: var(--platform-text) !important;
-}
-
-/* —— 登录 / 视频背景页：玻璃紫色实心（仅宣传页） —— */
-.app-shell--video-bg .n-button.platform-text-btn,
-.app-shell--video-bg
-  .n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):not(.n-button--text-type):not(.n-button--tertiary-type):not(.n-button--quaternary-type) {
-  background: var(--platform-accent) !important;
-  border: 1px solid var(--platform-accent) !important;
-  color: #fff !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
-}
-
-.app-shell--video-bg
-  .n-button:not(.n-button--disabled):not(.n-button--primary-type):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.feature-card__star):not(.n-button--text-type):not(.n-button--tertiary-type):not(.n-button--quaternary-type):hover {
-  background: var(--platform-accent-hover) !important;
-  border-color: var(--platform-accent-hover) !important;
-  color: #fff !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08) !important;
-}
-
-.app-shell--video-bg
-  .n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action) {
-  background: var(--platform-accent) !important;
-  border: 1px solid var(--platform-accent) !important;
-  color: #fff !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
-}
-
-.app-shell--video-bg
-  .n-button.n-button--primary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):hover {
-  background: var(--platform-accent-hover) !important;
-  border-color: var(--platform-accent-hover) !important;
-}
-
-.app-shell--video-bg
-  .n-button.n-button--default-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type),
-.app-shell--video-bg
-  .n-button.n-button--secondary-type:not(.n-button--disabled):not(.login-glass-btn):not(.header-icon-btn):not(.n-button--circle):not(.table-icon-action):not(.icon-action):not(.n-button--text-type) {
-  background: var(--platform-accent) !important;
-  border: 1px solid var(--platform-accent) !important;
-  color: #fff !important;
-}
-
-.app-shell--video-bg
-  .n-button.n-button--tertiary-type:not(.n-button--disabled):not(.header-icon-btn):not(.n-button--circle),
-.app-shell--video-bg
-  .n-button.n-button--quaternary-type:not(.n-button--disabled):not(.header-icon-btn):not(.n-button--circle) {
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.app-shell--video-bg
-  .n-button.n-button--tertiary-type:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action):hover,
-.app-shell--video-bg
-  .n-button.n-button--quaternary-type:not(.n-button--disabled):not(.header-icon-btn):not(.icon-action):hover {
-  background: color-mix(in srgb, var(--platform-accent-soft) 88%, rgba(255, 255, 255, 0.24)) !important;
-  color: var(--platform-accent) !important;
 }

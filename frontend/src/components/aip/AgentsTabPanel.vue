@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
   NButton,
   NCard,
@@ -27,6 +27,7 @@ import {
   fetchAgentProfileFile,
   fetchAgentProfiles,
   fetchAgentSkillRegistry,
+  fetchKnowledgeMounts,
   patchAgentProfile,
   updateAgentProfileFile,
 } from "../../api/agentSkills.js";
@@ -43,6 +44,7 @@ import {
   writeAgentsTabCache,
 } from "../../utils/agentSkillsAgentsTabCache.js";
 import { mergeBuiltinAgent, normalizeBuiltinAgent } from "../../utils/agentSkillsHelpers.js";
+import KnowledgeMountManager from "./KnowledgeMountManager.vue";
 
 const emit = defineEmits(["registry-changed"]);
 
@@ -57,7 +59,18 @@ const hydrated = ref(hasAgentsTabCacheData(initialCache));
 const agents = ref((initialCache?.agents || []).map((row) => normalizeBuiltinAgent(row)));
 const externalAgents = ref(initialCache?.externalAgents || []);
 const keyword = ref("");
+const searchOpen = ref(false);
+const searchInputRef = ref(null);
 const registryForPicker = ref([]);
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value;
+  if (searchOpen.value) {
+    nextTick(() => searchInputRef.value?.focus?.());
+  } else {
+    keyword.value = "";
+  }
+}
 
 const configDrawerOpen = ref(false);
 const configDrawerAgent = ref(null);
@@ -145,6 +158,17 @@ async function loadAgents({ background = false, foreground = false } = {}) {
   try {
     const rows = (await fetchAgentProfiles()) || [];
     agents.value = rows.map(normalizeBuiltinAgent);
+    // 并行拉取每个内置智能体的知识库挂载数量
+    await Promise.all(
+      agents.value.map(async (agent) => {
+        try {
+          const res = await fetchKnowledgeMounts(agent.id);
+          agent.mount_count = (res?.data || []).length;
+        } catch {
+          agent.mount_count = 0;
+        }
+      })
+    );
     hydrated.value = true;
     persistCache();
   } catch (e) {
@@ -405,22 +429,24 @@ onUnmounted(() => {
 
 defineExpose({
   reload,
+  toggleSearch,
   openExternalAgentModal,
   loading: refreshing,
 });
 </script>
 
 <template>
-  <div class="agents-tab-header">
-    <NText depth="3" class="agents-tab-hint">
-      {{ t("admin.agentSkills.agentsHint") }}
-    </NText>
-    <NInput
-      v-model:value="keyword"
-      clearable
-      :placeholder="t('admin.agentSkills.searchPlaceholder')"
-      style="width: 288px; flex-shrink: 0"
-    />
+  <div class="agents-tab">
+    <div class="agents-tab__header-actions">
+      <NInput
+        v-show="searchOpen"
+        ref="searchInputRef"
+        v-model:value="keyword"
+        clearable
+        :placeholder="t('admin.agentSkills.searchPlaceholder')"
+        style="width: 240px"
+      />
+    </div>
   </div>
   <!-- 首屏骨架：6 张卡片占位，避免白屏 -->
   <div v-if="initialLoading" class="agent-card-grid agent-card-grid--skeleton">
@@ -492,6 +518,10 @@ defineExpose({
           <span class="agent-card__meta-sep" aria-hidden="true">·</span>
           <span class="agent-card__meta-item">
             {{ t("admin.agentSkills.skillsCount", { count: agent.skill_names?.length || 0 }) }}
+          </span>
+          <span v-if="agent.mount_count > 0" class="agent-card__meta-sep" aria-hidden="true">·</span>
+          <span v-if="agent.mount_count > 0" class="agent-card__meta-item">
+            {{ t("admin.agentSkills.foldersCount", { count: agent.mount_count }) }}
           </span>
           <template v-if="!agent.enabled">
             <span class="agent-card__meta-sep" aria-hidden="true">·</span>
@@ -582,195 +612,210 @@ defineExpose({
     </NCard>
   </div>
 
-  <NDrawer v-model:show="agentDetailOpen" :width="864" placement="right">
-    <NDrawerContent
-      :title="t('admin.agentSkills.agentDetailTitle', { name: agentDetail?.title || '' })"
-      closable
-    >
-      <div v-if="agentDetailLoading">{{ t("common.loading") }}</div>
-      <template v-else-if="agentDetail">
-        <NText depth="3">{{ agentDetail.description }}</NText>
+  <Teleport to="body">
+    <NDrawer v-model:show="agentDetailOpen" :width="864" placement="right">
+      <NDrawerContent
+        :title="t('admin.agentSkills.agentDetailTitle', { name: agentDetail?.title || '' })"
+        closable
+      >
+        <div v-if="agentDetailLoading">{{ t("common.loading") }}</div>
+        <template v-else-if="agentDetail">
+          <NText depth="3">{{ agentDetail.description }}</NText>
 
-        <!-- 运行时工具列表 -->
-        <div v-if="agentDetail.runtime_tool_names?.length" style="margin: 14px 0">
-          <NText depth="2" style="font-weight: 600; display: block; margin-bottom: 6px">
-            {{ t("admin.agentSkills.toolsTitle") }}（{{ agentDetail.runtime_tool_names.length }}）
-          </NText>
-          <div style="display: flex; flex-wrap: wrap; gap: 4px">
-            <NTag
-              v-for="tool in agentDetail.runtime_tool_names"
-              :key="tool"
-              size="small"
-              :bordered="false"
-            >
-              {{ tool }}
-            </NTag>
-          </div>
-        </div>
-
-        <NText depth="3" style="display: block; margin: 14px 0">
-          {{ t("admin.agentSkills.agentConfigHint") }}
-        </NText>
-        <NSpace style="margin: 0 0 14px" :size="10" wrap>
-          <NTag
-            v-for="f in agentDetail.files || []"
-            :key="f"
-            size="small"
-            :bordered="false"
-            checkable
-            :checked="agentPreviewPath === f"
-            @click="loadAgentPreview(f)"
-          >
-            {{ f }}
-          </NTag>
-        </NSpace>
-        <NCard v-if="agentPreviewPath" size="small" :title="agentPreviewPath">
-          <div v-if="agentPreviewLoading">{{ t("common.loading") }}</div>
-          <template v-else>
-            <NInput
-              v-model:value="agentPreviewContent"
-              type="textarea"
-              :rows="18"
-              @update:value="agentPreviewDirty = true"
-            />
-            <NSpace style="margin-top: 10px">
-              <NButton
-                type="primary"
-                size="small"
-                :loading="agentPreviewSaving"
-                :disabled="!agentPreviewDirty"
-                @click="saveAgentPreview"
-              >
-                {{ t("common.save") }}
-              </NButton>
-              <IconAction
-                variant="table"
-                type="primary"
-                :label="t('admin.agentSkills.configure')"
-                :icon="SettingsOutline"
-                @click="openConfigDrawer(agentDetail)"
-              />
-            </NSpace>
-          </template>
-        </NCard>
-      </template>
-    </NDrawerContent>
-  </NDrawer>
-
-  <NDrawer v-model:show="configDrawerOpen" :width="504" placement="right">
-    <NDrawerContent
-      :title="t('admin.agentSkills.configDrawerTitle', { name: configDrawerDisplayName() })"
-      closable
-      :native-scrollbar="false"
-      body-content-style="padding: 19px 24px 14px; display: flex; flex-direction: column; gap: 0;"
-    >
-      <div class="agent-config-drawer">
-        <section class="agent-config-drawer__section">
-          <div class="agent-config-drawer__section-title">
-            {{ t("admin.agentSkills.configSectionGeneral") }}
-          </div>
-          <div class="agent-config-drawer__panel">
-            <div
-              v-if="configDrawerKind === 'builtin' && configDrawerAgent?.id !== 'orchestrator'"
-              class="agent-config-drawer__row"
-            >
-              <div class="agent-config-drawer__row-text">
-                <NText>{{ t("admin.agentSkills.agentEnabled") }}</NText>
-                <NText depth="3">{{ t("admin.agentSkills.agentEnabledHint") }}</NText>
-              </div>
-              <NSwitch v-model:value="configEnabled" size="small" />
-            </div>
-            <div class="agent-config-drawer__row">
-              <div class="agent-config-drawer__row-text">
-                <NText>{{ t("admin.agentSkills.serviceEnabled") }}</NText>
-                <NText depth="3">
-                  {{
-                    configDrawerKind === "external"
-                      ? t("admin.agentSkills.externalServiceHint")
-                      : t("admin.agentSkills.serviceEnabledHint")
-                  }}
-                </NText>
-              </div>
-              <NSwitch
-                v-if="configDrawerKind === 'external'"
-                v-model:value="configEnabled"
-                size="small"
-                :disabled="configDrawerAgent?.source === 'config'"
-              />
-              <NSwitch
-                v-else
-                v-model:value="configServiceEnabled"
-                size="small"
-                :disabled="configDrawerAgent?.id !== 'orchestrator' && !configEnabled"
-              />
-            </div>
-            <NText
-              v-if="configDrawerKind === 'external' && configDrawerAgent?.source === 'config'"
-              depth="3"
-              class="agent-config-drawer__readonly-hint"
-            >
-              {{ t("admin.agentSkills.externalAgentConfigReadonly") }}
+          <!-- 运行时工具列表 -->
+          <div v-if="agentDetail.runtime_tool_names?.length" style="margin: 14px 0">
+            <NText depth="2" style="display: block; margin-bottom: 6px">
+              {{ t("admin.agentSkills.toolsTitle") }}（{{ agentDetail.runtime_tool_names.length }}）
             </NText>
-          </div>
-        </section>
-
-        <template v-if="configDrawerKind === 'builtin' && configDrawerAgent?.skills_configurable">
-          <NDivider class="agent-config-drawer__divider" />
-          <section class="agent-config-drawer__section">
-            <div class="agent-config-drawer__section-head">
-              <div class="agent-config-drawer__section-title">
-                {{ t("admin.agentSkills.configSectionSkills") }}
-              </div>
-              <NTag size="small" :bordered="false" class="agent-config-drawer__skill-count">
-                {{ t("admin.agentSkills.skillsCount", { count: selectedSkillCount }) }}
+            <div style="display: flex; flex-wrap: wrap; gap: 4px">
+              <NTag
+                v-for="tool in agentDetail.runtime_tool_names"
+                :key="tool"
+                size="small"
+                :bordered="false"
+              >
+                {{ tool }}
               </NTag>
             </div>
-            <NText depth="3" class="agent-config-drawer__section-hint">
-              {{ t("admin.agentSkills.skillPickerHint") }}
-            </NText>
-            <NCheckboxGroup v-model:value="selectedSkillNames" class="agent-config-drawer__skills">
-              <div class="agent-config-drawer__skill-list">
-                <div
-                  v-for="opt in skillPickerOptions"
-                  :key="opt.value"
-                  class="agent-skill-option"
-                  :class="{
-                    'agent-skill-option--checked': selectedSkillNames.includes(opt.value),
-                    'agent-skill-option--disabled': opt.disabled,
-                  }"
+          </div>
+
+          <NText depth="3" style="display: block; margin: 14px 0">
+            {{ t("admin.agentSkills.agentConfigHint") }}
+          </NText>
+          <NSpace style="margin: 0 0 14px" :size="10" wrap>
+            <NTag
+              v-for="f in agentDetail.files || []"
+              :key="f"
+              size="small"
+              :bordered="false"
+              checkable
+              :checked="agentPreviewPath === f"
+              @click="loadAgentPreview(f)"
+            >
+              {{ f }}
+            </NTag>
+          </NSpace>
+          <NCard v-if="agentPreviewPath" size="small" :title="agentPreviewPath">
+            <div v-if="agentPreviewLoading">{{ t("common.loading") }}</div>
+            <template v-else>
+              <NInput
+                v-model:value="agentPreviewContent"
+                type="textarea"
+                :rows="18"
+                @update:value="agentPreviewDirty = true"
+              />
+              <NSpace style="margin-top: 10px">
+                <NButton
+                  type="primary"
+                  size="small"
+                  :loading="agentPreviewSaving"
+                  :disabled="!agentPreviewDirty"
+                  @click="saveAgentPreview"
                 >
-                  <NCheckbox :value="opt.value" :disabled="opt.disabled" class="agent-skill-option__checkbox">
-                    <div class="agent-skill-option__body">
-                      <span class="agent-skill-option__title">{{ opt.title }}</span>
-                      <span v-if="opt.title !== opt.name" class="agent-skill-option__name">
-                        {{ opt.name }}
-                      </span>
-                      <span v-if="opt.description" class="agent-skill-option__desc">
-                        {{ opt.description }}
-                      </span>
-                    </div>
-                  </NCheckbox>
-                </div>
-              </div>
-            </NCheckboxGroup>
-          </section>
+                  {{ t("common.save") }}
+                </NButton>
+                <IconAction
+                  variant="table"
+                  type="primary"
+                  :label="t('admin.agentSkills.configure')"
+                  :icon="SettingsOutline"
+                  @click="openConfigDrawer(agentDetail)"
+                />
+              </NSpace>
+            </template>
+          </NCard>
         </template>
-      </div>
-      <template #footer>
-        <NSpace justify="end" :size="10">
-          <NButton @click="configDrawerOpen = false">{{ t("common.cancel") }}</NButton>
-          <NButton
-            type="primary"
-            :loading="configSaving"
-            :disabled="configDrawerKind === 'external' && configDrawerAgent?.source === 'config'"
-            @click="saveAgentConfig"
-          >
-            {{ t("common.save") }}
-          </NButton>
-        </NSpace>
-      </template>
-    </NDrawerContent>
-  </NDrawer>
+      </NDrawerContent>
+    </NDrawer>
+  </Teleport>
+
+  <Teleport to="body">
+    <NDrawer v-model:show="configDrawerOpen" :width="640" placement="right">
+      <NDrawerContent
+        :title="t('admin.agentSkills.configDrawerTitle', { name: configDrawerDisplayName() })"
+        closable
+        :native-scrollbar="false"
+        body-content-style="overflow-x: hidden;"
+      >
+        <div class="agent-config-drawer">
+          <section class="agent-config-drawer__section">
+            <div class="agent-config-drawer__section-title">
+              {{ t("admin.agentSkills.configSectionGeneral") }}
+            </div>
+            <div class="agent-config-drawer__panel">
+              <div
+                v-if="configDrawerKind === 'builtin' && configDrawerAgent?.id !== 'orchestrator'"
+                class="agent-config-drawer__row"
+              >
+                <div class="agent-config-drawer__row-text">
+                  <NText>{{ t("admin.agentSkills.agentEnabled") }}</NText>
+                  <NText depth="3">{{ t("admin.agentSkills.agentEnabledHint") }}</NText>
+                </div>
+                <NSwitch v-model:value="configEnabled" size="small" />
+              </div>
+              <div class="agent-config-drawer__row">
+                <div class="agent-config-drawer__row-text">
+                  <NText>{{ t("admin.agentSkills.serviceEnabled") }}</NText>
+                  <NText depth="3">
+                    {{
+                      configDrawerKind === "external"
+                        ? t("admin.agentSkills.externalServiceHint")
+                        : t("admin.agentSkills.serviceEnabledHint")
+                    }}
+                  </NText>
+                </div>
+                <NSwitch
+                  v-if="configDrawerKind === 'external'"
+                  v-model:value="configEnabled"
+                  size="small"
+                  :disabled="configDrawerAgent?.source === 'config'"
+                />
+                <NSwitch
+                  v-else
+                  v-model:value="configServiceEnabled"
+                  size="small"
+                  :disabled="configDrawerAgent?.id !== 'orchestrator' && !configEnabled"
+                />
+              </div>
+              <NText
+                v-if="configDrawerKind === 'external' && configDrawerAgent?.source === 'config'"
+                depth="3"
+                class="agent-config-drawer__readonly-hint"
+              >
+                {{ t("admin.agentSkills.externalAgentConfigReadonly") }}
+              </NText>
+            </div>
+          </section>
+
+          <template v-if="configDrawerKind === 'builtin' && configDrawerAgent?.skills_configurable">
+            <NDivider class="agent-config-drawer__divider" />
+            <section class="agent-config-drawer__section">
+              <div class="agent-config-drawer__section-head">
+                <div class="agent-config-drawer__section-title">
+                  {{ t("admin.agentSkills.configSectionSkills") }}
+                </div>
+                <NTag size="small" :bordered="false" class="agent-config-drawer__skill-count">
+                  {{ t("admin.agentSkills.skillsCount", { count: selectedSkillCount }) }}
+                </NTag>
+              </div>
+              <NText depth="3" class="agent-config-drawer__section-hint">
+                {{ t("admin.agentSkills.skillPickerHint") }}
+              </NText>
+              <NCheckboxGroup v-model:value="selectedSkillNames" class="agent-config-drawer__skills">
+                <div class="agent-config-drawer__skill-list">
+                  <div
+                    v-for="opt in skillPickerOptions"
+                    :key="opt.value"
+                    class="agent-skill-option"
+                    :class="{
+                      'agent-skill-option--checked': selectedSkillNames.includes(opt.value),
+                      'agent-skill-option--disabled': opt.disabled,
+                    }"
+                  >
+                    <NCheckbox :value="opt.value" :disabled="opt.disabled" class="agent-skill-option__checkbox">
+                      <div class="agent-skill-option__body">
+                        <span class="agent-skill-option__title">{{ opt.title }}</span>
+                        <span v-if="opt.title !== opt.name" class="agent-skill-option__name">
+                          {{ opt.name }}
+                        </span>
+                        <span v-if="opt.description" class="agent-skill-option__desc">
+                          {{ opt.description }}
+                        </span>
+                      </div>
+                    </NCheckbox>
+                  </div>
+                </div>
+              </NCheckboxGroup>
+            </section>
+          </template>
+
+          <!-- 知识库挂载 -->
+          <template v-if="configDrawerKind === 'builtin'">
+            <NDivider class="agent-config-drawer__divider" />
+            <section class="agent-config-drawer__section">
+              <div class="agent-config-drawer__section-title">
+                {{ t("admin.agentSkills.configSectionKnowledgeMounts") }}
+              </div>
+              <KnowledgeMountManager :agent-id="configDrawerAgent.id" />
+            </section>
+          </template>
+        </div>
+        <template #footer>
+          <NSpace justify="end" :size="10">
+            <NButton @click="configDrawerOpen = false">{{ t("common.cancel") }}</NButton>
+            <NButton
+              type="primary"
+              :loading="configSaving"
+              :disabled="configDrawerKind === 'external' && configDrawerAgent?.source === 'config'"
+              @click="saveAgentConfig"
+            >
+              {{ t("common.save") }}
+            </NButton>
+          </NSpace>
+        </template>
+      </NDrawerContent>
+    </NDrawer>
+  </Teleport>
 
   <AdminFormModal
     v-model:show="externalAgentModalOpen"
@@ -834,5 +879,13 @@ defineExpose({
 .external-agent-modal__hint {
   display: block;
   margin-bottom: 19px;
+}
+
+.agents-tab__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 </style>

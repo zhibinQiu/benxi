@@ -331,8 +331,8 @@ html[data-theme="dark"] .promo-page {
 
 .promo-page--scrolling .promo-header {
   background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(17px) saturate(150%);
-  -webkit-backdrop-filter: blur(17px) saturate(150%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -380,7 +380,6 @@ html[data-theme="dark"] .promo-page--scrolling .promo-header__logo {
 
 .promo-header__title {
   font-size: 14px;
-  font-weight: 700;
   letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
@@ -477,7 +476,6 @@ html[data-theme="dark"] .promo-header__vrule {
   background: #000;
   color: #fff;
   font-size: 13px;
-  font-weight: 600;
   cursor: pointer;
   transition: opacity 0.2s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   line-height: 1;
@@ -544,7 +542,6 @@ html[data-theme="dark"] .promo-header__chip--login {
   background: linear-gradient(135deg, var(--platform-accent), color-mix(in srgb, var(--platform-accent) 70%, #6366f1));
   color: #fff;
   font-size: 13px;
-  font-weight: 600;
   letter-spacing: 0.03em;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--platform-accent) 30%, transparent);
 }
@@ -595,7 +592,6 @@ html[data-theme="dark"] .promo-hero__subtitle {
   border: none;
   border-radius: 999px;
   font-size: 16px;
-  font-weight: 600;
   line-height: 1;
   cursor: pointer;
   text-decoration: none;
@@ -618,8 +614,8 @@ html[data-theme="dark"] .promo-hero__subtitle {
 
 .promo-hero__cta--secondary {
   background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid rgba(0, 0, 0, 0.12);
   color: var(--platform-text);
   box-shadow: 0 5px 17px color-mix(in srgb, var(--platform-accent) 6%, transparent);
@@ -652,7 +648,6 @@ html[data-theme="dark"] .promo-hero__cta--secondary {
 
 .promo-hero__stat-value {
   font-size: clamp(18px, 2.2vw, 26px);
-  font-weight: 700;
   color: var(--platform-accent);
   letter-spacing: -0.02em;
 }
@@ -700,7 +695,6 @@ html[data-theme="dark"] .promo-detail {
   background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
   color: var(--platform-accent);
   font-size: 13px;
-  font-weight: 600;
   letter-spacing: 0.04em;
   margin-bottom: 14px;
 }
@@ -778,7 +772,6 @@ html[data-theme="dark"] .promo-detail__card:hover {
 .promo-detail__card-title {
   margin: 0 0 10px;
   font-size: 17px;
-  font-weight: 600;
   line-height: 1.3;
   color: #000;
 }
@@ -884,7 +877,6 @@ html[data-theme="dark"] .promo-flow__step:hover {
   background: linear-gradient(135deg, var(--platform-accent), color-mix(in srgb, var(--platform-accent) 70%, #6366f1));
   color: #fff;
   font-size: 18px;
-  font-weight: 700;
   font-feature-settings: "tnum";
 }
 
@@ -957,7 +949,6 @@ html[data-theme="dark"] .promo-arch {
   background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
   color: var(--platform-accent);
   font-size: 13px;
-  font-weight: 600;
   letter-spacing: 0.04em;
   margin-bottom: 14px;
 }
@@ -1019,7 +1010,6 @@ html[data-theme="dark"] .promo-arch__layer:hover {
   padding: 3px 10px;
   border-radius: 6px;
   font-size: 11px;
-  font-weight: 600;
   letter-spacing: 0.04em;
   margin-bottom: 14px;
 }
@@ -1112,7 +1102,6 @@ html[data-theme="dark"] .promo-cta::before {
   background: linear-gradient(135deg, var(--platform-accent), color-mix(in srgb, var(--platform-accent) 70%, #6366f1));
   color: #fff;
   font-size: 12px;
-  font-weight: 600;
   letter-spacing: 0.04em;
   margin-bottom: 20px;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--platform-accent) 30%, transparent);
@@ -1152,7 +1141,6 @@ html[data-theme="dark"] .promo-cta__body {
   background: var(--platform-accent);
   color: #fff;
   font-size: 17px;
-  font-weight: 600;
   cursor: pointer;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--platform-accent) 32%, transparent);
   transition:

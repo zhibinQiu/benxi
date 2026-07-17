@@ -24,32 +24,32 @@ function deepFreeze(obj) {
   return Object.freeze(obj);
 }
 
-/** Naive UI 主题覆盖色板（仅蓝色，默认方案） */
+/** Naive UI 主题覆盖色板（蓝色系） */
 export const NAIVE_PALETTES = deepFreeze({
   blue: {
     light: {
-      primary: "#0067ff",
-      primaryHover: "#0058db",
-      primaryPressed: "#004abf",
-      primarySuppl: "#004abf",
-      focusBorder: "#0067ff",
-      focusShadow: "0 0 0 2px rgba(0, 103, 255, 0.35)",
-      menuActiveBg: "#ececf1",
-      menuActiveBgHover: "#e3e3e8",
-      dropdownActiveBg: "rgba(0, 103, 255, 0.1)",
-      tabActive: "#0067ff",
-      dropdownActiveText: "#0067ff",
+      primary: "#0a6bff",
+      primaryHover: "#0058e0",
+      primaryPressed: "#004ac2",
+      primarySuppl: "#004ac2",
+      focusBorder: "#a0a0a0",
+      focusShadow: "0 0 0 2px rgba(0, 0, 0, 0.12)",
+      menuActiveBg: "#e6e6e6",
+      menuActiveBgHover: "#d9d9d9",
+      dropdownActiveBg: "rgba(0, 0, 0, 0.06)",
+      tabActive: "#0a6bff",
+      dropdownActiveText: "#0a6bff",
     },
     dark: {
       primary: "#4d94ff",
-      primaryHover: "#66a3ff",
-      primaryPressed: "#3385ff",
-      primarySuppl: "#3385ff",
-      focusBorder: "#4d94ff",
-      focusShadow: "0 0 0 2px rgba(77, 148, 255, 0.35)",
-      menuActiveBg: "rgba(255, 255, 255, 0.1)",
-      menuActiveBgHover: "rgba(255, 255, 255, 0.14)",
-      dropdownActiveBg: "rgba(77, 148, 255, 0.14)",
+      primaryHover: "#6ea3ff",
+      primaryPressed: "#3b82ff",
+      primarySuppl: "#3b82ff",
+      focusBorder: "#585868",
+      focusShadow: "0 0 0 2px rgba(255, 255, 255, 0.10)",
+      menuActiveBg: "rgba(255, 255, 255, 0.08)",
+      menuActiveBgHover: "rgba(255, 255, 255, 0.12)",
+      dropdownActiveBg: "rgba(255, 255, 255, 0.08)",
       tabActive: "#4d94ff",
       dropdownActiveText: "#4d94ff",
     },

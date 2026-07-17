@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from "vue";
-import { NButton, NCard, NInput, NSpace, NText } from "naive-ui";
+import { NButton, NCard, NInput, NSpace } from "naive-ui";
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
 import { clearAgentMemory, fetchAgentMemory, updateAgentMemory } from "../../api/agentSkills.js";
@@ -59,10 +59,7 @@ defineExpose({ load, loading });
 </script>
 
 <template>
-  <NCard size="small" :title="t('admin.agentSkills.memoryTitle')">
-    <NText depth="3" style="display: block; margin-bottom: 14px">
-      {{ t("admin.agentSkills.memoryHint") }}
-    </NText>
+  <NCard size="small">
     <div v-if="loading" class="agent-card-grid--skeleton">
       <div class="mcp-card--skeleton" style="max-width: 600px">
         <div class="skeleton-line skeleton-line--title" />
@@ -77,10 +74,10 @@ defineExpose({ load, loading });
         :placeholder="t('admin.agentSkills.memoryPlaceholder')"
       />
       <NSpace style="margin-top: 14px" :size="10">
-        <NButton type="primary" :loading="saving" @click="save">
+        <NButton quaternary :loading="saving" @click="save">
           {{ t("common.save") }}
         </NButton>
-        <NButton type="error" quaternary @click="wipe">
+        <NButton quaternary @click="wipe">
           {{ t("admin.agentSkills.memoryClear") }}
         </NButton>
       </NSpace>

@@ -28,6 +28,18 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         description="翻译、问数、语音转写等功能入口",
     ),
     MenuItemOut(
+        key="ontology",
+        label="本体定义",
+        group="main",
+        description="本体类型、属性与关系定义",
+    ),
+    MenuItemOut(
+        key="kg",
+        label="知识图谱",
+        group="main",
+        description="实体、关系与知识提取",
+    ),
+    MenuItemOut(
         key="documents",
         label="我的文件",
         group="main",
@@ -57,12 +69,25 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         group="settings",
         description="语言模型、OCR、语音等服务配置",
     ),
+    MenuItemOut(
+        key="admin-menu-settings",
+        label="菜单管理",
+        group="settings",
+        description="侧栏菜单项可见性管理",
+    ),
+    MenuItemOut(
+        key="agent-skills",
+        label="多智能体",
+        group="main",
+        description="系统智能体、技能、工具与记忆管理",
+    ),
 )
 
 DEFAULT_MENU_VISIBILITY: dict[str, MenuVisibility] = {
     item.key: "all" for item in MEMBER_MENU_ITEMS
 }
 DEFAULT_MENU_VISIBILITY["admin-model-settings"] = "admin"
+DEFAULT_MENU_VISIBILITY["admin-menu-settings"] = "admin"
 
 ROUTE_MENU_KEYS: dict[str, str] = {
     "ai-home": "ai-home",
@@ -79,15 +104,17 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "data-analysis": "system-functions",
     "carbon-qa": "system-functions",
     "smart-forecast": "system-functions",
-    "kg-palantir": "system-functions",
     "knowledge-search": "system-functions",
-    "agent-skills": "system-functions",
+    "agent-skills": "agent-skills",
+    "ontology": "ontology",
+    "kg": "kg",
     "documents": "documents",
     "document-detail": "documents",
     "knowledge-subscriptions": "knowledge-subscriptions",
     "subscription-item": "knowledge-subscriptions",
     "admin-monitor": "admin-monitor",
     "admin-model-settings": "admin-model-settings",
+    "admin-menu-settings": "admin-menu-settings",
     "issue-reports": "issue-reports",
 }
 

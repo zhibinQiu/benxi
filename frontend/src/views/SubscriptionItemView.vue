@@ -53,7 +53,7 @@ const showImportedActions = computed(
 const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 function fmtTime(iso) {
-  if (!iso) return t("issueReports.emDash");
+  if (!iso) return "—";
   try {
     return new Date(iso).toLocaleString(dateLocale.value, { hour12: false });
   } catch {
@@ -178,23 +178,26 @@ watch(
     <div class="subscription-detail-page">
       <NSpin :show="loading" class="detail-spin" local>
         <div v-if="item" class="detail-layout">
-          <div class="detail-panel">
-            <header class="detail-header">
-              <span v-if="item.is_wechat" class="wechat-badge" :title="t('subscriptionItem.wechatTitle')">
-                {{ t("subscriptionItem.wechatBadge") }}
-              </span>
-              <h1 class="article-title">{{ item.title }}</h1>
-              <NText depth="3" class="article-meta">
-                {{
-                  t("subscriptionItem.collectedAt", {
-                    time: fmtTime(item.created_at || item.publish_at),
-                  })
-                }}
-                <template v-if="item.author"> · {{ item.author }}</template>
-              </NText>
-            </header>
+          <!-- 文章标题与元信息 -->
+          <header class="detail-header">
+            <span v-if="item.is_wechat" class="wechat-badge" :title="t('subscriptionItem.wechatTitle')">
+              {{ t("subscriptionItem.wechatBadge") }}
+            </span>
+            <h1 class="article-title">{{ item.title }}</h1>
+            <NText depth="3" class="article-meta">
+              {{
+                t("subscriptionItem.collectedAt", {
+                  time: fmtTime(item.created_at || item.publish_at),
+                })
+              }}
+              <template v-if="item.author"> · {{ item.author }}</template>
+            </NText>
+          </header>
 
-            <div class="detail-body-scroll">
+          <!-- 网页内容提取卡片 -->
+          <section class="detail-section">
+            <div class="section-title">{{ t("subscriptionItem.contentExtractTitle") }}</div>
+            <div class="section-card">
               <div
                 v-if="articleBody.mode !== 'empty'"
                 class="article-content article-html"
@@ -202,7 +205,7 @@ watch(
               />
               <NText v-else depth="3">{{ t("subscriptionItem.emptyBody") }}</NText>
             </div>
-          </div>
+          </section>
         </div>
         <NEmpty v-else-if="!loading" :description="t('subscriptionItem.notFound')" />
       </NSpin>
@@ -240,56 +243,22 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.detail-panel {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-radius);
-  background: var(--platform-surface);
-  box-shadow: var(--platform-shadow);
   max-width: 860px;
   width: 100%;
   margin: 0 auto;
+  gap: 20px;
+  padding-bottom: 32px;
 }
 
 .detail-header {
   flex-shrink: 0;
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--platform-border);
-  background: var(--platform-surface);
-}
-
-.detail-body-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 20px 24px 32px;
-  box-sizing: border-box;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-.detail-body-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.detail-body-scroll::-webkit-scrollbar-thumb {
-  background: var(--platform-border-strong);
-  border-radius: 3px;
+  position: relative;
+  padding: 0 0 4px;
 }
 
 .wechat-badge {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
+  display: inline-block;
+  margin-bottom: 8px;
   font-size: var(--platform-font-size-xs);
   padding: 3px 9px;
   border-radius: var(--platform-radius-xs);
@@ -300,10 +269,9 @@ watch(
 
 .article-title {
   margin: 0;
-  padding-right: 68px;
-  font-size: 23px;
+  font-size: var(--platform-font-size-xl);
   line-height: var(--platform-line-heading);
-  font-weight: var(--platform-font-weight-strong);
+  font-weight: var(--platform-font-weight-normal);
   letter-spacing: var(--platform-tracking-tight);
   color: var(--platform-text);
 }
@@ -315,8 +283,45 @@ watch(
   line-height: 1.5;
 }
 
+/* 小标题 + 内容卡片设计模式 */
+.detail-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.section-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+  font-size: var(--platform-font-size-base);
+  color: var(--platform-text);
+}
+
+.section-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius);
+  background: var(--platform-surface);
+  box-shadow: var(--platform-shadow);
+  padding: 20px 24px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
 .subscription-item-toolbar__spacer {
   flex: 1;
   min-width: 0;
+}
+
+/* 网页内容提取排版 */
+.article-content {
+  line-height: 1.8;
+}
+.article-content :deep(p) {
+  margin: 0.6em 0;
+}
+.article-content :deep(p:first-child) {
+  margin-top: 0;
+}
+.article-content :deep(p:last-child) {
+  margin-bottom: 0;
 }
 </style>

@@ -12,6 +12,7 @@ from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
     ATOMIC_TOOL_WEB_SEARCH,
+    ATOMIC_TOOL_ONTOLOGY_QUERY,
 )
 from app.tool_center.context import ToolRuntimeContext
 
@@ -250,25 +251,149 @@ async def _run_knowledge_retrieve(
 
 
 async def _run_kg_query(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tuple[bool, str, dict | None]:
+    """Neo4j 版知识图谱查询 — 本体感知的多跳推理。"""
     question = str(params.get("question") or params.get("query") or "").strip()
+    from app.core.neo4j import get_neo4j
     from app.core.permissions import user_has_permission
-    from app.services.kg_service import retrieve_kg_context_for_question
 
-    if not user_has_permission(ctx.db, ctx.user, "feature.kg_palantir"):
-        return _tool_result(False, "无本体图谱权限")
-    kg_ctx = retrieve_kg_context_for_question(ctx.db, ctx.user, question)
-    if not kg_ctx or not kg_ctx.context_text:
-        return _tool_result(True, "未匹配到图谱实体", {})
+    has_ontology = user_has_permission(ctx.db, ctx.user, "feature.ontology")
+    has_kg = user_has_permission(ctx.db, ctx.user, "feature.kg")
+    if not (has_ontology or has_kg):
+        return _tool_result(False, "无知识图谱权限，请前往「语义管理」开启功能权限")
+
+    try:
+        driver = await get_neo4j()
+        from app.services.kg_reasoning import KGReasoningEngine
+
+        engine = KGReasoningEngine(driver)
+        context = await engine.reason(
+            question=question,
+            user_id=str(ctx.user.id),
+            max_depth=3,
+            include_inferred=True,
+        )
+        if not context or not context.context_text:
+            return _tool_result(True, "未匹配到图谱实体", {})
+        return _tool_result(
+            True,
+            f"图谱上下文 {context.entity_count} 个实体，{context.relation_count} 条关系",
+            {
+                "context_text": context.context_text,
+                "entity_count": context.entity_count,
+                "relation_count": context.relation_count,
+                "matched_entity_ids": context.matched_entity_ids,
+                "citations": context.citations,
+                "reasoning_hops": context.reasoning_hops,
+                "inferred_entities": context.inferred_entities,
+            },
+        )
+    except Exception as exc:
+        return _tool_result(False, f"图谱查询失败: {exc}")
+
+
+async def _run_ontology_query(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tuple[bool, str, dict | None]:
+    """查询本体定义：实体类型列表、关系类型约束、属性模式等。"""
+    question = str(params.get("question") or params.get("query") or "").strip()
+    from app.core.neo4j import get_neo4j
+    from app.core.permissions import user_has_permission
+
+    if not user_has_permission(ctx.db, ctx.user, "feature.ontology"):
+        return _tool_result(False, "无知识图谱权限")
+
+    try:
+        driver = await get_neo4j()
+        from app.services.kg_reasoning import KGReasoningEngine
+
+        engine = KGReasoningEngine(driver)
+        ontology_text = await engine.query_ontology(question)
+        if not ontology_text.strip():
+            ontology_text = "当前本体为空，建议先通过「语义管理 > 本体定义」初始化默认本体"
+
+        from app.schemas.kg import KgQaContext
+        context = KgQaContext(
+            context_text=ontology_text,
+            citations=[],
+            entity_count=0,
+            relation_count=0,
+        )
+        return _tool_result(
+            True,
+            "本体查询完成",
+            {
+                "context_text": context.context_text,
+                "entity_count": context.entity_count,
+                "relation_count": context.relation_count,
+                "citations": context.citations,
+            },
+        )
+    except Exception as exc:
+        return _tool_result(False, f"本体查询失败: {exc}")
+
+
+async def _run_knowledge_folder_search(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """在 Agent 已挂载的知识库文件夹内检索文档。"""
+    query = str(params.get("query") or "").strip()
+    limit = int(params.get("limit") or 8)
+    if not query:
+        return _tool_result(False, "检索词为空")
+
+    from app.services.agent_knowledge_mount_service import (
+        list_mounts,
+        resolve_mounts_to_doc_ids,
+    )
+
+    agent_id = (ctx.loop_state or {}).get("agent_id") or "orchestrator"
+    mounts = list_mounts(ctx.db, agent_id)
+    if not mounts:
+        return _tool_result(False, "当前 Agent 未挂载任何知识库文件夹，请先用 list_mounted_folders 查看")
+
+    doc_ids = resolve_mounts_to_doc_ids(ctx.db, ctx.user, mounts)
+    if not doc_ids:
+        return _tool_result(
+            True,
+            "挂载文件夹中暂无可检索的文档",
+            {"query": query, "hits": [], "mode": "none"},
+        )
+
+    from app.services.knowledge_qa_service import retrieve_hits_for_qa
+
+    uuid_ids = [uuid.UUID(d) for d in doc_ids]
+    hits, mode = retrieve_hits_for_qa(
+        ctx.db, ctx.user, uuid_ids, query, limit=limit, merge_nearby=True
+    )
     return _tool_result(
         True,
-        f"图谱上下文 {kg_ctx.entity_count} 个实体",
-        {
-            "context_text": kg_ctx.context_text,
-            "entity_count": kg_ctx.entity_count,
-            "relation_count": kg_ctx.relation_count,
-            "matched_entity_ids": [str(x) for x in kg_ctx.matched_entity_ids],
-            "citations": kg_ctx.citations,
-        },
+        f"挂载文件夹检索命中 {len(hits)} 段",
+        {"query": query, "hits": hits, "mode": mode, "doc_ids": doc_ids},
+    )
+
+
+def _run_list_mounted_folders(
+    ctx: ToolRuntimeContext,
+) -> tuple[bool, str, dict | None]:
+    """列出当前 Agent 已挂载的知识库文件夹。"""
+    from app.services.agent_knowledge_mount_service import list_mounts
+
+    agent_id = (ctx.loop_state or {}).get("agent_id") or "orchestrator"
+    mounts = list_mounts(ctx.db, agent_id)
+    if not mounts:
+        return _tool_result(True, "当前 Agent 未挂载任何知识库文件夹", {"folders": []})
+
+    items = []
+    for m in mounts:
+        items.append({
+            "id": m.get("id"),
+            "dataset_id": m.get("dataset_id"),
+            "folder_id": m.get("folder_id"),
+            "scope": m.get("scope"),
+            "label": m.get("label", "文件夹"),
+        })
+    return _tool_result(
+        True,
+        f"已挂载 {len(items)} 个知识库文件夹",
+        {"folders": items},
     )
 
 
@@ -292,6 +417,12 @@ async def run_global_atomic_tool(
         return await _run_knowledge_retrieve(ctx, params)
     if name == ATOMIC_TOOL_KG_QUERY:
         return await _run_kg_query(ctx, params)
+    if name == ATOMIC_TOOL_ONTOLOGY_QUERY:
+        return await _run_ontology_query(ctx, params)
+    if name == "knowledge_folder_search":
+        return await _run_knowledge_folder_search(ctx, params)
+    if name == "list_mounted_folders":
+        return _run_list_mounted_folders(ctx)
 
     from app.services.agent_tools import (
         _execute_admin_tool,

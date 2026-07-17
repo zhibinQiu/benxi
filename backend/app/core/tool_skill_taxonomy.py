@@ -41,6 +41,8 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     ATOMIC_TOOL_WEB_SEARCH: ToolCategory.WEB,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE: ToolCategory.KNOWLEDGE,
     ATOMIC_TOOL_KG_QUERY: ToolCategory.GRAPH,
+    "knowledge_folder_search": ToolCategory.KNOWLEDGE,
+    "list_mounted_folders": ToolCategory.KNOWLEDGE,
     "read_agent_memory": ToolCategory.MEMORY,
     "append_agent_memory": ToolCategory.MEMORY,
     "search_documents_by_name": ToolCategory.DOCUMENT,
@@ -137,6 +139,11 @@ GLOBAL_ATOMIC_TOOL_NAMES = GLOBAL_ATOMIC_TOOL_NAMES | frozenset(
     {"carbon_qa_query", "mermaid_diagram"}
 )
 
+# 知识库文件夹搜索工具（针对已挂载文件夹的细粒度检索）
+GLOBAL_ATOMIC_TOOL_NAMES = GLOBAL_ATOMIC_TOOL_NAMES | frozenset(
+    {"knowledge_folder_search", "list_mounted_folders"}
+)
+
 # --- Skill 运行时层（LLM 可见，非业务 Skill 本体）---
 
 SKILL_RUNTIME_TOOL_NAMES: tuple[str, ...] = (
@@ -208,6 +215,8 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
         # 原子工具
         "web_search",
         "knowledge_retrieve",
+        "knowledge_folder_search",
+        "list_mounted_folders",
         "kg_query",
         "mermaid_diagram",
         "carbon_qa_query",
@@ -242,6 +251,8 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
         "carbon_qa_query",
         "web_search",
         "knowledge_retrieve",
+        "knowledge_folder_search",
+        "list_mounted_folders",
         "kg_query",
         "read_agent_memory",
         "append_agent_memory",
@@ -263,6 +274,8 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
         "request_orchestrator_assist",
         "web_search",
         "knowledge_retrieve",
+        "knowledge_folder_search",
+        "list_mounted_folders",
         "kg_query",
         "read_agent_memory",
         "append_agent_memory",
@@ -273,6 +286,8 @@ DEFAULT_AGENT_TOOLS: dict[str, tuple[str, ...]] = {
 _ORCHESTRATOR_ATOMIC_TOOLS: tuple[str, ...] = (
     "web_search",
     "knowledge_retrieve",
+    "knowledge_folder_search",
+    "list_mounted_folders",
     "kg_query",
     "mermaid_diagram",
     "carbon_qa_query",
@@ -339,6 +354,8 @@ _AGENT_ATOMIC_TOOLS: dict[str, tuple[str, ...]] = {
         "carbon_qa_query",
         "web_search",
         "knowledge_retrieve",
+        "knowledge_folder_search",
+        "list_mounted_folders",
         "kg_query",
         "read_agent_memory",
         "append_agent_memory",
@@ -346,6 +363,8 @@ _AGENT_ATOMIC_TOOLS: dict[str, tuple[str, ...]] = {
     "power-economy": (
         "web_search",
         "knowledge_retrieve",
+        "knowledge_folder_search",
+        "list_mounted_folders",
         "kg_query",
         "read_agent_memory",
         "append_agent_memory",
@@ -363,7 +382,6 @@ SKILL_SKILL_DEV = "skill-development"
 
 SKILL_WEB_SEARCH = "web-search"
 SKILL_KNOWLEDGE_SEARCH = "knowledge-search"
-SKILL_KG_PALANTIR = "kg-palantir"
 SKILL_KNOWLEDGE_RESEARCH = "knowledge-research"
 
 SKILL_CARBON_QA = "carbon-qa"
@@ -410,7 +428,7 @@ RETRIEVAL_SKILL_ATOMIC_MAP: dict[str, tuple[str, str]] = {}
 # 全局原子 Tool → 默认归属（用于 tool → agent 归因）
 TOOL_TO_SKILL_ID: dict[str, str] = {}
 # 检索工具 → 通用归类
-for name in ("web_search", "knowledge_retrieve", "kg_query", "carbon_qa_query", "mermaid_diagram"):
+for name in ("web_search", "knowledge_retrieve", "knowledge_folder_search", "list_mounted_folders", "kg_query", "carbon_qa_query", "mermaid_diagram"):
     TOOL_TO_SKILL_ID[name] = SKILL_KNOWLEDGE_RESEARCH
 
 # ── 工具可见性范围（分层控制） ──────────────────────────────────────────────

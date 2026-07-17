@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -247,9 +248,18 @@ async def _execute_tasks_with_orchestrator_progress(
     progress_task = asyncio.create_task(_progress_emitter())
 
     timeout = getattr(get_settings(), "agent_subagent_timeout_sec", 600) or 600
+    last_real_event_time = time.monotonic()
+    max_stalled_sec = 45  # 连续 45 秒仅收到心跳事件（无 delta/workflow/complete），判定为卡住
 
     try:
         while True:
+            stall_elapsed = time.monotonic() - last_real_event_time
+            if stall_elapsed >= max_stalled_sec:
+                _logger.warning(
+                    "子任务 %s 秒未产出有效事件，强制结束。已完成 %d/%d",
+                    max_stalled_sec, completed, total,
+                )
+                break
             try:
                 kind, payload = await asyncio.wait_for(queue.get(), timeout=timeout)
             except asyncio.TimeoutError:
@@ -266,8 +276,10 @@ async def _execute_tasks_with_orchestrator_progress(
                 break
             elif kind == "error":
                 _logger.error("子任务异常：%s", payload[:500])
-                continue
+                yield {"type": "complete", "reply": f"子任务执行错误：{payload[:200]}", "messages": [], "citations": [], "kg_context": None}
+                break
             elif kind == "event":
+                last_real_event_time = time.monotonic()
                 yield payload
             elif kind == "progress":
                 yield payload
@@ -478,10 +490,12 @@ async def _execute_single_route(
 
     needs_reroute = False
     assist_reason = ""
+    got_complete = False
     async for event in _execute_tasks_with_orchestrator_progress(
         hop_gen, agent_titles=[agent_title]
     ):
         if event.get("type") == "complete":
+            got_complete = True
             handoff_msg = event.get("aip_handoff")
             if handoff_msg and isinstance(handoff_msg, dict):
                 payload = handoff_msg.get("payload", {})
@@ -497,6 +511,22 @@ async def _execute_single_route(
                 yield event  # 正常完成，立即转发
         else:
             yield event  # 渐进式转发（workflow、delta 等）
+
+    # 正常完成（complete 事件已在循环中 yield）→ 直接返回
+    if got_complete and not needs_reroute:
+        return
+
+    # 安全兜底：如果 progress wrapper 未产出任何 complete（如异常吞没后退出），
+    # 生成一个 fallback complete 事件，避免上游收不到循环结束信号
+    if not got_complete and not needs_reroute:
+        yield {
+            "type": "complete",
+            "reply": f"{agent_title} 执行未返回结果",
+            "messages": [],
+            "citations": [],
+            "kg_context": None,
+        }
+        return
 
     # ── 专精智能体无法完成 → 重路由至调度智能体 ──
     yield {

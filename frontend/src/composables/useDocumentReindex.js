@@ -1,6 +1,6 @@
 import { ref, onUnmounted } from "vue";
 import { usePlatformUi } from "./usePlatformUi";
-import { fetchParserOptions, reindexDocument } from "../api/knowledge.js";
+import { fetchParsers as fetchParserOptions, fetchReindexDocument as reindexDocument } from "../api/knowledge.js";
 import { fetchDocument } from "../api/documents.js";
 import { fetchJob } from "../api/client.js";
 import { subscribePlatformJobEvents } from "../api/jobEvents.js";

@@ -9,7 +9,7 @@ import {
   NIcon,
   NSpin,
   NText } from "naive-ui";
-import { ArrowBackOutline, ChatbubblesOutline, TrashOutline } from "@vicons/ionicons5";
+import { ArrowBackOutline, ChatbubblesOutline, RefreshOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import {
   deleteChatConversation,
@@ -18,7 +18,6 @@ import { CHAT_SCOPES } from "../constants/chatScopes";
 import { useI18n } from "../composables/useI18n.js";
 import { resolveReturnTarget } from "../utils/navigationReturn";
 import { deleteSequentially } from "../utils/batchActions";
-import ListRefreshButton from "../components/ListRefreshButton.vue";
 import ListTableFooter from "../components/ListTableFooter.vue";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
@@ -101,16 +100,6 @@ function openConversation(item) {
       name: target.name,
       params: target.params || {},
       query: { ...(target.query || {}), assistantConversation: item.id },
-    });
-    return;
-  }
-
-  if (scope.value === "digital-robot") {
-    const target = resolveReturnTarget(route) || { name: "ai-home", query: {}, params: {} };
-    router.push({
-      name: target.name,
-      params: target.params || {},
-      query: { ...(target.query || {}), digitalRobotConversation: item.id },
     });
     return;
   }
@@ -199,7 +188,6 @@ watch(scope, loadList);
         <n-text depth="3">{{ pageTitle }}</n-text>
       </div>
       <n-space align="center" :size="5" class="chat-history-actions">
-        <ListRefreshButton :loading="loading" size="small" @click="loadList" />
         <IconAction
           :label="t('chatHistory.delete')"
           :icon="TrashOutline"
@@ -209,6 +197,20 @@ watch(scope, loadList);
         />
       </n-space>
     </header>
+    <Teleport to="#header-page-tools">
+      <n-button
+        quaternary
+        circle
+        size="small"
+        class="header-icon-btn"
+        :class="{ 'header-icon-btn--spinning': loading }"
+        :aria-label="t('common.refresh')"
+        :disabled="loading"
+        @click="loadList"
+      >
+        <n-icon :size="14" :component="RefreshOutline" />
+      </n-button>
+    </Teleport>
 
     <div v-if="selectedCount > 0" class="chat-history-selection-hint">
       {{ t("common.selectedCount", { count: selectedCount }) }}
@@ -298,10 +300,10 @@ watch(scope, loadList);
   display: flex;
   flex-direction: column;
   gap: 7px;
-  border-radius: var(--platform-radius);
-  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-elevated));
-  border: 1px solid var(--platform-ui-glass-border, var(--platform-border));
-  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
+  border-radius: var(--platform-card-radius);
+  background: var(--platform-card-bg);
+  border: 1px solid var(--platform-card-border-color);
+  box-shadow: none;
   overflow: hidden;
 }
 

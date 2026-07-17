@@ -1,0 +1,152 @@
+/* 侧栏菜单 — 选中态玻璃指示条 + 悬浮态轻衬底 */
+
+.sider-menu {
+  --menu-liquid-x: 0.46;
+  --menu-liquid-y: 0.34;
+  --n-item-height: var(--platform-menu-item-height);
+  --n-item-padding: 0 8px;
+  font-size: 13px;
+}
+
+.sider-menu .n-menu-item {
+  margin-top: 0;
+}
+
+.sider-menu .n-menu-item-content {
+  border-radius: 0 !important;
+  font-size: 13px;
+  font-weight: 400;
+  background-color: transparent !important;
+}
+
+/* 悬浮衬底 */
+.sider-menu .n-menu-item-content::before {
+  z-index: 0 !important;
+  pointer-events: none;
+  inset: 0;
+  opacity: 0 !important;
+  border-radius: 0 !important;
+  background-color: var(--platform-bg-tertiary) !important;
+  box-shadow: none;
+  transform: none !important;
+  transition: opacity 0.12s ease !important;
+}
+
+.sider-menu .n-menu-item-content::after {
+  display: none;
+}
+
+/* 悬浮衬底：仅非选中态显示 */
+.sider-menu .n-menu-item-content:not(.n-menu-item-content--disabled, .n-menu-item-content--selected, .n-menu-item-content--child-active):is(:hover, .n-menu-item-content--hover)::before {
+  opacity: 1 !important;
+}
+
+/* 选中态由滑动指示条绘制，始终隐藏 ::before */
+.sider-menu .n-menu-item-content:is(.n-menu-item-content--selected, .n-menu-item-content--child-active)::before,
+.sider-menu .n-menu-item-content:is(.n-menu-item-content--selected, .n-menu-item-content--child-active)::after,
+.sider-menu .n-menu-item-content:is(.n-menu-item-content--selected, .n-menu-item-content--child-active):is(:hover, .n-menu-item-content--hover)::before {
+  opacity: 0 !important;
+}
+
+.sider-menu .n-menu-item-content > * {
+  position: relative;
+  z-index: 2 !important;
+}
+
+/* 菜单图标：始终灰色、不缩放、无变色动效 */
+/* 覆盖折叠全过程（包含过渡动画） */
+.app-sider.n-layout-sider--collapsed .sider-menu .n-menu-item-content .n-icon,
+.app-sider .sider-menu .n-menu-item-content .n-icon {
+  font-size: 18px !important;
+  transform: scale(1) !important;
+  transition: none !important;
+  color: var(--platform-text-secondary) !important;
+}
+/* 选中/悬浮态也不变色 */
+.sider-menu .n-menu-item-content:is(:hover, .n-menu-item-content--hover, .n-menu-item-content--selected, .n-menu-item-content--child-active) .n-icon {
+  color: var(--platform-text-secondary) !important;
+}
+
+/* 用户下拉 */
+.n-dropdown-menu .n-dropdown-option-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  border-radius: var(--platform-radius-xs) !important;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.n-dropdown-menu .n-dropdown-option-body__prefix {
+  flex-shrink: 0;
+}
+
+.n-dropdown-menu .n-dropdown-option-body__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.n-dropdown-menu .n-dropdown-option-body__suffix {
+  flex-shrink: 0;
+}
+
+.n-dropdown-menu .n-dropdown-option-body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: opacity 0.15s ease;
+}
+
+.n-dropdown-menu .n-dropdown-option:hover .n-dropdown-option-body::before {
+  opacity: 0.72;
+  background: var(--platform-bg-tertiary);
+  box-shadow: none;
+}
+
+.n-dropdown-menu .n-dropdown-option-body.n-dropdown-option-body--active::before,
+.n-dropdown-menu .n-dropdown-option-body.n-dropdown-option-body--selected::before {
+  opacity: 1;
+  background: var(--platform-bg-tertiary);
+  box-shadow: none;
+}
+
+.n-dropdown-menu .n-dropdown-option-body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 分组间隔 */
+.sider-menu .n-menu-item[data-menu-group="primary"] {
+  margin-top: 24px;
+}
+.sider-menu .n-menu-item[data-menu-group="primary"] ~ .n-menu-item[data-menu-group="primary"] {
+  margin-top: 0;
+}
+.sider-menu .n-menu-item[data-menu-group="insight"] {
+  margin-top: 24px;
+}
+.sider-menu .n-menu-item[data-menu-group="insight"] ~ .n-menu-item[data-menu-group="insight"] {
+  margin-top: 0;
+}
+.sider-menu .n-menu-item[data-menu-group="admin"] {
+  margin-top: 24px;
+}
+.sider-menu .n-menu-item[data-menu-group="admin"] ~ .n-menu-item[data-menu-group="admin"] {
+  margin-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sider-menu-indicator {
+    transition-duration: 0.01ms !important;
+  }
+  .sider-menu .n-menu-item-content::before {
+    transition-duration: 0.01ms !important;
+  }
+}

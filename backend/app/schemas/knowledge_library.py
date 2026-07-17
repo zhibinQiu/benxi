@@ -105,6 +105,16 @@ class KnowledgeQaMindmapOut(BaseModel):
     source: str = "llm"
 
 
+class MountableFolderOut(BaseModel):
+    dataset_id: str
+    folder_id: str | None = None
+    virtual_folder_id: str | None = None
+    label: str
+    scope: str
+    library_label: str
+    document_count: int = 0
+
+
 class KnowledgeReindexRequest(BaseModel):
     parser_id: str = Field(
         default_factory=default_reindex_parser_id,

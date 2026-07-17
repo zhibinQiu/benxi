@@ -85,6 +85,11 @@ async function saveStyle() {
   }
 }
 
+function clearStyle() {
+  styleContent.value = "";
+  styleDirty.value = true;
+}
+
 function onAgentChange(agentId) {
   styleDirty.value = false;
   loadStyle(agentId);
@@ -110,10 +115,7 @@ defineExpose({
 
 <template>
   <div class="style-tab-panel">
-    <NCard size="small" :title="t('admin.agentSkills.styleTitle')">
-      <NText depth="3" style="display: block; margin-bottom: 14px">
-        {{ t("admin.agentSkills.styleHint") }}
-      </NText>
+    <NCard size="small">
 
       <div v-if="loading" class="agent-card-grid--skeleton">
         <div class="mcp-card--skeleton" style="max-width: 600px">
@@ -155,8 +157,11 @@ defineExpose({
             @update:value="styleDirty = true"
           />
           <NSpace style="margin-top: 14px" :size="10">
-            <NButton type="primary" :loading="saving" :disabled="!styleDirty" @click="saveStyle">
+            <NButton quaternary :loading="saving" @click="saveStyle">
               {{ t("common.save") }}
+            </NButton>
+            <NButton quaternary @click="clearStyle">
+              {{ t("common.clear") }}
             </NButton>
           </NSpace>
         </template>
@@ -184,7 +189,6 @@ defineExpose({
   display: block;
   margin-bottom: 8px;
   font-size: 13px;
-  font-weight: 600;
 }
 
 .style-tab-panel__loading {

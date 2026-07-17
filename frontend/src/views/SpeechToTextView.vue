@@ -159,7 +159,7 @@ function resolveImportKgTitle({ recordTitle = "" } = {}) {
 }
 
 const canImportKg = computed(
-  () => hasPerm("feature.kg_palantir") && !!buildSummaryExportText().length
+  () => hasPerm("feature.kg") && !!buildSummaryExportText().length
 );
 
 const canImportLibrary = computed(() => !!buildSummaryExportText().length);
@@ -687,7 +687,7 @@ async function runImportKg({ record } = {}) {
     );
     if (res.root_entity_id) {
       router.push({
-        path: "/system/kg-palantir",
+        path: "/system/kg",
         query: { focusEntityId: res.root_entity_id },
       });
     }
@@ -788,7 +788,7 @@ onBeforeUnmount(() => {
                 {{ t('speechToText.loadToEditor') }}
               </n-button>
               <n-button
-                v-if="hasPerm('feature.kg_palantir')"
+                v-if="hasPerm('feature.kg')"
                 size="small"
                 quaternary
                 :loading="importingKg"
@@ -1120,7 +1120,7 @@ onBeforeUnmount(() => {
                   {{ t('speechToText.copy') }}
                 </n-button>
                 <n-button
-                  v-if="hasPerm('feature.kg_palantir')"
+                  v-if="hasPerm('feature.kg')"
                   size="small"
                   quaternary
                   :loading="importingKg"
@@ -1410,8 +1410,8 @@ onBeforeUnmount(() => {
   padding: 14px 17px;
   border-radius: calc(var(--platform-radius-sm) + 2px);
   border: 1px solid var(--platform-border);
-  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-elevated));
-  box-shadow: var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
+  background: var(--platform-bg-elevated);
+  box-shadow: none;
   cursor: default;
   transition:
     background 0.16s var(--platform-ease-smooth),
@@ -1423,7 +1423,7 @@ onBeforeUnmount(() => {
   border-color: color-mix(in srgb, var(--platform-accent) 22%, var(--platform-border));
   box-shadow:
     inset 4px 0 0 var(--platform-accent),
-    var(--platform-ui-layer-shadow, var(--platform-shadow-sm));
+    none;
 }
 
 .record-list-main {

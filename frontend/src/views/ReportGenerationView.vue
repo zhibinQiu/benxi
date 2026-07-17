@@ -105,7 +105,7 @@ onActivated(() => {
 </script>
 
 <template>
-  <div class="knowledge-feature-panel">
+  <div class="knowledge-feature-panel accent-theme">
     <Teleport v-if="headerExtensionActive" to="#page-header-extension">
       <div class="subsystem-extra-bar">
         <div class="subsystem-extra-row">
@@ -129,6 +129,7 @@ onActivated(() => {
       session-actions-in-toolbar
       :streaming="true"
       :rich-markdown="true"
+      :enable-attachments="true"
       :show-workflow-progress="true"
       :show-citations="true"
       :linkify-citations="true"
@@ -147,9 +148,7 @@ onActivated(() => {
       :report-optimize-presets="optimizePresets"
       :report-agent-skills="reportAgentSkills"
       :report-agent-skills-loading="reportSkillsLoading"
-      title-gradient
       :show-chat-header-brand="false"
-      :show-disclaimer="false"
     />
   </div>
 </template>
@@ -175,7 +174,7 @@ onActivated(() => {
 .report-gen-toolbar-hint {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--platform-text-secondary);
   overflow: hidden;
@@ -187,5 +186,26 @@ onActivated(() => {
   flex: 1;
   min-height: 0;
   border-radius: 0 !important;
+}
+
+/* ── 报告生成页面：仅标题、图标使用蓝色 ── */
+.report-gen-page__panel :deep(.ai-home-title.platform-text-gradient) {
+  background-image: linear-gradient(135deg, #3b82ff 0%, #0a6bff 100%);
+}
+.report-gen-page__panel :deep(.ai-home-icon) {
+  color: #0a6bff;
+}
+/* 思考呼吸气泡 + 智能体名称仍使用蓝色主题色 */
+.report-gen-page__panel :deep(.ai-std__dot) {
+  background: #0a6bff;
+}
+.report-gen-page__panel :deep(.agent-workflow__agent-tag) {
+  color: #0a6bff;
+  background: rgba(10, 107, 255, 0.1);
+  border: 1px solid rgba(10, 107, 255, 0.18);
+}
+.report-gen-page__panel :deep(.agent-workflow__checkbox) {
+  background: rgba(10, 107, 255, 0.12);
+  color: #0a6bff;
 }
 </style>

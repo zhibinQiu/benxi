@@ -9,7 +9,6 @@ export const SUBSYSTEM_PAGE_ROUTES = new Set([
   "speech",
   "text-to-speech",
   "ocr",
-  "kg-palantir",
   "compare",
   "agent-skills",
   "report-generation",

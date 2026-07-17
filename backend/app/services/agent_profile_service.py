@@ -432,6 +432,7 @@ def patch_agent_profile(
     enabled: bool | None = None,
     service_enabled: bool | None = None,
     skill_names: list[str] | None = None,
+    runtime_tool_names: list[str] | None = None,
 ) -> AgentProfileOut:
     defn = get_agent_profile(agent_id)
     if not defn:

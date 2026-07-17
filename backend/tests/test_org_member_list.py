@@ -107,6 +107,6 @@ def test_format_department_members_reply_from_kg():
         assert reply
         assert "测试用户A" in reply
         assert "张伟" not in reply
-        assert "本体图谱" in reply
+        assert "知识图谱" in reply
     finally:
         db.close()

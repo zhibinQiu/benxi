@@ -178,17 +178,30 @@ const routes = [
         component: () => import("../views/OcrView.vue"),
       },
       {
-        path: "system/kg-palantir",
-        name: "kg-palantir",
+        path: "system/ontology",
+        name: "ontology",
         meta: {
-          title: "本体图谱",
+          title: "本体定义",
           fullHeight: true,
           flushStart: true,
           flushEnd: true,
           featureIcon: "git-network",
-          perm: "feature.kg_palantir",
+          perm: "feature.ontology",
         },
-        component: () => import("../views/KgPalantirView.vue"),
+        component: () => import("../views/OntologyView.vue"),
+      },
+      {
+        path: "system/kg",
+        name: "kg",
+        meta: {
+          title: "知识图谱",
+          fullHeight: true,
+          flushStart: true,
+          flushEnd: true,
+          featureIcon: "cube-outline",
+          perm: "feature.kg",
+        },
+        component: () => import("../views/KgView.vue"),
       },
       {
         path: "system/compare",
@@ -386,11 +399,15 @@ router.beforeEach(async (to) => {
     return DEFAULT_HOME_ROUTE;
   }
   if (user.value) {
-    const { loadMenuSettings, isMenuVisible, firstVisibleRouteName } = useMenuSettings();
+    const { isMenuVisible, firstVisibleRouteName } = useMenuSettings();
     const { loadSystemFeatures } = useSystemFeatures();
-    await Promise.all([loadMenuSettings(), loadSystemFeatures()]);
+    await loadSystemFeatures();
     const menuKey = routeMenuKey(String(to.name || ""));
+    // 有 perm 检查的路由由 hasPerm 保护，不需要额外做菜单可见性拦截。
+    // 侧栏已用 isMenuVisible 控制渲染，用户点不到被隐藏的菜单项；
+    // 直接输 URL 的场景由 hasPerm 提供安全防护，菜单可见性检查是冗余的。
     if (
+      !to.meta.perm &&
       menuKey &&
       isConfigurableMenuKey(menuKey) &&
       !MENU_VISIBILITY_EXEMPT.has(String(to.name || "")) &&

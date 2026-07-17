@@ -309,7 +309,7 @@ def kg_relations_cache_key(
 
 
 def invalidate_kg_cache(user_id: str | uuid.UUID | None = None) -> None:
-    """本体图谱子图/元数据/列表变更后清理缓存。"""
+    """知识图谱子图/元数据/列表变更后清理缓存。"""
     prefixes = (
         f"kg:graph:v{_KG_GRAPH_CACHE_VERSION}:",
         f"kg:meta:v{_KG_GRAPH_CACHE_VERSION}:",

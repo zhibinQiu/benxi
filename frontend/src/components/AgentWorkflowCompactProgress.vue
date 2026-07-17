@@ -122,11 +122,10 @@ function doneStyle(index) {
             <span class="aw-c__title aw-c__title--running">{{ runningTitleText() }}</span>
           </div>
           <div
-            v-if="runningLiveContent()"
+            v-if="runningLiveContent() && runningLiveContent() !== runningTitleText()"
             class="aw-c__live"
           >
             <span class="aw-c__live-text">{{ runningLiveContent() }}</span>
-            <span class="aw-c__live-cursor"></span>
           </div>
         </div>
       </div>
@@ -137,7 +136,7 @@ function doneStyle(index) {
 <style scoped>
 .aw-c {
   margin-bottom: 12px;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 /* ── 已完成步骤 ── */
@@ -217,24 +216,22 @@ function doneStyle(index) {
 }
 
 .aw-c__title {
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.5;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--platform-text-secondary, #64748b);
 }
 
 .aw-c__title--running {
   color: var(--platform-text, #0f172a);
-  font-weight: 600;
 }
 
-/* ── Agent 标签 ── */
+/* ── Agent 标签（小徽章样式） ── */
 .aw-c__agent-tag {
   flex-shrink: 0;
   padding: 1px 7px;
   border-radius: 4px;
   font-size: 11px;
-  font-weight: 600;
   line-height: 1.5;
   color: var(--platform-accent);
   background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
@@ -244,20 +241,18 @@ function doneStyle(index) {
 /* ── 已完成步骤的 secondary detail ── */
 .aw-c__detail {
   margin-top: 2px;
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.5;
   color: var(--platform-text-tertiary, #94a3b8);
   word-break: break-word;
 }
 
-/* ── 实时详情（运行步骤） ── */
+/* ── 实时详情（运行步骤）：扫描动效 ── */
 .aw-c__live {
   margin-top: 4px;
   padding-left: 10px;
-  border-left: 2px solid var(--platform-accent);
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1.5;
-  color: var(--platform-text-secondary, #64748b);
   word-break: break-word;
   white-space: pre-wrap;
   display: flex;
@@ -267,21 +262,25 @@ function doneStyle(index) {
 
 .aw-c__live-text {
   flex: 1;
+  background: linear-gradient(
+    to right,
+    var(--platform-text-tertiary) 0%,
+    var(--platform-text-tertiary) 15%,
+    var(--platform-text) 35%,
+    var(--platform-text) 55%,
+    var(--platform-text-tertiary) 75%,
+    var(--platform-text-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: aw-scan 3s ease-in-out infinite;
 }
 
-.aw-c__live-cursor {
-  flex-shrink: 0;
-  display: inline-block;
-  width: 2px;
-  height: 14px;
-  background: var(--platform-accent);
-  animation: aw-c-blink 1s step-end infinite;
-  vertical-align: text-bottom;
-}
-
-@keyframes aw-c-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+@keyframes aw-scan {
+  0% { background-position: 200% 0%; }
+  100% { background-position: -200% 0%; }
 }
 
 /* ── 当前正在执行区域 ── */

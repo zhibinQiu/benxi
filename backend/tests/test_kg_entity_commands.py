@@ -1,4 +1,4 @@
-"""本体图谱实体批量操作与清空。"""
+"""知识图谱实体批量操作与清空。"""
 
 from __future__ import annotations
 

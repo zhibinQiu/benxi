@@ -1,30 +1,23 @@
 <script setup>
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
-import { CreateOutline } from "@vicons/ionicons5";
+import { CreateOutline, RefreshOutline } from "@vicons/ionicons5";
 import { computed, onMounted, ref } from "vue";
 import {
-  NCard,
   NDataTable,
   NButton,
   NForm,
   NFormItem,
   NInput,
   NSelect,
-  NSpace } from "naive-ui";
+  NSpace,
+  NIcon } from "naive-ui";
 import {
   fetchDepartments,
   createDepartment,
-  updateDepartment,
-  deleteDepartment } from "../../api/client";
-import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
+  updateDepartment } from "../../api/client";
 import AdminFormModal from "../../components/AdminFormModal.vue";
 import HintTooltip from "../../components/HintTooltip.vue";
-import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
-import { deleteSequentially } from "../../utils/batchActions";
-import ListRefreshButton from "../../components/ListRefreshButton.vue";
-import ListTableFooter from "../../components/ListTableFooter.vue";
-import { useClientListPagination } from "../../composables/useClientListPagination.js";
 import { renderIconAction } from "../../utils/tableIconActions.js";
 
 const ui = usePlatformUi();
@@ -42,29 +35,6 @@ const emptyForm = () => ({
 const form = ref(emptyForm());
 const isEdit = computed(() => Boolean(editingId.value));
 
-const {
-  checkedRowKeys,
-  selectedRows,
-  selectedCount,
-  onCheckedRowKeysChange,
-  clearSelection,
-  selectionColumn} = useBatchTableSelection(items);
-
-const {
-  page,
-  pageSize,
-  total,
-  pagedItems,
-  onPageChange: onListPageChange,
-} = useClientListPagination(items);
-
-function onPageChange(p) {
-  onListPageChange(p);
-  clearSelection();
-}
-
-const canBatchDelete = computed(() => selectedRows.value.length > 0);
-
 function deptName(id) {
   if (!id) return t("admin.departments.root");
   return items.value.find((d) => d.id === id)?.name || t("admin.departments.unknownDept");
@@ -81,7 +51,6 @@ const parentOptions = computed(() => {
 });
 
 const columns = computed(() => [
-  selectionColumn(),
   { title: t("admin.departments.name"), key: "name" },
   {
     title: t("admin.departments.parent"),
@@ -105,7 +74,6 @@ async function load() {
   loading.value = true;
   try {
     items.value = await fetchDepartments();
-    clearSelection();
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -131,42 +99,6 @@ function closeModal() {
   showModal.value = false;
   editingId.value = null;
   form.value = emptyForm();
-}
-
-function handleBatchDelete() {
-  const rows = selectedRows.value;
-  if (!rows.length) return;
-  const content =
-    rows.length === 1
-      ? t("admin.departments.batchDeleteContentSingle", { name: rows[0].name })
-      : t("admin.departments.batchDeleteContentMulti", { count: rows.length });
-  ui.confirmDelete({
-    title: t("admin.departments.batchDeleteTitle"),
-    content,
-    onPositive: async () => {
-      const { deleted, failed } = await deleteSequentially(rows, (row) =>
-        deleteDepartment(row.id)
-      );
-      if (failed.length) {
-        ui.warning(
-          t("admin.batchDeletePartial", {
-            success: deleted,
-            failed: failed.length,
-            error: failed[0].message || t("admin.unknownError"),
-          })
-        );
-      } else {
-        ui.success(
-          deleted > 1
-            ? t("admin.departments.batchDeletedMulti", { count: deleted })
-            : t("admin.departments.deleted")
-        );
-      }
-      clearSelection();
-      await load();
-      return !failed.length;
-    },
-  });
 }
 
 async function submit() {
@@ -199,35 +131,29 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="admin-list-table">
-    <n-card class="admin-page admin-page--list-table">
-      <div class="admin-table-toolbar">
-        <BatchTableToolbar
-          :count="selectedCount"
-          :disabled="!canBatchDelete"
-          @action="handleBatchDelete"
-        />
-        <n-space align="center" :size="10">
-          <ListRefreshButton :loading="loading" @click="load" />
-          <n-button type="primary" @click="openCreate">{{ t("admin.departments.create") }}</n-button>
-        </n-space>
-      </div>
+  <div class="dept-card">
+    <div class="admin-list-table">
+      <Teleport to="#header-page-tools">
+        <n-button
+          quaternary
+          circle
+          size="small"
+          class="header-icon-btn"
+          :class="{ 'header-icon-btn--spinning': loading }"
+          :aria-label="t('common.refresh')"
+          :disabled="loading"
+          @click="load"
+        >
+          <n-icon :size="14" :component="RefreshOutline" />
+        </n-button>
+      </Teleport>
       <n-data-table
         :columns="columns"
-        :data="pagedItems"
+        :data="items"
         :loading="loading"
         :row-key="(row) => row.id"
-        :checked-row-keys="checkedRowKeys"
-        :pagination="false"
-        @update:checked-row-keys="onCheckedRowKeysChange"
       />
-    </n-card>
-    <ListTableFooter
-      :page="page"
-      :page-size="pageSize"
-      :item-count="total"
-      @update:page="onPageChange"
-    />
+    </div>
   </div>
 
   <AdminFormModal
@@ -277,3 +203,27 @@ onMounted(load);
     </template>
   </AdminFormModal>
 </template>
+
+<style scoped>
+.dept-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  background: #fcfcfc;
+  padding: 12px 16px;
+  padding-top: 0;
+}
+
+.dept-card :deep(.n-data-table-th),
+.dept-card :deep(.n-data-table-td) {
+  padding: 6px 12px;
+}
+
+.dept-card :deep(.n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-strong);
+  vertical-align: middle;
+}
+
+.dept-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
+}
+</style>

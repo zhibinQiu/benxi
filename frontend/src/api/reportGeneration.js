@@ -77,10 +77,12 @@ const baseReportGenerationChatStream = createPlatformChatStream(
 );
 
 export function reportGenerationChatStream(
-  { message, history = [], conversationId = null, documentIds = null },
+  { message, history = [], conversationId = null, documentIds = null, attachmentSessionId = null },
   handlers,
 ) {
-  const extraBody = documentIds?.length ? { document_ids: documentIds } : {};
+  const extraBody = {};
+  if (documentIds?.length) extraBody.document_ids = documentIds;
+  if (attachmentSessionId) extraBody.attachment_session_id = attachmentSessionId;
   return baseReportGenerationChatStream(
     { message, history, conversationId, ...extraBody },
     handlers,

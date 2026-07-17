@@ -939,11 +939,11 @@ function loadPreviewBlob() {
   margin-bottom: 19px;
   padding: 14px 19px;
   border-radius: var(--platform-radius-md, 14px);
-  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-glass-strong));
-  border: 1px solid var(--platform-ui-glass-border, var(--platform-glass-border));
-  box-shadow: var(--platform-ui-layer-shadow, var(--platform-glass-shadow));
-  backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
-  -webkit-backdrop-filter: saturate(185%) blur(var(--platform-glass-blur));
+  background: var(--platform-bg-elevated);
+  border: 1px solid var(--platform-border);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .translate-steps {
@@ -989,7 +989,7 @@ function loadPreviewBlob() {
 
 .workflow-card,
 .result-card {
-  border-radius: var(--platform-radius-md, 14px);
+  border-radius: var(--platform-card-radius);
 }
 
 .translate-main,
@@ -1034,7 +1034,6 @@ function loadPreviewBlob() {
   align-items: center;
   justify-content: center;
   font-size: var(--platform-font-size-base);
-  font-weight: 700;
   color: var(--platform-accent);
   background: var(--platform-accent-soft);
 }
@@ -1194,7 +1193,7 @@ function loadPreviewBlob() {
   margin-bottom: 1px;
   border: 1px solid var(--platform-border);
   border-radius: 50%;
-  background: var(--platform-bg-glass-subtle, var(--n-color));
+  background: var(--platform-bg);
   color: var(--platform-muted);
   display: flex;
   align-items: center;
@@ -1478,8 +1477,8 @@ function loadPreviewBlob() {
   gap: 7px;
   padding: 7px 10px 7px 12px;
   border-radius: var(--platform-radius-sm, 10px);
-  border: 1px solid var(--platform-ui-glass-border, var(--platform-border));
-  background: var(--platform-ui-glass-fill-subtle, var(--platform-bg-glass-subtle));
+  border: 1px solid var(--platform-border);
+  background: var(--platform-bg);
   transition:
     border-color 0.2s var(--platform-ease-smooth),
     background 0.2s var(--platform-ease-smooth),

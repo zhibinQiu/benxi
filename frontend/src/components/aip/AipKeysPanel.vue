@@ -1,8 +1,8 @@
 <script setup>
 import { onMounted, ref } from "vue";
-import { NAlert, NButton, NDataTable, NForm, NFormItem, NInput, NModal, NSpace, NText } from "naive-ui";
-import { TrashOutline } from "@vicons/ionicons5";
-import AdminFormModal from "../AdminFormModal.vue";
+import { NAlert, NButton, NDataTable, NInput, NModal, NSpace } from "naive-ui";
+import { AddOutline, CopyOutline, RefreshOutline, TrashOutline } from "@vicons/ionicons5";
+import IconAction from "../IconAction.vue";
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
 import { createAipKey, deleteAipKey, fetchAipKeys } from "../../api/aipKeys";
@@ -11,11 +11,14 @@ import { renderIconActionGroup } from "../../utils/tableIconActions.js";
 const ui = usePlatformUi();
 const { t } = useI18n();
 
+const props = defineProps({
+  refreshing: { type: Boolean, default: false },
+  onRefresh: { type: Function, default: null },
+});
+
 const loading = ref(false);
 const creating = ref(false);
 const rows = ref([]);
-const showCreate = ref(false);
-const purpose = ref("");
 const createdSecret = ref("");
 const showSecretModal = ref(false);
 
@@ -70,24 +73,15 @@ async function load() {
   }
 }
 
-function openCreate() {
-  purpose.value = "";
-  showCreate.value = true;
-}
-
-async function submitCreate() {
-  const text = purpose.value.trim();
-  if (!text) {
-    ui.warning(t("admin.agentSkills.aipKeys.purposeRequired"));
-    return;
-  }
+async function onCreate() {
   creating.value = true;
   try {
-    const data = await createAipKey(text);
-    showCreate.value = false;
+    const data = await createAipKey("");
     createdSecret.value = data?.secret_key || "";
     showSecretModal.value = Boolean(createdSecret.value);
-    ui.success(t("admin.agentSkills.aipKeys.created"));
+    if (createdSecret.value) {
+      ui.success(t("admin.agentSkills.aipKeys.created"));
+    }
     await load();
   } catch (e) {
     ui.error(e?.message || t("admin.agentSkills.aipKeys.createFailed"));
@@ -120,48 +114,43 @@ async function copySecret() {
 
 onMounted(load);
 
-defineExpose({ load, openCreate, loading });
+defineExpose({ load, openCreate: onCreate, loading });
 </script>
 
 <template>
   <div class="aip-keys-panel">
-    <NText depth="3" class="aip-keys-panel__hint">
-      {{ t("admin.agentSkills.aipKeys.hint") }}
-    </NText>
-    <NAlert type="info" :bordered="false" class="aip-keys-panel__usage">
-      {{ t("admin.agentSkills.aipKeys.usageHint") }}
-    </NAlert>
-
-    <NDataTable
-      :columns="columns"
-      :data="rows"
-      :loading="loading"
-      :bordered="false"
-      size="small"
-    />
-
-    <AdminFormModal v-model:show="showCreate" :title="t('admin.agentSkills.aipKeys.createTitle')">
-      <NForm @submit.prevent="submitCreate">
-        <NFormItem :label="t('admin.agentSkills.aipKeys.purposeLabel')" required>
-          <NInput
-            v-model:value="purpose"
-            type="textarea"
-            :placeholder="t('admin.agentSkills.aipKeys.purposePh')"
-            :rows="3"
-            maxlength="500"
-            show-count
+    <div class="aip-keys-card__header">
+      <div class="aip-keys-card__title-row">
+        <div class="aip-keys-card__title">{{ t('admin.agentSkills.tabAipKeys') }}</div>
+        <div class="aip-keys-card__actions">
+          <IconAction
+            :label="t('admin.agentSkills.aipKeys.create')"
+            :icon="AddOutline"
+            :loading="creating"
+            @click="onCreate"
           />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showCreate = false">{{ t("common.cancel") }}</NButton>
-          <NButton type="primary" :loading="creating" @click="submitCreate">
-            {{ t("common.create") }}
-          </NButton>
-        </NSpace>
-      </template>
-    </AdminFormModal>
+          <IconAction
+            v-if="onRefresh"
+            :label="t('common.refresh')"
+            :icon="RefreshOutline"
+            :loading="refreshing"
+            @click="onRefresh"
+          />
+        </div>
+      </div>
+      <div class="aip-keys-card__hint">{{ t('admin.agentSkills.aipKeys.usageHint') }}</div>
+    </div>
+    <div class="aip-keys-card">
+      <div class="admin-list-table">
+        <NDataTable
+          :columns="columns"
+          :data="rows"
+          :loading="loading"
+          :bordered="false"
+          size="small"
+        />
+      </div>
+    </div>
 
     <NModal
       v-model:show="showSecretModal"
@@ -176,7 +165,12 @@ defineExpose({ load, openCreate, loading });
       </NAlert>
       <NInput :value="createdSecret" readonly type="textarea" :rows="3" />
       <NSpace justify="end" style="margin-top: 14px">
-        <NButton @click="copySecret">{{ t("admin.agentSkills.aipKeys.copy") }}</NButton>
+        <NButton @click="copySecret">
+          <template #icon>
+            <n-icon :component="CopyOutline" />
+          </template>
+          {{ t("admin.agentSkills.aipKeys.copy") }}
+        </NButton>
         <NButton type="primary" @click="showSecretModal = false">
           {{ t("admin.agentSkills.aipKeys.secretSaved") }}
         </NButton>
@@ -189,11 +183,62 @@ defineExpose({ load, openCreate, loading });
 .aip-keys-panel {
   max-width: 1320px;
 }
-.aip-keys-panel__hint {
-  display: block;
-  margin-bottom: 14px;
+
+.aip-keys-card__header {
+  margin: 0 0 8px;
+  padding-left: 16px;
 }
-.aip-keys-panel__usage {
-  margin-bottom: 19px;
+
+.aip-keys-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.aip-keys-card__title {
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
+  color: var(--platform-text);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.aip-keys-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.aip-keys-card__hint {
+  margin-top: 2px;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+  line-height: 1.4;
+}
+
+.aip-keys-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  background: #fcfcfc;
+  padding: 12px 16px;
+  padding-top: 0;
+}
+
+.aip-keys-card :deep(.n-data-table-th),
+.aip-keys-card :deep(.n-data-table-td) {
+  padding: 6px 12px;
+}
+
+.aip-keys-card :deep(.n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-strong);
+  vertical-align: middle;
+}
+
+.aip-keys-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
 }
 </style>

@@ -124,7 +124,7 @@ function statusTag(status) {
         </n-tag>
         <span class="library-hint">{{ t("dataAnalysis.libraryHint") }}</span>
       </div>
-      <n-button size="small" type="primary" :loading="creating" @click="addCell">
+      <n-button size="small" type="primary" class="platform-btn--create" :loading="creating" @click="addCell">
         <template #icon><n-icon><AddOutline /></n-icon></template>
         {{ t("dataAnalysis.addCell") }}
       </n-button>

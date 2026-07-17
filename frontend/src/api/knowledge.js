@@ -1,7 +1,5 @@
 /** 平台原生知识库 / 知识检索 API */
 import { api } from "./http.js";
-import { createPlatformChatStream } from "./rag.js";
-import { sanitizeUserFacingMessage } from "../utils/uiMessage.js";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 
 /** scope-tree 构建可能较慢（多库/多文档），统一放宽超时避免首次加载误报 */
@@ -16,42 +14,30 @@ export async function fetchKnowledgeScopeTree({ refresh = false } = {}) {
   });
 }
 
+export async function fetchMountableFolders() {
+  return api("/api/v1/knowledge/mountable-folders", {
+    timeoutMs: SCOPE_TREE_TIMEOUT_MS,
+  });
+}
+
 export async function fetchKnowledgeLibraries() {
   return api("/api/v1/knowledge/libraries");
 }
 
 export async function fetchLibraryDocuments(
   datasetId,
-  { page = 1, pageSize = LIST_PAGE_SIZE, keyword, folderId, virtualFolderId } = {}
+  { page = 1, pageSize = LIST_PAGE_SIZE, folderId } = {}
 ) {
-  const q = new URLSearchParams({
-    page: String(page),
-    page_size: String(pageSize),
-  });
-  if (keyword) q.set("keyword", keyword);
+  const q = new URLSearchParams({ page, page_size: pageSize });
   if (folderId) q.set("folder_id", folderId);
-  if (virtualFolderId) q.set("virtual_folder", virtualFolderId);
-  return api(`/api/v1/knowledge/libraries/${encodeURIComponent(datasetId)}/documents?${q}`);
+  return api(`/api/v1/knowledge/libraries/${datasetId}/documents?${q}`);
 }
 
-export async function fetchDocumentChunks(
-  documentId,
-  { versionId, page = 1, pageSize = LIST_PAGE_SIZE, keywords } = {}
-) {
-  const q = new URLSearchParams({
-    page: String(page),
-    page_size: String(pageSize),
-  });
-  if (versionId) q.set("version_id", versionId);
-  if (keywords) q.set("keywords", keywords);
-  return api(`/api/v1/knowledge/documents/${encodeURIComponent(documentId)}/chunks?${q}`);
+export async function fetchLibraryDocumentChunks(documentId) {
+  return api(`/api/v1/knowledge/documents/${documentId}/chunks`);
 }
 
-export async function fetchParserOptions() {
-  return api("/api/v1/knowledge/parsers");
-}
-
-export async function reindexDocument(
+export async function fetchReindexDocument(
   documentId,
   { versionId, parserId, layoutRecognize, resync = false } = {}
 ) {
@@ -65,81 +51,45 @@ export async function reindexDocument(
   });
 }
 
-/** 重新索引当前用户指定范围内所有未索引或索引失败的文档 */
-export async function reindexUnindexedDocuments({
-  scope = "personal",
-  deptId,
-  ownerId,
-} = {}) {
-  const q = new URLSearchParams({ scope });
-  if (deptId) q.set("dept_id", deptId);
-  if (ownerId) q.set("owner_id", ownerId);
-  return api(`/api/v1/knowledge/documents/reindex-unindexed?${q}`, {
+export async function fetchReindexUnindexedDocuments() {
+  return api("/api/v1/knowledge/documents/reindex-unindexed", {
     method: "POST",
   });
 }
 
-export async function createKnowledgeQaSession(documentIds, title = "知识检索") {
+export async function fetchParsers() {
+  return api("/api/v1/knowledge/parsers", { cache: new Date() });
+}
+
+export async function fetchCitationPreview({ ragflowDocId, chunkId, pageNum }) {
+  const q = new URLSearchParams({ ragflow_doc_id: ragflowDocId, chunk_id: chunkId, page_num: pageNum });
+  return api(`/api/v1/knowledge/citations/preview?${q}`);
+}
+
+export async function fetchCitationImage(imageId) {
+  return api(`/api/v1/knowledge/citations/images/${imageId}`, {
+    responseType: "blob",
+  });
+}
+
+export async function createKnowledgeQaSession(documentIds) {
   return api("/api/v1/knowledge/qa/sessions", {
     method: "POST",
-    body: JSON.stringify({ document_ids: documentIds, title }),
+    body: { document_ids: documentIds },
   });
 }
 
 export async function askKnowledgeQaSession(sessionId, question) {
-  return api(`/api/v1/knowledge/qa/sessions/${encodeURIComponent(sessionId)}/ask`, {
+  return api(`/api/v1/knowledge/qa/sessions/${sessionId}/ask`, {
     method: "POST",
-    body: JSON.stringify({ question }),
+    body: { question, use_agentic: true },
   });
 }
 
-/** 非流式问答，供 AiChatPanel chatSend 或自定义面板使用 */
-export async function knowledgeQaChatSend({ message, conversationId, documentIds }) {
-  let sessionId = conversationId;
-  if (!sessionId) {
-    if (!documentIds?.length) {
-      throw new Error("请从左侧选择知识库或文档");
-    }
-    const session = await createKnowledgeQaSession(documentIds);
-    sessionId = session.id;
-  }
-  const data = await askKnowledgeQaSession(sessionId, message);
-  const msg = data.message || {};
-  return {
-    reply: msg.content || "",
-    citations: msg.citations || [],
-    conversation_id: sessionId,
-  };
-}
-
-const _knowledgeQaStream = createPlatformChatStream(
-  "/api/v1/knowledge/qa/chat/stream",
-  {
-    sanitizeErrorMessage: (msg) =>
-      sanitizeUserFacingMessage(msg, "检索失败，请稍后重试"),
-  }
-);
-
-/** 流式问答，供知识检索 AiChatPanel 使用 */
-export async function knowledgeQaChatStream(
-  { message, history = [], conversationId = null, documentIds = null, useAgentic = true },
-  callbacks = {}
-) {
-  return _knowledgeQaStream(
-    {
-      message,
-      history,
-      conversationId,
-      use_agentic: useAgentic,
-      ...(documentIds?.length ? { document_ids: documentIds } : {}),
-    },
-    callbacks
-  );
-}
-
-export async function fetchKnowledgeMindmap({ question, answer }) {
+export async function fetchKnowledgeQaMindmap({ question, answer }) {
   return api("/api/v1/knowledge/qa/mindmap", {
     method: "POST",
-    body: JSON.stringify({ question, answer }),
+    body: { question, answer },
+    timeoutMs: 30_000,
   });
 }

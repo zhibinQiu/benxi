@@ -129,8 +129,8 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   flex-direction: column;
   align-items: center;
   width: 100%;
-  padding: 12px 10px 14px;
-  border-radius: var(--platform-radius-sm, 12px);
+  padding: 10px 9px 12px;
+  border-radius: var(--platform-card-radius);
   background: transparent;
   border: 1px solid transparent;
   box-shadow: none;
@@ -147,17 +147,13 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 .kb-folder-card:hover,
 .kb-folder-card:focus-visible {
   background: var(--platform-accent-soft);
-  border-color: var(--platform-border);
+  border-color: var(--platform-card-hover-border-color);
   box-shadow: var(--platform-shadow-sm);
-  transform: translateY(-2px);
-}
-
-.kb-folder-card:active {
-  transform: translateY(0);
+  transform: var(--platform-card-hover-transform);
 }
 
 .kb-folder-card:focus-visible {
-  box-shadow: var(--platform-focus-ring), var(--platform-shadow-sm);
+  box-shadow: var(--platform-focus-ring);
 }
 
 .kb-folder-card--shared {
@@ -187,7 +183,6 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   left: 2px;
   z-index: 2;
   font-size: 11px;
-  font-weight: 600;
   padding: 2px 6px;
   border-radius: 5px;
   color: var(--accent);

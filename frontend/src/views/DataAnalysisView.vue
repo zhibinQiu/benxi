@@ -413,7 +413,6 @@ onMounted(async () => {
 .pane-head h3 {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
 }
 
 .pane-head p {

@@ -12,7 +12,7 @@ name: web_search
 ## When NOT to use
 - 企业内部知识库检索（用 knowledge_retrieve）
 - 用户已提供 URL（用 fetch_url_content）
-- 本体图谱查询（用 kg_query）
+- 知识图谱查询（用 kg_query）
 
 ## Returns
 - 搜索引擎摘要 + 前 N 条全文（Markdown 格式）

@@ -1,8 +1,7 @@
 <script setup>
-import { computed, h, onMounted, ref, watch } from "vue";
+import { computed, h, nextTick, onMounted, ref, watch } from "vue";
 import {
   NButton,
-  NCard,
   NDataTable,
   NDrawer,
   NDrawerContent,
@@ -10,6 +9,7 @@ import {
   NFormItem,
   NIcon,
   NInput,
+  NPagination,
   NSpace,
   NSwitch,
   NTag,
@@ -22,11 +22,13 @@ import {
   AddOutline,
   CloudUploadOutline,
   CreateOutline,
+  DownloadOutline,
   FolderOpenOutline,
+  RefreshOutline,
+  SearchOutline,
+  SyncOutline,
   TrashOutline,
 } from "@vicons/ionicons5";
-import ListRefreshButton from "../ListRefreshButton.vue";
-import ListTableFooter from "../ListTableFooter.vue";
 import IconAction from "../IconAction.vue";
 import AdminFormModal from "../AdminFormModal.vue";
 import { useClientListPagination } from "../../composables/useClientListPagination.js";
@@ -63,6 +65,12 @@ import {
 
 const emit = defineEmits(["registry-changed"]);
 
+const props = defineProps({
+  refreshing: { type: Boolean, default: false },
+  onRefresh: { type: Function, default: null },
+  onConnectMcp: { type: Function, default: null },
+});
+
 const ui = usePlatformUi();
 const { t } = useI18n();
 
@@ -72,9 +80,20 @@ const hydrated = ref(hasSkillsTabCacheData(initialCache));
 const registryLoading = ref(false);
 const registry = ref(initialCache?.registry || []);
 const keyword = ref("");
+const searchOpen = ref(false);
+const searchInputRef = ref(null);
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value;
+  if (searchOpen.value) {
+    nextTick(() => searchInputRef.value?.focus?.());
+  } else {
+    keyword.value = "";
+  }
+}
 
 const mcpSkills = ref(initialCache?.mcpSkills || []);
-const mcpKeyword = ref("");
+
 const mcpSkillsLoading = ref(false);
 const mcpServerInfo = ref(initialCache?.mcpServerInfo || null);
 const mcpSkillModalOpen = ref(false);
@@ -96,6 +115,9 @@ const createOpen = ref(false);
 const createSaving = ref(false);
 const createForm = ref({ name: "", description: "", skillMdBody: "" });
 
+const builtinDetailOpen = ref(false);
+const builtinDetailRow = ref(null);
+
 const detailOpen = ref(false);
 const detailLoading = ref(false);
 const detail = ref(null);
@@ -108,20 +130,16 @@ const previewEditable = ref(false);
 
 const loading = computed(() => registryLoading.value || mcpSkillsLoading.value);
 
-const filteredSkills = computed(() => {
-  const q = keyword.value.trim().toLowerCase();
-  if (!q) return registry.value;
-  return registry.value.filter((row) => {
-    const hay = [row.name, row.title, row.description].filter(Boolean).join(" ").toLowerCase();
-    return hay.includes(q);
-  });
-});
+const allSkills = computed(() => [
+  ...(registry.value || []).map((s) => ({ ...s, _isMcp: false })),
+  ...(mcpSkills.value || []).map((s) => ({ ...s, _isMcp: true })),
+]);
 
-const filteredMcpSkills = computed(() => {
-  const q = mcpKeyword.value.trim().toLowerCase();
-  if (!q) return mcpSkills.value;
-  return mcpSkills.value.filter((s) => {
-    const hay = [s.name, s.title, s.description, s.endpoint].filter(Boolean).join(" ").toLowerCase();
+const mergedSkills = computed(() => {
+  const q = keyword.value.trim().toLowerCase();
+  if (!q) return allSkills.value;
+  return allSkills.value.filter((row) => {
+    const hay = [row.name, row.title, row.description, row.endpoint].filter(Boolean).join(" ").toLowerCase();
     return hay.includes(q);
   });
 });
@@ -133,9 +151,17 @@ const {
   pagedItems: skillsPagedItems,
   onPageChange: onSkillsPageChange,
   resetPage: resetSkillsPage,
-} = useClientListPagination(filteredSkills);
+} = useClientListPagination(mergedSkills);
+
+const displayInfo = computed(() => {
+  if (!skillsTotal.value) return "";
+  const start = (skillsPage.value - 1) * skillsPageSize + 1;
+  const end = Math.min(skillsPage.value * skillsPageSize, skillsTotal.value);
+  return `${skillsTotal.value}条数据中的 ${start}-${end} 条`;
+});
 
 function kindLabel(row) {
+  if (row._isMcp) return t("admin.agentSkills.mcpSkillTag");
   return isBuiltinSkill(row)
     ? t("admin.agentSkills.kindBuiltin")
     : t("admin.agentSkills.kindDeveloped");
@@ -153,6 +179,7 @@ function readinessLabel(readiness) {
 }
 
 function sourceLabel(row) {
+  if (row._isMcp) return t("admin.agentSkills.sourceExternal");
   if (row.source_type === "generated") return t("admin.agentSkills.sourceGenerated");
   if (row.source_type === "folder") return t("admin.agentSkills.sourceFolder");
   return t("admin.agentSkills.sourceZip");
@@ -224,6 +251,7 @@ async function toggleBuiltin(row, enabled) {
   try {
     await patchBuiltinSkill(row.name, { enabled });
     row.enabled = enabled;
+    await loadRegistry();
     ui.success(t("admin.agentSkills.saved"));
     emit("registry-changed");
   } catch (e) {
@@ -249,6 +277,29 @@ function toggleSkill(row, enabled) {
   return toggleDeveloped(row, enabled);
 }
 
+function viewBuiltinDetail(row) {
+  builtinDetailRow.value = row;
+  builtinDetailOpen.value = true;
+}
+
+function removeBuiltinSkill(row) {
+  ui.confirmDelete({
+    title: t("admin.agentSkills.deleteTitle"),
+    content: t("admin.agentSkills.builtinDeleteConfirm", { name: row.title || row.name }),
+    onPositive: async () => {
+      try {
+        await patchBuiltinSkill(row.name, { enabled: false });
+        row.enabled = false;
+        await loadRegistry();
+        ui.success(t("admin.agentSkills.builtinDisabled"));
+        emit("registry-changed");
+      } catch (e) {
+        ui.error(e.message || t("admin.agentSkills.saveFailed"));
+      }
+    },
+  });
+}
+
 function formatDateCompact(dt) {
   if (!dt) return "—";
   const d = new Date(dt);
@@ -261,6 +312,35 @@ function formatDateCompact(dt) {
 
 const skillColumns = computed(() => [
   {
+    title: t("admin.agentSkills.colName"),
+    key: "name",
+    minWidth: 220,
+    ellipsis: { tooltip: true },
+    render: (row) => {
+      const infoLines = [];
+      if (!row._isMcp && row.readiness) {
+        infoLines.push(`${t("admin.agentSkills.colReadiness")}: ${readinessLabel(row.readiness)}`);
+      }
+      if (!row._isMcp && row.created_at) {
+        infoLines.push(`${t("admin.agentSkills.colCreatedAt")}: ${formatDateCompact(row.created_at)}`);
+      }
+      const cell = h("div", { style: "display:flex;flex-direction:column;gap:2px;padding:2px 0;" }, [
+        h("div", { style: "font-size:var(--platform-font-size-sm);font-weight:500;color:var(--platform-text);line-height:1.4;" }, row.title || row.name),
+        h("div", { style: "font-size:var(--platform-font-size-sm);color:var(--platform-text-tertiary);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" }, row.description || ""),
+      ]);
+      if (!infoLines.length) return cell;
+      return h(
+        NTooltip,
+        { placement: "top" },
+        {
+          trigger: () => cell,
+          default: () =>
+            h("div", { style: "white-space: nowrap;" }, infoLines.join(" | ")),
+        }
+      );
+    },
+  },
+  {
     title: t("admin.agentSkills.colKind"),
     key: "kind",
     width: 96,
@@ -269,41 +349,19 @@ const skillColumns = computed(() => [
         NTag,
         {
           size: "small",
-          type: isBuiltinSkill(row) ? "info" : "default",
+          type: row._isMcp ? "info" : isBuiltinSkill(row) ? "info" : "default",
           bordered: false,
         },
         { default: () => kindLabel(row) }
       ),
   },
-  { title: t("admin.agentSkills.colName"), key: "name", width: 192, ellipsis: { tooltip: true }, render: (row) => row.title || row.name },
-  {
-    title: t("admin.agentSkills.colDescription"),
-    key: "description",
-    ellipsis: { tooltip: true },
-  },
-  {
-    title: t("admin.agentSkills.colCreatedAt"),
-    key: "created_at",
-    width: 120,
-    render: (row) => formatDateCompact(row.created_at),
-  },
-  {
-    title: t("admin.agentSkills.colReadiness"),
-    key: "readiness",
-    width: 120,
-    render: (row) =>
-      h(
-        NTag,
-        { size: "small", type: readinessTagType(row.readiness), bordered: false },
-        { default: () => readinessLabel(row.readiness) }
-      ),
-  },
   {
     title: t("admin.agentSkills.colEnabled"),
     key: "enabled",
-    width: 108,
+    width: 80,
     render: (row) =>
       h(NSwitch, {
+        size: "small",
         value: row.enabled,
         onUpdateValue: (v) => toggleSkill(row, v),
       }),
@@ -313,31 +371,62 @@ const skillColumns = computed(() => [
     key: "source_type",
     width: 108,
     render: (row) =>
-      isBuiltinSkill(row)
-        ? "—"
-        : h(NTag, { size: "small", bordered: false }, { default: () => sourceLabel(row) }),
+      h(NTag, { size: "small", bordered: false }, { default: () => sourceLabel(row) }),
   },
   {
     title: t("common.actions"),
     key: "actions",
-    width: 106,
-    render: (row) =>
-      isBuiltinSkill(row)
-        ? "—"
-        : renderIconActionGroup([
-            {
-              label: t("common.edit"),
-              icon: CreateOutline,
-              type: "primary",
-              onClick: () => openDetail(row),
-            },
-            {
-              label: t("common.delete"),
-              icon: TrashOutline,
-              type: "error",
-              onClick: () => removeSkill(row),
-            },
-          ]),
+    width: 120,
+    render: (row) => {
+      if (row._isMcp) {
+        return renderIconActionGroup([
+          {
+            label: t("admin.agentSkills.mcpSkillSync"),
+            icon: SyncOutline,
+            type: "primary",
+            disabled: row.source === "config",
+            onClick: () => handleSyncMcpSkill(row),
+          },
+          {
+            label: t("common.delete"),
+            icon: TrashOutline,
+            type: "error",
+            disabled: row.source === "config",
+            onClick: () => removeMcpSkill(row),
+          },
+        ]);
+      }
+      if (isBuiltinSkill(row)) {
+        return renderIconActionGroup([
+          {
+            label: t("common.edit"),
+            icon: CreateOutline,
+            type: "primary",
+            onClick: () => viewBuiltinDetail(row),
+          },
+          {
+            label: t("common.delete"),
+            icon: TrashOutline,
+            type: "error",
+            onClick: () => removeBuiltinSkill(row),
+          },
+        ]);
+      }
+      return renderIconActionGroup([
+        {
+          label: t("common.edit"),
+          icon: CreateOutline,
+          type: "primary",
+          onClick: () => openDetail(row),
+        },
+        {
+          label: t("common.delete"),
+          icon: TrashOutline,
+          type: "error",
+          onClick: () => removeSkill(row),
+        },
+      ]);
+    },
   },
 ]);
 
@@ -573,134 +662,72 @@ onMounted(async () => {
   }
 });
 
-defineExpose({ reload, loadRegistry, loadMcpSkills, loading });
+defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openMcpSkillModal });
 </script>
 
 <template>
-  <NCard size="small" style="margin-bottom: 19px">
-    <template #header>
-      <NSpace justify="space-between" align="center" style="width: 100%">
-        <span>{{ t("admin.agentSkills.mcpSkillsTitle") }}</span>
-        <NSpace align="center" :size="10">
-          <NButton size="small" @click="openMcpSkillModal">
-            {{ t("admin.agentSkills.connectMcpSkill") }}
-          </NButton>
-          <ListRefreshButton :loading="mcpSkillsLoading" @click="loadMcpSkills({ foreground: true, withServerInfo: true })" />
-        </NSpace>
-      </NSpace>
-    </template>
-    <NText depth="3" style="display: block; margin-bottom: 10px">
-      {{ t("admin.agentSkills.mcpSkillsHint") }}
-    </NText>
-    <NText v-if="mcpServerInfo?.endpoint" depth="3" style="display: block; margin-bottom: 14px">
-      {{ t("admin.agentSkills.mcpServerEndpoint", { endpoint: mcpServerInfo.endpoint }) }}
-    </NText>
-    <div style="display: flex; justify-content: flex-end; margin-bottom: 14px">
-      <NInput
-        v-model:value="mcpKeyword"
-        clearable
-        :placeholder="t('admin.agentSkills.searchPlaceholder')"
-        style="width: 288px"
-      />
-    </div>
-    <div v-if="mcpSkillsLoading && !hydrated" class="agent-card-grid agent-card-grid--skeleton">
-      <div v-for="n in 3" :key="n" class="mcp-card mcp-card--skeleton">
-        <div class="skeleton-line skeleton-line--title" />
-        <div class="skeleton-line skeleton-line--desc" />
-        <div class="skeleton-line skeleton-line--meta" />
-      </div>
-    </div>
-    <div v-else-if="!filteredMcpSkills.length" class="agent-card-grid agent-card-grid--empty">
-      <NText depth="3">{{ mcpKeyword.trim() ? t("admin.agentSkills.noSearchResults") : t("admin.agentSkills.mcpSkillsEmpty") }}</NText>
-    </div>
-    <div v-else class="agent-card-grid">
-      <NCard
-        v-for="skill in filteredMcpSkills"
-        :key="skill.id || skill.name"
-        size="small"
-        class="agent-card agent-card--external"
-      >
-        <NSpace vertical :size="8">
-          <NSpace justify="space-between" align="center">
-            <strong>{{ skill.title || skill.name }}</strong>
-            <NTag size="small" type="info">{{ t("admin.agentSkills.mcpSkillTag") }}</NTag>
-          </NSpace>
-          <NText depth="3">{{ skill.description || skill.name }}</NText>
-          <NText depth="3" style="font-size: 12px">{{ skill.endpoint }}</NText>
-          <NText depth="3" style="font-size: 12px">
-            {{ t("admin.agentSkills.mcpToolsCount", { count: (skill.tools || []).length }) }}
-          </NText>
-          <NSpace :size="8">
-            <NButton
-              size="tiny"
-              quaternary
-              :disabled="skill.source === 'config'"
-              @click="handleSyncMcpSkill(skill)"
-            >
-              {{ t("admin.agentSkills.mcpSkillSync") }}
-            </NButton>
-            <NButton
-              size="tiny"
-              quaternary
-              type="error"
-              :disabled="skill.source === 'config'"
-              @click="removeMcpSkill(skill)"
-            >
-              {{ t("common.delete") }}
-            </NButton>
-          </NSpace>
-        </NSpace>
-      </NCard>
-    </div>
-  </NCard>
-
-  <NCard size="small" style="margin-bottom: 19px">
-    <template #header>
-      <NSpace justify="space-between" align="center" style="width: 100%">
-        <span>{{ t("admin.agentSkills.listTitle") }}</span>
-        <NSpace align="center" :size="10">
-          <NTooltip placement="bottom">
-            <template #trigger>
-              <NButton
-                circle
-                quaternary
-                size="small"
-                :aria-label="t('admin.agentSkills.developedTitle')"
-                @click="createOpen = true"
-              >
-                <NIcon :component="AddOutline" />
-              </NButton>
-            </template>
-            {{ t("admin.agentSkills.developedTitle") }}
-          </NTooltip>
-          <ListRefreshButton :loading="registryLoading" @click="loadRegistry({ foreground: true })" />
+    <div class="skills-card__header">
+      <div class="skills-card__title-row">
+        <div class="skills-card__title">{{ t('admin.agentSkills.tabSkills') }}</div>
+        <div class="skills-card__actions">
+          <IconAction
+            :label="t('common.search')"
+            :icon="SearchOutline"
+            :active="searchOpen"
+            @click="toggleSearch"
+          />
+          <IconAction
+            v-if="onConnectMcp"
+            :label="t('admin.agentSkills.connectMcpSkill')"
+            :icon="DownloadOutline"
+            @click="onConnectMcp"
+          />
+          <IconAction
+            :label="t('admin.agentSkills.developedTitle')"
+            :icon="AddOutline"
+            @click="createOpen = true"
+          />
+          <IconAction
+            v-if="onRefresh"
+            :label="t('common.refresh')"
+            :icon="RefreshOutline"
+            :loading="refreshing"
+            @click="onRefresh"
+          />
           <NInput
+            v-show="searchOpen"
+            ref="searchInputRef"
             v-model:value="keyword"
             clearable
             :placeholder="t('admin.agentSkills.searchPlaceholder')"
-            style="width: 288px"
+            style="width: 240px"
           />
-        </NSpace>
-      </NSpace>
-    </template>
-    <NText depth="3" style="display: block; margin-bottom: 14px">
-      {{ t("admin.agentSkills.skillsListHint") }}
-    </NText>
-    <div class="admin-list-table">
-      <NDataTable
-        :loading="registryLoading && !hydrated"
-        :columns="skillColumns"
-        :data="skillsPagedItems"
-        :pagination="false"
-      />
-      <ListTableFooter
-        :page="skillsPage"
-        :page-size="skillsPageSize"
-        :item-count="skillsTotal"
-        @update:page="onSkillsPageChange"
-      />
+        </div>
+      </div>
+      <div class="skills-card__hint">{{ t('admin.agentSkills.toolbarHint.skills') }}</div>
     </div>
-  </NCard>
+    <div class="skills-card">
+      <div class="admin-list-table">
+        <NDataTable
+          :loading="loading && !hydrated"
+          :columns="skillColumns"
+          :data="skillsPagedItems"
+          :pagination="false"
+        />
+      </div>
+      <div class="skills-table-footer">
+        <span class="skills-table-footer__info">{{ displayInfo }}</span>
+        <div class="skills-table-footer__pages">
+          <NPagination
+            :page="skillsPage"
+            :page-size="skillsPageSize"
+            :item-count="skillsTotal"
+            :page-slot="7"
+            @update:page="onSkillsPageChange"
+          />
+        </div>
+      </div>
+    </div>
 
   <AdminFormModal
     v-model:show="createOpen"
@@ -871,11 +898,143 @@ defineExpose({ reload, loadRegistry, loadMcpSkills, loading });
       </NSpace>
     </template>
   </AdminFormModal>
+
+  <AdminFormModal
+    v-model:show="builtinDetailOpen"
+    :title="t('admin.agentSkills.builtinDetailTitle')"
+    :width="640"
+  >
+    <NSpace v-if="builtinDetailRow" vertical :size="14">
+      <NForm label-placement="left" label-width="100" :show-feedback="false">
+        <NFormItem :label="t('admin.agentSkills.colName')">
+          <NText depth="2">{{ builtinDetailRow.name }}</NText>
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.colTitle')">
+          <NText depth="2">{{ builtinDetailRow.title || builtinDetailRow.name }}</NText>
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.colDescription')">
+          <NText depth="2">{{ builtinDetailRow.description || '—' }}</NText>
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.colReadiness')">
+          <NTag :type="readinessTagType(builtinDetailRow.readiness)" size="small" bordered>
+            {{ readinessLabel(builtinDetailRow.readiness) }}
+          </NTag>
+        </NFormItem>
+        <NFormItem v-if="builtinDetailRow.route" :label="t('admin.agentSkills.builtinDetailRoute')">
+          <NText depth="2">{{ builtinDetailRow.route }}</NText>
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.builtinDetailUseWhen')">
+          <NText depth="2" style="white-space:pre-wrap">{{ builtinDetailRow.use_when || '—' }}</NText>
+        </NFormItem>
+        <NFormItem :label="t('admin.agentSkills.builtinDetailDontUseWhen')">
+          <NText depth="2" style="white-space:pre-wrap">{{ builtinDetailRow.dont_use_when || '—' }}</NText>
+        </NFormItem>
+        <NFormItem v-if="builtinDetailRow.orchestrated_tools?.length" :label="t('admin.agentSkills.builtinDetailTools')">
+          <NSpace :size="6" wrap>
+            <NTag v-for="tool in builtinDetailRow.orchestrated_tools" :key="tool" size="small" bordered>
+              {{ tool }}
+            </NTag>
+          </NSpace>
+        </NFormItem>
+      </NForm>
+    </NSpace>
+  </AdminFormModal>
 </template>
 
 <style scoped>
 .mcp-skill-modal__hint {
   display: block;
   margin-bottom: 19px;
+}
+
+.skills-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  background: #fcfcfc;
+  padding: 12px 16px;
+  padding-top: 0;
+}
+
+.skills-card__header {
+  margin: 0 0 8px;
+  padding-left: 16px;
+}
+
+.skills-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skills-card__title {
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
+  color: var(--platform-text);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.skills-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.skills-card__hint {
+  margin-top: 2px;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+  line-height: 1.4;
+}
+
+.skills-card :deep(.n-data-table-th),
+.skills-card :deep(.n-data-table-td) {
+  padding: 6px 12px;
+}
+
+.skills-card :deep(.n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-strong);
+  vertical-align: middle;
+}
+
+.skills-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
+}
+
+
+/* Switch 自定义：Naive UI 把变量设为内联样式，必须用 !important 覆盖 */
+.skills-card :deep(.n-switch) {
+  --n-rail-width: 28px !important;
+  --n-rail-height: 16px !important;
+  --n-button-width: 12px !important;
+  --n-button-height: 12px !important;
+  --n-button-width-pressed: 12px !important;
+  --n-height: 16px !important;
+  --n-width: 28px !important;
+  --n-offset: 2px !important;
+  --n-rail-color: var(--platform-border-strong) !important;
+  --n-rail-color-active: var(--platform-accent) !important;
+}
+
+.skills-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid var(--platform-border-strong);
+  font-size: var(--platform-font-size-sm);
+  color: var(--platform-text-tertiary);
+}
+
+.skills-table-footer__pages :deep(.n-pagination) {
+  justify-content: flex-end;
+}
+
+.skills-table-footer__pages :deep(.n-pagination-item) {
+  font-size: var(--platform-font-size-sm);
 }
 </style>

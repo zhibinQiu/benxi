@@ -227,8 +227,8 @@ defineExpose({ focus });
   border-radius: var(--platform-radius);
   overflow: hidden;
   border: 1px solid var(--platform-border);
-  background: var(--platform-bg-elevated);
-  transition: border-color var(--platform-duration-smooth) ease;
+  background: var(--platform-bg-elevated-solid, #fcfcfc);
+  transition: border-color var(--platform-duration-smooth) ease, box-shadow var(--platform-duration-smooth) ease;
 }
 
 /* 镜像层容器，与 textarea 叠放 */
@@ -258,6 +258,7 @@ defineExpose({ focus });
 
 .chat-composer:focus-within .chat-composer__surface {
   border-color: var(--platform-border-strong);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), none;
 }
 
 .chat-composer__attachments {

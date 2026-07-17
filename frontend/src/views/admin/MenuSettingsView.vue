@@ -6,14 +6,15 @@ import {
   NButton,
   NCard,
   NDivider,
+  NIcon,
   NSelect,
   NSpace,
   NSpin,
   NText,
 } from "naive-ui";
+import { RefreshOutline } from "@vicons/ionicons5";
 import { fetchMenuSettings, updateMenuSettings } from "../../api/menuSettings.js";
 import { useMenuSettings } from "../../composables/useMenuSettings.js";
-import ListRefreshButton from "../../components/ListRefreshButton.vue";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
@@ -93,7 +94,6 @@ onMounted(load);
     <n-spin :show="loading" local>
       <n-card :title="t('admin.menuSettings.title')" size="small">
         <template #header-extra>
-          <ListRefreshButton :loading="loading" @click="load" />
         </template>
         <n-text depth="3" class="page-hint">
           {{ t("admin.menuSettings.hint") }}
@@ -150,12 +150,25 @@ onMounted(load);
             <n-button type="primary" :loading="saving" @click="save">
               {{ t("common.save") }}
             </n-button>
-            <ListRefreshButton :loading="loading || saving" :label="t('admin.menuSettings.reload')" @click="load" />
           </n-space>
         </template>
       </n-card>
     </n-spin>
   </div>
+  <Teleport to="#header-page-tools">
+    <n-button
+      quaternary
+      circle
+      size="small"
+      class="header-icon-btn"
+      :class="{ 'header-icon-btn--spinning': loading }"
+      :aria-label="t('common.refresh')"
+      :disabled="loading"
+      @click="load"
+    >
+      <n-icon :size="14" :component="RefreshOutline" />
+    </n-button>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -187,8 +200,9 @@ onMounted(load);
   justify-content: space-between;
   gap: 19px;
   padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--platform-surface-muted, rgba(0, 0, 0, 0.02));
+  border-radius: var(--platform-card-radius);
+  background: var(--platform-card-bg);
+  border: 1px solid var(--platform-card-border-color);
 }
 
 .menu-row__info {

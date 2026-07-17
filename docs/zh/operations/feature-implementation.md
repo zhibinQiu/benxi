@@ -179,13 +179,13 @@
 
 #### 与本体图谱联动
 
-问答前若用户具备 `feature.kg_palantir`，会从问题中 **匹配实体 mention**，扩展 2 跳子图，将结构化关系追加到 LLM 上下文（引用编号与文档片段顺延）。
+问答前若用户具备 `feature.kg`，会从问题中 **匹配实体 mention**，扩展 2 跳子图，将结构化关系追加到 LLM 上下文（引用编号与文档片段顺延）。
 
 ### 4.6 本体图谱
 
 1. **本体建模**：管理员/用户配置实体类型（组织、人员、法规、项目等）与关系类型（包含、引用、约束…）。  
 2. **自动抽取**：文档索引完成后，可选 LLM 从正文抽取实体/关系写入 PostgreSQL（`kg_entities` / `kg_relations`）。  
-3. **工作台**：`KgPalantirView` 三栏——实体查询、关系子图、详情编辑；支持按类型浏览、跳数控制子图范围。  
+3. **工作台**：`KgView`（图探索）与 `OntologyView`（本体建模）双视图——实体查询、关系子图、详情编辑；支持按类型浏览、跳数控制子图范围。  
 4. **下游消费**：知识检索、报告生成、**AI 智能体** 在回答前调用 `retrieve_kg_context_for_question`，将图谱事实与文档片段一并注入 prompt。
 
 ### 4.7 报告生成（区别于短答式 RAG）
@@ -335,7 +335,7 @@ Job 统一模型：`Job` 表存 type、status、progress、payload、error_messa
 | doc_compare | 文档对比 |
 | knowledge_search | 知识检索 |
 | ai_home | AI 智能体 |
-| kg_palantir | 本体图谱 |
+| ontology | 本体图谱 |
 | report_generation | 报告生成 |
 | smart_data_query | 智能问数 |
 | carbon_qa | 领域问答 |

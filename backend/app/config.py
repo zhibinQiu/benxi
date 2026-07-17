@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import os
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PLATFORM_DIR = Path(__file__).resolve().parent.parent
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # ── 平台基础 ──────────────────────────────────────────────────────────────
     app_name: str = "本析"
-    platform_version: str = "4.6.0"
+    platform_version: str = "4.8.1"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -262,6 +262,12 @@ class Settings(BaseSettings):
     # ── 知识图谱 ──────────────────────────────────────────────────────────────
     kg_extraction_enabled: bool = True
     kg_extraction_max_chars: int = 10000
+
+    # ── Neo4j 图数据库（本体定义 + 知识图谱）────────────────────────────────
+    neo4j_uri: str = "bolt://neo4j:7687"  # env NEO4J_URI
+    neo4j_user: str = "neo4j"             # env NEO4J_USER
+    neo4j_password: str = Field("", alias="NEO4J_PASSWORD")
+    neo4j_database: str = "neo4j"         # env NEO4J_DATABASE
 
     # ── 系统设置 · 模型配置（页面只读展示，回退 deepseek_*）──────────────────
     platform_llm_base_url: str = ""

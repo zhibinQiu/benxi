@@ -86,6 +86,7 @@ async def report_generation_chat_stream(
             history=body.history,
             conversation_id=body.conversation_id,
             document_ids=body.document_ids,
+            attachment_session_id=body.attachment_session_id,
         ):
             yield payload
 

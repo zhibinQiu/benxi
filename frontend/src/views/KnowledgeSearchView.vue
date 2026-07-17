@@ -1,14 +1,15 @@
 <script setup>
 defineOptions({ name: "KnowledgeSearchView" });
 import { computed, inject, ref } from "vue";
-import { NButton, NCheckbox, NIcon } from "naive-ui";
+import { NIcon } from "naive-ui";
 import { AddOutline, SearchOutline } from "@vicons/ionicons5";
-import HintTooltip from "../components/HintTooltip.vue";
 import KnowledgeSearchPanel from "../components/KnowledgeSearchPanel.vue";
 import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
-import { knowledgeQaChatStream } from "../api/knowledge.js";
+import { createPlatformChatStream } from "../api/rag.js";
 import { useI18n } from "../composables/useI18n.js";
 import { KNOWLEDGE_SCOPE_SELECTION_KEY, readKnowledgeScopeSelection } from "../utils/knowledgeScopeSelectionCache.js";
+
+const knowledgeQaChatStream = createPlatformChatStream("/api/v1/knowledge/qa/chat/stream");
 
 const { t, tm } = useI18n();
 const { headerExtensionActive } = usePageHeaderExtension();
@@ -67,8 +68,8 @@ async function handleChatStream(params, callbacks) {
   return knowledgeQaChatStream(
     {
       ...params,
-      documentIds: selection.value.documentIds,
-      useAgentic: useAgentic.value,
+      document_ids: selection.value.documentIds,
+      use_agentic: useAgentic.value,
     },
     callbacks
   );
@@ -80,34 +81,13 @@ function resetSearch() {
 </script>
 
 <template>
-  <div class="knowledge-feature-panel">
+  <div class="knowledge-feature-panel accent-theme">
     <Teleport v-if="headerExtensionActive" to="#page-header-extension">
     <div class="subsystem-extra-bar">
       <div class="subsystem-extra-row">
         <div class="knowledge-search-toolbar">
-          <label class="knowledge-search-toolbar__agent">
-            <n-checkbox v-model:checked="useAgentic" size="small">
-              {{ t("knowledgeSearch.useAgent") }}
-            </n-checkbox>
-            <HintTooltip
-              :text="t('knowledgeSearch.useAgentTooltip')"
-              variant="inline"
-              placement="bottom"
-            />
-          </label>
           <n-icon :size="19" :component="SearchOutline" class="knowledge-search-toolbar__icon" />
           <span class="knowledge-search-toolbar__hint">{{ selectionHint }}</span>
-          <n-button
-            size="small"
-            quaternary
-            class="knowledge-search-toolbar__reset"
-            @click="resetSearch"
-          >
-            <template #icon>
-              <n-icon :component="AddOutline" />
-            </template>
-            {{ t("knowledgeSearch.newSearch") }}
-          </n-button>
         </div>
       </div>
     </div>
@@ -120,7 +100,30 @@ function resetSearch() {
     :can-search="canAsk"
     :has-checked-docs="hasCheckedDocs"
     :stream-chat="handleChatStream"
-  />
+  >
+    <template #toolbar>
+      <label
+        class="ks-toolbar-btn ks-toolbar-btn--agent"
+        :class="{ 'ks-toolbar-btn--active': useAgentic }"
+      >
+        <input
+          v-model="useAgentic"
+          type="checkbox"
+          class="ks-toolbar-btn__checkbox"
+        />
+        <span>{{ t("knowledgeSearch.useAgent") }}</span>
+      </label>
+      <button
+        type="button"
+        class="ks-toolbar-btn"
+        :disabled="loadingHistory"
+        @click="resetSearch"
+      >
+        <n-icon :size="13" :component="AddOutline" />
+        <span>{{ t("knowledgeSearch.newSearch") }}</span>
+      </button>
+    </template>
+  </KnowledgeSearchPanel>
   </div>
 </template>
 
@@ -147,26 +150,33 @@ function resetSearch() {
   min-width: 0;
 }
 
-.knowledge-search-toolbar__agent {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  font-size: 16px;
-  color: var(--platform-text);
-  cursor: pointer;
-  user-select: none;
+/* ── 知识检索页面：通过 accent-theme 变量实现蓝色主题 ── */
+.knowledge-search-page__panel :deep(.knowledge-search-panel__icon) {
+  color: var(--platform-accent);
+}
+.knowledge-search-page__panel :deep(.agent-workflow__agent-tag) {
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+  border: 1px solid var(--platform-accent-border-soft);
+}
+.knowledge-search-page__panel :deep(.agent-workflow__checkbox) {
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
+}
+.knowledge-search-page__panel :deep(.agent-workflow__checkbox--done) {
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
 }
 
 .knowledge-search-toolbar__icon {
   flex-shrink: 0;
-  color: var(--platform-accent);
+  color: var(--platform-icon);
 }
 
 .knowledge-search-toolbar__hint {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--platform-text-secondary);
   overflow: hidden;
@@ -174,7 +184,51 @@ function resetSearch() {
   white-space: nowrap;
 }
 
-.knowledge-search-toolbar__reset {
+.ks-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  border: 1px solid var(--platform-border);
+  background: var(--platform-bg-secondary);
+  color: var(--platform-text-secondary);
+  border-radius: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color var(--platform-duration-smooth) ease,
+              background var(--platform-duration-smooth) ease,
+              border-color var(--platform-duration-smooth) ease;
+}
+.ks-toolbar-btn:hover {
+  color: var(--platform-text);
+  background: var(--platform-bg-tertiary);
+  border-color: var(--platform-border-strong);
+}
+.ks-toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ks-toolbar-btn__checkbox {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--platform-text-tertiary);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
   flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+  margin: 0;
+}
+.ks-toolbar-btn--active .ks-toolbar-btn__checkbox {
+  background: var(--platform-accent);
+  border-color: var(--platform-accent);
+}
+.ks-toolbar-btn--agent:hover .ks-toolbar-btn__checkbox {
+  border-color: var(--platform-accent);
 }
 </style>

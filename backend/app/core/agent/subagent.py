@@ -31,7 +31,7 @@ _PLATFORM_RUNTIME = SubagentRuntime(
                 "检索探索子 Agent（常为 skill-dev 调研）："
                 "invoke_skill(web-search, search, {query})、"
                 "invoke_skill(knowledge-search, retrieve, {query})、"
-                "invoke_skill(kg-palantir, query_entities, {question})；"
+                "invoke_skill(kg, query_entities, {question})；"
                 "或 run_tool_batch / search_skills。"
                 "输出关键事实与材料局限的结构化摘要，勿写完整终稿。"
             ),
@@ -79,7 +79,7 @@ _PLATFORM_RUNTIME = SubagentRuntime(
     explore_steps=(
         ExploreSkillStep("web-search", "search", "query"),
         ExploreSkillStep("knowledge-search", "retrieve", "query"),
-        ExploreSkillStep("kg-palantir", "query_entities", "question"),
+        ExploreSkillStep("kg", "query_entities", "question"),
     ),
 )
 

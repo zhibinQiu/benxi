@@ -13,7 +13,7 @@
     result = await client.call_tool("search", {"query": "hello"})
 """
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.mcp.client import McpClient, McpClientConfig
 from app.agentkit.mcp.protocol import (

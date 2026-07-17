@@ -2,16 +2,17 @@
 import { computed, h, onMounted, ref } from "vue";
 import {
   NButton,
-  NCard,
   NDataTable,
   NEmpty,
+  NIcon,
   NInput,
+  NPagination,
   NSelect,
   NSpace,
   NSpin,
   NTag,
-  NText,
 } from "naive-ui";
+import { RefreshOutline } from "@vicons/ionicons5";
 import AdminFormModal from "../components/AdminFormModal.vue";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
@@ -22,8 +23,6 @@ import {
   fetchIssueReports,
   updateIssueReport,
 } from "../api/issueReports.js";
-import ListRefreshButton from "../components/ListRefreshButton.vue";
-import ListTableFooter from "../components/ListTableFooter.vue";
 import { useClientListPagination } from "../composables/useClientListPagination.js";
 
 const ui = usePlatformUi();
@@ -41,6 +40,12 @@ const {
   onPageChange,
   resetPage,
 } = useClientListPagination(items);
+const displayInfo = computed(() => {
+  if (!total.value) return "";
+  const start = (page.value - 1) * pageSize.value + 1;
+  const end = Math.min(page.value * pageSize.value, total.value);
+  return `${total.value}条数据中的 ${start}-${end} 条`;
+});
 const statusFilter = ref("");
 const showCreateModal = ref(false);
 const newDescription = ref("");
@@ -213,33 +218,39 @@ onMounted(load);
 
 <template>
   <div class="issue-reports-page feature-page">
-    <n-spin :show="loading" local>
-      <div class="admin-list-table">
-        <n-card size="small" class="admin-page admin-page--list-table">
-          <template #header>
-            <div class="issue-reports-page__header">
-              <div>
-                <n-text strong>{{ t("issueReports.title") }}</n-text>
-                <n-text depth="3" class="issue-reports-page__hint">
-                  {{ t("issueReports.hint") }}
-                </n-text>
-              </div>
-              <n-space :size="14" align="center">
-                <ListRefreshButton :loading="loading" @click="load" />
-                <n-select
-                  v-model:value="statusFilter"
-                  :options="statusOptions"
-                  size="small"
-                  style="width: 144px"
-                  @update:value="load"
-                />
-                <n-button type="primary" size="small" @click="showCreateModal = true">
-                  {{ t("issueReports.register") }}
-                </n-button>
-              </n-space>
-            </div>
-          </template>
-
+    <div class="issue-reports-card">
+      <div class="issue-reports-card__toolbar">
+        <div class="issue-reports-card__toolbar-left">
+          <n-button
+            quaternary
+            circle
+            size="small"
+            class="tool-icon-btn"
+            :class="{ 'tool-icon-btn--spinning': loading }"
+            :aria-label="t('common.refresh')"
+            :disabled="loading"
+            @click="load"
+          >
+            <template #icon>
+              <n-icon :size="14"><RefreshOutline /></n-icon>
+            </template>
+          </n-button>
+        </div>
+        <div class="issue-reports-card__toolbar-right">
+          <n-select
+            v-model:value="statusFilter"
+            :options="statusOptions"
+            size="small"
+            style="width: 144px"
+            @update:value="load"
+          />
+          <n-button type="primary" size="small" @click="showCreateModal = true">
+            {{ t("issueReports.register") }}
+          </n-button>
+        </div>
+      </div>
+      <n-spin :show="loading" local>
+        <div class="admin-list-table">
           <n-data-table
             v-if="items.length"
             :columns="columns"
@@ -250,16 +261,21 @@ onMounted(load);
             :pagination="false"
           />
           <n-empty v-else :description="t('issueReports.empty')" style="padding: 38px 0" />
-        </n-card>
-        <ListTableFooter
-          v-if="items.length"
-          :page="page"
-          :page-size="pageSize"
-          :item-count="total"
-          @update:page="onPageChange"
-        />
-      </div>
-    </n-spin>
+        </div>
+        <div v-if="items.length" class="issue-reports-table-footer">
+          <span class="issue-reports-table-footer__info">{{ displayInfo }}</span>
+          <div class="issue-reports-table-footer__pages">
+            <NPagination
+              :page="page"
+              :page-size="pageSize"
+              :item-count="total"
+              :page-slot="7"
+              @update:page="onPageChange"
+            />
+          </div>
+        </div>
+      </n-spin>
+    </div>
 
     <AdminFormModal
       v-model:show="showCreateModal"
@@ -289,18 +305,98 @@ onMounted(load);
 </template>
 
 <style scoped>
-.issue-reports-page__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 19px;
-  flex-wrap: wrap;
+.issue-reports-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  background: #fcfcfc;
+  padding: 12px 16px;
+  padding-top: 0;
 }
 
-.issue-reports-page__hint {
-  display: block;
-  margin-top: 7px;
-  font-size: 16px;
-  line-height: 1.5;
+.issue-reports-card__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 8px;
+}
+
+.issue-reports-card__toolbar-left {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.issue-reports-card__toolbar-right {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 标准工具栏 24px 圆形刷新按钮 */
+.issue-reports-card .tool-icon-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  --n-height: 24px;
+  --n-icon-size: 14px;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent);
+  color: var(--platform-text-tertiary);
+}
+
+.issue-reports-card .tool-icon-btn:hover {
+  color: var(--platform-accent);
+  background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
+}
+
+.issue-reports-card .tool-icon-btn--spinning :deep(.n-icon) {
+  animation: tool-spin 0.6s linear infinite;
+}
+
+@keyframes tool-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.issue-reports-card :deep(.n-data-table-th),
+.issue-reports-card :deep(.n-data-table-td) {
+  padding: 6px 12px;
+}
+
+.issue-reports-card :deep(.n-data-table-td) {
+  border-bottom: 1px solid var(--platform-border-strong);
+  vertical-align: middle;
+}
+
+.issue-reports-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
+  border-bottom: none;
+}
+
+.issue-reports-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid var(--platform-border-strong);
+  font-size: var(--platform-font-size-sm);
+  color: var(--platform-text-tertiary);
+}
+
+.issue-reports-table-footer__pages :deep(.n-pagination) {
+  justify-content: flex-end;
+}
+
+.issue-reports-table-footer__pages :deep(.n-pagination-item) {
+  font-size: var(--platform-font-size-sm);
 }
 </style>

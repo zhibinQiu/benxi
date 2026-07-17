@@ -4,7 +4,7 @@
 宿主通过 ``LoopEvidenceProvider`` 注入业务字段，避免本库依赖具体 planner / tool 层。
 """
 
-__version__ = "4.6.0"
+from app.agentkit import __version__  # noqa: F401
 
 from app.agentkit.loop.core import (
     DEFAULT_LOOP_SYSTEM_CONTRACT,

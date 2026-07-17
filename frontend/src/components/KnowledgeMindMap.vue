@@ -7,7 +7,7 @@ import PlatformSpin from "./PlatformSpin.vue";
 import { useI18n } from "../composables/useI18n.js";
 import { renderMermaidSvg } from "../utils/mermaidRender.js";
 import { buildMindmapFromAnswer } from "../utils/knowledgeMindmap.js";
-import { fetchKnowledgeMindmap } from "../api/knowledge.js";
+import { fetchKnowledgeQaMindmap as fetchKnowledgeMindmap } from "../api/knowledge.js";
 
 const props = defineProps({
   question: { type: String, default: "" },

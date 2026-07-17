@@ -644,7 +644,6 @@ defineExpose({ load, refresh: load });
   padding: 0 6px;
   border-radius: 1199px;
   font-size: 13px;
-  font-weight: 600;
   line-height: 22px;
   text-align: center;
   background: color-mix(in srgb, var(--platform-caution-soft) 88%, var(--platform-caution) 12%);

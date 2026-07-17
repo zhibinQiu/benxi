@@ -2,7 +2,6 @@
 import { useI18n } from "../composables/useI18n";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import { usePlatformUi } from "../composables/usePlatformUi";
-import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 import { computed, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -12,21 +11,18 @@ import {
   NInput,
   NPagination,
   NSpin,
-  NSwitch,
   NTag,
 } from "naive-ui";
 import { AddOutline, SearchOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import { fetchSubscriptionItems, importSubscriptionItem, ingestSubscriptionUrl } from "../api/client";
-import { siteFaviconUrl } from "../utils/siteFavicon.js";
 import { useAuth } from "../composables/useAuth";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
 const { t } = useI18n();
-const { headerExtensionActive } = usePageHeaderExtension();
 const { isSystemAdmin } = useAuth();
 
 const loading = ref(false);
@@ -35,7 +31,6 @@ const items = ref([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = LIST_PAGE_SIZE;
-const viewAllUsers = ref(false);
 
 const appliedSearch = ref("");
 
@@ -84,17 +79,6 @@ const pageCount = computed(() =>
   Math.max(1, Math.ceil(total.value / pageSize))
 );
 
-const resultCountLabel = computed(() => {
-  if (itemsLoading.value) return "";
-  if (appliedSearch.value) {
-    return t("subscriptions.resultsForKeyword", {
-      keyword: appliedSearch.value,
-      count: total.value,
-    });
-  }
-  return t("subscriptions.resultTotal", { count: total.value });
-});
-
 function fmtSerpDate(iso) {
   if (!iso) return "";
   try {
@@ -135,15 +119,6 @@ function breadcrumbPath(url) {
   }
 }
 
-function faviconForUrl(url) {
-  return siteFaviconUrl(url);
-}
-
-function siteInitial(item) {
-  const label = siteLabel(item);
-  return label.charAt(0).toUpperCase() || "?";
-}
-
 async function loadItems() {
   itemsLoading.value = true;
   try {
@@ -151,7 +126,7 @@ async function loadItems() {
       page: page.value,
       page_size: pageSize,
       keyword: appliedSearch.value || undefined,
-      all_users: isSystemAdmin.value && viewAllUsers.value,
+      all_users: isSystemAdmin.value,
     });
     items.value = data.items || [];
     total.value = data.total || 0;
@@ -198,13 +173,6 @@ function onPageChange(nextPage) {
   loadItems();
 }
 
-function onViewAllUsersChange(val) {
-  viewAllUsers.value = val;
-  page.value = 1;
-  loading.value = true;
-  loadItems();
-}
-
 function openItem(ref) {
   navigateWithReturn(
     router,
@@ -233,20 +201,6 @@ watch(
 
 <template>
     <FeatureSubsystemShell fill :show-intro="false">
-    <Teleport v-if="headerExtensionActive" to="#page-header-extension">
-      <div class="subscriptions-actions-bar">
-        <div class="subscriptions-actions-toolbar">
-          <div class="subscriptions-toolbar__count">
-            <NIcon :size="16" :component="SearchOutline" class="subscriptions-toolbar__icon" />
-            <span class="subscriptions-toolbar__hint">{{ resultCountLabel }}</span>
-          </div>
-          <div v-if="isSystemAdmin" class="subscriptions-toolbar__admin-toggle">
-            <span class="subscriptions-toolbar__admin-label">{{ t("subscriptions.viewAllUsers") }}</span>
-            <NSwitch v-model:value="viewAllUsers" @update:value="onViewAllUsersChange" />
-          </div>
-        </div>
-      </div>
-    </Teleport>
 
     <div class="subscriptions-page">
       <div class="subscriptions-hero">
@@ -255,16 +209,18 @@ watch(
 
       <div class="subscriptions-toolbar">
         <div class="subscriptions-search-hub__bar">
-          <NIcon :size="22" class="subscriptions-search-hub__icon" :component="inputIsUrl ? AddOutline : SearchOutline" />
+          <NIcon :size="18" class="subscriptions-search-hub__icon" :component="inputIsUrl ? AddOutline : SearchOutline" />
           <NInput
             v-model:value="searchKeyword"
             :placeholder="t('subscriptions.placeholderUnified')"
             clearable
+            size="small"
             class="subscriptions-search-hub__input"
             @keyup.enter="onSmartSubmit"
           />
           <NButton
             type="primary"
+            size="small"
             class="subscriptions-search-hub__submit"
             :loading="itemsLoading || ingesting"
             @click="onSmartSubmit"
@@ -277,7 +233,8 @@ watch(
       <div class="subscriptions-body">
         <NSpin :show="itemsLoading || loading" class="list-spin" local>
           <div class="subscriptions-list-scroll">
-            <div v-if="items.length" class="subscriptions-serp-list" role="list">
+            <div v-if="items.length" class="subscriptions-card">
+              <div class="subscriptions-serp-list" role="list">
               <article
                 v-for="a in items"
                 :key="a.ref"
@@ -285,56 +242,9 @@ watch(
                 class="serp-result-item"
                 @click="openItem(a.ref)"
               >
-                <div class="serp-result-item__source">
-                  <span class="serp-result-item__favicon" aria-hidden="true">
-                    <img
-                      v-if="faviconForUrl(a.link)"
-                      class="serp-result-item__favicon-img"
-                      :src="faviconForUrl(a.link)"
-                      alt=""
-                      loading="lazy"
-                      @error="$event.target.classList.add('is-broken')"
-                    />
-                    <span class="serp-result-item__favicon-fallback">{{ siteInitial(a) }}</span>
-                  </span>
-                  <div class="serp-result-item__source-text">
-                    <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
-                    <span v-if="breadcrumbPath(a.link)" class="serp-result-item__path">
-                      › {{ breadcrumbPath(a.link) }}
-                    </span>
-                  </div>
-                  <NTag
-                    v-if="a.imported"
-                    size="small"
-                    type="success"
-                    :bordered="false"
-                    class="serp-result-item__imported"
-                  >
-                    {{ t("subscriptions.importedTag") }}
-                  </NTag>
-                  <NButton
-                    v-else
-                    size="tiny"
-                    quaternary
-                    type="primary"
-                    :loading="importingRefs.has(a.ref)"
-                    class="serp-result-item__import-btn"
-                    @click.stop="onImportItem(a.ref)"
-                  >
-                    {{ t("subscriptions.importBtn") }}
-                  </NButton>
-                </div>
                 <h3 class="serp-result-item__title">{{ a.title }}</h3>
                 <p class="serp-result-item__snippet">{{ a.summary || t("subscriptions.noSummary") }}</p>
                 <div class="serp-result-item__meta">
-                  <NTag
-                    v-if="a.is_wechat"
-                    size="small"
-                    :bordered="false"
-                    class="serp-result-item__wechat-tag"
-                  >
-                    {{ t("subscriptions.wechatTag") }}
-                  </NTag>
                   <NTag
                     v-if="a.owner_name"
                     size="small"
@@ -347,7 +257,34 @@ watch(
                     {{ fmtSerpDate(a.created_at || a.publish_at) }}
                   </span>
                 </div>
+                <div class="serp-result-item__source">
+                  <div class="serp-result-item__source-text">
+                    <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
+                    <span v-if="breadcrumbPath(a.link)" class="serp-result-item__path">
+                      › {{ breadcrumbPath(a.link) }}
+                    </span>
+                  </div>
+                  <NTag
+                    v-if="a.imported"
+                    size="small"
+                    :bordered="false"
+                    class="serp-result-item__imported"
+                  >
+                    {{ t("subscriptions.importedTag") }}
+                  </NTag>
+                  <NButton
+                    v-else
+                    size="tiny"
+                    secondary
+                    :loading="importingRefs.has(a.ref)"
+                    class="serp-result-item__import-btn"
+                    @click.stop="onImportItem(a.ref)"
+                  >
+                    {{ t("subscriptions.importBtn") }}
+                  </NButton>
+                </div>
               </article>
+            </div>
             </div>
             <div v-else-if="!loading && !itemsLoading" class="subscriptions-empty">
               <NEmpty :description="t('subscriptions.emptySearch')" />
@@ -379,76 +316,49 @@ watch(
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding-top: 8px;
+  padding: 8px 16px 0;
 }
 
-/* ── Toolbar ── */
+/* ── Hero title ── */
 .subscriptions-toolbar {
   flex-shrink: 0;
   padding: 0 0 12px;
 }
 
-.subscriptions-toolbar__count {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.subscriptions-toolbar__icon {
-  flex-shrink: 0;
-  color: var(--platform-text-tertiary);
-}
-
-.subscriptions-toolbar__hint {
-  font-size: 14px;
-  color: var(--platform-text-tertiary);
-  white-space: nowrap;
-}
-
-.subscriptions-toolbar__admin-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.subscriptions-toolbar__admin-label {
-  font-size: 14px;
-  color: var(--platform-text-secondary);
-  white-space: nowrap;
-}
-
-/* ── Hero title ── */
 .subscriptions-hero {
   flex-shrink: 0;
-  padding: 36px 4px 24px;
+  padding: 24px 8px 16px;
 }
 
 .subscriptions-hero__title {
   margin: 0;
-  font-size: 26px;
-  font-weight: 600;
+  font-size: var(--platform-font-size-xl);
+  font-weight: 400;
   line-height: 1.35;
   color: var(--platform-text);
   letter-spacing: var(--platform-tracking-tight, -0.014em);
 }
 
+.subscriptions-hero__subtitle {
+  margin: 8px 0 0;
+  font-size: var(--platform-font-size-sm);
+  line-height: 1.5;
+  color: var(--platform-text-tertiary);
+}
 
 /* ── Search hub pill ── */
 .subscriptions-search-hub__bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 600px;
   max-width: 100%;
   flex-shrink: 0;
   min-width: 0;
-  padding: 5px 5px 5px 14px;
+  padding: 3px 3px 3px 12px;
   border-radius: 1199px;
   border: 1px solid var(--platform-border);
-  background: var(--platform-ui-glass-fill-strong, var(--platform-bg-glass-subtle));
+  background: var(--platform-bg-elevated);
   box-shadow:
     0 1px 4px color-mix(in srgb, var(--platform-text) 8%, transparent),
     inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent);
@@ -481,7 +391,14 @@ watch(
 .subscriptions-search-hub__submit {
   flex-shrink: 0;
   border-radius: 1199px;
-  padding-inline: 24px;
+  padding-inline: 20px;
+}
+
+.subscriptions-search-hub__submit,
+.subscriptions-search-hub__submit:focus,
+.subscriptions-search-hub__submit:hover,
+.subscriptions-search-hub__submit:active {
+  border: none !important;
 }
 
 /* ── Body ── */
@@ -518,10 +435,16 @@ watch(
   -webkit-overflow-scrolling: touch;
 }
 
+.subscriptions-card {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  background: #fcfcfc;
+  overflow: hidden;
+}
+
 .subscriptions-serp-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   width: 100%;
   margin: 0;
   padding: 0;
@@ -537,14 +460,14 @@ watch(
 .serp-result-item {
   display: block;
   width: 100%;
-  padding: 10px 10px;
-  margin: 0 -10px;
+  padding: 10px 12px;
+  margin: 0;
   box-sizing: border-box;
-  border-radius: 12px;
   text-align: left;
   cursor: pointer;
   background: transparent;
   border: none;
+  border-bottom: 1px solid var(--platform-border-strong);
   transition: background-color 0.15s ease;
 }
 
@@ -552,52 +475,22 @@ watch(
   background: color-mix(in srgb, var(--platform-text) 5%, transparent);
 }
 
+.serp-result-item:last-child {
+  border-bottom: none;
+}
+
 .serp-result-item__source {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
-  margin-bottom: 5px;
-}
-
-.serp-result-item__favicon {
-  position: relative;
-  flex-shrink: 0;
-  width: 31px;
-  height: 31px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: var(--platform-bg-muted, color-mix(in srgb, var(--platform-text) 6%, transparent));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.serp-result-item__favicon-img {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-
-.serp-result-item__favicon-fallback {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--platform-text-secondary);
-  line-height: 1;
-}
-
-.serp-result-item__favicon-img.is-broken {
-  display: none;
-}
-
-.serp-result-item__favicon:has(.serp-result-item__favicon-img:not(.is-broken)) .serp-result-item__favicon-fallback {
-  display: none;
+  margin-top: 8px;
 }
 
 .serp-result-item__source-text {
   flex: 1;
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--platform-font-size-xs);
   line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
@@ -620,17 +513,14 @@ html[data-theme="light"] .serp-result-item__path {
   color: #5f6368;
 }
 
-.serp-result-item__imported {
-  flex-shrink: 0;
-}
 
 .serp-result-item__title {
   margin: 0 0 4px;
-  font-size: 18px;
-  font-weight: 500;
+  font-size: var(--platform-font-size-base);
+  font-weight: 400;
   line-height: 1.35;
   letter-spacing: -0.01em;
-  color: var(--platform-accent);
+  color: var(--platform-text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -639,23 +529,23 @@ html[data-theme="light"] .serp-result-item__path {
 }
 
 html[data-theme="light"] .serp-result-item__title {
-  color: #1a0dab;
+  color: var(--platform-text);
 }
 
 .serp-result-item:hover .serp-result-item__title {
   text-decoration: underline;
-  color: var(--platform-accent-hover);
+  color: var(--platform-text);
 }
 
 html[data-theme="light"] .serp-result-item:hover .serp-result-item__title {
-  color: #681da8;
+  color: var(--platform-text);
 }
 
 .serp-result-item__snippet {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--platform-text-secondary);
+  font-size: var(--platform-font-size-sm);
+  line-height: 1.5;
+  color: var(--platform-text-tertiary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -663,7 +553,7 @@ html[data-theme="light"] .serp-result-item:hover .serp-result-item__title {
 }
 
 html[data-theme="light"] .serp-result-item__snippet {
-  color: #4d5156;
+  color: var(--platform-text-tertiary);
 }
 
 .serp-result-item__meta {
@@ -674,20 +564,25 @@ html[data-theme="light"] .serp-result-item__snippet {
   margin-top: 8px;
 }
 
-.serp-result-item__wechat-tag {
-  background: var(--platform-accent-soft) !important;
-  color: var(--platform-accent) !important;
-}
-
 .serp-result-item__date {
-  font-size: 14px;
+  font-size: var(--platform-font-size-xs);
   color: var(--platform-text-tertiary);
 }
 
 .serp-result-item__import-btn {
   flex-shrink: 0;
 }
-
+.serp-result-item__imported {
+  font-size: var(--platform-font-size-xs);
+  padding: 2px 10px;
+  border-radius: var(--platform-radius-xs);
+  line-height: 1.5;
+  border: 1px solid transparent;
+  transition: background 0.18s, color 0.18s;
+  background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
+  color: var(--platform-accent);
+  pointer-events: none;
+}
 .serp-result-item__owner-tag {
   background: color-mix(in srgb, var(--platform-accent) 10%, transparent) !important;
   color: var(--platform-accent) !important;
@@ -709,7 +604,7 @@ html[data-theme="light"] .serp-result-item__snippet {
 
 .subscriptions-page-indicator {
   flex-shrink: 0;
-  font-size: 14px;
+  font-size: var(--platform-font-size-xs);
   color: var(--platform-text-tertiary);
   user-select: none;
   letter-spacing: 0.04em;

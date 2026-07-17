@@ -303,7 +303,6 @@ function goPdfPage(delta) {
 .doc-panel-badge {
   flex-shrink: 0;
   font-size: 13px;
-  font-weight: 600;
   padding: 2px 10px;
   border-radius: 5px;
   background: rgba(96, 165, 250, 0.15);

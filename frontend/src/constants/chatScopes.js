@@ -12,9 +12,6 @@ export const CHAT_SCOPES = {
   "report-generation": {
     routeName: "report-generation",
   },
-  "digital-robot": {
-    routeName: null,
-  },
   assistant: {
     routeName: null,
   },

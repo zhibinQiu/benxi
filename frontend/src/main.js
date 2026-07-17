@@ -1,3 +1,6 @@
+import "@fontsource/inter";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 import { createApp } from "vue";
 import App from "./App.vue";
 import router from "./router";

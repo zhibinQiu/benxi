@@ -55,6 +55,9 @@ RUN mkdir -p app/agentkit && touch app/agentkit/__init__.py
 # PageIndex 可选；仅 INSTALL_PAGEINDEX=1 时安装 extra
 COPY third_party/pageindex ./third_party/pageindex/
 
+# agentkit 本地包（pip install 时 file:../packages/ 需要 /packages/）
+COPY packages /packages
+
 RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
     pip install --no-cache-dir -i "${PIP_INDEX_URL}" . && \
     if [ "${INSTALL_PAGEINDEX}" = "1" ]; then \

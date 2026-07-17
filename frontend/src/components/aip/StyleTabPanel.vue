@@ -138,24 +138,26 @@ defineExpose({
           </NTag>
         </div>
 
-        <NText v-if="selectedAgentId" depth="3" class="style-tab-panel__file-name">
-          STYLE.md — {{ selectedAgentTitle }}
-        </NText>
-
         <div v-if="styleLoading" class="style-tab-panel__loading">
           <div class="skeleton-line skeleton-line--desc" />
           <div class="skeleton-line skeleton-line--desc" />
           <div class="skeleton-line skeleton-line--desc skeleton-line--short" />
         </div>
         <template v-else-if="selectedAgentId">
-          <NInput
-            :key="selectedAgentId"
-            v-model:value="styleContent"
-            type="textarea"
-            :rows="18"
-            :placeholder="t('admin.agentSkills.stylePlaceholder')"
-            @update:value="styleDirty = true"
-          />
+          <div class="style-tab-panel__input-backdrop">
+            <div class="style-tab-panel__input-backdrop-title">
+              <span>STYLE.md — {{ selectedAgentTitle }}</span>
+            </div>
+            <NInput
+              :key="selectedAgentId"
+              v-model:value="styleContent"
+              type="textarea"
+              :rows="16"
+              :placeholder="t('admin.agentSkills.stylePlaceholder')"
+              @update:value="styleDirty = true"
+            />
+          </div>
+          <p class="style-tab-panel__hint">{{ t("admin.agentSkills.styleHint") }}</p>
           <NSpace style="margin-top: 14px" :size="10">
             <NButton quaternary :loading="saving" @click="saveStyle">
               {{ t("common.save") }}
@@ -185,15 +187,33 @@ defineExpose({
   margin-bottom: 18px;
 }
 
-.style-tab-panel__file-name {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 13px;
-}
-
 .style-tab-panel__loading {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.style-tab-panel__input-backdrop {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius);
+  background: #fff;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.style-tab-panel__input-backdrop-title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: var(--platform-font-size-base);
+  font-weight: 600;
+  color: var(--platform-text-primary);
+}
+
+.style-tab-panel__hint {
+  margin: 0 0 14px;
+  font-size: var(--platform-font-size-sm);
+  line-height: 1.5;
+  color: var(--platform-text-tertiary);
 }
 </style>

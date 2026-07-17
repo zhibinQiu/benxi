@@ -302,7 +302,7 @@ function goPdfPage(delta) {
 }
 .doc-panel-badge {
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   padding: 2px 10px;
   border-radius: 5px;
   background: rgba(96, 165, 250, 0.15);
@@ -320,13 +320,13 @@ function goPdfPage(delta) {
   white-space: nowrap;
 }
 .doc-panel-placeholder {
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
 }
 .doc-panel-page-nav {
   flex-shrink: 0;
 }
 .doc-panel-page-label {
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   white-space: nowrap;
 }
 .doc-panel-preview {

@@ -150,6 +150,10 @@ async function runSearch(content) {
         onDelta: (delta) => {
           answer.value += delta;
           scrollTick += 1;
+          if (scrollTick % 4 === 0) {
+            const el = resultsRef.value?.querySelector?.('.knowledge-search-panel__summary-body');
+            if (el) el.scrollTop = el.scrollHeight;
+          }
         },
         onError: (err) => {
           throw err;
@@ -531,7 +535,7 @@ onMounted(() => {
 
 .knowledge-search-panel__sub {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--platform-font-size-lg);
   color: #94a3b8;
 }
 
@@ -565,20 +569,30 @@ onMounted(() => {
 }
 
 .knowledge-search-panel__chip {
-  padding: 6px 12px;
-  font-size: 14px;
-  color: var(--platform-text);
-  background: var(--platform-bg-secondary);
-  border: 1px solid var(--platform-border);
-  border-radius: 1199px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--platform-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--platform-border-color-tertiary, var(--platform-bg-tertiary));
+  border-radius: var(--platform-radius-pill);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+  transition:
+    all var(--platform-duration-smooth, 0.2s) var(--platform-ease-smooth, ease);
 }
 
 .knowledge-search-panel__chip:hover:not(:disabled) {
-  color: var(--platform-text);
-  background: var(--platform-bg-tertiary);
-  border-color: var(--platform-border);
+  color: var(--platform-accent-pressed);
+  background: var(--platform-accent-soft);
+  border-color: var(--platform-accent-border);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--platform-accent) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.knowledge-search-panel__chip:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .knowledge-search-panel__chip:disabled {
@@ -612,7 +626,7 @@ onMounted(() => {
 
 .knowledge-search-panel__question {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.5;
   color: var(--platform-text);
 }
@@ -620,7 +634,7 @@ onMounted(() => {
 .knowledge-search-panel__question-label,
 .knowledge-search-panel__summary-label,
 .knowledge-search-panel__citations-label {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--platform-text-secondary);
@@ -700,11 +714,15 @@ onMounted(() => {
 .knowledge-search-panel__summary-body {
   width: 100%;
   min-width: 0;
-  font-size: 16px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.6;
   color: var(--platform-text);
   overflow-wrap: anywhere;
   word-break: break-word;
+  /* 流式/完成内容高度限制：不占满整个视口 */
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .knowledge-search-panel__summary-body :deep(.knowledge-chat-content) {
@@ -722,7 +740,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-text-secondary);
 }
 
@@ -737,7 +755,7 @@ onMounted(() => {
 }
 
 .knowledge-search-panel__no-cites {
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   color: var(--platform-text-secondary);
 }
 
@@ -745,13 +763,13 @@ onMounted(() => {
   --n-padding-left: 19px;
   --n-padding-right: 19px;
   --n-line-height-textarea: 1.55;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
 }
 
 .knowledge-search-panel :deep(.ai-chat-textarea .n-input__textarea-el),
 .knowledge-search-panel :deep(.ai-chat-textarea .n-input__placeholder),
 .knowledge-search-panel :deep(.ai-chat-textarea .n-input__textarea-mirror) {
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.55;
 }
 
@@ -765,7 +783,7 @@ onMounted(() => {
 /* ── 与本析智能保持同款的 Markdown 排版 ── */
 .knowledge-search-panel__summary-body :deep(p) {
   margin: 0 0 0.6em;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.7;
   color: var(--platform-text);
   font-kerning: normal;
@@ -781,7 +799,7 @@ onMounted(() => {
 .knowledge-search-panel__summary-body :deep(ol) {
   margin: 0.5em 0;
   padding-left: 1.4em;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.7;
 }
 
@@ -853,7 +871,7 @@ onMounted(() => {
   border-collapse: collapse;
   width: 100%;
   margin: 0.6em 0;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
 }
 
 .knowledge-search-panel__summary-body :deep(th),
@@ -886,7 +904,7 @@ onMounted(() => {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   color: var(--platform-text-secondary);
   text-align: left;
   transition: background 0.15s ease;
@@ -898,7 +916,7 @@ onMounted(() => {
 }
 
 .ks-cite-fold__chevron {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
   flex-shrink: 0;
 }
@@ -909,7 +927,7 @@ onMounted(() => {
 
 .ks-cite-fold__count {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
   background: var(--platform-bg-tertiary);
   padding: 1px 7px;

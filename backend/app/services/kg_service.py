@@ -220,13 +220,6 @@ class KgService(Neo4jBaseService):
             record = await result.single()
             return (record.get("deleted") or 0) > 0
 
-    async def count_entities(self, user_id: str) -> int:
-        """统计用户的实体总数。"""
-        return await self.count_query(
-            "MATCH (e:Entity) WHERE e.owner_id IS NULL OR e.owner_id = $owner_id RETURN count(e) AS cnt",
-            params=dict(owner_id=user_id),
-        )
-
     async def count_entities_by_type(self, user_id: str) -> dict[str, int]:
         """按类型统计实体数量。"""
         records = await self.run_and_collect(
@@ -403,11 +396,17 @@ class KgService(Neo4jBaseService):
     async def get_subgraph(
         self, focus_id: str, depth: int = 2, user_id: str | None = None
     ) -> GraphOut:
-        """获取子图（Neo4j 原生图遍历）。"""
-        params: dict[str, Any] = {"focus_id": focus_id, "depth": max(1, min(depth, 5))}
+        """获取子图（Neo4j 原生图遍历）。
+
+        始终返回焦点实体自身（即使没有任何关联节点）。
+        """
+        depth_clamped = max(1, min(depth, 5))
         where_clause = ""
+        params: dict[str, Any] = {"focus_id": focus_id, "depth": depth_clamped}
         if user_id:
-            where_clause = " AND (connected.owner_id IS NULL OR connected.owner_id = $owner_id)"
+            where_clause = (
+                "WHERE (connected.owner_id IS NULL OR connected.owner_id = $owner_id)"
+            )
             params["owner_id"] = user_id
 
         record = await self.run_single(
@@ -415,14 +414,12 @@ class KgService(Neo4jBaseService):
             MATCH (focus:Entity {{id: $focus_id}})
             OPTIONAL MATCH path = (focus)-[:RELATES*1..$depth]-(connected:Entity)
             {where_clause}
-            WITH collect(DISTINCT focus) + collect(DISTINCT connected) AS all_nodes,
-                 collect(DISTINCT relationships(path)) AS all_rels
-            UNWIND all_nodes AS n
-            WITH collect(DISTINCT n) AS nodes, all_rels
-            UNWIND all_rels AS rel_list
-            UNWIND rel_list AS r
-            WITH nodes, collect(DISTINCT r) AS edges
-            RETURN nodes, edges
+            WITH focus,
+                 collect(DISTINCT connected) AS conn_nodes,
+                 [p IN collect(DISTINCT path) WHERE p IS NOT NULL | relationships(p)] AS path_rels
+            WITH [focus] + [c IN conn_nodes WHERE c IS NOT NULL] AS all_nodes,
+                 reduce(acc = [], rl IN path_rels | acc + rl) AS all_edges
+            RETURN all_nodes, all_edges
             """,
             params=params,
         )
@@ -430,8 +427,8 @@ class KgService(Neo4jBaseService):
             return GraphOut(focus_entity_id=focus_id)
 
         return await self._nodes_and_edges_to_graph(
-            record.get("nodes") or [],
-            record.get("edges") or [],
+            record.get("all_nodes") or [],
+            record.get("all_edges") or [],
             focus_id,
         )
 
@@ -927,31 +924,6 @@ class KgService(Neo4jBaseService):
 
         logger.info("记忆同步完成: %s", stats)
         return stats
-
-    async def sync_document_to_kg(
-        self, doc_id: str, title: str, description: str, owner_id: str
-    ) -> bool:
-        """将单篇文档同步为 doc 类型实体。"""
-        existing = await self.run_single(
-            "MATCH (e:Entity {source_document_id: $sid}) RETURN e LIMIT 1",
-            params=dict(sid=doc_id),
-        )
-        if existing:
-            return False
-        entity_id = str(uuid.uuid4())
-        try:
-            await self.execute_write(
-                "CREATE (e:Entity {id: $id, type_code: 'doc', name: $name, "
-                "description: $desc, source_type: 'system', "
-                "source_document_id: $sid, owner_id: $owner, created_by: $owner, "
-                "created_at: datetime(), updated_at: datetime()})",
-                params=dict(id=entity_id, name=title.strip() or "未命名文档",
-                            desc=description or "", sid=doc_id, owner=owner_id),
-            )
-            return True
-        except Exception as exc:
-            logger.warning("同步文档到 KG 失败 [%s]: %s", doc_id, exc)
-            return False
 
     async def batch_extract_documents_from_content(
         self,

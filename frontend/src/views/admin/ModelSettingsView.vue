@@ -19,6 +19,7 @@ import {
   NSwitch,
   NText } from "naive-ui";
 import {
+  CubeOutline,
   GlobeOutline,
   ColorPaletteOutline,
   ChatbubblesOutline,
@@ -128,6 +129,10 @@ const form = reactive({
   agent_browser_max_steps_per_session: 50,
   agent_browser_auto_task_enabled: true,
   agent_browser_auto_task_max_steps: 15,
+  neo4j_uri: "",
+  neo4j_user: "",
+  neo4j_password: "",
+  neo4j_database: "neo4j",
   ragflow_api_url: "",
   ragflow_api_key: "",
   knowflow_backend_url: "",
@@ -153,6 +158,7 @@ const RESOURCE_ICON_MAP = {
   pdf2zh: LanguageOutline,
   searxng: SearchOutline,
   browser_rpa: GlobeOutline,
+  neo4j: CubeOutline,
   ragflow_api: LibraryOutline,
   knowflow_backend: ServerOutline,
   ragflow_mysql: ServerOutline,
@@ -171,6 +177,7 @@ const RESOURCE_CATEGORY_MAP = {
   pdf2zh: "service",
   searxng: "service",
   browser_rpa: "service",
+  neo4j: "service",
   ragflow_api: "knowledge",
   knowflow_backend: "knowledge",
   ragflow_mysql: "knowledge",
@@ -218,34 +225,6 @@ const groupedResources = computed(() =>
   }))
 );
 
-function modelEndpoint(data, key, legacyKey) {
-  return data?.[key] || data?.[legacyKey] || null;
-}
-
-function activeProviderSummary(id, endpointName) {
-  const data = settings.value;
-  if (!data) return t("common.loading");
-  const ep = data[endpointName];
-  if (!ep) return t("admin.modelSettings.summary.notConfigured");
-  const providers = ep.providers;
-  const activeId = ep.active_provider;
-  if (Array.isArray(providers) && providers.length > 0) {
-    const active = providers.find((p) => p.id === activeId) || providers[0];
-    if (!active || (!active.base_url && !active.model_name)) {
-      return t("admin.modelSettings.summary.notConfigured");
-    }
-    const label = active.label || active.model_name || t("admin.modelSettings.summary.noLabel");
-    const url = truncate(active.base_url);
-    if (providers.length > 1) {
-      return `${label} · ${url} · ${t("admin.modelSettings.summary.providersCount", { count: providers.length })}`;
-    }
-    return `${label} · ${url}`;
-  }
-  // Backward compat: no providers array
-  return data[endpointName]?.model_name
-    ? `${data[endpointName].model_name} · ${truncate(data[endpointName].base_url)}`
-    : t("admin.modelSettings.summary.notConfigured");
-}
 
 function fillForm(data) {
   settings.value = data;
@@ -305,6 +284,11 @@ function fillForm(data) {
   form.agent_browser_max_steps_per_session = data?.agent_browser_max_steps_per_session || 50;
   form.agent_browser_auto_task_enabled = data?.agent_browser_auto_task_enabled !== false;
   form.agent_browser_auto_task_max_steps = data?.agent_browser_auto_task_max_steps || 15;
+  const ng = data?.neo4j || {};
+  form.neo4j_uri = ng.neo4j_uri || "";
+  form.neo4j_user = ng.neo4j_user || "";
+  form.neo4j_password = ng.neo4j_password_masked || "";
+  form.neo4j_database = ng.neo4j_database || "neo4j";
   const kb = data?.knowledge || {};
   form.ragflow_api_url = kb.ragflow_api_url || "";
   form.ragflow_api_key = kb.ragflow_api_key_masked || "";
@@ -319,104 +303,6 @@ function fillForm(data) {
   form.ragflow_mysql_container = kb.ragflow_mysql_container || "";
 }
 
-function resourceSummary(id) {
-  const data = settings.value;
-  if (!data) return t("common.loading");
-  switch (id) {
-    case "platform_api":
-      return data.platform_api_base_url
-        ? truncate(data.platform_api_base_url)
-        : t("admin.modelSettings.summary.defaultApi");
-    case "frontend": {
-      const themeLabel =
-        themeOptions.value.find((item) => item.value === data.frontend_default_theme)?.label ||
-        t("admin.modelSettings.theme.systemShort");
-      const scheme = normalizeColorScheme(data.frontend_color_scheme);
-      const schemeLabel =
-        scheme === COLOR_SCHEME_CUSTOM
-          ? t("admin.modelSettings.colorScheme.customShort", {
-              color: normalizePrimaryColor(data.frontend_primary_color),
-            })
-          : colorSchemeOptions.value.find((item) => item.value === scheme)
-              ?.label || t("admin.modelSettings.colorScheme.blueShort");
-      const title = data.frontend_app_title || t("admin.modelSettings.summary.systemName");
-      return `${title} · ${schemeLabel} · ${themeLabel}`;
-    }
-    case "llm":
-      return activeProviderSummary(id, "llm");
-    case "multimodal":
-      return activeProviderSummary(id, "multimodal");
-    case "embedding":
-      return activeProviderSummary(id, "embedding");
-    case "rerank":
-      return activeProviderSummary(id, "rerank") || t("admin.modelSettings.summary.optionalNotConfigured");
-    case "paddleocr": {
-      const sum = activeProviderSummary(id, "paddleocr");
-      if (sum !== t("admin.modelSettings.summary.notConfigured")) return sum;
-      return data.paddleocr_url
-        ? truncate(data.paddleocr_url)
-        : t("admin.modelSettings.summary.notConfigured");
-    }
-    case "speech":
-      return data.speech_service_url
-        ? truncate(data.speech_service_url)
-        : t("admin.modelSettings.summary.notConfigured");
-    case "tts":
-      return activeProviderSummary(id, "tts");
-    case "pdf2zh":
-      return data.pdf2zh_api_url
-        ? truncate(data.pdf2zh_api_url)
-        : t("admin.modelSettings.summary.notConfigured");
-    case "searxng":
-      return data.searxng_url
-        ? t("admin.modelSettings.summary.seconds", {
-            url: truncate(data.searxng_url),
-            seconds: data.searxng_timeout_seconds || 15,
-          }) + (data.firecrawl_api_key ? " · FC" : " · 无全文")
-        : t("admin.modelSettings.summary.notConfigured");
-    case "browser_rpa":
-      return data.agent_browser_enabled
-        ? t("admin.modelSettings.summary.browserRpaEnabled", {
-            headless: data.agent_browser_headless ? "headless" : "headed",
-            domains: data.agent_browser_allowed_domains || t("admin.modelSettings.summary.browserRpaAllDomains"),
-          })
-        : t("admin.modelSettings.summary.notConfigured");
-    case "ragflow_api":
-      return data.knowledge?.ragflow_api_url
-        ? truncate(data.knowledge.ragflow_api_url)
-        : t("admin.modelSettings.summary.notConfigured");
-    case "knowflow_backend": {
-      const kb = data.knowledge;
-      const parts = [];
-      if (kb?.knowflow_backend_url) {
-        parts.push(t("admin.modelSettings.summary.apiPrefix", { url: truncate(kb.knowflow_backend_url) }));
-      }
-      if (kb?.knowflow_ui_url) {
-        parts.push(t("admin.modelSettings.summary.uiPrefix", { url: truncate(kb.knowflow_ui_url) }));
-      }
-      return parts.length ? parts.join(" · ") : t("admin.modelSettings.summary.notConfigured");
-    }
-    case "ragflow_mysql": {
-      const kb = data.knowledge;
-      if (!kb?.ragflow_mysql_host && !kb?.ragflow_mysql_password_configured) {
-        return kb?.knowflow_enabled
-          ? t("admin.modelSettings.summary.dockerDefault")
-          : t("admin.modelSettings.summary.notConfigured");
-      }
-      const host = kb.ragflow_mysql_host || "localhost";
-      return `${host}:${kb.ragflow_mysql_port || 3306}/${kb.ragflow_mysql_db || "rag_flow"}`;
-    }
-    default:
-      return "";
-  }
-}
-
-function truncate(value) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  if (text.length <= 42) return text;
-  return `${text.slice(0, 39)}…`;
-}
 
 function extractProviders(endpointData) {
   if (!endpointData) return [];
@@ -631,6 +517,14 @@ function buildPayloadFor(id) {
         firecrawl_api_url: form.firecrawl_api_url.trim() || "https://api.firecrawl.dev",
         firecrawl_read_full_max_urls: Number(form.firecrawl_read_full_max_urls) || 3,
       };
+    case "neo4j":
+      return {
+        neo4j_uri: form.neo4j_uri.trim(),
+        neo4j_user: form.neo4j_user.trim(),
+        neo4j_database: form.neo4j_database.trim() || "neo4j",
+        ...(form.neo4j_password && !form.neo4j_password.includes("••••")
+          ? { neo4j_password: form.neo4j_password.trim() }
+          : {})};
     case "browser_rpa":
       return {
         agent_browser_enabled: Boolean(form.agent_browser_enabled),
@@ -810,16 +704,17 @@ onMounted(loadAll);
             @keydown.enter.prevent="openResource(item.id)"
             @keydown.space.prevent="openResource(item.id)"
           >
-            <div class="feature-card__top">
+            <div class="resource-card__header">
               <div class="feature-card__icon">
                 <n-icon :size="20">
                   <component :is="item.icon" />
                 </n-icon>
               </div>
+              <div class="resource-card__text">
+                <h3 class="feature-card__title">{{ item.title }}</h3>
+                <p class="feature-card__desc">{{ item.hint }}</p>
+              </div>
             </div>
-            <h3 class="feature-card__title">{{ item.title }}</h3>
-            <p class="feature-card__desc">{{ item.hint }}</p>
-            <p class="resource-card__summary">{{ resourceSummary(item.id) }}</p>
           </article>
         </n-gi>
       </n-grid>
@@ -1443,6 +1338,36 @@ onMounted(loadAll);
             <div class="drawer-hint" v-html="t('admin.modelSettings.hints.browserRpa')" />
           </template>
 
+          <template v-else-if="activeId === 'neo4j'">
+            <n-form-item :label="t('admin.modelSettings.labels.neo4jUri')">
+              <n-input
+                v-model:value="form.neo4j_uri"
+                :placeholder="t('admin.modelSettings.placeholders.neo4jUri')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.neo4jUser')">
+              <n-input
+                v-model:value="form.neo4j_user"
+                :placeholder="t('admin.modelSettings.placeholders.neo4jUser')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.neo4jPassword')">
+              <n-input
+                v-model:value="form.neo4j_password"
+                type="password"
+                show-password-on="click"
+                :placeholder="t('admin.modelSettings.placeholders.apiKeyMasked')"
+              />
+            </n-form-item>
+            <n-form-item :label="t('admin.modelSettings.labels.neo4jDatabase')">
+              <n-input
+                v-model:value="form.neo4j_database"
+                :placeholder="t('admin.modelSettings.placeholders.neo4jDatabase')"
+              />
+            </n-form-item>
+            <div class="drawer-hint" v-html="t('admin.modelSettings.hints.neo4j')" />
+          </template>
+
           <template v-else-if="activeId === 'ragflow_api'">
             <n-form-item :label="t('admin.modelSettings.labels.apiAddress')">
               <n-input
@@ -1544,7 +1469,7 @@ onMounted(loadAll);
         </n-alert>
 
         <template #footer>
-          <n-space>
+          <div class="btn-group btn-group--right">
             <n-button
               v-if="canTestActive"
               :loading="testing"
@@ -1557,7 +1482,7 @@ onMounted(loadAll);
               {{ t("admin.modelSettings.saveAndApply") }}
             </n-button>
             <n-button @click="drawerOpen = false">{{ t("common.cancel") }}</n-button>
-          </n-space>
+          </div>
         </template>
       </n-drawer-content>
     </n-drawer>
@@ -1630,8 +1555,8 @@ onMounted(loadAll);
   top: 0;
   right: 0;
   z-index: 2;
-  width: 13px;
-  height: 13px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   border: 2px solid var(--platform-bg-elevated, #fff);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--platform-border) 80%, transparent);
@@ -1670,7 +1595,7 @@ onMounted(loadAll);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 13px 14px;
+  padding: 14px;
   border-radius: var(--platform-card-radius);
   background: var(--platform-card-bg);
   border: 1px solid var(--platform-card-border-color);
@@ -1695,18 +1620,10 @@ onMounted(loadAll);
     0 0 0 5px var(--cat-accent);
 }
 
-.feature-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 7px;
-  margin-bottom: 7px;
-}
-
 .feature-card__icon {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1724,19 +1641,22 @@ onMounted(loadAll);
 }
 
 .feature-card__desc {
-  margin: 5px 0 0;
+  margin: 4px 0 0;
   font-size: var(--platform-font-size-nano);
   font-weight: 400;
   line-height: 1.45;
   color: var(--platform-text-tertiary);
 }
 
-.resource-card__summary {
-  margin: 10px 0 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--platform-text-secondary);
-  word-break: break-all;
+.resource-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.resource-card__text {
+  min-width: 0;
+  flex: 1;
 }
 
 .drawer-hint {

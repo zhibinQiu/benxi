@@ -54,6 +54,16 @@ class KnowledgeInfraOut(BaseModel):
     ragflow_mysql_container: str = ""
 
 
+class Neo4jConfigOut(BaseModel):
+    """Neo4j 图数据库连接配置（响应）。"""
+
+    neo4j_uri: str = ""
+    neo4j_user: str = ""
+    neo4j_password_configured: bool = False
+    neo4j_password_masked: str = ""
+    neo4j_database: str = ""
+
+
 class ClientConfigOut(BaseModel):
     """前端启动时拉取的公开配置（无需登录）。"""
 
@@ -96,6 +106,7 @@ class ModelSettingsOut(BaseModel):
     agent_browser_max_steps_per_session: int = 50
     agent_browser_auto_task_enabled: bool = True
     agent_browser_auto_task_max_steps: int = 15
+    neo4j: Neo4jConfigOut
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -169,6 +180,10 @@ class ModelSettingsUpdate(BaseModel):
     agent_browser_max_steps_per_session: int | None = None
     agent_browser_auto_task_enabled: bool | None = None
     agent_browser_auto_task_max_steps: int | None = None
+    neo4j_uri: str | None = None
+    neo4j_user: str | None = None
+    neo4j_password: str | None = None
+    neo4j_database: str | None = None
 
 
 class ProviderHealthItemOut(BaseModel):

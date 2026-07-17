@@ -1765,6 +1765,7 @@ export default {
       tabMemory: "记忆",
       tabStyles: "风格",
       tabAipKeys: "密钥",
+      tabFiles: "文件夹",
       pageTitle: "多智能体",
       toolbarHint: {
         agents: "管理内置与外部 AIP 智能体",
@@ -1848,7 +1849,10 @@ export default {
       knowledgeMountAdded: "已挂载知识库文件夹",
       knowledgeMountRemoved: "已移除挂载",
       knowledgeMountPickFolder: "选择知识库文件夹",
+      unknownLibrary: "未分类",
       toolsCount: "{{count}} 个工具",
+      agentToolsHint: "该智能体可调用 {{count}} 个原子工具",
+      noToolsAvailable: "该智能体暂无可用工具",
       skillsCount: "{{count}} 个技能",
       foldersCount: "{{count}} 个文件夹",
       activeConversations: "{{count}} 个活跃会话",
@@ -2028,6 +2032,7 @@ export default {
         tts: { title: "语音合成", hint: "文本转语音（硅基流动 / OpenAI 兼容）" },
         pdf2zh: { title: "PDF 翻译服务", hint: "pdf2zh 文档翻译 API" },
         searxng: { title: "网络检索服务", hint: "SearXNG 搜索引擎 + FireCrawl 全文提取，供报告生成与智能体联网检索" },
+        neo4j: { title: "图数据库", hint: "Neo4j 知识图谱存储（本体定义+关系推理+实体管理）" },
         browser_rpa: { title: "浏览器 RPA", hint: "本析智能体网页自动化（无头 Chromium）" },
         ragflow_api: { title: "知识库 API", hint: "知识库检索、文档同步 HTTP API" },
         knowflow_backend: { title: "知识库扩展后台", hint: "知识库扩展 API（RBAC 与知识库授权）；Web UI / iframe 为可选" },
@@ -2111,6 +2116,10 @@ export default {
         database: "数据库",
         rootPassword: "root 密码",
         dockerContainer: "Docker 容器",
+        neo4jUri: "连接地址",
+        neo4jUser: "用户名",
+        neo4jPassword: "密码",
+        neo4jDatabase: "数据库名",
         browserRpaEnabled: "启用浏览器 RPA",
         browserRpaHeadless: "无头模式（生产服务器推荐）",
         browserRpaAllowedDomains: "域名白名单",
@@ -2154,6 +2163,9 @@ export default {
         mysqlHost: "留空且启用知识库时使用内置 MySQL",
         mysqlDb: "rag_flow",
         mysqlContainer: "kb-mysql（无法 TCP 连接时 fallback docker exec）",
+        neo4jUri: "bolt://host:7687",
+        neo4jUser: "neo4j",
+        neo4jDatabase: "neo4j（默认库名）",
       },
       hints: {
         platformApi:
@@ -2179,6 +2191,9 @@ export default {
           "对应知识库扩展后台、Web UI、iframe 基址与同源代理前缀等配置。API 后台用于 RBAC 与知识库授权；Web UI 为知识库管理界面；iframe 基址用于知识问答嵌入。保存后立即生效。",
         ragflowMysql:
           "平台通过 MySQL 同步租户模型、清理冲突账号等。对应知识库 MySQL 相关环境变量；远程开发可填服务器 IP。",
+        neo4j:
+          "Neo4j 图数据库用于本体定义（实体类型/关系类型/公理）+ 知识图谱存储。" +
+          "通过 <code>NEO4J_URI</code>、<code>NEO4J_USER</code>、<code>NEO4J_PASSWORD</code> 等环境变量配置。保存后立即生效。",
       },
     },
   },
@@ -2216,7 +2231,6 @@ export default {
   },
   subscriptions: {
     title: "资讯管理",
-    heroTitle: "这里是您收藏的资讯，有什么可以帮忙？",
     newSearch: "新检索",
     searchAgainPlaceholder: "继续搜索已收录文章…",
     needKeyword: "请输入搜索关键词",
@@ -2248,6 +2262,8 @@ export default {
     needUrl: "请粘贴文章链接",
     ingestedWithSummary: "已收录并生成摘要",
     ingested: "已收录",
+    deleteConfirm: "确定删除该条资讯？删除后无法恢复。",
+    deleted: "已删除",
   },
   subscriptionItem: {
     wechatBadge: "公众号",

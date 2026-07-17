@@ -207,7 +207,7 @@ function openTool(tool) {
 }
 .category-hint {
   display: block;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   margin-top: 2px;
 }
 .category-grid {

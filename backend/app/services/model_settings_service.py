@@ -22,6 +22,7 @@ from app.models.platform_model_settings import SINGLETON_ID, PlatformModelSettin
 from app.schemas.model_settings import (
     KnowledgeInfraOut,
     ModelEndpointOut,
+    Neo4jConfigOut,
     ProviderEndpointOut,
     ModelSettingsOut,
     ModelSettingsUpdate,
@@ -475,6 +476,10 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
         "agent_browser_max_steps_per_session": str(settings.agent_browser_max_steps_per_session),
         "agent_browser_auto_task_enabled": str(settings.agent_browser_auto_task_enabled).lower(),
         "agent_browser_auto_task_max_steps": str(settings.agent_browser_auto_task_max_steps),
+        "neo4j_uri": (settings.neo4j_uri or "bolt://neo4j:7687").strip(),
+        "neo4j_user": (settings.neo4j_user or "neo4j").strip(),
+        "neo4j_password": (settings.neo4j_password or "").strip(),
+        "neo4j_database": (settings.neo4j_database or "neo4j").strip(),
     }
 
 
@@ -919,6 +924,13 @@ def _build_model_settings_out(effective: dict[str, str]) -> ModelSettingsOut:
         agent_browser_auto_task_max_steps=int(
             effective.get("agent_browser_auto_task_max_steps") or 15
         ),
+        neo4j=Neo4jConfigOut(
+            neo4j_uri=effective.get("neo4j_uri") or "",
+            neo4j_user=effective.get("neo4j_user") or "",
+            neo4j_password_configured=bool((effective.get("neo4j_password") or "").strip()),
+            neo4j_password_masked=mask_secret(effective.get("neo4j_password") or ""),
+            neo4j_database=effective.get("neo4j_database") or "neo4j",
+        ),
         knowledge=_knowledge_infra_out(effective),
     )
 
@@ -1212,6 +1224,24 @@ def save_model_settings(
             str(max(1, int(body.agent_browser_auto_task_max_steps)))
             if body.agent_browser_auto_task_max_steps is not None
             else current.get("agent_browser_auto_task_max_steps", "15")
+        ),
+        "neo4j_uri": (
+            (body.neo4j_uri or "").strip()
+            if body.neo4j_uri is not None
+            else current.get("neo4j_uri", "bolt://neo4j:7687")
+        ),
+        "neo4j_user": (
+            (body.neo4j_user or "").strip()
+            if body.neo4j_user is not None
+            else current.get("neo4j_user", "neo4j")
+        ),
+        "neo4j_database": (
+            (body.neo4j_database or "neo4j").strip()
+            if body.neo4j_database is not None
+            else current.get("neo4j_database", "neo4j")
+        ),
+        "neo4j_password": (
+            _keep_secret(body.neo4j_password, current.get("neo4j_password", ""))
         ),
     }
 

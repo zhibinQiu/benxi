@@ -23,7 +23,7 @@ defineEmits(["click"]);
 
 const isTableVariant = computed(() => props.variant === "table");
 
-const iconSize = computed(() => (isTableVariant.value ? 16 : 18));
+const iconSize = computed(() => (isTableVariant.value ? 16 : 15));
 
 const actionClass = computed(() => {
   if (isTableVariant.value) {
@@ -64,8 +64,8 @@ const actionClass = computed(() => {
 
 <style scoped>
 .icon-action {
-  width: 38px;
-  height: 38px;
+  width: 28px;
+  height: 28px;
   border: none !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
@@ -77,17 +77,17 @@ const actionClass = computed(() => {
 }
 
 .icon-action.icon-action--theme {
-  color: var(--platform-accent);
+  color: var(--platform-text-tertiary);
 }
 
 .icon-action.icon-action--theme:not(:disabled):hover {
-  color: var(--platform-accent-hover, var(--platform-accent));
-  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%) !important;
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--platform-accent) 18%, transparent);
+  color: var(--platform-text-secondary);
+  background: var(--platform-toolbar-bg) !important;
 }
 
 .icon-action.icon-action--theme.icon-action--active {
-  background: var(--platform-accent-soft);
+  color: var(--platform-text-secondary);
+  background: var(--platform-bg-tertiary);
 }
 
 .icon-action.icon-action--caution:not(:disabled) {

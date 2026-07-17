@@ -278,11 +278,11 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 }
 
 .notifications-panel :deep(.n-thing .n-thing-header__title) {
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
 }
 
 .notifications-panel :deep(.n-thing .n-thing-main__description) {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
 }
 
 .notifications-panel :deep(.n-empty) {
@@ -314,7 +314,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 }
 
 .notif-time {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
 }
 
@@ -323,7 +323,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   padding: 0 2px;
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   font-weight: 500;
   color: var(--platform-accent);
   cursor: pointer;
@@ -335,7 +335,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 }
 
 .notif-read {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
 }
 

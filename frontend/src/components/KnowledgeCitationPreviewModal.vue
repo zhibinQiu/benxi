@@ -223,13 +223,13 @@ function openDocument() {
 }
 
 .knowledge-citation-preview__hint {
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   flex: 1;
   min-width: 240px;
 }
 
 .knowledge-citation-preview__score {
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
 }
 
 .knowledge-citation-preview__snippet-block {
@@ -239,7 +239,7 @@ function openDocument() {
 }
 
 .knowledge-citation-preview__snippet-title {
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   font-weight: 600;
   color: var(--platform-text-secondary);
 }
@@ -249,7 +249,7 @@ function openDocument() {
   border-radius: 10px;
   background: var(--platform-accent-muted);
   border: 1px solid var(--platform-accent-border-soft);
-  font-size: 16px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.65;
   color: var(--platform-text);
   max-height: 144px;
@@ -268,7 +268,7 @@ function openDocument() {
 }
 
 .knowledge-citation-preview__text-only {
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.5;
 }
 

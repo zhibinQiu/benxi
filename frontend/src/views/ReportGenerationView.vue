@@ -8,7 +8,6 @@ import { isRouteAbortError } from "../api/client";
 import {
   downloadReportDocx,
   fetchReportAgentSkills,
-  fetchReportGenerationMeta,
   fetchReportMindmap,
   fetchReportOptimizePresets,
   importReportToLibrary,
@@ -30,27 +29,6 @@ const conversationId = ref(null);
 const optimizePresets = ref([]);
 const reportAgentSkills = ref([]);
 const reportSkillsLoading = ref(false);
-const webSearchAvailable = ref(true);
-
-const selectionHint = computed(() => {
-  const sel = selection.value;
-  const total = sel?.totalSelected || sel?.documentIds?.length || 0;
-  const ready = sel?.indexReadyCount ?? total;
-  const parts = [];
-  if (total) {
-    if (ready < total) {
-      parts.push(t("reportGeneration.selectedDocsIndexPendingHint", { total, ready }));
-    } else {
-      parts.push(t("reportGeneration.selectedDocsHint", { count: total }));
-    }
-  } else {
-    parts.push(t("reportGeneration.noLocalDocsHint"));
-  }
-  if (!webSearchAvailable.value) {
-    parts.push(t("reportGeneration.webSearchUnavailableHint"));
-  }
-  return parts.join(" · ");
-});
 
 const historyLoading = computed(() => Boolean(chatPanelRef.value?.loadingHistory));
 
@@ -76,12 +54,6 @@ async function loadReportPageData() {
   reportSkillsLoading.value = true;
   try {
     try {
-      const meta = await fetchReportGenerationMeta();
-      webSearchAvailable.value = Boolean(meta?.web_search_enabled);
-    } catch (e) {
-      if (!isRouteAbortError(e)) webSearchAvailable.value = true;
-    }
-    try {
       optimizePresets.value = (await fetchReportOptimizePresets()) || [];
     } catch (e) {
       if (!isRouteAbortError(e)) optimizePresets.value = [];
@@ -106,19 +78,12 @@ onActivated(() => {
 
 <template>
   <div class="knowledge-feature-panel accent-theme">
-    <Teleport v-if="headerExtensionActive" to="#page-header-extension">
-      <div class="subsystem-extra-bar">
-        <div class="subsystem-extra-row">
-          <div class="report-gen-toolbar">
-            <span class="report-gen-toolbar-hint">{{ selectionHint }}</span>
-            <ChatSessionToolbarActions
-              :disabled="historyLoading"
-              @history="openHistory"
-              @new-chat="startNewChat"
-            />
-          </div>
-        </div>
-      </div>
+    <Teleport v-if="headerExtensionActive" to="#header-actions">
+      <ChatSessionToolbarActions
+        :disabled="historyLoading"
+        @history="openHistory"
+        @new-chat="startNewChat"
+      />
     </Teleport>
 
     <AiChatPanel
@@ -160,26 +125,6 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-}
-
-.report-gen-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  width: 100%;
-  min-width: 0;
-}
-
-.report-gen-toolbar-hint {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--platform-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .report-gen-page__panel {

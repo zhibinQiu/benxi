@@ -203,10 +203,6 @@ watch(
     <FeatureSubsystemShell fill :show-intro="false">
 
     <div class="subscriptions-page">
-      <div class="subscriptions-hero">
-        <h2 class="subscriptions-hero__title">{{ t("subscriptions.heroTitle") }}</h2>
-      </div>
-
       <div class="subscriptions-toolbar">
         <div class="subscriptions-search-hub__bar">
           <NIcon :size="18" class="subscriptions-search-hub__icon" :component="inputIsUrl ? AddOutline : SearchOutline" />
@@ -244,34 +240,30 @@ watch(
               >
                 <h3 class="serp-result-item__title">{{ a.title }}</h3>
                 <p class="serp-result-item__snippet">{{ a.summary || t("subscriptions.noSummary") }}</p>
+                <div class="serp-result-item__footer">
                 <div class="serp-result-item__meta">
-                  <NTag
-                    v-if="a.owner_name"
-                    size="small"
-                    :bordered="false"
-                    class="serp-result-item__owner-tag"
-                  >
-                    {{ a.owner_name }}
-                  </NTag>
+                  <span v-if="a.owner_name" class="serp-result-item__owner">{{ a.owner_name }}</span>
                   <span v-if="fmtSerpDate(a.created_at || a.publish_at)" class="serp-result-item__date">
                     {{ fmtSerpDate(a.created_at || a.publish_at) }}
                   </span>
-                </div>
-                <div class="serp-result-item__source">
-                  <div class="serp-result-item__source-text">
+                  <span class="serp-result-item__meta-sep">·</span>
+                  <span class="serp-result-item__source-text">
                     <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
                     <span v-if="breadcrumbPath(a.link)" class="serp-result-item__path">
                       › {{ breadcrumbPath(a.link) }}
                     </span>
-                  </div>
-                  <NTag
+                  </span>
+                </div>
+                  <div class="serp-result-item__actions">
+                  <NButton
                     v-if="a.imported"
-                    size="small"
-                    :bordered="false"
-                    class="serp-result-item__imported"
+                    size="tiny"
+                    secondary
+                    disabled
+                    class="serp-result-item__import-btn serp-result-item__imported-btn"
                   >
                     {{ t("subscriptions.importedTag") }}
-                  </NTag>
+                  </NButton>
                   <NButton
                     v-else
                     size="tiny"
@@ -282,6 +274,7 @@ watch(
                   >
                     {{ t("subscriptions.importBtn") }}
                   </NButton>
+                </div>
                 </div>
               </article>
             </div>
@@ -319,31 +312,10 @@ watch(
   padding: 8px 16px 0;
 }
 
-/* ── Hero title ── */
+/* ── Toolbar ── */
 .subscriptions-toolbar {
   flex-shrink: 0;
-  padding: 0 0 12px;
-}
-
-.subscriptions-hero {
-  flex-shrink: 0;
-  padding: 24px 8px 16px;
-}
-
-.subscriptions-hero__title {
-  margin: 0;
-  font-size: var(--platform-font-size-xl);
-  font-weight: 400;
-  line-height: 1.35;
-  color: var(--platform-text);
-  letter-spacing: var(--platform-tracking-tight, -0.014em);
-}
-
-.subscriptions-hero__subtitle {
-  margin: 8px 0 0;
-  font-size: var(--platform-font-size-sm);
-  line-height: 1.5;
-  color: var(--platform-text-tertiary);
+  padding: 20px 0 12px;
 }
 
 /* ── Search hub pill ── */
@@ -359,9 +331,6 @@ watch(
   border-radius: 1199px;
   border: 1px solid var(--platform-border);
   background: var(--platform-bg-elevated);
-  box-shadow:
-    0 1px 4px color-mix(in srgb, var(--platform-text) 8%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent);
 }
 
 .subscriptions-search-hub__icon {
@@ -438,7 +407,7 @@ watch(
 .subscriptions-card {
   border: 1px solid var(--platform-border);
   border-radius: var(--platform-card-radius);
-  background: #fcfcfc;
+  background: var(--platform-card-bg);
   overflow: hidden;
 }
 
@@ -460,65 +429,30 @@ watch(
 .serp-result-item {
   display: block;
   width: 100%;
-  padding: 10px 12px;
+  padding: 14px 16px;
   margin: 0;
   box-sizing: border-box;
   text-align: left;
   cursor: pointer;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--platform-border-strong);
-  transition: background-color 0.15s ease;
+  border-bottom: 1px solid var(--platform-border);
+  transition: background-color 0.18s ease;
 }
 
 .serp-result-item:hover {
-  background: color-mix(in srgb, var(--platform-text) 5%, transparent);
+  background: var(--platform-accent-soft);
 }
 
 .serp-result-item:last-child {
   border-bottom: none;
 }
 
-.serp-result-item__source {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  margin-top: 8px;
-}
-
-.serp-result-item__source-text {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--platform-font-size-xs);
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.serp-result-item__site {
-  color: var(--platform-text);
-}
-
-.serp-result-item__path {
-  color: var(--platform-text-tertiary);
-}
-
-html[data-theme="light"] .serp-result-item__site {
-  color: #202124;
-}
-
-html[data-theme="light"] .serp-result-item__path {
-  color: #5f6368;
-}
-
-
 .serp-result-item__title {
-  margin: 0 0 4px;
-  font-size: var(--platform-font-size-base);
-  font-weight: 400;
-  line-height: 1.35;
+  margin: 0 0 6px;
+  font-size: var(--platform-font-size-lg);
+  font-weight: 500;
+  line-height: 1.4;
   letter-spacing: -0.01em;
   color: var(--platform-text);
   display: -webkit-box;
@@ -528,23 +462,14 @@ html[data-theme="light"] .serp-result-item__path {
   transition: color 0.15s ease;
 }
 
-html[data-theme="light"] .serp-result-item__title {
-  color: var(--platform-text);
-}
-
 .serp-result-item:hover .serp-result-item__title {
-  text-decoration: underline;
-  color: var(--platform-text);
-}
-
-html[data-theme="light"] .serp-result-item:hover .serp-result-item__title {
-  color: var(--platform-text);
+  color: var(--platform-accent);
 }
 
 .serp-result-item__snippet {
-  margin: 0;
+  margin: 0 0 8px;
   font-size: var(--platform-font-size-sm);
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--platform-text-tertiary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -552,16 +477,25 @@ html[data-theme="light"] .serp-result-item:hover .serp-result-item__title {
   overflow: hidden;
 }
 
-html[data-theme="light"] .serp-result-item__snippet {
-  color: var(--platform-text-tertiary);
-}
-
+/* ── Meta row ── */
 .serp-result-item__meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 3px 6px;
+  font-size: var(--platform-font-size-xs);
+  color: var(--platform-text-tertiary);
+}
+
+.serp-result-item__owner {
+  font-size: var(--platform-font-size-xs);
+  color: var(--platform-text-tertiary);
+}
+
+.serp-result-item__owner::before {
+  content: "@";
+  margin-right: 1px;
+  opacity: 0.6;
 }
 
 .serp-result-item__date {
@@ -569,23 +503,57 @@ html[data-theme="light"] .serp-result-item__snippet {
   color: var(--platform-text-tertiary);
 }
 
+.serp-result-item__meta-sep {
+  opacity: 0.35;
+  user-select: none;
+}
+
+.serp-result-item__source-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.serp-result-item__site {
+  color: var(--platform-text-quaternary);
+}
+
+.serp-result-item__path {
+  color: var(--platform-text-quaternary);
+}
+
+/* ── Footer: meta + actions in same row ── */
+.serp-result-item__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.serp-result-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.serp-result-item:hover .serp-result-item__actions {
+  opacity: 1;
+}
+
 .serp-result-item__import-btn {
   flex-shrink: 0;
 }
-.serp-result-item__imported {
-  font-size: var(--platform-font-size-xs);
-  padding: 2px 10px;
-  border-radius: var(--platform-radius-xs);
-  line-height: 1.5;
-  border: 1px solid transparent;
-  transition: background 0.18s, color 0.18s;
-  background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
-  color: var(--platform-accent);
-  pointer-events: none;
+.serp-result-item__import-btn:not(:disabled):not(.serp-result-item__imported-btn):hover {
+  background: var(--platform-accent-soft);
+  border-color: var(--platform-accent-border-soft);
 }
-.serp-result-item__owner-tag {
-  background: color-mix(in srgb, var(--platform-accent) 10%, transparent) !important;
-  color: var(--platform-accent) !important;
+.serp-result-item__imported-btn {
+  pointer-events: none;
+  opacity: 0.5;
 }
 
 /* ── Footer ── */
@@ -624,6 +592,10 @@ html[data-theme="light"] .serp-result-item__snippet {
   .subscriptions-search-hub__submit {
     padding-inline: 12px;
     font-size: 13px;
+  }
+
+  .serp-result-item {
+    padding: 12px;
   }
 }
 </style>

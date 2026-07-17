@@ -59,13 +59,13 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
         borderColor: "rgba(255, 255, 255, 0.1)",
       },
       Button: {
-        borderRadiusMedium: "8px",
-        borderRadiusSmall: "6px",
-        fontWeight: "450",
-        heightMedium: "36px",
-        heightSmall: "30px",
-        fontSizeMedium: "13px",
-        fontSizeSmall: "12px",
+        borderRadiusMedium: "8px",   // --btn-radius
+        borderRadiusSmall: "6px",    // --btn-radius-sm
+        fontWeight: "500",           // --btn-font-weight
+        heightMedium: "36px",        // --btn-height-md
+        heightSmall: "30px",         // (small 专用)
+        fontSizeMedium: "13px",      // --btn-font-size
+        fontSizeSmall: "12px",       // --btn-font-size-sm
       },
       Input: {
         borderRadius: "8px",
@@ -114,7 +114,7 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
       Tabs: {
         tabTextColorActive: palette.tabActive,
         tabTextColorHover: "#f5f5f7",
-        barColor: palette.primary,
+        barColor: "transparent",
       },
       Tag: {
         borderRadius: "6px",
@@ -142,10 +142,6 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
         suffixColor: "#98989d",
         optionColorHover: "rgba(255, 255, 255, 0.06)",
         optionColorActive: palette.dropdownActiveBg,
-      },
-      Switch: {
-        railColorActive: "#585868",
-        buttonColorActive: "#f5f5f7",
       },
       Dialog: {
         borderRadius: "14px",
@@ -194,13 +190,13 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
       borderColor: "rgba(0, 0, 0, 0.09)",
     },
     Button: {
-      borderRadiusMedium: "8px",
-      borderRadiusSmall: "6px",
-      fontWeight: "450",
-      heightMedium: "36px",
-      heightSmall: "30px",
-      fontSizeMedium: "13px",
-      fontSizeSmall: "12px",
+      borderRadiusMedium: "8px",   // --btn-radius
+      borderRadiusSmall: "6px",    // --btn-radius-sm
+      fontWeight: "500",           // --btn-font-weight
+      heightMedium: "36px",        // --btn-height-md
+      heightSmall: "30px",         // (small 专用)
+      fontSizeMedium: "13px",      // --btn-font-size
+      fontSizeSmall: "12px",       // --btn-font-size-sm
     },
     Input: {
       borderRadius: "8px",
@@ -249,7 +245,7 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
     Tabs: {
       tabTextColorActive: palette.tabActive,
       tabTextColorHover: "#141414",
-      barColor: palette.primary,
+      barColor: "transparent",
     },
     Tag: {
       borderRadius: "6px",
@@ -278,10 +274,6 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
       optionColorHover: "rgba(0, 0, 0, 0.04)",
       optionColorActive: palette.dropdownActiveBg,
       optionIconColor: "#606060",
-    },
-    Switch: {
-      railColorActive: "#909090",
-      buttonColorActive: "#ffffff",
     },
     Dialog: {
       borderRadius: "14px",

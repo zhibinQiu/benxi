@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 
@@ -279,12 +279,12 @@ async def extract_from_text(
     return ApiResponse(data=ExtractFromTextOut(**result))
 
 
-@router.post("/extract/documents", response_model=ApiResponse[dict[str, int]])
+@router.post("/extract/documents", response_model=ApiResponse[dict[str, Any]])
 async def extract_documents(
     body: ExtractBatchIn,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[dict[str, int]]:
+) -> ApiResponse[dict[str, Any]]:
     """批量读取文档正文并通过 LLM 抽取实体/关系到知识图谱。"""
     svc = await _get_kg_svc()
     stats = await svc.batch_extract_documents_from_content(
@@ -312,46 +312,46 @@ async def extract_batch(
 # ── 平台数据同步 ──────────────────────────────────────────────────────────
 
 
-@router.post("/sync/org", response_model=ApiResponse[dict[str, int]])
+@router.post("/sync/org", response_model=ApiResponse[dict[str, Any]])
 async def sync_platform_org(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[dict[str, int]]:
+) -> ApiResponse[dict[str, Any]]:
     """同步平台用户/部门到知识图谱（person/org 实体 + employs/contains 关系）。"""
     svc = await _get_kg_svc()
     stats = await svc.sync_platform_org(db, str(user.id))
     return ApiResponse(data=stats)
 
 
-@router.post("/sync/agents", response_model=ApiResponse[dict[str, int]])
+@router.post("/sync/agents", response_model=ApiResponse[dict[str, Any]])
 async def sync_platform_agents(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[dict[str, int]]:
+) -> ApiResponse[dict[str, Any]]:
     """同步平台智能体/工具/Skill 到知识图谱。"""
     svc = await _get_kg_svc()
     stats = await svc.sync_platform_agents(db, str(user.id))
     return ApiResponse(data=stats)
 
 
-@router.post("/sync/memory", response_model=ApiResponse[dict[str, int]])
+@router.post("/sync/memory", response_model=ApiResponse[dict[str, Any]])
 async def sync_agent_memory(
     user: Annotated[User, Depends(get_current_user)],
-) -> ApiResponse[dict[str, int]]:
+) -> ApiResponse[dict[str, Any]]:
     """同步智能体记忆到知识图谱。"""
     svc = await _get_kg_svc()
     stats = await svc.sync_agent_memory_to_kg(str(user.id))
     return ApiResponse(data=stats)
 
 
-@router.post("/sync/all", response_model=ApiResponse[dict[str, int]])
+@router.post("/sync/all", response_model=ApiResponse[dict[str, Any]])
 async def sync_all_platform(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[dict[str, int]]:
+) -> ApiResponse[dict[str, Any]]:
     """一键同步所有平台数据到知识图谱（组织 + 智能体 + 记忆）。"""
     svc = await _get_kg_svc()
-    stats: dict[str, int] = {}
+    stats: dict[str, Any] = {}
     try:
         org_stats = await svc.sync_platform_org(db, str(user.id))
         stats.update({f"org_{k}": v for k, v in org_stats.items()})

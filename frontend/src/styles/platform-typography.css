@@ -23,13 +23,13 @@
 /* =============================================
  * 全局字号工具类 — 统一所有页面的文字层级
  * 使用示例：
- *   class="text-xl"    → 22px  弹窗/页面大标题
- *   class="text-lg"    → 18px  大号正文/功能标题
- *   class="text-base"  → 16px  标准正文
- *   class="text-sm"    → 15px  次要文字/说明文字
- *   class="text-xs"    → 13px  辅助信息/元数据
- *   class="text-micro" → 12px  标签/徽章
- *   class="text-nano"  → 11px  极小型（表头大写等）
+ *   class="text-xl"    → 14px  弹窗/页面大标题
+ *   class="text-lg"    → 14px  大号正文/功能标题
+ *   class="text-base"  → 13px  标准正文
+ *   class="text-sm"    → 12px  次要文字/说明文字
+ *   class="text-xs"    → 9px   辅助信息/元数据
+ *   class="text-micro" → 8px   标签/徽章
+ *   class="text-nano"  → 7px   极小型（表头大写等）
  *
  * 标题使用 h1-h6 或对应语义标签，不使用这些工具类。
  * ============================================= */

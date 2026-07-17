@@ -421,7 +421,7 @@ const versionColumns = computed(() => [
     ? [{
         title: t("common.actions"),
         key: "actions",
-        width: 130,
+        width: 160,
         render: (row) => {
           if (!row.uploaded) return null;
           const children = [];
@@ -900,7 +900,7 @@ onMounted(() => {
             </n-button>
           </template>
           <template v-else>
-            <n-text style="font-size: 16px; font-weight: 500">{{ doc.title }}</n-text>
+            <n-text style="font-size: var(--platform-font-size-lg); font-weight: 500">{{ doc.title }}</n-text>
             <n-button
               v-if="canEditDoc"
               text

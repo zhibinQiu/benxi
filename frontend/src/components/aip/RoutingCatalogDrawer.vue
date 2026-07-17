@@ -102,7 +102,7 @@ defineExpose({ openCatalog, refreshIfOpen, loading, catalogType });
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.5;
   max-height: 576px;
   overflow: auto;

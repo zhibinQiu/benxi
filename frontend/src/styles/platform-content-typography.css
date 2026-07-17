@@ -2,17 +2,16 @@
  * 全局字号规范
  *
  * 层级对照（实际 CSS 变量值，非视觉 px）：
- *   --platform-font-size-xl:  13px
- *   --platform-font-size-lg:  12px
- *   --platform-font-size-base: 11px
- *   --platform-font-size-sm:  10px
- *   --platform-font-size-xs:  9px
- *   --platform-font-size-micro: 8px
- *   --platform-font-size-nano: 7px
+ *   --platform-font-size-xl:  14px  弹窗/页面大标题
+ *   --platform-font-size-lg:  14px  大号正文/功能标题
+ *   --platform-font-size-base: 13px  标准正文
+ *   --platform-font-size-sm:  12px  次要正文/说明文字
+ *   --platform-font-size-xs:  9px   辅助信息/元数据  ↓ 不变
+ *   --platform-font-size-micro: 8px 标签/徽章        ↓ 不变
+ *   --platform-font-size-nano: 7px  极小型（表头大写等）↓ 不变
  *
- * 注意：这些是 token 定义值，实际渲染大小受 body font-size (15px) 和
- * Naive UI 内部缩放影响。对于阅读型内容（文章、Markdown），
- * 请使用 body 继承的 15px，而非 token 值。
+ * 大标题（hero 30px 等、弹窗标题 16px）、辅助字体（xs/micro/nano）、
+ * 系统菜单栏（13px）保持原有大小不变。
  */
 
 .app-main,
@@ -59,10 +58,6 @@
   .n-dropdown-option-body__label,
   .n-drawer-body-content-wrapper
 ) {
-  font-size: var(--platform-font-size-base) !important;
-}
-
-.app-shell .app-content .n-button:not(.n-button--tiny-type) {
   font-size: var(--platform-font-size-base) !important;
 }
 
@@ -128,8 +123,8 @@
 
 /* =============================================
  * 功能工作台（翻译、语音、TTS、OCR、对比等）
- * 正文使用 --platform-font-size-base (16px)
- * 仅需强调的标题/按钮使用 --platform-font-size-lg (18px)
+ * 正文使用 --platform-font-size-base (13px)
+ * 仅需强调的标题/按钮使用 --platform-font-size-lg (14px)
  * ============================================= */
 .app-content .subsystem-shell {
   font-size: var(--platform-font-size-base);

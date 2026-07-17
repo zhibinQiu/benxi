@@ -194,6 +194,15 @@ watch(
             </NText>
           </header>
 
+          <!-- 摘要卡片 -->
+          <section class="detail-section">
+            <div class="section-title">{{ t("subscriptionItem.summaryTitle") }}</div>
+            <div class="section-card">
+              <NText v-if="item.summary" depth="2" class="summary-text">{{ item.summary }}</NText>
+              <NText v-else depth="3">{{ t("subscriptionItem.noSummary") }}</NText>
+            </div>
+          </section>
+
           <!-- 网页内容提取卡片 -->
           <section class="detail-section">
             <div class="section-title">{{ t("subscriptionItem.contentExtractTitle") }}</div>
@@ -304,6 +313,12 @@ watch(
   padding: 20px 24px;
   line-height: 1.7;
   overflow-x: hidden;
+}
+
+.summary-text {
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .subscription-item-toolbar__spacer {

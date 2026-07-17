@@ -58,6 +58,10 @@
 .md-rich .md-echart-wrap .md-echart {
   display: block;
   margin: 0 auto;
+  max-width: 86%;
+  height: auto;
+  max-height: min(440px, 55vh);
+  object-fit: contain;
 }
 
 .md-rich-media-hint {

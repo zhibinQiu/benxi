@@ -187,7 +187,7 @@
 /* —— 工具栏图标按钮（选中 / 激活） —— */
 .icon-action.icon-action--active,
 .page-toolbar .icon-action.icon-action--active {
-  color: var(--platform-accent) !important;
+  color: var(--platform-text-secondary) !important;
   background: var(--platform-bg-tertiary) !important;
   box-shadow: none !important;
 }

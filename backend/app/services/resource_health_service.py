@@ -15,8 +15,6 @@ from app.services.model_settings_service import (
     _endpoint_fields,
     _legacy_paddleocr_base_url,
     get_effective_model_config,
-    get_firecrawl_api_key,
-    get_firecrawl_api_url,
     get_searxng_timeout_seconds,
     mask_secret,
     resolve_ragflow_api_base,
@@ -41,6 +39,7 @@ TESTABLE_RESOURCE_IDS = frozenset(
         "pdf2zh",
         "searxng",
         "firecrawl",
+        "neo4j",
         "ragflow_api",
         "knowflow_backend",
         "ragflow_mysql",
@@ -305,6 +304,37 @@ def _probe_pdf2zh_url(base_url: str) -> tuple[bool, str]:
     if ok:
         return ok, msg
     return _probe_http_get(f"{base}/openapi.json")
+
+
+def _probe_neo4j(uri: str, user: str, password: str, database: str) -> tuple[bool, str]:
+    """探测 Neo4j 连通性。"""
+    url = (uri or "").strip()
+    if not url:
+        return False, "未填写连接地址"
+    try:
+        from neo4j import AsyncGraphDatabase
+        import asyncio
+
+        async def _probe():
+            try:
+                driver = AsyncGraphDatabase.driver(url, auth=(user, password) if password else None)
+                async with driver.session(database=database or None) as session:
+                    r = await session.run("RETURN 1 AS ok")
+                    rec = await r.single()
+                    ok = bool(rec and rec.get("ok") == 1)
+                await driver.close()
+                return ok, "连接正常" if ok else "查询无返回"
+            except Exception as exc:
+                msg = str(exc)
+                if "Authentication" in msg or "Unauthorized" in msg:
+                    return False, "认证失败，请检查用户名/密码"
+                if "Connection" in msg or "connect" in msg.lower():
+                    return False, f"无法连接：{msg[:120]}"
+                return False, msg[:200]
+
+        return asyncio.run(_probe())
+    except ImportError:
+        return False, "neo4j Python 驱动未安装"
 
 
 def _probe_ragflow_api_url(api_url: str, api_key: str) -> tuple[bool, str]:
@@ -705,6 +735,17 @@ def check_single_resource_health(resource_id: str, cfg: dict[str, str], db) -> d
             return _item(configured=False, healthy=False, message="未填写 API 地址")
         healthy, msg = _probe_firecrawl_url(firecrawl_api_url, firecrawl_api_key)
         return _item(configured=True, healthy=healthy, message=msg)
+
+    if rid == "neo4j":
+        neo4j_uri = (cfg.get("neo4j_uri") or "").strip()
+        neo4j_user = (cfg.get("neo4j_user") or "").strip()
+        neo4j_password = (cfg.get("neo4j_password") or "").strip()
+        neo4j_database = (cfg.get("neo4j_database") or "").strip()
+        if not neo4j_uri:
+            return _item(configured=False, healthy=False, message="未填写连接地址")
+        configured = bool(neo4j_uri and neo4j_user)
+        healthy, msg = _probe_neo4j(neo4j_uri, neo4j_user, neo4j_password, neo4j_database)
+        return _item(configured=configured, healthy=healthy, message=msg)
 
     if rid == "ragflow_api":
         ragflow_url = (cfg.get("ragflow_api_url") or "").strip()

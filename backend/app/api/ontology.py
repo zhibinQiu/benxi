@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path
 from sqlalchemy import select
@@ -324,7 +324,7 @@ async def run_all_axioms(
 # ── 默认种子 ──────────────────────────────────────────────────────────────────
 
 
-@router.post("/seed-defaults", response_model=ApiResponse[dict[str, int]])
+@router.post("/seed-defaults", response_model=ApiResponse[dict[str, Any]])
 async def seed_defaults(
     body: DefaultSeedIn,
     user: Annotated[User, Depends(get_current_user)],

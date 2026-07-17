@@ -287,6 +287,19 @@ function collectDocumentNodesFromKeys(keys) {
   return nodes;
 }
 
+/** 已选文档的统计摘要 */
+const selectionSummary = computed(() => {
+  const docNodes = collectDocumentNodesFromKeys(checkedKeys.value);
+  const total = docNodes.length;
+  if (!total) return null;
+  const ready = docNodes.filter((n) => n.index_ready);
+  return {
+    total,
+    indexReady: ready.length,
+    indexPending: total - ready.length,
+  };
+});
+
 function pruneCheckedKeys(keys) {
   const next = (keys || []).filter((key) => Boolean(findNode(treeData.value, key)));
   return [...new Set(next)];
@@ -513,6 +526,22 @@ defineExpose({ reload: reloadTree });
         :description="t('knowledgeSearch.tree.empty')"
       />
     </PlatformSpin>
+    <div
+      v-if="selectionSummary"
+      class="knowledge-scope-tree__footer"
+    >
+      <template v-if="selectionSummary.indexPending > 0">
+        {{ t("reportGeneration.selectedDocsIndexPendingHint", {
+          total: selectionSummary.total,
+          ready: selectionSummary.indexReady,
+        }) }}
+      </template>
+      <template v-else>
+        {{ t("reportGeneration.selectedDocsHint", {
+          count: selectionSummary.total,
+        }) }}
+      </template>
+    </div>
   </div>
 </template>
 
@@ -601,5 +630,16 @@ defineExpose({ reload: reloadTree });
 
 .knowledge-scope-tree__node-tag {
   flex-shrink: 0;
+}
+
+.knowledge-scope-tree__footer {
+  flex-shrink: 0;
+  padding: 4px 14px 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--platform-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

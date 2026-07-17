@@ -8,10 +8,13 @@ import {
   NDivider,
   NDrawer,
   NDrawerContent,
+  NEmpty,
   NForm,
   NFormItem,
   NInput,
+  NScrollbar,
   NSpace,
+  NSpin,
   NSwitch,
   NTag,
   NText,
@@ -23,12 +26,14 @@ import { formatAgentDisplayName } from "../../utils/agentDisplay.js";
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
 import {
-  fetchAgentProfile,
+  addKnowledgeMount,
   fetchAgentProfileFile,
   fetchAgentProfiles,
   fetchAgentSkillRegistry,
+  fetchAgentTools,
   fetchKnowledgeMounts,
   patchAgentProfile,
+  removeKnowledgeMount,
   updateAgentProfileFile,
 } from "../../api/agentSkills.js";
 import {
@@ -44,7 +49,6 @@ import {
   writeAgentsTabCache,
 } from "../../utils/agentSkillsAgentsTabCache.js";
 import { mergeBuiltinAgent, normalizeBuiltinAgent } from "../../utils/agentSkillsHelpers.js";
-import KnowledgeMountManager from "./KnowledgeMountManager.vue";
 
 const emit = defineEmits(["registry-changed"]);
 
@@ -80,14 +84,27 @@ const configServiceEnabled = ref(true);
 const selectedSkillNames = ref([]);
 const configSaving = ref(false);
 
-const agentDetailOpen = ref(false);
-const agentDetailLoading = ref(false);
-const agentDetail = ref(null);
-const agentPreviewPath = ref("");
-const agentPreviewContent = ref("");
-const agentPreviewLoading = ref(false);
-const agentPreviewDirty = ref(false);
-const agentPreviewSaving = ref(false);
+const configActiveTab = ref("agent-md");
+const configAgentMdContent = ref("");
+const configAgentMdLoading = ref(false);
+const configAgentMdDirty = ref(false);
+const configAgentMdSaving = ref(false);
+const configStyleMdContent = ref("");
+const configStyleMdLoading = ref(false);
+const configStyleMdDirty = ref(false);
+const configStyleMdSaving = ref(false);
+
+// ── 文件夹 tab（文档树勾选） ─────────────────────
+const configFolderTreeLoading = ref(false);
+const configFolderList = ref([]);
+const configMountedFolderKeys = ref(new Set());
+const configFolderToggling = ref(new Set());
+/** folderKey -> mountId 映射，用于移除挂载 */
+const configFolderMountIdMap = ref({});
+
+// ── 工具 tab ──────────────────────────────────────
+const configToolsLoading = ref(false);
+const configAgentTools = ref([]);
 
 const externalAgentModalOpen = ref(false);
 const externalAgentSaving = ref(false);
@@ -163,7 +180,7 @@ async function loadAgents({ background = false, foreground = false } = {}) {
       agents.value.map(async (agent) => {
         try {
           const res = await fetchKnowledgeMounts(agent.id);
-          agent.mount_count = (res?.data || []).length;
+          agent.mount_count = res?.data?.length ?? 0;
         } catch {
           agent.mount_count = 0;
         }
@@ -235,7 +252,14 @@ async function openConfigDrawer(agent, kind = "builtin") {
         : agent.enabled !== false
       : agent.enabled !== false;
   selectedSkillNames.value = [...(agent.skill_names || [])];
+  configActiveTab.value = "agent-md";
   configDrawerOpen.value = true;
+  if (kind === "builtin") {
+    loadConfigAgentMd();
+    loadConfigStyleMd();
+    loadConfigFolderTree();
+    loadConfigAgentTools();
+  }
 }
 
 async function saveAgentConfig() {
@@ -265,9 +289,6 @@ async function saveAgentConfig() {
       const idx = agents.value.findIndex((a) => a.id === updated.id);
       if (idx >= 0) agents.value[idx] = mergeBuiltinAgent(agents.value[idx], updated);
       configDrawerAgent.value = mergeBuiltinAgent(configDrawerAgent.value, updated);
-      if (agentDetail.value?.id === updated.id) {
-        agentDetail.value = { ...agentDetail.value, ...updated };
-      }
       emit("registry-changed");
     }
     ui.success(t("admin.agentSkills.saved"));
@@ -280,57 +301,220 @@ async function saveAgentConfig() {
   }
 }
 
-async function openAgentDetail(agent) {
-  agentDetailOpen.value = true;
-  agentDetailLoading.value = true;
-  agentPreviewPath.value = "";
-  agentPreviewContent.value = "";
+async function loadConfigAgentMd() {
+  const agent = configDrawerAgent.value;
+  if (!agent?.id) return;
+  configAgentMdLoading.value = true;
+  configAgentMdContent.value = "";
+  configAgentMdDirty.value = false;
   try {
-    agentDetail.value = await fetchAgentProfile(agent.id);
-    if (agentDetail.value?.files?.includes("AGENT.md")) {
-      await loadAgentPreview("AGENT.md");
-    }
-  } catch (e) {
-    ui.error(e.message || t("admin.agentSkills.loadFailed"));
+    const file = await fetchAgentProfileFile(agent.id, "AGENT.md");
+    configAgentMdContent.value = file?.text || "";
+  } catch {
+    configAgentMdContent.value = "";
   } finally {
-    agentDetailLoading.value = false;
+    configAgentMdLoading.value = false;
   }
 }
 
-async function loadAgentPreview(path) {
-  if (!agentDetail.value?.id) return;
-  agentPreviewLoading.value = true;
-  agentPreviewPath.value = path;
-  agentPreviewDirty.value = false;
+async function saveConfigAgentMd() {
+  const agent = configDrawerAgent.value;
+  if (!agent?.id) return;
+  configAgentMdSaving.value = true;
   try {
-    const file = await fetchAgentProfileFile(agentDetail.value.id, path);
-    agentPreviewContent.value = file?.text || "";
-  } catch (e) {
-    agentPreviewContent.value = e.message || "";
-  } finally {
-    agentPreviewLoading.value = false;
-  }
-}
-
-async function saveAgentPreview() {
-  if (!agentDetail.value?.id || !agentPreviewPath.value) return;
-  agentPreviewSaving.value = true;
-  try {
-    await updateAgentProfileFile(
-      agentDetail.value.id,
-      agentPreviewPath.value,
-      agentPreviewContent.value
-    );
-    agentPreviewDirty.value = false;
+    await updateAgentProfileFile(agent.id, "AGENT.md", configAgentMdContent.value);
+    configAgentMdDirty.value = false;
     ui.success(t("admin.agentSkills.saved"));
-    agentDetail.value = await fetchAgentProfile(agentDetail.value.id);
-    const idx = agents.value.findIndex((a) => a.id === agentDetail.value.id);
-    if (idx >= 0) agents.value[idx] = { ...agents.value[idx], ...agentDetail.value };
-    persistCache();
   } catch (e) {
     ui.error(e.message || t("admin.agentSkills.saveFailed"));
   } finally {
-    agentPreviewSaving.value = false;
+    configAgentMdSaving.value = false;
+  }
+}
+
+async function loadConfigStyleMd() {
+  const agent = configDrawerAgent.value;
+  if (!agent?.id) return;
+  configStyleMdLoading.value = true;
+  configStyleMdContent.value = "";
+  configStyleMdDirty.value = false;
+  try {
+    const file = await fetchAgentProfileFile(agent.id, "STYLE.md");
+    configStyleMdContent.value = file?.text || "";
+  } catch {
+    configStyleMdContent.value = "";
+  } finally {
+    configStyleMdLoading.value = false;
+  }
+}
+
+async function saveConfigStyleMd() {
+  const agent = configDrawerAgent.value;
+  if (!agent?.id) return;
+  configStyleMdSaving.value = true;
+  try {
+    await updateAgentProfileFile(agent.id, "STYLE.md", configStyleMdContent.value);
+    configStyleMdDirty.value = false;
+    ui.success(t("admin.agentSkills.saved"));
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.saveFailed"));
+  } finally {
+    configStyleMdSaving.value = false;
+  }
+}
+
+// ── 文件夹 tab：加载文档树与当前挂载 ──────────────
+async function loadConfigFolderTree() {
+  const agent = configDrawerAgent.value;
+  if (!agent?.id) return;
+  configFolderTreeLoading.value = true;
+  try {
+    const [foldersRes, mountsRes] = await Promise.all([
+      import("../../api/knowledge.js").then((m) => m.fetchMountableFolders()),
+      fetchKnowledgeMounts(agent.id),
+    ]);
+    const folders = foldersRes ?? [];
+    // 按 library_label 分组构建树
+    const libMap = {};
+    for (const f of folders) {
+      const mountId = f.folder_id || f.virtual_folder_id;
+      if (!mountId) continue;
+      const lib = f.library_label || t("admin.agentSkills.unknownLibrary");
+      if (!libMap[lib]) libMap[lib] = { label: lib, scope: "library", children: [] };
+      libMap[lib].children.push({
+        key: `${f.dataset_id}::${mountId}`,
+        label: f.label,
+        scope: f.scope,
+        dataset_id: f.dataset_id,
+        folder_id: mountId,
+        document_count: f.document_count || 0,
+      });
+    }
+    const tree = Object.values(libMap);
+    // 构建已挂载 keys 及 mountId 映射
+    const mountedKeys = new Set();
+    const mountIdMap = {};
+    for (const m of mountsRes || []) {
+      const key = `${m.dataset_id}::${m.folder_id}`;
+      mountedKeys.add(key);
+      mountIdMap[key] = m.id;
+    }
+    configFolderList.value = tree;
+    configMountedFolderKeys.value = mountedKeys;
+    configFolderMountIdMap.value = mountIdMap;
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.loadFailed"));
+  } finally {
+    configFolderTreeLoading.value = false;
+  }
+}
+
+/** 将树结构拍平为展示数据（按 library 分组） */
+const folderTreeData = computed(() => {
+  const mapKey = (lib) => {
+    const node = {
+      key: lib.label,
+      label: lib.label,
+      children: lib.children ? lib.children.map((f) => ({
+        key: f.key,
+        label: f.label,
+        _folder: f,
+      })) : [],
+    };
+    return node;
+  };
+  return configFolderList.value.map(mapKey);
+});
+
+const folderCheckedKeys = computed({
+  get: () => Array.from(configMountedFolderKeys.value),
+  set: (keys) => {
+    configMountedFolderKeys.value = new Set(keys);
+  },
+});
+
+async function handleFolderCheck(keys) {
+  const agent = configDrawerAgent.value;
+  if (!agent?.id) return;
+  const prevKeys = new Set(configMountedFolderKeys.value);
+  const newKeys = new Set(keys);
+  const toAdd = [...newKeys].filter((k) => !prevKeys.has(k));
+  const toRemove = [...prevKeys].filter((k) => !newKeys.has(k));
+
+  // 先更新本地状态
+  configMountedFolderKeys.value = newKeys;
+
+  for (const key of toAdd) {
+    configFolderToggling.value = new Set([...configFolderToggling.value, key]);
+    const [dsId, folderId] = key.split("::");
+    // 从 folderList 找 entry
+    const entry = findFolderEntry(key);
+    if (!entry) continue;
+    try {
+      const res = await addKnowledgeMount(agent.id, {
+        datasetId: dsId,
+        folderId,
+        scope: entry.scope,
+        label: entry.label,
+      });
+      // 记录新挂载的 mountId
+      if (res?.id) {
+        configFolderMountIdMap.value = { ...configFolderMountIdMap.value, [key]: res.id };
+      }
+    } catch (e) {
+      configMountedFolderKeys.value = prevKeys;
+      ui.error(e.message || t("admin.agentSkills.saveFailed"));
+    } finally {
+      const s = new Set(configFolderToggling.value);
+      s.delete(key);
+      configFolderToggling.value = s;
+    }
+  }
+
+  for (const key of toRemove) {
+    configFolderToggling.value = new Set([...configFolderToggling.value, key]);
+    const mountId = findMountId(key);
+    if (!mountId) continue;
+    try {
+      await removeKnowledgeMount(agent.id, mountId);
+    } catch (e) {
+      configMountedFolderKeys.value = prevKeys;
+      ui.error(e.message || t("admin.agentSkills.saveFailed"));
+    } finally {
+      const s = new Set(configFolderToggling.value);
+      s.delete(key);
+      configFolderToggling.value = s;
+    }
+  }
+}
+
+function findFolderEntry(key) {
+  for (const lib of configFolderList.value) {
+    for (const child of lib.children || []) {
+      if (child.key === key) return child;
+    }
+  }
+  return null;
+}
+
+function findMountId(key) {
+  return configFolderMountIdMap.value[key] || key.split("::")[1];
+}
+
+// ── 工具 tab ──────────────────────────────────────
+async function loadConfigAgentTools() {
+  const agent = configDrawerAgent.value;
+  if (!agent?.id) return;
+  configToolsLoading.value = true;
+  try {
+    const res = await fetchAgentTools();
+    const allTools = res?.data ?? [];
+    const runtimeNames = new Set(agent.runtime_tool_names || []);
+    configAgentTools.value = allTools.filter((t) => runtimeNames.has(t.tool_id));
+  } catch (e) {
+    configAgentTools.value = [];
+  } finally {
+    configToolsLoading.value = false;
   }
 }
 
@@ -475,9 +659,8 @@ defineExpose({
       v-for="agent in filteredAgents"
       :key="agent.id"
       size="small"
-      class="agent-card agent-card--clickable"
-      :class="{ 'agent-card--disabled': !agent.enabled }"
-      @click="openAgentDetail(agent)"
+      class="agent-card"
+      :class="{ 'agent-card--disabled': !agent.enabled, 'agent-card--clickable': false }"
     >
       <div
         class="agent-card__progress"
@@ -519,9 +702,9 @@ defineExpose({
           <span class="agent-card__meta-item">
             {{ t("admin.agentSkills.skillsCount", { count: agent.skill_names?.length || 0 }) }}
           </span>
-          <span v-if="agent.mount_count > 0" class="agent-card__meta-sep" aria-hidden="true">·</span>
-          <span v-if="agent.mount_count > 0" class="agent-card__meta-item">
-            {{ t("admin.agentSkills.foldersCount", { count: agent.mount_count }) }}
+          <span class="agent-card__meta-sep" aria-hidden="true">·</span>
+          <span class="agent-card__meta-item">
+            {{ t("admin.agentSkills.foldersCount", { count: agent.mount_count ?? 0 }) }}
           </span>
           <template v-if="!agent.enabled">
             <span class="agent-card__meta-sep" aria-hidden="true">·</span>
@@ -613,83 +796,6 @@ defineExpose({
   </div>
 
   <Teleport to="body">
-    <NDrawer v-model:show="agentDetailOpen" :width="864" placement="right">
-      <NDrawerContent
-        :title="t('admin.agentSkills.agentDetailTitle', { name: agentDetail?.title || '' })"
-        closable
-      >
-        <div v-if="agentDetailLoading">{{ t("common.loading") }}</div>
-        <template v-else-if="agentDetail">
-          <NText depth="3">{{ agentDetail.description }}</NText>
-
-          <!-- 运行时工具列表 -->
-          <div v-if="agentDetail.runtime_tool_names?.length" style="margin: 14px 0">
-            <NText depth="2" style="display: block; margin-bottom: 6px">
-              {{ t("admin.agentSkills.toolsTitle") }}（{{ agentDetail.runtime_tool_names.length }}）
-            </NText>
-            <div style="display: flex; flex-wrap: wrap; gap: 4px">
-              <NTag
-                v-for="tool in agentDetail.runtime_tool_names"
-                :key="tool"
-                size="small"
-                :bordered="false"
-              >
-                {{ tool }}
-              </NTag>
-            </div>
-          </div>
-
-          <NText depth="3" style="display: block; margin: 14px 0">
-            {{ t("admin.agentSkills.agentConfigHint") }}
-          </NText>
-          <NSpace style="margin: 0 0 14px" :size="10" wrap>
-            <NTag
-              v-for="f in agentDetail.files || []"
-              :key="f"
-              size="small"
-              :bordered="false"
-              checkable
-              :checked="agentPreviewPath === f"
-              @click="loadAgentPreview(f)"
-            >
-              {{ f }}
-            </NTag>
-          </NSpace>
-          <NCard v-if="agentPreviewPath" size="small" :title="agentPreviewPath">
-            <div v-if="agentPreviewLoading">{{ t("common.loading") }}</div>
-            <template v-else>
-              <NInput
-                v-model:value="agentPreviewContent"
-                type="textarea"
-                :rows="18"
-                @update:value="agentPreviewDirty = true"
-              />
-              <NSpace style="margin-top: 10px">
-                <NButton
-                  type="primary"
-                  size="small"
-                  :loading="agentPreviewSaving"
-                  :disabled="!agentPreviewDirty"
-                  @click="saveAgentPreview"
-                >
-                  {{ t("common.save") }}
-                </NButton>
-                <IconAction
-                  variant="table"
-                  type="primary"
-                  :label="t('admin.agentSkills.configure')"
-                  :icon="SettingsOutline"
-                  @click="openConfigDrawer(agentDetail)"
-                />
-              </NSpace>
-            </template>
-          </NCard>
-        </template>
-      </NDrawerContent>
-    </NDrawer>
-  </Teleport>
-
-  <Teleport to="body">
     <NDrawer v-model:show="configDrawerOpen" :width="640" placement="right">
       <NDrawerContent
         :title="t('admin.agentSkills.configDrawerTitle', { name: configDrawerDisplayName() })"
@@ -698,7 +804,8 @@ defineExpose({
         body-content-style="overflow-x: hidden;"
       >
         <div class="agent-config-drawer">
-          <section class="agent-config-drawer__section">
+          <!-- 通用设置（始终显示在 tab 上方） -->
+          <section class="agent-config-drawer__section" style="margin-bottom: 16px;">
             <div class="agent-config-drawer__section-title">
               {{ t("admin.agentSkills.configSectionGeneral") }}
             </div>
@@ -747,57 +854,186 @@ defineExpose({
             </div>
           </section>
 
-          <template v-if="configDrawerKind === 'builtin' && configDrawerAgent?.skills_configurable">
-            <NDivider class="agent-config-drawer__divider" />
-            <section class="agent-config-drawer__section">
-              <div class="agent-config-drawer__section-head">
-                <div class="agent-config-drawer__section-title">
-                  {{ t("admin.agentSkills.configSectionSkills") }}
-                </div>
-                <NTag size="small" :bordered="false" class="agent-config-drawer__skill-count">
-                  {{ t("admin.agentSkills.skillsCount", { count: selectedSkillCount }) }}
-                </NTag>
-              </div>
-              <NText depth="3" class="agent-config-drawer__section-hint">
-                {{ t("admin.agentSkills.skillPickerHint") }}
-              </NText>
-              <NCheckboxGroup v-model:value="selectedSkillNames" class="agent-config-drawer__skills">
-                <div class="agent-config-drawer__skill-list">
-                  <div
-                    v-for="opt in skillPickerOptions"
-                    :key="opt.value"
-                    class="agent-skill-option"
-                    :class="{
-                      'agent-skill-option--checked': selectedSkillNames.includes(opt.value),
-                      'agent-skill-option--disabled': opt.disabled,
-                    }"
-                  >
-                    <NCheckbox :value="opt.value" :disabled="opt.disabled" class="agent-skill-option__checkbox">
-                      <div class="agent-skill-option__body">
-                        <span class="agent-skill-option__title">{{ opt.title }}</span>
-                        <span v-if="opt.title !== opt.name" class="agent-skill-option__name">
-                          {{ opt.name }}
-                        </span>
-                        <span v-if="opt.description" class="agent-skill-option__desc">
-                          {{ opt.description }}
-                        </span>
-                      </div>
-                    </NCheckbox>
-                  </div>
-                </div>
-              </NCheckboxGroup>
-            </section>
-          </template>
-
-          <!-- 知识库挂载 -->
+          <!-- Tab 配置：AGENT.md / STYLE.md / 文件夹 / 技能 / 工具（仅内置智能体） -->
           <template v-if="configDrawerKind === 'builtin'">
-            <NDivider class="agent-config-drawer__divider" />
-            <section class="agent-config-drawer__section">
-              <div class="agent-config-drawer__section-title">
-                {{ t("admin.agentSkills.configSectionKnowledgeMounts") }}
-              </div>
-              <KnowledgeMountManager :agent-id="configDrawerAgent.id" />
-            </section>
+            <n-tabs v-model:value="configActiveTab" type="line" size="small" style="margin-top: 4px;">
+              <n-tab-pane name="agent-md" tab="AGENT.md">
+                <div v-if="configAgentMdLoading" style="padding: 20px 0;">
+                  {{ t("common.loading") }}
+                </div>
+                <template v-else>
+                  <NInput
+                    v-model:value="configAgentMdContent"
+                    type="textarea"
+                    :rows="16"
+                    :placeholder="t('admin.agentSkills.agentConfigHint')"
+                    @update:value="configAgentMdDirty = true"
+                  />
+                  <NSpace style="margin-top: 10px">
+                    <NButton
+                      type="primary"
+                      size="small"
+                      :loading="configAgentMdSaving"
+                      :disabled="!configAgentMdDirty"
+                      @click="saveConfigAgentMd"
+                    >
+                      {{ t("common.save") }}
+                    </NButton>
+                  </NSpace>
+                </template>
+              </n-tab-pane>
+              <n-tab-pane name="style-md" tab="STYLE.md">
+                <div v-if="configStyleMdLoading" style="padding: 20px 0;">
+                  {{ t("common.loading") }}
+                </div>
+                <template v-else>
+                  <NInput
+                    v-model:value="configStyleMdContent"
+                    type="textarea"
+                    :rows="16"
+                    :placeholder="t('admin.agentSkills.stylePlaceholder')"
+                    @update:value="configStyleMdDirty = true"
+                  />
+                  <NSpace style="margin-top: 10px">
+                    <NButton
+                      type="primary"
+                      size="small"
+                      :loading="configStyleMdSaving"
+                      :disabled="!configStyleMdDirty"
+                      @click="saveConfigStyleMd"
+                    >
+                      {{ t("common.save") }}
+                    </NButton>
+                  </NSpace>
+                </template>
+              </n-tab-pane>
+              <n-tab-pane name="files" :tab="t('admin.agentSkills.tabFiles')">
+                <div class="agent-config-drawer__tab-content">
+                  <NSpin :show="configFolderTreeLoading">
+                    <template v-if="!configFolderTreeLoading">
+                      <div v-if="!folderTreeData.length" style="padding: 20px 0;">
+                        <NEmpty :description="t('admin.agentSkills.knowledgeMountsEmpty')" />
+                      </div>
+                      <template v-else>
+                        <NText depth="3" class="agent-config-drawer__section-hint">
+                          {{ t("admin.agentSkills.knowledgeMountsHint") }}
+                        </NText>
+                        <NScrollbar style="max-height: 400px;">
+                          <div class="agent-config-drawer__folder-tree">
+                            <div
+                              v-for="lib in folderTreeData"
+                              :key="lib.key"
+                              class="folder-tree__library"
+                            >
+                              <div class="folder-tree__library-title">
+                                <NText depth="2" class="folder-tree__library-label">{{ lib.label }}</NText>
+                              </div>
+                              <div class="folder-tree__items">
+                                <div
+                                  v-for="child in lib.children"
+                                  :key="child.key"
+                                  class="folder-tree__item"
+                                  :class="{ 'folder-tree__item--toggling': configFolderToggling.has(child.key) }"
+                                >
+                                  <NCheckbox
+                                    :checked="folderCheckedKeys.includes(child.key)"
+                                    :disabled="configFolderToggling.has(child.key)"
+                                    @update:checked="
+                                      (v) => {
+                                        const keys = v
+                                          ? [...folderCheckedKeys, child.key]
+                                          : folderCheckedKeys.filter((k) => k !== child.key);
+                                        handleFolderCheck(keys);
+                                      }
+                                    "
+                                  >
+                                    <div class="folder-tree__item-body">
+                                      <span class="folder-tree__item-label">{{ child.label }}</span>
+                                      <span class="folder-tree__item-meta">
+                                        {{ child._folder.document_count }} 文档
+                                      </span>
+                                    </div>
+                                  </NCheckbox>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </NScrollbar>
+                      </template>
+                    </template>
+                  </NSpin>
+                </div>
+              </n-tab-pane>
+              <n-tab-pane name="skills" :tab="t('admin.agentSkills.tabSkills')">
+                <div class="agent-config-drawer__tab-content">
+                  <template v-if="configDrawerAgent?.skills_configurable">
+                    <NText depth="3" class="agent-config-drawer__section-hint">
+                      {{ t("admin.agentSkills.skillPickerHint") }}
+                    </NText>
+                    <NCheckboxGroup v-model:value="selectedSkillNames" class="agent-config-drawer__skills">
+                      <div class="agent-config-drawer__skill-list">
+                        <div
+                          v-for="opt in skillPickerOptions"
+                          :key="opt.value"
+                          class="agent-skill-option"
+                          :class="{
+                            'agent-skill-option--checked': selectedSkillNames.includes(opt.value),
+                            'agent-skill-option--disabled': opt.disabled,
+                          }"
+                        >
+                          <NCheckbox :value="opt.value" :disabled="opt.disabled" class="agent-skill-option__checkbox">
+                            <div class="agent-skill-option__body">
+                              <span class="agent-skill-option__title">{{ opt.title }}</span>
+                              <span v-if="opt.title !== opt.name" class="agent-skill-option__name">
+                                {{ opt.name }}
+                              </span>
+                              <span v-if="opt.description" class="agent-skill-option__desc">
+                                {{ opt.description }}
+                              </span>
+                            </div>
+                          </NCheckbox>
+                        </div>
+                      </div>
+                    </NCheckboxGroup>
+                  </template>
+                  <NText v-else depth="3">
+                    该智能体不支持技能配置
+                  </NText>
+                </div>
+              </n-tab-pane>
+              <n-tab-pane name="tools" :tab="t('admin.agentSkills.tabTools')">
+                <div class="agent-config-drawer__tab-content">
+                  <NSpin :show="configToolsLoading">
+                    <template v-if="!configToolsLoading">
+                      <div v-if="!configAgentTools.length" style="padding: 20px 0;">
+                        <NEmpty :description="t('admin.agentSkills.noToolsAvailable')" />
+                      </div>
+                      <div v-else class="agent-config-drawer__tools-list">
+                        <NText depth="3" class="agent-config-drawer__section-hint">
+                          {{ t("admin.agentSkills.agentToolsHint", { count: configAgentTools.length }) }}
+                        </NText>
+                        <div
+                          v-for="tool in configAgentTools"
+                          :key="tool.tool_id"
+                          class="agent-tool-item"
+                        >
+                          <div class="agent-tool-item__head">
+                            <span class="agent-tool-item__name">{{ tool.tool_id }}</span>
+                            <NTag size="tiny" :bordered="false">{{ tool.tool_type }}</NTag>
+                            <NTag size="tiny" :bordered="false">
+                              {{ t(`admin.agentSkills.toolCategory.${tool.category}`, tool.category) }}
+                            </NTag>
+                          </div>
+                          <div v-if="tool.description" class="agent-tool-item__desc">
+                            {{ tool.description }}
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </NSpin>
+                </div>
+              </n-tab-pane>
+            </n-tabs>
           </template>
         </div>
         <template #footer>
@@ -887,5 +1123,106 @@ defineExpose({
   justify-content: flex-end;
   gap: 6px;
   margin-bottom: 12px;
+}
+
+/* ── 配置抽屉 tab 内容容器（防止左右滑动） ── */
+.agent-config-drawer__tab-content {
+  overflow-x: hidden;
+}
+
+/* ── 文件夹树 ── */
+.agent-config-drawer__folder-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.folder-tree__library-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--platform-border-soft, #e8e8e8);
+}
+
+.folder-tree__library-label {
+  font-weight: 600;
+  font-size: var(--platform-font-size-sm, 13px);
+}
+
+.folder-tree__items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+}
+
+.folder-tree__item {
+  display: flex;
+  align-items: center;
+  padding: 3px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.folder-tree__item:hover {
+  background: var(--platform-hover-bg, rgba(0,0,0,0.03));
+}
+
+.folder-tree__item--toggling {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.folder-tree__item-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-tree__item-label {
+  font-size: var(--platform-font-size-sm, 13px);
+  color: var(--platform-text, #333);
+}
+
+.folder-tree__item-meta {
+  font-size: var(--platform-font-size-xs, 11px);
+  color: var(--platform-text-tertiary, #999);
+}
+
+/* ── 工具列表 ── */
+.agent-config-drawer__tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-tool-item {
+  border: 1px solid var(--platform-border, #e0e0e0);
+  border-radius: var(--platform-card-radius, 6px);
+  background: #fafafa;
+  padding: 8px 10px;
+}
+
+.agent-tool-item__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.agent-tool-item__name {
+  font-size: var(--platform-font-size-sm, 13px);
+  font-weight: 500;
+  color: var(--platform-text, #333);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+}
+
+.agent-tool-item__desc {
+  margin-top: 4px;
+  font-size: var(--platform-font-size-sm, 13px);
+  color: var(--platform-text-tertiary, #999);
+  line-height: 1.4;
 }
 </style>

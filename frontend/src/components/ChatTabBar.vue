@@ -67,7 +67,7 @@ onUnmounted(() => {
         @click="emit('switch', tab.id)"
       >
         <span v-if="tabStreaming[tab.id]" class="chat-tab__spinner" aria-hidden="true">
-          <CurveAnimation preset="rose-three" :size="18" inline rotate label="" />
+          <CurveAnimation preset="rose-three" :size="16" inline rotate label="" />
         </span>
         <span v-else-if="tabHasContent[tab.id]" class="chat-tab__check" aria-hidden="true">
           <n-icon :size="10" :component="CheckmarkOutline" />
@@ -152,15 +152,15 @@ onUnmounted(() => {
   flex: 0 0 calc(100% / 7);
   max-width: calc(100% / 7);
   min-width: 0;
-  height: 32px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   gap: 0;
-  padding: 0 8px 0 12px;
+  padding: 0 6px 0 10px;
   border-right: 1px solid var(--platform-border);
   background: var(--platform-bg-secondary);
   color: var(--platform-text-tertiary);
-  font-size: 12px;
+  font-size: 11px;
   font-family: inherit;
   line-height: 1;
   cursor: pointer;
@@ -197,8 +197,8 @@ onUnmounted(() => {
   content: "";
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
+  top: 3px;
+  bottom: 3px;
   width: 2.5px;
   border-radius: 1px;
   background: var(--platform-accent);
@@ -219,7 +219,7 @@ onUnmounted(() => {
   box-sizing: border-box;
   flex: none;
   width: 36px;
-  height: 32px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -314,8 +314,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  height: 32px;
-  font-size: 12px;
+  height: 28px;
+  font-size: 11px;
   color: var(--platform-text-tertiary);
   line-height: 1;
   white-space: nowrap;
@@ -337,8 +337,8 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 32px;
+  width: 24px;
+  height: 28px;
   background: transparent;
   color: var(--platform-text-tertiary);
   cursor: pointer;

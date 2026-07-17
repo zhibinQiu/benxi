@@ -43,7 +43,7 @@ async function loadMounts() {
   loading.value = true;
   try {
     const res = await fetchKnowledgeMounts(props.agentId);
-    mounts.value = res?.data ?? [];
+    mounts.value = res ?? [];
   } catch (e) {
     message.error("加载挂载列表失败");
   } finally {
@@ -75,7 +75,7 @@ async function openPicker() {
   folderMap.value = {};
   try {
     const res = await fetchMountableFolders();
-    const folders = res?.data ?? [];
+    const folders = res ?? [];
     for (const f of folders) {
       const mountId = f.folder_id || f.virtual_folder_id;
       if (mountId) {
@@ -128,7 +128,7 @@ async function handleAddMount(key) {
         margin-bottom: 8px;
       "
     >
-      <NText depth="3" style="font-size: 13px">
+      <NText depth="3" style="font-size: var(--platform-font-size-sm)">
         {{ t("admin.agentSkills.knowledgeMountsHint") }}
       </NText>
       <NButton size="tiny" secondary class="platform-btn--create" @click="openPicker">

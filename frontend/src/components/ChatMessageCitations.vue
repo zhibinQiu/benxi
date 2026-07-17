@@ -127,7 +127,7 @@ function openDocument(citation, event) {
 }
 
 .chat-citations-title {
-  font-size: 14px;
+  font-size: var(--platform-font-size-lg);
   font-weight: 600;
   color: var(--platform-text-secondary);
   margin-bottom: 10px;
@@ -135,7 +135,7 @@ function openDocument(citation, event) {
 
 .chat-citations-hint {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.5;
   color: var(--platform-text-tertiary);
 }
@@ -159,7 +159,7 @@ function openDocument(citation, event) {
   border: none;
   background: none;
   color: var(--platform-accent);
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   cursor: pointer;
 }
 
@@ -169,17 +169,17 @@ function openDocument(citation, event) {
 
 
 .chat-citation-score {
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   color: var(--platform-text-tertiary);
 }
 
 .chat-citation-chevron {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
 }
 
 .chat-citation-doc {
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   color: var(--platform-text);
   max-width: 100%;
   overflow: hidden;
@@ -206,7 +206,7 @@ function openDocument(citation, event) {
   border-radius: 10px;
   background: var(--platform-accent-muted);
   border: 1px solid var(--platform-accent-border-soft);
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.6;
   color: var(--platform-text);
 }

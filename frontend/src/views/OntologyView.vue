@@ -58,8 +58,10 @@
       v-model:value="activeTab"
       type="line"
       animated
-      @update:value="onTabChange"
     >
+      <n-tab-pane name="architecture" tab="本体感知架构">
+        <SystemArchitectureDiagram />
+      </n-tab-pane>
       <n-tab-pane name="entity-types" :tab="`实体类型 (${stats.entityTypeCount})`">
         <EntityTypesPanel
           ref="entityTypesRef"
@@ -97,6 +99,7 @@ import { RefreshOutline, FlashOutline, CloudDownloadOutline } from "@vicons/ioni
 import EntityTypesPanel from "../components/ontology/EntityTypesPanel.vue";
 import RelationTypesPanel from "../components/ontology/RelationTypesPanel.vue";
 import AxiomsPanel from "../components/ontology/AxiomsPanel.vue";
+import SystemArchitectureDiagram from "../components/ontology/SystemArchitectureDiagram.vue";
 import {
   fetchOntologyEntityTypes,
   fetchOntologyRelationTypes,
@@ -118,7 +121,7 @@ const { t } = useI18n();
 const message = useMessage();
 const ui = usePlatformUi();
 
-const activeTab = ref("entity-types");
+const activeTab = ref("architecture");
 const loading = ref(false);
 const entityTypes = ref([]);
 const relationTypes = ref([]);
@@ -263,9 +266,6 @@ function refreshAll() {
   fetchAll();
 }
 
-function onTabChange(tab) {
-  // tab switch
-}
 
 function handleSeedDefaults() {
   ui.confirmAction({

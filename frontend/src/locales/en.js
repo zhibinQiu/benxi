@@ -1800,6 +1800,7 @@ export default {
       tabMemory: "Memory",
       tabStyles: "Style",
       tabAipKeys: "Keys",
+      tabFiles: "Folders",
       pageTitle: "Multi-Agent",
       toolbarHint: {
         agents: "Manage built-in and external AIP agents",
@@ -1883,7 +1884,10 @@ export default {
       knowledgeMountAdded: "Knowledge folder mounted",
       knowledgeMountRemoved: "Mount removed",
       knowledgeMountPickFolder: "Select Knowledge Folder",
+      unknownLibrary: "Uncategorized",
       toolsCount: "{{count}} tools",
+      agentToolsHint: "This agent has {{count}} available atomic tools",
+      noToolsAvailable: "No tools available for this agent",
       skillsCount: "{{count}} skills",
       foldersCount: "{{count}} folders",
       activeConversations: "{{count}} active sessions",
@@ -2082,6 +2086,7 @@ export default {
         tts: { title: "Text-to-speech", hint: "TTS (SiliconFlow / OpenAI-compatible)" },
         pdf2zh: { title: "PDF translation", hint: "pdf2zh document translation API" },
         searxng: { title: "Web Retrieval Service", hint: "SearXNG search engine + FireCrawl full-text extraction for report and AI agent retrieval" },
+        neo4j: { title: "Graph Database", hint: "Neo4j knowledge graph store (ontology + relation reasoning + entity management)" },
         browser_rpa: { title: "Browser RPA", hint: "AI agent web automation (headless Chromium)" },
         ragflow_api: { title: "Knowledge base API", hint: "Knowledge retrieval and document sync HTTP API" },
         knowflow_backend: {
@@ -2173,6 +2178,10 @@ export default {
         database: "Database",
         rootPassword: "root password",
         dockerContainer: "Docker container",
+        neo4jUri: "Connection URI",
+        neo4jUser: "Username",
+        neo4jPassword: "Password",
+        neo4jDatabase: "Database name",
         browserRpaEnabled: "Enable browser RPA",
         browserRpaHeadless: "Headless mode (recommended for servers)",
         browserRpaAllowedDomains: "Domain allowlist",
@@ -2218,6 +2227,9 @@ export default {
         mysqlHost: "Empty with knowledge base enabled uses built-in MySQL",
         mysqlDb: "rag_flow",
         mysqlContainer: "kb-mysql (docker exec fallback if TCP fails)",
+        neo4jUri: "bolt://host:7687",
+        neo4jUser: "neo4j",
+        neo4jDatabase: "neo4j (default DB name)",
       },
       hints: {
         platformApi:
@@ -2244,6 +2256,9 @@ export default {
           "Maps to extension backend, Web UI, iframe base and proxy prefix settings. API for RBAC/KB auth; Web UI is knowledge admin; iframe base for embedded Q&A. Takes effect immediately.",
         ragflowMysql:
           "Platform syncs tenant models and cleans conflicting accounts via MySQL. Maps to knowledge base MySQL env vars; use server IP for remote dev.",
+        neo4j:
+          "Neo4j graph database for ontology definitions (entity types/relation types/axioms) + knowledge graph storage. " +
+          "Configured via <code>NEO4J_URI</code>, <code>NEO4J_USER</code>, <code>NEO4J_PASSWORD</code> env vars. Takes effect immediately.",
       },
     },
   },
@@ -2281,7 +2296,6 @@ export default {
   },
   subscriptions: {
     title: "Bookmarks",
-    heroTitle: "Your bookmarks are here. How can I help?",
     newSearch: "New search",
     searchAgainPlaceholder: "Search saved articles…",
     needKeyword: "Enter a search keyword",
@@ -2313,6 +2327,8 @@ export default {
     needUrl: "Paste an article URL",
     ingestedWithSummary: "Saved with AI summary",
     ingested: "Saved",
+    deleteConfirm: "Delete this bookmark? This cannot be undone.",
+    deleted: "Deleted",
   },
   subscriptionItem: {
     wechatBadge: "WeChat",

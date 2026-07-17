@@ -8,7 +8,20 @@
  * 1. 所有颜色使用 `--platform-*` CSS 变量，禁止硬编码
  * 2. 扁平极简风格：无渐变、无毛玻璃、无厚重阴影
  * 3. 排除特定的特殊按钮类（header-icon-btn、icon-action、table-icon-action 等）
+ *
+ * 按钮分类（与 --btn-* 变量配合使用）：
+ *   分类A：无背板按钮（菜单栏）     → quaternary / tertiary
+ *   分类B：有背板图标按钮           → .icon-action 系列
+ *   分类C：重要文字按钮（保存/更新/确认）→ primary / info
+ *   分类D：一般文字按钮             → default / secondary（描边）
+ *   分类E：纯文字按钮               → tertiary（无边框，hover 有衬底）
+ *   分类F：删除/危险按钮            → error
  * ============================================================================= */
+
+/* ── 全局按钮字重 ── */
+.n-button {
+  font-weight: var(--btn-font-weight, 500);
+}
 
 /* ── 所有按钮统一切换动画 + 点击反馈 ── */
 .n-button:not(.n-button--disabled) {
@@ -30,7 +43,7 @@
   display: none !important;
 }
 
-/* ── 1. 主按钮（primary / info）：深色背景，白字，无边框 ── */
+/* ── 1. 重要文字按钮（primary / info）：深色背景，白字，无边框 ── */
 .n-button.n-button--primary-type:not(.n-button--disabled),
 .n-button.n-button--info-type:not(.n-button--disabled) {
   background: var(--platform-text) !important;
@@ -73,7 +86,7 @@
   background: var(--platform-text-secondary) !important;
 }
 
-/* ── 2. 次要按钮（default / secondary）：透明底 + 描边 ── */
+/* ── 2. 一般文字按钮（default / secondary）：透明底 + 描边 ── */
 .n-button.n-button--default-type:not(.n-button--disabled),
 .n-button.n-button--secondary-type:not(.n-button--disabled) {
   background: transparent !important;
@@ -91,7 +104,9 @@
   background: var(--platform-bg-secondary) !important;
 }
 
-/* ── 3. 轻量按钮（tertiary / quaternary）：透明无边框 ── */
+/* ── 3. 无背板按钮（quaternary / tertiary）：透明无边框
+ *    quaternary → 菜单栏/工具栏图标按钮（无背板）
+ *    tertiary   → 纯文字链接风格按钮 ── */
 .n-button.n-button--tertiary-type:not(.n-button--disabled),
 .n-button.n-button--quaternary-type:not(.n-button--disabled) {
   background: transparent !important;
@@ -106,7 +121,7 @@
   color: var(--platform-text) !important;
 }
 
-/* ── 4. 语义色按钮 ── */
+/* ── 4. 语义色按钮（warning / error / success） ── */
 
 /* 警告（warning）：描边风格 */
 .n-button.n-button--warning-type:not(.n-button--disabled) {
@@ -172,9 +187,9 @@
 .n-button.icon-action.n-button--circle:not(.table-icon-action):not(.header-icon-btn) {
   border-radius: var(--platform-card-radius) !important;
 }
-/* theme 变体：hover 时主题色背景 */
+/* theme 变体：hover 时灰色背景 */
 .n-button.icon-action.icon-action--theme:not(.table-icon-action):not(.header-icon-btn):hover {
-  background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%) !important;
+  background: var(--platform-toolbar-bg) !important;
 }
 
 /* ── 6. 禁用按钮 ── */

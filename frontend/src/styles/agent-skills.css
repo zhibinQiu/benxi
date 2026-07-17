@@ -4,15 +4,6 @@
   font-size: var(--platform-font-size-sm);
   line-height: 1.45;
 }
-.routing-catalog-link {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: var(--platform-font-size-xs);
-}
-.routing-catalog-drawer__body {
-  max-height: calc(100vh - 180px);
-  overflow: auto;
-  margin: 0;
-}
 .agent-card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
@@ -56,9 +47,9 @@
   min-width: 0;
 }
 .agent-card-title {
-  font-size: 13px;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
+  line-height: 1.4;
 }
 .agent-card__head :deep(.agent-card__badge) {
   font-size: var(--platform-font-size-micro);
@@ -88,8 +79,9 @@
   -webkit-line-clamp: 3;
   line-clamp: 3;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.5;
+  color: var(--platform-text-tertiary);
 }
 .agent-card__bottom {
   display: flex;

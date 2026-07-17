@@ -5,21 +5,24 @@ html[data-theme="light"] {
 
   /* =============================================
    * 统一字号层级（语义化）
-   *   xl   → 13px   大标题（弹窗/页面标题）
-   *   lg   → 12px   大号正文/功能标题
-   *   base → 11px   标准正文
-   *   sm   → 10px   次要正文/说明文字
-   *   xs   → 9px    辅助信息/元数据
-   *   micro→ 8px    标签/徽章
-   *   nano → 7px    极小型（表头大写等）
+   *   xl   → 14px   弹窗/页面大标题
+   *   lg   → 14px   大号正文/功能标题
+   *   base → 13px   标准正文
+   *   sm   → 12px   次要正文/说明文字
+   *   xs   → 9px    辅助信息/元数据 ↓ 不变
+   *   micro→ 8px    标签/徽章      ↓ 不变
+   *   nano → 7px    极小型（表头大写等）↓ 不变
    *
    * 同一语义的角色在各处使用同一个变量。
    * 禁止硬编码 font-size（阅读类特殊场景除外）。
+   *
+   * 大标题（30px 主标题、弹窗标题 16px 等）与
+   * 辅助字体（xs/micro/nano）保持原有大小不变。
    * ============================================= */
-  --platform-font-size-xl: 13px;
-  --platform-font-size-lg: 12px;
-  --platform-font-size-base: 11px;
-  --platform-font-size-sm: 10px;
+  --platform-font-size-xl: 14px;
+  --platform-font-size-lg: 14px;
+  --platform-font-size-base: 13px;
+  --platform-font-size-sm: 12px;
   --platform-font-size-xs: 9px;
   --platform-font-size-micro: 8px;
   --platform-font-size-nano: 7px;
@@ -29,6 +32,25 @@ html[data-theme="light"] {
   --platform-control-height-md: 42px;
   --platform-control-height-sm: 32px;
   --platform-menu-item-height: 40px;
+
+  /* =============================================
+   * 按钮设计令牌（Button Design Tokens）
+   *   字体、尺寸、圆角等在此集中定义。
+   *   组件/样式引用这些变量，修改一处即全局生效。
+   *   注意：Naive UI theme overrides 不支持 CSS 变量，
+   *   因此 platformTheme.js 中保持对应静态值并附注释。
+   * ============================================= */
+  --btn-font-size: var(--platform-font-size-base);   /* 13px */
+  --btn-font-size-sm: var(--platform-font-size-sm);  /* 12px */
+  --btn-font-weight: 500;
+  --btn-height-lg: 38px;    /* 大号操作栏按钮 */
+  --btn-height-md: 36px;    /* 标准按钮 */
+  --btn-height-sm: 32px;    /* 对话框/工具栏按钮 */
+  --btn-radius: 8px;        /* 标准圆角 */
+  --btn-radius-sm: 6px;     /* 小按钮/对话框圆角 */
+  --btn-padding-x: 16px;    /* 水平内边距 */
+  --btn-padding-x-sm: 12px; /* 小按钮水平内边距 */
+  --btn-gap: 6px;           /* 图标与文字间距 */
 
   --platform-font:
     "Inter", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui,
@@ -270,4 +292,17 @@ html[data-theme="dark"] {
   --platform-card-hover-border-color: var(--platform-card-border-color);
   --platform-card-hover-transform: none;
   --platform-card-transition: border-color 0.22s var(--platform-ease-smooth, ease);
+
+  /* ── 按钮设计令牌（暗色主题） ── */
+  --btn-font-size: var(--platform-font-size-base);
+  --btn-font-size-sm: var(--platform-font-size-sm);
+  --btn-font-weight: 500;
+  --btn-height-lg: 38px;
+  --btn-height-md: 36px;
+  --btn-height-sm: 32px;
+  --btn-radius: 8px;
+  --btn-radius-sm: 6px;
+  --btn-padding-x: 16px;
+  --btn-padding-x-sm: 12px;
+  --btn-gap: 6px;
 }

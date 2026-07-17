@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, nextTick, reactive, ref, watch } from "vue";
+import { computed, defineAsyncComponent, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { SearchOutline, RefreshOutline, DownloadOutline } from "@vicons/ionicons5";
 import IconAction from "../../components/IconAction.vue";
@@ -7,7 +7,6 @@ import FeatureSubsystemShell from "../../components/FeatureSubsystemShell.vue";
 import { resolveAgentSkillsTab } from "../../constants/agentSkillsTabs.js";
 import { useI18n } from "../../composables/useI18n";
 import { readPanelLoading } from "../../utils/panelExpose.js";
-import { writeRoutingCatalogCache } from "../../utils/agentSkillsRoutingCatalogCache.js";
 
 const AgentsTabPanel = defineAsyncComponent(
   () => import("../../components/aip/AgentsTabPanel.vue")
@@ -21,14 +20,8 @@ const ToolsTabPanel = defineAsyncComponent(
 const MemoryTabPanel = defineAsyncComponent(
   () => import("../../components/aip/MemoryTabPanel.vue")
 );
-const StyleTabPanel = defineAsyncComponent(
-  () => import("../../components/aip/StyleTabPanel.vue")
-);
 const AipKeysPanel = defineAsyncComponent(
   () => import("../../components/aip/AipKeysPanel.vue")
-);
-const RoutingCatalogDrawer = defineAsyncComponent(
-  () => import("../../components/aip/RoutingCatalogDrawer.vue")
 );
 
 const { t } = useI18n();
@@ -42,29 +35,18 @@ const agentsPanelRef = ref(null);
 const skillsPanelRef = ref(null);
 const toolsPanelRef = ref(null);
 const memoryPanelRef = ref(null);
-const stylePanelRef = ref(null);
 const aipKeysPanelRef = ref(null);
-const routingCatalogRef = ref(null);
-const routingCatalogReady = ref(false);
 
 const panelRefByTab = {
   agents: agentsPanelRef,
   skills: skillsPanelRef,
   tools: toolsPanelRef,
   memory: memoryPanelRef,
-  styles: stylePanelRef,
   "aip-keys": aipKeysPanelRef,
 };
 
 const refreshing = computed(() =>
   readPanelLoading(panelRefByTab[activeTab.value]?.value)
-);
-
-const routingCatalogLoading = computed(() =>
-  routingCatalogReady.value ? readPanelLoading(routingCatalogRef.value) : false
-);
-const routingCatalogType = computed(() =>
-  routingCatalogReady.value ? routingCatalogRef.value?.catalogType?.value ?? "" : ""
 );
 
 const SEARCHABLE_TABS = new Set(["agents", "skills", "tools"]);
@@ -108,33 +90,17 @@ watch(
 
 async function refreshActiveTab() {
   const panel = panelRefByTab[activeTab.value]?.value;
-  if (activeTab.value === "agents") {
+  if (activeTab.value === "agents" || activeTab.value === "skills") {
     await panel?.reload?.({ foreground: true });
-    await routingCatalogRef.value?.refreshIfOpen?.();
-    return;
-  }
-  if (activeTab.value === "skills") {
-    await panel?.reload?.({ foreground: true });
-    await routingCatalogRef.value?.refreshIfOpen?.();
     return;
   }
   await panel?.load?.({ foreground: true });
-}
-
-async function openRoutingCatalog(filename) {
-  routingCatalogReady.value = true;
-  await nextTick();
-  await routingCatalogRef.value?.openCatalog?.(filename);
 }
 
 function connectExternalAgent() {
   agentsPanelRef.value?.openExternalAgentModal?.();
 }
 
-async function onRegistryChanged() {
-  writeRoutingCatalogCache("skills.md", "");
-  await routingCatalogRef.value?.refreshIfOpen?.();
-}
 </script>
 
 <template>
@@ -163,20 +129,10 @@ async function onRegistryChanged() {
                 @click="toggleSearchForTab('agents')"
               />
             </div>
-            <n-button
-              quaternary
-              size="small"
-              class="agent-skills-inline-btn"
-              :loading="routingCatalogLoading && routingCatalogType === 'agents.md'"
-              @click="openRoutingCatalog('agents.md')"
-            >
-              agents.md
-            </n-button>
           </div>
           <AgentsTabPanel
             v-if="mountedTabs.agents"
             ref="agentsPanelRef"
-            @registry-changed="onRegistryChanged"
           />
         </n-tab-pane>
 
@@ -188,7 +144,6 @@ async function onRegistryChanged() {
             :refreshing="refreshing"
             :on-refresh="refreshActiveTab"
             :on-connect-mcp="() => skillsPanelRef?.openMcpSkillModal?.()"
-            @registry-changed="onRegistryChanged"
           />
         </n-tab-pane>
 
@@ -199,14 +154,6 @@ async function onRegistryChanged() {
             ref="toolsPanelRef"
             :refreshing="refreshing"
             :on-refresh="refreshActiveTab"
-          />
-        </n-tab-pane>
-
-        <!-- ── styles tab ── -->
-        <n-tab-pane name="styles" :tab="t('admin.agentSkills.tabStyles')">
-          <StyleTabPanel
-            v-if="mountedTabs.styles"
-            ref="stylePanelRef"
           />
         </n-tab-pane>
 
@@ -228,8 +175,6 @@ async function onRegistryChanged() {
           />
         </n-tab-pane>
       </n-tabs>
-
-      <RoutingCatalogDrawer v-if="routingCatalogReady" ref="routingCatalogRef" />
     </div>
   </FeatureSubsystemShell>
 </template>
@@ -270,14 +215,21 @@ async function onRegistryChanged() {
 .agents-tab-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
-.agent-skills-inline-btn {
-  width: auto !important;
-  padding: 0 8px !important;
-  border-radius: 4px !important;
+/* 智能体 tab 头部图标按钮紧凑化：与技能 tab 按钮大小一致 */
+.agents-tab-actions :deep(.icon-action) {
+  width: 22px !important;
+  height: 22px !important;
 }
+.agents-tab-actions :deep(.n-icon),
+.agents-tab-actions :deep(.n-icon svg) {
+  font-size: 13px !important;
+  width: 13px;
+  height: 13px;
+}
+
 </style>
 
 <style>

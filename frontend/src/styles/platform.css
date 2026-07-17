@@ -184,7 +184,7 @@ a:hover {
 }
 
 .n-dialog.platform-confirm-dialog .n-dialog__content {
-  font-size: 13px !important;
+  font-size: var(--platform-font-size-base) !important;
   color: var(--platform-text-secondary) !important;
   line-height: 1.6 !important;
   background: transparent !important;
@@ -201,11 +201,11 @@ a:hover {
 }
 
 .n-dialog.platform-confirm-dialog .n-dialog__action .n-button {
-  font-size: 13px !important;
-  height: 32px !important;
+  font-size: var(--platform-font-size-base) !important;
+  height: var(--btn-height-sm, 32px) !important;
   padding: 0 16px !important;
-  border-radius: 6px !important;
-  font-weight: 400 !important;
+  border-radius: var(--btn-radius-sm, 6px) !important;
+  font-weight: 400 !important;  /* dialog 按钮偏轻，不按 --btn-font-weight */
 }
 
 /* 确认弹窗按钮样式见 platform-buttons.css */
@@ -229,7 +229,7 @@ a:hover {
 }
 
 .n-dialog:not(.platform-confirm-dialog) .n-dialog__content {
-  font-size: 13px !important;
+  font-size: var(--platform-font-size-base) !important;
   color: var(--platform-text-secondary) !important;
   line-height: 1.6 !important;
   background: transparent !important;
@@ -244,11 +244,11 @@ a:hover {
 }
 
 .n-dialog:not(.platform-confirm-dialog) .n-dialog__action .n-button {
-  font-size: 13px !important;
-  height: 32px !important;
+  font-size: var(--platform-font-size-base) !important;
+  height: var(--btn-height-sm, 32px) !important;
   padding: 0 16px !important;
-  border-radius: 6px !important;
-  font-weight: 400 !important;
+  border-radius: var(--btn-radius-sm, 6px) !important;
+  font-weight: 400 !important;  /* dialog 按钮偏轻，不按 --btn-font-weight */
 }
 
 /* 弹窗遮罩（dialog / modal 通用） */
@@ -342,10 +342,6 @@ body > .n-modal-container .n-modal-mask {
   letter-spacing: var(--platform-tracking-tight);
 }
 
-.n-button {
-  font-weight: 500;
-}
-
 /* 顶栏弹窗标题栏：纯文字链接，无玻璃底 */
 .panel-header-link {
   flex-shrink: 0;
@@ -379,7 +375,7 @@ body > .n-modal-container .n-modal-mask {
 .n-input,
 .n-select,
 .n-base-selection {
-  font-size: var(--platform-font-size-sm);
+  font-size: var(--platform-font-size-base);
 }
 
 /* 更精致的输入框悬浮态 */
@@ -1229,17 +1225,18 @@ body > .v-binder-follower-container .n-dropdown-menu {
 .page-toolbar .icon-action {
   background: transparent;
   border: none;
-  color: var(--platform-text-secondary);
+  color: var(--platform-text-tertiary);
 }
 
 .page-toolbar .icon-action:not(:disabled):hover {
-  color: var(--platform-text);
+  color: var(--platform-text-secondary);
   background: var(--platform-toolbar-bg) !important;
   box-shadow: none !important;
 }
 
 .page-toolbar .icon-action.icon-action--active {
-  color: var(--platform-accent);
+  color: var(--platform-text-secondary);
+  background: var(--platform-bg-tertiary);
 }
 
 .page-toolbar .icon-action.icon-action--caution:not(:disabled) {
@@ -1903,65 +1900,6 @@ hr.platform-divider--light {
   box-shadow: inset 3px 0 0 var(--platform-accent);
 }
 
-/* 统一确认弹窗按钮基座 */
-.platform-confirm-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 38px;
-  padding: 0 17px;
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-radius-sm);
-  background: var(--platform-bg-elevated);
-  color: var(--platform-text-secondary);
-  font: inherit;
-  font-size: var(--platform-font-size-base);
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background var(--platform-duration-smooth) ease,
-    border-color var(--platform-duration-smooth) ease,
-    color var(--platform-duration-smooth) ease,
-    box-shadow var(--platform-duration-smooth) ease;
-  white-space: nowrap;
-}
-
-.platform-confirm-btn:hover:not(:disabled) {
-  background: var(--platform-bg-secondary);
-  border-color: var(--platform-border-strong);
-  color: var(--platform-text);
-}
-
-.platform-confirm-btn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.platform-confirm-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.platform-confirm-btn--primary {
-  background: var(--platform-accent);
-  border-color: var(--platform-accent);
-  color: #fff;
-}
-
-.platform-confirm-btn--primary:hover:not(:disabled) {
-  background: var(--platform-accent-hover);
-  border-color: var(--platform-accent-hover);
-  color: #fff;
-}
-
-/* 加载中按钮占位 */
-.btn-loading-spinner {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-}
-
 /* =============================================================================
  * 页面布局标准化工具类
  * ============================================================================= */
@@ -2028,4 +1966,61 @@ hr.platform-divider--light {
 
 .block-gap-lg + .block-gap-lg {
   margin-top: 20px;
+}
+
+/* =============================================================================
+ * 页面布局对齐工具类
+ *
+ * 与 .page-content / .page-toolbar-row / .page-heading 配合使用。
+ * ============================================================================= */
+
+/* 工具栏左右对齐容器 */
+.page-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.page-toolbar-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* 表单/卡片内字段水平对齐（标签+值同行） */
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--btn-height-md, 36px);
+}
+.field-row--top {
+  align-items: flex-start;
+}
+
+/* 区间距叠加 */
+.section-gap + .section-gap {
+  margin-top: 20px;
+}
+.section-gap-sm + .section-gap-sm {
+  margin-top: 14px;
+}
+
+/* 按钮组横向排列 */
+.btn-group {
+  display: flex;
+  align-items: center;
+  gap: var(--btn-gap, 6px);
+}
+.btn-group--right {
+  justify-content: flex-end;
+}
+.btn-group--spaced {
+  gap: 10px;
 }

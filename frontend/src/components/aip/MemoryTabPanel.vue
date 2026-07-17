@@ -67,12 +67,18 @@ defineExpose({ load, loading });
       </div>
     </div>
     <template v-else>
-      <NInput
-        v-model:value="content"
-        type="textarea"
-        :rows="16"
-        :placeholder="t('admin.agentSkills.memoryPlaceholder')"
-      />
+      <div class="memory-tab-panel__input-backdrop">
+        <div class="memory-tab-panel__input-backdrop-title">
+          <span>{{ t("admin.agentSkills.memoryTitle") }}</span>
+        </div>
+        <NInput
+          v-model:value="content"
+          type="textarea"
+          :rows="14"
+          :placeholder="t('admin.agentSkills.memoryPlaceholder')"
+        />
+      </div>
+      <p class="memory-tab-panel__hint">{{ t("admin.agentSkills.memoryHint") }}</p>
       <NSpace style="margin-top: 14px" :size="10">
         <NButton quaternary :loading="saving" @click="save">
           {{ t("common.save") }}
@@ -84,3 +90,29 @@ defineExpose({ load, loading });
     </template>
   </NCard>
 </template>
+
+<style scoped>
+.memory-tab-panel__input-backdrop {
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-radius);
+  background: #fff;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.memory-tab-panel__input-backdrop-title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: var(--platform-font-size-base);
+  font-weight: 600;
+  color: var(--platform-text-primary);
+}
+
+.memory-tab-panel__hint {
+  margin: 0 0 14px;
+  font-size: var(--platform-font-size-sm);
+  line-height: 1.5;
+  color: var(--platform-text-tertiary);
+}
+</style>

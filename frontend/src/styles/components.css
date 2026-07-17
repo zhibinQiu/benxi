@@ -103,19 +103,7 @@
 /* =============================================================================
  * 九、开关（Switch / Toggle）
  * ============================================================================= */
-/* 缩小所有开关尺寸（默认 medium 用 20px 高，约 38px 宽） */
-.n-switch {
-  --n-height: 20px !important;
-  --n-button-width: 16px !important;
-  --n-button-height: 16px !important;
-  --n-box-shadow-focus: none !important;
-}
-/* small 尺寸进一步缩小 */
-.n-switch.n-switch--small {
-  --n-height: 18px !important;
-  --n-button-width: 14px !important;
-  --n-button-height: 14px !important;
-}
+/* 开关保持 Naive UI 默认样式 */
 
 /* =============================================================================
  * 十、全局焦点/悬浮描边统一样式 — 不使用主题色

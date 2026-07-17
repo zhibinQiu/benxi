@@ -419,11 +419,6 @@ function saveModelCache(groups) {
   localStorage.setItem(MODEL_CACHE_TS_KEY, String(Date.now()));
 }
 
-function clearModelCache() {
-  localStorage.removeItem(MODEL_CACHE_KEY);
-  localStorage.removeItem(MODEL_CACHE_TS_KEY);
-}
-
 const modelSettingsLoading = ref(false);
 const modelOptions = ref([]);
 const selectedModelProviderId = ref(localStorage.getItem(MODEL_SELECTED_KEY) || "");
@@ -1055,6 +1050,9 @@ async function scrollToBottom() {
   await nextTick();
   const el = messagesRef.value;
   if (el) el.scrollTop = el.scrollHeight;
+  /* 流式内容区域同步滚到底部 */
+  const streamMd = el?.querySelector?.('.ai-home-bubble--streaming .ai-home-stream-md');
+  if (streamMd) streamMd.scrollTop = streamMd.scrollHeight;
 }
 
 function buildChatHistory() {
@@ -2854,7 +2852,7 @@ defineExpose({
 
 .agentkit-intro-title {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   font-weight: 600;
   color: var(--platform-text-primary);
 }
@@ -2869,7 +2867,7 @@ defineExpose({
   position: relative;
   margin-bottom: 4px;
   padding-left: 10px;
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.5;
   color: var(--platform-text-secondary);
 }
@@ -2885,7 +2883,7 @@ defineExpose({
 .agentkit-intro-link {
   display: inline-block;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-primary);
   cursor: pointer;
   text-decoration: none;
@@ -3000,7 +2998,7 @@ defineExpose({
 
 .ai-home-chip {
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
   color: var(--platform-text-tertiary);
   background: transparent;
@@ -3056,7 +3054,7 @@ defineExpose({
 }
 
 .ai-home-follow-ups__label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -3072,7 +3070,7 @@ defineExpose({
 
 .ai-home-follow-ups .ai-home-chip {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .ai-home-attachment-input {
@@ -3276,7 +3274,7 @@ defineExpose({
 }
 
 .ai-home-chat-sub {
-  font-size: 14px;
+  font-size: var(--platform-font-size-lg);
   color: var(--platform-muted);
 }
 
@@ -3310,7 +3308,7 @@ defineExpose({
   color: var(--platform-text-secondary);
   border-radius: 1199px;
   padding: 7px 17px;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
   cursor: pointer;
 }
 
@@ -3411,6 +3409,13 @@ defineExpose({
   word-break: break-word;
 }
 
+/* 流式输出时高度限制，超出可滚动，防止页面无限拉长 */
+.ai-home-bubble--streaming .ai-home-stream-md {
+  max-height: 55vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .ai-home-stream-md .ai-home-cursor {
   display: inline-block;
   margin-left: 2px;
@@ -3498,7 +3503,7 @@ defineExpose({
 
 .ai-home-bubble--bot :deep(p) {
   margin: 0 0 0.6em;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.7;
   color: var(--platform-text);
   font-kerning: normal;
@@ -3514,7 +3519,7 @@ defineExpose({
 .ai-home-bubble--bot :deep(ol) {
   margin: 0.5em 0;
   padding-left: 1.4em;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.7;
 }
 
@@ -3587,7 +3592,7 @@ defineExpose({
   border-collapse: collapse;
   width: 100%;
   margin: 0.6em 0;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
 }
 
 .ai-home-bubble--bot :deep(th),
@@ -3647,7 +3652,7 @@ defineExpose({
 }
 
 .ai-std__elapsed {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   font-weight: 500;
   color: var(--platform-text-quaternary);
   letter-spacing: 0.3px;
@@ -3683,7 +3688,7 @@ defineExpose({
   flex-shrink: 0;
   padding: 1px 7px;
   border-radius: 5px;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   font-weight: 600;
   line-height: 1.4;
   color: var(--platform-text);
@@ -3788,14 +3793,14 @@ defineExpose({
 .ai-report-export__btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 41px;
-  padding: 0 17px;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--platform-accent-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--platform-accent-muted);
   color: var(--platform-accent-pressed);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -3836,18 +3841,18 @@ defineExpose({
 /* ── 最终回复折叠面板 ── */
 .ai-home-final-panels {
   margin-bottom: 12px;
-  font-size: 14px;
+  font-size: var(--platform-font-size-base);
 }
 
 .ai-home-final-panels :deep(.n-collapse-item__header) {
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
 }
 
 .ai-home-panel-header {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   color: var(--platform-text-secondary);
 }
 
@@ -3877,7 +3882,7 @@ defineExpose({
   padding: 4px 6px;
   margin: 0 -6px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.5;
   color: var(--platform-text-secondary);
   cursor: pointer;
@@ -3905,7 +3910,7 @@ defineExpose({
   white-space: nowrap;
   max-width: 200px;
   color: var(--platform-text-tertiary);
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   direction: rtl;
   text-align: right;
 }
@@ -3915,14 +3920,14 @@ defineExpose({
 }
 
 .ai-home-panel-plan-step-title {
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   font-weight: 500;
   color: var(--platform-text);
   margin-bottom: 2px;
 }
 
 .ai-home-panel-plan-step-summary {
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
   margin: 2px 0 4px;
   line-height: 1.45;
@@ -3937,7 +3942,7 @@ defineExpose({
   align-items: flex-start;
   gap: 4px;
   padding: 1px 0;
-  font-size: 12px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.5;
   color: var(--platform-text-tertiary);
 }
@@ -3949,7 +3954,7 @@ defineExpose({
 }
 
 .ai-home-panel-thinking-text {
-  font-size: 13px;
+  font-size: var(--platform-font-size-base);
   line-height: 1.65;
   color: var(--platform-text-tertiary);
   white-space: pre-wrap;
@@ -3964,6 +3969,88 @@ defineExpose({
 
 .ai-report-citations {
   margin-top: 17px;
+}
+
+/* ── 移动端竖屏适配 ── */
+@media (max-width: 768px) {
+  /* 1. 隐藏底部免责声明（在移动端占用空间且价值不大） */
+  .ai-home-dock :deep(.chat-disclaimer) {
+    display: none;
+  }
+
+  /* 2. 输入框字体调小、padding 压缩 */
+  .ai-home :deep(.ai-chat-textarea.n-input) {
+    --n-padding-left: 12px;
+    --n-padding-right: 12px;
+    font-size: 15px;
+  }
+  .ai-home :deep(.ai-chat-textarea .n-input__textarea-el),
+  .ai-home :deep(.ai-chat-textarea .n-input__placeholder),
+  .ai-home :deep(.ai-chat-textarea .n-input__textarea-mirror) {
+    font-size: 15px;
+    line-height: 1.45;
+    padding-top: 10px;
+  }
+
+  /* 3. 输入区底部间距（为移动端底部导航栏让出更多空间） */
+  .ai-home-dock {
+    padding: 0 14px 18px;
+  }
+  .ai-home-dock--chat {
+    padding: 0 14px 18px;
+  }
+  .ai-home-dock-inner {
+    gap: 4px;
+  }
+
+  /* 4. 首屏标题区域压缩 */
+  .ai-home-main--landing {
+    padding-bottom: 12px;
+  }
+  .ai-home-welcome {
+    padding: 16px 16px 4px;
+  }
+  .ai-home-hero {
+    margin-bottom: 8px;
+  }
+  .ai-home-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 12px;
+    border-radius: 16px;
+  }
+  .ai-home-icon--dynamic :deep(.curve-animation) {
+    transform: scale(0.6);
+    transform-origin: center;
+  }
+  .ai-home-title {
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+  .ai-home-desc,
+  .ai-home-sub {
+    font-size: 14px;
+  }
+
+  /* 5. 消息列表 padding 压缩 */
+  .ai-home-messages {
+    padding: 0 10px 6px;
+  }
+
+  /* 6. 聊天工具栏挪到发送按钮旁，避免遮挡 */
+  .ai-home-composer-stack {
+    gap: 4px;
+  }
+
+  /* 7. 首屏建议 chip 缩小 */
+  .ai-home-suggestions {
+    gap: 6px;
+    padding: 0 6px;
+  }
+  .ai-home-chip {
+    font-size: 12px;
+    padding: 5px 10px;
+  }
 }
 
 </style>

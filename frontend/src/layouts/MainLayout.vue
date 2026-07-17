@@ -139,8 +139,6 @@ const userMenuOptions = computed(() => [
   },
 ]);
 
-const siderUserMenuProps = computed(() => ({}));
-
 function onSiderUserMenuSelect(key) {
   userMenuOpen.value = false;
   if (key === "toggle_locale") {
@@ -198,9 +196,9 @@ const favoriteActiveKey = computed(() => {
   return null;
 });
 
-const KNOWLEDGE_ROUTES = new Set(["knowledge-search", "report-generation"]);
+const KNOWLEDGE_ROUTES = new Set([]);
 
-/** 标题在顶栏 primary 区域的路由（知识检索/报告生成） */
+/** 标题在顶栏 primary 区域的路由（知识检索/报告生成已改为内容区标题，不在此列） */
 const showTitleInPrimary = computed(() => KNOWLEDGE_ROUTES.has(String(route.name || "")));
 
 /** 隐藏顶栏 header-primary 行（仅本析智能用标签栏替代顶栏） */
@@ -240,7 +238,7 @@ watch(
   (name) => {
     if (!getToken()) return;
     const routeName = String(name || "");
-    if (KNOWLEDGE_ROUTES.has(routeName)) prefetchKnowledgeScopeTree();
+    if (routeName === "knowledge-search" || routeName === "report-generation") prefetchKnowledgeScopeTree();
   },
   { immediate: true }
 );
@@ -442,8 +440,6 @@ const reservesHeaderExtension = computed(() => {
   const name = String(route.name || "");
   // ai-home 用标签栏替代顶栏
   if (name === "ai-home" || name === "ai-home-tab") return flushFeatureNav.value;
-  // 知识检索/报告生成标题在顶栏，操作栏无需预留
-  if (name === "knowledge-search" || name === "report-generation") return false;
   // 其余页面有标题行 + 操作栏，始终预留空间
   return true;
 });
@@ -834,28 +830,30 @@ function onMenuSelect(key) {
               />
             </div>
             <div v-else-if="!showTitleInPrimary" class="bare-feature-title-row">
-              <n-button
-                v-if="showSubsystemBack"
-                quaternary
-                circle
-                size="tiny"
-                class="header-back"
-                :aria-label="t('header.back')"
-                @click="goSubsystemBack"
-              >
-                <n-icon :size="19" :component="ArrowBackOutline" />
-              </n-button>
-              <div class="bare-feature-title-block">
-                <span class="bare-feature-title">{{ headerTitle }}</span>
-                <div class="bare-feature-description-row">
-                  <span v-if="headerDescription" class="bare-feature-description">{{ headerDescription }}</span>
-                </div>
-                <div class="bare-feature-tools-row">
-                  <div id="header-page-tools" class="header-page-tools"></div>
-                  <div id="header-actions" class="header-actions"></div>
-                  <div id="header-actions-row" class="bare-feature-actions-row"></div>
+              <div class="bare-feature-title-left">
+                <n-button
+                  v-if="showSubsystemBack"
+                  quaternary
+                  circle
+                  size="tiny"
+                  class="header-back"
+                  :aria-label="t('header.back')"
+                  @click="goSubsystemBack"
+                >
+                  <n-icon :size="19" :component="ArrowBackOutline" />
+                </n-button>
+                <div class="bare-feature-title-block">
+                  <span class="bare-feature-title">{{ headerTitle }}</span>
+                  <div class="bare-feature-description-row">
+                    <span v-if="headerDescription" class="bare-feature-description">{{ headerDescription }}</span>
+                  </div>
+                  <div class="bare-feature-tools-row">
+                    <div id="header-page-tools" class="header-page-tools"></div>
+                    <div id="header-actions-row" class="bare-feature-actions-row"></div>
+                  </div>
                 </div>
               </div>
+              <div id="header-actions" class="header-actions"></div>
             </div>
           </div>
         </div>
@@ -1664,6 +1662,15 @@ function onMenuSelect(key) {
 
 <!-- 非 scoped：Teleport 到 #header-page-tools / #header-actions / #header-actions-row 的按钮样式 -->
 <style>
+/* 标题左侧容器：后退按钮 + 标题块 */
+.bare-feature-title-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
 /* 工具栏容器：所有按钮区在同一行 */
 .bare-feature-tools-row {
   display: flex;
@@ -1671,11 +1678,19 @@ function onMenuSelect(key) {
   gap: 6px;
   margin-top: 4px;
 }
-#header-page-tools,
-#header-actions {
+#header-page-tools {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+/* 与标题同行的右侧按钮区 */
+#header-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-top: 2px;
 }
 #header-actions-row {
   display: flex;
@@ -1699,6 +1714,7 @@ function onMenuSelect(key) {
 /* —— 统一工具栏按钮：24px 圆形，透明玻璃背景，强制覆盖 Naive UI 内部变量 —— */
 #header-page-tools .header-icon-btn,
 #header-actions .header-icon-btn,
+#header-actions .icon-action,
 #header-actions-row .icon-action,
 #header-actions-row .n-button.n-button--quaternary:not(.agent-skills-action-btn),
 #header-page-tools .n-button.n-button--quaternary {
@@ -1765,7 +1781,8 @@ function onMenuSelect(key) {
 
 /* 选中/激活态 */
 #header-page-tools .header-icon-btn--active,
-#header-actions .header-icon-btn--active {
+#header-actions .header-icon-btn--active,
+#header-actions .icon-action.icon-action--active {
   color: var(--platform-accent) !important;
   background: color-mix(in srgb, var(--platform-accent-soft) 72%, var(--platform-accent) 28%) !important;
 }

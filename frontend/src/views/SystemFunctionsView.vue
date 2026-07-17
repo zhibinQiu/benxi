@@ -72,9 +72,6 @@ const iconMap = {
 
 const CATEGORY_ORDER = ["tools"];
 
-/** 功能 id → 展示分类（与后端 plugin.category 对齐，避免缓存或未重启时仍落在旧分组） */
-const FEATURE_CATEGORY_OVERRIDES = {};
-
 /** 功能 id → 路由名（避免 path/redirect 循环） */
 const FEATURE_ROUTE_NAMES = {
   knowledge_search: "knowledge-search",
@@ -106,22 +103,9 @@ const categoryMeta = computed(() =>
 const DEFAULT_CATEGORY = "tools";
 
 function resolveFeatureCategory(feature) {
-  const raw =
-    FEATURE_CATEGORY_OVERRIDES[feature.id] || feature.category || DEFAULT_CATEGORY;
+  const raw = feature.category || DEFAULT_CATEGORY;
   if (raw === "external" || raw === "carbon" || raw === "ai") return "ai";
   return raw;
-}
-
-function tagType(f) {
-  if (!f.enabled) return "default";
-  if (!f.accessible) return "warning";
-  return "success";
-}
-
-function shouldShowTag(f) {
-  const tag = String(f.tag || "").trim();
-  const available = t("systemFunctionsPage.tags.available");
-  return Boolean(tag) && tag !== available && tag !== "可用";
 }
 
 function displayTag(f) {
@@ -246,10 +230,6 @@ function openFeature(f) {
         :key="cat.id"
         class="category-block"
       >
-        <header class="category-block__head">
-          <h2 class="category-block__title">{{ cat.title }}</h2>
-        </header>
-
         <n-grid
           cols="2 s:3 m:4 l:5 xl:6"
           :x-gap="10"
@@ -371,20 +351,6 @@ function openFeature(f) {
 
 .category-block:first-of-type {
   margin-top: 0;
-}
-
-.category-block__head {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.category-block__title {
-  margin: 0;
-  font-size: var(--platform-font-size-sm);
-  font-weight: var(--platform-font-weight-medium);
-  line-height: 1.35;
-  color: var(--platform-text);
 }
 
 .category-grid :deep(> *) {

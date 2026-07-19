@@ -1,6 +1,6 @@
 # 企业 AI 知识库平台 文档
 
-**当前版本 v4.6.0** · 运维与开发文档入口。
+**当前版本 v4.8.6** · 运维与开发文档入口。
 
 ## 知识能力闭环（速览）
 
@@ -18,13 +18,17 @@ flowchart LR
   search --> report[报告生成]
   kg --> report
   report --> mindmap[思维导图导出]
+  agent --> finance[理财助手]
+  agent --> carbon[双碳助手]
+  docs --> share[公开分享]
 ```
 
 | 环节 | 文档 |
 |------|------|
 | 平台能力总览 | [功能实现说明](operations/feature-implementation.md) |
+| Agent 架构 / 哲学 | [Agent 架构](agent-architecture.md) · [设计哲学](agent-philosophy.md) |
 | Agent Skills 专题 | [Agent Skills 实现](implementation/agent-skills-implementation.md) |
-| 浏览器 RPA | [浏览器 RPA 实现](implementation/browser-rpa-implementation.md) |
+| 浏览器自动化 | [浏览器 RPA 实现](implementation/browser-rpa-implementation.md)（v4.8.6 起由 `kind=execute` 子智能体委托） |
 | 检索 vs 传统做法 | [功能实现 §0 / §4.5](operations/feature-implementation.md) |
 
 ## 运维与部署

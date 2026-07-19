@@ -1,7 +1,7 @@
-# 功能实现说明（v4.6.0）
+# 功能实现说明（v4.8.6）
 
 > **本文说明各功能如何运转**，含关键方法与提示词落点。  
-> 架构分层见 [系统架构](architecture.md)；Agent Skills 详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)（含 §10 Prompt、§11 调用链）。
+> 架构分层见 [系统架构](architecture.md)；Agent Skills 详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)（含 §10 Prompt、§11 调用链）；子智能体模型见 [Agent 架构](../agent-architecture.md)。
 
 ---
 
@@ -15,8 +15,12 @@
 | [§4](#4-knowflow--知识库) | 知识库、检索、图谱、AI 智能体 |
 | [§5–§13](#5-pdf-翻译) | 翻译、对比、语音、任务等 |
 | [§14](#14-agent-skills-管理) | Agent Skills 管理 |
-| [§15](#15-aip-智能体互联v450) | AIP 智能体互联 |
+| [§15](#15-aip-智能体互联v460) | AIP 智能体互联 |
 | [§16](#16-postgresql-读写分离) | PostgreSQL 读写分离 |
+| [§17](#17-理财助手与股市分析v486) | 理财助手、股市专精 Agent |
+| [§18](#18-双碳助手v486) | 双碳助手看板与报告 |
+| [§19](#19-工作笔记与提示词管理v486) | 笔记、提示词模板 |
+| [§20](#20-公开分享share_tokenv486) | 文档/笔记/报告公开分享 |
 
 **常见术语**：**JWT** = 登录后颁发的访问凭证；**RBAC** = 按角色分配功能权限；**MinIO** = 存文件的 object 存储；**Celery** = 后台异步任务 worker；**SSE** = 浏览器实时接收服务端推送（用于对话流式输出）。
 
@@ -236,7 +240,7 @@ System 提示词、Agentic 规划 JSON、优化预设详见 [报告生成实现]
 
 详细提示词片段与调用链见 [Agent Skills 实现 §10–§11](../implementation/agent-skills-implementation.md)。
 
-**浏览器 RPA（Phase 1）**：启用 `AGENT_BROWSER_ENABLED` 后，智能体可用内置 `browser_navigate` / `browser_snapshot` / `browser_click` / `browser_type` / `browser_screenshot` 操作网页并展示截图；`browser_save_workflow` 将探索过程固化为 upload Skill。详见 [浏览器 RPA 实现](../implementation/browser-rpa-implementation.md)。
+**浏览器自动化**：启用 `AGENT_BROWSER_ENABLED` 后，可用 `browser_*` 工具族；v4.8.6 起由父层通过 `invoke_context_subagent(kind=execute)` 委托执行（无独立 `rpa` 专精）。详见 [浏览器 RPA 实现](../implementation/browser-rpa-implementation.md)。
 
 ### 4.9 切片管理 / 编码管理
 
@@ -459,13 +463,66 @@ Celery Worker、流式对话中的写操作（如 `platform_chat_store.append_tu
 
 ---
 
-## 15. 与外部系统关系
+## 17. 理财助手与股市分析（v4.8.6）
+
+**面向谁**：有理财助手功能权限的用户；对话中也可路由到 `stock` 专精智能体。
+
+| 能力 | 说明 |
+|------|------|
+| 行情与自选 | A 股/基金/虚拟币行情；`finance_watchlist_items` 自选清单 |
+| AI 报告 | 深度解读、多角色圆桌（辩论/专业 × 基本面/短线）、量价会诊；异步 Job 生成 |
+| 原子工具 | `stock_quote` / `stock_kline` / `market_indices` / `finance_search` / `f10_data` |
+| 专精 Agent | `stock`（`agents/instructions/stock.md`）；F10 底稿经 AKShare 结构化拉取 |
+| 分享 | 报告支持 `share_token` 免登录 HTML 预览 |
+
+入口：前端 `FinanceAssistantView`；API `app/api/finance.py`；服务 `finance_service` / `finance_f10` / `finance_factsheet`。
+
+---
+
+## 18. 双碳助手（v4.8.6）
+
+**面向谁**：有双碳助手功能权限的用户；对话可路由到 `carbon` 专精智能体。
+
+| 能力 | 说明 |
+|------|------|
+| 看板 | 碳交易快照、碳价/政策/多维数据查询 |
+| AI 报告 | 碳交易简报、政策摘要、减碳策略；写入 `carbon_reports` |
+| 原子工具 | `carbon_price` / `carbon_policy` / `carbon_data` |
+| Skill | `carbon-consulting` 上传型/内置包与示例包同步 |
+
+入口：前端 `CarbonAssistantView`；API `app/api/carbon_assistant.py`；服务 `carbon_assistant_service` / `carbon_service`。
+
+---
+
+## 19. 工作笔记与提示词管理（v4.8.6）
+
+| 模块 | 能力 | 落点 |
+|------|------|------|
+| 工作笔记 | 文件夹、Markdown 编辑、图片粘贴、AI 润色、发布至文档库、待办子 Tab | `NoteView` · `note_service` · 表 `notes` / `note_folders` |
+| 提示词管理 | 个人模板 CRUD、按类别筛选、一键复制 | `PromptManagementView` · `prompt_service` · 表 `prompt_templates` |
+
+二者均注册为 builtin FeaturePlugin，菜单与权限由功能注册表驱动。
+
+---
+
+## 20. 公开分享（share_token，v4.8.6）
+
+文档、笔记、理财报告、碳报告统一使用 `share_token`：
+
+1. 登录用户在详情页/`ShareLinkModal` 生成或撤销链接。  
+2. 免登录 `GET` 公开路由渲染 HTML 预览（`document_share_render` / `note_share_render` / 各报告 render）。  
+3. Schema 迁移为各实体增加 `share_token` 列（唯一索引）。
+
+---
+
+## 21. 与外部系统关系
 
 | 系统 | 关系 |
 |------|------|
 | pdf2zh_next / BabelDOC | 独立 HTTP 服务，平台只调 REST |
 | KnowFlow / RAGFlow | 向量库 + 原厂 UI；平台 SSO + 同步 + ACL |
 | DeepSeek 等 | 在线 LLM，API Key 在 `.env` 或资源管理 |
+| AKShare | 金融 F10 / 行情结构化拉取（理财与股市 Agent） |
 | 设计系统（:40001） | 智能问数等 iframe 外链，独立 upstream |
 | Dify（若同机） | 端口 40001 预留，与平台栈分离 |
 
@@ -477,5 +534,7 @@ Celery Worker、流式对话中的写操作（如 `platform_chat_store.append_tu
 - [权限与账户](permissions.md)
 - [知识库实现](../implementation/knowledge-implementation.md)
 - [报告生成实现](../implementation/report-generation-implementation.md)
+- [Agent 架构](../agent-architecture.md)
+- [设计哲学](../agent-philosophy.md)
 - [Agent Skills 实现](../implementation/agent-skills-implementation.md)
 - [文档对比产品设计](../platform/doc-compare-product-design.md)

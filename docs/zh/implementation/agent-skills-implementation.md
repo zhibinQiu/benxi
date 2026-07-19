@@ -1,7 +1,7 @@
 # Agent Skills 实现说明
 
 > **适用读者**：产品经理、运维、后端/前端开发  
-> **版本**：v4.6.0 · [开发说明书总览](../development/implementation-manual.md)  
+> **版本**：v4.8.6 · [开发说明书总览](../development/implementation-manual.md)  
 > **配套阅读**：[功能实现说明 §4.8 / §14](../operations/feature-implementation.md)（偏业务视角）
 
 ---
@@ -39,14 +39,16 @@
 
 ---
 
-## 1. 实现总览（v4.6.0）
+## 1. 实现总览（v4.8.6）
 
 AI 首页对话采用 **Discovery + Activation** 两阶段：
 
 | 阶段 | 代码入口 | 注入内容 |
 |------|----------|----------|
 | Discovery | `build_agent_catalog_prompt()` | Skill 名称、描述、选用规则（**不含** `SKILL.md` 正文） |
-| Activation | `iter_agent_tool_loop()` + `execute_agent_tool()` | 模型调用原子工具或 `load_uploaded_skill` 加载发展技能 |
+| Activation | `iter_agent_tool_loop()` + `execute_agent_tool()` | 模型调用原子工具、`find_skills` 或 `invoke_skill` / `load_uploaded_skill` |
+
+v4.8.6 起：`find_skills` 替代 `search_skills`（仅检索当前 Agent 已挂载 Skill）；子智能体为 `search` / `use` / `execute`，父层非直调工具可透明委托 `execute` 子层。
 
 入口函数：`ai_chat_service.iter_chat_with_ai_agent_stream()` → 组装 messages → `iter_agent_tool_loop()` 多轮 tool-calling（默认最多 40 轮，`agent_max_tool_rounds`）。
 

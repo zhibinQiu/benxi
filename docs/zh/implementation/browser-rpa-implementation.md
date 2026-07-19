@@ -1,7 +1,9 @@
 # 浏览器 RPA（网页自动化）实现说明
 
 **状态**：Phase 1 基础设施（内置 Agent 工具 + 会话录制 → Skill 固化）  
-**版本**：v4.6.0 · [开发说明书总览](../development/implementation-manual.md)  
+**版本**：v4.8.6 · [开发说明书总览](../development/implementation-manual.md)
+
+> **v4.8.6**：独立 `rpa` 专精 Profile 已移除；浏览器自动化由父 Agent 通过 `invoke_context_subagent(kind=execute, steps=...)` 委托执行。本文描述 Playwright 会话与 `browser_*` 工具族实现，仍适用于底层能力。  
 **入口**：AI 智能体 `POST /api/v1/ai-chat/stream` → `browser_*` 工具族
 
 ---

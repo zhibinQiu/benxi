@@ -77,7 +77,7 @@ flowchart TB
 
 详见 [知识服务实现](../implementation/knowledge-implementation.md)（实现细节）与本目录 [网络拓扑](network-topology.md)。
 
-## 启动与版本（v4.6.0）
+## 启动与版本（v4.8.6）
 
 | 项 | 说明 |
 |----|------|

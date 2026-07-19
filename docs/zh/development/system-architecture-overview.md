@@ -223,7 +223,7 @@ sequenceDiagram
 
 已实现插件示例：`translate`、`compare`、`rag`、`speech`、`agent_skills`、`subscriptions` 等（见 `platform/app/features/builtin/`）。
 
-### 4.4 Agent Skills 与工具循环（v4.8.2）
+### 4.4 Agent Skills 与工具循环（v4.8.6）
 
 ```mermaid
 flowchart LR
@@ -236,19 +236,21 @@ flowchart LR
   subgraph agent [AI 智能体]
     CHAT[ai_chat_service]
     LOOP[agent_tool_loop]
-    TOOLS[agent_tools research/load/memory]
+    SUB[subagent search/use/execute]
+    TOOLS[agent_tools + find_skills]
   end
 
   REG --> CAT
   CAT --> CHAT
   CHAT --> LOOP
   LOOP --> TOOLS
+  LOOP --> SUB
   TOOLS --> EXEC
   EXEC --> KB[knowledge_qa / kg / searxng]
   EXEC --> MD[上传 SKILL.md]
 ```
 
-AI 首页对话不再 HTTP 层预检索；LLM 通过 `research` 按需调用内置 handler，通过 `load_uploaded_skill` 激活上传包。v4.4.1 起工具循环采用 **`AgentLoopSession` 短会话**：LLM / 外部 I/O 前释放 PostgreSQL 连接，工具执行前再打开，避免长流式占满连接池。v4.6.0 新增 **AgentKit 包拆分**，将多智能体核心组件拆分为 11 个独立 Python 包。v4.5.0 新增 **AIP 智能体互联**（发现/调用/外部登记）。v4.8.x 将旧 `kg_palantir` 重构为 `ontology`（本体建模）与 `kg`（图探索）双模块，`digital_robot` 数字人功能下线，Neo4j 基础服务提取至 `agentkit.graph` 统一管理。路由 regex 收敛至 `agent_routing_signals`，planner 与 supervisor 共用。详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md) 与 [系统架构](../operations/architecture.md#容量与连接池v460)。
+AI 首页对话不再 HTTP 层预检索；LLM 通过原子工具与 Skill 按需激活。v4.4.1 起工具循环采用 **`AgentLoopSession` 短会话**。v4.6.0 新增 **AgentKit 包拆分**。v4.8.x 将旧 `kg_palantir` 拆为 `ontology` + `kg`。**v4.8.6**：子智能体统一为 `search` / `use` / `execute`（移除 `explore` 与独立 `rpa` 专精）；`find_skills` 替代 `search_skills`；新增理财/双碳助手、笔记、提示词与 `share_token` 公开分享。详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)、[功能实现 §17–§20](../operations/feature-implementation.md) 与 [系统架构](../operations/architecture.md#容量与连接池v460)。
 
 ---
 
@@ -274,6 +276,8 @@ flowchart TB
   AI --> AI1[PDF 翻译]
   AI --> AI2[文档对比]
   AI --> AI3[网站收藏 / 录音转写]
+  AI --> AI4[理财助手 / 双碳助手]
+  AI --> AI5[工作笔记 / 提示词]
   OPS --> OPS1[审计监控]
   OPS --> OPS2[待办通知 / 部署脚本]
 ```
@@ -287,6 +291,9 @@ flowchart TB
 | 文档对比 | PostgreSQL `compare_jobs` | KnowFlow 检索（可选） |
 | 网站收藏 | PostgreSQL `subscriptions` | 网页抓取、DeepSeek 摘要 |
 | 语音 | PostgreSQL `meeting_record` | speech-api、DeepSeek 总结 |
+| 理财助手 | PostgreSQL `finance_*` | AKShare、行情源 |
+| 双碳助手 | PostgreSQL `carbon_reports` | 碳价/政策数据源 |
+| 笔记 / 提示词 | PostgreSQL `notes` / `prompt_templates` | — |
 
 ---
 

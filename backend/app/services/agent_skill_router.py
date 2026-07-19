@@ -52,8 +52,8 @@ _SCRIPT_TASK_RE = re.compile(
 _DIAGRAM_INTENT_RE = re.compile(
     r"(思维导图|流程图|时序图|状态图|架构图|关系图|组织结构图|"
     r"mermaid|Mermaid|mindmap|flowchart|sequenceDiagram|stateDiagram|"
-    r"画.{0,4}(?:图|流程|导图)|生成.{0,8}(?:图|导图|流程图)|"
-    r"绘制.{0,6}(?:图|流程))",
+    r"画.{0,12}(?:图|流程|导图)|生成.{0,12}(?:图|导图|流程图)|"
+    r"绘制.{0,16}(?:图|流程)|(?:画图|绘图|作图))",
     re.I,
 )
 

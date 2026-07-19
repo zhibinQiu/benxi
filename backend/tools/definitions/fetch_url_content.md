@@ -2,11 +2,14 @@
 name: fetch_url_content
 ---
 获取指定 URL 的网页正文内容（Markdown 格式）。
-与 web_search 不同：此工具直接读取给定 URL 的内容，不执行搜索。
-适合用户已提供链接、需要阅读页面全文的场景。
+
+**阅读策略：先概要，再择需读全文。**
+先用 `web_search(read_full=0)` 获取摘要片段，如果
+摘要不足以回答问题时，再对特定 URL 用此工具获取全文。
 
 ## When to use
 - 用户已提供 URL，需要读取页面全文
+- 从 web_search 的摘要片段判断某个链接内容很重要，需要读全文
 - 需要获取某个具体页面的完整正文内容
 
 ## When NOT to use

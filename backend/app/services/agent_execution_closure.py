@@ -132,7 +132,7 @@ def execution_plan_needs_skill_data(
         return False
     if execution_plan.direct_answer:
         return False
-    if execution_plan.intent == "执行发展技能":
+    if execution_plan.intent == "执行发展技能" and plan_has_script is not False:
         return True
     if execution_plan.uploaded_skill and plan_has_script is not False:
         return True
@@ -238,29 +238,13 @@ def build_adaptive_replan_notice(
     )
 
 
-def apply_execution_plan_unlocks(
+def apply_execution_plan_context(
     execution_plan: AgentExecutionPlan,
     loop_state: LoopState,
 ) -> None:
-    from app.services.agent_planner import SKILL_MGMT_INTENT
-    from app.services.agent_tool_search import register_unlocked_tools
-
+    """把执行计划中的技能上下文写入 loop_state。"""
     if execution_plan.uploaded_skill:
         loop_state["planned_uploaded_skill"] = execution_plan.uploaded_skill
-    unlock_names: list[str] = []
-    if execution_plan.uploaded_skill:
-        unlock_names.append("run_skill_script")
-    if execution_plan.intent == SKILL_MGMT_INTENT:
-        unlock_names.extend(
-            [
-                "run_skill_script",
-                "create_skill",
-                "update_uploaded_skill_file",
-                "delete_uploaded_skill",
-            ]
-        )
-    if unlock_names:
-        register_unlocked_tools(loop_state, unlock_names)
 
 
 async def resolve_adaptive_replan(
@@ -306,10 +290,59 @@ async def resolve_adaptive_replan(
             direct_answer=False,
             allowed_tools=(),
             uploaded_skill=skill,
-            steps=(f"run_skill_script({skill})",),
+            steps=(
+                f"invoke_context_subagent(kind=use, task=使用技能 {skill} 完成用户请求)",
+            ),
             source="replan",
         )
     return prior_plan
+
+
+async def auto_execute_mermaid_diagram(
+    db,
+    user,
+    *,
+    user_message: str,
+    loop_state: LoopState,
+    conversation_id: str | None,
+    attachment_session_id: str | None,
+) -> tuple[bool, str]:
+    """闭包补执行：经 execute 子智能体调用 mermaid_diagram（绘图统一渠道）。"""
+    from app.agentkit.message.filter import has_mermaid_deliverable
+    from app.core.agent.subagent import execute_context_subagent
+
+    if has_mermaid_deliverable(str(loop_state.get("deterministic_reply") or "")):
+        return True, "图表已就绪"
+    if has_mermaid_deliverable(str(loop_state.get("task_deliverable") or "")):
+        text = str(loop_state.get("task_deliverable") or "").strip()
+        loop_state["deterministic_reply"] = text
+        return True, "图表已就绪"
+
+    desc = (user_message or "").strip() or "按用户要求绘制图表"
+    result_text = await execute_context_subagent(
+        db,
+        user,
+        kind="execute",
+        task=f"生成 Mermaid 图表：{desc}",
+        steps=[{"tool": "mermaid_diagram", "arguments": {"description": desc}}],
+        conversation_id=conversation_id,
+        attachment_session_id=attachment_session_id,
+        loop_state=loop_state,
+    )
+    try:
+        body = json.loads(result_text)
+        ok = bool(body.get("ok"))
+        summary = str(body.get("summary") or "")
+    except json.JSONDecodeError:
+        ok = False
+        summary = (result_text or "")[:200]
+
+    reply = str(loop_state.get("deterministic_reply") or loop_state.get("task_deliverable") or "").strip()
+    if has_mermaid_deliverable(reply):
+        loop_state["deterministic_reply"] = reply
+        loop_state["task_deliverable"] = reply
+        return True, summary or "已生成 Mermaid 图表"
+    return ok and bool(reply), summary or ("完成" if ok else "图表生成失败")
 
 
 async def auto_execute_uploaded_skill(
@@ -323,18 +356,27 @@ async def auto_execute_uploaded_skill(
     conversation_id: str | None,
     attachment_session_id: str | None,
 ) -> tuple[bool, str]:
-    """服务端代用户执行 run_skill_script，写入 loop_state。"""
+    """闭包补执行：经 use 子智能体跑上传 Skill（父层不直执 run_skill_script）。"""
+    from app.core.agent.subagent import execute_context_subagent
+    from app.services.agent_skill_router import MERMAID_DIAGRAM_SKILL
     from app.services.agent_skill_service import uploaded_skill_has_script
-    from app.services.agent_tools import execute_agent_tool, fetch_uploaded_skill_md
 
+    _ = chat_history
     name = (skill_name or "").strip()
     if not name:
         return False, "缺少 skill_name"
+    # 绘图技能无脚本：走 mermaid_diagram 原子工具
+    if name == MERMAID_DIAGRAM_SKILL:
+        return await auto_execute_mermaid_diagram(
+            db,
+            user,
+            user_message=user_message,
+            loop_state=loop_state,
+            conversation_id=conversation_id,
+            attachment_session_id=attachment_session_id,
+        )
     if not uploaded_skill_has_script(db, name):
         return False, f"Skill `{name}` 无脚本"
-
-    skill_md = fetch_uploaded_skill_md(db, name, user=user, max_chars=6000) or ""
-    args = infer_skill_script_args(user_message, chat_history, skill_md)
 
     loop_state["planned_uploaded_skill"] = name
     invoked = list(loop_state.get("invoked_uploaded_skills") or [])
@@ -342,14 +384,13 @@ async def auto_execute_uploaded_skill(
         invoked.append(name)
     loop_state["invoked_uploaded_skills"] = invoked
 
-    result_text = await execute_agent_tool(
+    result_text = await execute_context_subagent(
         db,
         user,
-        tool_name="run_skill_script",
-        arguments={"skill_name": name, "args": args},
+        kind="use",
+        task=f"使用技能 {name} 完成用户请求：{user_message}",
         conversation_id=conversation_id,
         attachment_session_id=attachment_session_id,
-        user_message=user_message,
         loop_state=loop_state,
     )
     try:
@@ -361,6 +402,6 @@ async def auto_execute_uploaded_skill(
         summary = result_text[:200]
 
     outcome_lines = list(loop_state.get("tool_outcome_lines") or [])
-    outcome_lines.append(f"自动执行 Skill：{summary or ('完成' if ok else '失败')}")
+    outcome_lines.append(f"子智能体执行 Skill：{summary or ('完成' if ok else '失败')}")
     loop_state["tool_outcome_lines"] = outcome_lines[-12:]
     return ok and bool(presentable_skill_conclusion(loop_state)), summary

@@ -59,6 +59,7 @@ class SkillInvocationContext:
     trace_id: str | None = None
     user_message: str = ""
     loop_state: LoopState | None = None
+    progress_callback: Callable[[int, str], None] | None = None
 
 
 @dataclass(slots=True)

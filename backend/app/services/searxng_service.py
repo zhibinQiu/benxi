@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MAX_RETRIES = 2
-_RETRY_DELAY_SEC = 1.0
+_MAX_RETRIES = 1
+_RETRY_DELAY_SEC = 0.5
 
 
 class SearxngNotConfiguredError(RuntimeError):

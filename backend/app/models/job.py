@@ -23,6 +23,8 @@ class JobType(str, enum.Enum):
     pdf_translate = "pdf_translate"
     document_index = "document_index"
     subscription_import = "subscription_import"
+    finance_report = "finance_report"
+    carbon_report = "carbon_report"
 
 
 class Job(Base):

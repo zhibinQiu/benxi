@@ -64,8 +64,8 @@ const actionClass = computed(() => {
 
 <style scoped>
 .icon-action {
-  width: 28px;
-  height: 28px;
+  width: var(--btn-height-sm, 32px);
+  height: var(--btn-height-sm, 32px);
   border: none !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
@@ -82,7 +82,7 @@ const actionClass = computed(() => {
 
 .icon-action.icon-action--theme:not(:disabled):hover {
   color: var(--platform-text-secondary);
-  background: var(--platform-toolbar-bg) !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
 }
 
 .icon-action.icon-action--theme.icon-action--active {

@@ -121,7 +121,6 @@ async function runSearch(content) {
   workflow.value = {
     ...emptyWorkflow(),
     running: true,
-    currentTitle: t("knowledgeSearch.thinking"),
   };
   answerView.value = "answer";
   citationsExpanded.value = false;
@@ -348,11 +347,9 @@ onMounted(() => {
             </template>
             <template v-else>
               <AgentWorkflowProgress
-                v-if="sending && (workflow.running || workflow.steps.length)"
+                v-if="sending && workflow.running"
                 :workflow="workflow"
                 :keep-visible-after-done="sending"
-                :awaiting-reply="sending && !answer"
-                compact
               />
               <div
                 v-else-if="sending && !answer"

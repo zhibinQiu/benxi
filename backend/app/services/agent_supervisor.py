@@ -61,6 +61,7 @@ async def _run_specialist_hop(
     intent_plan: AgentToolPlan | None,
     max_rounds: int | None,
     task_mode: bool = False,
+    round_state: dict | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """执行单次专精 hop（委托 AIP 执行层）。"""
     ctx = SpecialistExecutionContext(
@@ -80,8 +81,29 @@ async def _run_specialist_hop(
     conv_key = ctx.session_id
     mark_agent_running(route.agent_id, conv_key)
     try:
-        async for event in iter_builtin_specialist_hop(sess, user_id, ctx):
+        async for event in iter_builtin_specialist_hop(sess, user_id, ctx, round_state=round_state):
             yield event
+    except Exception:
+        _logger.exception("Specialist hop 异常中断 agent=%s", route.agent_id)
+        yield {
+            "type": "workflow",
+            "data": {
+                "phase": "agent_thought",
+                "title": "执行中断",
+                "detail": "智能体执行时遇到错误，请联系管理员或稍后重试",
+                "tool": "supervisor.route",
+                "status": "error",
+            },
+        }
+        yield {
+            "type": "complete",
+            "messages": [
+                {"role": "assistant", "content": "抱歉，智能体执行时遇到错误，请稍后重试。"}
+            ],
+            "reply": "抱歉，智能体执行时遇到错误，请稍后重试。",
+            "citations": [],
+            "kg_context": None,
+        }
     finally:
         mark_agent_idle(route.agent_id, conv_key)
 
@@ -246,7 +268,7 @@ async def _execute_tasks_with_orchestrator_progress(
     last_real_event_time = time.monotonic()
     # 连续 N 秒仅收到心跳事件（无 delta/workflow/complete），判定为卡住。
     # 须大于工具执行超时（agent_tool_timeout_sec，默认 60s），
-    # 因为 deep_research 子智能体执行多轮 web_search 时父工具循环被阻塞，
+    # 因为 search 子智能体执行多轮 web_search 时父工具循环被阻塞，
     # 不会产生事件。若 stall 阈值小于工具超时，会在工具正常执行中被误触发。
     max_stalled_sec = 120
     stall_reason = ""
@@ -301,6 +323,7 @@ async def _execute_tasks_with_orchestrator_progress(
                 last_real_event_time = time.monotonic()
                 yield payload
             elif kind == "progress":
+                last_real_event_time = time.monotonic()
                 yield payload
     finally:
         progress_task.cancel()
@@ -601,23 +624,23 @@ async def iter_supervised_agent_loop(
     context_instruction: str = "",
     skip_route_plan_ui: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Supervisor 入口：路由规划 → 子任务执行，专精智能体的答复直接流式给用户。
+    """Supervisor 入口：路由规划 → 执行。
 
     设计原则：
     - 调度智能体只负责理解用户意图和分配路由
-    - 每个专精智能体的 tool loop（max_rounds）自行处理重试和完成判断
-    - 专精智能体执行完成后，其最终回复直接流式给用户，调度不做验收/润色
+    - 每个专精智能体的 tool loop 自行处理重试和完成判断
+    - 保持最简单的 yield 链，不使用队列/后台任务包装
     """
     user_id = coerce_user_id(user)
     sess = AgentLoopSession(user_id)
-
-    # 标记调度智能体（小析）为运行中
     conv_key = str(conversation_id or "")
     if conv_key:
         mark_agent_running("orchestrator", conv_key)
 
     try:
-        # ── 单次规划 ──
+        _t_start = time.monotonic()
+
+        # ── 路由规划 ──
         if skip_route_plan_ui:
             yield _orchestrator_progress_event(
                 detail=f"{_ORCH_TITLE}：正在分析任务并分配智能体",
@@ -638,16 +661,14 @@ async def iter_supervised_agent_loop(
                 },
             }
 
+        _logger.info("SUPERVISOR: pre-route-plan %.1fs msg=%s",
+                     time.monotonic() - _t_start, user_message[:60])
         db, bound_user = sess.open()
         try:
             plan = await resolve_agent_route_plan(
-                db,
-                bound_user,
-                user_message,
-                intent_plan=intent_plan,
-                chat_history=chat_history,
-                prior_outcomes=None,
-                force_replan=False,
+                db, bound_user, user_message,
+                intent_plan=intent_plan, chat_history=chat_history,
+                prior_outcomes=None, force_replan=False,
             )
         finally:
             sess.release_before_io()
@@ -660,16 +681,17 @@ async def iter_supervised_agent_loop(
             route_titles.append(title)
             if route.reason:
                 route_details.append(route.reason)
-        if len(route_titles) == 1:
-            plan_title = f"规划方案：{route_titles[0]}"
-        elif route_titles:
-            plan_title = f"规划方案：{' → '.join(route_titles)}"
-        else:
-            plan_title = "规划方案：调度智能体"
-        plan_detail = (
-            "；".join(route_details[:4]) if route_details else "、".join(route_titles[:4])
+        plan_title = (
+            f"规划方案：{route_titles[0]}"
+            if len(route_titles) == 1
+            else f"规划方案：{' → '.join(route_titles)}"
+            if route_titles
+            else "规划方案：调度智能体"
         )
-        # 规划结果事件——始终发射，让前端能更新"正在分析"提示
+        plan_detail = (
+            "；".join(route_details[:4]) if route_details
+            else "、".join(route_titles[:4])
+        )
         yield {
             "type": "workflow",
             "data": {
@@ -684,31 +706,238 @@ async def iter_supervised_agent_loop(
             },
         }
 
-        round_context_instruction = _merge_context_instruction(
-            context_instruction,
-            plan.capability_gap_instruction,
+        hop_context = _merge_context_instruction(
+            context_instruction, plan.capability_gap_instruction,
         )
+        routes = list(plan.routes)
 
+        # ── 无路由 → 直接返回 ──
+        if not routes:
+            yield _build_final_complete(
+                messages=messages, hop_completes=[], reply=None)
+            return
+
+        route = routes[0]
+
+        _logger.info("SUPERVISOR: post-route-plan %.1fs route=%s first_route=%s",
+                     time.monotonic() - _t_start, plan.source, route.agent_id)
+
+        # ── 能力缺口计划 ──
+        if _is_capability_gap_plan(plan):
+            async for event in _execute_capability_gap(
+                plan, route, messages, hop_context,
+            ):
+                yield event
+            return
+
+        # ── 自动 Skill 创建 ──
+        if _is_auto_skill_dev_plan(plan):
+            async for event in _execute_auto_skill_dev_task_interactive(
+                sess=sess, user_id=user_id, route=route,
+                user_message=user_message, chat_history=chat_history,
+                retrieval_context=retrieval_context,
+                context_instruction=hop_context,
+                conversation_id=conversation_id,
+                attachment_session_id=attachment_session_id,
+                intent_plan=intent_plan, max_rounds=max_rounds,
+            ):
+                yield event
+            return
+
+        # ── 普通执行：Supervisor 循环调度子智能体 ──
         effective_user_message = user_message
         if plan.source == "capability_partial" and plan.feasible_goal.strip():
             effective_user_message = plan.feasible_goal.strip()
 
-        # ── 专精智能体执行，其答复直接流式给用户 ──
-        async for event in _execute_route_plan(
-            plan,
-            sess=sess,
-            user_id=user_id,
-            messages=messages,
-            conversation_id=conversation_id,
-            max_rounds=max_rounds,
-            user_message=effective_user_message,
-            attachment_session_id=attachment_session_id,
-            intent_plan=intent_plan,
-            chat_history=chat_history,
-            retrieval_context=retrieval_context,
-            context_instruction=round_context_instruction,
-        ):
-            yield event
+        agent_title = resolve_agent_title(route.agent_id)
+        round_state: dict | None = None
+        max_supervisor_rounds = max_rounds or 8
+        needs_reroute = False
+        assist_reason = ""
+        hop_messages: list[dict] = []
+
+        for _sv_round in range(max_supervisor_rounds):
+            gen = _run_specialist_hop(
+                sess, user_id,
+                route=route,
+                user_message=effective_user_message,
+                chat_history=chat_history,
+                retrieval_context=retrieval_context,
+                context_instruction=hop_context,
+                conversation_id=conversation_id,
+                attachment_session_id=attachment_session_id,
+                intent_plan=intent_plan,
+                max_rounds=max_rounds,
+                task_mode=False,
+                round_state=round_state,
+            )
+            step_result: dict | None = None
+            got_complete = False
+            needs_reroute = False
+            assist_reason = ""
+
+            async for event in gen:
+                if event.get("type") == "step_complete":
+                    step_result = event
+                    # step_complete 之后不再有其他事件，break 让外层处理
+                    break
+                elif event.get("type") == "complete":
+                    # orchestrator 路径保持原有多轮 complete 处理
+                    got_complete = True
+                    hop_messages = list(event.get("messages") or [])
+                    handoff_msg = event.get("aip_handoff")
+                    if handoff_msg and isinstance(handoff_msg, dict):
+                        pl = handoff_msg.get("payload", {})
+                        if isinstance(pl, dict) and pl.get("status") == "needs_assist":
+                            needs_reroute = True
+                            assist = pl.get("assist", {})
+                            if isinstance(assist, dict):
+                                assist_reason = str(assist.get("reason", "") or "")
+                            if not assist_reason:
+                                assist_reason = str(event.get("reply", "") or "")
+                            continue
+                    if not needs_reroute:
+                        yield event
+                        return
+                else:
+                    yield event
+
+            # ── orchestrator 路径：保持原有多轮处理 ──
+            if got_complete and not needs_reroute:
+                return
+            if got_complete and needs_reroute:
+                # orchestrator 请求协助 → 重路由（同旧逻辑）
+                break  # 跳出 for 循环，执行下方重路由
+
+            # ── 专精智能体 step_complete 处理 ──
+            if step_result is not None:
+                round_state = step_result  # 保存给下一轮
+                needs_more = step_result.get("needs_more_rounds", False)
+                orch_assist = step_result.get("orchestrator_assist_request")
+
+                if orch_assist:
+                    # 子智能体通过 request_orchestrator_assist 请求调度协助
+                    break  # 跳出 for 循环，执行下方重路由
+
+                if needs_more:
+                    continue  # 继续下一轮
+
+                # 本步结束：有工具证据则由父层综合终稿，禁止透传子智能体正文/工具清单
+                working = list(step_result.get("working") or [])
+                loop_state = dict(step_result.get("loop_state") or {})
+                from app.services.agent_reply_synth import has_deliverable_evidence
+                from app.services.agent_tool_loop import emit_final_user_reply
+
+                if has_deliverable_evidence(loop_state):
+                    async for ev in emit_final_user_reply(
+                        sess,
+                        user_id,
+                        f"agent-tools-{uuid.uuid4().hex[:8]}",
+                        effective_user_message,
+                        working,
+                        loop_state,
+                        chat_history=chat_history,
+                    ):
+                        yield ev
+                    return
+
+                reply = str(step_result.get("reply") or "").strip()
+                yield {
+                    "type": "complete",
+                    "reply": reply or "抱歉，这次没能完成您的请求。请补充更具体的要求后重试。",
+                    "messages": working,
+                    "citations": list(loop_state.get("citations") or []),
+                    "kg_context": loop_state.get("kg_context"),
+                }
+                return
+
+            # ── 安全兜底：无 step_complete 也无 complete ──
+            if not needs_reroute:
+                _logger.warning(
+                    "专精智能体 %s 未产出 step_complete 事件，触发安全兜底",
+                    agent_title,
+                )
+                yield {
+                    "type": "complete",
+                    "reply": f"{agent_title} 执行异常中断（未收到完成信号）",
+                    "messages": [], "citations": [], "kg_context": None,
+                }
+                return
+
+        # ── 超出最大轮次 or 请求协助 ──
+        if needs_reroute or round_state and round_state.get("orchestrator_assist_request"):
+            # 构建重路由指令
+            if not assist_reason and step_result:
+                assist_reason = str(step_result.get("reply") or "")[:120]
+            yield {
+                "type": "workflow",
+                "data": {
+                    "phase": "agent_thought",
+                    "title": f"{agent_title} 请求调度协助",
+                    "detail": assist_reason or "需要调度协助",
+                    "tool": "supervisor.reroute",
+                    "step_id": f"reroute-{uuid.uuid4().hex[:8]}",
+                    "status": "done",
+                    "agent_id": route.agent_id,
+                    "agent_title": agent_title,
+                },
+            }
+            reroute_instruction = (
+                f"【专精智能体无法完成，已交还调度】\n"
+                f"用户原问题：{user_message}\n"
+                f"专精智能体 [{agent_title}] 反馈：{assist_reason or '需要协助'}\n\n"
+                f"请根据以上信息重新处理用户请求，可直接回复或分配给其他智能体。"
+            )
+            orch_route = AgentRoute(
+                agent_id="orchestrator",
+                reason=f"{agent_title} 请求协助，由调度重新处理",
+            )
+            async for event in _run_specialist_hop(
+                sess, user_id,
+                route=orch_route,
+                user_message=user_message,
+                chat_history=chat_history,
+                retrieval_context=retrieval_context,
+                context_instruction=reroute_instruction,
+                conversation_id=conversation_id,
+                attachment_session_id=attachment_session_id,
+                intent_plan=intent_plan,
+                max_rounds=max_rounds,
+                task_mode=False,
+            ):
+                yield event
+            return
+
+        # ── 超出最大轮次兜底 ──
+        _logger.warning(
+            "专精智能体 %s 达到最大 supervisor 轮次 %d 仍未完成",
+            agent_title, max_supervisor_rounds,
+        )
+        yield {
+            "type": "complete",
+            "reply": f"{agent_title} 已达到最大执行轮次，请精简您的请求后重试。",
+            "messages": [], "citations": [], "kg_context": None,
+        }
+
+    except Exception:
+        _logger.exception("iter_supervised_agent_loop 异常中断 user=%s", user_id)
+        yield {
+            "type": "workflow",
+            "data": {
+                "phase": "agent_thought",
+                "title": "任务中断",
+                "detail": "调度智能体遇到错误，请稍后重试",
+                "tool": "supervisor.error",
+                "status": "error",
+            },
+        }
+        yield {
+            "type": "complete",
+            "messages": messages,
+            "reply": "抱歉，系统处理您的请求时遇到错误，请稍后重试。",
+            "citations": [],
+            "kg_context": None,
+        }
     finally:
         if conv_key:
             mark_agent_idle("orchestrator", conv_key)

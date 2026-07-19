@@ -20,6 +20,8 @@ class _HtmlAnalyzer(HTMLParser):
         self._tag_stack: list[str] = []
         self._skip_depth = 0
         self._in_title = False
+        self._in_article = False
+        self._article_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         t = tag.lower()
@@ -28,6 +30,15 @@ class _HtmlAnalyzer(HTMLParser):
             self._in_title = True
         if t in _SKIP_TAGS:
             self._skip_depth += 1
+        # 尝试识别主要正文区域
+        if t in ("article", "main") or any(
+            k.lower() in ("id", "class")
+            and v
+            and any(kw in v.lower() for kw in ("content", "article", "main", "detail", "news"))
+            for k, v in attrs
+        ):
+            self._in_article = True
+            self._article_depth = len(self._tag_stack)
 
     def handle_endtag(self, tag: str) -> None:
         t = tag.lower()
@@ -37,6 +48,9 @@ class _HtmlAnalyzer(HTMLParser):
             self._in_title = False
         if t in _SKIP_TAGS and self._skip_depth > 0:
             self._skip_depth -= 1
+        # 退出正文区域
+        if self._in_article and len(self._tag_stack) < self._article_depth:
+            self._in_article = False
 
     def handle_data(self, data: str) -> None:
         text = _clean(data)
@@ -64,13 +78,34 @@ def _extract_price_data(text: str) -> list[str]:
         line = line.strip()
         if not line:
             continue
+        # 价格相关关键词
         price_kw = (
             "碳价", "成交价", "均价", "收盘价", "开盘价", "最高价", "最低价",
             "成交量", "成交额", "交易量", "交易额", "挂牌", "大宗",
             "CEA", "CCER", "配额", "碳配额", "元/吨",
         )
         if any(kw in line for kw in price_kw):
-            lines.append(line[:200])
+            # 提取数字信息
+            numbers = re.findall(r"[\d,]+\.?\d*", line)
+            if numbers:
+                lines.append(line[:200])
+    return lines
+
+
+def _extract_policy_data(text: str) -> list[str]:
+    """从文本中提取政策相关段落。"""
+    lines = []
+    for para in text.split("。"):
+        para = para.strip()
+        if not para:
+            continue
+        policy_kw = (
+            "印发", "印发", "发布", "通知", "意见", "方案", "规划",
+            "碳达峰", "碳中和", "节能减排", "绿色", "低碳", "双碳",
+            "实施", "试行", "暂行", "办法", "规定", "条例",
+        )
+        if any(kw in para for kw in policy_kw):
+            lines.append(para[:200])
     return lines
 
 
@@ -81,12 +116,18 @@ def analyze_html(html: str, query_type: str = "") -> dict[str, object]:
     except Exception:
         pass
     title = _clean(parser.title) or "（无 title）"
+
+    # 全文拼接
     full_text = " ".join(parser._body_parts)
 
+    # 按类型提取关键数据
     extracted: list[str] = []
     if query_type == "price":
         extracted = _extract_price_data(full_text)
+    elif query_type in ("policy",):
+        extracted = _extract_policy_data(full_text)
 
+    # 正文摘要（优先取正文区域或提取的关键数据）
     snippet = ""
     if extracted:
         snippet = "；".join(extracted[:_MAX_SNIPPET])[:3000]
@@ -104,11 +145,16 @@ def analyze_html(html: str, query_type: str = "") -> dict[str, object]:
 def build_conclusion(url: str, data: dict[str, object], query_type: str = "") -> str:
     headings = data.get("headings") or []
     heading_text = "、".join(headings[:5]) if headings else "（无明显标题）"
+
     extracted = data.get("extracted") or []
     extracted_text = ""
     if extracted:
-        extracted_text = "\n关键数据：\n" + "\n".join(f"  - {item[:200]}" for item in extracted[:10])
+        extracted_text = "\n关键数据：\n" + "\n".join(
+            f"  - {item[:200]}" for item in extracted[:10]
+        )
+
     snippet = str(data.get("snippet") or "")[:600]
+
     type_label = {
         "price": "碳价行情",
         "policy": "政策法规",
@@ -117,10 +163,12 @@ def build_conclusion(url: str, data: dict[str, object], query_type: str = "") ->
         "international": "国际碳市场",
         "local": "地方双碳方案",
     }.get(query_type, "双碳资讯")
+
     return (
         f"【{type_label}】\n"
         f"URL：{url}\n"
         f"标题：{data.get('title')}\n"
         f"主要标题：{heading_text}\n"
-        f"正文摘要：{snippet}{extracted_text}"
+        f"正文摘要：{snippet}"
+        f"{extracted_text}"
     )

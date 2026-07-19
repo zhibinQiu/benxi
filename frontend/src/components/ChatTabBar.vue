@@ -67,7 +67,7 @@ onUnmounted(() => {
         @click="emit('switch', tab.id)"
       >
         <span v-if="tabStreaming[tab.id]" class="chat-tab__spinner" aria-hidden="true">
-          <CurveAnimation preset="rose-three" :size="16" inline rotate label="" />
+          <CurveAnimation preset="rose-three" :size="20" inline rotate :rotation-duration="12000" label="" />
         </span>
         <span v-else-if="tabHasContent[tab.id]" class="chat-tab__check" aria-hidden="true">
           <n-icon :size="10" :component="CheckmarkOutline" />
@@ -260,7 +260,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  margin-right: 4px;
+  vertical-align: middle;
+  margin: -2px 4px 0 0;
   line-height: 0;
 }
 

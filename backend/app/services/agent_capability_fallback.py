@@ -233,8 +233,8 @@ async def resolve_capability_gap_route_plan(
                 unsupported_part="",
                 capability_gap_instruction=(
                     "当前平台没有匹配的 Skill 能完成用户需求。"
-                    "请自动调用 skill-development 创建一个新 Skill（默认挂载到 skill-dev），"
-                    "然后运行脚本验证，最后向用户说明结果。"
+                    "请直接调用 create_skill 创建一个新 Skill（默认挂载到 skill-dev），"
+                    "然后调用 run_skill_script 验证，最后向用户说明结果。"
                 ),
             ),
             message,

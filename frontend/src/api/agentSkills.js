@@ -13,11 +13,14 @@ export async function fetchAgentTools() {
   return api("/api/v1/admin/agent-skills/tools");
 }
 
-export async function patchBuiltinSkill(name, { enabled }) {
+export async function patchBuiltinSkill(name, { enabled, title, description }) {
+  const body = { enabled };
+  if (title !== undefined) body.title = title;
+  if (description !== undefined) body.description = description;
   return api(`/api/v1/admin/agent-skills/builtin/${encodeURIComponent(name)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(body),
   });
 }
 

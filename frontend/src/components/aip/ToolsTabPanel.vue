@@ -1,6 +1,6 @@
 <script setup>
 import { computed, h, nextTick, onMounted, ref, watch } from "vue";
-import { NButton, NDataTable, NDivider, NDrawer, NDrawerContent, NIcon, NInput, NPagination, NSpace, NTag, NText } from "naive-ui";
+import { NButton, NDataTable, NDivider, NDrawer, NDrawerContent, NIcon, NInput, NPagination, NSpace, NTag, NText, NSelect } from "naive-ui";
 import { EyeOutline, RefreshOutline, SearchOutline } from "@vicons/ionicons5";
 import IconAction from "../IconAction.vue";
 import { useClientListPagination } from "../../composables/useClientListPagination.js";
@@ -32,6 +32,16 @@ const searchOpen = ref(false);
 const searchInputRef = ref(null);
 const detailOpen = ref(false);
 const detail = ref(null);
+const categoryFilter = ref("all");
+
+const CATEGORY_OPTIONS = [
+  { label: t("admin.agentSkills.filterAll"), value: "all" },
+  { label: t("admin.agentSkills.toolCategory.platform"), value: "platform" },
+  { label: t("admin.agentSkills.toolCategory.data"), value: "data" },
+  { label: t("admin.agentSkills.toolCategory.model"), value: "model" },
+  { label: t("admin.agentSkills.toolCategory.browser"), value: "browser" },
+  { label: t("admin.agentSkills.toolCategory.document"), value: "document" },
+];
 
 function toggleSearch() {
   searchOpen.value = !searchOpen.value;
@@ -43,12 +53,19 @@ function toggleSearch() {
 }
 
 const filteredTools = computed(() => {
+  let list = tools.value;
+  const cf = categoryFilter.value;
+  if (cf && cf !== "all") {
+    list = list.filter((t) => t.category === cf);
+  }
   const q = keyword.value.trim().toLowerCase();
-  if (!q) return tools.value;
-  return tools.value.filter((t) => {
-    const hay = [t.tool_id, t.tool_type, t.category, t.description].filter(Boolean).join(" ").toLowerCase();
-    return hay.includes(q);
-  });
+  if (q) {
+    list = list.filter((t) => {
+      const hay = [t.tool_id, t.category, t.description].filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }
+  return list;
 });
 
 const {
@@ -57,7 +74,7 @@ const {
   total,
   pagedItems,
   onPageChange,
-} = useClientListPagination(filteredTools);
+} = useClientListPagination(filteredTools, { pageSize: 5 });
 
 const displayInfo = computed(() => {
   if (!total.value) return "";
@@ -66,7 +83,7 @@ const displayInfo = computed(() => {
   return `${total.value}条数据中的 ${start}-${end} 条`;
 });
 
-watch(keyword, () => {
+watch([keyword, categoryFilter], () => {
   onPageChange(1);
 });
 
@@ -92,12 +109,6 @@ const columns = computed(() => [
       ]),
   },
   {
-    title: t("admin.agentSkills.colToolType"),
-    key: "tool_type",
-    width: 132,
-    ellipsis: { tooltip: true },
-  },
-  {
     title: t("admin.agentSkills.colCategory"),
     key: "category",
     width: 128,
@@ -105,30 +116,16 @@ const columns = computed(() => [
     render: (row) => toolCategoryLabel(row.category),
   },
   {
-    title: t("admin.agentSkills.colAvailable"),
-    key: "available",
-    width: 100,
-    render: (row) =>
-      h(
-        NTag,
-        {
-          size: "small",
-          type: row.available ? "success" : "default",
-          bordered: false,
-        },
-        { default: () => (row.available ? t("admin.agentSkills.availableYes") : t("admin.agentSkills.availableNo")) }
-      ),
-  },
-  {
     title: "",
     key: "actions",
     width: 56,
     render: (row) =>
-      h(
-        NButton,
-        { size: "tiny", quaternary: true, circle: true, onClick: () => openDetail(row) },
-        { default: () => h(NIcon, null, { default: () => h(EyeOutline) }) }
-      ),
+      h(IconAction, {
+        label: t("common.view"),
+        icon: EyeOutline,
+        variant: "table",
+        onClick: () => openDetail(row),
+      }),
   },
 ]);
 
@@ -190,6 +187,15 @@ defineExpose({ load, toggleSearch, loading });
       <div class="tools-card__hint">{{ t('admin.agentSkills.toolbarHint.tools') }}</div>
     </div>
     <div class="tools-card">
+      <div class="tools-filter-bar">
+        <NSelect
+          v-model:value="categoryFilter"
+          :placeholder="t('admin.agentSkills.filterByCategory')"
+          :options="CATEGORY_OPTIONS"
+          style="width: 160px"
+          size="small"
+        />
+      </div>
       <div class="admin-list-table tools-tab-table">
         <NDataTable
           :loading="loading && !hydrated"
@@ -218,7 +224,6 @@ defineExpose({ load, toggleSearch, loading });
         <div><strong>{{ detail.tool_id }}</strong></div>
         <NText depth="3">{{ detail.description }}</NText>
         <NSpace :size="8">
-          <NTag size="small" :bordered="false">{{ detail.tool_type }}</NTag>
           <NTag size="small" :bordered="false">{{ toolCategoryLabel(detail.category) }}</NTag>
           <NTag size="small" :bordered="false">{{ detail.tool_version }}</NTag>
           <NTag size="small" :bordered="false">QPS {{ detail.rate_limit?.qps ?? "—" }}</NTag>
@@ -268,6 +273,15 @@ defineExpose({ load, toggleSearch, loading });
   background: #fcfcfc;
   padding: 12px 16px;
   padding-top: 0;
+}
+
+.tools-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--platform-border-strong);
+  margin-bottom: 0;
 }
 
 .tools-card__header {

@@ -922,8 +922,9 @@ def iter_gather_for_report(
         if not loc_q and not web_q:
             break
 
-        # 先发出所有 tool_call 事件，让用户立即感知全部计划
+        # ── 阶段一：本地检索（tool_call → 执行 → tool_result，顺序到位让前台感知进度） ──
         ret_call_meta: list[tuple[int, str, str, str]] = []
+        batch_results: list[Any] = []
         if doc_ids and loc_q:
             for qi, q in enumerate(loc_q, start=1):
                 title = _retrieval_step_title(
@@ -935,27 +936,8 @@ def iter_gather_for_report(
                 _emit_wf(emit, ev)
                 yield ev
                 ret_call_meta.append((qi, q, sid, title))
-
-        research_sid: str = ""
-        combined = ""
-        if web_enabled and web_q:
-            combined = f"{topic} {' '.join(web_q)}".strip()
-            research_sid, ev = _tool_call_event(
-                "deep_research", "联网调研", combined[:120]
-            )
-            _emit_wf(emit, ev)
-            yield ev
-
-        # 顺序执行（同 one db session，不能跨线程共享）
-        batch_results: list[Any] = []
-        if doc_ids and loc_q:
+            # 立刻执行本地检索（同 one db session）
             batch_results = toolkit.retrieve_many(loc_q, limit=15) or []
-        research_result: Any = None
-        if web_enabled and web_q and combined:
-            research_result = toolkit.deep_research(combined)
-
-        # 发出 tool_result 事件（本地检索）
-        if ret_call_meta:
             for (qi, q, sid, title), tr in zip(
                 ret_call_meta, batch_results, strict=False
             ):
@@ -973,22 +955,30 @@ def iter_gather_for_report(
                 )
                 _emit_wf(emit, tre)
                 yield tre
-        # 发出 tool_result 事件（联网调研）
-        if web_enabled and research_result and research_sid:
-            summaries.append(research_result.summary)
-            wf_kind = "联网调研"
-            tre = _tool_result_event(
-                "deep_research",
-                _retrieval_step_title(
-                    round_idx,
-                    kind=wf_kind,
-                ),
-                research_result.summary,
-                research_sid,
-                ok=research_result.ok,
+
+        # ── 阶段二：联网调研（tool_call → 执行 → tool_result） ──
+        research_sid: str = ""
+        research_result: Any = None
+        if web_enabled and web_q:
+            combined = f"{topic} {' '.join(web_q)}".strip()
+            research_sid, ev = _tool_call_event(
+                "deep_research", "联网调研", combined[:120]
             )
-            _emit_wf(emit, tre)
-            yield tre
+            _emit_wf(emit, ev)
+            yield ev
+            # 立刻执行联网调研
+            research_result = toolkit.deep_research(combined)
+            if research_result:
+                summaries.append(research_result.summary)
+                tre = _tool_result_event(
+                    "deep_research",
+                    "联网调研",
+                    research_result.summary,
+                    research_sid,
+                    ok=research_result.ok,
+                )
+                _emit_wf(emit, tre)
+                yield tre
 
         if not agentic:
             break

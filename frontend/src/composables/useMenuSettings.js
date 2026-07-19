@@ -55,6 +55,9 @@ export const ROUTE_MENU_KEYS = Object.freeze({
   "admin-menu-settings": "admin-menu-settings",
   "issue-reports": "issue-reports",
   "agent-skills": "agent-skills",
+  "finance-assistant": "system-functions",
+  "carbon-assistant": "system-functions",
+  "prompt-management": "system-functions",
 });
 
 /** 管理员在「菜单管理」中可配置的侧栏项（不含权限控制的子页） */

@@ -32,16 +32,11 @@ class SkillKindOut(StrEnum):
 
 
 class AgentToolCategoryOut(StrEnum):
-    WEB = "web"
-    KNOWLEDGE = "knowledge"
-    GRAPH = "graph"
-    SKILL_MGMT = "skill_mgmt"
-    MEMORY = "memory"
-    DOCUMENT = "document"
     PLATFORM = "platform"
-    ADMIN = "admin"
+    DATA = "data"
+    MODEL = "model"
     BROWSER = "browser"
-    ORCHESTRATION = "orchestration"
+    DOCUMENT = "document"
 
 
 class RateLimitOut(BaseModel):
@@ -53,12 +48,9 @@ class AgentToolOut(BaseModel):
 
     name: str
     tool_id: str = ""
-    tool_type: str = ""
     description: str
     doc_text: str = ""
     category: AgentToolCategoryOut
-    available: bool = True
-    availability_note: str = ""
     input_schema: dict = Field(default_factory=dict)
     output_schema: dict = Field(default_factory=dict)
     rate_limit: RateLimitOut = Field(default_factory=RateLimitOut)
@@ -115,6 +107,8 @@ class UnifiedSkillOut(BaseModel):
 
 class BuiltinSkillPatchIn(BaseModel):
     enabled: bool
+    title: str | None = None
+    description: str | None = None
 
 
 class SkillInvokeIn(BaseModel):

@@ -81,7 +81,7 @@ flowchart TB
 
 | 项 | 说明 |
 |----|------|
-| 版本源 | 仓库根 `VERSION`（当前 4.6.0）→ `BENXI_VERSION` 镜像 tag |
+| 版本源 | 仓库根 `VERSION`（当前 4.8.6）→ `BENXI_VERSION` 镜像 tag |
 | 开发入口 | `./dev.sh docker`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
 | 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |

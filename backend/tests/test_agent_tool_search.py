@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
+from app.core.tool_skill_taxonomy import (
+    PARENT_HIDDEN_EXECUTION_ENTRYPOINTS,
+    mounted_tool_names_for_agent,
+)
 from app.services.agent_tool_search import (
     CORE_TOOL_NAMES,
     search_tool_definitions,
@@ -30,18 +36,18 @@ def test_search_tools_finds_document_tools():
     assert "create_kb_folder" in names
 
 
-def test_select_visible_includes_core_and_unlocked():
+def test_select_visible_exposes_mounted_specs_only():
     specs = [
-        {"type": "function", "function": {"name": "create_kb_folder", "description": "x"}},
         {"type": "function", "function": {"name": "web_search", "description": "y"}},
+        {"type": "function", "function": {"name": "browser_navigate", "description": "z"}},
     ]
-    visible = select_visible_tool_specs(specs, {"create_kb_folder"})
+    visible = select_visible_tool_specs(specs, agent_id="orchestrator")
     names = {tool_spec_name(s) for s in visible}
-    assert "search_skills" in names
     assert "web_search" in names
-    assert "create_kb_folder" in names
-    assert "list_todos" not in names
-    assert "run_tool_batch" in names
+    assert "browser_navigate" in names
+    # 未传入 specs 的工具不可见（可见集=已挂载 specs）
+    assert "create_kb_folder" not in names
+    assert "find_skills" not in names
 
 
 def test_skill_dev_does_not_expose_run_tool_batch():
@@ -49,14 +55,43 @@ def test_skill_dev_does_not_expose_run_tool_batch():
         {"type": "function", "function": {"name": "run_skill_script", "description": "x"}},
         {"type": "function", "function": {"name": "list_agent_skills", "description": "y"}},
     ]
-    visible = select_visible_tool_specs(specs, set(), agent_id="skill-dev")
+    visible = select_visible_tool_specs(specs, agent_id="skill-dev")
     names = {tool_spec_name(s) for s in visible}
     assert "run_skill_script" in names
     assert "run_tool_batch" not in names
 
 
-def test_core_tool_names_subset_of_full_catalog():
-    assert "search_skills" in CORE_TOOL_NAMES
-    assert "knowledge_retrieve" in CORE_TOOL_NAMES
-    assert "search_documents_by_name" in CORE_TOOL_NAMES
+def test_core_tool_names_include_orchestration_primitives():
+    assert "find_skills" in CORE_TOOL_NAMES
+    assert "invoke_context_subagent" in CORE_TOOL_NAMES
     assert "run_skill_script" not in CORE_TOOL_NAMES
+
+
+def test_parent_orchestrator_specs_are_mounted_not_platform_wide():
+    db = MagicMock()
+    user = MagicMock()
+    mounted_default = mounted_tool_names_for_agent("orchestrator")
+    with (
+        patch(
+            "app.services.agent_profile_service.resolve_effective_runtime_tool_names",
+            return_value=list(mounted_default),
+        ),
+        patch("app.services.agent_tools.user_has_permission", return_value=False),
+        patch("app.domains.knowledge.knowledge.enabled", return_value=True),
+        patch(
+            "app.integrations.browser_automation.browser_config.get_browser_rpa_config",
+        ) as browser_cfg,
+    ):
+        browser_cfg.return_value.enabled = True
+        specs = build_agent_tool_specs(db, user, agent_id="orchestrator")
+    names = {tool_spec_name(s) for s in specs}
+    assert "find_skills" in names
+    assert "web_search" in names
+    assert "browser_navigate" in names
+    # 未挂载到 orchestrator 的平台工具不应出现
+    assert "create_user" not in names
+    assert "create_skill" not in names
+    for hidden in PARENT_HIDDEN_EXECUTION_ENTRYPOINTS:
+        assert hidden not in names, hidden
+    # 可见集 ⊆ 默认挂载集（再减去隐藏入口）
+    assert names <= (mounted_default - PARENT_HIDDEN_EXECUTION_ENTRYPOINTS)

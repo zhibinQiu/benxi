@@ -173,6 +173,7 @@ class DocumentListItem(BaseModel):
 class DocumentDetail(DocumentListItem):
     description: str
     versions: list[DocumentVersionOut] = []
+    share_token: str | None = None
 
 
 class UploadPrepareResponse(BaseModel):

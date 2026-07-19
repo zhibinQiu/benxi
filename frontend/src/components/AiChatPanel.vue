@@ -54,9 +54,6 @@ import { handleAgentWorkflowForNotifications } from "../composables/useNotificat
 import {
   emptyAgentWorkflow,
   applyAgentWorkflowEvent,
-  sanitizeWorkflowDisplayText,
-  formatWorkflowRunningLine,
-  getWorkflowRunningSegment,
   getWorkflowLastError,
 } from "../utils/agentWorkflow.js";
 import { alignCitationsWithContent, splitCitedCitations } from "../utils/reportCitations.js";
@@ -937,47 +934,22 @@ function emptyWorkflow() {
   return emptyAgentWorkflow();
 }
 
-const useCompactWorkflowProgress = computed(() => props.chatScope === "ai-home");
-
-/** 智能问数、双碳问答：新的思考过程替换上一个，不从上往下堆叠。 */
-const useThinkingReplaceScope = computed(() =>
-  props.chatScope === "smart-data-query" || props.chatScope === "carbon-qa"
-);
-
-/** 报告生成：同一智能体的多个 tool_call 合并为一段滚动显示，不罗列全部子步骤。 */
-const useSingleStepWorkflow = computed(() =>
-  useCompactWorkflowProgress.value
-  || useThinkingReplaceScope.value
-  || props.chatScope === "report-generation"
-);
-
 function applyWorkflowEvent(workflow, ev) {
-  return applyAgentWorkflowEvent(workflow, ev, t, {
-    currentStepOnly: useSingleStepWorkflow.value,
-  });
+  return applyAgentWorkflowEvent(workflow, ev);
 }
 
-function workflowHasStepList(workflow) {
-  if (!workflow) return false;
-  if ((workflow.steps?.length ?? 0) > 0) return true;
-  if ((workflow.taskPlan?.length ?? 0) > 0) return true;
-  if (workflow.pendingConfirmation?.status === "awaiting") return true;
-  if (workflow.pendingChoice?.status === "awaiting") return true;
-  return false;
-}
-function workflowHasVisibleProgress(workflow) {
+function workflowVisible(workflow) {
   if (!workflow) return false;
   if (workflow.running) return true;
-  if ((workflow.steps?.length ?? 0) > 0) return true;
-  if ((workflow.taskPlan?.length ?? 0) > 0) return true;
-  return Boolean(sanitizeWorkflowDisplayText(workflow.currentTitle));
+  if (workflow.failed) return true;
+  if (workflow.pendingConfirmation || workflow.pendingChoice) return true;
+  return Boolean(workflow.summary);
 }
 
 function workflowAwaitingAnswer(message) {
   if ((message?.content || "").trim()) return false;
-  if (messageScreenshots(message).length) return false;
   const workflow = message?.workflow;
-  if (!workflow || !workflowHasVisibleProgress(workflow)) return false;
+  if (!workflow || !workflowVisible(workflow)) return false;
   return Boolean(message?.streaming || workflow.running);
 }
 
@@ -989,16 +961,9 @@ function assistantConclusionContent(message) {
   return message.content || "";
 }
 
-function workflowCurrentStepText(workflow) {
+function workflowAnswerStatusText(workflow) {
   if (!workflow) return "";
-  const running = getWorkflowRunningSegment(workflow);
-  if (running) return formatWorkflowRunningLine(workflow, running, t("agentWorkflow.executingAgent"));
-  const current = sanitizeWorkflowDisplayText(workflow.currentTitle);
-  if (current) return current;
-  for (const task of workflow.taskPlan || []) {
-    if (task.status === "running" && task.title) return task.title;
-  }
-  return "";
+  return workflow.summary || "";
 }
 
 function formatElapsed(ms) {
@@ -1007,13 +972,6 @@ function formatElapsed(ms) {
   const min = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
   return `已处理 ${min} 分 ${sec} 秒`;
-}
-
-function workflowAnswerStatusText(workflow) {
-  if (!workflow) return "";
-  const running = workflowCurrentStepText(workflow);
-  if (running) return running;
-  return sanitizeWorkflowDisplayText(workflow.planResult) || "";
 }
 
 function clearFollowUpQuestions() {
@@ -1980,26 +1938,15 @@ defineExpose({
                 'ai-home-bubble--error': entry.message.error,
                 'ai-home-bubble--streaming': entry.message.streaming}"
             >
+              <!-- 统一工作流进度（所有 scope 共用极简单行显示） -->
               <AgentWorkflowProgress
-                v-if="
-                  showWorkflowProgress &&
-                  !useCompactWorkflowProgress &&
-                  workflowHasStepList(entry.message.workflow)
-                "
+                v-if="showWorkflowProgress && workflowVisible(entry.message.workflow)"
                 :workflow="entry.message.workflow"
                 :keep-visible-after-done="true"
-                :awaiting-reply="entry.message.streaming && !entry.message.content"
-                :show-live-status="false"
-                compact
               />
-              <!-- 思考过程动画展示 -->
+              <!-- 无工作流时的回退加载动画 -->
               <div
-                v-if="
-                  useCompactWorkflowProgress &&
-                  entry.message.streaming &&
-                  !entry.message.content &&
-                  !workflowHasStepList(entry.message.workflow)
-                "
+                v-else-if="entry.message.streaming && !entry.message.content"
                 class="ai-std"
               >
                 <div class="ai-std__dot-pulse">
@@ -2008,40 +1955,6 @@ defineExpose({
                   <span class="ai-std__dot"></span>
                 </div>
                 <div class="ai-std__elapsed">{{ formatElapsed(elapsedMs) }}</div>
-              </div>
-              <div
-                v-else-if="
-                  entry.message.streaming &&
-                  !entry.message.content &&
-                  !(showWorkflowProgress && workflowAwaitingAnswer(entry.message)) &&
-                  !useCompactWorkflowProgress
-                "
-                class="ai-std"
-              >
-                <div class="ai-std__dot-pulse">
-                  <span class="ai-std__dot"></span>
-                  <span class="ai-std__dot"></span>
-                  <span class="ai-std__dot"></span>
-                </div>
-              </div>
-              <AgentWorkflowCompactProgress
-                v-if="showWorkflowProgress && workflowAwaitingAnswer(entry.message) && useCompactWorkflowProgress"
-                :workflow="entry.message.workflow"
-              />
-              <div
-                v-else-if="showWorkflowProgress && workflowAwaitingAnswer(entry.message)"
-                class="ai-answer-status platform-inline-loading ai-workflow-current"
-              >
-                <RoseLoader class="ai-answer-status__rose" :size="24" />
-                <span
-                  v-if="entry.message.workflow?.currentAgentTitle"
-                  class="ai-workflow-current__agent"
-                >
-                  {{ entry.message.workflow.currentAgentTitle }}
-                </span>
-                <span class="ai-answer-status-text">{{
-                  workflowAnswerStatusText(entry.message.workflow) || t("agentWorkflow.executing")
-                }}</span>
               </div>
               <div
                 v-if="
@@ -2159,16 +2072,19 @@ defineExpose({
                         </div>
                       </div>
                       <div v-for="(step, si) in workflowExecSteps(entry.message)" :key="`exec-${si}`" class="ai-home-panel-plan-step">
-                        <div class="ai-home-panel-plan-step-title">{{ step.title }}</div>
-                        <!-- 思考型步骤：完整显示思考文本内容 -->
-                        <div v-if="step.kind === 'thinking' && step.detail" class="ai-home-panel-thinking-text">{{ step.detail }}</div>
-                        <!-- 其他步骤：以列表形式展示详情 -->
-                        <div v-else-if="Array.isArray(step.detail) && step.detail.length" class="ai-home-panel-plan-substeps">
-                          <div v-for="(row, ri) in step.detail" :key="`det-${ri}`" class="ai-home-panel-plan-substep">
-                            <span class="ai-home-panel-plan-substep-dot">•</span>
-                            <span>{{ row.label || row.text || row }}</span>
+                        <!-- 思考型步骤：仅正文，不显示「思考」标题 -->
+                        <template v-if="step.kind === 'thinking'">
+                          <div v-if="step.detail" class="ai-home-panel-thinking-text">{{ step.detail }}</div>
+                        </template>
+                        <template v-else>
+                          <div class="ai-home-panel-plan-step-title">{{ step.title }}</div>
+                          <div v-if="Array.isArray(step.detail) && step.detail.length" class="ai-home-panel-plan-substeps">
+                            <div v-for="(row, ri) in step.detail" :key="`det-${ri}`" class="ai-home-panel-plan-substep">
+                              <span class="ai-home-panel-plan-substep-dot">•</span>
+                              <span>{{ row.label || row.text || row }}</span>
+                            </div>
                           </div>
-                        </div>
+                        </template>
                       </div>
                     </div>
                   </n-collapse-item>
@@ -2811,7 +2727,7 @@ defineExpose({
   width: 86px;
   height: 86px;
   margin: 0 auto 19px;
-  border-radius: 24px;
+  border-radius: var(--platform-radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2831,7 +2747,7 @@ defineExpose({
   width: 48px;
   height: 48px;
   margin: 0;
-  border-radius: 14px;
+  border-radius: var(--platform-radius);
 }
 
 .ai-home-title {
@@ -2854,7 +2770,7 @@ defineExpose({
 
 .ai-home-desc {
   margin: 0 0 12px;
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1.65;
   color: var(--platform-muted);
 }
@@ -3663,18 +3579,18 @@ defineExpose({
 }
 
 .ai-std__dot {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
   background: var(--platform-accent);
-  animation: ai-std-bounce 1.2s ease-in-out infinite;
+  animation: ai-std-bounce 0.8s ease-in-out infinite;
 }
 
 .ai-std__dot:nth-child(2) {
-  animation-delay: 0.15s;
+  animation-delay: 0.1s;
 }
 .ai-std__dot:nth-child(3) {
-  animation-delay: 0.3s;
+  animation-delay: 0.2s;
 }
 
 @keyframes ai-std-bounce {
@@ -3697,9 +3613,9 @@ defineExpose({
 }
 
 .ai-answer-status {
-  gap: 10px;
-  font-size: 16px;
-  padding: 5px 0;
+  gap: 8px;
+  font-size: 13px;
+  padding: 4px 0;
 }
 
 .ai-answer-status__rose {
@@ -3709,6 +3625,8 @@ defineExpose({
 
 .ai-answer-status__rose :deep(.rose-loader) {
   display: block;
+  width: 16px;
+  height: 16px;
 }
 
 .ai-answer-status-text {

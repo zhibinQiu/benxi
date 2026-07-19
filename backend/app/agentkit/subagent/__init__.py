@@ -8,7 +8,6 @@ from app.agentkit.subagent.context import (
     merge_child_into_parent,
     normalize_queries,
 )
-from app.agentkit.subagent.explore import ExploreSkillStep, parallel_explore_queries
 from app.agentkit.subagent.loop import run_subagent_tool_loop
 from app.agentkit.subagent.runtime import execute_subagent
 from app.agentkit.subagent.types import SubagentKindConfig, SubagentRuntime
@@ -20,7 +19,6 @@ from app.agentkit.subagent.types import (
 )
 
 __all__ = [
-    "ExploreSkillStep",
     "LlmCompletionFn",
     "SkillInvokeFn",
     "SubagentConfig",
@@ -32,6 +30,5 @@ __all__ = [
     "execute_subagent",
     "merge_child_into_parent",
     "normalize_queries",
-    "parallel_explore_queries",
     "run_subagent_tool_loop",
 ]

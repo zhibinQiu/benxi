@@ -12,7 +12,7 @@ name: describe_tool
 
 ## When NOT to use
 - 你已清楚工具参数结构（直接调用，无需 describe）
-- 你只需要搜索 Skill（用 search_skills）
+- 你只需要搜索 Skill（用 find_skills）
 - 你不知道工具名（先看 tools.md 路由索引）
 
 ## Returns

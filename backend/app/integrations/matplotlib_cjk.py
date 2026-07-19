@@ -1,4 +1,4 @@
-"""matplotlib 中文字体配置（数据分析 Notebook 子进程绘图）。"""
+"""matplotlib 中文字体配置（表格分析 Notebook 子进程绘图）。"""
 
 from __future__ import annotations
 

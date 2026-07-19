@@ -25,7 +25,7 @@ def test_lazy_catalog_omits_full_skill_list():
         user = _admin_user(db)
         text = build_agent_catalog_prompt(db, user=user, lazy=True, query="")
         assert "按需发现" in text
-        assert "search_skills" in text
+        assert "find_skills" in text
         assert "### 内置" not in text
     finally:
         db.close()
@@ -48,8 +48,11 @@ def test_lazy_catalog_includes_query_matches():
 
 
 def test_research_has_context_subagent_tool():
-    names = skill_runtime_tools_for_agent("research")
-    assert "invoke_context_subagent" in names
+    # "research" 不再是专精 Agent；子智能体通过 invoke_context_subagent(kind=search) 入口
+    # 所有专精 Agent 均有 invoke_context_subagent 以创建子智能体
+    for aid in ("platform", "skill-dev", "carbon", "power-economy", "report"):
+        names = skill_runtime_tools_for_agent(aid)
+        assert "invoke_context_subagent" in names, f"{aid} 缺少 invoke_context_subagent"
 
 
 def test_invoke_context_subagent_args_validation():

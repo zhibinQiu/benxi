@@ -48,7 +48,10 @@ const TYPE_LABELS = {
   document_index: "jobs.types.document_index",
   document_parse: "jobs.types.document_parse",
   subscription_import: "jobs.types.subscription_import",
-  maintenance: "jobs.types.maintenance"};
+  maintenance: "jobs.types.maintenance",
+  finance_report: "jobs.types.finance_report",
+  carbon_report: "jobs.types.carbon_report",
+};
 
 const STATUS_LABELS = {
   pending: "jobs.status.pending",
@@ -425,7 +428,7 @@ defineExpose({ load, refresh: load });
                 v-if="['pdf_translate', 'document_index'].includes(row.type)"
                 text
                 type="primary"
-                size="tiny"
+                size="small"
                 @click="openJob(row)"
               >
                 {{ t("common.view") }}
@@ -434,7 +437,7 @@ defineExpose({ load, refresh: load });
                 v-if="isCancellable(row)"
                 text
                 type="warning"
-                size="tiny"
+                size="small"
                 @click="confirmCancelJob(row.id)"
               >
                 {{ t("batch.cancel") }}

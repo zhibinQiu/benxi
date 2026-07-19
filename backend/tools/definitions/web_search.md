@@ -2,11 +2,15 @@
 name: web_search
 ---
 【内部工具】联网检索公开信息，返回各来源全文（Markdown）。
-此工具不直接暴露给用户对话，由 deep_research 子智能体内部调用。
-可多次调用此工具实现多轮搜索：先宽泛搜索了解概貌，根据已读全文生成更具体的关键词继续深挖。
+
+**阅读策略：先概要，再择需读全文。**
+先调 `web_search(read_full=0)` 获取摘要片段快速判断是否够用；
+如摘要不足以回答问题，再对特定 URL 调 `fetch_url_content` 获取全文。
 
 ## When to use
-- 仅供 deep_research 子智能体内部调用，不直接暴露给 LLM
+- 检索公开网络信息
+- 先 read_full=0 看摘要，再择需 fetch_url_content
+- 如需自动读前 N 条全文，设置 read_full=3~6
 
 ## Returns
 - 搜索引擎摘要 + 前 N 条全文（Markdown 格式）
@@ -21,4 +25,4 @@ name: web_search
 最大结果数，默认 8，最大 20。
 
 ### read_full (optional)
-读取前 N 条链接的全文（Markdown）。0=仅返回搜索引擎摘要。默认 3，最大 6。
+读取前 N 条链接的全文（Markdown）。0=仅返回搜索引擎摘要（秒级返回）。默认 3，最大 6。

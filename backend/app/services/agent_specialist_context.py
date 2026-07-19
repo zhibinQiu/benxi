@@ -31,13 +31,16 @@ def build_specialist_chat_messages(
     context_instruction: str = "",
     task_mode: bool = False,
     route_reason: str = "",
+    skill_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """为指定专精智能体构建 bounded chat messages（system + history + user）。
 
     route_reason: 路由层分配的该智能体被选中的原因（如 "Skill 匹配（`web-search`）"），
                   会注入到 system prompt 的顶部以指导智能体优先使用哪类工具。
+
+    skill_names: 可选预解析的 skill 名称列表，避免内部重复查询。
     """
-    skill_names = resolve_agent_skill_names(db, agent_id)
+    skill_names = skill_names if skill_names is not None else resolve_agent_skill_names(db, agent_id)
     if agent_id == "skill-dev":
         skill_catalog = build_agent_catalog_prompt(
             db,

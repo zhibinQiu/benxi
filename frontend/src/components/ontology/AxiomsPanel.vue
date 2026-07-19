@@ -1,7 +1,7 @@
 <template>
   <div class="axioms-wrapper">
-    <n-space justify="space-between">
-      <n-button class="platform-btn--create" @click="openCreate">
+    <div class="axioms-toolbar">
+      <n-button type="primary" @click="openCreate">
         <template #icon><n-icon><AddOutline /></n-icon></template>
         新建公理
       </n-button>
@@ -9,7 +9,7 @@
         <template #icon><n-icon><PlayOutline /></n-icon></template>
         执行所有活跃公理
       </n-button>
-    </n-space>
+    </div>
 
     <div class="axioms-card">
       <div class="admin-list-table">
@@ -20,6 +20,7 @@
           :bordered="false"
           :row-key="(row) => row.name"
           pagination
+          :max-height="tableMaxHeight"
         />
       </div>
     </div>
@@ -52,7 +53,7 @@
 </template>
 
 <script setup>
-import { h, ref, reactive } from "vue";
+import { h, ref, reactive, onMounted, onUnmounted } from "vue";
 import { useMessage, useDialog } from "naive-ui";
 import { AddOutline, TrashOutline, CreateOutline, PlayOutline } from "@vicons/ionicons5";
 import {
@@ -77,6 +78,25 @@ const showModal = ref(false);
 const isEdit = ref(false);
 const saving = ref(false);
 const runningAll = ref(false);
+
+// 自适应表格高度
+const tableMaxHeight = ref(400);
+let resizeObs = null;
+function calcTableHeight() {
+  const el = document.querySelector(".axioms-wrapper");
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const avail = window.innerHeight - rect.top - 60;
+  tableMaxHeight.value = Math.max(200, avail);
+}
+onMounted(() => {
+  calcTableHeight();
+  resizeObs = new ResizeObserver(calcTableHeight);
+  const el = document.querySelector(".axioms-wrapper");
+  if (el) resizeObs.observe(el);
+});
+onUnmounted(() => { resizeObs?.disconnect(); });
+
 const form = reactive({
   name: "",
   description: "",
@@ -223,15 +243,26 @@ const columns = [
 .axioms-wrapper {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.axioms-toolbar {
+  display: flex;
+  align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .axioms-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--platform-border);
   border-radius: var(--platform-card-radius);
   background: #fcfcfc;
-  padding: 12px 16px;
-  padding-top: 0;
+  padding: 0 16px;
 }
 
 .axioms-card :deep(.n-data-table-th),
@@ -246,5 +277,10 @@ const columns = [
 
 .axioms-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
   border-bottom: none;
+}
+
+.axioms-card .admin-list-table {
+  height: 100%;
+  overflow: auto;
 }
 </style>

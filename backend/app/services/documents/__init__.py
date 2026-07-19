@@ -15,6 +15,13 @@ from app.services.documents.content import (
     read_document_file_bytes,
     read_document_pdf_bytes,
 )
+from app.services.documents.share import (
+    ensure_share_token,
+    get_document_by_share_token,
+    read_shared_document_file,
+    regenerate_share_token,
+    revoke_share_token,
+)
 from app.services.documents.crud import (
     complete_upload,
     create_document,
@@ -92,4 +99,9 @@ __all__ = [
     "list_recycle_documents",
     "list_shared_documents",
     "list_translatable_documents",
+    "ensure_share_token",
+    "get_document_by_share_token",
+    "read_shared_document_file",
+    "regenerate_share_token",
+    "revoke_share_token",
 ]

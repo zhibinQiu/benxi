@@ -83,7 +83,7 @@ const routes = [
       {
         path: "system/data-analysis",
         name: "data-analysis",
-        meta: { title: "数据分析", fullHeight: true, featureIcon: "stats-chart" },
+        meta: { title: "表格分析", fullHeight: true, featureIcon: "stats-chart" },
         component: () => import("../views/DataAnalysisView.vue"),
       },
       {
@@ -287,8 +287,19 @@ const routes = [
       {
         path: "todos",
         name: "todos",
-        meta: { title: "待办事项", featureIcon: "list" },
-        component: () => import("../views/TodosView.vue"),
+        redirect: { name: "notes", query: { tab: "todos" } },
+      },
+      {
+        path: "system/notes",
+        name: "notes",
+        meta: {
+          title: "工作笔记",
+          fullHeight: true,
+          flushStart: true,
+          flushEnd: true,
+          featureIcon: "create",
+        },
+        component: () => import("../views/NoteView.vue"),
       },
       {
         path: "profile",

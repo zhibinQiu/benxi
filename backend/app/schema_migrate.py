@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
+
+
+def _set_ddl_timeout(conn: Connection) -> None:
+    """迁移 DDL 临时解除超时限制，并防止锁等待过久。"""
+    conn.execute(text("SET LOCAL statement_timeout = '0'"))
+    conn.execute(text("SET LOCAL lock_timeout = '10s'"))
 
 
 def ensure_document_schema(engine: Engine) -> None:
@@ -1080,6 +1086,30 @@ def ensure_scheduled_rpa_task_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_notification_schema(engine: Engine) -> None:
+    """确保 notifications 表存在（系统通知）。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title VARCHAR(256) NOT NULL,
+            body TEXT NOT NULL DEFAULT '',
+            link VARCHAR(1024),
+            read_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_notifications_user "
+        "ON notifications (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_notifications_created_at "
+        "ON notifications (created_at DESC)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def ensure_scheduled_notification_schema(engine: Engine) -> None:
     statements = [
         """
@@ -1134,11 +1164,16 @@ def ensure_agent_skill_schema(engine: Engine) -> None:
         CREATE TABLE IF NOT EXISTS agent_skill_bindings (
             name VARCHAR(64) PRIMARY KEY,
             enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            title_override TEXT,
+            description_override TEXT,
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
         """,
+        "ALTER TABLE agent_skill_bindings ADD COLUMN IF NOT EXISTS title_override TEXT",
+        "ALTER TABLE agent_skill_bindings ADD COLUMN IF NOT EXISTS description_override TEXT",
     ]
     with engine.begin() as conn:
+        _set_ddl_timeout(conn)
         for sql in statements:
             conn.execute(text(sql))
 
@@ -1176,6 +1211,7 @@ def ensure_agent_profile_schema(engine: Engine) -> None:
         """,
     ]
     with engine.begin() as conn:
+        _set_ddl_timeout(conn)
         for sql in statements:
             conn.execute(text(sql))
 
@@ -1315,6 +1351,160 @@ def drop_legacy_carbon_market_tables(engine: Engine) -> None:
         )
 
 
+def ensure_prompt_schema(engine: Engine) -> None:
+    """提示词管理表。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS prompt_templates (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            title VARCHAR(256) NOT NULL,
+            content TEXT NOT NULL,
+            category VARCHAR(64) NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_prompt_user_id ON prompt_templates (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_prompt_category ON prompt_templates (category)",
+        "CREATE INDEX IF NOT EXISTS ix_prompt_user_cat ON prompt_templates (user_id, category)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_note_schema(engine: Engine) -> None:
+    """工作笔记表。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS note_folders (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            name VARCHAR(256) NOT NULL,
+            parent_id UUID REFERENCES note_folders(id) ON DELETE SET NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_note_folders_user_id ON note_folders (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_note_folders_parent_id ON note_folders (parent_id)",
+        """
+        CREATE TABLE IF NOT EXISTS notes (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            folder_id UUID REFERENCES note_folders(id) ON DELETE SET NULL,
+            title VARCHAR(512) NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_notes_user_id ON notes (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_notes_folder_id ON notes (folder_id)",
+        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)",
+        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_notes_share_token ON notes (share_token)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_finance_watchlist_schema(engine: Engine) -> None:
+    """理财自选清单表。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS finance_watchlist_items (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            asset_type VARCHAR(16) NOT NULL,
+            asset_code VARCHAR(64) NOT NULL,
+            asset_name VARCHAR(128) NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_watchlist_user_id ON finance_watchlist_items (user_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_watchlist_user_type_code "
+        "ON finance_watchlist_items (user_id, asset_type, asset_code)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_finance_report_schema(engine: Engine) -> None:
+    """理财报告任务表。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS finance_reports (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            stock_code VARCHAR(32) NOT NULL,
+            stock_name VARCHAR(128) NOT NULL,
+            report_type VARCHAR(16) NOT NULL,
+            roundtable_type VARCHAR(16),
+            research_direction VARCHAR(16),
+            ai_context TEXT NOT NULL DEFAULT '',
+            status VARCHAR(16) NOT NULL DEFAULT 'pending',
+            content TEXT,
+            error_message TEXT,
+            progress INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_finance_reports_user ON finance_reports (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_finance_reports_status ON finance_reports (status)",
+        "CREATE INDEX IF NOT EXISTS ix_finance_reports_user_status "
+        "ON finance_reports (user_id, status)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_carbon_report_schema(engine: Engine) -> None:
+    """双碳助手报告 / 策略任务表。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS carbon_reports (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            subject VARCHAR(128) NOT NULL,
+            report_type VARCHAR(32) NOT NULL,
+            industry VARCHAR(64) NOT NULL DEFAULT '',
+            region VARCHAR(64) NOT NULL DEFAULT '',
+            target_year VARCHAR(16) NOT NULL DEFAULT '',
+            ai_context TEXT NOT NULL DEFAULT '',
+            status VARCHAR(16) NOT NULL DEFAULT 'pending',
+            content TEXT,
+            error_message TEXT,
+            progress INTEGER NOT NULL DEFAULT 0,
+            view_count INTEGER NOT NULL DEFAULT 0,
+            share_token VARCHAR(64),
+            system_job_id UUID,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_reports_user ON carbon_reports (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_carbon_reports_status ON carbon_reports (status)",
+        "CREATE INDEX IF NOT EXISTS ix_carbon_reports_type ON carbon_reports (report_type)",
+        "CREATE INDEX IF NOT EXISTS ix_carbon_reports_user_status "
+        "ON carbon_reports (user_id, status)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_carbon_reports_share_token "
+        "ON carbon_reports (share_token)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 def run_light_schema_patches(engine: Engine) -> None:
     """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
     drop_legacy_carbon_market_tables(engine)
@@ -1326,8 +1516,50 @@ def run_light_schema_patches(engine: Engine) -> None:
     ensure_aip_external_agents_schema(engine)
     ensure_mcp_external_skills_schema(engine)
     ensure_aip_secret_keys_schema(engine)
+    ensure_notification_schema(engine)
     ensure_scheduled_notification_schema(engine)
     ensure_scheduled_rpa_task_schema(engine)
+    ensure_prompt_schema(engine)
+    ensure_note_schema(engine)
+    ensure_finance_watchlist_schema(engine)
+    ensure_finance_report_schema(engine)
+    ensure_carbon_report_schema(engine)
+
+    # patches: 新增 system_job_id / view_count / share_token 列
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE finance_reports ADD COLUMN IF NOT EXISTS system_job_id UUID")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE finance_reports "
+                "ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE finance_reports "
+                "ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_finance_reports_share_token "
+                "ON finance_reports (share_token)"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE documents "
+                "ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_share_token "
+                "ON documents (share_token)"
+            )
+        )
 
 
 def run_all_schema_migrations(engine: Engine) -> None:

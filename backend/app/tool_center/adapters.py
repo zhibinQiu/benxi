@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 from app.services.skill_chat_service import (
+    ATOMIC_TOOL_FETCH_URL_CONTENT,
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
     ATOMIC_TOOL_WEB_SEARCH,
@@ -42,7 +43,7 @@ def _firecrawl_scrape(url: str) -> str | None:
                 f"{api_url}/v1/scrape",
                 json={"url": url, "formats": ["markdown"]},
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=20,
+                timeout=15,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -52,10 +53,10 @@ def _firecrawl_scrape(url: str) -> str | None:
         except Exception as exc:
             logger.debug("FireCrawl scrape failed %s: %s", url, exc)
 
-    # Fallback: 内置 web_article_fetcher
+    # Fallback: 内置 web_article_fetcher（轻量模式，快速跳过）
     try:
-        from app.integrations.web_article_fetcher import fetch_web_article
-        entry = fetch_web_article(url, timeout=15.0)
+        from app.integrations.web_article_fetcher import fetch_web_article_fast
+        entry = fetch_web_article_fast(url, timeout=8.0)
         if entry and entry.content_html:
             from app.integrations.html_markdown import html_to_markdown
             return html_to_markdown(entry.content_html)
@@ -64,23 +65,202 @@ def _firecrawl_scrape(url: str) -> str | None:
     return None
 
 
-async def _enrich_items_with_full_text(items: list[dict], read_full: int) -> list[dict]:
-    """并行抓取前 read_full 条链接的全文，附加到 items。"""
+async def _enrich_items_with_full_text(
+    items: list[dict],
+    read_full: int,
+    *,
+    loop_state: dict[str, Any] | None = None,
+) -> list[dict]:
+    """并行抓取前 read_full 条链接的全文，附加到 items。超时/出错的 URL 静默跳过。"""
     targets = [(i, item) for i, item in enumerate(items[:read_full]) if item.get("url")]
     if not targets:
         return items
 
+    # 结构化状态：前端原地替换列表，不堆叠字符串
+    url_entries: list[dict[str, str]] = [
+        {"url": (item.get("url") or "").strip(), "status": "pending"}
+        for _, item in targets
+    ]
+    url_entries = [e for e in url_entries if e["url"]]
+    total = len(url_entries)
+    if not total:
+        return items
+    done_count = 0
+    lock = asyncio.Lock()
+
+    def _emit(current_url: str = "") -> None:
+        _emit_url_parse_progress(
+            loop_state,
+            urls=list(url_entries),
+            done=done_count,
+            total=total,
+            current_url=current_url,
+            tool_name="web_search",
+        )
+
+    _emit()
+
     async def _fetch_one(idx: int, item: dict) -> None:
+        nonlocal done_count
         url = (item.get("url") or "").strip()
         if not url:
             return
+        entry = next((e for e in url_entries if e["url"] == url), None)
+        async with lock:
+            if entry is not None:
+                entry["status"] = "parsing"
+            _emit(current_url=url)
         loop = asyncio.get_running_loop()
-        full = await loop.run_in_executor(None, _firecrawl_scrape, url)
-        if full:
-            items[idx]["full_text"] = full
+        ok = False
+        try:
+            full = await asyncio.wait_for(
+                loop.run_in_executor(None, _firecrawl_scrape, url),
+                timeout=15.0,
+            )
+            if full:
+                items[idx]["full_text"] = full
+                ok = True
+        except (asyncio.TimeoutError, Exception):
+            logger.debug("skip slow/error url=%s", url)
+        async with lock:
+            done_count += 1
+            if entry is not None:
+                entry["status"] = "done" if ok else "skipped"
+            _emit(current_url=url)
 
     await asyncio.gather(*[_fetch_one(idx, it) for idx, it in targets], return_exceptions=True)
+    _emit()
+    if loop_state is not None:
+        loop_state.pop("_url_parse_state", None)
     return items
+
+
+def _truncate_url(url: str, max_len: int = 72) -> str:
+    """截断 URL 为可读短串。"""
+    if not url:
+        return ""
+    url = url.rstrip("/")
+    if len(url) <= max_len:
+        return url
+    return url[: max_len - 3] + "..."
+
+
+def _emit_url_parse_progress(
+    loop_state: dict[str, Any] | None,
+    *,
+    urls: list[dict[str, str]],
+    done: int,
+    total: int,
+    current_url: str = "",
+    tool_name: str = "web_search",
+) -> None:
+    """推送网页解析进度（全量 snapshot，前端原地替换）。"""
+    if loop_state is None:
+        return
+    snapshot = {
+        "urls": urls,
+        "done": done,
+        "total": total,
+        "current_url": current_url,
+    }
+    loop_state["_url_parse_state"] = snapshot
+    parsing = [u["url"] for u in urls if u.get("status") == "parsing"]
+    if parsing:
+        title = f"正在解析网页（{done}/{total}）"
+        detail = _truncate_url(parsing[0] if len(parsing) == 1 else f"{len(parsing)} 个进行中")
+    elif done < total:
+        title = f"准备解析网页（{done}/{total}）"
+        detail = _truncate_url(current_url) if current_url else f"共 {total} 个"
+    else:
+        title = f"网页解析完成（{total}/{total}）"
+        detail = f"已处理 {total} 个链接"
+    from app.services.agent_tools import push_intermediate_progress
+
+    push_intermediate_progress(
+        loop_state,
+        "url_parse_progress",
+        title,
+        detail,
+        tool="web.search",
+        tool_name=tool_name,
+        urls=urls,
+        done=done,
+        total=total,
+        current_url=current_url,
+    )
+
+
+async def _run_fetch_url_content(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """获取指定 URL 的网页正文（Markdown 格式）。"""
+    url = str(params.get("url") or "").strip()
+    max_chars = int(params.get("max_chars") or 50000)
+    if not url:
+        return _tool_result(False, "请提供要获取内容的 URL")
+
+    _emit_url_parse_progress(
+        ctx.loop_state,
+        urls=[{"url": url, "status": "parsing"}],
+        done=0,
+        total=1,
+        current_url=url,
+        tool_name="fetch_url_content",
+    )
+    loop = asyncio.get_running_loop()
+    try:
+        md = await asyncio.wait_for(
+            loop.run_in_executor(None, _firecrawl_scrape, url),
+            timeout=15.0,
+        )
+    except asyncio.TimeoutError:
+        _emit_url_parse_progress(
+            ctx.loop_state,
+            urls=[{"url": url, "status": "skipped"}],
+            done=1,
+            total=1,
+            current_url=url,
+            tool_name="fetch_url_content",
+        )
+        return _tool_result(False, f"获取网页超时：{url[:80]}")
+    except Exception as exc:
+        _emit_url_parse_progress(
+            ctx.loop_state,
+            urls=[{"url": url, "status": "skipped"}],
+            done=1,
+            total=1,
+            current_url=url,
+            tool_name="fetch_url_content",
+        )
+        return _tool_result(False, f"获取网页失败：{exc}")
+
+    if not md or not md.strip():
+        _emit_url_parse_progress(
+            ctx.loop_state,
+            urls=[{"url": url, "status": "skipped"}],
+            done=1,
+            total=1,
+            current_url=url,
+            tool_name="fetch_url_content",
+        )
+        return _tool_result(False, f"无法解析该网页内容：{url[:80]}")
+
+    truncated = md[:max_chars]
+    _emit_url_parse_progress(
+        ctx.loop_state,
+        urls=[{"url": url, "status": "done"}],
+        done=1,
+        total=1,
+        current_url=url,
+        tool_name="fetch_url_content",
+    )
+    if ctx.loop_state is not None:
+        ctx.loop_state.pop("_url_parse_state", None)
+    return _tool_result(
+        True,
+        f"已获取 {len(truncated)} 字符",
+        {"content": truncated, "url": url, "chars": len(truncated)},
+    )
 
 
 async def _run_web_search(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tuple[bool, str, dict | None]:
@@ -91,6 +271,17 @@ async def _run_web_search(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tu
         SearxngNotConfiguredError,
         SearxngSearchError,
         search_web,
+    )
+
+    from app.services.agent_tools import push_intermediate_progress
+
+    push_intermediate_progress(
+        ctx.loop_state,
+        "orchestrator_progress",
+        f"联网搜索：{query[:80]}",
+        f"搜索关键词：{query[:120]}" if query else "联网搜索",
+        tool="web.search",
+        tool_name="web_search",
     )
 
     # search_web 使用同步 httpx.Client()，放在 executor 中执行以免阻塞事件循环
@@ -106,7 +297,7 @@ async def _run_web_search(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tu
 
     # Phase 1: 读前 N 条全文
     if read_full > 0 and items:
-        items = await _enrich_items_with_full_text(items, read_full)
+        items = await _enrich_items_with_full_text(items, read_full, loop_state=ctx.loop_state)
         read_count = sum(1 for it in items[:read_full] if it.get("full_text"))
     else:
         read_count = 0
@@ -401,6 +592,183 @@ def _run_list_mounted_folders(
     )
 
 
+# ── 金融数据 ─────────────────────────────────────────────
+
+
+async def _run_stock_quote(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """A 股实时行情。"""
+    codes = str(params.get("codes") or "").strip()
+    if not codes:
+        return _tool_result(False, "codes 不能为空，请提供股票代码")
+
+    from app.services import finance_service as svc
+
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    data = await svc.get_stock_quotes(code_list)
+    if not data:
+        return _tool_result(False, f"未获取到行情数据：{codes[:80]}")
+    return _tool_result(
+        True,
+        f"已获取 {len(data)} 只股票行情",
+        {"quotes": data, "count": len(data)},
+    )
+
+
+async def _run_stock_kline(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """A 股 K 线数据。"""
+    code = str(params.get("code") or "").strip()
+    ktype = str(params.get("ktype") or "day").strip()
+    if not code:
+        return _tool_result(False, "code 不能为空，请提供股票代码")
+
+    from app.services import finance_service as svc
+
+    data = await svc.get_stock_kline(code, ktype)
+    if not data:
+        return _tool_result(False, f"未获取到 K 线数据：{code}")
+    return _tool_result(
+        True,
+        f"已获取 {len(data)} 条 K 线数据（{ktype}）",
+        {"kline": data, "code": code, "ktype": ktype, "count": len(data)},
+    )
+
+
+async def _run_market_indices(
+    ctx: ToolRuntimeContext,
+) -> tuple[bool, str, dict | None]:
+    """主要市场指数。"""
+    from app.services import finance_service as svc
+
+    data = await svc.get_market_indices()
+    return _tool_result(
+        True,
+        f"已获取 {len(data)} 个市场指数",
+        {"indices": data, "count": len(data)},
+    )
+
+
+async def _run_finance_search(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """搜索股票或基金。"""
+    query = str(params.get("query") or "").strip()
+    market = str(params.get("market") or "stock").strip()
+    if not query:
+        return _tool_result(False, "query 不能为空")
+
+    from app.services import finance_service as svc
+
+    if market == "fund":
+        data = await svc.search_funds(query)
+        label = "基金"
+    else:
+        data = await svc.search_stocks(query)
+        label = "股票"
+    if not data:
+        return _tool_result(True, f"未匹配到 {label}", {"results": []})
+    return _tool_result(
+        True,
+        f"找到 {len(data)} 个匹配的{label}",
+        {"results": data, "count": len(data), "market": market},
+    )
+
+
+async def _run_f10_data(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """个股基本面 F10 数据。"""
+    code = str(params.get("code") or "").strip()
+    if not code:
+        return _tool_result(False, "code 不能为空，请提供股票代码")
+
+    from app.services import finance_service as svc
+
+    target_date = str(params.get("target_date") or "").strip()
+    start_range = str(params.get("start_range") or "").strip()
+    end_range = str(params.get("end_range") or "").strip()
+    keywords_str = str(params.get("keywords") or "").strip()
+    keywords = [k.strip() for k in keywords_str.split(",") if k.strip()] if keywords_str else None
+
+    data = await svc.get_f10_report(
+        code=code,
+        target_date=target_date or None,
+        start_range=start_range or None,
+        end_range=end_range or None,
+        keywords=keywords,
+    )
+    summary_md = data.get("summary_md", "")[:2000]
+
+    counts = {
+        k: len(v) if isinstance(v, list) else (1 if v else 0)
+        for k, v in data.items()
+        if k != "summary_md" and k != "code"
+    }
+
+    return _tool_result(
+        True,
+        f"已获取 {code} 基本面数据。公司概况: {bool(data.get('company_info'))}, "
+        f"主营构成: {len(data.get('main_business', []))}, "
+        f"财务摘要: {len(data.get('financial_abstract', []))}, "
+        f"盈利指标: {len(data.get('profit_indicators', []))}",
+        {"report": data, "code": code, "summary_md": summary_md, "counts": counts},
+    )
+
+
+async def _run_carbon_price(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """碳价行情官方源摘要。"""
+    from app.services import carbon_service as svc
+
+    keyword = str(params.get("keyword") or "").strip()
+    url = str(params.get("url") or "").strip()
+    data = await svc.fetch_carbon_price(keyword=keyword, url=url)
+    ok = bool(data.get("ok"))
+    summary = str(data.get("summary_md") or "")[:4000]
+    n = len(data.get("sources") or [])
+    title = f"已获取 {n} 个碳价数据源摘要" if ok else "碳价数据源暂时无法访问"
+    return _tool_result(ok, title if ok else summary[:500], data)
+
+
+async def _run_carbon_policy(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """双碳政策法规官方源摘要。"""
+    from app.services import carbon_service as svc
+
+    keyword = str(params.get("keyword") or "").strip()
+    url = str(params.get("url") or "").strip()
+    data = await svc.fetch_carbon_policy(keyword=keyword, url=url)
+    ok = bool(data.get("ok"))
+    summary = str(data.get("summary_md") or "")[:4000]
+    n = len(data.get("sources") or [])
+    title = f"已获取 {n} 个政策数据源摘要" if ok else "政策数据源暂时无法访问"
+    return _tool_result(ok, title if ok else summary[:500], data)
+
+
+async def _run_carbon_data(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """排放 / CCER / 国际 / 地方双碳数据摘要。"""
+    from app.services import carbon_service as svc
+
+    topic = str(params.get("topic") or "").strip()
+    if not topic:
+        return _tool_result(False, "topic 不能为空，可选 emission/ccer/international/local")
+    keyword = str(params.get("keyword") or "").strip()
+    url = str(params.get("url") or "").strip()
+    data = await svc.fetch_carbon_data(topic, keyword=keyword, url=url)
+    ok = bool(data.get("ok"))
+    summary = str(data.get("summary_md") or "")[:4000]
+    n = len(data.get("sources") or [])
+    title = f"已获取 {topic} 数据（{n} 个源）" if ok else f"[{topic}] 数据源暂时无法访问"
+    return _tool_result(ok, title if ok else summary[:500], data)
+
+
 async def run_global_atomic_tool(
     ctx: ToolRuntimeContext,
     tool_id: str,
@@ -411,6 +779,8 @@ async def run_global_atomic_tool(
 
     if name == ATOMIC_TOOL_WEB_SEARCH:
         return await _run_web_search(ctx, params)
+    if name == ATOMIC_TOOL_FETCH_URL_CONTENT:
+        return await _run_fetch_url_content(ctx, params)
     if name == ATOMIC_TOOL_KNOWLEDGE_RETRIEVE:
         if ctx.loop_state and ctx.loop_state.get("local_kb_disabled"):
             return _tool_result(True, "已跳过知识库检索", {"context": "", "skipped": True})
@@ -427,6 +797,24 @@ async def run_global_atomic_tool(
         return await _run_knowledge_folder_search(ctx, params)
     if name == "list_mounted_folders":
         return _run_list_mounted_folders(ctx)
+
+    # ── 金融数据 ────────────────────────────────────────
+    if name == "stock_quote":
+        return await _run_stock_quote(ctx, params)
+    if name == "stock_kline":
+        return await _run_stock_kline(ctx, params)
+    if name == "market_indices":
+        return await _run_market_indices(ctx)
+    if name == "finance_search":
+        return await _run_finance_search(ctx, params)
+    if name == "f10_data":
+        return await _run_f10_data(ctx, params)
+    if name == "carbon_price":
+        return await _run_carbon_price(ctx, params)
+    if name == "carbon_policy":
+        return await _run_carbon_policy(ctx, params)
+    if name == "carbon_data":
+        return await _run_carbon_data(ctx, params)
 
     from app.services.agent_tools import (
         _execute_admin_tool,

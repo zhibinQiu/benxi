@@ -16,6 +16,7 @@ const USED_CHARTS = () => [
     PieChart: m.PieChart,
     ScatterChart: m.ScatterChart,
     RadarChart: m.RadarChart,
+    CandlestickChart: m.CandlestickChart,
   })),
 ];
 

@@ -6,7 +6,7 @@
 但不得直接调用任何技能或工具。所有实际执行必须委托给子智能体：
 
   ✅ invoke_context_subagent(kind=search, task=用户查询)
-  ✅ invoke_context_subagent(kind=auto, task=用户需求)
+  ✅ invoke_context_subagent(kind=execute, task=用户需求)
   ✅ invoke_context_subagent(kind=search, queries=[...])
   ✅ invoke_context_subagent(kind=use, task=技能任务)
 
@@ -163,16 +163,14 @@ _SPECIALIST_DOMAIN_AGENTS = frozenset(
         "report",
         "skill-dev",
         "platform",
-        "rpa",
     }
 )
 
 
 def _skill_management_plan_instruction() -> str:
     return (
-        "Skill 管理：直接 invoke_skill(skill-development, call, operation=create_skill)"
-        " 创建新包，然后 operation=run_skill_script 验证。"
-        " 用 invoke_context_subagent(kind=auto, task=...) 自主完成，"
+        "Skill 管理：直接调用 create_skill 创建新包，然后 run_skill_script 验证。"
+        " 用 invoke_context_subagent(kind=execute, task=...) 执行，"
         " 需检索多关键词用 invoke_context_subagent(kind=search, queries=[...])。"
     )
 
@@ -247,18 +245,18 @@ def _rule_plan_for_skill_management(message: str) -> AgentExecutionPlan | None:
     needs_browser = bool(message_has_url(msg) or message_has_page_intent(msg))
     if needs_browser:
         steps = (
-            "invoke_context_subagent(kind=auto, task=用户需求) 调研页面结构",
+            "invoke_context_subagent(kind=search, task=用户需求) 调研页面结构",
             "澄清目标字段与验收标准",
-            "invoke_skill(skill-development, call, operation=create_skill)",
-            "invoke_skill(skill-development, call, operation=run_skill_script) 验证新包",
+            "create_skill 直接创建技能包",
+            "run_skill_script 验证新包",
             "向用户说明结果与用法",
         )
     else:
         steps = (
             "澄清需求、输入输出与验收标准",
             "必要时 invoke_context_subagent(kind=search, queries=[...])",
-            "invoke_skill(skill-development, call, operation=create_skill)",
-            "invoke_skill(skill-development, call, operation=run_skill_script) 验证新包",
+            "create_skill 直接创建技能包",
+            "run_skill_script 验证新包",
             "向用户说明结果与用法",
         )
     blocked_extra: tuple[str, ...] = ()
@@ -266,7 +264,7 @@ def _rule_plan_for_skill_management(message: str) -> AgentExecutionPlan | None:
         blocked_extra = ("browser_screenshot",)
     return _make_plan(
         reasoning=(
-            "发展技能：经 invoke_skill(skill-development, call, ...) 创建与验证，"
+            "发展技能：直接调用 create_skill 等原子工具创建与验证，"
             "勿查目录或 load/run 已有包；须先调研再动手"
         ),
         intent=SKILL_MGMT_INTENT,
@@ -324,15 +322,24 @@ def _rule_plan_for_uploaded_skill_followup(
         has_script = uploaded_skill_has_script(db, skill)
     except Exception:
         has_script = False
+    # 父层只编排：把技能交给 use 子智能体执行（子层有完整工具集）
     if has_script:
-        steps = (f"run_skill_script({skill}) 获取结果",)
-        reasoning = f"已有发展技能 `{skill}`（脚本型），run_skill_script 执行"
+        steps = (
+            f"invoke_context_subagent(kind=use, task=使用技能 {skill} 完成用户请求；"
+            f"需要时 run_skill_script({skill}))",
+            "根据子智能体结论整理最终回答",
+        )
+        reasoning = f"已有发展技能 `{skill}`（脚本型），委托 use 子智能体执行"
     else:
-        steps = ("按 SKILL.md 指引直接回复，勿 run_skill_script",)
-        reasoning = f"已有发展技能 `{skill}`（指令型），按 SKILL.md 答复"
+        steps = (
+            f"invoke_context_subagent(kind=use, task=按技能 {skill} 的 SKILL.md 完成用户请求)",
+            "根据子智能体结论整理最终回答",
+        )
+        reasoning = f"已有发展技能 `{skill}`（指令型），委托 use 子智能体按 SKILL.md 执行"
     return _make_plan(
         reasoning=reasoning,
         intent="执行发展技能",
+        # 父层禁止自行做检索原子工具；技能执行委托 use 子智能体
         blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
         uploaded_skill=skill,
         steps=steps,
@@ -447,7 +454,7 @@ def _rule_plan_for_web_research(
 
 
 def _rule_plan_for_browser_operation(message: str) -> AgentExecutionPlan | None:
-    """浏览器操作意图（站点搜索/截图/页面访问）→ 委托 auto 子智能体。"""
+    """浏览器操作意图（站点搜索/截图/页面访问）→ 委托 execute 子智能体。"""
     msg = (message or "").strip()
     if not msg:
         return None
@@ -458,16 +465,72 @@ def _rule_plan_for_browser_operation(message: str) -> AgentExecutionPlan | None:
     ):
         return None
     return _make_plan(
-        reasoning="用户需要进行浏览器操作，委托浏览器取证子智能体执行",
+        reasoning="用户需要进行浏览器操作，委托 execute 子智能体调用浏览器工具",
         intent="浏览器操作",
         blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
         steps=(
-            "invoke_context_subagent(kind=auto, task=用户需求描述)",
-            "根据子智能体返回结果整理回答",
+            "invoke_context_subagent(kind=execute, task=用户浏览器需求；"
+            "优先 browser_run_task 一次完成，或分步 browser_navigate/type/screenshot)",
+            "根据子智能体返回结果与截图整理回答",
         ),
     )
 
 
+def _rule_plan_for_diagram(
+    db: Session,
+    user: User,
+    message: str,
+) -> AgentExecutionPlan | None:
+    """Mermaid 图表生成（流程图/时序图/思维导图等）。"""
+    _ = db
+    _ = user
+    msg = (message or "").strip()
+    if not msg or not is_diagram_generation_message(msg):
+        return None
+    return _make_plan(
+        reasoning="用户要求生成图表：统一走 mermaid_diagram 工具输出 ```mermaid 围栏",
+        intent="生成图表",
+        direct_answer=False,
+        uploaded_skill=MERMAID_DIAGRAM_SKILL,
+        allowed_tools=("mermaid_diagram", "invoke_context_subagent", "describe_tool"),
+        blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+        steps=(
+            "必须调用 mermaid_diagram(description=用户绘图需求全文) 生成图表",
+            "将工具返回的 ```mermaid 源码原样展示给用户，不要只描述不画",
+        ),
+        source="rule",
+    )
+
+
+def _rule_plan_for_report(
+    db: Session,
+    user: User,
+    message: str,
+) -> AgentExecutionPlan | None:
+    """结构化长报告撰写 → 匹配报告类型 Skill。"""
+    _ = db
+    _ = user
+    from app.services.report_agent_skills import (
+        classify_report_skill,
+        is_report_generation_message,
+    )
+
+    msg = (message or "").strip()
+    if not msg or not is_report_generation_message(msg):
+        return None
+    skill = classify_report_skill(msg)
+    return _make_plan(
+        reasoning=f"用户要求撰写报告，使用报告类型 Skill「{skill}」",
+        intent="撰写报告",
+        direct_answer=False,
+        uploaded_skill=skill,
+        allowed_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE, "web_search"),
+        steps=(
+            "检索知识库与联网材料",
+            f"按 {skill} 技能结构撰写报告",
+        ),
+        source="rule",
+    )
 
 
 def _build_specialist_domain_plan(
@@ -492,7 +555,7 @@ def _build_specialist_domain_plan(
         return None
 
     default_skills = AGENT_DEFAULT_SKILLS.get(aid, ())
-    all_names = _all_available_skill_names(db, user)
+    all_names = _plannable_skill_names(db, user, agent_id=aid)
 
     # skill-dev 是特例：管理 Skill 包，不 load 任何现有 Skill
     if aid == "skill-dev":
@@ -504,7 +567,7 @@ def _build_specialist_domain_plan(
             intent=SKILL_MGMT_INTENT,
             blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
             steps=(
-                "调研（invoke_context_subagent(kind=auto, task=...)；"
+                "调研（invoke_context_subagent(kind=execute, task=...)；"
                 "否则 invoke_context_subagent(kind=search, queries=[...])）",
                 "create_skill 直接生成新包",
                 "run_skill_script 验证",
@@ -525,22 +588,7 @@ def _build_specialist_domain_plan(
             source="specialist",
         )
 
-    # 其他领域专精（rpa 等）：使用默认 Skill，不 load 任何 SKILL.md
-    # 这些专精的 domain Skill（browser-automation/platform-ops）是纯编排型，
-    # 无需 load_uploaded_skill，LLM 通过 invoke_skill 直接调用
-    domain_intents = {
-        "rpa": ("浏览器 RPA 专精", "浏览器操作",
-                ("browser_navigate → browser_snapshot → 交互",)),
-    }
-    entry = domain_intents.get(aid)
-    if entry is not None:
-        return _make_plan(
-            reasoning=entry[0],
-            intent=entry[1],
-            blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
-            steps=entry[2],
-            source="specialist",
-        )
+    pass  # 其他领域专精：使用默认 Skill，不 load 任何 SKILL.md
 
     return None
 
@@ -731,33 +779,55 @@ def _parse_llm_plan(
 
 
 def _fallback_plan(intent_label: str = "") -> AgentExecutionPlan:
-    """无规则匹配时的安全兜底：直接回答，不暴露任何 Tool。
+    """无规则匹配时的安全兜底：让 LLM 自主使用 CORE_TOOL 完成任务。
 
-    direct_answer=True 确保 LLM 不会在无边界约束下调用跨域工具
-    （如浏览器自动化等），从根本上避免了「画流程图 → 调用浏览器」类误判。
+    编排器默认只能看到 CORE_TOOL_NAMES（web_search / knowledge_retrieve /
+    kg_query / invoke_context_subagent 等安全工具），浏览器工具默认不可见，
+    因此不存在「画流程图 → 调用浏览器」类误判风险。direct_answer=True
+    反而让 LLM 在需要实时数据时只能凭空回答，造成「只说不做」。
     """
-    return _make_direct_answer_plan(
-        reasoning=intent_label or "由智能体直接回答",
-        intent=intent_label or "直接回答",
+    return _make_plan(
+        reasoning=intent_label or "无规则匹配，由智能体自主选择工具或直接回答",
+        intent=intent_label or "查询或执行",
+        direct_answer=False,
         source="fallback",
     )
 
 
-def _all_available_skill_names(db: Session, user: User) -> set[str]:
-    """返回所有可用的 Skill 名称（合并内置+上传+MCP，不区分类别）。
+def _plannable_skill_names(
+    db: Session,
+    user: User,
+    *,
+    agent_id: str | None = None,
+) -> set[str]:
+    """规划可用 Skill 名称。
 
-    这是查询可用 Skill 的唯一入口。调用方不应再分别查 builtin/uploaded，
-    避免因 Source 分类遗漏技能导致路由跳过。
+    = 该 Agent 已挂载 Skill
+    ∪ 当前用户上传型 Skill（显式例外：便于「请使用 xxx-skill」编排 kind=use）
+
+    不含未挂载的平台 builtin/MCP 全库（与 find_skills 可见范围对齐，上传例外除外）。
     """
-    all_skills: set[str] = set()
+    from app.skills.types import SkillSource
+
+    names: set[str] = set()
+    aid = (agent_id or "").strip() or "orchestrator"
+    try:
+        from app.services.agent_profile_service import resolve_agent_skill_names
+
+        names.update(resolve_agent_skill_names(db, aid))
+    except Exception:
+        pass
     for skill in list_all_skill_definitions(db, user=user, admin_view=False, catalog_only=True):
         if skill.readiness in (SkillReadiness.DISABLED, SkillReadiness.NO_PERMISSION):
             continue
-        all_skills.add(skill.name)
-    return all_skills
+        if skill.source == SkillSource.UPLOADED:
+            names.add(skill.name)
+    return names
 
-# 兼容旧导入：部分外部代码仍用 `_skill_name_sets`（rst 中的 `_` 前缀表示私有）
-_skill_name_sets = _all_available_skill_names  # type: ignore[assignment]
+
+# 兼容旧名：语义已变为「可规划集」而非平台全库
+_all_available_skill_names = _plannable_skill_names  # type: ignore[assignment]
+_skill_name_sets = _plannable_skill_names  # type: ignore[assignment]
 
 
 _KG_PLANNING_USER_LABEL = "【知识图谱关联（规划参考，非检索结果）】"
@@ -807,7 +877,8 @@ def _planning_system_prompt(
         '{"reasoning":"…","intent":"…","direct_answer":true|false,'
         '"allowed_tools":[],"blocked_tools":[],"uploaded_skill":null,'
         '"steps":[]}\n'
-        "规则：闲聊/够答→direct_answer；"
+        "规则：仅闲聊/无需任何工具的常识问答→direct_answer=true；"
+        "凡需检索、提醒/通知/待办、浏览器、写平台数据、执行 Skill→direct_answer=false 并选工具；"
         "够用即停。"
         "若存在近期对话，须结合上文理解当前短句/追问的真实意图，勿孤立看待本轮输入。"
         "但若当前句为完整独立问题或寒暄，以当前句为准，勿强行绑定上一轮话题或 Skill。"
@@ -868,7 +939,7 @@ async def resolve_execution_plan(
     if skill_mgmt_plan is not None and not force_replan:
         return skill_mgmt_plan
 
-    all_skill_names = _all_available_skill_names(db, user)
+    all_skill_names = _plannable_skill_names(db, user, agent_id=specialist_id or "orchestrator")
     followup_plan = _rule_plan_for_uploaded_skill_followup(
         db, user, message, history, all_skill_names
     )
@@ -882,6 +953,10 @@ async def resolve_execution_plan(
     browser_plan = _rule_plan_for_browser_operation(message)
     if browser_plan is not None and not force_replan:
         return browser_plan
+
+    diagram_plan = _rule_plan_for_diagram(db, user, message)
+    if diagram_plan is not None and not force_replan:
+        return diagram_plan
 
     web_research_plan = _rule_plan_for_web_research(message)
     if web_research_plan is not None and not force_replan:

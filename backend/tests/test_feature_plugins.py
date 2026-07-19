@@ -17,6 +17,7 @@ def test_builtin_plugins_registered():
     assert "ai_tools" in ids
     assert "smart_data_query" in ids
     assert "carbon_qa" in ids
+    assert "carbon_assistant" in ids
     assert "smart_forecast" in ids
     assert "ai_home" in ids
     assert "carbon_platform" in ids

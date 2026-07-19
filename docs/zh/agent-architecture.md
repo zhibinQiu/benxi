@@ -80,7 +80,7 @@ agent_tool_loop.py::execute_tool_loop()
 ### 3.2 Skill 脚本执行
 
 ```
-invoke_skill(skill-development, call, operation=run_skill_script)
+create_skill
     ↓
 skill_script_executor.py::execute_skill_script()
     ├── resolve_entry_path(files)       # 找到 main.py

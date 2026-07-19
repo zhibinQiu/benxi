@@ -13,25 +13,14 @@ from app.core.tool_skill_taxonomy import ToolCategory, _TOOL_CATEGORIES
 from app.tool_center.schemas import ToolDescriptor
 
 _CATEGORY_TOOL_TYPE: dict[ToolCategory, str] = {
-    ToolCategory.WEB: "io_http",
-    ToolCategory.KNOWLEDGE: "io_knowledge",
-    ToolCategory.GRAPH: "io_graph",
-    ToolCategory.DOCUMENT: "io_document",
     ToolCategory.PLATFORM: "io_platform",
+    ToolCategory.DATA: "io_data",
+    ToolCategory.MODEL: "io_model",
     ToolCategory.BROWSER: "io_browser",
-    ToolCategory.ADMIN: "io_admin",
-    ToolCategory.MEMORY: "io_memory",
-    ToolCategory.SKILL_MGMT: "io_skill",
-    ToolCategory.ORCHESTRATION: "io_orchestration",
+    ToolCategory.DOCUMENT: "io_document",
 }
 
 def _default_output_schema(category: ToolCategory | None) -> dict[str, Any]:
-    if category == ToolCategory.WEB:
-        return {"items": "list[dict]", "query": "str"}
-    if category == ToolCategory.KNOWLEDGE:
-        return {"hits": "list[dict]", "mode": "str"}
-    if category == ToolCategory.GRAPH:
-        return {"context_text": "str", "entities": "list[dict]"}
     if category == ToolCategory.DOCUMENT:
         return {"result": "dict", "summary": "str"}
     return {"payload": "dict", "summary": "str"}

@@ -24,13 +24,11 @@ from app.services.agent_supervisor import AgentRoute
 def test_tasks_from_routes_one_per_route():
     routes = [
         AgentRoute(agent_id="platform", reason="平台"),
-        AgentRoute(agent_id="rpa", reason="浏览器"),
     ]
     tasks = tasks_from_routes(routes)
-    assert len(tasks) == 2
+    assert len(tasks) == 1
     assert tasks[0].id == "t1"
     assert tasks[0].agent_id == "platform"
-    assert tasks[1].agent_id == "rpa"
 
 
 def test_verify_rejects_tool_failure():
@@ -404,7 +402,7 @@ def test_build_global_round_reflection_includes_correction_instruction():
         title="技能开发",
         agent_id="skill-dev",
         reason="x",
-        correction_instruction="改用 invoke_skill(skill-development, call, {operation: create_skill, ...})",
+        correction_instruction="改用 create_skill 直接创建技能包",
     )
     results = [
         TaskExecutionResult(

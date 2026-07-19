@@ -23,7 +23,7 @@ AgentKit 是本析平台智能体系统的核心工具箱，按职责分层：
 - **subagent**：子智能体，
   提供隔离上下文的多轮研究型子 Agent 运行时。
 - **tools**：工具层，
-  提供工具参数 Schema 定义、校验、压缩和分层发现（ToolVisibility）。
+  提供工具参数 Schema 定义、校验与结果压缩（分层可见性由平台 ``agent_tool_search`` 实现）。
 
 详细设计理念见 docs/zh/agent-philosophy.md 与 AGENTS.md。
 """

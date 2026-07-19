@@ -580,6 +580,8 @@ async function testActive() {
       probeTimeoutMs
     );
     drawerTestResult.value = result;
+    // 立即更新卡片上的状态标记（无论通不通都标记）
+    health.value[activeId.value] = { healthy: result?.healthy, message: result?.message };
     // 填充逐服务源（provider）连通性结果
     if (result?.providers?.length) {
       const map = {};

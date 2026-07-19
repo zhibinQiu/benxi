@@ -225,7 +225,7 @@ def test_build_deliverable_evidence_prioritizes_subagent():
         {
             "subagent_summaries": [
                 {"kind": "search", "task": "调研", "summary": "应忽略的旧摘要"},
-                {"kind": "auto", "task": "页面", "summary": "最新子智能体：收盘 82.41"},
+                {"kind": "search", "task": "页面", "summary": "最新子智能体：收盘 82.41"},
             ],
             "retrieval_context_parts": ["早期检索：不应出现在终稿证据"],
             "tool_outcome_lines": ["Skills 目录：共 4 个技能"],
@@ -235,6 +235,19 @@ def test_build_deliverable_evidence_prioritizes_subagent():
     assert "早期检索" not in block
     assert "Skills 目录" not in block
     assert "应忽略的旧摘要" not in block
+
+
+def test_build_deliverable_evidence_keeps_retrieval_when_subagent_thin():
+    block = build_deliverable_evidence_block(
+        {
+            "subagent_summaries": [
+                {"kind": "execute", "task": "截图", "summary": "browser_screenshot: 完成"},
+            ],
+            "retrieval_context_parts": ["页面正文：碳价 82.41"],
+        }
+    )
+    assert "browser_screenshot: 完成" in block
+    assert "页面正文：碳价 82.41" in block
 
 
 def test_skill_creation_user_reply_prefers_last_subagent():

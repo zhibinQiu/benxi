@@ -91,6 +91,5 @@ def build_skill_dev_escalation_message(
         f"{user_message.strip()}\n\n"
         f"【调度补能力 · {task.title}】上一专精步骤未满足用户诉求（{err}）。"
         "请先 invoke_context_subagent 完成网页/公开信息调研；"
-        "再 invoke_skill(skill-development, call, {operation: create_skill, ...})"
-        "并 run_skill_script 验证。"
+        "再 invoke_context_subagent(kind=execute) 创建技能包并 run_skill_script 验证。"
     )

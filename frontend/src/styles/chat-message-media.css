@@ -52,15 +52,23 @@
   padding: 10px 5px 5px;
   border-radius: 14px;
   background: color-mix(in srgb, var(--platform-bg, #fff) 55%, transparent);
+  max-width: 70%;
+  overflow: hidden;
 }
 
-.md-rich .md-mermaid-wrap :deep(svg),
+.md-rich .md-mermaid-svg {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.md-rich .md-mermaid-wrap svg,
 .md-rich .md-echart-wrap .md-echart {
   display: block;
   margin: 0 auto;
-  max-width: 86%;
-  height: auto;
-  max-height: min(440px, 55vh);
+  max-width: 100%;
+  width: auto !important;
+  height: auto !important;
+  max-height: min(380px, 48vh);
   object-fit: contain;
 }
 

@@ -39,7 +39,7 @@ async def run_subagent_tool_loop(
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": kind_config.system_contract},
-        {"role": "user", "content": f"【子任务】\n{task[:1200]}"},
+        {"role": "user", "content": f"【子任务】\n{task[:6000]}"},
     ]
     final_summary = ""
 
@@ -82,4 +82,4 @@ async def run_subagent_tool_loop(
     if not final_summary:
         outcomes = list(child_state.get("tool_outcome_lines") or [])
         final_summary = "\n".join(str(x) for x in outcomes[-4:]) or "子 Agent 未产出有效摘要"
-    return final_summary[:2000]
+    return final_summary[:8000]

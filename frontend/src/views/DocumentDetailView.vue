@@ -16,12 +16,12 @@ import {
   NFormItem,
   NInput,
   NSwitch,
-  NText,
   NDivider,
   NRadio,
   NRadioGroup,
   NSelect,
   NAlert,
+  NSpin,
 } from "naive-ui";
 import {
   ChevronDownOutline,
@@ -29,10 +29,13 @@ import {
   EyeOutline,
   GitCompareOutline,
   RefreshOutline,
+  ShareSocialOutline,
   TrashOutline,
 } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
+import FeatureSection from "../components/FeatureSection.vue";
 import AdminFormModal from "../components/AdminFormModal.vue";
+import ShareLinkModal from "../components/ShareLinkModal.vue";
 import DocumentVersionPreviewModal from "../components/DocumentVersionPreviewModal.vue";
 import {
   fetchDocument,
@@ -51,6 +54,7 @@ import {
   fetchDocumentDenials,
   denyDocumentAccess,
   liftDocumentDenial } from "../api/client";
+import { shareDocument, unshareDocument, getDocumentShareUrl } from "../api/documents.js";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
 import { useDocumentLibrary } from "../composables/useDocumentLibrary.js";
@@ -269,6 +273,9 @@ const shareGranting = ref(false);
 const publishTarget = ref("department");
 const publishDeptIds = ref([]);
 const publishLoading = ref(false);
+const shareLinkLoading = ref(false);
+const showShareLinkModal = ref(false);
+const lastShareUrl = ref("");
 const accessMode = ref("publish");
 const publishSectionExpanded = ref(false);
 const restrictionSectionExpanded = ref(false);
@@ -305,7 +312,11 @@ const showPublishCard = computed(
     showTeamPublish.value
 );
 const showAccessCard = computed(
-  () => showPublishCard.value || canGrantAcl.value
+  () => showPublishCard.value || canGrantAcl.value || canModifyDoc.value
+);
+
+const currentPublicShareUrl = computed(() =>
+  doc.value?.share_token ? getDocumentShareUrl(doc.value.share_token) : lastShareUrl.value || ""
 );
 
 function syncAccessModeDefault() {
@@ -313,6 +324,8 @@ function syncAccessModeDefault() {
     accessMode.value = "share";
   } else if (accessMode.value === "share" && !canGrantAcl.value && showPublishCard.value) {
     accessMode.value = "publish";
+  } else if (accessMode.value === "link" && !canModifyDoc.value) {
+    accessMode.value = showPublishCard.value ? "publish" : "share";
   } else if (!showPublishCard.value && canGrantAcl.value) {
     accessMode.value = "share";
   } else if (showPublishCard.value && !canGrantAcl.value) {
@@ -737,36 +750,99 @@ function confirmDeleteVersion(v) {
 }
 
 async function publishToLibrary() {
-  if (ORG_SCOPES.includes(publishTarget.value)) {
-    if (!publishDeptIds.value.length) {
-      ui.warning(t("documents.detail.selectPublishOrg"));
-      return;
-    }
-    if (publishTarget.value === "team" && !showTeamPublish.value) {
-      ui.warning(t("documents.detail.noTeamPublish"));
-      return;
-    }
-    if (publishTarget.value === "department" && !canPublishDept.value) {
-      ui.warning(t("documents.detail.noDeptPublish"));
-      return;
-    }
-  } else if (!canPublishCompany.value) {
+  if (!ORG_SCOPES.includes(publishTarget.value) || !publishDeptIds.value.length) {
+    ui.warning(t("documents.detail.selectPublishOrg"));
+    return;
+  }
+  if (publishTarget.value === "team" && !showTeamPublish.value) {
+    ui.warning(t("documents.detail.noTeamPublish"));
+    return;
+  }
+  if (publishTarget.value === "department" && !canPublishDept.value) {
+    ui.warning(t("documents.detail.noDeptPublish"));
+    return;
+  }
+  if (publishTarget.value === "company" && !canPublishCompany.value) {
     ui.warning(t("documents.detail.noCompanyPublish"));
     return;
   }
   publishLoading.value = true;
   try {
-    const payload = { scope: publishTarget.value };
-    if (ORG_SCOPES.includes(publishTarget.value)) {
-      payload.dept_id = publishDeptIds.value[0];
-    }
-    doc.value = await updateDocument(docId, payload);
+    doc.value = await updateDocument(docId, {
+      scope: publishTarget.value,
+      dept_id: publishDeptIds.value[0],
+    });
     ui.success(t("documents.detail.publishedToLibrary"));
     await load({ notifyOnError: false });
   } catch (e) {
     ui.error(e.message);
   } finally {
     publishLoading.value = false;
+  }
+}
+
+async function openPublicShareModal() {
+  lastShareUrl.value = currentPublicShareUrl.value;
+  showShareLinkModal.value = true;
+  if (!currentPublicShareUrl.value) {
+    await generateOrRefreshPublicShare({ regenerate: true });
+  }
+}
+
+async function generateOrRefreshPublicShare({ regenerate = true } = {}) {
+  if (shareLinkLoading.value) return;
+  shareLinkLoading.value = true;
+  try {
+    const res = await shareDocument(docId, { regenerate });
+    const token = res?.share_token;
+    if (!token) throw new Error(t("documents.detail.shareLinkCopyFailed"));
+    if (doc.value) doc.value = { ...doc.value, share_token: token };
+    const url = getDocumentShareUrl(token);
+    lastShareUrl.value = url;
+    try {
+      await navigator.clipboard.writeText(url);
+      ui.success(
+        regenerate
+          ? t("documents.detail.resharedWithLink")
+          : t("documents.detail.shareLinkCopied")
+      );
+    } catch {
+      ui.success(
+        regenerate
+          ? t("documents.detail.reshared")
+          : t("documents.detail.shareLinkGenerated")
+      );
+    }
+  } catch (e) {
+    ui.error(e?.message || t("documents.detail.shareLinkCopyFailed"));
+  } finally {
+    shareLinkLoading.value = false;
+  }
+}
+
+async function unsharePublicLink() {
+  if (shareLinkLoading.value) return;
+  shareLinkLoading.value = true;
+  try {
+    await unshareDocument(docId);
+    if (doc.value) doc.value = { ...doc.value, share_token: null };
+    lastShareUrl.value = "";
+    ui.success(t("documents.detail.publicShareRevoked"));
+  } catch (e) {
+    ui.error(e?.message || t("documents.detail.shareLinkCopyFailed"));
+  } finally {
+    shareLinkLoading.value = false;
+  }
+}
+
+async function copyLastShareUrl() {
+  const url = currentPublicShareUrl.value || lastShareUrl.value;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    ui.success(t("documents.detail.shareLinkCopied"));
+  } catch {
+    ui.warning(t("documents.detail.shareLinkCopyFailed"));
   }
 }
 
@@ -871,55 +947,53 @@ onMounted(() => {
 </script>
 
 <template>
-  <n-card v-if="loading && !doc" :title="t('documents.detail.title')" :loading="true" />
-  <n-space v-else-if="doc" vertical :size="19">
-    <n-card :loading="loading" class="detail-card">
-      <template #header>
-        <n-space align="center" :size="14" style="flex-wrap: wrap">
-          <template v-if="titleEditing && canEditDoc">
-            <n-input
-              ref="titleInputRef"
-              v-model:value="editTitle"
-              class="doc-title-input"
-              :placeholder="t('documents.detail.docTitlePlaceholder')"
-              maxlength="512"
-              :disabled="titleSaving"
-              @keyup.enter="saveTitle"
-            />
-            <n-button
-              size="small"
-              type="primary"
-              :loading="titleSaving"
-              :disabled="titleSaving"
-              @click="saveTitle"
-            >
-              {{ t("common.save") }}
-            </n-button>
-            <n-button size="small" :disabled="titleSaving" @click="cancelEditTitle">
-              {{ t("common.cancel") }}
-            </n-button>
-          </template>
-          <template v-else>
-            <n-text style="font-size: var(--platform-font-size-lg); font-weight: 500">{{ doc.title }}</n-text>
-            <n-button
-              v-if="canEditDoc"
-              text
-              type="primary"
-              size="small"
-              @click="startEditTitle"
-            >
-              {{ t("common.edit") }}
-            </n-button>
-          </template>
-        </n-space>
+  <n-spin v-if="loading && !doc" :show="true" style="min-height: 120px" />
+  <div v-else-if="doc" class="doc-detail">
+    <FeatureSection :title="t('documents.detail.title')" dense>
+      <template v-if="canModifyDoc" #extra>
+        <IconAction
+          :label="t('documents.detail.publicShareLink')"
+          :icon="ShareSocialOutline"
+          size="tiny"
+          :active="!!doc.share_token"
+          :loading="shareLinkLoading"
+          @click="openPublicShareModal"
+        />
       </template>
-      <n-descriptions :column="2" label-placement="left">
+      <div class="doc-detail__title-row">
+        <template v-if="titleEditing && canEditDoc">
+          <n-input
+            ref="titleInputRef"
+            v-model:value="editTitle"
+            class="doc-title-input"
+            :placeholder="t('documents.detail.docTitlePlaceholder')"
+            maxlength="512"
+            size="small"
+            :disabled="titleSaving"
+            @keyup.enter="saveTitle"
+          />
+          <n-button size="tiny" tertiary :loading="titleSaving" :disabled="titleSaving" @click="saveTitle">
+            {{ t("common.save") }}
+          </n-button>
+          <n-button size="tiny" quaternary :disabled="titleSaving" @click="cancelEditTitle">
+            {{ t("common.cancel") }}
+          </n-button>
+        </template>
+        <template v-else>
+          <span class="doc-detail__doc-title">{{ doc.title }}</span>
+          <n-button v-if="canEditDoc" quaternary size="tiny" @click="startEditTitle">
+            {{ t("common.edit") }}
+          </n-button>
+        </template>
+      </div>
+      <n-descriptions :column="2" label-placement="left" size="small">
         <n-descriptions-item label="ID">{{ doc.id }}</n-descriptions-item>
         <n-descriptions-item :label="t('documents.detail.docStatus')">
-          <n-space align="center" :size="10">
+          <n-space align="center" :size="6">
             <n-switch
               :value="statusEnabled"
               :disabled="!canManageDoc"
+              size="small"
               @update:value="onStatusChange"
             />
             <span>{{
@@ -930,7 +1004,7 @@ onMounted(() => {
           </n-space>
         </n-descriptions-item>
         <n-descriptions-item :label="t('documents.columns.scope')">
-          <n-tag size="small" :bordered="false">{{ scopeLabel(doc.scope) || doc.scope }}</n-tag>
+          <n-tag size="tiny" :bordered="false">{{ scopeLabel(doc.scope) || doc.scope }}</n-tag>
         </n-descriptions-item>
         <n-descriptions-item v-if="supportsKbFolder" :label="t('documents.detail.folder')">
           {{ doc.folder_name || t("documents.uncategorized") }}
@@ -951,11 +1025,11 @@ onMounted(() => {
           {{ new Date(doc.updated_at).toLocaleString() }}
         </n-descriptions-item>
       </n-descriptions>
-    </n-card>
+    </FeatureSection>
 
-    <n-card :title="t('documents.detail.versionHistory')" class="detail-card">
-      <template #header-extra>
-        <n-space :size="5" align="center">
+    <FeatureSection :title="t('documents.detail.versionHistory')" dense>
+      <template #extra>
+        <n-space :size="2" align="center">
           <IconAction
             v-if="canCompareVersions"
             :label="t('documents.detail.compare')"
@@ -970,16 +1044,68 @@ onMounted(() => {
           />
         </n-space>
       </template>
-      <n-data-table
-        class="documents-table"
-        :columns="versionColumns"
-        :data="displayVersions"
-        :single-line="false"
-        :bordered="false"
-        size="small"
-        :row-key="(row) => row.id"
-        :loading="loading"
-      />
+
+      <div v-if="!displayVersions.length" class="version-list__empty">{{ t("common.empty") }}</div>
+      <div v-else class="version-list">
+        <div v-for="row in displayVersions" :key="row.id" class="version-list__item">
+          <div class="version-list__main">
+            <div class="version-list__title-row">
+              <span class="version-list__ver">v{{ row.version_no }}</span>
+              <n-tag v-if="row.is_current" size="tiny" :bordered="false">{{ t("documents.detail.current") }}</n-tag>
+              <n-tag
+                v-if="row.uploaded"
+                size="tiny"
+                :bordered="false"
+                :type="knowledgeIndexTagProps(row).type"
+              >{{ knowledgeIndexTagProps(row).label }}</n-tag>
+            </div>
+            <div class="version-list__name">{{ versionFileLabel(row) }}</div>
+            <div class="version-list__meta">
+              <span>{{ versionSizeLabel(row) }}</span>
+              <span class="version-list__sep">·</span>
+              <span>{{ new Date(row.created_at).toLocaleString() }}</span>
+              <template v-if="versionIndexMethodLabel(row, { t })">
+                <span class="version-list__sep">·</span>
+                <span>{{ versionIndexMethodLabel(row, { t }) }}</span>
+              </template>
+            </div>
+            <div v-if="row.change_description" class="version-list__desc">{{ row.change_description }}</div>
+          </div>
+          <div v-if="showVersionActions && row.uploaded" class="version-list__actions">
+            <IconAction
+              v-if="canReindexDoc"
+              variant="table"
+              :label="t('documents.detail.reindex')"
+              :icon="RefreshOutline"
+              :disabled="indexPolling || reparsing"
+              @click="openReindexModal(row)"
+            />
+            <IconAction
+              v-if="canViewDoc"
+              variant="table"
+              :label="t('documents.detail.preview')"
+              :icon="EyeOutline"
+              @click="openVersionPreview(row)"
+            />
+            <IconAction
+              v-if="canViewDoc"
+              variant="table"
+              type="primary"
+              :label="t('documents.detail.download')"
+              :icon="DownloadOutline"
+              @click="downloadVersion(row)"
+            />
+            <IconAction
+              v-if="canDeleteDoc"
+              variant="table"
+              type="error"
+              :label="t('common.delete')"
+              :icon="TrashOutline"
+              @click="confirmDeleteVersion(row)"
+            />
+          </div>
+        </div>
+      </div>
 
       <div v-if="canEditDoc" class="version-upload-bar">
         <n-input
@@ -1003,7 +1129,7 @@ onMounted(() => {
         <n-button
           class="version-upload-bar__submit"
           size="small"
-          type="primary"
+          tertiary
           :loading="versionUploading"
           :disabled="!versionUploadFile || versionUploading"
           @click="submitVersionUpload"
@@ -1011,12 +1137,12 @@ onMounted(() => {
           {{ t("documents.detail.uploadNewVersion") }}
         </n-button>
       </div>
-    </n-card>
+    </FeatureSection>
 
     <div v-if="showAccessCard" class="detail-section">
       <div class="expandable-header" @click="publishSectionExpanded = !publishSectionExpanded">
           <span class="expandable-header__title">{{ t("documents.detail.publishAndShare") }}</span>
-          <n-icon :class="['expandable-header__icon', { 'icon-rotated': publishSectionExpanded }]" :size="18">
+          <n-icon :class="['expandable-header__icon', { 'icon-rotated': publishSectionExpanded }]" :size="14">
             <ChevronDownOutline />
           </n-icon>
         </div>
@@ -1024,20 +1150,18 @@ onMounted(() => {
         <div v-show="publishSectionExpanded" class="collapsible-body">
       <div class="access-current-loc">
         <span class="access-current-loc__label">{{ t("documents.detail.currentLocation") }}</span>
-        <n-tag type="info" size="small" :bordered="false">{{ currentScopeLabel }}</n-tag>
+        <n-tag size="small" :bordered="false">{{ currentScopeLabel }}</n-tag>
       </div>
 
       <n-radio-group v-model:value="accessMode" class="access-mode-group">
         <n-space>
-          <n-radio v-if="showPublishCard" value="publish">{{ t("documents.detail.publishToLibrary") }}</n-radio>
+          <n-radio v-if="showPublishCard" value="publish">{{ t("documents.detail.publish") }}</n-radio>
           <n-radio v-if="canGrantAcl" value="share">{{ t("documents.detail.shareToIndividuals") }}</n-radio>
+          <n-radio v-if="canModifyDoc" value="link">{{ t("documents.detail.publicShareLink") }}</n-radio>
         </n-space>
       </n-radio-group>
 
       <template v-if="accessMode === 'publish' && showPublishCard">
-        <p class="access-card-hint">
-          {{ t("documents.detail.publishHint") }}
-        </p>
         <n-radio-group v-model:value="publishTarget" class="access-publish-target">
           <n-space>
             <n-radio v-if="canPublishCompany" value="company">{{ t("scope.company") }}</n-radio>
@@ -1050,16 +1174,30 @@ onMounted(() => {
           :departments="aclDepartments"
           v-model:department-ids="publishDeptIds"
           :max-height="336"
-          style="margin-bottom: 14px"
+          style="margin-bottom: 10px"
         />
         <n-button
           secondary
-          size="tiny"
+          size="small"
           :loading="publishLoading"
           :disabled="ORG_SCOPES.includes(publishTarget) && !publishDeptIds.length"
           @click="publishToLibrary"
         >
           {{ doc.scope === "personal" ? t("documents.detail.publish") : t("documents.detail.updatePublishLocation") }}
+        </n-button>
+      </template>
+
+      <template v-else-if="accessMode === 'link' && canModifyDoc">
+        <p class="access-card-hint">
+          {{ t("documents.detail.generateShareLinkHint") }}
+        </p>
+        <n-button
+          secondary
+          size="small"
+          :loading="shareLinkLoading"
+          @click="openPublicShareModal"
+        >
+          {{ currentPublicShareUrl ? t("documents.detail.manageShareLink") : t("documents.detail.generateShareLink") }}
         </n-button>
       </template>
 
@@ -1075,12 +1213,12 @@ onMounted(() => {
           v-model:checked-keys="shareSelectedKeys"
           :max-height="384"
         />
-        <n-space v-if="aclCandidates.length" style="margin-top: 14px" wrap>
+        <n-space v-if="aclCandidates.length" style="margin-top: 10px" wrap>
           <n-button
             v-for="act in sharePermissionActions"
             :key="act.level"
             secondary
-            size="tiny"
+            size="small"
             :loading="shareGranting"
             :disabled="!shareSelectedKeys.length"
             @click="grantShareLevel(act.level)"
@@ -1088,8 +1226,8 @@ onMounted(() => {
             {{ act.label }}（{{ act.desc }}）
           </n-button>
         </n-space>
-        <n-divider v-if="shares.length" style="margin: 19px 0" />
-        <p v-if="shares.length" style="margin: 0 0 10px; font-weight: 500; font-size: 16px">
+        <n-divider v-if="shares.length" style="margin: 10px 0" />
+        <p v-if="shares.length" style="margin: 0 0 6px; font-weight: 500; font-size: 12px">
           {{ t("documents.detail.currentAuthorized") }}
         </p>
         <n-data-table
@@ -1112,10 +1250,10 @@ onMounted(() => {
       <div class="expandable-header" @click="restrictionSectionExpanded = !restrictionSectionExpanded">
           <span class="expandable-header__title">{{ t("documents.detail.accessRestrictions") }}</span>
           <n-space :size="8" align="center">
-            <n-button size="tiny" secondary @click.stop="openDenyModal">
+            <n-button size="small" secondary @click.stop="openDenyModal">
               {{ t("documents.detail.denyUserAccess") }}
             </n-button>
-            <n-icon :class="['expandable-header__icon', { 'icon-rotated': restrictionSectionExpanded }]" :size="18">
+            <n-icon :class="['expandable-header__icon', { 'icon-rotated': restrictionSectionExpanded }]" :size="14">
               <ChevronDownOutline />
             </n-icon>
           </n-space>
@@ -1139,7 +1277,7 @@ onMounted(() => {
       </div>
     </Transition>
   </div>
-  </n-space>
+  </div>
 
   <AdminFormModal
     v-model:show="showDeny"
@@ -1177,6 +1315,19 @@ onMounted(() => {
     width="min(960px, 96vw)"
     viewport-height="min(45vh, 480px)"
     @download="onPreviewDownload"
+  />
+
+  <ShareLinkModal
+    v-model:show="showShareLinkModal"
+    :title="t('documents.detail.publicShareLink')"
+    :url="currentPublicShareUrl || lastShareUrl"
+    :shared="!!(currentPublicShareUrl || lastShareUrl)"
+    :loading="shareLinkLoading"
+    :hint="t('documents.detail.generateShareLinkHint')"
+    @generate="generateOrRefreshPublicShare({ regenerate: true })"
+    @reshare="generateOrRefreshPublicShare({ regenerate: true })"
+    @unshare="unsharePublicLink"
+    @copy="copyLastShareUrl"
   />
 
   <AdminFormModal
@@ -1237,18 +1388,116 @@ onMounted(() => {
 </template>
 
 <style scoped>
+
+.doc-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 960px;
+  font-size: 12px;
+}
+.doc-detail :deep(.feature-section__title) {
+  font-size: 11px;
+}
+.doc-detail :deep(.n-descriptions-table-content),
+.doc-detail :deep(.n-descriptions-table-label),
+.doc-detail :deep(.n-descriptions .n-descriptions-table-wrapper) {
+  font-size: 6px;
+}
+.doc-detail :deep(.n-descriptions-table-content),
+.doc-detail :deep(.n-descriptions-table-label) {
+  padding: 2px 0 !important;
+}
+.doc-detail__title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--platform-border);
+}
+.doc-detail__doc-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--platform-text);
+  line-height: 1.35;
+}
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.version-list__empty {
+  font-size: 11px;
+  color: var(--platform-text-tertiary);
+  padding: 6px 0;
+}
+.version-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--platform-border);
+}
+.version-list__item:last-child {
+  border-bottom: none;
+}
+.version-list__main {
+  flex: 1;
+  min-width: 0;
+}
+.version-list__title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 1px;
+}
+.version-list__ver {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--platform-text);
+}
+.version-list__name {
+  font-size: 11px;
+  color: var(--platform-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.version-list__meta {
+  margin-top: 1px;
+  font-size: 10px;
+  color: var(--platform-text-tertiary);
+}
+.version-list__sep { margin: 0 3px; }
+.version-list__desc {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--platform-text-secondary);
+}
+.version-list__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.version-upload-bar {
+  margin-top: 6px !important;
+  padding-top: 8px !important;
+}
 .doc-title-input {
-  min-width: 288px;
-  max-width: min(672px, 100%);
+  min-width: 240px;
+  max-width: min(560px, 100%);
 }
 
 .version-upload-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  margin-top: 19px;
-  padding-top: 19px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--platform-border, #e2e8f0);
 }
 
@@ -1270,7 +1519,7 @@ onMounted(() => {
 }
 
 .reindex-pageindex-hint {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 @media (max-width: 720px) {
@@ -1286,21 +1535,21 @@ onMounted(() => {
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  padding: 4px 0;
+  padding: 2px 0;
   transition: background-color 0.2s ease;
   border-radius: 6px;
 }
 .expandable-header:hover {
   background: var(--platform-accent-muted, #f1f5f9);
   margin: 0 -4px;
-  padding: 4px;
+  padding: 2px 4px;
 }
 .expandable-header:active {
   background: var(--platform-accent-pressed, #e2e8f0);
 }
 .expandable-header__title {
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0.02em;
   color: var(--platform-text-primary, #1e293b);
 }
@@ -1345,47 +1594,48 @@ onMounted(() => {
 .access-current-loc {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 17px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
   background: var(--platform-accent-muted, #f1f5f9);
   border: 1px solid var(--platform-border, #e2e8f0);
 }
 
 .access-current-loc__label {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--platform-text-secondary, #64748b);
   flex-shrink: 0;
 }
 
 .access-mode-group {
-  margin-bottom: 17px;
+  margin-bottom: 10px;
 }
 
 .access-publish-target {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .access-card-hint {
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   color: var(--platform-text-secondary, #666);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* 文档表格 — 参照多智能体技能表格样式 */
 .documents-table :deep(.n-data-table-th),
 .documents-table :deep(.n-data-table-td) {
-  padding: 6px 12px;
+  padding: 4px 8px;
 }
 .documents-table :deep(.n-data-table-thead .n-data-table-th) {
-  font-size: 14px !important;
+  font-size: 12px !important;
   font-weight: 500 !important;
   color: var(--platform-text) !important;
   border-bottom: 1px solid var(--platform-border-strong) !important;
 }
 .documents-table :deep(.n-data-table-tbody .n-data-table-td) {
+  font-size: 12px;
   border-bottom: 1px solid var(--platform-border-strong) !important;
   vertical-align: middle;
 }

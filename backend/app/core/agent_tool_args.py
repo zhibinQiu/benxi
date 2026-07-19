@@ -18,6 +18,7 @@ build_function_tool_spec = _build_function_tool_spec
 
 from app.core.tool_def_loader import get_tool_description
 from app.services.skill_chat_service import (
+    ATOMIC_TOOL_FETCH_URL_CONTENT,
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
     ATOMIC_TOOL_WEB_SEARCH,
@@ -69,10 +70,6 @@ class KgQueryArgs(_StrictArgs):
     question: str = Field(min_length=1, max_length=500)
 
 
-class CarbonQaQueryArgs(_StrictArgs):
-    question: str = Field(min_length=1, max_length=500)
-
-
 class MermaidDiagramArgs(_StrictArgs):
     description: str = Field(min_length=1, max_length=1000, description="图表类型和内容描述")
 
@@ -80,6 +77,50 @@ class MermaidDiagramArgs(_StrictArgs):
 class SearchToolsArgs(_StrictArgs):
     query: str = Field(min_length=1, max_length=200)
     limit: int = Field(default=8, ge=1, le=15)
+
+
+class StockQuoteArgs(_StrictArgs):
+    codes: str = Field(description="股票代码，逗号分隔多个，如 600519,000001。支持上海 sh6/s h68、深圳 sz0/sz3 格式。")
+
+
+class StockKlineArgs(_StrictArgs):
+    code: str = Field(min_length=4, max_length=10, description="股票代码，如 600519、000001")
+    ktype: str = Field(default="day", description="K 线类型: day(日K) / week(周K) / month(月K)")
+
+
+class MarketIndicesArgs(_StrictArgs):
+    pass
+
+
+class FinanceSearchArgs(_StrictArgs):
+    query: str = Field(min_length=1, max_length=100, description="搜索关键词，股票名或代码")
+    market: str = Field(default="stock", description="市场类型: stock(股票) / fund(基金)")
+
+
+class F10DataArgs(_StrictArgs):
+    code: str = Field(min_length=4, max_length=10, description="股票代码，如 000682、600519")
+    target_date: str = Field(default="", description="估值截止日期，格式 2026-07-17，留空用当天")
+    start_range: str = Field(default="", description="区间涨跌幅起始，格式 2026-06-29，留空默认 15 天前")
+    end_range: str = Field(default="", description="区间涨跌幅结束，格式 2026-07-17，留空用当天")
+    keywords: str = Field(default="", description="互动易关键词筛选，逗号分隔，如 储能,虚拟电厂,电表")
+
+
+class CarbonPriceArgs(_StrictArgs):
+    keyword: str = Field(default="", description="可选关键词，如 全国碳市场、CCER、广东试点")
+    url: str = Field(default="", description="可选，指定官方 URL 直接抓取；留空则按默认碳价源查询")
+
+
+class CarbonPolicyArgs(_StrictArgs):
+    keyword: str = Field(default="", description="可选关键词，如 钢铁纳入碳市场、碳达峰方案")
+    url: str = Field(default="", description="可选，指定政策页 URL；留空则按 gov/ndrc/mee/miit 等默认源查询")
+
+
+class CarbonDataArgs(_StrictArgs):
+    topic: str = Field(
+        description="数据主题: emission(排放) / ccer / international(国际碳市场) / local(地方双碳方案)",
+    )
+    keyword: str = Field(default="", description="可选关键词，缩小摘要关注点")
+    url: str = Field(default="", description="可选，指定 URL 直接抓取")
 
 
 class InvokeSkillArgs(_StrictArgs):
@@ -103,7 +144,7 @@ class DomainSkillCallArgs(_StrictArgs):
         return coerce_dict_field(value)
 
 
-class SearchSkillsArgs(_StrictArgs):
+class FindSkillsArgs(_StrictArgs):
     query: str = Field(min_length=1, max_length=200)
     limit: int = Field(default=8, ge=1, le=15)
 
@@ -122,7 +163,17 @@ class RunToolBatchArgs(_StrictArgs):
     steps: list[RunToolBatchStepArgs] = Field(min_length=1, max_length=6)
 
 
-ContextSubagentKind = Literal["use", "search", "auto"]
+# ── 编排步骤（供 execute 子Agent使用） ──────────────────────
+
+
+class ExecuteStepItem(_StrictArgs):
+    """execute 子Agent 的单个执行步骤。"""
+    tool: str = Field(min_length=1, max_length=80, description="工具名称")
+    arguments: dict[str, Any] = Field(default_factory=dict, description="工具参数")
+    tool_call_id: str = Field(default="", max_length=64, description="父Agent的 tool_call_id，用于关联结果")
+
+
+ContextSubagentKind = Literal["use", "search", "execute"]
 
 
 class InvokeContextSubagentArgs(_StrictArgs):
@@ -132,15 +183,20 @@ class InvokeContextSubagentArgs(_StrictArgs):
             "调用 web_search / knowledge_retrieve / kg_query 等多源检索工具；"
             "传入 queries 参数时并行检索多个关键词。"
             "use=执行指定技能——子 Agent 调用 invoke_skill 完成具体技能任务。"
-            "auto=自主编排——子 Agent 继承父智能体的全部工具，"
-            "自主决定工作流程和工具调用顺序，适用于浏览器操作等复杂任务。"
+            "execute=执行父智能体编排的步骤——子 Agent 严格按 steps 数组依次执行，"
+            "不经过 LLM 决策，直接返回每步的执行结果。"
         )
     )
-    task: str = Field(default="", max_length=1200, description="单子任务描述")
+    task: str = Field(default="", max_length=1200, description="任务描述（search/use 用）")
     queries: list[str] | None = Field(
         default=None,
         max_length=4,
-        description="explore 专用：2–4 个 query 并行检索（省 token，优于多次调用）；deep_research 不需要此字段，子 Agent 会自主分析意图并生成搜索关键词",
+        description="search 可选：2–4 个关键词并行检索；不传则子 Agent 自主分析意图并生成搜索词",
+    )
+    steps: list[ExecuteStepItem] | None = Field(
+        default=None,
+        max_length=12,
+        description="execute 专用：父智能体编排的步骤列表。子 Agent 严格按顺序执行，不自主决策",
     )
 
     @field_validator("queries", mode="before")
@@ -155,10 +211,10 @@ class InvokeContextSubagentArgs(_StrictArgs):
         return [str(x).strip() for x in value if str(x).strip()]
 
     @model_validator(mode="after")
-    def _task_or_queries(self) -> InvokeContextSubagentArgs:
-        if (self.task or "").strip() or (self.queries or []):
+    def _task_or_queries_or_steps(self) -> InvokeContextSubagentArgs:
+        if (self.task or "").strip() or (self.queries or []) or (self.steps or []):
             return self
-        raise ValueError("task 与 queries 至少填一项")
+        raise ValueError("task、queries 与 steps 至少填一项")
 
 
 # --- Skill / 记忆 ---
@@ -631,11 +687,85 @@ ALL_TOOLS: list[ToolDef] = [
         args_schema=EmptyMountedFoldersArgs,
         authority=("knowledge_folder",),
     ),
-    # ── 碳问答（原 carbon-qa skill 迁移） ──────────────
+    # ── 金融数据 ──────────────────────────────────────────
     ToolDef(
-        name="carbon_qa_query",
-        description="双碳领域问答：碳市场行情、碳交易、碳中和/碳达峰政策、CCER、碳排放核算等。",
-        args_schema=CarbonQaQueryArgs,
+        name="stock_quote",
+        description=(
+            "获取中国 A 股实时行情数据。返回最新价、涨跌幅、涨跌额、"
+            "最高价、最低价、成交量、成交额、市盈率、振幅等常用指标。"
+            "可一次查询多只股票（逗号分隔）。"
+        ),
+        args_schema=StockQuoteArgs,
+        authority=("retrieval",),
+    ),
+    ToolDef(
+        name="stock_kline",
+        description=(
+            "获取中国 A 股历史 K 线数据，用于技术面分析。"
+            "支持日 K、周 K、月 K 三种周期，返回 OHLC（开/高/低/收）和成交量。"
+        ),
+        args_schema=StockKlineArgs,
+        authority=("retrieval",),
+    ),
+    ToolDef(
+        name="market_indices",
+        description=(
+            "获取中国 A 股主要市场指数实时行情，包括：上证指数、深证成指、"
+            "创业板指、科创 50、沪深 300、上证 50、中证 1000 等。"
+        ),
+        args_schema=MarketIndicesArgs,
+        authority=("retrieval",),
+    ),
+    ToolDef(
+        name="finance_search",
+        description=(
+            "搜索中国 A 股股票或公募基金。输入股票名/代码或基金名/代码，"
+            "返回匹配的证券代码和名称列表。"
+        ),
+        args_schema=FinanceSearchArgs,
+        authority=("retrieval",),
+    ),
+    ToolDef(
+        name="f10_data",
+        description=(
+            "获取个股完整 F10 基本面数据。返回公司概况、主营构成（分产品营收/毛利率）、"
+            "财务摘要（营收/归母净利/EPS/同比）、盈利能力（ROE/毛利率/净利率）、"
+            "区间行情与涨跌幅、主力资金流向、业绩预告、股东户数、北向资金持仓、"
+            "近期公告、互动易问答。数据来源：东方财富（AKshare）。"
+            "适用于深度基本面分析、辩论圆桌的事实底稿。"
+        ),
+        args_schema=F10DataArgs,
+        authority=("retrieval",),
+    ),
+    # ── 双碳数据 ──────────────────────────────────────────
+    ToolDef(
+        name="carbon_price",
+        description=(
+            "从官方渠道获取碳价行情摘要：全国 CEA、CCER、地方试点等。"
+            "数据源含 cets.org.cn / cneeex.com 等。禁止编造实时碳价。"
+            "新闻资讯请用浏览器（invoke_context_subagent kind=execute），勿用本工具。"
+        ),
+        args_schema=CarbonPriceArgs,
+        authority=("retrieval",),
+    ),
+    ToolDef(
+        name="carbon_policy",
+        description=(
+            "从官方渠道获取双碳政策法规摘要：gov.cn / ndrc.gov.cn / mee.gov.cn / miit.gov.cn 等。"
+            "适用于碳达峰碳中和顶层文件、行业方案、碳市场条例等。"
+            "每日新闻/政策解读请用浏览器查最新，勿用本工具冒充即时资讯。"
+        ),
+        args_schema=CarbonPolicyArgs,
+        authority=("retrieval",),
+    ),
+    ToolDef(
+        name="carbon_data",
+        description=(
+            "从官方渠道获取双碳结构化数据摘要。"
+            "topic=emission 排放数据；ccer 方法学/项目；international 国际碳市场；"
+            "local 地方双碳方案。新闻资讯请走浏览器工具。"
+        ),
+        args_schema=CarbonDataArgs,
         authority=("retrieval",),
     ),
     # ── 图表绘制（原 mermaid-diagram skill 迁移） ──────
@@ -647,9 +777,9 @@ ALL_TOOLS: list[ToolDef] = [
     ),
     # ── 发现 / 元工具 ─────────────────────────────────
     ToolDef(
-        name="search_skills",
-        description="按关键词搜索可用 Skill 路由",
-        args_schema=SearchSkillsArgs,
+        name="find_skills",
+        description="按关键词查找可用 Skill 路由",
+        args_schema=FindSkillsArgs,
         authority=("skill_runtime",),
     ),
     ToolDef(
@@ -664,7 +794,7 @@ ALL_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="search_tools",
-        description="【内部】按关键词搜索原子工具；优先使用 search_skills",
+        description="【内部】按关键词搜索原子工具；优先使用 find_skills",
         args_schema=SearchToolsArgs,
         authority=(),
     ),
@@ -680,11 +810,12 @@ ALL_TOOLS: list[ToolDef] = [
         description=(
             "调用已绑定 Skill：检索/文档库/技能开发等经此入口。"
             "文档库 invoke_skill(document-library, call, {operation, params})；"
-            "技能开发 invoke_skill(skill-development, call, {operation: create_skill, ...})"
+            "技能开发直接调用 create_skill"
         ),
         args_schema=InvokeSkillArgs,
-        authority=tuple(),
-    ),    ToolDef(
+        authority=("skill_runtime",),
+    ),
+    ToolDef(
         name="load_uploaded_skill",
         description="加载上传 Skill 的 SKILL.md",
         args_schema=LoadUploadedSkillArgs,
@@ -812,7 +943,7 @@ ALL_TOOLS: list[ToolDef] = [
     ),
     # ── 网页内容 ──────────────────────────────────────
     ToolDef(
-        name="fetch_url_content",
+        name=ATOMIC_TOOL_FETCH_URL_CONTENT,
         description=(
             "获取指定 URL 的网页正文内容（Markdown 格式）。"
             "与 web_search 不同：此工具直接读取给定 URL 的内容，不执行搜索。"
@@ -820,7 +951,7 @@ ALL_TOOLS: list[ToolDef] = [
             "注意：仅限可公开访问的 URL，不支持登录态页面。"
         ),
         args_schema=FetchUrlContentArgs,
-        authority=(),
+        authority=("retrieval",),
     ),
     # ── 文档库 ────────────────────────────────────────
     ToolDef(
@@ -1013,13 +1144,11 @@ ALL_TOOLS: list[ToolDef] = [
     ToolDef(
         name="invoke_context_subagent",
         description=(
-            "联网检索/深度调研——委托子 Agent 执行联网检索。这是联网检索的唯一入口，"
-            "所有需要上网查信息/调研/研究的需求统一使用此工具。"
-            "browser_digest→browser-automation 页面取证；"
-            "explore→web-search/knowledge-search/kg 并行检索；"
-            "deep_research→自主分析意图、生成多关键词、web_search 深度检索"
-            "（含 FireCrawl 全文读+交叉验证）。"
-            "skill-dev 创建 Skill 时的纯主题检索（无浏览器操作）走本工具"
+            "委托子 Agent 执行任务。这是三种子智能体的统一入口：\n"
+            "- kind=search：深度联网检索（搜索+知识库+本体+图谱，多源交叉验证，直接回答）\n"
+            "- kind=use：执行已有 Skill（按需调用技能的每一步）\n"
+            "- kind=execute：严格按父智能体编排的步骤执行（浏览器自动化、定时器、通知发送等具体操作）\n"
+            "所有需要联网查信息/调研/研究的需求统一使用 kind=search。"
         ),
         args_schema=InvokeContextSubagentArgs,
         authority=("orchestration",),

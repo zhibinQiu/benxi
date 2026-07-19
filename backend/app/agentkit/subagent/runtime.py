@@ -1,4 +1,4 @@
-"""子 Agent 统一入口 — explore 并行 / 单 query 隔离循环。"""
+"""子 Agent 统一入口 — 单 query 隔离循环。"""
 
 from __future__ import annotations
 
@@ -13,8 +13,9 @@ from app.agentkit.subagent.context import (
     merge_child_into_parent,
     normalize_queries,
 )
-from app.agentkit.subagent.explore import parallel_explore_queries
 from app.agentkit.subagent.loop import run_subagent_tool_loop
+
+_MAX_PARALLEL_QUERIES = 4
 
 
 async def execute_subagent(
@@ -31,6 +32,7 @@ async def execute_subagent(
     """执行子 Agent，返回 JSON 字符串（与平台 invoke_context_subagent 兼容）。
 
     使用 ``SubagentConfig`` 注入宿主依赖，替代原 13 个松散参数。
+    所有子 Agent 均走隔离 tool loop：LLM 决策 → 调用工具 → 汇总结果。
     """
     sub_kind = (kind or "").strip().lower()
     kind_config = config.runtime.kinds.get(sub_kind)
@@ -39,49 +41,21 @@ async def execute_subagent(
     if not llm_configured:
         return _result(False, "LLM 未配置")
 
+    if config.execute_tool is None or config.record_tool is None or config.llm_complete is None or config.build_tool_specs is None:
+        return _result(False, "子 Agent 运行时未配置")
+
     normalized = normalize_queries(
         task or user_message,
         queries,
-        max_queries=config.runtime.max_parallel_queries,
+        max_queries=_MAX_PARALLEL_QUERIES,
     )
     if not normalized:
         return _result(False, "task 或 queries 不能为空")
 
     agent = agent_id or str((loop_state or {}).get("agent_id") or "")
-
-    # 并行检索模式（search + 多 query + invoke_skill + explore_steps）
-    # search 接收 queries 时走并行技能检索，否则走 LLM 隔离循环
-    if (
-        sub_kind == "search"
-        and len(normalized) >= config.runtime.parallel_explore_min_queries
-        and config.invoke_skill is not None
-        and config.runtime.explore_steps
-    ):
-        summary, child_state = await parallel_explore_queries(
-            normalized,
-            loop_state=loop_state,
-            agent_id=agent,
-            steps=config.runtime.explore_steps,
-            invoke_skill=config.invoke_skill,
-            append_retrieval=config.append_retrieval,
-        )
-        task_label = " | ".join(normalized[:3])
-        merge_child_into_parent(
-            loop_state,
-            child_state,
-            kind=sub_kind,
-            task=task_label,
-            summary=summary,
-            append_retrieval=config.append_retrieval,
-        )
-        return _result(True, summary[:2000], {"kind": sub_kind, "parallel_queries": len(normalized), "mode": "parallel_retrieval"})
-
-    # 隔离 tool loop 模式
-    if config.execute_tool is None or config.record_tool is None or config.llm_complete is None or config.build_tool_specs is None:
-        return _result(False, "子 Agent 运行时未配置")
-
     sub_task = normalized[0]
     child_state = child_state_from_parent(loop_state, kind=sub_kind, agent_id=agent)
+    # allowed_tools=None：由宿主 build_tool_specs 决定（execute 按父挂载集收窄）
     allowed = set(kind_config.allowed_tools) if kind_config.allowed_tools is not None else None
     tool_specs = config.build_tool_specs(allowed)
     summary = await run_subagent_tool_loop(
@@ -103,7 +77,7 @@ async def execute_subagent(
         summary=summary,
         append_retrieval=config.append_retrieval,
     )
-    return _result(True, summary[:2000], {"kind": sub_kind, "mode": "isolated_loop"})
+    return _result(True, summary, {"kind": sub_kind, "mode": "isolated_loop"})
 
 
 def _result(ok: bool, summary: str, data: dict[str, Any] | None = None) -> str:

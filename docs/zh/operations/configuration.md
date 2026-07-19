@@ -28,7 +28,7 @@
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `BENXI_VERSION` | 4.6.0（见根目录 `VERSION`） | 自有镜像 tag |
+| `BENXI_VERSION` | 4.8.6（见根目录 `VERSION`） | 自有镜像 tag |
 | `DATA_ROOT` | ./data | 持久化根目录 |
 | `FRONTEND_PORT` | 40005 | 唯一对外 Web 端口 |
 | `STACK_USE_MIRROR` | 1 | 启用 compose.mirror.yaml |

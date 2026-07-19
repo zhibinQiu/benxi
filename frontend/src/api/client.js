@@ -24,3 +24,6 @@ export * from "./textToSpeech.js";
 export * from "./ocr.js";
 export * from "./agentSkills.js";
 export * from "./chat.js";
+export * from "./prompts.js";
+export * from "./finance.js";
+export * from "./notes.js";

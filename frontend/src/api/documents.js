@@ -217,6 +217,27 @@ export async function updateDocument(documentId, payload) {
   });
 }
 
+/** 公开分享链接（无需登录即可预览最新版本） */
+export function getDocumentShareUrl(shareToken) {
+  if (!shareToken) return "";
+  const base = (getApiBase() || "/ai").replace(/\/$/, "");
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return `${origin}${base}/api/v1/share/documents/${shareToken}`;
+}
+
+/** 生成/覆盖文档公开分享令牌 */
+export async function shareDocument(documentId, { regenerate = true } = {}) {
+  return api(`/api/v1/documents/${documentId}/share`, {
+    method: "POST",
+    body: JSON.stringify({ regenerate }),
+  });
+}
+
+/** 撤销文档公开分享链接 */
+export async function unshareDocument(documentId) {
+  return api(`/api/v1/documents/${documentId}/share`, { method: "DELETE" });
+}
+
 export async function moveDocument(documentId, { folder_id } = {}) {
   return api(`/api/v1/documents/${documentId}/move`, {
     method: "POST",

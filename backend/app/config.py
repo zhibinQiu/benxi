@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # ── 平台基础 ──────────────────────────────────────────────────────────────
     app_name: str = "本析"
-    platform_version: str = "4.8.1"
+    platform_version: str = "4.8.6"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -354,7 +354,7 @@ class Settings(BaseSettings):
     firecrawl_api_url: str = "https://api.firecrawl.dev"
     firecrawl_read_full_max_urls: int = 3
 
-    # ── 数据分析 ──────────────────────────────────────────────────────────────
+    # ── 表格分析 ──────────────────────────────────────────────────────────────
     data_analysis_storage_dir: str = ""
     data_analysis_max_file_mb: int = 50
     data_analysis_exec_timeout_seconds: int = 60

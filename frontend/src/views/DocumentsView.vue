@@ -73,7 +73,7 @@ import {
   writeDocumentsKbFoldersCache,
   writeDocumentsListCache } from "../utils/documentsViewCache.js";
 import { renderIconAction } from "../utils/tableIconActions";
-import { renderKnowledgeIndexTag, isDocumentIndexReady } from "../utils/knowledgeIndex.js";
+import { knowledgeIndexTagProps, isDocumentIndexReady } from "../utils/knowledgeIndex.js";
 import { notifyKnowledgeScopeTreeStale } from "../utils/knowledgeScopeRefresh.js";
 import { isRouteAbortError } from "../api/requestScope.js";
 import {
@@ -89,7 +89,9 @@ import {
   deleteDocument,
   updateKbFolder } from "../api/documents.js";
 import { fetchReindexUnindexedDocuments as reindexUnindexedDocuments } from "../api/knowledge.js";
-import { LIST_PAGE_SIZE } from "../constants/listPage.js";
+
+/** 文档列表每页条数 */
+const DOCUMENTS_PAGE_SIZE = 6;
 
 const route = useRoute();
 const { isSystemAdmin, user } = useAuth();
@@ -105,7 +107,7 @@ const searchOpen = ref(false);
 const searchInputRef = ref(null);
 const appliedSearch = ref("");
 const page = ref(1);
-const pageSize = ref(LIST_PAGE_SIZE);
+const pageSize = ref(DOCUMENTS_PAGE_SIZE);
 const total = ref(0);
 const items = ref([]);
 const folders = ref([]);
@@ -465,6 +467,7 @@ const columns = computed(() => {
   base.push({
     title: t("documents.columns.title"),
     key: "title",
+    minWidth: 200,
     ellipsis: { tooltip: true },
     render: (row) => h("span", { class: "documents-doc-title" }, row.title || "—"),
   });
@@ -476,7 +479,7 @@ const columns = computed(() => {
       row.file_format
         ? h(
             NTag,
-            { size: "small", bordered: false, type: "info" },
+            { size: "tiny", bordered: false, type: "info", class: "documents-meta-tag" },
             { default: () => formatDocumentFormatLabel(row.file_format) }
           )
         : "—"});
@@ -484,8 +487,15 @@ const columns = computed(() => {
     title: t("documents.columns.indexStatus"),
     key: "indexStatus",
     width: 115,
-    render: (row) => renderKnowledgeIndexTag(row)});
-  if (!isSearchMode.value) {
+    render: (row) => {
+      const tag = knowledgeIndexTagProps(row);
+      return h(
+        NTag,
+        { size: "tiny", type: tag.type, bordered: false, class: "documents-meta-tag" },
+        { default: () => tag.label }
+      );
+    }});
+  if (!isSearchMode.value && !isInsideKbFolder.value) {
     base.push({
       title: t("documents.columns.status"),
       key: "status",
@@ -545,8 +555,9 @@ const columns = computed(() => {
         render: (row) => docLevelLabel(row.shared_level) || row.shared_level || "—"}
     );
   } else if (ORG_SCOPES.includes(activeScope.value)) {
-    base.push(
-      {
+    // 进入文件夹后已限定组织单元，无需再显示所属分部/部门/公司
+    if (!isInsideKbFolder.value) {
+      base.push({
         title:
           activeScope.value === "company"
             ? t("documents.columns.company")
@@ -555,13 +566,13 @@ const columns = computed(() => {
               : t("documents.columns.department"),
         key: "dept_name",
         width: 144,
-        render: (row) => row.dept_name || "—"},
-      {
-        title: t("documents.columns.owner"),
-        key: "owner_name",
-        width: 202,
-        render: (row) => row.owner_name || t("documents.unknownUser")}
-    );
+        render: (row) => row.dept_name || "—"});
+    }
+    base.push({
+      title: t("documents.columns.owner"),
+      key: "owner_name",
+      width: 202,
+      render: (row) => row.owner_name || t("documents.unknownUser")});
   }
   base.push(
     {
@@ -1795,15 +1806,13 @@ watch(
       <IconAction :label="t('documents.backToFolders')" :icon="ArrowBackOutline" @click="backToKbFolders" />
       <span class="documents-folder-toolbar__name">{{ activeKbFolderLabel }}</span>
       <div class="folder-action-pills">
-        <NButton quaternary size="tiny" class="folder-action-btn" :disabled="!canBatchPublish" @click="openBatchPublish">
-          <template #icon><NIcon :component="RocketOutline" /></template>
-          {{ t("documents.detail.publishToLibrary") }}
+        <NButton text size="tiny" class="folder-action-btn" :disabled="!canBatchPublish" @click="openBatchPublish">
+          {{ t("documents.detail.publish") }}
         </NButton>
-        <NButton quaternary size="tiny" class="folder-action-btn" :disabled="!canBatchMove" @click="openBatchMove">
+        <NButton text size="tiny" class="folder-action-btn" :disabled="!canBatchMove" @click="openBatchMove">
           {{ t("common.move") }}
         </NButton>
-        <NButton quaternary size="tiny" class="folder-action-btn folder-action-btn--danger" :disabled="!canBatchDelete" @click="handleBatchDelete">
-          <template #icon><NIcon :component="TrashOutline" /></template>
+        <NButton text size="tiny" class="folder-action-btn folder-action-btn--danger" :disabled="!canBatchDelete" @click="handleBatchDelete">
           {{ t("common.delete") }}
         </NButton>
       </div>
@@ -1811,7 +1820,7 @@ watch(
     <div v-if="showBottomBatchToolbar" class="doc-list-toolbar page-toolbar">
       <n-space align="center" :size="7">
         <IconAction
-          :label="t('documents.detail.publishToLibrary')"
+          :label="t('documents.detail.publish')"
           :icon="RocketOutline"
           :disabled="!canBatchPublish"
           @click="openBatchPublish"
@@ -2113,33 +2122,33 @@ watch(
   letter-spacing: -0.01em;
 }
 
-/* ── 文件夹内操作按钮 ── */
-.documents-folder-toolbar .folder-action-btn.n-button.n-button--quaternary-type {
+/* ── 文件夹内操作按钮（纯文字） ── */
+.documents-folder-toolbar .folder-action-btn.n-button {
   width: auto !important;
-  padding: 0 10px !important;
-  border-radius: 6px !important;
-  font-size: var(--platform-font-size-sm) !important;
-  line-height: 1 !important;
-  --n-height: 28px;
-  border: 1px solid var(--platform-border-strong);
-  background: var(--platform-surface);
-  transition: background 0.15s ease, border-color 0.15s ease;
+  padding: 0 6px !important;
+  font-size: var(--platform-font-size-xs) !important;
+  line-height: 1.2 !important;
+  --n-height: 22px;
+  font-weight: 400;
+  color: var(--platform-text-secondary);
 }
-.documents-folder-toolbar .folder-action-btn.n-button.n-button--quaternary-type:not(:disabled):hover {
-  background: var(--platform-bg-tertiary);
-  border-color: var(--platform-accent);
+.documents-folder-toolbar .folder-action-btn.n-button:not(:disabled):hover {
+  color: var(--platform-accent);
 }
-.documents-folder-toolbar .folder-action-btn--danger.n-button.n-button--quaternary-type:not(:disabled) {
+.documents-folder-toolbar .folder-action-btn--danger.n-button:not(:disabled) {
   color: var(--platform-danger);
 }
-.documents-folder-toolbar .folder-action-btn--danger.n-button.n-button--quaternary-type:not(:disabled):hover {
+.documents-folder-toolbar .folder-action-btn--danger.n-button:not(:disabled):hover {
   color: var(--platform-danger);
-  background: var(--platform-danger-soft);
-  border-color: var(--platform-danger);
+  opacity: 0.85;
 }
 
 .documents-doc-title {
   font-size: 15px;
+}
+
+.documents-table :deep(.documents-meta-tag) {
+  font-size: var(--platform-font-size-xs) !important;
 }
 
 /* 文档表格 — 参照多智能体技能表格样式 */
@@ -2154,6 +2163,21 @@ watch(
   font-size: 13px;
 }
 
+.documents-scope-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--platform-bg);
+}
+.documents-scope-tabs :deep(.n-tabs-tab--active) {
+  color: var(--n-tab-text-color) !important;
+}
+.documents-scope-tabs :deep(.n-tabs-tab):hover {
+  color: var(--n-tab-text-color) !important;
+}
+.documents-scope-tabs :deep(.n-tabs-bar) {
+  display: none;
+}
 .documents-scope-tabs :deep(.n-tabs-tab-panes) {
   display: none;
 }
@@ -2320,10 +2344,9 @@ watch(
     padding: 6px 0 12px;
   }
 
-  .documents-folder-toolbar .folder-action-btn.n-button.n-button--quaternary-type {
-    font-size: 11px !important;
-    padding: 0 6px !important;
-    height: 26px !important;
+  .documents-folder-toolbar .folder-action-btn.n-button {
+    font-size: var(--platform-font-size-xs) !important;
+    padding: 0 4px !important;
   }
 
   .documents-table :deep(.n-data-table-th):nth-child(5), /* scope */

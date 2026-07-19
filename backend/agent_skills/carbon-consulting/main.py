@@ -85,6 +85,20 @@ def main() -> None:
     query_type = args[0].strip().lower()
     keyword = args[1] if len(args) > 1 else ""
 
+    # 新闻资讯：指引浏览器，不再静态抓取冒充即时新闻
+    if query_type == "news":
+        q = keyword or "最新双碳新闻资讯"
+        skill_runtime.finish(
+            "【新闻资讯请用浏览器查最新】\n"
+            "正式路径：invoke_context_subagent(kind=execute, task=\""
+            f"用浏览器打开 https://www.cenews.com.cn 、https://www.tandao.org 、"
+            f"https://www.3060.org.cn 查询并摘要：{q}"
+            "\")\n"
+            "或平台原子工具编排：invoke_skill(carbon-qa, ask, {question: \"...\"})；"
+            "碳价/政策请用 carbon_price / carbon_policy / carbon_data。"
+        )
+        return
+
     # 如果参数是完整 URL，直接获取
     if keyword.startswith(("http://", "https://")):
         try:

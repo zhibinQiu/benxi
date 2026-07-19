@@ -51,11 +51,16 @@ from app.models import (  # noqa: F401 — register ORM models
     document_version_compare,
     document_workflow,
     feed_subscription,
+    carbon_report,
+    finance_report,
+    finance_watchlist,
     job,
     kg,
     meeting_record,
     notification,
+    note,
     org,
+    prompt,
     platform_chat,
     platform_model_settings,
     rag,
@@ -352,6 +357,16 @@ def create_app() -> FastAPI:
     app.include_router(system.router, prefix=prefix)
     app.include_router(embed_proxy_api.router, prefix=prefix)
     mount_routers(app, prefix)
+    # 理财报告 / 双碳报告 / 工作笔记 / 文档 公开分享（无需登录）
+    from app.api.finance import public_router as finance_share_router
+    from app.api.carbon_assistant import public_router as carbon_share_router
+    from app.api.note import public_router as note_share_router
+    from app.api.documents.share import public_router as document_share_router
+
+    app.include_router(finance_share_router, prefix=prefix)
+    app.include_router(carbon_share_router, prefix=prefix)
+    app.include_router(note_share_router, prefix=prefix)
+    app.include_router(document_share_router, prefix=prefix)
     app.include_router(jobs.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
     app.include_router(todos.router, prefix=prefix)

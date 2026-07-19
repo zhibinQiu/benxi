@@ -83,12 +83,20 @@ def test_registry_bootstraps_global_atomic_tools():
     # 现在注册所有 TOOL_DEFINITIONS 工具，包含 scope 工具名
     assert GLOBAL_ATOMIC_TOOL_NAMES <= ids
     assert "invoke_skill" in ids
-    assert "search_skills" in ids
+    assert "find_skills" in ids
 
     web = center.get("web_search")
     assert web is not None
-    assert web.tool_type == "io_http"
+    assert web.tool_type == "io_data"
     assert "query" in (web.input_schema.get("properties") or {})
+
+    quote = center.get("stock_quote")
+    assert quote is not None
+    assert quote.tool_type == "io_data"
+
+    todos = center.get("list_todos")
+    assert todos is not None
+    assert todos.tool_type == "io_platform"
 
 
 def test_param_validation_returns_1xxx():

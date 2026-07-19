@@ -44,7 +44,7 @@ _logger = logging.getLogger(__name__)
 
 # 平台 agent 分类与 marker（注入 agentkit-orchestrate 规则层）
 _VERIFY_RULES = VerifyRules(
-    action_agent_ids=frozenset({"platform", "rpa"}),
+    action_agent_ids=frozenset({"platform"}),
     skill_dev_agent_id="skill-dev",
     skill_outcome_markers=(
         "运行 Skill 脚本",
@@ -58,7 +58,7 @@ _VERIFY_RULES = VerifyRules(
 )
 _ASSIST_RULES = AssistRules(
     assistable_agent_ids=frozenset(
-        {"platform", "rpa", "skill-dev"}
+        {"platform", "skill-dev"}
     ),
     skill_dev_agent_id="skill-dev",
     no_escalate_agent_ids=frozenset({"skill-dev", "orchestrator"}),
@@ -75,16 +75,15 @@ _ASSIST_RULES = AssistRules(
         "无定时提醒",
         "请调用平台工具",
     ),
-    action_agent_ids=frozenset({"platform", "rpa"}),
+    action_agent_ids=frozenset({"platform"}),
 )
 
 
 _RETRY_HINTS: dict[str, str] = {
     "skill-dev": (
-        "Skill 包管理：invoke_skill(skill-development, call, {operation, ...})；"
-        "operation 用 list_agent_skills（勿 list_uploaded_skills）。"
-        "浏览器调研（创建抓取类 Skill 的中间步骤）：直接 invoke_skill(browser-automation, call, ...)。"
-        "纯主题检索调研：invoke_context_subagent(kind=explore, queries=[...])。"
+        "Skill 包管理：直接调用 create_skill / list_agent_skills 等原子工具。"
+        "浏览器调研（创建抓取类 Skill 的中间步骤）：直接调用 browser_navigate 等原子工具。"
+        "纯主题检索调研：invoke_context_subagent(kind=search, queries=[...])。"
         "禁止仅口头说明无法完成。"
     ),
 }
@@ -392,10 +391,9 @@ def _fallback_specialist_correction(
         parts.append(f"专精回复摘要：{specialist_reply.strip()[:300]}")
     if task.agent_id == "skill-dev":
         parts.append(
-            "主业：invoke_skill(skill-development, call, {operation, ...})，"
-            "operation 用 list_agent_skills（勿 list_uploaded_skills）。"
-            "浏览器调研（创建抓取 Skill 中间步骤）：直接 invoke_skill(browser-automation, call, ...)。"
-            "主题检索调研：invoke_context_subagent(kind=explore, queries=[...])。"
+            "主业：直接调用 create_skill / list_agent_skills 等原子工具。"
+            "浏览器调研（创建抓取 Skill 中间步骤）：直接调用 browser_navigate 等原子工具。"
+            "主题检索调研：invoke_context_subagent(kind=search, queries=[...])。"
         )
     return "\n".join(parts) if parts else "请换用正确工具与参数重试，勿重复失败路径。"
 

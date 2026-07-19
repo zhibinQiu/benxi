@@ -166,25 +166,25 @@ a:hover {
 
 /* 系统确认弹窗 — 简洁白底，与平台风格统一 */
 .n-dialog.platform-confirm-dialog {
-  border-radius: 12px !important;
+  border-radius: var(--platform-card-radius, 10px) !important;
   border: 1px solid var(--platform-border-strong) !important;
   background: var(--platform-bg-elevated, #ffffff) !important;
   box-shadow: var(--platform-shadow-lg) !important;
-  padding: 24px 28px 20px !important;
+  padding: 20px 24px 16px !important;
   max-width: 420px !important;
   animation: platform-modal-enter 0.38s var(--platform-ease-spring) both;
 }
 
 .n-dialog.platform-confirm-dialog .n-dialog__title {
-  font-size: 16px !important;
+  font-size: var(--platform-font-size-lg, 14px) !important;
   font-weight: 500 !important;
   color: var(--platform-text) !important;
   line-height: 1.4 !important;
-  padding-bottom: 6px !important;
+  padding-bottom: 4px !important;
 }
 
 .n-dialog.platform-confirm-dialog .n-dialog__content {
-  font-size: var(--platform-font-size-base) !important;
+  font-size: var(--platform-font-size-base, 13px) !important;
   color: var(--platform-text-secondary) !important;
   line-height: 1.6 !important;
   background: transparent !important;
@@ -195,41 +195,41 @@ a:hover {
   display: flex !important;
   justify-content: flex-end !important;
   gap: 8px !important;
-  padding-top: 18px !important;
+  padding-top: 16px !important;
   margin-top: 0 !important;
   border-top: none !important;
 }
 
 .n-dialog.platform-confirm-dialog .n-dialog__action .n-button {
-  font-size: var(--platform-font-size-base) !important;
-  height: var(--btn-height-sm, 32px) !important;
-  padding: 0 16px !important;
+  font-size: var(--platform-font-size-sm, 12px) !important;
+  height: var(--btn-height-sm, 28px) !important;
+  padding: 0 var(--btn-padding-x-sm, 12px) !important;
   border-radius: var(--btn-radius-sm, 6px) !important;
-  font-weight: 400 !important;  /* dialog 按钮偏轻，不按 --btn-font-weight */
+  font-weight: 400 !important;
 }
 
 /* 确认弹窗按钮样式见 platform-buttons.css */
 
 /* 全局弹窗（n-dialog）统一样式 — 确保无论是否使用 platform-confirm-dialog 都不奇怪 */
 .n-dialog:not(.platform-confirm-dialog) {
-  border-radius: 12px !important;
+  border-radius: var(--platform-card-radius, 10px) !important;
   border: 1px solid var(--platform-border-strong) !important;
   background: var(--platform-bg-elevated, #ffffff) !important;
   box-shadow: var(--platform-shadow-lg) !important;
-  padding: 24px 28px 20px !important;
+  padding: 20px 24px 16px !important;
   max-width: 420px !important;
 }
 
 .n-dialog:not(.platform-confirm-dialog) .n-dialog__title {
-  font-size: 16px !important;
+  font-size: var(--platform-font-size-lg, 14px) !important;
   font-weight: 500 !important;
   color: var(--platform-text) !important;
   line-height: 1.4 !important;
-  padding-bottom: 6px !important;
+  padding-bottom: 4px !important;
 }
 
 .n-dialog:not(.platform-confirm-dialog) .n-dialog__content {
-  font-size: var(--platform-font-size-base) !important;
+  font-size: var(--platform-font-size-base, 13px) !important;
   color: var(--platform-text-secondary) !important;
   line-height: 1.6 !important;
   background: transparent !important;
@@ -240,15 +240,15 @@ a:hover {
   display: flex !important;
   justify-content: flex-end !important;
   gap: 8px !important;
-  padding-top: 18px !important;
+  padding-top: 16px !important;
 }
 
 .n-dialog:not(.platform-confirm-dialog) .n-dialog__action .n-button {
-  font-size: var(--platform-font-size-base) !important;
-  height: var(--btn-height-sm, 32px) !important;
-  padding: 0 16px !important;
+  font-size: var(--platform-font-size-sm, 12px) !important;
+  height: var(--btn-height-sm, 28px) !important;
+  padding: 0 var(--btn-padding-x-sm, 12px) !important;
   border-radius: var(--btn-radius-sm, 6px) !important;
-  font-weight: 400 !important;  /* dialog 按钮偏轻，不按 --btn-font-weight */
+  font-weight: 400 !important;
 }
 
 /* 弹窗遮罩（dialog / modal 通用） */
@@ -267,21 +267,51 @@ body > .n-modal-container .n-modal-mask {
   background: var(--platform-modal-mask) !important;
 }
 .n-drawer .n-drawer-header {
-  padding: 22px 24px 0 !important;
+  padding: 16px 20px 0 !important;
 }
 .n-drawer .n-drawer-header .n-drawer-header__title {
-  font-size: var(--platform-font-size-xl);
-  font-weight: var(--platform-font-weight-normal);
+  font-size: var(--platform-font-size-lg, 14px);
+  font-weight: 500;
   letter-spacing: var(--platform-tracking-tight);
+  color: var(--platform-text);
 }
 .n-drawer .n-drawer-body {
-  padding: 0 24px !important;
+  padding: 0 20px !important;
+  font-size: var(--platform-font-size-base, 13px);
+  color: var(--platform-text);
 }
 .n-drawer .n-drawer-body-content-wrapper {
-  padding: 16px 0 !important;
+  padding: 12px 0 !important;
 }
 .n-drawer .n-drawer-footer {
-  padding: 14px 24px 22px !important;
+  padding: 12px 20px 16px !important;
+  gap: 8px;
+}
+.n-drawer .n-drawer-footer .n-button {
+  height: var(--btn-height-sm, 28px) !important;
+  font-size: var(--platform-font-size-sm, 12px) !important;
+  padding: 0 var(--btn-padding-x-sm, 12px) !important;
+  border-radius: var(--btn-radius-sm, 6px) !important;
+}
+
+/* 二级 Modal 卡片（管理表单等）与系统字体/按钮对齐 */
+.n-modal .n-card > .n-card-header .n-card-header__main,
+.admin-form-modal .n-card > .n-card-header .n-card-header__main {
+  font-size: var(--platform-font-size-lg, 14px) !important;
+  font-weight: 500 !important;
+  color: var(--platform-text) !important;
+}
+.n-modal .n-card > .n-card__content,
+.admin-form-modal .n-card > .n-card__content {
+  font-size: var(--platform-font-size-base, 13px);
+  color: var(--platform-text);
+}
+.n-modal .n-card__footer .n-button,
+.admin-form-modal__footer .n-button {
+  height: var(--btn-height-sm, 28px) !important;
+  font-size: var(--platform-font-size-sm, 12px) !important;
+  padding: 0 var(--btn-padding-x-sm, 12px) !important;
+  border-radius: var(--btn-radius-sm, 6px) !important;
 }
 
 .n-data-table .n-data-table-th {
@@ -1223,38 +1253,20 @@ body > .v-binder-follower-container .n-dropdown-menu {
 }
 
 .page-toolbar .icon-action {
-  background: transparent;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent);
   border: none;
   color: var(--platform-text-tertiary);
 }
 
 .page-toolbar .icon-action:not(:disabled):hover {
   color: var(--platform-text-secondary);
-  background: var(--platform-toolbar-bg) !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
   box-shadow: none !important;
 }
 
 .page-toolbar .icon-action.icon-action--active {
   color: var(--platform-text-secondary);
   background: var(--platform-bg-tertiary);
-}
-
-.page-toolbar .icon-action.icon-action--caution:not(:disabled) {
-  color: var(--platform-caution);
-}
-
-.page-toolbar .icon-action.icon-action--caution:not(:disabled):hover {
-  color: var(--platform-caution);
-  background: var(--platform-caution-soft);
-}
-
-.page-toolbar .icon-action.icon-action--danger:not(:disabled) {
-  color: var(--platform-danger);
-}
-
-.page-toolbar .icon-action.icon-action--danger:not(:disabled):hover {
-  color: var(--platform-danger);
-  background: var(--platform-danger-soft);
 }
 
 .batch-table-toolbar {
@@ -1448,8 +1460,10 @@ html[data-theme="dark"] .documents-actions-bar .documents-org-picker__select :de
 }
 
 .table-icon-action {
-  width: 34px;
-  height: 34px;
+  width: var(--btn-height-sm, 32px);
+  height: var(--btn-height-sm, 32px);
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent);
+  border: none;
   color: var(--platform-text-tertiary);
   transition:
     color 0.15s ease,
@@ -1542,6 +1556,8 @@ html[data-theme="dark"] .documents-actions-bar .documents-org-picker__select :de
 .admin-form-modal__footer {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
   width: 100%;
 }
 

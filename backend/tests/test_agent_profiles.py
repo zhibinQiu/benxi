@@ -17,7 +17,7 @@ def test_list_builtin_agents(client, admin_token):
     assert "orchestrator" in ids
     assert "platform" in ids
     assert "report" in ids
-    assert "rpa" in ids
+    assert "rpa" not in ids
     assert "skill-dev" in ids
     assert ids.index("orchestrator") < ids.index("platform")
     assert ids.index("platform") < ids.index("report")
@@ -27,16 +27,16 @@ def test_patch_agent_skills(client, admin_token):
     ensure_agent_profile_schema(engine)
     headers = {"Authorization": f"Bearer {admin_token}"}
     r = client.patch(
-        "/api/v1/admin/agent-skills/agents/platform",
+        "/api/v1/admin/agent-skills/agents/carbon",
         headers=headers,
-        json={"skill_names": ["document-library", "platform-ops"]},
+        json={"skill_names": ["carbon-consulting"]},
     )
     assert r.status_code == 200, r.text
     data = r.json()["data"]
-    assert data["skill_names"] == ["document-library", "platform-ops"]
+    assert data["skill_names"] == ["carbon-consulting"]
 
-    r2 = client.get("/api/v1/admin/agent-skills/agents/platform", headers=headers)
-    assert r2.json()["data"]["skill_names"] == ["document-library", "platform-ops"]
+    r2 = client.get("/api/v1/admin/agent-skills/agents/carbon", headers=headers)
+    assert r2.json()["data"]["skill_names"] == ["carbon-consulting"]
 
 
 def test_orchestrator_skills_not_configurable(client, admin_token):
@@ -70,7 +70,7 @@ def test_patch_agent_service_enabled(client, admin_token):
     ensure_agent_profile_schema(engine)
     headers = {"Authorization": f"Bearer {admin_token}"}
     r = client.patch(
-        "/api/v1/admin/agent-skills/agents/research",
+        "/api/v1/admin/agent-skills/agents/carbon",
         headers=headers,
         json={"service_enabled": False},
     )
@@ -79,7 +79,7 @@ def test_patch_agent_service_enabled(client, admin_token):
     assert data["service_enabled"] is False
 
     r2 = client.patch(
-        "/api/v1/admin/agent-skills/agents/research",
+        "/api/v1/admin/agent-skills/agents/carbon",
         headers=headers,
         json={"service_enabled": True},
     )
@@ -106,12 +106,12 @@ def test_agent_config_file_read_and_update(client, admin_token):
     ensure_agent_profile_schema(engine)
     headers = {"Authorization": f"Bearer {admin_token}"}
     r = client.get(
-        "/api/v1/admin/agent-skills/agents/research/files/AGENT.md",
+        "/api/v1/admin/agent-skills/agents/carbon/files/AGENT.md",
         headers=headers,
     )
     assert r.status_code == 200, r.text
     original = r.json()["data"]["text"]
-    assert "id: research" in original
+    assert "id: carbon" in original
     assert "description:" in original
 
     updated_md = original.replace(
@@ -120,11 +120,14 @@ def test_agent_config_file_read_and_update(client, admin_token):
         1,
     )
     r2 = client.put(
-        "/api/v1/admin/agent-skills/agents/research/files/AGENT.md",
+        "/api/v1/admin/agent-skills/agents/carbon/files/AGENT.md",
         headers=headers,
         json={"content": updated_md},
     )
     assert r2.status_code == 200, r2.text
 
-    r3 = client.get("/api/v1/admin/agent-skills/agents/research", headers=headers)
-    assert "测试路由描述" in r3.json()["data"]["description"]
+    r3 = client.get(
+        "/api/v1/admin/agent-skills/agents/carbon/files/AGENT.md",
+        headers=headers,
+    )
+    assert "测试路由描述" in r3.json()["data"]["text"]

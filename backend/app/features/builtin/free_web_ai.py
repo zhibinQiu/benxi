@@ -18,7 +18,7 @@ free_web_ai_plugin = FeaturePlugin(
     enabled=True,
     category="ai",
     sort_order=60,
-    show_in_catalog=True,
+    show_in_catalog=False,
     grant_to_roles=("sys_admin", "member"),
 )
 

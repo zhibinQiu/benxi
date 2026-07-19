@@ -24,6 +24,7 @@ TOOL_KG = "query_entities"
 
 # 暴露给模型的原子 Agent 工具名
 ATOMIC_TOOL_WEB_SEARCH = "web_search"
+ATOMIC_TOOL_FETCH_URL_CONTENT = "fetch_url_content"
 ATOMIC_TOOL_KNOWLEDGE_RETRIEVE = "knowledge_retrieve"
 ATOMIC_TOOL_KG_QUERY = "kg_query"
 ATOMIC_TOOL_ONTOLOGY_QUERY = "ontology_query"
@@ -312,7 +313,7 @@ async def resolve_combined_research_async(
         nonlocal kg_context, merged_context, citations
         kg_context = await resolve_kg_context_via_skill(db, user, text)
         channels["kg"] = True
-        merged_context, citations = merge_kg_qa_into_context("", [], kg_context)
+        merged_context = merge_kg_qa_into_context("", [], kg_context)
 
     async def _run_web() -> None:
         nonlocal merged_context, citations

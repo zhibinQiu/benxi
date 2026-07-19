@@ -117,6 +117,8 @@ const createForm = ref({ name: "", description: "", skillMdBody: "" });
 
 const builtinDetailOpen = ref(false);
 const builtinDetailRow = ref(null);
+const builtinEditForm = ref({ title: "", description: "" });
+const builtinEditSaving = ref(false);
 
 const detailOpen = ref(false);
 const detailLoading = ref(false);
@@ -151,7 +153,7 @@ const {
   pagedItems: skillsPagedItems,
   onPageChange: onSkillsPageChange,
   resetPage: resetSkillsPage,
-} = useClientListPagination(mergedSkills);
+} = useClientListPagination(mergedSkills, { pageSize: 5 });
 
 const displayInfo = computed(() => {
   if (!skillsTotal.value) return "";
@@ -279,7 +281,32 @@ function toggleSkill(row, enabled) {
 
 function viewBuiltinDetail(row) {
   builtinDetailRow.value = row;
+  builtinEditForm.value = {
+    title: row.title || row.name || "",
+    description: row.description || "",
+  };
   builtinDetailOpen.value = true;
+}
+
+async function saveBuiltinEdit() {
+  if (!builtinDetailRow.value) return;
+  builtinEditSaving.value = true;
+  try {
+    const { title, description } = builtinEditForm.value;
+    await patchBuiltinSkill(builtinDetailRow.value.name, {
+      enabled: builtinDetailRow.value.enabled,
+      title,
+      description,
+    });
+    builtinDetailOpen.value = false;
+    ui.success(t("admin.agentSkills.saved"));
+    await loadRegistry();
+    emit("registry-changed");
+  } catch (e) {
+    ui.error(e.message || t("admin.agentSkills.saveFailed"));
+  } finally {
+    builtinEditSaving.value = false;
+  }
 }
 
 function removeBuiltinSkill(row) {
@@ -318,11 +345,14 @@ const skillColumns = computed(() => [
     ellipsis: { tooltip: true },
     render: (row) => {
       const infoLines = [];
-      if (!row._isMcp && row.readiness) {
-        infoLines.push(`${t("admin.agentSkills.colReadiness")}: ${readinessLabel(row.readiness)}`);
-      }
       if (!row._isMcp && row.created_at) {
         infoLines.push(`${t("admin.agentSkills.colCreatedAt")}: ${formatDateCompact(row.created_at)}`);
+      }
+      if (isBuiltinSkill(row) && row.route) {
+        infoLines.push(`${t("admin.agentSkills.builtinDetailRoute")}: ${row.route}`);
+      }
+      if (row.permission_code) {
+        infoLines.push(`permission: ${row.permission_code}`);
       }
       const cell = h("div", { style: "display:flex;flex-direction:column;gap:2px;padding:2px 0;" }, [
         h("div", { style: "font-size:var(--platform-font-size-sm);font-weight:500;color:var(--platform-text);line-height:1.4;" }, row.title || row.name),
@@ -337,6 +367,23 @@ const skillColumns = computed(() => [
           default: () =>
             h("div", { style: "white-space: nowrap;" }, infoLines.join(" | ")),
         }
+      );
+    },
+  },
+  {
+    title: t("admin.agentSkills.colReadiness"),
+    key: "readiness",
+    width: 96,
+    render: (row) => {
+      if (row._isMcp) return "";
+      return h(
+        NTag,
+        {
+          size: "small",
+          type: readinessTagType(row.readiness),
+          bordered: false,
+        },
+        { default: () => readinessLabel(row.readiness) }
       );
     },
   },
@@ -910,10 +957,18 @@ defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openM
           <NText depth="2">{{ builtinDetailRow.name }}</NText>
         </NFormItem>
         <NFormItem :label="t('admin.agentSkills.colTitle')">
-          <NText depth="2">{{ builtinDetailRow.title || builtinDetailRow.name }}</NText>
+          <NInput
+            v-model:value="builtinEditForm.title"
+            :placeholder="builtinDetailRow.name"
+          />
         </NFormItem>
         <NFormItem :label="t('admin.agentSkills.colDescription')">
-          <NText depth="2">{{ builtinDetailRow.description || '—' }}</NText>
+          <NInput
+            v-model:value="builtinEditForm.description"
+            type="textarea"
+            :rows="4"
+            :placeholder="builtinDetailRow.description || t('admin.agentSkills.editDescPh')"
+          />
         </NFormItem>
         <NFormItem :label="t('admin.agentSkills.colReadiness')">
           <NTag :type="readinessTagType(builtinDetailRow.readiness)" size="small" bordered>
@@ -938,6 +993,14 @@ defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openM
         </NFormItem>
       </NForm>
     </NSpace>
+    <template #footer>
+      <NSpace justify="end">
+        <NButton @click="builtinDetailOpen = false">{{ t("common.cancel") }}</NButton>
+        <NButton type="primary" :loading="builtinEditSaving" @click="saveBuiltinEdit">
+          {{ t("common.save") }}
+        </NButton>
+      </NSpace>
+    </template>
   </AdminFormModal>
 </template>
 

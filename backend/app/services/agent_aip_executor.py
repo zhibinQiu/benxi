@@ -90,11 +90,45 @@ async def iter_builtin_specialist_hop(
     sess: AgentLoopSession,
     user_id: uuid.UUID,
     ctx: SpecialistExecutionContext,
+    round_state: dict | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """执行内置专精智能体 hop，产出 workflow / complete 事件流。"""
+    """执行内置专精智能体 hop，产出 workflow / step_complete / complete 事件流。
+
+    - 首次调用（round_state=None）：完整 setup + 首轮单步
+    - 后续调用（round_state 来自上一轮的 step_complete）：恢复状态 + 下一轮单步
+    - orchestrator 保持原有多轮 tool loop 行为
+    """
+    from app.services.agent_profile_service import resolve_effective_runtime_tool_names
+    from app.services.agent_skill_runtime import build_agent_runtime_tool_specs
+    from app.services.agent_tool_loop import _exec_one_tool_round
+
     agent_id = ctx.agent_id
     agent_title = resolve_agent_title(agent_id)
 
+    # ── 后续轮次：恢复状态，直接执行单步 ──
+    if round_state is not None:
+        db, user = sess.open()
+        async for event in _exec_one_tool_round(
+            sess, db, user,
+            working=round_state["working"],
+            loop_state=round_state["loop_state"],
+            all_tool_specs=round_state["_all_tool_specs"],
+            execution_plan=round_state["_execution_plan"],
+            user_message=ctx.user_message,
+            conversation_id=ctx.session_id,
+            attachment_session_id=ctx.attachment_session_id,
+            agent_id=agent_id,
+            plan_has_script=round_state.get("_plan_has_script"),
+        ):
+            yield _annotate_workflow(
+                event,
+                agent_id=agent_id,
+                agent_title=agent_title,
+                task_id=ctx.task_id,
+            )
+        return
+
+    # ── 首次轮次：完整 setup ──
     route_step_id = f"agent-route-{uuid.uuid4().hex[:8]}"
     route_data: dict[str, Any] = {
         "phase": "agent_thought",
@@ -112,6 +146,7 @@ async def iter_builtin_specialist_hop(
 
     db, user = sess.open()
     try:
+        skill_names = resolve_agent_skill_names(db, agent_id)
         working_messages = build_specialist_chat_messages(
             db,
             user,
@@ -121,42 +156,73 @@ async def iter_builtin_specialist_hop(
             retrieval_context=ctx.retrieval_context,
             context_instruction=ctx.context_instruction,
             task_mode=ctx.task_mode,
-            # 将路由原因作为额外指令注入，让 agent 知道自己被选中执行什么任务
             route_reason=ctx.reason,
+            skill_names=skill_names,
         )
-        skill_names = resolve_agent_skill_names(db, agent_id)
-        # orchestrator 是通用智能体，不限制可用 skill
         allowed_skills = None if agent_id == "orchestrator" else set(skill_names)
+        tool_names = resolve_effective_runtime_tool_names(db, agent_id)
+        all_tool_specs = build_agent_runtime_tool_specs(
+            db,
+            user,
+            agent_id=agent_id,
+            allowed_skill_names=list(skill_names) if skill_names else None,
+            runtime_tool_names=tool_names,
+        )
     finally:
         sess.release_before_io()
 
-    settings = get_settings()
+    # ── orchestrator：保持原有多轮 tool loop ──
     if agent_id == "orchestrator":
+        from app.services.agent_tool_loop import iter_agent_tool_loop
+
         specialist_rounds = min(8, ctx.max_rounds or 8)
         hop_task_mode = False
-    else:
-        specialist_rounds = min(
-            settings.agent_specialist_max_tool_rounds,
-            ctx.max_rounds or settings.agent_specialist_max_tool_rounds,
-        )
-        hop_task_mode = ctx.task_mode
+        async for event in iter_agent_tool_loop(
+            user_id,
+            working_messages,
+            conversation_id=ctx.session_id,
+            max_rounds=specialist_rounds,
+            user_message=ctx.user_message,
+            attachment_session_id=ctx.attachment_session_id,
+            intent_plan=ctx.intent_plan,
+            chat_history=ctx.chat_history,
+            agent_id=agent_id,
+            allowed_tool_names=None,
+            allowed_skill_names=allowed_skills,
+            task_mode=hop_task_mode,
+            task_id=ctx.task_id,
+        ):
+            yield _annotate_workflow(
+                event,
+                agent_id=agent_id,
+                agent_title=agent_title,
+                task_id=ctx.task_id,
+            )
+        return
 
-    from app.services.agent_tool_loop import iter_agent_tool_loop
+    # ── 专精智能体：复用 intent_plan / 域内最小 plan，再单步执行 ──
+    from app.services.agent_planner import _fallback_plan, _rule_plan_from_intent
 
-    async for event in iter_agent_tool_loop(
-        user_id,
-        working_messages,
-        conversation_id=ctx.session_id,
-        max_rounds=specialist_rounds,
-        user_message=ctx.user_message,
-        attachment_session_id=ctx.attachment_session_id,
-        intent_plan=ctx.intent_plan,
-        chat_history=ctx.chat_history,
-        agent_id=agent_id,
-        allowed_tool_names=None,
-        allowed_skill_names=allowed_skills,
-        task_mode=hop_task_mode,
-        task_id=ctx.task_id,
+    intent_label = "执行"
+    execution_plan = None
+    if ctx.intent_plan is not None:
+        intent_label = ctx.intent_plan.intent_label or intent_label
+        execution_plan = _rule_plan_from_intent(ctx.intent_plan)
+    if execution_plan is None:
+        execution_plan = _fallback_plan(intent_label=intent_label)
+    plan_has_script: bool | None = None
+    loop_state: dict[str, Any] = {
+        "conversation_id": ctx.session_id,
+        "agent_id": agent_id,
+        "citations": [],
+        "allowed_skill_names": allowed_skills,
+    }
+
+    db, user = sess.open()
+    async for event in _exec_one_tool_round(
+        sess, db, user, working_messages, loop_state, all_tool_specs,
+        execution_plan, ctx.user_message, ctx.session_id,
+        ctx.attachment_session_id, agent_id, plan_has_script,
     ):
         yield _annotate_workflow(
             event,

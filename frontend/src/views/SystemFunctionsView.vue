@@ -76,11 +76,11 @@ const CATEGORY_ORDER = ["tools"];
 const FEATURE_ROUTE_NAMES = {
   knowledge_search: "knowledge-search",
   report_generation: "report-generation",
-  todos: "todos",
+  todos: "notes",
 };
 
 /** 不在功能列表中显示的功能 ID */
-const HIDDEN_FEATURE_IDS = new Set(["ai_home", "agent_skills"]);
+const HIDDEN_FEATURE_IDS = new Set(["ai_home", "agent_skills", "carbon_platform"]);
 
 const categoryMeta = computed(() =>
   Object.fromEntries(
@@ -519,7 +519,7 @@ function openFeature(f) {
 .feature-card__desc {
   margin: 0;
   min-height: calc(1em * 1.5);
-  font-size: var(--platform-font-size-nano);
+  font-size: var(--platform-font-size-sm);
   font-weight: var(--platform-font-weight-normal);
   line-height: 1.5;
   color: var(--platform-text-tertiary);
@@ -668,7 +668,7 @@ function openFeature(f) {
   }
 
   .feature-card__desc {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .feature-card__star {

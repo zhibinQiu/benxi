@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import time
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,16 +39,52 @@ from app.skills.catalog import get_merged_skill_definition, list_all_skill_defin
 from app.services.agent_runtime_service import agent_runtime_status
 
 
-def _binding_map(db: Session) -> dict[str, AgentProfileBinding]:
+@dataclass(frozen=True)
+class _BindingInfo:
+    """进程级缓存用纯数据结构 — 替代跨 session 的 ORM 对象。"""
+    agent_id: str
+    enabled: bool
+    service_enabled: bool = True
+    skill_names: list[str] = field(default_factory=list)
+    runtime_tool_names: list[str] = field(default_factory=list)
+    config_md: str | None = None
+
+
+# 手动 TTL 缓存 — 避免 ORM 对象跨越 session 成为 detached
+_binding_cache: dict[str, tuple[float, dict[str, _BindingInfo]]] = {}
+_BINDING_CACHE_TTL = 3.0
+
+
+def _invalidate_binding_cache() -> None:
+    _binding_cache.clear()
+
+
+def _binding_map(db: Session) -> dict[str, _BindingInfo]:
+    """返回 {agent_id: _BindingInfo}，进程级 TTL 缓存避免 ORM 跨 session detached。"""
+    now = time.monotonic()
+    cached = _binding_cache.get("_")
+    if cached is not None and now - cached[0] < _BINDING_CACHE_TTL:
+        return cached[1]
     try:
         rows = db.scalars(select(AgentProfileBinding)).all()
-        return {row.agent_id: row for row in rows}
+        result: dict[str, _BindingInfo] = {}
+        for row in rows:
+            result[row.agent_id] = _BindingInfo(
+                agent_id=row.agent_id or "",
+                enabled=bool(row.enabled),
+                service_enabled=bool(getattr(row, 'service_enabled', True)),
+                skill_names=list(row.skill_names) if row.skill_names is not None else [],
+                runtime_tool_names=list(row.runtime_tool_names) if row.runtime_tool_names is not None else [],
+                config_md=str(row.config_md) if row.config_md else None,
+            )
+        _binding_cache["_"] = (now, result)
+        return result
     except Exception:
         db.rollback()
         return {}
 
 
-def _effective_skill_names(defn: AgentProfileDef, binding: AgentProfileBinding | None) -> list[str]:
+def _effective_skill_names(defn: AgentProfileDef, binding: _BindingInfo | None) -> list[str]:
     if binding is not None and binding.skill_names is not None:
         stored = [str(name).strip() for name in binding.skill_names if str(name).strip()]
         if stored:
@@ -51,7 +92,7 @@ def _effective_skill_names(defn: AgentProfileDef, binding: AgentProfileBinding |
     return list(defn.default_skill_names)
 
 
-def _effective_runtime_tool_names(defn: AgentProfileDef, binding: AgentProfileBinding | None) -> list[str]:
+def _effective_runtime_tool_names(defn: AgentProfileDef, binding: _BindingInfo | None) -> list[str]:
     """动态工具名：优先从 DB binding 读取，无绑定或为空时回退 AgentProfileDef 默认值。
 
     与 _effective_skill_names 一致：空列表视为"未设置"，回退默认值。
@@ -92,7 +133,7 @@ _RUNTIME_TOOL_CATEGORY: dict[str, str] = {
     "update_uploaded_skill_file": "skill_mgmt",
     "delete_uploaded_skill": "skill_mgmt",
     "list_agent_skills": "skill",
-    "search_skills": "skill",
+    "find_skills": "skill",
     "request_orchestrator_assist": "orchestration",
 }
 
@@ -119,7 +160,7 @@ def _resolve_runtime_tool_names(
     db: Session | None = None,
     known_skill_names: set[str] | None = None,
     skill_def_map: dict[str, object] | None = None,
-    binding: AgentProfileBinding | None = None,
+    binding: _BindingInfo | None = None,
 ) -> list[str]:
     """返回该 Agent 运行时 LLM 实际可见的工具名列表。
 
@@ -196,7 +237,7 @@ def _count_runtime_tools(
 def _to_out_with_prefetched(
     db: Session,
     defn: AgentProfileDef,
-    binding: AgentProfileBinding | None,
+    binding: _BindingInfo | None,
     *,
     all_skill_defs: list[object],
     known_skill_names: set[str],
@@ -255,7 +296,7 @@ def _validate_skill_names(db: Session, skill_names: list[str]) -> list[str]:
 def _to_out(
     db: Session,
     defn: AgentProfileDef,
-    binding: AgentProfileBinding | None,
+    binding: _BindingInfo | None,
 ) -> AgentProfileOut:
     enabled = binding.enabled if binding is not None else True
     service_enabled = binding.service_enabled if binding is not None else True
@@ -289,7 +330,7 @@ def _to_out(
 def _to_detail_out(
     db: Session,
     defn: AgentProfileDef,
-    binding: AgentProfileBinding | None,
+    binding: _BindingInfo | None,
 ) -> AgentProfileDetailOut:
     base = _to_out(db, defn, binding)
     return AgentProfileDetailOut(**base.model_dump(), files=[AGENT_MD_FILENAME, STYLE_MD_FILENAME])
@@ -396,6 +437,7 @@ def update_agent_config_file(
         row.config_md = validated
         db.commit()
         db.refresh(row)
+        _invalidate_binding_cache()
         return AgentSkillFileContentOut(
             path=AGENT_MD_FILENAME,
             content_type="text/markdown",
@@ -406,6 +448,7 @@ def update_agent_config_file(
         row.style_md = validated if validated else None
         db.commit()
         db.refresh(row)
+        _invalidate_binding_cache()
         return AgentSkillFileContentOut(
             path=STYLE_MD_FILENAME,
             content_type="text/markdown",
@@ -460,6 +503,7 @@ def patch_agent_profile(
 
     db.commit()
     db.refresh(row)
+    _invalidate_binding_cache()
     return _to_out(db, defn, row)
 
 

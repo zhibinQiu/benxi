@@ -15,6 +15,16 @@ const props = defineProps({
     type: String,
     default: "加载中",
   },
+  /** 覆盖预设的整体旋转周期（ms），越小越快 */
+  rotationDuration: {
+    type: Number,
+    default: undefined,
+  },
+  /** 覆盖预设的动画周期（ms），越小越快 */
+  durationMs: {
+    type: Number,
+    default: undefined,
+  },
 });
 
 const SIZE_MAP = {
@@ -37,6 +47,8 @@ const pixelSize = computed(() => {
     :size="pixelSize"
     :rotate="rotate"
     :label="label"
+    :rotation-duration="rotationDuration"
+    :duration-ms="durationMs"
   />
 </template>
 

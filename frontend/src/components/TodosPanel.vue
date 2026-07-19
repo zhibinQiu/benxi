@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
   NButton,
-  NCard,
   NCheckbox,
   NDatePicker,
   NEmpty,
@@ -11,11 +10,11 @@ import {
   NInput,
   NRadioButton,
   NRadioGroup,
-  NSpace,
   NSpin,
   NTag,
   NText,
-  NTooltip } from "naive-ui";
+  NTooltip,
+} from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
 import {
   CalendarClearOutline,
@@ -24,9 +23,9 @@ import {
   ReorderThreeOutline,
   SparklesOutline,
   TimeOutline,
-  TrashOutline } from "@vicons/ionicons5";
+  TrashOutline,
+} from "@vicons/ionicons5";
 import IconAction from "./IconAction.vue";
-import HintTooltip from "./HintTooltip.vue";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import {
@@ -378,7 +377,15 @@ defineExpose({ load, refresh: load });
 </script>
 
 <template>
-  <div :class="['todos-panel', { 'todos-panel--popover': variant === 'popover' }]">
+  <div
+    :class="[
+      'todos-panel',
+      {
+        'todos-panel--popover': variant === 'popover',
+        'todos-panel--page': variant === 'page',
+      },
+    ]"
+  >
     <header v-if="variant === 'popover'" class="todos-panel__header">
       <strong class="platform-text-gradient todos-panel__title">
         {{ t("header.todos") }}
@@ -427,68 +434,65 @@ defineExpose({ load, refresh: load });
       </div>
     </header>
 
-    <n-card v-if="variant === 'page'" size="small" class="todos-card">
-      <template #header-extra>
-        <n-space align="center" :size="5">
-          <HintTooltip :text="t('todos.pageHint')" />
-          <n-button size="small" quaternary @click="openLlm">
-            <template #icon>
-              <n-icon :component="SparklesOutline" />
-            </template>
-            {{ t("todos.smartEntry") }}
-          </n-button>
-        </n-space>
-      </template>
-
-      <div class="add-row">
-        <div class="add-row__input-group">
-          <n-input
-            v-model:value="newTitle"
-            :placeholder="t('todos.addPlaceholderEnter')"
-            clearable
-            @keyup.enter="addTodo"
-          />
-          <n-tooltip placement="top">
-            <template #trigger>
-              <n-button
-                size="small"
-                quaternary
-                :class="{ 'add-due-btn--active': showDuePicker }"
-                class="add-due-btn"
-                @click="showDuePicker = !showDuePicker"
-              >
-                <template #icon><n-icon :component="TimeOutline" :size="18" /></template>
-              </n-button>
-            </template>
-            {{ newDueAt ? t("todos.setDueDateTime") : t("todos.setDueDate") }}
-          </n-tooltip>
-          <n-button type="primary" :loading="adding" @click="addTodo">{{ t("todos.add") }}</n-button>
-        </div>
-        <div v-if="showDuePicker" class="add-row__picker">
-          <n-date-picker
-            v-model:value="newDueAt"
-            type="datetime"
-            :placeholder="t('todos.setDueDateTime')"
-            clearable
-            style="width: 100%"
-          />
-          <n-tag v-if="newDueAt" closable size="tiny" @close="newDueAt = null" style="margin-top: 6px">
-            {{ formatDueTime(new Date(newDueAt).toISOString()) }}
-          </n-tag>
+    <div v-if="variant === 'page'" class="todos-page">
+      <div class="todos-page__toolbar">
+        <div class="add-row add-row--page">
+          <div class="add-row__input-group">
+            <input
+              v-model="newTitle"
+              class="todos-page__input"
+              :placeholder="t('todos.addPlaceholderEnter')"
+              @keyup.enter="addTodo"
+            />
+            <n-tooltip placement="top">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="todos-page__icon-btn"
+                  :class="{ 'todos-page__icon-btn--active': showDuePicker }"
+                  @click="showDuePicker = !showDuePicker"
+                >
+                  <n-icon :component="TimeOutline" :size="14" />
+                </button>
+              </template>
+              {{ newDueAt ? t("todos.setDueDateTime") : t("todos.setDueDate") }}
+            </n-tooltip>
+            <n-button size="tiny" type="primary" :loading="adding" @click="addTodo">
+              {{ t("todos.add") }}
+            </n-button>
+            <n-button size="tiny" quaternary @click="openLlm">
+              <template #icon><n-icon :size="14" :component="SparklesOutline" /></template>
+              {{ t("todos.smartEntry") }}
+            </n-button>
+          </div>
+          <div v-if="showDuePicker" class="add-row__picker">
+            <n-date-picker
+              v-model:value="newDueAt"
+              type="datetime"
+              size="small"
+              :placeholder="t('todos.setDueDateTime')"
+              clearable
+              style="width: 100%"
+            />
+            <n-tag v-if="newDueAt" closable size="tiny" @close="newDueAt = null" style="margin-top: 6px">
+              {{ formatDueTime(new Date(newDueAt).toISOString()) }}
+            </n-tag>
+          </div>
         </div>
       </div>
 
-      <n-spin :show="loading" local>
-        <div class="todos-columns">
+      <n-spin :show="loading" class="todos-page__spin">
+        <div class="todos-columns todos-columns--page">
           <section class="todo-column todo-column--pending">
             <header class="column-head">
               <span class="column-title">{{ t("todos.pendingColumn") }}</span>
-              <n-tag size="small" :bordered="false" type="info">{{ pending.length }}</n-tag>
+              <span class="column-count">{{ pending.length }}</span>
               <IconAction
                 :label="t('common.delete')"
                 :icon="TrashOutline"
                 type="error"
                 size="tiny"
+                variant="table"
                 :disabled="!canBatchDeletePending"
                 @click="handleBatchDelete('pending')"
               />
@@ -515,7 +519,7 @@ defineExpose({ load, refresh: load });
                   @update:checked="(v) => toggleTodoSelected('pending', item.id, v)"
                 />
                 <span class="todo-drag" :title="t('todos.dragSort')">
-                  <n-icon :component="ReorderThreeOutline" :size="22" />
+                  <n-icon :component="ReorderThreeOutline" :size="14" />
                 </span>
                 <n-checkbox
                   :checked="item.status === 'done'"
@@ -529,7 +533,7 @@ defineExpose({ load, refresh: load });
                       v-model:value="editingDueValue"
                       type="datetime"
                       size="small"
-                      style="width: 220px"
+                      style="width: 200px"
                     />
                     <n-button size="tiny" type="primary" @click="saveDue(item)">{{ t("todos.confirmApply") }}</n-button>
                     <n-button size="tiny" quaternary @click="cancelEditDue">{{ t("common.cancel") }}</n-button>
@@ -541,7 +545,7 @@ defineExpose({ load, refresh: load });
                     :class="{ 'todo-due--overdue': isOverdue(item.due_at) && item.status === 'pending' }"
                     @click.stop="startEditDue(item)"
                   >
-                    <n-icon :component="CalendarClearOutline" :size="14" />
+                    <n-icon :component="CalendarClearOutline" :size="12" />
                     <span>{{ formatDueTime(item.due_at) }}</span>
                   </div>
                 </div>
@@ -552,12 +556,13 @@ defineExpose({ load, refresh: load });
           <section class="todo-column todo-column--done">
             <header class="column-head">
               <span class="column-title">{{ t("todos.done") }}</span>
-              <n-tag size="small" :bordered="false" type="success">{{ done.length }}</n-tag>
+              <span class="column-count">{{ done.length }}</span>
               <IconAction
                 :label="t('common.delete')"
                 :icon="TrashOutline"
                 type="error"
                 size="tiny"
+                variant="table"
                 :disabled="!canBatchDeleteDone"
                 @click="handleBatchDelete('done')"
               />
@@ -584,7 +589,7 @@ defineExpose({ load, refresh: load });
                   @update:checked="(v) => toggleTodoSelected('done', item.id, v)"
                 />
                 <span class="todo-drag" :title="t('todos.dragSort')">
-                  <n-icon :component="ReorderThreeOutline" :size="22" />
+                  <n-icon :component="ReorderThreeOutline" :size="14" />
                 </span>
                 <n-checkbox
                   :checked="item.status === 'done'"
@@ -598,11 +603,10 @@ defineExpose({ load, refresh: load });
                   </n-text>
                   <div
                     v-if="item.due_at"
-                    class="todo-due"
-                    :class="{ 'todo-due--done': true }"
+                    class="todo-due todo-due--done"
                     @click.stop="startEditDue(item)"
                   >
-                    <n-icon :component="CalendarClearOutline" :size="14" />
+                    <n-icon :component="CalendarClearOutline" :size="12" />
                     <span>{{ formatDueTime(item.due_at) }}</span>
                   </div>
                 </div>
@@ -611,7 +615,7 @@ defineExpose({ load, refresh: load });
           </section>
         </div>
       </n-spin>
-    </n-card>
+    </div>
 
     <template v-else>
       <div class="add-row add-row--popover">
@@ -665,7 +669,7 @@ defineExpose({ load, refresh: load });
                   :label="t('common.delete')"
                   :icon="TrashOutline"
                   type="error"
-                  size="tiny"
+                  size="small"
                   :disabled="!canBatchDeletePending"
                   @click="handleBatchDelete('pending')"
                 />
@@ -722,7 +726,7 @@ defineExpose({ load, refresh: load });
                   :label="t('common.delete')"
                   :icon="TrashOutline"
                   type="error"
-                  size="tiny"
+                  size="small"
                   :disabled="!canBatchDeleteDone"
                   @click="handleBatchDelete('done')"
                 />
@@ -821,9 +825,163 @@ defineExpose({ load, refresh: load });
 </template>
 
 <style scoped>
+.todos-page {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--platform-bg);
+  overflow: hidden;
+}
+
+.todos-page__toolbar {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--platform-border-strong);
+  background: var(--platform-bg-secondary);
+}
+
+.todos-page__input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--platform-border-strong);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  outline: none;
+  background: var(--platform-bg-elevated);
+  color: var(--platform-text);
+}
+
+.todos-page__input:focus {
+  border-color: var(--platform-accent);
+}
+
+.todos-page__icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--platform-border-strong);
+  border-radius: 6px;
+  background: var(--platform-bg-elevated);
+  color: var(--platform-text-tertiary);
+  cursor: pointer;
+}
+
+.todos-page__icon-btn--active,
+.todos-page__icon-btn:hover {
+  color: var(--platform-text);
+  background: var(--platform-bg-tertiary);
+}
+
+.todos-page__spin {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.todos-page__spin :deep(.n-spin-container),
+.todos-page__spin :deep(.n-spin-content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.todos-columns--page {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  height: 100%;
+}
+
+.todos-columns--page .todo-column {
+  min-height: 0;
+  height: 100%;
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid var(--platform-border-strong);
+  background: var(--platform-bg-secondary);
+  display: flex;
+  flex-direction: column;
+}
+
+.todos-columns--page .todo-column--done {
+  border-right: none;
+  background: var(--platform-bg);
+}
+
+.todos-columns--page .todo-column--pending,
+.todos-columns--page .todo-column--done {
+  border-top: none;
+}
+
+.todos-columns--page .column-head {
+  padding: 8px 12px;
+  background: transparent;
+  border-bottom: 1px solid var(--platform-border);
+}
+
+.todos-columns--page .column-title {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.column-count {
+  margin-left: auto;
+  margin-right: 4px;
+  font-size: 11px;
+  color: var(--platform-text-tertiary);
+}
+
+.todos-columns--page .todo-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px 12px;
+}
+
+.todos-columns--page .todo-item {
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: var(--platform-radius-sm, 6px);
+  border: none;
+  background: transparent;
+  gap: 6px;
+}
+
+.todos-columns--page .todo-item:hover {
+  background: var(--platform-bg-tertiary);
+}
+
+.todos-columns--page .todo-title {
+  font-size: 12px;
+}
+
+.todos-columns--page .todo-note,
+.todos-columns--page .todo-time,
+.todos-columns--page .todo-due {
+  font-size: 10px;
+}
+
 .todos-panel--page {
-  max-width: 1320px;
-  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.todos-panel--page .todos-page {
+  flex: 1;
+  min-height: 0;
 }
 
 .todos-panel--popover {

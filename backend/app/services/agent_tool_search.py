@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.agent_tool_args import (
     DescribeToolArgs,
     RunToolBatchArgs,
-    SearchSkillsArgs,
+    FindSkillsArgs,
     TOOL_DEFINITIONS,
     TOOL_ARG_MODELS,
     build_function_tool_spec,
@@ -28,17 +28,31 @@ from app.services.skill_chat_service import (
 )
 from app.models.org import User
 
-# 主 Agent 默认可见的超核心工具集，其余工具通过 describe_tool 按需发现
+# 兼容旧测试 / 局部引用的「高频编排工具」提示集。
+# 父编排实际可见集 = 该 Agent 已挂载工具（whitelist/binding），见 build_agent_tool_specs；
+# select_visible 对父/专精均暴露传入的 all_specs（不再用本集合裁剪）。
 CORE_TOOL_NAMES: frozenset[str] = frozenset(
     {
-        "search_skills",       # 技能发现
-        "describe_tool",       # 工具发现（按需加载完整 schema）
-        "web_search",          # 联网检索
-        "knowledge_retrieve",  # 知识库检索
-        "kg_query",            # 图谱查询
-        "invoke_context_subagent",  # 子智能体（深度研究/并行检索）
-        "send_notification",   # 即时通知
-        "schedule_notification",  # 定时通知
+        "find_skills",
+        "describe_tool",
+        "web_search",
+        "knowledge_retrieve",
+        "kg_query",
+        "invoke_context_subagent",
+        "send_notification",
+        "schedule_notification",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_screenshot",
+        "browser_run_task",
+        "browser_click",
+        "browser_type",
+        "browser_fill",
+        "fetch_url_content",
+        "run_tool_batch",
+        "ontology_query",
+        "read_agent_memory",
+        "append_agent_memory",
     }
 )
 
@@ -113,7 +127,14 @@ TOOL_USE_EXAMPLES: dict[str, list[dict[str, Any]]] = {
     "invoke_context_subagent": [
         {"kind": "search", "task": "2026年全球新能源车销量趋势，包含主要品牌数据对比"},
         {"kind": "search", "task": "了解某网站的技术架构", "queries": ["网站技术栈", "架构设计"]},
-        {"kind": "auto", "task": "提取页面表单字段结构"},
+        {"kind": "use", "task": "使用 carbon-consulting 查询全国碳价行情"},
+        {
+            "kind": "execute",
+            "task": "在 bing 搜索双碳并截图",
+            "steps": [
+                {"tool": "browser_run_task", "arguments": {"task": "打开必应搜索双碳并截图"}},
+            ],
+        },
     ],
     "list_users": [
         {"page": 1, "page_size": 20},
@@ -128,10 +149,10 @@ TOOL_USE_EXAMPLES: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
-SEARCH_SKILLS_SPEC: dict[str, Any] = build_function_tool_spec(
-    name="search_skills",
-    description="按关键词搜索可用 Skill 路由",
-    args_model=SearchSkillsArgs,
+FIND_SKILLS_SPEC: dict[str, Any] = build_function_tool_spec(
+    name="find_skills",
+    description="按关键词查找可用 Skill 路由",
+    args_model=FindSkillsArgs,
 )
 
 DESCRIBE_TOOL_SPEC: dict[str, Any] = build_function_tool_spec(
@@ -187,7 +208,7 @@ def search_tool_definitions(
     scored: list[tuple[int, dict[str, Any]]] = []
     for spec in all_specs:
         name = tool_spec_name(spec)
-        if not name or name in ("search_tools", "search_skills"):
+        if not name or name in ("search_tools", "find_skills"):
             continue
         fn = spec.get("function") or {}
         hay = f"{name} {fn.get('description') or ''}".lower()
@@ -200,47 +221,27 @@ def search_tool_definitions(
 
 def select_visible_tool_specs(
     all_specs: list[dict[str, Any]],
-    unlocked: set[str] | None,
     *,
     agent_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """主 Agent loop：核心工具 + 已解锁 + search/batch meta 工具。"""
-    unlocked = unlocked or set()
-    visible_names = CORE_TOOL_NAMES | unlocked
+    """暴露本轮 ``all_specs``（调用方已按该 Agent 已挂载工具裁剪）。
+
+    - 父编排：挂载集 − 技能直执入口；执行仍由 tool loop 委托子智能体
+    - 专精：挂载集整表可见（skill-dev/report 隐藏 run_tool_batch）
+    """
+    aid = (agent_id or "").strip()
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
+
     for spec in all_specs:
         name = tool_spec_name(spec)
-        if name in seen:
+        if not name or name in seen:
             continue
-        if name in visible_names:
-            out.append(attach_tool_examples(spec))
-            seen.add(name)
-    if "search_skills" not in seen:
-        out.insert(0, attach_tool_examples(SEARCH_SKILLS_SPEC))
-        seen.add("search_skills")
-    if "describe_tool" not in seen:
-        # 放在 search_skills 之后
-        insert_pos = 1 if len(out) >= 1 else len(out)
-        out.insert(insert_pos, attach_tool_examples(DESCRIBE_TOOL_SPEC))
-        seen.add("describe_tool")
-    aid = (agent_id or "").strip()
-    # skill-dev 等专精须直接 tool_calls（run_skill_script 等），勿走 batch
-    if aid not in ("skill-dev", "report", "rpa") and "run_tool_batch" not in seen:
-        # 放在 describe_tool 之后
-        insert_pos = 2 if len(out) >= 2 else len(out)
-        out.insert(insert_pos, attach_tool_examples(RUN_TOOL_BATCH_SPEC))
+        if name == "run_tool_batch" and aid in ("skill-dev", "report"):
+            continue
+        out.append(attach_tool_examples(spec))
+        seen.add(name)
     return out
-
-
-def register_unlocked_tools(loop_state: LoopState | None, names: list[str]) -> None:
-    if loop_state is None:
-        return
-    bucket: set[str] = loop_state.setdefault("unlocked_tools", set())
-    for name in names:
-        n = str(name or "").strip()
-        if n:
-            bucket.add(n)
 
 
 async def execute_describe_tool(
@@ -250,7 +251,7 @@ async def execute_describe_tool(
     name: str,
     loop_state: LoopState | None = None,
 ) -> str:
-    """describe_tool 处理器：返回工具的完整定义并解锁。"""
+    """describe_tool 处理器：返回已挂载工具（或 Skill）的完整定义。"""
     n = (name or "").strip()
     if not n:
         return json.dumps({"ok": False, "summary": "工具名不能为空"}, ensure_ascii=False)
@@ -290,20 +291,49 @@ async def execute_describe_tool(
             ensure_ascii=False,
         )
 
-    # 可见性检查：非 orchestrator 不可发现管理员工具
-    from app.core.tool_skill_taxonomy import is_tool_visible_to_agent
-
+    # 可见性：仅已挂载到当前 Agent 的工具（优先本轮 specs，回退默认挂载表）
     agent_id = None
     if loop_state:
         agent_id = str(loop_state.get("agent_id") or "").strip() or None
-    if not is_tool_visible_to_agent(n, agent_id):
-        return json.dumps(
-            {
-                "ok": False,
-                "summary": f"工具 `{n}` 不在你的可见范围内，请确认是否需要路由到对应专精处理",
-            },
-            ensure_ascii=False,
-        )
+        mounted_specs = loop_state.get("_all_tool_specs") or []
+        if mounted_specs:
+            mounted_now = {tool_spec_name(s) for s in mounted_specs if tool_spec_name(s)}
+            if n not in mounted_now:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "summary": (
+                            f"工具 `{n}` 未挂载到当前智能体，"
+                            "不可发现；请改用已挂载工具或路由到对应专精"
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+        else:
+            from app.core.tool_skill_taxonomy import is_tool_visible_to_agent
+
+            if not is_tool_visible_to_agent(n, agent_id):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "summary": (
+                            f"工具 `{n}` 未挂载到当前智能体，"
+                            "请确认是否需要路由到对应专精处理"
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+    else:
+        from app.core.tool_skill_taxonomy import is_tool_visible_to_agent
+
+        if not is_tool_visible_to_agent(n, agent_id):
+            return json.dumps(
+                {
+                    "ok": False,
+                    "summary": f"工具 `{n}` 不在可见范围内",
+                },
+                ensure_ascii=False,
+            )
 
     hardcoded_desc, model_cls = definition
     md_desc = get_tool_description(n)
@@ -343,35 +373,35 @@ async def execute_describe_tool(
             ex_lines.append(f"  {_json.dumps(ex, ensure_ascii=False)}")
         examples_text = "\n## Examples\n" + "\n".join(ex_lines)
 
-    # 注册到 unlocked_tools——下一轮 LLM 调用时该工具变为可用
-    register_unlocked_tools(loop_state, [n])
-
-    # 构建返回文本
-    full_desc = (
-        f"## {n}\n\n"
-        f"{desc}\n\n"
-        f"## Parameters\n{params_text}"
-        f"{examples_text}\n\n"
-        f"---\n"
-        f"✅ 工具 `{n}` 已被解锁，下一轮你可以直接调用它。"
+    aid = (agent_id or "").strip()
+    parent = aid in ("", "orchestrator")
+    next_hint = (
+        f"✅ 工具 `{n}` 已在当前智能体挂载集中。"
+        + (
+            "父编排发起调用时由运行时委托子智能体执行；"
+            "或显式 `invoke_context_subagent(kind=execute|search|use)`。"
+            if parent
+            else "可直接调用。"
+        )
     )
     return json.dumps(
         {
             "ok": True,
-            "summary": f"已加载工具 `{n}` 的定义（{len(params_text)} 个参数行），已解锁可用",
+            "summary": f"已加载工具 `{n}` 的定义（已挂载）",
             "data": {
                 "tool": n,
                 "description": desc,
                 "parameters": properties,
                 "required": required,
                 "examples": examples[:3],
+                "hint": next_hint,
             },
         },
         ensure_ascii=False,
     )
 
 
-async def execute_search_skills_compat(
+async def execute_find_skills(
     db: Session,
     user: User,
     *,
@@ -379,21 +409,40 @@ async def execute_search_skills_compat(
     limit: int = 8,
     loop_state: LoopState | None = None,
 ) -> str:
-    """search_tools 兼容入口 — 统一走 Skill 路由搜索。"""
+    """在当前 Agent 已挂载 Skill 范围内搜索路由（非平台全库）。"""
     from app.skills.catalog import search_skill_routes
 
     lines = search_skill_routes(db, user, query, tier=None, limit=limit)
+    allowed: set[str] | None = None
+    if loop_state is not None:
+        raw = loop_state.get("allowed_skill_names")
+        if raw is not None:
+            allowed = {str(x).strip() for x in raw if str(x).strip()}
+        elif loop_state.get("agent_id"):
+            from app.services.agent_profile_service import resolve_agent_skill_names
+
+            allowed = set(
+                resolve_agent_skill_names(
+                    db, str(loop_state.get("agent_id") or "").strip()
+                )
+            )
+    if allowed is not None:
+        lines = [ln for ln in lines if any(f"`{s}`" in ln for s in allowed)]
     if loop_state is not None and lines:
         loop_state.setdefault("discovered_skill_routes", []).extend(lines[:limit])
-    text = "\n".join(lines) if lines else "未匹配到 Skill"
+    text = "\n".join(lines) if lines else "未匹配到已挂载 Skill"
     return json.dumps(
         {
             "ok": True,
-            "summary": f"匹配 {len(lines)} 条 Skill 路由",
+            "summary": f"匹配 {len(lines)} 条已挂载 Skill 路由",
             "data": {"lines": lines, "text": text},
         },
         ensure_ascii=False,
     )
+
+
+# 旧名：仅 search_tools 执行分支曾用；新代码请用 execute_find_skills
+execute_find_skills_compat = execute_find_skills
 
 
 # ── 批量执行单步进度推送 ───────────────────────────────────────

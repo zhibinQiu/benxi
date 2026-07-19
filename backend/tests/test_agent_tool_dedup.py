@@ -53,4 +53,4 @@ def test_build_turn_executed_tools_context_lists_calls():
     block = build_turn_executed_tools_context(loop_state)
     assert "本轮对话已执行工具" in block
     assert "knowledge_retrieve" in block
-    assert "勿重复调用" in block
+    assert "Do not re-invoke" in block

@@ -40,8 +40,8 @@ my-skill/
 ## 4. 推荐流程
 
 1. 先用 `invoke_context_subagent` 完成调研
-2. 再 `invoke_skill(skill-development, call, {operation: create_skill, ...})`
-3. 最后 `invoke_skill(skill-development, call, {operation: run_skill_script, ...})` 验证
+2. 再直接调用 `create_skill` 创建包（参数中提交 main.py + SKILL.md）
+3. 最后调用 `run_skill_script` 验证
 
 ## 5. 自动补能力场景
 

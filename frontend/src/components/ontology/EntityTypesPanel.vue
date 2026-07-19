@@ -1,9 +1,11 @@
 <template>
   <div class="entity-types-wrapper">
-    <n-button class="platform-btn--create" @click="openCreate">
-      <template #icon><n-icon><AddOutline /></n-icon></template>
-      新建实体类型
-    </n-button>
+    <div class="entity-types-toolbar">
+      <n-button type="primary" @click="openCreate">
+        <template #icon><n-icon><AddOutline /></n-icon></template>
+        新建实体类型
+      </n-button>
+    </div>
 
     <div class="entity-types-card">
       <div class="admin-list-table">
@@ -14,6 +16,7 @@
           :bordered="false"
           :row-key="(row) => row.code"
           pagination
+          :max-height="tableMaxHeight"
         />
       </div>
     </div>
@@ -52,7 +55,7 @@
 </template>
 
 <script setup>
-import { h, ref, reactive } from "vue";
+import { h, ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "../../composables/useI18n";
 import { useMessage, useDialog } from "naive-ui";
@@ -101,6 +104,24 @@ const form = reactive({
   property_schema: {},
 });
 const editingCode = ref("");
+
+// 自适应表格高度
+const tableMaxHeight = ref(400);
+let resizeObs = null;
+function calcTableHeight() {
+  const el = document.querySelector(".entity-types-wrapper");
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const avail = window.innerHeight - rect.top - 60;
+  tableMaxHeight.value = Math.max(200, avail);
+}
+onMounted(() => {
+  calcTableHeight();
+  resizeObs = new ResizeObserver(calcTableHeight);
+  const el = document.querySelector(".entity-types-wrapper");
+  if (el) resizeObs.observe(el);
+});
+onUnmounted(() => { resizeObs?.disconnect(); });
 
 const codeRule = {
   pattern: /^[a-z][a-z0-9_]*$/,
@@ -277,15 +298,25 @@ const columns = [
 .entity-types-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.entity-types-toolbar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .entity-types-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--platform-border);
   border-radius: var(--platform-card-radius);
   background: #fcfcfc;
-  padding: 12px 16px;
-  padding-top: 0;
+  padding: 0 16px;
 }
 
 .entity-types-card :deep(.n-data-table-th),
@@ -300,5 +331,10 @@ const columns = [
 
 .entity-types-card :deep(.n-data-table-tr:last-child .n-data-table-td) {
   border-bottom: none;
+}
+
+.entity-types-card .admin-list-table {
+  height: 100%;
+  overflow: auto;
 }
 </style>

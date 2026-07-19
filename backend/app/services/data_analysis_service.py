@@ -1,4 +1,4 @@
-"""数据分析 — 会话、对话生成代码、单元格执行。"""
+"""表格分析 — 会话、对话生成代码、单元格执行。"""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ from app.integrations.deepseek_client import is_configured, resolve_credentials
 from app.schemas.data_analysis import (
     ChatMessageOut,
     DataAnalysisMetaOut,
+    DataPreviewOut,
+    DataPreviewRow,
     DatasetProfileOut,
     DatasetUploadOut,
     LlmCellDraft,
@@ -53,8 +55,15 @@ _SYSTEM_PROMPT = (
     f"{assistant_data_analysis_persona()}。用户已上传 Excel 或 CSV，你只能看到数据结构画像（字段、类型、"
     "样例行、统计摘要），看不到全量数据。\n"
     "支持多轮连续对话：请结合历史问答与已有 Notebook 单元格及其运行结果，"
-    "在同一数据集上递进分析，避免重复已完成的工作。\n"
-    "请根据用户问题生成可执行的 pandas / matplotlib / seaborn 分析代码。\n"
+    "在同一数据集上递进处理，避免重复已完成的工作。\n"
+    "你的能力包括但不限于：\n"
+    "- 数据清洗：删除空行/重复行、填充缺失值、类型转换、列重命名\n"
+    "- 数据转换：筛选、排序、分组聚合、行列转置、合并/拼接\n"
+    "- 统计分析：描述性统计、相关性分析、异常检测\n"
+    "- 数据可视化：折线图、柱状图、散点图、热力图、箱线图等\n"
+    "- 格式调整：列顺序调整、数值格式化、导出整理后的数据\n"
+    "- 其他用户要求的表格处理操作\n"
+    "请根据用户问题生成可执行的 pandas / matplotlib / seaborn 处理代码。\n"
     "约束：\n"
     "1. 已有变量 df（已加载数据）、DATA_PATH、FILE_TYPE、pd、np、plt、sns、display、display_image；"
     "Excel 另有 ACTIVE_SHEET\n"
@@ -62,7 +71,18 @@ _SYSTEM_PROMPT = (
     "3. 统计用 df 聚合；绘图用 plt 或 sns，无需 plt.show()，运行后自动展示图表\n"
     "4. 输出必须是 JSON 对象，不要 Markdown 围栏，格式：\n"
     '{"reply":"自然语言说明","cells":[{"title":"单元标题","code":"python代码"}]}\n'
-    "若仅需解释无需代码，cells 可为空数组。回复中提及助手时统一使用名称「小析」。"
+    "若仅需解释无需代码，cells 可为空数组。\n"
+    "\n--- 代码自检与修复 ---\n"
+    "当用户指出某单元格报错（如「这个单元出错了，帮我看看」「报错原因是什么」「修一下」），"
+    "或要求修改已有代码时，请注意：\n"
+    "- 系统已为你提供了每个单元格的 id、代码、运行输出(stderr)和状态(status)。\n"
+    "- 仔细阅读错误信息，分析根因：列名不存在？类型错误？语法错误？逻辑问题？\n"
+    "- 若需要更新已有单元格的代码，请在 cells 数组的对应项中指定 update_cell_id "
+    "(值为该单元格的 id)，表示替换该单元格的代码而非新建。\n"
+    "- 若需新建分析单元（如补充分析），则不填 update_cell_id。\n"
+    '例如: {"reply":"已修复列名错误","cells":[{"update_cell_id":"abc123","code":"修复后的代码"}]}\n'
+    "回复中提及助手时统一使用名称「小析」。\n"
+    "---"
 )
 
 
@@ -171,12 +191,18 @@ def _extract_json_payload(text: str) -> dict[str, Any]:
     raise bad_request("无法解析模型返回的 JSON")
 
 
-def _notebook_summary_for_llm(cells: list[dict[str, Any]]) -> str:
+def _notebook_summary_for_llm(cells: list[dict[str, Any]], *, repair_cell_id: str | None = None) -> str:
     if not cells:
         return "（尚无 Notebook 单元格）"
     lines = ["【已有 Notebook 分析上下文 — 可在此基础上继续追问】"]
     for index, cell in enumerate(cells[-8:], 1):
-        lines.append(f"### 单元 {index}: {cell.get('title') or '分析单元'}")
+        cid = cell.get("id") or ""
+        prefix = f"### 单元 {index}"
+        if cid:
+            prefix += f" [id={cid}]"
+        if cid == repair_cell_id:
+            prefix += " ⬅ 用户要求修复此单元格"
+        lines.append(f"{prefix}: {cell.get('title') or '分析单元'}")
         lines.append(f"- 状态: {cell.get('status') or 'idle'}")
         code = (cell.get("code") or "").strip()
         if code:
@@ -189,11 +215,13 @@ def _notebook_summary_for_llm(cells: list[dict[str, Any]]) -> str:
         if cell.get("status") == "error":
             stderr = (cell.get("stderr") or "").strip()
             if stderr:
-                clipped = stderr if len(stderr) <= 400 else stderr[:400] + "\n..."
-                lines.append(f"- 错误:\n{clipped}")
+                lines.append(f"- 错误:\n{stderr}")
         if cell.get("images"):
             lines.append(f"- 已生成图表: {len(cell.get('images') or [])} 张")
-    lines.append("请结合上述结果回答后续问题；若用户要求修改或深入，生成新的代码单元。")
+    lines.append(
+        "修复提示: 当用户指出某单元格报错或要求修改已有代码时，请分析其代码与错误信息，"
+        "在 cells 中指定 update_cell_id 来更新该单元格代码。"
+    )
     return "\n".join(lines)
 
 
@@ -202,12 +230,13 @@ def _build_llm_messages(
     profile: dict[str, Any],
     history: list[dict[str, str]],
     cells: list[dict[str, Any]],
+    repair_cell_id: str | None = None,
 ) -> list[dict[str, str]]:
     context_block = (
         "【数据结构画像】\n"
         + profile_summary_for_llm(profile)
         + "\n\n"
-        + _notebook_summary_for_llm(cells)
+        + _notebook_summary_for_llm(cells, repair_cell_id=repair_cell_id)
     )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": _SYSTEM_PROMPT + "\n\n" + context_block},
@@ -226,7 +255,8 @@ async def chat(
     session_id: str,
     message: str,
     dataset_id: str | None = None,
-) -> tuple[str, list[NotebookCellOut], SessionOut]:
+    repair_cell_id: str | None = None,
+) -> tuple[str, list[NotebookCellOut], list[NotebookCellOut], SessionOut]:
     if not is_configured():
         raise bad_request("未配置 DeepSeek API，无法生成分析代码")
 
@@ -255,6 +285,7 @@ async def chat(
             profile=profile,
             history=history,
             cells=state.get("cells") or [],
+            repair_cell_id=repair_cell_id,
         ),
         get_prompt_limits()["prompt_max_chars"],
     )
@@ -284,6 +315,7 @@ async def chat(
     drafts = parsed.get("cells") or []
 
     added: list[NotebookCellOut] = []
+    updated: list[NotebookCellOut] = []
     for draft in drafts:
         try:
             item = LlmCellDraft.model_validate(draft)
@@ -291,22 +323,34 @@ async def chat(
             continue
         if not item.code.strip():
             continue
-        cell = {
-            "id": store.new_cell_id(),
-            "title": item.title.strip() or "分析单元",
-            "code": item.code.strip(),
-            "status": "idle",
-            "stdout": "",
-            "stderr": "",
-            "images": [],
-        }
-        state.setdefault("cells", []).append(cell)
-        added.append(NotebookCellOut.model_validate(cell))
+
+        if item.update_cell_id:
+            # 更新已有单元格
+            cells = state.get("cells") or []
+            target = next((c for c in cells if c.get("id") == item.update_cell_id), None)
+            if target:
+                target["code"] = item.code.strip()
+                if item.title.strip():
+                    target["title"] = item.title.strip()
+                target["status"] = "idle"
+                updated.append(NotebookCellOut.model_validate(target))
+        else:
+            cell = {
+                "id": store.new_cell_id(),
+                "title": item.title.strip() or "分析单元",
+                "code": item.code.strip(),
+                "status": "idle",
+                "stdout": "",
+                "stderr": "",
+                "images": [],
+            }
+            state.setdefault("cells", []).append(cell)
+            added.append(NotebookCellOut.model_validate(cell))
 
     history.append({"role": "assistant", "content": reply})
     state["messages"] = history
     store.save_session(user_id, session_id, state)
-    return reply, added, _session_out(state)
+    return reply, added, updated, _session_out(state)
 
 
 def update_cell(
@@ -393,3 +437,54 @@ def run_cell(*, user_id: int, session_id: str, cell_id: str) -> NotebookCellOut:
 
     store.save_session(user_id, session_id, state)
     return NotebookCellOut.model_validate(target)
+
+
+def preview_dataset(
+    *,
+    user_id: int,
+    session_id: str,
+    limit: int = 20,
+) -> DataPreviewOut:
+    """返回数据集的预览行（前 N 行），不执行用户代码。"""
+    state = _load_owned_session(user_id, session_id)
+    dataset_id = state.get("dataset_id")
+    profile = state.get("profile")
+    if not dataset_id or not profile:
+        raise bad_request("请先上传数据文件并绑定数据集")
+
+    data_path = store.dataset_file_path(user_id, dataset_id)
+    file_type = profile.get("file_type") or store.dataset_file_type(user_id, dataset_id)
+    active_sheet = state.get("active_sheet") or profile.get("active_sheet") or 0
+
+    try:
+        import pandas as pd
+    except ImportError:
+        raise bad_request("pandas 未安装，无法预览数据")
+
+    try:
+        if file_type == "csv":
+            df = pd.read_csv(data_path, nrows=limit)
+        else:
+            df = pd.read_excel(data_path, sheet_name=active_sheet, nrows=limit)
+    except Exception as exc:
+        raise bad_request(f"读取数据失败: {exc}")
+
+    columns = list(df.columns.astype(str))
+    rows_list = []
+    for _, row in df.head(limit).iterrows():
+        rows_list.append(
+            DataPreviewRow(
+                columns=[str(v) if v is not None else "" for v in row.tolist()]
+            )
+        )
+    total = (
+        profile.get("sheets", [{}])[0].get("rows", 0)
+        if profile.get("sheets")
+        else 0
+    )
+    return DataPreviewOut(
+        columns=columns,
+        rows=rows_list,
+        total_rows=total,
+        preview_rows=len(rows_list),
+    )

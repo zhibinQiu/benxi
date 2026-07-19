@@ -7,7 +7,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 # 所有工具名（从 TOOL_DEFINITIONS 提取）
 TOOL_NAMES = [
     "web_search", "knowledge_retrieve", "kg_query",
-    "invoke_skill", "search_skills", "search_tools", "run_tool_batch",
+    "invoke_skill", "find_skills", "search_tools", "run_tool_batch",
     "invoke_context_subagent",
     "load_uploaded_skill", "run_skill_script", "create_skill",
     "update_uploaded_skill_file", "delete_uploaded_skill", "list_agent_skills",

@@ -257,6 +257,26 @@ def record_executed_tool_call(
     loop_state["executed_tool_cache"] = cache
 
 
+_TOOL_ACTION_REPLAY_PREFIXES = (
+    "使用联网搜索查询",
+    "使用联网搜索搜索",
+    "使用搜索引擎查询",
+    "联网检索返回",
+    "获取网页内容",
+)
+
+
+def _is_tool_action_replay_summary(summary: str) -> bool:
+    """判断工具 call summary 是否仅为操作回顾（不含实质结果数据）。"""
+    text = (summary or "").strip()
+    if not text:
+        return True
+    for prefix in _TOOL_ACTION_REPLAY_PREFIXES:
+        if text.startswith(prefix):
+            return True
+    return False
+
+
 def build_turn_executed_tools_context(loop_state: LoopState | None) -> str:
     records = list((loop_state or {}).get("executed_tool_calls") or [])
     if not records:
@@ -267,9 +287,14 @@ def build_turn_executed_tools_context(loop_state: LoopState | None) -> str:
         args = str(rec.get("args_preview") or "").strip()
         summary = str(rec.get("summary") or "完成").strip()
         sid = str(rec.get("step_id") or "").strip()
+        # 跳过纯工具操作回顾（如"联网检索返回X条"），不污染终稿 prompt
+        if summary and _is_tool_action_replay_summary(summary):
+            continue
         label = f"[{sid}] " if sid else ""
         arg_part = f"({args})" if args and args != "{}" else ""
         lines.append(f"{idx}. {label}{name}{arg_part} → {summary}")
+    if not lines:
+        return ""
     return (
         f"{_TURN_TOOLS_MARKER}{_TURN_TOOLS_HEADER}\n"
         + "\n".join(lines)

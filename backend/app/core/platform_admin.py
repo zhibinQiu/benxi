@@ -26,16 +26,21 @@ def normalize_bootstrap_login_id() -> str:
 
 def user_has_system_admin_role(db: Session, user_id: uuid.UUID) -> bool:
     """是否被授予「系统管理员」角色（由 admin 或其他系统管理员在用户管理中分配）。"""
-    row = db.scalar(
-        select(Role.code)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .where(
-            UserRole.user_id == user_id,
-            Role.code == SYSTEM_ADMIN_ROLE_CODE,
+    from app.core.request_user_cache import cached_per_request
+
+    def _load() -> bool:
+        row = db.scalar(
+            select(Role.code)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                Role.code == SYSTEM_ADMIN_ROLE_CODE,
+            )
+            .limit(1)
         )
-        .limit(1)
-    )
-    return row is not None
+        return row is not None
+
+    return cached_per_request(f"sys_admin:{user_id}", _load)
 
 
 def ensure_bootstrap_has_system_admin_role(db: Session, user: User) -> None:

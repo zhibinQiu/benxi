@@ -192,7 +192,7 @@ def _prepare_qa_stream_bundle(
         question=question,
         doc_meta=doc_meta,
     )
-    context, all_citations = merge_kg_qa_into_context(context, all_citations, kg_ctx)
+    context = merge_kg_qa_into_context(context, all_citations, kg_ctx)
     include_kg = bool(kg_ctx and kg_ctx.context_text)
     kf = knowledge.client_for_user(db, user)
     plan = plan_knowledge_query(
@@ -529,7 +529,7 @@ def answer_knowledge_question(
     )
     from app.services.kg_service import merge_kg_qa_into_context
 
-    context, all_citations = merge_kg_qa_into_context(
+    context = merge_kg_qa_into_context(
         context, all_citations, kg_ctx
     )
     include_kg = bool(kg_ctx and kg_ctx.context_text)

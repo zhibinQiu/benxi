@@ -30,7 +30,7 @@ html[data-theme="light"] {
   --platform-font-weight-medium: 400;
   --platform-font-weight-strong: 600;
   --platform-control-height-md: 42px;
-  --platform-control-height-sm: 32px;
+  --platform-control-height-sm: 28px;
   --platform-menu-item-height: 40px;
 
   /* =============================================
@@ -45,7 +45,7 @@ html[data-theme="light"] {
   --btn-font-weight: 500;
   --btn-height-lg: 38px;    /* 大号操作栏按钮 */
   --btn-height-md: 36px;    /* 标准按钮 */
-  --btn-height-sm: 32px;    /* 对话框/工具栏按钮 */
+  --btn-height-sm: 28px;    /* 列表/工具栏/对话框操作按钮 */
   --btn-radius: 8px;        /* 标准圆角 */
   --btn-radius-sm: 6px;     /* 小按钮/对话框圆角 */
   --btn-padding-x: 16px;    /* 水平内边距 */
@@ -299,7 +299,7 @@ html[data-theme="dark"] {
   --btn-font-weight: 500;
   --btn-height-lg: 38px;
   --btn-height-md: 36px;
-  --btn-height-sm: 32px;
+  --btn-height-sm: 28px;
   --btn-radius: 8px;
   --btn-radius-sm: 6px;
   --btn-padding-x: 16px;

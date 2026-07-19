@@ -55,7 +55,7 @@ bash scripts/stack.sh up --profile knowflow --profile speech
 **本机（与目标同架构或 buildx）：**
 
 ```bash
-export BENXI_VERSION=4.6.0
+export BENXI_VERSION=4.8.6
 bash scripts/stack.sh build --profile knowflow
 bash scripts/stack.sh save      # 输出 images/benxi-*.tar.gz
 ```

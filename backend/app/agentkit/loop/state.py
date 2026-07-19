@@ -107,10 +107,8 @@ class LoopState(TypedDict, total=False):
     """子任务模式下的最终可交付内容文本。"""
     subagent_summaries: list[dict[str, Any]]
     """子 Agent 执行结果摘要列表（汇总到父 Agent）。"""
-    unlocked_tools: set[str]
-    """通过 describe_tool / execution_plan 动态解锁的工具名集合。"""
     discovered_skill_routes: list[str]
-    """通过 search_skills 发现的 Skill 路由描述。"""
+    """通过 find_skills 发现的 Skill 路由描述。"""
     collected_attachments: list[dict[str, Any]]
     """已收集的附件信息列表（用于最终回复 Markdown 插入）。"""
     atomic_retrieval_queries: set[str]

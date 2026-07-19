@@ -957,7 +957,6 @@ defineExpose({
                         >
                           <div class="agent-tool-item__head">
                             <span class="agent-tool-item__name">{{ tool.tool_id }}</span>
-                            <NTag size="tiny" :bordered="false">{{ tool.tool_type }}</NTag>
                             <NTag size="tiny" :bordered="false">
                               {{ t(`admin.agentSkills.toolCategory.${tool.category}`, tool.category) }}
                             </NTag>
@@ -1085,9 +1084,24 @@ defineExpose({
 
 /* ── 配置抽屉 tab 内容容器 ── */
 .agent-config-drawer__tabs-wrap {
-  overflow: hidden;
   width: 100%;
   max-width: 100%;
+}
+.agent-config-drawer__tabs-wrap :deep(.n-tabs) {
+  overflow: hidden;
+}
+.agent-config-drawer__tabs-wrap :deep(.n-tabs-nav) {
+  flex-shrink: 0;
+  background: var(--platform-card-bg);
+}
+.agent-config-drawer__tabs-wrap :deep(.n-tabs-tab--active) {
+  color: var(--n-tab-text-color) !important;
+}
+.agent-config-drawer__tabs-wrap :deep(.n-tabs-tab):hover {
+  color: var(--n-tab-text-color) !important;
+}
+.agent-config-drawer__tabs-wrap :deep(.n-tabs-bar) {
+  display: none;
 }
 
 .agent-drawer-scroll :deep(.n-tabs-nav-wrapper),

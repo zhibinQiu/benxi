@@ -321,21 +321,37 @@ onMounted(() => {
   min-height: 0;
   flex: 1;
   height: 100%;
+  overflow: hidden;
 }
 .ontology-wrapper :deep(.n-tabs) {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+.ontology-wrapper :deep(.n-tabs-nav) {
+  background: var(--platform-bg);
+}
+.ontology-wrapper :deep(.n-tabs-tab--active) {
+  color: var(--n-tab-text-color) !important;
+}
+.ontology-wrapper :deep(.n-tabs-tab):hover {
+  color: var(--n-tab-text-color) !important;
+}
+.ontology-wrapper :deep(.n-tabs-bar) {
+  display: none;
 }
 .ontology-wrapper :deep(.n-tabs .n-tabs-tab-panes) {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding-bottom: 4px;
 }
 .ontology-wrapper :deep(.n-tabs .n-tab-pane) {
-  height: auto;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
 }
 
 /* 空状态：居中介绍 + 初始化按钮 */

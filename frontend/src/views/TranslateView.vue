@@ -10,8 +10,6 @@ import {
   NDataTable,
   NIcon,
   NInput,
-  NRadioButton,
-  NRadioGroup,
   NSelect,
   NSpace,
   NStep,
@@ -285,6 +283,8 @@ onBeforeUnmount(() => {
 });
 
 function onSourceModeChange(mode) {
+  if (status.value === "running") return;
+  sourceMode.value = mode;
   if (mode === "upload") libraryDoc.value = null;
   else pdfFile.value = null;
 }
@@ -322,7 +322,7 @@ const libraryColumns = computed(() => [
         NButton,
         {
           size: "small",
-          type: "primary",
+          secondary: true,
           onClick: () => selectLibraryDoc(row),
         },
         () => t("translate.select")
@@ -491,56 +491,65 @@ function loadPreviewBlob() {
     </Teleport>
 
     <div class="translate-page">
-    <header class="translate-steps-bar feature-local-nav">
-      <n-steps :current="currentStep" size="small" class="translate-steps">
-        <n-step :title="t('translate.steps.document.title')" :description="t('translate.steps.document.description')" />
-        <n-step :title="t('translate.steps.config.title')" :description="t('translate.steps.config.description')" />
-        <n-step :title="t('translate.steps.result.title')" :description="t('translate.steps.result.description')" />
-      </n-steps>
-    </header>
+      <n-card size="small" class="translate-steps-card">
+        <n-steps :current="currentStep" size="small" class="translate-steps">
+          <n-step :title="t('translate.steps.document.title')" :description="t('translate.steps.document.description')" />
+          <n-step :title="t('translate.steps.config.title')" :description="t('translate.steps.config.description')" />
+          <n-step :title="t('translate.steps.result.title')" :description="t('translate.steps.result.description')" />
+        </n-steps>
+      </n-card>
 
-    <div v-if="status === 'running' || error" class="page-alerts">
-      <n-alert
-        v-if="status === 'running'"
-        type="info"
-        class="page-alert"
-        closable
-      >
-        {{ t("translate.runningAlert") }}
-      </n-alert>
-      <n-alert
-        v-if="error"
-        type="error"
-        :title="error"
-        closable
-        class="page-alert"
-        @close="error = ''"
-      />
-    </div>
+      <div v-if="status === 'running' || error" class="page-alerts">
+        <n-alert
+          v-if="status === 'running'"
+          type="info"
+          class="page-alert"
+          closable
+        >
+          {{ t("translate.runningAlert") }}
+        </n-alert>
+        <n-alert
+          v-if="error"
+          type="error"
+          :title="error"
+          closable
+          class="page-alert"
+          @close="error = ''"
+        />
+      </div>
 
-    <div class="translate-workspace">
-      <div class="translate-layout">
-        <section class="translate-main">
-          <n-card class="workflow-card" size="small">
-            <div class="wf-section">
-              <div class="wf-section-head">
-                <span class="wf-step-badge">1</span>
-                <div class="wf-section-titles">
-                  <span class="wf-section-title">{{ t("translate.selectDocument") }}</span>
-                  <span class="wf-section-desc">{{ t("translate.selectDocumentDesc") }}</span>
-                </div>
+      <div class="translate-workspace">
+        <div class="translate-layout">
+          <section class="translate-main">
+            <n-card size="small" class="panel-card" :title="t('translate.selectDocument')">
+              <template #header-extra>
+                <n-text depth="3" class="card-desc">{{ t("translate.selectDocumentDesc") }}</n-text>
+              </template>
+
+              <div class="source-mode-switch" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  class="source-mode-btn"
+                  :class="{ 'source-mode-btn--active': sourceMode === 'upload' }"
+                  :aria-selected="sourceMode === 'upload'"
+                  :disabled="status === 'running'"
+                  @click="onSourceModeChange('upload')"
+                >
+                  {{ t("translate.sourceUpload") }}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  class="source-mode-btn"
+                  :class="{ 'source-mode-btn--active': sourceMode === 'library' }"
+                  :aria-selected="sourceMode === 'library'"
+                  :disabled="status === 'running'"
+                  @click="onSourceModeChange('library')"
+                >
+                  {{ t("translate.sourceLibrary") }}
+                </button>
               </div>
-
-              <n-radio-group
-                v-model:value="sourceMode"
-                size="small"
-                class="source-toggle"
-                :disabled="status === 'running'"
-                @update:value="onSourceModeChange"
-              >
-                <n-radio-button value="upload">{{ t("translate.sourceUpload") }}</n-radio-button>
-                <n-radio-button value="library">{{ t("translate.sourceLibrary") }}</n-radio-button>
-              </n-radio-group>
 
               <div v-if="sourceMode === 'upload'" class="upload-fill">
                 <file-drop-zone
@@ -568,7 +577,7 @@ function loadPreviewBlob() {
                 @keydown.space.prevent="status !== 'running' && openLibraryPicker()"
               >
                 <div v-if="libraryDoc" class="library-selected">
-                  <n-icon :size="22" class="library-selected-icon">
+                  <n-icon :size="20" class="library-selected-icon">
                     <checkmark-circle-outline />
                   </n-icon>
                   <div class="library-selected-body">
@@ -586,28 +595,22 @@ function loadPreviewBlob() {
                   </button>
                 </div>
                 <div v-else class="library-empty">
-                  <n-icon :size="26" :depth="3" :component="FolderOpenOutline" />
+                  <n-icon :size="22" :depth="3" :component="FolderOpenOutline" />
                   <div class="library-empty-text">
                     <n-text strong>{{ t("translate.pickFromLibrary") }}</n-text>
                     <n-text depth="3">{{ t("translate.pickFromLibraryHint") }}</n-text>
                   </div>
                 </div>
               </div>
-            </div>
+            </n-card>
 
-            <div class="wf-divider" />
-
-            <div class="wf-section">
-              <div class="wf-section-head">
-                <span class="wf-step-badge">2</span>
-                <div class="wf-section-titles">
-                  <span class="wf-section-title">{{ t("translate.translateConfig") }}</span>
-                  <span class="wf-section-desc">{{ t("translate.translateConfigDesc") }}</span>
-                </div>
-              </div>
+            <n-card size="small" class="panel-card" :title="t('translate.translateConfig')">
+              <template #header-extra>
+                <n-text depth="3" class="card-desc">{{ t("translate.translateConfigDesc") }}</n-text>
+              </template>
 
               <div class="config-grid">
-                <section class="config-block">
+                <div class="config-panel">
                   <n-text class="block-label">{{ t("translate.langDirection") }}</n-text>
                   <div class="lang-row">
                     <div class="lang-field">
@@ -627,7 +630,7 @@ function loadPreviewBlob() {
                       :disabled="status === 'running'"
                       @click="swapLanguages"
                     >
-                      <n-icon :size="19"><swap-horizontal-outline /></n-icon>
+                      <n-icon :size="18"><swap-horizontal-outline /></n-icon>
                     </button>
                     <div class="lang-field">
                       <n-text depth="3" class="field-label">{{ t("translate.langTarget") }}</n-text>
@@ -643,9 +646,9 @@ function loadPreviewBlob() {
                   <n-tag size="tiny" :bordered="false" class="lang-pair-tag">
                     {{ langPairLabel }}
                   </n-tag>
-                </section>
+                </div>
 
-                <section class="config-block">
+                <div class="config-panel">
                   <n-text class="block-label">{{ t("translate.translateModel") }}</n-text>
                   <n-select
                     v-model:value="service"
@@ -653,10 +656,10 @@ function loadPreviewBlob() {
                     :options="engineOptions"
                     :disabled="status === 'running'"
                   />
-                </section>
+                </div>
               </div>
 
-              <section class="config-block config-block--glossary">
+              <div class="config-panel">
                 <div class="block-label-row">
                   <n-text class="block-label">{{ t("translate.glossaryOptional") }}</n-text>
                   <n-tag
@@ -679,192 +682,190 @@ function loadPreviewBlob() {
                   :file-name="glossaryFileLabel"
                   @change="onGlossaryChange"
                 />
-              </section>
-            </div>
-
-            <div class="wf-actions">
-              <n-button
-                type="primary"
-                size="medium"
-                class="start-btn"
-                :disabled="!canStart"
-                :loading="status === 'running' || status === 'submitting'"
-                :render-icon="renderIcon(RocketOutline)"
-                @click="startTranslation"
-              >
-                {{ status === "running" || status === "submitting" ? t("translate.translating") : t("translate.startTranslate") }}
-              </n-button>
-            </div>
-          </n-card>
-        </section>
-
-        <aside
-          class="translate-aside"
-          :class="{
-            'translate-aside--active': showProgressPanel,
-            'translate-aside--done': status === 'done',
-          }"
-        >
-          <n-card class="result-card" size="small">
-            <template #header>
-              <div class="result-head">
-                <n-icon
-                  :size="19"
-                  :component="status === 'done' ? CheckmarkCircleOutline : CloudDownloadOutline"
-                />
-                <span>{{ t("translate.progressAndResult") }}</span>
-              </div>
-            </template>
-
-            <div class="result-body">
-              <div v-if="!showProgressPanel" class="result-idle">
-                <n-icon :size="29" :depth="3"><time-outline /></n-icon>
-                <n-text depth="2">{{ t("translate.idleHint") }}</n-text>
               </div>
 
-              <template v-else>
-              <div class="status-strip" :class="`status-strip--${status}`">
-                <div class="status-row">
-                  <n-tag :type="statusType" round size="small">{{ statusLabel }}</n-tag>
-                  <span
-                    v-if="status === 'running'"
-                    class="status-pulse"
-                    aria-hidden="true"
+              <div class="wf-actions">
+                <n-button
+                  type="primary"
+                  size="medium"
+                  class="start-btn"
+                  :disabled="!canStart"
+                  :loading="status === 'running' || status === 'submitting'"
+                  :render-icon="renderIcon(RocketOutline)"
+                  @click="startTranslation"
+                >
+                  {{ status === "running" || status === "submitting" ? t("translate.translating") : t("translate.startTranslate") }}
+                </n-button>
+              </div>
+            </n-card>
+          </section>
+
+          <aside
+            class="translate-aside"
+            :class="{
+              'translate-aside--active': showProgressPanel,
+              'translate-aside--done': status === 'done',
+            }"
+          >
+            <n-card class="panel-card result-card" size="small">
+              <template #header>
+                <div class="result-head">
+                  <n-icon
+                    :size="18"
+                    :component="status === 'done' ? CheckmarkCircleOutline : CloudDownloadOutline"
                   />
+                  <span>{{ t("translate.progressAndResult") }}</span>
                 </div>
-                <n-text v-if="displayFileName" depth="2" class="status-file">
-                  {{ displayFileName }}
-                </n-text>
-                <n-text v-if="status !== 'idle'" depth="3" class="status-meta">
-                  {{ langPairLabel }}
-                  <template v-if="engineLabel"> · {{ engineLabel }}</template>
-                </n-text>
-              </div>
-
               </template>
 
-              <div class="dl-group">
-                <n-text class="dl-group-label">{{ t("translate.translation") }}</n-text>
-                <div class="dl-list">
-                  <div
-                    class="dl-item dl-item--primary"
-                    :class="{ 'dl-item--disabled': !resultsReady }"
-                  >
-                    <button
-                      type="button"
-                      class="dl-item-main"
-                      :disabled="!resultsReady"
-                      @click="dl('dual', 'dual.pdf')"
-                    >
-                      <n-icon :size="19" :component="DownloadOutline" />
-                      <span class="dl-item-text">
-                        <strong>{{ t("translate.dualPdf") }}</strong>
-                        <small>{{ t("translate.dualPdfDesc") }}</small>
-                      </span>
-                    </button>
-                    <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('dual')">
-                      <template #icon>
-                        <n-icon :component="EyeOutline" />
-                      </template>
-                      {{ t("translate.preview") }}
-                    </n-button>
+              <div class="result-body">
+                <div v-if="!showProgressPanel" class="result-idle">
+                  <n-icon :size="28" :depth="3"><time-outline /></n-icon>
+                  <n-text depth="2">{{ t("translate.idleHint") }}</n-text>
+                </div>
+
+                <template v-else>
+                  <div class="status-strip" :class="`status-strip--${status}`">
+                    <div class="status-row">
+                      <n-tag :type="statusType" round size="small">{{ statusLabel }}</n-tag>
+                      <span
+                        v-if="status === 'running'"
+                        class="status-pulse"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <n-text v-if="displayFileName" depth="2" class="status-file">
+                      {{ displayFileName }}
+                    </n-text>
+                    <n-text v-if="status !== 'idle'" depth="3" class="status-meta">
+                      {{ langPairLabel }}
+                      <template v-if="engineLabel"> · {{ engineLabel }}</template>
+                    </n-text>
                   </div>
-                  <div class="dl-item" :class="{ 'dl-item--disabled': !resultsReady }">
-                    <button
-                      type="button"
-                      class="dl-item-main"
-                      :disabled="!resultsReady"
-                      @click="dl('mono', 'mono.pdf')"
+                </template>
+
+                <div class="dl-group">
+                  <n-text class="dl-group-label">{{ t("translate.translation") }}</n-text>
+                  <div class="dl-list">
+                    <div
+                      class="dl-item dl-item--primary"
+                      :class="{ 'dl-item--disabled': !resultsReady }"
                     >
-                      <n-icon :size="19" :component="DownloadOutline" />
-                      <span class="dl-item-text">
-                        <strong>{{ t("translate.monoPdf") }}</strong>
-                        <small>{{ t("translate.monoPdfDesc") }}</small>
-                      </span>
-                    </button>
-                    <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('mono')">
-                      <template #icon>
-                        <n-icon :component="EyeOutline" />
-                      </template>
-                      {{ t("translate.preview") }}
-                    </n-button>
+                      <button
+                        type="button"
+                        class="dl-item-main"
+                        :disabled="!resultsReady"
+                        @click="dl('dual', 'dual.pdf')"
+                      >
+                        <n-icon :size="18" :component="DownloadOutline" />
+                        <span class="dl-item-text">
+                          <strong>{{ t("translate.dualPdf") }}</strong>
+                          <small>{{ t("translate.dualPdfDesc") }}</small>
+                        </span>
+                      </button>
+                      <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('dual')">
+                        <template #icon>
+                          <n-icon :component="EyeOutline" />
+                        </template>
+                        {{ t("translate.preview") }}
+                      </n-button>
+                    </div>
+                    <div class="dl-item" :class="{ 'dl-item--disabled': !resultsReady }">
+                      <button
+                        type="button"
+                        class="dl-item-main"
+                        :disabled="!resultsReady"
+                        @click="dl('mono', 'mono.pdf')"
+                      >
+                        <n-icon :size="18" :component="DownloadOutline" />
+                        <span class="dl-item-text">
+                          <strong>{{ t("translate.monoPdf") }}</strong>
+                          <small>{{ t("translate.monoPdfDesc") }}</small>
+                        </span>
+                      </button>
+                      <n-button text size="tiny" :disabled="!resultsReady" @click="openPreview('mono')">
+                        <template #icon>
+                          <n-icon :component="EyeOutline" />
+                        </template>
+                        {{ t("translate.preview") }}
+                      </n-button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div class="dl-group">
-                <n-text class="dl-group-label">{{ t("translate.moreExports") }}</n-text>
-                <n-space :size="7" wrap class="dl-chips">
-                  <n-button
-                    size="small"
-                    secondary
-                    :disabled="!resultsReady"
-                    @click="dl('glossary', 'glossary.csv')"
-                  >
-                    {{ t("translate.glossary") }}
-                  </n-button>
-                  <n-button
-                    size="small"
-                    secondary
-                    :disabled="!resultsReady"
-                    @click="dl('extracted-json', 'extracted.json')"
-                  >
-                    JSON
-                  </n-button>
-                  <n-button
-                    size="small"
-                    secondary
-                    :disabled="!resultsReady"
-                    @click="dl('extracted-md', 'extracted.md')"
-                  >
-                    Markdown
-                  </n-button>
-                </n-space>
-              </div>
-
-              <div class="dl-group">
-                <n-text class="dl-group-label">{{ t("translate.knowledgeBase") }}</n-text>
-                <n-space :size="7" wrap align="center">
-                  <template v-if="importedDocumentId">
-                    <n-tag type="success" :bordered="false" size="small">{{ t("translate.imported") }}</n-tag>
-                    <n-button size="small" type="primary" @click="openImportedDocument">
-                      {{ t("translate.viewDocument") }}
-                    </n-button>
-                  </template>
-                  <template v-else>
+                <div class="dl-group">
+                  <n-text class="dl-group-label">{{ t("translate.moreExports") }}</n-text>
+                  <n-space :size="8" wrap class="dl-chips">
                     <n-button
                       size="small"
                       secondary
                       :disabled="!resultsReady"
-                      :loading="importLoading"
-                      @click="importToLibrary('mono')"
+                      @click="dl('glossary', 'glossary.csv')"
                     >
-                      {{ t("translate.importMono") }}
+                      {{ t("translate.glossary") }}
                     </n-button>
                     <n-button
                       size="small"
                       secondary
                       :disabled="!resultsReady"
-                      :loading="importLoading"
-                      @click="importToLibrary('dual')"
+                      @click="dl('extracted-json', 'extracted.json')"
                     >
-                      {{ t("translate.importDual") }}
+                      JSON
                     </n-button>
-                  </template>
-                </n-space>
-                <n-text
-                  v-if="showProgressPanel && !resultsReady"
-                  depth="3"
-                  class="dl-group-hint"
-                >
-                  {{ t("translate.resultHint") }}
-                </n-text>
+                    <n-button
+                      size="small"
+                      secondary
+                      :disabled="!resultsReady"
+                      @click="dl('extracted-md', 'extracted.md')"
+                    >
+                      Markdown
+                    </n-button>
+                  </n-space>
+                </div>
+
+                <div class="dl-group">
+                  <n-text class="dl-group-label">{{ t("translate.knowledgeBase") }}</n-text>
+                  <n-space :size="8" wrap align="center">
+                    <template v-if="importedDocumentId">
+                      <n-tag type="success" :bordered="false" size="small">{{ t("translate.imported") }}</n-tag>
+                      <n-button size="small" secondary @click="openImportedDocument">
+                        {{ t("translate.viewDocument") }}
+                      </n-button>
+                    </template>
+                    <template v-else>
+                      <n-button
+                        size="small"
+                        secondary
+                        :disabled="!resultsReady"
+                        :loading="importLoading"
+                        @click="importToLibrary('mono')"
+                      >
+                        {{ t("translate.importMono") }}
+                      </n-button>
+                      <n-button
+                        size="small"
+                        secondary
+                        :disabled="!resultsReady"
+                        :loading="importLoading"
+                        @click="importToLibrary('dual')"
+                      >
+                        {{ t("translate.importDual") }}
+                      </n-button>
+                    </template>
+                  </n-space>
+                  <n-text
+                    v-if="showProgressPanel && !resultsReady"
+                    depth="3"
+                    class="dl-group-hint"
+                  >
+                    {{ t("translate.resultHint") }}
+                  </n-text>
+                </div>
               </div>
-            </div>
-          </n-card>
-        </aside>
+            </n-card>
+          </aside>
+        </div>
       </div>
-    </div>
     </div>
 
     <AdminFormModal
@@ -885,7 +886,7 @@ function loadPreviewBlob() {
             <n-icon :component="SearchOutline" />
           </template>
         </n-input>
-        <n-button size="small" type="primary" @click="libraryPage = 1; loadLibraryDocs()">
+        <n-button size="small" secondary @click="libraryPage = 1; loadLibraryDocs()">
           {{ t("common.search") }}
         </n-button>
         <ListRefreshButton :loading="libraryLoading" size="small" @click="loadLibraryDocs" />
@@ -923,39 +924,37 @@ function loadPreviewBlob() {
 
 <style scoped>
 .translate-page {
+  --tr-gap: 16px;
+  --tr-gap-sm: 12px;
+  --tr-pad: 16px;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1344px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 5px 0 29px;
+  padding: 8px 0 24px;
   box-sizing: border-box;
+  overflow-y: auto;
 }
 
-.translate-steps-bar {
+.translate-steps-card {
   flex-shrink: 0;
-  margin-bottom: 19px;
-  padding: 14px 19px;
-  border-radius: var(--platform-radius-md, 14px);
-  background: var(--platform-bg-elevated);
-  border: 1px solid var(--platform-border);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  margin-bottom: var(--tr-gap);
+  border-radius: var(--platform-card-radius);
 }
 
 .translate-steps {
-  max-width: 576px;
+  max-width: 560px;
 }
 
 .page-alerts {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: var(--tr-gap-sm);
 }
 
 .page-alert {
@@ -963,153 +962,131 @@ function loadPreviewBlob() {
 }
 
 .translate-workspace {
-  flex: 1;
+  flex: none;
   min-height: 0;
-  overflow-y: auto;
 }
 
 .translate-layout {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 19px;
+  gap: var(--tr-gap);
   align-items: start;
 }
 
 @media (min-width: 880px) {
   .translate-layout {
-    grid-template-columns: minmax(0, 1.15fr) minmax(336px, 0.85fr);
-    gap: 24px;
+    grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
   }
 
   .translate-aside {
     position: sticky;
-    top: 10px;
+    top: 8px;
   }
 }
 
-.workflow-card,
-.result-card {
+.translate-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tr-gap);
+  min-width: 0;
+}
+
+.translate-aside,
+.panel-card {
+  min-width: 0;
+  max-width: 100%;
   border-radius: var(--platform-card-radius);
 }
 
-.translate-main,
-.translate-aside,
-.workflow-card {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.workflow-card :deep(.n-card__content) {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 17px 19px 19px;
-}
-
-.workflow-card :deep(.n-card-header) {
-  padding: 12px 19px 0;
+.panel-card :deep(.n-card-header) {
+  padding: 12px var(--tr-pad) 0;
   min-height: 0;
+  align-items: flex-start;
 }
 
-.wf-section {
+.panel-card :deep(.n-card__content) {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  max-width: 100%;
+  gap: var(--tr-gap-sm);
+  padding: 12px var(--tr-pad) var(--tr-pad);
 }
 
-.wf-section-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.card-desc {
+  font-size: var(--platform-font-size-sm);
+  max-width: 240px;
+  text-align: right;
+  line-height: 1.4;
 }
 
-.wf-step-badge {
-  flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  display: flex;
+.source-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--platform-radius-sm, 9px);
+  background: var(--platform-bg-secondary);
+}
+
+.source-mode-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--platform-font-size-base);
+  margin: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--platform-radius-xs, 6px);
+  background: transparent;
+  color: var(--platform-text-secondary);
+  font: inherit;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.18s var(--platform-ease-smooth),
+    color 0.18s var(--platform-ease-smooth),
+    box-shadow 0.18s var(--platform-ease-smooth);
+}
+
+.source-mode-btn:hover:not(:disabled) {
+  color: var(--platform-text);
+  background: color-mix(in srgb, var(--platform-bg-elevated) 70%, transparent);
+}
+
+.source-mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.source-mode-btn--active {
   color: var(--platform-accent);
-  background: var(--platform-accent-soft);
-}
-
-.wf-section-titles {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.wf-section-title {
-  font-size: var(--platform-font-size-lg);
-  font-weight: var(--platform-font-weight-strong);
-  color: var(--n-text-color);
-  line-height: 1.3;
-}
-
-.wf-section-desc {
-  font-size: var(--platform-font-size-base);
-  color: var(--platform-muted);
-  line-height: 1.35;
-}
-
-.wf-divider {
-  height: 1px;
-  margin: 17px 0;
-  background: var(--platform-divider, var(--platform-border));
-}
-
-.source-toggle {
-  width: 100%;
-}
-
-.source-toggle :deep(.n-radio-group) {
-  display: flex;
-  width: 100%;
-}
-
-.source-toggle :deep(.n-radio-button) {
-  flex: 1;
-  text-align: center;
+  background: var(--platform-bg-elevated-solid, #fff);
+  box-shadow: var(--platform-shadow-sm);
 }
 
 .upload-fill {
   width: 100%;
   min-width: 0;
-  max-width: 100%;
 }
 
 .upload-fill :deep(.drop-zone) {
   width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 0;
-  padding: 10px 12px;
+  min-height: 88px;
+  padding: 12px 14px;
   box-sizing: border-box;
-  border-radius: var(--platform-radius-sm, 10px);
+  border-radius: var(--platform-radius-sm, 9px);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-items: center;
-  gap: 1px 10px;
+  gap: 2px 12px;
   text-align: left;
-  overflow: hidden;
 }
 
 .upload-fill :deep(.drop-zone .drop-icon-wrap) {
   grid-row: 1 / 3;
-  width: 29px;
-  height: 29px;
+  width: 28px;
+  height: 28px;
   margin-bottom: 0;
-}
-
-.upload-fill :deep(.drop-zone .drop-icon-wrap .n-icon) {
-  font-size: var(--platform-font-size-lg) !important;
 }
 
 .upload-fill :deep(.drop-zone .drop-title) {
@@ -1117,10 +1094,6 @@ function loadPreviewBlob() {
   grid-row: 1;
   font-size: var(--platform-font-size-base);
   margin-bottom: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .upload-fill :deep(.drop-zone .drop-hint) {
@@ -1128,57 +1101,55 @@ function loadPreviewBlob() {
   grid-row: 2;
   font-size: var(--platform-font-size-sm);
   line-height: 1.35;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .config-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: var(--tr-gap-sm);
 }
 
-@media (min-width: 520px) {
+@media (min-width: 560px) {
   .config-grid {
     grid-template-columns: 1fr 1fr;
+    align-items: stretch;
   }
 }
 
-.config-block {
+.config-panel {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--platform-radius-sm, 9px);
+  border: 1px solid var(--platform-border);
+  background: var(--platform-bg-secondary);
+  min-width: 0;
 }
 
-.config-block--glossary {
-  margin-top: 2px;
-}
-
-.config-block--glossary :deep(.drop-zone) {
-  min-height: 86px;
-  padding: 0.55rem 0.7rem;
+.config-panel :deep(.drop-zone) {
+  min-height: 72px;
+  padding: 10px 12px;
 }
 
 .block-label {
-  font-size: var(--platform-font-size-lg);
-  font-weight: var(--platform-font-weight-medium);
-  color: var(--n-text-color-2, var(--platform-text-secondary));
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
+  color: var(--platform-text);
 }
 
 .block-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .lang-row {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 .lang-field {
@@ -1188,13 +1159,13 @@ function loadPreviewBlob() {
 
 .lang-swap-btn {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   margin-bottom: 1px;
-  border: 1px solid var(--platform-border);
-  border-radius: 50%;
-  background: var(--platform-bg);
-  color: var(--platform-muted);
+  border: 1px solid var(--platform-border-strong);
+  border-radius: var(--platform-radius-xs, 6px);
+  background: var(--platform-bg-elevated-solid, #fff);
+  color: var(--platform-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1222,37 +1193,33 @@ function loadPreviewBlob() {
 .field-label {
   display: block;
   font-size: var(--platform-font-size-sm);
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
 .wf-actions {
-  margin-top: 17px;
-  padding-top: 14px;
-  border-top: 1px solid var(--platform-divider, var(--platform-border));
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--platform-border);
 }
 
 .start-btn {
   width: 100%;
-  font-weight: var(--platform-font-weight-strong);
-  height: 43px;
+  height: 40px;
 }
 
 .library-pick {
   width: 100%;
   min-width: 0;
-  border-radius: var(--platform-radius-sm, 10px);
-  border: 2px dashed var(--n-border-color);
-  background: color-mix(in srgb, var(--platform-text) 2%, transparent);
+  border-radius: var(--platform-radius-sm, 9px);
+  border: 1px solid var(--platform-border-strong);
+  background: var(--platform-bg-secondary);
   cursor: pointer;
-  transition:
-    border-color 0.2s,
-    background 0.2s,
-    box-shadow 0.2s;
+  transition: border-color 0.18s, background 0.18s;
 }
 
 .library-pick:hover:not(.library-pick--disabled) {
-  border-color: var(--n-text-color-3);
-  background: var(--n-action-color);
+  border-color: var(--platform-accent-border-soft);
+  background: var(--platform-accent-soft);
 }
 
 .library-pick--disabled {
@@ -1264,11 +1231,8 @@ function loadPreviewBlob() {
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: flex-start;
   gap: 12px;
-  padding: 12px 14px;
-  min-height: 0;
-  text-align: left;
+  padding: 14px;
 }
 
 .library-empty-text {
@@ -1278,27 +1242,16 @@ function loadPreviewBlob() {
   gap: 2px;
 }
 
-.library-empty-text :deep(.n-text) {
-  font-size: var(--platform-font-size-base);
-  line-height: 1.35;
-}
-
 .library-pick:has(.library-selected) {
-  border-style: solid;
   border-color: var(--platform-accent-border-soft);
   background: var(--platform-accent-soft);
-}
-
-.library-pick:has(.library-selected):not(.library-pick--disabled):hover {
-  border-color: var(--platform-accent);
-  background: color-mix(in srgb, var(--platform-accent) 12%, transparent);
 }
 
 .library-selected {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
+  padding: 14px;
   min-width: 0;
 }
 
@@ -1307,17 +1260,16 @@ function loadPreviewBlob() {
   margin-left: auto;
   padding: 2px 10px;
   border: none;
-  border-radius: var(--platform-radius-sm, 7px);
+  border-radius: var(--platform-radius-xs, 6px);
   background: transparent;
-  color: var(--platform-muted);
+  color: var(--platform-text-tertiary);
   font: inherit;
   font-size: var(--platform-font-size-sm);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
 }
 
 .library-clear-btn:hover:not(:disabled) {
-  background: var(--platform-bg-tertiary);
+  background: var(--platform-bg-elevated-solid, #fff);
   color: var(--platform-text);
 }
 
@@ -1329,7 +1281,6 @@ function loadPreviewBlob() {
 .library-selected-icon {
   color: var(--platform-accent);
   flex-shrink: 0;
-  margin-top: 1px;
 }
 
 .library-selected-body {
@@ -1343,32 +1294,20 @@ function loadPreviewBlob() {
   margin-top: 2px;
 }
 
-.result-card :deep(.n-card-header) {
-  padding: 12px 17px 7px;
-  min-height: 0;
-}
-
-.result-card :deep(.n-card__content) {
-  padding: 10px 17px 17px;
-}
-
 .result-head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   font-size: var(--platform-font-size-lg);
-  font-weight: var(--platform-font-weight-medium);
-  color: var(--n-text-color);
+  font-weight: 500;
+  color: var(--platform-text);
 }
 
 .result-head .n-icon {
   color: var(--platform-accent);
 }
 
-.translate-aside--active .result-card {
-  border-color: color-mix(in srgb, var(--platform-accent) 22%, transparent);
-}
-
+.translate-aside--active .result-card,
 .translate-aside--done .result-card {
   border-color: var(--platform-accent-border-soft);
 }
@@ -1378,39 +1317,38 @@ function loadPreviewBlob() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 10px 5px 5px;
+  gap: 8px;
+  padding: 20px 8px;
   text-align: center;
   font-size: var(--platform-font-size-base);
+  border-radius: var(--platform-radius-sm, 9px);
+  border: 1px dashed var(--platform-border-strong);
+  background: var(--platform-bg-secondary);
 }
 
 .result-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--tr-gap-sm);
 }
 
 .status-strip {
-  padding: 12px 14px;
-  border-radius: var(--platform-radius-sm, 10px);
-  background: color-mix(in srgb, var(--platform-text) 3%, transparent);
+  padding: 12px;
+  border-radius: var(--platform-radius-sm, 9px);
+  background: var(--platform-bg-secondary);
   border: 1px solid var(--platform-border);
 }
 
-.status-strip--done {
-  background: var(--platform-accent-soft);
-  border-color: var(--platform-accent-border-soft);
-}
-
+.status-strip--done,
 .status-strip--running {
-  background: color-mix(in srgb, var(--platform-accent) 6%, transparent);
+  background: var(--platform-accent-soft);
   border-color: var(--platform-accent-border-soft);
 }
 
 .status-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1437,7 +1375,7 @@ function loadPreviewBlob() {
 .status-file {
   display: block;
   font-size: var(--platform-font-size-base);
-  margin-top: 7px;
+  margin-top: 6px;
   word-break: break-all;
   line-height: 1.4;
 }
@@ -1451,13 +1389,13 @@ function loadPreviewBlob() {
 .dl-group {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .dl-group-label {
   font-size: var(--platform-font-size-sm);
-  font-weight: var(--platform-font-weight-normal);
-  color: var(--platform-muted);
+  font-weight: 500;
+  color: var(--platform-text-secondary);
 }
 
 .dl-group-hint {
@@ -1468,27 +1406,23 @@ function loadPreviewBlob() {
 .dl-list {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .dl-item {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 10px 7px 12px;
-  border-radius: var(--platform-radius-sm, 10px);
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+  border-radius: var(--platform-radius-sm, 9px);
   border: 1px solid var(--platform-border);
-  background: var(--platform-bg);
-  transition:
-    border-color 0.2s var(--platform-ease-smooth),
-    background 0.2s var(--platform-ease-smooth),
-    box-shadow 0.2s var(--platform-ease-smooth);
+  background: var(--platform-bg-elevated-solid, #fff);
+  transition: border-color 0.18s var(--platform-ease-smooth), background 0.18s var(--platform-ease-smooth);
 }
 
 .dl-item:hover:not(.dl-item--disabled) {
-  border-color: color-mix(in srgb, var(--platform-accent) 35%, transparent);
-  background: color-mix(in srgb, var(--platform-accent) 8%, transparent);
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--platform-accent) 10%, transparent);
+  border-color: var(--platform-accent-border-soft);
+  background: var(--platform-accent-soft);
 }
 
 .dl-item--disabled {
@@ -1500,13 +1434,9 @@ function loadPreviewBlob() {
   cursor: not-allowed;
 }
 
-.dl-item--disabled .dl-item-main:disabled {
-  opacity: 1;
-}
-
 .dl-item--primary {
   border-color: var(--platform-accent-border-soft);
-  background: color-mix(in srgb, var(--platform-accent) 5%, transparent);
+  background: var(--platform-accent-soft);
 }
 
 .dl-item-main {
@@ -1515,15 +1445,13 @@ function loadPreviewBlob() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 5px 2px;
+  padding: 4px 0;
   border: none;
   background: transparent;
   color: var(--platform-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  border-radius: 7px;
-  transition: color 0.2s ease;
 }
 
 .dl-item-main:hover:not(:disabled) {
@@ -1539,18 +1467,17 @@ function loadPreviewBlob() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
 .dl-item-text strong {
   font-size: var(--platform-font-size-base);
-  font-weight: var(--platform-font-weight-strong);
+  font-weight: 600;
   line-height: 1.3;
 }
 
 .dl-item-text small {
   font-size: var(--platform-font-size-sm);
-  color: var(--platform-muted);
+  color: var(--platform-text-tertiary);
   line-height: 1.3;
 }
 
@@ -1572,6 +1499,10 @@ function loadPreviewBlob() {
 
   .config-grid {
     grid-template-columns: 1fr;
+  }
+
+  .card-desc {
+    display: none;
   }
 }
 </style>

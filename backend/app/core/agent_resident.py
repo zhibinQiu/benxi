@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.core.agent_config import get_default_instruction_body
 from app.core.platform_assistant import (
     assistant_ai_home_persona,
+    assistant_completion_first_principle,
     assistant_conclusion_source_priority,
     assistant_search_strategy,
     assistant_user_communication_style,
@@ -30,6 +31,9 @@ _USER_STYLE_RULES = assistant_user_communication_style()
 _TOOL_LOOP_REPLY_RULE = (
     "工具执行阶段：只发起 tool_calls，content 留空或一行内部状态；"
     "面向用户的最终结论由系统在工具结束后单独生成，你在本阶段写的正文不会展示给用户。"
+    "【严重警告】禁止只说不做：当你确定需要某个工具时，必须在同一轮对话的 tool_calls 中立即调用。"
+    "不得先说「我来查一下」「我马上去搜索」「请稍等」然后再调用工具——调用工具是证明你执行了的唯一方式。"
+    "连续输出正文而不调用工具会被视为执行失败，系统将终止任务。"
 )
 
 _WRITE_RATE_RULES = (
@@ -60,7 +64,7 @@ _SPECIALIST_SCOPE_RULE = (
 )
 
 _SPECIALIST_TOOL_RULES = (
-    "本域通过 invoke_skill 调用已绑定 Skill；search_skills 补充 Skill 路由。"
+    "本域通过 invoke_skill 调用已绑定 Skill；find_skills 补充 Skill 路由。"
     "load/run_skill_script 用于发展技能。必须 API tool_calls，禁止正文 DSML/脚本。"
 )
 
@@ -68,6 +72,7 @@ _SPECIALIST_TOOL_RULES = (
 def _specialist_common_prefix(*, task_mode: bool = False) -> str:
     parts = [
         f"{assistant_ai_home_persona()}。",
+        assistant_completion_first_principle(),
         SESSION_CONTEXT_RULE,
         _GROUNDING_RULES,
         _SEARCH_STRATEGY_RULES,
@@ -112,16 +117,20 @@ def build_specialist_resident_prompt(
         body = (config_body or get_default_instruction_body("orchestrator") or "").strip()
         return (
             f"{assistant_ai_home_persona()}。\n"
+            f"{assistant_completion_first_principle()}\n"
             "- \u7b80\u4f53\u4e2d\u6587\uff1b\u3010\u7528\u6237\u8bb0\u5fc6\u3011\u540d\u79f0\u4f18\u5148\n"
             "══════════════════════════════════════════\n"
             "## 调度原则\n"
-            "⊙ 你是一个调度 Agent，职责：理解→分配→验收。\n"
-            "⊙ 你能直接做的：回答常识/寒暄（不用任何工具）、联网检索、知识库检索、知识图谱查询等。\n"
-            "⊙ 平台操作、浏览器自动化等 → 由路由系统自动分配给专精 Agent 处理。\n"
-            "⊙ 当专精 Agent 通过 request_orchestrator_assist 交还任务时，仔细阅读其反馈的问题描述，\n"
-            "   重新规划处理方式（直接回复、调用工具、或分配给其他专精）。\n"
-            "⊙ 不要自己执行专精工具，那是专精 Agent 的事。\n"
-            "⊙ 历史消息中的工具使用场景不代表当前问题也需要同样处理，每次独立判断。\n"
+            "⊙ 你是一个**调度 Agent**（Orchestrator）。\n"
+            "⊙ **领域明确** → 必须通过以下方式委托，禁止只用文字描述：\n"
+            "   · invoke_context_subagent(kind=search) — 联网检索/知识库/图谱/本体\n"
+            "   · invoke_context_subagent(kind=use) — 执行已有 Skill\n"
+            "   · invoke_context_subagent(kind=execute) — 严格按编排步骤执行（浏览器自动化等）\n"
+            "   · request_orchestrator_assist(agent_id=...) — 路由到专精 Agent\n"
+            "⊙ **不确定/跨领域** → 直接用通用工具（web_search / knowledge_retrieve / kg_query /\n"
+            "   fetch_url_content / send_notification / read_agent_memory 等）。\n"
+            "⊙ **禁止只说不做**：当你确定需要某个工具时，**必须在同一轮对话中立即调用**，\n"
+            "   不能只说「我来查一下」「我马上去搜索」而不实际调工具。\n"
             "══════════════════════════════════════════\n"
             f"- {SESSION_CONTEXT_RULE}\n"
             f"- {_GROUNDING_RULES}\n"
@@ -129,7 +138,8 @@ def build_specialist_resident_prompt(
             f"- {_USER_STYLE_RULES}\n"
             f"- {orchestrator_failure_communication_rule()}\n"
             f"- {_HUMAN_IN_THE_LOOP_RULES}\n"
-            "- 复合任务拆子任务分发给专精子 Agent；你只收结论，验收通过后汇总给用户\n"
+            "- 复合任务拆子任务分发给子智能体或专精 Agent；你只收结论，验收通过后汇总给用户\n"
+            "- 利用一切可用工具满足用户需求；不知道就委托检索；查到了直接答，禁止空口推诿。\n"
             f"{body}\n"
         )
     common = _specialist_common_prefix(task_mode=task_mode)

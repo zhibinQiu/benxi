@@ -1,4 +1,4 @@
-"""数据分析 — 表格结构画像（Excel / CSV，不向 LLM 传递全量数据）。"""
+"""表格分析 — 表格结构画像（Excel / CSV，不向 LLM 传递全量数据）。"""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def warn_if_data_analysis_deps_missing() -> None:
     missing = missing_data_analysis_modules()
     if missing:
         logger.warning(
-            "数据分析依赖未就绪 (%s)。%s",
+            "表格分析依赖未就绪 (%s)。%s",
             ", ".join(missing),
             data_analysis_deps_install_hint(),
         )
@@ -58,7 +58,7 @@ def _require_pandas():
         missing = missing_data_analysis_modules()
         detail = ", ".join(missing) if missing else "pandas/openpyxl"
         raise bad_request(
-            f"数据分析依赖未安装（{detail}）。{data_analysis_deps_install_hint()}"
+            f"表格分析依赖未安装（{detail}）。{data_analysis_deps_install_hint()}"
         ) from exc
     return pd, load_workbook
 

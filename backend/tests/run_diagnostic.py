@@ -51,7 +51,7 @@ if __name__ == "__main__":
         ("用例3-定时提醒", "8s 后提醒我喝水", "orchestrator"),
         ("用例4-生成技能", "生成一个 skill，帮我从 https://www.tanshichang.cn 爬取最新的碳市场价格", "skill-dev"),
         ("用例5-碳政策", "最新的双碳政策有哪些？", "carbon"),
-        ("用例6-浏览器", "帮我打开百度搜索 rpa 并截图", "rpa"),
+        ("用例6-浏览器", "帮我打开百度搜索 rpa 并截图", "orchestrator"),
         ("用例7-寒暄", "你好", "orchestrator"),
         ("用例8-碳行情", "今天全国碳市场的成交价是多少？", "carbon"),
         ("用例9-平台操作", "帮我创建一个文档文件夹", "platform"),
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     mock_index = {
         "web-search": "orchestrator", "carbon-qa": "carbon",
         "report-generation": "report", "mermaid-diagram": "orchestrator",
-        "browser-automation": "rpa", "skill-development": "skill-dev",
+        "browser-automation": "orchestrator", "skill-development": "skill-dev",
     }
     mock_db = MagicMock()
 
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         ("使用 carbon-qa 查询碳价", "carbon"),
         ("使用 mermaid-diagram 画流程图", "orchestrator"),
         ("运行 skill-development 创建技能", "skill-dev"),
-        ("使用 browser-automation 打开网页", "rpa"),
+        ("使用 browser-automation 打开网页", "orchestrator"),
     ]:
         routes = resolve_agent_routes_from_skills(mock_db, fake_user, msg, index=mock_index)
         actual = routes[0].agent_id if routes else "无路由"
@@ -153,7 +153,7 @@ if __name__ == "__main__":
         integration_test_cases = [
             ("使用 carbon-qa 查询碳价", "carbon", "Fast Path"),
             ("最新的双碳政策有哪些？", "carbon", "Agent关键词匹配"),
-            ("帮我打开百度搜索 rpa 并截图", "rpa", "Agent关键词匹配"),
+            ("帮我打开百度搜索 rpa 并截图", "orchestrator", "Agent关键词匹配"),
             ("今天全国碳市场的成交价是多少？", "carbon", "Agent关键词匹配"),
             ("什么是碳达峰和碳中和？", "carbon", "Agent关键词匹配"),
             ("帮我创建一个文档文件夹", "platform", "Agent关键词匹配"),

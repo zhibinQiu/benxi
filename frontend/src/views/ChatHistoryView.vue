@@ -7,9 +7,9 @@ import {
   NCheckbox,
   NEmpty,
   NIcon,
-  NSpin,
-  NText } from "naive-ui";
-import { ArrowBackOutline, ChatbubblesOutline, RefreshOutline, TrashOutline } from "@vicons/ionicons5";
+  NInput,
+  NSpin } from "naive-ui";
+import { ChatbubblesOutline, SearchOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../components/IconAction.vue";
 import {
   deleteChatConversation,
@@ -24,36 +24,38 @@ import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
-const { chatScopeTitle, t, locale } = useI18n();
+const { t, locale } = useI18n();
 
 const dateLocale = computed(() => (locale.value === "zh" ? "zh-CN" : "en-US"));
 
 const scope = computed(() => String(route.params.scope || ""));
-const pageTitle = computed(() => chatScopeTitle(scope.value));
 
 const loading = ref(false);
 const batchDeleting = ref(false);
 const items = ref([]);
 const selectedIds = ref([]);
 const page = ref(1);
+const searchQuery = ref("");
+
+const filteredItems = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return items.value;
+  return items.value.filter((item) => {
+    const title = (item.title || "").toLowerCase();
+    return title.includes(q);
+  });
+});
 
 const pagedItems = computed(() => {
   const start = (page.value - 1) * LIST_PAGE_SIZE;
-  return items.value.slice(start, start + LIST_PAGE_SIZE);
+  return filteredItems.value.slice(start, start + LIST_PAGE_SIZE);
 });
+
+const filteredCount = computed(() => filteredItems.value.length);
 
 function onPageChange(next) {
   page.value = next;
 }
-
-const backTarget = computed(() => {
-  const fromReturn = resolveReturnTarget(route);
-  if (fromReturn) return fromReturn;
-  const meta = CHAT_SCOPES[scope.value];
-  if (!meta) return { name: "ai-home" };
-  if (meta.routeName) return { name: meta.routeName };
-  return { path: route.query.from || "/" };
-});
 
 const selectedCount = computed(() => selectedIds.value.length);
 const canBatchDelete = computed(() => selectedCount.value > 0 && !batchDeleting.value);
@@ -173,20 +175,14 @@ function formatTime(value) {
 
 onMounted(loadList);
 watch(scope, loadList);
+watch(searchQuery, () => {
+  page.value = 1;
+});
 </script>
 
 <template>
   <div class="chat-history-page">
     <header class="chat-history-header">
-      <n-button quaternary circle size="small" :aria-label="t('chatHistory.back')" @click="router.push(backTarget)">
-        <template #icon>
-          <n-icon :component="ArrowBackOutline" />
-        </template>
-      </n-button>
-      <div class="chat-history-header-text">
-        <h1 class="chat-history-title">{{ t("chatHistory.title") }}</h1>
-        <n-text depth="3">{{ pageTitle }}</n-text>
-      </div>
       <n-space align="center" :size="5" class="chat-history-actions">
         <IconAction
           :label="t('chatHistory.delete')"
@@ -197,28 +193,27 @@ watch(scope, loadList);
         />
       </n-space>
     </header>
-    <Teleport to="#header-page-tools">
-      <n-button
-        quaternary
-        circle
-        size="small"
-        class="header-icon-btn"
-        :class="{ 'header-icon-btn--spinning': loading }"
-        :aria-label="t('common.refresh')"
-        :disabled="loading"
-        @click="loadList"
-      >
-        <n-icon :size="14" :component="RefreshOutline" />
-      </n-button>
-    </Teleport>
 
     <div v-if="selectedCount > 0" class="chat-history-selection-hint">
       {{ t("common.selectedCount", { count: selectedCount }) }}
     </div>
 
+    <div class="chat-history-search">
+      <n-input
+        v-model:value="searchQuery"
+        :placeholder="t('chatHistory.searchPlaceholder')"
+        clearable
+        size="small"
+      >
+        <template #prefix>
+          <n-icon :component="SearchOutline" />
+        </template>
+      </n-input>
+    </div>
+
     <n-spin :show="loading" local>
-      <div v-if="!loading && !items.length" class="chat-history-empty">
-        <n-empty :description="t('chatHistory.empty')" />
+      <div v-if="!loading && !filteredCount" class="chat-history-empty">
+        <n-empty :description="searchQuery.trim() ? t('chatHistory.noSearchResults') : t('chatHistory.empty')" />
       </div>
       <div v-else class="admin-list-table">
         <ul class="chat-history-list">
@@ -243,7 +238,7 @@ watch(scope, loadList);
         <ListTableFooter
           :page="page"
           :page-size="LIST_PAGE_SIZE"
-          :item-count="items.length"
+          :item-count="filteredCount"
           @update:page="onPageChange"
         />
       </div>
@@ -255,19 +250,14 @@ watch(scope, loadList);
 .chat-history-page {
   max-width: 864px;
   margin: 0 auto;
-  padding: 19px 24px 38px;
+  padding: 16px 24px 38px;
 }
 
 .chat-history-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.chat-history-header-text {
-  flex: 1;
-  min-width: 0;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .chat-history-actions {
@@ -276,21 +266,17 @@ watch(scope, loadList);
 }
 
 .chat-history-selection-hint {
-  margin: -10px 0 14px;
-  font-size: 16px;
+  margin: -6px 0 10px;
+  font-size: 13px;
   color: #666;
 }
 
-.chat-history-title {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #0f172a;
-  line-height: 1.3;
+.chat-history-search {
+  margin-bottom: 12px;
 }
 
 .chat-history-empty {
-  padding: 58px 0;
+  padding: 48px 0;
 }
 
 .chat-history-list {
@@ -299,7 +285,7 @@ watch(scope, loadList);
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
   border-radius: var(--platform-card-radius);
   background: var(--platform-card-bg);
   border: 1px solid var(--platform-card-border-color);
@@ -310,8 +296,8 @@ watch(scope, loadList);
 .chat-history-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
+  gap: 8px;
+  padding: 0 8px;
 }
 
 .chat-history-row:not(:last-child) .chat-history-item {
@@ -327,8 +313,8 @@ watch(scope, loadList);
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 11px 12px;
+  gap: 10px;
+  padding: 8px 10px;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -343,12 +329,12 @@ watch(scope, loadList);
 
 .chat-history-item-icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--platform-accent);
   background: var(--platform-accent-soft);
 }
@@ -362,7 +348,7 @@ watch(scope, loadList);
 }
 
 .chat-history-item-title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--platform-text);
   overflow: hidden;
@@ -371,7 +357,7 @@ watch(scope, loadList);
 }
 
 .chat-history-item-time {
-  font-size: 14px;
+  font-size: 12px;
   color: var(--platform-text-tertiary);
 }
 </style>

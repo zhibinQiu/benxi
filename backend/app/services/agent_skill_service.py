@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.exceptions import bad_request, not_found
+from app.core.ttl_cache import ttl_cache
 from app.models.agent_skill import AgentSkill
 from app.models.org import User
 from app.schemas.agent_skill import (
@@ -832,6 +833,7 @@ def load_skill_workspace_bytes(db: Session, skill_id: uuid.UUID) -> dict[str, by
     return out
 
 
+@ttl_cache(ttl=3.0)
 def uploaded_skill_has_script(db: Session, skill_name: str) -> bool:
     """发展技能是否含可执行 Python / RPA 脚本。"""
     from app.integrations.skill_script_executor import skill_files_have_executable_script

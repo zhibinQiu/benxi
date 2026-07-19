@@ -6,7 +6,7 @@ name: invoke_skill
 ## When to use
 - 调用已绑定的系统 Skill（文档库 CRUD、技能开发等）
 - 文档库操作：invoke_skill(document-library, call, {operation, params})
-- 技能开发：invoke_skill(skill-development, call, {operation: create_skill, ...})
+- 技能开发：直接调用 create_skill（skill-dev 专精可用）
 
 ## When NOT to use
 - 可直接用原子工具一步完成的任务（优先走原子工具）

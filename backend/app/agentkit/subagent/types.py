@@ -48,7 +48,7 @@ class RetrievalAppender(Protocol):
 class ToolSpecBuilder(Protocol):
     """根据允许工具名集合构建 tool 规范列表。
 
-    None 表示继承父智能体的完整工具集（auto 模式）。
+    None 表示继承父智能体的完整工具集（所有子 Agent 默认行为）。
     """
 
     def __call__(self, allowed_tools: set[str] | None) -> list[dict[str, Any]]: ...
@@ -59,22 +59,17 @@ class ToolSpecBuilder(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SubagentKindConfig:
-    """单种 subagent 的行为配置。"""
+    """单种 subagent 的行为配置。
+
+    所有子 Agent 默认继承父智能体的完整工具集（allowed_tools=None）。
+    显式指定 allowed_tools 仅在需要限制子 Agent 工具范围时使用（如 search）。
+    """
 
     kind: str
-    allowed_tools: frozenset[str] | None
-    """None 表示继承父智能体工具集（auto 模式）。"""
-    system_contract: str
+    allowed_tools: frozenset[str] | None = None
+    """None 表示继承父智能体工具集（默认行为）。"""
+    system_contract: str = ""
     max_rounds: int = 8
-
-
-@dataclass(frozen=True, slots=True)
-class ExploreSkillStep:
-    """并行 explore 单步：skill_name + action + params 中的 query 键名。"""
-
-    skill_name: str
-    action: str
-    param_key: str = "query"
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +77,3 @@ class SubagentRuntime:
     """子 Agent 全局运行时配置。"""
 
     kinds: dict[str, SubagentKindConfig] = field(default_factory=dict)
-    explore_steps: tuple[ExploreSkillStep, ...] = ()
-    max_parallel_queries: int = 4
-    parallel_explore_min_queries: int = 2

@@ -226,7 +226,8 @@ async def chat_completion_message_async(
         return None
     try:
         api_key, base_url, model = resolve_credentials()
-    except Exception:
+    except Exception as exc:
+        logger.warning("LLM 凭据解析失败（非流式）: %s", exc)
         return None
     payload: dict[str, Any] = {
         "model": model,
@@ -249,7 +250,11 @@ async def chat_completion_message_async(
             choices = data.get("choices") or []
             return choices[0] if choices else None
     except Exception as exc:
-        logger.warning("LLM tool 调用失败: %s", exc)
+        logger.warning(
+            "LLM tool 调用失败 type=%s repr=%s",
+            type(exc).__name__,
+            repr(exc)[:200],
+        )
         return None
 
 
@@ -414,7 +419,8 @@ async def chat_completion_stream_choice(
         return
     try:
         api_key, base_url, model = resolve_credentials()
-    except Exception:
+    except Exception as exc:
+        logger.warning("LLM 凭据解析失败（流式）: %s", exc)
         return
     payload_messages = _prepare_messages_for_api(messages)
     payload: dict[str, Any] = {

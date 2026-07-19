@@ -1,4 +1,4 @@
-"""数据分析 — Excel 上传、对话生成代码、Notebook 单元格执行。"""
+"""表格分析 — Excel 上传、对话生成代码、Notebook 单元格执行。"""
 
 from __future__ import annotations
 
@@ -87,11 +87,13 @@ class SessionCreateIn(BaseModel):
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     dataset_id: str | None = None
+    repair_cell_id: str | None = None
 
 
 class ChatOut(BaseModel):
     reply: str
     cells_added: list[NotebookCellOut] = Field(default_factory=list)
+    cells_updated: list[NotebookCellOut] = Field(default_factory=list)
     session: SessionOut
 
 
@@ -112,3 +114,17 @@ class CellRunOut(BaseModel):
 class LlmCellDraft(BaseModel):
     title: str = "分析单元"
     code: str
+    update_cell_id: str | None = None
+
+
+class DataPreviewRow(BaseModel):
+    """预览数据的一行。"""
+    columns: list[str] = Field(default_factory=list)
+
+
+class DataPreviewOut(BaseModel):
+    """数据预览响应。"""
+    columns: list[str] = Field(default_factory=list)
+    rows: list[DataPreviewRow] = Field(default_factory=list)
+    total_rows: int = 0
+    preview_rows: int = 0

@@ -18,6 +18,10 @@ import {
   HardwareChipOutline,
   LeafOutline,
   CubeOutline,
+  CashOutline,
+  ClipboardOutline,
+  TrendingUpOutline,
+  JournalOutline,
 } from "@vicons/ionicons5";
 
 /** 与系统功能插件 icon 字段一致 */
@@ -41,6 +45,10 @@ export const FEATURE_ICON_MAP = Object.freeze({
   "hardware-chip": HardwareChipOutline,
   leaf: LeafOutline,
   "cube-outline": CubeOutline,
+  "cash-outline": CashOutline,
+  "trending-up": TrendingUpOutline,
+  "clipboard-outline": ClipboardOutline,
+  journal: JournalOutline,
 });
 
 export function resolveFeatureIcon(key) {

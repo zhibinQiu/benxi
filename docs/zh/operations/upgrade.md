@@ -2,7 +2,7 @@
 
 ## 版本号
 
-- 镜像 tag：`BENXI_VERSION`（默认 4.6.0，见根目录 `VERSION` 或 `.env.stack.example`）
+- 镜像 tag：`BENXI_VERSION`（默认 4.8.6，见根目录 `VERSION` 或 `.env.stack.example`）
 - 升级时 bump 版本并 rebuild / save / load
 
 ## 标准升级（stack）

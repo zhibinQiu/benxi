@@ -205,8 +205,7 @@ def test_rule_skill_management_never_direct_answer():
     assert plan is not None
     assert plan.direct_answer is False
     assert plan.source == "rule"
-    assert "invoke_skill" in " ".join(plan.steps)
-    assert "skill-development" in " ".join(plan.steps)
+    assert "create_skill" in " ".join(plan.steps)
     assert "list_agent_skills" not in " ".join(plan.steps)
     assert "invoke_context_subagent" in " ".join(plan.steps)
     assert "澄清" in " ".join(plan.steps)
@@ -266,7 +265,7 @@ def test_skill_management_plan_instruction_injected():
     assert plan is not None
     text = build_plan_context_instruction(plan)
     assert "invoke_context_subagent" in text
-    assert "invoke_skill" in text
+    assert "create_skill" in text
 
 
 def test_planning_system_prompt_includes_kg_disambiguation_when_requested():
@@ -290,6 +289,8 @@ def test_planning_system_prompt_omits_kg_block_by_default():
 
 
 def test_skill_first_plan_before_web_search():
+    from unittest.mock import MagicMock, patch
+
     from app.schemas.ai_chat import AiChatMessage
     from app.services.agent_planner import _rule_plan_for_uploaded_skill_followup
 
@@ -303,14 +304,21 @@ def test_skill_first_plan_before_web_search():
             content="已为您创建 carbon-market-price 技能。",
         ),
     ]
-    plan = _rule_plan_for_uploaded_skill_followup(
-        "广东",
-        history,
-        {"carbon-market-price"},
-    )
+    with patch(
+        "app.services.agent_skill_service.uploaded_skill_has_script",
+        return_value=True,
+    ):
+        plan = _rule_plan_for_uploaded_skill_followup(
+            MagicMock(),
+            MagicMock(),
+            "广东",
+            history,
+            {"carbon-market-price"},
+        )
     assert plan is not None
     assert plan.uploaded_skill == "carbon-market-price"
     assert ATOMIC_TOOL_WEB_SEARCH not in plan.allowed_tools
+    assert any("kind=use" in s for s in plan.steps)
 
 
 def test_rule_platform_system_data_requires_list_users():
@@ -401,14 +409,23 @@ def test_rule_uploaded_skill_followup_after_carbon_skill_creation():
             content="已为您创建 carbon-market-price 技能，可直接用自然语言查询各地碳价。",
         ),
     ]
-    plan = _rule_plan_for_uploaded_skill_followup(
-        "北京",
-        history,
-        {"carbon-market-price"},
-    )
+    from unittest.mock import MagicMock, patch
+
+    with patch(
+        "app.services.agent_skill_service.uploaded_skill_has_script",
+        return_value=True,
+    ):
+        plan = _rule_plan_for_uploaded_skill_followup(
+            MagicMock(),
+            MagicMock(),
+            "北京",
+            history,
+            {"carbon-market-price"},
+        )
     assert plan is not None
     assert plan.uploaded_skill == "carbon-market-price"
     assert plan.direct_answer is False
+    assert any("kind=use" in s for s in plan.steps)
 
 
 def test_hello_after_stock_question_does_not_inherit_carbon_skill():

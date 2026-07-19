@@ -215,7 +215,6 @@ watch(
             @keyup.enter="onSmartSubmit"
           />
           <NButton
-            type="primary"
             size="small"
             class="subscriptions-search-hub__submit"
             :loading="itemsLoading || ingesting"
@@ -229,8 +228,7 @@ watch(
       <div class="subscriptions-body">
         <NSpin :show="itemsLoading || loading" class="list-spin" local>
           <div class="subscriptions-list-scroll">
-            <div v-if="items.length" class="subscriptions-card">
-              <div class="subscriptions-serp-list" role="list">
+            <div v-if="items.length" class="subscriptions-feed" role="list">
               <article
                 v-for="a in items"
                 :key="a.ref"
@@ -257,7 +255,7 @@ watch(
                   <div class="serp-result-item__actions">
                   <NButton
                     v-if="a.imported"
-                    size="tiny"
+                    size="small"
                     secondary
                     disabled
                     class="serp-result-item__import-btn serp-result-item__imported-btn"
@@ -266,7 +264,7 @@ watch(
                   </NButton>
                   <NButton
                     v-else
-                    size="tiny"
+                    size="small"
                     secondary
                     :loading="importingRefs.has(a.ref)"
                     class="serp-result-item__import-btn"
@@ -277,7 +275,6 @@ watch(
                 </div>
                 </div>
               </article>
-            </div>
             </div>
             <div v-else-if="!loading && !itemsLoading" class="subscriptions-empty">
               <NEmpty :description="t('subscriptions.emptySearch')" />
@@ -359,15 +356,8 @@ watch(
 
 .subscriptions-search-hub__submit {
   flex-shrink: 0;
+  padding-inline: 16px;
   border-radius: 1199px;
-  padding-inline: 20px;
-}
-
-.subscriptions-search-hub__submit,
-.subscriptions-search-hub__submit:focus,
-.subscriptions-search-hub__submit:hover,
-.subscriptions-search-hub__submit:active {
-  border: none !important;
 }
 
 /* ── Body ── */
@@ -404,20 +394,14 @@ watch(
   -webkit-overflow-scrolling: touch;
 }
 
-.subscriptions-card {
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-card-radius);
-  background: var(--platform-card-bg);
-  overflow: hidden;
-}
-
-.subscriptions-serp-list {
+.subscriptions-feed {
   display: flex;
   flex-direction: column;
   width: 100%;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  gap: 8px;
 }
 
 .subscriptions-empty {
@@ -434,24 +418,20 @@ watch(
   box-sizing: border-box;
   text-align: left;
   cursor: pointer;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--platform-border);
-  transition: background-color 0.18s ease;
+  background: var(--platform-card-bg);
+  border: 1px solid var(--platform-border);
+  border-radius: var(--platform-card-radius);
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .serp-result-item:hover {
   background: var(--platform-accent-soft);
 }
 
-.serp-result-item:last-child {
-  border-bottom: none;
-}
-
 .serp-result-item__title {
   margin: 0 0 6px;
   font-size: var(--platform-font-size-lg);
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.4;
   letter-spacing: -0.01em;
   color: var(--platform-text);

@@ -868,3 +868,24 @@ def fetch_web_article(url: str, *, timeout: float = 25.0) -> ParsedFeedEntry:
         f"网页解析失败：{hint}。"
         "已尝试 http/https 与多种浏览器标识；若仍失败，请检查链接是否需要登录。"
     )
+
+
+def fetch_web_article_fast(url: str, *, timeout: float = 8.0) -> ParsedFeedEntry:
+    """搜索场景用的轻量版：单 URL 单次尝试，不解析变体、不多组 UA，超时即放弃。
+
+    专为 _enrich_items_with_full_text 设计，SearXNG 搜索结果通常是可访问的公开网页，
+    不需要完整的候选 URL 探测逻辑。
+    """
+    url = _normalize_input_url(url)
+    site_kind = detect_site_kind(url)
+    headers = _request_header_sets(url)[0]
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            attempt = _attempt_fetch(client, url, headers)
+    except Exception:
+        logger.debug("fetch_web_article_fast failed url=%s timeout=%s", url, timeout)
+        raise WebArticleFetchError("快速抓取超时或失败")
+
+    if attempt is None:
+        raise WebArticleFetchError("快速抓取无结果")
+    return attempt.entry

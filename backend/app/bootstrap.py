@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -50,18 +52,19 @@ def _seed_permissions_and_roles(db: Session) -> None:
             perm.name = name
         code_to_perm[code] = perm
 
+    # 一次加载全部 RolePermission，按 role_id 分组
+    all_rp = db.scalars(select(RolePermission)).all()
+    existing_by_role: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for rp in all_rp:
+        existing_by_role.setdefault(rp.role_id, set()).add(rp.permission_id)
+
     for role_code, spec in DEFAULT_ROLES.items():
         role = db.scalar(select(Role).where(Role.code == role_code))
         if not role:
             role = Role(code=role_code, name=spec["name"])
             db.add(role)
             db.flush()
-        existing = {
-            rp.permission_id
-            for rp in db.scalars(
-                select(RolePermission).where(RolePermission.role_id == role.id)
-            ).all()
-        }
+        existing = existing_by_role.get(role.id, set())
         for pcode in spec["permissions"]:
             perm = code_to_perm.get(pcode)
             if not perm:
@@ -73,12 +76,24 @@ def _seed_permissions_and_roles(db: Session) -> None:
 
 
 def _sync_plugin_role_grants(db: Session) -> None:
-    """按插件 ``grant_to_roles`` 为角色补齐功能权限（升级兼容）。"""
+    """按插件 ``grant_to_roles`` 为角色补齐功能权限（升级兼容）。
+
+    一次加载全部 RolePermission 后做内存判断，避免远程数据库 N+1 查询。
+    """
     code_to_perm = {
         p.code: p
         for p in db.scalars(select(Permission)).all()
     }
     role_by_code = {r.code: r for r in db.scalars(select(Role)).all()}
+
+    # 一次加载全部 RolePermission → {(role_id, permission_id)}
+    all_rp = db.scalars(select(RolePermission)).all()
+    rp_by_key: dict[tuple[uuid.UUID, uuid.UUID], RolePermission] = {
+        (rp.role_id, rp.permission_id): rp for rp in all_rp
+    }
+
+    to_add: list[RolePermission] = []
+    to_delete: list[RolePermission] = []
 
     for plugin in all_plugins():
         perm = code_to_perm.get(plugin.permission_code)
@@ -87,16 +102,20 @@ def _sync_plugin_role_grants(db: Session) -> None:
         target_roles = set(plugin.grant_to_roles) | {"sys_admin"}
         for role_code, role in role_by_code.items():
             should_have = role_code in target_roles
-            rp = db.scalar(
-                select(RolePermission).where(
-                    RolePermission.role_id == role.id,
-                    RolePermission.permission_id == perm.id,
-                )
-            )
-            if should_have and not rp:
-                db.add(RolePermission(role_id=role.id, permission_id=perm.id))
-            elif not should_have and rp:
-                db.delete(rp)
+            key = (role.id, perm.id)
+            rp = rp_by_key.get(key)
+            if should_have and rp is None:
+                rp = RolePermission(role_id=role.id, permission_id=perm.id)
+                to_add.append(rp)
+                rp_by_key[key] = rp
+            elif not should_have and rp is not None:
+                to_delete.append(rp)
+                del rp_by_key[key]
+
+    for rp in to_add:
+        db.add(rp)
+    for rp in to_delete:
+        db.delete(rp)
 
     db.commit()
 

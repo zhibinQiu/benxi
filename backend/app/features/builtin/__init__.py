@@ -10,6 +10,7 @@ def register_builtin_plugins() -> None:
         ai_home,  # noqa: F401
         ai_tools,  # noqa: F401
         carbon_ai_v1,  # noqa: F401
+        carbon_assistant,  # noqa: F401
         carbon_platform_v3,  # noqa: F401
         carbon_qa_v2,  # noqa: F401 — 注册 id=carbon_qa
         compare,  # noqa: F401
@@ -27,5 +28,8 @@ def register_builtin_plugins() -> None:
         subscriptions,  # noqa: F401
         todos,  # noqa: F401
         translate,  # noqa: F401
+        finance_assistant,  # noqa: F401
         wechat_mp_feed,  # noqa: F401
+        prompt_management,  # noqa: F401
+        note,  # noqa: F401
     )

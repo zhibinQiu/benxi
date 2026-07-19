@@ -187,15 +187,26 @@
 .n-button.icon-action.n-button--circle:not(.table-icon-action):not(.header-icon-btn) {
   border-radius: var(--platform-card-radius) !important;
 }
-/* theme 变体：hover 时灰色背景 */
+/* theme 变体：hover 时加深灰色背景 */
 .n-button.icon-action.icon-action--theme:not(.table-icon-action):not(.header-icon-btn):hover {
-  background: var(--platform-toolbar-bg) !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
 }
 
 /* ── 6. 禁用按钮 ── */
 .n-button.n-button--disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* primary / info 禁用态：灰色背景代替降透明度 */
+.n-button.n-button--primary-type.n-button--disabled,
+.n-button.n-button--info-type.n-button--disabled {
+  opacity: 1;
+  background: var(--platform-bg-tertiary) !important;
+  border: none !important;
+  color: var(--platform-text-tertiary) !important;
+  --n-color: var(--platform-bg-tertiary) !important;
+  --n-text-color: var(--platform-text-tertiary) !important;
 }
 
 /* ── 7. 系统确认弹窗取消按钮（ghost） ── */
@@ -209,3 +220,23 @@
   background: var(--platform-bg-tertiary) !important;
   border-color: var(--platform-border) !important;
 }
+
+/* ── 8. 全局图标按钮统一样式（除侧边栏）：灰色半透明背板 ── */
+/* 覆盖所有非侧边栏的 quaternary circle 按钮，统一灰色背板 */
+.app-main .n-button.n-button--quaternary-type.n-button--circle {
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent) !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.app-main .n-button.n-button--quaternary-type.n-button--circle:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
+}
+.app-main .n-button.n-button--quaternary-type.n-button--circle:active:not(:disabled) {
+  background: var(--platform-bg-tertiary) !important;
+}
+
+/* ── 9. 列表行内操作按钮尺寸
+ *    约定：列表/卡片行操作统一 size="small"（高度 --btn-height-sm）。
+ *    图标操作列走 .table-icon-action（同高度 token）。
+ *    勿再为单页覆盖 height/font-size。
+ * ── */

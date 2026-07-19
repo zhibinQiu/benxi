@@ -39,6 +39,22 @@ _INTERNAL_OUTCOME_PREFIXES = (
     "请求调度协助",
 )
 
+# 工具操作回顾 — 仅描述了工具做了什么，不含实质结果数据
+_TOOL_ACTION_REPLAY_PREFIXES = (
+    "使用联网搜索查询",
+    "使用联网搜索搜索",
+    "使用搜索引擎查询",
+    "联网检索返回",
+    "使用浏览器访问",
+    "使用浏览器打开",
+    "获取网页内容",
+    "读取文档正文",
+    "正在搜索",
+    "已读取",
+    "发起搜索",
+    "发起检索",
+)
+
 _SKILL_RUN_OUTCOME_MARKERS = (
     "运行 Skill 脚本",
     "自动执行 Skill",
@@ -76,6 +92,17 @@ def is_internal_tool_outcome_line(line: str) -> bool:
         if text.startswith(f"{prefix}：") or text.startswith(f"{prefix}:"):
             return True
         if prefix == "请求调度协助" and text.startswith(prefix):
+            return True
+    return False
+
+
+def is_tool_action_replay_line(line: str) -> bool:
+    """工具操作回顾行——仅描述工具执行了什么操作，不含实质结果数据。"""
+    text = (line or "").strip()
+    if not text:
+        return True
+    for prefix in _TOOL_ACTION_REPLAY_PREFIXES:
+        if text.startswith(prefix):
             return True
     return False
 
@@ -119,6 +146,9 @@ def has_deliverable_evidence(loop_state: LoopState | None) -> bool:
         return True
     if list(state.get("citations") or []):
         return True
+    # 子智能体已回传结论（use/search/execute）也算证据，供父层综合
+    if latest_subagent_summary(state):
+        return True
     return False
 
 
@@ -129,8 +159,32 @@ def latest_subagent_summary(loop_state: LoopState | None) -> str:
         return ""
     last = summaries[-1]
     if isinstance(last, dict):
-        return str(last.get("summary") or "").strip()
-    return str(last or "").strip()
+        text = str(last.get("summary") or "").strip()
+    else:
+        text = str(last or "").strip()
+    if not text or text in ("子 Agent 未产出有效摘要",):
+        return ""
+    return text
+
+
+def _subagent_summary_is_thin(summary: str) -> bool:
+    """execute 步骤路径常只回「tool: 完成」类薄摘要，不足以单独支撑终稿。"""
+    import re
+
+    text = (summary or "").strip()
+    if not text:
+        return True
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return True
+    status_re = re.compile(
+        r"^[\w.\-_/]+:\s*(完成|ok|success|成功|已执行)\s*$",
+        re.IGNORECASE,
+    )
+    return all(
+        status_re.match(ln) or ln.lower() in ("完成", "ok", "success", "成功", "已执行")
+        for ln in lines
+    )
 
 
 def build_deliverable_evidence_block(loop_state: LoopState | None) -> str:
@@ -139,6 +193,7 @@ def build_deliverable_evidence_block(loop_state: LoopState | None) -> str:
     parts: list[str] = []
 
     subagent = latest_subagent_summary(state)
+    thin_subagent = bool(subagent) and _subagent_summary_is_thin(subagent)
     if subagent:
         parts.append(f"【子智能体结论（优先引用）】\n{subagent[:6000]}")
 
@@ -149,7 +204,8 @@ def build_deliverable_evidence_block(loop_state: LoopState | None) -> str:
         if text:
             parts.append(f"【文档正文 · {title}】\n{text[:24000]}")
 
-    if not subagent:
+    # 无摘要或摘要过薄时保留检索材料，避免 execute 状态行淹没正文证据
+    if not subagent or thin_subagent:
         retrieval = "\n\n".join(
             str(x).strip()
             for x in (state.get("retrieval_context_parts") or [])
@@ -167,9 +223,14 @@ def build_deliverable_evidence_block(loop_state: LoopState | None) -> str:
         parts.append(f"【脚本结论】\n{skill[:4000]}")
 
     tool_lines = [
-        str(x).strip() for x in (state.get("tool_outcome_lines") or []) if str(x).strip()
+        str(x).strip()
+        for x in (state.get("tool_outcome_lines") or [])
+        if str(x).strip()
+        and not _outcome_line_failed(str(x))
+        and not is_internal_tool_outcome_line(str(x))
+        and not is_tool_action_replay_line(str(x))
     ]
-    if tool_lines and not subagent:
+    if tool_lines and (not subagent or thin_subagent):
         parts.append("【工具执行记录】\n" + "\n".join(f"- {line}" for line in tool_lines[-10:]))
 
     return "\n\n".join(parts).strip()
@@ -340,7 +401,10 @@ def request_fulfilled(
     loop_state: LoopState | None,
     user_message: str,
 ) -> bool:
-    """子任务是否已有可交付成果（工具执行记录本身不算完成）。"""
+    """子任务是否已有可交付成果。
+
+    检索过程摘要不算完成；定时提醒/发送通知等写操作成功后算完成。
+    """
     state = loop_state or {}
     deliverable = str(state.get("task_deliverable") or "").strip()
     if deliverable and is_substantive_deliverable(deliverable):
@@ -351,6 +415,9 @@ def request_fulfilled(
         return True
     if is_skill_management_message(user_message):
         return skill_management_goal_satisfied(state, user_message)
+    # 定时提醒 / 发送通知等写操作已成功 → 任务完成，避免再进一轮重复调用
+    if _action_outcome_reply(state):
+        return True
     return False
 
 
@@ -548,24 +615,51 @@ def build_tool_outcome_summary(loop_state: LoopState | None) -> list[str]:
     return lines[-12:]
 
 
-def fallback_tool_loop_reply(user_message: str, loop_state: LoopState | None) -> str:
-    det = str((loop_state or {}).get("deterministic_reply") or "").strip()
+def _true_deliverable_reply(loop_state: LoopState | None) -> str | None:
+    """结构化交付物（确定性答复 / 脚本结论），不含工具状态清单。"""
+    from app.agentkit.message.filter import has_mermaid_deliverable
+
+    state = loop_state or {}
+    det = str(state.get("deterministic_reply") or "").strip()
     if det:
         return det
-    presentable = presentable_skill_conclusion(loop_state)
+    task = str(state.get("task_deliverable") or "").strip()
+    if task and (has_mermaid_deliverable(task) or is_substantive_deliverable(task)):
+        return task
+    presentable = presentable_skill_conclusion(state)
     if presentable:
         return presentable
+    return None
+
+
+def _action_outcome_reply(loop_state: LoopState | None) -> str | None:
+    """已完成的动作确认（如定时通知）可作为快速回复；检索过程摘要不行。"""
+    lines = [
+        line
+        for line in user_facing_tool_outcome_lines(loop_state)
+        if not is_tool_action_replay_line(line) and not looks_like_tool_status_echo(line)
+    ]
+    if not lines:
+        return None
+    if len(lines) == 1 and "\n" in lines[0]:
+        return lines[0]
+    return "\n".join(f"- {line}" for line in lines)
+
+
+def fallback_tool_loop_reply(user_message: str, loop_state: LoopState | None) -> str:
+    """无 LLM 合成时的兜底。禁止把「联网检索返回 N 条」类过程摘要当作用户答案。"""
+    deliverable = _true_deliverable_reply(loop_state)
+    if deliverable:
+        return deliverable
     if is_skill_management_message(user_message):
         created_reply = skill_creation_user_reply(loop_state)
         if created_reply:
             return created_reply
         if not skill_management_goal_satisfied(loop_state, user_message):
             return incomplete_skill_management_reply(user_message)
-    lines = build_tool_outcome_summary(loop_state)
-    if lines:
-        if len(lines) == 1 and "\n" in lines[0]:
-            return lines[0]
-        return "\n".join(f"- {line}" for line in lines)
+    action = _action_outcome_reply(loop_state)
+    if action:
+        return action
     _ = user_message
     return "抱歉，这次没能完成您的请求。您可以补充更具体的要求，或稍后再试，我会继续帮您处理。"
 
@@ -574,7 +668,7 @@ def _resolve_tool_loop_reply_fast(
     user_message: str,
     loop_state: LoopState | None,
 ) -> str | None:
-    """无需 LLM 的用户可见回复（handoff / 规则 / 工具摘要）。"""
+    """快速路径：真正交付物 / 动作确认。检索类证据必须走 LLM 综合。"""
     state = dict(loop_state or {})
     handoff = build_specialist_handoff(state, user_message)
     if handoff.ok and handoff.text:
@@ -590,6 +684,11 @@ def _resolve_tool_loop_reply_fast(
         )
 
     if state.get("expects_skill_data"):
+        deliverable = _true_deliverable_reply(state) or _action_outcome_reply(state)
+        if deliverable:
+            return deliverable
+        if has_deliverable_evidence(state):
+            return None  # 有检索/工具证据 → LLM 综合
         return (
             "抱歉，这次未能自动获取到您要的最新数据。"
             "请稍后再试，或补充更具体的查询条件。"
@@ -597,9 +696,7 @@ def _resolve_tool_loop_reply_fast(
 
     if is_skill_management_message(user_message):
         if skill_management_goal_satisfied(state, user_message):
-            reply = skill_creation_user_reply(state) or fallback_tool_loop_reply(
-                user_message, state
-            )
+            reply = skill_creation_user_reply(state) or _true_deliverable_reply(state)
             if reply and "没能完成" not in reply and "抱歉" not in reply[:4]:
                 return reply
         return incomplete_skill_management_reply(user_message)
@@ -607,19 +704,20 @@ def _resolve_tool_loop_reply_fast(
     from app.services.agent_skill_router import user_wants_browser_screenshot
 
     if user_wants_browser_screenshot(user_message) and state.get("collected_attachments"):
-        lines = build_tool_outcome_summary(state)
-        if lines:
-            if len(lines) == 1 and "\n" in lines[0]:
-                return lines[0]
-            return "\n".join(f"- {line}" for line in lines)
         return "已完成您要求的浏览器操作，页面截图如下。"
 
-    summary_reply = fallback_tool_loop_reply(user_message, state)
-    if summary_reply and "没能完成" not in summary_reply:
-        return summary_reply
+    action = _action_outcome_reply(state)
+    if action:
+        return action
+
+    # 有检索正文等证据 → LLM 综合；禁止把过程摘要当答案
+    if state.get("retrieval_context_parts") or presentable_skill_conclusion(state):
+        return None
     if user_facing_tool_outcome_lines(state):
-        return summary_reply
-    return None
+        # 仅过程摘要时也走综合（综合侧用 retrieval / 子结论；无材料则 fallback）
+        return None
+
+    return _true_deliverable_reply(state)
 
 
 def build_tool_loop_user_synthesis_messages(

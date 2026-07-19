@@ -206,6 +206,7 @@ def document_detail(
         can_modify=can_modify,
         can_edit=can_modify,
         can_delete=can_modify,
+        share_token=doc.share_token if can_modify else None,
         versions=[
             version_out(db, doc, v, user=user, index_meta=version_meta)
             for v in version_rows

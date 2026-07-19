@@ -31,7 +31,6 @@ def test_parse_routing_md_sections():
 
 def test_load_skills_routing_md_has_core_skills():
     entries = load_skills_routing_md()
-    assert "skill-development" in entries
     assert "free-web-ai" in entries
 
 

@@ -131,7 +131,7 @@ async function handleAddMount(key) {
       <NText depth="3" style="font-size: var(--platform-font-size-sm)">
         {{ t("admin.agentSkills.knowledgeMountsHint") }}
       </NText>
-      <NButton size="tiny" secondary class="platform-btn--create" @click="openPicker">
+      <NButton size="small" secondary class="platform-btn--create" @click="openPicker">
         <template #icon><AddOutline /></template>
         {{ t("admin.agentSkills.addKnowledgeMount") }}
       </NButton>
@@ -206,7 +206,7 @@ async function handleAddMount(key) {
                 </div>
               </div>
               <NButton
-                size="tiny"
+                size="small"
                 type="primary"
                 secondary
                 class="platform-btn--create"

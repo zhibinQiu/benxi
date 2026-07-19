@@ -30,7 +30,9 @@ import {
   FolderOpenOutline,
   TrashOutline,
   GitNetworkOutline,
-  LibraryOutline } from "@vicons/ionicons5";
+  LibraryOutline,
+  LinkOutline,
+} from "@vicons/ionicons5";
 import FileDropZone from "../components/FileDropZone.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import ListRefreshButton from "../components/ListRefreshButton.vue";
@@ -197,9 +199,16 @@ function formatTime(sec) {
 
 function speakerColor(speaker) {
   const n = parseInt(String(speaker).replace(/\D/g, ""), 10) || 1;
-  const colors = ["#2080f0", "#3385ff", "#f0a020", "#d03050", "#5b9cf5"];
+  // 仅使用平台既有色：accent / accent-secondary / caution / danger / accent-hover
+  const colors = ["#0a6bff", "#3b82ff", "#e25507", "#BE1743", "#0058e0"];
   return colors[(n - 1) % colors.length];
 }
+
+const sourceModeOptions = computed(() => [
+  { key: "record", label: t("speechToText.browserRecord"), icon: MicOutline },
+  { key: "upload", label: t("speechToText.uploadFile"), icon: CloudUploadOutline },
+  { key: "videoUrl", label: t("speechToText.videoUrl"), icon: LinkOutline },
+]);
 
 function segmentsToText(segs) {
   return segs.map((s) => `${s.speaker} [${formatTime(s.start)}]: ${s.text}`).join("\n");
@@ -742,7 +751,7 @@ onBeforeUnmount(() => {
           <template #icon><n-icon :component="FolderOpenOutline" /></template>
           {{ t('speechToText.meetingRecords') }}
         </n-button>
-        <n-button type="primary" secondary :disabled="!canSave" :loading="saving" @click="openSaveModal">
+        <n-button quaternary :disabled="!canSave" :loading="saving" @click="openSaveModal">
           <template #icon><n-icon :component="SaveOutline" /></template>
           {{ t('speechToText.save') }}
         </n-button>
@@ -784,7 +793,7 @@ onBeforeUnmount(() => {
               <n-text depth="3" style="font-size: 14px">
                 {{ formatRecordTime(viewingRecord.created_at) }}
               </n-text>
-              <n-button size="small" type="primary" @click="applyRecordToEditor(viewingRecord)">
+              <n-button size="small" secondary @click="applyRecordToEditor(viewingRecord)">
                 {{ t('speechToText.loadToEditor') }}
               </n-button>
               <n-button
@@ -817,14 +826,17 @@ onBeforeUnmount(() => {
               <n-text strong style="font-size: 16px">{{ t('speechToText.transcript') }}</n-text>
               <div class="record-segments">
                 <div v-for="(seg, i) in viewingRecord.segments" :key="i" class="segment-row">
-                  <n-tag
-                    size="small"
-                    :bordered="false"
-                    :style="{ background: speakerColor(seg.speaker) + '22', color: speakerColor(seg.speaker) }"
-                  >
-                    {{ seg.speaker }}
-                  </n-tag>
-                  <n-text depth="3" class="seg-time">{{ formatTime(seg.start) }}</n-text>
+                  <div class="segment-meta">
+                    <n-tag
+                      size="small"
+                      :bordered="false"
+                      round
+                      :style="{ background: speakerColor(seg.speaker) + '18', color: speakerColor(seg.speaker) }"
+                    >
+                      {{ seg.speaker }}
+                    </n-tag>
+                    <n-text depth="3" class="seg-time">{{ formatTime(seg.start) }}</n-text>
+                  </div>
                   <n-text class="seg-text">{{ seg.text }}</n-text>
                 </div>
               </div>
@@ -835,14 +847,17 @@ onBeforeUnmount(() => {
                   :key="i"
                   class="summary-block"
                 >
-                  <n-tag
-                    size="small"
-                    :bordered="false"
-                    :style="{ background: speakerColor(blk.speaker) + '22', color: speakerColor(blk.speaker) }"
-                  >
-                    {{ blk.speaker }}
-                  </n-tag>
-                  <n-text depth="3" class="blk-time">{{ blk.time_range }}</n-text>
+                  <div class="segment-meta">
+                    <n-tag
+                      size="small"
+                      :bordered="false"
+                      round
+                      :style="{ background: speakerColor(blk.speaker) + '18', color: speakerColor(blk.speaker) }"
+                    >
+                      {{ blk.speaker }}
+                    </n-tag>
+                    <n-text depth="3" class="blk-time">{{ blk.time_range }}</n-text>
+                  </div>
                   <n-text class="blk-summary">{{ blk.summary }}</n-text>
                 </div>
               </template>
@@ -869,7 +884,7 @@ onBeforeUnmount(() => {
                     </n-tag>
                   </n-text>
                 </div>
-                <n-button size="tiny" quaternary type="error" @click.stop="confirmDeleteRecord(item)">
+                <n-button size="small" quaternary type="error" @click.stop="confirmDeleteRecord(item)">
                   <template #icon><n-icon :component="TrashOutline" /></template>
                 </n-button>
               </div>
@@ -914,154 +929,165 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="speech-layout">
-          <n-card :title="t('speechToText.audioSource')" class="panel panel-source">
-            <div class="panel-body">
-            <n-space vertical :size="19" class="source-space">
-              <n-space :size="10">
-                <n-button
-                  :type="sourceMode === 'record' ? 'primary' : 'default'"
-                  :secondary="sourceMode !== 'record'"
-                  @click="sourceMode = 'record'"
-                >
-                  {{ t('speechToText.browserRecord') }}
-                </n-button>
-                <n-button
-                  :type="sourceMode === 'upload' ? 'primary' : 'default'"
-                  :secondary="sourceMode !== 'upload'"
-                  @click="sourceMode = 'upload'"
-                >
-                  {{ t('speechToText.uploadFile') }}
-                </n-button>
-                <n-button
-                  :type="sourceMode === 'videoUrl' ? 'primary' : 'default'"
-                  :secondary="sourceMode !== 'videoUrl'"
-                  @click="sourceMode = 'videoUrl'"
-                >
-                  {{ t('speechToText.videoUrl') }}
-                </n-button>
-              </n-space>
+        <n-card :title="t('speechToText.audioSource')" size="small" class="panel panel-source">
+          <div class="panel-body">
+            <div class="source-mode-switch" role="tablist">
+              <button
+                v-for="opt in sourceModeOptions"
+                :key="opt.key"
+                type="button"
+                role="tab"
+                class="source-mode-btn"
+                :class="{ 'source-mode-btn--active': sourceMode === opt.key }"
+                :aria-selected="sourceMode === opt.key"
+                @click="sourceMode = opt.key"
+              >
+                <n-icon :component="opt.icon" :size="15" />
+                <span>{{ opt.label }}</span>
+              </button>
+            </div>
 
-              <div v-if="sourceMode === 'record'" class="record-block source-main">
+            <div v-if="sourceMode === 'record'" class="record-block source-main" :class="{ 'record-block--live': recording }">
+              <div class="record-stage">
+                <div class="record-timer" :class="{ 'record-timer--live': recording }">
+                  <span v-if="recording" class="record-pulse" aria-hidden="true" />
+                  <span class="record-timer-text">{{ formatDuration(recordSeconds) }}</span>
+                </div>
                 <audio-waveform
                   :stream="recordStream"
                   :active="recording"
-                  :height="120"
+                  :height="100"
+                  :placeholder="t('speechToText.wavePlaceholder')"
                 />
-                <n-space align="center" :size="14" wrap>
-                  <n-button
-                    :type="recording ? 'error' : 'primary'"
-                    :secondary="recording"
-                    :disabled="!configured"
-                    @click="toggleRecording"
-                  >
-                    <template #icon>
-                      <n-icon :component="recording ? StopCircleOutline : MicOutline" />
-                    </template>
-                    {{ recording ? t('speechToText.stopRecording') : t('speechToText.startRecording') }}
-                  </n-button>
-                  <n-tag v-if="recording && streamRecognize" type="warning" size="small" :bordered="false">
+              </div>
+
+              <div class="record-controls">
+                <n-button
+                  :type="recording ? 'error' : 'default'"
+                  :secondary="recording"
+                  size="medium"
+                  :disabled="!configured"
+                  @click="toggleRecording"
+                >
+                  <template #icon>
+                    <n-icon :component="recording ? StopCircleOutline : MicOutline" />
+                  </template>
+                  {{ recording ? t('speechToText.stopRecording') : t('speechToText.startRecording') }}
+                </n-button>
+                <div class="record-status-tags">
+                  <n-tag v-if="recording && streamRecognize" type="info" size="small" :bordered="false" round>
                     <template #icon>
                       <n-icon :component="RadioOutline" />
                     </template>
                     {{ t('speechToText.liveTranscribing') }}
                   </n-tag>
-                  <n-tag v-if="pendingStreamCount" size="small" :bordered="false">
+                  <n-tag v-if="pendingStreamCount" size="small" :bordered="false" round>
                     {{ t('speechToText.segmentsRecognizing', { count: pendingStreamCount }) }}
                   </n-tag>
-                </n-space>
-                <n-text depth="3" class="record-hint">{{ recordHint }}</n-text>
-                <n-checkbox v-model:checked="streamRecognize" :disabled="recording">
-                  {{ t('speechToText.streamRecognizeLabel') }}
-                </n-checkbox>
-                <div v-if="liveSegments.length" class="live-segments">
-                  <div
-                    v-for="item in liveSegments"
-                    :key="item.id"
-                    class="live-seg-row"
-                    :class="item.status"
-                  >
-                    <n-tag size="tiny" :type="item.status === 'done' ? 'success' : item.status === 'error' ? 'error' : 'info'">
-                      {{ item.timeLabel }}
-                    </n-tag>
-                    <n-spin v-if="item.status === 'transcribing'" size="small" />
-                    <n-text class="live-seg-text">{{ item.text || t('speechToText.recognizing') }}</n-text>
-                  </div>
                 </div>
               </div>
 
-              <div v-else-if="sourceMode === 'upload'" class="upload-fill source-main">
-                <file-drop-zone
-                  accept="audio/*,.webm,.wav,.mp3,.m4a,.ogg,.flac"
-                  :title="t('speechToText.uploadDropTitle')"
-                  :hint="t('speechToText.uploadMaxSize', { mb: meta?.max_file_mb || 100 })"
-                  :file-name="audioFile?.name || ''"
-                  icon="upload"
-                  :disabled="!configured"
-                  @change="onUploadChange"
-                />
-              </div>
-
-              <div v-else class="video-url-block source-main">
-                <n-input
-                  v-model:value="videoUrl"
-                  type="textarea"
-                  :placeholder="t('speechToText.videoUrlPlaceholder')"
-                  :autosize="{ minRows: 3, maxRows: 5 }"
-                  :disabled="!configured"
-                />
-                <n-text depth="3" class="video-url-hint">
-                  {{ t('speechToText.videoUrlHint', { mb: meta?.max_file_mb || 100 }) }}
-                </n-text>
-              </div>
-
-              <div v-if="audioFile && sourceMode !== 'videoUrl'" class="audio-actions">
-                <n-text depth="3">{{ t('speechToText.audioReady', { name: audioFile.name }) }}</n-text>
-                <n-button size="small" quaternary @click="resetAll">{{ t('speechToText.clear') }}</n-button>
-              </div>
-
-              <div>
-                <n-text class="field-label">{{ t('speechToText.recognizeLanguage') }}</n-text>
-                <n-select v-model:value="language" :options="languageOptions" />
-              </div>
-
-              <n-checkbox
-                v-model:checked="diarize"
-                :disabled="!meta?.diarization_available"
-              >
-                {{ t('speechToText.diarize') }}
+              <n-text depth="3" class="record-hint">{{ recordHint }}</n-text>
+              <n-checkbox v-model:checked="streamRecognize" :disabled="recording" class="stream-check">
+                {{ t('speechToText.streamRecognizeLabel') }}
               </n-checkbox>
 
-              <n-checkbox
-                v-if="meta?.summarize_available"
-                v-model:checked="autoSummarize"
-              >
-                {{ t('speechToText.autoSummarize') }}
-              </n-checkbox>
-
-              <n-button
-                type="primary"
-                block
-                :loading="transcribing"
-                :disabled="!canTranscribe"
-                @click="runTranscribe"
-              >
-                <template #icon>
-                  <n-icon :component="CloudUploadOutline" />
-                </template>
-                {{
-                  streamRecognize && segments.length
-                    ? t('speechToText.retranscribeAll')
-                    : t('speechToText.startTranscribe')
-                }}
-              </n-button>
-            </n-space>
+              <div v-if="liveSegments.length" class="live-segments">
+                <div
+                  v-for="item in liveSegments"
+                  :key="item.id"
+                  class="live-seg-row"
+                  :class="item.status"
+                >
+                  <n-tag size="tiny" :type="item.status === 'done' ? 'success' : item.status === 'error' ? 'error' : 'info'" round>
+                    {{ item.timeLabel }}
+                  </n-tag>
+                  <n-spin v-if="item.status === 'transcribing'" :size="14" />
+                  <n-text class="live-seg-text">{{ item.text || t('speechToText.recognizing') }}</n-text>
+                </div>
+              </div>
             </div>
-          </n-card>
 
-          <div class="speech-output-column">
-          <n-card :title="t('speechToText.transcriptResult')" class="panel panel-transcript">
+            <div v-else-if="sourceMode === 'upload'" class="upload-fill source-main">
+              <file-drop-zone
+                accept="audio/*,.webm,.wav,.mp3,.m4a,.ogg,.flac"
+                :title="t('speechToText.uploadDropTitle')"
+                :hint="t('speechToText.uploadMaxSize', { mb: meta?.max_file_mb || 100 })"
+                :file-name="audioFile?.name || ''"
+                icon="upload"
+                :disabled="!configured"
+                @change="onUploadChange"
+              />
+            </div>
+
+            <div v-else class="video-url-block source-main">
+              <div class="video-url-icon">
+                <n-icon :component="LinkOutline" :size="22" />
+              </div>
+              <n-input
+                v-model:value="videoUrl"
+                type="textarea"
+                :placeholder="t('speechToText.videoUrlPlaceholder')"
+                :autosize="{ minRows: 3, maxRows: 5 }"
+                :disabled="!configured"
+              />
+              <n-text depth="3" class="video-url-hint">
+                {{ t('speechToText.videoUrlHint', { mb: meta?.max_file_mb || 100 }) }}
+              </n-text>
+            </div>
+
+            <div v-if="audioFile && sourceMode !== 'videoUrl'" class="audio-actions">
+              <n-text depth="3" class="audio-ready-text">{{ t('speechToText.audioReady', { name: audioFile.name }) }}</n-text>
+              <n-button size="small" quaternary @click="resetAll">{{ t('speechToText.clear') }}</n-button>
+            </div>
+
+            <div class="speech-options">
+              <n-text class="options-title">{{ t('speechToText.optionsTitle') }}</n-text>
+              <div class="options-field">
+                <n-text class="field-label">{{ t('speechToText.recognizeLanguage') }}</n-text>
+                <n-select v-model:value="language" :options="languageOptions" size="small" />
+              </div>
+              <div class="options-checks">
+                <n-checkbox
+                  v-model:checked="diarize"
+                  :disabled="!meta?.diarization_available"
+                >
+                  {{ t('speechToText.diarize') }}
+                </n-checkbox>
+                <n-checkbox
+                  v-if="meta?.summarize_available"
+                  v-model:checked="autoSummarize"
+                >
+                  {{ t('speechToText.autoSummarize') }}
+                </n-checkbox>
+              </div>
+            </div>
+
+            <n-button
+              type="primary"
+              block
+              size="medium"
+              class="transcribe-btn"
+              :loading="transcribing"
+              :disabled="!canTranscribe"
+              @click="runTranscribe"
+            >
+              <template #icon>
+                <n-icon :component="CloudUploadOutline" />
+              </template>
+              {{
+                streamRecognize && segments.length
+                  ? t('speechToText.retranscribeAll')
+                  : t('speechToText.startTranscribe')
+              }}
+            </n-button>
+          </div>
+        </n-card>
+
+        <div class="speech-output-column">
+          <n-card :title="t('speechToText.transcriptResult')" size="small" class="panel panel-transcript">
             <template #header-extra>
-              <n-button size="small" quaternary :disabled="!transcript" @click="copyText(transcript)">
+              <n-button size="tiny" quaternary :disabled="!transcript" @click="copyText(transcript)">
                 <template #icon><n-icon :component="CopyOutline" /></template>
                 {{ t('speechToText.copy') }}
               </n-button>
@@ -1070,16 +1096,22 @@ onBeforeUnmount(() => {
             <div class="panel-body">
               <div v-if="segments.length" class="segment-list">
                 <div v-for="(seg, i) in segments" :key="i" class="segment-row">
-                  <n-tag
-                    size="small"
-                    :bordered="false"
-                    :style="{ background: speakerColor(seg.speaker) + '22', color: speakerColor(seg.speaker) }"
-                  >
-                    {{ seg.speaker }}
-                  </n-tag>
-                  <n-text depth="3" class="seg-time">{{ formatTime(seg.start) }}</n-text>
+                  <div class="segment-meta">
+                    <n-tag
+                      size="small"
+                      :bordered="false"
+                      round
+                      :style="{ background: speakerColor(seg.speaker) + '18', color: speakerColor(seg.speaker) }"
+                    >
+                      {{ seg.speaker }}
+                    </n-tag>
+                    <n-text depth="3" class="seg-time">{{ formatTime(seg.start) }}</n-text>
+                  </div>
                   <n-text class="seg-text">{{ seg.text }}</n-text>
                 </div>
+              </div>
+              <div v-else-if="!transcript" class="panel-empty">
+                <n-text depth="3">{{ t('speechToText.transcriptEmpty') }}</n-text>
               </div>
 
               <div class="textarea-fill">
@@ -1092,18 +1124,18 @@ onBeforeUnmount(() => {
             </div>
           </n-card>
 
-          <n-card :title="t('speechToText.smartSummary')" class="panel panel-summary">
-            <template #header-extra>
-              <n-space :size="10">
+          <n-card :title="t('speechToText.smartSummary')" size="small" class="panel panel-summary">
+            <div class="panel-body">
+              <div class="summary-toolbar">
                 <n-select
                   v-model:value="summaryStyle"
                   :options="summaryStyleOptions"
                   size="small"
-                  style="width: 144px"
+                  class="summary-style-select"
                 />
                 <n-button
                   size="small"
-                  type="primary"
+                  secondary
                   :loading="summarizing"
                   :disabled="!canSummarize"
                   @click="runSummarize"
@@ -1111,51 +1143,60 @@ onBeforeUnmount(() => {
                   <template #icon><n-icon :component="SparklesOutline" /></template>
                   {{ t('speechToText.generateSummary') }}
                 </n-button>
-                <n-button
-                  size="small"
-                  quaternary
-                  :disabled="!buildSummaryExportText()"
-                  @click="copyText(buildSummaryExportText())"
-                >
-                  {{ t('speechToText.copy') }}
-                </n-button>
-                <n-button
-                  v-if="hasPerm('feature.kg')"
-                  size="small"
-                  quaternary
-                  :loading="importingKg"
-                  :disabled="!canImportKg"
-                  @click="runImportKg()"
-                >
-                  <template #icon><n-icon :component="GitNetworkOutline" /></template>
-                  {{ t('speechToText.importKg') }}
-                </n-button>
-                <n-button
-                  size="small"
-                  quaternary
-                  :loading="importingLibrary"
-                  :disabled="!canImportLibrary"
-                  @click="runImportLibrary()"
-                >
-                  <template #icon><n-icon :component="LibraryOutline" /></template>
-                  {{ t('speechToText.importLibrary') }}
-                </n-button>
-              </n-space>
-            </template>
-            <div class="panel-body">
+                <div class="summary-toolbar-actions">
+                  <n-button
+                    size="tiny"
+                    quaternary
+                    :disabled="!buildSummaryExportText()"
+                    @click="copyText(buildSummaryExportText())"
+                  >
+                    <template #icon><n-icon :component="CopyOutline" /></template>
+                    {{ t('speechToText.copy') }}
+                  </n-button>
+                  <n-button
+                    v-if="hasPerm('feature.kg')"
+                    size="tiny"
+                    quaternary
+                    :loading="importingKg"
+                    :disabled="!canImportKg"
+                    @click="runImportKg()"
+                  >
+                    <template #icon><n-icon :component="GitNetworkOutline" /></template>
+                    {{ t('speechToText.importKg') }}
+                  </n-button>
+                  <n-button
+                    size="tiny"
+                    quaternary
+                    :loading="importingLibrary"
+                    :disabled="!canImportLibrary"
+                    @click="runImportLibrary()"
+                  >
+                    <template #icon><n-icon :component="LibraryOutline" /></template>
+                    {{ t('speechToText.importLibrary') }}
+                  </n-button>
+                </div>
+              </div>
+
               <div v-if="summaryBlocks.length" class="summary-blocks">
                 <div v-for="(blk, i) in summaryBlocks" :key="i" class="summary-block">
-                  <n-tag
-                    size="small"
-                    :bordered="false"
-                    :style="{ background: speakerColor(blk.speaker) + '22', color: speakerColor(blk.speaker) }"
-                  >
-                    {{ blk.speaker }}
-                  </n-tag>
-                  <n-text depth="3" class="blk-time">{{ blk.time_range }}</n-text>
+                  <div class="segment-meta">
+                    <n-tag
+                      size="small"
+                      :bordered="false"
+                      round
+                      :style="{ background: speakerColor(blk.speaker) + '18', color: speakerColor(blk.speaker) }"
+                    >
+                      {{ blk.speaker }}
+                    </n-tag>
+                    <n-text depth="3" class="blk-time">{{ blk.time_range }}</n-text>
+                  </div>
                   <n-text class="blk-summary">{{ blk.summary }}</n-text>
                 </div>
               </div>
+              <div v-else-if="!summary" class="panel-empty panel-empty--compact">
+                <n-text depth="3">{{ t('speechToText.summaryEmpty') }}</n-text>
+              </div>
+
               <div class="textarea-fill">
                 <n-input
                   v-model:value="summary"
@@ -1170,22 +1211,13 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </n-card>
-          </div>
+        </div>
       </div>
     </n-spin>
   </FeatureSubsystemShell>
 </template>
 
 <style scoped>
-.speech-page {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  max-width: none;
-  margin: 0;
-}
 .speech-spin {
   flex: 1;
   min-height: 0;
@@ -1194,9 +1226,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding-top: 14px;
+  padding-top: 8px;
+  overflow-y: auto;
 }
-.speech-spin :deep(.n-spin-container) {
+.speech-spin :deep(.n-spin-container),
+.speech-spin :deep(.n-spin-content) {
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -1209,56 +1243,81 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .speech-layout {
-  flex: 1;
-  min-height: 0;
+  flex: none;
   min-width: 0;
   max-width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-  gap: 19px;
-  align-items: stretch;
+  grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.2fr);
+  gap: 16px;
+  align-items: start;
   box-sizing: border-box;
-  overflow: hidden;
+  padding-bottom: 24px;
 }
 .speech-output-column {
   display: flex;
   flex-direction: column;
-  gap: 19px;
-  min-height: 0;
+  gap: 16px;
+  min-width: 0;
 }
 .panel {
-  border-radius: 12px;
-  min-height: 0;
+  border-radius: var(--platform-card-radius, 12px);
   min-width: 0;
   max-width: 100%;
   display: flex;
   flex-direction: column;
-}
-.panel :deep(.n-card) {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  background: var(--platform-card-bg, var(--platform-bg-elevated));
 }
 .panel :deep(.n-card__content) {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 .panel-body {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
-.panel-source .source-space {
-  width: 100%;
-  height: 100%;
+
+/* 来源模式分段切换 */
+.source-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--platform-radius-sm, 9px);
+  background: var(--platform-bg-secondary);
+  flex-shrink: 0;
+}
+.source-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 6px;
+  border: none;
+  border-radius: var(--platform-radius-xs, 6px);
+  background: transparent;
+  color: var(--platform-text-secondary);
+  font: inherit;
+  font-size: var(--platform-font-size-sm, 12px);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.18s var(--platform-ease-smooth),
+    color 0.18s var(--platform-ease-smooth),
+    box-shadow 0.18s var(--platform-ease-smooth);
+}
+.source-mode-btn:hover {
+  color: var(--platform-text);
+  background: color-mix(in srgb, var(--platform-bg-elevated) 70%, transparent);
+}
+.source-mode-btn--active {
+  color: var(--platform-accent);
+  background: var(--platform-bg-elevated-solid, #fff);
+  box-shadow: var(--platform-shadow-sm);
 }
 .source-main {
-  flex: 1;
-  min-height: 240px;
+  min-height: 200px;
 }
 .upload-fill {
   display: flex;
@@ -1266,76 +1325,150 @@ onBeforeUnmount(() => {
 .upload-fill :deep(.drop-zone) {
   flex: 1;
   width: 100%;
-  min-height: 216px;
+  min-height: 180px;
 }
 .video-url-block {
-  flex: 1;
-  min-height: 216px;
+  min-height: 180px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px;
-  border-radius: 10px;
-  border: 1px dashed var(--platform-border-strong);
+  padding: 16px;
+  border-radius: var(--platform-radius-sm, 9px);
+  border: 1px solid var(--platform-border-strong);
   background: var(--platform-bg-secondary);
 }
+.video-url-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--platform-radius-xs, 6px);
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+}
 .video-url-hint {
-  font-size: 14px;
+  font-size: var(--platform-font-size-sm, 12px);
   line-height: 1.5;
 }
 .panel-transcript,
 .panel-summary {
-  flex: 1;
-  min-height: 0;
+  min-height: 280px;
 }
 .textarea-fill {
-  flex: 1;
-  min-height: 192px;
+  min-height: 160px;
   display: flex;
 }
 .textarea-fill :deep(.n-input) {
   height: 100%;
+  min-height: 160px;
 }
 .textarea-fill :deep(textarea) {
   height: 100% !important;
-  min-height: 192px;
-  resize: none;
+  min-height: 160px;
+  resize: vertical;
+  font-size: var(--platform-font-size-base, 13px);
+  line-height: var(--platform-line-body, 1.55);
 }
 .page-alert {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
+
+/* 录音区 */
 .record-block {
-  flex: 1;
-  min-height: 240px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 14px;
-  padding: 19px;
-  border-radius: 10px;
-  border: 1px dashed var(--platform-border-strong);
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--platform-radius-sm, 9px);
+  border: 1px solid var(--platform-border-strong);
   background: var(--platform-bg-secondary);
+  transition: border-color 0.2s var(--platform-ease-smooth);
+}
+.record-block--live {
+  border-color: var(--platform-accent-border);
+}
+.record-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.record-timer {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: var(--platform-radius-pill);
+  background: var(--platform-bg-elevated-solid, #fff);
+  border: 1px solid var(--platform-border);
+  color: var(--platform-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.record-timer--live {
+  color: var(--platform-danger);
+  border-color: color-mix(in srgb, var(--platform-danger) 28%, var(--platform-border));
+  background: var(--platform-danger-soft);
+}
+.record-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--platform-danger);
+  animation: speech-pulse 1.2s var(--platform-ease-smooth) infinite;
+}
+.record-timer-text {
+  font-size: var(--platform-font-size-sm, 12px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+@keyframes speech-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+.record-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.record-status-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .record-hint {
-  font-size: 16px;
+  font-size: var(--platform-font-size-sm, 12px);
+  line-height: 1.45;
+}
+.stream-check {
+  font-size: var(--platform-font-size-sm, 12px);
 }
 .live-segments {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  flex: 1;
-  min-height: 96px;
-  max-height: none;
+  gap: 8px;
+  max-height: 160px;
   overflow-y: auto;
-  padding: 10px;
-  border-radius: 7px;
-  background: var(--platform-bg-tertiary);
+  padding: 8px;
+  border-radius: var(--platform-radius-xs, 6px);
+  background: var(--platform-bg-elevated-solid, #fff);
+  border: 1px solid var(--platform-border);
 }
 .live-seg-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  font-size: 16px;
+  gap: 8px;
+  font-size: var(--platform-font-size-sm, 12px);
 }
 .live-seg-row.error .live-seg-text {
   color: var(--platform-danger);
@@ -1348,110 +1481,173 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--platform-radius-xs, 6px);
+  background: var(--platform-accent-soft);
+  border: 1px solid var(--platform-accent-border-soft);
+}
+.audio-ready-text {
+  font-size: var(--platform-font-size-sm, 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 转写选项 */
+.speech-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--platform-radius-sm, 9px);
+  background: var(--platform-bg-secondary);
+  border: 1px solid var(--platform-border);
+  flex-shrink: 0;
+}
+.options-title {
+  font-size: var(--platform-font-size-sm, 12px);
+  font-weight: 600;
+  color: var(--platform-text);
+}
+.options-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .field-label {
   display: block;
-  font-size: 14px;
-  margin-bottom: 7px;
+  font-size: var(--platform-font-size-sm, 12px);
+  color: var(--platform-text-secondary);
 }
-.segment-list {
+.options-checks {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  flex: 0 1 auto;
-  max-height: 38%;
-  min-height: 86px;
-  overflow-y: auto;
+  gap: 6px;
 }
-.segment-row {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: 10px;
-  align-items: start;
-  font-size: 16px;
+.transcribe-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
-.seg-time {
-  font-size: 14px;
-  white-space: nowrap;
-}
-.seg-text {
-  line-height: 1.5;
-}
+
+/* 转写时间线 */
+.segment-list,
 .summary-blocks,
 .record-segments {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  flex: 0 1 auto;
-  max-height: 42%;
+  gap: 8px;
+  max-height: 240px;
   overflow-y: auto;
+  padding-right: 2px;
 }
+.segment-row,
 .summary-block {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: 10px;
-  align-items: start;
-  font-size: 16px;
-  padding: 12px;
-  border-radius: 10px;
-  background: var(--platform-bg-tertiary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--platform-radius-xs, 6px);
+  background: var(--platform-bg-secondary);
+  border: 1px solid transparent;
+  transition: border-color 0.16s var(--platform-ease-smooth);
 }
+.segment-row:hover,
+.summary-block:hover {
+  border-color: var(--platform-border-strong);
+}
+.segment-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seg-time,
 .blk-time {
-  font-size: 14px;
+  font-size: var(--platform-font-size-xs, 9px);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.seg-text,
 .blk-summary {
-  line-height: 1.5;
+  font-size: var(--platform-font-size-base, 13px);
+  line-height: var(--platform-line-body, 1.55);
+  color: var(--platform-text);
 }
+
+.summary-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.summary-style-select {
+  width: 128px;
+}
+.summary-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  padding: 16px;
+  border-radius: var(--platform-radius-xs, 6px);
+  border: 1px dashed var(--platform-border-strong);
+  background: var(--platform-bg-secondary);
+  text-align: center;
+  font-size: var(--platform-font-size-sm, 12px);
+}
+.panel-empty--compact {
+  min-height: 48px;
+  padding: 12px;
+}
+
 .record-list-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 17px;
-  border-radius: calc(var(--platform-radius-sm) + 2px);
+  padding: 12px 14px;
+  border-radius: var(--platform-radius-sm, 9px);
   border: 1px solid var(--platform-border);
   background: var(--platform-bg-elevated);
-  box-shadow: none;
   cursor: default;
   transition:
     background 0.16s var(--platform-ease-smooth),
-    box-shadow 0.16s var(--platform-ease-smooth),
     border-color 0.16s var(--platform-ease-smooth);
 }
-
 .record-list-item:hover {
   border-color: color-mix(in srgb, var(--platform-accent) 22%, var(--platform-border));
-  box-shadow:
-    inset 4px 0 0 var(--platform-accent),
-    none;
+  box-shadow: inset 3px 0 0 var(--platform-accent);
 }
-
 .record-list-main {
   flex: 1;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
+  min-width: 0;
 }
 
-.record-list-main:hover {
-  opacity: 1;
-}
 @media (max-width: 900px) {
-  .speech-spin {
-    overflow-y: auto;
-  }
   .speech-layout {
     grid-template-columns: 1fr;
-    flex: none;
-    min-height: min(85vh, 1080px);
   }
-  .speech-output-column {
-    min-height: 576px;
+  .source-mode-btn span {
+    display: none;
   }
-  .panel-transcript,
-  .panel-summary {
-    min-height: 336px;
+  .source-mode-btn {
+    padding: 10px;
+  }
+  .summary-toolbar-actions {
+    margin-left: 0;
+    width: 100%;
   }
 }
 </style>

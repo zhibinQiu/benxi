@@ -330,7 +330,7 @@ def test_baidu_search_with_screenshot_routes_rpa():
 
         routes = _resolve_agent_routes(db, user, "百度搜索双碳并查看结果截图。")
         assert routes
-        assert routes[0].agent_id == "rpa"
+        assert routes[0].agent_id == "orchestrator"
     finally:
         db.close()
 
@@ -355,7 +355,7 @@ def test_baidu_screenshot_prefers_rpa_with_skill_history():
             chat_history=history,
         )
         assert routes
-        assert routes[0].agent_id == "rpa"
+        assert routes[0].agent_id == "orchestrator"
     finally:
         db.close()
 

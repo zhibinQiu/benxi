@@ -1,30 +1,35 @@
 ---
 name: invoke_context_subagent
 ---
-联网检索/深度调研的统一入口——委托子 Agent 执行联网检索。
-所有需要上网查信息/调研/研究的需求统一使用此工具。
-browser_digest→浏览器自动化页面取证；explore→多源并行检索；deep_research→联网检索与深度调研。
+委托子 Agent 执行任务的统一入口。父智能体只编排（可见范围=本 Agent 已挂载工具/技能），子智能体才执行。
+
+- kind=search：多源检索（文档+联网+本体+图谱）；可选 `queries` 并行关键词
+- kind=use：执行已有 Skill（子层按需 `invoke_skill` / `load_uploaded_skill` / `run_skill_script`）
+- kind=execute：严格按父编排的 `steps` 执行（浏览器自动化、定时通知等）；工具面=父挂载集 − 技能直执入口
 
 ## When to use
-- 所有需要联网获取信息的情况（这是唯一的联网检索入口）
-- deep_research：联网检索 + 深度调研——子 Agent 自主分析意图、多关键词搜索、FireCrawl 读全文、交叉验证
-- explore：内部知识多源并行检索（web-search + knowledge-search + kg），省 Token
-- browser_digest：浏览器页面取证，打开指定 URL 获取页面内容与结构
-- skill-dev 创建 Skill 时的纯主题检索（无浏览器操作）
+- 已知 Skill 名或用户说「请使用 xxx-skill」→ kind=use
+- 浏览器操作（导航/点击/截图等）→ kind=execute + steps
+- 深度多源调研 → kind=search
 
 ## When NOT to use
-- 已知 Skill 名（直接用 invoke_skill）
+- 一步可完成的轻量原子工具（如单次 `web_search`、发通知）→ 父层可直接调用
+- 纯常识问答 → 直接回答
 
 ## Returns
-- 结构化调研/检索/取证结果
+- 结构化调研/技能/编排执行结果
 
 ## Parameters
 
 ### kind (required)
-子 Agent 类型：deep_research（联网检索/深度调研）、explore（并行检索）、browser_digest（页面取证）。
+子 Agent 类型：search / use / execute。
 
-### task (optional)
-单子任务描述。最长 1200 字符。deep_research 传入用户的查询或调研问题。
+### task
+任务描述（search/use 用）。最长 1200 字符。
 
 ### queries (optional)
-explore 专用：2-4 个 query 并行检索。deep_research 不需要此字段，子 Agent 会自主分析意图并生成搜索关键词。
+search 可选：2–4 个关键词并行检索；不传则子 Agent 自主生成搜索词。
+
+### steps (optional)
+execute 专用：父智能体编排的步骤列表。子 Agent 严格按序执行，不自主决策。
+步骤中的工具必须已挂载到当前父智能体；`invoke_skill` / `run_skill_script` 等技能直执入口会被拒绝（改用 kind=use）。

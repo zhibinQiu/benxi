@@ -81,6 +81,9 @@ class Document(Base):
         nullable=True,
         index=True,
     )
+    share_token: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
 
     versions: Mapped[list["DocumentVersion"]] = relationship(
         back_populates="document",

@@ -8,7 +8,6 @@ FALLBACK_AGENT_ID = "orchestrator"
 
 ROUTE_REASONS: dict[str, str] = {
     "platform": "平台信息 / 待办 / 系统数据",
-    "rpa": "浏览器自动化 / 网页交互",
     "skill-dev": "Skill 创建/更新/执行",
     "orchestrator": "通用交流",
 }

@@ -1,4 +1,4 @@
-"""数据分析 API — Excel 上传、对话生成代码、Notebook 执行。"""
+"""表格分析 API — Excel 上传、对话生成代码、Notebook 执行。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from app.schemas.data_analysis import (
     ChatIn,
     ChatOut,
     DataAnalysisMetaOut,
+    DataPreviewOut,
     DatasetUploadOut,
     SessionCreateIn,
     SessionOut,
@@ -94,11 +95,12 @@ async def chat(
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[ChatOut]:
-    reply, cells_added, session = await svc.chat(
+    reply, cells_added, cells_updated, session = await svc.chat(
         user_id=user.id,
         session_id=session_id,
         message=body.message,
         dataset_id=body.dataset_id,
+        repair_cell_id=body.repair_cell_id,
     )
     write_audit(
         db,
@@ -108,12 +110,35 @@ async def chat(
         detail={
             "session_id": session_id,
             "cells_added": len(cells_added),
+            "cells_updated": len(cells_updated),
         },
         ip_address=client_ip,
     )
     return ApiResponse(
-        data=ChatOut(reply=reply, cells_added=cells_added, session=session)
+        data=ChatOut(
+            reply=reply,
+            cells_added=cells_added,
+            cells_updated=cells_updated,
+            session=session,
+        )
     )
+
+
+@router.get(
+    "/sessions/{session_id}/preview",
+    response_model=ApiResponse[DataPreviewOut],
+)
+def preview_data(
+    session_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    limit: int = 20,
+) -> ApiResponse[DataPreviewOut]:
+    preview = svc.preview_dataset(
+        user_id=user.id,
+        session_id=session_id,
+        limit=min(limit, 100),
+    )
+    return ApiResponse(data=preview)
 
 
 @router.put("/sessions/{session_id}/cells/{cell_id}", response_model=ApiResponse[CellRunOut])

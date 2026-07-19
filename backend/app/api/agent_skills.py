@@ -113,13 +113,16 @@ def patch_builtin_skill(
     db: Annotated[Session, Depends(get_db)],
     client_ip: Annotated[str | None, Depends(get_client_ip)] = None,
 ) -> ApiResponse[UnifiedSkillOut]:
-    result = registry_svc.patch_builtin_skill(db, skill_name, enabled=body.enabled)
+    result = registry_svc.patch_builtin_skill(
+        db, skill_name, enabled=body.enabled,
+        title=body.title, description=body.description,
+    )
     write_audit(
         db,
         user_id=user.id,
         action="agent_skill.builtin_patch",
         resource_type="agent_skill",
-        detail={"name": skill_name, "enabled": body.enabled},
+        detail={"name": skill_name, "enabled": body.enabled, "title": body.title, "description": body.description},
         ip_address=client_ip,
     )
     return ApiResponse(data=result)

@@ -41,8 +41,8 @@ AGENT_PROFILES: tuple[AgentProfileDef, ...] = (
     AgentProfileDef(
         id="orchestrator",
         title="小析",
-        description="通用智能体：处理大多数日常任务——联网/知识库/图谱检索、AI对话/生图/识图、图表绘制。"
-        "仅在需要领域专精操作（平台数据CRUD、浏览器自动化、定时通知、Skill开发、长报告撰写）时路由到对应专精。",
+        description="调度智能体：负责任务理解、分配与验收。可见已挂载工具/技能并编排；"
+        "执行委托子智能体或路由专精 Agent。",
         default_runtime_tool_names=_tools_for("orchestrator"),
         skills_configurable=True,
         sort_order=0,
@@ -64,14 +64,6 @@ AGENT_PROFILES: tuple[AgentProfileDef, ...] = (
         default_runtime_tool_names=_tools_for("report"),
         skills_configurable=True,
         sort_order=21,
-    ),
-    AgentProfileDef(
-        id="rpa",
-        title="浏览器自动化",
-        description="无头浏览器：网页导航、搜索填表、点击截图、流程录制与回放。以浏览器操作为目的，非 Skill 开发调研。",
-        default_skill_names=_skills_for("rpa"),
-        default_runtime_tool_names=_tools_for("rpa"),
-        sort_order=30,
     ),
     AgentProfileDef(
         id="skill-dev",
@@ -97,6 +89,15 @@ AGENT_PROFILES: tuple[AgentProfileDef, ...] = (
         default_runtime_tool_names=_tools_for("power-economy"),
         skills_configurable=True,
         sort_order=45,
+    ),
+    AgentProfileDef(
+        id="stock",
+        title="股市分析",
+        description="股市分析领域：个股基本面深度解读、多角色圆桌对抗性研究（含基本面与短线两个研究方向）、量价技术面诊断与决策参考。",
+        default_skill_names=_skills_for("stock"),
+        default_runtime_tool_names=_tools_for("stock"),
+        skills_configurable=True,
+        sort_order=47,
     ),
 )
 

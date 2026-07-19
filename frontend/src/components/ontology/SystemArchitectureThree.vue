@@ -389,6 +389,7 @@ function init() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setSize(w, h);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x0a0a14, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.85;
   wrapper.appendChild(renderer.domElement);
@@ -656,6 +657,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background: #0a0a14;
 }
 
 .three-arch__canvas {

@@ -74,6 +74,24 @@ def merge_child_into_parent(
         bucket = child_loop_state.get(key)
         if isinstance(bucket, list) and bucket:
             parent_loop_state.setdefault(key, []).extend(bucket)
+    # 技能/交付物标量：子结论必须回传，否则父层终稿证据为空
+    for key in ("last_skill_conclusion", "deterministic_reply", "task_deliverable"):
+        child_val = child_loop_state.get(key)
+        if child_val and not parent_loop_state.get(key):
+            parent_loop_state[key] = child_val
+    child_invoked = list(child_loop_state.get("invoked_uploaded_skills") or [])
+    if child_invoked:
+        parent_invoked = list(parent_loop_state.get("invoked_uploaded_skills") or [])
+        for name in child_invoked:
+            n = str(name or "").strip()
+            if n and n not in parent_invoked:
+                parent_invoked.append(n)
+        parent_loop_state["invoked_uploaded_skills"] = parent_invoked
+    child_atts = list(child_loop_state.get("collected_attachments") or [])
+    if child_atts:
+        parent_atts = list(parent_loop_state.get("collected_attachments") or [])
+        parent_atts.extend(child_atts)
+        parent_loop_state["collected_attachments"] = parent_atts
     retrieval = str(child_loop_state.get("retrieval_context") or "").strip()
     if retrieval and append_retrieval is not None:
         append_retrieval(parent_loop_state, retrieval)

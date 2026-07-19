@@ -2,16 +2,6 @@
 
 from __future__ import annotations
 
-from app.core.tool_skill_taxonomy import (
-    SKILL_BROWSER_AUTOMATION,
-    SKILL_DEPT_ADMIN,
-    SKILL_DOCUMENT_LIBRARY,
-    SKILL_NOTIFICATION,
-    SKILL_PLATFORM_OPS,
-    SKILL_SKILL_DEV,
-    SKILL_USER_ADMIN,
-)
-from app.skills.builtin import domain_handlers as dh
 from app.skills.builtin import handlers as h
 from app.skills.registry import register_skill
 from app.skills.types import SkillDefinition, SkillReadiness, SkillSource, SkillToolSpec
@@ -43,82 +33,9 @@ def _stub_tool(
     )
 
 
-def _domain_call_spec(
-    *,
-    description: str,
-    allowed_hint: str,
-    handler,
-) -> SkillToolSpec:
-    return SkillToolSpec(
-        name="call",
-        description=description,
-        parameters={
-            "type": "object",
-            "required": ["operation"],
-            "properties": {
-                "operation": {
-                    "type": "string",
-                    "description": f"原子操作名。允许：{allowed_hint}",
-                },
-                "params": {
-                    "type": "object",
-                    "description": "传给该操作的参数（与原子 Tool schema 一致）",
-                    "additionalProperties": True,
-                },
-            },
-            "additionalProperties": True,
-        },
-        handler=handler,
-    )
-
-
 def register_builtin_skills() -> None:
     specs: list[SkillDefinition] = [
-        # 以下为真正的技能（编排工作流 / 指令集），保留
-        SkillDefinition(
-            name="deep-research",
-            title="深度研究",
-            description=(
-                "对复杂课题进行多轮、多角度的互联网深度调研：分析问题、拆解子主题、"
-                "生成多组搜索关键词、FireCrawl 读取网页全文、跨源交叉验证矛盾数据、"
-                "输出带引用的结构化研究报告。适合需要深入调研的复杂问题。"
-            ),
-            source=SkillSource.BUILTIN,
-            feature_id=None,
-            readiness=SkillReadiness.READY,
-            catalog_visible=True,
-            catalog_tier="resident",
-            use_when=(
-                "需对复杂课题进行深度调研、多个角度交叉验证、"
-                "获取最新数据和多方观点时使用"
-            ),
-            dont_use_when=(
-                "简单知识查询（直接用 web_search / knowledge_retrieve）、"
-                "内部知识库检索、浏览器自动化操作"
-            ),
-            output=(
-                "带引用的结构化研究报告（含研究概述、关键发现、多源数据对比、矛盾说明）"
-            ),
-            tools=(
-                SkillToolSpec(
-                    name="call",
-                    description=(
-                        "对指定课题进行深度联网调研，委托子 Agent 执行多轮搜索与交叉验证"
-                    ),
-                    parameters={
-                        "type": "object",
-                        "required": ["task"],
-                        "properties": {
-                            "task": {
-                                "type": "string",
-                                "description": "研究课题/问题描述，应包含足够的上下文和具体需求",
-                            },
-                        },
-                    },
-                    handler=h.handle_deep_research,
-                ),
-            ),
-        ),
+        # ── 前端路由 Stub Skill（占位用，无真实编排） ────────────
         SkillDefinition(
             name="pdf-translate",
             title="PDF 翻译",
@@ -241,8 +158,8 @@ def register_builtin_skills() -> None:
         ),
         SkillDefinition(
             name="data-analysis",
-            title="数据分析",
-            description="用户上传 Excel/CSV 并要求统计分析或可视化时使用。",
+            title="表格分析",
+            description="用户上传 Excel/CSV 并要求对表格进行统计、清洗、转换、可视化等处理时使用。",
             source=SkillSource.BUILTIN,
             feature_id="data_analysis",
             permission_code="feature.data_analysis",
@@ -251,9 +168,9 @@ def register_builtin_skills() -> None:
             catalog_visible=True,
             tools=(
                 _stub_tool(
-                    "analyze_dataset",
-                    "对数据集执行统计分析",
-                    feature_title="数据分析",
+                    "process_table",
+                    "对表格数据执行清洗、转换、统计、可视化等处理",
+                    feature_title="表格分析",
                     route="/system/data-analysis",
                 ),
             ),
@@ -277,7 +194,7 @@ def register_builtin_skills() -> None:
                 ),
             ),
         ),
-        # --- 免费网页 AI Skill（真正的多步编排工作流） ---
+        # ── 免费网页 AI Skill（真正的多步编排工作流） ───────
         SkillDefinition(
             name="free-web-ai",
             title="免费 AI 工具",
@@ -293,7 +210,7 @@ def register_builtin_skills() -> None:
             catalog_visible=True,
             catalog_tier="resident",
             use_when="需要免费 AI 对话、代码生成、文案、翻译、生图、识图等任务，且不想用付费 API",
-            dont_use_when="企业内部知识库检索（用 knowledge-search）、平台 CRUD、需联网获取最新信息（用 web_search）、需要精确构图或高分辨率出图（推荐用专业工具）、纯 OCR 提取（用 ocr feature）",
+            dont_use_when="企业内部知识库检索（用 invoke_context_subagent(kind=search)）、平台 CRUD、需联网获取最新信息（用 invoke_context_subagent(kind=search)）、需要精确构图或高分辨率出图（推荐用专业工具）、纯 OCR 提取（用 ocr feature）",
             output="AI 文本回复 / 图片 / 图片内容描述",
             tools=(
                 SkillToolSpec(
@@ -368,216 +285,283 @@ def register_builtin_skills() -> None:
                 ),
             ),
         ),
+        # ── 股市分析 Skills ─────────────────────────────
         SkillDefinition(
-            name=SKILL_SKILL_DEV,
-            title="技能开发",
+            name="stock-deep-analysis",
+            title="AI 深度解读",
             description=(
-                "上传型 Skill 生命周期：list/create/update/delete、run_skill_script 验证；"
-                "经 invoke_skill(skill-development, call, {operation, params}) 调用。"
+                "单只个股的基本面深度分析：从财务数据、估值水平、行业竞争格局、"
+                "成长逻辑等维度进行全面解读，输出结构化分析报告。"
             ),
             source=SkillSource.BUILTIN,
+            feature_id="stock_deep_analysis",
+            permission_code="feature.stock_deep_analysis",
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            use_when="需要单只个股的基本面深度分析：财务数据解读、估值评估、行业竞争格局、成长逻辑验证",
+            dont_use_when="需要多角色辩论或量价技术面分析（分别用 stock-roundtable / stock-volume-price）",
+            output="结构化个股深度分析报告（含公司概览、财务/估值/行业/成长/风险五维分析）",
+            tools=(
+                SkillToolSpec(
+                    name="analyze",
+                    description="对指定个股进行 AI 深度基本面分析",
+                    parameters={
+                        "type": "object",
+                        "required": ["stock"],
+                        "properties": {
+                            "stock": {
+                                "type": "string",
+                                "description": "股票代码或名称，如 603986.SH / 兆易创新",
+                            },
+                            "dimensions": {
+                                "type": "string",
+                                "description": "可选，指定分析维度，逗号分隔：财务,估值,行业,成长,风险。默认全部",
+                            },
+                        },
+                    },
+                    handler=h.handle_stock_deep_analysis,
+                ),
+            ),
+        ),
+        SkillDefinition(
+            name="stock-roundtable-debate-fundamental",
+            title="辩论圆桌 · 基本面",
+            description=(
+                "多角色对抗性辩论研究，聚焦基本面维度（财务/估值/行业格局）。"
+                "9 位参与者（4 位研究分工角色 + 巴菲特/芒格/彼得林奇/索罗斯/"
+                "霍华德·马克斯等虚构角色）对抗性辩论，主持人逐轮裁决，输出完整圆桌报告。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id="stock_roundtable_debate_fundamental",
+            permission_code="feature.stock_roundtable_debate_fundamental",
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            use_when="需要多角色对抗性辩论研究，且聚焦基本面维度（财务数据、估值逻辑、行业格局）：平台信号研究员/基本面研究员/市场定价研究员/风险反方 + 巴菲特/芒格/彼得林奇/索罗斯/霍华德·马克斯等虚构角色",
+            dont_use_when="短线技术面分析（用 stock-roundtable-debate-shortterm 或 stock-volume-price）、单只个股基本面问答（用 stock-deep-analysis）、无虚构角色研究（用 stock-roundtable-research-fundamental）",
+            output="完整圆桌研究报告（辩论圆桌·基本面）：含证据加权总表、非平庸洞见、研究分层结论、后续验证清单",
+            tools=(
+                SkillToolSpec(
+                    name="debate",
+                    description="对指定个股发起辩论圆桌·基本面研究",
+                    parameters={
+                        "type": "object",
+                        "required": ["stock"],
+                        "properties": {
+                            "stock": {
+                                "type": "string",
+                                "description": "股票代码或名称，如 603986.SH / 兆易创新",
+                            },
+                            "rounds": {
+                                "type": "integer",
+                                "description": "可选，辩论轮数 3-5，默认 4",
+                                "minimum": 3,
+                                "maximum": 5,
+                                "default": 4,
+                            },
+                        },
+                    },
+                    handler=h.handle_stock_roundtable_debate_fundamental,
+                ),
+            ),
+        ),
+        SkillDefinition(
+            name="stock-roundtable-debate-shortterm",
+            title="辩论圆桌 · 短线",
+            description=(
+                "多角色对抗性辩论研究，聚焦短线维度（量价/资金/情绪）。"
+                "9 位参与者（4 位研究分工角色 + 巴菲特/芒格/彼得林奇/索罗斯/"
+                "霍华德·马克斯等虚构角色）对抗性辩论，主持人逐轮裁决，输出完整圆桌报告。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id="stock_roundtable_debate_shortterm",
+            permission_code="feature.stock_roundtable_debate_shortterm",
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            use_when="需要多角色对抗性辩论研究，且聚焦短线维度（量价关系、资金流向、市场情绪）：平台信号研究员/基本面研究员/市场定价研究员/风险反方 + 巴菲特/芒格/彼得林奇/索罗斯/霍华德·马克斯等虚构角色",
+            dont_use_when="基本面深度分析（用 stock-deep-analysis 或 stock-roundtable-debate-fundamental）、无虚构角色短线研究（用 stock-roundtable-research-shortterm）、简单技术面诊断（用 stock-volume-price）",
+            output="完整圆桌研究报告（辩论圆桌·短线）：含证据加权总表、非平庸洞见、研究分层结论、后续验证清单",
+            tools=(
+                SkillToolSpec(
+                    name="debate",
+                    description="对指定个股发起辩论圆桌·短线研究",
+                    parameters={
+                        "type": "object",
+                        "required": ["stock"],
+                        "properties": {
+                            "stock": {
+                                "type": "string",
+                                "description": "股票代码或名称，如 603986.SH / 兆易创新",
+                            },
+                            "rounds": {
+                                "type": "integer",
+                                "description": "可选，辩论轮数 3-5，默认 4",
+                                "minimum": 3,
+                                "maximum": 5,
+                                "default": 4,
+                            },
+                        },
+                    },
+                    handler=h.handle_stock_roundtable_debate_shortterm,
+                ),
+            ),
+        ),
+        SkillDefinition(
+            name="stock-roundtable-research-fundamental",
+            title="专业研究 · 基本面",
+            description=(
+                "无虚构角色的系统性基本面研究。4 位专业研究角色（行业分析师/财务分析师/"
+                "估值分析师/风险分析师）协作，输出结构化研究报告，不含对抗性辩论。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id="stock_roundtable_research_fundamental",
+            permission_code="feature.stock_roundtable_research_fundamental",
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            use_when="需要系统性基本面研究，不需要虚构角色的对抗性辩论：行业分析师/财务分析师/估值分析师/风险分析师研究团队协作",
+            dont_use_when="需要多角色对抗性辩论（用 stock-roundtable-debate-fundamental）、单只个股基本面问答（用 stock-deep-analysis）、短线研究方向（用 stock-roundtable-research-shortterm）",
+            output="结构化研究报告（专业研究·基本面）：含行业与竞争定位、财务深度拆解、估值评估、关键假设验证、风险清单",
+            tools=(
+                SkillToolSpec(
+                    name="research",
+                    description="对指定个股进行专业研究·基本面分析",
+                    parameters={
+                        "type": "object",
+                        "required": ["stock"],
+                        "properties": {
+                            "stock": {
+                                "type": "string",
+                                "description": "股票代码或名称，如 603986.SH / 兆易创新",
+                            },
+                            "rounds": {
+                                "type": "integer",
+                                "description": "可选，研究迭代深度 3-5，默认 4",
+                                "minimum": 3,
+                                "maximum": 5,
+                                "default": 4,
+                            },
+                        },
+                    },
+                    handler=h.handle_stock_roundtable_research_fundamental,
+                ),
+            ),
+        ),
+        SkillDefinition(
+            name="stock-roundtable-research-shortterm",
+            title="专业研究 · 短线",
+            description=(
+                "无虚构角色的短线技术面研究。4 位专业研究角色（技术分析师/资金分析师/"
+                "情绪分析师/风险分析师）协作，输出结构化短线评估报告，不含对抗性辩论。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id="stock_roundtable_research_shortterm",
+            permission_code="feature.stock_roundtable_research_shortterm",
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            use_when="需要系统性短线技术面研究，不需要虚构角色的对抗性辩论：技术分析师/资金分析师/情绪分析师/风险分析师研究团队协作",
+            dont_use_when="需要多角色对抗性短线辩论（用 stock-roundtable-debate-shortterm）、简单量价诊断（用 stock-volume-price）、基本面研究方向（用 stock-roundtable-research-fundamental）",
+            output="结构化研究报告（专业研究·短线）：含量价结构分析、资金面分析、情绪面分析、技术指标信号、关键价位与风险",
+            tools=(
+                SkillToolSpec(
+                    name="research",
+                    description="对指定个股进行专业研究·短线分析",
+                    parameters={
+                        "type": "object",
+                        "required": ["stock"],
+                        "properties": {
+                            "stock": {
+                                "type": "string",
+                                "description": "股票代码或名称，如 603986.SH / 兆易创新",
+                            },
+                            "rounds": {
+                                "type": "integer",
+                                "description": "可选，研究迭代深度 3-5，默认 4",
+                                "minimum": 3,
+                                "maximum": 5,
+                                "default": 4,
+                            },
+                        },
+                    },
+                    handler=h.handle_stock_roundtable_research_shortterm,
+                ),
+            ),
+        ),
+        SkillDefinition(
+            name="stock-volume-price",
+            title="量价会诊",
+            description=(
+                "短线技术面诊断。围绕指标（强弱评分/量比/换手/资金流向/市场温度）、"
+                "形态（K线结构/经典形态/放量缩量关键位置）、"
+                "趋势（均线位置/近期涨跌幅/波段强度与背离风险）、"
+                "决策（观察清单与风险边界）四层框架，输出可复核的短线检查单，不给买卖指令。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id="stock_volume_price",
+            permission_code="feature.stock_volume_price",
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            use_when="需要短线技术面诊断：量价分析、技术指标判断、K线形态识别、趋势结构分析、风险边界评估",
+            dont_use_when="基本面深度分析或多角色辩论（分别用 stock-deep-analysis / stock-roundtable）",
+            output="短线检查单（含四层框架：指标→形态→趋势→决策，不给买卖指令）",
+            tools=(
+                SkillToolSpec(
+                    name="diagnose",
+                    description="对指定个股进行量价技术面诊断，输出四层框架检查单",
+                    parameters={
+                        "type": "object",
+                        "required": ["stock"],
+                        "properties": {
+                            "stock": {
+                                "type": "string",
+                                "description": "股票代码或名称，如 603986.SH / 兆易创新",
+                            },
+                            "aspects": {
+                                "type": "string",
+                                "description": "可选，指定分析维度，逗号分隔：indicators(指标),patterns(形态),trend(趋势),decision(决策)。默认全部",
+                            },
+                        },
+                    },
+                    handler=h.handle_stock_volume_price,
+                ),
+            ),
+        ),
+        # ── 双碳问答 ─────────────────────────────────────
+        SkillDefinition(
+            name="carbon-qa",
+            title="双碳问答",
+            description=(
+                "双碳领域专业问答：通过官方源原子工具获取碳价/政策/排放·CCER·国际·地方数据，"
+                "综合回答碳市场、碳达峰碳中和、CCER、碳排放核算等问题。"
+                "新闻资讯类引导浏览器查最新，禁止编造实时数据。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id="carbon_qa",
+            permission_code="feature.carbon_qa",
             readiness=SkillReadiness.READY,
             catalog_visible=True,
             catalog_tier="resident",
             use_when=(
-                "创建/修改/删除上传型 Skill 或 run_skill_script 取数验证；"
-                "operation 如 create_skill、run_skill_script、list_agent_skills"
+                "双碳领域问题：碳价行情、碳交易、碳达峰碳中和政策、CCER、碳排放核算、节能降碳等"
             ),
-            dont_use_when=(
-                "网页/联网调研（skill-dev 须 invoke_context_subagent 委托 browser-automation/web-search）、"
-                "平台文档操作、撰写正式长报告"
-            ),
-            output="Skill 包变更或脚本执行输出",
-            orchestrated_tools=(
-                "list_agent_skills",
-                "load_uploaded_skill",
-                "run_skill_script",
-                "create_skill",
-                "update_uploaded_skill_file",
-                "delete_uploaded_skill",
-            ),
+            dont_use_when="其他非双碳领域问题、简单常识问答（无需查官方源）",
+            output="双碳领域专业分析结果与建议（含来源链接）；新闻类返回浏览器执行指引",
             tools=(
-                _domain_call_spec(
-                    description="执行技能管理操作",
-                    allowed_hint=(
-                        "list_agent_skills, create_skill, run_skill_script, "
-                        "update_uploaded_skill_file, delete_uploaded_skill"
+                SkillToolSpec(
+                    name="ask",
+                    description=(
+                        "回答双碳领域问题：自动调用 carbon_price / carbon_policy / carbon_data；"
+                        "新闻资讯类返回浏览器查最新的执行指引"
                     ),
-                    handler=dh.handle_skill_development_call,
-                ),
-            ),
-        ),
-        # --- 浏览器自动化 ---
-        SkillDefinition(
-            name=SKILL_BROWSER_AUTOMATION,
-            title="浏览器自动化",
-            description=(
-                "浏览器自动化操作（导航/点击/填表/截图/RPA 流程录制回放）；"
-                "经 invoke_skill(browser-automation, call, {operation, params}) 调用。"
-            ),
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=True,
-            catalog_tier="resident",
-            use_when=(
-                "需要浏览器自动化操作：导航网页、点击元素、填表、截图、"
-                "RPA 流程录制/回放、域名查询"
-            ),
-            dont_use_when="纯文本检索、平台文档操作、AI 对话、知识库检索",
-            output="浏览器操作结果或截图",
-            tools=(
-                _domain_call_spec(
-                    description="执行浏览器自动化操作",
-                    allowed_hint=(
-                        "browser_navigate, browser_snapshot, browser_click, "
-                        "browser_type, browser_fill, browser_screenshot, "
-                        "browser_save_workflow, browser_replay_workflow, "
-                        "browser_run_task, browser_close_session, "
-                        "schedule_browser_workflow"
-                    ),
-                    handler=dh.handle_browser_automation_call,
-                ),
-            ),
-        ),
-        # --- 文档库 ---
-        SkillDefinition(
-            name=SKILL_DOCUMENT_LIBRARY,
-            title="文档库操作",
-            description=(
-                "文档库管理：搜索、读取、创建、移动、分享、删除文档与文件夹；"
-                "经 invoke_skill(document-library, call, {operation, params}) 调用。"
-            ),
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=True,
-            catalog_tier="resident",
-            use_when=(
-                "需要操作文档库：搜索文档、读取内容、创建文档、移动/分享/删除文档、"
-                "管理文件夹"
-            ),
-            dont_use_when=(
-                "纯知识库语义检索（用 knowledge_retrieve）、"
-                "浏览器自动化、AI 对话"
-            ),
-            output="文档操作结果",
-            tools=(
-                _domain_call_spec(
-                    description="执行文档库操作",
-                    allowed_hint=(
-                        "search_documents_by_name, read_document_content, "
-                        "list_library_documents, list_manageable_documents, "
-                        "list_document_folders, create_kb_folder, "
-                        "create_library_document, rename_document, "
-                        "move_document, share_document, delete_document, "
-                        "update_kb_folder, delete_kb_folder, "
-                        "sync_document_knowledge, reindex_document"
-                    ),
-                    handler=dh.handle_document_library_call,
-                ),
-            ),
-        ),
-        # --- 平台操作 ---
-        SkillDefinition(
-            name=SKILL_PLATFORM_OPS,
-            title="平台操作",
-            description=(
-                "待办事项管理；"
-                "经 invoke_skill(platform-ops, call, {operation, params}) 调用。"
-            ),
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=True,
-            catalog_tier="resident",
-            use_when="需要管理待办事项（创建/更新/删除/列出）",
-            dont_use_when="浏览器操作、文档库操作、知识检索",
-            output="操作结果",
-            tools=(
-                _domain_call_spec(
-                    description="执行平台待办操作",
-                    allowed_hint=(
-                        "list_todos, create_todo, update_todo, delete_todo"
-                    ),
-                    handler=dh.handle_platform_ops_call,
-                ),
-            ),
-        ),
-        # --- 通知 ---
-        SkillDefinition(
-            name=SKILL_NOTIFICATION,
-            title="通知管理",
-            description=(
-                "发送系统站内通知与定时提醒；"
-                "经 invoke_skill(notification, call, {operation, params}) 调用。"
-            ),
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=True,
-            catalog_tier="resident",
-            use_when=(
-                "需要发送立即通知、设置定时提醒、查看已安排的定时通知、取消定时通知"
-            ),
-            dont_use_when="待办管理、文档库操作、浏览器操作",
-            output="通知发送或操作结果",
-            tools=(
-                _domain_call_spec(
-                    description="执行通知操作",
-                    allowed_hint=(
-                        "send_notification, schedule_notification, "
-                        "list_scheduled_notifications, "
-                        "cancel_scheduled_notification"
-                    ),
-                    handler=dh.handle_notification_call,
-                ),
-            ),
-        ),
-        # --- 用户管理 ---
-        SkillDefinition(
-            name=SKILL_USER_ADMIN,
-            title="用户管理",
-            description=(
-                "平台用户管理：创建/更新/删除用户；"
-                "经 invoke_skill(user-administration, call, {operation, params}) 调用。"
-            ),
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=True,
-            catalog_tier="resident",
-            use_when="需要管理平台用户（创建/更新/删除）",
-            dont_use_when="部门管理、文档操作、浏览器操作",
-            output="用户管理操作结果",
-            tools=(
-                _domain_call_spec(
-                    description="执行用户管理操作",
-                    allowed_hint=(
-                        "list_users, create_user, update_user, delete_user"
-                    ),
-                    handler=dh.handle_user_admin_call,
-                ),
-            ),
-        ),
-        # --- 部门管理 ---
-        SkillDefinition(
-            name=SKILL_DEPT_ADMIN,
-            title="部门管理",
-            description=(
-                "平台部门管理：创建/更新/删除部门；"
-                "经 invoke_skill(dept-administration, call, {operation, params}) 调用。"
-            ),
-            source=SkillSource.BUILTIN,
-            readiness=SkillReadiness.READY,
-            catalog_visible=True,
-            catalog_tier="resident",
-            use_when="需要管理平台部门（创建/更新/删除/列出）",
-            dont_use_when="用户管理、文档操作、浏览器操作",
-            output="部门管理操作结果",
-            tools=(
-                _domain_call_spec(
-                    description="执行部门管理操作",
-                    allowed_hint=(
-                        "list_departments, create_department, "
-                        "update_department, delete_department"
-                    ),
-                    handler=dh.handle_dept_admin_call,
+                    parameters={
+                        "type": "object",
+                        "required": ["question"],
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                                "description": "用户的双碳问题",
+                            },
+                        },
+                    },
+                    handler=h.handle_carbon_qa_ask,
                 ),
             ),
         ),

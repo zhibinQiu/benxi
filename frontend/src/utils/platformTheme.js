@@ -63,7 +63,7 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
         borderRadiusSmall: "6px",    // --btn-radius-sm
         fontWeight: "500",           // --btn-font-weight
         heightMedium: "36px",        // --btn-height-md
-        heightSmall: "30px",         // (small 专用)
+        heightSmall: "28px",         // --btn-height-sm（列表/工具栏操作统一）
         fontSizeMedium: "13px",      // --btn-font-size
         fontSizeSmall: "12px",       // --btn-font-size-sm
       },
@@ -147,6 +147,19 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
         borderRadius: "14px",
         padding: "20px 22px",
       },
+      Pagination: {
+        itemTextColorActive: "#c5c5d2",
+        itemTextColorHover: "#ececec",
+        itemBorderActive: "1px solid rgba(255,255,255,0.16)",
+        itemBorderHover: "1px solid rgba(255,255,255,0.16)",
+        itemColorActive: "transparent",
+        itemColorActiveHover: "transparent",
+        itemSizeMedium: "24px",
+        itemFontSizeMedium: "11px",
+        buttonIconSizeMedium: "12px",
+        itemPaddingMedium: "0 3px",
+        itemMarginMedium: "0 0 0 4px",
+      },
     };
   }
 
@@ -194,7 +207,7 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
       borderRadiusSmall: "6px",    // --btn-radius-sm
       fontWeight: "500",           // --btn-font-weight
       heightMedium: "36px",        // --btn-height-md
-      heightSmall: "30px",         // (small 专用)
+      heightSmall: "28px",         // --btn-height-sm（列表/工具栏操作统一）
       fontSizeMedium: "13px",      // --btn-font-size
       fontSizeSmall: "12px",       // --btn-font-size-sm
     },
@@ -278,6 +291,19 @@ export function createThemeOverrides(isDark, colorScheme = "blue", customPrimary
     Dialog: {
       borderRadius: "14px",
       padding: "20px 22px",
+    },
+    Pagination: {
+      itemTextColorActive: "#4f4f4f",
+      itemTextColorHover: "#141414",
+      itemBorderActive: "1px solid rgba(0,0,0,0.16)",
+      itemBorderHover: "1px solid rgba(0,0,0,0.16)",
+      itemColorActive: "transparent",
+      itemColorActiveHover: "transparent",
+      itemSizeMedium: "24px",
+      itemFontSizeMedium: "11px",
+      buttonIconSizeMedium: "12px",
+      itemPaddingMedium: "0 3px",
+      itemMarginMedium: "0 0 0 4px",
     },
   };
 }

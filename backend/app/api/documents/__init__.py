@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.documents import access, crud, delete, folders, listing, sync, upload, versions
+from app.api.documents import access, crud, delete, folders, listing, share, sync, upload, versions
 from app.api.documents.listing import create_document, list_documents
 from app.schemas.common import ApiResponse, PageResult
 from app.schemas.document import DocumentDetail, DocumentListItem
@@ -19,3 +19,4 @@ router.include_router(sync.router)
 router.include_router(access.router)
 router.include_router(versions.router)
 router.include_router(delete.router)
+router.include_router(share.router)

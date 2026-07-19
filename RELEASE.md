@@ -1,5 +1,22 @@
 # 发布说明
 
+## 4.8.6（v4.8.6）— 理财助手、双碳助手与 Agent 子智能体架构收敛
+
+- **理财助手**：独立功能模块，覆盖 A 股/基金/虚拟币行情与自选清单；支持 AI 深度解读、多角色圆桌（辩论/专业 × 基本面/短线）、量价会诊三类异步研究报告，可下载、导入文档库与公开分享
+- **股市分析 Agent**：新增 `stock` 专精智能体与指令 playbook；配套 `stock_quote` / `stock_kline` / `market_indices` / `finance_search` / `f10_data` 金融原子工具，F10 底稿经 AKShare 结构化拉取供圆桌与深度解读复用
+- **双碳助手**：碳交易快照与碳价/政策/多维数据查询看板；支持碳交易简报、政策摘要、减碳策略三类 AI 报告；复用 `carbon_price` / `carbon_policy` / `carbon_data` 工具链
+- **子智能体三模式**：移除 `explore` 并行检索与 `discovery` 工具发现层；子 Agent 统一为 `search` / `use` / `auto`；`find_skills` 替代 `search_skills`，仅在当前 Agent 已挂载 Skill 范围内检索
+- **浏览器自动化收敛**：删除 `rpa` 专精 Profile；浏览器自动化改由 `kind=auto` 子智能体透明委托，减少专精路由分支
+- **工具循环增强**：父层非直调工具可透明路由至 `kind=execute` 子 Agent；子结论、附件与技能调用状态回传父层，避免终稿证据丢失；前端 `agentWorkflow.js` 同步精简
+- **公开分享体系**：文档、笔记、理财报告、碳报告统一 `share_token`；免登录 HTML 预览；`ShareLinkModal` 支持生成/重新分享/撤销
+- **工作笔记**：文件夹分类、Markdown 编辑、图片粘贴上传、AI 润色、发布至文档库与公开分享；笔记页集成待办子 Tab
+- **提示词管理**：个人提示词模板 CRUD，按类别筛选，一键复制到剪贴板
+- **前端组件复用**：新增 `FeatureSection`、`SelectOptionTile`、`ShareLinkModal`；理财/碳助手与文档详情页共用；翻译、语音转写等视图布局对齐
+- **Schema 与插件**：迁移 `prompt_templates`、`notes`/`note_folders`、`finance_*`、`carbon_reports` 及 `share_token` 列；四个 builtin FeaturePlugin 注册路由与权限
+- **性能辅助**：进程级 `ttl_cache` 减轻高频查询；碳咨询 Skill 与冒烟测试同步更新
+- **代码收敛**：移除 `domain_handlers`、`search_skills`、根目录临时测试脚本与截图产物；版本号统一至 4.8.6
+- **版本统一**：`VERSION` 同步 API / 前端 / Docker 镜像 tag（4.8.6）
+
 ## 4.6.0（v4.6.0）— AgentKit 包拆分、智能体开发套件与平台稳定增强
 
 - **AgentKit 包拆分**：将多智能体核心组件拆分为 11 个独立 Python 包（agentkit-aip、agentkit-loop、agentkit-mcp、agentkit-message、agentkit-orchestrate、agentkit-route、agentkit-skills、agentkit-subagent、agentkit-tools、agentkit-interrupt、agentkit 元包），支持按需 pip 安装、独立版本管理与 PyPI 发布

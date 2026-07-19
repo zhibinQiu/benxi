@@ -50,7 +50,7 @@ _SKILL_INDEX_TTL = 60.0  # 秒
 
 # ── 无专精声明的 Skill → 兜底 orchestrator ────────────────────────────────
 _ORCHESTRATOR_SKILLS: frozenset[str] = frozenset({
-    "free-web-ai", "mermaid-diagram",
+    "free-web-ai",
     "pdf-translate", "speech-to-text", "text-to-speech", "ocr",
     "document-compare", "report-generation", "data-analysis",
     "smart-data-query",

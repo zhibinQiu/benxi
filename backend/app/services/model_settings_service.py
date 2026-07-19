@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import TYPE_CHECKING
 
 from app.config import Settings, get_settings
@@ -482,14 +483,31 @@ def _env_defaults(settings: Settings) -> dict[str, str]:
     }
 
 
+# _payload_cache: 缓存 _load_db_payload 结果，3s TTL。PlatformModelSettings 是单行表，极少变更。
+_payload_cache: tuple[float, dict[str, str]] | None = None
+_PAYLOAD_CACHE_TTL = 3.0
+
+
+def _clear_payload_cache() -> None:
+    global _payload_cache
+    _payload_cache = None
+
+
 def _load_db_payload(db: Session | None) -> dict[str, str]:
+    global _payload_cache
     if db is None:
         return {}
+    now = time.monotonic()
+    if _payload_cache is not None and now - _payload_cache[0] < _PAYLOAD_CACHE_TTL:
+        return _payload_cache[1]
     row = db.get(PlatformModelSettings, SINGLETON_ID)
     if not row or not isinstance(row.payload, dict):
+        _payload_cache = (now, {})
         return {}
     raw = {str(k): str(v) if v is not None else "" for k, v in row.payload.items()}
-    return _migrate_legacy_model_keys(raw)
+    result = _migrate_legacy_model_keys(raw)
+    _payload_cache = (now, result)
+    return result
 
 
 def _merge_effective(
@@ -1245,6 +1263,7 @@ def save_model_settings(
     else:
         row.payload = payload
     db.commit()
+    _clear_payload_cache()
 
     try:
         from app.core.platform_cache import invalidate_system_config_cache

@@ -1,4 +1,4 @@
-"""数据分析 — 受限 Python 代码执行（子进程 + 预装科学计算库）。"""
+"""表格分析 — 受限 Python 代码执行（子进程 + 预装科学计算库）。"""
 
 from __future__ import annotations
 

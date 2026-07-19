@@ -1042,7 +1042,7 @@ def _gather_report_simple(
     )
     web_items: list[dict] = []
     if web_on and topic:
-        # 统一走 deep_research 子智能体进行联网调研，替代逐条 web_search 调用
+        # 统一走 search 子智能体进行联网调研，替代逐条 web_search 调用
         toolkit.deep_research(f"{topic} {message}".strip())
         web_items = toolkit.accumulated_web_items
     from app.services.knowledge_qa_service import _doc_titles
@@ -1573,6 +1573,7 @@ def import_report_to_library(
     title: str,
     markdown: str,
     sync_knowflow: bool = True,
+    description: str = "由报告生成导入",
 ) -> dict[str, Any]:
     """将报告正文导出为 Word 并写入个人级文档库（默认未分类）。"""
     from app.core.document_scope import content_subscription_import_scope
@@ -1600,7 +1601,7 @@ def import_report_to_library(
         db,
         user,
         title=safe_title,
-        description="由报告生成导入",
+        description=(description or "由报告生成导入").strip()[:500] or "由报告生成导入",
         scope=content_subscription_import_scope(),
         folder_id=None,
     )

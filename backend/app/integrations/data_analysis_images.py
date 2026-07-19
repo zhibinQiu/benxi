@@ -1,4 +1,4 @@
-"""数据分析单元格 — 将各类输入规范化为 matplotlib imshow 可用的数组。"""
+"""表格分析单元格 — 将各类输入规范化为 matplotlib imshow 可用的数组。"""
 
 from __future__ import annotations
 

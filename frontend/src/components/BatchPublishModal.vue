@@ -7,6 +7,7 @@ import {
   NRadioGroup,
   NText,
   NProgress,
+  NTag,
 } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
 import OrgDeptPickerTree from "./OrgDeptPickerTree.vue";
@@ -70,11 +71,9 @@ const filteredDepartments = computed(() => {
 
 const hasDepts = computed(() => filteredDepartments.value.length > 0);
 
-const canSubmit = computed(() => {
-  if (!publishDeptIds.value.length) return false;
-  if (!ORG_SCOPES.includes(publishTarget.value)) return false;
-  return true;
-});
+const canSubmit = computed(
+  () => ORG_SCOPES.includes(publishTarget.value) && publishDeptIds.value.length > 0
+);
 
 const progressPercent = computed(() => {
   const p = batchProgress.value;
@@ -116,12 +115,13 @@ async function publishToLibrary() {
         batchProgress.value.done++;
       }
     }
-    const { done: success, failed } = batchProgress.value;
+    const success = batchProgress.value.total - batchProgress.value.failed.length;
+    const { failed } = batchProgress.value;
     if (success > 0 && failed.length === 0) {
       ui.success(t("documents.detail.publishedToLibrary"));
       emit("published");
     } else if (success > 0) {
-      ui.warning(`已发布 ${success} 份文档，${failed.length} 份发布失败`);
+      ui.warning(`已处理 ${success} 份文档，${failed.length} 份失败`);
       emit("published");
     } else {
       ui.error("发布失败");
@@ -158,7 +158,7 @@ watch(publishTarget, () => {
 <template>
   <AdminFormModal
     :show="show"
-    :title="t('documents.detail.publishToLibrary')"
+    :title="t('documents.detail.publish')"
     :width="624"
     @update:show="$emit('update:show', $event)"
   >
@@ -174,10 +174,6 @@ watch(publishTarget, () => {
           {{ t("batch.selected", { count: documentCount }) }}
         </n-tag>
       </div>
-
-      <p class="batch-publish-hint">
-        {{ t("documents.detail.publishHint") }}
-      </p>
 
       <n-radio-group v-model:value="publishTarget" class="batch-publish-target">
         <n-space>
@@ -212,7 +208,7 @@ watch(publishTarget, () => {
         <n-button
           type="primary"
           :loading="publishing"
-          :disabled="!canSubmit || !hasDepts"
+          :disabled="!canSubmit"
           @click="publishToLibrary"
         >
           {{ t("documents.detail.publish") }}
@@ -224,31 +220,19 @@ watch(publishTarget, () => {
 
 <style scoped>
 .batch-publish-loading {
-  display: flex;
-  justify-content: center;
-  padding: 48px 0;
+  padding: 24px 0;
+  text-align: center;
 }
 
 .batch-publish-summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.batch-publish-hint {
-  margin: 0 0 14px;
-  color: var(--platform-text-secondary, #666);
-  font-size: 16px;
-  line-height: 1.55;
+  margin-bottom: 12px;
 }
 
 .batch-publish-target {
-  display: block;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .batch-publish-progress {
-  margin-bottom: 14px;
+  margin-top: 12px;
 }
 </style>

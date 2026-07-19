@@ -193,6 +193,22 @@ function connectExternalAgent() {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: visible;
+}
+.agent-skills-view :deep(.n-tabs-nav) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--platform-bg);
+}
+.agent-skills-view :deep(.n-tabs-tab--active) {
+  color: var(--n-tab-text-color) !important;
+}
+.agent-skills-view :deep(.n-tabs-tab):hover {
+  color: var(--n-tab-text-color) !important;
+}
+.agent-skills-view :deep(.n-tabs-bar) {
+  display: none;
 }
 .agent-skills-view :deep(.n-tabs .n-tabs-tab-panes) {
   flex: 1;

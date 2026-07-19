@@ -127,7 +127,18 @@ def resolve_db_user(db: Session, user: uuid.UUID | object) -> object:
     from app.models.org import User
 
     if isinstance(user, User):
-        uid = user.id
+        try:
+            uid = user.id
+        except Exception:
+            # detached / expired — 从 inspect 或 _sa_instance_state.key 获取
+            from sqlalchemy import inspect as sa_inspect
+
+            inst = sa_inspect(user)
+            if inst and inst.identity:
+                uid = inst.identity[0]
+            else:
+                # 最后手段：尝试 User 的另一已加载字段或字符串化
+                uid = uuid.UUID(str(user))
     elif isinstance(user, uuid.UUID):
         uid = user
     elif getattr(user, "id", None):

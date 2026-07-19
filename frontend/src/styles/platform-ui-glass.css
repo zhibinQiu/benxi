@@ -38,6 +38,7 @@
   border: 1px solid var(--platform-border) !important;
   border-radius: var(--platform-radius-xs) !important;
   font-weight: 500;
+  font-size: 11px !important;
   transition:
     background 0.2s var(--platform-ease-smooth),
     border-color 0.2s var(--platform-ease-smooth),
@@ -47,15 +48,15 @@
 }
 
 .app-shell .n-pagination .n-pagination-item:not(.n-pagination-item--disabled):hover {
-  border-color: var(--platform-accent) !important;
-  color: var(--platform-accent) !important;
+  border-color: var(--platform-text-tertiary) !important;
+  color: var(--platform-text) !important;
   transform: translateY(-1px);
 }
 
 .app-shell .n-pagination .n-pagination-item.n-pagination-item--active {
-  background: var(--platform-accent) !important;
-  border-color: var(--platform-accent) !important;
-  color: #ffffff !important;
+  background: var(--platform-bg-tertiary) !important;
+  border-color: var(--platform-border) !important;
+  color: var(--platform-text) !important;
   box-shadow: none !important;
 }
 
@@ -405,7 +406,7 @@
 
 .table-icon-action:not(:disabled):hover {
   color: var(--platform-text) !important;
-  background: transparent !important;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 80%, transparent) !important;
 }
 
 .table-icon-action--accent:not(:disabled):hover {

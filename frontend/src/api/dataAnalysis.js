@@ -21,12 +21,13 @@ export async function fetchDataAnalysisSession(sessionId) {
   return api(`/api/v1/data-analysis/sessions/${sessionId}`);
 }
 
-export async function dataAnalysisChat(sessionId, { message, datasetId } = {}) {
+export async function dataAnalysisChat(sessionId, { message, datasetId, repairCellId } = {}) {
   return api(`/api/v1/data-analysis/sessions/${sessionId}/chat`, {
     method: "POST",
     body: JSON.stringify({
       message,
       dataset_id: datasetId || null,
+      repair_cell_id: repairCellId || null,
     }),
   });
 }
@@ -49,4 +50,11 @@ export async function runDataAnalysisCell(sessionId, cellId) {
   return api(`/api/v1/data-analysis/sessions/${sessionId}/cells/${cellId}/run`, {
     method: "POST",
   });
+}
+
+export async function previewDataAnalysisData(sessionId, { limit } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  const qs = params.toString();
+  return api(`/api/v1/data-analysis/sessions/${sessionId}/preview${qs ? `?${qs}` : ""}`);
 }

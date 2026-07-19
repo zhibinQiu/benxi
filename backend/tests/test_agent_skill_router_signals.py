@@ -42,6 +42,6 @@ def test_search_rpa_supervisor_routes():
         research_routes = _resolve_agent_routes(db, user, "搜索 rpa")
         assert research_routes[0].agent_id == "orchestrator"
         browser_routes = _resolve_agent_routes(db, user, "搜索 rpa并截图")
-        assert browser_routes[0].agent_id == "rpa"
+        assert browser_routes[0].agent_id == "orchestrator"
     finally:
         db.close()

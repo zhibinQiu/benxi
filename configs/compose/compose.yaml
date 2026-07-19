@@ -84,7 +84,7 @@ services:
 
   # --- PDF 翻译 API（BabelDOC / pdf2zh）---
   pdf2zh-api:
-    image: ${PDF2ZH_IMAGE:-benxi-pdf2zh:${BENXI_VERSION:-4.6.0}}
+    image: ${PDF2ZH_IMAGE:-benxi-pdf2zh:${BENXI_VERSION:-4.8.6}}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -121,7 +121,7 @@ services:
 
   # --- 平台 API（FastAPI）与 Celery Worker，共用 benxi-api 镜像 ---
   api:
-    image: benxi-api:${BENXI_VERSION:-4.6.0}
+    image: benxi-api:${BENXI_VERSION:-4.8.6}
     build:
       context: ../..
       dockerfile: backend/Dockerfile
@@ -173,7 +173,7 @@ services:
       - benxi
 
   worker:
-    image: benxi-api:${BENXI_VERSION:-4.6.0}
+    image: benxi-api:${BENXI_VERSION:-4.8.6}
     build:
       context: ../..
       dockerfile: backend/Dockerfile
@@ -215,7 +215,7 @@ services:
 
   # --- 唯一对外 Web 入口（生产 Nginx；dev 见 compose.dev.yaml 的 Vite）---
   frontend:
-    image: benxi-frontend:${BENXI_VERSION:-4.6.0}
+    image: benxi-frontend:${BENXI_VERSION:-4.8.6}
     build:
       context: ../../frontend
       dockerfile: Dockerfile
@@ -242,7 +242,7 @@ services:
   # --- profile speech: FunASR 会议转写（模型卷 data/speech-models）---
   speech-api:
     profiles: ["speech"]
-    image: ${SPEECH_IMAGE:-benxi-speech:${BENXI_VERSION:-4.6.0}}
+    image: ${SPEECH_IMAGE:-benxi-speech:${BENXI_VERSION:-4.8.6}}
     build:
       context: ../../third_party/speech-service
       dockerfile: Dockerfile
@@ -280,7 +280,7 @@ services:
   # --- profile docs: MkDocs Material 系统文档（开发/内网预览）---
   docs:
     profiles: ["docs"]
-    image: benxi-docs:${BENXI_VERSION:-4.6.0}
+    image: benxi-docs:${BENXI_VERSION:-4.8.6}
     build:
       context: ../..
       dockerfile: docs/Dockerfile

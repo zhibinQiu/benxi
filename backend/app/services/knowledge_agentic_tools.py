@@ -19,6 +19,16 @@ from app.services.knowledge_qa_service import (
 
 logger = logging.getLogger(__name__)
 
+# 联网调研子智能体的事件循环缓存（避免每轮调用创建/销毁事件循环的开销）
+_DR_LOOP: asyncio.AbstractEventLoop | None = None
+
+
+def _get_dr_loop() -> asyncio.AbstractEventLoop:
+    global _DR_LOOP
+    if _DR_LOOP is None or _DR_LOOP.is_closed():
+        _DR_LOOP = asyncio.new_event_loop()
+    return _DR_LOOP
+
 
 @dataclass(slots=True)
 class ToolResult:
@@ -180,15 +190,15 @@ class KnowledgeAgenticToolkit:
         """（已弃用）逐查询联网检索。
 
         报告生成请使用 deep_research() 方法统一调研，不再逐条查询调用 web_search。
-        保留此方法仅用于兼容旧调用方，内部仍走 deep_research 子智能体。
+        保留此方法仅用于兼容旧调用方，内部仍走 search 子智能体。
         """
         return self.deep_research(query, max_items=max_items)
 
     def deep_research(self, topic: str, *, max_items: int | None = None) -> ToolResult:
-        """统一联网调研入口：走 deep_research 子智能体进行多轮检索与综合分析。
+        """统一联网调研入口：走 search 子智能体进行多轮检索与选择性解析。
 
-        取代逐条 web_search 调用，一次传入完整主题/问题，
-        子智能体自主分析意图、多关键词搜索、FireCrawl 读全文、交叉验证。
+        先搜索获取摘要片段，再动态判断哪些网页需要解析全文——
+        摘要已能回答的问题直接返回，无需全部网站都进入全文解析。
         """
         q = (topic or "").strip()
         if not q:
@@ -264,11 +274,9 @@ def _deep_research_via_subagent_sync(
     user: User,
     query: str,
 ) -> list[dict] | None:
-    """Sync wrapper: invoke deep_research subagent and return web items.
+    """Sync wrapper: invoke search subagent and return web items.
 
-    所有联网检索统一走 deep_research 子智能体（而非直接调用 web-search skill），
-    子智能体内部调用 web_search 进行多轮搜索与全文阅读，返回结构化研究报告。
-    本函数解析研究报告中的来源链接，提取为 web_items 格式供调用方使用。
+    所有联网检索统一走 search 子智能体，先搜索摘要再择需解析全文。
 
     Runs via asyncio.run() since callers (report gathering, knowledge QA)
     execute in thread pools (run_db_task) where no event loop is active.
@@ -280,12 +288,15 @@ def _deep_research_via_subagent_sync(
         return None
 
     try:
-        result_text = asyncio.run(
-            execute_context_subagent(
-                db,
-                user,
-                kind="search",
-                task=q,
+        result_text = _get_dr_loop().run_until_complete(
+            asyncio.wait_for(
+                execute_context_subagent(
+                    db,
+                    user,
+                    kind="search",
+                    task=q,
+                ),
+                timeout=120.0,
             )
         )
     except Exception:
@@ -306,9 +317,9 @@ def _deep_research_via_subagent_sync(
 
 
 def _deep_research_output_to_web_items(text: str) -> list[dict]:
-    """解析 deep_research 子智能体输出，提取来源链接为 web_items 格式。
+    """解析 search 子智能体输出，提取来源链接为 web_items 格式。
 
-    deep_research 输出为结构化研究报告，含 inline citations / markdown links。
+    search 子智能体输出为结构化研究报告，含 inline citations / markdown links。
     提取其中的 URL 与其周边上下文作为 web item 的 title/snippet/full_text。
     """
     import re

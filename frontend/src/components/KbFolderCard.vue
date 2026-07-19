@@ -42,7 +42,7 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
         :options="menuOptions"
         @select="(key) => emit('menu-select', key, folder)"
       >
-        <n-button quaternary circle size="tiny" title="更多操作">
+        <n-button quaternary circle size="small" title="更多操作">
           <template #icon>
             <n-icon :component="EllipsisHorizontal" />
           </template>
@@ -182,13 +182,13 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   top: 2px;
   left: 2px;
   z-index: 2;
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: rgba(255, 255, 255, 0.92);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--platform-text-tertiary);
+  background: color-mix(in srgb, var(--platform-bg-elevated-solid, #fff) 92%, transparent);
   line-height: 1.2;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .kb-folder-card__menu {
@@ -277,8 +277,8 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
   margin: 0 auto;
   width: 100%;
   max-width: 100%;
-  font-size: var(--platform-font-size-xs);
-  font-weight: var(--platform-font-weight-strong);
+  font-size: var(--platform-font-size-lg, 14px);
+  font-weight: 500;
   line-height: 1.4;
   text-align: center;
   color: var(--platform-text, #0f172a);
@@ -298,14 +298,13 @@ const countLabel = computed(() => `${props.folder.document_count ?? 0} 项`);
 }
 
 .kb-folder-card__meta {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   width: 100%;
-  font-size: var(--platform-font-size-sm);
+  font-size: 10px;
   font-weight: var(--platform-font-weight-normal);
   line-height: 1.2;
   text-align: center;
-  color: var(--accent);
-  opacity: 0.88;
+  color: var(--platform-text-quaternary, #999);
 }
 
 @media (prefers-reduced-motion: reduce) {

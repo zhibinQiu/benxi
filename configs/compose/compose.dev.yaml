@@ -10,7 +10,7 @@
 
 services:
   api:
-    image: benxi-api-runtime:${BENXI_VERSION:-4.6.0}
+    image: benxi-api-runtime:${BENXI_VERSION:-4.8.6}
     build:
       context: ../..
       dockerfile: backend/Dockerfile
@@ -36,7 +36,7 @@ services:
       RAGFLOW_MYSQL_HOST: knowflow-mysql
 
   worker:
-    image: benxi-api-runtime:${BENXI_VERSION:-4.6.0}
+    image: benxi-api-runtime:${BENXI_VERSION:-4.8.6}
     shm_size: "512mb"
     volumes:
       - ../../backend/app:/app/app:ro

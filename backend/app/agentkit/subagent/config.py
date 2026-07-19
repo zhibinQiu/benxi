@@ -1,4 +1,4 @@
-"""子 Agent 调用配置 — 替代 13 参数函数的 Builder 模式。"""
+"""子 Agent 调用配置 — dataclass 注入宿主依赖。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from app.agentkit.subagent.types import (
 @dataclass
 class SubagentConfig:
     """子 Agent 执行配置：宿主注入依赖接口。
-    
+
     替代 ``execute_subagent`` 的 13 个松散参数，通过 ``@dataclass`` 提供默认值，
     宿主仅需覆盖需要注入的字段。
     """
@@ -37,16 +37,6 @@ class SubagentConfig:
     strip_markup: Any = None
 
     @classmethod
-    def minimal(
-        cls,
-        *,
-        runtime: Any,
-        llm_complete: LlmCompletionFn | None = None,
-    ) -> SubagentConfig:
-        """最小配置：仅 LLM + runtime，跳过 explore 和 tool loop。"""
-        return cls(runtime=runtime, llm_complete=llm_complete)
-
-    @classmethod
     def full(
         cls,
         *,
@@ -58,7 +48,7 @@ class SubagentConfig:
         invoke_skill: SkillInvokeFn,
         append_retrieval: RetrievalAppender | None = None,
     ) -> SubagentConfig:
-        """完整配置：LLM + tool loop + explore。"""
+        """完整配置快捷构造。"""
         return cls(
             runtime=runtime,
             llm_complete=llm_complete,

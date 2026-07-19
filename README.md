@@ -12,7 +12,7 @@
 - **GitHub**: [https://github.com/zhibinQiu/benxi](https://github.com/zhibinQiu/benxi)
 - **AgentKit** <sup>[¹](#设计哲学)</sup>: [https://github.com/zhibinQiu/Agentkit](https://github.com/zhibinQiu/Agentkit)
 - **文档站点**: [https://zhibinQiu.github.io/benxi/](https://zhibinQiu.github.io/benxi/)
-- **版本**: v4.6.0（见根目录 `VERSION`）
+- **版本**: v4.8.6（见根目录 `VERSION`）
 
 ---
 

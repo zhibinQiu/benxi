@@ -1,5 +1,5 @@
 <script setup>
-defineOptions({ name: "DataAnalysisView" });
+defineOptions({ name: "TableView" });
 import { useI18n } from "../composables/useI18n.js";
 import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
@@ -25,7 +25,7 @@ import {
   uploadDataAnalysisDataset } from "../api/dataAnalysis";
 import { FEATURE_UNAVAILABLE } from "../utils/uiMessage";
 
-const STORAGE_KEY = "data-analysis-session";
+const STORAGE_KEY = "table-analysis-session";
 const ui = usePlatformUi();
 const { t } = useI18n();
 
@@ -113,16 +113,16 @@ function profileSummaryText(p) {
   const sheet = (p.sheets || [])[0];
   if (!sheet) return `${p.filename}`;
   const cols = (sheet.column_profiles || []).map((c) => c.name).join("、");
-  const fields = cols || t("dataAnalysis.fieldsFallback");
+  const fields = cols || t("tableAnalysis.fieldsFallback");
   if (p.file_type === "csv") {
-    return t("dataAnalysis.profileCsv", {
+    return t("tableAnalysis.profileCsv", {
       filename: p.filename,
       rows: sheet.rows,
       columns: sheet.columns,
       fields,
     });
   }
-  return t("dataAnalysis.profileSheet", {
+  return t("tableAnalysis.profileSheet", {
     filename: p.filename,
     sheet: sheet.name,
     rows: sheet.rows,
@@ -140,9 +140,9 @@ async function onUploadChange({ file }) {
     datasetId.value = data.dataset_id;
     profile.value = data.profile;
     await startSessionWithDataset(data);
-    ui.success(t("dataAnalysis.uploadSuccess"));
+    ui.success(t("tableAnalysis.uploadSuccess"));
   } catch (e) {
-    ui.error(e.message || t("dataAnalysis.uploadFailed"));
+    ui.error(e.message || t("tableAnalysis.uploadFailed"));
   } finally {
     uploading.value = false;
   }
@@ -154,10 +154,12 @@ async function sendChat() {
   await sendChatText(text);
 }
 
-async function sendChatText(text) {
+const repairTargetId = ref("");
+
+async function sendChatText(text, opts = {}) {
   if (!text) return;
   if (!datasetId.value || !sessionId.value) {
-    ui.warning(t("dataAnalysis.uploadFirst"));
+    ui.warning(t("tableAnalysis.uploadFirst"));
     return;
   }
   if (!meta.value?.configured) {
@@ -166,25 +168,43 @@ async function sendChatText(text) {
   }
   chatting.value = true;
   chatInput.value = "";
+  const repairCellId = opts.repairCellId || repairTargetId.value || null;
+  repairTargetId.value = "";
   appendMessage("user", text);
   try {
     const data = await dataAnalysisChat(sessionId.value, {
       message: text,
-      datasetId: datasetId.value});
+      datasetId: datasetId.value,
+      repairCellId,
+    });
     if (data.session) {
       applySession(data.session);
     } else {
-      appendMessage("assistant", data.reply || t("dataAnalysis.analysisGenerated"));
+      appendMessage("assistant", data.reply || t("tableAnalysis.analysisGenerated"));
       if (data.cells_added?.length) {
         cells.value = [...cells.value, ...data.cells_added];
       }
+      if (data.cells_updated?.length) {
+        for (const updated of data.cells_updated) {
+          const idx = cells.value.findIndex((c) => c.id === updated.id);
+          if (idx >= 0) {
+            cells.value[idx] = { ...updated };
+          }
+        }
+        cells.value = [...cells.value];
+      }
     }
   } catch (e) {
-    appendMessage("assistant", e.message || t("dataAnalysis.analysisFailed"));
-    ui.error(e.message || t("dataAnalysis.analysisFailed"));
+    appendMessage("assistant", e.message || t("tableAnalysis.analysisFailed"));
+    ui.error(e.message || t("tableAnalysis.analysisFailed"));
   } finally {
     chatting.value = false;
   }
+}
+
+function requestRepair(cellId) {
+  repairTargetId.value = cellId;
+  sendChatText("这个单元格出错了，请检查代码并修复");
 }
 
 function findUserIndexBefore(index) {
@@ -213,7 +233,7 @@ async function shareAssistantMessage(message) {
   await shareChatMessageText(message?.content, {
     ui,
     t,
-    title: t("dataAnalysis.chatTitle"),
+    title: t("tableAnalysis.chatTitle"),
   });
 }
 
@@ -238,7 +258,8 @@ async function retryMessage(index) {
 }
 
 function onChatKeydown(e) {
-  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+  if (e.key === "Enter") {
+    if (e.shiftKey) return; // Shift+Enter 换行
     e.preventDefault();
     sendChat();
   }
@@ -262,14 +283,14 @@ onMounted(async () => {
       <div class="data-analysis-layout">
         <aside class="chat-pane">
           <div class="pane-head">
-            <h3>{{ t("dataAnalysis.chatTitle") }}</h3>
-            <p>{{ t("dataAnalysis.chatDesc") }}</p>
+            <h3>{{ t("tableAnalysis.chatTitle") }}</h3>
+            <p>{{ t("tableAnalysis.chatDesc") }}</p>
           </div>
 
           <n-alert
             v-if="meta && !meta.configured"
             type="warning"
-            :title="t('dataAnalysis.unavailableTitle')"
+            :title="t('tableAnalysis.unavailableTitle')"
             class="meta-alert"
           >
             {{ FEATURE_UNAVAILABLE }}
@@ -285,18 +306,18 @@ onMounted(async () => {
             <n-upload-dragger class="upload-box">
               <div class="upload-inner">
                 <n-icon size="28" :depth="3"><CloudUploadOutline /></n-icon>
-                <p>{{ t("dataAnalysis.uploadPrompt") }}</p>
-                <p class="upload-limit">{{ t("dataAnalysis.uploadFormats") }}</p>
-                <p v-if="meta" class="upload-limit">{{ t("dataAnalysis.uploadMaxSize", { size: meta.max_file_mb }) }}</p>
+                <p>{{ t("tableAnalysis.uploadPrompt") }}</p>
+                <p class="upload-limit">{{ t("tableAnalysis.uploadFormats") }}</p>
+                <p v-if="meta" class="upload-limit">{{ t("tableAnalysis.uploadMaxSize", { size: meta.max_file_mb }) }}</p>
               </div>
             </n-upload-dragger>
           </n-upload>
 
           <div v-if="profile" class="dataset-chip">
-            <n-tag type="success" size="small" :bordered="false">{{ t("dataAnalysis.datasetBound") }}</n-tag>
+            <n-tag type="success" size="small" :bordered="false">{{ t("tableAnalysis.datasetBound") }}</n-tag>
             <span>{{ profile.filename }}</span>
             <n-tag v-if="messages.length > 1" size="small" :bordered="false">
-              {{ t("dataAnalysis.chatRounds", { count: userMessageCount }) }}
+              {{ t("tableAnalysis.chatRounds", { count: userMessageCount }) }}
             </n-tag>
           </div>
 
@@ -326,7 +347,7 @@ onMounted(async () => {
               </div>
             </div>
             <div v-if="!messages.length" class="chat-placeholder">
-              {{ t("dataAnalysis.chatPlaceholder") }}
+              {{ t("tableAnalysis.chatPlaceholder") }}
             </div>
           </div>
 
@@ -335,7 +356,7 @@ onMounted(async () => {
               v-model:value="chatInput"
               type="textarea"
               :autosize="{ minRows: 2, maxRows: 5 }"
-              :placeholder="t('dataAnalysis.inputPlaceholder')"
+              :placeholder="t('tableAnalysis.inputPlaceholder')"
               :disabled="chatting || !canChat"
               @keydown="onChatKeydown"
             />
@@ -346,15 +367,14 @@ onMounted(async () => {
               @click="sendChat"
             >
               <template #icon><n-icon><SendOutline /></n-icon></template>
-              {{ t("dataAnalysis.send") }}
+              {{ t("tableAnalysis.send") }}
             </n-button>
           </div>
         </aside>
 
         <section class="notebook-pane">
-          <div class="pane-head notebook-head">
-            <h3>{{ t("dataAnalysis.notebookTitle") }}</h3>
-            <p>{{ t("dataAnalysis.notebookDesc") }}</p>
+          <div v-if="!sessionId" class="notebook-wait">
+            {{ t("tableAnalysis.notebookWait") }}
           </div>
           <AnalysisNotebookPanel
             v-if="sessionId"
@@ -362,10 +382,8 @@ onMounted(async () => {
             :cells="cells"
             :libraries="meta?.builtin_libraries"
             @update:cells="cells = $event"
+            @repair="requestRepair"
           />
-          <div v-else class="notebook-wait">
-            {{ t("dataAnalysis.notebookWait") }}
-          </div>
         </section>
       </div>
     </n-spin>
@@ -373,17 +391,12 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.da-spin {
-  height: 100%;
-}
-
-.da-spin :deep(.n-spin-content) {
-  height: 100%;
-}
+.da-spin { height: 100%; }
+.da-spin :deep(.n-spin-content) { height: 100%; }
 
 .data-analysis-layout {
   display: grid;
-  grid-template-columns: minmax(0, 38%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 36%) minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   min-width: 0;
@@ -403,7 +416,7 @@ onMounted(async () => {
 
 .chat-pane {
   border-right: 1px solid var(--platform-border);
-  padding: 17px 17px 14px;
+  padding: 12px 12px 10px;
 }
 
 .notebook-pane {
@@ -412,45 +425,41 @@ onMounted(async () => {
 
 .pane-head h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 15px;
 }
 
 .pane-head p {
-  margin: 5px 0 0;
-  font-size: 14px;
+  margin: 3px 0 0;
+  font-size: 13px;
   color: var(--n-text-color-3);
 }
 
-.notebook-head {
-  padding: 17px 17px 0;
-}
-
 .meta-alert {
-  margin: 12px 0;
+  margin: 8px 0;
 }
 
 .upload-box {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .upload-inner {
-  padding: 10px 0;
+  padding: 8px 0;
   text-align: center;
   color: var(--n-text-color-2);
 }
 
 .upload-limit {
-  margin-top: 5px;
-  font-size: 14px;
+  margin-top: 4px;
+  font-size: 13px;
   color: var(--n-text-color-3);
 }
 
 .dataset-chip {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  font-size: 16px;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 14px;
   flex-wrap: wrap;
 }
 
@@ -458,13 +467,13 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  margin: 14px 0;
-  padding-right: 5px;
+  margin: 10px 0;
+  padding-right: 4px;
 }
 
 .chat-item {
   display: flex;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .chat-item-stack {
@@ -493,9 +502,9 @@ onMounted(async () => {
 .chat-item .bubble {
   width: 100%;
   max-width: 100%;
-  padding: 10px 13px;
-  border-radius: 12px;
-  font-size: 16px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 14px;
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -509,7 +518,7 @@ onMounted(async () => {
 }
 
 .chat-item.assistant .bubble {
-  padding: 5px 0;
+  padding: 4px 0;
   border-radius: 0;
   background: transparent;
   color: var(--platform-text);
@@ -518,23 +527,23 @@ onMounted(async () => {
 .chat-item.system .bubble {
   background: var(--platform-accent-soft);
   color: var(--platform-accent-pressed);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .chat-placeholder {
   margin-top: 20%;
   text-align: center;
   color: var(--n-text-color-3);
-  font-size: 16px;
-  padding: 0 14px;
-  line-height: 1.6;
+  font-size: 14px;
+  padding: 0 12px;
+  line-height: 1.5;
   white-space: pre-line;
 }
 
 .chat-input-row {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 10px;
+  gap: 8px;
   align-items: end;
 }
 
@@ -544,7 +553,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   color: var(--n-text-color-3);
-  font-size: 16px;
+  font-size: 14px;
 }
 
 @media (max-width: 960px) {
@@ -552,7 +561,6 @@ onMounted(async () => {
     grid-template-columns: 1fr;
     grid-template-rows: 45% 55%;
   }
-
   .chat-pane {
     border-right: none;
     border-bottom: 1px solid var(--platform-border);

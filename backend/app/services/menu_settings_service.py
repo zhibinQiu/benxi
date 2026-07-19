@@ -103,6 +103,7 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "smart-data-query": "system-functions",
     "data-analysis": "system-functions",
     "carbon-qa": "system-functions",
+    "carbon-assistant": "system-functions",
     "smart-forecast": "system-functions",
     "knowledge-search": "system-functions",
     "agent-skills": "agent-skills",

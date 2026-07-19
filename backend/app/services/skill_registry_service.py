@@ -91,14 +91,17 @@ async def invoke_skill(
     )
 
 
-def patch_builtin_skill(db: Session, name: str, *, enabled: bool) -> UnifiedSkillOut:
+def patch_builtin_skill(
+    db: Session, name: str, *, enabled: bool, title: str | None = None,
+    description: str | None = None,
+) -> UnifiedSkillOut:
     from app.core.exceptions import not_found
     from app.skills.catalog import get_merged_skill_definition
     from app.skills.registry import get_skill
 
     if not get_skill(name):
         raise not_found(f"内置 skill `{name}` 不存在")
-    set_builtin_binding(db, name, enabled=enabled)
+    set_builtin_binding(db, name, enabled=enabled, title=title, description=description)
     defn = get_merged_skill_definition(db, name, admin_view=True)
     assert defn is not None
     return _to_unified(defn)

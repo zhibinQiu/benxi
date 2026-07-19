@@ -37,28 +37,36 @@ def push_intermediate_progress(
     *,
     tool: str = "",
     tool_name: str = "",
+    **extra: Any,
 ) -> None:
-    """工具内部调用的通用中间进度推送。
+    """工具内部中间进度 → progress_queue → SSE workflow。
 
-    任何工具在执行过程中可调用此函数将进度推送至前端 SSE 流。
-    phase 取值: tool_call / tool_result / llm_thinking / llm_decision / info
+    phase 常用值: tool_call / tool_result / llm_thinking / llm_decision /
+    url_parse_progress / info
     """
     if loop_state is None:
         return
-    # 检查所有可能的 progress_queue 位置
     q: asyncio.Queue | None = loop_state.get("_progress_queue")
     if q is None:
         q = loop_state.get("_parent_progress_queue")
     if q is None:
         return
-    q.put_nowait({
+    ev: dict[str, Any] = {
         "phase": phase,
-        "title": title[:120],
-        "detail": detail[:240],
+        "title": (title or "")[:120],
+        "detail": (detail or "")[:240],
         "tool": tool or tool_name,
         "tool_name": tool_name,
         "step_id": f"ip-{uuid.uuid4().hex[:8]}",
-    })
+    }
+    for key, value in extra.items():
+        if value is not None:
+            ev[key] = value
+    # 供无新事件时的心跳文案复用
+    hint = (detail or title or "").strip()
+    if hint:
+        loop_state["_last_progress_hint"] = hint[:160]
+    q.put_nowait(ev)
 
 
 def mark_browser_session_used(loop_state: LoopState | None) -> None:
@@ -259,10 +267,61 @@ _ADMIN_USER_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(ADMIN_USER_TOOL_
 
 _ADMIN_DEPT_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(ADMIN_DEPT_TOOL_NAMES)
 
-# 父子分离的委派工具集：invoke_skill / web_search 仅子智能体可见，
-# 父智能体的 build_agent_tool_specs（allowed_names=None）自然看不到，
-# 子智能体通过 allowed_names 显式申请，merge 时补入。
-_SUBCONTRACT_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(("invoke_skill", "web_search"))
+
+def _build_tool_specs_from_list(names: tuple[str, ...]) -> list[dict[str, Any]]:
+    """从工具名列表构建 tool specs，自动去重。"""
+    from app.core.agent_tool_args import build_tool_specs as _build
+
+    specs = _build(names)
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for spec in specs:
+        fn = spec.get("function") or {}
+        n = str(fn.get("name") or "")
+        if n and n not in seen:
+            seen.add(n)
+            out.append(spec)
+    return out
+
+
+def _apply_platform_gates(
+    db: Session,
+    user: User,
+    specs: list[dict[str, Any]],
+    *,
+    include_skill_scripts: bool,
+) -> list[dict[str, Any]]:
+    """按权限 / 知识库 / 浏览器 / 脚本开关过滤已挂载工具 specs。"""
+    from app.config import get_settings
+    from app.domains.knowledge import knowledge
+    from app.integrations.browser_automation.browser_config import get_browser_rpa_config
+
+    names_ok: set[str] = set()
+    for spec in specs:
+        n = str((spec.get("function") or {}).get("name") or "")
+        if n:
+            names_ok.add(n)
+
+    if not knowledge.enabled():
+        names_ok -= {"sync_document_knowledge", "reindex_document"}
+    if not include_skill_scripts or not get_settings().agent_skill_script_enabled:
+        names_ok.discard("run_skill_script")
+    if not get_browser_rpa_config(db).enabled:
+        names_ok -= {str((s.get("function") or {}).get("name") or "") for s in _BROWSER_TOOL_SPECS}
+    if not user_has_permission(db, user, "admin.user"):
+        names_ok -= {str((s.get("function") or {}).get("name") or "") for s in _ADMIN_USER_TOOL_SPECS}
+    if not user_has_permission(db, user, "admin.dept"):
+        names_ok -= {str((s.get("function") or {}).get("name") or "") for s in _ADMIN_DEPT_TOOL_SPECS}
+
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for spec in specs:
+        n = str((spec.get("function") or {}).get("name") or "")
+        if not n or n in seen or n not in names_ok:
+            continue
+        seen.add(n)
+        out.append(spec)
+    return out
 
 
 def build_agent_tool_specs(
@@ -272,38 +331,52 @@ def build_agent_tool_specs(
     allowed_names: set[str] | None = None,
     agent_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """按用户权限与平台开关组装可用原子工具列表。
+    """按「该智能体已挂载工具」组装 LLM 可见 specs。
 
     设计原则：
-    - orchestrator（调度智能体）：仅挂载通用能力——技能运行时工具 + 编排工具 + 系统通知工具。
-      不挂载：联网检索(web_search)、知识图谱(kg_query)、知识库检索(knowledge_retrieve)、
-      文档CRUD、浏览器、用户/部门管理等专精工具。
-      这些专精操作由路由分配到对应的专精 Agent 执行。
-    - 其他 Agent：挂载完整工具集。
+    - 可见范围 = 已挂载到该 agent 的工具（whitelist / DB binding），不是平台全库。
+    - orchestrator（父编排）：在挂载集上再隐藏技能/脚本直执入口；执行由 tool loop 委托子智能体。
+    - 专精 / 子智能体：挂载集可含 invoke_skill 等执行入口。
+    - allowed_names != None：再从挂载集中二次过滤（子 Agent allowed_tools）。
     """
     from app.config import get_settings
+    from app.core.tool_skill_taxonomy import (
+        AGENT_TOOL_WHITELIST,
+        PARENT_HIDDEN_EXECUTION_ENTRYPOINTS,
+    )
 
-    is_orchestrator = (agent_id or "").strip() == "orchestrator"
+    aid = (agent_id or "").strip()
+    is_orchestrator = aid == "orchestrator"
 
-    specs: list[dict[str, Any]] = list(AGENT_TOOL_SPECS)
-    specs.extend(_ORCHESTRATION_TOOL_SPECS)
+    if is_orchestrator or aid in AGENT_TOOL_WHITELIST:
+        # 优先 DB binding 挂载列表，否则回退 AGENT_TOOL_WHITELIST / AgentProfileDef
+        mounted: set[str] = set()
+        if aid:
+            try:
+                from app.services.agent_profile_service import (
+                    resolve_effective_runtime_tool_names,
+                )
 
-    if is_orchestrator:
-        # ── 调度智能体：仅系统通知工具（待办/定时提醒） ──
-        NOTIFICATION_TOOL_NAMES = frozenset({
-            "send_notification",
-            "schedule_notification",
-            "list_scheduled_notifications",
-            "cancel_scheduled_notification",
-        })
-        for spec in _PLATFORM_TOOL_SPECS:
-            name = str((spec.get("function") or {}).get("name") or "")
-            if name in NOTIFICATION_TOOL_NAMES:
-                specs.append(spec)
-        if get_settings().agent_skill_script_enabled:
-            specs.append(_RUN_SKILL_SCRIPT_SPEC)
+                mounted = {
+                    str(n).strip()
+                    for n in resolve_effective_runtime_tool_names(db, aid)
+                    if str(n).strip()
+                }
+            except Exception:
+                mounted = set()
+        if not mounted:
+            cfg = AGENT_TOOL_WHITELIST.get(aid or "orchestrator", {})
+            mounted = set(cfg.get("runtime", ())) | set(cfg.get("atomic", ()))
+        if is_orchestrator:
+            mounted -= PARENT_HIDDEN_EXECUTION_ENTRYPOINTS
+        specs = _build_tool_specs_from_list(tuple(sorted(mounted)))
+        specs = _apply_platform_gates(
+            db, user, specs, include_skill_scripts=not is_orchestrator
+        )
     else:
-        # ── 专精/通用路径：挂载完整工具集 ──
+        # 未知 agent_id / 子 Agent 全量池（再由 allowed_names 收窄）
+        specs = list(AGENT_TOOL_SPECS)
+        specs.extend(_ORCHESTRATION_TOOL_SPECS)
         specs.extend(_ATOMIC_RETRIEVAL_TOOL_SPECS)
         specs.extend(_DOCUMENT_TOOL_SPECS)
         specs.extend(_PLATFORM_TOOL_SPECS)
@@ -311,34 +384,20 @@ def build_agent_tool_specs(
             specs.extend(_ADMIN_USER_TOOL_SPECS)
         if user_has_permission(db, user, "admin.dept"):
             specs.extend(_ADMIN_DEPT_TOOL_SPECS)
-        from app.domains.knowledge import knowledge
-
-        if not knowledge.enabled():
-            specs = [
-                s
-                for s in specs
-                if str((s.get("function") or {}).get("name") or "")
-                not in ("sync_document_knowledge", "reindex_document")
-            ]
         if get_settings().agent_skill_script_enabled:
             specs.append(_RUN_SKILL_SCRIPT_SPEC)
         from app.integrations.browser_automation.browser_config import get_browser_rpa_config
 
         if get_browser_rpa_config(db).enabled:
             specs.extend(_BROWSER_TOOL_SPECS)
+        specs = _apply_platform_gates(db, user, specs, include_skill_scripts=True)
+
     if allowed_names is not None:
-        _spec_name = lambda s: str((s.get("function") or {}).get("name") or "")
-        specs = [s for s in specs if _spec_name(s) in allowed_names]
-        # 子智能体显式申请的委派工具（invoke_skill / web_search）补入
-        seen = {_spec_name(s) for s in specs}
-        specs.extend(
-            s for s in _SUBCONTRACT_TOOL_SPECS
-            if _spec_name(s) in allowed_names and _spec_name(s) not in seen
-        )
-    # ── 父智能体（allowed_names=None）路径 ──
-    # invoke_skill 不在 AGENT_TOOL_SPECS 中（已从 SKILL_RUNTIME_TOOL_NAMES 移除），
-    # 父路径自然看不到它。web_search 仍存在于 _ATOMIC_RETRIEVAL_TOOL_SPECS 中，
-    # 后续待整体迁移至委派列表后一并移除。
+        specs = [
+            s
+            for s in specs
+            if str((s.get("function") or {}).get("name") or "") in allowed_names
+        ]
     return specs
 
 
@@ -444,14 +503,12 @@ async def _execute_invoke_skill(
     ctx.user_message = user_message
     ctx.loop_state = loop_state
 
-    from app.core.tool_skill_taxonomy import SKILL_SKILL_DEV, is_skill_runtime_tool
+    from app.core.tool_skill_taxonomy import is_skill_runtime_tool
 
     if is_skill_runtime_tool(skill_name):
         return _tool_result(
             False,
-            f"请勿 invoke_skill(skill_name=`{skill_name}`)。"
-            f"技能管理请 invoke_skill({SKILL_SKILL_DEV}, call, "
-            f"{{operation: `{skill_name}`, ...}})",
+            f"请直接调用工具 `{skill_name}`，不要通过 invoke_skill。"
         )
 
     if loop_state is not None and not loop_state.get("isolated_subagent"):
@@ -465,7 +522,7 @@ async def _execute_invoke_skill(
                     "knowledge-search",
                     "kg",
                 }:
-                    kind = "auto" if skill_name == "browser-automation" else "search"
+                    kind = "execute" if skill_name == "browser-automation" else "search"
                     return _tool_result(
                         False,
                         f"请用 invoke_context_subagent(kind={kind}, task=...) 委托子 Agent 调用 "
@@ -474,7 +531,7 @@ async def _execute_invoke_skill(
             return _tool_result(
                 False,
                 f"当前智能体未绑定 Skill `{skill_name}`；"
-                "本域调研请用 invoke_context_subagent(kind=search|auto)，"
+                "本域调研请用 invoke_context_subagent(kind=search|use|execute)，"
                 "勿直接 invoke_skill 跨域检索 Skill",
             )
 
@@ -945,9 +1002,8 @@ async def _execute_create_skill(
         return _tool_result(
             False,
             "创建 Skill 前须先完成调研：invoke_context_subagent"
-            "（网页 browser_digest→browser-automation，浏览器未开启时自动 explore；"
-            "公开信息 explore→web-search 等 + queries）。"
-            "完成后 invoke_skill(skill-development, call, {operation: create_skill, ...})",
+            "（网页 browser→kind=execute；公开信息→kind=search，可传 queries）。"
+            "完成后直接调用 create_skill 创建技能包",
         )
 
     extra_files = _parse_extra_files(params.get("extra_files"))
@@ -1251,28 +1307,37 @@ async def execute_agent_tool(
             )
 
         if name == "search_tools":
-            from app.services.agent_tool_search import execute_search_skills_compat
+            from app.services.agent_tool_search import execute_find_skills
 
             query = str(params.get("query") or user_message or "").strip()
             limit = int(params.get("limit") or 8)
-            return await execute_search_skills_compat(
+            return await execute_find_skills(
                 db, user, query=query, limit=limit, loop_state=loop_state
             )
 
-        if tool_name == "search_skills":
+        if tool_name == "find_skills":
             from app.skills.catalog import search_skill_routes
 
             query = str(params.get("query") or user_message or "").strip()
             limit = int(params.get("limit") or 8)
-            allowed = None
+            # 仅匹配已挂载到当前 Agent 的技能（binding / allowed_skill_names），非平台全库
+            allowed: set[str] | None = None
             if loop_state is not None:
                 raw = loop_state.get("allowed_skill_names")
-                if raw:
+                if raw is not None:
                     allowed = {str(x).strip() for x in raw if str(x).strip()}
+                elif loop_state.get("agent_id"):
+                    from app.services.agent_profile_service import resolve_agent_skill_names
+
+                    allowed = set(
+                        resolve_agent_skill_names(
+                            db, str(loop_state.get("agent_id") or "").strip()
+                        )
+                    )
             lines = search_skill_routes(db, user, query, limit=limit)
             if allowed is not None:
                 lines = [ln for ln in lines if any(f"`{s}`" in ln for s in allowed)]
-            text = "\n".join(lines) if lines else "未匹配到 Skill"
+            text = "\n".join(lines) if lines else "未匹配到已挂载 Skill"
             return _tool_result(True, f"匹配 {len(lines)} 条 Skill 路由", {"lines": lines, "text": text})
 
         if tool_name == "describe_tool":
@@ -1325,12 +1390,15 @@ async def execute_agent_tool(
                 }
                 loop_state["subagent_progress"] = subagent_progress
 
+            raw_steps = params.get("steps")
+            steps = raw_steps if isinstance(raw_steps, list) else None
             result = await execute_context_subagent(
                 db,
                 user,
                 kind=kind,
                 task=task,
                 queries=params.get("queries") if isinstance(params.get("queries"), list) else None,
+                steps=steps,
                 conversation_id=conversation_id,
                 attachment_session_id=attachment_session_id,
                 loop_state=loop_state,
@@ -1621,6 +1689,55 @@ async def execute_agent_tool(
             svc.delete_skill_by_name(db, str(params.get("skill_name") or ""))
             return _tool_result(True, "已删除 Skill")
 
+        if tool_name == "mermaid_diagram":
+            description = str(params.get("description") or "").strip()
+            if not description:
+                return _tool_result(False, "缺少 description 参数")
+            from app.integrations.deepseek_client import (
+                chat_completion_message_async,
+                is_configured as llm_ready,
+            )
+
+            if not llm_ready():
+                return _tool_result(False, "语言模型未配置，无法生成图表")
+            push_intermediate_progress(
+                loop_state, "llm_thinking", "正在生成 Mermaid 图表", description[:120],
+                tool_name="mermaid_diagram",
+            )
+            choice = await chat_completion_message_async(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是 Mermaid 图表生成器。根据用户描述输出唯一一张图。"
+                            "只输出一个以 ```mermaid 开头的 Markdown 围栏代码块，"
+                            "不要道歉、不要解释你无法画图。节点文案用简体中文，"
+                            "首行必须是合法图类型（如 flowchart TD / sequenceDiagram / mindmap）。"
+                        ),
+                    },
+                    {"role": "user", "content": description},
+                ],
+                temperature=0.2,
+                timeout=60.0,
+            )
+            text = ""
+            if isinstance(choice, dict):
+                msg = choice.get("message") or {}
+                text = str(msg.get("content") or "").strip()
+            if not text:
+                return _tool_result(False, "图表生成失败：模型未返回内容")
+            if "```mermaid" not in text.lower() and "```" not in text:
+                text = f"```mermaid\n{text}\n```"
+            # 图表源码即交付物，写入 loop_state 供终稿直接使用
+            if loop_state is not None:
+                loop_state["task_deliverable"] = text
+                loop_state["deterministic_reply"] = text
+            return _tool_result(
+                True,
+                "已生成 Mermaid 图表",
+                {"mermaid": text, "description": description},
+            )
+
         return _tool_result(False, f"未知工具: {tool_name}")
     except Exception as exc:
         _logger.warning("agent tool %s failed: %s", tool_name, exc)
@@ -1685,13 +1802,67 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
             "detail": url[:120],
             "tool": "fetch_url_content",
         }
-    if name == "search_skills":
+    if name == "stock_quote":
+        codes = str(params.get("codes") or "").strip() or "?"
+        return {
+            "title": f"获取股票行情：{codes[:80]}",
+            "result_title": "股票行情获取完成",
+            "detail": codes[:120],
+            "tool": "stock_quote",
+        }
+    if name == "stock_kline":
+        code = str(params.get("code") or "").strip() or "?"
+        return {
+            "title": f"获取 K 线数据：{code[:80]}",
+            "result_title": "K 线数据获取完成",
+            "detail": code[:120],
+            "tool": "stock_kline",
+        }
+    if name == "market_indices":
+        return {
+            "title": "获取市场指数",
+            "result_title": "市场指数获取完成",
+            "tool": "market_indices",
+        }
+    if name == "finance_search":
         query = str(params.get("query") or "").strip() or "?"
         return {
-            "title": f"搜索 Skill「{query[:80]}」",
-            "result_title": "Skill 搜索完成",
+            "title": f"搜索金融产品：{query[:80]}",
+            "result_title": "金融产品搜索完成",
             "detail": query[:120],
-            "tool": "skill.search",
+            "tool": "finance_search",
+        }
+    if name == "carbon_price":
+        keyword = str(params.get("keyword") or params.get("url") or "").strip() or "默认源"
+        return {
+            "title": f"获取碳价行情：{keyword[:80]}",
+            "result_title": "碳价行情获取完成",
+            "detail": keyword[:120],
+            "tool": "carbon_price",
+        }
+    if name == "carbon_policy":
+        keyword = str(params.get("keyword") or params.get("url") or "").strip() or "默认源"
+        return {
+            "title": f"获取双碳政策：{keyword[:80]}",
+            "result_title": "双碳政策获取完成",
+            "detail": keyword[:120],
+            "tool": "carbon_policy",
+        }
+    if name == "carbon_data":
+        topic = str(params.get("topic") or "").strip() or "?"
+        return {
+            "title": f"获取双碳数据：{topic[:80]}",
+            "result_title": "双碳数据获取完成",
+            "detail": topic[:120],
+            "tool": "carbon_data",
+        }
+    if name == "find_skills":
+        query = str(params.get("query") or "").strip() or "?"
+        return {
+            "title": f"查找 Skill「{query[:80]}」",
+            "result_title": "Skill 查找完成",
+            "detail": query[:120],
+            "tool": "skill.find",
         }
     if name == "invoke_skill":
         skill = str(params.get("skill_name") or "").strip() or "?"
@@ -1706,12 +1877,40 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == "run_tool_batch":
         steps = params.get("steps") or []
         count = len(steps) if isinstance(steps, list) else 0
+        detail_parts: list[str] = []
+        if isinstance(steps, list):
+            for step in steps[:4]:
+                if not isinstance(step, dict):
+                    continue
+                tn = str(step.get("tool") or step.get("name") or "").strip()
+                args = step.get("arguments") or step.get("args") or {}
+                if isinstance(args, dict):
+                    tip = str(
+                        args.get("query")
+                        or args.get("question")
+                        or args.get("task")
+                        or args.get("title")
+                        or ""
+                    ).strip()
+                else:
+                    tip = ""
+                detail_parts.append(f"{tn}：{tip[:40]}" if tip else tn)
+        detail = "；".join(p for p in detail_parts if p) or f"{count} 步"
         return {
-            "title": f"批量执行 {count} 个步骤",
+            "title": detail if detail_parts else f"批量执行 {count} 个步骤",
             "result_title": "批量执行完成",
             "failure_title": "批量执行失败",
-            "detail": f"{count} 步",
+            "detail": detail,
             "tool": "run_tool_batch",
+        }
+    if name == "mermaid_diagram":
+        desc = str(params.get("description") or "").strip()
+        return {
+            "title": f"绘制图表：{desc[:80]}" if desc else "生成 Mermaid 图表",
+            "result_title": "图表已生成",
+            "failure_title": "图表生成失败",
+            "detail": desc[:120],
+            "tool": "mermaid_diagram",
         }
     if name == "invoke_context_subagent":
         kind = str(params.get("kind") or "search").strip()

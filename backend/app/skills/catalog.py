@@ -18,15 +18,18 @@ from app.skills.routing import (
     uploaded_skill_tag,
 )
 from app.agentkit.skills.search import rank_skills_by_query, skill_query_tokens
+from app.core.ttl_cache import ttl_cache
 from app.skills.types import SkillDefinition, SkillReadiness, SkillSource
 
 
-def _binding_overrides(db: Session) -> dict[str, bool]:
+@ttl_cache(ttl=3.0)
+def _binding_overrides(db: Session) -> dict[str, tuple[bool, str | None, str | None]]:
+    """返回 {name: (enabled, title_override, description_override)}。"""
     from app.models.agent_skill_binding import AgentSkillBinding
 
     try:
         rows = db.scalars(select(AgentSkillBinding)).all()
-        return {row.name: row.enabled for row in rows}
+        return {row.name: (row.enabled, row.title_override, row.description_override) for row in rows}
     except Exception:
         db.rollback()
         return {}
@@ -45,13 +48,16 @@ def _effective_readiness(
     *,
     user: User | None,
     db: Session | None,
-    binding_overrides: dict[str, bool],
+    binding_overrides: dict[str, tuple[bool, str | None, str | None]],
     admin_view: bool = False,
 ) -> SkillReadiness:
     if defn.source == SkillSource.BUILTIN:
-        if defn.name in binding_overrides and not binding_overrides[defn.name]:
-            return SkillReadiness.DISABLED
-        if not _is_feature_available(defn):
+        if defn.name in binding_overrides:
+            enabled, *_ = binding_overrides[defn.name]
+            if not enabled:
+                return SkillReadiness.DISABLED
+            # 用户通过 binding 显式启用 → 跳过 feature 可用性检查，尊重用户设置
+        elif not _is_feature_available(defn):
             return SkillReadiness.DISABLED
         if defn.permission_code and db is not None and user is not None:
             if not admin_view and not user_has_permission(db, user, defn.permission_code):
@@ -66,17 +72,27 @@ def resolve_skill_definition(
     *,
     user: User | None = None,
     admin_view: bool = False,
-    bindings: dict[str, bool] | None = None,
+    bindings: dict[str, tuple[bool, str | None, str | None]] | None = None,
 ) -> SkillDefinition:
     """返回带有效 readiness 的副本（frozen dataclass 需重建）。"""
     binding_overrides = bindings if bindings is not None else _binding_overrides(db)
     readiness = _effective_readiness(
         defn, user=user, db=db, binding_overrides=binding_overrides, admin_view=admin_view
     )
+    # 应用 title/description 覆盖
+    binding = binding_overrides.get(defn.name)
+    title = defn.title
+    description = defn.description
+    if binding:
+        _, title_override, desc_override = binding
+        if title_override:
+            title = title_override
+        if desc_override:
+            description = desc_override
     return SkillDefinition(
         name=defn.name,
-        title=defn.title,
-        description=defn.description,
+        title=title,
+        description=description,
         source=defn.source,
         tools=defn.tools,
         orchestrated_tools=defn.orchestrated_tools,
@@ -95,6 +111,7 @@ def resolve_skill_definition(
     )
 
 
+@ttl_cache(ttl=3.0)
 def list_mcp_skill_definitions(
     db: Session, *, include_disabled: bool = False
 ) -> list[SkillDefinition]:
@@ -105,6 +122,7 @@ def list_mcp_skill_definitions(
     return [build_mcp_skill_definition(row) for row in rows]
 
 
+@ttl_cache(ttl=3.0)
 def list_uploaded_skill_definitions(
     db: Session, *, include_disabled: bool = False
 ) -> list[SkillDefinition]:
@@ -175,6 +193,7 @@ def list_all_skill_definitions(
     return out
 
 
+@ttl_cache(ttl=3.0)
 def get_merged_skill_definition(
     db: Session, name: str, *, user: User | None = None, admin_view: bool = False
 ) -> SkillDefinition | None:
@@ -273,7 +292,7 @@ def _format_agent_catalog_prompt(
     if lazy:
         lines = [SKILL_DISCOVERY_RULES, ""]
         if visible:
-            lines.append("### 本轮相关 Skill（按需 invoke_skill；更多请 search_skills）")
+            lines.append("### 本轮相关 Skill（按需 invoke_skill；更多请 find_skills）")
             for skill in visible:
                 tag = ""
                 if skill.source == SkillSource.UPLOADED:
@@ -289,7 +308,7 @@ def _format_agent_catalog_prompt(
                 lines.append(format_skill_route_line(skill, tag=tag))
             lines.append("")
         lines.append(
-            "完整 Skill/MCP 目录不在此常驻；需要时用 search_skills(query) 或 list_agent_skills 按需加载。"
+            "完整 Skill/MCP 目录不在此常驻；需要时用 find_skills(query) 或 list_agent_skills 按需加载。"
         )
         return "\n".join(lines).rstrip()
 
@@ -331,7 +350,7 @@ def _format_agent_catalog_prompt(
     if resident_only:
         lines.append(
             "低频内置能力（翻译/报告/OCR 等）不在此列表；"
-            "用户明确点名或 search_skills 命中后再处理，极低频请引导至对应功能页文档。"
+            "用户明确点名或 find_skills 命中后再处理，极低频请引导至对应功能页文档。"
         )
 
     return "\n".join(lines).rstrip()
@@ -407,12 +426,23 @@ def build_agent_catalog_prompt(
     )
 
 
-def set_builtin_binding(db: Session, name: str, *, enabled: bool) -> None:
+def set_builtin_binding(
+    db: Session, name: str, *, enabled: bool,
+    title: str | None = None, description: str | None = None,
+) -> None:
     from app.models.agent_skill_binding import AgentSkillBinding
 
     row = db.get(AgentSkillBinding, name)
     if row:
         row.enabled = enabled
+        if title is not None:
+            row.title_override = title or None
+        if description is not None:
+            row.description_override = description or None
     else:
-        db.add(AgentSkillBinding(name=name, enabled=enabled))
+        db.add(AgentSkillBinding(
+            name=name, enabled=enabled,
+            title_override=title or None,
+            description_override=description or None,
+        ))
     db.commit()

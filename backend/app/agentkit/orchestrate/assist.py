@@ -84,8 +84,8 @@ def _keyword_to_agent(blob: str, rules: AssistRules) -> str:
         return "report"
     if any(k in blob for k in ("图", "mermaid", "流程图", "思维导图")):
         return "diagram"
-    if any(k in blob for k in ("浏览器", "网页", "rpa", "截图")):
-        return "rpa"
+    if any(k in blob for k in ("浏览器", "网页", "截图")):
+        return "orchestrator"
     if any(k in blob for k in ("定时", "提醒", "schedule")):
         return "orchestrator"
     return ""

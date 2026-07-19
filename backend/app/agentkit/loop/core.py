@@ -67,14 +67,15 @@ def build_turn_tools_context(
     max_lines: int = 12,
     line_limit: int = 200,
 ) -> str:
-    """从 loop_state 提取本轮已执行工具的短摘要。"""
-    lines = (loop_state or {}).get("tool_outcome_lines") or []
-    if not lines:
-        return ""
-    clipped = [str(line)[:line_limit] for line in list(lines)[-max_lines:]]
-    return "【本轮工具观测】\n" + "\n".join(
-        f"- {line}" for line in clipped if line.strip()
-    )
+    """从 loop_state 提取本轮已执行工具的短摘要。
+
+    委托平台 ``build_turn_executed_tools_context``（单一事实源）；
+    ``max_lines`` / ``line_limit`` 保留签名兼容，截断由平台侧控制。
+    """
+    del max_lines, line_limit
+    from app.core.agent_tool_context import build_turn_executed_tools_context
+
+    return build_turn_executed_tools_context(loop_state)
 
 
 def _build_dynamic_blocks(ev: LoopEvidence, user_msg: str, msg_limit: int) -> list[str]:

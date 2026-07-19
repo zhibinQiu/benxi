@@ -90,7 +90,7 @@ const routes = [
       {
         path: "system/data-analysis",
         name: "data-analysis",
-        meta: { title: "数据分析", fullHeight: true, featureIcon: "stats-chart" },
+        meta: { title: "表格分析", fullHeight: true, featureIcon: "stats-chart" },
         component: () => import("../views/DataAnalysisView.vue"),
       },
       {
@@ -296,8 +296,7 @@ const routes = [
       {
         path: "todos",
         name: "todos",
-        meta: { title: "待办事项", featureIcon: "list" },
-        component: () => import("../views/TodosView.vue"),
+        redirect: { name: "notes", query: { tab: "todos" } },
       },
       {
         path: "profile",
@@ -360,6 +359,47 @@ const routes = [
         name: "issue-reports",
         meta: { title: "改进建议", featureIcon: "list" },
         component: () => import("../views/IssueReportsView.vue"),
+      },
+      {
+        path: "system/finance",
+        name: "finance-assistant",
+        meta: {
+          title: "理财助手",
+          featureLocalNav: true,
+          featureIcon: "trending-up",
+        },
+        component: () => import("../views/FinanceAssistantView.vue"),
+      },
+      {
+        path: "system/carbon-assistant",
+        name: "carbon-assistant",
+        meta: {
+          title: "双碳助手",
+          featureLocalNav: true,
+          featureIcon: "leaf",
+        },
+        component: () => import("../views/CarbonAssistantView.vue"),
+      },
+      {
+        path: "system/prompts",
+        name: "prompt-management",
+        meta: {
+          title: "提示词管理",
+          featureIcon: "clipboard-outline",
+        },
+        component: () => import("../views/PromptManagementView.vue"),
+      },
+      {
+        path: "system/notes",
+        name: "notes",
+        meta: {
+          title: "工作笔记",
+          fullHeight: true,
+          flushStart: true,
+          flushEnd: true,
+          featureIcon: "create",
+        },
+        component: () => import("../views/NoteView.vue"),
       },
       {
         path: "agentkit-docs",

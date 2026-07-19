@@ -35,7 +35,6 @@
   .n-empty__description,
   .n-list-item__main,
   .n-tabs-tab,
-  .n-pagination-item,
   .n-input__input-el,
   .n-input__textarea-el,
   .n-input__placeholder,
@@ -88,8 +87,8 @@
 }
 
 .app-content .functions-page .feature-card__desc {
-  font-size: var(--platform-font-size-base);
-  color: var(--platform-text-secondary);
+  font-size: var(--platform-font-size-sm);
+  color: var(--platform-text-tertiary);
 }
 
 .app-content .documents-page :is(
@@ -104,7 +103,7 @@
 }
 
 .app-content .documents-page .kb-folder-card__title {
-  font-size: var(--platform-font-size-xs);
+  font-size: 11px;
 }
 
 .app-content .documents-page .documents-doc-title {

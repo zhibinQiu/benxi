@@ -27,6 +27,7 @@ def _parse_int(raw: str | None, default: int) -> int:
 class FreeWebAiConfig:
     """免费网页 AI 配置。"""
 
+    enabled: bool = True
     headless: bool = True  # 默认无头模式，避免弹出浏览器窗口
     cdp_port: int = 0
     chrome_path: str = ""
@@ -55,6 +56,7 @@ def get_free_web_ai_config() -> FreeWebAiConfig:
         return None
 
     return FreeWebAiConfig(
+        enabled=_parse_bool(_get("FREE_WEB_AI_ENABLED"), True),
         headless=_parse_bool(_get("FREE_WEB_AI_HEADLESS"), True),
         cdp_port=_parse_int(_get("FREE_WEB_AI_CDP_PORT"), 0),
         chrome_path=_get("FREE_WEB_AI_CHROME_PATH") or "",

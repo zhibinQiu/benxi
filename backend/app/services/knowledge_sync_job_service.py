@@ -578,23 +578,30 @@ def _advance_parse_job_progress(
     status: str | None,
     rag_progress: int | None,
     stagnant_polls: int,
+    progress_floor: int = 68,
+    progress_ceil: int = 94,
 ) -> tuple[int, int]:
-    """在等待 KnowFlow 解析时推进任务进度，避免长时间停在 68%。"""
+    """在等待 KnowFlow 解析时推进任务进度，避免长时间停在同一百分比。"""
+    floor = max(0, min(99, int(progress_floor)))
+    ceil = max(floor, min(99, int(progress_ceil)))
+    stagnant_ceil = min(ceil, max(floor, ceil - 1))
+    queue_ceil = min(stagnant_ceil, floor + 16)
     prev = progress
     if rag_progress is not None and rag_progress >= 0:
-        mapped = 68 + round(rag_progress * 26 / 100)
-        progress = max(progress, min(94, mapped))
+        span = max(1, ceil - floor)
+        mapped = floor + round(rag_progress * span / 100)
+        progress = max(progress, min(ceil, mapped))
     elif _is_parse_running(status):
-        progress = min(94, progress + 1)
+        progress = min(ceil, progress + 1)
     elif status in (None, "未解析"):
-        progress = min(84, progress + 1)
+        progress = min(queue_ceil, progress + 1)
 
     if progress <= prev and (
         _is_parse_running(status) or status in (None, "未解析")
     ):
         stagnant_polls += 1
         if stagnant_polls >= 2:
-            progress = min(93, progress + 1)
+            progress = min(stagnant_ceil, progress + 1)
             stagnant_polls = 0
     else:
         stagnant_polls = 0
@@ -774,6 +781,8 @@ def _wait_for_parse(
     version_id: uuid.UUID | None = None,
     max_wait_sec: int | None = None,
     update_progress: bool = True,
+    progress_floor: int = 68,
+    progress_ceil: int = 94,
 ) -> bool:
     """等待 RAGFlow 解析完成。每轮轮询使用独立 DB 会话，sleep 期间不占用连接。"""
     from app.config import get_settings
@@ -789,7 +798,11 @@ def _wait_for_parse(
         absolute_deadline,
         time.time() + min(soft_extend, int(max_wait_sec)),
     )
-    progress = 68
+    floor = max(0, min(99, int(progress_floor)))
+    ceil = max(floor, min(99, int(progress_ceil)))
+    done_progress = min(99, ceil + 1)
+    soft_hold = min(ceil, floor + 16)
+    progress = floor
     last_status: str | None = None
     stagnant_polls = 0
     queue_backlog_polls = 0
@@ -814,7 +827,7 @@ def _wait_for_parse(
                             db,
                             job.id,
                             JobStatus.running.value,
-                            progress=min(progress, 84),
+                            progress=min(progress, soft_hold),
                         )
                 else:
                     soft_deadline = min(now + 60, absolute_deadline)
@@ -845,7 +858,9 @@ def _wait_for_parse(
                     db.commit()
                     return False
                 if update_progress:
-                    update_job_status(db, job.id, JobStatus.running.value, progress=95)
+                    update_job_status(
+                        db, job.id, JobStatus.running.value, progress=done_progress
+                    )
                 db.commit()
                 return True
             if _is_parse_failed(status):
@@ -859,6 +874,8 @@ def _wait_for_parse(
                 status=status,
                 rag_progress=rag_progress,
                 stagnant_polls=stagnant_polls,
+                progress_floor=floor,
+                progress_ceil=ceil,
             )
             if update_progress:
                 update_job_status(db, job.id, JobStatus.running.value, progress=progress)
@@ -1161,7 +1178,13 @@ def _defer_awaiting_parse_phase(
     mode: str,
     version_id_raw: str | None,
 ) -> None:
-    """同步链内解析超时：写入 awaiting_parse 阶段并调度同一 Job 续跑。"""
+    """同步链内解析超时：写入 awaiting_parse 阶段并延迟调度同一 Job 续跑。
+
+    必须带 countdown：当前 worker 仍占用 ``submit_background`` 同名 inflight 与执行租约，
+    立即调度会被去重跳过或抢租失败，任务会永久停在 90%。
+    """
+    from app.config import get_settings
+
     if _index_job_should_abort(db, job):
         return
     job.payload = enter_awaiting_parse_phase(
@@ -1172,7 +1195,8 @@ def _defer_awaiting_parse_phase(
         version_id_raw=version_id_raw,
     )
     update_job_status(db, job.id, JobStatus.running.value, progress=90, error_message=None)
-    dispatch_index_job(job.id)
+    delay = max(2, int(get_settings().knowledge_parse_poll_interval_sec))
+    dispatch_index_job(job.id, countdown=delay)
 
 
 def _run_awaiting_parse_phase(job_id: uuid.UUID) -> None:
@@ -1225,7 +1249,9 @@ def _run_awaiting_parse_phase(job_id: uuid.UUID) -> None:
             ragflow_document_id=rid,
             version_id=version_uuid,
             max_wait_sec=remaining,
-            update_progress=False,
+            update_progress=True,
+            progress_floor=90,
+            progress_ceil=99,
         )
     except RuntimeError as exc:
         parse_exc = exc
@@ -1275,12 +1301,23 @@ def _run_awaiting_parse_phase(job_id: uuid.UUID) -> None:
                 version_id_raw=version_id_raw,
             )
             job.payload["parse_watch_started_at"] = started_at
-            update_job_status(db, job.id, JobStatus.running.value, progress=90)
+            current_progress = max(90, min(99, int(job.progress or 90)))
+            update_job_status(
+                db, job.id, JobStatus.running.value, progress=current_progress
+            )
             db.commit()
             delay = max(60, int(settings.knowledge_parse_poll_interval_sec) * 6)
             dispatch_index_job(job_id, countdown=delay)
             return
 
+        _fail_parse_job(
+            db,
+            job,
+            user,
+            doc,
+            f"文档解析超时（已等待 {int(elapsed)} 秒）",
+            mode=mode,
+        )
         db.commit()
     except Exception:
         logger.exception("文档索引解析等待阶段失败 job=%s", job_id)

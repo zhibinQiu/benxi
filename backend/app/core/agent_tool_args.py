@@ -70,8 +70,8 @@ class KgQueryArgs(_StrictArgs):
     question: str = Field(min_length=1, max_length=500)
 
 
-class MermaidDiagramArgs(_StrictArgs):
-    description: str = Field(min_length=1, max_length=1000, description="图表类型和内容描述")
+class OntologyQueryArgs(_StrictArgs):
+    question: str = Field(min_length=1, max_length=500)
 
 
 class SearchToolsArgs(_StrictArgs):
@@ -121,6 +121,20 @@ class CarbonDataArgs(_StrictArgs):
     )
     keyword: str = Field(default="", description="可选关键词，缩小摘要关注点")
     url: str = Field(default="", description="可选，指定 URL 直接抓取")
+
+
+class TimeSeriesForecastArgs(_StrictArgs):
+    method: Literal["rule", "ets", "sarimax", "prophet"] = Field(
+        default="rule",
+        description=(
+            "预测算法: rule(规则趋势+季节+履约季) / ets(Holt-Winters) / "
+            "sarimax(履约月外生) / prophet(周年季节)"
+        ),
+    )
+    series: Literal["cea", "ccer"] = Field(
+        default="cea",
+        description="内置序列: cea(全国碳市场配额) / ccer(自愿减排量)",
+    )
 
 
 class InvokeSkillArgs(_StrictArgs):
@@ -638,11 +652,11 @@ ALL_TOOLS: list[ToolDef] = [
     ToolDef(
         name=ATOMIC_TOOL_WEB_SEARCH,
         description=(
-            "联网检索公开信息，返回各来源全文（Markdown）。"
-            "可多次调用此工具实现多轮搜索：先宽泛搜索了解概貌，"
-            "根据已读全文生成更具体的关键词继续深挖，"
-            "不同来源结论矛盾时追加搜索做交叉验证。"
-            "read_full=0 仅返回摘要片段（省 Token），默认 3 条全文。"
+            "联网检索公开信息。"
+            "简单事实（单一可核验的短答案）：只搜 1 次，query 简短，read_full=0，"
+            "拿到摘要即答，禁止换词重搜。"
+            "复杂调研才可多轮：先宽后窄，矛盾时再交叉验证；"
+            "read_full=0 仅摘要（快），默认 3 条全文（慢）。"
         ),
         args_schema=WebSearchArgs,
         authority=("retrieval",),
@@ -669,6 +683,16 @@ ALL_TOOLS: list[ToolDef] = [
             "如需文档内容检索请用 knowledge_retrieve。"
         ),
         args_schema=KgQueryArgs,
+        authority=("retrieval",),
+    ),
+    ToolDef(
+        name=ATOMIC_TOOL_ONTOLOGY_QUERY,
+        description=(
+            "查询本体定义（Ontology Schema）：实体类型、关系类型约束与属性模式。"
+            "当用户问领域有哪些类型/关系定义，或需在 kg_query 前了解本体约束时使用。"
+            "⚠ 仅返回 TBox 模式定义，不返回具体实体实例；实例请用 kg_query。"
+        ),
+        args_schema=OntologyQueryArgs,
         authority=("retrieval",),
     ),
     ToolDef(
@@ -768,12 +792,16 @@ ALL_TOOLS: list[ToolDef] = [
         args_schema=CarbonDataArgs,
         authority=("retrieval",),
     ),
-    # ── 图表绘制（原 mermaid-diagram skill 迁移） ──────
+    # ── 模型推理（时序预测等）──────────────────────────
     ToolDef(
-        name="mermaid_diagram",
-        description="按描述生成 Mermaid 图表（流程图/思维导图/时序图/架构图等）。",
-        args_schema=MermaidDiagramArgs,
-        authority=("orchestration",),
+        name="time_series_forecast",
+        description=(
+            "时序预测模型推理：基于历史日线外推至年底（中枢价与高低带）。"
+            "method=rule|ets|sarimax|prophet；series=cea|ccer。"
+            "用于价格走势预测/至年底外推，不是实时行情摘要（实时行情用 carbon_price）。"
+        ),
+        args_schema=TimeSeriesForecastArgs,
+        authority=("retrieval",),
     ),
     # ── 发现 / 元工具 ─────────────────────────────────
     ToolDef(
@@ -1144,11 +1172,11 @@ ALL_TOOLS: list[ToolDef] = [
     ToolDef(
         name="invoke_context_subagent",
         description=(
-            "委托子 Agent 执行任务。这是三种子智能体的统一入口：\n"
-            "- kind=search：深度联网检索（搜索+知识库+本体+图谱，多源交叉验证，直接回答）\n"
-            "- kind=use：执行已有 Skill（按需调用技能的每一步）\n"
-            "- kind=execute：严格按父智能体编排的步骤执行（浏览器自动化、定时器、通知发送等具体操作）\n"
-            "所有需要联网查信息/调研/研究的需求统一使用 kind=search。"
+            "委托子 Agent 执行任务。父编排唯一执行入口：\n"
+            "- kind=search：联网/知识库/图谱检索（简单事实与深度调研均用此入口）\n"
+            "- kind=use：执行已有 Skill\n"
+            "- kind=execute：按 steps 执行浏览器/通知等原子步骤\n"
+            "禁止父编排直接调用原子检索/执行工具；须委托子 Agent。"
         ),
         args_schema=InvokeContextSubagentArgs,
         authority=("orchestration",),

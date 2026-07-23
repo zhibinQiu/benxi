@@ -1,15 +1,26 @@
 ---
 name: create_kb_folder
 ---
-create_kb_folder 工具 — 根据当前任务需求自动调用。
+在指定文档库范围内新建文件夹。
 
 ## When to use
-- 用户请求与 create_kb_folder 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 用户要求新建文档分类/文件夹
+- 写入文档前需要先建目标文件夹
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 更新已有文件夹（用 update_kb_folder）
+- 删除文件夹（用 delete_kb_folder）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 新建文件夹信息（含 folder_id）
+
+## Parameters
+
+### name (required)
+文件夹名称。
+
+### scope (required)
+所属范围。
+
+### description (optional)
+文件夹说明。

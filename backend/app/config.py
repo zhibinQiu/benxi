@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # ── 平台基础 ──────────────────────────────────────────────────────────────
     app_name: str = "本析"
-    platform_version: str = "4.8.6"
+    platform_version: str = "4.8.7"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -207,6 +207,8 @@ class Settings(BaseSettings):
     agent_max_sequential_handoffs: int = 2
     agent_max_parallel_handoffs: int = 2
     agent_routing_llm_enabled: bool = False
+    agent_skill_rag_enabled: bool = True
+    agent_skill_rag_min_similarity: float = 0.42
     agent_skill_match_threshold: float = 0.3
     agent_capability_fallback_mode: str = "loose"
     agent_orchestrator_max_assist_rounds: int = 2

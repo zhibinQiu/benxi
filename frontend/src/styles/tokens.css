@@ -74,9 +74,9 @@ html[data-theme="light"] {
   --platform-duration-spring: 0.4s;
   --platform-duration-smooth: 0.22s;
 
-  /* #f8f8f8 背景 / #FCFCFC 卡片前景 */
-  --platform-bg-base: #f8f8f8;
-  --platform-bg: #f8f8f8;
+  /* #FAFAFA 内容区 / #F2F2F2 侧栏 / #FCFCFC 卡片前景 */
+  --platform-bg-base: #FAFAFA;
+  --platform-bg: #FAFAFA;
   --platform-bg-elevated: #FCFCFC;
   --platform-bg-elevated-solid: #FCFCFC;
   --platform-modal-mask: rgba(0, 0, 0, 0.3);
@@ -135,12 +135,32 @@ html[data-theme="light"] {
   --platform-loader-path: rgba(10, 107, 255, 0.24);
   --platform-loader-color: #0a6bff;
 
-  /* 渐变背景 */
-  --platform-shell-gradient: #f8f8f8;
-  --platform-chat-gradient: #f8f8f8;
-  --platform-header-bg: #f8f8f8;
-  --platform-sider-bg: #f3f3f3;
-  --platform-toolbar-bg: #f3f3f3;
+  /* ── 全局毛玻璃设计令牌（侧栏 / 顶栏 / 卡片 / 浮层统一引用） ── */
+  --platform-glass-blur: 18px;
+  --platform-glass-saturate: 1.45;
+  --platform-glass-filter: blur(var(--platform-glass-blur)) saturate(var(--platform-glass-saturate));
+  --platform-glass-sider-bg: color-mix(in srgb, #F2F2F2 78%, transparent);
+  /* 顶栏与内容区同色，视觉融为一体 */
+  --platform-glass-header-bg: #FAFAFA;
+  --platform-glass-panel-bg: color-mix(in srgb, #FCFCFC 68%, transparent);
+  --platform-glass-float-bg: color-mix(in srgb, #FFFFFF 78%, transparent);
+  --platform-glass-border: color-mix(in srgb, #ffffff 72%, rgba(0, 0, 0, 0.08));
+  --platform-glass-border-soft: color-mix(in srgb, #ffffff 55%, rgba(0, 0, 0, 0.06));
+  --platform-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --platform-glass-shadow:
+    var(--platform-glass-highlight),
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 10px 28px rgba(15, 23, 42, 0.04);
+  --platform-glass-shadow-sm:
+    var(--platform-glass-highlight),
+    0 1px 2px rgba(15, 23, 42, 0.02);
+
+  /* 壳层：内容区 / 顶栏同色 #FAFAFA，侧栏单独分层 */
+  --platform-shell-gradient: #FAFAFA;
+  --platform-chat-gradient: #FAFAFA;
+  --platform-header-bg: #FAFAFA;
+  --platform-sider-bg: var(--platform-glass-sider-bg);
+  --platform-toolbar-bg: var(--platform-glass-sider-bg);
 
   --platform-radius-lg: 16px;
   --platform-radius: 12px;
@@ -184,13 +204,23 @@ html[data-theme="light"] {
   --platform-green-surface: var(--platform-accent-soft);
   --platform-green-surface-2: var(--platform-accent-soft-2);
 
-  /* ── 全局卡片设计令牌（极简扁平风，无悬浮效果） ── */
+  /* ── 全局卡片设计令牌（毛玻璃抬升面 · 大厂克制动效） ── */
   --platform-card-radius: var(--platform-radius);
-  --platform-card-bg: var(--platform-bg-elevated);
-  --platform-card-border-color: var(--platform-border);
-  --platform-card-hover-border-color: var(--platform-card-border-color);
-  --platform-card-hover-transform: none;
-  --platform-card-transition: border-color 0.22s var(--platform-ease-smooth, ease);
+  --platform-card-bg: var(--platform-glass-panel-bg);
+  --platform-card-border-color: var(--platform-glass-border-soft);
+  --platform-card-hover-border-color: var(--platform-glass-border);
+  --platform-card-hover-bg: var(--platform-glass-panel-bg);
+  --platform-card-hover-transform: translateY(-2px);
+  --platform-card-shadow: var(--platform-glass-shadow-sm);
+  --platform-card-shadow-hover:
+    var(--platform-glass-highlight),
+    0 2px 4px rgba(15, 23, 42, 0.03),
+    0 12px 28px rgba(15, 23, 42, 0.06);
+  --platform-card-transition:
+    border-color 0.22s var(--platform-ease-smooth, ease),
+    box-shadow 0.22s var(--platform-ease-smooth, ease),
+    background 0.22s var(--platform-ease-smooth, ease),
+    transform 0.22s var(--platform-ease-smooth, ease);
 }
 
 html[data-theme="dark"] {
@@ -257,15 +287,30 @@ html[data-theme="dark"] {
 
   --platform-link: #6a9fcf;
 
-  --platform-shell-gradient: linear-gradient(155deg, #0c0c0f 0%, #0e0e12 50%, #0d0d11 100%);
-  --platform-chat-gradient: linear-gradient(180deg, #0c0c0f 0%, #0e0e12 100%);
-  --platform-header-bg: rgba(12, 12, 15, 0.8);
-  --platform-sider-bg: rgba(20, 20, 23, 0.5);
-  --platform-toolbar-bg: rgba(20, 20, 23, 0.5);
+  /* 深色毛玻璃（须先于 shell 背景引用） */
+  --platform-glass-blur: 20px;
+  --platform-glass-saturate: 1.35;
+  --platform-glass-filter: blur(var(--platform-glass-blur)) saturate(var(--platform-glass-saturate));
+  --platform-glass-sider-bg: color-mix(in srgb, #141417 72%, transparent);
+  --platform-glass-header-bg: #0c0c0f;
+  --platform-glass-panel-bg: color-mix(in srgb, #1a1a20 68%, transparent);
+  --platform-glass-float-bg: color-mix(in srgb, #1e1e24 78%, transparent);
+  --platform-glass-border: color-mix(in srgb, #ffffff 12%, transparent);
+  --platform-glass-border-soft: color-mix(in srgb, #ffffff 8%, transparent);
+  --platform-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --platform-glass-shadow:
+    var(--platform-glass-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 14px 36px rgba(0, 0, 0, 0.32);
+  --platform-glass-shadow-sm:
+    var(--platform-glass-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.22);
 
-  --platform-focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.08);
-
-  --platform-link: #6a9fcf;
+  --platform-shell-gradient: #0c0c0f;
+  --platform-chat-gradient: #0c0c0f;
+  --platform-header-bg: #0c0c0f;
+  --platform-sider-bg: var(--platform-glass-sider-bg);
+  --platform-toolbar-bg: var(--platform-glass-sider-bg);
 
   --platform-caution: #f59e0b;
   --platform-caution-hover: #fbbf24;
@@ -285,13 +330,23 @@ html[data-theme="dark"] {
   --platform-green-surface: var(--platform-accent-soft);
   --platform-green-surface-2: var(--platform-accent-soft-2);
 
-  /* ── 全局卡片设计令牌（极简扁平风，无悬浮效果） ── */
+  /* ── 全局卡片设计令牌（毛玻璃抬升面 · 大厂克制动效） ── */
   --platform-card-radius: var(--platform-radius);
-  --platform-card-bg: var(--platform-bg-elevated);
-  --platform-card-border-color: var(--platform-border);
-  --platform-card-hover-border-color: var(--platform-card-border-color);
-  --platform-card-hover-transform: none;
-  --platform-card-transition: border-color 0.22s var(--platform-ease-smooth, ease);
+  --platform-card-bg: var(--platform-glass-panel-bg);
+  --platform-card-border-color: var(--platform-glass-border-soft);
+  --platform-card-hover-border-color: var(--platform-glass-border);
+  --platform-card-hover-bg: var(--platform-glass-panel-bg);
+  --platform-card-hover-transform: translateY(-2px);
+  --platform-card-shadow: var(--platform-glass-shadow-sm);
+  --platform-card-shadow-hover:
+    var(--platform-glass-highlight),
+    0 2px 6px rgba(0, 0, 0, 0.22),
+    0 14px 32px rgba(0, 0, 0, 0.28);
+  --platform-card-transition:
+    border-color 0.22s var(--platform-ease-smooth, ease),
+    box-shadow 0.22s var(--platform-ease-smooth, ease),
+    background 0.22s var(--platform-ease-smooth, ease),
+    transform 0.22s var(--platform-ease-smooth, ease);
 
   /* ── 按钮设计令牌（暗色主题） ── */
   --btn-font-size: var(--platform-font-size-base);

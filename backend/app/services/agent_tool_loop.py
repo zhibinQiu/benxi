@@ -72,30 +72,68 @@ from app.services.agent_tools import (
 from app.services.agent_skill_runtime import build_agent_runtime_tool_specs
 
 
-# ── 父编排（orchestrator）可直调的已挂载原语；其余已挂载原子工具强制子智能体执行 ──
-# 可见上界始终是「该 Agent 已挂载集」，不是平台全库。
+# ── 父编排只委托：可直调集 = PARENT_ORCHESTRATION_TOOL_NAMES ──
 # 专精 Agent / isolated 子智能体不受此限制，本域可直执。
-_PARENT_DIRECT_TOOLS = frozenset({
-    "invoke_context_subagent",      # 子智能体委托
-    "request_orchestrator_assist",  # 路由协助
-    "ask_user_choice",              # 用户交互
-    "find_skills",                  # 技能发现（非执行）
-    "describe_tool",                # 工具定义查询（非执行）
-    "search_tools",                 # 原子工具目录检索（非执行）
-})
+from app.core.tool_skill_taxonomy import PARENT_ORCHESTRATION_TOOL_NAMES
+
+_PARENT_DIRECT_TOOLS = PARENT_ORCHESTRATION_TOOL_NAMES
 # 旧名兼容
 _PARENT_DELEGATION_TOOLS = _PARENT_DIRECT_TOOLS
 
 
-def _should_delegate_to_subagent(loop_state: LoopState | None, tool_name: str) -> bool:
-    """父编排层非直调工具 → True（须走子智能体）；专精/子 Agent → False。"""
-    if tool_name in _PARENT_DIRECT_TOOLS:
-        return False
+def _is_orchestrator_parent(loop_state: LoopState | None) -> bool:
     state = loop_state or {}
     if state.get("isolated_subagent"):
         return False
     aid = str(state.get("agent_id") or "").strip()
     return aid in ("", "orchestrator")
+
+
+def _should_delegate_to_subagent(loop_state: LoopState | None, tool_name: str) -> bool:
+    """父编排层对非编排入口工具返回 True（表示「不可直执，须拒绝并引导委托」）。
+
+    注意：不再透明包装进 execute；调用方应对 True 返回引导错误。
+    专精 / 子 Agent → False（本域直执）。
+    """
+    if tool_name in _PARENT_DIRECT_TOOLS:
+        return False
+    return _is_orchestrator_parent(loop_state)
+
+
+def _parent_must_delegate_error(tool_name: str) -> str:
+    """父编排误直调原子工具时的引导错误（不伪造 execute 包装）。"""
+    return json.dumps(
+        {
+            "ok": False,
+            "summary": (
+                f"父编排不可直调 `{tool_name}`。"
+                "请改用 invoke_context_subagent："
+                "联网/知识库/图谱检索用 kind=search；"
+                "执行已有 Skill 用 kind=use；"
+                "浏览器/通知等明确步骤用 kind=execute 并传 steps。"
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+
+def _reject_parent_direct_steps(
+    steps: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """把误直调步骤转为引导错误结果（按 tool_call_id 索引）。"""
+    out: dict[str, dict[str, Any]] = {}
+    for step in steps:
+        tid = str(step.get("tool_call_id") or "")
+        tn = str(step.get("tool") or "").strip()
+        raw = _parent_must_delegate_error(tn or "?")
+        out[tid] = {
+            "tool": tn,
+            "tool_call_id": tid,
+            "ok": False,
+            "summary": json.loads(raw).get("summary") or "",
+            "raw": raw,
+        }
+    return out
 
 # ── 系统提示词裁剪：通用缩短规则（直接回答场景） ──────────────
 _SYSTEM_TRIM_RULES: list[tuple[str, str]] = [
@@ -128,60 +166,6 @@ def _trim_system_for_direct_answer(messages: list[dict[str, Any]]) -> list[dict[
     return out
 
 
-def _build_subagent_task(tool_name: str, raw_args: Any) -> str:
-    """将父智能体的工具调用转为子智能体任务描述。"""
-    try:
-        params = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-    except (json.JSONDecodeError, TypeError):
-        params = {}
-    args_str = json.dumps(params, ensure_ascii=False)
-    return (
-        f"请执行父智能体委托的工具调用，返回完整原始结果。\n"
-        f"工具：{tool_name}\n"
-        f"参数：{args_str}\n"
-        f"要求：执行后返回工具的原始 OK/Error 结果（含 data 字段），不添加额外说明。"
-    )
-
-
-async def _run_tool_via_subagent(
-    db: Session,
-    user: User,
-    tool_name: str,
-    raw_args: Any,
-    *,
-    conversation_id: str | None,
-    attachment_session_id: str | None,
-    user_message: str,
-    loop_state: LoopState,
-    timeout: int,
-) -> str:
-    """将父智能体的工具调用委托给子智能体（kind=execute）执行。
-
-    父智能体只能看到工具列表用于规划决策，不得直接执行。
-    本函数将所有非委托工具调用透明路由到子智能体执行。
-    """
-    from app.core.agent.subagent import execute_context_subagent
-
-    task = _build_subagent_task(tool_name, raw_args)
-    try:
-        return await asyncio.wait_for(
-            execute_context_subagent(
-                db, user,
-                kind="execute",
-                task=task,
-                conversation_id=conversation_id,
-                attachment_session_id=attachment_session_id,
-                loop_state=loop_state,
-            ),
-            timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        return json.dumps(
-            {"ok": False, "summary": f"子智能体执行超时（{timeout} 秒）"},
-            ensure_ascii=False,
-        )
-
-
 def _dedupe_exec_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """同一轮内相同工具+相同参数只执行一次，避免提醒/写操作被重复提交。
 
@@ -209,22 +193,6 @@ def _dedupe_exec_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         out.append(step)
     return out
-
-
-async def _run_steps_via_subagent(
-    db, user, steps, *, conversation_id, attachment_session_id, user_message, loop_state, timeout,
-) -> str:
-    """批量步骤委托给 execute 子Agent 一次执行。"""
-    from app.core.agent.subagent import execute_context_subagent
-    try:
-        return await asyncio.wait_for(
-            execute_context_subagent(db, user, kind="execute", steps=steps,
-                conversation_id=conversation_id, attachment_session_id=attachment_session_id,
-                loop_state=loop_state),
-            timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        return json.dumps({"ok": False, "summary": f"子智能体执行超时（{timeout} 秒）", "step_results": []})
 
 
 def _human_tool_call_detail(tool_name: str, raw_args: dict[str, Any]) -> str:
@@ -269,9 +237,6 @@ def _human_tool_call_detail(tool_name: str, raw_args: dict[str, Any]) -> str:
     if tn == "send_notification":
         title = str(raw_args.get("title") or "").strip()
         return f"发送通知：{title[:120]}" if title else "发送系统通知"
-    if tn == "mermaid_diagram":
-        desc = str(raw_args.get("description") or "").strip()
-        return f"绘制图表：{desc[:120]}" if desc else "生成 Mermaid 图表"
     for key in ("query", "question", "task", "url", "name", "keyword", "description"):
         val = str(raw_args.get(key) or "").strip()
         if val:
@@ -298,6 +263,15 @@ from app.core.human_in_the_loop import (
 )
 
 _logger = logging.getLogger(__name__)
+
+_LLM_EMPTY_CHOICE_REPLY = (
+    "抱歉，语言模型服务未返回有效响应，无法继续分析与调用工具。"
+    "请检查「资源管理 → 模型」中的 API 地址（OpenAI 兼容需含 /v1）、"
+    "模型名与密钥后重试。若日志出现 401，请更新该模型的 API 密钥。"
+)
+_LLM_EMPTY_CHOICE_DETAIL = (
+    "未获得有效模型响应（常见原因：API 地址缺 /v1、密钥错误/过期或服务不可达）"
+)
 
 
 def _default_max_rounds() -> int:
@@ -810,6 +784,157 @@ async def _emit_task_handoff_complete(
     yield attach_handoff_to_complete(complete_payload, handoff.message)
 
 
+async def _hard_invoke_knowledge_qa(
+    sess: AgentLoopSession,
+    db: Session,
+    user: User,
+    *,
+    loop_id: str,
+    question: str,
+    user_message: str,
+    working: list[dict[str, Any]],
+    loop_state: LoopState,
+    conversation_id: str | None,
+    attachment_session_id: str | None,
+    chat_history: list[AiChatMessage] | None,
+    uid: uuid.UUID,
+) -> AsyncIterator[dict[str, Any]]:
+    """``#知识问答`` 硬触发：直接 invoke_skill，再综合作答（不经模型选型）。"""
+    from app.core.tool_skill_taxonomy import SKILL_KNOWLEDGE_QA
+    from app.skills.executor import invoke_skill_tool
+    from app.skills.types import SkillInvocationContext
+
+    step_id = f"knowledge-qa-{uuid.uuid4().hex[:8]}"
+    yield {
+        "type": "workflow",
+        "data": {
+            "phase": "tool_call",
+            "title": "知识问答",
+            "detail": question[:120],
+            "tool": SKILL_KNOWLEDGE_QA,
+            "tool_name": "invoke_skill",
+            "step_id": step_id,
+            "status": "running",
+        },
+    }
+
+    q = (question or "").strip() or (user_message or "").strip()
+    # 技能执行期间须保持 Session 打开；勿在 invoke 前 release（否则 User 脱绑）
+    db, user = sess.open()
+    ctx = SkillInvocationContext(
+        db=db,
+        user=user,
+        conversation_id=conversation_id,
+        attachment_session_id=attachment_session_id,
+        user_message=user_message,
+        loop_state=loop_state,
+        skill_name=SKILL_KNOWLEDGE_QA,
+        belong_agent=str(loop_state.get("agent_id") or "orchestrator"),
+    )
+    try:
+        result = await invoke_skill_tool(
+            ctx,
+            skill_name=SKILL_KNOWLEDGE_QA,
+            tool_name="ask",
+            params={"question": q},
+        )
+    except Exception as exc:
+        result = None
+        err_summary = f"知识问答执行失败：{exc}"
+    else:
+        err_summary = ""
+    # 长 IO 结束后归还连接，再重新绑定 User 供后续写 loop_state
+    sess.release_before_io()
+    db, user = sess.open()
+
+    ok = bool(result and result.ok)
+    summary = (result.summary if result else err_summary) or ("完成" if ok else "失败")
+    answer = ""
+    if result and result.data and isinstance(result.data, dict):
+        cites = result.data.get("citations")
+        if isinstance(cites, list) and cites:
+            loop_state.setdefault("citations", []).extend(
+                [c for c in cites if isinstance(c, dict)]
+            )
+        answer = str(result.data.get("answer") or "").strip()
+
+    # 用户只看最终答案：写入确定性交付物，禁止把工作笔记/事实底稿塞进检索上下文
+    if answer:
+        from app.skills.builtin.handlers import _rewrite_media_for_chat
+
+        answer = _rewrite_media_for_chat(answer)
+        loop_state["deterministic_reply"] = answer
+        loop_state["last_skill_conclusion"] = answer
+        loop_state["_cached_presentable_conclusion"] = answer
+    else:
+        outcome_detail = summary[:500]
+        loop_state["last_skill_conclusion"] = outcome_detail
+
+    outcome_lines = list(loop_state.get("tool_outcome_lines") or [])
+    outcome_lines.append(_short_tool_outcome_status(SKILL_KNOWLEDGE_QA, summary, ok=ok))
+    loop_state["tool_outcome_lines"] = outcome_lines[-12:]
+    record_executed_tool_call(
+        loop_state,
+        tool_name="invoke_skill",
+        raw_args={
+            "skill_name": SKILL_KNOWLEDGE_QA,
+            "action": "ask",
+            "params": {"question": q},
+        },
+        result_text=(answer or summary)[:4000],
+        summary=summary[:240],
+        step_id=step_id,
+    )
+    loop_state["planned_uploaded_skill"] = SKILL_KNOWLEDGE_QA
+
+    yield {
+        "type": "workflow",
+        "data": {
+            "phase": "tool_result",
+            "title": "知识问答完成" if ok else "知识问答未获有效数据",
+            "detail": (answer or summary)[:120],
+            "tool": SKILL_KNOWLEDGE_QA,
+            "tool_name": "invoke_skill",
+            "step_id": step_id,
+            "status": "done" if ok else "failed",
+        },
+    }
+
+    yield {
+        "type": "workflow",
+        "data": {
+            "phase": "agent_thought",
+            "title": "执行完成",
+            "detail": "知识问答",
+            "tool": "agent.execute",
+            "step_id": loop_id,
+            "status": "done" if ok else "failed",
+        },
+    }
+
+    if answer:
+        working.append({"role": "assistant", "content": answer})
+        yield {
+            "type": "complete",
+            "messages": working,
+            "reply": _finalize_loop_reply(answer, loop_state),
+            "citations": list(loop_state.get("citations") or []),
+            "kg_context": loop_state.get("kg_context"),
+        }
+        return
+
+    async for ev in emit_final_user_reply(
+        sess,
+        uid,
+        loop_id,
+        user_message,
+        working,
+        loop_state,
+        chat_history=chat_history,
+    ):
+        yield ev
+
+
 async def emit_final_user_reply(
     sess: AgentLoopSession,
     uid: uuid.UUID,
@@ -853,17 +978,35 @@ async def emit_final_user_reply(
         elif ev.get("type") == "complete_text":
             text = str(ev.get("text") or "").strip()
             if text:
-                for chunk in _emit_report_reply_deltas(text):
-                    synth_reply_parts.append(str(chunk["text"]))
-                    yield chunk
+                from app.agentkit.message.filter import has_mermaid_deliverable
+                from app.services.agent_reply_synth import looks_like_tool_status_dump
+
+                # 禁止把工具状态清单当终稿（如「web_search：联网检索返回…」）
+                if looks_like_tool_status_dump(text) and not has_mermaid_deliverable(text):
+                    synth_failed = True
+                # Mermaid 围栏整块下发（不拆 delta），避免半截源码导致前端无法渲染 SVG
+                elif has_mermaid_deliverable(text):
+                    synth_reply_parts.append(text)
+                else:
+                    for chunk in _emit_report_reply_deltas(text):
+                        synth_reply_parts.append(str(chunk["text"]))
+                        yield chunk
         elif ev.get("type") == "error":
             synth_failed = True
             yield {"type": "error", "message": ev.get("message", "回答合成失败")}
+    from app.services.agent_reply_synth import (
+        fallback_tool_loop_reply,
+        looks_like_tool_status_dump,
+        _true_deliverable_reply,
+    )
+
+    tentative = "".join(synth_reply_parts).strip()
+    if tentative and looks_like_tool_status_dump(tentative):
+        synth_failed = True
+        synth_reply_parts.clear()
     if synth_failed:
         _logger.warning("synthesis LLM failed after %.1fs", time.monotonic() - _synth_t0)
         # 合成失败时用 fallback 回复兜底
-        from app.services.agent_reply_synth import fallback_tool_loop_reply
-
         fallback = fallback_tool_loop_reply(user_message, loop_state)
         if fallback:
             yield {"type": "delta", "text": fallback}
@@ -871,6 +1014,8 @@ async def emit_final_user_reply(
     _synth_elapsed = time.monotonic() - _synth_t0
     _logger.info("synthesis LLM done in %.1fs", _synth_elapsed)
     final_reply = "".join(synth_reply_parts).strip() or None
+    if not final_reply:
+        final_reply = _true_deliverable_reply(loop_state)
     if final_reply:
         working.append({"role": "assistant", "content": final_reply})
     yield {
@@ -991,8 +1136,25 @@ async def _iter_agent_tool_loop_body(
             runtime_tool_names=tool_names,
         )
     else:
-        # 父编排：已挂载工具 − 技能直执入口（build_agent_tool_specs 内处理）
-        all_tool_specs = build_agent_tool_specs(db, user, agent_id=aid)
+        # 父编排 LLM：仅编排入口（build_agent_tool_specs for_llm=True）
+        all_tool_specs = build_agent_tool_specs(db, user, agent_id=aid, for_llm=True)
+    # 父编排可发现挂载全集（describe_tool / execute 子层池），与 LLM 可调用集分离
+    discoverable_names: set[str] = set()
+    if aid == "orchestrator":
+        discoverable_specs = build_agent_tool_specs(
+            db, user, agent_id=aid, for_llm=False
+        )
+        discoverable_names = {
+            str((s.get("function") or {}).get("name") or "").strip()
+            for s in discoverable_specs
+            if str((s.get("function") or {}).get("name") or "").strip()
+        }
+    else:
+        discoverable_names = {
+            str((s.get("function") or {}).get("name") or "").strip()
+            for s in all_tool_specs
+            if str((s.get("function") or {}).get("name") or "").strip()
+        }
     # Agent 有知识库挂载且未显式传入 scoped_doc_ids 时自动注入
     if scoped_doc_ids is None and agent_id:
         try:
@@ -1015,6 +1177,7 @@ async def _iter_agent_tool_loop_body(
         "kg_context": None,
         "allowed_skill_names": allowed_skill_names,
         "_all_tool_specs": all_tool_specs,
+        "_discoverable_tool_names": discoverable_names,
         "scoped_doc_ids": list(scoped_doc_ids) if scoped_doc_ids is not None else None,
         "local_kb_disabled": local_kb_disabled,
         "task_mode": task_mode,
@@ -1059,6 +1222,15 @@ async def _iter_agent_tool_loop_body(
         kg_plan_text = await resolve_kg_planning_context(
             db, user, user_message, history=chat_history
         )
+
+    # 规划阶段已命中的图谱事实注入作答材料，避免「规划看见、回答看不见」
+    if kg_plan_text and len(kg_plan_text) > 10:
+        from app.core.agent_tool_context import append_retrieval_context
+        from app.schemas.kg import KgQaContext
+
+        append_retrieval_context(loop_state, kg_plan_text)
+        if not loop_state.get("kg_context"):
+            loop_state["kg_context"] = KgQaContext(context_text=kg_plan_text)
 
     plan_step_id = f"agent-plan-{uuid.uuid4().hex[:8]}"
     plan_detail = "分析意图，拆解执行计划…"
@@ -1168,10 +1340,37 @@ async def _iter_agent_tool_loop_body(
         },
     }
 
+    # #知识问答 硬触发：直接 invoke_skill，跳过模型工具选型
+    from app.core.tool_skill_taxonomy import SKILL_KNOWLEDGE_QA
+    from app.services.agent_skill_router import match_knowledge_qa_hashtag
+
+    _qa_question = match_knowledge_qa_hashtag(user_message)
+    if (
+        _qa_question is not None
+        and (execution_plan.uploaded_skill or "").strip() == SKILL_KNOWLEDGE_QA
+    ):
+        async for ev in _hard_invoke_knowledge_qa(
+            sess,
+            db,
+            user,
+            loop_id=loop_id,
+            question=_qa_question or user_message,
+            user_message=user_message,
+            working=working,
+            loop_state=loop_state,
+            conversation_id=conversation_id,
+            attachment_session_id=attachment_session_id,
+            chat_history=chat_history,
+            uid=uid,
+        ):
+            yield ev
+        return
+
     # direct_answer 捷径仅用于闲聊/纯知识/指令型 Skill；
     # 平台操作、检索、提醒等必须进 tool loop，禁止规划器误标后跳过工具。
     from app.services.agent_intent import is_chitchat_message
     from app.services.agent_skill_router import (
+        is_diagram_generation_message,
         is_platform_operation_message,
         is_trivial_direct_question,
         matches_platform_ops_extra,
@@ -1187,6 +1386,8 @@ async def _iter_agent_tool_loop_body(
     )
     _direct_ok = bool(execution_plan.direct_answer) and (
         bool(execution_plan.uploaded_skill)
+        or is_diagram_generation_message(user_message)
+        or str(execution_plan.intent or "") == "生成图表"
         or (
             not _needs_tools
             and (
@@ -1206,7 +1407,7 @@ async def _iter_agent_tool_loop_body(
 
         direct_reply_parts: list[str] = []
 
-        # 注入 uploaded_skill 的 SKILL.md（如 mermaid-diagram）
+        # 注入 uploaded_skill 的 SKILL.md
         _skill_for_md = str(execution_plan.uploaded_skill or "").strip() or str(
             loop_state.get("planned_uploaded_skill") or ""
         ).strip()
@@ -1217,12 +1418,22 @@ async def _iter_agent_tool_loop_body(
 
         # 直接回答场景：裁剪系统提示词中的工具/技能/记忆等无关上下文，加速 LLM 响应
         working = _trim_system_for_direct_answer(working)
+        if is_diagram_generation_message(user_message) or str(execution_plan.intent or "") == "生成图表":
+            working = [dict(m) for m in working]
+            working.append({
+                "role": "system",
+                "content": (
+                    "【画图】在回复中直接输出一个 ```mermaid 围栏代码块；"
+                    "首行写 flowchart TD / sequenceDiagram / mindmap 等合法类型；"
+                    "节点文案用简体中文。画图不是工具调用，不要只描述不画。"
+                ),
+            })
 
         sess.release_before_io()
         async for ev in iter_llm_answer_events(
             messages=working,
             temperature=0.5,
-            think_title="生成回答",
+            think_title="绘制图表" if str(execution_plan.intent or "") == "生成图表" else "生成回答",
             think_detail=execution_plan.intent or "直接作答",
             step_id=loop_id,
         ):
@@ -1286,7 +1497,6 @@ async def _iter_agent_tool_loop_body(
 
     from app.services.agent_execution_closure import (
         apply_execution_plan_context,
-        auto_execute_mermaid_diagram,
         auto_execute_uploaded_skill,
         build_skill_management_continue_nudge,
         execution_goal_satisfied,
@@ -1388,7 +1598,7 @@ async def _iter_agent_tool_loop_body(
 
                 agent_id = str(loop_state.get("agent_id") or "").strip() or None
                 tool_specs = select_visible_tool_specs(
-                    planned_specs, agent_id=agent_id
+                    planned_specs, agent_id=agent_id, user_message=user_message
                 )
             else:
                 tool_specs = planned_specs
@@ -1416,18 +1626,30 @@ async def _iter_agent_tool_loop_body(
                 tools=tool_specs or None,
                 temperature=0.3,
             ):
-                if ev["type"] == "delta":
-                    yield {
-                        "type": "workflow",
-                        "data": {"phase": "thinking_delta", "delta": ev["text"]},
-                    }
-                elif ev["type"] == "choice":
+                # 不把模型正文 token 写入 thinking_delta：空口草稿（尤其 mermaid）
+                # 会污染执行详情 / 答后「思考过程」，看起来像反复重试。
+                if ev["type"] == "choice":
                     choice = ev
             _llm_elapsed = time.monotonic() - _llm_t0
             db, user = sess.open()
             if not choice:
                 _logger.info("LLM call empty choice in %.1fs agent=%s", _llm_elapsed, agent_id)
-                break
+                yield {
+                    "type": "workflow",
+                    "data": {
+                        "phase": "agent_thought",
+                        "title": "语言模型调用失败",
+                        "detail": _LLM_EMPTY_CHOICE_DETAIL,
+                        "tool": "agent.llm",
+                        "status": "failed",
+                        "step_id": f"agent-llm-fail-{uuid.uuid4().hex[:8]}",
+                    },
+                }
+                async for ev in _emit_direct_reply_complete(
+                    loop_id, _LLM_EMPTY_CHOICE_REPLY, working, loop_state,
+                ):
+                    yield ev
+                return
             message = normalize_llm_assistant_message(choice.get("message") or {})
             tool_calls = message.get("tool_calls") or []
             content = strip_dsml_markup(str(message.get("content") or "")).strip()
@@ -1435,8 +1657,8 @@ async def _iter_agent_tool_loop_body(
             if tool_calls:
                 working.append(message)
 
-                # ── 批量执行编排步骤（模式 B，路线 A） ──
-                exec_steps: list[dict[str, Any]] = []
+                # ── 父编排误直调原子工具：拒绝并引导委托（不透明包装） ──
+                forbidden_steps: list[dict[str, Any]] = []
                 for tc in tool_calls:
                     fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
                     tn = str(fn.get("name") or "")
@@ -1446,128 +1668,14 @@ async def _iter_agent_tool_loop_body(
                             parsed = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
                         except (json.JSONDecodeError, TypeError):
                             parsed = {}
-                        exec_steps.append({
+                        forbidden_steps.append({
                             "tool": tn, "arguments": parsed,
                             "tool_call_id": str(tc.get("id") or uuid.uuid4()),
                         })
                 _batch_results: dict[str, dict[str, Any]] = {}
                 _batch_streamed_tool_ids: set[str] = set()
-                if exec_steps:
-                    exec_steps = _dedupe_exec_steps(exec_steps)
-                    plan_lines: list[str] = []
-                    for s in exec_steps:
-                        cd = _human_tool_call_detail(s["tool"], s["arguments"])
-                        plan_lines.append(f"  {len(plan_lines) + 1}. {cd or s['tool']}")
-                    _plan_summary = "；".join(
-                        (cd or s["tool"])
-                        for s in exec_steps
-                        for cd in [_human_tool_call_detail(s["tool"], s["arguments"])]
-                    )
-                    yield {
-                        "type": "workflow",
-                        "data": {
-                            "phase": "agent_plan",
-                            "title": f"执行计划（{len(exec_steps)} 步）",
-                            "detail": "\n".join(plan_lines),
-                            "tool": "agent.planner",
-                            "step_id": f"agent-plan-{uuid.uuid4().hex[:8]}",
-                        },
-                    }
-                    # -- batch with realtime progress queue pumping --
-                    _batch_timeout = _tool_timeout()
-                    _progress_queue: asyncio.Queue = asyncio.Queue()
-                    loop_state["_progress_queue"] = _progress_queue
-                    _batch_task = asyncio.ensure_future(
-                        _run_steps_via_subagent(
-                            db, user, exec_steps,
-                            conversation_id=conversation_id,
-                            attachment_session_id=attachment_session_id,
-                            user_message=user_message,
-                            loop_state=loop_state,
-                            timeout=_batch_timeout,
-                        )
-                    )
-                    _start_ts = time.monotonic()
-                    while not _batch_task.done():
-                        _elapsed = time.monotonic() - _start_ts
-                        if _elapsed > _batch_timeout:
-                            _batch_task.cancel()
-                            batch_text = json.dumps({
-                                "ok": False, "summary": f"批量执行超时（{_batch_timeout} 秒）",
-                                "step_results": [],
-                            }, ensure_ascii=False)
-                            _batch_task = None
-                            break
-                        _get_task = asyncio.ensure_future(_progress_queue.get())
-                        _done, _pending = await asyncio.wait(
-                            [_batch_task, _get_task],
-                            return_when=asyncio.FIRST_COMPLETED,
-                            timeout=5.0,
-                        )
-                        if _batch_task in _done:
-                            _get_task.cancel()
-                            break
-                        if _get_task in _done:
-                            _ev = _get_task.result()
-                            if isinstance(_ev, dict) and _ev.get("phase") in (
-                                "tool_call", "tool_result",
-                            ):
-                                tid = str(_ev.get("tool_call_id") or _ev.get("step_id") or "")
-                                if tid:
-                                    _batch_streamed_tool_ids.add(tid)
-                                tname = str(_ev.get("tool_name") or "")
-                                if tname:
-                                    _batch_streamed_tool_ids.add(f"name:{tname}")
-                            yield {"type": "workflow", "data": _ev}
-                            continue
-                        _get_task.cancel()
-                        _hb_detail = _progress_heartbeat_detail(
-                            loop_state,
-                            _plan_summary or f"执行 {len(exec_steps)} 个步骤",
-                        )
-                        _parse = loop_state.get("_url_parse_state")
-                        if isinstance(_parse, dict) and _parse.get("urls"):
-                            yield {"type": "workflow", "data": {
-                                "phase": "url_parse_progress",
-                                "title": "执行中",
-                                "detail": _hb_detail,
-                                "tool": "subagent.batch",
-                                "tool_name": "web_search",
-                                "step_id": f"batch-hb-{uuid.uuid4().hex[:8]}",
-                                "urls": _parse.get("urls"),
-                                "done": _parse.get("done"),
-                                "total": _parse.get("total"),
-                                "current_url": _parse.get("current_url") or "",
-                            }}
-                        else:
-                            yield {"type": "workflow", "data": {
-                                "phase": "orchestrator_progress",
-                                "title": "执行中",
-                                "detail": _hb_detail,
-                                "tool": "subagent.batch",
-                                "step_id": f"batch-hb-{uuid.uuid4().hex[:8]}",
-                            }}
-                    if _batch_task is not None:
-                        batch_text = _batch_task.result()
-                    while not _progress_queue.empty():
-                        try:
-                            _ev = _progress_queue.get_nowait()
-                            if isinstance(_ev, dict) and _ev.get("phase") in (
-                                "tool_call", "tool_result",
-                            ):
-                                tname = str(_ev.get("tool_name") or "")
-                                if tname:
-                                    _batch_streamed_tool_ids.add(f"name:{tname}")
-                            yield {"type": "workflow", "data": _ev}
-                        except asyncio.QueueEmpty:
-                            break
-                    loop_state.pop("_progress_queue", None)
-                    try:
-                        body = json.loads(batch_text)
-                        for sr in body.get("step_results") or []:
-                            _batch_results[str(sr.get("tool_call_id") or "")] = sr
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                if forbidden_steps:
+                    _batch_results = _reject_parent_direct_steps(forbidden_steps)
                     loop_state["_batch_streamed_tool_ids"] = _batch_streamed_tool_ids
 
                 for tc in tool_calls:
@@ -1587,87 +1695,131 @@ async def _iter_agent_tool_loop_body(
 
                     # ── Human-in-the-Loop: 用户确认检查 ──
                     if is_confirmation_required(tool_name) and not loop_state.get("_hitl_confirmed"):
-                        confirmation_id = generate_confirmation_id()
-                        raw_params = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip().startswith("{") else (raw_args or {})
-                        checkpoint_id = generate_checkpoint_id()
+                        from app.core.agent_api_mode import is_api_mode
 
-                        # 保存完整 checkpoint 到 Redis（24h TTL）
-                        ckpt_saved = save_checkpoint(
-                            checkpoint_id,
-                            user_id=str(user.id),
-                            phase="awaiting_confirmation",
-                            loop_state=loop_state,
-                            working=working,
-                            pending_data={
-                                "confirmation_id": confirmation_id,
+                        if is_api_mode():
+                            # OpenAI 兼容 API 无交互确认 UI，直接放行
+                            loop_state["_hitl_confirmed"] = True
+                        else:
+                            confirmation_id = generate_confirmation_id()
+                            raw_params = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip().startswith("{") else (raw_args or {})
+                            checkpoint_id = generate_checkpoint_id()
+
+                            # 保存完整 checkpoint 到 Redis（24h TTL）
+                            ckpt_saved = save_checkpoint(
+                                checkpoint_id,
+                                user_id=str(user.id),
+                                phase="awaiting_confirmation",
+                                loop_state=loop_state,
+                                working=working,
+                                pending_data={
+                                    "confirmation_id": confirmation_id,
+                                    "tool_name": tool_name,
+                                    "params_json": json.dumps(raw_params, ensure_ascii=False) if raw_params else "{}",
+                                    "title": meta.get("title") or tool_name,
+                                },
+                                tool_call=_build_checkpoint_pending_tool(tool_name, tool_id, raw_args, step_id, meta),
+                            )
+                            stored = set_pending_confirmation(confirmation_id, {
+                                "user_id": str(user.id),
                                 "tool_name": tool_name,
                                 "params_json": json.dumps(raw_params, ensure_ascii=False) if raw_params else "{}",
-                                "title": meta.get("title") or tool_name,
-                            },
-                            tool_call=_build_checkpoint_pending_tool(tool_name, tool_id, raw_args, step_id, meta),
-                        )
-                        stored = set_pending_confirmation(confirmation_id, {
-                            "user_id": str(user.id),
-                            "tool_name": tool_name,
-                            "params_json": json.dumps(raw_params, ensure_ascii=False) if raw_params else "{}",
-                            "checkpoint_id": checkpoint_id,
-                        })
-                        if stored and ckpt_saved:
-                            yield {
-                                "type": "workflow",
-                                "data": {
-                                    "phase": "confirmation_required",
-                                    "confirmation_id": confirmation_id,
-                                    "checkpoint_id": checkpoint_id,
-                                    "tool": meta.get("tool") or tool_name,
-                                    "tool_name": tool_name,
-                                    "title": meta.get("title") or tool_name,
-                                    "detail": build_confirmation_summary(tool_name, raw_params),
-                                    "step_id": step_id,
-                                },
-                            }
-                            sess.release_before_io()
-                            accepted_resp = await _hitl_poll(lambda: get_confirm_response(confirmation_id))
-
-                            if accepted_resp is None:
-                                # 超时 → 进入 suspended 状态，checkpoint 保留在 Redis
+                                "checkpoint_id": checkpoint_id,
+                            })
+                            if stored and ckpt_saved:
                                 yield {
                                     "type": "workflow",
                                     "data": {
-                                        "phase": "workflow_finished",
-                                        "status": "suspended",
+                                        "phase": "confirmation_required",
+                                        "confirmation_id": confirmation_id,
                                         "checkpoint_id": checkpoint_id,
-                                        "title": "等待用户确认",
-                                    },
-                                }
-                                loop_state["_checkpoint_suspended"] = checkpoint_id
-                                return  # 退出生成器，SSE 流正常结束
-
-                            clear_pending_confirmation(confirmation_id)
-                            clear_checkpoint(checkpoint_id)
-
-                            accepted = accepted_resp == "accepted"
-                            if not accepted:
-                                yield {
-                                    "type": "workflow",
-                                    "data": {
-                                        "phase": "tool_result",
-                                        "title": f"已取消：{meta.get('title') or tool_name}",
-                                        "detail": "用户已拒绝此操作",
                                         "tool": meta.get("tool") or tool_name,
                                         "tool_name": tool_name,
+                                        "title": meta.get("title") or tool_name,
+                                        "detail": build_confirmation_summary(tool_name, raw_params),
                                         "step_id": step_id,
-                                        "status": "rejected",
                                     },
                                 }
-                                continue
-                            loop_state["_hitl_confirmed"] = True
+                                sess.release_before_io()
+                                accepted_resp = await _hitl_poll(lambda: get_confirm_response(confirmation_id))
+
+                                if accepted_resp is None:
+                                    # 超时 → 进入 suspended 状态，checkpoint 保留在 Redis
+                                    yield {
+                                        "type": "workflow",
+                                        "data": {
+                                            "phase": "workflow_finished",
+                                            "status": "suspended",
+                                            "checkpoint_id": checkpoint_id,
+                                            "title": "等待用户确认",
+                                        },
+                                    }
+                                    loop_state["_checkpoint_suspended"] = checkpoint_id
+                                    return  # 退出生成器，SSE 流正常结束
+
+                                clear_pending_confirmation(confirmation_id)
+                                clear_checkpoint(checkpoint_id)
+
+                                accepted = accepted_resp == "accepted"
+                                if not accepted:
+                                    yield {
+                                        "type": "workflow",
+                                        "data": {
+                                            "phase": "tool_result",
+                                            "title": f"已取消：{meta.get('title') or tool_name}",
+                                            "detail": "用户已拒绝此操作",
+                                            "tool": meta.get("tool") or tool_name,
+                                            "tool_name": tool_name,
+                                            "step_id": step_id,
+                                            "status": "rejected",
+                                        },
+                                    }
+                                    continue
+                                loop_state["_hitl_confirmed"] = True
 
                     # ── Human-in-the-Loop: 方案选择 ──
                     if tool_name == "ask_user_choice":
                         raw_params = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip().startswith("{") else (raw_args or {})
                         question = str(raw_params.get("question") or "")
                         options = raw_params.get("options") or []
+                        from app.core.agent_api_mode import is_api_mode
+
+                        if is_api_mode():
+                            # API 模式无选择 UI：默认取第一项
+                            chosen = options[0] if isinstance(options, list) and options else ""
+                            result_text = json.dumps({
+                                "ok": True,
+                                "summary": f"API 模式自动选择：{chosen}",
+                                "data": {"choice": chosen},
+                            }, ensure_ascii=False)
+                            ok = True
+                            summary = f"API 模式自动选择：{chosen}"
+                            record_executed_tool_call(
+                                loop_state,
+                                tool_name=tool_name,
+                                raw_args=raw_args,
+                                result_text=result_text,
+                                summary=summary,
+                                step_id=step_id,
+                            )
+                            yield {
+                                "type": "workflow",
+                                "data": {
+                                    "phase": "tool_result",
+                                    "title": _workflow_result_title(meta, ok=True),
+                                    "detail": summary,
+                                    "tool": meta.get("tool") or tool_name,
+                                    "tool_name": tool_name,
+                                    "step_id": step_id,
+                                    "status": "done",
+                                },
+                            }
+                            working.append({
+                                "role": "tool",
+                                "tool_call_id": tool_id,
+                                "content": compress_tool_result_for_loop(result_text),
+                            })
+                            continue
                         choice_id = generate_choice_id()
                         checkpoint_id = generate_checkpoint_id()
 
@@ -1832,12 +1984,11 @@ async def _iter_agent_tool_loop_body(
                                 # 专精 / 子 Agent：本域直执
                                 if _should_delegate_to_subagent(loop_state, tool_name):
                                     sr = _batch_results.get(tool_id, {})
-                                    result_text = sr.get("raw") or json.dumps(
-                                        {"ok": False, "summary": "批量执行未返回该步骤结果"},
-                                        ensure_ascii=False,
+                                    result_text = sr.get("raw") or _parent_must_delegate_error(
+                                        tool_name
                                     )
                                 else:
-                                    # 直执工具（含 invoke_context_subagent / web_search 等）统一泵送进度
+                                    # 直执：编排入口（invoke_context_subagent 等）或专精本域工具
                                     hb_title = (
                                         "子任务执行中"
                                         if tool_name == "invoke_context_subagent"
@@ -1886,29 +2037,22 @@ async def _iter_agent_tool_loop_body(
                             ok, summary = _parse_tool_summary(result_text)
                             # ── 自动重试：临时故障（超时/网络/数据库）立即重试一次 ──
                             if not ok and _is_retryable_error(result_text):
-                                yield {
-                                    "type": "workflow",
-                                    "data": {
-                                        "phase": "tool_call",
-                                        "title": f"{meta['title']}（重试）",
-                                        "detail": "临时故障，自动重试一次",
-                                        "tool": meta.get("tool") or tool_name,
-                                        "tool_name": tool_name,
-                                        "step_id": f"{step_id}-retry",
-                                    },
-                                }
-                                try:
-                                    if _should_delegate_to_subagent(loop_state, tool_name):
-                                        # 重试时直接用子Agent重新执行（batch 结果是已缓存失败的）
-                                        result_text = await _run_tool_via_subagent(
-                                            db, user, tool_name, raw_args,
-                                            conversation_id=conversation_id,
-                                            attachment_session_id=attachment_session_id,
-                                            user_message=user_message,
-                                            loop_state=loop_state,
-                                            timeout=timeout,
-                                        )
-                                    else:
+                                if _should_delegate_to_subagent(loop_state, tool_name):
+                                    # 父编排误直调：不重试假包装，保持引导错误
+                                    pass
+                                else:
+                                    yield {
+                                        "type": "workflow",
+                                        "data": {
+                                            "phase": "tool_call",
+                                            "title": f"{meta['title']}（重试）",
+                                            "detail": "临时故障，自动重试一次",
+                                            "tool": meta.get("tool") or tool_name,
+                                            "tool_name": tool_name,
+                                            "step_id": f"{step_id}-retry",
+                                        },
+                                    }
+                                    try:
                                         result_text = await asyncio.wait_for(
                                             execute_agent_tool(
                                                 db,
@@ -1922,16 +2066,16 @@ async def _iter_agent_tool_loop_body(
                                             ),
                                             timeout=timeout,
                                         )
-                                except asyncio.TimeoutError:
-                                    result_text = json.dumps(
-                                        {"ok": False, "summary": f"工具执行超时（{timeout} 秒）"},
-                                        ensure_ascii=False,
-                                    )
-                                except Exception as exc:
-                                    result_text = json.dumps(
-                                        {"ok": False, "summary": f"工具执行异常：{exc}"},
-                                        ensure_ascii=False,
-                                    )
+                                    except asyncio.TimeoutError:
+                                        result_text = json.dumps(
+                                            {"ok": False, "summary": f"工具执行超时（{timeout} 秒）"},
+                                            ensure_ascii=False,
+                                        )
+                                    except Exception as exc:
+                                        result_text = json.dumps(
+                                            {"ok": False, "summary": f"工具执行异常：{exc}"},
+                                            ensure_ascii=False,
+                                        )
                             # ── 追踪失败计数（仅对本次实际执行计数） ──
                             ok2, _ = _parse_tool_summary(result_text)
                             if not ok2:
@@ -1974,19 +2118,7 @@ async def _iter_agent_tool_loop_body(
                             )
                             if dept_reply:
                                 loop_state["deterministic_reply"] = dept_reply
-                            else:
-                                kg_ctx = loop_state["kg_context"]
-                                ctx_text = str(
-                                    getattr(kg_ctx, "context_text", None)
-                                    or (
-                                        kg_ctx.get("context_text")
-                                        if isinstance(kg_ctx, dict)
-                                        else ""
-                                    )
-                                    or ""
-                                ).strip()
-                                if ctx_text:
-                                    loop_state["deterministic_reply"] = ctx_text
+                            # 其余图谱结果留给回复合成层，禁止把原始推理上下文直接当最终答案
                     outcome_lines = list(loop_state.get("tool_outcome_lines") or [])
                     if cached_result is None:
                         outcome_lines.append(
@@ -2171,7 +2303,7 @@ async def _iter_agent_tool_loop_body(
 
         if deliverable_reply:
             if instruction_only_skill:
-                # 指令型技能（如 mermaid-diagram）的正文输出即为完整交付
+                # 指令型技能的正文输出即为完整交付
                 break
             # LLM 在本次推理中选择了输出正文而不调用任何工具，
             # 这意味着 LLM 认为答复已完整。无需自适应重规划。
@@ -2185,57 +2317,6 @@ async def _iter_agent_tool_loop_body(
         ):
             break
 
-        from app.services.agent_skill_router import (
-            MERMAID_DIAGRAM_SKILL,
-            is_diagram_generation_message,
-        )
-
-        # 绘图：统一闭包补调 mermaid_diagram（不依赖模型是否主动点名）
-        if (
-            execution_plan.intent == "生成图表"
-            or is_diagram_generation_message(user_message)
-            or str(execution_plan.uploaded_skill or "") == MERMAID_DIAGRAM_SKILL
-        ):
-            closure_step = f"agent-closure-mermaid-{uuid.uuid4().hex[:8]}"
-            yield {
-                "type": "workflow",
-                "data": {
-                    "phase": "agent_thinking",
-                    "title": "生成图表",
-                    "detail": "mermaid_diagram",
-                    "tool": "agent.closure",
-                    "step_id": closure_step,
-                },
-            }
-            sess.release_before_io()
-            _ok, _summary = await auto_execute_mermaid_diagram(
-                db,
-                user,
-                user_message=user_message,
-                loop_state=loop_state,
-                conversation_id=conversation_id,
-                attachment_session_id=attachment_session_id,
-            )
-            db, user = sess.open()
-            yield {
-                "type": "workflow",
-                "data": {
-                    "phase": "agent_thought",
-                    "title": "图表已生成" if _ok else "图表生成失败",
-                    "detail": _summary[:200] if _summary else "",
-                    "tool": "agent.closure",
-                    "step_id": closure_step,
-                    "status": "done" if _ok else "failed",
-                },
-            }
-            if execution_goal_satisfied(
-                execution_plan,
-                loop_state,
-                user_message,
-                plan_has_script=plan_has_script,
-            ):
-                break
-
         skill = resolve_target_uploaded_skill(
             execution_plan=execution_plan,
             loop_state=loop_state,
@@ -2243,8 +2324,10 @@ async def _iter_agent_tool_loop_body(
             chat_history=chat_history,
             uploaded_names=all_skill_names,
         )
+        from app.services.agent_skill_router import MERMAID_DIAGRAM_SKILL
+
         if skill == MERMAID_DIAGRAM_SKILL:
-            # 已由上方 mermaid 闭包处理
+            # 画图改为直接输出 Mermaid 围栏，不再走技能/工具闭包
             pass
         elif skill and plan_has_script is not False:
             closure_step = f"agent-closure-{uuid.uuid4().hex[:8]}"
@@ -2370,6 +2453,44 @@ def _exec_has_outcomes(loop_state: dict) -> bool:
     )
 
 
+def _short_tool_outcome_status(tool_name: str, summary: str, *, ok: bool) -> str:
+    """写入 tool_outcome_lines 的短状态（禁止把长报告/JSON 塞进 outcome）。"""
+    text = (summary or "").strip()
+    if text.startswith("{") and '"ok"' in text[:60]:
+        try:
+            body = json.loads(text)
+            if isinstance(body, dict):
+                text = str(body.get("summary") or "").strip()
+        except (json.JSONDecodeError, TypeError):
+            text = ""
+    text = re.sub(r"\s+", " ", text)
+    if len(text) > 120:
+        text = text[:117].rstrip() + "…"
+    if not text:
+        text = "完成" if ok else "失败"
+    return f"{tool_name}：{text}"
+
+
+def specialist_needs_more_rounds_after_tools(
+    *,
+    agent_id: str | None,
+    execution_plan: AgentExecutionPlan | None,
+    loop_state: dict,
+    assist_request: Any = None,
+) -> bool:
+    """专精 hop 工具执行后是否继续下一轮。
+
+    取数类专精拿到证据后应交父层综合；技能开发等多步闭环继续。
+    """
+    if assist_request:
+        return True
+    aid = str(agent_id or loop_state.get("agent_id") or "").strip()
+    plan_intent = str(getattr(execution_plan, "intent", "") or "")
+    if aid == "skill-dev" or plan_intent == SKILL_MGMT_INTENT:
+        return True
+    return not _exec_has_outcomes(loop_state)
+
+
 def _step_complete_payload(
     working: list[dict],
     loop_state: dict,
@@ -2425,7 +2546,17 @@ async def _exec_one_tool_round(
     # ── 1. 构建 LLM messages ──
     planned_specs = filter_tool_specs_by_plan(all_tool_specs, execution_plan)
     aid = str(loop_state.get("agent_id") or "").strip() or None
-    tool_specs = select_visible_tool_specs(planned_specs, agent_id=aid)
+    tool_specs = select_visible_tool_specs(
+        planned_specs, agent_id=aid, user_message=user_message
+    )
+
+    plan_instruction = build_plan_context_instruction(
+        execution_plan,
+        uploaded_skill_has_script=plan_has_script,
+    )
+    if plan_instruction:
+        working = [dict(m) for m in working]
+        working.append({"role": "system", "content": plan_instruction})
 
     llm_messages = trim_agent_loop_messages(
         inject_retrieval_context_message(working, loop_state),
@@ -2442,6 +2573,17 @@ async def _exec_one_tool_round(
         })
 
     # ── 2. LLM 调用 ──
+    think_step_id = f"spec-llm-{uuid.uuid4().hex[:8]}"
+    yield {
+        "type": "workflow",
+        "data": {
+            "phase": "agent_thinking",
+            "title": "正在分析并调用工具",
+            "detail": (user_message or "")[:120],
+            "tool": "agent.execute",
+            "step_id": think_step_id,
+        },
+    }
     sess.release_before_io()
     choice = None
     _llm_t0 = time.monotonic()
@@ -2450,22 +2592,36 @@ async def _exec_one_tool_round(
         tools=tool_specs or None,
         temperature=0.3,
     ):
-        if ev["type"] == "delta":
-            yield {
-                "type": "workflow",
-                "data": {"phase": "thinking_delta", "delta": ev["text"]},
-            }
-        elif ev["type"] == "choice":
+        # 专精单轮同样不转发正文 token 到 thinking_delta（见主循环注释）
+        if ev["type"] == "choice":
             choice = ev
     _llm_elapsed = time.monotonic() - _llm_t0
     db, user = sess.open()
     if not choice:
+        # 常见原因：模型 API 地址错误（缺 /v1）、密钥无效、服务宕机。
+        # 勿落到「缺少有效证据」——用户会误以为工具调用失败。
         _logger.info("LLM call empty choice in %.1fs agent=%s", _llm_elapsed, agent_id)
-        yield _step_complete_payload(working, loop_state, has_tool_calls=False,
-                                      needs_more_rounds=False, reply=None,
-                                      _all_tool_specs=all_tool_specs,
-                                      _execution_plan=execution_plan,
-                                      _plan_has_script=plan_has_script)
+        yield {
+            "type": "workflow",
+            "data": {
+                "phase": "agent_thought",
+                "title": "语言模型调用失败",
+                "detail": _LLM_EMPTY_CHOICE_DETAIL,
+                "tool": "agent.llm",
+                "status": "failed",
+                "step_id": think_step_id,
+            },
+        }
+        yield _step_complete_payload(
+            working,
+            loop_state,
+            has_tool_calls=False,
+            needs_more_rounds=False,
+            reply=_LLM_EMPTY_CHOICE_REPLY,
+            _all_tool_specs=all_tool_specs,
+            _execution_plan=execution_plan,
+            _plan_has_script=plan_has_script,
+        )
         return
 
     message = normalize_llm_assistant_message(choice.get("message") or {})
@@ -2499,21 +2655,31 @@ async def _exec_one_tool_round(
                     user_message, loop_state, tool_names=tool_names
                 )
                 working.append({"role": "system", "content": nudge})
+                yield {
+                    "type": "workflow",
+                    "data": {
+                        "phase": "agent_thinking",
+                        "title": "需要调用工具",
+                        "detail": nudge[:240],
+                        "tool": "agent.nudge",
+                        "step_id": f"nudge-{uuid.uuid4().hex[:8]}",
+                    },
+                }
                 yield _step_complete_payload(working, loop_state, has_tool_calls=False,
                                               needs_more_rounds=True, reply=None,
                                               _all_tool_specs=all_tool_specs,
                                               _execution_plan=execution_plan,
                                               _plan_has_script=plan_has_script)
                 return
-            # 催促耗尽仍未调工具：不得把 LLM 正文当完成态（可能编造成功）
+            # 催促耗尽：交父层收尾（画图应由直接作答输出 Mermaid，不走工具闭包）
             yield _step_complete_payload(working, loop_state, has_tool_calls=False,
-                                          needs_more_rounds=False, reply=None,
+                                          needs_more_rounds=False, reply=content or None,
                                           _all_tool_specs=all_tool_specs,
                                           _execution_plan=execution_plan,
                                           _plan_has_script=plan_has_script)
             return
 
-        # 3c. 无可用工具 → 纯文本可直接作为回答
+        # 3c. 无可用工具 → 正文可作为回答
         yield _step_complete_payload(working, loop_state, has_tool_calls=False,
                                       needs_more_rounds=False, reply=content or None,
                                       _all_tool_specs=all_tool_specs,
@@ -2524,8 +2690,8 @@ async def _exec_one_tool_round(
     # ── 4. 有 tool_calls → 执行工具 ──
     working.append(message)
 
-    # 4a. 父编排非直调工具：批量交给子智能体；专精本域工具走 4b 直执
-    exec_steps: list[dict] = []
+    # 4a. 父编排误直调原子工具：拒绝并引导；专精本域工具走 4b 直执
+    forbidden_steps: list[dict] = []
     for tc in tool_calls:
         fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
         tn = str(fn.get("name") or "")
@@ -2535,68 +2701,26 @@ async def _exec_one_tool_round(
                 parsed = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
             except (json.JSONDecodeError, TypeError):
                 parsed = {}
-            exec_steps.append({
+            forbidden_steps.append({
                 "tool": tn, "arguments": parsed,
                 "tool_call_id": str(tc.get("id") or uuid.uuid4()),
             })
 
     assist_request = loop_state.get("orchestrator_assist_request") or None
 
-    if exec_steps:
-        plan_lines: list[str] = []
-        for s in exec_steps:
-            cd = _human_tool_call_detail(s["tool"], s["arguments"])
-            plan_lines.append(f"  {len(plan_lines) + 1}. {cd or s['tool']}")
-        yield {
-            "type": "workflow",
-            "data": {
-                "phase": "agent_plan",
-                "title": f"执行计划（{len(exec_steps)} 步）",
-                "detail": "\n".join(plan_lines),
-                "tool": "agent.planner",
-                "step_id": f"agent-plan-{uuid.uuid4().hex[:8]}",
-            },
-        }
-        _batch_timeout = _tool_timeout()
-        _batch_task = asyncio.ensure_future(
-            _run_steps_via_subagent(
-                db, user, exec_steps,
-                conversation_id=conversation_id,
-                attachment_session_id=attachment_session_id,
-                user_message=user_message,
-                loop_state=loop_state,
-                timeout=_batch_timeout,
-            )
-        )
-        while not _batch_task.done():
-            if time.monotonic() - _llm_t0 > _batch_timeout + 5:
-                _batch_task.cancel()
-                break
-            await asyncio.sleep(0.1)
-
-        if _batch_task.done() and not _batch_task.cancelled():
-            batch_text = _batch_task.result()
-        else:
-            batch_text = json.dumps({
-                "ok": False, "summary": f"批量执行超时（{_batch_timeout} 秒）",
-                "step_results": [],
-            }, ensure_ascii=False)
-
-        try:
-            body = json.loads(batch_text)
-            outcome_lines = list(loop_state.get("tool_outcome_lines") or [])
-            for sr in body.get("step_results") or []:
-                summary = str(sr.get("summary", ""))[:200]
-                if summary:
-                    outcome_lines.append(summary)
-                working.append({
-                    "role": "tool",
-                    "tool_call_id": str(sr.get("tool_call_id", "")),
-                    "content": compress_tool_result_for_loop(sr.get("raw", batch_text)),
-                })
-            loop_state["tool_outcome_lines"] = outcome_lines[-12:]
-        except (json.JSONDecodeError, TypeError):
-            pass
+    if forbidden_steps:
+        rejected = _reject_parent_direct_steps(forbidden_steps)
+        outcome_lines = list(loop_state.get("tool_outcome_lines") or [])
+        for tid, sr in rejected.items():
+            summary = str(sr.get("summary", ""))[:200]
+            if summary:
+                outcome_lines.append(summary)
+            working.append({
+                "role": "tool",
+                "tool_call_id": tid,
+                "content": compress_tool_result_for_loop(sr.get("raw", "")),
+            })
+        loop_state["tool_outcome_lines"] = outcome_lines[-12:]
 
     # 4b. 直执工具（父编排原语，或专精本域原子工具）
     for tc in tool_calls:
@@ -2610,6 +2734,17 @@ async def _exec_one_tool_round(
             raw_params = json.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip().startswith("{") else (raw_args or {})
         except (json.JSONDecodeError, TypeError):
             raw_params = {}
+        meta = _human_tool_call_detail(tool_name, raw_params if isinstance(raw_params, dict) else {})
+        yield {
+            "type": "workflow",
+            "data": {
+                "phase": "tool_call",
+                "title": meta or f"调用 {tool_name}",
+                "detail": tool_name,
+                "tool": tool_name,
+                "step_id": f"spec-{tool_name}-{uuid.uuid4().hex[:6]}",
+            },
+        }
         result_text = await execute_agent_tool(
             db, user,
             tool_name=tool_name,
@@ -2624,11 +2759,51 @@ async def _exec_one_tool_round(
             "tool_call_id": tool_id,
             "content": compress_tool_result_for_loop(result_text),
         })
+        # 专精直执也必须写入证据线，否则下一轮会误判「无结果」并反复催促直至触顶
+        from app.agentkit.subagent.loop import parse_tool_summary
+        from app.core.agent_tool_context import append_retrieval_context
+
+        ok, summary = parse_tool_summary(result_text)
+        outcome_lines = list(loop_state.get("tool_outcome_lines") or [])
+        outcome_lines.append(_short_tool_outcome_status(tool_name, summary, ok=ok))
+        loop_state["tool_outcome_lines"] = outcome_lines[-12:]
+        # 长摘要进检索证据供父层综合，避免被 fast path 原样吐出
+        full_summary = (summary or "").strip()
+        if ok and len(full_summary) > 160:
+            append_retrieval_context(
+                loop_state, f"【{tool_name}】\n{full_summary[:6000]}"
+            )
+        record_executed_tool_call(
+            loop_state,
+            tool_name=tool_name,
+            raw_args=raw_params,
+            result_text=result_text,
+            summary=summary or ("完成" if ok else "失败"),
+            step_id=f"spec-{tool_name}-{uuid.uuid4().hex[:6]}",
+        )
+        yield {
+            "type": "workflow",
+            "data": {
+                "phase": "tool_result",
+                "title": (summary or ("完成" if ok else "失败"))[:80],
+                "detail": tool_name,
+                "tool": tool_name,
+                "status": "done" if ok else "failed",
+                "step_id": f"spec-{tool_name}-{uuid.uuid4().hex[:6]}",
+            },
+        }
         if tool_name == "request_orchestrator_assist":
             assist_request = loop_state.get("orchestrator_assist_request") or True
 
+    # 有取数证据后交父层综合；技能开发等多步闭环仍继续下一轮
+    needs_more = specialist_needs_more_rounds_after_tools(
+        agent_id=agent_id,
+        execution_plan=execution_plan,
+        loop_state=loop_state,
+        assist_request=assist_request,
+    )
     yield _step_complete_payload(working, loop_state, has_tool_calls=True,
-                                  needs_more_rounds=True, reply=None,
+                                  needs_more_rounds=needs_more, reply=None,
                                   orchestrator_assist_request=assist_request,
                                   _all_tool_specs=all_tool_specs,
                                   _execution_plan=execution_plan,

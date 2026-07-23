@@ -191,11 +191,12 @@ def sync_platform_org_to_kg(db: Session, user: User) -> dict[str, int]:
         )
 
     rel_count = 0
+    allowed_contains: dict[uuid.UUID, set[uuid.UUID]] = {}
     for dept in dept_rows:
-        parent_ent = dept_entity.get(dept.id)
-        if dept.parent_id and dept.parent_id in dept_entity and parent_ent:
+        if dept.parent_id and dept.parent_id in dept_entity and dept.id in dept_entity:
             parent = dept_entity[dept.parent_id]
             child = dept_entity[dept.id]
+            allowed_contains.setdefault(parent.id, set()).add(child.id)
             _ensure_relation(
                 db,
                 user,
@@ -204,6 +205,24 @@ def sync_platform_org_to_kg(db: Session, user: User) -> dict[str, int]:
                 to_id=child.id,
             )
             rel_count += 1
+    for parent_id, child_ids in allowed_contains.items():
+        _reconcile_outgoing_relations(
+            db,
+            user,
+            from_id=parent_id,
+            relation_type_id=contains_id,
+            allowed_to_ids=child_ids,
+        )
+    # 清理已无子部门的 contains 出边
+    for dept_ent in dept_entity.values():
+        if dept_ent.id not in allowed_contains:
+            _reconcile_outgoing_relations(
+                db,
+                user,
+                from_id=dept_ent.id,
+                relation_type_id=contains_id,
+                allowed_to_ids=set(),
+            )
 
     user_rows = list(
         db.scalars(
@@ -251,11 +270,30 @@ def sync_platform_org_to_kg(db: Session, user: User) -> dict[str, int]:
         if target_dept_id:
             rel_count += 1
 
+    # 全量：删除平台侧已不存在的部门/用户实体（及其边）
+    keep_dept_ids = {str(d.id) for d in dept_rows}
+    keep_user_ids = {str(u.id) for u in user_rows}
+    orphan_entities = db.scalars(
+        select(KgEntity).where(KgEntity.owner_id == user.id)
+    ).all()
+    deleted = 0
+    for row in orphan_entities:
+        props = row.properties or {}
+        dept_key = str(props.get(DEPT_ID_PROP) or "")
+        user_key = str(props.get(USER_ID_PROP) or "")
+        if dept_key and dept_key not in keep_dept_ids:
+            db.delete(row)
+            deleted += 1
+        elif user_key and user_key not in keep_user_ids:
+            db.delete(row)
+            deleted += 1
+
     db.flush()
     return {
         "departments": len(dept_rows),
         "users": len(user_rows),
         "relations": rel_count,
+        "deleted": deleted,
     }
 
 
@@ -436,10 +474,31 @@ def sync_platform_agents_to_kg(db: Session, user: User) -> dict[str, int]:
             )
             rel_count += 1
 
+    # 全量：清除平台侧已不存在的 agent/tool/skill 实体
+    keep_agents = {defn.id for defn in AGENT_PROFILES}
+    keep_tools = set(tool_entities)
+    keep_skills = set(skill_entities)
+    deleted = 0
+    for row in db.scalars(select(KgEntity).where(KgEntity.owner_id == user.id)).all():
+        props = row.properties or {}
+        agent_key = str(props.get(AGENT_ID_PROP) or "")
+        tool_key = str(props.get(TOOL_NAME_PROP) or "")
+        skill_key = str(props.get(SKILL_NAME_PROP) or "")
+        if agent_key and agent_key not in keep_agents:
+            db.delete(row)
+            deleted += 1
+        elif tool_key and tool_key not in keep_tools:
+            db.delete(row)
+            deleted += 1
+        elif skill_key and skill_key not in keep_skills:
+            db.delete(row)
+            deleted += 1
+
     db.flush()
     return {
         "agents": len(AGENT_PROFILES),
         "tools": len(tool_entities),
         "skills": len(skill_entities),
         "relations": rel_count,
+        "deleted": deleted,
     }

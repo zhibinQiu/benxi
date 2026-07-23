@@ -1,12 +1,110 @@
-/* 平台 UI 统一：紫白蓝渐变玻璃层 */
+/* 平台 UI 统一：毛玻璃抬升面（侧栏 / 顶栏 / 卡片 / 浮层） */
+
+/* —— 通用毛玻璃工具类（业务组件可直接挂 class） —— */
+.platform-glass,
+.platform-glass-panel,
+.glass-float-panel {
+  background: var(--platform-glass-panel-bg) !important;
+  border: 1px solid var(--platform-glass-border-soft) !important;
+  box-shadow: var(--platform-glass-shadow-sm) !important;
+  backdrop-filter: var(--platform-glass-filter);
+  -webkit-backdrop-filter: var(--platform-glass-filter);
+}
+
+.platform-glass--float {
+  background: var(--platform-glass-float-bg) !important;
+  border-color: var(--platform-glass-border) !important;
+  box-shadow: var(--platform-glass-shadow) !important;
+}
+
+/* —— 系统壳层：侧栏 / 顶栏 —— */
+.main-layout .app-sider.n-layout-sider {
+  position: relative;
+  overflow: hidden;
+  background: var(--platform-glass-sider-bg) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* 仅遮罩上半菜单区，避免压暗底部 logo / 建筑图 */
+.main-layout .app-sider.n-layout-sider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 58%;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--platform-glass-sider-bg, #f2f2f2) 72%, transparent) 0%,
+    color-mix(in srgb, var(--platform-glass-sider-bg, #f2f2f2) 28%, transparent) 70%,
+    transparent 100%
+  );
+}
+
+.main-layout .app-sider .n-layout-sider-scroll-container {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dark"] .main-layout .app-sider.n-layout-sider::before {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #171717 78%, transparent) 0%,
+    color-mix(in srgb, #171717 30%, transparent) 70%,
+    transparent 100%
+  );
+}
+
+/* 顶栏与内容区无底色，透出壳层 */
+.main-layout .header {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-bottom: none !important;
+}
+
+.main-layout,
+.main-layout .app-main.n-layout,
+.main-layout .app-content.n-layout-content,
+.main-layout .app-main .n-layout-scroll-container,
+.main-layout .app-content .n-layout-scroll-container {
+  background: transparent !important;
+}
 
 /* —— 通用玻璃面板（卡片 / 列表） —— */
 .app-shell .n-card:not(.feature-local-nav),
 .app-shell .n-list,
-.app-shell .glass-float-panel {
-  background: var(--platform-bg-elevated) !important;
-  border: 1px solid var(--platform-border) !important;
-  box-shadow: none !important;
+.app-shell .glass-float-panel,
+.app-shell .platform-surface-card,
+.app-shell .feature-card,
+.app-shell .agent-card.n-card {
+  background: var(--platform-card-bg) !important;
+  border: 1px solid var(--platform-card-border-color) !important;
+  box-shadow: var(--platform-card-shadow) !important;
+  backdrop-filter: var(--platform-glass-filter);
+  -webkit-backdrop-filter: var(--platform-glass-filter);
+  transition: var(--platform-card-transition) !important;
+}
+
+/* 抬升悬浮：功能列表 / 多智能体同款（弹窗、普通 n-card 不加） */
+.app-shell .feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked),
+.app-shell .agent-card.n-card:hover:not(.agent-card--disabled),
+.app-shell .subsystem-shell .agent-card.n-card:hover:not(.agent-card--disabled) {
+  border-color: var(--platform-card-hover-border-color) !important;
+  box-shadow: var(--platform-card-shadow-hover) !important;
+  transform: var(--platform-card-hover-transform);
+}
+
+/* 弹窗卡片禁止抬升，避免登录/注册等窗口跟手漂浮 */
+.n-modal .n-card:hover,
+.n-dialog .n-card:hover,
+.platform-glass-modal.n-modal .n-card:hover,
+.admin-form-modal.n-modal .n-card:hover {
+  transform: none !important;
 }
 
 /* 表格表头背景 — platform.css 已统一定义 */
@@ -421,11 +519,18 @@
   color: var(--platform-danger) !important;
 }
 
-/* —— 下拉 / 选择器菜单项（与侧栏菜单玻璃效果一致） —— */
+/* —— 下拉 / 浮层菜单毛玻璃 —— */
+body > .v-binder-follower-container .n-base-select-menu,
+body > .v-binder-follower-container .n-dropdown-menu,
+body > .v-binder-follower-container .n-popover:not(.n-popover--raw) {
+  background: var(--platform-glass-float-bg) !important;
+  border: 1px solid var(--platform-glass-border) !important;
+  box-shadow: var(--platform-glass-shadow) !important;
+  backdrop-filter: var(--platform-glass-filter) !important;
+  -webkit-backdrop-filter: var(--platform-glass-filter) !important;
+}
+
 body > .v-binder-follower-container .n-base-select-menu {
-  background: var(--platform-bg-elevated-solid) !important;
-  border: 1px solid var(--platform-border) !important;
-  box-shadow: var(--platform-shadow-lg, var(--platform-shadow-card)) !important;
   border-radius: var(--platform-radius-sm) !important;
   padding: 4px !important;
 }
@@ -550,5 +655,32 @@ body > .v-binder-follower-container .n-base-select-menu {
   .n-tabs.n-tabs--segment-type .n-tabs-capsule,
   .app-shell .n-radio-group.n-radio-group--button-group .n-radio-button {
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* 系统偏好：降低透明/特效时退回实色，避免可读性与性能问题 */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  html[data-theme="light"],
+  html[data-theme="dark"] {
+    --platform-glass-filter: none;
+    --platform-glass-sider-bg: #F2F2F2;
+    --platform-glass-header-bg: #FAFAFA;
+    --platform-glass-panel-bg: #FCFCFC;
+    --platform-glass-float-bg: #ffffff;
+    --platform-glass-shadow: none;
+    --platform-glass-shadow-sm: none;
+    --platform-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    --platform-card-shadow-hover: 0 8px 20px rgba(15, 23, 42, 0.08);
+    --platform-card-hover-transform: none;
+  }
+
+  html[data-theme="dark"] {
+    --platform-glass-sider-bg: #141417;
+    --platform-glass-header-bg: #0c0c0f;
+    --platform-glass-panel-bg: #1a1a20;
+    --platform-glass-float-bg: #1e1e24;
+    --platform-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+    --platform-card-shadow-hover: 0 10px 24px rgba(0, 0, 0, 0.36);
   }
 }

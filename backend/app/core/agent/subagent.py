@@ -45,31 +45,28 @@ _PLATFORM_RUNTIME = SubagentRuntime(
         "search": SubagentKindConfig(
             kind="search",
             allowed_tools=frozenset({"invoke_skill", "web_search", "fetch_url_content", "knowledge_retrieve", "kg_query", "ontology_query", "run_tool_batch"}),
-            max_rounds=12,
+            max_rounds=8,
             system_contract=(
-                "你是多源检索子 Agent。你的目标是快速获取真实信息直接回答用户问题。\n\n"
-                "你可以调用以下工具：\n"
-                "- web_search：联网检索。read_full=0 仅返回摘要片段（秒级返回），\n"
-                "  read_full=3（默认）自动读前 3 条全文\n"
-                "- fetch_url_content(url)：对特定 URL 获取网页正文（有疑惑时再用）\n"
-                "- knowledge_retrieve：检索内部知识库\n"
-                "- kg_query：查询知识图谱（结构化实体关系）\n"
-                "- ontology_query：查询本体模型\n"
-                "- invoke_skill(skill_name, action, params)：调用搜索类技能\n"
-                "- run_tool_batch：一批并行执行多个 web_search\n\n"
-                "## 工作原则\n"
-                "1. **先看概要再决定是否读全文**：先调用 web_search(read_full=0) 获取摘要片段，\n"
-                "   如果摘要已能回答问题无需读全文；如需深挖则对具体 URL 调 fetch_url_content。\n"
-                "2. **一次搜够**：拆解问题后 2-4 个搜索词一次性用 run_tool_batch 并行发出。\n"
-                "3. **快速判断**：搜索超时/无法解析的网站直接忽略，不要重试。\n"
-                "4. **直接回答**：获取到足够信息后立即回答，不要等全部 URL 读完。\n"
-                "5. **实事求是**：所有结论必须有搜索结果支撑，禁止编造数据。\n"
-                "6. **引源注明**：关键事实附上来源链接。\n\n"
+                "你是多源检索子 Agent。目标：用最少检索拿到真实信息并直接回答。\n\n"
+                "可用工具：\n"
+                "- kg_query / ontology_query：平台语义层（人员/组织/实体关系优先 kg_query）\n"
+                "- web_search：联网检索。简单题务必 read_full=0（只要摘要）；"
+                "深挖再用 read_full=3 或对 URL 调 fetch_url_content\n"
+                "- fetch_url_content / knowledge_retrieve\n"
+                "- run_tool_batch：仅复杂调研时并行多路 web_search\n\n"
+                "## 复杂度自适应（必须遵守）\n"
+                "0. **语义层优先**：平台实体/组织归属、图谱关系 → 必须先 kg_query；"
+                "已给出所属组织则直接中文作答，禁止改用联网猜测\n"
+                "1. **简单事实**（单一可核验的短答案：时间、报价、定义、状态等）：\n"
+                "   - 只搜 **1 次**，query 短而准，read_full=0\n"
+                "   - 摘要里已有答案则立即用中文回答并附来源；禁止换词/加日期再搜\n"
+                "2. **复杂调研**：可拆 2-4 个互补关键词，用 run_tool_batch 一次并行发出\n"
+                "3. **禁止近义重试**：不得在仅改词序、同义词、日期、\"今天/实时\" 等情况下反复搜索同一主题\n"
+                "4. 搜索无结果时：最多再换 **1 个** 明显不同的关键词；仍无则如实告知并建议用户改用权威渠道\n"
+                "5. 所有结论须有检索支撑；禁止编造实时数据\n\n"
                 "## 约束\n"
-                "- 禁止编造数据，所有量化结论必须来自搜索结果。\n"
-                "- 最多 12 轮交互，省着用。\n"
-                "- 结果足以回答时立即回复，不要多轮搜索。\n"
-                "- 回复使用中文，技术术语保留英文。"
+                "- 最多 8 轮；简单题力争 1 轮工具 + 1 轮作答结束\n"
+                "- 回复使用中文，技术术语保留英文"
             ),
         ),
         "execute": SubagentKindConfig(
@@ -268,10 +265,29 @@ def _push_llm_thinking(state: LoopState | None) -> None:
     )
 
 
+def _format_decision_tool_names(tool_names: list[str]) -> str:
+    """决策标题中的工具名：同名合并为 web_search×2，避免「web_search、web_search」。"""
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for raw in tool_names:
+        name = (raw or "").strip() or "tool"
+        if name not in counts:
+            order.append(name)
+            counts[name] = 0
+        counts[name] += 1
+    parts = [
+        f"{name}×{counts[name]}" if counts[name] > 1 else name
+        for name in order[:3]
+    ]
+    if len(order) > 3:
+        parts.append("…")
+    return "、".join(parts)
+
+
 def _push_llm_decided(state: LoopState | None, tool_names: list[str] | None, content: str) -> None:
     """推送 LLM 决策事件。"""
     if tool_names:
-        names = "、".join(tool_names[:3])
+        names = _format_decision_tool_names(tool_names)
         _push_event(
             state,
             phase="llm_decision",
@@ -363,30 +379,29 @@ async def execute_context_subagent(
     task_text = (task or "").strip()
 
     def _execute_parent_tool_pool() -> set[str] | None:
-        """execute 子层可用工具 = 父挂载集 − 技能直执入口。
+        """execute 子层可用工具 = 父挂载全集 − 技能直执入口。
 
-        优先父 loop_state._all_tool_specs；否则按 agent_id 解析挂载表。
+        不以父 LLM 可见 specs（仅编排入口）为池，否则子层无法执行 web_search 等。
         返回 None 表示无法解析（调用方勿当成「全库放行」）。
         """
-        names: set[str] = set()
-        for spec in list((loop_state or {}).get("_all_tool_specs") or []):
-            n = str((spec.get("function") or {}).get("name") or "").strip()
-            if n:
-                names.add(n)
-        if not names:
-            aid = (agent or "").strip() or "orchestrator"
-            try:
-                from app.services.agent_profile_service import (
-                    resolve_effective_runtime_tool_names,
-                )
+        aid = (agent or "").strip() or "orchestrator"
+        try:
+            from app.services.agent_profile_service import (
+                resolve_effective_runtime_tool_names,
+            )
 
-                names = {
-                    str(n).strip()
-                    for n in resolve_effective_runtime_tool_names(db, aid)
-                    if str(n).strip()
-                }
-            except Exception:
-                names = set()
+            names = {
+                str(n).strip()
+                for n in resolve_effective_runtime_tool_names(db, aid)
+                if str(n).strip()
+            }
+        except Exception:
+            names = set()
+        if not names:
+            # 回退：父 loop 可能缓存了可发现挂载名
+            for n in list((loop_state or {}).get("_discoverable_tool_names") or []):
+                if str(n).strip():
+                    names.add(str(n).strip())
         if not names:
             return None
         return names - PARENT_HIDDEN_EXECUTION_ENTRYPOINTS
@@ -518,18 +533,7 @@ async def execute_context_subagent(
     if sub_kind == "execute" and steps:
         execute_pool = _execute_parent_tool_pool()
         raw_results: list[dict[str, Any]] = []
-        plan_lines: list[str] = []
-        for step in steps:
-            tn = str(step.get("tool") or "").strip()
-            sa = _parse_tool_args_safe(step.get("arguments") or {})
-            cd = _human_tool_call_detail(tn, sa)
-            plan_lines.append(f"  {len(plan_lines) + 1}. {cd or tn}")
-        _push_event(
-            loop_state, phase="agent_plan",
-            title=f"编排计划（{len(steps)} 步）",
-            detail="\n".join(plan_lines),
-            tool="agent.planner",
-        )
+        # 父层已展示「执行计划」，此处不再重复推「编排计划」
         init_child_state()
         for step in steps:
             tool_name = str(step.get("tool") or "").strip()

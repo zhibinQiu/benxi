@@ -4,6 +4,7 @@ import { CloseOutline, AddOutline, TimeOutline, CheckmarkOutline, CloseCircleOut
 import { NIcon } from "naive-ui";
 import { useI18n } from "../composables/useI18n.js";
 import CurveAnimation from "./CurveAnimation.vue";
+import AiHomeOpenApiPanel from "./AiHomeOpenApiPanel.vue";
 
 const props = defineProps({
   tabs: { type: Array, required: true },
@@ -83,7 +84,7 @@ onUnmounted(() => {
           <n-icon :size="12" :component="CloseOutline" />
         </button>
       </button>
-      <!-- 新建对话按钮：仅加号 -->
+      <!-- 新建对话标签 -->
       <button
         type="button"
         class="chat-tab chat-tab--new"
@@ -116,6 +117,7 @@ onUnmounted(() => {
       >
         <n-icon :size="16" :component="TimeOutline" />
       </button>
+      <AiHomeOpenApiPanel />
     </div>
   </div>
 </template>
@@ -126,7 +128,7 @@ onUnmounted(() => {
   align-items: stretch;
   width: 100%;
   min-width: 0;
-  border-bottom: 1px solid var(--platform-border);
+  border-bottom: none;
 }
 
 .chat-tab-bar__scroll {
@@ -199,46 +201,21 @@ onUnmounted(() => {
   left: 0;
   top: 3px;
   bottom: 3px;
-  width: 2.5px;
-  border-radius: 1px;
+  width: 2px;
   background: var(--platform-accent);
-}
-
-.chat-tab--active:hover {
-  background: var(--platform-bg-elevated);
-}
-
-/* --- 已完成标签 --- */
-.chat-tab--done {
-  color: var(--platform-text-secondary);
-}
-
-/* --- 新建对话按钮：仅加号，不参与等分 --- */
-.chat-tab--new {
-  all: unset;
-  box-sizing: border-box;
-  flex: none;
-  width: 36px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--platform-text-tertiary);
-  font-size: 12px;
-  font-family: inherit;
-  line-height: 1;
-  cursor: pointer;
-  white-space: nowrap;
   border-radius: 0;
-  -webkit-appearance: none;
-  appearance: none;
+}
+
+.chat-tab--new {
+  flex: 0 0 36px;
+  max-width: 36px;
+  width: 36px;
+  justify-content: center;
+  padding: 0;
+  color: var(--platform-text-tertiary);
 }
 
 .chat-tab--new:hover:not(:disabled) {
-  background: var(--platform-bg-secondary);
   color: var(--platform-accent);
 }
 
@@ -327,19 +304,23 @@ onUnmounted(() => {
 /* --- 右侧操作区 --- */
 .chat-tab-bar__actions {
   flex-shrink: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-left: 1px solid var(--platform-border);
 }
 
 .chat-tab-action {
   all: unset;
   box-sizing: border-box;
-  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  width: 28px;
   height: 28px;
+  padding: 0;
+  border: none;
   background: transparent;
   color: var(--platform-text-tertiary);
   cursor: pointer;

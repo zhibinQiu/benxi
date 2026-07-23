@@ -10,6 +10,22 @@
   --motion-duration-slow: 0.38s;
 }
 
+/* 功能列表 / 多智能体等入口卡统一入场 */
+@keyframes platform-surface-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.platform-surface-card-enter {
+  animation: platform-surface-card-in 0.36s var(--motion-ease-out-expo) both;
+}
+
 /* 文档中心视图切换 */
 .doc-view-enter-active {
   transition:
@@ -74,8 +90,13 @@
   .doc-view-leave-active,
   .ai-welcome-leave-active,
   .ai-chat-header-enter-active,
-  .ai-msg-enter-active {
+  .ai-msg-enter-active,
+  .platform-surface-card-enter,
+  .agent-card-grid > .agent-card,
+  .agent-card-grid > *,
+  .feature-card-wrap {
     transition-duration: 0.01ms !important;
+    animation: none !important;
   }
 
   .doc-view-enter-from,
@@ -93,6 +114,10 @@
 
   .ai-home-dock {
     transform: none !important;
+  }
+
+  :root {
+    --platform-card-hover-transform: none;
   }
 }
 

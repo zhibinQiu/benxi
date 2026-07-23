@@ -256,3 +256,149 @@ def test_delete_item_after_import_keeps_document(client, admin_token):
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert doc.status_code == 200, doc.text
+
+
+def test_admin_can_open_other_user_wechat_item(client, admin_token):
+    """管理员 all_users 列表可见的他人微信文章，详情应可打开（非「文章不存在」）。"""
+    import uuid
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models.org import User
+    from app.models.wechat_mp import (
+        WechatMpArticle,
+        WechatMpSource,
+        WechatMpSourceSubscription,
+    )
+    from app.services.subscription_service import REF_WECHAT, make_ref
+
+    db = SessionLocal()
+    try:
+        admin = db.scalar(select(User).where(User.username == "admin"))
+        assert admin is not None
+        other = User(
+            id=uuid.uuid4(),
+            username=f"sub-member-{uuid.uuid4().hex[:6]}",
+            display_name="资讯成员",
+            phone=f"139{uuid.uuid4().int % 10**8:08d}",
+            password_hash="x",
+            status="active",
+        )
+        db.add(other)
+        db.flush()
+        source = WechatMpSource(
+            id=uuid.uuid4(),
+            biz=f"MzTestOther{uuid.uuid4().hex[:8]}",
+            name="他人公众号",
+        )
+        db.add(source)
+        db.flush()
+        db.add(
+            WechatMpSourceSubscription(user_id=other.id, source_id=source.id)
+        )
+        article = WechatMpArticle(
+            id=uuid.uuid4(),
+            source_id=source.id,
+            title="他人收录的微信文章",
+            summary="摘要",
+            content_html="<p>正文</p>",
+            original_url=f"https://mp.weixin.qq.com/s?__biz={source.biz}",
+            content_hash=uuid.uuid4().hex,
+            publish_at=datetime.now(timezone.utc),
+        )
+        db.add(article)
+        db.commit()
+        ref = make_ref(REF_WECHAT, article.id)
+        # 管理员本人未订阅该源
+        assert source.id not in {
+            row
+            for row in db.scalars(
+                select(WechatMpSourceSubscription.source_id).where(
+                    WechatMpSourceSubscription.user_id == admin.id
+                )
+            ).all()
+        }
+    finally:
+        db.close()
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    listed = client.get(
+        "/api/v1/subscriptions/items",
+        params={"all_users": "true", "page_size": 50},
+        headers=headers,
+    )
+    assert listed.status_code == 200, listed.text
+    assert any(i["ref"] == ref for i in listed.json()["data"]["items"])
+
+    detail = client.get(
+        f"/api/v1/subscriptions/items/{ref}",
+        headers=headers,
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["data"]["title"] == "他人收录的微信文章"
+
+
+def test_list_items_keyword_bm25_ranks_title_match_first(client, admin_token):
+    """有关键词时按 BM25 相关度排序：标题强匹配应排在弱匹配之前。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    # 使用罕见专有词，避免与库内历史资讯碰撞
+    docs = [
+        ParsedFeedEntry(
+            title="今日天气晴朗",
+            summary="无关摘要",
+            link="https://example.com/news/bm25-a",
+            content_html="<p>天气</p>",
+            entry_key="bm25-a",
+            publish_at=datetime.now(timezone.utc),
+        ),
+        ParsedFeedEntry(
+            title="市场周报",
+            summary="关于 Quorixylene 催化材料的简讯",
+            link="https://example.com/news/bm25-b",
+            content_html="<p>周报</p>",
+            entry_key="bm25-b",
+            publish_at=datetime.now(timezone.utc),
+        ),
+        ParsedFeedEntry(
+            title="Quorixylene 催化材料技术白皮书",
+            summary="政策要点",
+            link="https://example.com/news/bm25-c",
+            content_html="<p>政策</p>",
+            entry_key="bm25-c",
+            publish_at=datetime.now(timezone.utc),
+        ),
+    ]
+    for parsed in docs:
+        with patch(
+            "app.services.subscription_service.fetch_web_article",
+            return_value=parsed,
+        ):
+            r = client.post(
+                "/api/v1/subscriptions/ingest-url",
+                headers=headers,
+                json={"url": parsed.link},
+            )
+            assert r.status_code == 200, r.text
+
+    listed = client.get(
+        "/api/v1/subscriptions/items",
+        params={"keyword": "Quorixylene 催化材料", "page_size": 50},
+        headers=headers,
+    )
+    assert listed.status_code == 200, listed.text
+    data = listed.json()["data"]
+    titles = [i["title"] for i in data["items"]]
+    assert "Quorixylene 催化材料技术白皮书" in titles
+    assert titles[0] == "Quorixylene 催化材料技术白皮书"
+    assert "今日天气晴朗" not in titles
+
+    # 无关键词仍按时间倒序可用
+    all_listed = client.get(
+        "/api/v1/subscriptions/items",
+        params={"page_size": 50},
+        headers=headers,
+    )
+    assert all_listed.status_code == 200, all_listed.text
+    assert all_listed.json()["data"]["total"] >= 3

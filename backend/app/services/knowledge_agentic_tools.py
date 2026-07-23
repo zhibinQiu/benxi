@@ -168,10 +168,10 @@ class KnowledgeAgenticToolkit:
         if not self.include_kg:
             return ToolResult("kg_context", True, "未启用知识图谱", data=None)
         try:
-            from app.core.permissions import user_has_permission
+            from app.core.permissions import user_has_semantic_layer_permission
             from app.services.kg_service import retrieve_kg_context_for_question
 
-            if not user_has_permission(self.db, self.user, "feature.kg"):
+            if not user_has_semantic_layer_permission(self.db, self.user):
                 return ToolResult("kg_context", True, "无图谱权限", data=None)
             ctx = retrieve_kg_context_for_question(self.db, self.user, question)
             if not ctx or not ctx.context_text:

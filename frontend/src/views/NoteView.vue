@@ -85,8 +85,10 @@ const importingLibrary = ref(false);
 const editorMode = ref("edit");
 
 const showPolishModal = ref(false);
+const showPolishPreview = ref(false);
 const polishDirection = ref("");
 const polishSelection = ref(null); // { start, end, text } | null
+const polishPreviewContent = ref("");
 
 const showShareModal = ref(false);
 const lastGeneratedShareUrl = ref("");
@@ -293,6 +295,7 @@ async function selectFolder(menuId, { keepNote = false } = {}) {
   creatingFolder.value = false;
   renamingInline.value = false;
   if (!keepNote) {
+    closePolishPreview();
     currentNote.value = null;
     applyingHistory = true;
     editorContent.value = "";
@@ -398,6 +401,8 @@ async function deleteMenuDirect(m) {
 
 async function selectFile(file) {
   if (!file?.id || currentNote.value?.id === file.id) return;
+
+  closePolishPreview();
 
   // 离开前缓存并异步落盘，不阻塞切换
   if (currentNote.value?.id) {
@@ -850,26 +855,38 @@ async function runPolish() {
       ui.error("润色失败");
       return;
     }
-    if (sel && sel.end > sel.start) {
-      editorContent.value =
-        editorContent.value.substring(0, sel.start) +
-        r.content +
-        editorContent.value.substring(sel.end);
-      nextTick(() => {
-        const el = textareaRef.value;
-        if (!el) return;
-        el.focus();
-        el.selectionStart = sel.start;
-        el.selectionEnd = sel.start + r.content.length;
-      });
-    } else {
-      editorContent.value = r.content;
-    }
+    polishPreviewContent.value = r.content;
+    showPolishPreview.value = true;
   } catch (e) {
     ui.error(e?.message || "润色失败");
   } finally {
     polishing.value = false;
   }
+}
+
+function closePolishPreview() {
+  showPolishPreview.value = false;
+}
+
+function applyPolishPreview() {
+  const content = polishPreviewContent.value ?? "";
+  const sel = polishSelection.value;
+  if (sel && sel.end > sel.start) {
+    editorContent.value =
+      editorContent.value.substring(0, sel.start) +
+      content +
+      editorContent.value.substring(sel.end);
+    nextTick(() => {
+      const el = textareaRef.value;
+      if (!el) return;
+      el.focus();
+      el.selectionStart = sel.start;
+      el.selectionEnd = sel.start + content.length;
+    });
+  } else {
+    editorContent.value = content;
+  }
+  closePolishPreview();
 }
 
 function insertMarkdown({ prefix, suffix, placeholder }) {
@@ -1278,6 +1295,32 @@ onActivated(() => {
       </template>
     </AdminFormModal>
 
+    <n-drawer
+      v-model:show="showPolishPreview"
+      :width="520"
+      placement="right"
+      :mask-closable="false"
+      @after-leave="polishPreviewContent = ''"
+    >
+      <n-drawer-content title="AI 润色预览" closable body-content-style="display:flex;flex-direction:column;padding:0;">
+        <div class="polish-preview-body">
+          <n-input
+            v-model:value="polishPreviewContent"
+            type="textarea"
+            class="polish-preview-input"
+            placeholder="润色结果可在此修改…"
+            :autosize="{ minRows: 16, maxRows: 40 }"
+          />
+        </div>
+        <template #footer>
+          <div class="polish-preview-footer">
+            <n-button size="small" @click="closePolishPreview">取消</n-button>
+            <n-button size="small" type="primary" @click="applyPolishPreview">应用</n-button>
+          </div>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
+
     <ShareLinkModal
       v-model:show="showShareModal"
       title="分享笔记"
@@ -1338,7 +1381,7 @@ onActivated(() => {
   max-width: 16px;
   border: none;
   border-right: 1px solid var(--platform-border-strong);
-  background: var(--platform-bg-secondary);
+  background: var(--platform-bg);
   color: var(--platform-text-tertiary);
   cursor: pointer;
   display: flex;
@@ -1359,7 +1402,7 @@ onActivated(() => {
   max-width: 280px;
   flex: 0 0 280px !important;
   align-self: stretch;
-  background: var(--platform-bg-secondary);
+  background: var(--platform-bg);
   border-right: 1px solid var(--platform-border-strong);
   display: flex;
   flex-direction: column;
@@ -1898,6 +1941,25 @@ onActivated(() => {
 .ed-preview-wrap::-webkit-scrollbar-thumb {
   background: var(--platform-border-strong);
   border-radius: 2px;
+}
+
+.polish-preview-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+}
+
+.polish-preview-input :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: var(--platform-font-size-base, 13px);
+  line-height: 1.6;
+  min-height: 60vh;
+}
+
+.polish-preview-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>
 

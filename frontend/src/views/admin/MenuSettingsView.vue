@@ -173,36 +173,52 @@ onMounted(load);
 
 <style scoped>
 .menu-settings-page {
+  width: 100%;
   max-width: 984px;
 }
 
 .page-hint {
   display: block;
-  margin-bottom: 19px;
-  line-height: 1.6;
+  margin-bottom: 14px;
+  font-size: var(--platform-font-size-sm);
+  line-height: 1.5;
 }
 
 .menu-group__title {
-  margin: 0 0 12px;
-  font-size: 17px;
-  font-weight: 600;
+  margin: 0 0 10px;
+  font-size: var(--platform-font-size-sm);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--platform-text);
 }
 
 .menu-table {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
+/* 与功能列表同款材质 / 悬浮 */
 .menu-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 19px;
-  padding: 12px 14px;
+  gap: 14px;
+  min-height: 64px;
+  padding: 10px 14px;
   border-radius: var(--platform-card-radius);
   background: var(--platform-card-bg);
   border: 1px solid var(--platform-card-border-color);
+  box-shadow: var(--platform-card-shadow);
+  backdrop-filter: var(--platform-glass-filter);
+  -webkit-backdrop-filter: var(--platform-glass-filter);
+  transition: var(--platform-card-transition);
+}
+
+.menu-row:hover {
+  border-color: var(--platform-card-hover-border-color);
+  box-shadow: var(--platform-card-shadow-hover);
+  transform: var(--platform-card-hover-transform);
 }
 
 .menu-row__info {
@@ -211,15 +227,29 @@ onMounted(load);
   gap: 2px;
   min-width: 0;
   flex: 1;
-  font-size: 13px;
 }
 
 .menu-row__info strong {
-  font-size: 14px;
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
+  line-height: 1.4;
+  color: var(--platform-text);
+}
+
+.menu-row__info :deep(.n-text) {
+  font-size: var(--platform-font-size-xs);
+  line-height: 1.45;
+  color: var(--platform-text-tertiary);
 }
 
 .menu-row__select {
-  width: 202px;
+  width: 168px;
   flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-row:hover {
+    transform: none;
+  }
 }
 </style>

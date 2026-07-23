@@ -1,15 +1,20 @@
 ---
 name: sync_document_knowledge
 ---
-sync_document_knowledge 工具 — 根据当前任务需求自动调用。
+将指定文档同步到知识库，使其可被 knowledge_retrieve 检索。
 
 ## When to use
-- 用户请求与 sync_document_knowledge 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 新写入或更新的文档需要进入知识检索
+- 用户问「为什么知识库搜不到刚上传的文档」时触发同步
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 仅阅读文档正文（用 read_document_content）
+- 索引损坏需强制重建（用 reindex_document）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 同步任务/状态摘要
+
+## Parameters
+
+### document_id (required)
+文档 ID。

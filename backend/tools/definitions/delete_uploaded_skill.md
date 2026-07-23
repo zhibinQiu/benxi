@@ -1,15 +1,19 @@
 ---
 name: delete_uploaded_skill
 ---
-delete_uploaded_skill 工具 — 根据当前任务需求自动调用。
+删除上传型 Skill 包。
 
 ## When to use
-- 用户请求与 delete_uploaded_skill 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- skill-dev：用户明确要求删除某发展 Skill
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 仅禁用或修改文件（用 update_uploaded_skill_file）
+- 删除内置/非上传 Skill（不适用）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 删除结果
+
+## Parameters
+
+### skill_name (required)
+Skill slug。

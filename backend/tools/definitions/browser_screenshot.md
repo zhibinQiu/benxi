@@ -1,15 +1,20 @@
 ---
 name: browser_screenshot
 ---
-browser_screenshot 工具 — 根据当前任务需求自动调用。
+截取当前浏览器页面图像，用于核对页面视觉状态或留档。
 
 ## When to use
-- 用户请求与 browser_screenshot 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 需要确认页面渲染效果、验证码区域、图表等视觉信息
+- 操作后留存截图证据
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 需要获取可交互元素 ref（用 browser_snapshot）
+- 只需提取公开页正文（用 fetch_url_content）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 截图结果（可含图片资源引用）
+
+## Parameters
+
+### full_page (optional)
+是否整页滚动截图。默认 false（当前视口）。

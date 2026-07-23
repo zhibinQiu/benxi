@@ -537,25 +537,43 @@ class KgService(Neo4jBaseService):
     async def batch_import_documents(
         self,
         documents: list[tuple[str, str, str, str]],
+        *,
+        prune_missing: bool = True,
     ) -> dict[str, int]:
-        """批量将文档导入为图谱实体。
+        """全量同步文档为图谱 doc 实体：upsert 当前文档，可选清除已删文档对应实体。
 
         Args:
             documents: list of (id, title, description, owner_id) tuples.
+            prune_missing: 为 True 时删除 source_document_id 不在当前集合中的 doc 实体。
 
         Returns:
-            dict with created and skipped counts.
+            dict with imported / updated / deleted counts.
         """
         imported = 0
-        skipped = 0
+        updated = 0
+        deleted = 0
+        allowed_ids = [doc_id for doc_id, *_ in documents if doc_id]
         for doc_id, title, description, owner_id in documents:
-            # 检查是否已存在
+            name = title.strip() or "未命名文档"
+            desc = description or ""
             existing = await self.run_single(
-                "MATCH (e:Entity {source_document_id: $sid}) RETURN e LIMIT 1",
+                """
+                MATCH (e:Entity {type_code: 'doc', source_document_id: $sid})
+                RETURN e LIMIT 1
+                """,
                 params=dict(sid=doc_id),
             )
             if existing:
-                skipped += 1
+                await self.run_single(
+                    """
+                    MATCH (e:Entity {type_code: 'doc', source_document_id: $sid})
+                    SET e.name = $name, e.description = $desc,
+                        e.owner_id = $owner_id, e.updated_at = datetime()
+                    RETURN e
+                    """,
+                    params=dict(sid=doc_id, name=name, desc=desc, owner_id=owner_id),
+                )
+                updated += 1
                 continue
             entity_id = str(uuid.uuid4())
             try:
@@ -575,8 +593,8 @@ class KgService(Neo4jBaseService):
                     params=dict(
                         id=entity_id,
                         type_code="doc",
-                        name=title.strip() or "未命名文档",
-                        description=description or "",
+                        name=name,
+                        description=desc,
                         source_type="extraction",
                         source_document_id=doc_id,
                         owner_id=owner_id,
@@ -586,19 +604,162 @@ class KgService(Neo4jBaseService):
                 imported += 1
             except Exception as exc:
                 logger.warning("导入文档实体失败 [%s]: %s", doc_id, exc)
-                skipped += 1
-        return {"imported": imported, "skipped": skipped}
 
-    # ── 平台数据同步 ──────────────────────────────────────────────────────
+        if prune_missing:
+            deleted = await self._prune_entities_not_in(
+                prop_key="source_document_id",
+                allowed_values=allowed_ids,
+                extra_where="e.type_code = 'doc'",
+            )
+
+        return {
+            "imported": imported,
+            "updated": updated,
+            "deleted": deleted,
+            "skipped": 0,
+        }
+
+    # ── 平台数据同步（全量：upsert + 清除平台侧已不存在的实体/关系）──────────
+
+    async def _upsert_platform_entity(
+        self,
+        session: Any,
+        *,
+        match_prop: str,
+        match_value: str,
+        type_code: str,
+        name: str,
+        description: str,
+        owner_id: str,
+    ) -> str:
+        """按平台标识 upsert Entity，返回实体 id。"""
+        existing = await session.run(
+            f"MATCH (e:Entity {{{match_prop}: $v}}) RETURN e LIMIT 1",
+            v=match_value,
+        )
+        rec = await existing.single()
+        if rec:
+            eid = dict(rec["e"])["id"]
+            await session.run(
+                f"""
+                MATCH (e:Entity {{{match_prop}: $v}})
+                SET e.name = $name, e.description = $desc, e.type_code = $tc,
+                    e.source_type = 'system', e.owner_id = $owner,
+                    e.updated_at = datetime()
+                """,
+                v=match_value,
+                name=name,
+                desc=description,
+                tc=type_code,
+                owner=owner_id,
+            )
+            return eid
+        eid = str(uuid.uuid4())
+        await session.run(
+            f"""
+            CREATE (e:Entity {{
+                id: $id, type_code: $tc, name: $name, description: $desc,
+                properties: '{{}}', source_type: 'system',
+                {match_prop}: $v, owner_id: $owner, created_by: $owner,
+                created_at: datetime(), updated_at: datetime()
+            }})
+            """,
+            id=eid,
+            tc=type_code,
+            name=name,
+            desc=description,
+            v=match_value,
+            owner=owner_id,
+        )
+        return eid
+
+    async def _prune_entities_not_in(
+        self,
+        *,
+        prop_key: str,
+        allowed_values: list[str],
+        extra_where: str = "",
+        owner_id: str | None = None,
+    ) -> int:
+        """删除带平台标识、且标识不在允许集合中的实体（含关联关系）。"""
+        where_parts = [
+            f"e.{prop_key} IS NOT NULL",
+            f"e.{prop_key} <> ''",
+            f"NOT e.{prop_key} IN $allowed",
+        ]
+        if extra_where:
+            where_parts.append(extra_where)
+        if owner_id is not None:
+            where_parts.append("e.owner_id = $owner")
+        where_clause = " AND ".join(where_parts)
+        params: dict[str, Any] = {"allowed": list(allowed_values)}
+        if owner_id is not None:
+            params["owner"] = owner_id
+        record = await self.run_single(
+            f"""
+            MATCH (e:Entity)
+            WHERE {where_clause}
+            WITH collect(e) AS to_delete
+            FOREACH (n IN to_delete | DETACH DELETE n)
+            RETURN size(to_delete) AS deleted
+            """,
+            params=params,
+        )
+        return int((record or {}).get("deleted") or 0)
+
+    async def _rebuild_typed_relations(
+        self,
+        session: Any,
+        *,
+        type_code: str,
+        pairs: list[tuple[str, str]],
+        owner_id: str,
+        endpoint_filter: str,
+    ) -> int:
+        """删除匹配端点上的旧关系后，按 pairs 重建。"""
+        await session.run(
+            f"""
+            MATCH (a:Entity)-[r:RELATES {{type_code: $tc}}]->(b:Entity)
+            WHERE {endpoint_filter}
+            DELETE r
+            """,
+            tc=type_code,
+        )
+        created = 0
+        for frm, to in pairs:
+            if not frm or not to or frm == to:
+                continue
+            rid = str(uuid.uuid4())
+            await session.run(
+                """
+                MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to})
+                CREATE (a)-[r:RELATES {
+                    id: $rid, type_code: $tc, description: '',
+                    inferred: false, owner_id: $owner, created_at: datetime()
+                }]->(b)
+                """,
+                frm=frm,
+                to=to,
+                rid=rid,
+                tc=type_code,
+                owner=owner_id,
+            )
+            created += 1
+        return created
 
     async def sync_platform_org(
         self, db: Any, owner_id: str
     ) -> dict[str, int]:
-        """将平台用户/部门同步为 Neo4j 实体（person / org + employs / contains）。"""
+        """全量同步平台用户/部门到图谱（upsert + 清除已删/停用对象及过期关系）。"""
         from app.models.org import Department, User, UserDepartment, UserStatus
         from sqlalchemy import select
 
-        stats: dict[str, int] = {"departments": 0, "users": 0, "relations": 0}
+        stats: dict[str, int] = {
+            "departments": 0,
+            "users": 0,
+            "relations": 0,
+            "deleted": 0,
+        }
 
         if not await self.ontology.get_entity_type("org"):
             logger.warning("sync_platform_org: 实体类型 'org' 尚未定义")
@@ -607,322 +768,344 @@ class KgService(Neo4jBaseService):
             logger.warning("sync_platform_org: 实体类型 'person' 尚未定义")
             return stats
 
-        async with self._driver.session() as s:
-            # 部门 -> org
-            dept_rows = db.scalars(
+        dept_rows = list(
+            db.scalars(
                 select(Department).order_by(Department.sort_order, Department.name)
             ).all()
+        )
+        users = list(
+            db.scalars(select(User).where(User.status == UserStatus.active.value)).all()
+        )
+        memberships = list(db.scalars(select(UserDepartment)).all())
+        membership_map = {str(m.user_id): str(m.dept_id) for m in memberships}
+        allowed_dept_ids = [str(d.id) for d in dept_rows]
+        allowed_user_ids = [str(u.id) for u in users]
+
+        async with self._driver.session() as s:
             dept_map: dict[str, str] = {}
             for dept in dept_rows:
                 did = str(dept.id)
-                existing = await s.run(
-                    "MATCH (e:Entity {platform_department_id: $did}) RETURN e LIMIT 1", did=did
+                dept_map[did] = await self._upsert_platform_entity(
+                    s,
+                    match_prop="platform_department_id",
+                    match_value=did,
+                    type_code="org",
+                    name=dept.name.strip(),
+                    description="组织部门",
+                    owner_id=owner_id,
                 )
-                rec = await existing.single()
-                if rec:
-                    dept_map[did] = dict(rec["e"])["id"]
-                    continue
-                eid = str(uuid.uuid4())
-                await s.run(
-                    "CREATE (e:Entity {id: $id, type_code: 'org', name: $name, "
-                    "description: '组织部门', properties: '{}', source_type: 'system', "
-                    "platform_department_id: $did, owner_id: $owner, created_by: $owner, "
-                    "created_at: datetime(), updated_at: datetime()})",
-                    id=eid, name=dept.name.strip(), did=did, owner=owner_id,
-                )
-                dept_map[did] = eid
-                stats["departments"] += 1
+            stats["departments"] = len(dept_map)
 
-            # contains 关系
-            for dept in dept_rows:
-                did = str(dept.id)
-                pdid = str(dept.parent_id) if dept.parent_id else None
-                child_id = dept_map.get(did)
-                if not pdid or not child_id:
-                    continue
-                parent_id = dept_map.get(pdid)
-                if not parent_id:
-                    continue
-                dup = await s.run(
-                    "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'contains'}]->(b:Entity {id: $to}) "
-                    "RETURN r LIMIT 1", frm=parent_id, to=child_id,
-                )
-                if await dup.single():
-                    continue
-                rid = str(uuid.uuid4())
-                await s.run(
-                    "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
-                    "CREATE (a)-[r:RELATES {id: $rid, type_code: 'contains', "
-                    "description: '', inferred: false, owner_id: $owner, "
-                    "created_at: datetime()}]->(b)",
-                    frm=parent_id, to=child_id, rid=rid, owner=owner_id,
-                )
-                stats["relations"] += 1
-
-            # 用户 -> person + employs
-            users = db.scalars(
-                select(User).where(User.status == UserStatus.active.value)
-            ).all()
-            memberships = db.scalars(select(UserDepartment)).all()
-            membership_map: dict[str, str] = {}
-            for m in memberships:
-                membership_map[str(m.user_id)] = str(m.dept_id)
-
+            person_map: dict[str, str] = {}
             for u in users:
                 uid = str(u.id)
                 label = (u.display_name or u.username or u.phone or "用户").strip()
-                existing = await s.run(
-                    "MATCH (e:Entity {platform_user_id: $uid}) RETURN e LIMIT 1", uid=uid
+                desc_parts = [
+                    f"手机 {u.phone}" if u.phone else "",
+                    f"邮箱 {u.email}" if u.email else "",
+                    f"账号 {u.username}" if u.username else "",
+                ]
+                desc = " · ".join(p for p in desc_parts if p) or "平台用户"
+                person_map[uid] = await self._upsert_platform_entity(
+                    s,
+                    match_prop="platform_user_id",
+                    match_value=uid,
+                    type_code="person",
+                    name=label,
+                    description=desc,
+                    owner_id=owner_id,
                 )
-                rec = await existing.single()
-                if rec:
-                    person_id = dict(rec["e"])["id"]
-                else:
-                    person_id = str(uuid.uuid4())
-                    desc_parts = [f"手机 {u.phone}" if u.phone else "",
-                                  f"邮箱 {u.email}" if u.email else "",
-                                  f"账号 {u.username}" if u.username else ""]
-                    desc = " · ".join(p for p in desc_parts if p) or "平台用户"
-                    await s.run(
-                        "CREATE (e:Entity {id: $id, type_code: 'person', name: $name, "
-                        "description: $desc, properties: '{}', source_type: 'system', "
-                        "platform_user_id: $uid, owner_id: $owner, created_by: $owner, "
-                        "created_at: datetime(), updated_at: datetime()})",
-                        id=person_id, name=label, desc=desc, uid=uid, owner=owner_id,
-                    )
-                    stats["users"] += 1
+            stats["users"] = len(person_map)
 
-                dept_id = membership_map.get(uid)
-                if dept_id:
-                    dept_eid = dept_map.get(dept_id)
-                    if dept_eid:
-                        dup = await s.run(
-                            "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'employs'}]->(b:Entity {id: $to}) "
-                            "RETURN r LIMIT 1", frm=dept_eid, to=person_id,
-                        )
-                        if not await dup.single():
-                            rid = str(uuid.uuid4())
-                            await s.run(
-                                "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
-                                "CREATE (a)-[r:RELATES {id: $rid, type_code: 'employs', "
-                                "description: '', inferred: false, owner_id: $owner, "
-                                "created_at: datetime()}]->(b)",
-                                frm=dept_eid, to=person_id, rid=rid, owner=owner_id,
-                            )
-                            stats["relations"] += 1
+        deleted_depts = await self._prune_entities_not_in(
+            prop_key="platform_department_id",
+            allowed_values=allowed_dept_ids,
+        )
+        deleted_users = await self._prune_entities_not_in(
+            prop_key="platform_user_id",
+            allowed_values=allowed_user_ids,
+        )
+        stats["deleted"] = deleted_depts + deleted_users
 
-        logger.info("平台组织同步完成: %s", stats)
+        contains_pairs: list[tuple[str, str]] = []
+        for dept in dept_rows:
+            if not dept.parent_id:
+                continue
+            parent_id = dept_map.get(str(dept.parent_id))
+            child_id = dept_map.get(str(dept.id))
+            if parent_id and child_id:
+                contains_pairs.append((parent_id, child_id))
+
+        employs_pairs: list[tuple[str, str]] = []
+        for uid, person_id in person_map.items():
+            dept_id = membership_map.get(uid)
+            if not dept_id:
+                continue
+            dept_eid = dept_map.get(dept_id)
+            if dept_eid:
+                employs_pairs.append((dept_eid, person_id))
+
+        async with self._driver.session() as s:
+            contains_n = await self._rebuild_typed_relations(
+                s,
+                type_code="contains",
+                pairs=contains_pairs,
+                owner_id=owner_id,
+                endpoint_filter=(
+                    "a.platform_department_id IS NOT NULL "
+                    "AND b.platform_department_id IS NOT NULL"
+                ),
+            )
+            employs_n = await self._rebuild_typed_relations(
+                s,
+                type_code="employs",
+                pairs=employs_pairs,
+                owner_id=owner_id,
+                endpoint_filter=(
+                    "a.platform_department_id IS NOT NULL "
+                    "AND b.platform_user_id IS NOT NULL"
+                ),
+            )
+            stats["relations"] = contains_n + employs_n
+
+        logger.info("平台组织全量同步完成: %s", stats)
         return stats
 
     async def sync_platform_agents(
         self, db: Any, owner_id: str
     ) -> dict[str, int]:
-        """将平台智能体/工具/Skill 同步为 Neo4j 实体。"""
+        """全量同步平台智能体/工具/Skill（upsert + 清除已不存在项及过期关系）。"""
         from app.core.agent_profiles import AGENT_PROFILES
         from app.services.agent_profile_service import (
-            is_agent_enabled,
             resolve_agent_internal_atomic_tools,
             resolve_agent_skill_names,
         )
         from app.services.agent_tool_registry import list_agent_tools
         from app.skills.catalog import list_all_skill_definitions
 
-        stats: dict[str, int] = {"agents": 0, "tools": 0, "skills": 0, "relations": 0}
+        stats: dict[str, int] = {
+            "agents": 0,
+            "tools": 0,
+            "skills": 0,
+            "relations": 0,
+            "deleted": 0,
+        }
         for tc in ("agent", "tool", "skill"):
             if not await self.ontology.get_entity_type(tc):
                 logger.warning("sync_platform_agents: 类型 '%s' 尚未定义", tc)
                 return stats
 
-        async with self._driver.session() as s:
-            # 工具 -> tool
-            tool_map: dict[str, str] = {}
-            for tool in list_agent_tools(db, user=None):
-                tname = tool.name
-                existing = await s.run(
-                    "MATCH (e:Entity {platform_tool_name: $n}) RETURN e LIMIT 1", n=tname
-                )
-                rec = await existing.single()
-                if rec:
-                    tool_map[tname] = dict(rec["e"])["id"]
-                    continue
-                eid = str(uuid.uuid4())
-                await s.run(
-                    "CREATE (e:Entity {id: $id, type_code: 'tool', name: $name, "
-                    "description: $desc, properties: '{}', source_type: 'system', "
-                    "platform_tool_name: $tn, owner_id: $owner, created_by: $owner, "
-                    "created_at: datetime(), updated_at: datetime()})",
-                    id=eid, name=tname,
-                    desc=(tool.description or "").strip() or "平台原子工具",
-                    tn=tname, owner=owner_id,
-                )
-                tool_map[tname] = eid
-                stats["tools"] += 1
-
-            # Skill
-            skill_defs = list_all_skill_definitions(
+        tools = list(list_agent_tools(db, user=None))
+        skill_defs = list(
+            list_all_skill_definitions(
                 db, admin_view=True, include_disabled=True, catalog_only=False
             )
+        )
+        allowed_tools = [t.name for t in tools]
+        allowed_skills = [sk.name for sk in skill_defs]
+        allowed_agents = [defn.id for defn in AGENT_PROFILES]
+
+        async with self._driver.session() as s:
+            tool_map: dict[str, str] = {}
+            for tool in tools:
+                tname = tool.name
+                tool_map[tname] = await self._upsert_platform_entity(
+                    s,
+                    match_prop="platform_tool_name",
+                    match_value=tname,
+                    type_code="tool",
+                    name=tname,
+                    description=(tool.description or "").strip() or "平台原子工具",
+                    owner_id=owner_id,
+                )
+            stats["tools"] = len(tool_map)
+
             skill_map: dict[str, str] = {}
             for skill in skill_defs:
                 sname = skill.name
-                existing = await s.run(
-                    "MATCH (e:Entity {platform_skill_name: $n}) RETURN e LIMIT 1", n=sname
+                skill_map[sname] = await self._upsert_platform_entity(
+                    s,
+                    match_prop="platform_skill_name",
+                    match_value=sname,
+                    type_code="skill",
+                    name=(skill.title or sname).strip()[:256],
+                    description=(skill.description or "").strip() or "平台 Skill",
+                    owner_id=owner_id,
                 )
-                rec = await existing.single()
-                if rec:
-                    skill_map[sname] = dict(rec["e"])["id"]
-                    continue
-                eid = str(uuid.uuid4())
-                await s.run(
-                    "CREATE (e:Entity {id: $id, type_code: 'skill', name: $name, "
-                    "description: $desc, properties: '{}', source_type: 'system', "
-                    "platform_skill_name: $sn, owner_id: $owner, created_by: $owner, "
-                    "created_at: datetime(), updated_at: datetime()})",
-                    id=eid, name=(skill.title or sname).strip()[:256],
-                    desc=(skill.description or "").strip() or "平台 Skill",
-                    sn=sname, owner=owner_id,
-                )
-                skill_map[sname] = eid
-                stats["skills"] += 1
+            stats["skills"] = len(skill_map)
 
-            # 智能体 -> agent + 关系
+            agent_map: dict[str, str] = {}
             for defn in AGENT_PROFILES:
                 aid = defn.id
-                existing = await s.run(
-                    "MATCH (e:Entity {platform_agent_id: $aid}) RETURN e LIMIT 1", aid=aid
+                agent_map[aid] = await self._upsert_platform_entity(
+                    s,
+                    match_prop="platform_agent_id",
+                    match_value=aid,
+                    type_code="agent",
+                    name=defn.title.strip(),
+                    description=defn.description.strip(),
+                    owner_id=owner_id,
                 )
-                rec = await existing.single()
-                if rec:
-                    agent_id = dict(rec["e"])["id"]
-                else:
-                    agent_id = str(uuid.uuid4())
-                    enabled = is_agent_enabled(db, aid)
-                    await s.run(
-                        "CREATE (e:Entity {id: $id, type_code: 'agent', name: $name, "
-                        "description: $desc, properties: '{}', source_type: 'system', "
-                        "platform_agent_id: $aid, owner_id: $owner, created_by: $owner, "
-                        "created_at: datetime(), updated_at: datetime()})",
-                        id=agent_id, name=defn.title.strip(),
-                        desc=defn.description.strip(), aid=aid, owner=owner_id,
-                    )
-                    stats["agents"] += 1
+            stats["agents"] = len(agent_map)
 
-                # has_tool
-                for tname in resolve_agent_internal_atomic_tools(db, aid):
-                    tid = tool_map.get(tname)
-                    if not tid:
-                        continue
-                    dup = await s.run(
-                        "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'has_tool'}]->(b:Entity {id: $to}) "
-                        "RETURN r LIMIT 1", frm=agent_id, to=tid,
-                    )
-                    if await dup.single():
-                        continue
-                    rid = str(uuid.uuid4())
-                    await s.run(
-                        "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
-                        "CREATE (a)-[r:RELATES {id: $rid, type_code: 'has_tool', "
-                        "description: '', inferred: false, owner_id: $owner, "
-                        "created_at: datetime()}]->(b)",
-                        frm=agent_id, to=tid, rid=rid, owner=owner_id,
-                    )
-                    stats["relations"] += 1
+        deleted = 0
+        deleted += await self._prune_entities_not_in(
+            prop_key="platform_tool_name",
+            allowed_values=allowed_tools,
+        )
+        deleted += await self._prune_entities_not_in(
+            prop_key="platform_skill_name",
+            allowed_values=allowed_skills,
+        )
+        deleted += await self._prune_entities_not_in(
+            prop_key="platform_agent_id",
+            allowed_values=allowed_agents,
+        )
+        stats["deleted"] = deleted
 
-                # has_skill
-                for sname in resolve_agent_skill_names(db, aid):
-                    sid = skill_map.get(sname)
-                    if not sid:
-                        continue
-                    dup = await s.run(
-                        "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'has_skill'}]->(b:Entity {id: $to}) "
-                        "RETURN r LIMIT 1", frm=agent_id, to=sid,
-                    )
-                    if await dup.single():
-                        continue
-                    rid = str(uuid.uuid4())
-                    await s.run(
-                        "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
-                        "CREATE (a)-[r:RELATES {id: $rid, type_code: 'has_skill', "
-                        "description: '', inferred: false, owner_id: $owner, "
-                        "created_at: datetime()}]->(b)",
-                        frm=agent_id, to=sid, rid=rid, owner=owner_id,
-                    )
-                    stats["relations"] += 1
+        has_tool_pairs: list[tuple[str, str]] = []
+        has_skill_pairs: list[tuple[str, str]] = []
+        for aid, agent_id in agent_map.items():
+            for tname in resolve_agent_internal_atomic_tools(db, aid):
+                tid = tool_map.get(tname)
+                if tid:
+                    has_tool_pairs.append((agent_id, tid))
+            for sname in resolve_agent_skill_names(db, aid):
+                sid = skill_map.get(sname)
+                if sid:
+                    has_skill_pairs.append((agent_id, sid))
 
-            # orchestrates
-            for skill in skill_defs:
-                sid = skill_map.get(skill.name)
-                if not sid:
-                    continue
-                for tname in skill.orchestrated_tools:
-                    tid = tool_map.get(tname)
-                    if not tid:
-                        continue
-                    dup = await s.run(
-                        "MATCH (a:Entity {id: $frm})-[r:RELATES {type_code: 'orchestrates'}]->(b:Entity {id: $to}) "
-                        "RETURN r LIMIT 1", frm=sid, to=tid,
-                    )
-                    if await dup.single():
-                        continue
-                    rid = str(uuid.uuid4())
-                    await s.run(
-                        "MATCH (a:Entity {id: $frm}) MATCH (b:Entity {id: $to}) "
-                        "CREATE (a)-[r:RELATES {id: $rid, type_code: 'orchestrates', "
-                        "description: '', inferred: false, owner_id: $owner, "
-                        "created_at: datetime()}]->(b)",
-                        frm=sid, to=tid, rid=rid, owner=owner_id,
-                    )
-                    stats["relations"] += 1
+        orchestrates_pairs: list[tuple[str, str]] = []
+        for skill in skill_defs:
+            sid = skill_map.get(skill.name)
+            if not sid:
+                continue
+            for tname in skill.orchestrated_tools:
+                tid = tool_map.get(tname)
+                if tid:
+                    orchestrates_pairs.append((sid, tid))
 
-        logger.info("平台智能体/工具/Skill 同步完成: %s", stats)
+        async with self._driver.session() as s:
+            rel_n = 0
+            rel_n += await self._rebuild_typed_relations(
+                s,
+                type_code="has_tool",
+                pairs=has_tool_pairs,
+                owner_id=owner_id,
+                endpoint_filter=(
+                    "a.platform_agent_id IS NOT NULL "
+                    "AND b.platform_tool_name IS NOT NULL"
+                ),
+            )
+            rel_n += await self._rebuild_typed_relations(
+                s,
+                type_code="has_skill",
+                pairs=has_skill_pairs,
+                owner_id=owner_id,
+                endpoint_filter=(
+                    "a.platform_agent_id IS NOT NULL "
+                    "AND b.platform_skill_name IS NOT NULL"
+                ),
+            )
+            rel_n += await self._rebuild_typed_relations(
+                s,
+                type_code="orchestrates",
+                pairs=orchestrates_pairs,
+                owner_id=owner_id,
+                endpoint_filter=(
+                    "a.platform_skill_name IS NOT NULL "
+                    "AND b.platform_tool_name IS NOT NULL"
+                ),
+            )
+            stats["relations"] = rel_n
+
+        logger.info("平台智能体/工具/Skill 全量同步完成: %s", stats)
         return stats
 
     async def sync_agent_memory_to_kg(self, user_id: str) -> dict[str, int]:
-        """将用户 MEMORY.md 章节抽取为 memory 类型实体。"""
+        """全量同步用户 MEMORY.md 章节为 memory 实体（更新内容并删除已移除章节）。"""
         from app.services.agent_memory_service import read_user_memory
 
-        stats: dict[str, int] = {"entities": 0}
+        stats: dict[str, int] = {"entities": 0, "updated": 0, "deleted": 0}
         uid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
         memory_text = read_user_memory(uid)
-        if not memory_text.strip():
-            return stats
 
         sections: list[tuple[str, str]] = []
-        current_title = "概述"
-        current_lines: list[str] = []
-        for line in memory_text.split("\n"):
-            if line.startswith("## "):
-                if current_lines:
-                    sections.append((current_title, "\n".join(current_lines).strip()))
-                current_title = line.lstrip("#").strip()
-                current_lines = []
-            else:
-                current_lines.append(line)
-        if current_lines:
-            sections.append((current_title, "\n".join(current_lines).strip()))
+        if memory_text.strip():
+            current_title = "概述"
+            current_lines: list[str] = []
+            for line in memory_text.split("\n"):
+                if line.startswith("## "):
+                    if current_lines:
+                        sections.append(
+                            (current_title, "\n".join(current_lines).strip())
+                        )
+                    current_title = line.lstrip("#").strip()
+                    current_lines = []
+                else:
+                    current_lines.append(line)
+            if current_lines:
+                sections.append((current_title, "\n".join(current_lines).strip()))
 
+        kept_titles: list[str] = []
         async with self._driver.session() as s:
             for title, content in sections:
                 if not content:
                     continue
                 safe_title = title.strip()[:256]
+                kept_titles.append(safe_title)
                 existing = await s.run(
                     "MATCH (e:Entity {type_code: 'memory', name: $n, owner_id: $o}) "
-                    "RETURN e LIMIT 1", n=safe_title, o=user_id,
+                    "RETURN e LIMIT 1",
+                    n=safe_title,
+                    o=user_id,
                 )
-                if await existing.single():
-                    continue
-                eid = str(uuid.uuid4())
-                await s.run(
-                    "CREATE (e:Entity {id: $id, type_code: 'memory', name: $name, "
-                    "description: $desc, properties: '{}', source_type: 'system', "
-                    "owner_id: $owner, created_by: $owner, "
-                    "created_at: datetime(), updated_at: datetime()})",
-                    id=eid, name=safe_title, desc=content[:500], owner=user_id,
-                )
-                stats["entities"] += 1
+                rec = await existing.single()
+                if rec:
+                    await s.run(
+                        """
+                        MATCH (e:Entity {type_code: 'memory', name: $n, owner_id: $o})
+                        SET e.description = $desc, e.source_type = 'system',
+                            e.updated_at = datetime()
+                        """,
+                        n=safe_title,
+                        o=user_id,
+                        desc=content[:500],
+                    )
+                    stats["updated"] += 1
+                else:
+                    eid = str(uuid.uuid4())
+                    await s.run(
+                        """
+                        CREATE (e:Entity {
+                            id: $id, type_code: 'memory', name: $name,
+                            description: $desc, properties: '{}',
+                            source_type: 'system',
+                            owner_id: $owner, created_by: $owner,
+                            created_at: datetime(), updated_at: datetime()
+                        })
+                        """,
+                        id=eid,
+                        name=safe_title,
+                        desc=content[:500],
+                        owner=user_id,
+                    )
+                    stats["entities"] += 1
 
-        logger.info("记忆同步完成: %s", stats)
+        # 清除本用户下已不在 MEMORY.md 中的 memory 实体
+        record = await self.run_single(
+            """
+            MATCH (e:Entity {type_code: 'memory', owner_id: $owner})
+            WHERE NOT e.name IN $kept
+            WITH collect(e) AS to_delete
+            FOREACH (n IN to_delete | DETACH DELETE n)
+            RETURN size(to_delete) AS deleted
+            """,
+            params=dict(owner=user_id, kept=kept_titles),
+        )
+        stats["deleted"] = int((record or {}).get("deleted") or 0)
+
+        logger.info("记忆全量同步完成: %s", stats)
         return stats
 
     async def batch_extract_documents_from_content(
@@ -1223,18 +1406,40 @@ def ensure_ontology_defaults(db_session) -> None:
     logger.debug("ensure_ontology_defaults: PG 版已废弃，使用 ontology API 初始化")
 
 
-def merge_kg_qa_into_context(db_session, user, kg_ctx, base_context: str = "") -> str:
-    """向后兼容：将 KG 问答上下文合并到检索上下文字符串。"""
-    if kg_ctx is None:
-        return base_context
-    ctx_text = (getattr(kg_ctx, "context_text", "") or "").strip()
+def merge_kg_qa_into_context(
+    a=None,
+    b=None,
+    c=None,
+    *,
+    base_context: str = "",
+    kg_ctx=None,
+) -> str:
+    """将 KG 问答上下文合并到检索上下文字符串。
+
+    兼容两种调用：
+    - ``merge_kg_qa_into_context(base_context, citations, kg_ctx)``
+    - ``merge_kg_qa_into_context(db, user, kg_ctx, base_context=...)``
+    """
+    ctx = kg_ctx
+    base = base_context or ""
+    if ctx is None and c is not None and hasattr(c, "context_text"):
+        ctx = c
+        if isinstance(a, str):
+            base = a
+        elif base_context:
+            base = base_context
+    elif ctx is None and a is not None and hasattr(a, "context_text"):
+        ctx = a
+    if ctx is None:
+        return base
+    ctx_text = (getattr(ctx, "context_text", "") or "").strip()
     if ctx_text:
-        return f"{base_context}\n\n{ctx_text}" if base_context else ctx_text
-    return base_context
+        return f"{base}\n\n{ctx_text}" if base.strip() else ctx_text
+    return base
 
 
 def try_department_members_deterministic_reply(
     db_session, user, message: str, *, reply: str = ""
 ) -> str | None:
-    """向后兼容遗存函数，返回 None 表示不拦截。"""
+    """部门成员清单的确定性回复入口；无可靠格式化结果时返回 None。"""
     return None

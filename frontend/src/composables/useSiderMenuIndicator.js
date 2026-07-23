@@ -1,16 +1,16 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
-/** 与 sider-menu.css 中指示条 inset 保持一致 */
+/** 与 sider-menu.css 中指示条内边距保持一致 */
 function readMenuGlassInset(contentEl) {
   const collapsed = contentEl.classList.contains("n-menu-item-content--collapsed");
   if (collapsed) {
-    return { top: 1, right: 6, bottom: 1, left: 6 };
+    return { top: 2, right: 6, bottom: 2, left: 6 };
   }
-  return { top: 1, right: 4, bottom: 1, left: 0 };
+  return { top: 2, right: 4, bottom: 2, left: 0 };
 }
 
 /**
- * 侧栏选中玻璃指示条 — 固定左右边距，仅纵向滑动；点击时立即跟随，避免等路由后再动。
+ * 侧栏选中流动玻璃指示条 — 固定左右边距，仅纵向滑动；点击时立即跟随，避免等路由后再动。
  */
 export function useSiderMenuIndicator(wrapRef, { activeKey, collapsed, expandedKeys }) {
   const indicatorStyle = ref({

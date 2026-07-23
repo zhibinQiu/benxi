@@ -1,18 +1,17 @@
-"""AI 智能体执行规划 — 工具 loop 前的轻量规划阶段（方案 A）。
+"""AI 智能体执行规划 — 工具 loop 前的轻量规划阶段。
 
-架构原则 — 子智能体执行隔离（代码强制，非提示词软约束）
+架构原则 — 父编排只委托、不直执（代码强制）
 ────────────────────────────────────────────────────
-父智能体（调度层/通用层）的职责是「找到应该用哪个技能 / 工具」，
-但不得直接调用任何技能或工具。所有实际执行必须委托给子智能体：
+父智能体（调度层）只能调用编排入口（invoke_context_subagent 等），
+所有实际执行必须委托给子智能体：
 
   ✅ invoke_context_subagent(kind=search, task=用户查询)
-  ✅ invoke_context_subagent(kind=execute, task=用户需求)
-  ✅ invoke_context_subagent(kind=search, queries=[...])
+  ✅ invoke_context_subagent(kind=execute, steps=[...])
   ✅ invoke_context_subagent(kind=use, task=技能任务)
 
-已通过 build_agent_tool_specs 代码级拦截：
-  - allowed_names=None（父智能体工具集构建）时，invoke_skill 自动从可见工具列表中移除。
-  - 子智能体有自己的 allowed_names 限制集，invoke_skill 仍可在其中正常使用。
+已通过 build_agent_tool_specs(for_llm=True) 代码级收口：
+  - 父编排 LLM 可见集 = PARENT_ORCHESTRATION_TOOL_NAMES
+  - 原子工具仅可被 describe 发现，或由子 Agent 执行
 """
 
 from __future__ import annotations
@@ -47,6 +46,7 @@ from app.services.agent_skill_router import (
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
+    ATOMIC_TOOL_WEB_SEARCH,
 )
 from app.skills.catalog import list_all_skill_definitions
 from app.skills.types import SkillReadiness
@@ -55,8 +55,11 @@ _logger = logging.getLogger(__name__)
 
 RETRIEVAL_ATOMIC_TOOLS = frozenset(
     {
+        ATOMIC_TOOL_WEB_SEARCH,
         ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
         ATOMIC_TOOL_KG_QUERY,
+        "fetch_url_content",
+        "ontology_query",
     }
 )
 SKILL_LOAD_TOOL = "load_uploaded_skill"
@@ -163,6 +166,7 @@ _SPECIALIST_DOMAIN_AGENTS = frozenset(
         "report",
         "skill-dev",
         "platform",
+        "carbon",
     }
 )
 
@@ -235,6 +239,27 @@ def filter_tool_specs_by_plan(
             continue
         filtered.append(spec)
     return filtered
+
+
+def _rule_plan_for_knowledge_qa_hashtag(message: str) -> AgentExecutionPlan | None:
+    """``#知识问答`` / 「请使用 知识问答 技能」硬触发：强制执行 knowledge-qa。"""
+    from app.core.tool_skill_taxonomy import SKILL_KNOWLEDGE_QA
+    from app.services.agent_skill_router import match_knowledge_qa_hashtag
+
+    question = match_knowledge_qa_hashtag(message)
+    if question is None:
+        return None
+    q = question or (message or "").strip()
+    return _make_plan(
+        reasoning="按用户指定执行知识问答（#知识问答 / 请使用知识问答技能）",
+        intent="知识问答",
+        uploaded_skill=SKILL_KNOWLEDGE_QA,
+        blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
+        steps=(
+            f'直接 invoke_skill(knowledge-qa, ask, {{"question": {q!r}}})',
+            "基于多源事实底稿综合作答",
+        ),
+    )
 
 
 def _rule_plan_for_skill_management(message: str) -> AgentExecutionPlan | None:
@@ -362,6 +387,11 @@ def match_uploaded_skill_for_message(
     if is_chitchat_message(msg, history):
         return None
 
+    # 显式点名技能（「请使用 xxx 技能」/消息中含 slug）优先，不受检索信号压制
+    explicit = _match_explicit_uploaded_skill_name(msg, uploaded_names)
+    if explicit:
+        return explicit
+
     skill = _infer_uploaded_skill_followup(msg, history, uploaded_names)
     if skill:
         return skill
@@ -369,11 +399,35 @@ def match_uploaded_skill_for_message(
     if exclude_research_context and matches_research_signal(msg):
         return None
 
+    return None
+
+
+def _match_explicit_uploaded_skill_name(message: str, uploaded_names: set[str]) -> str | None:
+    """用户消息中明确写出技能名时返回该技能。"""
+    from app.services.agent_skill_router import MERMAID_DIAGRAM_SKILL
+
+    msg = (message or "").strip()
+    if not msg or not uploaded_names:
+        return None
     msg_fold = msg.casefold()
+    # 「使用/调用 xxx 技能」优先
+    m = re.search(
+        r"(?:请使用|使用|调用|按|执行)\s*[「\"'`]?([A-Za-z0-9][\w.-]{1,80})[」\"'`]?\s*技能",
+        msg,
+        re.I,
+    )
+    if m:
+        named = m.group(1).casefold()
+        for name in uploaded_names:
+            if name.casefold() == named:
+                if name == MERMAID_DIAGRAM_SKILL:
+                    return None
+                return name
     for name in sorted(uploaded_names, key=len, reverse=True):
+        if name == MERMAID_DIAGRAM_SKILL:
+            continue
         if name.casefold() in msg_fold:
             return name
-
     return None
 
 
@@ -383,10 +437,24 @@ def _rule_plan_for_platform_system_data(
     message: str,
 ) -> AgentExecutionPlan | None:
     """平台用户/部门等系统数据：必须调 list_users / list_departments 或 kg_query。"""
-    from app.services.agent_skill_router import is_org_member_list_question
+    from app.services.agent_skill_router import (
+        is_org_member_list_question,
+        is_person_org_affiliation_question,
+    )
 
     if not is_platform_system_data_message(message):
         return None
+    if is_person_org_affiliation_question(message):
+        return _make_plan(
+            reasoning="人员组织归属须来自知识图谱 employs/member_of，禁止臆造或仅凭常识回答",
+            intent="查询人员所属组织",
+            allowed_tools=(ATOMIC_TOOL_KG_QUERY,),
+            blocked_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE, ATOMIC_TOOL_WEB_SEARCH),
+            steps=(
+                "kg_query 查询该人员与组织的 employs/member_of 关系",
+                "仅根据工具返回的所属组织作答，禁止编造公司名",
+            ),
+        )
     if is_org_member_list_question(message):
         return _make_plan(
             reasoning="部门成员须来自知识图谱 employs 关系，禁止臆造姓名",
@@ -481,22 +549,22 @@ def _rule_plan_for_diagram(
     user: User,
     message: str,
 ) -> AgentExecutionPlan | None:
-    """Mermaid 图表生成（流程图/时序图/思维导图等）。"""
+    """Mermaid 图表：直接作答输出围栏，不走工具/技能。"""
     _ = db
     _ = user
     msg = (message or "").strip()
     if not msg or not is_diagram_generation_message(msg):
         return None
     return _make_plan(
-        reasoning="用户要求生成图表：统一走 mermaid_diagram 工具输出 ```mermaid 围栏",
+        reasoning="用户要求生成图表：在回复中直接输出 ```mermaid 围栏（无需工具）",
         intent="生成图表",
-        direct_answer=False,
-        uploaded_skill=MERMAID_DIAGRAM_SKILL,
-        allowed_tools=("mermaid_diagram", "invoke_context_subagent", "describe_tool"),
+        direct_answer=True,
+        uploaded_skill=None,
+        allowed_tools=(),
         blocked_tools=tuple(RETRIEVAL_ATOMIC_TOOLS),
         steps=(
-            "必须调用 mermaid_diagram(description=用户绘图需求全文) 生成图表",
-            "将工具返回的 ```mermaid 源码原样展示给用户，不要只描述不画",
+            "直接在回复中输出一个合法的 ```mermaid 代码块",
+            "可附简短图意说明；禁止只描述不画",
         ),
         source="rule",
     )
@@ -588,6 +656,49 @@ def _build_specialist_domain_plan(
             source="specialist",
         )
 
+    # carbon：政策/碳价走官方源原子工具；新闻才回交浏览器子智能体
+    if aid == "carbon":
+        from app.skills.builtin.handlers import _classify_carbon_question
+
+        kind = _classify_carbon_question(message)
+        if kind == "news":
+            return _make_plan(
+                reasoning="双碳新闻资讯：交浏览器子智能体查最新",
+                intent="双碳新闻",
+                steps=(
+                    "invoke_context_subagent(kind=execute, task=查询最新双碳新闻资讯)",
+                ),
+                source="specialist",
+            )
+        if kind == "forecast":
+            return _make_plan(
+                reasoning="双碳时序预测：优先 time_series_forecast 模型推理",
+                intent="双碳预测",
+                steps=("time_series_forecast(method=按用户指定或rule, series=cea或ccer)",),
+                source="specialist",
+            )
+        if kind == "price":
+            return _make_plan(
+                reasoning="双碳碳价：优先 carbon_price 官方源",
+                intent="双碳碳价",
+                steps=("carbon_price(keyword=用户问题)",),
+                source="specialist",
+            )
+        if kind in ("emission", "ccer", "international", "local"):
+            return _make_plan(
+                reasoning=f"双碳结构化数据：carbon_data(topic={kind})",
+                intent="双碳数据",
+                steps=(f"carbon_data(topic={kind}, keyword=用户问题)",),
+                source="specialist",
+            )
+        # policy / general → 政策官方源
+        return _make_plan(
+            reasoning="双碳政策/综合：优先 carbon_policy 官方源",
+            intent="双碳政策",
+            steps=("carbon_policy(keyword=用户问题)",),
+            source="specialist",
+        )
+
     pass  # 其他领域专精：使用默认 Skill，不 load 任何 SKILL.md
 
     return None
@@ -618,11 +729,13 @@ def _coerce_skill_first_plan(
             exclude_research_context=True,
         )
 
+    # 旧版 mermaid-diagram 技能不再作为画图路径；画图由直接作答输出围栏完成
+    if uploaded == MERMAID_DIAGRAM_SKILL:
+        uploaded = None
+
     if uploaded and uploaded.lower() not in msg.lower():
-        keep = uploaded == MERMAID_DIAGRAM_SKILL and (
-            is_diagram_generation_message(msg) or plan.source == "rule"
-        )
-        if not keep and uploaded_names and uploaded in uploaded_names:
+        keep = False
+        if uploaded_names and uploaded in uploaded_names:
             keep = bool(
                 match_uploaded_skill_for_message(
                     msg,
@@ -830,7 +943,7 @@ _all_available_skill_names = _plannable_skill_names  # type: ignore[assignment]
 _skill_name_sets = _plannable_skill_names  # type: ignore[assignment]
 
 
-_KG_PLANNING_USER_LABEL = "【知识图谱关联（规划参考，非检索结果）】"
+_KG_PLANNING_USER_LABEL = "【语义层决策上下文（规划参考）】"
 
 
 async def resolve_kg_planning_context(
@@ -839,23 +952,26 @@ async def resolve_kg_planning_context(
     question: str,
     history: list[AiChatMessage] | None = None,
 ) -> str:
-    """规划前从问题匹配实体并扩展子图，供消歧与工具选型参考。"""
+    """规划前构建语义层决策上下文，供消歧与工具选型参考。"""
     from app.core.conversation_turn_context import effective_question_for_retrieval
-    from app.core.permissions import user_has_permission
+    from app.core.permissions import user_has_semantic_layer_permission
 
-    if not user_has_permission(db, user, "feature.kg"):
+    if not user_has_semantic_layer_permission(db, user):
         return ""
     text = effective_question_for_retrieval(question, history).strip()
     if not text:
         return ""
     try:
-        from app.services.kg_service import retrieve_kg_context_for_question_async
+        from app.core.neo4j import get_neo4j
+        from app.benxi_semantic import SemanticLayer
 
-        ctx = await retrieve_kg_context_for_question_async(db, user, text)
-        if ctx and ctx.context_text:
-            return ctx.context_text.strip()[:1800]
+        driver = await get_neo4j()
+        decision = await SemanticLayer(driver).build_decision_context(
+            text, str(user.id), max_depth=3
+        )
+        return decision.planning_text(max_chars=1800)
     except Exception as exc:
-        _logger.warning("Agent 规划前知识图谱加载失败: %s", exc)
+        _logger.warning("Agent 规划前语义层加载失败: %s", exc)
     return ""
 
 
@@ -916,6 +1032,7 @@ async def resolve_execution_plan(
         )
 
     specialist_id = (agent_id or "").strip()
+
     if specialist_id in _SPECIALIST_DOMAIN_AGENTS and not force_replan:
         domain_plan = _rule_plan_for_specialist_domain(
             db,
@@ -931,6 +1048,11 @@ async def resolve_execution_plan(
     if rule_plan is not None:
         return rule_plan
 
+    # #知识问答 硬触发优先于闲聊/其它规则
+    knowledge_qa_plan = _rule_plan_for_knowledge_qa_hashtag(message)
+    if knowledge_qa_plan is not None and not force_replan:
+        return knowledge_qa_plan
+
     chitchat_plan = _rule_plan_for_chitchat(message, history)
     if chitchat_plan is not None and not force_replan:
         return chitchat_plan
@@ -945,10 +1067,6 @@ async def resolve_execution_plan(
     )
     if followup_plan is not None and not force_replan:
         return followup_plan
-
-    platform_data_plan = _rule_plan_for_platform_system_data(db, user, message)
-    if platform_data_plan is not None and not force_replan:
-        return platform_data_plan
 
     browser_plan = _rule_plan_for_browser_operation(message)
     if browser_plan is not None and not force_replan:
@@ -1022,7 +1140,7 @@ async def resolve_execution_plan(
 
     kg_text = (kg_planning_context or "").strip()
     if not kg_text:
-        kg_text = resolve_kg_planning_context(db, user, message, history=history)
+        kg_text = await resolve_kg_planning_context(db, user, message, history=history)
 
     system = _planning_system_prompt(
         allowed_atomic=allowed_atomic,

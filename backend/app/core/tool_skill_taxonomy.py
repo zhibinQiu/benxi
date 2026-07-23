@@ -30,7 +30,7 @@ class ToolCategory(StrEnum):
 
     平台 — 平台运营与编排（记忆、待办、通知、管理员、技能编排/管理、元工具等）。
     数据 — 网站拉取/爬取、外部行情与领域取数、知识库/图谱检索等数据处理。
-    模型 — 预留，后续对接算法模型推理。
+    模型 — 算法/时序预测等模型推理（如 time_series_forecast）。
     浏览器 — 浏览器自动化交互（导航/点击/填表等）。
     文档 — 文档库 CRUD 及全文阅读。
     """
@@ -48,6 +48,7 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "fetch_url_content": ToolCategory.DATA,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE: ToolCategory.DATA,
     ATOMIC_TOOL_KG_QUERY: ToolCategory.DATA,
+    "ontology_query": ToolCategory.DATA,
     "knowledge_folder_search": ToolCategory.DATA,
     "list_mounted_folders": ToolCategory.DATA,
     "stock_quote": ToolCategory.DATA,
@@ -58,6 +59,8 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "carbon_price": ToolCategory.DATA,
     "carbon_policy": ToolCategory.DATA,
     "carbon_data": ToolCategory.DATA,
+    # ── 模型（算法/时序预测推理）──
+    "time_series_forecast": ToolCategory.MODEL,
     # ── 平台（记忆、待办、通知、管理、编排、技能、元工具）──
     "read_agent_memory": ToolCategory.PLATFORM,
     "append_agent_memory": ToolCategory.PLATFORM,
@@ -77,7 +80,6 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "create_department": ToolCategory.PLATFORM,
     "update_department": ToolCategory.PLATFORM,
     "delete_department": ToolCategory.PLATFORM,
-    "mermaid_diagram": ToolCategory.PLATFORM,
     "invoke_skill": ToolCategory.PLATFORM,
     "find_skills": ToolCategory.PLATFORM,
     "describe_tool": ToolCategory.PLATFORM,
@@ -92,7 +94,6 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "create_skill": ToolCategory.PLATFORM,
     "update_uploaded_skill_file": ToolCategory.PLATFORM,
     "delete_uploaded_skill": ToolCategory.PLATFORM,
-    # ── 模型（预留）──
     # ── 浏览器 ──
     "browser_navigate": ToolCategory.BROWSER,
     "browser_snapshot": ToolCategory.BROWSER,
@@ -155,7 +156,6 @@ GLOBAL_ATOMIC_TOOL_NAMES: frozenset[str] = frozenset(
         *ADMIN_DEPT_TOOL_NAMES,
         "read_agent_memory",
         "append_agent_memory",
-        "mermaid_diagram",
         "knowledge_folder_search",
         "list_mounted_folders",
     }
@@ -174,6 +174,18 @@ PARENT_HIDDEN_EXECUTION_ENTRYPOINTS: frozenset[str] = frozenset(
         "update_uploaded_skill_file",
         "delete_uploaded_skill",
         "list_agent_skills",
+    }
+)
+
+# 父编排 LLM 可调用的唯一工具集（只委托/发现，不直执原子工具）
+PARENT_ORCHESTRATION_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "invoke_context_subagent",
+        "request_orchestrator_assist",
+        "ask_user_choice",
+        "find_skills",
+        "describe_tool",
+        "search_tools",
     }
 )
 
@@ -211,8 +223,8 @@ def skill_mgmt_operations_hint() -> str:
 # ── 智能体已挂载工具（默认挂载表；可被 DB binding.runtime_tool_names 覆盖）──
 # 分层：
 #   ALL_TOOLS（平台工具目录，不等于任一 Agent 可见集）
-#   → 本表 / binding = 该 Agent「已挂载」工具（LLM 可见上界）
-#   → 父编排另隐藏 PARENT_HIDDEN_EXECUTION_ENTRYPOINTS，且非直调工具强制子智能体执行
+#   → 本表 / binding = 该 Agent「已挂载」工具（子层执行池 / describe 发现上界）
+#   → 父编排 LLM 可调用集 = PARENT_ORCHESTRATION_TOOL_NAMES（只委托，不直执）
 #   → 专精 Agent：挂载集内可直执（含 invoke_skill 等，视挂载而定）
 AGENT_TOOL_WHITELIST: dict[str, dict[str, tuple[str, ...]]] = {
     "orchestrator": {
@@ -222,13 +234,13 @@ AGENT_TOOL_WHITELIST: dict[str, dict[str, tuple[str, ...]]] = {
             "search_tools",
             "ask_user_choice",
             "invoke_context_subagent",
-            "mermaid_diagram",
-            "run_tool_batch",
+            "request_orchestrator_assist",
         ),
         "atomic": (
             ATOMIC_TOOL_WEB_SEARCH,
             ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
             ATOMIC_TOOL_KG_QUERY,
+            "ontology_query",
             "fetch_url_content",
             "knowledge_folder_search",
             "list_mounted_folders",
@@ -251,6 +263,8 @@ AGENT_TOOL_WHITELIST: dict[str, dict[str, tuple[str, ...]]] = {
             "carbon_price",
             "carbon_policy",
             "carbon_data",
+            "time_series_forecast",
+            "run_tool_batch",
             *BROWSER_TOOL_NAMES,
         ),
     },
@@ -295,6 +309,7 @@ AGENT_TOOL_WHITELIST: dict[str, dict[str, tuple[str, ...]]] = {
             "carbon_price",
             "carbon_policy",
             "carbon_data",
+            "time_series_forecast",
             "read_agent_memory",
             "append_agent_memory",
         ),
@@ -412,7 +427,11 @@ def mounted_tool_names_for_agent(agent_id: str | None) -> frozenset[str]:
 
 
 def is_tool_visible_to_agent(name: str, agent_id: str | None) -> bool:
-    """工具是否对某 Agent 可发现（describe_tool）。以已挂载集为准，非平台全库。"""
+    """工具是否对某 Agent 可发现（describe_tool）。以已挂载集为准，非平台全库。
+
+    父编排：可发现挂载原子工具（用于编写 execute.steps），但 LLM 不可直调
+    （可调用集见 PARENT_ORCHESTRATION_TOOL_NAMES）。
+    """
     n = (name or "").strip()
     scope = get_tool_scope(n)
     if scope == ToolScope.INTERNAL:
@@ -444,6 +463,7 @@ SKILL_BROWSER_AUTOMATION = "browser-automation"
 SKILL_SKILL_DEV = "skill-development"
 SKILL_FREE_WEB_AI = "free-web-ai"
 SKILL_CARBON_QA = "carbon-qa"
+SKILL_KNOWLEDGE_QA = "knowledge-qa"
 SKILL_STOCK_DEEP_ANALYSIS = "stock-deep-analysis"
 SKILL_STOCK_ROUNDTABLE = "stock-roundtable"
 SKILL_STOCK_VOLUME_PRICE = "stock-volume-price"
@@ -465,6 +485,7 @@ def build_skill_dev_system_access_hint() -> str:
 # 专精 Agent 默认 Skill 绑定（仅用于倒排索引）
 # 技能是动态挂载的，此处仅声明内置默认绑定
 AGENT_DEFAULT_SKILLS: dict[str, tuple[str, ...]] = {
+    "orchestrator": (SKILL_KNOWLEDGE_QA,),
     "skill-dev": (SKILL_SKILL_DEV,),
     "carbon": (SKILL_CARBON_QA,),
     "stock": (
@@ -478,6 +499,7 @@ AGENT_DEFAULT_SKILLS: dict[str, tuple[str, ...]] = {
 BUILTIN_SKILL_NAMES: frozenset[str] = frozenset({
     SKILL_FREE_WEB_AI,
     SKILL_CARBON_QA,
+    SKILL_KNOWLEDGE_QA,
     SKILL_STOCK_DEEP_ANALYSIS,
     SKILL_STOCK_ROUNDTABLE,
     SKILL_STOCK_VOLUME_PRICE,

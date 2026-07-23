@@ -7,6 +7,7 @@ from app.core.document_scope import (
     department_id_at_depth,
     department_id_for_scope,
     library_departments_for_user,
+    library_teams_for_user,
 )
 
 
@@ -27,13 +28,61 @@ def test_superuser_gets_all_departments():
     d2 = MagicMock(id=uuid.uuid4())
     d2.name = "市场部"
     db.scalars.return_value.all.return_value = [d1, d2]
-    user = MagicMock()
+    user = MagicMock(id=uuid.uuid4())
     with patch("app.core.document_scope.user_is_superuser", return_value=True), patch(
         "app.core.document_scope.department_depth", return_value=1
+    ), patch("app.core.document_scope.user_dept_ids", return_value=[]), patch(
+        "app.core.document_scope.department_id_at_depth", return_value=None
     ):
         rows = library_departments_for_user(db, user)
     assert len(rows) == 2
+    assert rows[0]["name"] == "市场部"
+    assert rows[1]["name"] == "研发部"
+
+
+def test_superuser_prefers_own_department_first():
+    """系统管理员可见全部部门，但本人所属部门排在最前。"""
+    db = MagicMock()
+    own_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    market = MagicMock(id=other_id)
+    market.name = "市场部"
+    rd = MagicMock(id=own_id)
+    rd.name = "研发部"
+    # DB 按名称返回：市场部在前
+    db.scalars.return_value.all.return_value = [market, rd]
+    user = MagicMock(id=uuid.uuid4())
+    with patch("app.core.document_scope.user_is_superuser", return_value=True), patch(
+        "app.core.document_scope.department_depth", return_value=1
+    ), patch("app.core.document_scope.user_dept_ids", return_value=[own_id]), patch(
+        "app.core.document_scope.department_id_at_depth", return_value=own_id
+    ):
+        rows = library_departments_for_user(db, user)
+    assert len(rows) == 2
+    assert rows[0]["id"] == own_id
     assert rows[0]["name"] == "研发部"
+    assert rows[1]["name"] == "市场部"
+
+
+def test_superuser_prefers_own_team_first():
+    """系统管理员分部列表优先本人所在分部。"""
+    db = MagicMock()
+    own_team = uuid.uuid4()
+    other_team = uuid.uuid4()
+    a = MagicMock(id=other_team)
+    a.name = "前端组"
+    b = MagicMock(id=own_team)
+    b.name = "后端组"
+    db.scalars.return_value.all.return_value = [a, b]
+    user = MagicMock(id=uuid.uuid4())
+    with patch("app.core.document_scope.user_is_superuser", return_value=True), patch(
+        "app.core.document_scope.department_depth", return_value=2
+    ), patch("app.core.document_scope.user_dept_ids", return_value=[own_team]), patch(
+        "app.core.document_scope.department_id_at_depth", return_value=own_team
+    ):
+        rows = library_teams_for_user(db, user)
+    assert rows[0]["id"] == own_team
+    assert rows[0]["name"] == "后端组"
 
 
 def test_member_only_own_department():

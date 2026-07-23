@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from app.core.tool_skill_taxonomy import (
     PARENT_HIDDEN_EXECUTION_ENTRYPOINTS,
+    PARENT_ORCHESTRATION_TOOL_NAMES,
     mounted_tool_names_for_agent,
 )
 from app.services.agent_tool_search import (
@@ -67,7 +68,8 @@ def test_core_tool_names_include_orchestration_primitives():
     assert "run_skill_script" not in CORE_TOOL_NAMES
 
 
-def test_parent_orchestrator_specs_are_mounted_not_platform_wide():
+def test_parent_orchestrator_llm_specs_are_orchestration_only():
+    """父编排 LLM 可调用集仅为委托/发现入口，不含 web_search 等原子工具。"""
     db = MagicMock()
     user = MagicMock()
     mounted_default = mounted_tool_names_for_agent("orchestrator")
@@ -83,15 +85,20 @@ def test_parent_orchestrator_specs_are_mounted_not_platform_wide():
         ) as browser_cfg,
     ):
         browser_cfg.return_value.enabled = True
-        specs = build_agent_tool_specs(db, user, agent_id="orchestrator")
-    names = {tool_spec_name(s) for s in specs}
-    assert "find_skills" in names
-    assert "web_search" in names
-    assert "browser_navigate" in names
-    # 未挂载到 orchestrator 的平台工具不应出现
-    assert "create_user" not in names
-    assert "create_skill" not in names
+        llm_specs = build_agent_tool_specs(db, user, agent_id="orchestrator", for_llm=True)
+        discoverable = build_agent_tool_specs(
+            db, user, agent_id="orchestrator", for_llm=False
+        )
+    llm_names = {tool_spec_name(s) for s in llm_specs}
+    disc_names = {tool_spec_name(s) for s in discoverable}
+    assert "invoke_context_subagent" in llm_names
+    assert "find_skills" in llm_names
+    assert "web_search" not in llm_names
+    assert "browser_navigate" not in llm_names
+    assert llm_names <= PARENT_ORCHESTRATION_TOOL_NAMES
+    # 可发现挂载仍含原子工具，供 describe / execute.steps
+    assert "web_search" in disc_names
+    assert "browser_navigate" in disc_names
     for hidden in PARENT_HIDDEN_EXECUTION_ENTRYPOINTS:
-        assert hidden not in names, hidden
-    # 可见集 ⊆ 默认挂载集（再减去隐藏入口）
-    assert names <= (mounted_default - PARENT_HIDDEN_EXECUTION_ENTRYPOINTS)
+        assert hidden not in llm_names, hidden
+        assert hidden not in disc_names, hidden

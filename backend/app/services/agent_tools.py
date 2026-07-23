@@ -330,12 +330,14 @@ def build_agent_tool_specs(
     *,
     allowed_names: set[str] | None = None,
     agent_id: str | None = None,
+    for_llm: bool = True,
 ) -> list[dict[str, Any]]:
-    """按「该智能体已挂载工具」组装 LLM 可见 specs。
+    """按「该智能体已挂载工具」组装工具 specs。
 
     设计原则：
     - 可见范围 = 已挂载到该 agent 的工具（whitelist / DB binding），不是平台全库。
-    - orchestrator（父编排）：在挂载集上再隐藏技能/脚本直执入口；执行由 tool loop 委托子智能体。
+    - orchestrator + for_llm=True：仅 PARENT_ORCHESTRATION_TOOL_NAMES（只委托/发现，不直执）。
+    - orchestrator + for_llm=False：挂载全集 − 技能直执入口（供 describe / execute 子层池）。
     - 专精 / 子智能体：挂载集可含 invoke_skill 等执行入口。
     - allowed_names != None：再从挂载集中二次过滤（子 Agent allowed_tools）。
     """
@@ -343,6 +345,7 @@ def build_agent_tool_specs(
     from app.core.tool_skill_taxonomy import (
         AGENT_TOOL_WHITELIST,
         PARENT_HIDDEN_EXECUTION_ENTRYPOINTS,
+        PARENT_ORCHESTRATION_TOOL_NAMES,
     )
 
     aid = (agent_id or "").strip()
@@ -369,6 +372,8 @@ def build_agent_tool_specs(
             mounted = set(cfg.get("runtime", ())) | set(cfg.get("atomic", ()))
         if is_orchestrator:
             mounted -= PARENT_HIDDEN_EXECUTION_ENTRYPOINTS
+            if for_llm:
+                mounted &= PARENT_ORCHESTRATION_TOOL_NAMES
         specs = _build_tool_specs_from_list(tuple(sorted(mounted)))
         specs = _apply_platform_gates(
             db, user, specs, include_skill_scripts=not is_orchestrator
@@ -552,8 +557,13 @@ async def _execute_invoke_skill(
     if not result.ok:
         return _tool_result(False, result.summary or f"Skill `{skill_name}.{action}` 失败")
 
-    # Extract citations from deep-research skill and persist to loop_state
-    if result.ok and skill_name == "deep-research" and result.data and isinstance(result.data, dict):
+    # Extract citations from deep-research / knowledge-qa skills and persist to loop_state
+    if (
+        result.ok
+        and skill_name in ("deep-research", "knowledge-qa")
+        and result.data
+        and isinstance(result.data, dict)
+    ):
         citations = result.data.get("citations")
         if isinstance(citations, list) and citations and loop_state is not None:
             existing = loop_state.setdefault("citations", [])
@@ -1301,6 +1311,13 @@ async def execute_agent_tool(
             if not content:
                 return _tool_result(False, f"无法获取网页内容: {url}")
             trimmed = content[:max_chars]
+            if loop_state is not None and trimmed.strip():
+                from app.core.agent_tool_context import append_retrieval_context
+
+                append_retrieval_context(
+                    loop_state,
+                    f"【网页正文 · {url[:120]}】\n{trimmed[:6000]}",
+                )
             return _tool_result(
                 True, f"已获取 {len(content)} 字符",
                 {"url": url, "content": trimmed, "char_count": len(trimmed)},
@@ -1334,7 +1351,7 @@ async def execute_agent_tool(
                             db, str(loop_state.get("agent_id") or "").strip()
                         )
                     )
-            lines = search_skill_routes(db, user, query, limit=limit)
+            lines = search_skill_routes(db, user, query, tier=None, limit=limit)
             if allowed is not None:
                 lines = [ln for ln in lines if any(f"`{s}`" in ln for s in allowed)]
             text = "\n".join(lines) if lines else "未匹配到已挂载 Skill"
@@ -1689,55 +1706,6 @@ async def execute_agent_tool(
             svc.delete_skill_by_name(db, str(params.get("skill_name") or ""))
             return _tool_result(True, "已删除 Skill")
 
-        if tool_name == "mermaid_diagram":
-            description = str(params.get("description") or "").strip()
-            if not description:
-                return _tool_result(False, "缺少 description 参数")
-            from app.integrations.deepseek_client import (
-                chat_completion_message_async,
-                is_configured as llm_ready,
-            )
-
-            if not llm_ready():
-                return _tool_result(False, "语言模型未配置，无法生成图表")
-            push_intermediate_progress(
-                loop_state, "llm_thinking", "正在生成 Mermaid 图表", description[:120],
-                tool_name="mermaid_diagram",
-            )
-            choice = await chat_completion_message_async(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是 Mermaid 图表生成器。根据用户描述输出唯一一张图。"
-                            "只输出一个以 ```mermaid 开头的 Markdown 围栏代码块，"
-                            "不要道歉、不要解释你无法画图。节点文案用简体中文，"
-                            "首行必须是合法图类型（如 flowchart TD / sequenceDiagram / mindmap）。"
-                        ),
-                    },
-                    {"role": "user", "content": description},
-                ],
-                temperature=0.2,
-                timeout=60.0,
-            )
-            text = ""
-            if isinstance(choice, dict):
-                msg = choice.get("message") or {}
-                text = str(msg.get("content") or "").strip()
-            if not text:
-                return _tool_result(False, "图表生成失败：模型未返回内容")
-            if "```mermaid" not in text.lower() and "```" not in text:
-                text = f"```mermaid\n{text}\n```"
-            # 图表源码即交付物，写入 loop_state 供终稿直接使用
-            if loop_state is not None:
-                loop_state["task_deliverable"] = text
-                loop_state["deterministic_reply"] = text
-            return _tool_result(
-                True,
-                "已生成 Mermaid 图表",
-                {"mermaid": text, "description": description},
-            )
-
         return _tool_result(False, f"未知工具: {tool_name}")
     except Exception as exc:
         _logger.warning("agent tool %s failed: %s", tool_name, exc)
@@ -1902,15 +1870,6 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
             "failure_title": "批量执行失败",
             "detail": detail,
             "tool": "run_tool_batch",
-        }
-    if name == "mermaid_diagram":
-        desc = str(params.get("description") or "").strip()
-        return {
-            "title": f"绘制图表：{desc[:80]}" if desc else "生成 Mermaid 图表",
-            "result_title": "图表已生成",
-            "failure_title": "图表生成失败",
-            "detail": desc[:120],
-            "tool": "mermaid_diagram",
         }
     if name == "invoke_context_subagent":
         kind = str(params.get("kind") or "search").strip()

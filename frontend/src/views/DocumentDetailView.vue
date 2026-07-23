@@ -3,7 +3,6 @@ import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, h, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
-  NCard,
   NButton,
   NSpace,
   NDescriptions,

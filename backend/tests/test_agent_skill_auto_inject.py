@@ -17,11 +17,12 @@ def test_build_skill_md_context_block():
 
 def test_build_skill_md_context_block_instruction_only():
     block = build_skill_md_context_block(
-        "mermaid-diagram",
-        "# Mermaid",
+        "policy-outline",
+        "# 制度要点",
         has_script=False,
     )
-    assert "勿" in block and "run_skill_script" in block
+    assert "禁止" in block and "run_skill_script" in block
+    assert "指令型" in block
 
 
 def test_maybe_inject_skill_md_skips_duplicate():

@@ -537,16 +537,38 @@ def _all_departments_for_user(db: Session, user: User) -> list[dict]:
     return out
 
 
+def _preferred_org_unit_ids_at_depth(
+    db: Session, user: User, depth: int
+) -> set[uuid.UUID]:
+    """当前用户归属节点映射到指定 depth 后的组织 id（用于列表优先展示）。"""
+    preferred: set[uuid.UUID] = set()
+    for did in user_dept_ids(db, user.id):
+        mapped_id = department_id_at_depth(db, did, depth)
+        if mapped_id is not None:
+            preferred.add(mapped_id)
+    return preferred
+
+
+def _sort_org_units_prefer_own(
+    units: list[dict], preferred_ids: set[uuid.UUID]
+) -> list[dict]:
+    """本人所属组织排在最前，其余按名称排序。"""
+    units.sort(key=lambda x: (0 if x["id"] in preferred_ids else 1, x["name"]))
+    return units
+
+
 def _library_org_units_for_user(
     db: Session, user: User, *, depth: int
 ) -> list[dict]:
+    preferred_ids = _preferred_org_unit_ids_at_depth(db, user, depth)
     if user_is_superuser(db, user):
         rows = db.scalars(select(Department).order_by(Department.name)).all()
-        return [
+        units = [
             {"id": d.id, "name": d.name}
             for d in rows
             if department_depth(db, d.id) == depth
         ]
+        return _sort_org_units_prefer_own(units, preferred_ids)
     seen: set[uuid.UUID] = set()
     out: list[dict] = []
     for did in user_dept_ids(db, user.id):
@@ -558,14 +580,14 @@ def _library_org_units_for_user(
             continue
         seen.add(mapped_id)
         out.append({"id": d.id, "name": d.name})
-    out.sort(key=lambda x: x["name"])
-    return out
+    return _sort_org_units_prefer_own(out, preferred_ids)
 
 
 def library_companies_for_user(db: Session, user: User) -> list[dict]:
     """公司级 Tab：组织树根节点（depth=0）。"""
     if user_is_superuser(db, user):
         return _library_org_units_for_user(db, user, depth=0)
+    preferred_ids = _preferred_org_unit_ids_at_depth(db, user, 0)
     seen: set[uuid.UUID] = set()
     out: list[dict] = []
     for did in user_dept_ids(db, user.id):
@@ -576,8 +598,7 @@ def library_companies_for_user(db: Session, user: User) -> list[dict]:
         root = db.get(Department, root_id)
         if root:
             out.append({"id": root.id, "name": root.name})
-    out.sort(key=lambda x: x["name"])
-    return out
+    return _sort_org_units_prefer_own(out, preferred_ids)
 
 
 def library_departments_for_user(db: Session, user: User) -> list[dict]:

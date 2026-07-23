@@ -174,7 +174,7 @@ async def execute_global_atomic_tool_json(
         if prepared is None:
             return _tool_result(False, "缺少 query / question")
         merged, query = prepared
-        # 去重：web_search 允许不同 read_full 值再读一次（多轮搜索）
+        # 同参精确去重（同 query + read_full）；不做近义主题拦截
         read_full = int(merged.get("read_full") or 3)
         cache_key = f"{name}:{query.casefold()}:read_full={read_full}"
         if loop_state is not None:

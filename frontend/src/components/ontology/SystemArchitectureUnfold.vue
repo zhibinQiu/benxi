@@ -115,7 +115,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, onMounted, onUnmounted } from "vue";
 
 // ── 配色 ──
 const COLORS = ["#4d94ff", "#a78bfa", "#f59e0b", "#34d399"];

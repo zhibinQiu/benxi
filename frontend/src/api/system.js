@@ -9,6 +9,10 @@ export async function fetchDashboardStats() {
   return api("/api/v1/system/dashboard-stats");
 }
 
+export async function fetchPromoStats() {
+  return api("/api/v1/system/promo-stats");
+}
+
 export async function fetchFeatureEmbedMeta(featureId) {
   return api(`/api/v1/system/features/${encodeURIComponent(featureId)}/embed-meta`);
 }

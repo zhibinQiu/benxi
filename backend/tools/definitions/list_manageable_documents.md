@@ -1,15 +1,23 @@
 ---
 name: list_manageable_documents
 ---
-list_manageable_documents 工具 — 根据当前任务需求自动调用。
+列出当前用户有管理权限（可改名/移动/删除等）的文档。
 
 ## When to use
-- 用户请求与 list_manageable_documents 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 准备执行重命名、移动、删除、分享前，确认可操作文档
+- 用户问「我能管理哪些文档」
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 仅浏览/阅读可见文档（用 list_library_documents）
+- 语义检索（用 knowledge_retrieve）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 可管理文档列表
+
+## Parameters
+
+### keyword (optional)
+标题关键词过滤。
+
+### limit (optional)
+默认 20，最大 100。

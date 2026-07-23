@@ -1,4 +1,4 @@
-"""侧栏菜单可见性：管理员为各菜单项配置可见范围。"""
+"""侧栏常驻菜单可见性：管理员配置常驻项可见范围（不含功能列表收藏入口）。"""
 
 from __future__ import annotations
 
@@ -31,25 +31,13 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         key="ontology",
         label="本体定义",
         group="main",
-        description="本体类型、属性与关系定义",
-    ),
-    MenuItemOut(
-        key="kg",
-        label="知识图谱",
-        group="main",
-        description="实体、关系与知识提取",
+        description="模式层类型/公理与实例图谱探索",
     ),
     MenuItemOut(
         key="documents",
-        label="我的文件",
+        label="文档管理",
         group="main",
-        description="分级文档管理与分享",
-    ),
-    MenuItemOut(
-        key="knowledge-subscriptions",
-        label="资讯管理",
-        group="main",
-        description="资讯订阅与联网搜索收藏",
+        description="公司/部门/个人分级文档库与分享",
     ),
     MenuItemOut(
         key="issue-reports",
@@ -73,13 +61,19 @@ MEMBER_MENU_ITEMS: tuple[MenuItemOut, ...] = (
         key="admin-menu-settings",
         label="菜单管理",
         group="settings",
-        description="侧栏菜单项可见性管理",
+        description="侧栏常驻菜单可见性（不含功能列表收藏项）",
     ),
     MenuItemOut(
         key="agent-skills",
         label="多智能体",
         group="main",
         description="系统智能体、技能、工具与记忆管理",
+    ),
+    MenuItemOut(
+        key="automation",
+        label="定时任务",
+        group="main",
+        description="定时任务与执行记录",
     ),
 )
 
@@ -107,12 +101,13 @@ ROUTE_MENU_KEYS: dict[str, str] = {
     "smart-forecast": "system-functions",
     "knowledge-search": "system-functions",
     "agent-skills": "agent-skills",
+    "automation": "automation",
     "ontology": "ontology",
-    "kg": "kg",
+    "kg": "ontology",
     "documents": "documents",
     "document-detail": "documents",
-    "knowledge-subscriptions": "knowledge-subscriptions",
-    "subscription-item": "knowledge-subscriptions",
+    "knowledge-subscriptions": "system-functions",
+    "subscription-item": "system-functions",
     "admin-monitor": "admin-monitor",
     "admin-model-settings": "admin-model-settings",
     "admin-menu-settings": "admin-menu-settings",
@@ -242,7 +237,6 @@ def first_visible_menu_route(db: Session, user: User) -> str:
         "ai-home",
         "system-functions",
         "documents",
-        "knowledge-subscriptions",
         "issue-reports",
         "admin-monitor",
         "admin-model-settings",

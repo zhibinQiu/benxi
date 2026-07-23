@@ -1,15 +1,24 @@
 ---
 name: browser_replay_workflow
 ---
-browser_replay_workflow 工具 — 根据当前任务需求自动调用。
+立即回放已保存的浏览器 RPA Skill（由 browser_save_workflow 创建）。
 
 ## When to use
-- 用户请求与 browser_replay_workflow 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 用户要求执行已保存的自动化流程
+- 已知 skill_name，需要马上跑一遍
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- Skill 尚未保存（先操作并 browser_save_workflow）
+- 需要在未来某时刻执行（用 schedule_browser_workflow）
+- 一次性自然语言探索任务（用 browser_run_task）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 回放执行结果摘要
+
+## Parameters
+
+### skill_name (required)
+已保存的 RPA Skill 名称。
+
+### parameters (optional)
+键值对，填充 Skill 定义的参数占位。

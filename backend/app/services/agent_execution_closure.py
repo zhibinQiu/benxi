@@ -298,53 +298,6 @@ async def resolve_adaptive_replan(
     return prior_plan
 
 
-async def auto_execute_mermaid_diagram(
-    db,
-    user,
-    *,
-    user_message: str,
-    loop_state: LoopState,
-    conversation_id: str | None,
-    attachment_session_id: str | None,
-) -> tuple[bool, str]:
-    """闭包补执行：经 execute 子智能体调用 mermaid_diagram（绘图统一渠道）。"""
-    from app.agentkit.message.filter import has_mermaid_deliverable
-    from app.core.agent.subagent import execute_context_subagent
-
-    if has_mermaid_deliverable(str(loop_state.get("deterministic_reply") or "")):
-        return True, "图表已就绪"
-    if has_mermaid_deliverable(str(loop_state.get("task_deliverable") or "")):
-        text = str(loop_state.get("task_deliverable") or "").strip()
-        loop_state["deterministic_reply"] = text
-        return True, "图表已就绪"
-
-    desc = (user_message or "").strip() or "按用户要求绘制图表"
-    result_text = await execute_context_subagent(
-        db,
-        user,
-        kind="execute",
-        task=f"生成 Mermaid 图表：{desc}",
-        steps=[{"tool": "mermaid_diagram", "arguments": {"description": desc}}],
-        conversation_id=conversation_id,
-        attachment_session_id=attachment_session_id,
-        loop_state=loop_state,
-    )
-    try:
-        body = json.loads(result_text)
-        ok = bool(body.get("ok"))
-        summary = str(body.get("summary") or "")
-    except json.JSONDecodeError:
-        ok = False
-        summary = (result_text or "")[:200]
-
-    reply = str(loop_state.get("deterministic_reply") or loop_state.get("task_deliverable") or "").strip()
-    if has_mermaid_deliverable(reply):
-        loop_state["deterministic_reply"] = reply
-        loop_state["task_deliverable"] = reply
-        return True, summary or "已生成 Mermaid 图表"
-    return ok and bool(reply), summary or ("完成" if ok else "图表生成失败")
-
-
 async def auto_execute_uploaded_skill(
     db,
     user,
@@ -365,15 +318,10 @@ async def auto_execute_uploaded_skill(
     name = (skill_name or "").strip()
     if not name:
         return False, "缺少 skill_name"
-    # 绘图技能无脚本：走 mermaid_diagram 原子工具
+    # 兼容库中遗留的 mermaid-diagram：画图由模型直接输出围栏，不走技能
     if name == MERMAID_DIAGRAM_SKILL:
-        return await auto_execute_mermaid_diagram(
-            db,
-            user,
-            user_message=user_message,
-            loop_state=loop_state,
-            conversation_id=conversation_id,
-            attachment_session_id=attachment_session_id,
+        return False, (
+            "画图请直接在回复中输出 ```mermaid 代码块，无需调用技能"
         )
     if not uploaded_skill_has_script(db, name):
         return False, f"Skill `{name}` 无脚本"

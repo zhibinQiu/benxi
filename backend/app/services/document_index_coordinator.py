@@ -204,11 +204,17 @@ def recover_interrupted_jobs() -> int:
         ).all()
 
         for job in active_jobs:
-            if is_job_stale(
-                job, stale_minutes=int(get_settings().background_job_stale_minutes)
+            payload = job.payload or {}
+            awaiting_parse = is_awaiting_parse_phase(payload)
+            # awaiting_parse 本就可跨小时等待 KnowFlow；不得按通用 stale 跳过恢复。
+            if (
+                not awaiting_parse
+                and is_job_stale(
+                    job,
+                    stale_minutes=int(get_settings().background_job_stale_minutes),
+                )
             ):
                 continue
-            payload = job.payload or {}
             doc_id = job.document_id
             version_id = None
             if payload.get("version_id"):
@@ -221,16 +227,20 @@ def recover_interrupted_jobs() -> int:
             if _index_job_should_abort(db, job):
                 continue
 
-            if (
-                job.status == JobStatus.running.value
-                and not is_awaiting_parse_phase(payload)
-            ):
+            if job.status == JobStatus.running.value and not awaiting_parse:
                 update_job_status(
                     db,
                     job.id,
                     JobStatus.pending.value,
                     progress=max(0, min(job.progress or 0, 67)),
                 )
+
+            # 清掉可能残留的租约，避免恢复调度因租约未过期而被跳过。
+            if payload.get("exec_lease_until") is not None:
+                cleaned_payload = dict(payload)
+                cleaned_payload.pop("exec_lease_until", None)
+                job.payload = cleaned_payload
+                db.add(job)
 
             dispatch(job.id)
             recovered += 1

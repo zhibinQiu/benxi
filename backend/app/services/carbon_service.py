@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _MAX_SNIPPET = 800
+_DEFAULT_FETCH_TIMEOUT = 8.0
 _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 _SKIP_TAGS = frozenset({"script", "style", "noscript", "nav", "footer", "header"})
 _DEFAULT_UA = (
@@ -30,6 +32,7 @@ CARBON_DATA_TOPICS = frozenset({"emission", "ccer", "international", "local"})
 # 各查询类型的数据源（第一顺位为主源）
 _SOURCES: dict[str, tuple[str, ...]] = {
     "price": (
+        "https://www.ccn.ac.cn/cets",
         "https://www.cets.org.cn",
         "https://www.cneeex.com",
         "https://www.tanpaifang.com/tanjia/",
@@ -39,6 +42,14 @@ _SOURCES: dict[str, tuple[str, ...]] = {
         "https://www.ndrc.gov.cn/",
         "https://www.mee.gov.cn/ywgz/ydqhbh/wsqtkz/",
         "https://www.miit.gov.cn/",
+    ),
+    # 站外新闻/行业媒体（政策检索时一并拉取，不局限于官网）
+    "policy_news": (
+        "https://www.cenews.com.cn",
+        "https://www.tandao.org",
+        "https://www.3060.org.cn",
+        "https://www.tanpaifang.com/",
+        "https://carbon-pulse.com",
     ),
     "emission": (
         "https://www.ipe.org.cn",
@@ -63,11 +74,33 @@ _SOURCES: dict[str, tuple[str, ...]] = {
 _TYPE_LABELS = {
     "price": "碳价行情",
     "policy": "政策法规",
+    "policy_news": "碳市场新闻",
     "emission": "排放数据",
     "ccer": "CCER 数据",
     "international": "国际碳市场",
     "local": "地方双碳方案",
 }
+
+# 与全国碳市场/履约相关的主题词（用于过滤无关首页摘要）
+_CARBON_TOPIC_KW = (
+    "碳市场",
+    "碳排放",
+    "碳交易",
+    "碳排放权",
+    "CEA",
+    "CCER",
+    "履约",
+    "配额",
+    "双碳",
+    "碳达峰",
+    "碳中和",
+    "控排",
+    "温室气体",
+    "自愿减排",
+    "全国碳",
+    "清缴",
+    "碳价",
+)
 
 # 新闻资讯推荐浏览器打开的站点（不在本服务抓取）
 NEWS_BROWSER_HINT_URLS = (
@@ -224,20 +257,51 @@ def _filter_by_keyword(block: str, keyword: str) -> bool:
     kw = (keyword or "").strip()
     if not kw:
         return True
-    return kw.lower() in block.lower()
+    text = (block or "").lower()
+    tokens = [t for t in re.split(r"\s+", kw.lower()) if len(t) >= 2]
+    if not tokens:
+        return kw.lower() in text
+    # 任一词命中即可（避免整句关键词过严导致全丢）
+    return any(t in text for t in tokens)
 
 
-async def _fetch_html(url: str, *, timeout: float = 12.0) -> str | None:
+def _is_carbon_topic_relevant(block: str) -> bool:
+    text = (block or "").lower()
+    return any(k.lower() in text for k in _CARBON_TOPIC_KW)
+
+
+def _source_is_relevant(
+    *,
+    query_type: str,
+    keyword: str,
+    block: str,
+    extracted: list[str] | None,
+) -> bool:
+    """官网/新闻：无相关内容则丢弃，避免塞进无关首页摘要。"""
+    if query_type not in ("policy", "policy_news"):
+        if keyword and not _filter_by_keyword(block, keyword):
+            # 非政策类仍保留源（兼容旧行为），但政策类严格过滤
+            return True
+        return True
+    # 政策/新闻：必须与碳市场主题相关，或命中查询关键词且抽到有效句
+    topic_ok = _is_carbon_topic_relevant(block) or bool(extracted)
+    if not topic_ok:
+        return False
+    if keyword and not (
+        _filter_by_keyword(block, keyword) or _is_carbon_topic_relevant(block)
+    ):
+        return False
+    return True
+
+
+async def _fetch_html(
+    client: httpx.AsyncClient,
+    url: str,
+) -> str | None:
     try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            verify=False,
-            follow_redirects=True,
-            headers={"User-Agent": _DEFAULT_UA},
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.text
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text
     except Exception as exc:
         logger.debug("carbon fetch failed url=%s err=%s", url, exc)
         return None
@@ -248,8 +312,9 @@ async def _fetch_sources(
     *,
     keyword: str = "",
     url: str = "",
+    timeout: float = _DEFAULT_FETCH_TIMEOUT,
 ) -> dict[str, Any]:
-    """从官方源抓取并汇总摘要。"""
+    """从官方源并行抓取并汇总摘要。"""
     queried_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     sources_out: list[dict[str, Any]] = []
     blocks: list[str] = []
@@ -272,16 +337,30 @@ async def _fetch_sources(
             "error": "unknown_query_type",
         }
 
-    for src in target_urls:
-        html = await _fetch_html(src)
+    http_timeout = httpx.Timeout(timeout, connect=min(3.0, timeout))
+    async with httpx.AsyncClient(
+        timeout=http_timeout,
+        verify=False,
+        follow_redirects=True,
+        headers={"User-Agent": _DEFAULT_UA},
+    ) as client:
+        pages = await asyncio.gather(*[_fetch_html(client, src) for src in target_urls])
+
+    for src, html in zip(target_urls, pages):
         if not html:
             failed.append(src)
             continue
         data = analyze_html(html, query_type=query_type)
         block = build_source_block(src, data, query_type=query_type)
-        if keyword and not _filter_by_keyword(block, keyword):
-            # 关键词未命中时仍保留源摘要（官网首页常无关键词），但标注
-            block = block + f"\n（关键词「{keyword}」未在摘要中直接命中，以上为该源首页摘要）"
+        extracted = data.get("extracted") or []
+        if not _source_is_relevant(
+            query_type=query_type,
+            keyword=keyword,
+            block=block,
+            extracted=extracted if isinstance(extracted, list) else [],
+        ):
+            # 无相关内容：跳过，不把官网无关首页塞进报告
+            continue
         sources_out.append({
             "url": src,
             "title": data.get("title"),
@@ -329,14 +408,85 @@ async def _fetch_sources(
     }
 
 
-async def fetch_carbon_price(*, keyword: str = "", url: str = "") -> dict[str, Any]:
+async def fetch_carbon_price(
+    *,
+    keyword: str = "",
+    url: str = "",
+    timeout: float = _DEFAULT_FETCH_TIMEOUT,
+) -> dict[str, Any]:
     """获取 CEA/CCER/试点等碳价行情摘要。"""
-    return await _fetch_sources("price", keyword=keyword, url=url)
+    return await _fetch_sources("price", keyword=keyword, url=url, timeout=timeout)
 
 
-async def fetch_carbon_policy(*, keyword: str = "", url: str = "") -> dict[str, Any]:
-    """获取双碳政策法规摘要（gov/ndrc/mee/miit 等）。"""
-    return await _fetch_sources("policy", keyword=keyword, url=url)
+async def fetch_carbon_policy(
+    *,
+    keyword: str = "",
+    url: str = "",
+    timeout: float = _DEFAULT_FETCH_TIMEOUT,
+) -> dict[str, Any]:
+    """获取双碳政策与公开资讯：官网相关内容 + 站外新闻媒体。
+
+    - 官网优先：仅保留与碳市场/履约主题相关的摘要，无关首页不收录
+    - 同步拉取行业新闻站，避免资讯仅来自指定官网
+    """
+    if url.startswith(("http://", "https://")):
+        return await _fetch_sources("policy", keyword=keyword, url=url, timeout=timeout)
+
+    official, news = await asyncio.gather(
+        _fetch_sources("policy", keyword=keyword, timeout=timeout),
+        _fetch_sources("policy_news", keyword=keyword, timeout=timeout),
+        return_exceptions=True,
+    )
+    if isinstance(official, BaseException):
+        official = {
+            "ok": False,
+            "sources": [],
+            "failed_urls": [],
+            "summary_md": f"官网政策检索失败（{type(official).__name__}）",
+            "error": "official_exception",
+        }
+    if isinstance(news, BaseException):
+        news = {
+            "ok": False,
+            "sources": [],
+            "failed_urls": [],
+            "summary_md": f"新闻资讯检索失败（{type(news).__name__}）",
+            "error": "news_exception",
+        }
+
+    sources = list(official.get("sources") or []) + list(news.get("sources") or [])
+    failed = list(official.get("failed_urls") or []) + list(news.get("failed_urls") or [])
+    parts: list[str] = []
+    if official.get("ok") and official.get("summary_md"):
+        parts.append("### 官网政策要点\n\n" + str(official["summary_md"]))
+    if news.get("ok") and news.get("summary_md"):
+        parts.append("### 公开新闻与行业资讯\n\n" + str(news["summary_md"]))
+    if not parts:
+        tried = "官网政策站 + 行业新闻站"
+        return {
+            "ok": False,
+            "query_type": "policy",
+            "keyword": keyword,
+            "queried_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+            "sources": [],
+            "failed_urls": failed,
+            "summary_md": (
+                f"未获取到与「{keyword or '全国碳市场履约'}」相关的政策/资讯。"
+                f"已跳过无关页面；尝试来源：{tried}。"
+            ),
+            "error": "no_relevant_sources",
+        }
+
+    return {
+        "ok": True,
+        "query_type": "policy",
+        "keyword": keyword,
+        "queried_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "sources": sources,
+        "failed_urls": failed,
+        "summary_md": "\n\n---\n\n".join(parts),
+        "error": None,
+    }
 
 
 async def fetch_carbon_data(
@@ -344,6 +494,7 @@ async def fetch_carbon_data(
     *,
     keyword: str = "",
     url: str = "",
+    timeout: float = _DEFAULT_FETCH_TIMEOUT,
 ) -> dict[str, Any]:
     """获取排放 / CCER / 国际碳市场 / 地方双碳方案数据。"""
     t = (topic or "").strip().lower()
@@ -361,7 +512,7 @@ async def fetch_carbon_data(
             ),
             "error": "invalid_topic",
         }
-    return await _fetch_sources(t, keyword=keyword, url=url)
+    return await _fetch_sources(t, keyword=keyword, url=url, timeout=timeout)
 
 
 def news_browser_task_hint(question: str = "") -> str:

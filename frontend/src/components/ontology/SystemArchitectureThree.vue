@@ -164,6 +164,7 @@ function toggleLayerInfo(id) {
 // ── Three.js ──
 let scene, camera, renderer, controls;
 let animFrameId = null;
+let time = 0;
 const nodeMeshes = [];
 const nodeDataMap = new Map();
 let raycaster, pointer;

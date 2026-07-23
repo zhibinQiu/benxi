@@ -1,4 +1,4 @@
-"""启动时同步示例 Agent Skills（mermaid-diagram、报告类型 Skills 等）。"""
+"""启动时同步示例 Agent Skills（报告类型 Skills、双碳咨询等）。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from app.core.phone import bootstrap_login_id
 from app.core.report_skill_catalog import REPORT_SKILL_NAMES
 from app.models.agent_skill import AgentSkill
 from app.models.org import User
-from app.services.agent_skill_router import MERMAID_DIAGRAM_SKILL
 
 _logger = logging.getLogger(__name__)
 
@@ -67,10 +66,6 @@ def ensure_example_skill(db: Session, skill_name: str) -> bool:
     return True
 
 
-def ensure_mermaid_diagram_skill(db: Session) -> bool:
-    return ensure_example_skill(db, MERMAID_DIAGRAM_SKILL)
-
-
 def ensure_report_type_skills(db: Session) -> int:
     seeded = 0
     for name in REPORT_SKILL_NAMES:
@@ -83,7 +78,8 @@ CARBON_CONSULTING_SKILL = "carbon-consulting"
 
 
 def _example_skill_names() -> tuple[str, ...]:
-    return (MERMAID_DIAGRAM_SKILL, CARBON_CONSULTING_SKILL, *REPORT_SKILL_NAMES)
+    # 画图由调度直接输出 Mermaid，不再种子 mermaid-diagram
+    return (CARBON_CONSULTING_SKILL, *REPORT_SKILL_NAMES)
 
 
 def _all_example_skills_ready(db: Session) -> bool:
@@ -105,6 +101,5 @@ def ensure_carbon_consulting_skill(db: Session) -> bool:
 def ensure_example_agent_skills(db: Session) -> None:
     if _all_example_skills_ready(db):
         return
-    ensure_mermaid_diagram_skill(db)
     ensure_carbon_consulting_skill(db)
     ensure_report_type_skills(db)

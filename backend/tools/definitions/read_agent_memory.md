@@ -1,15 +1,15 @@
 ---
 name: read_agent_memory
 ---
-read_agent_memory 工具 — 根据当前任务需求自动调用。
+读取当前用户的 MEMORY.md 长期记忆全文。
 
 ## When to use
-- 用户请求与 read_agent_memory 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 需要了解用户偏好、角色设定、长期约定
+- 用户问「你还记得我说过什么」
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 查询平台业务数据（用对应业务工具）
+- 写入记忆（用 append_agent_memory）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- MEMORY.md 文本内容

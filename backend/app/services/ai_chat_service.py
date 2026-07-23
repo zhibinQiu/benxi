@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -198,6 +199,7 @@ def _maybe_write_user_memory(
     db: Session | None,
     user: User | uuid.UUID | None,
     message: str,
+    reply: str | None = None,
 ) -> None:
     if db is None or user is None:
         return
@@ -205,7 +207,7 @@ def _maybe_write_user_memory(
     from app.services.agent_context_service import maybe_write_user_memory
 
     resolved = resolve_db_user(db, user)
-    maybe_write_user_memory(resolved.id, message)
+    maybe_write_user_memory(resolved.id, message, reply)
 
 
 def _prepare_ai_chat_stream_plan(
@@ -256,37 +258,59 @@ def _build_chat_messages(
 
 _FOLLOW_UP_SKIP_MARKERS = ("未能生成", "无法回复", "未配置", "暂时无法")
 
+# 空泛推荐：出现则丢弃，宁缺毋滥
+_FOLLOW_UP_GENERIC_RE = re.compile(
+    r"^(还有什么|具体(是|怎么|如何)|怎么理解|如何看待|详细说说|"
+    r"能不能再|可以再|有没有其他|除此之外|下一步怎么办|"
+    r"请(再)?(详细|具体)|告诉我更多).{0,8}$"
+)
 
-def _fallback_follow_up_questions(answer: str, user_message: str) -> list[str]:
-    """LLM 超时或失败时，从回答中提取关键句作为追问候选。"""
-    import re
 
-    # 按句号、问号、感叹号、换行分割
-    parts = re.split(r"[。！？\n]+", answer)
-    candidates: list[str] = []
-    seen: set[str] = set()
-    user_lower = user_message.strip().lower()
+def _should_skip_follow_up(user_message: str, answer: str) -> bool:
+    """寒暄、过短或失败回复不生成推荐追问。"""
+    from app.services.agent_intent import is_chitchat_message
 
-    for p in parts:
-        p = p.strip()
-        if not p or len(p) < 6:
-            continue
-        # 跳过与用户问题高度相似的内容
-        if p.lower().startswith(user_lower) or user_lower.startswith(p.lower()):
-            continue
-        key = p[:20].lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        # 截取前 30 字作为追问提示
-        q = p[:30].strip()
-        if not q.endswith("？") and not q.endswith("?"):
-            q += "？"
-        candidates.append(q)
-        if len(candidates) >= 3:
-            break
+    msg = (user_message or "").strip()
+    ans = (answer or "").strip()
+    if not msg or not ans or len(ans) < 40:
+        return True
+    if is_chitchat_message(msg):
+        return True
+    if any(marker in ans for marker in _FOLLOW_UP_SKIP_MARKERS):
+        return True
+    return False
 
-    return candidates
+
+def _normalize_follow_up_question(raw: str) -> str:
+    """清洗为纯文本疑问句（去掉 Markdown 与多余标记）。"""
+    q = str(raw or "").strip()
+    q = re.sub(r"```[\s\S]*?```", " ", q)
+    q = re.sub(r"`([^`]+)`", r"\1", q)
+    q = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", q)
+    q = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", q)
+    q = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", q)
+    q = re.sub(r"[*_~]+", "", q)
+    q = re.sub(r"^\d+[\.\)、]\s*", "", q)
+    q = q.strip().strip("？?").strip("。.!！").strip()
+    q = re.sub(r"\s+", " ", q).strip()
+    return q
+
+
+def _is_low_quality_follow_up(q: str, *, user_message: str, answer: str) -> bool:
+    """过滤复述原问、照抄回答、空泛套话。"""
+    if not q or len(q) < 8 or len(q) > 36:
+        return True
+    ql = q.lower()
+    user_l = (user_message or "").strip().lower().rstrip("？?")
+    if ql == user_l or ql in user_l or user_l in ql:
+        return True
+    # 回答中大段照抄（去掉问号后仍是陈述句片段）
+    stem = q.rstrip("？?")
+    if stem and stem in (answer or ""):
+        return True
+    if _FOLLOW_UP_GENERIC_RE.match(stem):
+        return True
+    return False
 
 
 def generate_follow_up_questions(
@@ -295,35 +319,33 @@ def generate_follow_up_questions(
     assistant_answer: str,
     history: list[AiChatMessage] | None = None,
 ) -> list[str]:
-    """根据本轮问答生成 2～3 条可继续追问的短问题。"""
+    """根据本轮问答快速生成 2 条高价值追问；失败则返回空（不展示劣质兜底）。"""
     from app.core.llm_parse import parse_llm_json
     from app.integrations.deepseek_client import chat_completion_sync, is_configured
 
+    _ = history  # 保留签名兼容；为速度不再塞入长历史
     answer = (assistant_answer or "").strip()
-    if not answer or len(answer) < 16:
-        return []
-    if any(marker in answer for marker in _FOLLOW_UP_SKIP_MARKERS):
+    if _should_skip_follow_up(user_message, answer):
         return []
     if not is_configured():
         return []
 
-    hist_lines: list[str] = []
-    for msg in (history or [])[-4:]:
-        role = "用户" if msg.role == "user" else "助手"
-        text = (msg.content or "").strip()[:200]
-        if text:
-            hist_lines.append(f"{role}：{text}")
-    hist_block = "\n".join(hist_lines)
-
+    # 截断：只取回答前中段，加快首 token
+    answer_snip = re.sub(r"\s+", " ", answer)[:700].strip()
     system = (
-        "你是企业知识助手「小析」。根据本轮问答，生成用户可能继续追问的短问题。"
-        '仅返回 JSON：{"questions":["问题1","问题2"]}。'
-        "要求：2～3 条；每条 8～40 字；具体、可独立作答；不要重复用户刚问过的问题；"
-        "不要编号、不要解释。"
+        "你是对话助手。根据本轮问答，生成用户最可能继续追问的 2 条短问题。\n"
+        '仅返回 JSON：{"questions":["问题1","问题2"]}。\n'
+        "质量要求：\n"
+        "1. 深挖回答里未展开的要点：对比、数字依据、适用条件、例外、下一步行动；\n"
+        "2. 每条 10～28 字，必须是可独立作答的疑问句；纯文本，禁止 Markdown；\n"
+        "3. 禁止复述用户原问；禁止把回答原句改成问句；\n"
+        "4. 禁止空泛套话（如「还有什么」「详细说说」「具体是什么」）；\n"
+        "5. 不要编号、不要解释。"
     )
-    user = f"用户问题：{user_message.strip()[:500]}\n助手回答：{answer[:2000]}"
-    if hist_block:
-        user = f"近期对话：\n{hist_block}\n\n{user}"
+    user = (
+        f"用户：{user_message.strip()[:240]}\n"
+        f"助手：{answer_snip}"
+    )
 
     try:
         raw = chat_completion_sync(
@@ -331,36 +353,37 @@ def generate_follow_up_questions(
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=0.4,
-            timeout=8.0,
+            temperature=0.25,
+            timeout=3.5,
         )
     except Exception:
-        return _fallback_follow_up_questions(answer, user_message)
+        return []
 
     data = parse_llm_json(raw)
     if not data:
-        return _fallback_follow_up_questions(answer, user_message)
+        return []
     raw_q = data.get("questions") or data.get("follow_up_questions") or []
     if not isinstance(raw_q, list):
-        return _fallback_follow_up_questions(answer, user_message)
+        return []
 
     seen: set[str] = set()
     out: list[str] = []
-    user_norm = user_message.strip().lower()
     for item in raw_q:
-        q = str(item or "").strip().strip("？?").strip()
+        q = _normalize_follow_up_question(str(item or ""))
         if not q:
             continue
         if not q.endswith("？") and not q.endswith("?"):
             q += "？"
+        if _is_low_quality_follow_up(q, user_message=user_message, answer=answer):
+            continue
         key = q.lower()
-        if key in seen or key == user_norm:
+        if key in seen:
             continue
         seen.add(key)
-        out.append(q[:80])
-        if len(out) >= 3:
+        out.append(q)
+        if len(out) >= 2:
             break
-    return out or _fallback_follow_up_questions(answer, user_message)
+    return out
 
 
 async def _resolve_follow_up_questions(
@@ -505,19 +528,24 @@ async def _iter_stream_turn_tail(
     if out_conv_id and str(out_conv_id) != str(conversation_id or ""):
         yield sse_conversation_id(out_conv_id)
 
+    # 回复完成后异步写入本轮对话摘要（不阻塞 SSE）
+    asyncio.create_task(
+        _defer_maybe_write_user_memory(user_id, message, normalized_reply)
+    )
+
     follow_ups: list[str] = []
     if follow_up_task is not None:
         try:
-            done_set, _ = await asyncio.wait(
-                [follow_up_task], timeout=3.0
+            # 短等待：生成已与写库并行；超时宁可不展示，避免劣质兜底拖慢收尾
+            done_set, pending = await asyncio.wait(
+                [follow_up_task], timeout=1.8
             )
             if done_set:
-                follow_ups = follow_up_task.result()
+                follow_ups = follow_up_task.result() or []
+            for task in pending:
+                task.cancel()
         except Exception:
             follow_ups = []
-    if not follow_ups:
-        # 超时或未启动：使用快速文本兜底（不调 LLM），不阻塞 SSE 流
-        follow_ups = _fallback_follow_up_questions(normalized_reply, message)
     if follow_ups:
         yield sse_follow_up(follow_ups)
 
@@ -542,10 +570,14 @@ async def _emit_workflow(phase: str, **kwargs: Any) -> AsyncIterator[str]:
     await asyncio.sleep(0)
 
 
-async def _defer_maybe_write_user_memory(user_id: uuid.UUID, message: str) -> None:
-    """非关键路径：不阻塞首 token。"""
+async def _defer_maybe_write_user_memory(
+    user_id: uuid.UUID,
+    message: str,
+    reply: str | None = None,
+) -> None:
+    """非关键路径：不阻塞 SSE 收尾；写入本轮对话摘要。"""
     try:
-        await run_db_task(_maybe_write_user_memory, user_id, message)
+        await run_db_task(_maybe_write_user_memory, user_id, message, reply)
     except Exception:
         pass
 
@@ -777,8 +809,6 @@ async def iter_chat_with_ai_agent_stream(
     merged_context = ""
     context_instruction = plan.context_instruction or ""
 
-    asyncio.create_task(_defer_maybe_write_user_memory(user_id, message))
-
     attach_id = next_workflow_step_id("ai-s")
     attach_task: asyncio.Task | None = None
     if plan.use_attachment:
@@ -972,7 +1002,6 @@ async def chat_with_ai_agent(
         attachment_session_id,
         history=history,
     )
-    await run_db_task(_maybe_write_user_memory, user, message)
     layers = await run_db_task(
         _resolve_prompt_layers,
         user,
@@ -1031,6 +1060,12 @@ async def chat_with_ai_agent(
             conversation_id=conversation_id,
             message=message,
             reply=normalized_reply,
+        )
+        await run_db_task(
+            _maybe_write_user_memory,
+            user,
+            message,
+            normalized_reply,
         )
         follow_ups = await _resolve_follow_up_questions(
             user_message=message,

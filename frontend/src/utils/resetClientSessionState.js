@@ -5,6 +5,7 @@ import { clearCompareViewSession } from "./compareViewPersist.js";
 import { clearDocumentsViewCache } from "./documentsViewCache.js";
 
 import { invalidateKnowledgeScopeTree } from "../composables/useKnowledgeScopeTree.js";
+import { clearCarbonEnterpriseCache } from "../composables/useCarbonEnterprise.js";
 import { clearKnowledgeScopeTreeCache } from "./knowledgeScopeTreeCache.js";
 import { clearKnowledgeScopeSelection } from "./knowledgeScopeSelectionCache.js";
 import { stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
@@ -23,6 +24,7 @@ export function resetClientSessionState() {
   clearDocumentsViewCache();
   invalidateKnowledgeScopeTree();
   clearKnowledgeScopeTreeCache();
+  clearCarbonEnterpriseCache();
   clearAllChatSessions();
   clearCompareViewSession();
   resetChatTabs();

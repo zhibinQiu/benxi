@@ -258,6 +258,17 @@ def _user_source_ids(db: Session, user: User) -> list[uuid.UUID]:
     )
 
 
+def user_can_access_source(
+    db: Session, user: User, source_id: uuid.UUID
+) -> bool:
+    """本人已订阅该公众号，或系统管理员（与资讯列表 all_users 一致）。"""
+    if source_id in _user_source_ids(db, user):
+        return True
+    from app.core.permissions import user_is_system_admin
+
+    return user_is_system_admin(db, user)
+
+
 def list_articles(
     db: Session,
     user: User,
@@ -334,8 +345,7 @@ def get_article_detail(
     if not row:
         raise not_found("文章不存在")
     article, source = row
-    source_ids = _user_source_ids(db, user)
-    if source.id not in source_ids:
+    if not user_can_access_source(db, user, source.id):
         raise not_found("文章不存在")
 
     imp = db.scalar(
@@ -364,7 +374,7 @@ def delete_article(db: Session, user: User, article_id: uuid.UUID) -> None:
     if not row:
         raise not_found("文章不存在")
     article, source = row
-    if source.id not in _user_source_ids(db, user):
+    if not user_can_access_source(db, user, source.id):
         raise not_found("文章不存在")
     for imp in list(
         db.scalars(

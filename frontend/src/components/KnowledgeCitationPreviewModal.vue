@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { NButton, NEmpty, NSpace, NSpin, NTag, NText } from "naive-ui";
 import AdminFormModal from "./AdminFormModal.vue";
 import { useI18n } from "../composables/useI18n.js";
@@ -11,6 +11,10 @@ import {
   formatCitationSnippet,
   isCitationPreviewUnavailableError,
 } from "../utils/knowledgeCitation.js";
+import {
+  hydrateAuthenticatedImagesInElement,
+  revokeAuthenticatedImagesInElement,
+} from "../utils/authenticatedImage.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
 import { useRoute, useRouter } from "vue-router";
 
@@ -30,6 +34,7 @@ const imageLoading = ref(false);
 const imageError = ref("");
 const imageOk = ref(false);
 const imageObjectUrl = ref("");
+const inlineImagesRoot = ref(null);
 let loadSeq = 0;
 let loadAbort = null;
 
@@ -115,12 +120,31 @@ watch(
     if (!open) {
       loadAbort?.abort();
       resetImageState();
+      revokeAuthenticatedImagesInElement(inlineImagesRoot.value);
       return;
     }
     if (key) loadCitationPreview(props.citation);
     else resetImageState();
   }
 );
+
+watch(
+  () => [props.show, inlineImages.value],
+  async ([open]) => {
+    if (!open) return;
+    await nextTick();
+    const root = inlineImagesRoot.value;
+    if (!root) return;
+    revokeAuthenticatedImagesInElement(root);
+    await hydrateAuthenticatedImagesInElement(root);
+  },
+  { deep: true }
+);
+
+onBeforeUnmount(() => {
+  loadAbort?.abort();
+  revokeAuthenticatedImagesInElement(inlineImagesRoot.value);
+});
 
 function openDocument() {
   const id = props.citation?.document_id;
@@ -160,7 +184,11 @@ function openDocument() {
       </div>
 
       <!-- 内嵌图片 -->
-      <div v-if="inlineImages.length" class="knowledge-citation-preview__inline-images">
+      <div
+        v-if="inlineImages.length"
+        ref="inlineImagesRoot"
+        class="knowledge-citation-preview__inline-images"
+      >
         <div class="knowledge-citation-preview__snippet-title">
           {{ t("knowledgeSearch.citations.inlineImagesTitle") || "内嵌图片" }}
         </div>

@@ -13,6 +13,7 @@ export const SUBSYSTEM_PAGE_ROUTES = new Set([
   "agent-skills",
   "report-generation",
   "knowledge-search",
+  "knowledge-subscriptions",
   "subscription-item",
   "document-detail",
   "chat-history",

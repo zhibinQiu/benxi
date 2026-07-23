@@ -8,7 +8,7 @@ register(
     FeaturePlugin(
         id="carbon_assistant",
         title="双碳助手",
-        description="碳交易行情、碳报告与减碳策略，基于官方源数据与 AI 综合研判",
+        description="控排企业履约核算与碳交易策略推荐（火电/钢铁/水泥/电解铝）",
         icon="leaf",
         route="/system/carbon-assistant",
         router=carbon_assistant_router,

@@ -274,9 +274,15 @@ def _visible_catalog_skills(
 
     tokens = skill_query_tokens(query)
     if tokens:
-        visible = [
-            skill for _, skill in rank_skills_by_query(query, visible, limit=limit)
-        ]
+        from app.services.agent_skill_rag import rank_skills_by_embedding
+
+        emb_ranked = rank_skills_by_embedding(db, query, visible, limit=limit)
+        if emb_ranked:
+            visible = [skill for _, skill in emb_ranked]
+        else:
+            visible = [
+                skill for _, skill in rank_skills_by_query(query, visible, limit=limit)
+            ]
     elif limit is not None and limit > 0:
         visible = visible[:limit]
     return visible

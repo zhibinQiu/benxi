@@ -53,6 +53,17 @@ def _user_feed_source_ids(db: Session, user: User) -> list[uuid.UUID]:
     )
 
 
+def _user_can_access_feed_source(
+    db: Session, user: User, source_id: uuid.UUID
+) -> bool:
+    """本人已订阅该源，或系统管理员（与资讯列表 all_users 一致）。"""
+    if source_id in _user_feed_source_ids(db, user):
+        return True
+    from app.core.permissions import user_is_system_admin
+
+    return user_is_system_admin(db, user)
+
+
 def _get_feed_entry_detail(db: Session, user: User, entry_id: uuid.UUID) -> dict:
     row = db.execute(
         select(FeedEntry, FeedSource)
@@ -62,7 +73,7 @@ def _get_feed_entry_detail(db: Session, user: User, entry_id: uuid.UUID) -> dict
     if not row:
         raise not_found("条目不存在")
     entry, source = row
-    if source.id not in _user_feed_source_ids(db, user):
+    if not _user_can_access_feed_source(db, user, source.id):
         raise not_found("条目不存在")
     imp = db.scalar(
         select(FeedEntryImport).where(
@@ -400,7 +411,7 @@ def _resolve_item_link(db: Session, user: User, ref: str) -> str:
         if not row:
             raise not_found("文章不存在")
         article, source = row
-        if source.id not in wechat_svc._user_source_ids(db, user):
+        if not wechat_svc.user_can_access_source(db, user, source.id):
             raise not_found("文章不存在")
         return article.original_url or ""
     row = db.execute(
@@ -411,7 +422,7 @@ def _resolve_item_link(db: Session, user: User, ref: str) -> str:
     if not row:
         raise not_found("条目不存在")
     entry, source = row
-    if source.id not in _user_feed_source_ids(db, user):
+    if not _user_can_access_feed_source(db, user, source.id):
         raise not_found("条目不存在")
     return entry.link or ""
 
@@ -604,10 +615,31 @@ def list_items(
     all_users: bool = False,
 ) -> tuple[list[dict], int]:
     """合并当前用户已收录条目（公众号 + 网页），支持标题/正文搜索与收录时间筛选。
-    管理员可传 all_users=True 查看所有人的收藏。"""
+
+    有关键词时：ILIKE 子串 ∪ BM25 分词召回合并去重，按 BM25 相关度降序。
+    无关键词时：按收录时间倒序。
+    管理员可传 all_users=True 查看所有人的收藏。
+    """
     from app.core.permissions import user_is_system_admin
 
     is_admin = all_users and user_is_system_admin(db, user)
+    search_text = (keyword or "").strip()
+    use_bm25 = False
+    rank_subscription_items = None
+    substring_match = None
+    if search_text:
+        try:
+            from app.services.subscription_bm25 import (
+                rank_subscription_items as _rank,
+                substring_match as _substr,
+            )
+
+            rank_subscription_items = _rank
+            substring_match = _substr
+            use_bm25 = True
+        except ImportError:
+            # jieba/rank_bm25 未安装时回退 SQL ILIKE，避免整页 500
+            use_bm25 = False
 
     merged: list[dict] = []
     removed_keys = _removed_link_keys(db, user)
@@ -645,13 +677,15 @@ def list_items(
     # --- 微信公众号条目 ---
     if wechat_ids:
         q = select(WechatMpArticle).where(WechatMpArticle.source_id.in_(wechat_ids))
-        for clause in _keyword_clause(
-            keyword,
-            WechatMpArticle.title,
-            WechatMpArticle.summary,
-            WechatMpArticle.content_html,
-        ):
-            q = q.where(clause)
+        # 有关键词时加载全量语料供 BM25；无关键词时保留 SQL ILIKE 过滤（空 keyword 无 clause）
+        if not use_bm25:
+            for clause in _keyword_clause(
+                keyword,
+                WechatMpArticle.title,
+                WechatMpArticle.summary,
+                WechatMpArticle.content_html,
+            ):
+                q = q.where(clause)
         for clause in _created_range_clause(
             created_from, created_to, WechatMpArticle.fetched_at
         ):
@@ -673,21 +707,22 @@ def list_items(
                         WechatMpArticleImport.article_id == article.id,
                     )
                 )
-            merged.append(
-                _normalize_item(
-                    ref=make_ref(REF_WECHAT, article.id),
-                    item_id=article.id,
-                    title=article.title,
-                    summary=article.summary or "",
-                    link=article.original_url,
-                    publish_at=article.publish_at,
-                    fetched_at=article.fetched_at,
-                    imported=imp is not None,
-                    document_id=imp.document_id if imp else None,
-                    cover_url=article.cover_url or "",
-                    owner_id=owner_id if is_admin else None,
-                )
+            item = _normalize_item(
+                ref=make_ref(REF_WECHAT, article.id),
+                item_id=article.id,
+                title=article.title,
+                summary=article.summary or "",
+                link=article.original_url,
+                publish_at=article.publish_at,
+                fetched_at=article.fetched_at,
+                imported=imp is not None,
+                document_id=imp.document_id if imp else None,
+                cover_url=article.cover_url or "",
+                owner_id=owner_id if is_admin else None,
             )
+            if use_bm25:
+                item["content_html"] = article.content_html or ""
+            merged.append(item)
 
     # --- Feed 网页条目 ---
     if feed_source_ids:
@@ -699,13 +734,14 @@ def list_items(
                 FeedSource.kind == SOURCE_KIND_LINK,
             )
         )
-        for clause in _keyword_clause(
-            keyword,
-            FeedEntry.title,
-            FeedEntry.summary,
-            FeedEntry.content_html,
-        ):
-            q = q.where(clause)
+        if not use_bm25:
+            for clause in _keyword_clause(
+                keyword,
+                FeedEntry.title,
+                FeedEntry.summary,
+                FeedEntry.content_html,
+            ):
+                q = q.where(clause)
         for clause in _created_range_clause(
             created_from, created_to, FeedEntry.fetched_at
         ):
@@ -727,20 +763,21 @@ def list_items(
                         FeedEntryImport.entry_id == entry.id,
                     )
                 )
-            merged.append(
-                _normalize_item(
-                    ref=make_ref(REF_FEED, entry.id),
-                    item_id=entry.id,
-                    title=entry.title,
-                    summary=entry.summary or "",
-                    link=entry.link,
-                    publish_at=entry.publish_at,
-                    fetched_at=entry.fetched_at,
-                    imported=imp is not None,
-                    document_id=imp.document_id if imp else None,
-                    owner_id=owner_id if is_admin else None,
-                )
+            item = _normalize_item(
+                ref=make_ref(REF_FEED, entry.id),
+                item_id=entry.id,
+                title=entry.title,
+                summary=entry.summary or "",
+                link=entry.link,
+                publish_at=entry.publish_at,
+                fetched_at=entry.fetched_at,
+                imported=imp is not None,
+                document_id=imp.document_id if imp else None,
+                owner_id=owner_id if is_admin else None,
             )
+            if use_bm25:
+                item["content_html"] = entry.content_html or ""
+            merged.append(item)
 
     # --- 批量填充 owner_name ---
     if is_admin:
@@ -759,7 +796,21 @@ def list_items(
         except Exception:
             return 0.0
 
-    merged.sort(key=_ts, reverse=True)
+    def _strip_search_fields(item: dict) -> dict:
+        item.pop("content_html", None)
+        item.pop("_bm25_score", None)
+        return item
+
+    if use_bm25:
+        ilike_refs = {
+            str(it["ref"]) for it in merged if substring_match(search_text, it)
+        }
+        merged = rank_subscription_items(search_text, merged, ilike_refs=ilike_refs)
+        for item in merged:
+            _strip_search_fields(item)
+    else:
+        merged.sort(key=_ts, reverse=True)
+
     total = len(merged)
     start = (page - 1) * page_size
     return merged[start : start + page_size], total

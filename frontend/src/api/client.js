@@ -23,6 +23,8 @@ export * from "./speech.js";
 export * from "./textToSpeech.js";
 export * from "./ocr.js";
 export * from "./agentSkills.js";
+export * from "./automations.js";
+export * from "./aiHomeOpenApi.js";
 export * from "./chat.js";
 export * from "./prompts.js";
 export * from "./finance.js";

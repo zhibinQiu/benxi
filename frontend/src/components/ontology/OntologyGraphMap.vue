@@ -5,136 +5,162 @@
 
       <!-- ── DEFS ── -->
       <defs>
-        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#aaa" stroke-opacity="0.12" stroke-width="0.5"/>
+        <pattern id="onto-grid" width="36" height="36" patternUnits="userSpaceOnUse">
+          <path d="M 36 0 L 0 0 0 36" fill="none" class="onto-map__grid-line"/>
         </pattern>
-        <filter id="shadow">
-          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.08"/>
+        <filter id="onto-shadow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.18"/>
         </filter>
       </defs>
 
-      <!-- ── 背景（纯白底部 + 微弱的 radial 光晕 + 网格） ── -->
-      <rect width="900" height="700" fill="#fafbfc" rx="8"/>
-      <rect width="900" height="700" fill="url(#grid)" rx="8"/>
+      <!-- ── 背景 ── -->
+      <rect width="900" height="700" class="onto-map__canvas" rx="10"/>
+      <rect width="900" height="700" fill="url(#onto-grid)" rx="10" opacity="0.55"/>
 
-      <!-- ── 关系连线 ── -->
+      <!-- ── 关系连线（先画，节点在上层） ── -->
       <g v-for="(rel, ri) in relationPaths" :key="'rel-'+ri">
-        <marker :id="`arrow-${ri}`" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="9" markerHeight="9" orient="auto">
-          <path d="M0,0 L10,5 L0,10 Z" :fill="rel.color" opacity="0.85"/>
+        <marker :id="`arrow-${ri}`" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+          <path d="M0,1.5 L8,5 L0,8.5 Z" :fill="rel.color"/>
         </marker>
-        <!-- 发光底边 -->
+        <!-- 宽底边增强可见性 -->
         <path
           :d="rel.path"
           :stroke="rel.color"
-          stroke-width="6" fill="none"
-          :opacity="relHovered === rel.code ? 0.2 : 0.08"
+          stroke-width="8" fill="none" stroke-linecap="round"
+          :opacity="relHovered === rel.code ? 0.28 : 0.12"
         />
         <!-- 主边 -->
         <path
           :d="rel.path"
           :stroke="rel.color"
-          :stroke-width="relHovered === rel.code ? 4 : 2.5"
-          fill="none"
-          :opacity="relHovered === rel.code ? 1 : 0.6"
+          :stroke-width="relHovered === rel.code ? 3.5 : 2.25"
+          fill="none" stroke-linecap="round"
+          :opacity="relHovered === rel.code ? 1 : 0.78"
           class="onto-map__rel-path"
           :marker-end="`url(#arrow-${ri})`"
           @mouseenter="relHovered = rel.code"
           @mouseleave="relHovered = null"
           @click.stop="openRel(rel)"
         />
-        <!-- 标签背景 -->
-        <rect
-          :x="rel.labelX - rel.labelW / 2 - 3" :y="rel.labelY - 11"
-          :width="rel.labelW + 6" height="18" rx="4"
-          fill="white" stroke="var(--platform-border)" stroke-width="0.5"
-          :opacity="relHovered === rel.code ? 1 : 0.75"
-        />
-        <text
-          :x="rel.labelX" :y="rel.labelY"
-          :fill="rel.color"
-          :font-size="relHovered === rel.code ? 12 : 11"
-          font-weight="700" text-anchor="middle"
-          :opacity="relHovered === rel.code ? 1 : 0.8"
-          class="onto-map__rel-label"
-        >{{ rel.label }}</text>
+        <!-- 标签芯片 -->
+        <g
+          class="onto-map__rel-chip"
+          :opacity="relHovered === rel.code ? 1 : 0.92"
+          @mouseenter="relHovered = rel.code"
+          @mouseleave="relHovered = null"
+          @click.stop="openRel(rel)"
+        >
+          <rect
+            :x="rel.labelX - rel.labelW / 2 - 8" :y="rel.labelY - 11"
+            :width="rel.labelW + 16" height="22" rx="11"
+            class="onto-map__chip-bg"
+            :stroke="rel.color"
+            stroke-width="1.25"
+          />
+          <text
+            :x="rel.labelX" :y="rel.labelY + 4"
+            :fill="rel.color"
+            font-size="12" font-weight="700" text-anchor="middle"
+            class="onto-map__rel-label"
+          >{{ rel.label }}</text>
+        </g>
       </g>
 
       <!-- ── 实体节点 ── -->
       <g v-for="(et, ei) in nodes" :key="'et-'+ei"
         class="onto-map__node-group"
         :class="{ 'onto-map__node-group--active': activeEntityCode === et.code }"
+        filter="url(#onto-shadow)"
         @mousedown.stop="onNodeMouseDown($event, et)"
         @touchstart.stop.prevent="onTouchStart($event, et)"
       >
-        <!-- 外发光圈（白色背景上：亮面光晕） -->
-        <circle :cx="et.x" :cy="et.y" r="46" :fill="et.color" opacity="0.06"/>
-        <circle :cx="et.x" :cy="et.y" r="38" :fill="et.color" opacity="0.12"/>
-        <!-- 白色衬底 -->
-        <circle :cx="et.x" :cy="et.y" r="30" fill="white" opacity="0.7"/>
-        <!-- 主环 -->
-        <circle :cx="et.x" :cy="et.y" r="32"
-          fill="none" :stroke="et.color"
-          :stroke-width="activeEntityCode === et.code ? 4 : 2.5"
-          :opacity="1"
-          class="onto-map__node-ring"
+        <!-- 外光晕 -->
+        <circle
+          :cx="et.x" :cy="et.y" r="42"
+          :fill="et.color"
+          :opacity="activeEntityCode === et.code ? 0.22 : 0.12"
         />
-        <!-- 内部填充 -->
-        <circle :cx="et.x" :cy="et.y" r="26" :fill="et.color" opacity="0.1" stroke="none"/>
+        <!-- 主圆：实色填充 + 白边，保证任意主题下可读 -->
+        <circle
+          :cx="et.x" :cy="et.y" r="28"
+          :fill="et.color"
+          class="onto-map__node-fill"
+          :stroke-width="activeEntityCode === et.code ? 3.5 : 2.5"
+        />
         <!-- icon -->
-        <text :x="et.x" :y="et.y - 3" font-size="20" text-anchor="middle" dominant-baseline="central"
-          fill="currentColor" :opacity="1" class="onto-map__node-icon"
+        <text
+          :x="et.x" :y="et.y + 1"
+          font-size="22" text-anchor="middle" dominant-baseline="central"
+          class="onto-map__node-icon"
         >{{ et.icon }}</text>
-        <!-- label（用白色背景垫底增强可读性） -->
+        <!-- 标签：明确放在节点下方，避免与圆重叠 -->
         <rect
-          :x="et.x - 50" :y="et.y + 10" width="100" height="18" rx="9"
-          fill="white" :stroke="et.color" stroke-width="0.5"
-          :opacity="activeEntityCode === et.code ? 1 : 0.8"
+          :x="et.x - Math.max(et.labelW / 2 + 10, 36)"
+          :y="et.y + 34"
+          :width="Math.max(et.labelW + 20, 72)"
+          height="22" rx="11"
+          class="onto-map__label-bg"
+          :stroke="et.color"
+          stroke-width="1.2"
         />
-        <text :x="et.x" :y="et.y + 23" :fill="et.color" font-size="11" font-weight="700" text-anchor="middle"
-          :opacity="1" class="onto-map__node-label"
+        <text
+          :x="et.x" :y="et.y + 49"
+          :fill="et.color"
+          font-size="12" font-weight="700" text-anchor="middle"
+          class="onto-map__node-label"
         >{{ et.label }}</text>
         <!-- count badge -->
-        <g v-if="et.entity_count" filter="url(#shadow)">
-          <rect :x="et.x + 18" :y="et.y - 36" width="24" height="15" rx="7.5" :fill="et.color" opacity="0.85"/>
-          <text :x="et.x + 30" :y="et.y - 26" fill="white" font-size="9" font-weight="800" text-anchor="middle">{{ et.entity_count }}</text>
+        <g v-if="et.entity_count">
+          <rect
+            :x="et.x + 14" :y="et.y - 34"
+            :width="badgeWidth(et.entity_count)" height="18" rx="9"
+            :fill="et.color"
+          />
+          <text
+            :x="et.x + 14 + badgeWidth(et.entity_count) / 2"
+            :y="et.y - 21"
+            fill="#fff" font-size="10" font-weight="800" text-anchor="middle"
+          >{{ et.entity_count }}</text>
         </g>
       </g>
 
       <!-- ── 公理栏 ── -->
-      <g transform="translate(24, 640)">
-        <rect x="0" y="0" width="852" height="44" rx="8" fill="white" stroke="#d0d5dd" stroke-width="1" opacity="0.95"/>
-        <text x="14" y="18" fill="#344054" font-size="12" font-weight="700">
-          公理规则 <tspan font-size="10" fill="#667085" font-weight="400">Cypher 推理规则</tspan>
+      <g transform="translate(20, 632)">
+        <rect x="0" y="0" width="860" height="52" rx="10" class="onto-map__axiom-panel"/>
+        <text x="16" y="20" class="onto-map__axiom-title" font-size="12" font-weight="700">
+          公理规则
+          <tspan font-size="10" font-weight="500" class="onto-map__axiom-sub"> · Cypher 推理规则</tspan>
         </text>
         <template v-if="axiomRows.length">
           <text v-for="(ax, ai) in axiomRows" :key="'ax-'+ai"
-            :x="14 + (ax.col * 280)" y="34"
-            fill="#475467" font-size="11"
+            :x="16 + (ax.col * 280)" y="40"
+            font-size="12" class="onto-map__axiom-item"
           >
-            <tspan :fill="ax.active ? '#039855' : '#D92D20'" font-weight="700">{{ ax.active ? '●' : '○' }}</tspan>
+            <tspan :fill="ax.active ? '#12b76a' : '#f04438'" font-weight="800">{{ ax.active ? '●' : '○' }}</tspan>
             {{ ax.name }}
           </text>
         </template>
-        <text v-else x="14" y="34" fill="#98a2b3" font-size="10">尚无公理规则</text>
+        <text v-else x="16" y="40" font-size="11" class="onto-map__axiom-empty">尚无公理规则</text>
       </g>
 
       <!-- ── 空态 ── -->
       <g v-if="!entityTypes.length && !loading">
-        <text x="450" y="300" fill="#667085" font-size="16" text-anchor="middle" opacity="0.8">
+        <text x="450" y="300" font-size="16" text-anchor="middle" class="onto-map__empty-title">
           尚未初始化本体定义
         </text>
-        <text x="450" y="330" fill="#98a2b3" font-size="13" text-anchor="middle" opacity="0.6">
+        <text x="450" y="328" font-size="13" text-anchor="middle" class="onto-map__empty-desc">
           请先初始化默认本体或手动创建实体类型
         </text>
       </g>
     </svg>
+
+    <div class="onto-map__hint">拖拽调整 · 点击详情</div>
 
     <!-- ── 详情浮层 ── -->
     <Transition name="onto-overlay">
       <div v-if="activeDetail" class="onto-map__overlay" @click.self="activeDetail = null">
         <div class="onto-map__card">
 
-          <!-- 实体类型 -->
           <template v-if="activeDetail.type === 'entity'">
             <div class="onto-map__card-hd">
               <span class="onto-map__card-dot" :style="{ background: activeDetail.data.color }"/>
@@ -165,7 +191,6 @@
             <button class="onto-map__card-btn" @click="$emit('navigate', 'entity-types')">查看「实体类型」标签 →</button>
           </template>
 
-          <!-- 关系类型 -->
           <template v-if="activeDetail.type === 'relation'">
             <div class="onto-map__card-hd">
               <span class="onto-map__card-dot" style="background:#a78bfa"/>
@@ -201,7 +226,7 @@
 <script setup>
 import { ref, reactive, computed, watch } from "vue";
 
-const emit = defineEmits(["navigate"]);
+defineEmits(["navigate"]);
 const props = defineProps({
   entityTypes: { type: Array, default: () => [] },
   relationTypes: { type: Array, default: () => [] },
@@ -209,7 +234,6 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
 });
 
-// ── 详情状态 ──
 const activeDetail = ref(null);
 const activeEntityCode = ref(null);
 const relHovered = ref(null);
@@ -222,7 +246,19 @@ function openRel(rel) {
   activeDetail.value = { type: "relation", data: rel };
 }
 
-// ── 图标 ──
+function measureLabelW(label) {
+  let w = 0;
+  for (const ch of String(label || "")) {
+    w += ch.charCodeAt(0) > 127 ? 12 : 7.5;
+  }
+  return Math.max(w, 24);
+}
+
+function badgeWidth(n) {
+  const s = String(n);
+  return Math.max(22, 10 + s.length * 7);
+}
+
 const ICON_MAP = {
   organization: "🏢", department: "🏢", user: "👤", person: "👤",
   document: "📄", doc: "📄", file: "📄",
@@ -244,8 +280,7 @@ function resolveIcon(et) {
   return ICON_MAP[et.code] || "🔵";
 }
 
-// ── 节点位置（可拖拽） ──
-const CX = 450, CY = 300;
+const CX = 450, CY = 290;
 const nodePositions = reactive({});
 
 function initPositions() {
@@ -253,8 +288,9 @@ function initPositions() {
   const count = items.length;
   items.forEach((et, i) => {
     if (nodePositions[et.code]) return;
-    const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
-    const r = Math.max(130, Math.min(260, 120 + count * 14));
+    const angle = (i / Math.max(count, 1)) * Math.PI * 2 - Math.PI / 2;
+    // 节点变大后留更多间距，避免标签挤在一起
+    const r = Math.max(150, Math.min(270, 140 + count * 16));
     nodePositions[et.code] = { x: CX + Math.cos(angle) * r, y: CY + Math.sin(angle) * r };
   });
   const codes = new Set(items.map((e) => e.code));
@@ -266,11 +302,18 @@ watch(() => props.entityTypes, initPositions, { deep: true });
 const nodes = computed(() =>
   (props.entityTypes || []).map((et) => {
     const pos = nodePositions[et.code] || { x: CX, y: CY };
-    return { ...et, icon: resolveIcon(et), x: pos.x, y: pos.y };
+    const label = et.label || et.code || "";
+    return {
+      ...et,
+      icon: resolveIcon(et),
+      x: pos.x,
+      y: pos.y,
+      labelW: measureLabelW(label),
+      color: et.color || "#6366f1",
+    };
   })
 );
 
-// ── 关系路径 ──
 const relationPaths = computed(() => {
   const em = new Map(nodes.value.map((e) => [e.code, e]));
   return (props.relationTypes || []).map((rel) => {
@@ -280,26 +323,26 @@ const relationPaths = computed(() => {
     const mx = (src.x + dst.x) / 2, my = (src.y + dst.y) / 2;
     const dx = dst.x - src.x, dy = dst.y - src.y;
     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const nx = -dy / dist * 18, ny = dx / dist * 18;
+    // 缩短端点，避免箭头扎进节点圆心
+    const pad = 32;
+    const sx = src.x + (dx / dist) * pad;
+    const sy = src.y + (dy / dist) * pad;
+    const ex = dst.x - (dx / dist) * pad;
+    const ey = dst.y - (dy / dist) * pad;
+    const nx = -dy / dist * 28, ny = dx / dist * 28;
     const cpx = mx + nx, cpy = my + ny;
-    const label = rel.label || "";
-    // 估算文字宽度：中文约 11px/字，英文约 7px/字
-    let labelW = 0;
-    for (const ch of label) {
-      labelW += (ch.charCodeAt(0) > 127 ? 11 : 7);
-    }
-    labelW = Math.max(labelW, 20);
+    const label = rel.label || rel.code || "";
     return {
       ...rel,
       color: src.color || "#888",
-      path: `M${src.x},${src.y} Q${cpx},${cpy} ${dst.x},${dst.y}`,
-      labelX: cpx + nx * 0.15, labelY: cpy + ny * 0.15,
-      labelW,
+      path: `M${sx},${sy} Q${cpx},${cpy} ${ex},${ey}`,
+      labelX: cpx + nx * 0.08,
+      labelY: cpy + ny * 0.08,
+      labelW: measureLabelW(label),
     };
   }).filter(Boolean);
 });
 
-// ── 选中实体的关联关系 ──
 const entityRels = computed(() => {
   if (!activeDetail.value || activeDetail.value.type !== "entity") return [];
   const code = activeDetail.value.data.code;
@@ -315,13 +358,11 @@ const entityRels = computed(() => {
     });
 });
 
-// ── 公理 ──
 const AXIOMS_PER_ROW = 3;
 const axiomRows = computed(() =>
   ((props.axioms || [])).map((ax, i) => ({ ...ax, row: Math.floor(i / AXIOMS_PER_ROW), col: i % AXIOMS_PER_ROW }))
 );
 
-// ── 拖拽（区分拖拽和点击） ──
 const draggingNode = ref(null);
 let ddx = 0, ddy = 0, clicked = false, startX = 0, startY = 0;
 let svgEl = null;
@@ -351,19 +392,18 @@ function onDragMove(e) {
   if (!draggingNode.value) return;
   const p = getPt(e);
   if (Math.abs(p.x - startX) > 4 || Math.abs(p.y - startY) > 4) {
-    clicked = true; // 移动了 → 不是点击
+    clicked = true;
   }
   const pos = nodePositions[draggingNode.value];
   if (pos) {
-    pos.x = Math.max(60, Math.min(840, p.x - ddx));
-    pos.y = Math.max(60, Math.min(580, p.y - ddy));
+    pos.x = Math.max(70, Math.min(830, p.x - ddx));
+    pos.y = Math.max(70, Math.min(560, p.y - ddy));
   }
 }
 
-function onDragEnd(e) {
+function onDragEnd() {
   const code = draggingNode.value;
   draggingNode.value = null;
-  // 是拖拽还是点击？
   if (code && !clicked) {
     const et = (props.entityTypes || []).find((x) => x.code === code);
     if (et) openEntityDetail(et);
@@ -371,7 +411,6 @@ function onDragEnd(e) {
   clicked = false;
 }
 
-// touch
 function onTouchStart(e, et) {
   if (activeDetail.value) return;
   const t = e.touches[0];
@@ -408,7 +447,7 @@ function onTouchEnd() {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 500px;
+  min-height: 520px;
   user-select: none;
   overflow: hidden;
   display: flex;
@@ -428,17 +467,65 @@ function onTouchEnd() {
 }
 .onto-map__svg:active { cursor: grabbing; }
 
-/* 关系 */
-.onto-map__rel-path { cursor: pointer; transition: opacity 0.2s ease, stroke-width 0.2s ease; }
-.onto-map__rel-label { transition: opacity 0.2s ease; }
+/* 主题感知画布色 */
+.onto-map__canvas {
+  fill: var(--platform-bg-elevated, #fafbfc);
+}
+.onto-map__grid-line {
+  stroke: var(--platform-text, #111);
+  stroke-opacity: 0.07;
+  stroke-width: 0.6;
+}
+.onto-map__chip-bg,
+.onto-map__label-bg {
+  fill: var(--platform-bg-elevated, #fff);
+}
+.onto-map__axiom-panel {
+  fill: var(--platform-bg-elevated, #fff);
+  stroke: var(--platform-border-strong, #d0d5dd);
+  stroke-width: 1.25;
+}
+.onto-map__axiom-title { fill: var(--platform-text, #101828); }
+.onto-map__axiom-sub { fill: var(--platform-text-tertiary, #667085); }
+.onto-map__axiom-item { fill: var(--platform-text-secondary, #475467); }
+.onto-map__axiom-empty { fill: var(--platform-text-quaternary, #98a2b3); }
+.onto-map__empty-title { fill: var(--platform-text-secondary, #667085); }
+.onto-map__empty-desc { fill: var(--platform-text-tertiary, #98a2b3); }
 
-/* 节点 */
+.onto-map__node-fill {
+  stroke: var(--platform-bg-elevated, #fff);
+}
+
+.onto-map__rel-path { cursor: pointer; transition: opacity 0.15s ease, stroke-width 0.15s ease; }
+.onto-map__rel-chip { cursor: pointer; }
+.onto-map__rel-label { pointer-events: none; }
+
 .onto-map__node-group { cursor: pointer; transition: filter 0.15s ease; }
-.onto-map__node-group:hover { filter: brightness(1.35); }
-.onto-map__node-group--active { filter: brightness(1.5); }
-.onto-map__node-ring { transition: stroke-width 0.15s ease, opacity 0.15s ease; }
+.onto-map__node-group:hover { filter: brightness(1.12) saturate(1.15); }
+.onto-map__node-group--active { filter: brightness(1.18) saturate(1.2); }
 .onto-map__node-icon,
-.onto-map__node-label { pointer-events: none; transition: opacity 0.15s ease; }
+.onto-map__node-label { pointer-events: none; }
+.onto-map__node-icon {
+  /* emoji 自带颜色，加轻阴影提高浅色底上的可读性 */
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+}
+
+.onto-map__hint {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  pointer-events: none;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--platform-text-secondary);
+  background: color-mix(in srgb, var(--platform-bg-elevated) 92%, transparent);
+  border: 1px solid var(--platform-border);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
 
 /* ── 遮罩浮层 ── */
 .onto-map__overlay {
@@ -447,7 +534,7 @@ function onTouchEnd() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.32);
   z-index: 30;
   backdrop-filter: blur(3px);
 }
@@ -538,7 +625,6 @@ function onTouchEnd() {
 }
 .onto-map__card-btn:hover { background: color-mix(in srgb, var(--platform-accent) 18%, transparent); border-color: var(--platform-accent); }
 
-/* 浮层动画 */
 .onto-overlay-enter-active,
 .onto-overlay-leave-active { transition: opacity 0.2s ease; }
 .onto-overlay-enter-active .onto-map__card,

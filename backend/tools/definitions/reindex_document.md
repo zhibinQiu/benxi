@@ -1,15 +1,26 @@
 ---
 name: reindex_document
 ---
-reindex_document 工具 — 根据当前任务需求自动调用。
+重建指定文档的解析/向量索引；可选重新同步到知识库。
 
 ## When to use
-- 用户请求与 reindex_document 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 文档内容已变但检索结果仍旧
+- 索引异常、分片错误需要重建
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 首次简单同步（可先试 sync_document_knowledge）
+- 未指定具体文档
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 重建索引结果
+
+## Parameters
+
+### document_id (required)
+文档 ID。
+
+### parser_id (optional)
+指定解析器；通常留空用默认。
+
+### resync (optional)
+重建后是否再同步知识库。默认 false。

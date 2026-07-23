@@ -685,7 +685,7 @@ async def get_valuation(code: str, target_date: str = "") -> list[dict]:
 #  7. 主力资金流向
 # ═════════════════════════════════════════════════════════════════
 
-@_cached("fund_flow", _F10_CACHE_TTL)
+@_cached("fund_flow_v2", _F10_CACHE_TTL)
 async def get_fund_flow(code: str, days: int = 10) -> list[dict]:
     """获取个股主力资金流向（近 N 日）。"""
     try:
@@ -707,22 +707,46 @@ async def get_fund_flow(code: str, days: int = 10) -> list[dict]:
         return await _get_fund_flow_direct(code, days)
 
 
+def _eastmoney_secid(code: str) -> str:
+    """东财 secid：沪市 1.xxxxxx，深市 0.xxxxxx。"""
+    pure = (code or "").split(".")[0].strip()
+    if pure.startswith(("5", "6", "9")):
+        return f"1.{pure}"
+    return f"0.{pure}"
+
+
 async def _get_fund_flow_direct(code: str, days: int) -> list[dict]:
-    """push2 直连 API 获取资金流向。"""
-    secid = f"0.{code}" if code.startswith(("0", "3", "6")) else f"1.{code}"
-    url = (
-        "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get"
-        f"?secid={secid}&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55"
-        f"&klt=101&lmt={days}"
+    """push2 直连 API 获取资金流向（多主机兜底）。"""
+    secid = _eastmoney_secid(code)
+    query = (
+        f"?secid={secid}&fields1=f1,f2,f3,f7"
+        f"&fields2=f51,f52,f53,f54,f55,f56,f57"
+        f"&klt=101&lmt={days}&ut=b2884a393a59ad64002292a3e90d46a5"
     )
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
-    try:
-        async with httpx.AsyncClient(timeout=10, headers=headers) as client:
-            resp = await client.get(url)
-            raw = resp.json()
-    except Exception as e:
-        logger.debug("direct fund flow failed: %s", e)
-        return []
+    # https push2his 在部分网络会断连；http 与 push2delay 作兜底
+    urls = [
+        f"http://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get{query}",
+        f"https://push2delay.eastmoney.com/api/qt/stock/fflow/daykline/get{query}",
+        f"https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get{query}",
+    ]
+    headers = {
+        "User-Agent": _HEADERS["User-Agent"],
+        "Referer": "https://data.eastmoney.com/",
+    }
+    raw: dict | None = None
+    for url in urls:
+        try:
+            async with httpx.AsyncClient(timeout=10, headers=headers, trust_env=False) as client:
+                resp = await client.get(url)
+                candidate = resp.json()
+            klines = (candidate.get("data") or {}).get("klines") if isinstance(candidate, dict) else None
+            if klines:
+                raw = candidate
+                break
+            if raw is None and isinstance(candidate, dict):
+                raw = candidate
+        except Exception as e:
+            logger.debug("direct fund flow failed (%s): %s", url.split("/")[2], e)
 
     klines = raw.get("data", {}).get("klines", []) if raw else []
     result = []
@@ -730,14 +754,16 @@ async def _get_fund_flow_direct(code: str, days: int) -> list[dict]:
         parts = line.split(",")
         if len(parts) >= 5:
             def _f(v: str) -> str:
-                try: return _fmt(float(v))
-                except: return v
+                try:
+                    return _fmt(float(v))
+                except Exception:
+                    return v
             result.append({
                 "date": parts[0],
                 "main_net": _f(parts[1]),
-                "main_net_pct": "",
-                "super_large_net": "",
-                "large_net": "",
+                "main_net_pct": _f(parts[6]) if len(parts) > 6 else "",
+                "super_large_net": _f(parts[5]) if len(parts) > 5 else "",
+                "large_net": _f(parts[4]) if len(parts) > 4 else "",
                 "mid_net": _f(parts[3]),
                 "small_net": _f(parts[2]),
             })
@@ -842,33 +868,44 @@ async def get_northbound_holding(code: str) -> list[dict]:
 #  11. 公告列表（含分红筛选）
 # ═════════════════════════════════════════════════════════════════
 
-@_cached("announce", _F10_CACHE_TTL)
+@_cached("announce_v2", _F10_CACHE_TTL)
 async def get_announcements(code: str) -> list[dict]:
-    """获取最近公告（直连公告 API）。"""
-    market = "SZ" if code.startswith(("0", "3")) else "SH"
-    secucode = f"{market}{code}"
-    url = (
-        "https://np-anotice-stock.eastmoney.com/api/security/announcement"
-        f"?sr=-1&page_size=10&page_index=1&ann_type=A&stock_list={secucode}"
-        "&f_node=0&s_node=0"
-    )
+    """获取最近公告（直连东财公告 API）。"""
+    pure = (code or "").split(".")[0].strip()
+    # /announcement + 市场前缀已失效；现用 /ann + 纯代码
+    urls = [
+        (
+            "https://np-anotice-stock.eastmoney.com/api/security/ann"
+            f"?sr=-1&page_size=10&page_index=1&ann_type=A&client_source=web"
+            f"&stock_list={pure}&f_node=0&s_node=0"
+        ),
+        (
+            "https://np-anotice-stock.eastmoney.com/api/security/announcement"
+            f"?sr=-1&page_size=10&page_index=1&ann_type=A"
+            f"&stock_list={pure}&f_node=0&s_node=0"
+        ),
+    ]
     headers = {
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": _HEADERS["User-Agent"],
         "Referer": "https://emweb.eastmoney.com/",
     }
-    try:
-        async with httpx.AsyncClient(timeout=10, headers=headers) as client:
-            resp = await client.get(url)
-            raw = resp.json()
-    except Exception as e:
-        logger.debug("announcement API failed: %s", e)
-        return []
-    items = raw.get("data", {}).get("list", []) if isinstance(raw, dict) else []
+    items: list = []
+    for url in urls:
+        try:
+            async with httpx.AsyncClient(timeout=10, headers=headers, trust_env=False) as client:
+                resp = await client.get(url)
+                raw = resp.json()
+            candidate = raw.get("data", {}).get("list", []) if isinstance(raw, dict) else []
+            if candidate:
+                items = candidate
+                break
+        except Exception as e:
+            logger.debug("announcement API failed: %s", e)
     result = []
     for item in items[:10]:
         result.append({
-            "title": item.get("title", ""),
-            "date": str(item.get("notice_date", ""))[:10],
+            "title": item.get("title") or item.get("title_ch") or "",
+            "date": str(item.get("notice_date") or item.get("display_time") or "")[:10],
         })
     return result
 

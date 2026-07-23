@@ -131,6 +131,11 @@ function documentTitle(row) {
   const payload = row?.payload || {};
   const title = payload.document_title || payload.title;
   if (title) return title;
+  if (payload.stock_name) {
+    const code = payload.stock_code ? ` (${payload.stock_code})` : "";
+    return `${payload.stock_name}${code}`;
+  }
+  if (payload.subject) return payload.subject;
   return row.document_id || "—";
 }
 

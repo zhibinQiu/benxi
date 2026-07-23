@@ -1,15 +1,22 @@
 ---
 name: delete_document
 ---
-delete_document 工具 — 根据当前任务需求自动调用。
+删除文档库中的文档。破坏性操作，必须 confirm=true。
 
 ## When to use
-- 用户请求与 delete_document 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 用户明确要求删除某文档，并已确认
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 用户未明确确认删除意图
+- 仅移出文件夹（用 move_document）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 删除结果
+
+## Parameters
+
+### document_id (required)
+文档 ID。
+
+### confirm (required)
+必须为 true 才会执行删除。

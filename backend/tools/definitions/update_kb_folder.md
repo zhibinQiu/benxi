@@ -1,15 +1,28 @@
 ---
 name: update_kb_folder
 ---
-update_kb_folder 工具 — 根据当前任务需求自动调用。
+更新文档库文件夹的名称或描述。
 
 ## When to use
-- 用户请求与 update_kb_folder 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 重命名文件夹或修改说明
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 新建文件夹（用 create_kb_folder）
+- 删除文件夹（用 delete_kb_folder）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 更新后的文件夹信息
+
+## Parameters
+
+### scope (optional)
+默认 personal。
+
+### folder_id / folder_name (optional)
+定位目标文件夹。
+
+### name (optional)
+新名称。
+
+### description (optional)
+新说明。

@@ -997,10 +997,10 @@ def _gather_report_simple(
     # 加载知识图谱上下文（多跳推理），供规划器感知实体关系链
     kg_ctx_data = None
     if doc_ids:
-        from app.core.permissions import user_has_permission
+        from app.core.permissions import user_has_semantic_layer_permission
         from app.services.kg_service import retrieve_kg_context_for_question
 
-        if user_has_permission(db, user, "feature.kg"):
+        if user_has_semantic_layer_permission(db, user):
             try:
                 kg_ctx_data = retrieve_kg_context_for_question(
                     db, user, f"{topic} {message}".strip()

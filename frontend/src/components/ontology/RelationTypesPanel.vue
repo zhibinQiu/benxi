@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { h, ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { h, ref, reactive, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useMessage, useDialog } from "naive-ui";
 import { AddOutline, TrashOutline, CreateOutline, EyeOutline } from "@vicons/ionicons5";
@@ -228,7 +228,11 @@ const columns = [
         "a",
         {
           style: { color: "var(--platform-primary, #2080f0)", cursor: "pointer", textDecoration: "underline" },
-          onClick: () => router.push({ name: "kg", query: { relationType: row.code } }),
+          onClick: () =>
+            router.push({
+              name: "ontology",
+              query: { tab: "relations", relationType: row.code },
+            }),
         },
         String(count)
       );
@@ -244,7 +248,11 @@ const columns = [
         default: () => [
           h("n-button", {
               size: "small", quaternary: true,
-              onClick: () => router.push({ name: "kg", query: { relationType: row.code } }),
+              onClick: () =>
+                router.push({
+                  name: "ontology",
+                  query: { tab: "relations", relationType: row.code },
+                }),
             },
             { default: () => "查看实例", icon: () => h(EyeOutline) }),
           h("n-button", { size: "small", quaternary: true, onClick: () => openEdit(row) },

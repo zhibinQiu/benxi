@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import {
   NButton,
   NCard,
-  NDivider,
   NDrawer,
   NDrawerContent,
   NEmpty,
@@ -20,7 +19,7 @@ import {
 import { SettingsOutline, TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../IconAction.vue";
 import AdminFormModal from "../AdminFormModal.vue";
-import { formatAgentDisplayName } from "../../utils/agentDisplay.js";
+import { agentCardCoverUrl, formatAgentDisplayName, hasAgentCardBg } from "../../utils/agentDisplay.js";
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
 import {
@@ -632,73 +631,86 @@ defineExpose({
       :key="agent.id"
       size="small"
       class="agent-card"
-      :class="{ 'agent-card--disabled': !agent.enabled, 'agent-card--clickable': false }"
+      :class="{
+        'agent-card--disabled': !agent.enabled,
+        'agent-card--clickable': false,
+        'agent-card--has-cover': hasAgentCardBg(agent.id),
+      }"
+      :content-style="hasAgentCardBg(agent.id) ? { padding: '0' } : undefined"
     >
       <div
         class="agent-card__progress"
         :class="{ 'agent-card__progress--active': agent.status === 'running' }"
         aria-hidden="true"
       />
-      <div class="agent-card__head">
-        <div class="agent-card__identity">
-          <div class="agent-card-title">{{ formatAgentDisplayName(agent.title) }}</div>
-          <span
-            v-if="agent.status === 'running'"
-            class="agent-card__run-badge"
+      <div
+        v-if="hasAgentCardBg(agent.id)"
+        class="agent-card__cover"
+        :style="{ backgroundImage: `url(${agentCardCoverUrl(agent.id)})` }"
+        aria-hidden="true"
+      />
+      <div class="agent-card__body">
+        <div class="agent-card__head">
+          <div class="agent-card__identity">
+            <div class="agent-card-title">{{ formatAgentDisplayName(agent.title) }}</div>
+            <span
+              v-if="agent.status === 'running'"
+              class="agent-card__run-badge"
+            >
+              {{ agentStatusLabel(agent) }}
+            </span>
+          </div>
+          <span class="agent-card__badge agent-card__badge--builtin">
+            {{ t("admin.agentSkills.builtinAgentTag") }}
+          </span>
+        </div>
+
+        <div class="agent-card__desc-wrap">
+          <NText
+            v-if="agent.description"
+            depth="3"
+            class="agent-card__desc"
+            :title="agent.description"
           >
-            {{ agentStatusLabel(agent) }}
-          </span>
+            {{ agent.description }}
+          </NText>
         </div>
-        <span class="agent-card__badge agent-card__badge--builtin">
-          {{ t("admin.agentSkills.builtinAgentTag") }}
-        </span>
-      </div>
 
-      <div class="agent-card__desc-wrap">
-        <NText
-          v-if="agent.description"
-          depth="3"
-          class="agent-card__desc"
-          :title="agent.description"
-        >
-          {{ agent.description }}
-        </NText>
-      </div>
-
-      <div class="agent-card__bottom" @click.stop>
-        <div class="agent-card__meta">
-          <span class="agent-card__meta-item">
-            {{ t("admin.agentSkills.toolsCount", { count: agent.tool_count }) }}
-          </span>
-          <span class="agent-card__meta-sep" aria-hidden="true">·</span>
-          <span class="agent-card__meta-item">
-            {{ t("admin.agentSkills.skillsCount", { count: agent.skill_names?.length || 0 }) }}
-          </span>
-          <span class="agent-card__meta-sep" aria-hidden="true">·</span>
-          <span class="agent-card__meta-item">
-            {{ t("admin.agentSkills.foldersCount", { count: agent.mount_count ?? 0 }) }}
-          </span>
-          <template v-if="!agent.enabled">
-            <span class="agent-card__meta-sep" aria-hidden="true">·</span>
-            <span class="agent-card__meta-item agent-card__meta-item--warn">
-              {{ t("admin.agentSkills.disabledAgent") }}
+        <div class="agent-card__bottom" @click.stop>
+          <div class="agent-card__meta">
+            <span class="agent-card__meta-item">
+              {{ t("admin.agentSkills.toolsCount", { count: agent.tool_count }) }}
             </span>
-          </template>
-          <template v-else-if="!agent.service_enabled">
             <span class="agent-card__meta-sep" aria-hidden="true">·</span>
-            <span class="agent-card__meta-item agent-card__meta-item--warn">
-              {{ t("admin.agentSkills.serviceClosed") }}
+            <span class="agent-card__meta-item">
+              {{ t("admin.agentSkills.skillsCount", { count: agent.skill_names?.length || 0 }) }}
             </span>
-          </template>
-        </div>
-        <div class="agent-card__actions">
-          <IconAction
-            variant="table"
-            type="primary"
-            :label="t('admin.agentSkills.configure')"
-            :icon="SettingsOutline"
-            @click="openConfigDrawer(agent)"
-          />
+            <span class="agent-card__meta-sep" aria-hidden="true">·</span>
+            <span class="agent-card__meta-item">
+              {{ t("admin.agentSkills.foldersCount", { count: agent.mount_count ?? 0 }) }}
+            </span>
+            <template v-if="!agent.enabled">
+              <span class="agent-card__meta-sep" aria-hidden="true">·</span>
+              <span class="agent-card__meta-item agent-card__meta-item--warn">
+                {{ t("admin.agentSkills.disabledAgent") }}
+              </span>
+            </template>
+            <template v-else-if="!agent.service_enabled">
+              <span class="agent-card__meta-sep" aria-hidden="true">·</span>
+              <span class="agent-card__meta-item agent-card__meta-item--warn">
+                {{ t("admin.agentSkills.serviceClosed") }}
+              </span>
+            </template>
+          </div>
+          <div class="agent-card__actions">
+            <IconAction
+              variant="table"
+              type="primary"
+              :label="t('admin.agentSkills.configure')"
+              :icon="SettingsOutline"
+              @click="openConfigDrawer(agent)"
+            />
+          </div>
         </div>
       </div>
     </NCard>
@@ -916,21 +928,38 @@ defineExpose({
               <n-tab-pane name="skills" :tab="t('admin.agentSkills.tabSkills')">
                 <div class="agent-config-drawer__tab-content">
                   <template v-if="configDrawerAgent?.skills_configurable">
-                    <NText depth="3" class="agent-config-drawer__section-hint" style="margin-bottom: 8px; display: block;">
-                      {{ t("admin.agentSkills.skillPickerHint") }}
-                    </NText>
-                    <div class="agent-skills-picker">
+                    <div v-if="!skillPickerOptions.length" style="padding: 20px 0;">
+                      <NEmpty :description="t('admin.agentSkills.noSkillsAvailable')" />
+                    </div>
+                    <div v-else class="agent-config-drawer__skills-list">
+                      <NText depth="3" class="agent-config-drawer__section-hint">
+                        {{ t("admin.agentSkills.skillPickerHint") }}
+                      </NText>
                       <div
                         v-for="opt in skillPickerOptions"
                         :key="opt.value"
-                        class="agent-skill-chip"
+                        class="agent-skill-item"
                         :class="{
-                          'agent-skill-chip--checked': selectedSkillNames.includes(opt.value),
-                          'agent-skill-chip--disabled': opt.disabled,
+                          'agent-skill-item--checked': selectedSkillNames.includes(opt.value),
+                          'agent-skill-item--disabled': opt.disabled,
                         }"
                         @click="toggleSkillOption(opt)"
                       >
-                        <span class="agent-skill-chip__label">{{ opt.title || opt.name }}</span>
+                        <div class="agent-skill-item__head">
+                          <NCheckbox
+                            :checked="selectedSkillNames.includes(opt.value)"
+                            :disabled="opt.disabled"
+                            tabindex="-1"
+                            @click.prevent
+                          />
+                          <span class="agent-skill-item__name">{{ opt.name }}</span>
+                          <NTag v-if="opt.title && opt.title !== opt.name" size="tiny" :bordered="false">
+                            {{ opt.title }}
+                          </NTag>
+                        </div>
+                        <div v-if="opt.description" class="agent-skill-item__desc">
+                          {{ opt.description }}
+                        </div>
                       </div>
                     </div>
                   </template>
@@ -1261,56 +1290,60 @@ defineExpose({
   line-height: 1.4;
 }
 
-/* ── 技能选择器（chips 网格） ── */
-.agent-skills-picker {
+/* ── 技能列表（与工具列表同构） ── */
+.agent-config-drawer__skills-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
 }
 
-.agent-skill-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  border-radius: 14px;
-  font-size: var(--platform-font-size-sm, 13px);
-  line-height: 1.4;
-  cursor: pointer;
+.agent-skill-item {
   border: 1px solid var(--platform-border, #e0e0e0);
-  background: var(--platform-bg, #fff);
-  color: var(--platform-text, #333);
-  transition: all 0.15s;
+  border-radius: var(--platform-card-radius, 6px);
+  background: #fafafa;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
   user-select: none;
-  white-space: nowrap;
 }
 
-.agent-skill-chip:hover {
+.agent-skill-item:hover {
   border-color: var(--primary-color, #18a058);
-  color: var(--primary-color, #18a058);
 }
 
-.agent-skill-chip--checked {
-  background: var(--primary-color, #18a058);
+.agent-skill-item--checked {
   border-color: var(--primary-color, #18a058);
-  color: #fff;
+  background: color-mix(in srgb, var(--primary-color, #18a058) 8%, #fff);
 }
 
-.agent-skill-chip--checked:hover {
-  opacity: 0.85;
-}
-
-.agent-skill-chip--disabled {
-  opacity: 0.4;
+.agent-skill-item--disabled {
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-.agent-skill-chip--disabled:hover {
+.agent-skill-item--disabled:hover {
   border-color: var(--platform-border, #e0e0e0);
-  color: var(--platform-text, #333);
 }
 
-.agent-skill-chip__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.agent-skill-item__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-skill-item__name {
+  font-size: var(--platform-font-size-sm, 13px);
+  font-weight: 500;
+  color: var(--platform-text, #333);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+}
+
+.agent-skill-item__desc {
+  margin-top: 4px;
+  margin-left: 28px;
+  font-size: var(--platform-font-size-sm, 13px);
+  color: var(--platform-text-tertiary, #999);
+  line-height: 1.4;
 }
 </style>

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -280,20 +281,76 @@ def _format_qa(rows: list[dict]) -> str:
     return "；".join(parts)
 
 
-def _infer_gaps(rows: list[tuple[str, str, str]]) -> list[str]:
+def _extract_soft_hits(web_extra: str, keywords: list[str], *, limit: int = 5) -> str:
+    """从联网补充文本中抽取含关键词的可读要点。"""
+    text = (web_extra or "").strip()
+    if not text:
+        return "—"
+    hits: list[str] = []
+    seen: set[str] = set()
+    for raw_line in text.splitlines():
+        line = re.sub(r"^[#>*\-\d.\s]+", "", raw_line).strip()
+        line = re.sub(r"\s+", " ", line)
+        if len(line) < 16:
+            continue
+        if not any(kw in line for kw in keywords):
+            continue
+        key = line[:48]
+        if key in seen:
+            continue
+        seen.add(key)
+        hits.append(line[:220])
+        if len(hits) >= limit:
+            break
+    if not hits:
+        return "—"
+    return "；".join(hits) + "。【软证据，需公告/财报复核】"
+
+
+def _infer_gaps(
+    rows: list[tuple[str, str, str]],
+    *,
+    web_extra: str = "",
+    industry: str = "",
+) -> list[str]:
     gaps: list[str] = []
     empty_dims = [d for d, v, _ in rows if not v or v == "—"]
     for d in empty_dims:
         gaps.append(f"{d}：本窗口未见结构化记录（不等于不存在，需专题补证）")
-    # 常见外部周期缺口（结构化接口通常覆盖不到）
-    always = [
-        "国网/南网投资计划与招标中标明细（需公告或行业库）",
-        "在手订单金额与产能利用率（需年报/调研纪要）",
-        "自由现金流完整勾稽（若财报指标未返回则需年报 PDF 核对）",
+
+    web = web_extra or ""
+    industry_l = (industry or "").lower()
+    power_related = any(
+        k in (industry or "") or k in web
+        for k in ("电网", "电力", "能源", "电气", "自动化", "国网", "南网", "配网")
+    )
+    conditional: list[tuple[bool, str]] = [
+        (
+            power_related and not any(k in web for k in ("国网", "南网", "招标", "中标")),
+            "国网/南网投资计划与招标中标明细（需公告或行业库）",
+        ),
+        (
+            not any(k in web for k in ("在手订单", "订单金额", "产能利用率", "产能")),
+            "在手订单金额与产能利用率（需年报/调研纪要）",
+        ),
+        (
+            "自由现金流" not in web and not any("现金流" in (v or "") for _, v, _ in rows),
+            "自由现金流完整勾稽（若财报指标未返回则需年报 PDF 核对）",
+        ),
     ]
-    for g in always:
-        if g not in gaps:
+    for need, g in conditional:
+        if need and g not in gaps:
             gaps.append(g)
+
+    # 行业景气类缺口：仅在底稿与联网均未覆盖时提示
+    cycle_kw = ("行业投资", "招标节奏", "库存", "下游", "上游", "材料价格", "景气")
+    if not any(k in web for k in cycle_kw) and not any(k in industry_l for k in ("银行", "保险", "证券")):
+        cycle_gap = (
+            "行业投资额、招标节奏、在手订单、产能利用率、库存、下游景气、上游材料价格"
+            "——若上文未给出结构化数字，一律视为本次未获取到"
+        )
+        if cycle_gap not in gaps:
+            gaps.append(cycle_gap)
     return gaps[:12]
 
 
@@ -363,6 +420,23 @@ def assemble_fact_sheet_md(
         ),
         ("股吧热帖", _cell(_format_guba(f10.get("guba_posts") or []), 500), "东财股吧"),
     ]
+
+    # 从联网补充抽取订单/招标/产能等软证据，尽量补上结构化空缺
+    order_soft = _extract_soft_hits(
+        web_extra,
+        ["在手订单", "订单", "中标", "招标", "国网", "南网", "产能利用率", "产能"],
+    )
+    if order_soft != "—":
+        table_rows.append(("订单/招标/产能（报道）", _cell(order_soft, 500), "web_search/公告交叉"))
+    fcf_soft = _extract_soft_hits(web_extra, ["自由现金流", "经营现金流", "净现金流", "现金流"])
+    if fcf_soft != "—":
+        table_rows.append(("现金流补充（报道）", _cell(fcf_soft, 360), "web_search"))
+    cycle_soft = _extract_soft_hits(
+        web_extra,
+        ["行业投资", "招标节奏", "库存", "下游", "上游", "材料价格", "景气", "市场份额"],
+    )
+    if cycle_soft != "—":
+        table_rows.append(("行业景气补充（报道）", _cell(cycle_soft, 500), "web_search"))
 
     # 业绩预告 / 股东 / 北向 —— 并入表，避免重复拉取
     fc = f10.get("forecast") or []
@@ -456,7 +530,11 @@ def assemble_fact_sheet_md(
     else:
         lines.append("（本次未执行联网补充或未返回有效结果）")
 
-    gaps = _infer_gaps(table_rows)
+    gaps = _infer_gaps(
+        table_rows,
+        web_extra=web_block,
+        industry=str(info.get("industry") or ""),
+    )
     lines.extend([
         "",
         "### 四、需专题补证（本次底稿完全缺失或薄弱的外部/专项数据）",
@@ -467,7 +545,6 @@ def assemble_fact_sheet_md(
     for g in gaps:
         lines.append(f"- {g}")
     lines.extend([
-        "- 行业投资额、招标节奏、在手订单、产能利用率、库存、下游景气、上游材料价格——若上文未给出结构化数字，一律视为**本次未获取到**。",
         "",
         "> 数据源矩阵（主源/兜底）供核验：",
         "",

@@ -96,11 +96,11 @@ function parseReportConclusion(content) {
   if (!raw) return empty;
 
   const sectionMatch = raw.match(
-    /(?:^|\n)#{1,3}\s*先看结论\s*\n([\s\S]*?)(?=\n#{1,3}\s*(?:研究问题|事实底稿|圆桌参与者|研究参与者|第\s*\d\s*轮)|$)/
+    /(?:^|\n)#{1,3}\s*先看结论\s*\n([\s\S]*?)(?=\n#{1,3}\s*(?:3\s*分钟摘要|研究问题|事实底稿|圆桌参与者|研究参与者|详细研究|第\s*\d\s*轮)|$)/
   );
   let block = (sectionMatch?.[1] || raw).trim();
   // 去掉重复的「先看结论」标题与占位
-  block = block.replace(/^#{1,3}\s*先看结论\s*\n+/i, "").trim();
+  block = block.replace(/^(?:#{1,3}\s*先看结论\s*\n+)+/i, "").trim();
 
   const placeholder = /最终研究报告结论将在辩论结束后生成|结论将在/.test(block);
   if (placeholder) {
@@ -110,20 +110,27 @@ function parseReportConclusion(content) {
 
   const lines = block.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   let sentence = "";
+  const foundTags = [];
   for (const line of lines) {
     if (/^#{1,3}\s/.test(line)) continue;
-    if (/^[-*•]\s/.test(line)) continue;
-    if (/^三条要点/.test(line)) break;
+    if (/^三条要点/.test(line)) continue;
+    const bullet = line.match(/^[-*•]\s*(.+)$/);
+    if (bullet) {
+      const item = bullet[1];
+      for (const label of CONCLUSION_TAGS) {
+        if (item.includes(label) && !foundTags.includes(label)) foundTags.push(label);
+      }
+      continue;
+    }
     const cleaned = line.replace(/^>\s*/, "").replace(/^\*+|\*+$/g, "").trim();
-    if (cleaned.length >= 12) {
+    if (cleaned.length >= 12 && !sentence) {
       sentence = cleaned;
-      break;
     }
   }
 
   const full = sentence || "报告已生成，点击阅读查看完整研究结论。";
   return {
-    tags: [...CONCLUSION_TAGS],
+    tags: foundTags.length ? foundTags : [...CONCLUSION_TAGS],
     title: shortenConclusion(full),
     sentence: full,
   };

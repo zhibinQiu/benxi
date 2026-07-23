@@ -113,3 +113,50 @@ def test_cancel_stale_background_jobs_skips_fresh_pending():
         assert job.status == JobStatus.pending.value
     finally:
         db.close()
+
+
+def test_cancel_stale_skips_document_index_awaiting_parse():
+    from sqlalchemy import select
+
+    from app.core.phone import bootstrap_login_id
+    from app.database import SessionLocal
+    from app.models.org import User
+    from app.services.document_index_coordinator import enter_awaiting_parse_phase
+
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.phone == bootstrap_login_id()))
+        assert user is not None
+        job = create_job(
+            db,
+            job_type=JobType.document_index.value,
+            created_by=user.id,
+        )
+        job.status = JobStatus.running.value
+        job.started_at = datetime.now(timezone.utc) - timedelta(hours=2)
+        job.progress = 90
+        job.payload = enter_awaiting_parse_phase(
+            {},
+            dataset_id="ds-1",
+            ragflow_document_id="rid-1",
+            mode="reindex",
+            version_id_raw=None,
+        )
+        db.add(job)
+        db.commit()
+
+        settings = MagicMock(
+            background_job_stale_watchdog_enabled=True,
+            background_job_stale_minutes=30,
+        )
+        with patch(
+            "app.services.job_watchdog_service.get_settings", return_value=settings
+        ):
+            count = cancel_stale_background_jobs()
+
+        assert count == 0
+        db.refresh(job)
+        assert job.status == JobStatus.running.value
+        assert job.progress == 90
+    finally:
+        db.close()

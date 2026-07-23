@@ -1,38 +1,6 @@
-/** 双碳助手 API */
+/** 双碳助手 — 资讯报告 API（履约策略见 carbonCompliance.js） */
 
 import { api } from "./http.js";
-
-/** ── 碳交易 ── */
-
-export function fetchTradingSnapshot(keyword = "") {
-  const q = keyword ? `?keyword=${encodeURIComponent(keyword)}` : "";
-  return api(`/api/v1/carbon-assistant/trading/snapshot${q}`);
-}
-
-export function fetchCarbonPrice(keyword = "", url = "") {
-  const params = new URLSearchParams();
-  if (keyword) params.set("keyword", keyword);
-  if (url) params.set("url", url);
-  const qs = params.toString();
-  return api(`/api/v1/carbon-assistant/trading/price${qs ? `?${qs}` : ""}`);
-}
-
-export function fetchCarbonPolicy(keyword = "", url = "") {
-  const params = new URLSearchParams();
-  if (keyword) params.set("keyword", keyword);
-  if (url) params.set("url", url);
-  const qs = params.toString();
-  return api(`/api/v1/carbon-assistant/trading/policy${qs ? `?${qs}` : ""}`);
-}
-
-export function fetchCarbonData(topic, keyword = "", url = "") {
-  const params = new URLSearchParams({ topic });
-  if (keyword) params.set("keyword", keyword);
-  if (url) params.set("url", url);
-  return api(`/api/v1/carbon-assistant/trading/data?${params.toString()}`);
-}
-
-/** ── 报告 / 策略 ── */
 
 export function submitCarbonReport(payload) {
   return api("/api/v1/carbon-assistant/report", {
@@ -62,6 +30,7 @@ export function deleteCarbonReport(reportId) {
   return api(`/api/v1/carbon-assistant/report/${reportId}`, { method: "DELETE" });
 }
 
+/** 公开分享链接（维基风 HTML，与理财助手同款渲染） */
 export function getCarbonReportShareUrl(shareToken) {
   if (!shareToken) return "";
   const base = "/ai";
@@ -72,45 +41,26 @@ export function getCarbonReportShareUrl(shareToken) {
 export async function viewCarbonReport(reportId, shareToken) {
   const { openExternal } = await import("../utils/openExternal.js");
   let token = shareToken;
-  if (!token) {
+  if (!token && reportId) {
     try {
       const detail = await fetchCarbonReportDetail(reportId);
-      token = detail?.share_token || detail?.data?.share_token;
+      token = detail?.share_token;
     } catch {
       /* ignore */
     }
   }
-  if (token) {
-    openExternal(getCarbonReportShareUrl(token));
-    return;
-  }
-  const { getApiBase, getToken } = await import("./http.js");
-  const auth = getToken();
-  const base = (getApiBase() || "/ai").replace(/\/$/, "");
-  const url = `${window.location.origin}${base}/api/v1/carbon-assistant/report/${reportId}/view`;
-  if (auth) {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${auth}` },
-      redirect: "manual",
-    });
-    const loc = res.headers.get("Location");
-    if (loc) {
-      openExternal(loc.startsWith("http") ? loc : `${window.location.origin}${loc}`);
-      return;
-    }
-  }
-  openExternal(url);
+  if (!token) throw new Error("无法获取报告分享链接");
+  openExternal(getCarbonReportShareUrl(token));
 }
 
 export async function downloadCarbonReport(reportId) {
   const { getApiBase, getToken } = await import("./http.js");
-  const { default: downloadBlob } = await import("../utils/downloadBlob.js");
+  const { downloadBlob } = await import("../utils/downloadBlob.js");
   const base = getApiBase();
   const token = getToken();
-  const res = await fetch(
-    `${base}/api/v1/carbon-assistant/report/${reportId}/download`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-  );
+  const res = await fetch(`${base}/api/v1/carbon-assistant/report/${reportId}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) throw new Error("下载失败");
   const blob = await res.blob();
   downloadBlob(blob, `carbon_report_${String(reportId).slice(0, 8)}.md`);

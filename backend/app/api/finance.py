@@ -290,7 +290,11 @@ def view_report(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    """登录态查看：跳转到公开分享链接（可单独打开、可转发）。"""
+    """登录态查看：跳转到公开分享链接（可单独打开、可转发）。
+
+    浏览器直接打开本 URL 时须带 Authorization 或 ?token= / ?access_token=，
+    否则会 401。前端应优先打开 /api/v1/share/finance/{share_token}。
+    """
     r = svc.get_report(db, report_id)
     if not r or r.user_id != user.id:
         raise HTTPException(status_code=404, detail="报告不存在")

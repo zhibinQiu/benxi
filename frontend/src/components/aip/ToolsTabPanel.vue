@@ -1,6 +1,6 @@
 <script setup>
 import { computed, h, nextTick, onMounted, ref, watch } from "vue";
-import { NButton, NDataTable, NDivider, NDrawer, NDrawerContent, NIcon, NInput, NPagination, NSpace, NTag, NText, NSelect } from "naive-ui";
+import { NDataTable, NDivider, NDrawer, NDrawerContent, NInput, NPagination, NSpace, NTag, NText, NSelect } from "naive-ui";
 import { EyeOutline, RefreshOutline, SearchOutline } from "@vicons/ionicons5";
 import IconAction from "../IconAction.vue";
 import { useClientListPagination } from "../../composables/useClientListPagination.js";

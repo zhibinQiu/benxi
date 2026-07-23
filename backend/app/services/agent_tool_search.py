@@ -223,13 +223,18 @@ def select_visible_tool_specs(
     all_specs: list[dict[str, Any]],
     *,
     agent_id: str | None = None,
+    user_message: str | None = None,
 ) -> list[dict[str, Any]]:
     """暴露本轮 ``all_specs``（调用方已按该 Agent 已挂载工具裁剪）。
 
     - 父编排：挂载集 − 技能直执入口；执行仍由 tool loop 委托子智能体
     - 专精：挂载集整表可见（skill-dev/report 隐藏 run_tool_batch）
+    - 未明确要求「记住」时隐藏 append_agent_memory
     """
+    from app.services.agent_skill_router import should_write_memory
+
     aid = (agent_id or "").strip()
+    allow_memory_write = should_write_memory(user_message or "")
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -238,6 +243,8 @@ def select_visible_tool_specs(
         if not name or name in seen:
             continue
         if name == "run_tool_batch" and aid in ("skill-dev", "report"):
+            continue
+        if name == "append_agent_memory" and not allow_memory_write:
             continue
         out.append(attach_tool_examples(spec))
         seen.add(name)
@@ -291,14 +298,13 @@ async def execute_describe_tool(
             ensure_ascii=False,
         )
 
-    # 可见性：仅已挂载到当前 Agent 的工具（优先本轮 specs，回退默认挂载表）
+    # 可见性：已挂载到当前 Agent 的工具（父编排用可发现挂载集，非 LLM 可调用集）
     agent_id = None
     if loop_state:
         agent_id = str(loop_state.get("agent_id") or "").strip() or None
-        mounted_specs = loop_state.get("_all_tool_specs") or []
-        if mounted_specs:
-            mounted_now = {tool_spec_name(s) for s in mounted_specs if tool_spec_name(s)}
-            if n not in mounted_now:
+        discoverable = loop_state.get("_discoverable_tool_names")
+        if isinstance(discoverable, (set, list, tuple, frozenset)) and discoverable:
+            if n not in {str(x).strip() for x in discoverable if str(x).strip()}:
                 return json.dumps(
                     {
                         "ok": False,
@@ -378,8 +384,7 @@ async def execute_describe_tool(
     next_hint = (
         f"✅ 工具 `{n}` 已在当前智能体挂载集中。"
         + (
-            "父编排发起调用时由运行时委托子智能体执行；"
-            "或显式 `invoke_context_subagent(kind=execute|search|use)`。"
+            "父编排不可直调；请用 `invoke_context_subagent(kind=search|use|execute)` 委托执行。"
             if parent
             else "可直接调用。"
         )

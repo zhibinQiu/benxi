@@ -107,8 +107,10 @@ async def _collect_stock_facts(
     for q, sr in zip(search_queries, search_results):
         if isinstance(sr, Exception):
             continue
-        if sr and sr.ok and sr.summary:
-            search_parts.append(f"### 补充搜索：{q[:48]}\n\n{sr.summary[:1800]}")
+        if sr and sr.ok:
+            formatted = _format_web_search_block(q, sr)
+            if formatted:
+                search_parts.append(formatted)
     web_extra = "\n\n".join(search_parts)
 
     # 全模式都拉实时行情；短线/量价再附 K 线近端样本
@@ -120,12 +122,30 @@ async def _collect_stock_facts(
             params={"codes": pure_code},
             skill_id="stock_quote",
         )
+        quote_payload: dict | list | None = None
+        quote_summary = ""
         if quote_res and quote_res.ok:
             payload = quote_res.data if isinstance(quote_res.data, dict) else {}
+            quotes = payload.get("quotes") or []
+            if quotes:
+                quote_payload = quotes
+                quote_summary = quote_res.summary or "已获取行情"
+        if quote_payload is None:
+            # tool 失败时直连腾讯快照（含休市昨收）
+            try:
+                from app.services.finance_f10 import _quote_from_tencent
+
+                snap = await _quote_from_tencent(pure_code)
+                if snap and (snap.get("price") is not None or snap.get("prev_close") is not None):
+                    quote_payload = snap
+                    quote_summary = "已获取行情快照（腾讯，含休市收盘价）"
+            except Exception as snap_exc:
+                logger.warning("_collect_stock_facts quote fallback failed: %s", snap_exc)
+        if quote_payload is not None:
             market_chunks.append(
                 "### 实时行情（stock_quote / 腾讯）\n\n"
-                f"{quote_res.summary}\n\n"
-                f"```json\n{_truncate_json(payload.get('quotes') or payload)}\n```"
+                f"{quote_summary}\n\n"
+                f"```json\n{_truncate_json(quote_payload)}\n```"
             )
         else:
             market_chunks.append("### 实时行情（stock_quote）\n\n本次未获取到有效行情数据。")
@@ -194,6 +214,57 @@ async def _collect_stock_facts(
     }
 
 
+def _format_web_search_block(query: str, sr: Any) -> str:
+    """将 web_search 结果格式化为可读要点（标题/链接/摘要），而非过程统计。"""
+    lines = [f"### 补充搜索：{query[:48]}", ""]
+    data = sr.data if isinstance(getattr(sr, "data", None), dict) else {}
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list) or not items:
+        summary = str(getattr(sr, "summary", "") or "").strip()
+        if summary:
+            lines.append(summary[:500])
+        else:
+            lines.append("（本次检索未返回有效条目）")
+        return "\n".join(lines)
+
+    for i, it in enumerate(items[:5], 1):
+        if not isinstance(it, dict):
+            continue
+        title = str(it.get("title") or "").strip() or "无标题"
+        url = str(it.get("url") or "").strip()
+        full = re.sub(r"\s+", " ", str(it.get("full_text") or "").strip())
+        snippet = re.sub(r"\s+", " ", str(it.get("snippet") or "").strip())
+        body = (full[:420] if full else snippet[:320]) or ""
+        lines.append(f"{i}. **{title}**")
+        if url:
+            lines.append(f"   - 链接：{url}")
+        if body:
+            lines.append(f"   - 要点：{body}")
+
+    verification = data.get("verification") if isinstance(data, dict) else None
+    if isinstance(verification, list) and verification:
+        lines.append("")
+        lines.append("交叉核对主张：")
+        for v in verification[:5]:
+            if not isinstance(v, dict):
+                continue
+            claim = str(v.get("text") or v.get("claim") or "").strip()
+            if claim:
+                lines.append(f"- {claim[:200]}")
+
+    text = "\n".join(lines)
+    return text[:4500]
+
+
+def _strip_section_heading(text: str, heading: str) -> str:
+    """去掉模型可能重复输出的章节标题。"""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    pattern = rf"^#{{1,3}}\s*{re.escape(heading)}\s*\n+"
+    return re.sub(pattern, "", s, count=1, flags=re.IGNORECASE).strip()
+
+
 def _fill_placeholders(
     md_path: str,
     *,
@@ -202,6 +273,8 @@ def _fill_placeholders(
 ) -> None:
     """回填「先看结论」与「3 分钟摘要」占位块。"""
     current = _read_md(md_path)
+    brief = _strip_section_heading(brief, "先看结论")
+    summary = _strip_section_heading(summary, "3 分钟摘要")
     if brief and "<!--CONCLUSION_START-->" in current and "<!--CONCLUSION_END-->" in current:
         current = re.sub(
             r"<!--CONCLUSION_START-->.*?<!--CONCLUSION_END-->",
@@ -565,6 +638,10 @@ _CARBON_NEWS_KW = (
     "新闻", "资讯", "日报", "快讯", "头条", "动态", "解读",
     "今日要闻", "每日碳", "碳引擎", "碳道",
 )
+_CARBON_FORECAST_KW = (
+    "预测", "至年底", "到年底", "外推", "走势预测", "价格预测",
+    "forecast", "prophet", "sarimax", "holt", "ets",
+)
 _CARBON_PRICE_KW = (
     "碳价", "成交价", "收盘价", "开盘价", "成交量", "成交额",
     "cea", "挂牌协议", "配额价格", "行情",
@@ -579,13 +656,33 @@ _CARBON_LOCAL_KW = ("地方", "省市", "省级", "碳达峰方案", "零碳录"
 _CARBON_EMISSION_KW = ("排放", "核算", "排放因子", "温室气体", "碳足迹", "mrv")
 
 
+def _carbon_forecast_method(question: str) -> str:
+    q = (question or "").strip().lower()
+    if "prophet" in q:
+        return "prophet"
+    if "sarimax" in q or "arima" in q:
+        return "sarimax"
+    if "ets" in q or "holt" in q or "指数平滑" in q:
+        return "ets"
+    return "rule"
+
+
+def _carbon_forecast_series(question: str) -> str:
+    q = (question or "").strip().lower()
+    if "ccer" in q or "自愿减排" in q:
+        return "ccer"
+    return "cea"
+
+
 def _classify_carbon_question(question: str) -> str:
-    """返回 news | price | policy | emission | ccer | international | local | general。"""
+    """返回 news | forecast | price | policy | emission | ccer | international | local | general。"""
     q = (question or "").strip().lower()
     if not q:
         return "general"
     if any(kw in q for kw in _CARBON_NEWS_KW):
         return "news"
+    if any(kw in q for kw in _CARBON_FORECAST_KW):
+        return "forecast"
     if any(kw in q for kw in _CARBON_PRICE_KW):
         return "price"
     if any(kw in q for kw in _CARBON_POLICY_KW):
@@ -642,7 +739,17 @@ async def handle_carbon_qa_ask(
         progress(15, "正在从官方源获取双碳数据...")
 
     tool_calls: list[tuple[str, dict[str, Any]]] = []
-    if kind == "price":
+    if kind == "forecast":
+        tool_calls.append(
+            (
+                "time_series_forecast",
+                {
+                    "method": _carbon_forecast_method(question),
+                    "series": _carbon_forecast_series(question),
+                },
+            )
+        )
+    elif kind == "price":
         tool_calls.append(("carbon_price", {"keyword": question[:80]}))
     elif kind == "policy":
         tool_calls.append(("carbon_policy", {"keyword": question[:80]}))
@@ -669,7 +776,23 @@ async def handle_carbon_qa_ask(
         if res and res.ok:
             any_ok = True
             payload = res.data if isinstance(res.data, dict) else {}
-            md = str(payload.get("summary_md") or res.summary or "")[:6000]
+            md = str(payload.get("summary_md") or "").strip()
+            if not md and tid == "time_series_forecast":
+                s = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+                series = str(payload.get("series") or "").upper()
+                method = payload.get("method") or ""
+                md = (
+                    f"## {series} 时序预测（{method}）\n"
+                    f"- 锚定收盘：{s.get('last_close')}\n"
+                    f"- 预测年底：{s.get('year_end_price')}（带 {s.get('year_end_low')}~{s.get('year_end_high')}）\n"
+                    f"- 预测高点：{s.get('peak_price')}（{s.get('peak_date')}）\n"
+                    f"- 预测低点：{s.get('trough_price')}（{s.get('trough_date')}）\n"
+                    f"- 交易日数：{s.get('trading_days')}"
+                )
+            if not md:
+                md = str(res.summary or "")[:6000]
+            else:
+                md = md[:6000]
             parts.append(f"### {tid}\n\n{md}")
         else:
             err = (res.summary if res else "无结果") or "无结果"
@@ -689,6 +812,427 @@ async def handle_carbon_qa_ask(
         summary=summary,
         data={"kind": kind, "question": question, "tools": [t for t, _ in tool_calls]},
         error=None if any_ok else ("all_tools_failed" if kind != "general" else None),
+    )
+
+
+_PLATFORM_CITATION_IMAGE_PREFIX = "/api/v1/knowledge/citations/images/"
+_PLATFORM_CITATION_IMAGE_MD_RE = re.compile(
+    rf"!\[([^\]]*)\]\(({re.escape(_PLATFORM_CITATION_IMAGE_PREFIX)}[^)]+)\)"
+)
+_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+_HTML_IMG_RE = re.compile(r"<img\b[^>]*/?>", re.I)
+_KNOWFLOW_IMAGE_PATH_RE = re.compile(
+    r"(?:/v1)?/document/image/([^?\s#]+)"
+    r"|/api/v1/documents/images/([^?\s#]+)"
+    r"|/documents/images/([^?\s#]+)"
+    r"|/knowledge/citations/images/([^?\s#]+)",
+    re.I,
+)
+
+
+def _platform_citation_image_url(image_id: str) -> str:
+    from urllib.parse import quote, unquote
+
+    iid = unquote(str(image_id or "").strip())
+    if not iid:
+        return ""
+    return f"{_PLATFORM_CITATION_IMAGE_PREFIX}{quote(iid, safe='-_.~/')}"
+
+
+def _extract_image_id_from_url(url: str) -> str:
+    from urllib.parse import unquote
+
+    u = str(url or "").strip()
+    if not u:
+        return ""
+    if _PLATFORM_CITATION_IMAGE_PREFIX in u:
+        tail = u.split(_PLATFORM_CITATION_IMAGE_PREFIX, 1)[-1]
+        return unquote(tail.split("?", 1)[0].split("#", 1)[0])
+    m = _KNOWFLOW_IMAGE_PATH_RE.search(u)
+    if not m:
+        return ""
+    return unquote(next(g for g in m.groups() if g))
+
+
+def _normalize_chat_image_url(url: str) -> str:
+    """把文档图改写为聊天可鉴权渲染的 URL；无法代理的内网路径返回空。"""
+    u = str(url or "").strip().strip("\"'")
+    if not u:
+        return ""
+    if u.startswith("data:image/"):
+        return u
+    if _PLATFORM_CITATION_IMAGE_PREFIX in u:
+        idx = u.find(_PLATFORM_CITATION_IMAGE_PREFIX)
+        return u[idx:]
+    iid = _extract_image_id_from_url(u)
+    if iid and (
+        "document/image" in u
+        or "documents/images" in u
+        or "citations/images" in u
+        or u.startswith("/")
+    ):
+        return _platform_citation_image_url(iid)
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    if iid:
+        return _platform_citation_image_url(iid)
+    return ""
+
+
+def _rewrite_media_for_chat(text: str) -> str:
+    """将 ![](...) / <img> 改写为平台 citations/images 代理，供前端 Bearer→blob 渲染。"""
+
+    def _repl_md(match: re.Match[str]) -> str:
+        alt, src = match.group(1), match.group(2)
+        normalized = _normalize_chat_image_url(src)
+        if not normalized:
+            return ""
+        return f"![{alt}]({normalized})"
+
+    def _repl_html(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        src_m = re.search(r"""src\s*=\s*["']([^"']+)["']""", tag, re.I)
+        if not src_m:
+            return ""
+        normalized = _normalize_chat_image_url(src_m.group(1))
+        if not normalized:
+            return ""
+        alt_m = re.search(r"""alt\s*=\s*["']([^"']*)["']""", tag, re.I)
+        alt = (alt_m.group(1) if alt_m else "") or "文档图"
+        return f"![{alt}]({normalized})"
+
+    out = _MD_IMAGE_RE.sub(_repl_md, text or "")
+    out = _HTML_IMG_RE.sub(_repl_html, out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
+
+
+def _hit_image_markdowns(hit: dict) -> list[str]:
+    blocks: list[str] = []
+    seen: set[str] = set()
+    image_id = str(hit.get("image_id") or "").strip()
+    if image_id:
+        url = _platform_citation_image_url(image_id)
+        if url and url not in seen:
+            seen.add(url)
+            blocks.append(f"![文档截图]({url})")
+    for img in hit.get("inline_images") or []:
+        if not isinstance(img, dict):
+            continue
+        url = _normalize_chat_image_url(str(img.get("url") or ""))
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        alt = (
+            str(img.get("alt") or img.get("description") or "文档内嵌图").strip()
+            or "文档内嵌图"
+        )
+        blocks.append(f"![{alt}]({url})")
+    return blocks
+
+
+def _rewrite_inline_images_for_chat(images: Any) -> list[dict]:
+    out: list[dict] = []
+    if not isinstance(images, list):
+        return out
+    for img in images:
+        if not isinstance(img, dict):
+            continue
+        url = _normalize_chat_image_url(str(img.get("url") or ""))
+        if not url:
+            continue
+        out.append(
+            {
+                "url": url,
+                "alt": str(img.get("alt") or ""),
+                "description": str(img.get("description") or ""),
+            }
+        )
+    return out
+
+
+def _ensure_platform_images_in_answer(answer: str, source_md: str) -> str:
+    """综合后若模型丢掉平台图，把笔记里的代理图补回答案。"""
+    text = _rewrite_media_for_chat(answer)
+    present = {m.group(2) for m in _PLATFORM_CITATION_IMAGE_MD_RE.finditer(text)}
+    missing: list[str] = []
+    for m in _PLATFORM_CITATION_IMAGE_MD_RE.finditer(source_md or ""):
+        url = m.group(2)
+        if url not in present and url not in missing:
+            missing.append(url)
+    if not missing:
+        return text
+    parts = [text.rstrip(), "", "### 相关文档图", ""]
+    for url in missing[:8]:
+        parts.append(f"![文档图]({url})")
+    return "\n".join(parts).strip()
+
+
+def _knowledge_qa_format_hits(hits: list[Any], *, limit: int = 5) -> tuple[str, list[dict]]:
+    if not hits:
+        return "无命中片段", []
+    lines: list[str] = []
+    citations: list[dict] = []
+    for i, hit in enumerate(hits[:limit], start=1):
+        if not isinstance(hit, dict):
+            continue
+        title = str(hit.get("doc_title") or hit.get("title") or "文档")[:80]
+        snippet = _rewrite_media_for_chat(
+            str(hit.get("content") or hit.get("text") or hit.get("snippet") or "")
+        )[:1200]
+        image_blocks = _hit_image_markdowns(hit)
+        for block in image_blocks:
+            if block.split("(", 1)[-1].rstrip(")") not in snippet:
+                snippet = f"{snippet}\n\n{block}".strip() if snippet else block
+        lines.append(f"{i}. **{title}**\n{snippet}")
+        citations.append(
+            {
+                "index": i,
+                "document_id": hit.get("document_id"),
+                "title": title,
+                "snippet": str(hit.get("snippet") or hit.get("content") or "")[:2000],
+                "score": hit.get("score"),
+                "anchor_json": hit.get("anchor_json"),
+                "chunk_id": hit.get("chunk_id"),
+                "dataset_id": hit.get("dataset_id"),
+                "image_id": hit.get("image_id"),
+                "inline_images": _rewrite_inline_images_for_chat(hit.get("inline_images")),
+                "preview_available": hit.get("preview_available"),
+                "ragflow_document_id": hit.get("ragflow_document_id"),
+                "source": hit.get("source") or "knowflow",
+                "file_name": hit.get("file_name"),
+                "file_format": hit.get("file_format"),
+            }
+        )
+    return ("\n\n".join(lines) if lines else "无命中片段"), citations
+
+
+def _knowledge_qa_format_web_items(items: list[Any], *, limit: int = 5) -> tuple[str, list[dict]]:
+    """Format web_search items into markdown + citations."""
+    if not items:
+        return "无联网命中", []
+    lines: list[str] = []
+    citations: list[dict] = []
+    for i, item in enumerate(items[:limit], start=1):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or item.get("url") or "来源")[:120]
+        url = str(item.get("url") or "").strip()
+        snippet = _rewrite_media_for_chat(
+            str(
+                item.get("full_text")
+                or item.get("snippet")
+                or item.get("content")
+                or ""
+            )
+        )[:800]
+        if url:
+            lines.append(f"{i}. [{title}]({url})\n{snippet}")
+            citations.append({
+                "index": i,
+                "title": title,
+                "url": url,
+                "source": "web",
+            })
+        else:
+            lines.append(f"{i}. **{title}**\n{snippet}")
+    return ("\n\n".join(lines) if lines else "无联网命中"), citations
+
+
+def _notebook_append(notebook: list[str], title: str, body: str) -> None:
+    """把一步工具结果追加到内存工作笔记（不落盘）。"""
+    text = _rewrite_media_for_chat(body or "").strip() or "（本步无有效内容）"
+    notebook.append(f"## {title}\n\n{text}")
+
+
+async def _knowledge_qa_deep_search(
+    ctx: SkillInvocationContext, question: str
+) -> tuple[bool, str, list[dict]]:
+    """DeepSearch：联网检索并读前若干条全文（单次工具，不启多轮 search 子智能体）。"""
+    from app.tool_center.skill_bridge import invoke_atomic_tool
+
+    res = await invoke_atomic_tool(
+        ctx,
+        tool_id="web_search",
+        params={
+            "query": question[:200],
+            "max_items": 6,
+            "read_full": 2,
+        },
+        skill_id="web_search",
+        success_summary=f"DeepSearch「{question[:40]}」完成",
+    )
+    if not res or not res.ok:
+        err = (res.summary if res else "无结果") or "无结果"
+        return False, err[:500], []
+    payload = res.data if isinstance(res.data, dict) else {}
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    if not items:
+        for key in ("results", "hits", "web_items"):
+            raw = payload.get(key)
+            if isinstance(raw, list) and raw:
+                items = raw
+                break
+    body, citations = _knowledge_qa_format_web_items(items)
+    return True, body, citations
+
+
+async def _knowledge_qa_simple_retrieve(
+    ctx: SkillInvocationContext, question: str, params: dict[str, Any]
+) -> tuple[bool, str, list[dict]]:
+    """一次简单知识库检索。"""
+    from app.tool_center.skill_bridge import invoke_atomic_tool
+
+    kb_params: dict[str, Any] = {"query": question, "limit": 6}
+    doc_ids = _resolve_doc_ids(ctx, params)
+    if doc_ids:
+        kb_params["doc_ids"] = [str(x) for x in doc_ids]
+    res = await invoke_atomic_tool(
+        ctx,
+        tool_id="knowledge_retrieve",
+        params=kb_params,
+        skill_id="knowledge_retrieve",
+        success_summary=f"知识库检索「{question[:40]}」完成",
+    )
+    if not res or not res.ok:
+        err = (res.summary if res else "无结果") or "无结果"
+        return False, err[:500], []
+    payload = res.data if isinstance(res.data, dict) else {}
+    hits = payload.get("hits") if isinstance(payload.get("hits"), list) else []
+    body, citations = _knowledge_qa_format_hits(hits)
+    return True, body, citations
+
+
+async def _knowledge_qa_synthesize_answer(question: str, notebook_md: str) -> str:
+    """根据内存工作笔记综合最终用户回答（不输出笔记本身）。"""
+    from app.integrations.deepseek_client import chat_completion_message_async, is_configured
+
+    if not is_configured():
+        return _ensure_platform_images_in_answer(
+            "已完成检索，但当前未配置对话模型，无法自动综合结论。"
+            "请根据以下要点自行判断：\n\n" + notebook_md[:3000],
+            notebook_md,
+        )
+
+    system = (
+        "你是本析智能的知识问答综合器。用户看不到工作笔记。"
+        "请仅根据工作笔记中的工具结果，用简洁中文直接回答用户问题。"
+        "要求：\n"
+        "1. 只输出最终答案，不要复述「工作笔记」「事实底稿」「DeepSearch」等过程标题；\n"
+        "2. 关键事实附来源链接（若笔记中有）；\n"
+        "3. 笔记缺口处如实说明「未检索到」，禁止编造；\n"
+        "4. 笔记中出现的文档图 Markdown 必须原样保留，尤其是 "
+        "`![...](/api/v1/knowledge/citations/images/...)`；"
+        "把相关图紧挨对应论述放置；不要改写图片 URL；\n"
+        "5. 结论冲突时明确标注分歧。"
+    )
+    user = (
+        f"用户问题：{question}\n\n"
+        f"## 工作笔记（内部材料，请综合后给出答案，勿照抄结构）\n\n"
+        f"{notebook_md[:10000]}"
+    )
+    choice = await chat_completion_message_async(
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.3,
+    )
+    msg = (choice or {}).get("message") or {}
+    answer = str(msg.get("content") or "").strip()
+    return (
+        _ensure_platform_images_in_answer(answer, notebook_md)
+        or "未能根据检索材料生成有效结论。"
+    )
+
+
+async def handle_knowledge_qa_ask(
+    ctx: SkillInvocationContext, params: dict[str, Any]
+) -> SkillInvocationResult:
+    """知识问答：DeepSearch → 简单知识库检索 → 写入内存 MD → 综合最终答案（不展示底稿）。"""
+    question = str(
+        params.get("question") or params.get("query") or params.get("ask") or ""
+    ).strip()
+    if not question:
+        return SkillInvocationResult(False, "缺少 question", error="missing_question")
+
+    progress = ctx.progress_callback
+    notebook: list[str] = [f"# 工作笔记\n\n**问题**：{question}\n"]
+    channels_ok: list[str] = []
+    citations: list[dict] = []
+
+    # 1) DeepSearch（联网优先）
+    if progress:
+        progress(15, "DeepSearch 联网检索中...")
+    try:
+        web_ok, web_body, web_cites = await _knowledge_qa_deep_search(ctx, question)
+    except Exception as exc:
+        web_ok, web_body, web_cites = False, f"调用失败：{exc}", []
+    _notebook_append(notebook, "DeepSearch 联网检索", web_body)
+    if web_ok:
+        channels_ok.append("deep_search")
+        citations.extend(web_cites)
+
+    # 2) 一次简单知识库检索
+    if progress:
+        progress(55, "知识库简单检索中...")
+    try:
+        kb_ok, kb_body, kb_cites = await _knowledge_qa_simple_retrieve(ctx, question, params)
+    except Exception as exc:
+        kb_ok, kb_body, kb_cites = False, f"调用失败：{exc}", []
+    _notebook_append(notebook, "知识库检索", kb_body)
+    if kb_ok:
+        channels_ok.append("knowledge")
+        # 知识库引用编号接在联网引用之后
+        base = len(citations)
+        for cite in kb_cites:
+            if not isinstance(cite, dict):
+                continue
+            item = dict(cite)
+            try:
+                item["index"] = base + int(item.get("index") or 1)
+            except (TypeError, ValueError):
+                item["index"] = base + 1
+            citations.append(item)
+
+    notebook_md = "\n\n".join(notebook)
+    if progress:
+        progress(80, "综合分析得出结论...")
+
+    any_ok = bool(channels_ok)
+    if not any_ok:
+        return SkillInvocationResult(
+            ok=False,
+            summary="知识问答未获取到有效材料",
+            data={
+                "question": question,
+                "channels": [],
+                "citations": [],
+                "answer": "本次 DeepSearch 与知识库检索均未获得有效材料，请稍后再试或换个问法。",
+            },
+            error="all_channels_failed",
+        )
+
+    try:
+        answer = await _knowledge_qa_synthesize_answer(question, notebook_md)
+    except Exception as exc:
+        answer = f"材料已备齐，但综合分析失败：{exc}"
+
+    answer = _ensure_platform_images_in_answer(answer, notebook_md)
+    if progress:
+        progress(95, "知识问答完成")
+
+    return SkillInvocationResult(
+        ok=True,
+        # summary 仅作流程短状态；用户可见答案在 data.answer
+        summary="知识问答完成",
+        data={
+            "question": question,
+            "channels": channels_ok,
+            "citations": citations,
+            "answer": answer,
+            # 内部笔记不落盘、不回传给前端展示
+        },
     )
 
 
@@ -1432,8 +1976,8 @@ async def _execute_roundtable(
     initial_content = (
         header
         + conclusion_placeholder
-        + detail_header
         + summary_placeholder
+        + detail_header
         + research_question
         + fact_section
         + participant_section
@@ -1566,10 +2110,10 @@ async def _execute_roundtable(
                     f"请基于以下收束内容，为 {stock_name}（{stock}）写「先看结论」"
                     f"（Markdown，约 350-650 字）。\n\n"
                     "必须包含：\n"
-                    "1. 一段一句话结论（不加标题）\n"
-                    "2. 三条要点：价值线索 / 风险压力 / 跟踪优先级\n"
+                    "1. 一段一句话结论（不加任何标题，尤其不要写「先看结论」）\n"
+                    "2. 三条要点（无序列表）：价值线索 / 风险压力 / 跟踪优先级\n"
                     "3. 核心原因：证据强度、核心分歧、最大不确定性\n\n"
-                    "禁止编造底稿没有的数字。\n\n"
+                    "禁止编造底稿没有的数字。不要重复输出章节标题。\n\n"
                     f"{synthesis_text[:6000]}"
                 ),
             }],

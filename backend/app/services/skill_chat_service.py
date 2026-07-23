@@ -153,18 +153,19 @@ def kg_result_to_context(result: SkillInvocationResult) -> KgQaContext | None:
     context_text = (data.get("context_text") or "").strip()
     if not context_text:
         return None
-    matched: list[uuid.UUID] = []
-    for item in data.get("matched_entity_ids") or []:
-        try:
-            matched.append(uuid.UUID(str(item)))
-        except ValueError:
-            continue
+    matched = [
+        str(item).strip()
+        for item in (data.get("matched_entity_ids") or [])
+        if str(item).strip()
+    ]
     return KgQaContext(
         context_text=context_text,
         citations=list(data.get("citations") or []),
         matched_entity_ids=matched,
         entity_count=int(data.get("entity_count") or 0),
         relation_count=int(data.get("relation_count") or 0),
+        reasoning_hops=int(data.get("reasoning_hops") or 0),
+        inferred_entities=int(data.get("inferred_entities") or 0),
     )
 
 

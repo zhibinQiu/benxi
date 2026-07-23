@@ -76,6 +76,11 @@ export async function deleteUser(userId) {
   return api(`/api/v1/users/${userId}`, { method: "DELETE" });
 }
 
+/** 一键删除全部体验用户（username 以 trial_ 开头） */
+export async function deleteTrialUsers() {
+  return api("/api/v1/users/trial", { method: "DELETE" });
+}
+
 export async function fetchRoles() {
   return api("/api/v1/roles");
 }

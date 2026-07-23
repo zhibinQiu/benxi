@@ -1,15 +1,21 @@
 ---
 name: browser_navigate
 ---
-browser_navigate 工具 — 根据当前任务需求自动调用。
+在当前浏览器会话中打开指定 http/https 页面。典型流程的第一步：navigate → snapshot → click/type/fill。
 
 ## When to use
-- 用户请求与 browser_navigate 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 需要在真实浏览器中打开目标网址再交互
+- 多步网页操作开始前先导航到入口页
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 只需读取公开页面正文（用 fetch_url_content）
+- 只需搜索公开信息（用 web_search / invoke_context_subagent kind=search）
+- 复杂自然语言端到端任务可优先 browser_run_task
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 导航结果摘要（最终 URL、标题等）
+
+## Parameters
+
+### url (required)
+目标地址，须为 http:// 或 https://。

@@ -55,7 +55,8 @@ function onOpen(toast) {
 <style scoped>
 .system-notif-stack {
   position: fixed;
-  top: 0;
+  /* 避开顶栏/标签栏，整体下移，避免贴顶遮挡 */
+  top: 72px;
   right: 19px;
   display: flex;
   flex-direction: column;

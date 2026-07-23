@@ -1,15 +1,23 @@
 ---
 name: browser_fill
 ---
-browser_fill 工具 — 根据当前任务需求自动调用。
+按 fields 列表批量向多个表单字段写入值。每个字段需提供 snapshot ref 与 value。
 
 ## When to use
-- 用户请求与 browser_fill 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 一次填写多个输入框（登录表、资料表等）
+- 已 snapshot 且拿到各字段 ref
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 只填一个简单输入框（可用 browser_type）
+- 没有有效 ref（先 browser_snapshot）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 批量填表结果摘要
+
+## Parameters
+
+### fields (required)
+对象数组，每项含：
+- ref：snapshot 元素引用
+- value：要填入的值
+最多 30 项。

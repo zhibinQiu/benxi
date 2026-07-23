@@ -3,7 +3,6 @@ import { usePlatformUi } from "../composables/usePlatformUi";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
-  NButton,
   NCheckbox,
   NEmpty,
   NIcon,

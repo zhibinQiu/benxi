@@ -19,18 +19,23 @@ import {
   updateUser,
   fetchDepartments,
   fetchRoles } from "../../api/client";
-import { deleteUser } from "../../api/auth";
+import { deleteUser, deleteTrialUsers } from "../../api/auth";
 import OrgDeptPickerTree from "../../components/OrgDeptPickerTree.vue";
 import AdminFormModal from "../../components/AdminFormModal.vue";
+import BatchTableToolbar from "../../components/BatchTableToolbar.vue";
 import HintTooltip from "../../components/HintTooltip.vue";
+import IconAction from "../../components/IconAction.vue";
 import { useAuth } from "../../composables/useAuth";
+import { useBatchTableSelection } from "../../composables/useBatchTableSelection";
 import { LIST_PAGE_SIZE } from "../../constants/listPage.js";
+import { deleteSequentially } from "../../utils/batchActions.js";
 import { renderIconActionGroup } from "../../utils/tableIconActions.js";
 
 const ui = usePlatformUi();
 const { t } = useI18n();
 const { user: currentUser } = useAuth();
 const loading = ref(false);
+const deletingTrial = ref(false);
 const users = ref([]);
 const page = ref(1);
 const pageSize = LIST_PAGE_SIZE;
@@ -49,6 +54,22 @@ const roles = ref([]);
 const showModal = ref(false);
 const editingId = ref(null);
 const saving = ref(false);
+const showBatchModal = ref(false);
+const batchSaving = ref(false);
+const batchForm = ref({
+  status: "active",
+  department_ids: [],
+  role_id: null,
+});
+
+const {
+  checkedRowKeys,
+  selectedRows,
+  selectedCount,
+  onCheckedRowKeysChange,
+  clearSelection,
+  selectionColumn,
+} = useBatchTableSelection(users);
 
 const BOOTSTRAP_PHONE = "admin";
 
@@ -131,7 +152,23 @@ function isBootstrapUser(row) {
   return String(row?.phone || "") === BOOTSTRAP_PHONE;
 }
 
+function canEditUser(row) {
+  return Boolean(row) && !isBootstrapUser(row);
+}
+
+function canDeleteUser(row) {
+  if (!row || isBootstrapUser(row)) return false;
+  if (currentUser.value?.id && row.id === currentUser.value.id) return false;
+  return true;
+}
+
+const editableSelectedRows = computed(() => selectedRows.value.filter(canEditUser));
+const deletableSelectedRows = computed(() => selectedRows.value.filter(canDeleteUser));
+const canBatchEdit = computed(() => editableSelectedRows.value.length > 0);
+const canBatchDelete = computed(() => deletableSelectedRows.value.length > 0);
+
 const columns = computed(() => [
+  selectionColumn(),
   {
     title: t("admin.users.displayName"),
     key: "display_name",
@@ -163,6 +200,7 @@ const columns = computed(() => [
           label: t("common.delete"),
           icon: TrashOutline,
           type: "error",
+          disabled: !canDeleteUser(row),
           onClick: () => onDelete(row),
         },
       ]),
@@ -207,6 +245,7 @@ async function load() {
     }
     users.value = data.items;
     total.value = data.total;
+    clearSelection();
   } catch (e) {
     ui.error(e.message);
   } finally {
@@ -216,6 +255,7 @@ async function load() {
 
 function onPageChange(p) {
   page.value = p;
+  clearSelection();
   load();
 }
 
@@ -330,6 +370,7 @@ async function submit() {
 }
 
 async function onDelete(row) {
+  if (!canDeleteUser(row)) return;
   await ui.confirmDelete({
     title: t("admin.users.deleteTitle"),
     content: t("admin.users.deleteConfirm", { name: row.display_name || row.username || row.phone }),
@@ -337,6 +378,137 @@ async function onDelete(row) {
       await deleteUser(row.id);
       ui.success(t("admin.users.deleted"));
       await load();
+    },
+  });
+}
+
+function openBatchEdit() {
+  const rows = editableSelectedRows.value;
+  if (!rows.length) {
+    ui.warning(t("admin.users.batchEditNone"));
+    return;
+  }
+  if (rows.length === 1) {
+    openEdit(rows[0]);
+    return;
+  }
+  batchForm.value = {
+    status: "active",
+    department_ids: [],
+    role_id: memberRoleId(),
+  };
+  showBatchModal.value = true;
+}
+
+function closeBatchModal() {
+  showBatchModal.value = false;
+  batchForm.value = {
+    status: "active",
+    department_ids: [],
+    role_id: null,
+  };
+}
+
+async function submitBatchEdit() {
+  const rows = editableSelectedRows.value;
+  if (!rows.length) {
+    ui.warning(t("admin.users.batchEditNone"));
+    return;
+  }
+  if (!batchForm.value.role_id) {
+    ui.warning(t("admin.users.selectRoleRequired"));
+    return;
+  }
+  batchSaving.value = true;
+  const payload = {
+    status: batchForm.value.status,
+    department_ids: normalizeDepartmentIds(batchForm.value.department_ids),
+    role_ids: [batchForm.value.role_id],
+  };
+  try {
+    const { deleted: updated, failed } = await deleteSequentially(rows, (row) =>
+      updateUser(row.id, payload)
+    );
+    if (failed.length) {
+      ui.warning(
+        t("admin.batchDeletePartial", {
+          success: updated,
+          failed: failed.length,
+          error: failed[0].message || t("admin.unknownError"),
+        })
+      );
+    } else {
+      ui.success(t("admin.users.batchUpdatedMulti", { count: updated }));
+    }
+    closeBatchModal();
+    clearSelection();
+    await load();
+  } catch (e) {
+    ui.error(e.message);
+  } finally {
+    batchSaving.value = false;
+  }
+}
+
+function handleBatchDelete() {
+  const rows = deletableSelectedRows.value;
+  if (!rows.length) {
+    ui.warning(t("admin.users.batchDeleteNone"));
+    return;
+  }
+  const content =
+    rows.length === 1
+      ? t("admin.users.batchDeleteContentSingle", {
+          name: rows[0].display_name || rows[0].username || rows[0].phone,
+        })
+      : t("admin.users.batchDeleteContentMulti", { count: rows.length });
+  ui.confirmDelete({
+    title: t("admin.users.batchDeleteTitle"),
+    content,
+    onPositive: async () => {
+      const { deleted, failed } = await deleteSequentially(rows, (row) => deleteUser(row.id));
+      if (failed.length) {
+        ui.warning(
+          t("admin.batchDeletePartial", {
+            success: deleted,
+            failed: failed.length,
+            error: failed[0].message || t("admin.unknownError"),
+          })
+        );
+      } else {
+        ui.success(
+          deleted > 1
+            ? t("admin.users.batchDeletedMulti", { count: deleted })
+            : t("admin.users.deleted")
+        );
+      }
+      clearSelection();
+      await load();
+    },
+  });
+}
+
+function handleDeleteTrialUsers() {
+  ui.confirmDelete({
+    title: t("admin.users.deleteTrialTitle"),
+    content: t("admin.users.deleteTrialConfirm"),
+    onPositive: async () => {
+      deletingTrial.value = true;
+      try {
+        const data = await deleteTrialUsers();
+        const count = data?.deleted_count ?? 0;
+        if (count > 0) {
+          ui.success(t("admin.users.deleteTrialDone", { count }));
+        } else {
+          ui.success(t("admin.users.deleteTrialEmpty"));
+        }
+        clearSelection();
+        await load();
+      } catch (e) {
+        ui.error(e.message);
+      } finally {
+        deletingTrial.value = false;
+      }
     },
   });
 }
@@ -351,25 +523,55 @@ onMounted(async () => {
   <div class="users-card">
     <div class="admin-list-table">
       <Teleport to="#header-page-tools">
-        <n-button
-          quaternary
-          circle
-          size="small"
-          class="header-icon-btn"
-          :class="{ 'header-icon-btn--spinning': loading }"
-          :aria-label="t('common.refresh')"
-          :disabled="loading"
-          @click="load"
-        >
-          <n-icon :size="14" :component="RefreshOutline" />
-        </n-button>
+        <n-space align="center" :size="4">
+          <IconAction
+            :label="t('admin.users.deleteTrial')"
+            :icon="TrashOutline"
+            type="error"
+            :disabled="loading || deletingTrial"
+            :loading="deletingTrial"
+            @click="handleDeleteTrialUsers"
+          />
+          <n-button
+            quaternary
+            circle
+            size="small"
+            class="header-icon-btn"
+            :class="{ 'header-icon-btn--spinning': loading }"
+            :aria-label="t('common.refresh')"
+            :disabled="loading || deletingTrial"
+            @click="load"
+          >
+            <n-icon :size="14" :component="RefreshOutline" />
+          </n-button>
+        </n-space>
       </Teleport>
+      <div v-if="selectedCount > 0" class="admin-batch-toolbar">
+        <n-space align="center" :size="7">
+          <IconAction
+            :label="t('admin.users.batchEdit')"
+            :icon="CreateOutline"
+            type="primary"
+            :disabled="!canBatchEdit"
+            @click="openBatchEdit"
+          />
+          <BatchTableToolbar
+            :count="deletableSelectedRows.length || selectedCount"
+            :disabled="!canBatchDelete"
+            :icon="TrashOutline"
+            action-type="error"
+            @action="handleBatchDelete"
+          />
+        </n-space>
+      </div>
       <n-data-table
         :columns="columns"
         :data="users"
         :loading="loading"
         :scroll-x="900"
         :row-key="(row) => row.id"
+        :checked-row-keys="checkedRowKeys"
+        @update:checked-row-keys="onCheckedRowKeysChange"
       />
     </div>
     <div class="users-table-footer">
@@ -488,6 +690,70 @@ onMounted(async () => {
       </n-space>
     </template>
   </AdminFormModal>
+
+  <AdminFormModal
+    v-model:show="showBatchModal"
+    :title="t('admin.users.batchEditTitle')"
+    :width="624"
+    @after-leave="closeBatchModal"
+  >
+    <n-form
+      class="admin-form-modal__form admin-form-modal__form--compact"
+      label-placement="top"
+    >
+      <p class="admin-form-modal__hint">
+        {{ t("admin.users.batchEditHint", { count: editableSelectedRows.length }) }}
+      </p>
+      <div class="admin-form-modal__form-grid">
+        <n-form-item :label="t('admin.users.status')">
+          <n-select v-model:value="batchForm.status" :options="statusOptions" />
+        </n-form-item>
+        <n-form-item>
+          <template #label>
+            <span class="admin-form-modal__label-row">
+              {{ t("admin.users.role") }}
+              <HintTooltip
+                variant="inline"
+                placement="top"
+                :text="t('admin.users.roleHint')"
+              />
+            </span>
+          </template>
+          <n-select
+            v-model:value="batchForm.role_id"
+            :placeholder="t('admin.users.selectRole')"
+            :options="roleOptions"
+          />
+        </n-form-item>
+      </div>
+      <n-form-item>
+        <template #label>
+          <span class="admin-form-modal__label-row">
+            {{ t("admin.users.department") }}
+            <HintTooltip
+              variant="inline"
+              placement="top"
+              :text="t('admin.users.departmentHint')"
+            />
+          </span>
+        </template>
+        <OrgDeptPickerTree
+          v-model:department-ids="batchForm.department_ids"
+          :departments="departments"
+          :users="orgUsers"
+          :max-height="240"
+        />
+      </n-form-item>
+    </n-form>
+    <template #footer>
+      <n-space :size="12">
+        <n-button @click="showBatchModal = false">{{ t("common.cancel") }}</n-button>
+        <n-button type="primary" :loading="batchSaving" @click="submitBatchEdit">
+          {{ t("common.save") }}
+        </n-button>
+      </n-space>
+    </template>
+  </AdminFormModal>
 </template>
 
 <style scoped>
@@ -497,6 +763,12 @@ onMounted(async () => {
   background: #fcfcfc;
   padding: 12px 16px;
   padding-top: 0;
+}
+
+.admin-batch-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 8px 0 4px;
 }
 
 .users-card :deep(.n-data-table-th),

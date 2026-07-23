@@ -446,40 +446,38 @@ async def _run_knowledge_retrieve(
 
 
 async def _run_kg_query(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tuple[bool, str, dict | None]:
-    """Neo4j 版知识图谱查询 — 本体感知的多跳推理。"""
+    """知识图谱查询 — 经 app.benxi_semantic SemanticLayer 多跳推理。"""
     question = str(params.get("question") or params.get("query") or "").strip()
     from app.core.neo4j import get_neo4j
-    from app.core.permissions import user_has_permission
+    from app.core.permissions import user_has_semantic_layer_permission
 
-    has_ontology = user_has_permission(ctx.db, ctx.user, "feature.ontology")
-    has_kg = user_has_permission(ctx.db, ctx.user, "feature.kg")
-    if not (has_ontology or has_kg):
-        return _tool_result(False, "无知识图谱权限，请前往「语义管理」开启功能权限")
+    if not user_has_semantic_layer_permission(ctx.db, ctx.user):
+        return _tool_result(False, "无本体/图谱权限，请前往「本体定义」开启功能权限")
 
     try:
-        driver = await get_neo4j()
-        from app.services.kg_reasoning import KGReasoningEngine
+        from app.benxi_semantic import SemanticLayer
 
-        engine = KGReasoningEngine(driver)
-        context = await engine.reason(
-            question=question,
-            user_id=str(ctx.user.id),
+        driver = await get_neo4j()
+        payload = await SemanticLayer(driver).reason_abox(
+            question,
+            str(ctx.user.id),
             max_depth=3,
             include_inferred=True,
         )
-        if not context or not context.context_text:
+        if not payload or not payload.context_text:
             return _tool_result(True, "未匹配到图谱实体", {})
+        matched_ids = [e.id for e in (payload.matched_entities or [])]
         return _tool_result(
             True,
-            f"图谱上下文 {context.entity_count} 个实体，{context.relation_count} 条关系",
+            f"图谱上下文 {payload.entity_count} 个实体，{payload.relation_count} 条关系",
             {
-                "context_text": context.context_text,
-                "entity_count": context.entity_count,
-                "relation_count": context.relation_count,
-                "matched_entity_ids": context.matched_entity_ids,
-                "citations": context.citations,
-                "reasoning_hops": context.reasoning_hops,
-                "inferred_entities": context.inferred_entities,
+                "context_text": payload.context_text,
+                "entity_count": payload.entity_count,
+                "relation_count": payload.relation_count,
+                "matched_entity_ids": matched_ids,
+                "citations": payload.citations,
+                "reasoning_hops": payload.reasoning_hops,
+                "inferred_entities": payload.inferred_entities,
             },
         )
     except Exception as exc:
@@ -487,24 +485,23 @@ async def _run_kg_query(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tupl
 
 
 async def _run_ontology_query(ctx: ToolRuntimeContext, params: dict[str, Any]) -> tuple[bool, str, dict | None]:
-    """查询本体定义：实体类型列表、关系类型约束、属性模式等。"""
+    """查询本体摘要（按问题过滤相关类型，非整库 dump）。"""
     question = str(params.get("question") or params.get("query") or "").strip()
     from app.core.neo4j import get_neo4j
-    from app.core.permissions import user_has_permission
+    from app.core.permissions import user_has_semantic_layer_permission
 
-    if not user_has_permission(ctx.db, ctx.user, "feature.ontology"):
-        return _tool_result(False, "无知识图谱权限")
+    if not user_has_semantic_layer_permission(ctx.db, ctx.user):
+        return _tool_result(False, "无本体定义权限")
 
     try:
-        driver = await get_neo4j()
-        from app.services.kg_reasoning import KGReasoningEngine
-
-        engine = KGReasoningEngine(driver)
-        ontology_text = await engine.query_ontology(question)
-        if not ontology_text.strip():
-            ontology_text = "当前本体为空，建议先通过「语义管理 > 本体定义」初始化默认本体"
-
+        from app.benxi_semantic import SemanticLayer
         from app.schemas.kg import KgQaContext
+
+        driver = await get_neo4j()
+        ontology_text = await SemanticLayer(driver).ontology_compact(question)
+        if not ontology_text.strip():
+            ontology_text = "当前本体为空，建议先通过「本体定义」初始化默认本体"
+
         context = KgQaContext(
             context_text=ontology_text,
             citations=[],
@@ -718,6 +715,74 @@ async def _run_f10_data(
     )
 
 
+def _build_carbon_citations(
+    sources: list[Any] | None,
+    *,
+    start_index: int = 1,
+) -> list[dict[str, Any]]:
+    """将 carbon_* 工具的 sources 转为前端可展示的 citations。"""
+    citations: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    idx = max(1, int(start_index or 1))
+    for row in sources or []:
+        if not isinstance(row, dict):
+            continue
+        url = str(row.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        title = str(row.get("title") or "").strip() or url
+        snippet = str(row.get("snippet") or "").strip()
+        if not snippet:
+            extracted = row.get("extracted") or []
+            if isinstance(extracted, list):
+                snippet = " ".join(str(x).strip() for x in extracted if str(x).strip())[:800]
+        citations.append(
+            {
+                "index": idx,
+                "title": title,
+                "snippet": snippet[:2000],
+                "url": url,
+                "source": "web",
+                "document_id": None,
+                "preview_available": False,
+            }
+        )
+        idx += 1
+    return citations
+
+
+def _append_carbon_evidence(
+    ctx: ToolRuntimeContext,
+    *,
+    label: str,
+    summary_md: str,
+    sources: list[Any] | None = None,
+) -> None:
+    """把双碳工具正文与官方源 URL 写入 loop_state（证据 + 前端引用列表）。"""
+    text = (summary_md or "").strip()
+    if (not text and not sources) or ctx.loop_state is None:
+        return
+    from app.core.agent_tool_context import append_retrieval_context
+    from app.tool_center.agent_bridge import _citation_start
+
+    citations = _build_carbon_citations(
+        sources, start_index=_citation_start(ctx.loop_state)
+    )
+    if citations:
+        ctx.loop_state.setdefault("citations", []).extend(citations)
+        cite_lines = [
+            f"[{c['index']}] {c.get('title') or '来源'} — {c.get('url') or ''}"
+            for c in citations
+        ]
+        head = f"【{label} · 数据来源】\n" + "\n".join(cite_lines)
+        body = f"{head}\n\n{text}" if text else head
+    else:
+        body = f"【{label}】\n{text}" if text else ""
+    if body:
+        append_retrieval_context(ctx.loop_state, body)
+
+
 async def _run_carbon_price(
     ctx: ToolRuntimeContext, params: dict[str, Any]
 ) -> tuple[bool, str, dict | None]:
@@ -729,8 +794,13 @@ async def _run_carbon_price(
     data = await svc.fetch_carbon_price(keyword=keyword, url=url)
     ok = bool(data.get("ok"))
     summary = str(data.get("summary_md") or "")[:4000]
-    n = len(data.get("sources") or [])
+    sources = list(data.get("sources") or [])
+    n = len(sources)
     title = f"已获取 {n} 个碳价数据源摘要" if ok else "碳价数据源暂时无法访问"
+    if ok:
+        _append_carbon_evidence(
+            ctx, label="碳价行情", summary_md=summary, sources=sources
+        )
     return _tool_result(ok, title if ok else summary[:500], data)
 
 
@@ -745,8 +815,13 @@ async def _run_carbon_policy(
     data = await svc.fetch_carbon_policy(keyword=keyword, url=url)
     ok = bool(data.get("ok"))
     summary = str(data.get("summary_md") or "")[:4000]
-    n = len(data.get("sources") or [])
+    sources = list(data.get("sources") or [])
+    n = len(sources)
     title = f"已获取 {n} 个政策数据源摘要" if ok else "政策数据源暂时无法访问"
+    if ok:
+        _append_carbon_evidence(
+            ctx, label="双碳政策", summary_md=summary, sources=sources
+        )
     return _tool_result(ok, title if ok else summary[:500], data)
 
 
@@ -764,9 +839,110 @@ async def _run_carbon_data(
     data = await svc.fetch_carbon_data(topic, keyword=keyword, url=url)
     ok = bool(data.get("ok"))
     summary = str(data.get("summary_md") or "")[:4000]
-    n = len(data.get("sources") or [])
+    sources = list(data.get("sources") or [])
+    n = len(sources)
     title = f"已获取 {topic} 数据（{n} 个源）" if ok else f"[{topic}] 数据源暂时无法访问"
+    if ok:
+        _append_carbon_evidence(
+            ctx, label=f"双碳数据·{topic}", summary_md=summary, sources=sources
+        )
     return _tool_result(ok, title if ok else summary[:500], data)
+
+
+def _slim_forecast_payload(raw: dict[str, Any], *, method: str, series: str) -> dict[str, Any]:
+    """压缩预测结果，避免整段历史日线灌入 agent 上下文。"""
+    fc_pts = list(raw.get("forecast_points") or [])
+    sample: list[dict[str, Any]] = []
+    if fc_pts:
+        sample.append(fc_pts[0])
+        mid = len(fc_pts) // 2
+        if mid > 0 and mid < len(fc_pts) - 1:
+            sample.append(fc_pts[mid])
+        if len(fc_pts) > 1:
+            sample.append(fc_pts[-1])
+    summary = raw.get("summary")
+    if isinstance(summary, dict):
+        summary = dict(summary)
+    return {
+        "ok": bool(raw.get("ok")),
+        "kind": "forecast",
+        "series": series,
+        "method": raw.get("forecast_method") or method,
+        "title": raw.get("title"),
+        "unit": raw.get("unit") or "元/吨",
+        "source_name": raw.get("source_name"),
+        "source_page": raw.get("source_page"),
+        "queried_at": raw.get("queried_at"),
+        "summary": summary,
+        "latest": raw.get("latest"),
+        "forecast_sample": sample,
+        "forecast_point_count": len(fc_pts),
+        "note": raw.get("note") or raw.get("method_note"),
+    }
+
+
+def _forecast_summary_md(payload: dict[str, Any]) -> str:
+    s = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    series = str(payload.get("series") or "").upper()
+    method = payload.get("method") or ""
+    lines = [
+        f"## {series} 时序预测（{method}）",
+        f"- 锚定收盘：{s.get('last_close')}",
+        f"- 预测年底：{s.get('year_end_price')}（带 {s.get('year_end_low')}~{s.get('year_end_high')}）",
+        f"- 预测高点：{s.get('peak_price')}（{s.get('peak_date')}）",
+        f"- 预测低点：{s.get('trough_price')}（{s.get('trough_date')}）",
+        f"- 交易日数：{s.get('trading_days')}",
+    ]
+    note = payload.get("note") or s.get("note")
+    if note:
+        lines.append(f"- 说明：{note}")
+    src = payload.get("source_name")
+    if src:
+        lines.append(f"- 来源：{src}")
+    return "\n".join(lines)
+
+
+async def _run_time_series_forecast(
+    ctx: ToolRuntimeContext, params: dict[str, Any]
+) -> tuple[bool, str, dict | None]:
+    """时序预测模型推理（首批 series=cea|ccer）。"""
+    from app.services.carbon_compliance.market_sync import (
+        fetch_cea_chart_series,
+        fetch_ccer_chart_series,
+    )
+    from app.services.carbon_compliance.price_forecast import normalize_forecast_method
+
+    method = normalize_forecast_method(str(params.get("method") or "rule"))
+    series = str(params.get("series") or "cea").strip().lower()
+    if series not in ("cea", "ccer"):
+        return _tool_result(False, "series 仅支持 cea / ccer")
+
+    if series == "ccer":
+        raw = await fetch_ccer_chart_series("forecast", method=method)
+    else:
+        raw = await fetch_cea_chart_series("forecast", method=method)
+
+    payload = _slim_forecast_payload(raw if isinstance(raw, dict) else {}, method=method, series=series)
+    ok = bool(payload.get("ok"))
+    title = (
+        f"已完成 {series.upper()} 至年底预测（{payload.get('method') or method}）"
+        if ok
+        else f"{series.upper()} 预测暂不可用"
+    )
+    if ok:
+        _append_carbon_evidence(
+            ctx,
+            label=f"时序预测·{series}",
+            summary_md=_forecast_summary_md(payload),
+            sources=[
+                {
+                    "title": payload.get("source_name") or f"{series} forecast",
+                    "url": payload.get("source_page") or "",
+                    "snippet": title,
+                }
+            ],
+        )
+    return _tool_result(ok, title, payload)
 
 
 async def run_global_atomic_tool(
@@ -815,6 +991,8 @@ async def run_global_atomic_tool(
         return await _run_carbon_policy(ctx, params)
     if name == "carbon_data":
         return await _run_carbon_data(ctx, params)
+    if name == "time_series_forecast":
+        return await _run_time_series_forecast(ctx, params)
 
     from app.services.agent_tools import (
         _execute_admin_tool,
@@ -836,6 +1014,16 @@ async def run_global_atomic_tool(
         note = str(params.get("note") or "").strip()
         if not note:
             return _tool_result(False, "note 不能为空")
+        from app.services.agent_skill_router import should_write_memory
+
+        # 仅当用户明确要求「记住」时才写入；禁止用记忆工具冒充完成其它请求
+        user_msg = str(getattr(ctx, "user_message", None) or "").strip()
+        if user_msg and not should_write_memory(user_msg):
+            return _tool_result(
+                False,
+                "用户未要求记住信息，禁止写入记忆。"
+                "请改用用户点名的技能或其它工具完成请求，不要用 append_agent_memory 兜底。",
+            )
         ok = append_user_memory(ctx.user.id, extract_memory_note(note, max_len=500))
         return _tool_result(ok, "已写入记忆" if ok else "写入失败")
 

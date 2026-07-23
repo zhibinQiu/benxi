@@ -854,7 +854,11 @@ function handleReindexUnindexed() {
   if (reindexingUnindexed.value) return;
   ui.confirmAction({
     title: t("documents.reindexUnindexedTitle"),
-    content: t("documents.reindexUnindexedConfirm"),
+    content: t(
+      isSystemAdmin.value
+        ? "documents.reindexUnindexedConfirmAdmin"
+        : "documents.reindexUnindexedConfirm"
+    ),
     positiveText: t("documents.reindexUnindexedConfirmAction"),
     onPositive: () => {
       reindexingUnindexed.value = true;
@@ -865,16 +869,8 @@ function handleReindexUnindexed() {
 
 async function doReindexUnindexed() {
   try {
-    const params = { scope: activeScope.value };
-    if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
-      params.deptId = activeDeptId.value;
-    }
-    if (activeScope.value === "personal") {
-      params.ownerId = activeOwnerId.value || user.value?.id;
-    }
-    const res = await reindexUnindexedDocuments(params);
-    const data = res.data || {};
-    const queued = data.queued ?? 0;
+    const data = await reindexUnindexedDocuments();
+    const queued = data?.queued ?? 0;
     if (queued > 0) {
       ui.success("documents.reindexUnindexedSuccess", { count: queued });
       clearDocumentsViewCache();

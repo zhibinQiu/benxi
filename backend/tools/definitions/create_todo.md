@@ -1,15 +1,24 @@
 ---
 name: create_todo
 ---
-create_todo 工具 — 根据当前任务需求自动调用。
+为当前用户创建一条待办事项。
 
 ## When to use
-- 用户请求与 create_todo 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 用户要求记待办、任务清单项
+- 「帮我加一个待办：…」
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 定时提醒通知（用 schedule_notification）
+- 立即站内通知（用 send_notification）
+- 列出/更新/删除待办（用 list/update/delete_todo）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 新建待办 ID 与内容
+
+## Parameters
+
+### title (required)
+待办标题。
+
+### note (optional)
+补充说明。

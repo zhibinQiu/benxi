@@ -36,6 +36,9 @@ from app.schemas.org import UserCreate, UserOut, UserUpdate
 
 logger = logging.getLogger(__name__)
 
+# 体验登录（auth.trial）创建的账号：username = trial_{hex8}
+TRIAL_USERNAME_PREFIX = "trial_"
+
 
 def _display_name(user: User) -> str:
     return user_display_name(user)
@@ -243,6 +246,22 @@ def delete_user_by_admin(
         raise bad_request("不能删除系统默认管理员")
     delete_user_account(db, user)
     return {"deleted": True, "id": str(target_user_id)}
+
+
+def delete_trial_users_by_admin(db: Session, *, actor: User) -> dict[str, Any]:
+    """删除全部体验账号（username 以 trial_ 开头），跳过当前登录用户。"""
+    rows = list(
+        db.scalars(
+            select(User).where(User.username.startswith(TRIAL_USERNAME_PREFIX))
+        ).all()
+    )
+    deleted_ids: list[str] = []
+    for user in rows:
+        if user.id == actor.id or is_bootstrap_admin(user):
+            continue
+        delete_user_account(db, user)
+        deleted_ids.append(str(user.id))
+    return {"deleted_count": len(deleted_ids), "deleted_ids": deleted_ids}
 
 
 def delete_user_account(db: Session, user: User) -> None:

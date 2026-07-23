@@ -2,8 +2,8 @@
 
 html[data-color-scheme="blue"]:root,
 html[data-color-scheme="blue"][data-theme="light"] {
-  --platform-bg-base: #f8f8f8;
-  --platform-bg: #f8f8f8;
+  --platform-bg-base: #FAFAFA;
+  --platform-bg: #FAFAFA;
   --platform-modal-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.04),
     0 4px 12px rgba(0, 0, 0, 0.04),
@@ -51,10 +51,10 @@ html[data-color-scheme="blue"][data-theme="light"] {
   --platform-loader-path: rgba(10, 107, 255, 0.28);
   --platform-loader-color: #0a6bff;
 
-  --platform-shell-gradient: #f8f8f8;
-  --platform-header-bg: #f8f8f8;
-  --platform-sider-bg: #f3f3f3;
-  --platform-toolbar-bg: #f3f3f3;
+  --platform-shell-gradient: #FAFAFA;
+  --platform-header-bg: #FAFAFA;
+  --platform-sider-bg: var(--platform-glass-sider-bg, color-mix(in srgb, #F2F2F2 78%, transparent));
+  --platform-toolbar-bg: var(--platform-glass-sider-bg, color-mix(in srgb, #F2F2F2 78%, transparent));
 
   --platform-focus-ring: 0 0 0 2px rgba(0, 0, 0, 0.1);
   --platform-link: #22507c;

@@ -317,7 +317,7 @@ async def sync_platform_org(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[dict[str, Any]]:
-    """同步平台用户/部门到知识图谱（person/org 实体 + employs/contains 关系）。"""
+    """全量同步平台用户/部门到知识图谱（upsert + 清除已删/停用对象）。"""
     svc = await _get_kg_svc()
     stats = await svc.sync_platform_org(db, str(user.id))
     return ApiResponse(data=stats)
@@ -328,7 +328,7 @@ async def sync_platform_agents(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[dict[str, Any]]:
-    """同步平台智能体/工具/Skill 到知识图谱。"""
+    """全量同步平台智能体/工具/Skill（upsert + 清除已不存在项）。"""
     svc = await _get_kg_svc()
     stats = await svc.sync_platform_agents(db, str(user.id))
     return ApiResponse(data=stats)
@@ -338,7 +338,7 @@ async def sync_platform_agents(
 async def sync_agent_memory(
     user: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[dict[str, Any]]:
-    """同步智能体记忆到知识图谱。"""
+    """全量同步智能体记忆到知识图谱（更新内容并清除已移除章节）。"""
     svc = await _get_kg_svc()
     stats = await svc.sync_agent_memory_to_kg(str(user.id))
     return ApiResponse(data=stats)
@@ -349,7 +349,7 @@ async def sync_all_platform(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[dict[str, Any]]:
-    """一键同步所有平台数据到知识图谱（组织 + 智能体 + 记忆）。"""
+    """一键全量同步所有平台数据到知识图谱（组织 + 智能体 + 记忆）。"""
     svc = await _get_kg_svc()
     stats: dict[str, Any] = {}
     try:

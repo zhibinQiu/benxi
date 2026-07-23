@@ -1,15 +1,22 @@
 ---
 name: update_todo
 ---
-update_todo 工具 — 根据当前任务需求自动调用。
+更新已有待办的标题、备注或状态。
 
 ## When to use
-- 用户请求与 update_todo 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 用户要求改待办内容或标记完成/未完成
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 新建待办（用 create_todo）
+- 删除待办（用 delete_todo）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 更新后的待办
+
+## Parameters
+
+### todo_id (required)
+待办 ID。
+
+### title / note / status (optional)
+要更新的字段；至少提供一个。

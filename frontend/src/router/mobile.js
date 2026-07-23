@@ -185,16 +185,7 @@ const routes = [
       },
       {
         path: "system/kg",
-        name: "kg",
-        meta: {
-          title: "知识图谱",
-          fullHeight: true,
-          flushStart: true,
-          flushEnd: true,
-          featureIcon: "cube-outline",
-          perm: "feature.kg",
-        },
-        component: () => import("../views/KgView.vue"),
+        redirect: { path: "/system/ontology", query: { tab: "entities" } },
       },
       {
         path: "system/compare",

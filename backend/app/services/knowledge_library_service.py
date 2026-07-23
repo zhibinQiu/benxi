@@ -1284,3 +1284,94 @@ def reindex_document(
         "knowledge_job_id": str(job.id),
         "message": "已加入后台任务，正在重新索引，请在「后台任务」查看进度。",
     }
+
+
+def reindex_unindexed_documents(db: Session, user: User) -> dict:
+    """批量重新索引未完成索引的文档。
+
+    系统管理员：全平台所有用户名下未索引/索引失败的文档；
+    普通用户：仅本人名下文档。
+    """
+    from sqlalchemy import exists
+
+    from app.core.permissions import user_is_superuser
+    from app.models.document import DocumentStatus, DocumentVersion
+    from app.services.document_index_service import (
+        enrich_document_index_meta,
+        is_index_ready_meta,
+    )
+    from app.services.knowledge_parser_service import (
+        assert_index_stack_ready,
+        reindex_parser_id_raw,
+    )
+    from app.services.knowledge_sync_job_service import enqueue_document_reindex
+
+    has_upload = exists(
+        select(1).where(
+            DocumentVersion.document_id == Document.id,
+            DocumentVersion.file_size > 0,
+        )
+    )
+    stmt = select(Document).where(
+        Document.deleted_at.is_(None),
+        Document.status == DocumentStatus.active.value,
+        has_upload,
+    )
+    if not user_is_superuser(db, user):
+        stmt = stmt.where(Document.owner_id == user.id)
+
+    docs = list(db.scalars(stmt.order_by(Document.updated_at.desc())).all())
+    if not docs:
+        return {"total": 0, "queued": 0, "skipped": 0}
+
+    version_ids = [d.current_version_id for d in docs if d.current_version_id]
+    versions = {
+        v.id: v
+        for v in db.query(DocumentVersion)
+        .filter(
+            DocumentVersion.id.in_(version_ids),
+            DocumentVersion.file_size > 0,
+        )
+        .all()
+    } if version_ids else {}
+
+    meta_by_doc = enrich_document_index_meta(db, user, docs, live_ragflow=False)
+
+    need_reindex: list[Document] = []
+    skipped = 0
+    for doc in docs:
+        if not doc.current_version_id or doc.current_version_id not in versions:
+            skipped += 1
+            continue
+        if is_index_ready_meta(meta_by_doc.get(str(doc.id))):
+            skipped += 1
+            continue
+        need_reindex.append(doc)
+
+    if not need_reindex:
+        return {"total": 0, "queued": 0, "skipped": skipped}
+
+    parser_id = reindex_parser_id_raw(None)
+    assert_index_stack_ready(parser_id)
+
+    queued = 0
+    for doc in need_reindex:
+        version = versions[doc.current_version_id]
+        job = enqueue_document_reindex(
+            db,
+            user_id=user.id,
+            document_id=doc.id,
+            version_id=version.id,
+            parser_id=parser_id,
+            document_title=doc.title,
+        )
+        if job:
+            queued += 1
+        else:
+            skipped += 1
+
+    return {
+        "total": len(need_reindex),
+        "queued": queued,
+        "skipped": skipped,
+    }

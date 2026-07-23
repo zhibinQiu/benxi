@@ -20,7 +20,6 @@ register(
         tag="可用",
         category="tools",
         sort_order=34,
-        show_in_catalog=False,
         grant_to_roles=("sys_admin", "member", "member"),
     )
 )

@@ -61,6 +61,28 @@ def test_advance_parse_job_progress_unfreezes_stuck_ragflow_percent():
     assert stagnant == 0
 
 
+def test_advance_parse_job_progress_awaiting_parse_floor():
+    progress, _ = _advance_parse_job_progress(
+        90,
+        status="解析中",
+        rag_progress=50,
+        stagnant_polls=0,
+        progress_floor=90,
+        progress_ceil=99,
+    )
+    assert progress == 94
+
+    progress, _ = _advance_parse_job_progress(
+        90,
+        status="解析中",
+        rag_progress=100,
+        stagnant_polls=0,
+        progress_floor=90,
+        progress_ceil=99,
+    )
+    assert progress == 99
+
+
 def test_advance_parse_job_progress_when_status_unknown():
     progress, _ = _advance_parse_job_progress(
         68,
@@ -251,3 +273,37 @@ def test_wait_for_parse_defers_when_still_running_after_wait():
                 update_progress=False,
             )
         assert out is False
+
+
+def test_defer_awaiting_parse_phase_schedules_with_countdown():
+    from app.services.knowledge_sync_job_service import _defer_awaiting_parse_phase
+
+    job = MagicMock()
+    job.id = uuid.uuid4()
+    job.payload = {}
+    db = MagicMock()
+
+    with patch(
+        "app.services.knowledge_sync_job_service._index_job_should_abort",
+        return_value=False,
+    ), patch(
+        "app.services.knowledge_sync_job_service.update_job_status",
+    ), patch(
+        "app.services.knowledge_sync_job_service.dispatch_index_job",
+    ) as dispatch, patch(
+        "app.config.get_settings",
+        return_value=MagicMock(knowledge_parse_poll_interval_sec=5),
+    ):
+        _defer_awaiting_parse_phase(
+            db,
+            job,
+            dataset_id="ds-1",
+            ragflow_document_id="rid-1",
+            mode="reindex",
+            version_id_raw=None,
+        )
+
+    dispatch.assert_called_once()
+    assert dispatch.call_args.kwargs.get("countdown", 0) >= 2
+    assert (job.payload or {}).get("index_phase") == "awaiting_parse"
+    assert (job.payload or {}).get("awaiting_parse") is True

@@ -30,8 +30,12 @@ def test_parse_routing_md_sections():
 
 
 def test_load_skills_routing_md_has_core_skills():
+    load_skills_routing_md.cache_clear()
     entries = load_skills_routing_md()
-    assert "free-web-ai" in entries
+    assert "carbon-qa" in entries
+    assert "knowledge-qa" in entries
+    # free-web-ai 仅独立功能页，不纳入调度技能目录
+    assert "free-web-ai" not in entries
 
 
 def test_load_agents_routing_md_has_specialists():

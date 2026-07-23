@@ -257,24 +257,11 @@ def record_executed_tool_call(
     loop_state["executed_tool_cache"] = cache
 
 
-_TOOL_ACTION_REPLAY_PREFIXES = (
-    "使用联网搜索查询",
-    "使用联网搜索搜索",
-    "使用搜索引擎查询",
-    "联网检索返回",
-    "获取网页内容",
-)
-
-
 def _is_tool_action_replay_summary(summary: str) -> bool:
     """判断工具 call summary 是否仅为操作回顾（不含实质结果数据）。"""
-    text = (summary or "").strip()
-    if not text:
-        return True
-    for prefix in _TOOL_ACTION_REPLAY_PREFIXES:
-        if text.startswith(prefix):
-            return True
-    return False
+    from app.services.agent_reply_synth import is_tool_action_replay_line
+
+    return is_tool_action_replay_line(summary)
 
 
 def build_turn_executed_tools_context(loop_state: LoopState | None) -> str:

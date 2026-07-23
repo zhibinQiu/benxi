@@ -200,6 +200,12 @@ def assess_skill_match(
     )
     top_skills = tuple(skill.name for _, _, skill in ranked[:6])
     top_agent_score = agent_scores[0].score if agent_scores else 0.0
+    # 关键词分通常 < 20；Embedding 分为 similarity*100，门槛与配置对齐
+    agent_score_gate = (
+        float(get_settings().agent_skill_rag_min_similarity or 0.42) * 100.0
+        if top_agent_score >= 20.0
+        else 3.0
+    )
 
     if not ranked and not agent_scores:
         return SkillMatchAssessment(
@@ -211,7 +217,7 @@ def assess_skill_match(
 
     max_sim = ranked[0][0] if ranked else 0.0
 
-    if agent_scores and top_agent_score >= 3.0:
+    if agent_scores and top_agent_score >= agent_score_gate:
         if (
             len(ranked) > 1
             and ranked[1][0] >= threshold

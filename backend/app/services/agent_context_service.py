@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.core.agent_runtime import build_runtime_context, normalize_channel
 from app.models.org import User
-from app.services.agent_memory_service import append_user_memory, build_memory_prompt_context
+from app.services.agent_memory_service import (
+    append_user_memory,
+    build_memory_prompt_context,
+    build_turn_memory_note,
+)
 from app.services.agent_skill_router import (
     extract_memory_note,
     should_write_memory,
@@ -59,12 +63,23 @@ def resolve_agent_prompt_layers(
     )
 
 
-def maybe_write_user_memory(user_id: uuid.UUID, message: str) -> bool:
-    """系统层：用户明确要求记住时写入 MEMORY.md。"""
-    if not should_write_memory(message):
+def maybe_write_user_memory(
+    user_id: uuid.UUID,
+    message: str,
+    reply: str | None = None,
+) -> bool:
+    """系统层：每轮结束后写入对话摘要；用户显式要求「记住」时优先写入指定内容。"""
+    msg = (message or "").strip()
+    if not msg:
         return False
-    note = extract_memory_note(message)
-    return append_user_memory(user_id, note)
+    if should_write_memory(msg):
+        note = extract_memory_note(msg)
+        if note:
+            return append_user_memory(user_id, f"用户要求记住：{note}")
+    summary = build_turn_memory_note(msg, reply or "")
+    if not summary:
+        return False
+    return append_user_memory(user_id, summary)
 
 
 def _needs_platform_knowledge(message: str) -> bool:

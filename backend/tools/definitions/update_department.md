@@ -1,15 +1,27 @@
 ---
 name: update_department
 ---
-update_department 工具 — 根据当前任务需求自动调用。
+更新部门名称或父级（需管理员权限）。
 
 ## When to use
-- 用户请求与 update_department 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 重命名部门或调整组织挂载
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 新建/删除部门
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 更新后的部门信息
+
+## Parameters
+
+### department_id / department_name (optional)
+定位部门。
+
+### name (optional)
+新名称。
+
+### parent_id / parent_name (optional)
+新父部门。
+
+### clear_parent (optional)
+为 true 时清除父级（升为顶级）。

@@ -667,7 +667,7 @@ async def iter_supervised_agent_loop(
         try:
             plan = await resolve_agent_route_plan(
                 db, bound_user, user_message,
-                intent_plan=intent_plan, chat_history=chat_history,
+                chat_history=chat_history,
                 prior_outcomes=None, force_replan=False,
             )
         finally:
@@ -686,7 +686,7 @@ async def iter_supervised_agent_loop(
             if len(route_titles) == 1
             else f"规划方案：{' → '.join(route_titles)}"
             if route_titles
-            else "规划方案：调度智能体"
+            else "规划方案：小析"
         )
         plan_detail = (
             "；".join(route_details[:4]) if route_details
@@ -697,7 +697,7 @@ async def iter_supervised_agent_loop(
             "data": {
                 "phase": "agent_thought",
                 "title": plan_title,
-                "detail": plan_detail,
+                "detail": plan_detail or "正在根据用户意图选择处理路径",
                 "tool": "supervisor.plan",
                 "step_id": route_plan_step_id,
                 "status": "done",
@@ -827,6 +827,34 @@ async def iter_supervised_agent_loop(
                 loop_state = dict(step_result.get("loop_state") or {})
                 from app.services.agent_reply_synth import has_deliverable_evidence
                 from app.services.agent_tool_loop import emit_final_user_reply
+                from app.agentkit.message.filter import has_mermaid_deliverable
+
+                diagram_reply = str(
+                    step_result.get("reply")
+                    or loop_state.get("deterministic_reply")
+                    or loop_state.get("task_deliverable")
+                    or ""
+                ).strip()
+                if has_mermaid_deliverable(diagram_reply):
+                    # 图表交付物原样下发，避免再综合丢失围栏
+                    yield {
+                        "type": "workflow",
+                        "data": {
+                            "phase": "agent_thought",
+                            "title": "执行完成",
+                            "detail": "已生成流程图",
+                            "tool": "supervisor.finish",
+                            "status": "done",
+                        },
+                    }
+                    yield {
+                        "type": "complete",
+                        "messages": working,
+                        "reply": diagram_reply,
+                        "citations": list(loop_state.get("citations") or []),
+                        "kg_context": loop_state.get("kg_context"),
+                    }
+                    return
 
                 if has_deliverable_evidence(loop_state):
                     async for ev in emit_final_user_reply(
@@ -842,6 +870,24 @@ async def iter_supervised_agent_loop(
                     return
 
                 reply = str(step_result.get("reply") or "").strip()
+
+                # 失败也要给出可理解的思考收尾说明
+                if not reply:
+                    yield {
+                        "type": "workflow",
+                        "data": {
+                            "phase": "agent_thought",
+                            "title": "未能完成",
+                            "detail": (
+                                f"{agent_title} 本轮未产出可交付结果；"
+                                "已尝试调用可用工具，但仍缺少有效证据。"
+                            ),
+                            "tool": "supervisor.finish",
+                            "status": "failed",
+                            "agent_id": route.agent_id,
+                            "agent_title": agent_title,
+                        },
+                    }
                 yield {
                     "type": "complete",
                     "reply": reply or "抱歉，这次没能完成您的请求。请补充更具体的要求后重试。",
@@ -908,11 +954,39 @@ async def iter_supervised_agent_loop(
                 yield event
             return
 
-        # ── 超出最大轮次兜底 ──
+        # ── 超出最大轮次：有证据则综合终稿，避免空报错丢弃已取到的结果 ──
         _logger.warning(
             "专精智能体 %s 达到最大 supervisor 轮次 %d 仍未完成",
             agent_title, max_supervisor_rounds,
         )
+        if round_state is not None:
+            working = list(round_state.get("working") or [])
+            loop_state = dict(round_state.get("loop_state") or {})
+            from app.services.agent_reply_synth import has_deliverable_evidence
+            from app.services.agent_tool_loop import emit_final_user_reply
+
+            if has_deliverable_evidence(loop_state):
+                async for ev in emit_final_user_reply(
+                    sess,
+                    user_id,
+                    f"agent-tools-{uuid.uuid4().hex[:8]}",
+                    effective_user_message,
+                    working,
+                    loop_state,
+                    chat_history=chat_history,
+                ):
+                    yield ev
+                return
+            reply = str(round_state.get("reply") or "").strip()
+            if reply:
+                yield {
+                    "type": "complete",
+                    "reply": reply,
+                    "messages": working,
+                    "citations": list(loop_state.get("citations") or []),
+                    "kg_context": loop_state.get("kg_context"),
+                }
+                return
         yield {
             "type": "complete",
             "reply": f"{agent_title} 已达到最大执行轮次，请精简您的请求后重试。",
@@ -926,7 +1000,7 @@ async def iter_supervised_agent_loop(
             "data": {
                 "phase": "agent_thought",
                 "title": "任务中断",
-                "detail": "调度智能体遇到错误，请稍后重试",
+                "detail": "小析遇到错误，请稍后重试",
                 "tool": "supervisor.error",
                 "status": "error",
             },

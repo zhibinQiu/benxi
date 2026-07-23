@@ -1,15 +1,26 @@
 ---
 name: update_uploaded_skill_file
 ---
-update_uploaded_skill_file 工具 — 根据当前任务需求自动调用。
+更新上传型 Skill 包内的文本文件。更新 .py 时内容顶部必须 `import skill_runtime`，结论用 `skill_runtime.finish`。
 
 ## When to use
-- 用户请求与 update_uploaded_skill_file 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- skill-dev：修改 SKILL.md 或脚本内容
+- 修复脚本 NameError / 逻辑错误后回写
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 新建整个 Skill（用 create_skill）
+- 删除 Skill（用 delete_uploaded_skill）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 更新结果
+
+## Parameters
+
+### skill_name (required)
+Skill slug。
+
+### file_path (required)
+包内相对路径（如 SKILL.md、main.py）。
+
+### content (required)
+完整新文件内容。

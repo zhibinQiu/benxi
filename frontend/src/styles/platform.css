@@ -69,12 +69,10 @@ a:hover {
   border-radius: var(--platform-card-radius) !important;
   transition: var(--platform-card-transition) !important;
   border: 1px solid var(--platform-card-border-color) !important;
+  box-shadow: var(--platform-card-shadow, none);
 }
 
-.n-card:not(.n-card--embedded):hover {
-  border-color: var(--platform-card-hover-border-color) !important;
-  transform: var(--platform-card-hover-transform);
-}
+/* 卡片抬升/流动悬浮仅用于功能列表、多智能体卡片，见 platform-ui-glass.css */
 
 .n-card > .n-card-header {
   padding: 17px 19px 10px !important;
@@ -1493,8 +1491,11 @@ html[data-theme="dark"] .documents-actions-bar .documents-org-picker__select :de
 .admin-form-modal.n-modal .n-card {
   border-radius: calc(var(--platform-radius) + 2px) !important;
   overflow: hidden;
-  border: 1px solid var(--platform-card-border-color) !important;
-  background: var(--platform-card-bg) !important;
+  border: 1px solid var(--platform-glass-border, var(--platform-card-border-color)) !important;
+  background: var(--platform-glass-float-bg, var(--platform-card-bg)) !important;
+  box-shadow: var(--platform-glass-shadow, var(--platform-modal-shadow)) !important;
+  backdrop-filter: var(--platform-glass-filter);
+  -webkit-backdrop-filter: var(--platform-glass-filter);
   color: var(--platform-text);
   animation: platform-modal-enter 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
   transform-origin: center center;

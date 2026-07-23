@@ -1,5 +1,18 @@
 # 发布说明
 
+## 4.8.7（v4.8.7）— 双碳履约策略、OpenAI 兼容 API、语义层与定时任务
+
+- **双碳履约策略**：控排企业档案、排放/CEA/CCER 台账、三套履约策略、行情同步与价格预测、综合分析报告与导出
+- **本析 OpenAI 兼容 API**：/api/v1/openai/v1 chat/completions，benxi 走完整 Agent、grm 直连 LLM；管理员可启停
+- **本析语义层**：benxi_semantic 意图检测与 Neo4j 推理，接入 planner / kg_query / skill 路由
+- **Agent Skill RAG**：Embedding 语义召回 Skill/专精 Agent，失败回退关键词
+- **定时任务**：Agent Automation CRUD + 30s 轮询执行（once/hourly/daily/weekly/monthly）
+- **本体与图谱合并**：删除 KgView，/system/kg 重定向至 ontology；OntologyView 合并 ABox
+- **资讯订阅 BM25**：jieba + BM25Okapi 检索增强
+- **代码精简**：恢复误删的 Skill Fast Path；意图检测委托语义层；Skill RAG/路由去重；清理死参数与未用 composable
+- **前端修复**：双碳助手 keepAlive 轮询在失活时停止；LoginView 外链走 openExternal
+- **版本统一**：VERSION 同步 API / 前端 / Docker 镜像 tag（4.8.7）
+
 ## 4.8.6（v4.8.6）— 理财助手、双碳助手与 Agent 子智能体架构收敛
 
 - **理财助手**：独立功能模块，覆盖 A 股/基金/虚拟币行情与自选清单；支持 AI 深度解读、多角色圆桌（辩论/专业 × 基本面/短线）、量价会诊三类异步研究报告，可下载、导入文档库与公开分享

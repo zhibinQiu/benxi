@@ -20,6 +20,7 @@ const {
   updateTabTitle,
 } = useChatTabs();
 
+
 /**
  * 当前标签页 id：默认 tab-0（/ai-home），多标签从路由参数取。
  * 在 setup 阶段捕获，避免 KeepAlive deactivated 时 useRoute() 跟踪
@@ -58,7 +59,7 @@ const suggestions = computed(() => tm("aiHome.suggestions") || []);
       :rich-markdown="true"
       :show-citations="true"
       :show-workflow-progress="true"
-      :linkify-citations="false"
+      :linkify-citations="true"
       :enable-attachments="true"
       :enable-agent-skills="true"
       :show-chat-header-brand="false"

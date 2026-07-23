@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
-from app.api.deps import get_current_user, require_feature
+from app.api.deps import get_current_user, require_feature, require_permission
 from app.api.streaming_utils import stream_sse_payloads
 from app.database import get_db
 from app.models.org import User
@@ -20,11 +20,13 @@ from app.schemas.ai_chat import (
     AttachmentUploadOut,
     ModelProviderItem,
 )
+from app.schemas.ai_home_openai import AiHomeOpenAiSettingsOut, AiHomeOpenAiSettingsUpdate
 from app.schemas.agent_profile import AgentCatalogItemOut
 from app.schemas.agent_skill import AgentSkillCatalogItemOut
 from app.schemas.agent_skill import AgentMemoryOut, AgentMemoryUpdateIn
 from app.schemas.common import ApiResponse
 from app.services import ai_chat_attachment_service as attachment_svc
+from app.services import ai_home_api_settings_service as ai_home_api_settings_svc
 from app.services.ai_chat_service import chat_with_ai_agent, iter_chat_with_ai_agent_stream
 
 router = APIRouter(
@@ -191,6 +193,39 @@ def list_ai_chat_model_providers(
             )
 
     return ApiResponse(data=items)
+
+
+@router.get(
+    "/openai-api-settings",
+    response_model=ApiResponse[AiHomeOpenAiSettingsOut],
+)
+def read_openai_api_settings(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[AiHomeOpenAiSettingsOut]:
+    """本析智能 OpenAI 兼容 API 平台开关（只读）。"""
+    return ApiResponse(
+        data=AiHomeOpenAiSettingsOut.model_validate(
+            ai_home_api_settings_svc.get_openai_api_settings(db)
+        )
+    )
+
+
+@router.put(
+    "/openai-api-settings",
+    response_model=ApiResponse[AiHomeOpenAiSettingsOut],
+)
+def update_openai_api_settings(
+    body: AiHomeOpenAiSettingsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_permission("admin.user"))],
+) -> ApiResponse[AiHomeOpenAiSettingsOut]:
+    """管理员启停本析智能 OpenAI 兼容 API。"""
+    return ApiResponse(
+        data=AiHomeOpenAiSettingsOut.model_validate(
+            ai_home_api_settings_svc.set_openai_api_enabled(db, body.enabled)
+        )
+    )
 
 
 @router.post("/chat", response_model=ApiResponse[AiChatResponse])

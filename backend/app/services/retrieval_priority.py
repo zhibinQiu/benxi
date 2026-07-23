@@ -1,4 +1,4 @@
-"""默认检索优先级 — 提速：直答 > 本体查询 > 图谱查询 > 联网 > 文档库；用户显式指定时不走级联。"""
+"""默认检索优先级 — 实例证据优先于 Schema：图谱 → 联网 → 文档库；本体查询不参与级联短路。"""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from app.services.skill_chat_service import (
     ATOMIC_TOOL_ONTOLOGY_QUERY,
 )
 
-# 执行顺序（快→慢）；事实引用优先级与 platform_assistant 保持一致
+# 执行顺序（快→慢）：先实例后 Schema；ontology_query 仅作辅助理解，不短路后续检索
 DEFAULT_RETRIEVAL_TOOL_ORDER: tuple[str, ...] = (
-    ATOMIC_TOOL_ONTOLOGY_QUERY,  # 第 0 优先 — 先查本体理解领域语义
-    ATOMIC_TOOL_KG_QUERY,        # 第 1 优先 — 再查图谱实例
+    ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_WEB_SEARCH,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
+    ATOMIC_TOOL_ONTOLOGY_QUERY,
 )
 
 _DOC_CITATION_SOURCES = frozenset({"local", "local_filename", "knowflow"})
@@ -105,15 +105,27 @@ def resolve_retrieval_channel_plan(
     )
 
 
+_KG_EMPTY_MARKERS = (
+    "未匹配到",
+    "未从问题中识别",
+    "当前图谱为空",
+)
+
+
 def kg_has_material(kg_context: KgQaContext | None) -> bool:
+    """是否有可用于作答的图谱推理材料（排除空匹配兜底文案）。"""
     if kg_context is None:
         return False
-    return bool(
-        (kg_context.context_text or "").strip()
-        or kg_context.entity_count
-        or kg_context.relation_count
-        or kg_context.matched_entity_ids
-    )
+    text = (kg_context.context_text or "").strip()
+    if not text:
+        return False
+    if any(marker in text for marker in _KG_EMPTY_MARKERS):
+        return False
+    if kg_context.matched_entity_ids and (
+        kg_context.relation_count > 0 or "【知识图谱推理上下文】" in text
+    ):
+        return True
+    return kg_context.relation_count > 0
 
 
 def citations_have_sources(

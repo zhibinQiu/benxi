@@ -1,15 +1,21 @@
 ---
 name: create_department
 ---
-create_department 工具 — 根据当前任务需求自动调用。
+创建部门，可选挂到父部门下（需管理员权限）。
 
 ## When to use
-- 用户请求与 create_department 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 管理员要求新建部门/科室
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 更新或删除部门
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 新建部门信息
+
+## Parameters
+
+### name (required)
+部门名称。
+
+### parent_id / parent_name (optional)
+父部门定位。

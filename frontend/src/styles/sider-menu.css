@@ -1,11 +1,185 @@
-/* 侧栏菜单 — 选中态玻璃指示条 + 悬浮态轻衬底 */
+/* 侧栏菜单 — 选中态 iOS 流动玻璃指示条 + 悬浮态轻衬底 */
 
 .sider-menu {
-  --menu-liquid-x: 0.46;
-  --menu-liquid-y: 0.34;
   --n-item-height: var(--platform-menu-item-height);
   --n-item-padding: 0 8px;
   font-size: 13px;
+}
+
+/*
+ * 选中指示条：半透明折射玻璃 + 顶缘高光 + 流动光泽
+ * 位置由 useSiderMenuIndicator 以 transform/height 驱动，仅纵向滑动
+ */
+.sider-menu-wrap .sider-menu-indicator {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 0;
+  z-index: 0;
+  overflow: hidden;
+  isolation: isolate;
+  pointer-events: none;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, #ffffff 70%, rgba(0, 0, 0, 0.08));
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, #ffffff 58%, transparent) 0%,
+      color-mix(in srgb, #ffffff 28%, transparent) 52%,
+      color-mix(in srgb, #ffffff 18%, transparent) 100%
+    );
+  backdrop-filter: blur(22px) saturate(1.85) brightness(1.06);
+  -webkit-backdrop-filter: blur(22px) saturate(1.85) brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.18),
+    inset 1px 0 0 rgba(255, 255, 255, 0.28),
+    inset -1px 0 0 rgba(255, 255, 255, 0.12),
+    0 1px 1px rgba(15, 23, 42, 0.03),
+    0 2px 6px rgba(15, 23, 42, 0.04);
+  will-change: transform, height, opacity;
+  transition:
+    transform var(--platform-duration-spring, 0.4s) var(--platform-ease-fluid, cubic-bezier(0.16, 1, 0.3, 1)),
+    height 0.32s var(--platform-ease-spring-soft, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity 0.18s ease,
+    box-shadow 0.28s ease,
+    border-color 0.28s ease;
+}
+
+/* 折射光斑：缓慢在玻璃内流动 */
+.sider-menu-wrap .sider-menu-indicator::before {
+  content: "";
+  position: absolute;
+  inset: -55%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 42% 36% at 28% 30%,
+      rgba(255, 255, 255, 0.72) 0%,
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 38% 32% at 78% 68%,
+      rgba(255, 255, 255, 0.28) 0%,
+      transparent 68%
+    ),
+    conic-gradient(
+      from 210deg at 50% 50%,
+      transparent 0deg,
+      rgba(255, 255, 255, 0.22) 48deg,
+      transparent 110deg,
+      rgba(255, 255, 255, 0.12) 180deg,
+      transparent 250deg,
+      rgba(255, 255, 255, 0.16) 310deg,
+      transparent 360deg
+    );
+  filter: blur(10px);
+  opacity: 0.85;
+  mix-blend-mode: soft-light;
+  animation: sider-menu-liquid-flow 5.2s ease-in-out infinite;
+}
+
+/* 顶缘镜面高光条 + 斜向扫光 */
+.sider-menu-wrap .sider-menu-indicator::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.12) 28%,
+      transparent 55%
+    ),
+    linear-gradient(
+      118deg,
+      transparent 0%,
+      transparent 36%,
+      rgba(255, 255, 255, 0.38) 48%,
+      transparent 60%,
+      transparent 100%
+    );
+  background-size: 100% 100%, 220% 220%;
+  background-position: 0 0, 130% 0%;
+  mix-blend-mode: soft-light;
+  opacity: 0.9;
+  animation: sider-menu-liquid-sheen 3.6s ease-in-out infinite;
+}
+
+@keyframes sider-menu-liquid-flow {
+  0% {
+    transform: translate3d(-6%, -4%, 0) rotate(0deg) scale(1);
+  }
+  40% {
+    transform: translate3d(8%, 5%, 0) rotate(120deg) scale(1.08);
+  }
+  70% {
+    transform: translate3d(2%, -6%, 0) rotate(240deg) scale(1.04);
+  }
+  100% {
+    transform: translate3d(-6%, -4%, 0) rotate(360deg) scale(1);
+  }
+}
+
+@keyframes sider-menu-liquid-sheen {
+  0% {
+    background-position: 0 0, 140% -20%;
+    opacity: 0.55;
+  }
+  45% {
+    opacity: 0.95;
+  }
+  100% {
+    background-position: 0 0, -50% 120%;
+    opacity: 0.6;
+  }
+}
+
+html[data-theme="dark"] .sider-menu-wrap .sider-menu-indicator {
+  border-color: color-mix(in srgb, #ffffff 16%, transparent);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, #ffffff 14%, transparent) 0%,
+      color-mix(in srgb, #ffffff 6%, transparent) 52%,
+      color-mix(in srgb, #ffffff 4%, transparent) 100%
+    );
+  backdrop-filter: blur(24px) saturate(1.55) brightness(1.12);
+  -webkit-backdrop-filter: blur(24px) saturate(1.55) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    inset 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 1px 1px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.16);
+}
+
+html[data-theme="dark"] .sider-menu-wrap .sider-menu-indicator::before {
+  opacity: 0.7;
+}
+
+html[data-theme="dark"] .sider-menu-wrap .sider-menu-indicator::after {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.05) 30%,
+      transparent 58%
+    ),
+    linear-gradient(
+      118deg,
+      transparent 0%,
+      transparent 36%,
+      rgba(255, 255, 255, 0.2) 48%,
+      transparent 60%,
+      transparent 100%
+    );
+  background-size: 100% 100%, 220% 220%;
+  opacity: 0.75;
 }
 
 .sider-menu .n-menu-item {
@@ -143,10 +317,29 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sider-menu-indicator {
+  .sider-menu-wrap .sider-menu-indicator {
     transition-duration: 0.01ms !important;
+  }
+  .sider-menu-wrap .sider-menu-indicator::before,
+  .sider-menu-wrap .sider-menu-indicator::after {
+    animation: none !important;
   }
   .sider-menu .n-menu-item-content::before {
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* 降低透明：退回实色选中条，保证对比度 */
+@media (prefers-reduced-transparency: reduce) {
+  .sider-menu-wrap .sider-menu-indicator {
+    border-color: var(--platform-border);
+    background: var(--platform-bg-tertiary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+  .sider-menu-wrap .sider-menu-indicator::before,
+  .sider-menu-wrap .sider-menu-indicator::after {
+    display: none;
   }
 }

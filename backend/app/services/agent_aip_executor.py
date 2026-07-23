@@ -200,12 +200,23 @@ async def iter_builtin_specialist_hop(
             )
         return
 
-    # ── 专精智能体：复用 intent_plan / 域内最小 plan，再单步执行 ──
-    from app.services.agent_planner import _fallback_plan, _rule_plan_from_intent
+    # ── 专精智能体：域内规则 plan → intent plan → fallback，再单步执行 ──
+    from app.services.agent_planner import (
+        _build_specialist_domain_plan,
+        _fallback_plan,
+        _rule_plan_from_intent,
+    )
 
     intent_label = "执行"
-    execution_plan = None
-    if ctx.intent_plan is not None:
+    db, user = sess.open()
+    execution_plan = _build_specialist_domain_plan(
+        db,
+        user,
+        agent_id=agent_id,
+        message=ctx.user_message,
+        history=ctx.chat_history,
+    )
+    if execution_plan is None and ctx.intent_plan is not None:
         intent_label = ctx.intent_plan.intent_label or intent_label
         execution_plan = _rule_plan_from_intent(ctx.intent_plan)
     if execution_plan is None:
@@ -217,8 +228,6 @@ async def iter_builtin_specialist_hop(
         "citations": [],
         "allowed_skill_names": allowed_skills,
     }
-
-    db, user = sess.open()
     async for event in _exec_one_tool_round(
         sess, db, user, working_messages, loop_state, all_tool_specs,
         execution_plan, ctx.user_message, ctx.session_id,

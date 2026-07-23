@@ -109,6 +109,53 @@ def clear_user_memory(user_id: uuid.UUID) -> bool:
         return False
 
 
+def _truncate_keep_newest(body: str, max_total: int) -> str:
+    """超限时保留标题与最新条目（丢弃较早记忆）。"""
+    text = (body or "").strip()
+    if len(text) <= max_total:
+        return text
+    header = "# Agent Memory"
+    lines = text.splitlines()
+    if lines and lines[0].lstrip().startswith("#"):
+        header = lines[0].strip()
+        lines = lines[1:]
+    kept: list[str] = []
+    # 预留标题、截断提示与换行
+    budget = max_total - len(header) - len(_TRUNC) - 4
+    if budget < 80:
+        return truncate_text(text, max_total, suffix=_TRUNC)
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        candidate = line if not kept else f"{line}\n" + "\n".join(reversed(kept))
+        if len(candidate) > budget:
+            break
+        kept.append(line)
+    if not kept:
+        return truncate_text(text, max_total, suffix=_TRUNC)
+    newest = "\n".join(reversed(kept))
+    return f"{header}\n\n{_TRUNC.strip()}\n{newest}"
+
+
+def build_turn_memory_note(message: str, reply: str, *, max_len: int = 400) -> str:
+    """从本轮用户消息与助手回复生成紧凑对话摘要。"""
+    user_part = " ".join((message or "").strip().split())
+    reply_part = " ".join((reply or "").strip().split())
+    if not user_part:
+        return ""
+    # 去掉常见 Markdown 噪音，便于记忆注入
+    for marker in ("```", "**", "__", "## ", "# "):
+        reply_part = reply_part.replace(marker, " ")
+    reply_part = " ".join(reply_part.split())
+    max_user = min(140, max(40, max_len // 3))
+    max_reply = max(80, max_len - max_user - 20)
+    user_snip = truncate_text(user_part, max_user, suffix="…")
+    if not reply_part:
+        return f"对话摘要：用户「{user_snip}」"
+    reply_snip = truncate_text(reply_part, max_reply, suffix="…")
+    return f"对话摘要：用户「{user_snip}」→ {reply_snip}"
+
+
 def append_user_memory(user_id: uuid.UUID, note: str) -> bool:
     """追加一条带时间戳的记忆；超出总上限时保留最新内容。"""
     text = (note or "").strip()
@@ -136,7 +183,7 @@ def append_user_memory(user_id: uuid.UUID, note: str) -> bool:
     else:
         body = f"# Agent Memory\n\n{line}"
 
-    body = truncate_text(body, max_total, suffix=_TRUNC)
+    body = _truncate_keep_newest(body, max_total)
     try:
         store.put_object_bytes(key, body.encode("utf-8"), "text/markdown; charset=utf-8")
         _invalidate_memory_prompt_cache(user_id)

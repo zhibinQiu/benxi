@@ -50,7 +50,9 @@ def test_rule_attachment_blocks_retrieval():
     assert plan is not None
     assert plan.direct_answer is False
     assert plan.allowed_tools == ()
-    assert ATOMIC_TOOL_WEB_SEARCH not in plan.blocked_tools
+    # 附件优先：屏蔽检索原子工具；父编排亦不可直调，须 kind=search 才可联网
+    assert ATOMIC_TOOL_WEB_SEARCH in plan.blocked_tools
+    assert ATOMIC_TOOL_KNOWLEDGE_RETRIEVE in plan.blocked_tools
 
 
 def test_filter_removes_skipped_retrieval_and_skill_load():
@@ -119,16 +121,16 @@ def test_plan_instruction_uploaded_skill_uses_run_script():
 def test_plan_instruction_instruction_only_skill_no_run_script():
     plan = AgentExecutionPlan(
         reasoning="",
-        intent="画流程图",
+        intent="整理制度要点",
         direct_answer=False,
         allowed_tools=(),
         blocked_tools=(),
-        uploaded_skill="mermaid-diagram",
-        steps=("按 SKILL.md 输出 mermaid",),
+        uploaded_skill="policy-outline",
+        steps=("按 SKILL.md 整理要点",),
         source="test",
     )
     text = build_plan_context_instruction(plan, uploaded_skill_has_script=False)
-    assert "mermaid-diagram" in text
+    assert "policy-outline" in text
 
 
 def test_parse_llm_plan_distinguishes_tools_and_skills():

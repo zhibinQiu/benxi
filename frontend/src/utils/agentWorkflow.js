@@ -28,13 +28,24 @@ export function emptyAgentWorkflow() {
   };
 }
 
-const HIDDEN_TEXT_RES = [/最多\s*\d+\s*轮/];
-const LIVE_THINKING_MAX = 800;
+const HIDDEN_TEXT_RES = [
+  /最多\s*\d+\s*轮/,
+  /必须调用\s*mermaid/i,
+  /匹配技能/,
+  /```\s*mermaid/i,
+  /flowchart\s+TD/i,
+  /【系统警告】/,
+  /【系统提示】你必须通过 tool_calls/,
+  /【系统】必须调用/,
+];
+const LIVE_THINKING_MAX = 2400;
 
 export function sanitizeWorkflowDisplayText(text) {
   const value = String(text || "").trim();
   if (!value) return "";
   if (HIDDEN_TEXT_RES.some((re) => re.test(value))) return "";
+  // 草稿答复（含完整 mermaid / 长篇终稿）不进思考区
+  if (value.length > 400 && /```/.test(value)) return "";
   return value;
 }
 
@@ -45,6 +56,57 @@ function safeText(text, fallback = "") {
 function ensureSteps(state) {
   if (!Array.isArray(state.steps)) state.steps = [];
   return state.steps;
+}
+
+/**
+ * 将思考片段写入 liveThinking 与 steps（答后「思考过程」面板）。
+ * @param {{ stream?: boolean }} [opts] stream=true 时连续拼接（thinking_delta），不强制换行
+ */
+function appendThinking(state, chunk, opts = {}) {
+  const raw = String(chunk || "");
+  if (!raw) return;
+  // 流式增量也过滤终稿草稿，避免「重试多次」把完整答案堆进思考过程
+  if (/```\s*mermaid/i.test(raw) || (/flowchart\s+TD/i.test(raw) && raw.length > 40)) {
+    return;
+  }
+  const text = opts.stream ? raw : sanitizeWorkflowDisplayText(raw);
+  if (!opts.stream && !text) return;
+  if (opts.stream && !raw.trim()) return;
+  const steps = ensureSteps(state);
+  let thinking = steps.find((s) => s.kind === "thinking");
+  if (!thinking) {
+    thinking = { kind: "thinking", title: "思考过程", detail: "" };
+    steps.push(thinking);
+  }
+  const prev = String(thinking.detail || "");
+  // 去重：与末段相同则跳过（规划事件常重复推送）
+  if (!opts.stream) {
+    const tail = prev.split("\n").filter(Boolean).slice(-1)[0] || "";
+    if (tail && (tail === text || text.includes(tail) || tail.includes(text))) {
+      return;
+    }
+  }
+  const next = opts.stream
+    ? `${prev}${raw}`
+    : prev
+      ? `${prev}${prev.endsWith("\n") ? "" : "\n"}${text}`
+      : text;
+  thinking.detail = next.length > 8000 ? next.slice(-8000) : next;
+  const livePrev = String(state.liveThinking || "");
+  const live = opts.stream
+    ? `${livePrev}${raw}`
+    : livePrev
+      ? `${livePrev}${text.startsWith("\n") ? text : `\n${text}`}`
+      : text.replace(/^\n+/, "");
+  state.liveThinking =
+    live.length > LIVE_THINKING_MAX ? live.slice(-LIVE_THINKING_MAX) : live;
+}
+
+function formatThinkingLine(title, detail) {
+  const t = safeText(title);
+  const d = safeText(detail);
+  if (t && d && t !== d) return `${t}：${d}`;
+  return d || t || "";
 }
 
 function appendExecStep(state, step) {
@@ -80,12 +142,36 @@ function applyUrlParseSnapshot(state, ev) {
   if (urls.length) {
     state.parsingUrls = urls;
   }
+  const parsing = urls.find((u) => u.status === "parsing") || urls.find((u) => u.status === "pending");
   const title = safeText(ev.title || ev.detail);
-  if (title) state.summary = title;
-  else if (urls.length) {
-    const done = Number(ev.done) || urls.filter((u) => u.status === "done" || u.status === "skipped").length;
+  if (parsing?.url) {
+    // 动作行展示当前正在解析的网址，不另开列表
+    state.summary = `正在解析：${shortUrlForSummary(parsing.url)}`;
+  } else if (title) {
+    state.summary = title;
+  } else if (urls.length) {
+    const done =
+      Number(ev.done) ||
+      urls.filter((u) => u.status === "done" || u.status === "skipped").length;
     const total = Number(ev.total) || urls.length;
-    state.summary = `正在解析网页（${done}/${total}）`;
+    if (done >= total && total > 0) {
+      state.summary = `网页解析完成（${done}/${total}）`;
+      state.parsingUrls = [];
+    } else {
+      state.summary = `正在解析网页（${done}/${total}）`;
+    }
+  }
+}
+
+function shortUrlForSummary(url) {
+  const u = String(url || "").trim();
+  if (!u) return "";
+  try {
+    const parsed = new URL(u);
+    const path = `${parsed.hostname}${parsed.pathname || ""}`.replace(/\/$/, "");
+    return path.length > 72 ? `${path.slice(0, 69)}…` : path;
+  } catch {
+    return u.length > 72 ? `${u.slice(0, 69)}…` : u;
   }
 }
 
@@ -107,7 +193,6 @@ function extractToolSummary(ev) {
   if (tool === "request_orchestrator_assist") return title || "请求辅助";
   if (tool === "run_tool_batch") return title || "批量检索";
   if (tool === "deep_research") return title || "联网调研";
-  if (tool === "mermaid_diagram") return title || "绘制图表";
 
   return title || "";
 }
@@ -162,6 +247,10 @@ export function applyAgentWorkflowEvent(state, ev) {
         title: safeText(ev.title, "执行计划"),
         detail: lines.map((line) => ({ text: line.replace(/^\s*\d+\.\s*/, "") })),
       });
+      appendThinking(state, formatThinkingLine(ev.title || "执行计划", lines.join("；")));
+    } else {
+      const d = safeText(ev.detail || ev.title);
+      if (d) appendThinking(state, formatThinkingLine(ev.title || "执行计划", d));
     }
     return state;
   }
@@ -205,6 +294,10 @@ export function applyAgentWorkflowEvent(state, ev) {
       title: summary,
       detail: safeText(ev.callDetail || ev.detail),
     });
+    appendThinking(
+      state,
+      formatThinkingLine(summary, safeText(ev.callDetail || ev.detail)),
+    );
     return state;
   }
 
@@ -228,30 +321,29 @@ export function applyAgentWorkflowEvent(state, ev) {
     state.running = true;
     const delta = String(ev.delta || "");
     if (!delta) return state;
-    const steps = ensureSteps(state);
-    let thinking = steps.find((s) => s.kind === "thinking");
-    if (!thinking) {
-      thinking = { kind: "thinking", title: "思考", detail: "" };
-      steps.push(thinking);
-    }
-    thinking.detail = String(thinking.detail || "") + delta;
-    // 灰色思考区流式增长；上行 summary 保持短执行态，不被思考正文覆盖
-    const live = String(state.liveThinking || "") + delta;
-    state.liveThinking =
-      live.length > LIVE_THINKING_MAX ? live.slice(-LIVE_THINKING_MAX) : live;
+    // 流式增量须连续拼接；勿每段前插 \n，否则会变成「一字一行」
+    appendThinking(state, delta, { stream: true });
     if (!state.summary) state.summary = "思考中";
     return state;
   }
 
-  if (phase === "agent_thinking") {
+  if (phase === "agent_thinking" || phase === "llm_thinking") {
     state.running = true;
     const d = safeText(ev.detail || ev.title);
-    if (d) state.summary = d;
-    else if (!state.summary) state.summary = "思考中";
+    if (d) {
+      state.summary = d;
+      appendThinking(state, formatThinkingLine(ev.title, d));
+    } else if (!state.summary) {
+      state.summary = "思考中";
+    }
     return state;
   }
 
   if (phase === "agent_thought") {
+    const d = safeText(ev.detail || ev.title);
+    if (d) {
+      appendThinking(state, formatThinkingLine(ev.title, d));
+    }
     if (!state.summary || state.summary === "思考中") {
       state.summary = ev.status === "failed"
         ? safeText(ev.detail || ev.title, "失败")
@@ -260,18 +352,14 @@ export function applyAgentWorkflowEvent(state, ev) {
     return state;
   }
 
-  if (phase === "llm_thinking") {
-    state.running = true;
-    const d = safeText(ev.detail || ev.title);
-    if (d) state.summary = d;
-    else if (!state.summary) state.summary = "思考中";
-    return state;
-  }
-
   if (phase === "llm_decision") {
     const d = safeText(ev.detail || ev.title);
-    if (d) state.summary = d;
-    else if (state.summary === "思考中") state.summary = "";
+    if (d) {
+      state.summary = d;
+      appendThinking(state, formatThinkingLine(ev.title || "决策", d));
+    } else if (state.summary === "思考中") {
+      state.summary = "";
+    }
     return state;
   }
 

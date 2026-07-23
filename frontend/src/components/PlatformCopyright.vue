@@ -6,9 +6,17 @@ const { t } = useI18n();
 
 defineProps({
   compact: { type: Boolean, default: false },
+  /** 暂时可关闭「打赏开发者」入口 */
+  showBuyCoffee: { type: Boolean, default: true },
 });
 
+const emit = defineEmits(["coffeeClick"]);
+
 const HAIYI_HOMEPAGE = "https://www.haiyisoft.com";
+
+function onCoffeeClick() {
+  emit("coffeeClick");
+}
 </script>
 
 <template>
@@ -18,6 +26,12 @@ const HAIYI_HOMEPAGE = "https://www.haiyisoft.com";
   >
     <p class="platform-copyright__links">
       <a class="platform-copyright__link" @click.prevent="openExternal(HAIYI_HOMEPAGE)" href="#">{{ t("copyright.about") }}</a>
+      <template v-if="showBuyCoffee">
+        <span class="platform-copyright__sep" aria-hidden="true">·</span>
+        <button type="button" class="platform-copyright__link platform-copyright__link--btn" @click="onCoffeeClick">
+          {{ t("login.buyCoffee") }}
+        </button>
+      </template>
     </p>
     <p>{{ t("copyright.text") }}</p>
   </div>
@@ -45,11 +59,25 @@ const HAIYI_HOMEPAGE = "https://www.haiyisoft.com";
   line-height: 1.45;
 }
 
+.platform-copyright__sep {
+  margin: 0 6px;
+  opacity: 0.55;
+}
+
 .platform-copyright__link {
   color: var(--platform-text-quaternary);
   text-decoration: none;
   cursor: pointer;
   transition: color 0.2s;
+}
+
+.platform-copyright__link--btn {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+  font: inherit;
 }
 
 .platform-copyright__link:hover {

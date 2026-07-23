@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.agentkit.route.signals import CompoundDetector, never_detected
+from app.agentkit.route.signals import CompoundDetector
 from app.agentkit.route.types import AgentRoute, AgentRoutePlan, RouteMode
 
 
@@ -28,7 +28,7 @@ def pick_route_with_fallback(
         return AgentRoute(agent_id=agent_id, reason=reason)
     return AgentRoute(
         agent_id=fallback_agent_id,
-        reason=f"{reason}（{agent_id} 已禁用，由调度智能体处理）",
+        reason=f"{reason}（{agent_id} 已禁用，由小析处理）",
     )
 
 

@@ -79,7 +79,7 @@ RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
 RUN find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 RUN python -c "\
-import fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml; \
+import fastapi, sqlalchemy, celery, httpx, pandas, numpy, bs4, lxml, markdown; \
 print('deps ok', fastapi.__version__)\
 "
 

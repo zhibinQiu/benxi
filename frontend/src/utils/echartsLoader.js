@@ -8,6 +8,11 @@
 
 let echartsLoader = null;
 
+/** 测试或热更新后可清空缓存，重新按需注册组件 */
+export function resetEchartsLoader() {
+  echartsLoader = null;
+}
+
 /** 项目中使用的图表类型列表（按需添加） */
 const USED_CHARTS = () => [
   import("echarts/charts").then((m) => ({
@@ -30,6 +35,7 @@ const USED_COMPONENTS = () => [
     DataZoomComponent: m.DataZoomComponent,
     VisualMapComponent: m.VisualMapComponent,
     MarkLineComponent: m.MarkLineComponent,
+    TitleComponent: m.TitleComponent,
   })),
 ];
 

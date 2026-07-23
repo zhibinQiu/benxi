@@ -1,15 +1,25 @@
 ---
 name: list_users
 ---
-list_users 工具 — 根据当前任务需求自动调用。
+分页列出平台用户（需管理员权限）。
 
 ## When to use
-- 用户请求与 list_users 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 管理场景：查看用户列表、按关键词搜索用户
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 非管理员/非用户管理场景
+- 创建/更新/删除用户（用对应工具）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 用户分页列表
+
+## Parameters
+
+### page (optional)
+页码，默认 1。
+
+### page_size (optional)
+每页条数，默认 20，最大 100。
+
+### keyword (optional)
+姓名/手机/邮箱等关键词。

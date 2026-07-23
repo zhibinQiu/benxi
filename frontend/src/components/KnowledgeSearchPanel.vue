@@ -459,7 +459,7 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--platform-chat-gradient);
+  background: transparent;
   overflow: hidden;
   --knowledge-search-content-max: 864px;
   --knowledge-search-content-gutter: 24px;

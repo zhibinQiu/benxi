@@ -194,7 +194,7 @@ def register_builtin_skills() -> None:
                 ),
             ),
         ),
-        # ── 免费网页 AI Skill（真正的多步编排工作流） ───────
+        # ── 免费网页 AI：仅独立功能页 /system/free-web-ai，不纳入 find_skills / 路由目录 ──
         SkillDefinition(
             name="free-web-ai",
             title="免费 AI 工具",
@@ -207,7 +207,7 @@ def register_builtin_skills() -> None:
             permission_code="feature.free_web_ai",
             readiness=SkillReadiness.READY,
             route="/system/free-web-ai",
-            catalog_visible=True,
+            catalog_visible=False,
             catalog_tier="resident",
             use_when="需要免费 AI 对话、代码生成、文案、翻译、生图、识图等任务，且不想用付费 API",
             dont_use_when="企业内部知识库检索（用 invoke_context_subagent(kind=search)）、平台 CRUD、需联网获取最新信息（用 invoke_context_subagent(kind=search)）、需要精确构图或高分辨率出图（推荐用专业工具）、纯 OCR 提取（用 ocr feature）",
@@ -299,7 +299,10 @@ def register_builtin_skills() -> None:
             readiness=SkillReadiness.READY,
             catalog_visible=True,
             use_when="需要单只个股的基本面深度分析：财务数据解读、估值评估、行业竞争格局、成长逻辑验证",
-            dont_use_when="需要多角色辩论或量价技术面分析（分别用 stock-roundtable / stock-volume-price）",
+            dont_use_when=(
+                "需要多角色辩论或量价技术面分析（分别用 stock-roundtable / stock-volume-price）；"
+                "询问某人属于哪个公司/部门等平台组织归属（走 kg_query，不是个股分析）"
+            ),
             output="结构化个股深度分析报告（含公司概览、财务/估值/行业/成长/风险五维分析）",
             tools=(
                 SkillToolSpec(
@@ -524,6 +527,54 @@ def register_builtin_skills() -> None:
                 ),
             ),
         ),
+        # ── 知识问答（调度智能体）──────────────────────────
+        SkillDefinition(
+            name="knowledge-qa",
+            title="知识问答",
+            description=(
+                "优先 DeepSearch 联网，再做一次简单知识库检索；"
+                "工具结果写入内存工作笔记后综合最终答案（不展示底稿、不落盘）。"
+            ),
+            source=SkillSource.BUILTIN,
+            feature_id="knowledge_search",
+            permission_code="feature.knowledge_search",
+            readiness=SkillReadiness.READY,
+            catalog_visible=True,
+            catalog_tier="resident",
+            use_when=(
+                "用户以 #知识问答 / #knowledge-qa 开头，或说「请使用 知识问答 技能：…」（硬触发）；"
+                "需要联网 DeepSearch + 知识库交叉验证的知识问题"
+            ),
+            dont_use_when=(
+                "双碳专业行情与政策（用 carbon-qa）、股市深度分析（用 stock-*）、"
+                "纯平台文档 CRUD（走 platform）、仅需画图或寒暄常识"
+            ),
+            output="面向用户的最终结论（含来源链接）；不展示事实底稿",
+            tools=(
+                SkillToolSpec(
+                    name="ask",
+                    description=(
+                        "知识问答：DeepSearch → 知识库简单检索 → 内存笔记综合最终答案"
+                    ),
+                    parameters={
+                        "type": "object",
+                        "required": ["question"],
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                                "description": "用户的知识问题",
+                            },
+                            "doc_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "可选，限定知识库文档 ID 列表",
+                            },
+                        },
+                    },
+                    handler=h.handle_knowledge_qa_ask,
+                ),
+            ),
+        ),
         # ── 双碳问答 ─────────────────────────────────────
         SkillDefinition(
             name="carbon-qa",
@@ -548,7 +599,7 @@ def register_builtin_skills() -> None:
                 SkillToolSpec(
                     name="ask",
                     description=(
-                        "回答双碳领域问题：自动调用 carbon_price / carbon_policy / carbon_data；"
+                        "回答双碳领域问题：自动调用 carbon_price / carbon_policy / carbon_data / time_series_forecast；"
                         "新闻资讯类返回浏览器查最新的执行指引"
                     ),
                     parameters={

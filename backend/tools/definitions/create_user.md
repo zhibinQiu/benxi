@@ -1,15 +1,34 @@
 ---
 name: create_user
 ---
-create_user 工具 — 根据当前任务需求自动调用。
+创建平台用户（需管理员权限）。
 
 ## When to use
-- 用户请求与 create_user 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 管理员要求开通新账号
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 非管理场景
+- 更新已有用户（用 update_user）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 新建用户信息
+
+## Parameters
+
+### phone (required)
+手机号。
+
+### email (required)
+邮箱。
+
+### display_name (required)
+显示名。
+
+### password (required)
+初始密码（至少 6 位）。
+
+### status (optional)
+默认 active。
+
+### department_id / department_name (optional)
+所属部门。

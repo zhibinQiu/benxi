@@ -46,7 +46,12 @@ export function useAuth() {
 
   function hasPerm(code) {
     if (isSystemAdmin.value) return true;
-    return permissions.value.includes(code);
+    if (permissions.value.includes(code)) return true;
+    // 语义层：旧 feature.kg 视为 feature.ontology 兼容别名
+    if (code === "feature.ontology" && permissions.value.includes("feature.kg")) {
+      return true;
+    }
+    return false;
   }
 
   function displayName() {

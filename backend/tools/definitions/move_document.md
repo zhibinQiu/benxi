@@ -1,15 +1,22 @@
 ---
 name: move_document
 ---
-move_document 工具 — 根据当前任务需求自动调用。
+将文档移动到指定文件夹（可按 folder_id 或 folder_name）。
 
 ## When to use
-- 用户请求与 move_document 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 用户要求把文档归入某文件夹
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 仅改标题（用 rename_document）
+- 分享给他人（用 share_document）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 移动结果
+
+## Parameters
+
+### document_id (required)
+文档 ID。
+
+### folder_id / folder_name (optional)
+目标文件夹；通常至少提供一个。

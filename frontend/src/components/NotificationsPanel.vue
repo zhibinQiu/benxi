@@ -234,7 +234,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 }
 
 .notifications-panel__title {
-  font-size: 16px;
+  font-size: var(--platform-font-size-lg, 14px);
   font-weight: 600;
   letter-spacing: var(--platform-tracking-tight);
 }
@@ -249,7 +249,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 .notifications-panel__body {
   max-height: 432px;
   overflow-y: auto;
-  padding: 8px 16px 14px;
+  padding: 4px 12px 10px;
 }
 
 .notifications-panel :deep(.n-list) {
@@ -262,7 +262,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   padding-right: 0;
   border-radius: var(--platform-radius-sm);
   margin: 0 -4px;
-  padding: 10px 4px;
+  padding: 6px 4px;
   border-bottom: 1px solid var(--platform-border);
   transition:
     background-color 0.2s ease,
@@ -278,11 +278,18 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 }
 
 .notifications-panel :deep(.n-thing .n-thing-header__title) {
-  font-size: var(--platform-font-size-base);
+  font-size: var(--platform-font-size-sm);
+  line-height: 1.35;
 }
 
 .notifications-panel :deep(.n-thing .n-thing-main__description) {
-  font-size: var(--platform-font-size-sm);
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.notifications-panel :deep(.n-thing .n-thing-main__footer) {
+  margin-top: 4px;
 }
 
 .notifications-panel :deep(.n-empty) {
@@ -306,15 +313,15 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   content: "";
   position: absolute;
   left: 0;
-  top: 12px;
-  bottom: 12px;
+  top: 8px;
+  bottom: 8px;
   width: 3px;
   border-radius: 2px;
   background: var(--platform-accent);
 }
 
 .notif-time {
-  font-size: var(--platform-font-size-sm);
+  font-size: 11px;
   color: var(--platform-text-tertiary);
 }
 
@@ -323,7 +330,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   padding: 0 2px;
   background: transparent;
   font: inherit;
-  font-size: var(--platform-font-size-sm);
+  font-size: 11px;
   font-weight: 500;
   color: var(--platform-accent);
   cursor: pointer;
@@ -335,7 +342,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 }
 
 .notif-read {
-  font-size: var(--platform-font-size-sm);
+  font-size: 11px;
   color: var(--platform-text-tertiary);
 }
 

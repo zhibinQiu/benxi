@@ -192,16 +192,7 @@ const routes = [
       },
       {
         path: "system/kg",
-        name: "kg",
-        meta: {
-          title: "知识图谱",
-          fullHeight: true,
-          flushStart: true,
-          flushEnd: true,
-          featureIcon: "cube-outline",
-          perm: "feature.kg",
-        },
-        component: () => import("../views/KgView.vue"),
+        redirect: { path: "/system/ontology", query: { tab: "entities" } },
       },
       {
         path: "system/compare",
@@ -252,7 +243,7 @@ const routes = [
       {
         path: "documents",
         name: "documents",
-        meta: { title: "我的文件", featureIcon: "document-text", keepAlive: true },
+        meta: { title: "文档管理", featureIcon: "document-text", keepAlive: true },
         component: () => import("../views/DocumentsView.vue"),
       },
       {
@@ -361,6 +352,17 @@ const routes = [
         component: () => import("../views/IssueReportsView.vue"),
       },
       {
+        path: "automation",
+        name: "automation",
+        meta: {
+          title: "定时任务",
+          featureIcon: "timer",
+          featureLocalNav: true,
+          keepAlive: true,
+        },
+        component: () => import("../views/AutomationView.vue"),
+      },
+      {
         path: "system/finance",
         name: "finance-assistant",
         meta: {
@@ -377,6 +379,7 @@ const routes = [
           title: "双碳助手",
           featureLocalNav: true,
           featureIcon: "leaf",
+          keepAlive: true,
         },
         component: () => import("../views/CarbonAssistantView.vue"),
       },
@@ -464,7 +467,7 @@ router.afterEach((to, from) => {
   cleanupBlockingUiArtifacts({ aggressive: true });
   if (from.meta?.public) return;
   releaseRouteMemory(from, to);
-  /* 预取高频路由块：登录后/首页加载后尽早拉取「我的文件」「多智能体」chunk */
+  /* 预取高频路由块：登录后/首页加载后尽早拉取「文档管理」「多智能体」chunk */
   _prefetchPopularChunksIfNeeded(to);
   /* 性能指标采集 */
   reportPerfMetricsOnRoute(to);

@@ -13,7 +13,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   /** 智能体正在流式回复 */
   loading: { type: Boolean, default: false },
-  /** 流式回复时是否禁用输入（false 时可边生成边编辑，发送需先停止） */
+  /** 流式回复时是否禁用输入（false 时可边生成边编辑） */
   disableInputWhileLoading: { type: Boolean, default: false },
   minRows: { type: Number, default: 2 },
   maxRows: { type: Number, default: 6 },
@@ -251,8 +251,8 @@ defineExpose({ focus });
         aria-label="上传附件"
         @click="emit('attach')"
       >
-        <n-spin v-if="attachmentLoading" :size="17" />
-        <n-icon v-else :size="22" :component="AttachOutline" />
+        <n-spin v-if="attachmentLoading" :size="14" />
+        <n-icon v-else :size="16" :component="AttachOutline" />
       </button>
       <button
         v-if="showVoiceInput"
@@ -263,8 +263,8 @@ defineExpose({ focus });
         :aria-label="recording ? '停止录音' : '语音输入'"
         @click="toggleVoiceRecording"
       >
-        <n-spin v-if="voiceProcessing" :size="17" />
-        <n-icon v-else :size="19" :component="MicOutline" />
+        <n-spin v-if="voiceProcessing" :size="14" />
+        <n-icon v-else :size="15" :component="MicOutline" />
       </button>
       <button
         v-if="loading"
@@ -273,7 +273,7 @@ defineExpose({ focus });
         aria-label="停止生成"
         @click="emit('stop')"
       >
-        <n-icon :size="18" :component="StopOutline" />
+        <n-icon :size="14" :component="StopOutline" />
       </button>
       <button
         v-else
@@ -283,7 +283,7 @@ defineExpose({ focus });
         aria-label="发送"
         @click="emit('send')"
       >
-        <n-icon :size="18" :component="ArrowUpOutline" />
+        <n-icon :size="14" :component="ArrowUpOutline" />
       </button>
     </div>
   </div>
@@ -413,8 +413,8 @@ defineExpose({ focus });
 .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer__input :deep(.n-input__textarea-mirror) {
-  padding-right: 62px !important;
-  padding-bottom: 53px !important;
+  padding-right: 48px !important;
+  padding-bottom: 48px !important;
 }
 
 .chat-composer__input :deep(.n-input__textarea-el) {
@@ -434,44 +434,44 @@ defineExpose({ focus });
 .chat-composer--single .chat-composer__input :deep(.n-input__textarea-mirror) {
   padding-top: 12px !important;
   padding-bottom: 12px !important;
-  padding-right: 50px !important;
+  padding-right: 42px !important;
   min-height: 48px !important;
 }
 
 .chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--with-attach .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-mirror) {
-  padding-right: 96px !important;
+  padding-right: 76px !important;
 }
 
 .chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
-  padding-right: 130px !important;
+  padding-right: 104px !important;
 }
 
 .chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
-  padding-right: 162px !important;
+  padding-right: 130px !important;
 }
 
 .chat-composer--single.chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--single.chat-composer--with-attach .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--single.chat-composer--with-attach .chat-composer__input :deep(.n-input__textarea-mirror) {
-  padding-right: 82px !important;
+  padding-right: 68px !important;
 }
 
 .chat-composer--single.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--single.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--single.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
-  padding-right: 114px !important;
+  padding-right: 94px !important;
 }
 
 .chat-composer--single.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--single.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--single.chat-composer--with-attach.chat-composer--with-voice .chat-composer__input :deep(.n-input__textarea-mirror) {
-  padding-right: 146px !important;
+  padding-right: 120px !important;
 }
 
 .chat-composer--single.chat-composer--has-files .chat-composer__actions {
@@ -500,8 +500,8 @@ defineExpose({ focus });
 }
 
 .chat-composer__attach {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -525,8 +525,8 @@ defineExpose({ focus });
 }
 
 .chat-composer__send {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -580,8 +580,8 @@ defineExpose({ focus });
 }
 
 .chat-composer__voice {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -683,13 +683,13 @@ defineExpose({ focus });
   .chat-composer__send,
   .chat-composer__attach,
   .chat-composer__voice {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
   }
   .chat-composer__send :deep(.n-icon),
   .chat-composer__attach :deep(.n-icon),
   .chat-composer__voice :deep(.n-icon) {
-    font-size: 16px !important;
+    font-size: 14px !important;
   }
 
   .chat-composer__actions {

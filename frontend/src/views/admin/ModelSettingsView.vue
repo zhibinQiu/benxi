@@ -687,13 +687,18 @@ onMounted(loadAll);
       </div>
 
       <n-grid
-        cols="2 s:3 m:4 xl:5"
-        :x-gap="14"
-        :y-gap="14"
+        cols="2 s:3 m:4 l:5 xl:6"
+        :x-gap="10"
+        :y-gap="10"
         responsive="screen"
         class="category-grid"
       >
-        <n-gi v-for="(item, index) in group.items" :key="item.id" class="resource-card-wrap">
+        <n-gi
+          v-for="(item, index) in group.items"
+          :key="item.id"
+          class="resource-card-wrap"
+          :style="{ '--enter-delay': `${Math.min(index, 10) * 28}ms` }"
+        >
           <span
             class="resource-status-dot"
             :class="`resource-status-dot--${healthState(item.id)}`"
@@ -704,21 +709,20 @@ onMounted(loadAll);
             class="feature-card resource-card"
             role="button"
             tabindex="0"
-            :style="{ '--enter-delay': `${Math.min(index, 10) * 28}ms` }"
             @click="openResource(item.id)"
             @keydown.enter.prevent="openResource(item.id)"
             @keydown.space.prevent="openResource(item.id)"
           >
-            <div class="resource-card__header">
-              <div class="feature-card__icon">
-                <n-icon :size="20">
-                  <component :is="item.icon" />
-                </n-icon>
-              </div>
-              <div class="resource-card__text">
+            <div class="feature-card__icon" aria-hidden="true">
+              <n-icon :size="20">
+                <component :is="item.icon" />
+              </n-icon>
+            </div>
+            <div class="feature-card__body">
+              <div class="feature-card__title-row">
                 <h3 class="feature-card__title">{{ item.title }}</h3>
-                <p class="feature-card__desc">{{ item.hint }}</p>
               </div>
+              <p class="feature-card__desc">{{ item.hint }}</p>
             </div>
           </article>
         </n-gi>
@@ -1501,7 +1505,9 @@ onMounted(loadAll);
 <style scoped>
 .resource-settings-page {
   width: 100%;
-  max-width: 1536px;
+  max-width: none;
+  --feature-card-height: 96px;
+  --cat-accent: var(--platform-accent);
 }
 
 .page-toolbar {
@@ -1518,7 +1524,7 @@ onMounted(loadAll);
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 12px;
-  padding: 0 0 10px 0;
+  padding: 0;
 }
 
 .category-block__text {
@@ -1557,6 +1563,8 @@ onMounted(loadAll);
   width: 100%;
   padding-top: 5px;
   padding-right: 5px;
+  animation: feature-card-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--enter-delay, 0ms);
 }
 
 .resource-status-dot {
@@ -1598,20 +1606,37 @@ onMounted(loadAll);
   }
 }
 
+/* 与功能列表同款横排入口卡 */
 .feature-card {
+  position: relative;
   flex: 1;
   width: 100%;
+  height: var(--feature-card-height);
+  min-height: var(--feature-card-height);
+  max-height: var(--feature-card-height);
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  padding: 14px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
   border-radius: var(--platform-card-radius);
-  background: var(--platform-card-bg);
-  border: 1px solid var(--platform-card-border-color);
-  cursor: pointer;
   outline: none;
-  animation: feature-card-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--enter-delay, 0ms);
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  transition: var(--platform-card-transition);
+  border: 1px solid var(--platform-card-border-color);
+  background: var(--platform-card-bg);
+  box-shadow: var(--platform-card-shadow);
+  backdrop-filter: var(--platform-glass-filter);
+  -webkit-backdrop-filter: var(--platform-glass-filter);
+}
+
+.feature-card:hover:not(.resource-card--readonly) {
+  border-color: var(--platform-card-hover-border-color);
+  box-shadow: var(--platform-card-shadow-hover);
+  transform: var(--platform-card-hover-transform);
 }
 
 .resource-card--readonly {
@@ -1621,51 +1646,71 @@ onMounted(loadAll);
 .resource-card--readonly:hover {
   transform: none;
   border-color: var(--platform-card-border-color);
+  box-shadow: var(--platform-card-shadow);
 }
 
 .feature-card:focus-visible {
   box-shadow:
-    0 0 0 2px var(--platform-bg-elevated),
-    0 0 0 5px var(--cat-accent);
+    0 0 0 2px color-mix(in srgb, var(--platform-bg) 72%, transparent),
+    0 0 0 5px var(--cat-accent) !important;
 }
 
 .feature-card__icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
+  align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  color: #141414;
-  background: #f3f3f3;
+  color: var(--platform-accent);
+  background: color-mix(in srgb, var(--platform-accent-soft) 88%, var(--platform-bg-tertiary));
+  border: 1px solid color-mix(in srgb, var(--platform-accent) 12%, transparent);
+}
+
+.feature-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+.feature-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: calc(var(--platform-font-size-base) * 1.4);
 }
 
 .feature-card__title {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: var(--platform-font-size-sm);
-  font-weight: 400;
-  line-height: 1.35;
+  font-weight: var(--platform-font-weight-normal);
+  line-height: 1.4;
   color: var(--platform-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .feature-card__desc {
-  margin: 4px 0 0;
-  font-size: var(--platform-font-size-nano);
-  font-weight: 400;
-  line-height: 1.45;
+  margin: 0;
+  min-height: calc(1em * 1.5);
+  font-size: var(--platform-font-size-sm);
+  font-weight: var(--platform-font-weight-normal);
+  line-height: 1.5;
   color: var(--platform-text-tertiary);
-}
-
-.resource-card__header {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.resource-card__text {
-  min-width: 0;
-  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .drawer-hint {
@@ -1719,11 +1764,21 @@ onMounted(loadAll);
 @keyframes feature-card-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resource-card-wrap {
+    animation: none !important;
+  }
+
+  .feature-card:hover:not(.resource-card--readonly) {
+    transform: none;
   }
 }
 </style>

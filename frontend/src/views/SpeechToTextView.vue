@@ -161,7 +161,7 @@ function resolveImportKgTitle({ recordTitle = "" } = {}) {
 }
 
 const canImportKg = computed(
-  () => hasPerm("feature.kg") && !!buildSummaryExportText().length
+  () => hasPerm("feature.ontology") && !!buildSummaryExportText().length
 );
 
 const canImportLibrary = computed(() => !!buildSummaryExportText().length);
@@ -696,8 +696,8 @@ async function runImportKg({ record } = {}) {
     );
     if (res.root_entity_id) {
       router.push({
-        path: "/system/kg",
-        query: { focusEntityId: res.root_entity_id },
+        path: "/system/ontology",
+        query: { tab: "graph", focusEntityId: res.root_entity_id },
       });
     }
   } catch (e) {
@@ -797,7 +797,7 @@ onBeforeUnmount(() => {
                 {{ t('speechToText.loadToEditor') }}
               </n-button>
               <n-button
-                v-if="hasPerm('feature.kg')"
+                v-if="hasPerm('feature.ontology')"
                 size="small"
                 quaternary
                 :loading="importingKg"
@@ -1154,7 +1154,7 @@ onBeforeUnmount(() => {
                     {{ t('speechToText.copy') }}
                   </n-button>
                   <n-button
-                    v-if="hasPerm('feature.kg')"
+                    v-if="hasPerm('feature.ontology')"
                     size="tiny"
                     quaternary
                     :loading="importingKg"

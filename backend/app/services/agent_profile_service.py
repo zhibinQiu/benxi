@@ -543,6 +543,13 @@ def resolve_agent_skill_names(db: Session, agent_id: str) -> list[str]:
     if binding is not None and not binding.enabled:
         return []
     names = _effective_skill_names(defn, binding)
+    # 调度层内置默认 Skill（如 knowledge-qa）始终保留，避免 DB binding 覆盖后丢失硬触发能力
+    if (agent_id or "").strip() == "orchestrator":
+        from app.core.tool_skill_taxonomy import AGENT_DEFAULT_SKILLS
+
+        for name in AGENT_DEFAULT_SKILLS.get("orchestrator", ()):
+            if name and name not in names:
+                names.append(name)
     known = {
         skill.name
         for skill in list_all_skill_definitions(

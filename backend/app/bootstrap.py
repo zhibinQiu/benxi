@@ -35,9 +35,38 @@ def all_default_permissions() -> list[tuple[str, str]]:
 def bootstrap_db(db: Session) -> None:
     ensure_plugins_loaded()
     _seed_permissions_and_roles(db)
+    _migrate_kg_grants_to_ontology(db)
     _sync_plugin_role_grants(db)
     _prune_orphan_feature_permissions(db)
     _seed_admin(db)
+
+
+def _migrate_kg_grants_to_ontology(db: Session) -> None:
+    """将已有 ``feature.kg`` 角色授权合并到 ``feature.ontology``（幂等）。"""
+    kg = db.scalar(select(Permission).where(Permission.code == "feature.kg"))
+    ontology = db.scalar(
+        select(Permission).where(Permission.code == "feature.ontology")
+    )
+    if not kg or not ontology:
+        return
+    existing_ontology_roles = {
+        rp.role_id
+        for rp in db.scalars(
+            select(RolePermission).where(
+                RolePermission.permission_id == ontology.id
+            )
+        ).all()
+    }
+    for rp in db.scalars(
+        select(RolePermission).where(RolePermission.permission_id == kg.id)
+    ).all():
+        if rp.role_id in existing_ontology_roles:
+            continue
+        db.add(
+            RolePermission(role_id=rp.role_id, permission_id=ontology.id)
+        )
+        existing_ontology_roles.add(rp.role_id)
+    db.flush()
 
 
 def _seed_permissions_and_roles(db: Session) -> None:

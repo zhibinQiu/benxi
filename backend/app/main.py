@@ -29,10 +29,12 @@ from app.api import (
     monitor,
     notifications,
     ontology,
+    openai_compat,
     roles,
     system,
     todos,
     users,
+    automations,
 )
 from app.api import embed_proxy as embed_proxy_api
 from app.config import get_settings
@@ -61,6 +63,7 @@ from app.models import (  # noqa: F401 — register ORM models
     note,
     org,
     prompt,
+    platform_ai_home_settings,
     platform_chat,
     platform_model_settings,
     rag,
@@ -71,6 +74,7 @@ from app.models import (  # noqa: F401 — register ORM models
     scheduled_notification,
     todo,
     wechat_mp,
+    agent_automation,
 )
 from app.schemas.common import ApiResponse
 from app.services.knowflow_queue_watchdog_service import start_knowflow_queue_watchdog
@@ -175,9 +179,25 @@ async def lifespan(_app: FastAPI):
     )
     watchdog_task = start_knowflow_queue_watchdog()
     job_watchdog_task = start_background_job_watchdog()
+    from app.services.carbon_market_sync_service import start_carbon_market_sync
+
+    carbon_market_sync_task = start_carbon_market_sync()
+    from app.services.agent_automation_poller import start_automation_poller
+
+    automation_poller_task = start_automation_poller()
     try:
         yield
     finally:
+        automation_poller_task.cancel()
+        try:
+            await automation_poller_task
+        except asyncio.CancelledError:
+            pass
+        carbon_market_sync_task.cancel()
+        try:
+            await carbon_market_sync_task
+        except asyncio.CancelledError:
+            pass
         job_watchdog_task.cancel()
         try:
             await job_watchdog_task
@@ -369,6 +389,7 @@ def create_app() -> FastAPI:
     app.include_router(document_share_router, prefix=prefix)
     app.include_router(jobs.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
+    app.include_router(automations.router, prefix=prefix)
     app.include_router(todos.router, prefix=prefix)
     app.include_router(issue_reports.router, prefix=prefix)
     app.include_router(monitor.router, prefix=prefix)
@@ -377,6 +398,7 @@ def create_app() -> FastAPI:
     app.include_router(agent_skills.router, prefix=prefix)
     app.include_router(aip.router, prefix=prefix)
     app.include_router(aip_admin.router, prefix=prefix)
+    app.include_router(openai_compat.router, prefix=prefix)
     app.include_router(mcp.router, prefix=prefix)
     app.include_router(browser_rpa.router, prefix=prefix)
     app.include_router(ontology.router, prefix=prefix)

@@ -403,6 +403,9 @@ def _persist_package(
         _ensure_skill_mounted_to_agent(db, package.dir_name, mount_agent)
     db.commit()
     db.refresh(skill)
+    from app.services.agent_skill_rag import invalidate_skill_embedding_index
+
+    invalidate_skill_embedding_index()
     return skill
 
 
@@ -616,6 +619,9 @@ def update_skill(
         skill.description = desc
     db.commit()
     db.refresh(skill)
+    from app.services.agent_skill_rag import invalidate_skill_embedding_index
+
+    invalidate_skill_embedding_index()
     return _to_summary(skill)
 
 
@@ -626,6 +632,9 @@ def delete_skill(db: Session, skill_id: uuid.UUID) -> None:
     prefix = skill.storage_prefix
     db.delete(skill)
     db.commit()
+    from app.services.agent_skill_rag import invalidate_skill_embedding_index
+
+    invalidate_skill_embedding_index()
     if prefix:
         try:
             get_object_store().delete_prefix(prefix)
@@ -773,6 +782,9 @@ def update_skill_file(
         )
     db.commit()
     db.refresh(skill)
+    from app.services.agent_skill_rag import invalidate_skill_embedding_index
+
+    invalidate_skill_embedding_index()
     return AgentSkillFileContentOut(
         path=rel,
         content_type=_guess_content_type(rel),

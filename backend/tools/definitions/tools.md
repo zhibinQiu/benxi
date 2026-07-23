@@ -3,22 +3,22 @@
 原子工具是智能体执行的最小动作单元。每个工具提供单一、可验证的操作。
 工具的选择由 LLM 根据工具定义（description）和当前上下文自动决策。
 
-## invoke_context_subagent（子智能体统一入口）
-- Use when: 所有需要子智能体自主执行的场景
-  - kind=search：深度联网检索（搜索+知识库+本体+图谱，多源交叉验证）
+## invoke_context_subagent（子智能体统一入口 · 父编排唯一执行通道）
+- Use when: 父编排需要执行任何检索或操作
+  - kind=search：联网检索（搜索+知识库+本体+图谱）
   - kind=use：执行已有 Skill
-  - kind=execute：严格按编排步骤执行（浏览器自动化等具体操作），也可用于父智能体透明委托
-- Don't use when: 可直接用原子工具一步完成的任务、已确定的问题（直接回答）
+  - kind=execute：按 steps 执行浏览器/通知等原子步骤
+- Don't use when: 常识可直接回答、已确定用 Mermaid 画图
 - Output: 子智能体执行结果
 
 ## knowledge_retrieve
-- Use when: 检索企业文档库，按关键词匹配文档片段
-- Don't use when: 需联网搜索公开信息（用 invoke_context_subagent(kind=search)）、需查询实体关系图（用 kg_query）
+- Use when: 子 Agent（search/use/专精）检索企业文档库
+- Don't use when: 父编排直调（父层须 invoke_context_subagent(kind=search)）
 - Output: 匹配文档标题、片段及来源
 
 ## kg_query
-- Use when: 查询本体知识图谱，获取结构化实体关系
-- Don't use when: 需检索文档全文（用 knowledge_retrieve）、需搜索网络（用 invoke_context_subagent(kind=search)）
+- Use when: 子 Agent 查询本体知识图谱
+- Don't use when: 父编排直调（父层须 kind=search）
 - Output: 匹配实体、关系及属性
 
 ## send_notification
@@ -75,6 +75,11 @@
 - Use when: 查询排放数据 / CCER / 国际碳市场 / 地方双碳方案（topic=emission|ccer|international|local）
 - Don't use when: 碳价（用 carbon_price）、政策法规（用 carbon_policy）、新闻资讯（用浏览器）
 - Output: 多源结构化数据摘要 Markdown，附 URL 与查询时间
+
+## time_series_forecast
+- Use when: 碳价至年底走势预测/外推；需选择算法 rule|ets|sarimax|prophet；序列 cea|ccer
+- Don't use when: 今日实时行情摘要（用 carbon_price）、政策/排放结构化取数
+- Output: 预测摘要（年底价、高低带、峰谷）+ 抽样点位与来源
 
 ## request_orchestrator_assist
 - Use when: 专精 Agent 遇到本域无法完成的任务，需要调度层协调其他专精协助

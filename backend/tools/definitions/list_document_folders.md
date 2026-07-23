@@ -1,15 +1,20 @@
 ---
 name: list_document_folders
 ---
-list_document_folders 工具 — 根据当前任务需求自动调用。
+列出指定范围下的文档库文件夹。
 
 ## When to use
-- 用户请求与 list_document_folders 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 创建/移动文档前需要知道有哪些文件夹
+- 用户问「文档库文件夹结构」
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 列出文件夹内文档（用 list_library_documents）
+- 知识库挂载查询（用 list_mounted_folders，若可用）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 文件夹列表（名称、ID 等）
+
+## Parameters
+
+### scope (required)
+文档范围（personal / department / org 等）。

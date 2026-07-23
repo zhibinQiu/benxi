@@ -1,5 +1,6 @@
 import { computed, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { bumpSessionEpoch } from "../utils/sessionEpoch.js";
 
 const TABS_STORAGE_KEY = "platform:chat-tabs:ai-home";
 const MAX_TABS = 7;
@@ -94,13 +95,27 @@ watch(
   { deep: true }
 );
 
+function clearSessionStorageKey(sessionKey) {
+  if (!sessionKey) return;
+  try {
+    sessionStorage.removeItem(`platform:chat-session:${sessionKey}`);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function resetChatTabs() {
-  /* 登录/退出时重置为单个新对话标签 */
+  /* 登录/退出/关闭全部：清掉旧会话，只留一个全新空对话 */
+  for (const tab of tabs.value) {
+    clearSessionStorageKey(tab.sessionKey);
+  }
+  clearSessionStorageKey("ai-home");
+  const freshKey = `ai-home:${Date.now()}`;
   tabs.value = [
     {
       id: "tab-0",
       title: "",
-      sessionKey: "ai-home",
+      sessionKey: freshKey,
     },
   ];
   activeTabId.value = "tab-0";
@@ -200,11 +215,7 @@ export function useChatTabs() {
   function clearTabSession(id) {
     const tab = tabs.value.find((t) => t.id === id);
     if (tab) {
-      try {
-        sessionStorage.removeItem(`platform:chat-session:${tab.sessionKey}`);
-      } catch {
-        /* ignore */
-      }
+      clearSessionStorageKey(tab.sessionKey);
     }
   }
 
@@ -216,9 +227,12 @@ export function useChatTabs() {
     tabHasContent[id] = val;
   }
 
-  /** 一键关闭所有标签，重置为单个新对话 */
+  /** 一键关闭所有标签，重置为单个全新空对话（不复用旧 sessionStorage） */
   function closeAllTabs() {
     resetChatTabs();
+    // 强制 KeepAlive 丢弃旧 ai-home 实例，确保界面是空白新窗口
+    bumpSessionEpoch();
+    navigateToTab("tab-0");
   }
 
   return {

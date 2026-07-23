@@ -49,6 +49,54 @@ def test_get_llm_credentials_reads_merged_config(monkeypatch):
     assert model == "local-chat"
 
 
+def test_get_llm_credentials_skips_empty_active_provider(monkeypatch):
+    """active=default 无 key 时，改用 providers 中第一条可用密钥。"""
+    import json
+
+    settings = Settings(
+        platform_llm_base_url="https://api.deepseek.com/v1",
+        platform_llm_api_key="sk-badshort",
+        platform_llm_model="deepseek-chat",
+        deepseek_api_key="",
+    )
+    providers = [
+        {
+            "id": "default",
+            "base_url": "https://api.deepseek.com/v1",
+            "api_key": "",
+            "model_name": "deepseek-chat",
+        },
+        {
+            "id": "local_ok",
+            "base_url": "http://127.0.0.1:18056/v1",
+            "api_key": "sk-local-ok",
+            "model_name": "local-model",
+        },
+    ]
+
+    def _fake_merge(_settings, _db, fill_embedding_from_ragflow=False):
+        return {
+            "llm_base_url": "https://api.deepseek.com/v1",
+            "llm_api_key": "sk-badshort",
+            "llm_model": "deepseek-chat",
+            "llm_active_provider": "default",
+            "llm_providers": json.dumps(providers),
+        }
+
+    monkeypatch.setattr(
+        "app.services.model_settings_service.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        "app.services.model_settings_service._merge_effective",
+        _fake_merge,
+    )
+    base, key, model = get_llm_credentials(None)
+    assert base == "http://127.0.0.1:18056/v1"
+    assert key == "sk-local-ok"
+    assert model == "local-model"
+
+
 def test_endpoint_fields_reads_explicit_config():
     merged = {
         "vl_base_url": "https://api.siliconflow.cn/v1",

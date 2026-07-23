@@ -20,7 +20,7 @@ description: 双碳领域专业咨询：碳市场行情/碳交易/碳配额/CCER
 
 ## 核心原则
 
-- **结构化数据优先原子工具**：碳价用 `carbon_price`，政策用 `carbon_policy`，排放/CCER/国际/地方用 `carbon_data`
+- **结构化数据优先原子工具**：实时行情用 `carbon_price`，政策用 `carbon_policy`，排放/CCER/国际/地方用 `carbon_data`；至年底走势预测用 `time_series_forecast`
 - **新闻资讯走浏览器**：每日碳新闻、政策解读、滚动资讯用 `invoke_context_subagent(kind=execute, task=...)`，由调度层浏览器打开资讯站查最新；禁止用静态抓取冒充即时新闻
 - **优先官方源**：碳价优先 cneeex.com / cets.org.cn；政策优先 gov.cn / ndrc.gov.cn / mee.gov.cn；国际优先 Carbon Pulse / EEX
 - **技能是选配**：挂载的 `carbon-qa` 可通过 `invoke_skill(carbon-qa, ask, {question: "..."})` 编排取数与回答
@@ -29,9 +29,10 @@ description: 双碳领域专业咨询：碳市场行情/碳交易/碳配额/CCER
 
 | 工具 | 用途 |
 |------|------|
-| `carbon_price` | CEA / CCER / 试点碳价官方源摘要 |
+| `carbon_price` | CEA / CCER / 试点碳价官方源摘要（行情取数） |
 | `carbon_policy` | 双碳政策法规官方源摘要 |
 | `carbon_data` | topic=`emission`\|`ccer`\|`international`\|`local` |
+| `time_series_forecast` | 时序预测模型：method=`rule`\|`ets`\|`sarimax`\|`prophet`，series=`cea`\|`ccer` |
 
 ## 数据源
 
@@ -76,16 +77,19 @@ description: 双碳领域专业咨询：碳市场行情/碳交易/碳配额/CCER
 
 ## 工作方式
 
-1. **判断查询类型**：碳价 / 政策 / 排放·CCER·国际·地方 / 新闻资讯 / 综合分析
+1. **判断查询类型**：碳价行情 / 至年底预测 / 政策 / 排放·CCER·国际·地方 / 新闻资讯 / 综合分析
 2. **结构化数据**：直接调用 `carbon_price` / `carbon_policy` / `carbon_data`，或 `invoke_skill(carbon-qa, ask, {question: "..."})`
-3. **新闻资讯**：`invoke_context_subagent(kind=execute, task="用浏览器打开 cenews.com.cn / tandao.org / 3060.org.cn 查最新…")`
-4. **综合回答**：引用来源、注明时效、区分全国 CEA / 地方试点 / CCER 不同价格体系
+3. **走势预测**：调用 `time_series_forecast(method=..., series=cea|ccer)`；未指定算法时用 `rule`
+4. **新闻资讯**：`invoke_context_subagent(kind=execute, task="用浏览器打开 cenews.com.cn / tandao.org / 3060.org.cn 查最新…")`
+5. **综合回答**：引用来源、注明时效、区分全国 CEA / 地方试点 / CCER 不同价格体系
 
 ### 查询示例
 
 | 需求 | 调用方式 |
 |------|----------|
 | 今日 CEA 碳价 | `carbon_price(keyword="全国碳市场CEA今日收盘价")` |
+| CEA 至年底预测 | `time_series_forecast(method="rule", series="cea")` |
+| 用 Prophet 预测 CCER | `time_series_forecast(method="prophet", series="ccer")` |
 | CCER 政策 | `carbon_policy(keyword="CCER最新方法学")` 或 `carbon_data(topic="ccer")` |
 | 欧盟碳市场 | `carbon_data(topic="international", keyword="EU ETS")` |
 | 最新碳新闻 | `invoke_context_subagent(kind=execute, task="用浏览器打开碳资讯站查最新双碳新闻")` |

@@ -1,6 +1,6 @@
 [project]
 name = "doc-platform"
-version = "4.8.6"
+version = "4.8.7"
 description = "Single-tenant document platform (IAM, documents, jobs, notifications)"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -29,6 +29,7 @@ dependencies = [
     "lxml>=5.0.0",
     "pymysql>=1.1.0",
     "html2text>=2024.2.26",
+    "markdown>=3.5",
     "sse-starlette>=2.3.0",
     "pycryptodomex>=3.21.0",
     "pypdf>=5.0.0",
@@ -44,6 +45,9 @@ dependencies = [
     "seaborn>=0.13.0",
     "yt-dlp>=2024.12.0",
     "neo4j>=5.20.0",
+    "statsmodels>=0.14.0",
+    "jieba>=0.42.1",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.optional-dependencies]

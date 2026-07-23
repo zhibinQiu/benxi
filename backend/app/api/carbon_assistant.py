@@ -1,4 +1,4 @@
-"""双碳助手 API — 碳交易看板 / 碳报告 / 减碳策略。"""
+"""双碳助手 API — 履约策略工作台 / 市场摘要 / 资讯报告。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.api.carbon_compliance import router as compliance_router
 from app.api.deps import get_current_user, require_feature
+from app.core.permissions import user_is_system_admin
 from app.database import get_db
 from app.models.carbon_report import CarbonReport
 from app.models.org import User
@@ -18,11 +20,19 @@ from app.schemas.common import ApiResponse
 from app.services import carbon_assistant_service as svc
 from app.services import carbon_service as carbon_svc
 
+
+def _report_out(db: Session, report: CarbonReport, *, with_owner: bool = False) -> dict:
+    data = CarbonReportOut.model_validate(report).model_dump(mode="json")
+    if with_owner:
+        data["owner_name"] = svc.resolve_owner_name(db, report.user_id)
+    return data
+
 router = APIRouter(
     prefix="/carbon-assistant",
     tags=["carbon-assistant"],
     dependencies=[Depends(require_feature("carbon_assistant"))],
 )
+router.include_router(compliance_router)
 
 public_router = APIRouter(prefix="/share/carbon", tags=["carbon-share"])
 
@@ -99,6 +109,19 @@ async def submit_report(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse:
+    # strategy 类型已由履约综合分析替换
+    if body.report_type == "strategy":
+        raise HTTPException(
+            status_code=400,
+            detail="减碳策略报告已下线，请使用履约综合分析 compliance_analysis",
+        )
+    if body.report_type == "compliance_analysis":
+        ctx = (body.ai_context or "").strip()
+        if '"enterprise_id"' not in ctx and "'enterprise_id'" not in ctx:
+            raise HTTPException(
+                status_code=400,
+                detail="履约综合分析需在 ai_context 中提供 enterprise_id",
+            )
     report = svc.create_report(
         db,
         user.id,
@@ -122,6 +145,7 @@ async def list_reports(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> ApiResponse:
+    is_admin = user_is_system_admin(db, user)
     rows = svc.get_user_reports(
         db,
         user.id,
@@ -129,9 +153,10 @@ async def list_reports(
         status=status,
         limit=limit,
         offset=offset,
+        all_users=is_admin,
     )
     return ApiResponse(
-        data=[CarbonReportOut.model_validate(r).model_dump(mode="json") for r in rows]
+        data=[_report_out(db, r, with_owner=is_admin) for r in rows]
     )
 
 
@@ -142,9 +167,11 @@ async def get_report(
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse:
     report = svc.get_report(db, report_id)
-    if not report or report.user_id != user.id:
+    if not svc.user_can_access_report(db, user, report):
         raise HTTPException(status_code=404, detail="报告不存在")
-    return ApiResponse(data=CarbonReportOut.model_validate(report).model_dump(mode="json"))
+    assert report is not None
+    is_admin = user_is_system_admin(db, user)
+    return ApiResponse(data=_report_out(db, report, with_owner=is_admin))
 
 
 @router.post("/report/{report_id}/cancel", response_model=ApiResponse)
@@ -153,11 +180,12 @@ async def cancel_report(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse:
+    is_admin = user_is_system_admin(db, user)
     try:
-        report = svc.cancel_report_task(db, user.id, report_id)
+        report = svc.cancel_report_task(db, user.id, report_id, as_admin=is_admin)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return ApiResponse(data=CarbonReportOut.model_validate(report).model_dump(mode="json"))
+    return ApiResponse(data=_report_out(db, report, with_owner=is_admin))
 
 
 @router.delete("/report/{report_id}", response_model=ApiResponse)
@@ -166,8 +194,9 @@ async def delete_report(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse:
+    is_admin = user_is_system_admin(db, user)
     try:
-        svc.delete_report(db, user.id, report_id)
+        svc.delete_report(db, user.id, report_id, as_admin=is_admin)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ApiResponse(data={"ok": True})
@@ -180,8 +209,9 @@ async def view_report(
     db: Annotated[Session, Depends(get_db)],
 ):
     report = svc.get_report(db, report_id)
-    if not report or report.user_id != user.id:
+    if not svc.user_can_access_report(db, user, report):
         raise HTTPException(status_code=404, detail="报告不存在")
+    assert report is not None
     if report.status != "completed" or not report.content:
         raise HTTPException(status_code=400, detail="报告尚未完成")
     token = report.share_token or ""
@@ -197,8 +227,9 @@ async def download_report(
     db: Annotated[Session, Depends(get_db)],
 ):
     report = svc.get_report(db, report_id)
-    if not report or report.user_id != user.id:
+    if not svc.user_can_access_report(db, user, report):
         raise HTTPException(status_code=404, detail="报告不存在")
+    assert report is not None
     if report.status != "completed" or not report.content:
         raise HTTPException(status_code=400, detail="报告尚未完成")
     filename = f"{report.subject}_{report.report_type}.md".replace("/", "_")

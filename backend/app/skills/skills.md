@@ -1,16 +1,16 @@
 # Skills 路由目录（调度层只读 · 简约版）
 
+## knowledge-qa
+- Title: 知识问答
+- Use when: 用户以 `#知识问答` / `#knowledge-qa` 开头，或说「请使用 知识问答 技能：…」（硬触发，不经模型选型）；需要联网 DeepSearch + 知识库交叉验证的问题
+- Don't use when: 双碳专业行情与政策（用 carbon-qa）、股市深度分析（用 stock-*）、纯平台文档 CRUD（走 platform）、仅需画图或寒暄常识
+- Output: 面向用户的最终结论（含来源）；不展示事实底稿
+
 ## carbon-qa
 - Title: 双碳问答
 - Use when: 双碳领域问题：碳价行情、碳交易、碳达峰碳中和政策、CCER、碳排放核算、节能降碳等
 - Don't use when: 其他非双碳领域问题、简单常识问答
-- Output: 官方源事实底稿（carbon_price / carbon_policy / carbon_data）；新闻资讯返回浏览器 execute 指引，禁止编造实时数据
-
-## free-web-ai
-- Title: 免费 AI 工具
-- Use when: 需要免费 AI 对话、代码生成、文案、翻译、生图（文字描述）、识图问答等任务，无需付费 API key
-- Don't use when: 企业内部知识库检索（用 invoke_context_subagent(kind=search, ...)）、平台 CRUD、纯 OCR 提取（用 ocr feature）
-- Output: AI 文本回复 / 图片 / 图片内容描述
+- Output: 官方源事实底稿（carbon_price / carbon_policy / carbon_data）或时序预测（time_series_forecast）；新闻资讯返回浏览器 execute 指引，禁止编造实时数据
 
 ## stock-deep-analysis
 - Title: AI 深度解读

@@ -49,6 +49,103 @@ def system_version() -> ApiResponse[dict]:
     )
 
 
+# 宣传页报告累计展示基数（真实生成量在此之上累加）
+_PROMO_REPORT_BASE = 1960
+
+
+@router.get("/promo-stats")
+def promo_stats(
+    db: Annotated[Session, Depends(get_read_db)],
+) -> ApiResponse[dict]:
+    """登录宣传页统计（无需登录）：文档 / 智能体 / 技能 / 工具 / 报告 / 笔记 / 功能数量。"""
+    from pathlib import Path
+
+    from sqlalchemy import func, select
+
+    from app.core.aip.acdl import list_builtin_agent_acdl
+    from app.features.registry import all_plugins, ensure_plugins_loaded
+    from app.models.document import Document, DocumentStatus
+    from app.models.note import Note
+    from app.skills.registry import all_registered_skills, ensure_skills_loaded
+    from app.tool_center.registry import list_tool_descriptors
+
+    # 知识库文档（未删除的活跃文档）
+    documents = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Document)
+            .where(
+                Document.deleted_at.is_(None),
+                Document.status == DocumentStatus.active.value,
+            )
+        )
+        or 0
+    )
+
+    agents = len(list_builtin_agent_acdl(include_orchestrator=True))
+
+    ensure_skills_loaded()
+    registered = list(all_registered_skills())
+    skills = len(registered)
+    registered_names = {getattr(s, "name", None) for s in registered}
+    skills_root = Path(__file__).resolve().parents[2] / "agent_skills"
+    if skills_root.is_dir():
+        for p in skills_root.iterdir():
+            if p.is_dir() and (p / "SKILL.md").exists() and p.name not in registered_names:
+                skills += 1
+
+    tools = len(list_tool_descriptors())
+
+    notes = int(db.scalar(select(func.count()).select_from(Note)) or 0)
+
+    reports_extra = 0
+    roundtable_share_token = ""
+    try:
+        from app.models.finance_report import FinanceReport
+
+        reports_extra = int(
+            db.scalar(
+                select(func.count())
+                .select_from(FinanceReport)
+                .where(FinanceReport.status == "completed")
+            )
+            or 0
+        )
+        # 已公开分享的最新完成圆桌报告（不主动生成 token，避免泄露未分享报告）
+        token = db.scalar(
+            select(FinanceReport.share_token)
+            .where(
+                FinanceReport.status == "completed",
+                FinanceReport.report_type == "roundtable",
+                FinanceReport.share_token.is_not(None),
+                FinanceReport.share_token != "",
+            )
+            .order_by(FinanceReport.completed_at.desc().nulls_last(), FinanceReport.created_at.desc())
+            .limit(1)
+        )
+        roundtable_share_token = str(token or "").strip()
+    except Exception:
+        reports_extra = 0
+        roundtable_share_token = ""
+
+    ensure_plugins_loaded()
+    features = len([p for p in all_plugins() if getattr(p, "enabled", True)])
+
+    return ApiResponse(
+        data={
+            "documents": documents,
+            "agents": agents,
+            "skills": skills,
+            "tools": tools,
+            "notes": notes,
+            "reports": _PROMO_REPORT_BASE + reports_extra,
+            "features": max(features, 20),
+            "features_plus": True,
+            "roundtable_share_token": roundtable_share_token,
+        }
+    )
+
+
 @router.get("/client-config", response_model=ApiResponse[ClientConfigOut])
 def client_config(
     db: Annotated[Session, Depends(get_read_db)],

@@ -1,11 +1,9 @@
-"""知识图谱 FeaturePlugin 注册。
+"""知识图谱 — 兼容壳（已并入「本体定义」）。
 
-与本体定义（ontology）是独立的功能模块：
-- ontology（本体定义）：管理 TBox — 实体类型、关系类型、属性模式、公理
-- kg（知识图谱）：管理 ABox — 实体/关系实例、图谱可视化、LLM 抽取
+不再作为独立菜单/功能清单项；``/api/v1/kg`` 由 ontology 插件挂载。
+保留 ``feature.kg`` 权限码供旧授权兼容别名检查。
 """
 
-from app.api import kg as kg_api
 from app.features.base import FeaturePlugin
 from app.features.registry import register
 
@@ -13,15 +11,17 @@ register(
     FeaturePlugin(
         id="kg",
         title="知识图谱",
-        description="基于本体约束抽取和编辑实体/关系实例，可视化图谱探索与多跳推理",
+        description="已并入「本体定义」实例层（兼容保留）",
         icon="cube-outline",
         permission_code="feature.kg",
-        permission_name="知识图谱",
-        route="/system/kg",
-        router=kg_api.router,
-        enabled=True,
+        permission_name="知识图谱（兼容）",
+        route=None,
+        router=None,
+        enabled=False,
+        show_in_catalog=False,
         category="tools",
         sort_order=22,
-        grant_to_roles=("sys_admin", "member"),
+        grant_to_roles=(),
+        tag="已并入本体定义",
     )
 )

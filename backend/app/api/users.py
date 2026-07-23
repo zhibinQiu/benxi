@@ -46,6 +46,18 @@ def create_user(
     return ApiResponse(data=user_service.serialize_user_out(db, user))
 
 
+@router.delete("/trial", response_model=ApiResponse[dict])
+def delete_trial_users(
+    db: Annotated[Session, Depends(get_db)],
+    current: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_permission("admin.user"))],
+) -> ApiResponse[dict]:
+    """一键删除全部体验用户（登录页「立即体验」创建的 trial_* 账号）。"""
+    data = user_service.delete_trial_users_by_admin(db, actor=current)
+    db.commit()
+    return ApiResponse(data=data)
+
+
 @router.patch("/{user_id}", response_model=ApiResponse[UserOut])
 def update_user(
     user_id: uuid.UUID,

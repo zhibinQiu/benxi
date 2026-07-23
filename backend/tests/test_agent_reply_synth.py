@@ -8,12 +8,15 @@ import json
 from app.core.agent_message_parse import looks_like_internal_agent_content
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_reply_synth import (
+    _action_outcome_reply,
     _format_skill_conclusion,
     _resolve_tool_loop_reply_fast,
     build_deliverable_evidence_block,
     build_tool_outcome_summary,
     fallback_tool_loop_reply,
     is_internal_tool_outcome_line,
+    is_tool_action_replay_line,
+    looks_like_tool_status_dump,
     reply_contradicts_tool_outcomes,
     reply_looks_like_denial,
     reply_looks_like_user_command_instruction,
@@ -288,5 +291,77 @@ def test_resolve_fast_skill_management_success():
     )
     assert reply is not None
     assert "抱歉" not in reply
-    assert "carbon-scraper" in reply
-    assert "收盘价字段" in reply
+    # 有脚本数据结论时优先交付数据；否则回落创建确认（含 skill 名）
+    assert ("82.41" in reply) or ("carbon-scraper" in reply)
+
+
+def test_tool_status_lines_with_tool_name_prefix_are_replay():
+    assert is_tool_action_replay_line("carbon_policy：已获取 4 个政策数据源摘要")
+    assert is_tool_action_replay_line("web_search：联网检索返回 8 条，已读全文 2 条")
+    assert is_tool_action_replay_line("fetch_url_content：已获取 3000 字符")
+    assert looks_like_tool_status_dump(
+        "carbon_policy：已获取 4 个政策数据源摘要\n"
+        "web_search：联网检索返回 8 条，已读全文 2 条\n"
+        "fetch_url_content：已获取 3000 字符"
+    )
+
+
+def test_search_tool_outcomes_not_used_as_final_reply():
+    """检索过程摘要不得作为「最新双碳政策」类问题的终稿。"""
+    loop_state = {
+        "tool_outcome_lines": [
+            "carbon_policy：已获取 4 个政策数据源摘要",
+            "web_search：联网检索返回 8 条，已读全文 2 条",
+            "web_search：联网检索返回 8 条，已读全文 3 条",
+            "fetch_url_content：已获取 8000 字符",
+        ],
+    }
+    assert _action_outcome_reply(loop_state, "最新的双碳政策有哪些？") is None
+    # 无检索正文时走综合/兜底，不能把状态清单当答案
+    fast = _resolve_tool_loop_reply_fast("最新的双碳政策有哪些？", loop_state)
+    assert fast is None or "联网检索返回" not in fast
+    assert fast is None or "已获取" not in (fast or "")
+    reply = fallback_tool_loop_reply("最新的双碳政策有哪些？", loop_state)
+    assert "联网检索返回" not in reply
+    assert "carbon_policy" not in reply
+
+
+def test_invoke_context_subagent_json_dump_not_final_reply():
+    """专精 hop 不得把 invoke_context_subagent：{JSON} 原样当作用户终稿。"""
+    dump = (
+        'invoke_context_subagent：{"ok": true, "summary": "'
+        "现在信息已经足够充分了。让我整理一份完整的2026年双碳政策动态报告。\\n\\n"
+        "# 2026年最新双碳政策动态\\n\\n## 一、顶层设计\\n"
+        '"}'
+    )
+    assert is_tool_action_replay_line(dump)
+    loop_state = {
+        "tool_outcome_lines": [dump],
+        "subagent_summaries": [
+            {
+                "kind": "search",
+                "task": "最新双碳政策",
+                "summary": "# 2026年最新双碳政策动态\n\n国务院发布…",
+            }
+        ],
+    }
+    assert _action_outcome_reply(loop_state, "最新的双碳政策有哪些？") is None
+    fast = _resolve_tool_loop_reply_fast("最新的双碳政策有哪些？", loop_state)
+    assert fast is None
+    assert "invoke_context_subagent" not in (fast or "")
+
+
+def test_search_outcomes_with_retrieval_go_to_llm_synth():
+    loop_state = {
+        "tool_outcome_lines": [
+            "carbon_policy：已获取 4 个政策数据源摘要",
+            "web_search：联网检索返回 8 条，已读全文 2 条",
+        ],
+        "retrieval_context_parts": [
+            "【双碳政策】\n《关于完整准确全面贯彻新发展理念做好碳达峰碳中和工作的意见》…"
+        ],
+    }
+    assert _resolve_tool_loop_reply_fast("最新的双碳政策有哪些？", loop_state) is None
+    block = build_deliverable_evidence_block(loop_state)
+    assert "碳达峰碳中和" in block
+    assert "【双碳政策】" in block

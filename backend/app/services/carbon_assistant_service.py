@@ -1,10 +1,14 @@
-"""双碳助手服务 — 复用 carbon_service 取数，异步生成报告/策略。"""
+"""双碳助手资讯报告服务 — 复用 carbon_service 取数，异步生成市场/政策简报。
+
+履约综合分析见 report_type=compliance_analysis；旧 strategy 已废弃。
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import secrets
+import time
 import uuid
 from datetime import datetime
 from typing import Any
@@ -21,7 +25,8 @@ _REPORT_TASK_QUEUE: dict[uuid.UUID, asyncio.Task] = {}
 REPORT_TYPE_LABELS = {
     "market_brief": "碳交易简报",
     "policy_digest": "政策摘要",
-    "strategy": "减碳策略",
+    "compliance_analysis": "履约综合分析",
+    "strategy": "减碳策略(已下线)",
 }
 
 
@@ -47,7 +52,7 @@ def create_report(
         industry=(industry or "").strip()[:64],
         region=(region or "").strip()[:64],
         target_year=(target_year or "").strip()[:16],
-        ai_context=(ai_context or "").strip()[:2000],
+        ai_context=(ai_context or "").strip()[:8000],
         status="pending",
         share_token=new_share_token(),
     )
@@ -65,8 +70,11 @@ def get_user_reports(
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    all_users: bool = False,
 ) -> list[CarbonReport]:
-    stmt = select(CarbonReport).where(CarbonReport.user_id == user_id)
+    stmt = select(CarbonReport)
+    if not all_users:
+        stmt = stmt.where(CarbonReport.user_id == user_id)
     if report_type:
         stmt = stmt.where(CarbonReport.report_type == report_type)
     if status:
@@ -88,16 +96,42 @@ def get_report_by_share_token(db: Session, share_token: str) -> CarbonReport | N
     ).first()
 
 
+def user_can_access_report(db: Session, user, report: CarbonReport | None) -> bool:
+    """本人或系统管理员可访问报告。"""
+    if not report:
+        return False
+    if report.user_id == user.id:
+        return True
+    from app.core.permissions import user_is_system_admin
+
+    return user_is_system_admin(db, user)
+
+
+def resolve_owner_name(db: Session, user_id: uuid.UUID) -> str:
+    from app.models.org import User
+
+    u = db.get(User, user_id)
+    if not u:
+        return ""
+    for candidate in (u.display_name, u.username, u.phone, u.email):
+        name = (candidate or "").strip()
+        if name:
+            return name
+    return str(user_id)[:8]
+
+
 def cancel_report_task(
     db: Session,
     user_id: uuid.UUID,
     report_id: uuid.UUID,
+    *,
+    as_admin: bool = False,
 ) -> CarbonReport:
     from app.models.job import Job
     from app.services.job_service import cancel_job as cancel_system_job
 
     report = db.get(CarbonReport, report_id)
-    if not report or report.user_id != user_id:
+    if not report or (report.user_id != user_id and not as_admin):
         raise ValueError("报告不存在")
     if report.status in ("completed", "failed", "cancelled"):
         raise ValueError(f"报告状态为「{report.status}」，无法取消")
@@ -120,9 +154,15 @@ def cancel_report_task(
     return report
 
 
-def delete_report(db: Session, user_id: uuid.UUID, report_id: uuid.UUID) -> None:
+def delete_report(
+    db: Session,
+    user_id: uuid.UUID,
+    report_id: uuid.UUID,
+    *,
+    as_admin: bool = False,
+) -> None:
     report = db.get(CarbonReport, report_id)
-    if not report or report.user_id != user_id:
+    if not report or (report.user_id != user_id and not as_admin):
         raise ValueError("报告不存在")
     if report.status in ("pending", "running"):
         raise ValueError("进行中的任务请先取消")
@@ -276,22 +316,56 @@ async def _run_report_task(report_id: uuid.UUID) -> None:
         if not report or report.status == "cancelled":
             return
         report.status = "running"
-        report.progress = 10
+        report.progress = 5
+        report.error_message = "任务已启动"
         db.commit()
 
         if report.system_job_id:
             from app.services.job_service import update_job_status
 
             try:
-                update_job_status(db, report.system_job_id, "running", progress=10)
+                update_job_status(db, report.system_job_id, "running", progress=5)
             except ValueError:
                 pass
 
-        _update_progress(db, report, 25, "正在从官方源获取双碳数据...")
-        facts = await _collect_facts(report)
+        if report.report_type == "compliance_analysis":
+            from app.services.carbon_compliance.compliance_analysis_report import (
+                run_compliance_analysis_report,
+            )
 
-        _update_progress(db, report, 55, "正在撰写报告...")
-        content = await _synthesize_report(report, facts)
+            last_flush = 0.0
+
+            def on_progress(progress: int, msg: str) -> None:
+                r = db.get(CarbonReport, report_id)
+                if not r or r.status == "cancelled":
+                    return
+                _update_progress(db, r, progress, msg)
+
+            def on_content(text: str) -> None:
+                nonlocal last_flush
+                now = time.monotonic()
+                # 流式预览：约每 0.8s 落库一次，避免过密 commit
+                if last_flush and now - last_flush < 0.8:
+                    return
+                last_flush = now
+                r = db.get(CarbonReport, report_id)
+                if not r or r.status == "cancelled":
+                    return
+                r.content = text
+                db.commit()
+
+            content = await run_compliance_analysis_report(
+                db,
+                report,
+                on_progress=on_progress,
+                on_content=on_content,
+            )
+        else:
+            _update_progress(db, report, 25, "正在从官方源获取双碳数据...")
+            facts = await _collect_facts(report)
+
+            _update_progress(db, report, 55, "正在撰写报告...")
+            content = await _synthesize_report(report, facts)
 
         report = db.get(CarbonReport, report_id)
         if not report or report.status == "cancelled":
@@ -372,6 +446,7 @@ async def submit_report_task(report: CarbonReport) -> None:
                 "report_id": str(report.id),
                 "subject": report.subject,
                 "report_type": report.report_type,
+                "title": report_title(report),
             },
         )
         db_report = db.get(CarbonReport, report.id)
@@ -386,15 +461,41 @@ async def submit_report_task(report: CarbonReport) -> None:
 
 
 async def trading_snapshot(*, keyword: str = "") -> dict[str, Any]:
-    """碳交易看板：并行拉碳价 + CCER + 政策要点。"""
+    """碳交易看板：并行拉碳价 + CCER + 政策要点。
+
+    单源超时收紧，避免外站不可达时拖垮前端默认 20s 请求超时。
+    """
     from app.services import carbon_service as carbon
 
     kw = (keyword or "").strip() or "全国碳市场"
-    price, ccer, policy = await asyncio.gather(
-        carbon.fetch_carbon_price(keyword=kw),
-        carbon.fetch_carbon_data("ccer", keyword=kw),
-        carbon.fetch_carbon_policy(keyword=kw),
+    # 看板只需快速摘要；外站挂起时最坏约等于单源 timeout
+    snap_timeout = 6.0
+
+    def _soft_fail(query_type: str, exc: BaseException) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "query_type": query_type,
+            "keyword": kw,
+            "queried_at": "",
+            "sources": [],
+            "failed_urls": [],
+            "summary_md": f"数据源暂时无法访问（{type(exc).__name__}）",
+            "error": "fetch_exception",
+        }
+
+    results = await asyncio.gather(
+        carbon.fetch_carbon_price(keyword=kw, timeout=snap_timeout),
+        carbon.fetch_carbon_data("ccer", keyword=kw, timeout=snap_timeout),
+        carbon.fetch_carbon_policy(keyword=kw, timeout=snap_timeout),
+        return_exceptions=True,
     )
+    price, ccer, policy = results
+    if isinstance(price, BaseException):
+        price = _soft_fail("price", price)
+    if isinstance(ccer, BaseException):
+        ccer = _soft_fail("ccer", ccer)
+    if isinstance(policy, BaseException):
+        policy = _soft_fail("policy", policy)
     return {
         "keyword": kw,
         "price": price,

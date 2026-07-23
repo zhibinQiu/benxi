@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 from app.core.phone import bootstrap_login_id
@@ -24,6 +25,16 @@ from app.services.agent_skill_routing import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _disable_skill_rag_for_keyword_routing_tests(monkeypatch):
+    """本文件断言关键词/硬规则行为；禁用 Embedding 以免环境凭证干扰。"""
+    monkeypatch.setattr(
+        "app.services.agent_skill_rag.rank_skills_by_embedding",
+        lambda *a, **k: None,
+    )
+
+
+
 def _admin_user(db) -> User:
     user = db.scalar(select(User).where(User.phone == bootstrap_login_id()))
     assert user is not None
@@ -44,12 +55,11 @@ def test_parse_failed_agents():
     assert parse_failed_agents_from_text(line) == ["diagram", "platform"]
 
 
-def test_build_skill_agent_index_maps_research():
+def test_build_skill_agent_index_maps_carbon():
     db = SessionLocal()
     try:
         index = build_skill_agent_index(db)
-        agent = index.get("browser-automation") or index.get("web-search")
-        assert agent is not None
+        assert index.get("carbon-qa") == "carbon"
     finally:
         db.close()
 
@@ -61,16 +71,16 @@ def test_aggregate_agents_weights_primary_skills():
         (
             4,
             SkillDefinition(
-                name="web-search",
-                title="联网",
-                description="联网检索",
+                name="carbon-qa",
+                title="双碳",
+                description="双碳问答",
                 source=SkillSource.BUILTIN,
             ),
         ),
     ]
-    index = {"web-search": "orchestrator"}
+    index = {"carbon-qa": "carbon"}
     scores = aggregate_agents_from_skills(skills, index)
-    assert scores[0].agent_id == "orchestrator"
+    assert scores[0].agent_id == "carbon"
 
 
 def test_resolve_agent_routes_chitchat():
@@ -118,6 +128,26 @@ def test_resolve_agent_routes_hello_after_business_question():
         db.close()
 
 
+def test_resolve_agent_routes_follow_up_keeps_carbon():
+    """双碳追问应延续 carbon，避免落到调度后乱调 list_todos 等平台工具。"""
+    from app.schemas.ai_chat import AiChatMessage
+
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        history = [
+            AiChatMessage(role="user", content="最新的双碳政策有哪些？"),
+            AiChatMessage(role="assistant", content="近期双碳政策包括……"),
+        ]
+        for follow in ("再详细一点", "有哪些具体文件？", "十五五的呢？"):
+            routes = _resolve_agent_routes(db, user, follow, chat_history=history)
+            assert len(routes) == 1, follow
+            assert routes[0].agent_id == "carbon", (follow, routes[0].reason)
+            assert "追问延续上文" in (routes[0].reason or "")
+    finally:
+        db.close()
+
+
 def test_pick_skill_route_scores_rejects_ambiguous_weak_match():
     from app.services.agent_skill_routing import AgentRoutingScore
 
@@ -144,7 +174,40 @@ def test_resolve_agent_routes_platform_via_skills():
         db.close()
 
 
-def test_skill_scores_for_research_message():
+def test_resolve_agent_routes_reminder_to_platform():
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        routes = _resolve_agent_routes(db, user, "8s 后提醒我喝水")
+        assert routes
+        assert routes[0].agent_id == "platform"
+        assert "平台" in routes[0].reason or "通知" in routes[0].reason or "待办" in routes[0].reason
+    finally:
+        db.close()
+
+
+def test_skill_scores_for_carbon_message(monkeypatch):
+    """语义召回：碳市场政策应落到 carbon。"""
+    from app.services.agent_skill_rag import skill_routing_document
+
+    def fake_rank(db, query, skills, *, limit=None, min_similarity=None):
+        q = query or ""
+        tokens = ["碳", "市场", "政策", "配额", "价格"]
+        scored = []
+        for s in skills:
+            doc = skill_routing_document(s)
+            hit = sum(1 for t in tokens if t in q and t in doc)
+            if hit <= 0:
+                continue
+            scored.append((float(hit * 20), s))
+        scored.sort(key=lambda x: (-x[0], x[1].name))
+        return scored[: limit or 12]
+
+    monkeypatch.setattr(
+        "app.services.agent_skill_rag.rank_skills_by_embedding",
+        fake_rank,
+    )
+
     db = SessionLocal()
     try:
         user = _admin_user(db)
@@ -152,7 +215,7 @@ def test_skill_scores_for_research_message():
             db, user, "全国碳市场最新政策有哪些？"
         )
         picked = pick_skill_route_scores(scores)
-        assert any(s.agent_id == "research" for s in picked)
+        assert any(s.agent_id == "carbon" for s in picked)
     finally:
         db.close()
 

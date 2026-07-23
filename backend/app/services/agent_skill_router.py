@@ -1,23 +1,18 @@
 """智能体信号检测与意图识别 — 用户消息 vs 路由/记忆/平台/Skill 管理的匹配判断。
 
-负责检测用户消息中的语义信号，判断用户意图属于技能管理、图表生成、平台操作、
-浏览器/RPA、记忆读写、路由模式（串行/并行）等。
-与 agent_skill_routing.py（LLM 路由规划）和 agent_skill_match.py（匹配评分）构成信号层→规划层→评分层。
-
-注意：通用路由信号检测契约在 agentkit_route.signals（SignalDetector Protocol）；
-本文件的 regex 是平台绑定实现，不应被 agentkit 依赖。
-
-合并历史：原 agent_routing_signals.py 的路由信号（2026-07）已并入本文件。"""
+检测用户消息中的语义信号（技能管理、图表、平台操作、浏览器、记忆读写、串行/并行路由等）。
+与 agent_skill_routing（路由规划）、agent_skill_match（匹配评分）构成信号层→规划层→评分层。
+通用 SignalDetector 契约在 agentkit.route.signals；本文件为平台绑定 regex 实现。"""
 
 from __future__ import annotations
 
 import re
-from typing import Any
 
-from app.skills.routing import SKILL_NO_LOAD_WARNING
-
+from app.benxi_semantic.intents import (
+    is_org_member_list_question,
+    is_person_org_affiliation_question,
+)
 from app.core.agent_loop_state import LoopState
-
 from app.skills.types import SkillSource
 
 # ── 平台绑定信号：URL / 页面 / 图片 ───────────────────────────────
@@ -117,10 +112,43 @@ BROWSER_SITE_SEARCH_RE = re.compile(
 )
 
 RESEARCH_SIGNAL_RE = re.compile(
-    r"(知识库|文档库|检索|联网|上网|知识图谱|本体图谱|"
-    r"knowledge_retrieve|web_search|kg_query)",
+    r"(知识库|文档库|检索|联网|上网|知识图谱|本体图谱|本体定义|知识问答|"
+    r"knowledge_retrieve|web_search|kg_query|ontology_query|knowledge-qa|"
+    r"deep.?research|深度调研)",
     re.I,
 )
+
+# 「#知识问答 xxx」或「请使用 知识问答 技能：xxx」硬触发（不走模型选型）
+_KNOWLEDGE_QA_TRIGGER_RE = re.compile(
+    r"(?:"
+    r"^\s*#\s*(?:知识问答|knowledge[-_]?qa)\b\s*"
+    r"|"
+    r"(?:请使用|使用|调用|按|执行)\s*[「\"'`]?(?:知识问答|knowledge[-_]?qa)[」\"'`]?\s*技能\s*[:：]?\s*"
+    r")",
+    re.I,
+)
+
+
+def match_knowledge_qa_hashtag(message: str) -> str | None:
+    """硬触发知识问答，返回去掉触发语后的问题文本。
+
+    支持：
+    - ``#知识问答 xxx`` / ``#knowledge-qa xxx``
+    - ``请使用 知识问答 技能：xxx`` / ``使用 knowledge-qa 技能 xxx``
+
+    返回空字符串表示仅有触发语、无后续问题；返回 ``None`` 表示未命中。
+    """
+    text = message or ""
+    m = _KNOWLEDGE_QA_TRIGGER_RE.search(text)
+    if not m:
+        return None
+    after = text[m.end():].strip().lstrip("：:").strip()
+    return after
+
+
+# 兼容旧名
+match_knowledge_qa_trigger = match_knowledge_qa_hashtag
+
 
 # 比 RESEARCH_SIGNAL_RE 更广泛：匹配日常"查"/"搜索"等需要联网获取信息的表达
 RESEARCH_INTENT_RE = re.compile(
@@ -225,27 +253,14 @@ _PLATFORM_SYS_DATA_RE = re.compile(
     re.I,
 )
 
-# 「咨询服务部有哪些人」类：指定部门/组织单元的成员清单
-_ORG_MEMBER_LIST_RE = re.compile(
-    r"(?:有哪些|有谁|多少|几个|列出|名单)(?:人|成员|员工|同事)?"
-    r"|(?:成员|人员|员工|同事)(?:列表|清单|有谁)?"
-    r"|谁(?:在|属于|是).{0,6}(?:部|组|中心|团队)",
-    re.I,
-)
-_ORG_UNIT_MARK_RE = re.compile(r"(?:部|部门|组|中心|团队|科室|处|室)", re.I)
-
-
-def is_org_member_list_question(message: str) -> bool:
-    """询问某部门/组织单元有哪些成员（须走 platform + 图谱，禁止 LLM 编造名单）。"""
-    msg = (message or "").strip()
-    if not msg or not _ORG_MEMBER_LIST_RE.search(msg):
-        return False
-    return bool(_ORG_UNIT_MARK_RE.search(msg) or _PLATFORM_SYS_DATA_RE.search(msg))
+# 部门成员清单 / 人员组织归属意图：委托 benxi_semantic.intents（上方已 import re-export）
 
 
 def is_platform_system_data_message(message: str) -> bool:
     """用户是否在查询/管理平台用户、部门等系统数据。"""
     if is_org_member_list_question(message):
+        return True
+    if is_person_org_affiliation_question(message):
         return True
     return bool(_PLATFORM_SYS_DATA_RE.search((message or "").strip()))
 
@@ -260,6 +275,8 @@ def is_platform_operation_message(message: str) -> bool:
     if not msg:
         return False
     if is_platform_usage_message(msg) or is_platform_system_data_message(msg):
+        return True
+    if matches_scheduler_intent(msg):
         return True
     return bool(
         re.search(

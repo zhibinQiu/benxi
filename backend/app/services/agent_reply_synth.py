@@ -37,6 +37,9 @@ _INTERNAL_OUTCOME_PREFIXES = (
     "加载 Skill",
     "搜索工具",
     "请求调度协助",
+    "append_agent_memory",
+    "写入 Agent 记忆",
+    "记忆已写入",
 )
 
 # 工具操作回顾 — 仅描述了工具做了什么，不含实质结果数据
@@ -53,7 +56,55 @@ _TOOL_ACTION_REPLAY_PREFIXES = (
     "已读取",
     "发起搜索",
     "发起检索",
+    "本回合已执行相同检索",
 )
+
+# 去掉「tool_name：」前缀后的状态体（如「已获取 4 个政策数据源摘要」）
+_TOOL_STATUS_BODY_RE = re.compile(
+    r"^(?:"
+    r"联网检索返回|"
+    r"已读全文|"
+    r"已获取\s*\d+\s*(?:个|字符|条)|"
+    r"已获取\s+\w+\s*数据|"
+    r"使用联网搜索|"
+    r"使用搜索引擎|"
+    r"使用浏览器|"
+    r"获取网页内容|"
+    r"读取文档正文|"
+    r"正在搜索|"
+    r"发起搜索|"
+    r"发起检索|"
+    r"本回合已执行相同检索"
+    r")"
+)
+_TOOL_STATUS_SHORT_RE = re.compile(
+    r"^(?:完成|ok|success|成功|已执行)\s*$",
+    re.IGNORECASE,
+)
+
+_TOOL_NAME_PREFIX_RE = re.compile(r"^[\w.\-_/]+[：:]\s*")
+_LIST_MARKER_RE = re.compile(r"^[-*•]\s+")
+# 工具结果 JSON 整段（含 ok/summary）不得当作用户终稿
+_TOOL_JSON_DUMP_RE = re.compile(
+    r"^[\w.\-_/]+[：:]\s*\{[\s\S]*\"ok\"\s*:",
+)
+# 调研/编排类工具前缀：过程行，不可当作动作确认回复
+_RESEARCH_TOOL_REPLY_NAMES = frozenset({
+    "invoke_context_subagent",
+    "invoke_skill",
+    "run_tool_batch",
+    "web_search",
+    "fetch_url_content",
+    "knowledge_retrieve",
+    "kg_query",
+    "carbon_policy",
+    "carbon_price",
+    "carbon_data",
+    "time_series_forecast",
+    "browser_run_task",
+    "browser_navigate",
+    "browser_snapshot",
+})
 
 _SKILL_RUN_OUTCOME_MARKERS = (
     "运行 Skill 脚本",
@@ -96,14 +147,35 @@ def is_internal_tool_outcome_line(line: str) -> bool:
     return False
 
 
+def _strip_tool_line_decoration(line: str) -> str:
+    """去掉列表符号与 tool_name： 前缀，便于识别状态行。"""
+    text = _LIST_MARKER_RE.sub("", (line or "").strip())
+    return _TOOL_NAME_PREFIX_RE.sub("", text).strip() or text
+
+
 def is_tool_action_replay_line(line: str) -> bool:
     """工具操作回顾行——仅描述工具执行了什么操作，不含实质结果数据。"""
     text = (line or "").strip()
     if not text:
         return True
-    for prefix in _TOOL_ACTION_REPLAY_PREFIXES:
-        if text.startswith(prefix):
+    if _TOOL_JSON_DUMP_RE.match(text):
+        return True
+    body = _strip_tool_line_decoration(text)
+    if body.startswith("{") and '"ok"' in body[:80]:
+        return True
+    m = _TOOL_NAME_PREFIX_RE.match(text)
+    if m:
+        tool_name = text[: m.end()].rstrip("：: ").strip()
+        if tool_name in _RESEARCH_TOOL_REPLY_NAMES:
             return True
+        # 带 tool_name： 前缀的长文/多段内容是过程 dump，不是短动作确认
+        if len(text) > 240 or "\n" in text:
+            return True
+    for prefix in _TOOL_ACTION_REPLAY_PREFIXES:
+        if text.startswith(prefix) or body.startswith(prefix):
+            return True
+    if _TOOL_STATUS_BODY_RE.match(body) or _TOOL_STATUS_SHORT_RE.match(body):
+        return True
     return False
 
 
@@ -111,6 +183,8 @@ def looks_like_tool_status_echo(text: str) -> bool:
     """通用：文本是否像工具执行状态复述，而非子任务交付物。"""
     body = (text or "").strip()
     if not body:
+        return True
+    if is_tool_action_replay_line(body):
         return True
     if body.startswith("读取文档正文"):
         return True
@@ -121,12 +195,25 @@ def looks_like_tool_status_echo(text: str) -> bool:
     return False
 
 
+def looks_like_tool_status_dump(text: str) -> bool:
+    """整段回复是否几乎全是工具状态清单（如 web_search：联网检索返回…）。"""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if not lines:
+        return True
+    if len(lines) == 1:
+        return looks_like_tool_status_echo(lines[0]) or is_tool_action_replay_line(lines[0])
+    status_n = sum(
+        1 for ln in lines if is_tool_action_replay_line(ln) or looks_like_tool_status_echo(ln)
+    )
+    return status_n >= max(2, int(len(lines) * 0.7))
+
+
 def is_substantive_deliverable(text: str, *, min_chars: int = 12) -> bool:
     """子任务/用户可见交付物是否具备实质内容（非推脱、非空、非过短状态句）。"""
     body = (text or "").strip()
     if not body or reply_looks_like_denial(body):
         return False
-    if looks_like_tool_status_echo(body):
+    if looks_like_tool_status_echo(body) or looks_like_tool_status_dump(body):
         return False
     return len(body) >= min_chars
 
@@ -416,7 +503,7 @@ def request_fulfilled(
     if is_skill_management_message(user_message):
         return skill_management_goal_satisfied(state, user_message)
     # 定时提醒 / 发送通知等写操作已成功 → 任务完成，避免再进一轮重复调用
-    if _action_outcome_reply(state):
+    if _action_outcome_reply(state, user_message):
         return True
     return False
 
@@ -621,25 +708,45 @@ def _true_deliverable_reply(loop_state: LoopState | None) -> str | None:
 
     state = loop_state or {}
     det = str(state.get("deterministic_reply") or "").strip()
-    if det:
+    if det and not looks_like_tool_status_dump(det):
         return det
     task = str(state.get("task_deliverable") or "").strip()
     if task and (has_mermaid_deliverable(task) or is_substantive_deliverable(task)):
         return task
     presentable = presentable_skill_conclusion(state)
-    if presentable:
+    if presentable and not looks_like_tool_status_dump(presentable):
         return presentable
     return None
 
 
-def _action_outcome_reply(loop_state: LoopState | None) -> str | None:
+def _action_outcome_reply(
+    loop_state: LoopState | None,
+    user_message: str | None = None,
+) -> str | None:
     """已完成的动作确认（如定时通知）可作为快速回复；检索过程摘要不行。"""
+    from app.services.agent_skill_router import should_write_memory
+
     lines = [
         line
         for line in user_facing_tool_outcome_lines(loop_state)
         if not is_tool_action_replay_line(line) and not looks_like_tool_status_echo(line)
     ]
     if not lines:
+        return None
+    # 子智能体 / 检索证据在时，禁止把残余 outcome 行当终稿（应交 LLM 综合）
+    if latest_subagent_summary(loop_state) or list(
+        (loop_state or {}).get("retrieval_context_parts") or []
+    ):
+        return None
+    joined = "\n".join(lines)
+    if looks_like_tool_status_dump(joined):
+        return None
+    memory_only = all(
+        ("记忆" in line and ("写入" in line or "append_agent_memory" in line))
+        for line in lines
+    )
+    # 写入记忆只有在用户明确要求「记住」时才可作为最终答复
+    if memory_only and not should_write_memory(user_message or ""):
         return None
     if len(lines) == 1 and "\n" in lines[0]:
         return lines[0]
@@ -657,10 +764,9 @@ def fallback_tool_loop_reply(user_message: str, loop_state: LoopState | None) ->
             return created_reply
         if not skill_management_goal_satisfied(loop_state, user_message):
             return incomplete_skill_management_reply(user_message)
-    action = _action_outcome_reply(loop_state)
+    action = _action_outcome_reply(loop_state, user_message)
     if action:
         return action
-    _ = user_message
     return "抱歉，这次没能完成您的请求。您可以补充更具体的要求，或稍后再试，我会继续帮您处理。"
 
 
@@ -670,6 +776,11 @@ def _resolve_tool_loop_reply_fast(
 ) -> str | None:
     """快速路径：真正交付物 / 动作确认。检索类证据必须走 LLM 综合。"""
     state = dict(loop_state or {})
+    # 图表等确定性交付物优先原样输出，避免被过程摘要抢走去综合
+    true = _true_deliverable_reply(state)
+    if true:
+        return true
+
     handoff = build_specialist_handoff(state, user_message)
     if handoff.ok and handoff.text:
         return handoff.text
@@ -677,14 +788,19 @@ def _resolve_tool_loop_reply_fast(
     from app.services.agent_skill_router import is_platform_system_data_message
 
     if is_platform_system_data_message(user_message):
+        # 已有图谱/工具证据时走 LLM 综合；无证据则拒绝臆造名单或公司归属
+        if has_deliverable_evidence(state):
+            return None
         return (
-            "未能从系统接口获取用户或组织数据。"
-            "请稍后重试，或前往「系统设置 → 用户管理」查看；"
-            "请勿根据猜测列出用户姓名或邮箱。"
+            "未能从系统接口或知识图谱获取用户/组织数据。"
+            "请确认已同步组织到图谱后重试，或前往「系统设置 → 用户管理」查看；"
+            "请勿根据猜测列出用户姓名、邮箱或公司归属。"
         )
 
     if state.get("expects_skill_data"):
-        deliverable = _true_deliverable_reply(state) or _action_outcome_reply(state)
+        deliverable = _true_deliverable_reply(state) or _action_outcome_reply(
+            state, user_message
+        )
         if deliverable:
             return deliverable
         if has_deliverable_evidence(state):
@@ -706,7 +822,7 @@ def _resolve_tool_loop_reply_fast(
     if user_wants_browser_screenshot(user_message) and state.get("collected_attachments"):
         return "已完成您要求的浏览器操作，页面截图如下。"
 
-    action = _action_outcome_reply(state)
+    action = _action_outcome_reply(state, user_message)
     if action:
         return action
 
@@ -717,7 +833,7 @@ def _resolve_tool_loop_reply_fast(
         # 仅过程摘要时也走综合（综合侧用 retrieval / 子结论；无材料则 fallback）
         return None
 
-    return _true_deliverable_reply(state)
+    return None
 
 
 def build_tool_loop_user_synthesis_messages(
@@ -802,5 +918,11 @@ async def synthesize_tool_loop_user_reply(
         if ev.get("type") == "delta" and ev.get("text"):
             parts.append(str(ev["text"]))
         elif ev.get("type") == "complete_text":
-            return str(ev.get("text") or "").strip()
-    return "".join(parts).strip() or fallback_tool_loop_reply(user_message, loop_state)
+            text = str(ev.get("text") or "").strip()
+            if text and not looks_like_tool_status_dump(text):
+                return text
+            break
+    joined = "".join(parts).strip()
+    if joined and not looks_like_tool_status_dump(joined):
+        return joined
+    return fallback_tool_loop_reply(user_message, loop_state)

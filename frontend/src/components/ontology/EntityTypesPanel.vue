@@ -55,7 +55,7 @@
 </template>
 
 <script setup>
-import { h, ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { h, ref, reactive, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "../../composables/useI18n";
 import { useMessage, useDialog } from "naive-ui";
@@ -245,7 +245,11 @@ const columns = [
         "a",
         {
           style: { color: "var(--platform-primary, #2080f0)", cursor: "pointer", textDecoration: "underline" },
-          onClick: () => router.push({ name: "kg", query: { entityType: row.code } }),
+          onClick: () =>
+            router.push({
+              name: "ontology",
+              query: { tab: "entities", entityType: row.code },
+            }),
         },
         String(count)
       );
@@ -264,7 +268,11 @@ const columns = [
             {
               size: "small",
               quaternary: true,
-              onClick: () => router.push({ name: "kg", query: { entityType: row.code } }),
+              onClick: () =>
+                router.push({
+                  name: "ontology",
+                  query: { tab: "entities", entityType: row.code },
+                }),
             },
             { default: () => "查看实例", icon: () => h(EyeOutline) }
           ),

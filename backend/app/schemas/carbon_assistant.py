@@ -12,17 +12,25 @@ class CarbonReportSubmit(BaseModel):
     subject: str = Field(..., min_length=1, max_length=128, description="报告主题")
     report_type: str = Field(
         ...,
-        pattern="^(market_brief|policy_digest|strategy)$",
-        description="market_brief 碳交易简报 / policy_digest 政策摘要 / strategy 减碳策略",
+        pattern="^(market_brief|policy_digest|compliance_analysis|strategy)$",
+        description=(
+            "market_brief 碳交易简报 / policy_digest 政策摘要 / "
+            "compliance_analysis 履约综合分析 / strategy 已下线"
+        ),
     )
     industry: str = Field("", max_length=64, description="行业（策略类）")
     region: str = Field("", max_length=64, description="地区（策略类）")
     target_year: str = Field("", max_length=16, description="目标年份，如 2030")
-    ai_context: str = Field("", max_length=2000, description="补充说明")
+    ai_context: str = Field(
+        "",
+        max_length=8000,
+        description="补充说明；compliance_analysis 为 JSON（enterprise_id 等）",
+    )
 
 
 class CarbonReportOut(BaseModel):
     id: uuid.UUID
+    user_id: uuid.UUID | None = None
     subject: str
     report_type: str
     industry: str
@@ -38,5 +46,7 @@ class CarbonReportOut(BaseModel):
     system_job_id: uuid.UUID | None
     created_at: datetime
     completed_at: datetime | None
+    # 管理员查看全员报告时填充
+    owner_name: str | None = None
 
     model_config = {"from_attributes": True}

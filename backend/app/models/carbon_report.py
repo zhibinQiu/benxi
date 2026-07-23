@@ -13,7 +13,7 @@ from app.database import Base
 
 
 class CarbonReport(Base):
-    """双碳报告 / 减碳策略任务。"""
+    """双碳资讯报告任务（market_brief / policy_digest；strategy 已废弃）。"""
 
     __tablename__ = "carbon_reports"
 

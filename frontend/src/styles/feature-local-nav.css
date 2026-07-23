@@ -27,14 +27,18 @@
   box-sizing: border-box;
 }
 
-/* 壳层（顶栏 / 侧栏 / 主区 / 局部顶栏）共用视口固定渐变，避免分块重绘色差 */
+/* 壳层：顶栏与主内容区无底色 */
+.main-layout .app-main {
+  background: transparent !important;
+}
+
+.main-layout .app-content,
 .main-layout .header,
-.main-layout .app-sider.n-layout-sider,
-.main-layout .app-main,
 .feature-local-nav,
 .feature-top-strip {
-  background: var(--platform-shell-gradient) !important;
-  background-attachment: fixed;
+  background: transparent !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
 }
 
 .main-layout:has(.app-content .feature-local-nav),
@@ -65,12 +69,13 @@
   position: relative;
   flex-shrink: 0;
   box-sizing: border-box;
-  border: 1px solid var(--platform-border) !important;
-  border-top: 1px solid var(--platform-divider) !important;
+  border: 1px solid var(--platform-glass-border-soft) !important;
+  border-top: 1px solid var(--platform-glass-border-soft) !important;
   border-radius: var(--platform-radius-md, 14px);
-  background: var(--platform-bg-elevated) !important;
-  box-shadow: none !important;
-
+  background: var(--platform-glass-panel-bg) !important;
+  box-shadow: var(--platform-glass-shadow-sm) !important;
+  backdrop-filter: var(--platform-glass-filter);
+  -webkit-backdrop-filter: var(--platform-glass-filter);
 }
 
 .feature-bottom-strip::before {
@@ -92,8 +97,6 @@
   border-top: none !important;
   border-bottom: none !important;
   box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
   border-radius: 0 !important;
   margin-top: 0 !important;
 }
@@ -153,7 +156,7 @@
 }
 
 .header-extension .translate-actions-bar {
-  border-bottom: 1px solid var(--platform-border);
+  border-bottom: none;
 }
 
 /* 文档中心操作条（旧：内容区 feature-local-nav，保留兼容） */
@@ -207,7 +210,7 @@
   padding-top: 14px;
   padding-bottom: 14px;
   margin-bottom: 0 !important;
-  border-bottom: 1px solid var(--platform-divider);
+  border-bottom: none;
 }
 
 .main-layout .app-content--full .subscriptions-page > .feature-top-strip,

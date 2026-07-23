@@ -7,39 +7,25 @@ import ListRefreshButton from "../components/ListRefreshButton.vue";
 import { NEmpty, NGrid, NGi, NIcon } from "naive-ui";
 
 import {
-  LanguageOutline,
-  ChatbubblesOutline,
-  GitCompareOutline,
   DocumentTextOutline,
-  ListOutline,
-  MicOutline,
-  ScanOutline,
-  StatsChartOutline,
-  LeafOutline,
-  SparklesOutline,
-  GridOutline,
-  HardwareChipOutline,
-  CreateOutline,
-  CubeOutline,
-  NewspaperOutline,
-  SearchOutline,
-  GitNetworkOutline,
-  ExtensionPuzzleOutline,
   StarOutline,
   Star,
-  VolumeHighOutline,
 } from "@vicons/ionicons5";
 import HintTooltip from "../components/HintTooltip.vue";
 import PlatformSpin from "../components/PlatformSpin.vue";
-import { useFeatureFavorites } from "../composables/useFeatureFavorites";
+import {
+  SIDEBAR_DEDICATED_FEATURE_IDS,
+  useFeatureFavorites,
+} from "../composables/useFeatureFavorites";
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
 import { openExternal } from "../utils/openExternal.js";
+import { featureCardImageUrl, hasFeatureCardImage } from "../utils/featureDisplay.js";
 
 const route = useRoute();
 const router = useRouter();
 const ui = usePlatformUi();
-const { featureLabel, t, tm, featureTagLabel } = useI18n();
+const { featureLabel, t, featureTagLabel } = useI18n();
 const { isFavorite, toggleFavorite } = useFeatureFavorites();
 const { features, loading, loaded, loadError, loadSystemFeatures } = useSystemFeatures();
 const showLoading = computed(
@@ -49,38 +35,21 @@ const showEmpty = computed(
   () => !loading.value && loaded.value && groupedCategories.value.length === 0
 );
 
-const iconMap = {
-  language: LanguageOutline,
-  chatbubbles: ChatbubblesOutline,
-  mic: MicOutline,
-  "volume-high": VolumeHighOutline,
-  scan: ScanOutline,
-  "git-compare": GitCompareOutline,
-  "document-text": DocumentTextOutline,
-  "stats-chart": StatsChartOutline,
-  leaf: LeafOutline,
-  sparkles: SparklesOutline,
-  "hardware-chip": HardwareChipOutline,
-  create: CreateOutline,
-  "cube-outline": CubeOutline,
-  newspaper: NewspaperOutline,
-  search: SearchOutline,
-  "git-network": GitNetworkOutline,
-  "extension-puzzle": ExtensionPuzzleOutline,
-  list: ListOutline,
-};
-
 const CATEGORY_ORDER = ["tools"];
 
 /** 功能 id → 路由名（避免 path/redirect 循环） */
 const FEATURE_ROUTE_NAMES = {
   knowledge_search: "knowledge-search",
   report_generation: "report-generation",
+  subscriptions: "knowledge-subscriptions",
   todos: "notes",
 };
 
-/** 不在功能列表中显示的功能 ID */
-const HIDDEN_FEATURE_IDS = new Set(["ai_home", "agent_skills", "carbon_platform"]);
+/** 不在功能列表中显示：已有独立侧栏入口的功能 + 内部入口 */
+const HIDDEN_FEATURE_IDS = new Set([
+  ...SIDEBAR_DEDICATED_FEATURE_IDS,
+  "carbon_platform",
+]);
 
 const categoryMeta = computed(() =>
   Object.fromEntries(
@@ -89,12 +58,6 @@ const categoryMeta = computed(() =>
       {
         title: t(`systemFunctionsPage.categories.${id}.title`),
         hint: t(`systemFunctionsPage.categories.${id}.hint`),
-        icon:
-          id === "document"
-            ? DocumentTextOutline
-            : id === "tools"
-              ? GridOutline
-              : LeafOutline,
       },
     ])
   )
@@ -254,9 +217,21 @@ function openFeature(f) {
               @keydown.enter.prevent="openFeature(f)"
               @keydown.space.prevent="openFeature(f)"
             >
-              <div class="feature-card__icon" aria-hidden="true">
-                <n-icon :size="20">
-                  <component :is="iconMap[f.icon] || DocumentTextOutline" />
+              <div
+                class="feature-card__thumb"
+                :class="{ 'feature-card__thumb--fallback': !hasFeatureCardImage(f.id) }"
+                aria-hidden="true"
+              >
+                <img
+                  v-if="hasFeatureCardImage(f.id)"
+                  class="feature-card__thumb-img"
+                  :src="featureCardImageUrl(f.id)"
+                  :alt="featureTitle(f)"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <n-icon v-else :size="20">
+                  <component :is="DocumentTextOutline" />
                 </n-icon>
               </div>
               <div class="feature-card__body">
@@ -292,7 +267,7 @@ function openFeature(f) {
       >
         <n-gi v-for="i in 10" :key="i" class="feature-card-wrap">
           <article class="feature-card feature-card--skeleton" aria-hidden="true">
-            <div class="feature-card__icon skeleton-block skeleton-block--icon" />
+            <div class="feature-card__thumb skeleton-block skeleton-block--thumb" />
             <div class="feature-card__body">
               <div class="skeleton-block skeleton-block--title" />
               <div class="skeleton-block skeleton-block--desc" />
@@ -369,7 +344,7 @@ function openFeature(f) {
 @keyframes feature-card-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -393,27 +368,27 @@ function openFeature(f) {
   border-radius: var(--platform-card-radius);
   outline: none;
   cursor: pointer;
-  overflow: visible;
+  overflow: hidden;
   isolation: isolate;
   transition: var(--platform-card-transition);
   border: 1px solid var(--platform-card-border-color);
   background: var(--platform-card-bg);
+  box-shadow: var(--platform-card-shadow);
+  backdrop-filter: var(--platform-glass-filter);
+  -webkit-backdrop-filter: var(--platform-glass-filter);
 }
 
-
-.feature-card:not(.feature-card--disabled):not(.feature-card--locked)::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: 0;
-  background: transparent;
-}
+/* 悬浮态：仅抬升与描边，无色彩层 */
 
 .feature-card:not(.feature-card--disabled):not(.feature-card--locked) > * {
   position: relative;
   z-index: 1;
+}
+
+.feature-card:hover:not(.feature-card--disabled):not(.feature-card--locked) {
+  border-color: var(--platform-card-hover-border-color);
+  box-shadow: var(--platform-card-shadow-hover);
+  transform: var(--platform-card-hover-transform);
 }
 
 .feature-card:focus-visible {
@@ -449,7 +424,7 @@ function openFeature(f) {
 
 .feature-card__star:hover {
   color: var(--platform-text-secondary);
-  background: var(--platform-bg);
+  background: color-mix(in srgb, var(--platform-bg) 70%, transparent);
   transform: scale(1.08);
 }
 
@@ -484,17 +459,31 @@ function openFeature(f) {
   min-height: calc(var(--platform-font-size-base) * 1.4);
 }
 
-.feature-card__icon {
+.feature-card__thumb {
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  color: #141414;
-  background: #f3f3f3;
+  overflow: hidden;
+  background: var(--platform-bg-tertiary);
+  border: 1px solid color-mix(in srgb, var(--platform-border) 80%, transparent);
+}
+
+.feature-card__thumb--fallback {
+  color: var(--platform-accent);
+  background: color-mix(in srgb, var(--platform-accent-soft) 88%, var(--platform-bg-tertiary));
+  border-color: color-mix(in srgb, var(--platform-accent) 12%, transparent);
+}
+
+.feature-card__thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .feature-card__title {
@@ -567,9 +556,9 @@ function openFeature(f) {
   animation: skeleton-shimmer 1.2s ease-in-out infinite;
 }
 
-.skeleton-block--icon {
-  width: 40px;
-  height: 40px;
+.skeleton-block--thumb {
+  width: 48px;
+  height: 48px;
   border-radius: 10px;
   flex-shrink: 0;
 }
@@ -609,9 +598,9 @@ function openFeature(f) {
     padding: 10px 12px;
   }
 
-  .feature-card__icon {
-    width: 36px;
-    height: 36px;
+  .feature-card__thumb {
+    width: 40px;
+    height: 40px;
   }
 
   .feature-card__star {
@@ -653,13 +642,13 @@ function openFeature(f) {
     gap: 8px;
   }
 
-  .feature-card__icon {
-    width: 32px;
-    height: 32px;
+  .feature-card__thumb {
+    width: 36px;
+    height: 36px;
     border-radius: 8px;
   }
 
-  .feature-card__icon :deep(.n-icon) {
+  .feature-card__thumb--fallback :deep(.n-icon) {
     font-size: 16px !important;
   }
 

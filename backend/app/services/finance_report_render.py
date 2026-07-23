@@ -1,20 +1,22 @@
-"""理财报告 HTML 渲染 — 维基百科风格阅读页 + 本析引流侧栏。
+"""理财报告 HTML 渲染 — 维基百科风格阅读页。
 
 布局：
   - 顶栏：本析品牌
   - 左侧：目录（维基 TOC 风格）
-  - 中间：正文（维基排版：蓝链、标题下划线、表格）
-  - 右侧：平台引流卡片（登录 CTA）
+  - 中间：报告摘要卡片 + 正文
 """
 
 from __future__ import annotations
 
 import html as html_lib
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import markdown
 from markdown.extensions import attr_list, fenced_code, tables, toc
+
+# 中国常见 UTC+8 偏移：旧数据 completed_at 为 naive 本地时与 UTC created_at 相减会多出约 8 小时
+_CN_OFFSET = timedelta(hours=8)
 
 REPORT_HTML_TEMPLATE = """\
 <!DOCTYPE html>
@@ -35,11 +37,7 @@ REPORT_HTML_TEMPLATE = """\
     --wiki-link-hover: #0645ad;
     --wiki-toc-bg: #f8f9fa;
     --wiki-accent: #0a6bff;
-    --promo: #0a6bff;
-    --promo-hover: #0058e0;
-    --promo-soft: rgba(10, 107, 255, 0.07);
     --toc-w: 220px;
-    --side-w: 260px;
     --content-max: 820px;
   }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -65,15 +63,15 @@ REPORT_HTML_TEMPLATE = """\
     display: inline-flex; align-items: center; gap: 6px;
     text-decoration: none; color: var(--wiki-text);
   }}
-  .brand-mark svg {{ width: 18px; height: 18px; color: var(--promo); }}
+  .brand-mark svg {{ width: 18px; height: 18px; color: var(--wiki-accent); }}
   .brand-mark span {{ font-size: 13px; font-weight: 500; letter-spacing: 2px; }}
   .brand-sub {{ font-size: 11px; color: var(--wiki-muted); }}
 
   .page {{
     display: grid;
-    grid-template-columns: var(--toc-w) minmax(0, 1fr) var(--side-w);
+    grid-template-columns: var(--toc-w) minmax(0, 1fr);
     gap: 24px;
-    max-width: calc(var(--toc-w) + var(--content-max) + var(--side-w) + 96px);
+    max-width: calc(var(--toc-w) + var(--content-max) + 64px);
     margin: 0 auto;
     padding: 16px 16px 64px;
   }}
@@ -110,6 +108,9 @@ REPORT_HTML_TEMPLATE = """\
   /* ── 主内容 ── */
   .main {{
     min-width: 0; max-width: var(--content-max);
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
     background: var(--wiki-surface);
     border: 1px solid var(--wiki-border-soft);
     border-radius: 2px;
@@ -123,6 +124,7 @@ REPORT_HTML_TEMPLATE = """\
   .report-header h1 {{
     font-size: 20px; font-weight: 500; line-height: 1.35;
     margin-bottom: 6px; letter-spacing: 0;
+    overflow-wrap: anywhere;
   }}
   .report-meta {{
     font-size: 11.5px; color: var(--wiki-muted);
@@ -130,7 +132,13 @@ REPORT_HTML_TEMPLATE = """\
   }}
   .report-meta .dot {{ opacity: .55; }}
 
-  .report-body {{ font-size: 13px; line-height: 1.65; }}
+  .report-body {{
+    font-size: 13px; line-height: 1.65;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }}
   .report-body h2 {{
     font-size: 16px; font-weight: 500;
     margin: 1.25em 0 0.45em;
@@ -149,7 +157,10 @@ REPORT_HTML_TEMPLATE = """\
   .report-body p {{ margin: 0.55em 0; }}
   .report-body ul, .report-body ol {{ margin: 0.45em 0; padding-left: 1.5em; }}
   .report-body li {{ margin: 0.15em 0; }}
-  .report-body a {{ color: var(--wiki-link); text-decoration: none; }}
+  .report-body a {{
+    color: var(--wiki-link); text-decoration: none;
+    word-break: break-all;
+  }}
   .report-body a:hover {{ text-decoration: underline; color: var(--wiki-link-hover); }}
   .report-body blockquote {{
     margin: 0.75em 0; padding: 0.15em 0 0.15em 0.9em;
@@ -159,25 +170,32 @@ REPORT_HTML_TEMPLATE = """\
   .report-body code {{
     font-family: inherit;
     font-size: 12px; background: #eaecf0; padding: 1px 4px; border-radius: 2px;
+    word-break: break-all;
   }}
   .report-body pre {{
     margin: 0.7em 0; padding: 10px 12px; overflow-x: auto;
+    max-width: 100%; box-sizing: border-box;
     background: #f8f9fa; border: 1px solid var(--wiki-border-soft);
     font-size: 12px; font-family: inherit;
   }}
   .report-body pre code {{ background: none; padding: 0; }}
   .report-body table {{
-    width: 100%; border-collapse: collapse; margin: 0.75em 0;
-    font-size: 12px;
+    width: 100%; max-width: 100%;
+    border-collapse: collapse; margin: 0.75em 0;
+    font-size: 12px; table-layout: fixed;
   }}
   .report-body th, .report-body td {{
     border: 1px solid var(--wiki-border-soft);
     padding: 6px 8px; vertical-align: top;
+    overflow-wrap: anywhere; word-break: break-word;
   }}
   .report-body th {{
     background: #eaecf0; font-weight: 600; text-align: left;
   }}
   .report-body tr:nth-child(even) td {{ background: #f8f9fa; }}
+  .report-body img, .report-body svg, .report-body video {{
+    max-width: 100%; height: auto;
+  }}
   .report-body hr {{
     margin: 1.2em 0; border: none; border-top: 1px solid var(--wiki-border);
   }}
@@ -189,60 +207,37 @@ REPORT_HTML_TEMPLATE = """\
     font-size: 11.5px; color: var(--wiki-muted); line-height: 1.6;
   }}
 
-  /* ── 右侧引流 ── */
-  .side-panel {{
-    position: sticky; top: 60px; align-self: start;
-  }}
-  .promo-card {{
-    background: var(--wiki-surface);
+  .summary-card {{
+    margin: 0 0 16px;
+    padding: 14px 16px;
     border: 1px solid var(--wiki-border-soft);
-    border-radius: 6px;
-    padding: 14px 12px 12px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #f4f8ff 0%, #ffffff 72%);
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
   }}
-  .promo-brand {{
-    font-size: 14px; font-weight: 500; letter-spacing: 2px;
-    color: var(--promo); margin-bottom: 6px;
+  .summary-card-badge {{
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600; color: var(--wiki-accent);
+    margin-bottom: 8px;
   }}
-  .promo-title {{
-    font-size: 12.5px; font-weight: 500; line-height: 1.45;
-    color: var(--wiki-text); margin-bottom: 6px;
+  .summary-card-tags {{
+    display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;
   }}
-  .promo-desc {{
-    font-size: 12px; line-height: 1.5; color: var(--wiki-muted);
-    margin-bottom: 10px;
+  .summary-card-tags span {{
+    font-size: 11px; color: var(--wiki-muted);
+    background: #eaecf0; border-radius: 4px; padding: 2px 8px;
   }}
-  .promo-points {{
-    list-style: none; display: flex; flex-direction: column; gap: 6px;
-    margin-bottom: 12px;
-  }}
-  .promo-points li {{
-    font-size: 12px; color: var(--wiki-text);
-    padding: 6px 8px; border-radius: 6px; background: var(--promo-soft);
-    border: 1px solid var(--wiki-border-soft);
-  }}
-  .promo-cta {{
-    display: block; width: 100%; text-align: center;
-    padding: 8px 10px; border-radius: 6px;
-    background: var(--promo); color: #fff !important;
-    font-size: 12.5px; font-weight: 500; text-decoration: none !important;
-    transition: background .15s;
-  }}
-  .promo-cta:hover {{ background: var(--promo-hover); }}
-  .promo-note {{
-    margin-top: 8px; font-size: 11px; color: var(--wiki-muted);
-    text-align: center; line-height: 1.45;
+  .summary-card-sentence {{
+    font-size: 14px; font-weight: 600; line-height: 1.65; color: var(--wiki-text);
   }}
 
-  @media (max-width: 1100px) {{
-    .page {{ grid-template-columns: var(--toc-w) minmax(0, 1fr); }}
-    .side-panel {{ display: none; }}
-  }}
   @media (max-width: 820px) {{
     .page {{ grid-template-columns: 1fr; padding: 12px 10px 48px; }}
     .toc-panel {{ position: relative; top: 0; max-height: none; }}
     .main {{ padding: 14px 12px 22px; }}
     .report-header h1 {{ font-size: 18px; }}
-    .side-panel {{ display: block; position: relative; top: 0; margin-top: 8px; }}
   }}
 </style>
 </head>
@@ -276,32 +271,17 @@ REPORT_HTML_TEMPLATE = """\
         </div>
       </header>
 
+      {summary_card_html}
+
       <article class="report-body" id="report-body">
 {body_html}
       </article>
 
       <footer class="report-footer">
         <p><strong>免责声明</strong>：本报告为研究性质的分析，<strong>不构成任何投资建议</strong>。
-        不提供买入/卖出/持有指令、目标价、止盈止损位或收益承诺。股市有风险，投资需谨慎。</p>
+        不提供买入/卖出/持有指令、目标价、止盈止损位或收益承诺。市场有风险，决策需谨慎。</p>
       </footer>
     </main>
-
-    <aside class="side-panel">
-      <div class="promo-card">
-        <div class="promo-brand">本析</div>
-        <div class="promo-title">把一份好报告，变成你的持续研究工作台</div>
-        <p class="promo-desc">
-          围绕利润断层策略沉淀股票池、历史快照、AI 圆桌报告和可分享 PDF，适合反复跟踪、复盘和团队交流。
-        </p>
-        <ul class="promo-points">
-          <li>利润断层股票池</li>
-          <li>AI 圆桌深度研究</li>
-          <li>历史记录与分享沉淀</li>
-        </ul>
-        <a class="promo-cta" href="{cta_url}">用同样方法分析我关注的股票</a>
-        <p class="promo-note">免费注册后即可使用完整研究工作台。</p>
-      </div>
-    </aside>
   </div>
 
 <script>
@@ -382,9 +362,153 @@ def _format_dt(dt: datetime | None) -> str:
     if not dt:
         return "—"
     try:
+        if dt.tzinfo is not None:
+            local = dt.astimezone()
+            return local.strftime("%Y-%m-%d %H:%M:%S")
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return str(dt)
+
+
+def _duration_seconds(created_at: datetime | None, completed_at: datetime | None) -> float | None:
+    """计算报告耗时，兼容旧数据 naive 本地时间与 UTC timestamptz 混用。"""
+    if not created_at or not completed_at:
+        return None
+    try:
+        start = created_at
+        end = completed_at
+        if start.tzinfo is None and end.tzinfo is not None:
+            start = start.replace(tzinfo=timezone.utc)
+        elif end.tzinfo is None and start.tzinfo is not None:
+            end = end.replace(tzinfo=timezone.utc)
+        elif start.tzinfo is None and end.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+            end = end.replace(tzinfo=timezone.utc)
+
+        secs = (end - start).total_seconds()
+        # 旧 bug：completed_at=naive 本地钟面、created_at=UTC → 常多出约 8 小时
+        if secs > 5 * 3600:
+            adjusted = secs - _CN_OFFSET.total_seconds()
+            if 20 < adjusted < 3 * 3600:
+                secs = adjusted
+        if secs < 0:
+            return None
+        return secs
+    except Exception:
+        return None
+
+
+def _shorten_sentence(text: str, max_len: int = 48) -> str:
+    s = re.sub(r"\s+", " ", _strip_inline_markdown(text or "").strip())
+    if not s:
+        return ""
+    clause = re.split(r"[。！？；\n]", s)[0].strip() or s
+    cut = re.split(r"[，、：:]", clause)[0].strip() or clause
+    base = cut if len(cut) >= 8 else clause
+    if len(base) <= max_len:
+        return base
+    return base[:max_len].rstrip("，、：:. ") + "…"
+
+
+def _strip_inline_markdown(text: str) -> str:
+    """纯文本摘要去掉行内 Markdown，避免露出 **加粗** 等标记。"""
+    s = str(text or "")
+    s = re.sub(r"!\[[^\]]*]\([^)]*\)", "", s)
+    s = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", s)
+    s = re.sub(r"`([^`]+)`", r"\1", s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
+    s = re.sub(r"__([^_]+)__", r"\1", s)
+    s = re.sub(r"\*([^*]+)\*", r"\1", s)
+    s = re.sub(r"_([^_]+)_", r"\1", s)
+    s = re.sub(r"~~([^~]+)~~", r"\1", s)
+    s = re.sub(r"^\s{0,3}#{1,6}\s+", "", s, flags=re.M)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _extract_conclusion_card(body_md: str) -> tuple[str, str]:
+    """从正文抽出「先看结论」做摘要卡片，并去掉正文中重复的该节标题块。"""
+    text = (body_md or "").strip()
+    if not text:
+        return "", text
+
+    m = re.search(
+        r"(?:^|\n)##\s*先看结论\s*\n+([\s\S]*?)(?=\n##\s+|\Z)",
+        text,
+    )
+    if not m:
+        return "", text
+
+    block = m.group(1).strip()
+    # 去掉块内再次出现的同名标题
+    block = re.sub(r"^#{1,3}\s*先看结论\s*\n+", "", block, flags=re.IGNORECASE).strip()
+    if re.search(r"最终研究报告结论将在|结论将在.*生成|正在生成 AI", block):
+        return "", text
+
+    sentence = ""
+    tags: list[str] = []
+    for line in block.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        bullet = re.match(r"^[-*•]\s*(.+)$", s)
+        item_raw = bullet.group(1).strip() if bullet else re.sub(r"^>\s*", "", s).strip()
+        item = _strip_inline_markdown(item_raw)
+        if not item:
+            continue
+        for label in ("价值线索", "风险压力", "跟踪优先级", "履约缺口", "配额盈余", "结转风险"):
+            if label in item and label not in tags:
+                tags.append(label)
+        if bullet and re.match(r"^三条要点", item):
+            continue
+        if not sentence and len(item) >= 10 and not item.startswith("|"):
+            sentence = item
+
+    if not sentence:
+        return "", text
+
+    carbonish = bool(
+        re.search(
+            r"履约|碳配额|碳市场|CEA|CCER|结转|控排|核查排放",
+            f"{sentence}\n{text[:800]}",
+        )
+    )
+    # 避免「履约无缺口」误打成「履约缺口」标签
+    refined: list[str] = []
+    for label in tags:
+        if label == "履约缺口" and re.search(r"无缺口|无履约缺口|不存在缺口", sentence):
+            continue
+        if label not in refined:
+            refined.append(label)
+    if not refined:
+        if re.search(r"配额盈余|无缺口|盈余企业", sentence):
+            refined = ["配额盈余", "策略建议", "结转风险"] if carbonish else [
+                "价值线索",
+                "风险压力",
+                "跟踪优先级",
+            ]
+        elif carbonish:
+            refined = ["履约缺口", "策略建议", "分析预警"]
+        else:
+            refined = ["价值线索", "风险压力", "跟踪优先级"]
+    tag_html = "".join(f"<span>{html_lib.escape(t)}</span>" for t in refined)
+    # 只展示完整结论一次，不再用截断标题重复一遍
+    card = (
+        '<section class="summary-card">'
+        '<div class="summary-card-badge">报告摘要</div>'
+        f'<div class="summary-card-tags">{tag_html}</div>'
+        f'<div class="summary-card-sentence">{html_lib.escape(sentence)}</div>'
+        "</section>"
+    )
+
+    # 正文保留「先看结论」章节，但去掉块内重复的二级标题行
+    cleaned_block = re.sub(
+        r"(##\s*先看结论\s*\n+)(?:#{1,3}\s*先看结论\s*\n+)+",
+        r"\1",
+        text,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    return card, cleaned_block
 
 
 def render_report_html(
@@ -422,15 +546,10 @@ def render_report_html(
 
     body_md = "\n".join(body_md_lines).strip()
     body_md = re.sub(r"<!--.*?-->", "", body_md, flags=re.DOTALL).strip()
+    summary_card_html, body_md = _extract_conclusion_card(body_md)
     body_html = _MD.convert(body_md)
 
-    duration_secs = None
-    if created_at and completed_at:
-        try:
-            duration_secs = (completed_at - created_at).total_seconds()
-        except Exception:
-            duration_secs = None
-
+    duration_secs = _duration_seconds(created_at, completed_at)
     login_url = (cta_url or "/ai/login").strip() or "/ai/login"
 
     return REPORT_HTML_TEMPLATE.format(
@@ -438,6 +557,7 @@ def render_report_html(
         date_str=html_lib.escape(_format_dt(completed_at or created_at)),
         duration_str=html_lib.escape(_format_duration(duration_secs)),
         view_count=max(0, int(view_count or 0)),
+        summary_card_html=summary_card_html,
         body_html=body_html,
         cta_url=html_lib.escape(login_url, quote=True),
     )

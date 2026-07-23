@@ -14,7 +14,7 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { TimeOutline, DocumentTextOutline, GitNetworkOutline, FolderOpenOutline, SparklesOutline, LayersOutline, CloudOutline, ChevronDown } from "@vicons/ionicons5";
+import { TimeOutline, DocumentTextOutline, GitNetworkOutline, FolderOpenOutline, SparklesOutline, LayersOutline, CloudOutline, ChevronDown, CloseOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
 import {
   collectScreenshotAttachmentCandidates,
@@ -33,7 +33,6 @@ import {
   uploadAiChatAttachments,
 } from "../api/chat.js";
 import { formatAgentDisplayName } from "../utils/agentDisplay.js";
-import RoseLoader from "./RoseLoader.vue";
 import CurveAnimation from "./CurveAnimation.vue";
 import { transcribeSpeech } from "../api/speech";
 import { NButton, NCollapse, NCollapseItem, NIcon, NPopover } from "naive-ui";
@@ -49,7 +48,6 @@ const KnowledgeMindMap = defineAsyncComponent(() => import("./KnowledgeMindMap.v
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import { useI18n } from "../composables/useI18n.js";
 import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
-import AgentWorkflowCompactProgress from "./AgentWorkflowCompactProgress.vue";
 import { handleAgentWorkflowForNotifications } from "../composables/useNotificationAlerts.js";
 import {
   emptyAgentWorkflow,
@@ -175,6 +173,9 @@ const input = ref(sessionBootstrap.input);
 const sending = ref(false);
 const resumingCheckpoint = ref(null);
 const messages = ref(sessionBootstrap.messages);
+/** 本析智能：生成中可继续提交，进入排队；完成后自动发送 */
+const messageQueue = ref([]);
+let queueSeq = 0;
 const messagesRef = ref(null);
 const composerRef = ref(null);
 const citationPreviewShow = ref(false);
@@ -900,8 +901,8 @@ function openCitationPreview(citationOrIndex, citations = [], question = "") {
   if (!citation) return;
   if (citation.source === "kg" && citation.entity_id) {
     router.push({
-      name: "kg",
-      query: { focusEntityId: citation.entity_id },
+      name: "ontology",
+      query: { tab: "graph", focusEntityId: citation.entity_id },
     });
     return;
   }
@@ -922,7 +923,7 @@ const headerSub = computed(
 
 const composerPlaceholder = computed(() =>
   started.value
-    ? props.replyPlaceholder || t("chat.continueAsk")
+    ? props.replyPlaceholder || t("chat.continueAskPlaceholder")
     : t("chat.enterQuestion")
 );
 
@@ -980,10 +981,58 @@ function clearFollowUpQuestions() {
   }
 }
 
+function stripFollowUpMarkdown(text) {
+  return String(text || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_~]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function applyFollowUpQuestions(row, questions) {
   if (props.chatScope !== "ai-home" || !row) return;
   if (!Array.isArray(questions) || !questions.length) return;
-  row.followUpQuestions = questions.filter((q) => String(q || "").trim());
+  row.followUpQuestions = questions
+    .map((q) => stripFollowUpMarkdown(q))
+    .filter((q) => q.length >= 4);
+}
+
+const queueEnabled = computed(() => props.chatScope === "ai-home");
+
+function enqueueMessage(text) {
+  const content = String(text || "").trim();
+  if (!content) return false;
+  queueSeq += 1;
+  messageQueue.value.push({
+    id: `q-${Date.now()}-${queueSeq}`,
+    text: content,
+  });
+  return true;
+}
+
+function removeQueuedMessage(id) {
+  messageQueue.value = messageQueue.value.filter((item) => item.id !== id);
+}
+
+function updateQueuedMessage(id, text) {
+  const item = messageQueue.value.find((q) => q.id === id);
+  if (!item) return;
+  item.text = String(text || "");
+}
+
+async function drainMessageQueue() {
+  if (!queueEnabled.value || sending.value) return;
+  while (messageQueue.value.length) {
+    const next = messageQueue.value.shift();
+    const content = String(next?.text || "").trim();
+    if (!content) continue;
+    await dispatchMessage(content);
+    return;
+  }
 }
 
 function showFollowUpForMessage(index, message) {
@@ -1001,9 +1050,14 @@ function showFollowUpForMessage(index, message) {
 }
 
 function useFollowUpQuestion(text) {
-  const q = String(text || "").trim();
-  if (!q || sending.value) return;
-  sendMessage(q);
+  const q = stripFollowUpMarkdown(text);
+  if (!q) return;
+  if (sending.value && queueEnabled.value) {
+    enqueueMessage(q);
+    return;
+  }
+  if (sending.value) return;
+  void dispatchMessage(q);
 }
 
 async function scrollToBottom() {
@@ -1229,6 +1283,7 @@ function stopGeneration() {
   finalizeStoppedAssistant(assistantIdx);
   sending.value = false;
   streamAbort = null;
+  void drainMessageQueue();
 }
 
 async function revealContentTypewriter(row, fullText) {
@@ -1404,7 +1459,21 @@ async function sendMessage(text) {
   const content = (text ?? input.value).trim();
   if (!content) return;
 
+  if (sending.value && queueEnabled.value) {
+    if (enqueueMessage(content)) {
+      input.value = "";
+    }
+    return;
+  }
   if (sending.value) return;
+
+  input.value = "";
+  await dispatchMessage(content);
+}
+
+async function dispatchMessage(content) {
+  const text = String(content || "").trim();
+  if (!text) return;
 
   if (props.streaming && !props.streamChat) {
     ui.error(t("chat.streamNotConfigured"));
@@ -1422,8 +1491,7 @@ async function sendMessage(text) {
   clearFollowUpQuestions();
 
   const history = buildChatHistory();
-  messages.value.push({ role: "user", content });
-  input.value = "";
+  messages.value.push({ role: "user", content: text });
   sending.value = true;
 
   if (firstTurn) {
@@ -1449,9 +1517,9 @@ async function sendMessage(text) {
           : null,
       });
       await scrollToBottom();
-      await sendMessageStreaming(content, assistantIdx, history);
+      await sendMessageStreaming(text, assistantIdx, history);
     } else {
-      await sendMessageBlocking(content, assistantIdx, history);
+      await sendMessageBlocking(text, assistantIdx, history);
     }
   } catch (e) {
     if (e?.name === "AbortError") {
@@ -1479,13 +1547,15 @@ async function sendMessage(text) {
     }
     await scrollToBottom();
     persistSessionState({ immediate: true });
+    if (generation === streamGeneration) {
+      await drainMessageQueue();
+    }
   }
 }
 
 function onComposerKeydown(e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    if (sending.value) return;
     sendMessage();
   }
 }
@@ -1617,6 +1687,7 @@ function newChat() {
   streamAbort?.abort();
   streamAbort = null;
   sending.value = false;
+  messageQueue.value = [];
   started.value = false;
   messages.value = [];
   messageWindowStart.value = 0;
@@ -1681,6 +1752,7 @@ async function loadConversationFromId(id) {
     streamAbort?.abort();
     streamAbort = null;
     sending.value = false;
+    messageQueue.value = [];
     messages.value = trimChatMessages(
       rows.map((m) => {
         const row = {
@@ -2322,7 +2394,6 @@ defineExpose({
                   :key="q"
                   type="button"
                   class="ai-home-chip"
-                  :disabled="sending"
                   @click="useFollowUpQuestion(q)"
                 >
                   {{ q }}
@@ -2346,6 +2417,40 @@ defineExpose({
             @change="onAttachmentInputChange"
           />
           <div class="ai-home-composer-stack">
+            <div
+              v-if="queueEnabled && messageQueue.length"
+              class="ai-home-queue"
+            >
+              <div class="ai-home-queue__head">
+                <span class="ai-home-queue__title">
+                  {{ t("chat.queueTitle", { count: messageQueue.length }) }}
+                </span>
+              </div>
+              <div
+                v-for="(item, idx) in messageQueue"
+                :key="item.id"
+                class="ai-home-queue__item"
+              >
+                <span class="ai-home-queue__index">{{ idx + 1 }}</span>
+                <n-input
+                  :value="item.text"
+                  type="textarea"
+                  :autosize="{ minRows: 1, maxRows: 2 }"
+                  size="tiny"
+                  class="ai-home-queue__input"
+                  :placeholder="t('chat.queueEditPlaceholder')"
+                  @update:value="(v) => updateQueuedMessage(item.id, v)"
+                />
+                <button
+                  type="button"
+                  class="ai-home-queue__remove"
+                  :aria-label="t('common.delete')"
+                  @click="removeQueuedMessage(item.id)"
+                >
+                  <n-icon :size="12" :component="CloseOutline" />
+                </button>
+              </div>
+            </div>
             <div class="ai-home-composer">
               <ChatComposer
                 ref="composerRef"
@@ -2668,7 +2773,7 @@ defineExpose({
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--platform-chat-gradient);
+  background: transparent;
   border-radius: var(--platform-radius);
   overflow: hidden;
 }
@@ -3150,6 +3255,86 @@ defineExpose({
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
+}
+
+.ai-home-queue {
+  border: 1px solid var(--platform-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--platform-bg-tertiary) 55%, transparent);
+  padding: 5px 8px;
+}
+
+.ai-home-queue__head {
+  margin-bottom: 3px;
+}
+
+.ai-home-queue__title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--platform-text-tertiary);
+}
+
+.ai-home-queue__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.ai-home-queue__item + .ai-home-queue__item {
+  border-top: 1px solid var(--platform-border);
+}
+
+.ai-home-queue__index {
+  flex-shrink: 0;
+  width: 14px;
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--platform-text-tertiary);
+  text-align: center;
+}
+
+.ai-home-queue__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-home-queue__input :deep(.n-input) {
+  --n-font-size: 11px;
+  --n-height: 24px;
+  font-size: 11px;
+}
+
+.ai-home-queue__input :deep(.n-input__textarea-el),
+.ai-home-queue__input :deep(.n-input__textarea-mirror),
+.ai-home-queue__input :deep(.n-input__placeholder) {
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+  padding: 3px 6px !important;
+}
+
+.ai-home-queue__remove {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  color: #1a1a1a;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.ai-home-queue__remove:hover {
+  opacity: 1;
+  background: color-mix(in srgb, #000 6%, transparent);
 }
 
 .ai-home-composer {
@@ -3829,14 +4014,14 @@ defineExpose({
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--platform-text-secondary);
 }
 
 
 .ai-home-panel-body {
   padding: 0;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .ai-home-panel-citation {
@@ -3846,7 +4031,7 @@ defineExpose({
   padding: 1px 6px;
   margin: 0 -6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.4;
   color: var(--platform-text-secondary);
   cursor: pointer;
@@ -3884,14 +4069,14 @@ defineExpose({
 }
 
 .ai-home-panel-plan-step-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--platform-text);
   margin-bottom: 1px;
 }
 
 .ai-home-panel-plan-step-summary {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--platform-text-tertiary);
   margin: 1px 0 2px;
   line-height: 1.4;
@@ -3906,7 +4091,7 @@ defineExpose({
   align-items: flex-start;
   gap: 4px;
   padding: 1px 0;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.4;
   color: var(--platform-text-tertiary);
 }
@@ -3918,7 +4103,7 @@ defineExpose({
 }
 
 .ai-home-panel-thinking-text {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.5;
   color: var(--platform-text-tertiary);
   white-space: pre-wrap;

@@ -1,15 +1,25 @@
 ---
 name: delete_kb_folder
 ---
-delete_kb_folder 工具 — 根据当前任务需求自动调用。
+删除文档库文件夹。破坏性操作，必须 confirm=true。
 
 ## When to use
-- 用户请求与 delete_kb_folder 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 用户明确要求删除某文件夹，并已确认
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 仅清空或移动其中文档（先处理文档再用本工具）
+- 未确认时
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 删除结果
+
+## Parameters
+
+### confirm (required)
+必须为 true。
+
+### scope (optional)
+默认 personal。
+
+### folder_id / folder_name (optional)
+定位目标文件夹。

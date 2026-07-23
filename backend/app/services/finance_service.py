@@ -14,7 +14,7 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP, DecimalException
 
 import httpx
@@ -119,12 +119,34 @@ async def search_stocks(query: str) -> list[dict]:
     return results[:20]
 
 
+def _normalize_tencent_quote_code(code: str) -> str:
+    """腾讯 qt 接口需要 sh/sz/bj 前缀；纯数字代码按规则补全。"""
+    raw = (code or "").strip().lower()
+    if not raw:
+        return ""
+    if raw.startswith(("sh", "sz", "bj")):
+        return raw
+    pure = raw.split(".")[0].strip()
+    if pure.startswith(("5", "6", "9")):
+        return f"sh{pure}"
+    if pure.startswith(("0", "3")):
+        return f"sz{pure}"
+    if pure.startswith(("4", "8")):
+        return f"bj{pure}"
+    return pure
+
+
 async def get_stock_quotes(codes: list[str]) -> list[dict]:
-    """批量获取 A 股实时行情。"""
+    """批量获取 A 股实时行情（休市时返回最近交易日收盘快照）。"""
     if not codes:
         return []
 
-    codes_str = ",".join(codes)
+    normalized = [_normalize_tencent_quote_code(c) for c in codes]
+    normalized = [c for c in normalized if c]
+    if not normalized:
+        return []
+
+    codes_str = ",".join(normalized)
     url = f"https://qt.gtimg.cn/q={codes_str}"
     text = await _fetch_text(url, headers={"Referer": "https://qt.gtimg.cn"})
 
@@ -138,10 +160,14 @@ async def get_stock_quotes(codes: list[str]) -> list[dict]:
             fields = raw.split("~")
             if len(fields) < 46:
                 continue
+            price = _to_float(fields[3])
+            # 休市或未开盘时现价可能为 0，回退昨收/最新成交价字段
+            if price is None or price <= 0:
+                price = _to_float(fields[4])  # prev_close
             results.append({
                 "code": fields[2],
                 "name": fields[1],
-                "price": _to_float(fields[3]),
+                "price": price,
                 "change": _to_float(fields[31]),  # 涨跌额
                 "change_pct": _to_float(fields[32]),  # 涨跌幅 %
                 "open": _to_float(fields[5]),
@@ -154,6 +180,7 @@ async def get_stock_quotes(codes: list[str]) -> list[dict]:
                 "amplitude": _to_float(fields[43]),  # 振幅 %
                 "market_cap": _to_float(fields[44]),  # 流通市值（万）
                 "total_market_cap": _to_float(fields[45]),  # 总市值（万）
+                "trade_time": fields[30] if len(fields) > 30 else None,
             })
         except (IndexError, ValueError) as e:
             logger.warning("parse stock quote failed: %s", e)
@@ -809,7 +836,9 @@ async def _run_report_task(report_id: uuid.UUID) -> None:
         report.status = "completed"
         report.progress = 100
         report.error_message = "报告已生成"
-        report.completed_at = datetime.now()
+        report.completed_at = datetime.now(timezone.utc)
+        if not report.share_token:
+            report.share_token = new_share_token()
         db.commit()
 
         # 完成系统 Job
@@ -931,6 +960,7 @@ async def submit_report_task(report: FinanceReport) -> None:
                 "stock_code": report.stock_code,
                 "stock_name": report.stock_name,
                 "report_type": report.report_type,
+                "title": _report_document_title(report),
             },
         )
         # 在当前 session 中重新获取 report 再更新 system_job_id

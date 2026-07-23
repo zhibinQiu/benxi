@@ -1,22 +1,59 @@
 <script setup>
-defineProps({
+import { ref, watch } from "vue";
+import { ChevronDownOutline } from "@vicons/ionicons5";
+
+const props = defineProps({
   title: { type: String, default: "" },
   /** 侧栏等紧凑内边距 */
   dense: { type: Boolean, default: false },
+  /** 可点击标题折叠/展开内容 */
+  collapsible: { type: Boolean, default: false },
+  /** 可折叠时是否默认展开 */
+  defaultExpanded: { type: Boolean, default: true },
 });
+
+const expanded = ref(props.defaultExpanded);
+
+watch(
+  () => props.defaultExpanded,
+  (v) => {
+    if (props.collapsible) expanded.value = v;
+  }
+);
+
+function toggle() {
+  if (!props.collapsible) return;
+  expanded.value = !expanded.value;
+}
 </script>
 
 <template>
-  <section class="feature-section">
-    <header v-if="title || $slots.title || $slots.extra" class="feature-section__header">
+  <section class="feature-section" :class="{ 'feature-section--collapsed': collapsible && !expanded }">
+    <header
+      v-if="title || $slots.title || $slots.extra"
+      class="feature-section__header"
+      :class="{ 'feature-section__header--clickable': collapsible }"
+      @click="toggle"
+    >
+      <n-icon
+        v-if="collapsible"
+        class="feature-section__chevron"
+        :class="{ 'feature-section__chevron--open': expanded }"
+        :component="ChevronDownOutline"
+        :size="14"
+      />
       <div class="feature-section__title">
         <slot name="title">{{ title }}</slot>
       </div>
-      <div v-if="$slots.extra" class="feature-section__extra">
+      <div v-if="$slots.extra" class="feature-section__extra" @click.stop>
         <slot name="extra" />
       </div>
     </header>
-    <div class="feature-section__card" :class="{ 'feature-section__card--dense': dense }">
+    <div
+      v-show="!collapsible || expanded"
+      class="feature-section__card"
+      :class="{ 'feature-section__card--dense': dense }"
+    >
       <slot />
     </div>
   </section>
@@ -37,6 +74,28 @@ defineProps({
   gap: var(--fs-2);
   margin: 0 0 var(--fs-1);
   padding-left: var(--fs-1);
+}
+.feature-section__header--clickable {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  padding: 2px var(--fs-1);
+  margin-left: 0;
+}
+.feature-section__header--clickable:hover {
+  background: var(--platform-bg-secondary, rgba(0, 0, 0, 0.03));
+}
+.feature-section--collapsed .feature-section__header {
+  margin-bottom: 0;
+}
+.feature-section__chevron {
+  flex-shrink: 0;
+  color: var(--platform-text-tertiary);
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
+.feature-section__chevron--open {
+  transform: rotate(0deg);
 }
 .feature-section__title {
   font-size: var(--platform-font-size-sm, 12px);

@@ -1,4 +1,4 @@
-# 功能实现说明（v4.8.6）
+# 功能实现说明（v4.8.7）
 
 > **本文说明各功能如何运转**，含关键方法与提示词落点。  
 > 架构分层见 [系统架构](architecture.md)；Agent Skills 详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)（含 §10 Prompt、§11 调用链）；子智能体模型见 [Agent 架构](../agent-architecture.md)。
@@ -189,7 +189,7 @@
 
 1. **本体建模**：管理员/用户配置实体类型（组织、人员、法规、项目等）与关系类型（包含、引用、约束…）。  
 2. **自动抽取**：文档索引完成后，可选 LLM 从正文抽取实体/关系写入 PostgreSQL（`kg_entities` / `kg_relations`）。  
-3. **工作台**：`KgView`（图探索）与 `OntologyView`（本体建模）双视图——实体查询、关系子图、详情编辑；支持按类型浏览、跳数控制子图范围。  
+3. **工作台**：`OntologyView` 合并本体建模与 ABox 图探索——实体查询、关系子图、详情编辑；支持按类型浏览、跳数控制子图范围；`/system/kg` 重定向至 ontology。  
 4. **下游消费**：知识检索、报告生成、**AI 智能体** 在回答前调用 `retrieve_kg_context_for_question`，将图谱事实与文档片段一并注入 prompt。
 
 ### 4.7 报告生成（区别于短答式 RAG）

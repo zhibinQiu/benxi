@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useI18n } from "../composables/useI18n.js";
 import RoseLoader from "./RoseLoader.vue";
 import { confirmToolExecution, chooseToolOption } from "../api/chat.js";
@@ -15,11 +15,24 @@ const emit = defineEmits(["confirm", "reject", "choose"]);
 const { t } = useI18n();
 
 const running = computed(() => props.workflow?.running ?? false);
-const summary = computed(() => props.workflow?.summary || "");
 const liveThinking = computed(() => String(props.workflow?.liveThinking || "").trim());
 const parsingUrls = computed(() => {
   const list = props.workflow?.parsingUrls;
   return Array.isArray(list) ? list : [];
+});
+/** 仅在有「解析中」网址时，把网址并入动作行；无解析任务不展示网址列表 */
+const activeParsingUrl = computed(() => {
+  const item =
+    parsingUrls.value.find((u) => u.status === "parsing") ||
+    parsingUrls.value.find((u) => u.status === "pending");
+  return item?.url ? shortUrl(item.url) : "";
+});
+const summary = computed(() => {
+  const base = props.workflow?.summary || "";
+  if (activeParsingUrl.value && !String(base).includes(activeParsingUrl.value)) {
+    return `正在解析：${activeParsingUrl.value}`;
+  }
+  return base;
 });
 
 const visible = computed(() => {
@@ -33,12 +46,20 @@ const visible = computed(() => {
 
 const showLiveStatus = computed(() => running.value);
 
-function statusLabel(status) {
-  if (status === "done") return "已解析";
-  if (status === "skipped") return "已跳过";
-  if (status === "parsing") return "解析中";
-  return "排队";
-}
+/** 执行中详情区：随内容增长自动滚到底，形成流式观感 */
+const thinkingScrollRef = ref(null);
+
+watch(
+  liveThinking,
+  async () => {
+    if (!running.value) return;
+    await nextTick();
+    const el = thinkingScrollRef.value;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  },
+  { flush: "post" },
+);
 
 function shortUrl(url) {
   const u = String(url || "").trim();
@@ -119,21 +140,15 @@ async function onChoose(index) {
           {{ summary || t("agentWorkflow.executing") }}
         </div>
 
-        <div v-if="liveThinking" class="aw__thinking" aria-label="思考过程">
-          {{ liveThinking }}
+        <div
+          v-if="liveThinking"
+          ref="thinkingScrollRef"
+          class="aw__thinking"
+          :class="{ 'aw__thinking--streaming': running }"
+          aria-label="执行详情"
+        >
+          <div class="aw__thinking-inner">{{ liveThinking }}<span v-if="running" class="aw__caret" aria-hidden="true" /></div>
         </div>
-
-        <ul v-if="parsingUrls.length" class="aw__urls">
-          <li
-            v-for="(item, idx) in parsingUrls"
-            :key="`${item.url}-${idx}`"
-            class="aw__url"
-            :class="`aw__url--${item.status || 'pending'}`"
-          >
-            <span class="aw__url-status">{{ statusLabel(item.status) }}</span>
-            <span class="aw__url-text" :title="item.url">{{ shortUrl(item.url) }}</span>
-          </li>
-        </ul>
       </div>
     </div>
 
@@ -234,59 +249,61 @@ async function onChoose(index) {
 
 .aw__thinking {
   margin-top: 6px;
-  max-height: 5.4em;
-  overflow: hidden;
-  font-size: 13px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  max-height: min(18vh, 140px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0;
+  font-size: 11px;
   font-weight: 400;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--platform-text-secondary, #64748b);
   white-space: pre-wrap;
-  word-break: break-word;
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 100%);
+  overflow-wrap: anywhere;
+  word-break: normal;
+  /* 可滚动但不显示滚动条 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-.aw__urls {
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.aw__thinking::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-.aw__url {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--platform-text-secondary, #64748b);
+.aw__thinking-inner {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 1.55em;
 }
 
-.aw__url-status {
-  flex-shrink: 0;
-  min-width: 3em;
-  font-size: 11px;
-  color: var(--platform-text-tertiary, #94a3b8);
+.aw__thinking--streaming {
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 8%, #000 100%);
 }
 
-.aw__url--parsing .aw__url-status {
-  color: var(--platform-primary, #2563eb);
+.aw__caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: color-mix(in srgb, var(--platform-accent) 75%, transparent);
+  animation: aw-caret-blink 1s steps(1) infinite;
 }
 
-.aw__url--done .aw__url-status {
-  color: #16a34a;
-}
-
-.aw__url--skipped .aw__url-status {
-  color: #b45309;
-}
-
-.aw__url-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+@keyframes aw-caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 /* ── HITL ── */

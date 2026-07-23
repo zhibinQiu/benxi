@@ -48,7 +48,7 @@ if __name__ == "__main__":
     TEST_CASES = [
         ("用例1-流程图", "帮我绘制把大象装进冰箱的流程图", "orchestrator"),
         ("用例2-技能使用", "请使用 zhangxuefeng-skill 技能：你是谁？", "orchestrator"),
-        ("用例3-定时提醒", "8s 后提醒我喝水", "orchestrator"),
+        ("用例3-定时提醒", "8s 后提醒我喝水", "platform"),
         ("用例4-生成技能", "生成一个 skill，帮我从 https://www.tanshichang.cn 爬取最新的碳市场价格", "skill-dev"),
         ("用例5-碳政策", "最新的双碳政策有哪些？", "carbon"),
         ("用例6-浏览器", "帮我打开百度搜索 rpa 并截图", "orchestrator"),

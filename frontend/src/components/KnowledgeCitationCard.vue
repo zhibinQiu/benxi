@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { NSpin, NTag, NText } from "naive-ui";
 import {
   citationCanPreviewImage,
@@ -9,6 +9,10 @@ import {
   formatCitationSnippet,
   isCitationPreviewUnavailableError,
 } from "../utils/knowledgeCitation.js";
+import {
+  hydrateAuthenticatedImagesInElement,
+  revokeAuthenticatedImagesInElement,
+} from "../utils/authenticatedImage.js";
 import { formatDocumentFormatLabel } from "../constants/documentUpload.js";
 import { useI18n } from "../composables/useI18n.js";
 import { navigateWithReturn } from "../utils/navigationReturn.js";
@@ -27,6 +31,7 @@ const imageLoading = ref(false);
 const imageError = ref("");
 const imageObjectUrl = ref("");
 const previewUnsupported = ref(false);
+const inlineImagesRoot = ref(null);
 let loadSeq = 0;
 let loadAbort = null;
 
@@ -126,10 +131,23 @@ watch(
   { immediate: true }
 );
 
+watch(
+  inlineImages,
+  async () => {
+    await nextTick();
+    const root = inlineImagesRoot.value;
+    if (!root) return;
+    revokeAuthenticatedImagesInElement(root);
+    await hydrateAuthenticatedImagesInElement(root);
+  },
+  { immediate: true, deep: true }
+);
+
 onBeforeUnmount(() => {
   loadAbort?.abort();
   loadAbort = null;
   cleanupImage();
+  revokeAuthenticatedImagesInElement(inlineImagesRoot.value);
 });
 
 function openDocument() {
@@ -142,8 +160,8 @@ function openKgEntity() {
   const entityId = props.citation?.entity_id;
   if (!entityId) return;
   router.push({
-    name: "kg",
-    query: { focusEntityId: entityId },
+    name: "ontology",
+    query: { tab: "graph", focusEntityId: entityId },
   });
 }
 
@@ -185,7 +203,11 @@ const isKgCitation = computed(() => props.citation?.source === "kg");
     </p>
 
     <!-- 内嵌图片（来自文档中的内联图片，如 DOCX/PDF 中的嵌入图） -->
-    <div v-if="inlineImages.length" class="knowledge-citation-card__inline-images">
+    <div
+      v-if="inlineImages.length"
+      ref="inlineImagesRoot"
+      class="knowledge-citation-card__inline-images"
+    >
       <div
         v-for="(img, imgIdx) in inlineImages"
         :key="imgIdx"

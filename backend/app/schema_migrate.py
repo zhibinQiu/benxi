@@ -885,6 +885,21 @@ def ensure_platform_menu_settings_schema(engine: Engine) -> None:
         )
 
 
+def ensure_platform_ai_home_settings_schema(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS platform_ai_home_settings (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    openai_api_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        )
+
+
 def ensure_platform_model_settings_schema(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -1080,6 +1095,51 @@ def ensure_scheduled_rpa_task_schema(engine: Engine) -> None:
         "CREATE INDEX IF NOT EXISTS ix_scheduled_rpa_tasks_user ON scheduled_rpa_tasks (user_id)",
         "CREATE INDEX IF NOT EXISTS ix_scheduled_rpa_tasks_scheduled_at "
         "ON scheduled_rpa_tasks (scheduled_at)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def ensure_agent_automation_schema(engine: Engine) -> None:
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS agent_automations (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(256) NOT NULL,
+            prompt TEXT NOT NULL,
+            frequency VARCHAR(32) NOT NULL DEFAULT 'daily',
+            starts_at TIMESTAMPTZ,
+            ends_at TIMESTAMPTZ,
+            next_run_at TIMESTAMPTZ,
+            last_run_at TIMESTAMPTZ,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            cancelled_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_agent_automations_user ON agent_automations (user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agent_automations_next_run "
+        "ON agent_automations (next_run_at)",
+        """
+        CREATE TABLE IF NOT EXISTS agent_automation_runs (
+            id UUID PRIMARY KEY,
+            automation_id UUID NOT NULL REFERENCES agent_automations(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            result_summary TEXT,
+            error TEXT,
+            started_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_agent_automation_runs_auto "
+        "ON agent_automation_runs (automation_id)",
+        "CREATE INDEX IF NOT EXISTS ix_agent_automation_runs_user "
+        "ON agent_automation_runs (user_id)",
     ]
     with engine.begin() as conn:
         for sql in statements:
@@ -1505,12 +1565,434 @@ def ensure_carbon_report_schema(engine: Engine) -> None:
             conn.execute(text(sql))
 
 
+def ensure_carbon_compliance_schema(engine: Engine) -> None:
+    """控排企业履约策略：企业档案、台账、行情、配置、策略运行与预警。"""
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS platform_carbon_strategy_settings (
+            id INTEGER PRIMARY KEY,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS carbon_enterprises (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL,
+            name VARCHAR(256) NOT NULL,
+            uscc VARCHAR(32) NOT NULL DEFAULT '',
+            industry VARCHAR(32) NOT NULL,
+            market_start_year INTEGER NOT NULL,
+            compliance_cycle VARCHAR(64) NOT NULL DEFAULT 'annual',
+            risk_profile VARCHAR(32) NOT NULL DEFAULT 'balanced',
+            annual_budget_cap DOUBLE PRECISION NOT NULL DEFAULT 0,
+            single_trade_limit DOUBLE PRECISION NOT NULL DEFAULT 0,
+            enterprise_attrs JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_enterprises_user ON carbon_enterprises (user_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_emission_years (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            year INTEGER NOT NULL,
+            verified_total DOUBLE PRECISION,
+            scope1_combustion DOUBLE PRECISION NOT NULL DEFAULT 0,
+            scope1_process DOUBLE PRECISION NOT NULL DEFAULT 0,
+            scope2_power DOUBLE PRECISION NOT NULL DEFAULT 0,
+            purchased_mwh DOUBLE PRECISION NOT NULL DEFAULT 0,
+            monthly_detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+            historical_gap DOUBLE PRECISION,
+            ccer_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_carbon_emission_year UNIQUE (enterprise_id, year)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_emission_years_ent ON carbon_emission_years (enterprise_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_emission_forecasts (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            year INTEGER NOT NULL,
+            forecast_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+            capacity_plan TEXT NOT NULL DEFAULT '',
+            abatement_projects JSONB NOT NULL DEFAULT '[]'::jsonb,
+            production_plan TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_carbon_emission_forecast UNIQUE (enterprise_id, year)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_emission_forecasts_ent ON carbon_emission_forecasts (enterprise_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_cea_holdings (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            vintage_year INTEGER NOT NULL,
+            free_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            carry_forward_qty DOUBLE PRECISION NOT NULL DEFAULT 0,
+            net_sell_qty DOUBLE PRECISION NOT NULL DEFAULT 0,
+            avg_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+            estimated_free_quota DOUBLE PRECISION NOT NULL DEFAULT 0,
+            sellable_cap DOUBLE PRECISION,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_carbon_cea_holding UNIQUE (enterprise_id, vintage_year)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_cea_holdings_ent ON carbon_cea_holdings (enterprise_id)",
+        # 兼容旧库：若仍为 expired_qty 列则重命名；新列补齐
+        "ALTER TABLE carbon_cea_holdings ADD COLUMN IF NOT EXISTS carry_forward_qty DOUBLE PRECISION NOT NULL DEFAULT 0",
+        "ALTER TABLE carbon_cea_holdings ADD COLUMN IF NOT EXISTS net_sell_qty DOUBLE PRECISION NOT NULL DEFAULT 0",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_cea_trades (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            side VARCHAR(8) NOT NULL,
+            qty DOUBLE PRECISION NOT NULL,
+            price DOUBLE PRECISION NOT NULL DEFAULT 0,
+            traded_at TIMESTAMPTZ DEFAULT NOW(),
+            note VARCHAR(256) NOT NULL DEFAULT ''
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_cea_trades_ent ON carbon_cea_trades (enterprise_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_ccer_holdings (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            project_type VARCHAR(64) NOT NULL DEFAULT '',
+            issue_year INTEGER NOT NULL,
+            expire_at DATE,
+            qty DOUBLE PRECISION NOT NULL DEFAULT 0,
+            cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+            eligible_qty DOUBLE PRECISION NOT NULL DEFAULT 0,
+            linked_green_cert BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_ccer_holdings_ent ON carbon_ccer_holdings (enterprise_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_ccer_trades (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            side VARCHAR(8) NOT NULL,
+            qty DOUBLE PRECISION NOT NULL,
+            price DOUBLE PRECISION NOT NULL DEFAULT 0,
+            traded_at TIMESTAMPTZ DEFAULT NOW(),
+            note VARCHAR(256) NOT NULL DEFAULT ''
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_ccer_trades_ent ON carbon_ccer_trades (enterprise_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_green_power (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            year INTEGER NOT NULL,
+            market_green_mwh DOUBLE PRECISION NOT NULL DEFAULT 0,
+            self_gen_mwh DOUBLE PRECISION NOT NULL DEFAULT 0,
+            premium_per_mwh DOUBLE PRECISION NOT NULL DEFAULT 0,
+            contract_ref VARCHAR(256) NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_carbon_green_power UNIQUE (enterprise_id, year)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_green_power_ent ON carbon_green_power (enterprise_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_green_certs (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            year INTEGER NOT NULL,
+            qty DOUBLE PRECISION NOT NULL DEFAULT 0,
+            unit_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+            retired BOOLEAN NOT NULL DEFAULT FALSE,
+            ren_weight_target DOUBLE PRECISION,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_green_certs_ent ON carbon_green_certs (enterprise_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_market_cea_monthly (
+            id UUID PRIMARY KEY,
+            year_month VARCHAR(7) NOT NULL,
+            avg_price DOUBLE PRECISION NOT NULL,
+            high DOUBLE PRECISION,
+            low DOUBLE PRECISION,
+            period_tag VARCHAR(32) NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_carbon_market_cea_ym UNIQUE (year_month)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS carbon_market_ccer_monthly (
+            id UUID PRIMARY KEY,
+            year_month VARCHAR(7) NOT NULL,
+            project_type VARCHAR(64) NOT NULL DEFAULT 'general',
+            avg_price DOUBLE PRECISION NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_carbon_market_ccer_ym_type UNIQUE (year_month, project_type)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS carbon_market_energy_monthly (
+            id UUID PRIMARY KEY,
+            year_month VARCHAR(7) NOT NULL,
+            region VARCHAR(64) NOT NULL DEFAULT 'national',
+            green_premium DOUBLE PRECISION,
+            grec_price DOUBLE PRECISION,
+            coal_price DOUBLE PRECISION,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            CONSTRAINT uq_carbon_market_energy_ym_region UNIQUE (year_month, region)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS carbon_strategy_runs (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL,
+            compliance_year INTEGER NOT NULL,
+            accounting_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+            market_tags JSONB NOT NULL DEFAULT '{}'::jsonb,
+            plans JSONB NOT NULL DEFAULT '[]'::jsonb,
+            status VARCHAR(16) NOT NULL DEFAULT 'completed',
+            report_md TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_strategy_runs_ent ON carbon_strategy_runs (enterprise_id)",
+        "CREATE INDEX IF NOT EXISTS ix_carbon_strategy_runs_user ON carbon_strategy_runs (user_id)",
+        """
+        CREATE TABLE IF NOT EXISTS carbon_alerts (
+            id UUID PRIMARY KEY,
+            enterprise_id UUID NOT NULL REFERENCES carbon_enterprises(id) ON DELETE CASCADE,
+            user_id UUID NOT NULL,
+            level VARCHAR(16) NOT NULL DEFAULT 'info',
+            alert_type VARCHAR(64) NOT NULL,
+            message TEXT NOT NULL,
+            due_at TIMESTAMPTZ,
+            acked BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_carbon_alerts_ent ON carbon_alerts (enterprise_id)",
+        "CREATE INDEX IF NOT EXISTS ix_carbon_alerts_user ON carbon_alerts (user_id)",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
+def migrate_carbon_qty_unit_wan_v1(engine: Engine) -> None:
+    """履约台账数量由「吨」统一为「万吨」（÷10000）；阈值配置同步缩放。"""
+    patch_name = "carbon_qty_unit_wan_v1"
+    with engine.begin() as conn:
+        _ensure_schema_patches_table(conn)
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = :name"),
+            {"name": patch_name},
+        ).first()
+        if done:
+            return
+        # 排放 / 预测
+        conn.execute(
+            text(
+                """
+                UPDATE carbon_emission_years SET
+                    verified_total = CASE WHEN verified_total IS NULL THEN NULL
+                        ELSE verified_total / 10000.0 END,
+                    scope1_combustion = scope1_combustion / 10000.0,
+                    scope1_process = scope1_process / 10000.0,
+                    scope2_power = scope2_power / 10000.0,
+                    historical_gap = CASE WHEN historical_gap IS NULL THEN NULL
+                        ELSE historical_gap / 10000.0 END,
+                    ccer_used = ccer_used / 10000.0
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                UPDATE carbon_emission_forecasts SET
+                    forecast_total = forecast_total / 10000.0
+                """
+            )
+        )
+        # CEA / CCER 持仓与成交量
+        conn.execute(
+            text(
+                """
+                UPDATE carbon_cea_holdings SET
+                    free_quota = free_quota / 10000.0,
+                    estimated_free_quota = estimated_free_quota / 10000.0,
+                    sellable_cap = CASE WHEN sellable_cap IS NULL THEN NULL
+                        ELSE sellable_cap / 10000.0 END
+                """
+            )
+        )
+        # 兼容迁移时尚存的 expired_qty / 已改名的 carry_forward_qty
+        for col in ("carry_forward_qty", "expired_qty"):
+            exists = conn.execute(
+                text(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'carbon_cea_holdings' AND column_name = :c
+                    """
+                ),
+                {"c": col},
+            ).first()
+            if exists:
+                conn.execute(
+                    text(f"UPDATE carbon_cea_holdings SET {col} = {col} / 10000.0")
+                )
+                break
+        conn.execute(text("UPDATE carbon_cea_trades SET qty = qty / 10000.0"))
+        conn.execute(
+            text(
+                """
+                UPDATE carbon_ccer_holdings SET
+                    qty = qty / 10000.0,
+                    eligible_qty = eligible_qty / 10000.0
+                """
+            )
+        )
+        conn.execute(text("UPDATE carbon_ccer_trades SET qty = qty / 10000.0"))
+        # 企业单笔限额（数量，万吨）
+        conn.execute(
+            text(
+                """
+                UPDATE carbon_enterprises SET
+                    single_trade_limit = single_trade_limit / 10000.0
+                WHERE single_trade_limit > 0
+                """
+            )
+        )
+        # 平台默认阈值（若仍为吨量级则缩放）
+        row = conn.execute(
+            text("SELECT payload FROM platform_carbon_strategy_settings WHERE id = 1")
+        ).first()
+        if row and isinstance(row[0], dict):
+            import json
+
+            payload = dict(row[0])
+            comp = dict(payload.get("compliance") or {})
+            changed = False
+            for key, old_default_tons in (
+                ("large_trade_split_threshold", 50_000.0),
+                ("annual_position_cap_default", 1_000_000.0),
+                ("single_trade_cap_default", 100_000.0),
+            ):
+                if key not in comp:
+                    continue
+                try:
+                    val = float(comp[key])
+                except (TypeError, ValueError):
+                    continue
+                # 明显仍为旧吨量级，或等于历史默认吨值
+                if val >= 1000 or abs(val - old_default_tons) < 1e-6:
+                    comp[key] = val / 10000.0
+                    changed = True
+            if changed:
+                payload["compliance"] = comp
+                conn.execute(
+                    text(
+                        "UPDATE platform_carbon_strategy_settings SET payload = CAST(:p AS jsonb) "
+                        "WHERE id = 1"
+                    ),
+                    {"p": json.dumps(payload, ensure_ascii=False)},
+                )
+        conn.execute(
+            text("INSERT INTO schema_patches (name) VALUES (:name)"),
+            {"name": patch_name},
+        )
+
+
+def migrate_carbon_cea_carry_forward_v1(engine: Engine) -> None:
+    """CEA 台账：已过期量 → 结转量（语义变更，旧值清零）。"""
+    patch_name = "carbon_cea_carry_forward_v1"
+    with engine.begin() as conn:
+        _ensure_schema_patches_table(conn)
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = :name"),
+            {"name": patch_name},
+        ).first()
+        if done:
+            return
+        has_expired = conn.execute(
+            text(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'carbon_cea_holdings' AND column_name = 'expired_qty'
+                """
+            )
+        ).first()
+        has_carry = conn.execute(
+            text(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'carbon_cea_holdings' AND column_name = 'carry_forward_qty'
+                """
+            )
+        ).first()
+        if has_expired and has_carry:
+            # ensure 已补空列：丢掉空 carry，把 expired 改名为结转列后清零
+            conn.execute(text("ALTER TABLE carbon_cea_holdings DROP COLUMN carry_forward_qty"))
+            conn.execute(
+                text(
+                    "ALTER TABLE carbon_cea_holdings "
+                    "RENAME COLUMN expired_qty TO carry_forward_qty"
+                )
+            )
+            conn.execute(text("UPDATE carbon_cea_holdings SET carry_forward_qty = 0"))
+        elif has_expired and not has_carry:
+            conn.execute(
+                text(
+                    "ALTER TABLE carbon_cea_holdings "
+                    "RENAME COLUMN expired_qty TO carry_forward_qty"
+                )
+            )
+            conn.execute(text("UPDATE carbon_cea_holdings SET carry_forward_qty = 0"))
+        elif not has_carry:
+            conn.execute(
+                text(
+                    "ALTER TABLE carbon_cea_holdings "
+                    "ADD COLUMN carry_forward_qty DOUBLE PRECISION NOT NULL DEFAULT 0"
+                )
+            )
+        conn.execute(
+            text("INSERT INTO schema_patches (name) VALUES (:name)"),
+            {"name": patch_name},
+        )
+
+
+def migrate_carbon_cea_net_sell_v1(engine: Engine) -> None:
+    """CEA 台账增加当前净卖出（万吨），供结转上限测算。"""
+    patch_name = "carbon_cea_net_sell_v1"
+    with engine.begin() as conn:
+        _ensure_schema_patches_table(conn)
+        done = conn.execute(
+            text("SELECT 1 FROM schema_patches WHERE name = :name"),
+            {"name": patch_name},
+        ).first()
+        if done:
+            return
+        conn.execute(
+            text(
+                "ALTER TABLE carbon_cea_holdings "
+                "ADD COLUMN IF NOT EXISTS net_sell_qty DOUBLE PRECISION NOT NULL DEFAULT 0"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO schema_patches (name) VALUES (:name)"),
+            {"name": patch_name},
+        )
+
+
 def run_light_schema_patches(engine: Engine) -> None:
     """轻量启动时仍须执行的幂等 DDL（新增表/列，CREATE IF NOT EXISTS）。"""
     drop_legacy_carbon_market_tables(engine)
     ensure_pageindex_schema(engine)
     ensure_issue_report_schema(engine)
     ensure_platform_menu_settings_schema(engine)
+    ensure_platform_ai_home_settings_schema(engine)
     ensure_agent_skill_schema(engine)
     ensure_agent_profile_schema(engine)
     ensure_aip_external_agents_schema(engine)
@@ -1519,11 +2001,16 @@ def run_light_schema_patches(engine: Engine) -> None:
     ensure_notification_schema(engine)
     ensure_scheduled_notification_schema(engine)
     ensure_scheduled_rpa_task_schema(engine)
+    ensure_agent_automation_schema(engine)
     ensure_prompt_schema(engine)
     ensure_note_schema(engine)
     ensure_finance_watchlist_schema(engine)
     ensure_finance_report_schema(engine)
     ensure_carbon_report_schema(engine)
+    ensure_carbon_compliance_schema(engine)
+    migrate_carbon_qty_unit_wan_v1(engine)
+    migrate_carbon_cea_carry_forward_v1(engine)
+    migrate_carbon_cea_net_sell_v1(engine)
 
     # patches: 新增 system_job_id / view_count / share_token 列
     with engine.begin() as conn:

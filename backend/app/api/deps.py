@@ -86,12 +86,18 @@ def require_feature(feature_id: str):
         db: Annotated[Session, Depends(get_db)],
         user: Annotated[User, Depends(get_current_user)],
     ) -> User:
+        from app.core.permissions import user_has_semantic_layer_permission
         from app.features.registry import ensure_plugins_loaded, get_plugin
 
         ensure_plugins_loaded()
         plugin = get_plugin(feature_id)
         if not plugin:
             raise forbidden(f"Unknown feature: {feature_id}")
+        # 本体 / 图谱已融合：任一语义层权限即可访问两侧 API
+        if feature_id in ("ontology", "kg"):
+            if not user_has_semantic_layer_permission(db, user):
+                raise forbidden("Missing permission: feature.ontology")
+            return user
         if not user_has_permission(db, user, plugin.permission_code):
             raise forbidden(f"Missing permission: {plugin.permission_code}")
         return user

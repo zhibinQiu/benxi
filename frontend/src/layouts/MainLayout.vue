@@ -10,8 +10,6 @@ import {
   NButton,
   NIcon,
   NSpace,
-  NAvatar,
-  NDropdown,
 } from "naive-ui";
 import {
   DocumentTextOutline,
@@ -23,13 +21,11 @@ import {
   HardwareChipOutline,
   SparklesOutline,
   ArrowBackOutline,
-  NewspaperOutline,
   BugOutline,
   ListOutline,
-  CubeOutline,
   GitNetworkOutline,
   ExtensionPuzzleOutline,
-  EllipsisHorizontal,
+  TimerOutline,
 } from "@vicons/ionicons5";
 import { useAuth } from "../composables/useAuth";
 import { useI18n } from "../composables/useI18n";
@@ -38,13 +34,16 @@ import { useMenuSettings } from "../composables/useMenuSettings";
 import { getPageHeaderOverride } from "../composables/usePageHeader";
 import { resolveFeatureIcon } from "../constants/featureIcons";
 import { useAppDisplayName } from "../composables/usePlatformBranding";
-import { useFeatureFavorites } from "../composables/useFeatureFavorites";
+import {
+  SIDEBAR_DEDICATED_FEATURE_IDS,
+  useFeatureFavorites,
+} from "../composables/useFeatureFavorites";
 import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import SystemNotificationToast from "../components/SystemNotificationToast.vue";
 import NotificationsPanel from "../components/NotificationsPanel.vue";
-import { startNotificationAlerts, stopNotificationAlerts, useNotificationAlerts } from "../composables/useNotificationAlerts.js";
+import { startNotificationAlerts, stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
 import { goBackToEntry } from "../utils/navigationReturn";
@@ -57,15 +56,25 @@ import {
   shouldShowReleaseHighlights,
 } from "../utils/releaseNotesAck.js";
 import { useBlockingUiCleanup } from "../composables/useBlockingUiCleanup.js";
-import { useAppPreferences } from "../composables/useAppPreferences";
 import { prefetchKnowledgeScopeTree } from "../composables/useKnowledgeScopeTree.js";
 import { getToken } from "../api/client.js";
 import { openExternal } from "../utils/openExternal.js";
+import { publicAsset } from "../utils/appBase.js";
 import ChatTabBar from "../components/ChatTabBar.vue";
 import { useChatTabs } from "../composables/useChatTabs.js";
 
-/** 对话 / 知识检索 / 报告生成 / 我的文件 / 多智能体保留实例；其余功能离开路由后销毁以释放内存 */
-const KEEP_ALIVE_VIEWS = ["AiHomeView", "KnowledgeFeatureLayout", "DocumentsView", "AgentSkillsView"];
+/** 侧栏底部装饰：海颐 logo + 建筑图 */
+const siderBgSrc = publicAsset("images/sider-bg.jpg");
+const haiyiLogoSrc = publicAsset("images/haiyi-logo.png");
+
+/** 对话 / 知识检索 / 报告生成 / 文档管理 / 多智能体保留实例；其余功能离开路由后销毁以释放内存 */
+const KEEP_ALIVE_VIEWS = [
+  "AiHomeView",
+  "KnowledgeFeatureLayout",
+  "DocumentsView",
+  "AgentSkillsView",
+  "CarbonAssistantView",
+];
 
 function routeViewKey(viewRoute) {
   const name = String(viewRoute.name || "");
@@ -86,12 +95,10 @@ function routeViewKey(viewRoute) {
 const route = useRoute();
 const router = useRouter();
 useBlockingUiCleanup();
-const { loadUser, hasPerm, user, displayName, logout } = useAuth();
-const { toggleTheme, toggleLocale, locale, isDark } = useAppPreferences();
+const { loadUser, hasPerm } = useAuth();
 const { t, routeTitle, featureLabel, featureDescription } = useI18n();
 const { loadMenuSettings, isMenuVisible } = useMenuSettings();
 const pageHeaderOverride = getPageHeaderOverride();
-const { unreadCount } = useNotificationAlerts();
 const headerToolbarRef = ref(null);
 const releaseHighlightsOpen = ref(false);
 const releaseHighlights = ref(null);
@@ -103,52 +110,6 @@ const siderMenuWrapRef = ref(null);
 
 const siderCollapsed = ref(false);
 const isMobile = ref(window.innerWidth < 768);
-const userMenuOpen = ref(false);
-
-const userDisplayName = computed(() => {
-  const d = displayName();
-  return d || user.value?.nickname || user.value?.phone || "";
-});
-
-const roleLabel = computed(() => {
-  const u = user.value;
-  if (!u) return "";
-  if (u.role === "admin" || u.is_system_admin) return "管理员";
-  if (u.role === "manager") return "经理";
-  return "成员";
-});
-
-const userMenuOptions = computed(() => [
-  {
-    label: "偏好设置",
-    key: "preferences-group",
-    children: [
-      {
-        label: locale.value === "zh" ? "English" : "中文",
-        key: "toggle_locale",
-      },
-      {
-        label: isDark.value ? "日间模式" : "夜间模式",
-        key: "toggle_theme",
-      },
-    ],
-  },
-  {
-    label: "退出登录",
-    key: "logout",
-  },
-]);
-
-function onSiderUserMenuSelect(key) {
-  userMenuOpen.value = false;
-  if (key === "toggle_locale") {
-    toggleLocale();
-  } else if (key === "toggle_theme") {
-    toggleTheme();
-  } else if (key === "logout") {
-    logout();
-  }
-}
 
 function toggleNotifDrawer() {
   headerToolbarRef.value?.closeAllFlyouts?.();
@@ -179,9 +140,10 @@ function favoriteMenuKey(feature) {
 
 const favoriteMenuFeatures = computed(() => {
   const byId = Object.fromEntries(systemFeatures.value.map((f) => [f.id, f]));
+  const dedicated = new Set(SIDEBAR_DEDICATED_FEATURE_IDS);
   return favoriteIds.value
     .map((id) => byId[id])
-    .filter((f) => f && f.enabled && f.accessible);
+    .filter((f) => f && f.enabled && f.accessible && !dedicated.has(f.id));
 });
 
 const favoriteActiveKey = computed(() => {
@@ -332,17 +294,18 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(ExtensionPuzzleOutline) })});
   }
 
+  if (isMenuVisible("automation")) {
+    items.push({
+      label: t("menu.automation"),
+      key: "automation",
+      icon: () => h(NIcon, null, { default: () => h(TimerOutline) })});
+  }
+
   if (isMenuVisible("documents")) {
     items.push({
       label: t("menu.documents"),
       key: "documents",
       icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) })});
-  }
-  if (isMenuVisible("knowledge-subscriptions")) {
-    items.push({
-      label: t("menu.knowledgeSubscriptions"),
-      key: "knowledge-subscriptions",
-      icon: () => h(NIcon, null, { default: () => h(NewspaperOutline) })});
   }
 
   for (const feature of favoriteMenuFeatures.value) {
@@ -353,18 +316,12 @@ const menuOptions = computed(() => {
       icon: () => h(NIcon, null, { default: () => h(Icon) })});
   }
 
-  // 本体定义 & 知识图谱
+  // 本体定义（含模式层 + 实例图谱）
   if (hasPerm("feature.ontology") && isMenuVisible("ontology")) {
     items.push({
       label: t("menu.ontology"),
       key: "ontology",
       icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) })});
-  }
-  if (hasPerm("feature.kg") && isMenuVisible("kg")) {
-    items.push({
-      label: t("menu.kg"),
-      key: "kg",
-      icon: () => h(NIcon, null, { default: () => h(CubeOutline) })});
   }
 
   if (settingsChildren.value.length) {
@@ -394,12 +351,6 @@ const activeKey = computed(() => {
     return "ai-home";
   }
   if (
-    route.name === "knowledge-subscriptions" ||
-    route.name === "subscription-item"
-  ) {
-    return "knowledge-subscriptions";
-  }
-  if (
     route.name === "translate" ||
     route.name === "speech" ||
     route.name === "text-to-speech" ||
@@ -407,6 +358,8 @@ const activeKey = computed(() => {
     route.name === "compare" ||
     route.name === "knowledge-search" ||
     route.name === "report-generation" ||
+    route.name === "knowledge-subscriptions" ||
+    route.name === "subscription-item" ||
     route.name === "ai-tools" ||
     route.name === "smart-data-query" ||
     route.name === "data-analysis" ||
@@ -419,6 +372,7 @@ const activeKey = computed(() => {
     route.name === "admin-users" ||
     route.name === "admin-departments" ||
     route.name === "agent-skills" ||
+    route.name === "automation" ||
     route.name === "admin-monitor" ||
     route.name === "admin-model-settings" ||
     route.name === "admin-menu-settings" ||
@@ -529,7 +483,7 @@ const contentStyle = computed(() => {
   return "padding: 14px 24px";
 });
 
-/** 移动端底部导航栏：仅显示4个核心入口 */
+/** 移动端底部导航栏：核心入口（资讯等子功能经功能列表收藏后出现在侧栏） */
 const mobileBottomTabs = computed(() => [
   {
     key: "ai-home",
@@ -549,20 +503,19 @@ const mobileBottomTabs = computed(() => [
     icon: GridOutline,
     routeName: "system-functions",
   },
-  {
-    key: "knowledge-subscriptions",
-    label: t("menu.knowledgeSubscriptions"),
-    icon: NewspaperOutline,
-    routeName: "knowledge-subscriptions",
-  },
 ]);
 
 const mobileTabActiveKey = computed(() => {
   const name = String(route.name || "");
   if (name === "ai-home" || name === "ai-home-tab") return "ai-home";
   if (name === "documents" || name === "document-detail") return "documents";
-  if (name === "system-functions") return "system-functions";
-  if (name === "knowledge-subscriptions" || name === "subscription-item") return "knowledge-subscriptions";
+  if (
+    name === "system-functions" ||
+    name === "knowledge-subscriptions" ||
+    name === "subscription-item"
+  ) {
+    return "system-functions";
+  }
   return "ai-home";
 });
 
@@ -751,53 +704,22 @@ function onMenuSelect(key) {
             @update:expanded-keys="onExpandedKeysUpdate"
           />
         </div>
-        <div class="sider-user-section" :class="{ 'sider-user-section--collapsed': siderCollapsed }">
-          <div class="sider-user-row">
-            <button
-              type="button"
-              class="sider-user-avatar-wrap"
-              aria-label="通知"
-              @click="toggleNotifDrawer"
-            >
-              <span class="sider-user-avatar-inner">
-                <n-avatar round size="small" class="sider-user-avatar">
-                  {{ (userDisplayName || 'U')[0] }}
-                </n-avatar>
-                <span v-if="unreadCount > 0" class="sider-user-badge-sup">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
-              </span>
-            </button>
-            <div v-if="!siderCollapsed" class="sider-user-info">
-              <span class="sider-username">{{ userDisplayName }}</span>
-              <span class="sider-user-role">{{ roleLabel }}</span>
-            </div>
-            <div v-if="!siderCollapsed" class="sider-user-actions">
-              <n-dropdown
-                trigger="click"
-                placement="top-start"
-                to="body"
-                :z-index="1050"
-                :options="userMenuOptions"
-                @update:show="(v) => (userMenuOpen = v)"
-                @select="onSiderUserMenuSelect"
-              >
-                <n-button quaternary circle size="tiny" class="sider-user-more-btn">
-                  <template #icon>
-                    <n-icon :size="14"><EllipsisHorizontal /></n-icon>
-                  </template>
-                </n-button>
-              </n-dropdown>
-            </div>
-          </div>
+        <div v-if="!siderCollapsed" class="sider-decor" aria-hidden="true">
+          <img class="sider-decor__logo" :src="haiyiLogoSrc" alt="" />
+          <img class="sider-decor__building" :src="siderBgSrc" alt="" />
         </div>
       </div>
     </n-layout-sider>
     <!-- 移动端无需抽屉，改用底部导航栏 -->
     <n-layout class="app-main">
-      <n-layout-header :bordered="!showAiHomeTabBar" :class="['header', { 'header--tab-mode': showAiHomeTabBar }, { 'header--bare': !showHeaderPrimary }, { 'header--mob': isMobile }]">
+      <n-layout-header :bordered="false" :class="['header', { 'header--tab-mode': showAiHomeTabBar }, { 'header--mob': isMobile }]">
         <div class="header-stack">
-          <div v-if="showHeaderPrimary" class="header-primary">
+          <div
+            class="header-primary"
+            :class="{ 'header-primary--toolbar-only': !showHeaderPrimary }"
+          >
             <n-space align="center" justify="space-between" style="width: 100%">
-              <n-space align="center" :size="isMobile ? 6 : 10" class="header-leading">
+              <n-space v-if="showHeaderPrimary" align="center" :size="isMobile ? 6 : 10" class="header-leading">
                 <template v-if="showTitleInPrimary">
                   <div class="header-title-inline">
                     <span class="header-title">{{ headerTitle }}</span>
@@ -805,7 +727,8 @@ function onMenuSelect(key) {
                   </div>
                 </template>
               </n-space>
-              <HeaderToolbar ref="headerToolbarRef" />
+              <span v-else aria-hidden="true" />
+              <HeaderToolbar ref="headerToolbarRef" @toggle-notifications="toggleNotifDrawer" />
             </n-space>
           </div>
           <div
@@ -939,24 +862,16 @@ function onMenuSelect(key) {
   overflow: hidden;
 }
 
-/* 系统壳层：与智能体页相同的渐变底（底色见 feature-local-nav.css 壳层规则） */
+/* 系统壳层：侧栏 / 顶栏毛玻璃由 platform-ui-glass.css 统一控制 */
 .main-layout :deep(.app-sider.n-layout-sider) {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
-  border-right: 1px solid var(--platform-border) !important;
-}
-
-.main-layout :deep(.app-sider.n-layout-sider::before) {
-  display: none;
+  border-right: 1px solid var(--platform-glass-border-soft, var(--platform-border)) !important;
 }
 
 .main-layout .header {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  box-shadow: none !important;
   border-bottom: none !important;
-  background: var(--platform-header-bg) !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 /* Header 微妙的玻璃质感 — 仅在非 tab 模式 / 无 feature-local-nav 时生效 */
@@ -969,109 +884,39 @@ function onMenuSelect(key) {
   border-bottom: none !important;
 }
 
-/* 已全局移除 header border-bottom，无需额外覆盖 */
-
 
 .app-sider {
   height: 100vh;
 }
-/* 侧栏底部用户信息 */
-.sider-user-section {
+
+/* 侧栏最底部：海颐 logo + 建筑图 */
+.sider-decor {
   flex-shrink: 0;
-  padding: 4px 4px 8px;
-  margin: 0;
-  text-align: left;
-}
-.sider-user-section--collapsed {
-  text-align: center;
-}
-.sider-user-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 6px;
-  min-width: 0;
-  position: relative;
-}
-.sider-user-avatar-wrap {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  margin: 0;
-  line-height: 0;
-  position: relative;
-}
-.sider-user-avatar-inner {
-  position: relative;
-  display: inline-block;
-}
-.sider-user-avatar {
-  flex-shrink: 0;
-  width: 26px !important;
-  height: 26px !important;
-  background: #0a6bff !important;
-  color: #fff !important;
-  font-size: 11px;
-  font-weight: 600;
-}
-.sider-user-badge-sup {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 14px;
-  text-align: center;
-  border-radius: 7px;
-  background: var(--platform-danger, #be1743);
-  color: #fff;
-  pointer-events: none;
-}
-.sider-user-info {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  line-height: 1.35;
-}
-.sider-username {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--platform-text);
-}
-.sider-user-role {
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--platform-text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sider-user-chevron {
-  color: var(--platform-icon, #686868);
-  flex-shrink: 0;
-  cursor: pointer;
-}
-.sider-user-actions {
-  flex-shrink: 0;
-  display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 0 0;
+  box-sizing: border-box;
 }
-.sider-user-more-btn {
-  color: var(--platform-icon, #686868) !important;
-  border: none !important;
-  outline: none !important;
+
+.sider-decor__logo {
+  width: 36%;
+  max-width: 78px;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.sider-decor__building {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  object-position: center bottom;
+  margin-bottom: 0;
 }
 
 .app-sider :deep(.n-layout-sider-scroll-container) {
@@ -1086,7 +931,7 @@ function onMenuSelect(key) {
   min-height: 0;
   padding: 6px 0 0;
   box-sizing: border-box;
-  background: var(--platform-sider-bg);
+  background: transparent;
 }
 .sider-toggle {
   flex-shrink: 0;
@@ -1160,22 +1005,7 @@ function onMenuSelect(key) {
   flex-direction: column;
 }
 
-.sider-menu-indicator {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 0;
-  z-index: 0;
-  border-radius: var(--platform-radius-sm);
-  pointer-events: none;
-  background: var(--platform-bg-tertiary);
-  box-shadow: none;
-  will-change: transform, height;
-  transition:
-    transform 0.3s cubic-bezier(0.22, 0.85, 0.32, 1),
-    height 0.25s cubic-bezier(0.22, 0.85, 0.32, 1),
-    opacity 0.15s ease;
-}
+/* 选中态流动玻璃指示条样式见 sider-menu.css */
 
 .sider-menu {
   position: relative;
@@ -1225,7 +1055,7 @@ function onMenuSelect(key) {
   flex-shrink: 0;
 }
 
-/* 隐藏顶栏标题行（本析智能标签栏模式）：由内容撑开高度 */
+/* 隐藏顶栏标题行高度由内容撑开（本析智能标签栏模式仍保留工具条） */
 .header--bare {
   min-height: 0;
 }
@@ -1269,7 +1099,10 @@ function onMenuSelect(key) {
   box-sizing: border-box;
 }
 
-/* 操作栏标题行（在顶栏下方，包含标题、介绍、按钮） */
+.header-primary--toolbar-only {
+  height: 48px;
+  min-height: 48px;
+}
 .bare-feature-title-row {
   display: flex;
   align-items: center;
@@ -1426,14 +1259,14 @@ function onMenuSelect(key) {
   width: 100%;
 }
 
-/* ai-home 多标签栏容器 */
+/* ai-home 多标签栏容器：与内容区同色，无分割线 */
 .ai-home-tab-bar-wrap {
   width: 100%;
   display: flex;
   align-items: stretch;
   padding: 0 24px;
   box-sizing: border-box;
-  background: var(--platform-bg-secondary);
+  background: transparent;
 }
 
 /* === 移动端适配 === */
@@ -1931,9 +1764,7 @@ function onMenuSelect(key) {
 
 /* 侧栏按钮去掉边框，颜色与菜单图标一致 */
 .app-sider .sider-toggle,
-.app-sider .sider-toggle.n-button,
-.app-sider .sider-user-more-btn,
-.app-sider .sider-user-more-btn.n-button {
+.app-sider .sider-toggle.n-button {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
@@ -1944,9 +1775,7 @@ function onMenuSelect(key) {
   color: var(--platform-icon) !important;
 }
 .app-sider .sider-toggle .n-button__border,
-.app-sider .sider-user-more-btn .n-button__border,
-.app-sider .sider-toggle .n-button__state-border,
-.app-sider .sider-user-more-btn .n-button__state-border {
+.app-sider .sider-toggle .n-button__state-border {
   display: none !important;
 }
 

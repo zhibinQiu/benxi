@@ -1,9 +1,10 @@
-"""调度路由 — LLM 读取 skills.md / agents.md 后规划 Skill 选型，反查专精 Agent。
+"""调度路由 — Skill 语义召回（Embedding）优先，关键词与 LLM 作兜底。
 
-Skill 路由三阶段：
-  1. 信号层（agent_skill_router）：用户消息意图检测
-  2. 规划层（本文件）：LLM 读取路由目录后选 Skill → 反查 Agent
-  3. 评分层（agent_skill_match）：关键词召回 → 相似度归一化 → Agent 聚合评分
+Skill 路由阶段：
+  1. 信号层（agent_skill_router）：用户消息意图硬触发
+  2. 语义召回（agent_skill_rag）：Embedding Top-K → 聚合 Agent
+  3. 关键词回退：skills.md / SkillDefinition token 打分
+  4. 规划层（可选 LLM）：粗筛候选后 JSON 选型
 
 倒排索引：```skill_name → agent_id```（一对一，一个 Skill 只会分配给一个 Agent）。
 """
@@ -22,11 +23,14 @@ from app.core.agent_profiles import AGENT_PROFILES
 from app.core.llm_parse import parse_llm_json
 from app.core.routing_catalog_md import (
     _truncate as _truncate_md,
+)
+from app.core.routing_catalog_md import (
     build_agents_catalog_text,
-    format_skill_route_line as format_md_skill_line,
     load_skills_routing_md,
     rank_routing_entries,
-    skills_routing_md_text,
+)
+from app.core.routing_catalog_md import (
+    format_skill_route_line as format_md_skill_line,
 )
 from app.core.tool_skill_taxonomy import AGENT_DEFAULT_SKILLS
 from app.models.org import User
@@ -49,11 +53,14 @@ _SKILL_INDEX_TS: float = 0.0
 _SKILL_INDEX_TTL = 60.0  # 秒
 
 # ── 无专精声明的 Skill → 兜底 orchestrator ────────────────────────────────
+# free-web-ai 仅独立功能页使用，不纳入技能搜索 / 路由目录
 _ORCHESTRATOR_SKILLS: frozenset[str] = frozenset({
-    "free-web-ai",
     "pdf-translate", "speech-to-text", "text-to-speech", "ocr",
     "document-compare", "report-generation", "data-analysis",
-    "smart-data-query",
+    "smart-data-query", "knowledge-qa",
+})
+_ROUTING_EXCLUDED_SKILLS: frozenset[str] = frozenset({
+    "free-web-ai",
 })
 
 
@@ -201,26 +208,14 @@ def coarse_skill_candidates(
     prior_outcomes: list[str] | None = None,
     limit: int = _COARSE_SKILL_LIMIT,
 ) -> list[SkillDefinition]:
-    """关键词粗筛 Top-N，优先 skills.md，发展技能回退 SkillDefinition。"""
+    """语义粗筛 Top-N；内部复用 `_rank_skills_for_routing` 的 Embedding→关键词回退链。"""
     query = build_routing_query(message, prior_outcomes)
     skills = [
         s
-        for s in list_all_skill_definitions(db, user=user, catalog_only=False)
+        for s in list_all_skill_definitions(db, user=user, catalog_only=True)
         if s.readiness not in (SkillReadiness.DISABLED, SkillReadiness.NO_PERMISSION)
     ]
-    by_name = {s.name: s for s in skills}
-    md = load_skills_routing_md()
-    md_ranked = rank_routing_entries(query, md, limit=limit)
-    matched: list[SkillDefinition] = []
-    seen: set[str] = set()
-    for score, sid in md_ranked:
-        if score <= 0 or sid not in by_name:
-            continue
-        matched.append(by_name[sid])
-        seen.add(sid)
-    if matched:
-        return matched[:limit]
-    ranked = rank_skills_by_query(query, skills, limit=limit)
+    ranked = _rank_skills_for_routing(db, query, skills, limit=limit)
     return [skill for score, skill in ranked if score > 0][:limit]
 
 
@@ -331,7 +326,7 @@ def resolved_routes_from_skill_plan(
 
 
 def aggregate_agents_from_skills(
-    ranked_skills: list[tuple[int, SkillDefinition]],
+    ranked_skills: list[tuple[float, SkillDefinition]] | list[tuple[int, SkillDefinition]],
     skill_agent_index: dict[str, str],
     *,
     failed_agent_ids: frozenset[str] | None = None,
@@ -364,21 +359,28 @@ def aggregate_agents_from_skills(
 
 
 def _rank_skills_for_routing(
+    db: Session | None,
     query: str,
     skills: list[SkillDefinition],
     *,
     limit: int = 12,
-) -> list[tuple[int, SkillDefinition]]:
-    """skills.md 优先，发展技能回退 SkillDefinition 字段。"""
+) -> list[tuple[float, SkillDefinition]]:
+    """Embedding 语义召回优先；失败时 skills.md / SkillDefinition 关键词回退。"""
+    from app.services.agent_skill_rag import rank_skills_by_embedding
+
+    emb_ranked = rank_skills_by_embedding(db, query, skills, limit=limit)
+    if emb_ranked:
+        return [(float(sc), sk) for sc, sk in emb_ranked]
+
     by_name = {s.name: s for s in skills}
     md = load_skills_routing_md()
-    ranked: list[tuple[int, SkillDefinition]] = []
+    ranked: list[tuple[float, SkillDefinition]] = []
     for score, sid in rank_routing_entries(query, md, limit=limit):
         if sid in by_name:
-            ranked.append((score, by_name[sid]))
+            ranked.append((float(score), by_name[sid]))
     if ranked:
         return ranked
-    return rank_skills_by_query(query, skills, limit=limit)
+    return [(float(sc), sk) for sc, sk in rank_skills_by_query(query, skills, limit=limit)]
 
 
 def resolve_skill_routed_agent_scores(
@@ -389,14 +391,19 @@ def resolve_skill_routed_agent_scores(
     prior_outcomes: list[str] | None = None,
     index: dict[str, str] | None = None,
 ) -> list[AgentRoutingScore]:
-    """关键词评分路由：用倒排索引（优先传入）加速查 Agent 映射。"""
+    """Skill 先 Embedding RAG 召回，再经 skill→agent 倒排索引聚合到专精 Agent。
+
+    Embedding 不可用时回退 skills.md / 关键词评分，映射仍走同一倒排索引。
+    """
     query = build_routing_query(message, prior_outcomes)
     skills = [
         s
-        for s in list_all_skill_definitions(db, user=user, catalog_only=False)
+        for s in list_all_skill_definitions(db, user=user, catalog_only=True)
         if s.readiness not in (SkillReadiness.DISABLED, SkillReadiness.NO_PERMISSION)
+        and s.name not in _ROUTING_EXCLUDED_SKILLS
     ]
-    ranked = _rank_skills_for_routing(query, skills, limit=12)
+    ranked = _rank_skills_for_routing(db, query, skills, limit=12)
+    ranked = [(sc, sk) for sc, sk in ranked if sk.name not in _ROUTING_EXCLUDED_SKILLS]
     if not ranked:
         return []
     if index is None:
@@ -448,16 +455,26 @@ def skill_route_reason(score: AgentRoutingScore) -> str:
     return f"Skill 匹配（{skills}）" if skills else "Skill 能力匹配"
 
 
+def _find_direct_skill_match(
+    message: str,
+    index: dict[str, str],
+) -> str | None:
+    """消息中直接包含已知 Skill 名时，O(n) 返回对应 Agent ID。"""
+    msg = (message or "").strip().lower()
+    if not msg:
+        return None
+    for skill_name, agent_id in index.items():
+        if skill_name and skill_name.lower() in msg:
+            return agent_id
+    return None
+
+
 def resolve_agent_from_message_fast(
     db: Session | None,
     message: str,
     index: dict[str, str] | None = None,
 ) -> str | None:
-    """快速路由：直接扫描消息中的 Skill 名，匹配则返回 Agent。
-
-    完全绕过 LLM 路由和关键词评分路由链路。返回 None 表示无法快速决策。
-    可以传入预构建的 index 避免额外 DB 查询。
-    """
+    """快速路由：扫描消息中的 Skill 名；命中则返回 Agent，否则 None。"""
     msg = (message or "").strip()
     if not msg or len(msg) < 4:
         return None

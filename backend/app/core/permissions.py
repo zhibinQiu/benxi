@@ -141,6 +141,14 @@ def user_has_permission(db: Session, user: User, code: str) -> bool:
     return code in user_permission_codes(db, user.id)
 
 
+def user_has_semantic_layer_permission(db: Session, user: User) -> bool:
+    """本体定义（模式+实例）权限：``feature.ontology``，``feature.kg`` 为兼容别名。"""
+    if user_is_superuser(db, user):
+        return True
+    codes = user_permission_codes(db, user.id)
+    return "feature.ontology" in codes or "feature.kg" in codes
+
+
 def user_dept_ids(db: Session, user_id: uuid.UUID) -> list[uuid.UUID]:
     from app.core.request_user_cache import cached_per_request
     from app.core.user_department import user_dept_ids as _user_dept_ids

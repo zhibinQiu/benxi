@@ -47,7 +47,7 @@ TEST_CASES = [
     {
         "name": "用例3-定时提醒",
         "message": "8s 后提醒我喝水",
-        "expect_agent": "orchestrator",
+        "expect_agent": "platform",
     },
     {
         "name": "用例4-生成技能",

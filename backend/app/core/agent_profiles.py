@@ -43,6 +43,7 @@ AGENT_PROFILES: tuple[AgentProfileDef, ...] = (
         title="小析",
         description="调度智能体：负责任务理解、分配与验收。可见已挂载工具/技能并编排；"
         "执行委托子智能体或路由专精 Agent。",
+        default_skill_names=_skills_for("orchestrator"),
         default_runtime_tool_names=_tools_for("orchestrator"),
         skills_configurable=True,
         sort_order=0,

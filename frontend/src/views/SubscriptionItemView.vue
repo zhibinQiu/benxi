@@ -228,7 +228,7 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding-top: 14px;
+  padding: 14px 24px 0;
   box-sizing: border-box;
 }
 
@@ -252,7 +252,7 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  max-width: 860px;
+  max-width: 1400px;
   width: 100%;
   margin: 0 auto;
   gap: 20px;

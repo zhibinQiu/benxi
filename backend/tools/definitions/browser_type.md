@@ -1,15 +1,27 @@
 ---
 name: browser_type
 ---
-browser_type 工具 — 根据当前任务需求自动调用。
+向 snapshot 返回的输入框元素键入文本；可选提交（如回车搜索）。
 
 ## When to use
-- 用户请求与 browser_type 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 向搜索框、单行输入框输入文字
+- 需要输入后立即提交（submit=true）
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 多个表单字段批量填写（用 browser_fill）
+- 没有有效 ref（先 browser_snapshot）
+- 点击按钮/链接（用 browser_click）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 输入操作结果与页面状态摘要
+
+## Parameters
+
+### ref (required)
+输入框的 snapshot ref。
+
+### text (required)
+要输入的文本。
+
+### submit (optional)
+是否在输入后提交（如按回车）。默认 false。

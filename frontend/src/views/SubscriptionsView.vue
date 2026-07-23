@@ -11,7 +11,6 @@ import {
   NInput,
   NPagination,
   NSpin,
-  NTag,
 } from "naive-ui";
 import { AddOutline, SearchOutline } from "@vicons/ionicons5";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
@@ -236,43 +235,42 @@ watch(
                 class="serp-result-item"
                 @click="openItem(a.ref)"
               >
+                <div class="serp-result-item__cite">
+                  <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
+                  <span v-if="breadcrumbPath(a.link)" class="serp-result-item__path">
+                    › {{ breadcrumbPath(a.link) }}
+                  </span>
+                </div>
                 <h3 class="serp-result-item__title">{{ a.title }}</h3>
                 <p class="serp-result-item__snippet">{{ a.summary || t("subscriptions.noSummary") }}</p>
                 <div class="serp-result-item__footer">
-                <div class="serp-result-item__meta">
-                  <span v-if="a.owner_name" class="serp-result-item__owner">{{ a.owner_name }}</span>
-                  <span v-if="fmtSerpDate(a.created_at || a.publish_at)" class="serp-result-item__date">
-                    {{ fmtSerpDate(a.created_at || a.publish_at) }}
-                  </span>
-                  <span class="serp-result-item__meta-sep">·</span>
-                  <span class="serp-result-item__source-text">
-                    <span class="serp-result-item__site">{{ siteLabel(a) }}</span>
-                    <span v-if="breadcrumbPath(a.link)" class="serp-result-item__path">
-                      › {{ breadcrumbPath(a.link) }}
+                  <div class="serp-result-item__meta">
+                    <span v-if="a.owner_name" class="serp-result-item__owner">{{ a.owner_name }}</span>
+                    <span v-if="fmtSerpDate(a.created_at || a.publish_at)" class="serp-result-item__date">
+                      {{ fmtSerpDate(a.created_at || a.publish_at) }}
                     </span>
-                  </span>
-                </div>
+                  </div>
                   <div class="serp-result-item__actions">
-                  <NButton
-                    v-if="a.imported"
-                    size="small"
-                    secondary
-                    disabled
-                    class="serp-result-item__import-btn serp-result-item__imported-btn"
-                  >
-                    {{ t("subscriptions.importedTag") }}
-                  </NButton>
-                  <NButton
-                    v-else
-                    size="small"
-                    secondary
-                    :loading="importingRefs.has(a.ref)"
-                    class="serp-result-item__import-btn"
-                    @click.stop="onImportItem(a.ref)"
-                  >
-                    {{ t("subscriptions.importBtn") }}
-                  </NButton>
-                </div>
+                    <NButton
+                      v-if="a.imported"
+                      size="tiny"
+                      quaternary
+                      disabled
+                      class="serp-result-item__import-btn serp-result-item__imported-btn"
+                    >
+                      {{ t("subscriptions.importedTag") }}
+                    </NButton>
+                    <NButton
+                      v-else
+                      size="tiny"
+                      quaternary
+                      :loading="importingRefs.has(a.ref)"
+                      class="serp-result-item__import-btn"
+                      @click.stop="onImportItem(a.ref)"
+                    >
+                      {{ t("subscriptions.importBtn") }}
+                    </NButton>
+                  </div>
                 </div>
               </article>
             </div>
@@ -398,10 +396,11 @@ watch(
   display: flex;
   flex-direction: column;
   width: 100%;
+  max-width: 720px;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  gap: 8px;
+  gap: 0;
 }
 
 .subscriptions-empty {
@@ -409,48 +408,47 @@ watch(
   padding: 29px 0;
 }
 
-/* ── Result items ── */
+/* ── Result items（搜索引擎式：无卡片边框） ── */
 .serp-result-item {
   display: block;
   width: 100%;
-  padding: 14px 16px;
+  padding: 16px 4px 18px;
   margin: 0;
   box-sizing: border-box;
   text-align: left;
   cursor: pointer;
-  background: var(--platform-card-bg);
-  border: 1px solid var(--platform-border);
-  border-radius: var(--platform-card-radius);
-  transition: background-color 0.18s ease, border-color 0.18s ease;
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
-.serp-result-item:hover {
-  background: var(--platform-accent-soft);
+.serp-result-item + .serp-result-item {
+  border-top: none;
 }
 
 .serp-result-item__title {
-  margin: 0 0 6px;
-  font-size: var(--platform-font-size-lg);
+  margin: 0 0 4px;
+  font-size: 15px;
   font-weight: 400;
-  line-height: 1.4;
+  line-height: 1.35;
   letter-spacing: -0.01em;
-  color: var(--platform-text);
+  color: var(--platform-link);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  transition: color 0.15s ease;
+  transition: text-decoration 0.12s ease;
 }
 
 .serp-result-item:hover .serp-result-item__title {
-  color: var(--platform-accent);
+  text-decoration: underline;
 }
 
 .serp-result-item__snippet {
-  margin: 0 0 8px;
-  font-size: var(--platform-font-size-sm);
-  line-height: 1.55;
-  color: var(--platform-text-tertiary);
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.58;
+  color: var(--platform-text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -458,11 +456,35 @@ watch(
 }
 
 /* ── Meta row ── */
+.serp-result-item__cite {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 2px;
+  margin-bottom: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.serp-result-item__site {
+  color: var(--platform-text-secondary);
+}
+
+.serp-result-item__path {
+  color: var(--platform-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .serp-result-item__meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 3px 6px;
+  gap: 3px 8px;
   font-size: var(--platform-font-size-xs);
   color: var(--platform-text-tertiary);
 }
@@ -483,32 +505,12 @@ watch(
   color: var(--platform-text-tertiary);
 }
 
-.serp-result-item__meta-sep {
-  opacity: 0.35;
-  user-select: none;
-}
-
-.serp-result-item__source-text {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.serp-result-item__site {
-  color: var(--platform-text-quaternary);
-}
-
-.serp-result-item__path {
-  color: var(--platform-text-quaternary);
-}
-
 /* ── Footer: meta + actions in same row ── */
 .serp-result-item__footer {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .serp-result-item__actions {
@@ -517,7 +519,7 @@ watch(
   gap: 4px;
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 0.18s ease;
+  transition: opacity 0.15s ease;
 }
 
 .serp-result-item:hover .serp-result-item__actions {
@@ -526,14 +528,21 @@ watch(
 
 .serp-result-item__import-btn {
   flex-shrink: 0;
+  --n-height: 20px !important;
+  --n-font-size: 11px !important;
+  --n-padding: 0 6px !important;
+  font-size: 11px;
+  height: 20px;
+  padding: 0 6px;
+  color: var(--platform-text-tertiary);
 }
 .serp-result-item__import-btn:not(:disabled):not(.serp-result-item__imported-btn):hover {
+  color: var(--platform-accent);
   background: var(--platform-accent-soft);
-  border-color: var(--platform-accent-border-soft);
 }
 .serp-result-item__imported-btn {
   pointer-events: none;
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 /* ── Footer ── */
@@ -574,8 +583,12 @@ watch(
     font-size: 13px;
   }
 
+  .subscriptions-feed {
+    max-width: 100%;
+  }
+
   .serp-result-item {
-    padding: 12px;
+    padding: 14px 2px 16px;
   }
 
   .serp-result-item__title {

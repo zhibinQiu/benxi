@@ -107,41 +107,27 @@ export function getReportShareUrl(shareToken) {
   return `${origin}${base}/api/v1/share/finance/${shareToken}`;
 }
 
-/** 在线查看报告：打开可独立访问的公开分享 URL */
+/** 在线查看报告：打开可独立访问的公开分享 URL（绝不直接打开需登录的 /view） */
 export async function viewReport(reportId, shareToken) {
   const { openExternal } = await import("../utils/openExternal.js");
-  const { getApiBase, getToken } = await import("./http.js");
 
   let token = shareToken;
   if (!token) {
     try {
-      const detail = await fetchReportDetail(reportId);
-      token = detail?.share_token || detail?.data?.share_token;
+      // regenerate=false：已有令牌则复用，缺失则补齐
+      const shared = await shareReport(reportId, { regenerate: false });
+      token = shared?.share_token;
     } catch {
-      /* ignore */
+      try {
+        const detail = await fetchReportDetail(reportId);
+        token = detail?.share_token;
+      } catch {
+        /* ignore */
+      }
     }
   }
-  if (token) {
-    openExternal(getReportShareUrl(token));
-    return;
-  }
-
-  // 兜底：登录态跳转接口（会 302 到公开链接）
-  const auth = getToken();
-  const base = (getApiBase() || "/ai").replace(/\/$/, "");
-  const url = `${window.location.origin}${base}/api/v1/finance/report/${reportId}/view`;
-  if (auth) {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${auth}` },
-      redirect: "manual",
-    });
-    const loc = res.headers.get("Location");
-    if (loc) {
-      openExternal(loc.startsWith("http") ? loc : `${window.location.origin}${loc}`);
-      return;
-    }
-  }
-  openExternal(url);
+  if (!token) throw new Error("无法获取报告分享链接");
+  openExternal(getReportShareUrl(token));
 }
 
 export async function deleteReport(reportId) {
@@ -168,7 +154,7 @@ export function unshareReport(reportId) {
 
 export async function downloadReport(reportId, fmt = "md") {
   const { getApiBase, getToken } = await import("./http.js");
-  const { default: downloadBlob } = await import("../utils/downloadBlob.js");
+  const { downloadBlob } = await import("../utils/downloadBlob.js");
   const base = getApiBase();
   const token = getToken();
   const res = await fetch(
@@ -187,13 +173,12 @@ export async function exportReportPdf(reportId, shareToken) {
   let token = shareToken;
   if (!token) {
     try {
-      const detail = await fetchReportDetail(reportId);
-      token = detail?.share_token || detail?.data?.share_token;
+      const shared = await shareReport(reportId, { regenerate: false });
+      token = shared?.share_token;
     } catch {
       /* ignore */
     }
   }
   if (!token) throw new Error("缺少分享链接");
-  // 打开公开页，用户可在浏览器中打印为 PDF
   openExternal(getReportShareUrl(token));
 }

@@ -14,6 +14,7 @@ def test_default_tool_order():
         "kg_query",
         "web_search",
         "knowledge_retrieve",
+        "ontology_query",
     )
 
 

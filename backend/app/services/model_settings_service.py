@@ -540,9 +540,72 @@ def get_effective_model_config(db: Session | None = None) -> dict[str, str]:
 
 
 def get_llm_credentials(db: Session | None = None) -> tuple[str, str, str]:
-    """语言模型凭证（资源管理 / .env 合并，每次调用读库）。"""
+    """语言模型凭证（优先有真实密钥的 active provider，再回退 flat 字段）。
+
+    常见坏数据：active=default 且 key 为空，但 flat 仍残留无效 DeepSeek 短钥；
+    此时应改用 providers 列表中第一条可用密钥，避免后台任务 401。
+    """
     merged = _merge_effective(get_settings(), db, fill_embedding_from_ragflow=False)
-    return _endpoint_fields(merged, "llm")
+    flat_base, flat_key, flat_model = _endpoint_fields(merged, "llm")
+
+    raw = merged.get("llm_providers") or []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            raw = []
+    providers = raw if isinstance(raw, list) else []
+    active_id = str(merged.get("llm_active_provider") or "").strip()
+
+    def _usable(key: str) -> bool:
+        k = (key or "").strip()
+        return bool(k) and not _is_masked_secret(k)
+
+    def _prov_tuple(p: dict) -> tuple[str, str, str] | None:
+        base = str(p.get("base_url") or "").strip()
+        key = str(
+            p.get("api_key") or p.get("password") or p.get("api_key_masked") or ""
+        ).strip()
+        model = str(p.get("model_name") or p.get("model") or "").strip()
+        if _is_masked_secret(key) and _usable(flat_key):
+            key = flat_key
+        if not _usable(key):
+            return None
+        if not base:
+            base = flat_base
+        if not model:
+            model = flat_model
+        if not base or not model:
+            return None
+        return base, key, model
+
+    def _finish(creds: tuple[str, str, str]) -> tuple[str, str, str]:
+        # 刷新 deepseek 客户端 TTL 缓存，避免继续命中旧的无效 flat key
+        try:
+            from app.integrations.deepseek_client import _cache_set
+
+            _cache_set("_platform", creds)
+        except Exception:
+            pass
+        return creds
+
+    # 1) active provider（有真实 key）
+    if providers and active_id:
+        for p in providers:
+            if str(p.get("id") or "") != active_id:
+                continue
+            got = _prov_tuple(p)
+            if got:
+                return _finish(got)
+            break
+
+    # 2) 任一 llm provider 有真实 key（跳过空密钥的 default）
+    for p in providers:
+        got = _prov_tuple(p)
+        if got:
+            return _finish(got)
+
+    return _finish((flat_base, flat_key, flat_model))
 
 
 def _is_masked_secret(val: str) -> bool:

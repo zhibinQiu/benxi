@@ -1,15 +1,15 @@
 ---
 name: browser_close_session
 ---
-browser_close_session 工具 — 根据当前任务需求自动调用。
+关闭当前对话绑定的浏览器会话，释放页面与资源。
 
 ## When to use
-- 用户请求与 browser_close_session 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 浏览器任务已完成，不再需要该会话
+- 用户明确要求关闭浏览器
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 后续还要继续在同一页面操作
+- 任务中途（关闭后需重新 navigate）
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 会话关闭确认

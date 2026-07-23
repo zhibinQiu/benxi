@@ -1,15 +1,13 @@
 ---
 name: list_departments
 ---
-list_departments 工具 — 根据当前任务需求自动调用。
+列出平台组织部门树/列表（需管理员权限）。无参数。
 
 ## When to use
-- 用户请求与 list_departments 功能匹配的场景
-- 根据工具参数 schema 填充正确的参数
+- 管理场景：查看部门结构、创建用户前选择部门
 
 ## When NOT to use
-- 任务不匹配该工具的场景
-- 有更合适的工具可用时
+- 非管理场景
 
 ## Returns
-- 工具执行结果（具体返回字段由 tool schema 定义）
+- 部门列表（含层级关系）

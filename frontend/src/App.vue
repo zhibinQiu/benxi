@@ -73,7 +73,7 @@ body,
   line-height: var(--platform-line-body);
   letter-spacing: var(--platform-tracking-normal);
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ss01" 1, "cv05" 1;
-  background: var(--platform-bg-base, #f5f5f7);
+  background: var(--platform-bg-base, #FAFAFA);
   color: var(--platform-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -105,34 +105,6 @@ h4,
   position: relative;
   min-height: 100vh;
   background: transparent;
-}
-
-.app-shell::before {
-  content: '';
-  position: fixed;
-  top: -50%;
-  right: -25%;
-  width: 70vmax;
-  height: 70vmax;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--platform-accent) 2.5%, transparent) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.7;
-}
-
-.app-shell::after {
-  content: '';
-  position: fixed;
-  bottom: -40%;
-  left: -20%;
-  width: 60vmax;
-  height: 60vmax;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--platform-accent-secondary) 2%, transparent) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.5;
 }
 
 .app-shell > :not(.page-video-bg) {

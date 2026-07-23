@@ -1,6 +1,7 @@
 import { getApiBase, getToken, rejectHttpFailure, fetchWithTimeout } from "../api/http.js";
 
-const AUTH_API_IMAGE_RE = /(?:\/ai)?\/api\/v1\/(?:browser-rpa\/screenshot|documents\/[^/]+\/file)\b/;
+const AUTH_API_IMAGE_RE =
+  /(?:\/ai)?\/api\/v1\/(?:browser-rpa\/screenshot|documents\/[^/]+\/file|knowledge\/citations\/images\/)/;
 const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\(([^)]+)\)/g;
 const PLAIN_SCREENSHOT_URL_RE =
   /(?:\/ai)?\/api\/v1\/browser-rpa\/screenshot\?key=[^\s<>"')\]]+/g;

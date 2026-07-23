@@ -36,3 +36,22 @@ def test_delete_user_via_api(client, admin_token):
 
     again = client.get("/api/v1/users", headers=headers).json()["data"]["items"]
     assert not any(u["id"] == user_id for u in again)
+
+
+def test_delete_trial_users_via_api(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    for _ in range(2):
+        r = client.post("/api/v1/auth/trial")
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["access_token"]
+
+    purged = client.delete("/api/v1/users/trial", headers=headers)
+    assert purged.status_code == 200, purged.text
+    body = purged.json()["data"]
+    assert body["deleted_count"] >= 2
+    assert len(body["deleted_ids"]) == body["deleted_count"]
+
+    empty = client.delete("/api/v1/users/trial", headers=headers)
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["data"]["deleted_count"] == 0

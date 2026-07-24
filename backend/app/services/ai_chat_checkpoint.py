@@ -57,10 +57,12 @@ async def iter_resumed_agent_stream(
     pending_data: dict[str, Any] = cp.get("pending_data") or {}
     phase: str = cp.get("phase", "")
 
-    # ── 2. 获取用户响应 ──
+    # ── 2. 获取用户响应（between_rounds 无需 HITL）──
     response: str | None = None
     accepted: bool | None = None
-    if phase == "awaiting_confirmation":
+    if phase == "between_rounds":
+        response = "resume"
+    elif phase == "awaiting_confirmation":
         cid = pending_data.get("confirmation_id", "")
         response = get_confirm_response(cid) if cid else None
         if response == "accepted":
@@ -76,9 +78,14 @@ async def iter_resumed_agent_stream(
         return
 
     # ── 3. 发射 workflow_resumed 事件 ──
+    resumed_title = (
+        "从中断进度继续"
+        if phase == "between_rounds"
+        else "已收到确认，继续执行"
+    )
     yield workflow_event_json(
         "workflow_resumed",
-        title="已收到确认，继续执行",
+        title=resumed_title,
         detail=pending_data.get("title") or "恢复执行",
         checkpoint_id=checkpoint_id,
     )
@@ -93,8 +100,8 @@ async def iter_resumed_agent_stream(
     try:
         db, user = sess.open()
 
-        # ── 5. 获取待执行的 tool_call 信息 ──
-        tool_call = cp.get("tool_call")
+        # ── 5. 获取待执行的 tool_call 信息（between_rounds 无 pending tool）──
+        tool_call = cp.get("tool_call") if phase != "between_rounds" else None
         if tool_call:
             tool_name = tool_call.get("tool_name", "")
             tool_id = tool_call.get("tool_id", "")

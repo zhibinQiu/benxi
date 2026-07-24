@@ -61,7 +61,11 @@ def _invalidate_memory_prompt_cache(user_id: uuid.UUID) -> None:
 
 
 def build_memory_prompt_context(user_id: uuid.UUID) -> str:
-    """将 MEMORY.md 格式化为每轮 system 注入块；无内容时返回空字符串。"""
+    """将 MEMORY.md 格式化为每轮 system 注入块；无内容时返回空字符串。
+
+    这是跨会话「系统记忆」，与本轮 harness「工作时记忆」分离；
+    后者由 supervisor 以【工作时记忆】块注入，不会写入本文件。
+    """
     cache_key = str(user_id)
     now = time.monotonic()
     cached = _memory_prompt_cache.get(cache_key)
@@ -71,7 +75,11 @@ def build_memory_prompt_context(user_id: uuid.UUID) -> str:
     if not body.strip():
         result = ""
     else:
-        result = f"【用户记忆】\n{body.strip()}\n\n{_MEMORY_OVERRIDE_HINT}"
+        result = (
+            f"【用户记忆】\n{body.strip()}\n\n"
+            f"{_MEMORY_OVERRIDE_HINT}\n"
+            "（系统长期记忆；本轮执行轨迹见【工作时记忆】，二者勿混淆。）"
+        )
     _memory_prompt_cache[cache_key] = (now, result)
     return result
 

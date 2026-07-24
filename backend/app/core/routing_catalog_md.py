@@ -112,10 +112,21 @@ def agents_routing_md_text() -> str:
 
 
 def routing_entry_haystack(entry: RoutingEntry) -> str:
+    """完整文案拼接（含 Don't use when，供展示/调试）。"""
     return " ".join(
         filter(
             None,
             (entry.id, entry.title, entry.use_when, entry.dont_use_when, entry.output, entry.skills),
+        )
+    ).lower()
+
+
+def routing_entry_positive_haystack(entry: RoutingEntry) -> str:
+    """关键词正向匹配字段（不含 dont_use_when）。"""
+    return " ".join(
+        filter(
+            None,
+            (entry.id, entry.title, entry.use_when, entry.output, entry.skills),
         )
     ).lower()
 
@@ -156,8 +167,9 @@ def rank_routing_entries(
     scored: list[tuple[int, str]] = []
     for eid, entry in entries.items():
         use_l = (entry.use_when or "").lower()
+        dont_l = (entry.dont_use_when or "").lower()
         id_l = eid.lower()
-        hay = routing_entry_haystack(entry)
+        hay = routing_entry_positive_haystack(entry)
         score = 0
         for t in tokens:
             if t in use_l:
@@ -166,6 +178,8 @@ def rank_routing_entries(
                 score += 2
             elif t in hay:
                 score += 1
+            if dont_l and t in dont_l:
+                score -= 3
         if score > 0:
             scored.append((score, eid))
     scored.sort(key=lambda item: (-item[0], item[1]))
@@ -174,15 +188,20 @@ def rank_routing_entries(
     return scored
 
 
-def build_agents_catalog_text(*, enabled_ids: frozenset[str] | None = None) -> str:
+def build_agents_catalog_text(
+    *,
+    enabled_ids: frozenset[str] | None = None,
+    include_orchestrator: bool = False,
+) -> str:
+    """从 agents.md 动态拼装路由目录（Use when / Don't），不写死业务偏好。"""
     entries = load_agents_routing_md()
     lines = [agents_routing_md_text().split("\n", 1)[0], ""]
-    for eid in entries:
-        if eid == "orchestrator":
+    for eid, entry in entries.items():
+        if eid == "orchestrator" and not include_orchestrator:
             continue
-        if enabled_ids is not None and eid not in enabled_ids:
+        if eid != "orchestrator" and enabled_ids is not None and eid not in enabled_ids:
             continue
-        lines.append(format_agent_route_line(entries[eid]))
+        lines.append(format_agent_route_line(entry))
     return "\n".join(lines)
 
 

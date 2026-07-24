@@ -70,7 +70,22 @@ def merge_child_into_parent(
     parent_loop_state.setdefault("subagent_summaries", []).append(
         {"kind": kind, "task": task[:400], "summary": summary[:2000]}
     )
-    for key in ("citations", "tool_outcome_lines", "retrieval_context_parts"):
+    child_cites = child_loop_state.get("citations")
+    if isinstance(child_cites, list) and child_cites:
+        parent_cites = parent_loop_state.setdefault("citations", [])
+        start = len(parent_cites) + 1
+        offset = start - 1
+        for raw in child_cites:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            if offset > 0:
+                try:
+                    item["index"] = int(item.get("index") or 0) + offset
+                except (TypeError, ValueError):
+                    item["index"] = start
+            parent_cites.append(item)
+    for key in ("tool_outcome_lines", "retrieval_context_parts"):
         bucket = child_loop_state.get(key)
         if isinstance(bucket, list) and bucket:
             parent_loop_state.setdefault(key, []).extend(bucket)
@@ -92,6 +107,9 @@ def merge_child_into_parent(
         parent_atts = list(parent_loop_state.get("collected_attachments") or [])
         parent_atts.extend(child_atts)
         parent_loop_state["collected_attachments"] = parent_atts
+    # 子图谱上下文：父层尚无时回传，供来源统计与终稿
+    if child_loop_state.get("kg_context") and not parent_loop_state.get("kg_context"):
+        parent_loop_state["kg_context"] = child_loop_state.get("kg_context")
     retrieval = str(child_loop_state.get("retrieval_context") or "").strip()
     if retrieval and append_retrieval is not None:
         append_retrieval(parent_loop_state, retrieval)

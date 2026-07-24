@@ -14,6 +14,7 @@ from app.services.agent_reply_synth import (
     build_deliverable_evidence_block,
     build_tool_outcome_summary,
     fallback_tool_loop_reply,
+    has_deliverable_evidence,
     is_internal_tool_outcome_line,
     is_tool_action_replay_line,
     looks_like_tool_status_dump,
@@ -324,6 +325,20 @@ def test_search_tool_outcomes_not_used_as_final_reply():
     reply = fallback_tool_loop_reply("最新的双碳政策有哪些？", loop_state)
     assert "联网检索返回" not in reply
     assert "carbon_policy" not in reply
+
+
+def test_find_skills_zero_match_not_final_reply():
+    """find_skills 匹配 0 条不得当作用户终稿（定时任务曾误推此文）。"""
+    line = "find_skills：匹配 0 条 Skill 路由"
+    assert is_tool_action_replay_line(line)
+    assert is_tool_action_replay_line(f"- {line}")
+    assert looks_like_tool_status_dump(f"- {line}")
+    loop_state = {"tool_outcome_lines": [line]}
+    assert has_deliverable_evidence(loop_state) is False
+    assert _action_outcome_reply(loop_state, "2026年7月AI最新新闻") is None
+    reply = fallback_tool_loop_reply("2026年7月AI最新新闻", loop_state)
+    assert "find_skills" not in reply
+    assert "匹配 0 条" not in reply
 
 
 def test_invoke_context_subagent_json_dump_not_final_reply():

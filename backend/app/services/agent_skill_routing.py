@@ -1,9 +1,9 @@
-"""调度路由 — Skill 语义召回（Embedding）优先，关键词与 LLM 作兜底。
+"""调度路由 — Skill 混合检索打分（Embedding × 关键词），LLM 作可选兜底。
 
 Skill 路由阶段：
   1. 信号层（agent_skill_router）：用户消息意图硬触发
-  2. 语义召回（agent_skill_rag）：Embedding Top-K → 聚合 Agent
-  3. 关键词回退：skills.md / SkillDefinition token 打分
+  2. 混合召回：Embedding Top-K ∪ 关键词打分 → 加权融合（量纲对齐 sim*100）
+  3. Embedding 不可用时：仅关键词，且要求 use_when/name 级命中（raw>=3）
   4. 规划层（可选 LLM）：粗筛候选后 JSON 选型
 
 倒排索引：```skill_name → agent_id```（一对一，一个 Skill 只会分配给一个 Agent）。
@@ -53,15 +53,12 @@ _SKILL_INDEX_TS: float = 0.0
 _SKILL_INDEX_TTL = 60.0  # 秒
 
 # ── 无专精声明的 Skill → 兜底 orchestrator ────────────────────────────────
-# free-web-ai 仅独立功能页使用，不纳入技能搜索 / 路由目录
 _ORCHESTRATOR_SKILLS: frozenset[str] = frozenset({
     "pdf-translate", "speech-to-text", "text-to-speech", "ocr",
     "document-compare", "report-generation", "data-analysis",
     "smart-data-query", "knowledge-qa",
 })
-_ROUTING_EXCLUDED_SKILLS: frozenset[str] = frozenset({
-    "free-web-ai",
-})
+_ROUTING_EXCLUDED_SKILLS: frozenset[str] = frozenset()
 
 
 def clear_skill_agent_index_cache() -> None:
@@ -141,6 +138,31 @@ class LlmSkillRoutePlan(BaseModel):
         if not isinstance(value, list):
             return []
         return [str(x).strip() for x in value if str(x).strip()]
+
+
+class LlmAgentRoutePlan(BaseModel):
+    """调度 LLM 输出的专精 Agent 路由计划（不经 Embedding/关键词打分）。"""
+
+    orchestrator_direct: bool = False
+    mode: RouteMode = "single"
+    agents: list[str] = Field(default_factory=list, max_length=4)
+    reason: str = ""
+
+    @field_validator("agents", mode="before")
+    @classmethod
+    def _normalize_agents(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list):
+            return []
+        out: list[str] = []
+        for x in value:
+            aid = str(x).strip()
+            if aid and aid not in out:
+                out.append(aid)
+        return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +290,124 @@ def parse_llm_skill_route_plan(
     return plan.model_copy(update={"skills": skills}) if skills != plan.skills else plan
 
 
+def parse_llm_agent_route_plan(
+    data: dict[str, object] | None,
+    *,
+    allowed: set[str],
+) -> LlmAgentRoutePlan | None:
+    """解析 LLM 专精 Agent 选型；只保留 enabled 目录内的 agent_id。"""
+    if not isinstance(data, dict):
+        return None
+    try:
+        plan = LlmAgentRoutePlan.model_validate(data)
+    except Exception:
+        return None
+    agents = [aid for aid in plan.agents if aid in allowed]
+    # orchestrator 可出现在 agents 中表示由调度自行处理
+    if plan.orchestrator_direct or (len(agents) == 1 and agents[0] == "orchestrator"):
+        return plan.model_copy(
+            update={"orchestrator_direct": True, "agents": [], "mode": "single"}
+        )
+    agents = [aid for aid in agents if aid != "orchestrator"]
+    if not agents:
+        if plan.orchestrator_direct:
+            return plan.model_copy(update={"agents": []})
+        return None
+    mode = plan.mode if len(agents) > 1 else "single"
+    return plan.model_copy(update={"agents": agents, "mode": mode})
+
+
+def resolved_routes_from_agent_plan(
+    plan: LlmAgentRoutePlan,
+) -> ResolvedSkillRoutes | None:
+    if plan.orchestrator_direct:
+        note = (plan.reason or "调度直接处理").strip()
+        return ResolvedSkillRoutes(mode="single", items=(("orchestrator", note),))
+    if not plan.agents:
+        return None
+    reason = (plan.reason or "LLM 选型").strip()
+    items = tuple(
+        (aid, f"LLM 分配（`{aid}`）" + (f"：{reason}" if reason else ""))
+        for aid in plan.agents
+    )
+    mode: RouteMode = plan.mode if len(items) > 1 else "single"
+    return ResolvedSkillRoutes(mode=mode, items=items)
+
+
+async def llm_plan_agent_routes(
+    db: Session,
+    message: str,
+    *,
+    chat_history: list | None = None,
+    prior_outcomes: list[str] | None = None,
+) -> ResolvedSkillRoutes | None:
+    """调度 LLM：动态注入 agents.md 目录，按 Use when / Don't 选型（无程序内写死偏好）。"""
+    from app.integrations.deepseek_client import chat_completion_message_async, is_configured
+
+    if not is_configured():
+        return None
+
+    enabled = {
+        p.id
+        for p in AGENT_PROFILES
+        if p.id == "orchestrator" or is_agent_enabled(db, p.id)
+    }
+    enabled_ids = frozenset(enabled)
+    # 目录含 orchestrator：描述一律来自 agents.md，不在代码里写领域偏好
+    agent_catalog = build_agents_catalog_text(
+        enabled_ids=enabled_ids,
+        include_orchestrator=True,
+    )
+    query = build_routing_query(message, prior_outcomes)
+
+    from app.core.conversation_turn_context import is_likely_follow_up
+
+    hist = ""
+    if chat_history and is_likely_follow_up(message, chat_history):
+        for msg in chat_history[-4:]:
+            role = "用户" if getattr(msg, "role", "") == "user" else "助手"
+            text = (getattr(msg, "content", "") or "").strip()[:160]
+            if text:
+                hist += f"{role}：{text}\n"
+
+    system = (
+        "You are the platform routing layer. You only assign agents; you do not execute tools "
+        "and you must not invent facts or tool results.\n"
+        "Read the injected Agent catalog below. For each agent, follow its Use when / Don't use when "
+        "exactly — do not rely on any domain preference outside that catalog.\n"
+        "Pick one or more agent_id values that appear in the catalog.\n"
+        "If no specialist fits, or the catalog says orchestrator should handle it, "
+        "set orchestrator_direct=true and agents=[].\n"
+        'Output JSON only: {"orchestrator_direct":false,"mode":"single|sequential|parallel",'
+        '"agents":["agent-id",...],"reason":"one sentence"}\n'
+        "agents: 1–3 ids in order; sequential when dependent, parallel when independent."
+    )
+    user_prompt = f"【用户目标】\n{query[:900]}\n\n【Agent 路由目录（动态注入）】\n{agent_catalog}"
+    if hist:
+        user_prompt = f"【近期对话】\n{hist}\n{user_prompt}"
+
+    try:
+        choice = await chat_completion_message_async(
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_prompt},
+            ],
+            tools=None,
+            temperature=0.1,
+        )
+        content = (((choice or {}).get("message") or {}).get("content") or "").strip()
+        plan = parse_llm_agent_route_plan(
+            parse_llm_json(content),
+            allowed=enabled | {"orchestrator"},
+        )
+        if plan is None:
+            return None
+        return resolved_routes_from_agent_plan(plan)
+    except Exception:
+        _logger.exception("调度 Agent LLM 路由失败")
+        return None
+
+
 def _pick_agent_for_skill(skill_name: str, index: dict[str, str]) -> str:
     return lookup_agent_for_skill(skill_name, index)
 
@@ -358,6 +498,71 @@ def aggregate_agents_from_skills(
     return scores
 
 
+# Embedding 权重；关键词侧归一化到 0–100 后占 (1-α)
+_HYBRID_ALPHA = 0.7
+# 纯关键词路径：至少打到 use_when（+3）或等价强度，过滤 hay 噪声
+_KEYWORD_ONLY_MIN_RAW = 3
+
+
+def _normalize_keyword_score_100(raw: float, query: str) -> float:
+    """将关键词原始分映射到 0–100，与 Embedding(sim*100) 同量纲。"""
+    from app.agentkit.skills.search import skill_query_tokens
+
+    tokens = skill_query_tokens(query)
+    if raw <= 0 or not tokens:
+        return 0.0
+    ceiling = max(1, 3 * len(tokens))
+    return min(100.0, 100.0 * float(raw) / float(ceiling))
+
+
+def _keyword_rank_skills(
+    query: str,
+    skills: list[SkillDefinition],
+    *,
+    limit: int = 12,
+) -> list[tuple[int, SkillDefinition]]:
+    """skills.md 优先，否则 SkillDefinition 关键词打分。返回原始整型分。"""
+    by_name = {s.name: s for s in skills}
+    md = load_skills_routing_md()
+    ranked: list[tuple[int, SkillDefinition]] = []
+    for score, sid in rank_routing_entries(query, md, limit=max(limit * 2, limit)):
+        skill = by_name.get(sid)
+        if skill is not None:
+            ranked.append((int(score), skill))
+    if ranked:
+        return ranked[:limit]
+    return [
+        (int(sc), sk)
+        for sc, sk in rank_skills_by_query(query, skills, limit=limit)
+    ]
+
+
+def _fuse_hybrid_scores(
+    emb_ranked: list[tuple[float, SkillDefinition]],
+    kw_ranked: list[tuple[int, SkillDefinition]],
+    query: str,
+    *,
+    alpha: float = _HYBRID_ALPHA,
+    limit: int = 12,
+    min_final: float = 0.0,
+) -> list[tuple[float, SkillDefinition]]:
+    """候选并集：final = α·emb_n + (1-α)·kw_n（两端均为 0–100）。"""
+    emb_map = {sk.name: (float(sc), sk) for sc, sk in emb_ranked if (sk.name or "").strip()}
+    kw_map = {sk.name: (int(sc), sk) for sc, sk in kw_ranked if (sk.name or "").strip()}
+    fused: list[tuple[float, SkillDefinition]] = []
+    for name in set(emb_map) | set(kw_map):
+        emb_sc = emb_map[name][0] if name in emb_map else 0.0
+        kw_raw = kw_map[name][0] if name in kw_map else 0
+        skill = emb_map[name][1] if name in emb_map else kw_map[name][1]
+        kw_n = _normalize_keyword_score_100(float(kw_raw), query)
+        final = float(alpha) * float(emb_sc) + (1.0 - float(alpha)) * kw_n
+        if final < min_final:
+            continue
+        fused.append((final, skill))
+    fused.sort(key=lambda item: (-item[0], item[1].name))
+    return fused[:limit]
+
+
 def _rank_skills_for_routing(
     db: Session | None,
     query: str,
@@ -365,22 +570,32 @@ def _rank_skills_for_routing(
     *,
     limit: int = 12,
 ) -> list[tuple[float, SkillDefinition]]:
-    """Embedding 语义召回优先；失败时 skills.md / SkillDefinition 关键词回退。"""
+    """Embedding ∪ 关键词加权混合；Embedding 不可用时仅关键词（raw>=3）。"""
+    from app.config import get_settings
     from app.services.agent_skill_rag import rank_skills_by_embedding
 
     emb_ranked = rank_skills_by_embedding(db, query, skills, limit=limit)
-    if emb_ranked:
-        return [(float(sc), sk) for sc, sk in emb_ranked]
+    kw_ranked = _keyword_rank_skills(query, skills, limit=limit)
 
-    by_name = {s.name: s for s in skills}
-    md = load_skills_routing_md()
-    ranked: list[tuple[float, SkillDefinition]] = []
-    for score, sid in rank_routing_entries(query, md, limit=limit):
-        if sid in by_name:
-            ranked.append((float(score), by_name[sid]))
-    if ranked:
-        return ranked
-    return [(float(sc), sk) for sc, sk in rank_skills_by_query(query, skills, limit=limit)]
+    if emb_ranked:
+        emb_pairs = [(float(sc), sk) for sc, sk in emb_ranked]
+        if not kw_ranked:
+            return emb_pairs[:limit]
+        threshold = float(get_settings().agent_skill_rag_min_similarity or 0.42) * 100.0
+        return _fuse_hybrid_scores(
+            emb_pairs,
+            kw_ranked,
+            query,
+            alpha=_HYBRID_ALPHA,
+            limit=limit,
+            min_final=threshold,
+        )
+
+    return [
+        (float(sc), sk)
+        for sc, sk in kw_ranked
+        if sc >= _KEYWORD_ONLY_MIN_RAW
+    ][:limit]
 
 
 def resolve_skill_routed_agent_scores(
@@ -391,9 +606,9 @@ def resolve_skill_routed_agent_scores(
     prior_outcomes: list[str] | None = None,
     index: dict[str, str] | None = None,
 ) -> list[AgentRoutingScore]:
-    """Skill 先 Embedding RAG 召回，再经 skill→agent 倒排索引聚合到专精 Agent。
+    """Skill 混合召回后经 skill→agent 倒排索引聚合到专精 Agent。
 
-    Embedding 不可用时回退 skills.md / 关键词评分，映射仍走同一倒排索引。
+    Embedding 不可用时回退关键词（use_when/name 级命中），映射仍走同一倒排索引。
     """
     query = build_routing_query(message, prior_outcomes)
     skills = [
@@ -530,13 +745,12 @@ async def llm_plan_routes_from_skills(
                 hist += f"{role}：{text}\n"
 
     system = (
-        "你是平台调度层。根据用户目标，阅读【skills.md 候选】与【agents.md 专精目录】"
+        "你是平台调度层。根据用户目标，阅读下方动态注入的【Skill 候选】与【Agent 目录】，"
         "选出完成任务所需的 skill_id。\n"
-        "你只选 Skill，不执行 Tool，不编造目录外的 skill_id；"
-        "须同时核对 Skill 与专精 Agent 的 Use when / Don't，确保域一致。\n"
-        "优先以【用户目标】当前句为准；仅当明显是追问/省略主语时再参考【近期对话】。\n"
-        "若寒暄、常识、简单心算、基于上文追问可直接回答，设 orchestrator_direct=true 且 skills=[]。\n"
-        "若均不匹配（置信度低），设 orchestrator_direct=true，勿强行选用无关 Skill。\n"
+        "只选目录中的 skill_id，不执行 Tool，不编造目录外 id；"
+        "须核对各条目自带的 Use when / Don't（以注入文案为准，勿另加领域偏好）。\n"
+        "优先以【用户目标】当前句为准；仅当明显是追问时再参考【近期对话】。\n"
+        "若寒暄、常识、可直接回答，或均不匹配，设 orchestrator_direct=true 且 skills=[]。\n"
         '输出 JSON：{"orchestrator_direct":false,"mode":"single|sequential|parallel",'
         '"skills":["skill-id",...],"reason":"一句话"}\n'
         "规则：skills 1–4 个按执行先后；有依赖 → sequential，可并行 → parallel。"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from .models import (
@@ -18,6 +19,42 @@ if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
 logger = logging.getLogger(__name__)
+
+_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9][\w.-]{1,}", re.UNICODE)
+
+
+def question_match_tokens(question: str, *, max_tokens: int = 48) -> list[str]:
+    """从问题提取用于实体匹配的 token（长度≥2），保序去重。
+
+    连续中文串额外切出 2～4 字窗口（常见姓名/专名长度），供精确名匹配。
+    """
+    q = (question or "").strip()
+    if not q:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(tok: str) -> bool:
+        t = tok.strip().lower()
+        if len(t) < 2 or t in seen:
+            return len(out) < max_tokens
+        seen.add(t)
+        out.append(t)
+        return len(out) < max_tokens
+
+    for m in _TOKEN_RE.finditer(q):
+        raw = m.group(0)
+        if not _add(raw):
+            return out
+        # 中文连续串：优先长窗口，再短窗口
+        if re.fullmatch(r"[\u4e00-\u9fff]{2,}", raw):
+            for n in (4, 3, 2):
+                if len(raw) < n:
+                    continue
+                for i in range(0, len(raw) - n + 1):
+                    if not _add(raw[i : i + n]):
+                        return out
+    return out
 
 
 class SemanticQueryEngine:
@@ -72,39 +109,61 @@ class SemanticQueryEngine:
         *,
         limit: int = 5,
     ) -> list[MatchedEntity]:
-        """子串匹配：实体名出现在问题中（优于 CONTAINS 反向）。"""
-        q = (question or "").strip().lower()
+        """实体名出现在问题中：在 Neo4j 侧过滤，禁止全量拉取实体到 Python。"""
+        q_raw = (question or "").strip()
+        q = q_raw.lower()
         if not q or not owner_id:
             return []
+        tokens = question_match_tokens(q_raw)
+        # 拉取上限略大于 limit，便于本地按 name 长度精排
+        fetch_limit = max(limit * 4, 20)
         rows = await self._ops.collect(
             """
             MATCH (e:Entity {owner_id: $owner_id})
+            WHERE size(coalesce(e.name, '')) >= 2
+              AND (
+                any(t IN $tokens WHERE toLower(e.name) = t)
+                OR toLower($q) CONTAINS toLower(e.name)
+                OR (
+                  e.type_code = 'memory'
+                  AND any(t IN $tokens WHERE size(t) >= 2 AND toLower(e.name) CONTAINS t)
+                )
+              )
             RETURN e.id AS id, e.name AS name,
                    e.type_code AS type_code,
                    e.description AS description
+            ORDER BY size(e.name) DESC
+            LIMIT $limit
             """,
-            {"owner_id": owner_id},
+            {
+                "owner_id": owner_id,
+                "q": q,
+                "tokens": tokens,
+                "limit": fetch_limit,
+            },
         )
         candidates: list[MatchedEntity] = []
         for row in rows:
             name = (row.get("name") or "").strip()
             name_l = name.lower()
-            desc = (row.get("description") or "").strip().lower()
+            if not name_l:
+                continue
             score = 0.0
-            if name_l and name_l in q:
+            if name_l in q:
                 score = 100.0 + len(name_l)
-            elif desc and len(desc) >= 4 and desc[:16] in q:
-                score = 10.0
-            if score > 0:
-                candidates.append(
-                    MatchedEntity(
-                        id=str(row.get("id") or ""),
-                        name=name,
-                        type_code=str(row.get("type_code") or ""),
-                        score=score,
-                        description=str(row.get("description") or ""),
-                    )
+            elif name_l in tokens:
+                score = 90.0 + len(name_l)
+            else:
+                continue
+            candidates.append(
+                MatchedEntity(
+                    id=str(row.get("id") or ""),
+                    name=name,
+                    type_code=str(row.get("type_code") or ""),
+                    score=score,
+                    description=str(row.get("description") or ""),
                 )
+            )
         candidates.sort(key=lambda x: (-x.score, -len(x.name)))
         return candidates[:limit]
 

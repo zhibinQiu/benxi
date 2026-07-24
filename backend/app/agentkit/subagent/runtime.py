@@ -53,8 +53,20 @@ async def execute_subagent(
         return _result(False, "task 或 queries 不能为空")
 
     agent = agent_id or str((loop_state or {}).get("agent_id") or "")
-    sub_task = normalized[0]
+    base_task = (task or user_message or "").strip()
+    if len(normalized) > 1:
+        # 多关键词必须全部交给子 Agent，禁止只跑第一条
+        bullets = "\n".join(f"- {q}" for q in normalized)
+        sub_task = (
+            f"{base_task or normalized[0]}\n\n"
+            f"请用 run_tool_batch 一次并行检索以下关键词（勿只搜其中一条）：\n{bullets}"
+        )
+    else:
+        sub_task = normalized[0]
     child_state = child_state_from_parent(loop_state, kind=sub_kind, agent_id=agent)
+    if config.child_state_holder is not None:
+        # 与宿主 execute_tool 共享同一 child_state，避免引用写到孤儿 dict
+        config.child_state_holder["state"] = child_state
     # allowed_tools=None：由宿主 build_tool_specs 决定（execute 按父挂载集收窄）
     allowed = set(kind_config.allowed_tools) if kind_config.allowed_tools is not None else None
     tool_specs = config.build_tool_specs(allowed)

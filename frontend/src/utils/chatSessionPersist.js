@@ -160,6 +160,7 @@ export function serializeChatMessages(messages) {
           content,
           citations: Array.isArray(m.citations) ? m.citations.slice(0, 40) : undefined,
           error: m.error,
+          liked: m.liked ? true : undefined,
         };
       })
       .filter((m) => m.content || m.role === "user"),

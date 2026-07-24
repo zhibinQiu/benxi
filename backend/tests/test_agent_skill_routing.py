@@ -128,9 +128,12 @@ def test_resolve_agent_routes_hello_after_business_question():
         db.close()
 
 
-def test_resolve_agent_routes_follow_up_keeps_carbon():
-    """双碳追问应延续 carbon，避免落到调度后乱调 list_todos 等平台工具。"""
+def test_resolve_agent_routes_follow_up_uses_skill_rag_query_expansion(monkeypatch):
+    """追问扩写后走 Skill RAG；此处 mock 命中 carbon。"""
+    from unittest.mock import patch
+
     from app.schemas.ai_chat import AiChatMessage
+    from app.services.agent_skill_routing import AgentRoutingScore
 
     db = SessionLocal()
     try:
@@ -139,11 +142,24 @@ def test_resolve_agent_routes_follow_up_keeps_carbon():
             AiChatMessage(role="user", content="最新的双碳政策有哪些？"),
             AiChatMessage(role="assistant", content="近期双碳政策包括……"),
         ]
-        for follow in ("再详细一点", "有哪些具体文件？", "十五五的呢？"):
-            routes = _resolve_agent_routes(db, user, follow, chat_history=history)
-            assert len(routes) == 1, follow
-            assert routes[0].agent_id == "carbon", (follow, routes[0].reason)
-            assert "追问延续上文" in (routes[0].reason or "")
+        score = AgentRoutingScore(
+            agent_id="carbon",
+            score=50.0,
+            matched_skills=("carbon-qa",),
+        )
+        with (
+            patch(
+                "app.services.agent_skill_routing.resolve_skill_routed_agent_scores",
+                return_value=[score],
+            ),
+            patch(
+                "app.services.agent_skill_routing.pick_skill_route_scores",
+                return_value=[score],
+            ),
+        ):
+            routes = _resolve_agent_routes(db, user, "再详细一点", chat_history=history)
+        assert routes[0].agent_id == "carbon"
+        assert "Skill" in (routes[0].reason or "")
     finally:
         db.close()
 
@@ -163,13 +179,14 @@ def test_pick_skill_route_scores_rejects_ambiguous_weak_match():
     assert pick_skill_route_scores(scores_clear, query="全国碳市场政策") != []
 
 
-def test_resolve_agent_routes_platform_via_skills():
+def test_resolve_agent_routes_doc_list_defers_without_rag():
+    """文档库列表不再靠关键词打分进 platform；同步路径兜底调度，async 由 LLM 选型。"""
     db = SessionLocal()
     try:
         user = _admin_user(db)
         routes = _resolve_agent_routes(db, user, "列出我文档库里的文件夹")
         assert routes
-        assert routes[0].agent_id == "platform"
+        assert routes[0].agent_id == "orchestrator"
     finally:
         db.close()
 
@@ -218,6 +235,90 @@ def test_skill_scores_for_carbon_message(monkeypatch):
         assert any(s.agent_id == "carbon" for s in picked)
     finally:
         db.close()
+
+
+def test_elephant_fridge_riddle_does_not_route_stock(monkeypatch):
+    """常识谜题不得因「需要」命中 Don't use when 而落到股市分析。"""
+    monkeypatch.setattr(
+        "app.services.agent_skill_rag.rank_agents_by_embedding",
+        lambda *a, **k: None,
+    )
+    db = SessionLocal()
+    try:
+        user = _admin_user(db)
+        for q in (
+            "把两只大象放进冰箱需要几步？",
+            "把大象放进冰箱需要几步",
+        ):
+            routes = _resolve_agent_routes(db, user, q)
+            assert routes, q
+            assert routes[0].agent_id != "stock", (q, routes[0].reason)
+            assert routes[0].agent_id == "orchestrator", (q, routes[0].reason)
+    finally:
+        db.close()
+
+
+def test_fuse_hybrid_both_signals_outrank_emb_only():
+    """两侧都高的候选应排在仅 Embedding 高、关键词为 0 的候选之前。"""
+    from app.services.agent_skill_routing import _fuse_hybrid_scores
+    from app.skills.types import SkillDefinition, SkillSource
+
+    both = SkillDefinition(
+        name="carbon-qa",
+        title="双碳问答",
+        description="双碳问答",
+        source=SkillSource.BUILTIN,
+        use_when="碳价",
+    )
+    emb_only = SkillDefinition(
+        name="stock-deep-analysis",
+        title="AI 深度解读",
+        description="个股分析",
+        source=SkillSource.BUILTIN,
+        use_when="个股",
+    )
+    emb = [(90.0, emb_only), (70.0, both)]
+    kw = [(3, both)]
+    fused = _fuse_hybrid_scores(
+        emb, kw, "碳价", alpha=0.7, limit=5, min_final=0.0
+    )
+    assert fused
+    assert fused[0][1].name == "carbon-qa"
+    # emb-only 被拉低：0.7*90=63；both：0.7*70+0.3*100=79
+    by_name = {sk.name: sc for sc, sk in fused}
+    assert by_name["carbon-qa"] > by_name["stock-deep-analysis"]
+
+
+def test_keyword_only_carbon_policy_still_ranks_carbon_qa(monkeypatch):
+    """Embedding 不可用时，碳市场政策关键词仍应召回 carbon-qa。"""
+    from app.services.agent_skill_routing import _rank_skills_for_routing
+    from app.skills.types import SkillDefinition, SkillSource
+
+    monkeypatch.setattr(
+        "app.services.agent_skill_rag.rank_skills_by_embedding",
+        lambda *a, **k: None,
+    )
+    skills = [
+        SkillDefinition(
+            name="carbon-qa",
+            title="双碳问答",
+            description="双碳问答",
+            source=SkillSource.BUILTIN,
+            use_when="碳价行情碳交易政策",
+            catalog_tier="resident",
+        ),
+        SkillDefinition(
+            name="stock-deep-analysis",
+            title="AI 深度解读",
+            description="个股分析",
+            source=SkillSource.BUILTIN,
+            use_when="个股财务估值",
+            catalog_tier="resident",
+        ),
+    ]
+    ranked = _rank_skills_for_routing(None, "全国碳市场最新政策", skills, limit=5)
+    assert ranked
+    assert any(sk.name == "carbon-qa" for _, sk in ranked)
 
 
 def test_parse_llm_skill_route_plan_filters_unknown():

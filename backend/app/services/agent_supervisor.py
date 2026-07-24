@@ -610,6 +610,160 @@ async def _execute_single_route(
         yield event
 
 
+async def _execute_multi_route_plan(
+    sess: AgentLoopSession,
+    user_id: uuid.UUID,
+    *,
+    plan: AgentRoutePlan,
+    routes: list[AgentRoute],
+    mode: str,
+    user_message: str,
+    chat_history: list[AiChatMessage] | None,
+    retrieval_context: str,
+    context_instruction: str,
+    conversation_id: str | None,
+    attachment_session_id: str | None,
+    intent_plan: AgentToolPlan | None,
+    max_rounds: int | None,
+    messages: list[dict[str, Any]],
+) -> AsyncIterator[dict[str, Any]]:
+    """消费 plan.mode：sequential 串行 hop；parallel 并行 hop 后汇总。"""
+    from app.agentkit.orchestrate.parallel import iter_parallel_task_events
+    from app.agentkit.orchestrate.types import ORCH_TASK_RESULT, TaskExecutionResult
+    from app.core.stream_cancel import raise_if_stream_cancelled
+    from app.services.agent_orchestrator import tasks_from_routes, workflow_plan_tasks
+
+    tasks = tasks_from_routes(routes)
+    yield workflow_plan_tasks(
+        tasks,
+        step_id=f"multi-{uuid.uuid4().hex[:8]}",
+        mode=mode,
+    )
+
+    hop_replies: list[str] = []
+    hop_completes: list[dict[str, Any]] = []
+
+    if mode == "sequential":
+        running_msg = user_message
+        for idx, route in enumerate(routes):
+            raise_if_stream_cancelled()
+            complete = None
+            async for event in _run_specialist_hop(
+                sess,
+                user_id,
+                route=route,
+                user_message=running_msg,
+                chat_history=chat_history,
+                retrieval_context=retrieval_context,
+                context_instruction=context_instruction,
+                conversation_id=conversation_id,
+                attachment_session_id=attachment_session_id,
+                intent_plan=intent_plan,
+                max_rounds=max_rounds,
+                task_mode=True,
+            ):
+                if event.get("type") == "complete":
+                    complete = event
+                elif event.get("type") == "step_complete":
+                    complete = {
+                        "type": "complete",
+                        "reply": event.get("reply"),
+                        "messages": event.get("working") or [],
+                        "citations": list(
+                            (event.get("loop_state") or {}).get("citations") or []
+                        ),
+                        "kg_context": (event.get("loop_state") or {}).get("kg_context"),
+                    }
+                elif not _skip_hop_client_preview(event):
+                    yield event
+            if complete:
+                hop_completes.append(complete)
+                reply = str(complete.get("reply") or "").strip()
+                if reply:
+                    hop_replies.append(reply)
+                    title = resolve_agent_title(route.agent_id)
+                    running_msg = (
+                        f"{user_message}\n\n【上一步 {title} 结论】\n{reply[:1200]}"
+                    )
+        merged = "\n\n".join(hop_replies).strip() or None
+        yield _build_final_complete(
+            messages=messages, hop_completes=hop_completes, reply=merged
+        )
+        return
+
+    # parallel
+    results: list[TaskExecutionResult] = []
+
+    async def run_one_task(_sess, *, task, route, **_kw):
+        events: list[dict[str, Any]] = []
+        complete = None
+        async for event in _run_specialist_hop(
+            sess,
+            user_id,
+            route=route,
+            user_message=user_message,
+            chat_history=chat_history,
+            retrieval_context=retrieval_context,
+            context_instruction=context_instruction,
+            conversation_id=conversation_id,
+            attachment_session_id=attachment_session_id,
+            intent_plan=intent_plan,
+            max_rounds=max_rounds,
+            task_mode=True,
+        ):
+            if event.get("type") == "complete":
+                complete = event
+            elif event.get("type") == "step_complete":
+                complete = {
+                    "type": "complete",
+                    "reply": event.get("reply"),
+                    "messages": event.get("working") or [],
+                    "citations": list(
+                        (event.get("loop_state") or {}).get("citations") or []
+                    ),
+                    "kg_context": (event.get("loop_state") or {}).get("kg_context"),
+                }
+            elif not _skip_hop_client_preview(event):
+                events.append(event)
+                yield event
+        result = TaskExecutionResult(
+            task=task,
+            route=route,
+            events=events,
+            complete=complete,
+            satisfied=bool(str((complete or {}).get("reply") or "").strip()),
+        )
+        yield {"type": ORCH_TASK_RESULT, "result": result}
+
+    async for kind, payload in iter_parallel_task_events(
+        tasks,
+        routes,
+        session_factory=lambda: None,
+        run_one_task=run_one_task,
+        all_tasks=tasks,
+        agent_title_fn=resolve_agent_title,
+        close_session=None,
+    ):
+        raise_if_stream_cancelled()
+        if kind == "event":
+            yield payload
+        elif kind == "result" and isinstance(payload, TaskExecutionResult):
+            results.append(payload)
+            if payload.complete:
+                hop_completes.append(payload.complete)
+                reply = str(payload.complete.get("reply") or "").strip()
+                if reply:
+                    title = resolve_agent_title(
+                        getattr(payload.route, "agent_id", "") or ""
+                    )
+                    hop_replies.append(f"【{title}】\n{reply}" if title else reply)
+
+    merged = "\n\n".join(hop_replies).strip() or None
+    yield _build_final_complete(
+        messages=messages, hop_completes=hop_completes, reply=merged
+    )
+
+
 async def iter_supervised_agent_loop(
     user: User | uuid.UUID,
     messages: list[dict[str, Any]],
@@ -648,11 +802,26 @@ async def iter_supervised_agent_loop(
 
         route_plan_step_id = f"route-plan-{uuid.uuid4().hex[:8]}"
         if not skip_route_plan_ui:
+            # 硬规则可瞬间返回；需图谱探测时再显示「正在检索知识图谱」
+            from app.services.agent_route_resolver import _resolve_hard_rule_routes
+            from app.services.agent_skill_router import should_skip_kg_probe
+
+            db_pre, bound_pre = sess.open()
+            try:
+                hard_pre = _resolve_hard_rule_routes(db_pre, user_message)
+            finally:
+                sess.release_before_io()
+            if hard_pre is not None:
+                thinking_title = "正在规划方案"
+            elif should_skip_kg_probe(user_message):
+                thinking_title = "正在规划方案"
+            else:
+                thinking_title = "正在检索知识图谱"
             yield {
                 "type": "workflow",
                 "data": {
                     "phase": "agent_thinking",
-                    "title": "正在规划方案",
+                    "title": thinking_title,
                     "detail": "",
                     "tool": "supervisor.plan",
                     "step_id": route_plan_step_id,
@@ -673,7 +842,50 @@ async def iter_supervised_agent_loop(
         finally:
             sess.release_before_io()
 
-        route_titles = []
+        from app.core.stream_cancel import raise_if_stream_cancelled
+
+        raise_if_stream_cancelled()
+
+        # 知识图谱已足以作答：跳过 Skill/Agent 匹配与 tool loop，立刻推送正文
+        kg_direct = (plan.direct_reply or "").strip() if plan.source == "kg_direct" else ""
+        if kg_direct:
+            yield {
+                "type": "workflow",
+                "data": {
+                    "phase": "agent_thought",
+                    "title": "知识图谱直答",
+                    "detail": "已命中，跳过 Skill 匹配",
+                    "tool": "kg_query",
+                    "step_id": route_plan_step_id,
+                    "status": "done",
+                    "agent_id": "orchestrator",
+                    "agent_title": _ORCH_TITLE,
+                },
+            }
+            yield {"type": "replace", "text": kg_direct}
+            yield {
+                "type": "complete",
+                "messages": list(messages or []),
+                "reply": kg_direct,
+                "citations": [],
+                "kg_context": None,
+            }
+            return
+
+        # 本轮图谱探测结果并入检索上下文，避免 tool loop 重复推理
+        kg_ctx = (plan.kg_context_text or "").strip()
+        effective_retrieval = retrieval_context or ""
+        if kg_ctx and kg_ctx not in effective_retrieval:
+            from app.services.agent_planner import _KG_PLANNING_USER_LABEL
+
+            block = f"{_KG_PLANNING_USER_LABEL}\n{kg_ctx}"
+            effective_retrieval = (
+                f"{effective_retrieval.rstrip()}\n\n{block}".strip()
+                if effective_retrieval.strip()
+                else block
+            )
+
+        route_titles: list[str] = []
         route_details: list[str] = []
         for route in plan.routes:
             profile = get_agent_profile(route.agent_id)
@@ -692,6 +904,16 @@ async def iter_supervised_agent_loop(
             "；".join(route_details[:4]) if route_details
             else "、".join(route_titles[:4])
         )
+        from app.services.agent_working_memory import WorkingMemory
+
+        working_memory = WorkingMemory()
+        first_route = plan.routes[0] if plan.routes else None
+        if first_route:
+            working_memory.observe_route(
+                source=str(plan.source or ""),
+                agent_id=first_route.agent_id,
+                reason=plan_detail or first_route.reason or "",
+            )
         yield {
             "type": "workflow",
             "data": {
@@ -709,12 +931,36 @@ async def iter_supervised_agent_loop(
         hop_context = _merge_context_instruction(
             context_instruction, plan.capability_gap_instruction,
         )
+        hop_context = _merge_context_instruction(
+            hop_context, working_memory.format_prompt_block(),
+        )
         routes = list(plan.routes)
 
         # ── 无路由 → 直接返回 ──
         if not routes:
             yield _build_final_complete(
                 messages=messages, hop_completes=[], reply=None)
+            return
+
+        mode = (plan.mode or "single").strip().lower()
+        if mode in ("sequential", "parallel") and len(routes) > 1:
+            async for event in _execute_multi_route_plan(
+                sess,
+                user_id,
+                plan=plan,
+                routes=routes,
+                mode=mode,
+                user_message=user_message,
+                chat_history=chat_history,
+                retrieval_context=effective_retrieval,
+                context_instruction=hop_context,
+                conversation_id=conversation_id,
+                attachment_session_id=attachment_session_id,
+                intent_plan=intent_plan,
+                max_rounds=max_rounds,
+                messages=messages,
+            ):
+                yield event
             return
 
         route = routes[0]
@@ -735,7 +981,7 @@ async def iter_supervised_agent_loop(
             async for event in _execute_auto_skill_dev_task_interactive(
                 sess=sess, user_id=user_id, route=route,
                 user_message=user_message, chat_history=chat_history,
-                retrieval_context=retrieval_context,
+                retrieval_context=effective_retrieval,
                 context_instruction=hop_context,
                 conversation_id=conversation_id,
                 attachment_session_id=attachment_session_id,
@@ -757,12 +1003,26 @@ async def iter_supervised_agent_loop(
         hop_messages: list[dict] = []
 
         for _sv_round in range(max_supervisor_rounds):
+            from app.core.stream_cancel import raise_if_stream_cancelled
+
+            raise_if_stream_cancelled()
+            working_memory.record(
+                "执行轮次",
+                f"第 {_sv_round + 1} 轮",
+                agent_id=route.agent_id,
+            )
+            hop_context = _merge_context_instruction(
+                _merge_context_instruction(
+                    context_instruction, plan.capability_gap_instruction,
+                ),
+                working_memory.format_prompt_block(),
+            )
             gen = _run_specialist_hop(
                 sess, user_id,
                 route=route,
                 user_message=effective_user_message,
                 chat_history=chat_history,
-                retrieval_context=retrieval_context,
+                retrieval_context=effective_retrieval,
                 context_instruction=hop_context,
                 conversation_id=conversation_id,
                 attachment_session_id=attachment_session_id,
@@ -777,6 +1037,7 @@ async def iter_supervised_agent_loop(
             assist_reason = ""
 
             async for event in gen:
+                working_memory.observe_stream_event(event)
                 if event.get("type") == "step_complete":
                     step_result = event
                     # step_complete 之后不再有其他事件，break 让外层处理
@@ -871,7 +1132,29 @@ async def iter_supervised_agent_loop(
 
                 reply = str(step_result.get("reply") or "").strip()
 
-                # 失败也要给出可理解的思考收尾说明
+                # 专精未交付 → 事实回执写入工作时记忆，交还调度重编排（禁止把编造答复当终稿）
+                if route.agent_id != "orchestrator":
+                    assist_reason = working_memory.add_failure_receipt(
+                        agent_id=route.agent_id,
+                        agent_title=agent_title,
+                        loop_state=loop_state,
+                        reply=reply,
+                    )
+                    yield {
+                        "type": "workflow",
+                        "data": {
+                            "phase": "agent_thought",
+                            "title": f"{agent_title} 无法完成，交还调度",
+                            "detail": assist_reason[:240],
+                            "tool": "supervisor.reroute",
+                            "status": "done",
+                            "agent_id": route.agent_id,
+                            "agent_title": agent_title,
+                        },
+                    }
+                    needs_reroute = True
+                    break
+
                 if not reply:
                     yield {
                         "type": "workflow",
@@ -910,11 +1193,17 @@ async def iter_supervised_agent_loop(
                 }
                 return
 
-        # ── 超出最大轮次 or 请求协助 ──
+        # ── 超出最大轮次 or 请求协助 / 专精失败回交 ──
         if needs_reroute or round_state and round_state.get("orchestrator_assist_request"):
             # 构建重路由指令
             if not assist_reason and step_result:
                 assist_reason = str(step_result.get("reply") or "")[:120]
+            if round_state and round_state.get("orchestrator_assist_request"):
+                working_memory.record(
+                    "请求调度协助",
+                    assist_reason or "需要调度协助",
+                    agent_id=route.agent_id,
+                )
             yield {
                 "type": "workflow",
                 "data": {
@@ -928,22 +1217,27 @@ async def iter_supervised_agent_loop(
                     "agent_title": agent_title,
                 },
             }
-            reroute_instruction = (
-                f"【专精智能体无法完成，已交还调度】\n"
-                f"用户原问题：{user_message}\n"
-                f"专精智能体 [{agent_title}] 反馈：{assist_reason or '需要协助'}\n\n"
-                f"请根据以上信息重新处理用户请求，可直接回复或分配给其他智能体。"
+            wm_block = working_memory.format_prompt_block()
+            reroute_instruction = _merge_context_instruction(
+                (
+                    f"【专精智能体无法完成，已交还调度】\n"
+                    f"用户原问题：{user_message}\n"
+                    f"失败回执：{assist_reason or '需要协助'}\n\n"
+                    f"约束：不得编造工具未返回的数据；须根据工作时记忆中的失败事实"
+                    f"重新编排（改用合适工具/子智能体，或分配更合适的智能体）。"
+                ),
+                wm_block,
             )
             orch_route = AgentRoute(
                 agent_id="orchestrator",
-                reason=f"{agent_title} 请求协助，由调度重新处理",
+                reason=f"{agent_title} 无法完成，由调度重新处理",
             )
             async for event in _run_specialist_hop(
                 sess, user_id,
                 route=orch_route,
                 user_message=user_message,
                 chat_history=chat_history,
-                retrieval_context=retrieval_context,
+                retrieval_context=effective_retrieval,
                 context_instruction=reroute_instruction,
                 conversation_id=conversation_id,
                 attachment_session_id=attachment_session_id,

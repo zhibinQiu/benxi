@@ -77,11 +77,11 @@ flowchart TB
 
 详见 [知识服务实现](../implementation/knowledge-implementation.md)（实现细节）与本目录 [网络拓扑](network-topology.md)。
 
-## 启动与版本（v4.8.7）
+## 启动与版本（v4.8.8）
 
 | 项 | 说明 |
 |----|------|
-| 版本源 | 仓库根 `VERSION`（当前 4.8.7）→ `BENXI_VERSION` 镜像 tag |
+| 版本源 | 仓库根 `VERSION`（当前 4.8.8）→ `BENXI_VERSION` 镜像 tag |
 | 开发入口 | `./dev.sh docker`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
 | 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |
@@ -96,6 +96,8 @@ flowchart TB
 | DB 启动 | `auto` / `light` / `full` 分流；light 仅跑增量 DDL + 权限种子 |
 | 流式 API | 鉴权后 `detach_request_db` 归还连接池；SSE 轮询用独立短会话 |
 | Agent 工具循环 | `AgentLoopSession`：LLM/外部 I/O 前 `release_before_io()`，工具执行前 `open()`；supervisor / report 流式路径不再长占 `SessionLocal` |
+| SSE 取消（v4.8.8） | `stream_cancel`：客户端断开时协作中断 supervisor / tool loop / 子 Agent / 图谱 probe |
+| 工作时记忆（v4.8.8） | `agent_working_memory` 注入调度轨迹；与用户系统记忆 `MEMORY.md` 分离 |
 | 路由信号 | `agent_routing_signals` 集中 regex（浏览器/调度/复合句等），planner 与 supervisor 共用 |
 | 前端内存 | 对话/知识壳 KeepAlive；知识双面板 max=1；重型 chunk 异步加载 |
 | 进程退出 | 关闭 `last_seen` 线程池与后台 executor |

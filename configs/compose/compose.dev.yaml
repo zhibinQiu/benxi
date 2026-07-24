@@ -10,7 +10,7 @@
 
 services:
   api:
-    image: benxi-api-runtime:${BENXI_VERSION:-4.8.7}
+    image: benxi-api-runtime:${BENXI_VERSION:-4.8.8}
     build:
       context: ../..
       dockerfile: backend/Dockerfile
@@ -27,7 +27,6 @@ services:
       - ../../backend/workers:/app/workers:ro
       - ../../RELEASE.md:/app/RELEASE.md:ro
       - ${DATA_ROOT:-../../data}/pageindex:/app/.run/pageindex
-      - ${DATA_ROOT:-../../data}/free-web-ai-profile:/root/.free-web-ai-profile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -36,13 +35,12 @@ services:
       RAGFLOW_MYSQL_HOST: knowflow-mysql
 
   worker:
-    image: benxi-api-runtime:${BENXI_VERSION:-4.8.7}
+    image: benxi-api-runtime:${BENXI_VERSION:-4.8.8}
     shm_size: "512mb"
     volumes:
       - ../../backend/app:/app/app:ro
       - ../../backend/workers:/app/workers:ro
       - ${DATA_ROOT:-../../data}/pageindex:/app/.run/pageindex
-      - ${DATA_ROOT:-../../data}/free-web-ai-profile:/root/.free-web-ai-profile:ro
     environment:
       SPEECH_SERVICE_URL: http://host.docker.internal:8765
 

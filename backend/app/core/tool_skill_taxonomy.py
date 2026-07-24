@@ -461,7 +461,6 @@ def is_skill_runtime_tool(name: str) -> bool:
 # --- 内置领域 Skill ---
 SKILL_BROWSER_AUTOMATION = "browser-automation"
 SKILL_SKILL_DEV = "skill-development"
-SKILL_FREE_WEB_AI = "free-web-ai"
 SKILL_CARBON_QA = "carbon-qa"
 SKILL_KNOWLEDGE_QA = "knowledge-qa"
 SKILL_STOCK_DEEP_ANALYSIS = "stock-deep-analysis"
@@ -497,7 +496,6 @@ AGENT_DEFAULT_SKILLS: dict[str, tuple[str, ...]] = {
 
 # 内置系统 Skill 名称集合
 BUILTIN_SKILL_NAMES: frozenset[str] = frozenset({
-    SKILL_FREE_WEB_AI,
     SKILL_CARBON_QA,
     SKILL_KNOWLEDGE_QA,
     SKILL_STOCK_DEEP_ANALYSIS,

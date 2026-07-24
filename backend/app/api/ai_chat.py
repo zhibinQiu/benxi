@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
@@ -251,6 +251,7 @@ async def ai_home_chat_stream(
     body: AiChatRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    request: Request,
 ) -> StreamingResponse:
     user_id = user.id
 
@@ -266,7 +267,7 @@ async def ai_home_chat_stream(
             yield payload
 
     return StreamingResponse(
-        stream_sse_payloads(db, payloads),
+        stream_sse_payloads(db, payloads, request=request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -421,6 +422,7 @@ def resume_from_checkpoint(
     body: _ResumeCheckpointRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    request: Request,
 ) -> StreamingResponse:
     """从 checkpoint 恢复 Agent 执行。
 
@@ -478,6 +480,7 @@ def resume_from_checkpoint(
                 checkpoint_id=checkpoint_id,
                 conversation_id=None,
             ),
+            request=request,
         ),
         media_type="text/event-stream",
         headers={
@@ -486,3 +489,37 @@ def resume_from_checkpoint(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+class AiChatFeedbackIn(BaseModel):
+    rating: str = Field(..., description="like")
+    question: str = Field(..., min_length=1)
+    answer: str = Field(..., min_length=1)
+    conversation_id: str | None = None
+
+
+@router.post("/feedback", response_model=ApiResponse[dict])
+async def submit_ai_chat_feedback(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    body: AiChatFeedbackIn,
+) -> ApiResponse[dict]:
+    """点赞终稿：将问答摘要写入知识图谱，供后续关键词命中直答。"""
+    from app.core.exceptions import bad_request, forbidden
+    from app.core.permissions import user_has_semantic_layer_permission
+    from app.services.kg_liked_qa_service import upsert_liked_qa_to_kg
+
+    rating = (body.rating or "").strip().lower()
+    if rating != "like":
+        raise bad_request("目前仅支持 rating=like")
+    if not user_has_semantic_layer_permission(db, user):
+        raise forbidden("无知识图谱权限，无法写入点赞问答")
+    result = await upsert_liked_qa_to_kg(
+        user_id=str(user.id),
+        question=body.question,
+        answer=body.answer,
+        conversation_id=body.conversation_id,
+    )
+    if not result.get("ok"):
+        raise bad_request(str(result.get("error") or "写入知识图谱失败"))
+    return ApiResponse(data=result)

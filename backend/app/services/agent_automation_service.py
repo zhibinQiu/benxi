@@ -217,18 +217,19 @@ def update_automation(
 
         raise not_found("定时任务不存在")
 
-    if body.name is not None:
-        row.name = body.name.strip()
-    if body.prompt is not None:
-        row.prompt = body.prompt.strip()
-    if body.frequency is not None:
-        row.frequency = body.frequency
-    if body.starts_at is not None:
-        row.starts_at = _as_utc(body.starts_at)
-    if body.ends_at is not None:
-        row.ends_at = _as_utc(body.ends_at)
-    if body.enabled is not None:
-        row.enabled = bool(body.enabled)
+    data = body.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        row.name = str(data["name"]).strip()
+    if "prompt" in data and data["prompt"] is not None:
+        row.prompt = str(data["prompt"]).strip()
+    if "frequency" in data and data["frequency"] is not None:
+        row.frequency = data["frequency"]
+    if "starts_at" in data:
+        row.starts_at = _as_utc(data["starts_at"])
+    if "ends_at" in data:
+        row.ends_at = _as_utc(data["ends_at"])
+    if "enabled" in data and data["enabled"] is not None:
+        row.enabled = bool(data["enabled"])
 
     starts = _as_utc(row.starts_at)
     ends = _as_utc(row.ends_at)
@@ -278,19 +279,33 @@ def list_due_automations(db: Session, *, now: datetime | None = None) -> list[Ag
     )
 
 
-async def execute_automation(automation_id: uuid.UUID) -> dict[str, Any]:
-    """执行一条自动化：以提示词调用本析智能，并写执行记录 + 系统通知。"""
+async def execute_automation(
+    automation_id: uuid.UUID,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    """执行一条自动化：提示词原样走本析智能（与 /chat 同一套提示词与编排），结果推通知。
+
+    force=True 时跳过 enabled 检查（手动「立即执行」）。
+    调用 chat 前关闭 Session，只传 user_id，避免 detached User。
+    """
     from app.database import SessionLocal
     from app.services.ai_chat_service import chat_with_ai_agent
     from app.services.notification_service import create_notification
 
+    prompt: str
+    user_id: uuid.UUID
+    auto_name: str
+    run_id: uuid.UUID
+
     db = SessionLocal()
-    run: AgentAutomationRun | None = None
     try:
         row = db.get(AgentAutomation, automation_id)
         if not row:
             return {"ok": False, "reason": "not_found"}
-        if row.cancelled_at is not None or not row.enabled:
+        if row.cancelled_at is not None:
+            return {"ok": False, "reason": "disabled"}
+        if not force and not row.enabled:
             return {"ok": False, "reason": "disabled"}
 
         now = _utcnow()
@@ -300,9 +315,12 @@ async def execute_automation(automation_id: uuid.UUID) -> dict[str, Any]:
             db.commit()
             return {"ok": False, "reason": "expired"}
 
-        user = db.get(User, row.user_id)
-        if user is None:
+        if db.get(User, row.user_id) is None:
             return {"ok": False, "reason": "user_missing"}
+
+        prompt = (row.prompt or "").strip()
+        if not prompt:
+            return {"ok": False, "reason": "empty_prompt"}
 
         run = AgentAutomationRun(
             automation_id=row.id,
@@ -313,72 +331,75 @@ async def execute_automation(automation_id: uuid.UUID) -> dict[str, Any]:
         db.add(run)
         # 先推进 next_run，避免并发重复触发
         row.last_run_at = now
-        row.next_run_at = compute_next_run_at(
-            row.frequency,
-            from_dt=now,
-            starts_at=row.starts_at,
-            ends_at=row.ends_at,
-            after_run=True,
-        )
-        if row.frequency == "once" or row.next_run_at is None:
-            row.enabled = False
-            row.next_run_at = None
+        if row.enabled:
+            row.next_run_at = compute_next_run_at(
+                row.frequency,
+                from_dt=now,
+                starts_at=row.starts_at,
+                ends_at=row.ends_at,
+                after_run=True,
+            )
+            if row.frequency == "once" or row.next_run_at is None:
+                row.enabled = False
+                row.next_run_at = None
         db.commit()
         db.refresh(run)
 
-        prompt = (
-            f"【定时任务：{row.name}】\n"
-            f"请按以下提示词完成任务，并给出简洁可执行的结果：\n\n"
-            f"{row.prompt}"
-        )
         user_id = row.user_id
         auto_name = row.name
         run_id = run.id
-
-        try:
-            result = await chat_with_ai_agent(
-                message=prompt,
-                history=[],
-                db=db,
-                user=user,
-                conversation_id=None,
-            )
-            reply = str((result or {}).get("reply") or "").strip()
-            summary = reply[:2000] if reply else "（无文本回复）"
-            status = "succeeded"
-            error = None
-        except Exception as exc:
-            _logger.exception("automation execute failed id=%s", automation_id)
-            summary = None
-            status = "failed"
-            error = str(exc)[:1000]
-
-        # chat_with_ai_agent 可能已 release db；重新取会话
-        db2 = SessionLocal()
-        try:
-            run2 = db2.get(AgentAutomationRun, run_id)
-            if run2:
-                run2.status = status
-                run2.result_summary = summary
-                run2.error = error
-                run2.finished_at = _utcnow()
-            title = f"定时任务「{auto_name}」{'完成' if status == 'succeeded' else '失败'}"
-            body = (summary or error or "")[:500]
-            create_notification(
-                db2,
-                user_id=user_id,
-                title=title,
-                body=body,
-                link="/automation",
-            )
-            db2.commit()
-        finally:
-            db2.close()
-
-        return {"ok": status == "succeeded", "run_id": str(run_id), "status": status}
     except Exception:
         db.rollback()
         _logger.exception("automation execute error id=%s", automation_id)
         raise
     finally:
         db.close()
+
+    try:
+        # 与 ai_home_chat 同一入口：相同提示词层、路由与编排；仅交付改为通知。
+        result = await chat_with_ai_agent(
+            message=prompt,
+            history=[],
+            db=None,
+            user=user_id,
+            conversation_id=None,
+            persist_conversation=False,
+            write_memory=False,
+        )
+        reply = str((result or {}).get("reply") or "").strip()
+        if reply:
+            summary = reply[:2000]
+            status = "succeeded"
+            error = None
+        else:
+            summary = None
+            status = "failed"
+            error = "智能体未能生成有效回复"
+    except Exception as exc:
+        _logger.exception("automation execute failed id=%s", automation_id)
+        summary = None
+        status = "failed"
+        error = str(exc)[:1000]
+
+    db2 = SessionLocal()
+    try:
+        run2 = db2.get(AgentAutomationRun, run_id)
+        if run2:
+            run2.status = status
+            run2.result_summary = summary
+            run2.error = error
+            run2.finished_at = _utcnow()
+        title = f"定时任务「{auto_name}」{'完成' if status == 'succeeded' else '失败'}"
+        body = (summary or error or "")[:2000]
+        create_notification(
+            db2,
+            user_id=user_id,
+            title=title,
+            body=body,
+            link="/automation",
+        )
+        db2.commit()
+    finally:
+        db2.close()
+
+    return {"ok": status == "succeeded", "run_id": str(run_id), "status": status}

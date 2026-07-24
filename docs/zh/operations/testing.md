@@ -1,17 +1,18 @@
 # 测试
 
-## v4.8.7 轻量化验证清单
+## v4.8.8 轻量化验证清单
 
-本次版本新增双碳履约策略、OpenAI 兼容 API、语义层与定时任务。发布前建议：
+本次版本聚焦图谱直答、Agent LLM 路由、工作时记忆、SSE 取消与免费网页 AI 下线。发布前建议：
 
 | 层级 | 命令 / 检查 |
 |------|-------------|
-| 后端单元测试 | `cd platform && pytest tests/ -q` |
-| 前端 lint + 构建 | `cd platform-frontend && npm run lint && npm run build` |
-| 知识检索流式 | 知识检索页勾选文档 → 问答 → 引用与 workflow 正常 |
-| 双碳 / 问数 / 报告 | 各对话页流式输出与 `createPlatformChatStream` 一致 |
-| 对比任务 SSE | 发起文档对比 → 进度推送正常；长时间轮询不耗尽 DB 连接池 |
-| 知识双面板 | 检索 ↔ 报告切换流畅；会话状态由 sessionStorage 恢复 |
+| 后端单元测试 | `cd backend && pytest tests/ -q` |
+| 关键路由/取消单测 | `pytest tests/test_llm_agent_route.py tests/test_stream_cancel.py tests/test_agent_working_memory.py tests/test_kg_direct_and_plan_ui.py tests/test_subagent_loop_and_kg_skip.py -q` |
+| 前端 lint + 构建 | `cd frontend && npm run lint && npm run build` |
+| 图谱直答 | 点赞过的问答或图谱实体相关提问 → 无 tool loop 直接出字 |
+| 流式取消 / 侧重试 | AI 对话生成中点停止或用户消息侧重试 → 后端协作中断 |
+| 定时任务 | 编辑已有任务 → 立即执行 → 与 `/chat` 编排一致 |
+| 文档库图标视图 | 文件夹内切换列表/图标，偏好可恢复 |
 | AIP | `pytest tests/test_aip_*.py -q`；Agent Skills 管理页登记外部智能体 |
 
 ## 平台后端

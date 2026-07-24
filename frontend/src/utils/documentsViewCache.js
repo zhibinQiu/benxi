@@ -5,6 +5,8 @@ import { trimBoundedMap } from "./boundedMap.js";
 const LIBRARY_KEY = "platform:documents-library:v1";
 const KB_FOLDERS_PREFIX = "platform:documents-kb-folders:v1:";
 const DOC_LIST_PREFIX = "platform:documents-list:v1:";
+/** 文件夹内文档列表展示模式：list | icons（localStorage 持久化） */
+const FOLDER_VIEW_MODE_KEY = "platform:documents-folder-view:v1";
 
 const LIBRARY_TTL_MS = 120 * 1000;
 const KB_FOLDERS_TTL_MS = 45 * 1000;
@@ -110,6 +112,27 @@ export function clearDocumentsViewCache() {
       }
     }
     keys.forEach((key) => sessionStorage.removeItem(key));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** @returns {"list"|"icons"} */
+export function readDocumentsFolderViewMode() {
+  try {
+    const v = localStorage.getItem(FOLDER_VIEW_MODE_KEY);
+    if (v === "list") return "list";
+    if (v === "icons") return "icons";
+    return "icons";
+  } catch {
+    return "icons";
+  }
+}
+
+/** @param {"list"|"icons"} mode */
+export function writeDocumentsFolderViewMode(mode) {
+  try {
+    localStorage.setItem(FOLDER_VIEW_MODE_KEY, mode === "icons" ? "icons" : "list");
   } catch {
     /* ignore */
   }

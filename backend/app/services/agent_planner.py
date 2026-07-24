@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -101,18 +102,22 @@ def execution_plan_summary_for_ui(plan: AgentExecutionPlan) -> str:
     parts: list[str] = []
     if plan.source == "cache":
         parts.append("命中问题缓存")
-    if plan.intent:
-        parts.append(_execution_plan_intent_label(plan))
+    intent_label = _execution_plan_intent_label(plan) if plan.intent else ""
+    if intent_label:
+        parts.append(intent_label)
     if plan.direct_answer:
         parts.append("直接回答")
     else:
         step_summary = _execution_plan_step_summary(plan)
-        if step_summary:
+        # 避免「处理用户请求：处理用户请求」这类重复拼接
+        if step_summary and step_summary != intent_label:
             parts.append(step_summary)
     if plan.uploaded_skill and plan.intent != "执行发展技能":
         parts.append(f"匹配技能「{plan.uploaded_skill}」")
     if plan.reasoning and len(parts) < 2:
-        parts.append(plan.reasoning[:120])
+        reason = plan.reasoning[:120]
+        if reason not in parts and reason != intent_label:
+            parts.append(reason)
     return "；".join(parts)[:240] or "已规划"
 
 
@@ -720,6 +725,14 @@ def _coerce_skill_first_plan(
     if plan.intent == SKILL_MGMT_INTENT or is_skill_management_message(msg):
         return plan
 
+    # 本轮已锁定 kg_query（图谱优先路径）：禁止被 Skill 语义匹配覆盖
+    if (
+        "kg_query" in (plan.allowed_tools or ())
+        and "web_search" in (plan.blocked_tools or ())
+        and not plan.uploaded_skill
+    ):
+        return plan
+
     uploaded = plan.uploaded_skill
     if not uploaded and uploaded_names:
         uploaded = match_uploaded_skill_for_message(
@@ -944,6 +957,161 @@ _skill_name_sets = _plannable_skill_names  # type: ignore[assignment]
 
 
 _KG_PLANNING_USER_LABEL = "【语义层决策上下文（规划参考）】"
+_KG_PROBE_TIMEOUT_SEC = 0.45
+_KG_DECISION_CACHE_TTL = 45.0
+# key → (monotonic_ts, planning_text, can_direct, direct_reply)
+_KG_DECISION_CACHE: dict[str, tuple[float, str, bool, str]] = {}
+
+
+def _kg_decision_cache_key(user_id: str, question: str) -> str:
+    return f"{user_id}::{hash((question or '').strip())}"
+
+
+def peek_cached_kg_planning_text(user_id: str, question: str) -> str:
+    """读取本轮短时缓存的图谱规划文本（无 IO）。"""
+    key = _kg_decision_cache_key(str(user_id), question)
+    entry = _KG_DECISION_CACHE.get(key)
+    if entry is None:
+        return ""
+    ts, text, _can, _reply = entry
+    if time.monotonic() - ts > _KG_DECISION_CACHE_TTL:
+        _KG_DECISION_CACHE.pop(key, None)
+        return ""
+    return text or ""
+
+
+def peek_cached_kg_direct_reply(user_id: str, question: str) -> str:
+    """读取本轮短时缓存的图谱直答正文（无 IO）。"""
+    key = _kg_decision_cache_key(str(user_id), question)
+    entry = _KG_DECISION_CACHE.get(key)
+    if entry is None:
+        return ""
+    ts, _text, _can, reply = entry
+    if time.monotonic() - ts > _KG_DECISION_CACHE_TTL:
+        _KG_DECISION_CACHE.pop(key, None)
+        return ""
+    return (reply or "").strip()
+
+
+def _store_kg_decision_cache(
+    user_id: str,
+    question: str,
+    *,
+    planning_text: str,
+    can_direct: bool,
+    direct_reply: str,
+) -> None:
+    if len(_KG_DECISION_CACHE) >= 256:
+        _KG_DECISION_CACHE.clear()
+    key = _kg_decision_cache_key(str(user_id), question)
+    _KG_DECISION_CACHE[key] = (
+        time.monotonic(),
+        planning_text or "",
+        bool(can_direct),
+        (direct_reply or "").strip(),
+    )
+
+
+async def resolve_kg_decision_context(
+    db: Session,
+    user: User,
+    question: str,
+    history: list[AiChatMessage] | None = None,
+    *,
+    mode: str = "probe",
+    timeout_sec: float | None = None,
+):
+    """规划前构建语义层决策上下文；无权限或失败时返回 None。
+
+    调度默认路径：先快速关键词匹配 → 无命中则立刻结束 → 有命中再浅层推理。
+    mode=probe：depth=1、无传递推理、短超时。
+    mode=full：完整推理。
+    """
+    import asyncio
+
+    from app.benxi_semantic import (
+        SemanticLayer,
+        can_answer_from_decision,
+        try_direct_answer_from_decision,
+    )
+    from app.benxi_semantic.models import AgentDecisionContext
+    from app.core.conversation_turn_context import effective_question_for_retrieval
+    from app.core.neo4j import get_neo4j
+    from app.core.permissions import user_has_semantic_layer_permission
+
+    if not user_has_semantic_layer_permission(db, user):
+        return None
+    text = effective_question_for_retrieval(question, history).strip()
+    if not text:
+        return None
+
+    uid = str(user.id)
+    # 同轮已探测过（含超时空结果哨兵）：不再打 Neo4j
+    cache_key = _kg_decision_cache_key(uid, text)
+    cached_entry = _KG_DECISION_CACHE.get(cache_key)
+    if cached_entry is not None:
+        if time.monotonic() - cached_entry[0] <= _KG_DECISION_CACHE_TTL:
+            return None
+        _KG_DECISION_CACHE.pop(cache_key, None)
+
+    probe = (mode or "probe").strip().lower() != "full"
+    depth = 1 if probe else 3
+    include_inferred = not probe
+    wait = (
+        float(timeout_sec)
+        if timeout_sec is not None
+        else (_KG_PROBE_TIMEOUT_SEC if probe else 5.0)
+    )
+
+    async def _probe() -> AgentDecisionContext | None:
+        driver = await get_neo4j()
+        layer = SemanticLayer(driver)
+        # 1) 仅关键词匹配（快）；无命中则不进入邻域搜索
+        matched = await layer.query.match_entities_in_question(text, uid, limit=5)
+        if not matched:
+            return None
+        # 2) 有关键词再做浅层/完整决策上下文
+        decision = await layer.build_decision_context(
+            text,
+            uid,
+            max_depth=depth,
+            include_inferred=include_inferred,
+        )
+        return decision if isinstance(decision, AgentDecisionContext) else None
+
+    try:
+        from app.core.stream_cancel import await_unless_cancelled, raise_if_stream_cancelled
+
+        raise_if_stream_cancelled()
+        decision = await await_unless_cancelled(
+            asyncio.wait_for(_probe(), timeout=max(0.3, wait)),
+            poll_sec=0.15,
+        )
+        if decision is None:
+            _store_kg_decision_cache(
+                uid, text, planning_text="", can_direct=False, direct_reply=""
+            )
+            return None
+        planning = decision.planning_text(max_chars=1800)
+        direct = try_direct_answer_from_decision(decision, text) or ""
+        _store_kg_decision_cache(
+            uid,
+            text,
+            planning_text=planning,
+            can_direct=can_answer_from_decision(decision),
+            direct_reply=direct,
+        )
+        return decision
+    except asyncio.TimeoutError:
+        _logger.warning("Agent 规划前语义层探测超时 mode=%s wait=%.1fs", mode, wait)
+        _store_kg_decision_cache(
+            uid, text, planning_text="", can_direct=False, direct_reply=""
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        _logger.warning("Agent 规划前语义层加载失败: %s", exc)
+    return None
 
 
 async def resolve_kg_planning_context(
@@ -951,28 +1119,26 @@ async def resolve_kg_planning_context(
     user: User,
     question: str,
     history: list[AiChatMessage] | None = None,
+    *,
+    mode: str = "probe",
 ) -> str:
-    """规划前构建语义层决策上下文，供消歧与工具选型参考。"""
+    """规划前构建语义层决策上下文文本，供消歧与工具选型参考。"""
     from app.core.conversation_turn_context import effective_question_for_retrieval
-    from app.core.permissions import user_has_semantic_layer_permission
 
-    if not user_has_semantic_layer_permission(db, user):
-        return ""
     text = effective_question_for_retrieval(question, history).strip()
-    if not text:
+    cached = peek_cached_kg_planning_text(str(user.id), text)
+    if cached:
+        return cached
+    # 空缓存哨兵：已探测无结果
+    key = _kg_decision_cache_key(str(user.id), text)
+    if key in _KG_DECISION_CACHE:
         return ""
-    try:
-        from app.core.neo4j import get_neo4j
-        from app.benxi_semantic import SemanticLayer
-
-        driver = await get_neo4j()
-        decision = await SemanticLayer(driver).build_decision_context(
-            text, str(user.id), max_depth=3
-        )
-        return decision.planning_text(max_chars=1800)
-    except Exception as exc:
-        _logger.warning("Agent 规划前语义层加载失败: %s", exc)
-    return ""
+    decision = await resolve_kg_decision_context(
+        db, user, question, history=history, mode=mode
+    )
+    if decision is None:
+        return peek_cached_kg_planning_text(str(user.id), text)
+    return decision.planning_text(max_chars=1800)
 
 
 def _planning_system_prompt(
@@ -1032,6 +1198,25 @@ async def resolve_execution_plan(
         )
 
     specialist_id = (agent_id or "").strip()
+
+    # 系统数据：仅当本轮图谱决策已指向 kg_query / 系统数据意图时优先；
+    # 避免无图谱命中时压过专精域规划。
+    if not force_replan and (kg_planning_context or "").strip():
+        from app.benxi_semantic.intents import (
+            INTENT_ORG_MEMBERS,
+            INTENT_PERSON_AFFILIATION,
+            detect_intent_tags,
+        )
+
+        tags = set(detect_intent_tags(message))
+        kg_prefers = (
+            "优先工具: kg_query" in (kg_planning_context or "")
+            or "kg_query" in (kg_planning_context or "")
+        )
+        if kg_prefers or tags & {INTENT_PERSON_AFFILIATION, INTENT_ORG_MEMBERS}:
+            platform_data_plan = _rule_plan_for_platform_system_data(db, user, message)
+            if platform_data_plan is not None:
+                return platform_data_plan
 
     if specialist_id in _SPECIALIST_DOMAIN_AGENTS and not force_replan:
         domain_plan = _rule_plan_for_specialist_domain(

@@ -1,5 +1,21 @@
 # 发布说明
 
+## 4.8.8（v4.8.8）— 图谱直答、Agent LLM 路由与工作记忆
+
+- **路由流程重构**：硬规则 → 知识图谱可直答 → Skill 混合 RAG → LLM 动态读 `agents.md` 选型 → orchestrator 兜底；业务偏好收敛到目录文件
+- **Skill 混合召回**：Embedding 与关键词加权融合；`Don't use when` 参与负向打分；无专精命中时才走 LLM Agent 路由
+- **图谱直答**：规划/路由前快速 probe；`benxi_semantic/answers` 按置信度判定，命中则跳过 Skill 与 tool loop，SSE 立刻推送正文
+- **点赞问答入图谱**：对话点赞经 `kg_liked_qa_service` 写入用户图谱，供后续关键词命中直答
+- **工作时记忆**：`agent_working_memory` 记录路由/工具/失败轨迹并注入调度，与系统 `MEMORY.md` 分离
+- **SSE 流式取消**：`stream_cancel` 在客户端断开时协作中断，贯穿 supervisor、tool loop、子 Agent 与图谱 probe
+- **子 Agent / Supervisor**：禁止空话当结论；多关键词并行检索；证据兜底；citations/kg_context 回传；支持 sequential/parallel 专精 hop
+- **对话体验**：首包加速；用户消息侧重试；规划 UI 去重；回复合成过滤发现类工具过程行
+- **文档库**：文件夹内列表/图标双视图（`DocumentFileIcon` / `DocumentIconCard`）
+- **定时任务**：与 `/chat` 同一编排；支持编辑与 partial patch；手动执行可 force
+- **功能下线**：移除免费网页 AI（API / Feature / integrations / compose 卷挂载）；删除 `featureDisplay.js`
+- **测试**：工作时记忆、流式取消、图谱直答、LLM Agent 路由、子 Agent loop 等单测
+- **版本统一**：VERSION 同步 API / 前端 / Docker 镜像 tag（4.8.8）
+
 ## 4.8.7（v4.8.7）— 双碳履约策略、OpenAI 兼容 API、语义层与定时任务
 
 - **双碳履约策略**：控排企业档案、排放/CEA/CCER 台账、三套履约策略、行情同步与价格预测、综合分析报告与导出

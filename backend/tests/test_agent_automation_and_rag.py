@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
+import pytest
 
+from app.core.agent_loop_session import coerce_user_id
 from app.core.routing_catalog_md import RoutingEntry
-from app.services.agent_automation_service import compute_next_run_at
+from app.services.agent_automation_service import compute_next_run_at, execute_automation
 from app.services.agent_skill_rag import (
     invalidate_agent_embedding_index,
     rank_agents_by_embedding,
@@ -103,3 +106,97 @@ def test_rank_agents_by_embedding_prefers_matching_entry(monkeypatch):
     ranked = rank_agents_by_embedding(None, "今天碳配额价格", limit=2)
     assert ranked is not None
     assert ranked[0][1].id == "carbon"
+
+
+def test_coerce_user_id_accepts_detached_expired_user():
+    """commit+close 后 ORM User 属性过期；coerce_user_id 仍应能取出 id。"""
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models.org import User
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).limit(1)).first()
+        if user is None:
+            pytest.skip("no user in db")
+        expected = user.id
+        db.commit()
+        db.close()
+    except Exception:
+        db.close()
+        raise
+
+    assert coerce_user_id(user) == expected
+    assert coerce_user_id(expected) == expected
+
+
+def test_execute_automation_passes_user_id_not_orm(monkeypatch):
+    """立即执行不得把 Session 绑定的 User 传入 chat（避免 DetachedInstanceError）。"""
+    import asyncio
+
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models.agent_automation import AgentAutomation
+    from app.models.org import User
+
+    db = SessionLocal()
+    try:
+        user = db.scalars(select(User).limit(1)).first()
+        if user is None:
+            pytest.skip("no user in db")
+        row = AgentAutomation(
+            user_id=user.id,
+            name="unit-test-auto",
+            prompt="ping",
+            frequency="daily",
+            enabled=True,
+            next_run_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        auto_id = row.id
+        uid = user.id
+    finally:
+        db.close()
+
+    seen: dict = {}
+
+    async def _fake_chat(**kwargs):
+        seen["user"] = kwargs.get("user")
+        seen["db"] = kwargs.get("db")
+        seen["message"] = kwargs.get("message")
+        seen["extra"] = kwargs.get("extra_context_instruction")
+        seen["persist"] = kwargs.get("persist_conversation")
+        return {"reply": "七月 AI 事件摘要：模型发布与开源进展若干条。"}
+
+    monkeypatch.setattr(
+        "app.services.ai_chat_service.chat_with_ai_agent",
+        _fake_chat,
+    )
+    monkeypatch.setattr(
+        "app.services.notification_service.create_notification",
+        lambda *a, **k: None,
+    )
+
+    try:
+        result = asyncio.run(execute_automation(auto_id, force=True))
+        assert result.get("ok") is True
+        assert seen["db"] is None
+        assert seen["user"] == uid
+        assert isinstance(seen["user"], uuid.UUID)
+        assert seen["message"] == "ping"
+        # 与聊天共用同一入口：不注入定时任务专用提示词
+        assert seen["extra"] is None
+        assert seen["persist"] is False
+    finally:
+        db2 = SessionLocal()
+        try:
+            r = db2.get(AgentAutomation, auto_id)
+            if r:
+                db2.delete(r)
+                db2.commit()
+        finally:
+            db2.close()

@@ -37,3 +37,7 @@ class AgentRoutePlan:
     unsupported_part: str = ""
     capability_gap_instruction: str = ""
     missing_capability_receipt: dict[str, Any] | None = None
+    # 硬规则之后知识图谱已足以作答时，由 Supervisor 直接下发，跳过 Skill/Agent 匹配
+    direct_reply: str = ""
+    # 本轮已检索的图谱规划文本，供后续 hop 复用，避免重复推理
+    kg_context_text: str = ""

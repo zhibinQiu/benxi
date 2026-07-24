@@ -487,6 +487,39 @@ def matches_research_intent(message: str) -> bool:
     return bool(RESEARCH_INTENT_RE.search((message or "").strip()))
 
 
+def should_skip_kg_probe(message: str) -> bool:
+    """仅跳过明显无需图谱探测的消息（寒暄/画图/Skill 管理/定时）。
+
+    调度层默认先做快速关键词探测：有关键词再深入图谱搜索，无关键词再 Skill/Agent 匹配。
+    不按「对比/联网调研」等业务问题类型特判跳过。
+    """
+    msg = (message or "").strip()
+    if not msg:
+        return True
+    if is_chitchat_like_skip_kg(msg):
+        return True
+    if is_diagram_generation_message(msg) or is_skill_management_message(msg):
+        return True
+    if matches_scheduler_intent(msg):
+        return True
+    return False
+
+
+def is_chitchat_like_skip_kg(message: str) -> bool:
+    """轻量寒暄判定，避免在 should_skip_kg_probe 中循环 import agent_intent。"""
+    text = (message or "").strip()
+    if not text or len(text) > 40:
+        return False
+    return bool(
+        re.fullmatch(
+            r"(?:你好|您好|hi|hello|嗨|谢谢|感谢|再见|拜拜|在吗|好的|明白|收到)"
+            r"[!！?？。.,，~～\s]*",
+            text,
+            re.I,
+        )
+    )
+
+
 def is_compound_sequential_message(message: str) -> bool:
     return bool(COMPOUND_SEQUENTIAL_RE.search((message or "").strip()))
 

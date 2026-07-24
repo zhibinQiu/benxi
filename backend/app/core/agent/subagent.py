@@ -64,6 +64,10 @@ _PLATFORM_RUNTIME = SubagentRuntime(
                 "3. **禁止近义重试**：不得在仅改词序、同义词、日期、\"今天/实时\" 等情况下反复搜索同一主题\n"
                 "4. 搜索无结果时：最多再换 **1 个** 明显不同的关键词；仍无则如实告知并建议用户改用权威渠道\n"
                 "5. 所有结论须有检索支撑；禁止编造实时数据\n\n"
+                "## 输出纪律（必须遵守）\n"
+                "- 第一轮若需检索：只发 tool_calls，不要写「我会搜索/正在查询」\n"
+                "- 工具返回后：必须输出面向任务的完整中文结论，并附来源链接或出处\n"
+                "- 禁止把「计划去搜索」当成最终结论交给父智能体\n\n"
                 "## 约束\n"
                 "- 最多 8 轮；简单题力争 1 轮工具 + 1 轮作答结束\n"
                 "- 回复使用中文，技术术语保留英文"
@@ -511,6 +515,7 @@ async def execute_context_subagent(
         return state
 
     async def execute_tool_bound(tool_name: str, raw_args: Any) -> str:
+        # child_state_holder 已由 execute_subagent 绑定时，禁止再建孤儿 state
         if loop_holder["state"] is None:
             init_child_state()
         _push_tool_start(loop_state, tool_name, raw_args)
@@ -625,6 +630,7 @@ async def execute_context_subagent(
             build_tool_specs=build_tool_specs,
             invoke_skill=invoke_skill_step,
             append_retrieval=append_retrieval_context,
+            child_state_holder=loop_holder,
         ),
         kind=sub_kind,
         task=task_text,

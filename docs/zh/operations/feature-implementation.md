@@ -1,4 +1,4 @@
-# 功能实现说明（v4.8.7）
+# 功能实现说明（v4.8.8）
 
 > **本文说明各功能如何运转**，含关键方法与提示词落点。  
 > 架构分层见 [系统架构](architecture.md)；Agent Skills 详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)（含 §10 Prompt、§11 调用链）；子智能体模型见 [Agent 架构](../agent-architecture.md)。

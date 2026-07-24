@@ -22,6 +22,9 @@ _DENIAL_MARKERS = frozenset({
     "无定时提醒", "建议您手动", "建议使用手机", "手机自带",
     "手机计时器", "闹钟功能", "不具备", "不支持",
     "请联系系统管理员", "抱歉，这次没能",
+    "无法执行联网", "没有可用的网络", "没有可用的搜索",
+    "系统中没有可用", "未配置任何可用的搜索", "没有配置任何可用的搜索",
+    "没有可用的网络检索",
 })
 
 _USER_COMMAND_RE = re.compile(
@@ -30,6 +33,30 @@ _USER_COMMAND_RE = re.compile(
     r"args\s*=\s*\[",
     re.I,
 )
+
+# 调研/编排类工具前缀：过程行，不可当作动作确认回复
+_RESEARCH_TOOL_REPLY_NAMES = frozenset({
+    "invoke_context_subagent",
+    "invoke_skill",
+    "run_tool_batch",
+    "web_search",
+    "fetch_url_content",
+    "knowledge_retrieve",
+    "kg_query",
+    "carbon_policy",
+    "carbon_price",
+    "carbon_data",
+    "time_series_forecast",
+    "browser_run_task",
+    "browser_navigate",
+    "browser_snapshot",
+    # 发现/探查类：匹配目录不等于任务完成
+    "find_skills",
+    "search_tools",
+    "describe_tool",
+    "list_agent_skills",
+    "ask_user_choice",
+})
 
 # 规划/探查类工具摘要 — 仅作证据，不可当作子任务交付物
 _INTERNAL_OUTCOME_PREFIXES = (
@@ -74,7 +101,8 @@ _TOOL_STATUS_BODY_RE = re.compile(
     r"正在搜索|"
     r"发起搜索|"
     r"发起检索|"
-    r"本回合已执行相同检索"
+    r"本回合已执行相同检索|"
+    r"匹配\s*\d+\s*条\s*Skill"
     r")"
 )
 _TOOL_STATUS_SHORT_RE = re.compile(
@@ -88,23 +116,6 @@ _LIST_MARKER_RE = re.compile(r"^[-*•]\s+")
 _TOOL_JSON_DUMP_RE = re.compile(
     r"^[\w.\-_/]+[：:]\s*\{[\s\S]*\"ok\"\s*:",
 )
-# 调研/编排类工具前缀：过程行，不可当作动作确认回复
-_RESEARCH_TOOL_REPLY_NAMES = frozenset({
-    "invoke_context_subagent",
-    "invoke_skill",
-    "run_tool_batch",
-    "web_search",
-    "fetch_url_content",
-    "knowledge_retrieve",
-    "kg_query",
-    "carbon_policy",
-    "carbon_price",
-    "carbon_data",
-    "time_series_forecast",
-    "browser_run_task",
-    "browser_navigate",
-    "browser_snapshot",
-})
 
 _SKILL_RUN_OUTCOME_MARKERS = (
     "运行 Skill 脚本",
@@ -139,6 +150,18 @@ def is_internal_tool_outcome_line(line: str) -> bool:
     text = (line or "").strip()
     if not text:
         return True
+    bare = _LIST_MARKER_RE.sub("", text)
+    m = _TOOL_NAME_PREFIX_RE.match(bare)
+    if m:
+        tool_name = bare[: m.end()].rstrip("：: ").strip()
+        if tool_name in (
+            "find_skills",
+            "search_tools",
+            "describe_tool",
+            "list_agent_skills",
+            "ask_user_choice",
+        ):
+            return True
     for prefix in _INTERNAL_OUTCOME_PREFIXES:
         if text.startswith(f"{prefix}：") or text.startswith(f"{prefix}:"):
             return True
@@ -160,19 +183,20 @@ def is_tool_action_replay_line(line: str) -> bool:
         return True
     if _TOOL_JSON_DUMP_RE.match(text):
         return True
+    bare = _LIST_MARKER_RE.sub("", text)
     body = _strip_tool_line_decoration(text)
     if body.startswith("{") and '"ok"' in body[:80]:
         return True
-    m = _TOOL_NAME_PREFIX_RE.match(text)
+    m = _TOOL_NAME_PREFIX_RE.match(bare)
     if m:
-        tool_name = text[: m.end()].rstrip("：: ").strip()
+        tool_name = bare[: m.end()].rstrip("：: ").strip()
         if tool_name in _RESEARCH_TOOL_REPLY_NAMES:
             return True
         # 带 tool_name： 前缀的长文/多段内容是过程 dump，不是短动作确认
-        if len(text) > 240 or "\n" in text:
+        if len(bare) > 240 or "\n" in bare:
             return True
     for prefix in _TOOL_ACTION_REPLAY_PREFIXES:
-        if text.startswith(prefix) or body.startswith(prefix):
+        if text.startswith(prefix) or body.startswith(prefix) or bare.startswith(prefix):
             return True
     if _TOOL_STATUS_BODY_RE.match(body) or _TOOL_STATUS_SHORT_RE.match(body):
         return True
@@ -221,10 +245,9 @@ def is_substantive_deliverable(text: str, *, min_chars: int = 12) -> bool:
 def has_deliverable_evidence(loop_state: LoopState | None) -> bool:
     """工具循环是否已积累可合成交付物的证据（与交付物本身区分）。"""
     state = loop_state or {}
-    if list(state.get("tool_outcome_lines") or []):
-        return True
     if isinstance(state.get("agent_document_context"), dict):
-        return bool(str(state["agent_document_context"].get("full_text") or "").strip())
+        if str(state["agent_document_context"].get("full_text") or "").strip():
+            return True
     if list(state.get("retrieval_context_parts") or []):
         return True
     if str(state.get("deterministic_reply") or "").strip():
@@ -236,6 +259,16 @@ def has_deliverable_evidence(loop_state: LoopState | None) -> bool:
     # 子智能体已回传结论（use/search/execute）也算证据，供父层综合
     if latest_subagent_summary(state):
         return True
+    # find_skills / web_search 过程行不算交付证据
+    for raw in state.get("tool_outcome_lines") or []:
+        line = str(raw or "").strip()
+        if (
+            line
+            and not _outcome_line_failed(line)
+            and not is_internal_tool_outcome_line(line)
+            and not is_tool_action_replay_line(line)
+        ):
+            return True
     return False
 
 
@@ -261,6 +294,16 @@ def _subagent_summary_is_thin(summary: str) -> bool:
     text = (summary or "").strip()
     if not text:
         return True
+    # 「我会先搜索…」类空口承诺不得当作子智能体结论
+    if re.search(
+        r"(?:我会|我将|我先|接下来|正在|准备).{0,12}(?:搜索|检索|查询|调用|并行)"
+        r"|(?:先|马上|立刻).{0,8}(?:搜索|检索|查询)",
+        text,
+        re.I,
+    ) and len(text) < 400:
+        return True
+    if "未调用工具" in text or "未产出有效摘要" in text:
+        return True
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if not lines:
         return True
@@ -281,8 +324,11 @@ def build_deliverable_evidence_block(loop_state: LoopState | None) -> str:
 
     subagent = latest_subagent_summary(state)
     thin_subagent = bool(subagent) and _subagent_summary_is_thin(subagent)
-    if subagent:
+    if subagent and not thin_subagent:
         parts.append(f"【子智能体结论（优先引用）】\n{subagent[:6000]}")
+    elif subagent and thin_subagent:
+        # 薄摘要仅作备注，避免终稿优先引用「我会搜索」
+        parts.append(f"【子智能体过程备注（勿当事实）】\n{subagent[:800]}")
 
     doc_ctx = state.get("agent_document_context")
     if isinstance(doc_ctx, dict):

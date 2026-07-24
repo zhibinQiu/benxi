@@ -744,7 +744,6 @@ function onMenuSelect(key) {
                 :tab-count="chatTabCount"
                 :tab-streaming="tabStreaming"
                 :tab-has-content="tabHasContent"
-                :intro-text="t('aiHome.chatHeaderSub')"
                 @switch="switchChatTab"
                 @close="closeChatTab"
                 @create="createChatTab"

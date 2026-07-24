@@ -4,6 +4,7 @@ import {
   CopyOutline,
   RefreshOutline,
   ShareSocialOutline,
+  ThumbsUpOutline,
 } from "@vicons/ionicons5";
 import { useI18n } from "../composables/useI18n.js";
 
@@ -16,9 +17,14 @@ defineProps({
   disabled: { type: Boolean, default: false },
   showRetry: { type: Boolean, default: false },
   retryDisabled: { type: Boolean, default: false },
+  showCopy: { type: Boolean, default: true },
+  showShare: { type: Boolean, default: true },
+  showLike: { type: Boolean, default: false },
+  liked: { type: Boolean, default: false },
+  likeDisabled: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["copy", "share", "retry"]);
+const emit = defineEmits(["copy", "share", "retry", "like"]);
 
 const { t } = useI18n();
 </script>
@@ -31,6 +37,7 @@ const { t } = useI18n();
     :aria-label="t('chat.messageActions')"
   >
     <button
+      v-if="showCopy"
       type="button"
       class="chat-bubble-actions__btn"
       :disabled="disabled"
@@ -41,6 +48,7 @@ const { t } = useI18n();
       <n-icon :size="16" :component="CopyOutline" />
     </button>
     <button
+      v-if="showShare"
       type="button"
       class="chat-bubble-actions__btn"
       :disabled="disabled"
@@ -49,6 +57,18 @@ const { t } = useI18n();
       @click="emit('share')"
     >
       <n-icon :size="16" :component="ShareSocialOutline" />
+    </button>
+    <button
+      v-if="showLike"
+      type="button"
+      class="chat-bubble-actions__btn"
+      :class="{ 'chat-bubble-actions__btn--active': liked }"
+      :disabled="disabled || likeDisabled || liked"
+      :aria-label="t('chat.like')"
+      :title="liked ? t('chat.liked') : t('chat.like')"
+      @click="emit('like')"
+    >
+      <n-icon :size="16" :component="ThumbsUpOutline" />
     </button>
     <button
       v-if="showRetry"

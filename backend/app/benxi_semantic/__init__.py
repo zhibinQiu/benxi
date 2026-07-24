@@ -6,6 +6,7 @@ Agent、工具与规划侧应优先经 ``SemanticLayer`` 获取决策上下文�
 
 from __future__ import annotations
 
+from .answers import can_answer_from_decision, try_direct_answer_from_decision
 from .defaults import DEFAULT_ENTITY_TYPES, DEFAULT_RELATION_TYPES
 from .intents import detect_intent_tags
 from .models import AgentDecisionContext, MatchedEntity
@@ -22,7 +23,9 @@ __all__ = [
     "ReasoningPayload",
     "SemanticLayer",
     "SemanticQueryEngine",
+    "can_answer_from_decision",
     "detect_intent_tags",
+    "try_direct_answer_from_decision",
 ]
 
 __version__ = "0.1.0"

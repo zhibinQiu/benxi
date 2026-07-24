@@ -83,5 +83,5 @@ async def run_automation_now(
     row = db.get(AgentAutomation, automation_id)
     if not row or row.user_id != user.id or row.cancelled_at is not None:
         raise not_found("定时任务不存在")
-    result = await svc.execute_automation(automation_id)
+    result = await svc.execute_automation(automation_id, force=True)
     return ApiResponse(data=result)

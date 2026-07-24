@@ -478,112 +478,6 @@ def _resolve_doc_ids(
     return _default_searchable_doc_ids(ctx)
 
 
-async def handle_free_web_ai_chat(
-    ctx: SkillInvocationContext,
-    params: dict[str, Any],
-) -> SkillInvocationResult:
-    """免费网页 AI 文本对话。"""
-    prompt = str(params.get("prompt") or params.get("query") or "").strip()
-    if not prompt:
-        return SkillInvocationResult(False, "缺少 prompt", error="missing_prompt")
-    provider = str(params.get("provider") or "").strip() or None
-    new_conv = bool(params.get("new_conversation", False))
-    try:
-        from app.integrations.free_web_ai import get_free_web_ai_manager
-        from app.integrations.free_web_ai.config import get_free_web_ai_config
-
-        cfg = get_free_web_ai_config()
-        if not cfg.enabled:
-            return SkillInvocationResult(
-                False, "免费网页 AI 功能未启用，请配置 FREE_WEB_AI_ENABLED=true",
-                error="disabled",
-            )
-        mgr = get_free_web_ai_manager()
-        result = await mgr.chat(prompt, provider=provider, new_conversation=new_conv)
-        if result.get("success"):
-            return SkillInvocationResult(
-                True,
-                f"AI 回复（{result.get('provider', '?')}）",
-                data={"response": result.get("response", ""), "provider": result.get("provider")},
-            )
-        return SkillInvocationResult(
-            False,
-            f"AI 回复失败: {result.get('reason', 'unknown')}",
-            error=result.get("reason", "unknown"),
-        )
-    except Exception as exc:
-        return SkillInvocationResult(False, f"免费网页 AI 调用异常: {exc}", error=str(exc))
-
-
-async def handle_free_web_ai_image_gen(
-    ctx: SkillInvocationContext,
-    params: dict[str, Any],
-) -> SkillInvocationResult:
-    """免费网页 AI 文字生图。"""
-    prompt = str(params.get("prompt") or params.get("query") or "").strip()
-    if not prompt:
-        return SkillInvocationResult(False, "缺少生图描述", error="missing_prompt")
-    provider = str(params.get("provider") or "").strip() or None
-    new_conv = bool(params.get("new_conversation", False))
-    try:
-        from app.integrations.free_web_ai import get_free_web_ai_manager
-        from app.integrations.free_web_ai.config import get_free_web_ai_config
-
-        cfg = get_free_web_ai_config()
-        if not cfg.enabled:
-            return SkillInvocationResult(False, "免费网页 AI 功能未启用", error="disabled")
-        mgr = get_free_web_ai_manager()
-        result = await mgr.generate_image(prompt, provider=provider, new_conversation=new_conv)
-        if result.get("success"):
-            return SkillInvocationResult(
-                True,
-                f"图片已生成（{result.get('provider', '?')}）",
-                data={"response": result.get("response", ""), "provider": result.get("provider")},
-            )
-        return SkillInvocationResult(
-            False, f"生图失败: {result.get('reason', 'unknown')}",
-            error=result.get("reason", "unknown"),
-        )
-    except Exception as exc:
-        return SkillInvocationResult(False, f"生图异常: {exc}", error=str(exc))
-
-
-async def handle_free_web_ai_image_ask(
-    ctx: SkillInvocationContext,
-    params: dict[str, Any],
-) -> SkillInvocationResult:
-    """免费网页 AI 识图问答。"""
-    question = str(params.get("question") or params.get("query") or "").strip()
-    if not question:
-        return SkillInvocationResult(False, "缺少问题", error="missing_question")
-    image_path = str(params.get("image_path") or "").strip()
-    if not image_path:
-        return SkillInvocationResult(False, "缺少图片路径", error="missing_image_path")
-    provider = str(params.get("provider") or "").strip() or None
-    new_conv = bool(params.get("new_conversation", False))
-    try:
-        from app.integrations.free_web_ai import get_free_web_ai_manager
-        from app.integrations.free_web_ai.config import get_free_web_ai_config
-
-        cfg = get_free_web_ai_config()
-        if not cfg.enabled:
-            return SkillInvocationResult(False, "免费网页 AI 功能未启用", error="disabled")
-        mgr = get_free_web_ai_manager()
-        result = await mgr.ask_with_image(question, image_path, provider=provider, new_conversation=new_conv)
-        if result.get("success"):
-            return SkillInvocationResult(
-                True,
-                f"识图回复（{result.get('provider', '?')}）",
-                data={"response": result.get("response", ""), "provider": result.get("provider")},
-            )
-        return SkillInvocationResult(
-            False, f"识图问答失败: {result.get('reason', 'unknown')}",
-            error=result.get("reason", "unknown"),
-        )
-    except Exception as exc:
-        return SkillInvocationResult(False, f"识图问答异常: {exc}", error=str(exc))
-
-
 def _default_searchable_doc_ids(ctx: SkillInvocationContext) -> list[uuid.UUID]:
     """无显式 doc_ids 时，取用户权限内少量已索引/有文件的文档。"""
     try:
@@ -816,9 +710,6 @@ async def handle_carbon_qa_ask(
 
 
 _PLATFORM_CITATION_IMAGE_PREFIX = "/api/v1/knowledge/citations/images/"
-_PLATFORM_CITATION_IMAGE_MD_RE = re.compile(
-    rf"!\[([^\]]*)\]\(({re.escape(_PLATFORM_CITATION_IMAGE_PREFIX)}[^)]+)\)"
-)
 _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 _HTML_IMG_RE = re.compile(r"<img\b[^>]*/?>", re.I)
 _KNOWFLOW_IMAGE_PATH_RE = re.compile(
@@ -907,30 +798,6 @@ def _rewrite_media_for_chat(text: str) -> str:
     return out.strip()
 
 
-def _hit_image_markdowns(hit: dict) -> list[str]:
-    blocks: list[str] = []
-    seen: set[str] = set()
-    image_id = str(hit.get("image_id") or "").strip()
-    if image_id:
-        url = _platform_citation_image_url(image_id)
-        if url and url not in seen:
-            seen.add(url)
-            blocks.append(f"![文档截图]({url})")
-    for img in hit.get("inline_images") or []:
-        if not isinstance(img, dict):
-            continue
-        url = _normalize_chat_image_url(str(img.get("url") or ""))
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        alt = (
-            str(img.get("alt") or img.get("description") or "文档内嵌图").strip()
-            or "文档内嵌图"
-        )
-        blocks.append(f"![{alt}]({url})")
-    return blocks
-
-
 def _rewrite_inline_images_for_chat(images: Any) -> list[dict]:
     out: list[dict] = []
     if not isinstance(images, list):
@@ -951,21 +818,37 @@ def _rewrite_inline_images_for_chat(images: Any) -> list[dict]:
     return out
 
 
-def _ensure_platform_images_in_answer(answer: str, source_md: str) -> str:
-    """综合后若模型丢掉平台图，把笔记里的代理图补回答案。"""
-    text = _rewrite_media_for_chat(answer)
-    present = {m.group(2) for m in _PLATFORM_CITATION_IMAGE_MD_RE.finditer(text)}
-    missing: list[str] = []
-    for m in _PLATFORM_CITATION_IMAGE_MD_RE.finditer(source_md or ""):
-        url = m.group(2)
-        if url not in present and url not in missing:
-            missing.append(url)
-    if not missing:
-        return text
-    parts = [text.rstrip(), "", "### 相关文档图", ""]
-    for url in missing[:8]:
-        parts.append(f"![文档图]({url})")
-    return "\n".join(parts).strip()
+def _is_document_citation_image_url(url: str) -> bool:
+    """平台 citations/images 代理或 KnowFlow 文档图路径。"""
+    u = str(url or "").strip()
+    if not u:
+        return False
+    if _PLATFORM_CITATION_IMAGE_PREFIX in u:
+        return True
+    if _extract_image_id_from_url(u):
+        return True
+    return False
+
+
+def _strip_document_images_from_answer(answer: str) -> str:
+    """最终回答仅保留文字；文档截图交给 citations / 数据来源面板展示。"""
+    text = str(answer or "")
+
+    def _drop_md(match: re.Match[str]) -> str:
+        return "" if _is_document_citation_image_url(match.group(2)) else match.group(0)
+
+    def _drop_html(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        src_m = re.search(r"""src\s*=\s*["']([^"']+)["']""", tag, re.I)
+        if src_m and _is_document_citation_image_url(src_m.group(1)):
+            return ""
+        return tag
+
+    text = _MD_IMAGE_RE.sub(_drop_md, text)
+    text = _HTML_IMG_RE.sub(_drop_html, text)
+    text = re.sub(r"\n*#{1,6}\s*相关文档图\s*\n*", "\n\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _knowledge_qa_format_hits(hits: list[Any], *, limit: int = 5) -> tuple[str, list[dict]]:
@@ -977,13 +860,12 @@ def _knowledge_qa_format_hits(hits: list[Any], *, limit: int = 5) -> tuple[str, 
         if not isinstance(hit, dict):
             continue
         title = str(hit.get("doc_title") or hit.get("title") or "文档")[:80]
-        snippet = _rewrite_media_for_chat(
-            str(hit.get("content") or hit.get("text") or hit.get("snippet") or "")
+        # 工作笔记只保留文字；截图进 citations，由前端「数据来源」展示
+        snippet = _strip_document_images_from_answer(
+            _rewrite_media_for_chat(
+                str(hit.get("content") or hit.get("text") or hit.get("snippet") or "")
+            )
         )[:1200]
-        image_blocks = _hit_image_markdowns(hit)
-        for block in image_blocks:
-            if block.split("(", 1)[-1].rstrip(")") not in snippet:
-                snippet = f"{snippet}\n\n{block}".strip() if snippet else block
         lines.append(f"{i}. **{title}**\n{snippet}")
         citations.append(
             {
@@ -1108,10 +990,9 @@ async def _knowledge_qa_synthesize_answer(question: str, notebook_md: str) -> st
     from app.integrations.deepseek_client import chat_completion_message_async, is_configured
 
     if not is_configured():
-        return _ensure_platform_images_in_answer(
+        return _strip_document_images_from_answer(
             "已完成检索，但当前未配置对话模型，无法自动综合结论。"
-            "请根据以下要点自行判断：\n\n" + notebook_md[:3000],
-            notebook_md,
+            "请根据以下要点自行判断：\n\n" + notebook_md[:3000]
         )
 
     system = (
@@ -1121,9 +1002,9 @@ async def _knowledge_qa_synthesize_answer(question: str, notebook_md: str) -> st
         "1. 只输出最终答案，不要复述「工作笔记」「事实底稿」「DeepSearch」等过程标题；\n"
         "2. 关键事实附来源链接（若笔记中有）；\n"
         "3. 笔记缺口处如实说明「未检索到」，禁止编造；\n"
-        "4. 笔记中出现的文档图 Markdown 必须原样保留，尤其是 "
-        "`![...](/api/v1/knowledge/citations/images/...)`；"
-        "把相关图紧挨对应论述放置；不要改写图片 URL；\n"
+        "4. 不要在答案中输出任何文档截图或图片 Markdown"
+        "（如 `![...](/api/v1/knowledge/citations/images/...)`）；"
+        "文档配图由系统在「数据来源」引用区单独展示；\n"
         "5. 结论冲突时明确标注分歧。"
     )
     user = (
@@ -1141,7 +1022,7 @@ async def _knowledge_qa_synthesize_answer(question: str, notebook_md: str) -> st
     msg = (choice or {}).get("message") or {}
     answer = str(msg.get("content") or "").strip()
     return (
-        _ensure_platform_images_in_answer(answer, notebook_md)
+        _strip_document_images_from_answer(answer)
         or "未能根据检索材料生成有效结论。"
     )
 
@@ -1218,7 +1099,7 @@ async def handle_knowledge_qa_ask(
     except Exception as exc:
         answer = f"材料已备齐，但综合分析失败：{exc}"
 
-    answer = _ensure_platform_images_in_answer(answer, notebook_md)
+    answer = _strip_document_images_from_answer(answer)
     if progress:
         progress(95, "知识问答完成")
 

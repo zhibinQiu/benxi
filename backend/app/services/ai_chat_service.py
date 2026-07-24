@@ -538,7 +538,7 @@ async def _iter_stream_turn_tail(
         try:
             # 短等待：生成已与写库并行；超时宁可不展示，避免劣质兜底拖慢收尾
             done_set, pending = await asyncio.wait(
-                [follow_up_task], timeout=1.8
+                [follow_up_task], timeout=0.6
             )
             if done_set:
                 follow_ups = follow_up_task.result() or []
@@ -645,135 +645,24 @@ async def iter_chat_with_ai_agent_stream(
         yield sse_error("AI 对话未配置，请联系管理员配置 DeepSeek API")
         return
 
-    history = await run_db_task(
-        _resolve_ai_home_history_for_user,
-        user_id,
-        conversation_id,
-        history,
-    )
-
     msg = (message or "").strip()
 
-    # ──────────────────────────────────────────────
-    # 🟢 THIRD-PARTY AI PREFIX：用户以 #豆包/#千问/#DeepSeek 开头，
-    #    直接走免费网页 AI skill，不经过调度智能体。
-    # ──────────────────────────────────────────────
-    _THIRD_PARTY_AI_PREFIXES: dict[str, str] = {
-        "#豆包": "doubao",
-        "#千问": "qwen",
-        "#DeepSeek": "deepseek",
-    }
-    _IMAGE_GEN_KEYWORDS = ("画", "生成", "绘制", "图片", "图", "插画", "海报")
-    third_party_provider: str | None = None
-    third_party_prompt: str = msg
-    for prefix, provider_key in _THIRD_PARTY_AI_PREFIXES.items():
-        if msg.startswith(prefix):
-            third_party_provider = provider_key
-            third_party_prompt = msg[len(prefix):].strip()
-            break
-    if third_party_provider:
-        _PROVIDER_LABEL = dict(zip(_THIRD_PARTY_AI_PREFIXES.values(), _THIRD_PARTY_AI_PREFIXES.keys())).get(third_party_provider, third_party_provider)
-        if not third_party_prompt:
-            reply = f"请在 `{_PROVIDER_LABEL}` 后面输入你的问题"
-            async for payload in _iter_stream_turn_tail(
-                user_id=user_id, message=message, history=history,
-                conversation_id=conversation_id, normalized_reply=reply,
-                display_citations=[], kg_context=None,
-                streamed_content=False, tool_loop=False,
-            ):
-                yield payload
-            return
-
-        from app.integrations.free_web_ai import get_free_web_ai_manager
-        from app.integrations.free_web_ai.config import get_free_web_ai_config
-
-        cfg = get_free_web_ai_config()
-        if not cfg.enabled:
-            reply = "免费网页 AI 功能未启用，请在 .env 中配置 `FREE_WEB_AI_ENABLED=true`"
-            async for payload in _iter_stream_turn_tail(
-                user_id=user_id, message=message, history=history,
-                conversation_id=conversation_id, normalized_reply=reply,
-                display_citations=[], kg_context=None,
-                streamed_content=False, tool_loop=False,
-            ):
-                yield payload
-            return
-
-        mgr = get_free_web_ai_manager()
-        is_image_gen = any(kw in third_party_prompt for kw in _IMAGE_GEN_KEYWORDS)
-
-        provider_label = _PROVIDER_LABEL
-        accumulated = ""
-        pending_images: list[str] = []
-        reply = ""
-        result_provider = ""
-
-        try:
-            stream_gen = (
-                mgr.stream_generate_image(third_party_prompt, provider=third_party_provider)
-                if is_image_gen
-                else mgr.stream_chat(third_party_prompt, provider=third_party_provider)
-            )
-            async for chunk in stream_gen:
-                ctype = chunk.get("type", "")
-                if ctype == "status":
-                    # 立即给用户反馈（连接中、生成中…）
-                    prefix = f"> 由 **{provider_label}**（免费网页 AI）生成\n\n"
-                    yield sse_replace(f"{prefix}*{chunk['message']}*")
-                elif ctype == "text":
-                    accumulated = chunk["content"]
-                    prefix = f"> 由 **{provider_label}**（免费网页 AI）生成\n\n"
-                    yield sse_replace(f"{prefix}{accumulated}")
-                elif ctype == "images":
-                    pending_images = chunk.get("images", [])
-                elif ctype == "done":
-                    result_provider = chunk.get("provider", provider_label)
-                    reply = chunk.get("response", accumulated)
-                    # 生图模式追加图片 markdown
-                    if is_image_gen and pending_images:
-                        image_md = "\n\n" + "\n\n".join(
-                            f"![生成图片 {i+1}]({url})" for i, url in enumerate(pending_images)
-                        )
-                        reply = f"{reply}{image_md}"
-                elif ctype == "error":
-                    reason = chunk.get("reason", "unknown")
-                    reply = f"免费网页 AI 回复失败（{result_provider or provider_label}）：{reason}"
-        except Exception as exc:
-            reply = f"免费网页 AI 调用异常：{exc}"
-            async for payload in _iter_stream_turn_tail(
-                user_id=user_id, message=message, history=history,
-                conversation_id=conversation_id, normalized_reply=reply,
-                display_citations=[], kg_context=None,
-                streamed_content=False, tool_loop=False,
-            ):
-                yield payload
-            return
-
-        normalized = f"> 由 **{result_provider or provider_label}**（免费网页 AI）生成\n\n{reply}"
-        async for payload in _iter_stream_turn_tail(
-            user_id=user_id, message=message, history=history,
-            conversation_id=conversation_id, normalized_reply=normalized,
-            display_citations=[], kg_context=None,
-            streamed_content=True, tool_loop=False,
-        ):
-            yield payload
-        return
-
-    # 初始化前端 workflow（探针的工具调用需要状态容器）
-    # 初始化前端 workflow
+    # 普通 Agent：历史加载与开场 workflow 并行，缩短首包等待
     _request_t0 = time.monotonic()
     _logger.info("Agent stream start user=%s msg=%s", user_id, msg[:60])
-    async for payload in _emit_workflow("workflow_started", title="小析已经收到您的请求，正在规划方案"):
-        yield payload
-
-    prep_plan_id = next_workflow_step_id("ai-p")
+    history_task = asyncio.create_task(
+        run_db_task(
+            _resolve_ai_home_history_for_user,
+            user_id,
+            conversation_id,
+            history,
+        )
+    )
     async for payload in _emit_workflow(
-        "agent_thinking",
-        title="正在规划方案",
-        tool="planner",
-        step_id=prep_plan_id,
+        "workflow_started", title="小析已经收到您的请求，正在规划方案"
     ):
         yield payload
+    history = await history_task
 
     prep = await run_db_task(
         _prepare_ai_chat_stream_plan,
@@ -786,20 +675,30 @@ async def iter_chat_with_ai_agent_stream(
 
     from app.core.conversation_turn_context import follow_up_thinking_hint
 
-    prep_detail = (plan.context_instruction or plan.intent_label or "已分析请求").strip()
-    context_hint = follow_up_thinking_hint(message, history)
-    if context_hint:
-        prep_detail = f"{context_hint}；{prep_detail}" if prep_detail else context_hint
-    prep_title = f"规划方案：{plan.intent_label or '已分析请求'}"
-    async for payload in _emit_workflow(
-        "agent_thought",
-        title=prep_title,
-        detail=prep_detail[:240],
-        tool="planner",
-        status="done",
-        step_id=prep_plan_id,
-    ):
-        yield payload
+    # 有附件才展示二次规划仪式；普通问答尽快进入 supervisor
+    if plan.use_attachment:
+        prep_plan_id = next_workflow_step_id("ai-p")
+        async for payload in _emit_workflow(
+            "agent_thinking",
+            title="正在规划方案",
+            tool="planner",
+            step_id=prep_plan_id,
+        ):
+            yield payload
+        prep_detail = (plan.context_instruction or plan.intent_label or "已分析请求").strip()
+        context_hint = follow_up_thinking_hint(message, history)
+        if context_hint:
+            prep_detail = f"{context_hint}；{prep_detail}" if prep_detail else context_hint
+        prep_title = f"规划方案：{plan.intent_label or '已分析请求'}"
+        async for payload in _emit_workflow(
+            "agent_thought",
+            title=prep_title,
+            detail=prep_detail[:240],
+            tool="planner",
+            status="done",
+            step_id=prep_plan_id,
+        ):
+            yield payload
 
     # 上下文准备
     attachment_context = ""
@@ -891,13 +790,24 @@ async def iter_chat_with_ai_agent_stream(
         elif event.get("type") == "replace" and event.get("text") is not None:
             tool_reply = str(event["text"])
             tool_reply_replaced = True
+            # 立刻推送正文（图谱直答等），不等 turn_tail
+            yield sse_replace(tool_reply)
             await asyncio.sleep(0)
         elif event.get("type") == "complete":
             messages = event.get("messages") or messages
-            tool_reply = event.get("reply")
+            tool_reply = event.get("reply") if event.get("reply") is not None else tool_reply
             tool_citations = list(event.get("citations") or [])
             if event.get("kg_context") is not None:
                 kg_context = event.get("kg_context")
+            # 未提前出字时，complete 立刻推送，避免等收尾仪式
+            if (
+                (tool_reply or "").strip()
+                and not tool_reply_streamed
+                and not tool_reply_replaced
+            ):
+                tool_reply_replaced = True
+                yield sse_replace(str(tool_reply))
+                await asyncio.sleep(0)
 
     if _was_suspended:
         # 正常暂停，不等同于错误
@@ -965,10 +875,12 @@ async def chat_with_ai_agent(
     message: str,
     history: list[AiChatMessage],
     db: Session | None = None,
-    user: User | None = None,
+    user: User | uuid.UUID | None = None,
     conversation_id: str | None = None,
     attachment_session_id: str | None = None,
     model_provider_id: str | None = None,
+    persist_conversation: bool = True,
+    write_memory: bool = True,
 ) -> dict:
     from app.integrations.deepseek_client import set_current_provider_id
 
@@ -1054,19 +966,22 @@ async def chat_with_ai_agent(
             kg_context=merged_kg,
             tool_citations=tool_citations,
         )
-        out_conv_id = await run_db_task(
-            _persist_turn,
-            user_id=coerce_user_id(user),
-            conversation_id=conversation_id,
-            message=message,
-            reply=normalized_reply,
-        )
-        await run_db_task(
-            _maybe_write_user_memory,
-            user,
-            message,
-            normalized_reply,
-        )
+        out_conv_id = conversation_id
+        if persist_conversation:
+            out_conv_id = await run_db_task(
+                _persist_turn,
+                user_id=coerce_user_id(user),
+                conversation_id=conversation_id,
+                message=message,
+                reply=normalized_reply,
+            )
+        if write_memory:
+            await run_db_task(
+                _maybe_write_user_memory,
+                user,
+                message,
+                normalized_reply,
+            )
         follow_ups = await _resolve_follow_up_questions(
             user_message=message,
             assistant_answer=normalized_reply,

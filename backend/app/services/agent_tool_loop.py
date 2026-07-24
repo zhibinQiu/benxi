@@ -46,7 +46,6 @@ from app.services.agent_planner import (
     execution_plan_summary_for_ui,
     filter_tool_specs_by_plan,
     resolve_execution_plan,
-    resolve_kg_planning_context,
 )
 from app.core.agent_message_parse import (
     assistant_content_is_deliverable,
@@ -336,6 +335,9 @@ async def _iter_execute_with_progress(
     result_text = ""
     try:
         while not tool_task.done():
+            from app.core.stream_cancel import raise_if_stream_cancelled
+
+            raise_if_stream_cancelled()
             elapsed = time.monotonic() - start_ts
             if elapsed > timeout:
                 tool_task.cancel()
@@ -658,8 +660,11 @@ async def _hitl_poll(
     """通用 HITL 轮询：持续检查 ``get_response()``，超时返回 None。"""
     import time
 
+    from app.core.stream_cancel import raise_if_stream_cancelled
+
     deadline = time.monotonic() + timeout
     while True:
+        raise_if_stream_cancelled()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return None
@@ -683,6 +688,36 @@ def _build_checkpoint_pending_tool(
         "step_id": step_id,
         "meta": meta,
     }
+
+
+def _save_between_rounds_checkpoint(
+    *,
+    user_id: str,
+    working: list[dict[str, Any]],
+    loop_state: LoopState,
+    conversation_id: str | None,
+    round_idx: int,
+) -> None:
+    """工具轮次结束后静默覆盖落盘，供崩溃/断线后 resume（不断流）。"""
+    try:
+        cid = str(loop_state.get("_between_rounds_checkpoint_id") or "").strip()
+        if not cid:
+            cid = generate_checkpoint_id()
+            loop_state["_between_rounds_checkpoint_id"] = cid
+        save_checkpoint(
+            cid,
+            user_id=str(user_id),
+            phase="between_rounds",
+            loop_state=loop_state,
+            working=working,
+            pending_data={
+                "conversation_id": conversation_id,
+                "round": int(round_idx),
+            },
+            tool_call=None,
+        )
+    except Exception:
+        _logger.debug("between_rounds checkpoint save failed", exc_info=True)
 
 
 # ─── 异步生成器：各退出路径（以 yield complete 结束） ──────────────
@@ -860,9 +895,12 @@ async def _hard_invoke_knowledge_qa(
 
     # 用户只看最终答案：写入确定性交付物，禁止把工作笔记/事实底稿塞进检索上下文
     if answer:
-        from app.skills.builtin.handlers import _rewrite_media_for_chat
+        from app.skills.builtin.handlers import (
+            _rewrite_media_for_chat,
+            _strip_document_images_from_answer,
+        )
 
-        answer = _rewrite_media_for_chat(answer)
+        answer = _strip_document_images_from_answer(_rewrite_media_for_chat(answer))
         loop_state["deterministic_reply"] = answer
         loop_state["last_skill_conclusion"] = answer
         loop_state["_cached_presentable_conclusion"] = answer
@@ -1212,19 +1250,85 @@ async def _iter_agent_tool_loop_body(
         return
 
     kg_plan_text = ""
+    kg_decision = None
+    from app.benxi_semantic import try_direct_answer_from_decision
+    from app.core.conversation_turn_context import effective_question_for_retrieval
     from app.services.agent_intent import is_chitchat_message
-    from app.services.agent_skill_router import is_trivial_direct_question
-
-    skip_kg_plan = is_chitchat_message(user_message, chat_history) or is_trivial_direct_question(
-        user_message
+    from app.services.agent_planner import (
+        _KG_PLANNING_USER_LABEL,
+        peek_cached_kg_direct_reply,
+        peek_cached_kg_planning_text,
+        resolve_kg_decision_context,
     )
-    if not skip_kg_plan and not _messages_have_prefetched_research(working):
-        kg_plan_text = await resolve_kg_planning_context(
-            db, user, user_message, history=chat_history
-        )
+    from app.services.agent_skill_router import is_trivial_direct_question, should_skip_kg_probe
 
-    # 规划阶段已命中的图谱事实注入作答材料，避免「规划看见、回答看不见」
-    if kg_plan_text and len(kg_plan_text) > 10:
+    skip_kg_plan = (
+        is_chitchat_message(user_message, chat_history)
+        or is_trivial_direct_question(user_message)
+        or should_skip_kg_probe(user_message)
+    )
+    kg_q = effective_question_for_retrieval(user_message, chat_history).strip() or user_message
+    # 路由阶段已探测：优先复用短时缓存，禁止重复 Neo4j 推理
+    cached_kg = "" if skip_kg_plan else peek_cached_kg_planning_text(str(user.id), kg_q)
+    cached_direct = "" if skip_kg_plan else peek_cached_kg_direct_reply(str(user.id), kg_q)
+    prefetched = _messages_have_prefetched_research(working) or any(
+        _KG_PLANNING_USER_LABEL in str((m or {}).get("content") or "")
+        for m in working
+        if isinstance(m, dict)
+    )
+    if cached_kg:
+        kg_plan_text = cached_kg
+    elif not skip_kg_plan and not prefetched:
+        kg_decision = await resolve_kg_decision_context(
+            db, user, user_message, history=chat_history, mode="probe"
+        )
+        if kg_decision is not None:
+            kg_plan_text = kg_decision.planning_text(max_chars=1800)
+        else:
+            kg_plan_text = peek_cached_kg_planning_text(str(user.id), kg_q)
+
+    kg_direct = (
+        try_direct_answer_from_decision(kg_decision, user_message)
+        or cached_direct
+    )
+    if kg_direct:
+        loop_state["deterministic_reply"] = kg_direct
+        if kg_plan_text and len(kg_plan_text) > 10:
+            from app.core.agent_tool_context import append_retrieval_context
+            from app.schemas.kg import KgQaContext
+
+            append_retrieval_context(loop_state, kg_plan_text)
+            if not loop_state.get("kg_context"):
+                loop_state["kg_context"] = KgQaContext(context_text=kg_plan_text)
+        yield {
+            "type": "workflow",
+            "data": {
+                "phase": "agent_thought",
+                "title": "知识图谱直答",
+                "detail": "",
+                "tool": "kg_query",
+                "step_id": loop_id,
+                "status": "done",
+            },
+        }
+        yield {"type": "replace", "text": kg_direct}
+        yield {
+            "type": "complete",
+            "messages": working,
+            "reply": kg_direct,
+            "citations": list(loop_state.get("citations") or []),
+            "kg_context": loop_state.get("kg_context"),
+        }
+        return
+
+    # 仅当图谱有可推理材料时注入，避免空标签也触发「参考知识图谱…」
+    kg_has_material = bool(kg_plan_text) and (
+        "【知识图谱推理上下文】" in kg_plan_text
+        or "所属组织:" in kg_plan_text
+    )
+    if not kg_has_material:
+        kg_plan_text = ""
+    elif kg_plan_text:
         from app.core.agent_tool_context import append_retrieval_context
         from app.schemas.kg import KgQaContext
 
@@ -1234,9 +1338,8 @@ async def _iter_agent_tool_loop_body(
 
     plan_step_id = f"agent-plan-{uuid.uuid4().hex[:8]}"
     plan_detail = "分析意图，拆解执行计划…"
-    # 如果已有 KG 规划上下文则附带提示
-    if kg_plan_text and len(kg_plan_text) > 10:
-        plan_detail = f"参考知识图谱上下文进行规划…"
+    if kg_has_material:
+        plan_detail = "参考知识图谱上下文进行规划…"
     yield {
         "type": "workflow",
         "data": {
@@ -1265,12 +1368,15 @@ async def _iter_agent_tool_loop_body(
     )
     loop_state["_execution_plan"] = execution_plan
     plan_summary = execution_plan_summary_for_ui(execution_plan)
+    intent_label = (execution_plan.intent or "").strip()
+    # 前端会用「title：detail」拼接；detail 与 intent 相同时只保留 title
+    plan_detail_done = "" if plan_summary in ("", intent_label) else plan_summary
     yield {
         "type": "workflow",
         "data": {
             "phase": "agent_thought",
-            "title": f"规划方案：{execution_plan.intent or '执行步骤'}",
-            "detail": plan_summary,
+            "title": f"规划方案：{intent_label or '执行步骤'}",
+            "detail": plan_detail_done,
             "tool": "planner",
             "step_id": plan_step_id,
             "status": "done",
@@ -1526,6 +1632,7 @@ async def _iter_agent_tool_loop_body(
                 break
             prior_plan = execution_plan
             sess.release_before_io()
+            db, user = sess.open()
             _replan_t0 = time.monotonic()
             execution_plan = await resolve_adaptive_replan(
                 db,
@@ -1550,7 +1657,6 @@ async def _iter_agent_tool_loop_body(
                 allowed_skill_names=allowed_skill_names,
                 user_message=user_message,
             )
-            db, user = sess.open()
             if execution_plan.uploaded_skill:
                 from app.services.agent_skill_service import uploaded_skill_has_script
 
@@ -1582,7 +1688,10 @@ async def _iter_agent_tool_loop_body(
 
         nudge_cache = _build_nudge_cache(user_message, execution_plan, plan_has_script)
         rounds_this_pass = tool_rounds_for_adaptive_pass(rounds, adaptive_pass)
-        for _ in range(max(1, rounds_this_pass)):
+        for round_idx in range(max(1, rounds_this_pass)):
+            from app.core.stream_cancel import raise_if_stream_cancelled
+
+            raise_if_stream_cancelled()
             pending_skill = str(loop_state.get("pending_skill_md_inject") or "").strip()
             allowed_skills = loop_state.get("allowed_skill_names")
             if pending_skill and allowed_skills is not None and pending_skill not in allowed_skills:
@@ -1626,6 +1735,9 @@ async def _iter_agent_tool_loop_body(
                 tools=tool_specs or None,
                 temperature=0.3,
             ):
+                from app.core.stream_cancel import raise_if_stream_cancelled
+
+                raise_if_stream_cancelled()
                 # 不把模型正文 token 写入 thinking_delta：空口草稿（尤其 mermaid）
                 # 会污染执行详情 / 答后「思考过程」，看起来像反复重试。
                 if ev["type"] == "choice":
@@ -1679,6 +1791,9 @@ async def _iter_agent_tool_loop_body(
                     loop_state["_batch_streamed_tool_ids"] = _batch_streamed_tool_ids
 
                 for tc in tool_calls:
+                    from app.core.stream_cancel import raise_if_stream_cancelled
+
+                    raise_if_stream_cancelled()
                     fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
                     tool_name = str(fn.get("name") or "")
                     tool_id = str(tc.get("id") or uuid.uuid4())
@@ -1776,6 +1891,7 @@ async def _iter_agent_tool_loop_body(
                                     }
                                     continue
                                 loop_state["_hitl_confirmed"] = True
+                                db, user = sess.open()
 
                     # ── Human-in-the-Loop: 方案选择 ──
                     if tool_name == "ask_user_choice":
@@ -1877,6 +1993,7 @@ async def _iter_agent_tool_loop_body(
 
                             clear_pending_choice(choice_id)
                             clear_checkpoint(checkpoint_id)
+                            db, user = sess.open()
 
                             result_text = json.dumps({
                                 "ok": True,
@@ -2223,6 +2340,15 @@ async def _iter_agent_tool_loop_body(
                         _mark_streamed_attachment(loop_state, att)
                         yield {"type": "attachment", "data": att}
                     loop_state["stream_attachments"] = []
+
+                _save_between_rounds_checkpoint(
+                    user_id=str(user.id),
+                    working=working,
+                    loop_state=loop_state,
+                    conversation_id=conversation_id,
+                    round_idx=round_idx,
+                )
+
                 if loop_state.get("orchestrator_assist_request"):
                     break
                 if not execution_goal_satisfied(
@@ -2342,6 +2468,7 @@ async def _iter_agent_tool_loop_body(
                 },
             }
             sess.release_before_io()
+            db, user = sess.open()
             _ok, _summary = await auto_execute_uploaded_skill(
                 db,
                 user,
@@ -2352,7 +2479,6 @@ async def _iter_agent_tool_loop_body(
                 conversation_id=conversation_id,
                 attachment_session_id=attachment_session_id,
             )
-            db, user = sess.open()
             yield {
                 "type": "workflow",
                 "data": {

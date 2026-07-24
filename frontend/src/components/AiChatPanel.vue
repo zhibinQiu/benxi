@@ -14,7 +14,7 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { TimeOutline, DocumentTextOutline, GitNetworkOutline, FolderOpenOutline, SparklesOutline, LayersOutline, CloudOutline, ChevronDown, CloseOutline } from "@vicons/ionicons5";
+import { TimeOutline, DocumentTextOutline, GitNetworkOutline, FolderOpenOutline, SparklesOutline, LayersOutline, ChevronDown, CloseOutline } from "@vicons/ionicons5";
 import { fetchChatConversationMessages } from "../api/client";
 import {
   collectScreenshotAttachmentCandidates,
@@ -30,6 +30,7 @@ import {
   fetchAiChatSkillCatalog,
   fetchAiChatAttachments,
   removeAiChatAttachmentFile,
+  submitAiChatFeedback,
   uploadAiChatAttachments,
 } from "../api/chat.js";
 import { formatAgentDisplayName } from "../utils/agentDisplay.js";
@@ -45,6 +46,7 @@ import ChatMarkdownBody from "./ChatMarkdownBody.vue";
 import KnowledgeChatContent from "./KnowledgeChatContent.vue";
 import KnowledgeCitationPreviewModal from "./KnowledgeCitationPreviewModal.vue";
 const KnowledgeMindMap = defineAsyncComponent(() => import("./KnowledgeMindMap.vue"));
+import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import { useI18n } from "../composables/useI18n.js";
 import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
@@ -394,7 +396,6 @@ const skillCatalog = ref([]);
 const skillCatalogLoading = ref(false);
 const skillPopoverShow = ref(false);
 const skillCatalogLoaded = ref(false);
-const thirdPartyAiPopoverShow = ref(false);
 
 /** ── 模型切换 ───────────────────────────────────── */
 const MODEL_CACHE_KEY = "ai_chat_model_options";
@@ -424,11 +425,6 @@ const selectedModelProviderId = ref(localStorage.getItem(MODEL_SELECTED_KEY) || 
 const modelOptionsLoaded = ref(false);
 const modelPopoverShow = ref(false);
 
-const thirdPartyAiOptions = [
-  { key: "doubao", label: "豆包", desc: "字节跳动自研 AI，通用对话能力强、支持文字生图、反应快、免费额度充足" },
-  { key: "qwen", label: "通义千问", desc: "阿里云通义系列，擅长中文创作与知识问答、支持通义万相生图、输出质量高" },
-  { key: "deepseek", label: "DeepSeek", desc: "DeepSeek 推理模型，代码编程与逻辑推理能力突出、深度思考模式、适合技术问题" },
-];
 const reportSkillPopoverShow = ref(false);
 const reportOptimizePopoverShow = ref(false);
 
@@ -608,23 +604,6 @@ function useSkill(skill) {
   if (!label) return;
   input.value = `请使用 ${label} 技能：`;
   skillPopoverShow.value = false;
-  nextTick(() => composerRef.value?.focus?.());
-}
-
-const THIRD_PARTY_AI_PREFIXES = {
-  doubao: "#豆包",
-  qwen: "#千问",
-  deepseek: "#DeepSeek",
-};
-
-function onThirdPartyAiPopoverShowChange(show) {
-  thirdPartyAiPopoverShow.value = show;
-}
-
-function useThirdPartyAi(opt) {
-  const prefixUsed = THIRD_PARTY_AI_PREFIXES[opt.key] || `#${opt.label}`;
-  input.value = `${prefixUsed} `;
-  thirdPartyAiPopoverShow.value = false;
   nextTick(() => composerRef.value?.focus?.());
 }
 
@@ -851,6 +830,17 @@ const thinkingPanelOpen = ref(false);
 
 function citationCount(message) {
   return Array.isArray(message?.citations) ? message.citations.length : 0;
+}
+
+/** 文档检索引用：在数据来源区用卡片展示截图，不把图塞进最终回答。 */
+function citationShowsDocumentSource(cit) {
+  if (!cit || cit.source === "web") return false;
+  if (String(cit.image_id || "").trim()) return true;
+  if (Array.isArray(cit.inline_images) && cit.inline_images.some((img) => img?.url)) {
+    return true;
+  }
+  if (cit.preview_available === true) return true;
+  return Boolean(cit.document_id || cit.chunk_id);
 }
 
 function shouldShowFinalPanels(entry) {
@@ -1140,16 +1130,10 @@ async function sendMessageStreaming(content, assistantIdx, history) {
           const row = messages.value[assistantIdx];
           if (!row) return;
           const formatted = mergeScreenshotBlocksIntoContent(text);
-          if (row.content) {
-            // 已有部分流式内容，直接替换（做后续格式修正）
-            row.content = formatted;
-            syncMessageScreenshots(row);
-            scrollToBottom();
-          } else {
-            // 无流式内容，用打字机动画逐步展示（避免探针路径等场景全文蹦出）
-            typewriterActive = true;
-            revealContentTypewriter(row, formatted);
-          }
+          // 立刻展示正文，避免打字机人为拖慢「可直答」路径
+          row.content = formatted;
+          syncMessageScreenshots(row);
+          scrollToBottom();
         },
         onCitations: (citations) => {
           if ((!props.showCitations && !props.showReportTools) || !Array.isArray(citations)) return;
@@ -1597,10 +1581,10 @@ function findUserIndexBefore(index) {
   return -1;
 }
 
-function canRetryMessage(index, message) {
-  if (sending.value || loadingHistory.value || message?.streaming) return false;
-  if (message?.role !== "assistant") return false;
-  return findUserIndexBefore(index) >= 0;
+function canRetryUserMessage(index, message) {
+  if (loadingHistory.value) return false;
+  if (message?.role !== "user") return false;
+  return !!(message?.content || "").trim();
 }
 
 function canShowMessageActions(index, message) {
@@ -1623,27 +1607,55 @@ async function shareAssistantMessage(message) {
   });
 }
 
-async function retryMessage(index) {
+/** 打断当前生成（若有），从指定用户消息截断并重发。 */
+async function retryUserMessage(index) {
   const message = messages.value[index];
-  if (!message || !canRetryMessage(index, message)) return;
+  if (!message || !canRetryUserMessage(index, message)) return;
 
-  const userIndex = findUserIndexBefore(index);
-  if (userIndex < 0) return;
-
-  const content = (messages.value[userIndex]?.content || "").trim();
+  const content = (message.content || "").trim();
   if (!content) return;
 
   streamAbort?.abort();
   streamGeneration += 1;
+  const lastIdx = messages.value.length - 1;
+  const last = messages.value[lastIdx];
+  if (last?.role === "assistant" && (last.streaming || sending.value)) {
+    finalizeStoppedAssistant(lastIdx);
+  }
   sending.value = false;
   streamAbort = null;
 
-  messages.value = messages.value.slice(0, userIndex);
+  messages.value = messages.value.slice(0, index);
   if (!messages.value.length) {
     started.value = false;
   }
 
   await sendMessage(content);
+}
+
+async function likeAssistantMessage(index) {
+  const message = messages.value[index];
+  if (!message || message.role !== "assistant" || message.liked) return;
+  if (!canShowMessageActions(index, message)) return;
+
+  const userIndex = findUserIndexBefore(index);
+  if (userIndex < 0) return;
+  const question = (messages.value[userIndex]?.content || "").trim();
+  const answer = (message.content || "").trim();
+  if (!question || !answer) return;
+
+  try {
+    await submitAiChatFeedback({
+      rating: "like",
+      question,
+      answer,
+      conversationId: conversationId.value,
+    });
+    message.liked = true;
+    ui.success(t("chat.likeSaved"));
+  } catch (e) {
+    ui.error(e?.message || t("chat.likeFailed"));
+  }
 }
 
 function useSuggestion(text) {
@@ -2112,17 +2124,26 @@ defineExpose({
                     <template #arrow>
                       <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5.7 11.7 9.4 8 5.7 4.3a.7.7 0 0 1 1-1l4 4a.7.7 0 0 1 0 1l-4 4a.7.7 0 0 1-1-1z"/></svg>
                     </template>
-                    <div class="ai-home-panel-body">
-                      <div
+                    <div class="ai-home-panel-body ai-home-panel-body--citations">
+                      <template
                         v-for="(cit, ci) in (entry.message.citations || [])"
-                        :key="ci"
-                        class="ai-home-panel-citation"
-                        @click="openCitationPreview(cit, entry.message.citations)"
+                        :key="`${ci}-${cit.index || cit.document_id || cit.url || ''}`"
                       >
-                        <span class="ai-home-panel-citation-idx">{{ ci + 1 }}.</span>
-                        <span class="ai-home-panel-citation-title">{{ cit.title || cit.name || '来源' }}</span>
-                        <span v-if="cit.url" class="ai-home-panel-citation-url">({{ cit.url }})</span>
-                      </div>
+                        <KnowledgeCitationCard
+                          v-if="citationShowsDocumentSource(cit)"
+                          class="ai-home-panel-citation-card"
+                          :citation="cit"
+                        />
+                        <div
+                          v-else
+                          class="ai-home-panel-citation"
+                          @click="openCitationPreview(cit, entry.message.citations)"
+                        >
+                          <span class="ai-home-panel-citation-idx">{{ ci + 1 }}.</span>
+                          <span class="ai-home-panel-citation-title">{{ cit.title || cit.name || '来源' }}</span>
+                          <span v-if="cit.url" class="ai-home-panel-citation-url">({{ cit.url }})</span>
+                        </div>
+                      </template>
                     </div>
                   </n-collapse-item>
                   <n-collapse-item name="thinking">
@@ -2349,6 +2370,7 @@ defineExpose({
                 v-if="
                   showCitations &&
                   !showReportTools &&
+                  !shouldShowFinalPanels(entry) &&
                   !entry.message.streaming &&
                   messageCitationView(entry.message).citations.length
                 "
@@ -2375,13 +2397,24 @@ defineExpose({
               {{ entry.message.content }}
             </div>
             <ChatBubbleActions
-              v-if="canShowMessageActions(entry.index, entry.message)"
+              v-if="canRetryUserMessage(entry.index, entry.message)"
+              align="end"
+              :show-copy="false"
+              :show-share="false"
+              :show-retry="true"
+              :retry-disabled="loadingHistory"
+              @retry="retryUserMessage(entry.index)"
+            />
+            <ChatBubbleActions
+              v-else-if="canShowMessageActions(entry.index, entry.message)"
               align="start"
-              :show-retry="canRetryMessage(entry.index, entry.message)"
-              :retry-disabled="sending || loadingHistory"
+              :show-retry="false"
+              :show-like="true"
+              :liked="!!entry.message.liked"
+              :like-disabled="loadingHistory"
               @copy="copyAssistantMessage(entry.message)"
               @share="shareAssistantMessage(entry.message)"
-              @retry="retryMessage(entry.index)"
+              @like="likeAssistantMessage(entry.index)"
             />
             <div
               v-if="showFollowUpForMessage(entry.index, entry.message)"
@@ -2641,43 +2674,6 @@ defineExpose({
                         <span v-if="skill.description" class="ai-home-skills-popover__item-desc">
                           {{ skill.description }}
                         </span>
-                      </button>
-                    </div>
-                  </n-popover>
-                  <n-popover
-                    v-if="enableAgentSkills"
-                    trigger="click"
-                    placement="top-start"
-                    :width="312"
-                    :show="thirdPartyAiPopoverShow"
-                    @update:show="onThirdPartyAiPopoverShowChange"
-                  >
-                    <template #trigger>
-                      <button
-                        type="button"
-                        class="ai-home-tool-link ai-home-tool-action ai-home-composer-tool"
-                        :disabled="sending"
-                      >
-                        <n-icon :size="14" :component="CloudOutline" />
-                        <span>{{ t("chat.agentSkills.thirdPartyAi") }}</span>
-                      </button>
-                    </template>
-                    <div class="ai-home-skills-popover">
-                      <div class="ai-home-skills-popover__title">{{ t("chat.agentSkills.thirdPartyAiSelect") }}</div>
-                      <button
-                        v-for="opt in thirdPartyAiOptions"
-                        :key="opt.key"
-                        type="button"
-                        class="ai-home-skills-popover__item ai-home-skills-popover__item--with-badge"
-                        @click="useThirdPartyAi(opt)"
-                      >
-                        <span class="ai-home-skills-popover__item-row">
-                          <span class="ai-home-skills-popover__item-badge" :class="`ai-home-skills-popover__item-badge--${opt.key}`">
-                            {{ opt.label.charAt(0) }}
-                          </span>
-                          <span class="ai-home-skills-popover__item-name">{{ opt.label }}</span>
-                        </span>
-                        <span class="ai-home-skills-popover__item-desc">{{ opt.desc }}</span>
                       </button>
                     </div>
                   </n-popover>
@@ -3235,18 +3231,6 @@ defineExpose({
   font-size: 11px;
   font-weight: 700;
   color: #fff;
-}
-
-.ai-home-skills-popover__item-badge--doubao {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-}
-
-.ai-home-skills-popover__item-badge--qwen {
-  background: linear-gradient(135deg, #0ea5e9, #06b6d4);
-}
-
-.ai-home-skills-popover__item-badge--deepseek {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 .ai-home-composer-stack {
@@ -4022,6 +4006,17 @@ defineExpose({
 .ai-home-panel-body {
   padding: 0;
   font-size: 10px;
+}
+
+.ai-home-panel-body--citations {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 2px;
+}
+
+.ai-home-panel-citation-card {
+  width: 100%;
 }
 
 .ai-home-panel-citation {

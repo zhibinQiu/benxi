@@ -15,7 +15,6 @@ def register_builtin_plugins() -> None:
         carbon_qa_v2,  # noqa: F401 — 注册 id=carbon_qa
         compare,  # noqa: F401
         data_analysis,  # noqa: F401
-        free_web_ai,  # noqa: F401
         knowledge_search,  # noqa: F401
         kg,  # noqa: F401 — 知识图谱（ABox 实例管理）
         ocr,  # noqa: F401

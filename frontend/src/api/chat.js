@@ -107,3 +107,21 @@ export async function chooseToolOption(choiceId, choice) {
     body: JSON.stringify({ choice }),
   });
 }
+
+/** 点赞终稿：问答摘要写入知识图谱 */
+export async function submitAiChatFeedback({
+  rating = "like",
+  question,
+  answer,
+  conversationId = null,
+} = {}) {
+  return api("/api/v1/ai-chat/feedback", {
+    method: "POST",
+    body: JSON.stringify({
+      rating,
+      question,
+      answer,
+      conversation_id: conversationId || null,
+    }),
+  });
+}

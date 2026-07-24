@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.agentkit.subagent.types import (
     LlmCompletionFn,
@@ -35,6 +36,9 @@ class SubagentConfig:
     append_retrieval: RetrievalAppender | None = None
     normalize_message: Any = None
     strip_markup: Any = None
+    # 宿主可注入 {"state": None}，runtime 创建 child_state 后写入，
+    # 保证 execute_tool 与 merge 使用同一对象（否则 citations 会丢）
+    child_state_holder: dict[str, Any] | None = None
 
     @classmethod
     def full(
@@ -47,6 +51,7 @@ class SubagentConfig:
         build_tool_specs: ToolSpecBuilder,
         invoke_skill: SkillInvokeFn,
         append_retrieval: RetrievalAppender | None = None,
+        child_state_holder: dict[str, Any] | None = None,
     ) -> SubagentConfig:
         """完整配置快捷构造。"""
         return cls(
@@ -57,4 +62,5 @@ class SubagentConfig:
             build_tool_specs=build_tool_specs,
             invoke_skill=invoke_skill,
             append_retrieval=append_retrieval,
+            child_state_holder=child_state_holder,
         )

@@ -26,15 +26,40 @@ def _dumps(obj: dict) -> str:
 async def stream_sse_payloads(
     db: Session | None,
     payload_iter: Callable[[], AsyncIterator[str]],
+    *,
+    request: Any | None = None,
 ) -> AsyncIterator[str]:
-    """鉴权完成后释放 get_db，并在并发槽内产出 SSE data 行。"""
+    """鉴权完成后释放 get_db，并在并发槽内产出 SSE data 行。
+
+    若传入 Starlette Request，客户端断开时标记协作取消并停止产出。
+    """
+    from app.core.stream_cancel import (
+        clear_stream_cancel,
+        install_stream_cancel,
+        mark_stream_cancelled,
+    )
+
     detach_request_db(db)
+    cancel_ev = install_stream_cancel()
     try:
         async with stream_db_slot():
             async for payload in payload_iter():
+                if request is not None:
+                    try:
+                        if await request.is_disconnected():
+                            mark_stream_cancelled()
+                            logger.info("SSE client disconnected, stop stream")
+                            break
+                    except Exception:
+                        pass
+                if cancel_ev.is_set():
+                    break
                 yield f"data: {payload}\n\n"
     except StreamCapacityError as exc:
         yield f"data: {_dumps({'error': str(exc)})}\n\n"
+    except asyncio.CancelledError:
+        mark_stream_cancelled()
+        raise
     except Exception as exc:
         logger.exception("stream_sse_payloads failed")
         message = sanitize_user_message(
@@ -42,6 +67,8 @@ async def stream_sse_payloads(
             fallback=KNOWLEDGE_SERVICE_UNAVAILABLE,
         )
         yield f"data: {_dumps({'error': message})}\n\n"
+    finally:
+        clear_stream_cancel()
 
 
 _POLL_EVENT_TERMINAL = frozenset({"done", "failed", "cancelled"})

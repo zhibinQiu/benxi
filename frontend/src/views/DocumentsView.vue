@@ -30,12 +30,15 @@ import {
   RocketOutline,
   EyeOutline,
   ConstructOutline,
-  RefreshOutline } from "@vicons/ionicons5";
+  RefreshOutline,
+  GridOutline,
+  ListOutline } from "@vicons/ionicons5";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
 import BatchPublishModal from "../components/BatchPublishModal.vue";
 import DocumentUploadLocationPicker from "../components/DocumentUploadLocationPicker.vue";
 import KbFolderCard from "../components/KbFolderCard.vue";
 import KbFolderCreateCard from "../components/KbFolderCreateCard.vue";
+import DocumentIconCard from "../components/DocumentIconCard.vue";
 import IconAction from "../components/IconAction.vue";
 import PlatformSpin from "../components/PlatformSpin.vue";
 import BatchTableToolbar from "../components/BatchTableToolbar.vue";
@@ -68,8 +71,10 @@ import {
 import {
   clearDocumentsViewCache,
   invalidateDocumentsKbFoldersCache,
+  readDocumentsFolderViewMode,
   readDocumentsKbFoldersCache,
   readDocumentsListCache,
+  writeDocumentsFolderViewMode,
   writeDocumentsKbFoldersCache,
   writeDocumentsListCache } from "../utils/documentsViewCache.js";
 import { renderIconAction } from "../utils/tableIconActions";
@@ -90,8 +95,10 @@ import {
   updateKbFolder } from "../api/documents.js";
 import { fetchReindexUnindexedDocuments as reindexUnindexedDocuments } from "../api/knowledge.js";
 
-/** 文档列表每页条数 */
-const DOCUMENTS_PAGE_SIZE = 6;
+/** 列表视图每页条数 */
+const DOCUMENTS_LIST_PAGE_SIZE = 6;
+/** 图标视图：与网格约 6 列对齐，每页最多 2 行 */
+const DOCUMENTS_ICON_PAGE_SIZE = 12;
 
 const route = useRoute();
 const { isSystemAdmin, user } = useAuth();
@@ -107,7 +114,6 @@ const searchOpen = ref(false);
 const searchInputRef = ref(null);
 const appliedSearch = ref("");
 const page = ref(1);
-const pageSize = ref(DOCUMENTS_PAGE_SIZE);
 const total = ref(0);
 const items = ref([]);
 const folders = ref([]);
@@ -413,6 +419,36 @@ const showBatchDocActions = computed(
 const showTopFolderBatchActions = computed(
   () => isInsideKbFolder.value && showBatchDocActions.value
 );
+
+/** 文件夹内文档展示：list | icons */
+const folderDocViewMode = ref(readDocumentsFolderViewMode());
+const showFolderIconView = computed(
+  () => isInsideKbFolder.value && folderDocViewMode.value === "icons"
+);
+const pageSize = computed(() =>
+  showFolderIconView.value ? DOCUMENTS_ICON_PAGE_SIZE : DOCUMENTS_LIST_PAGE_SIZE
+);
+
+function setFolderDocViewMode(mode) {
+  const next = mode === "icons" ? "icons" : "list";
+  if (next === folderDocViewMode.value) return;
+  folderDocViewMode.value = next;
+  writeDocumentsFolderViewMode(next);
+  page.value = 1;
+  void load({ force: true });
+}
+
+function onIconCardSelected(row, checked) {
+  if (!canBatchSelectDocument(row)) return;
+  const id = row.id;
+  if (checked) {
+    if (!checkedRowKeys.value.includes(id)) {
+      checkedRowKeys.value = [...checkedRowKeys.value, id];
+    }
+  } else {
+    checkedRowKeys.value = checkedRowKeys.value.filter((k) => k !== id);
+  }
+}
 
 const showFolderNavInActions = computed(
   () =>
@@ -1798,10 +1834,24 @@ watch(
 
     <div v-else key="doc-list" class="documents-list-panel">
     <!-- 文件夹内操作栏：在卡片上方显示 -->
-    <div v-if="showTopFolderBatchActions" class="documents-folder-toolbar">
+    <div v-if="isInsideKbFolder" class="documents-folder-toolbar">
       <IconAction :label="t('documents.backToFolders')" :icon="ArrowBackOutline" @click="backToKbFolders" />
       <span class="documents-folder-toolbar__name">{{ activeKbFolderLabel }}</span>
-      <div class="folder-action-pills">
+      <div class="folder-view-toggle" role="group" :aria-label="t('documents.viewModeLabel')">
+        <IconAction
+          :label="t('documents.viewList')"
+          :icon="ListOutline"
+          :active="folderDocViewMode === 'list'"
+          @click="setFolderDocViewMode('list')"
+        />
+        <IconAction
+          :label="t('documents.viewIcons')"
+          :icon="GridOutline"
+          :active="folderDocViewMode === 'icons'"
+          @click="setFolderDocViewMode('icons')"
+        />
+      </div>
+      <div v-if="showTopFolderBatchActions" class="folder-action-pills">
         <NButton text size="tiny" class="folder-action-btn" :disabled="!canBatchPublish" @click="openBatchPublish">
           {{ t("documents.detail.publish") }}
         </NButton>
@@ -1837,7 +1887,36 @@ watch(
       </n-space>
     </div>
 
-        <n-card class="documents-list-card" :bordered="true">
+    <PlatformSpin
+      v-if="showFolderIconView"
+      :show="loading && !items.length"
+      class="documents-view-spin"
+      local
+    >
+      <n-empty
+        v-if="!items.length && !loading"
+        :description="t('documents.emptyDocs')"
+      />
+      <div v-else class="kb-folder-explorer documents-icon-explorer">
+        <div
+          v-for="(row, docIdx) in items"
+          :key="row.id"
+          class="kb-folder-explorer__cell"
+          :style="{ '--folder-i': docIdx }"
+        >
+          <DocumentIconCard
+            :document="row"
+            :selectable="showBatchDocActions"
+            :selected="checkedRowKeys.includes(row.id)"
+            :select-disabled="!canBatchSelectDocument(row)"
+            @open="(doc) => openDocumentDetail(doc.id)"
+            @update:selected="(v) => onIconCardSelected(row, v)"
+          />
+        </div>
+      </div>
+    </PlatformSpin>
+
+        <n-card v-else class="documents-list-card" :bordered="true">
     <PlatformSpin :show="loading && !items.length" class="documents-view-spin" local>
       <n-data-table
         class="documents-table"
@@ -2118,6 +2197,13 @@ watch(
   letter-spacing: -0.01em;
 }
 
+.folder-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 /* ── 文件夹内操作按钮（纯文字） ── */
 .documents-folder-toolbar .folder-action-btn.n-button {
   width: auto !important;
@@ -2273,6 +2359,9 @@ watch(
     font-size: 14px;
     min-width: 0;
     max-width: 40vw;
+  }
+  .folder-view-toggle {
+    order: 3;
   }
 
   /* 7. 搜索框全宽 */

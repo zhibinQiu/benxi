@@ -13,6 +13,7 @@ from app.agentkit.loop.state import LoopState
 InterruptPhase = Literal[
     "awaiting_confirmation",  # 等待用户确认
     "awaiting_choice",  # 等待用户从多方案中选择
+    "between_rounds",  # 工具轮次间静默落盘（崩溃/断线后可 resume）
 ]
 
 InterruptResponse = Literal["accepted", "rejected"] | str

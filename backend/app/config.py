@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # ── 平台基础 ──────────────────────────────────────────────────────────────
     app_name: str = "本析"
-    platform_version: str = "4.8.7"
+    platform_version: str = "4.8.8"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -338,16 +338,6 @@ class Settings(BaseSettings):
     mcp_enabled: bool = True
     mcp_service_base_url: str = ""
     mcp_external_skills_json: str = "[]"
-
-    # ── 免费网页 AI Bridge ────────────────────────────────────────────────────
-    free_web_ai_headless: bool = False
-    free_web_ai_cdp_port: int = 0
-    free_web_ai_chrome_path: str = ""
-    free_web_ai_profile_dir: str = ""
-    free_web_ai_proxy_server: str = ""
-    free_web_ai_timeout_ms: int = 120000
-    free_web_ai_provider_timeout_ms: int = 180000
-    free_web_ai_default_provider: str = "qwen"
 
     # ── 在线搜索 ──────────────────────────────────────────────────────────────
     searxng_url: str = ""

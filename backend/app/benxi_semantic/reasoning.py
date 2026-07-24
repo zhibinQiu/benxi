@@ -178,8 +178,10 @@ class ReasoningEngine:
         matched: list[MatchedEntity],
     ) -> ReasoningPayload:
         matched_ids = {e.id for e in matched}
+        # 孤立实体（无边）也要进入上下文，否则点赞 memory 等无法成材
+        all_ids = set(result.entity_ids) | matched_ids
         sorted_ids = sorted(
-            result.entity_ids,
+            all_ids,
             key=lambda eid: (0 if eid in matched_ids else 1),
         )
         entity_details: dict[str, dict[str, Any]] = {}
@@ -191,10 +193,19 @@ class ReasoningEngine:
                        e.type_code AS type_code,
                        e.description AS description
                 """,
-                {"ids": sorted_ids},
+                {"ids": list(sorted_ids)},
             )
             for rd in rows:
                 entity_details[rd["id"]] = rd
+            # 查询失败时仍可用 match 结果兜底
+            for ent in matched:
+                if ent.id not in entity_details:
+                    entity_details[ent.id] = {
+                        "id": ent.id,
+                        "name": ent.name,
+                        "type_code": ent.type_code,
+                        "description": ent.description,
+                    }
 
         lines: list[str] = []
         citations: list[dict[str, Any]] = []

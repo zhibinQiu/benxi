@@ -17,7 +17,13 @@ import {
   NTabs,
   NTag,
 } from "naive-ui";
-import { AddOutline, PlayOutline, RefreshOutline, TrashOutline } from "@vicons/ionicons5";
+import {
+  AddOutline,
+  CreateOutline,
+  PlayOutline,
+  RefreshOutline,
+  TrashOutline,
+} from "@vicons/ionicons5";
 import AdminFormModal from "../components/AdminFormModal.vue";
 import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import IconAction from "../components/IconAction.vue";
@@ -37,7 +43,8 @@ const { t } = useI18n();
 
 const loading = ref(false);
 const saving = ref(false);
-const createOpen = ref(false);
+const formOpen = ref(false);
+const editingId = ref(null);
 const activeTab = ref("configured");
 const automations = ref([]);
 const runs = ref([]);
@@ -48,6 +55,10 @@ const form = ref({
   range: null,
   enabled: true,
 });
+
+const formTitle = computed(() =>
+  editingId.value ? t("automation.edit") : t("automation.create")
+);
 
 const frequencyOptions = computed(() => [
   { label: t("automation.freqOnce"), value: "once" },
@@ -98,6 +109,7 @@ function statusTag(status) {
 }
 
 function resetForm() {
+  editingId.value = null;
   form.value = {
     name: "",
     prompt: "",
@@ -107,9 +119,36 @@ function resetForm() {
   };
 }
 
+function toRangeValue(startsAt, endsAt) {
+  if (!startsAt && !endsAt) return null;
+  const start = startsAt ? new Date(startsAt).getTime() : null;
+  const end = endsAt ? new Date(endsAt).getTime() : null;
+  if (start == null || end == null || Number.isNaN(start) || Number.isNaN(end)) {
+    return null;
+  }
+  return [start, end];
+}
+
 function openCreate() {
   resetForm();
-  createOpen.value = true;
+  formOpen.value = true;
+}
+
+function openEdit(row) {
+  editingId.value = row.id;
+  form.value = {
+    name: row.name || "",
+    prompt: row.prompt || "",
+    frequency: row.frequency || "daily",
+    range: toRangeValue(row.starts_at, row.ends_at),
+    enabled: !!row.enabled,
+  };
+  formOpen.value = true;
+}
+
+function closeForm() {
+  formOpen.value = false;
+  resetForm();
 }
 
 async function load() {
@@ -125,7 +164,7 @@ async function load() {
   }
 }
 
-async function submitCreate() {
+async function submitForm() {
   const name = form.value.name.trim();
   const prompt = form.value.prompt.trim();
   if (!name || !prompt) {
@@ -143,14 +182,21 @@ async function submitCreate() {
   };
   saving.value = true;
   try {
-    await createAutomation(body);
-    ui.success(t("automation.createOk"));
-    createOpen.value = false;
-    resetForm();
+    if (editingId.value) {
+      await updateAutomation(editingId.value, body);
+      ui.success(t("automation.updateOk"));
+    } else {
+      await createAutomation(body);
+      ui.success(t("automation.createOk"));
+    }
+    closeForm();
     await load();
     activeTab.value = "configured";
   } catch (e) {
-    ui.error(e.message || t("automation.createFailed"));
+    ui.error(
+      e.message ||
+        (editingId.value ? t("automation.updateFailed") : t("automation.createFailed"))
+    );
   } finally {
     saving.value = false;
   }
@@ -221,9 +267,14 @@ const automationColumns = computed(() => [
   {
     title: t("common.actions"),
     key: "actions",
-    width: 100,
+    width: 132,
     render: (row) =>
       renderIconActionGroup([
+        {
+          label: t("common.edit"),
+          icon: CreateOutline,
+          onClick: () => openEdit(row),
+        },
         {
           label: t("automation.runNow"),
           icon: PlayOutline,
@@ -352,9 +403,10 @@ onMounted(load);
       </n-tabs>
 
       <AdminFormModal
-        v-model:show="createOpen"
-        :title="t('automation.create')"
+        v-model:show="formOpen"
+        :title="formTitle"
         :width="720"
+        @update:show="(v) => { if (!v) resetForm(); }"
       >
         <n-form label-placement="top" class="automation-create-form">
           <n-grid :cols="24" :x-gap="12" :y-gap="0">
@@ -403,10 +455,10 @@ onMounted(load);
         </n-form>
         <template #footer>
           <n-space justify="end">
-            <n-button :disabled="saving" @click="createOpen = false">
+            <n-button :disabled="saving" @click="closeForm">
               {{ t("common.cancel") }}
             </n-button>
-            <n-button type="primary" :loading="saving" @click="submitCreate">
+            <n-button type="primary" :loading="saving" @click="submitForm">
               {{ t("common.save") }}
             </n-button>
           </n-space>

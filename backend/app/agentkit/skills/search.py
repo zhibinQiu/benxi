@@ -29,6 +29,7 @@ def skill_query_tokens(query: str) -> list[str]:
 
 
 def _skill_search_haystack(skill: SkillDefinition) -> str:
+    """正向匹配字段（不含 dont_use_when，避免负面说明被当成命中）。"""
     return " ".join(
         filter(
             None,
@@ -36,8 +37,8 @@ def _skill_search_haystack(skill: SkillDefinition) -> str:
                 skill.name,
                 skill.description,
                 skill.use_when or "",
-                skill.dont_use_when or "",
                 skill.title or "",
+                skill.output or "",
             ),
         )
     ).lower()
@@ -69,6 +70,7 @@ def rank_skills_by_query(
     for skill in skills:
         name_l = skill.name.lower()
         use_l = (skill.use_when or "").lower()
+        dont_l = (skill.dont_use_when or "").lower()
         hay = _skill_search_haystack(skill)
         score = 0
         for t in tokens:
@@ -78,6 +80,8 @@ def rank_skills_by_query(
                 score += 2
             elif t in hay:
                 score += 1
+            if dont_l and t in dont_l:
+                score -= 3
         if score > 0 and skill.catalog_tier == "resident":
             score = int(round(score * resident_boost))
         if score > 0:

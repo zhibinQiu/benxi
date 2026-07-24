@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from app.services.agent_skill_router import (
     matches_browser_intent,
+    matches_browser_site_search,
     matches_search_rpa_browser_intent,
     matches_search_rpa_research_intent,
 )
 
 
-def test_affiliation_question_not_hard_routed_to_platform():
-    """归属类问题不做路由硬拦截；仅显式指定智能体/技能/工具时才硬拦。"""
+def test_affiliation_question_falls_through_to_skill_matching_when_no_kg():
+    """无图谱直答时，归属类问题不硬拦路由；同步路径兜底到调度。"""
     from unittest.mock import MagicMock, patch
 
     from app.services.agent_route_resolver import resolve_agent_routes_from_skills
@@ -32,24 +33,11 @@ def test_affiliation_question_not_hard_routed_to_platform():
             "app.services.agent_planner._skill_name_sets",
             return_value=set(),
         ),
-        patch(
-            "app.services.agent_route_resolver._match_agent_directly",
-            return_value=None,
-        ),
-        patch(
-            "app.services.agent_skill_routing.resolve_skill_routed_agent_scores",
-            return_value=[],
-        ),
-        patch(
-            "app.services.agent_skill_routing.pick_skill_route_scores",
-            return_value=[],
-        ),
     ):
         routes = resolve_agent_routes_from_skills(
             MagicMock(), MagicMock(), q, chat_history=None
         )
     assert len(routes) == 1
-    # 无显式指定时走调度兜底，不得因问题类型硬拦到 platform
     assert routes[0].agent_id == "orchestrator"
 
 
@@ -65,20 +53,17 @@ def test_browser_rpa_agent_prefix_still_browser_with_screenshot():
     assert not matches_search_rpa_research_intent("浏览器 RPA Agent：搜索 rpa并截图")
 
 
-def test_search_rpa_supervisor_routes():
-    from sqlalchemy import select
+def test_bing_search_carbon_with_screenshot_is_browser_intent():
+    q = "bing 搜索双碳并截图"
+    assert matches_browser_intent(q)
+    assert matches_browser_site_search(q)
 
-    from app.database import SessionLocal
-    from app.models.org import User
-    from app.services.agent_supervisor import _resolve_agent_routes
 
-    db = SessionLocal()
-    try:
-        user = db.scalar(select(User).limit(1))
-        assert user is not None
-        research_routes = _resolve_agent_routes(db, user, "搜索 rpa")
-        assert research_routes[0].agent_id == "orchestrator"
-        browser_routes = _resolve_agent_routes(db, user, "搜索 rpa并截图")
-        assert browser_routes[0].agent_id == "orchestrator"
-    finally:
-        db.close()
+def test_hard_rules_do_not_special_case_browser_or_news():
+    """浏览器/新闻不走打分式硬规则，留给 LLM 专精选型。"""
+    from unittest.mock import MagicMock
+
+    from app.services.agent_route_resolver import _resolve_hard_rule_routes
+
+    assert _resolve_hard_rule_routes(MagicMock(), "bing 搜索双碳并截图") is None
+    assert _resolve_hard_rule_routes(MagicMock(), "帮我查询最新的 AI 事件新闻") is None

@@ -124,27 +124,36 @@ def detach_request_db(db: Session | None) -> None:
 
 def resolve_db_user(db: Session, user: uuid.UUID | object) -> object:
     """run_db_task 内用 user_id 重新绑定 Session，避免 detached User。"""
+    from sqlalchemy import inspect as sa_inspect
+
     from app.models.org import User
 
-    if isinstance(user, User):
-        try:
-            uid = user.id
-        except Exception:
-            # detached / expired — 从 inspect 或 _sa_instance_state.key 获取
-            from sqlalchemy import inspect as sa_inspect
-
-            inst = sa_inspect(user)
-            if inst and inst.identity:
-                uid = inst.identity[0]
-            else:
-                # 最后手段：尝试 User 的另一已加载字段或字符串化
-                uid = uuid.UUID(str(user))
-    elif isinstance(user, uuid.UUID):
+    uid: uuid.UUID | None = None
+    if isinstance(user, uuid.UUID):
         uid = user
-    elif getattr(user, "id", None):
-        uid = user.id
+    elif isinstance(user, User):
+        try:
+            inst = sa_inspect(user)
+            if inst is not None and inst.identity:
+                raw = inst.identity[0]
+                uid = raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw))
+        except Exception:
+            uid = None
+        if uid is None:
+            try:
+                raw = user.id
+                uid = raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw))
+            except Exception as exc:
+                raise ValueError("无效用户") from exc
+    elif getattr(user, "id", None) is not None:
+        try:
+            raw = user.id  # type: ignore[union-attr]
+            uid = raw if isinstance(raw, uuid.UUID) else uuid.UUID(str(raw))
+        except Exception:
+            uid = uuid.UUID(str(user))
     else:
         uid = uuid.UUID(str(user))
+
     row = db.get(User, uid)
     if row is None:
         raise ValueError("用户不存在")

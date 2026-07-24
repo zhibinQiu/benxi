@@ -1,11 +1,11 @@
-"""知识问答：文档嵌入图改写为平台鉴权代理 URL。"""
+"""知识问答：文档嵌入图改写为平台鉴权代理 URL；最终回答不内嵌文档截图。"""
 
 from app.skills.builtin.handlers import (
-    _ensure_platform_images_in_answer,
     _knowledge_qa_format_hits,
     _normalize_chat_image_url,
     _platform_citation_image_url,
     _rewrite_media_for_chat,
+    _strip_document_images_from_answer,
 )
 
 
@@ -35,12 +35,12 @@ def test_rewrite_markdown_and_html_img():
     assert "<img" not in out.lower()
 
 
-def test_format_hits_appends_image_id_and_inline():
+def test_format_hits_keeps_images_in_citations_not_body():
     body, cites = _knowledge_qa_format_hits(
         [
             {
                 "title": "制度.pdf",
-                "content": "考勤规则……",
+                "content": "考勤规则…… ![表](/v1/document/image/inline-1)",
                 "document_id": "d1",
                 "image_id": "shot-1",
                 "inline_images": [{"url": "/v1/document/image/inline-1", "alt": "表"}],
@@ -50,16 +50,22 @@ def test_format_hits_appends_image_id_and_inline():
         ]
     )
     proxy = _platform_citation_image_url("shot-1")
-    assert proxy in body
-    assert "/api/v1/knowledge/citations/images/inline-1" in body
+    assert proxy not in body
+    assert "/api/v1/knowledge/citations/images/inline-1" not in body
+    assert "考勤规则" in body
     assert cites[0]["image_id"] == "shot-1"
     assert cites[0]["inline_images"][0]["url"].endswith("inline-1")
 
 
-def test_ensure_platform_images_reappended_when_model_drops():
-    notebook = "材料\n\n![文档截图](/api/v1/knowledge/citations/images/keep-me)\n"
-    answer = "根据材料，考勤需打卡。"
-    out = _ensure_platform_images_in_answer(answer, notebook)
+def test_strip_document_images_from_answer():
+    answer = (
+        "根据材料，考勤需打卡。\n\n"
+        "### 相关文档图\n\n"
+        "![文档截图](/api/v1/knowledge/citations/images/keep-me)\n"
+        "另见图 ![表](/v1/document/image/inline-x)\n"
+    )
+    out = _strip_document_images_from_answer(answer)
     assert "考勤需打卡" in out
-    assert "/api/v1/knowledge/citations/images/keep-me" in out
-    assert "相关文档图" in out
+    assert "/api/v1/knowledge/citations/images/keep-me" not in out
+    assert "相关文档图" not in out
+    assert "![表]" not in out

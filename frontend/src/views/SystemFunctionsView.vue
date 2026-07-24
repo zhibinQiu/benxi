@@ -7,7 +7,6 @@ import ListRefreshButton from "../components/ListRefreshButton.vue";
 import { NEmpty, NGrid, NGi, NIcon } from "naive-ui";
 
 import {
-  DocumentTextOutline,
   StarOutline,
   Star,
 } from "@vicons/ionicons5";
@@ -20,7 +19,6 @@ import {
 import { useI18n } from "../composables/useI18n";
 import { useSystemFeatures } from "../composables/useSystemFeatures";
 import { openExternal } from "../utils/openExternal.js";
-import { featureCardImageUrl, hasFeatureCardImage } from "../utils/featureDisplay.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -217,23 +215,6 @@ function openFeature(f) {
               @keydown.enter.prevent="openFeature(f)"
               @keydown.space.prevent="openFeature(f)"
             >
-              <div
-                class="feature-card__thumb"
-                :class="{ 'feature-card__thumb--fallback': !hasFeatureCardImage(f.id) }"
-                aria-hidden="true"
-              >
-                <img
-                  v-if="hasFeatureCardImage(f.id)"
-                  class="feature-card__thumb-img"
-                  :src="featureCardImageUrl(f.id)"
-                  :alt="featureTitle(f)"
-                  loading="lazy"
-                  decoding="async"
-                />
-                <n-icon v-else :size="20">
-                  <component :is="DocumentTextOutline" />
-                </n-icon>
-              </div>
               <div class="feature-card__body">
                 <div class="feature-card__title-row">
                   <h3 class="feature-card__title">{{ featureTitle(f) }}</h3>
@@ -267,7 +248,6 @@ function openFeature(f) {
       >
         <n-gi v-for="i in 10" :key="i" class="feature-card-wrap">
           <article class="feature-card feature-card--skeleton" aria-hidden="true">
-            <div class="feature-card__thumb skeleton-block skeleton-block--thumb" />
             <div class="feature-card__body">
               <div class="skeleton-block skeleton-block--title" />
               <div class="skeleton-block skeleton-block--desc" />
@@ -286,7 +266,7 @@ function openFeature(f) {
   width: 100%;
   flex: 1;
   min-height: 100%;
-  --feature-card-height: 96px;
+  --feature-card-height: 88px;
   --cat-accent: var(--platform-accent);
   --cat-accent-soft: var(--platform-accent-soft);
 }
@@ -361,9 +341,9 @@ function openFeature(f) {
   max-height: var(--feature-card-height);
   box-sizing: border-box;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
   padding: 12px 14px;
   border-radius: var(--platform-card-radius);
   outline: none;
@@ -448,6 +428,7 @@ function openFeature(f) {
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+  min-height: 0;
   gap: 4px;
 }
 
@@ -456,34 +437,8 @@ function openFeature(f) {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  min-height: calc(var(--platform-font-size-base) * 1.4);
-}
-
-.feature-card__thumb {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  align-self: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--platform-bg-tertiary);
-  border: 1px solid color-mix(in srgb, var(--platform-border) 80%, transparent);
-}
-
-.feature-card__thumb--fallback {
-  color: var(--platform-accent);
-  background: color-mix(in srgb, var(--platform-accent-soft) 88%, var(--platform-bg-tertiary));
-  border-color: color-mix(in srgb, var(--platform-accent) 12%, transparent);
-}
-
-.feature-card__thumb-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
+  padding-right: 18px;
+  min-height: calc(var(--platform-font-size-base) * 1.35);
 }
 
 .feature-card__title {
@@ -507,10 +462,10 @@ function openFeature(f) {
 
 .feature-card__desc {
   margin: 0;
-  min-height: calc(1em * 1.5);
+  min-height: calc(1em * 1.4);
   font-size: var(--platform-font-size-sm);
   font-weight: var(--platform-font-weight-normal);
-  line-height: 1.5;
+  line-height: 1.4;
   color: var(--platform-text-tertiary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -536,9 +491,8 @@ function openFeature(f) {
   min-height: var(--feature-card-height);
   max-height: var(--feature-card-height);
   pointer-events: none;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  justify-content: center;
   padding: 12px 14px;
   background: var(--platform-bg-tertiary) !important;
   border: 1px solid transparent !important;
@@ -556,15 +510,6 @@ function openFeature(f) {
   animation: skeleton-shimmer 1.2s ease-in-out infinite;
 }
 
-.skeleton-block--thumb {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-
-
 .skeleton-block--title {
   height: 14px;
   width: 72%;
@@ -573,6 +518,7 @@ function openFeature(f) {
 .skeleton-block--desc {
   height: 12px;
   width: 92%;
+  margin-top: 4px;
 }
 
 @keyframes skeleton-shimmer {
@@ -586,7 +532,7 @@ function openFeature(f) {
 
 @media (max-width: 640px) {
   .functions-page {
-    --feature-card-height: 92px;
+    --feature-card-height: 84px;
   }
 
   .functions-page__content {
@@ -594,13 +540,7 @@ function openFeature(f) {
   }
 
   .feature-card {
-    gap: 10px;
     padding: 10px 12px;
-  }
-
-  .feature-card__thumb {
-    width: 40px;
-    height: 40px;
   }
 
   .feature-card__star {
@@ -632,24 +572,16 @@ function openFeature(f) {
 }
 
 @media (max-width: 400px) {
+  .functions-page {
+    --feature-card-height: 82px;
+  }
+
   .functions-page__content {
     padding: 4px 8px 12px;
   }
 
   .feature-card {
-    --feature-card-height: 98px;
-    padding: 8px;
-    gap: 8px;
-  }
-
-  .feature-card__thumb {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-  }
-
-  .feature-card__thumb--fallback :deep(.n-icon) {
-    font-size: 16px !important;
+    padding: 8px 10px;
   }
 
   .feature-card__title {

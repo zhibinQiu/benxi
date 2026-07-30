@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 
 from app.core.tool_skill_taxonomy import GLOBAL_ATOMIC_TOOL_NAMES
-from app.tool_center.errors import ToolErrorCode, business_message, is_retryable
-from app.tool_center.registry import get_tool_center
-from app.tool_center.schemas import SkillMeta, ToolCallRequest, ToolDescriptor, ToolResponse
-from app.tool_center.context import ToolRuntimeContext
-from app.tool_center.executor import execute_tool_call, new_call_id
+from app.tools.errors import ToolErrorCode, business_message, is_retryable
+from app.tools.registry import get_tool_center
+from app.tools.schemas import SkillMeta, ToolCallRequest, ToolDescriptor, ToolResponse
+from app.tools.context import ToolRuntimeContext
+from app.tools.executor import execute_tool_call, new_call_id
 
 
 def test_tool_descriptor_schema():
@@ -131,7 +131,7 @@ def test_param_validation_returns_1xxx():
 def test_skill_bridge_retries_retryable_errors(monkeypatch):
     """Skill 层对可重试 Tool 错误自动退避重试。"""
     from app.skills.types import SkillInvocationContext
-    from app.tool_center import skill_bridge
+    from app.tools import skill_bridge
 
     calls: list[int] = []
 

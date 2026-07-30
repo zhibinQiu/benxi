@@ -25,6 +25,8 @@ class JobType(str, enum.Enum):
     subscription_import = "subscription_import"
     finance_report = "finance_report"
     carbon_report = "carbon_report"
+    kg_sync = "kg_sync"
+    automl_train = "automl_train"
 
 
 class Job(Base):

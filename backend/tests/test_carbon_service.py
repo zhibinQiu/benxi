@@ -147,10 +147,85 @@ def test_classify_carbon_question():
     assert _classify_carbon_question("什么是碳达峰") == "general"
 
 
+def test_normalize_policy_keyword():
+    assert svc.normalize_policy_keyword("最新的双碳政策有哪些？") == "双碳政策"
+    assert svc.normalize_policy_keyword("最新的碳政策有哪些") == "碳政策"
+    assert svc.normalize_policy_keyword("") == "碳"
+    assert svc.normalize_policy_keyword("CCER最新方法学") == "CCER方法学"
+
+
+def test_build_policy_summary_md_lists_items():
+    md = svc._build_policy_summary_md(
+        keyword="双碳政策",
+        queried_at="t",
+        total_hits=10,
+        sources=[
+            {
+                "title": "关于印发碳达峰方案的通知",
+                "doc_type": "政务公开",
+                "published_at": "2026-01-01",
+                "source": "发改委",
+                "url": "https://www.ndrc.gov.cn/a.html",
+                "body": "第一段。" * 50,
+            }
+        ],
+        failed=[],
+    )
+    assert "关于印发碳达峰方案的通知" in md
+    assert "政务公开" in md
+    assert "https://www.ndrc.gov.cn/a.html" in md
+    assert "按下列条目" in md or "有哪些" in md
+
+
+def test_fetch_carbon_policy_ndrc_mocked(monkeypatch):
+    from app.services import ndrc_policy_scraper as ndrc
+
+    async def _fake_scrape(self, **_kwargs):
+        self.total_hits = 2
+        return [
+            {
+                "title": "关于印发碳达峰实施方案的通知",
+                "url": "https://www.ndrc.gov.cn/a.html",
+                "doc_type": "政务公开",
+                "published_at": "2026-01-01",
+                "source": "发改委",
+                "body": "第一段政策内容。\n\n第二段继续说明各地落实要求。",
+            },
+            {
+                "title": "碳市场条例解读",
+                "url": "https://www.ndrc.gov.cn/b.html",
+                "doc_type": "新闻动态",
+                "published_at": "2026-01-02",
+                "source": "发改委",
+                "body": "条例全文要点一。\n\n条例全文要点二。",
+            },
+        ]
+
+    async def _noop_refresh(self):
+        return None
+
+    async def _noop_close(self):
+        return None
+
+    monkeypatch.setattr(ndrc.NdrcPolicySearcher, "refresh_token", _noop_refresh)
+    monkeypatch.setattr(ndrc.NdrcPolicySearcher, "scrape", _fake_scrape)
+    monkeypatch.setattr(ndrc.NdrcPolicySearcher, "aclose", _noop_close)
+
+    result = asyncio.run(svc.fetch_carbon_policy(keyword="最新的碳达峰政策有哪些？"))
+    assert result["ok"] is True
+    assert result["keyword"] == "碳达峰政策"
+    assert result["total_hits"] == 2
+    assert len(result["sources"]) == 2
+    assert "### 1. 关于印发碳达峰实施方案的通知" in result["summary_md"]
+    assert "第二段继续说明" in result["summary_md"]
+    assert "正文全文" not in result["summary_md"]  # Agent 侧用精简列表
+    assert result["sources"][0]["body"].count("\n\n") >= 1
+
+
 def test_carbon_policy_writes_citations_to_loop_state(monkeypatch):
     """carbon_policy 成功后须写入 loop_state.citations，供前端「数据来源」展示。"""
-    from app.tool_center.adapters import _run_carbon_policy
-    from app.tool_center.context import ToolRuntimeContext
+    from app.tools.adapters import _run_carbon_policy
+    from app.tools.context import ToolRuntimeContext
 
     fake = {
         "ok": True,
@@ -188,7 +263,7 @@ def test_carbon_policy_writes_citations_to_loop_state(monkeypatch):
     )
     ok, summary, data = asyncio.run(_run_carbon_policy(ctx, {"keyword": "双碳"}))
     assert ok is True
-    assert "2 个政策" in summary
+    assert "2 条政策" in summary or "2 个政策" in summary
     assert data and data["ok"] is True
     cites = loop_state["citations"]
     assert len(cites) == 2

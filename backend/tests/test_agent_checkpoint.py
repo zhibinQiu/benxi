@@ -240,7 +240,7 @@ class TestPendingCheckpointsForUser:
             phase="awaiting_confirmation",
             loop_state=_make_loop_state(),
             working=_make_working(),
-            pending_data={"tool_name": "delete_user"},
+            pending_data={"tool_name": "delete_document"},
         )
 
         user_cps = get_pending_checkpoints_for_user(user_id)

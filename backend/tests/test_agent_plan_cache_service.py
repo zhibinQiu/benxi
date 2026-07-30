@@ -16,7 +16,7 @@ from app.services.agent_plan_cache_service import (
     question_similarity,
     store_cached_payload,
 )
-from app.agentkit.loop import AgentExecutionPlan
+from app.agent.loop import AgentExecutionPlan
 
 
 def test_normalize_question_collapses_punctuation():

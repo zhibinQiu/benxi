@@ -271,7 +271,7 @@ def execution_plan_to_payload(plan: Any) -> dict[str, Any]:
 
 
 def execution_plan_from_payload(data: dict[str, Any], *, source: str = "cache"):
-    from app.agentkit.loop import AgentExecutionPlan
+    from app.agent.loop import AgentExecutionPlan
 
     return AgentExecutionPlan(
         reasoning=str(data.get("reasoning") or "").strip(),

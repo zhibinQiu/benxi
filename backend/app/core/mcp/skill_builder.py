@@ -1,11 +1,11 @@
-"""将外部 MCP Skill 登记项转换为平台 SkillDefinition — agentkit 适配。"""
+"""将外部 MCP Skill 登记项转换为平台 SkillDefinition — app.agent 适配。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.agentkit.skills.mcp_bridge import McpSkillRecord
-from app.agentkit.skills.mcp_bridge import build_mcp_skill_definition as _build_mcp_skill
+from app.agent.skills.mcp_bridge import McpSkillRecord
+from app.agent.skills.mcp_bridge import build_mcp_skill_definition as _build_mcp_skill
 
 from app.core.mcp.client import mcp_call_tool
 from app.core.mcp.external_registry import McpExternalSkillRecord

@@ -261,7 +261,7 @@ async def research_industry_abatement(
 
     if top and read_full > 0:
         try:
-            from app.tool_center.adapters import _enrich_items_with_full_text
+            from app.tools.adapters import _enrich_items_with_full_text
 
             prefer = top[:read_full]
             await _enrich_items_with_full_text(prefer, len(prefer))

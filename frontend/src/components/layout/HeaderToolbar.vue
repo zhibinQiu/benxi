@@ -8,31 +8,35 @@ import {
   NDropdown,
   NIcon,
 } from "naive-ui";
-import { TimeOutline } from "@vicons/ionicons5";
+import { TimeOutline, NotificationsOutline } from "@vicons/ionicons5";
 import { fetchJobs } from "../../api/client";
 import HeaderFlyoutShell from "../HeaderFlyoutShell.vue";
 import { useAuth } from "../../composables/useAuth";
 import { useAppPreferences } from "../../composables/useAppPreferences";
 import { useNotificationAlerts } from "../../composables/useNotificationAlerts.js";
+import { PLATFORM_JOBS_REFRESH_EVENT } from "../../constants/platformEvents.js";
 
 const JobsPanel = defineAsyncComponent(() => import("../JobsPanel.vue"));
-
-const emit = defineEmits(["toggle-notifications"]);
+const NotificationsPanel = defineAsyncComponent(() => import("../NotificationsPanel.vue"));
 
 const route = useRoute();
 const { user, displayName, logout } = useAuth();
 const { toggleTheme, toggleLocale, locale, isDark } = useAppPreferences();
-const { unreadCount } = useNotificationAlerts();
+const { unreadCount, refreshNotificationAlerts } = useNotificationAlerts();
 
 const activeJobCount = ref(0);
 const jobsPopoverOpen = ref(false);
+const notifPopoverOpen = ref(false);
 const jobsTriggerRef = ref(null);
+const notifTriggerRef = ref(null);
 const flyoutsReady = ref(false);
 const jobsPanelMounted = ref(false);
+const notifPanelMounted = ref(false);
 const userMenuOpen = ref(false);
 const isMobile = ref(window.innerWidth < 768);
 let badgeTimer = null;
 let jobsUnmountTimer = null;
+let notifUnmountTimer = null;
 
 const FLYOUT_UNMOUNT_DELAY_MS = 320;
 
@@ -85,8 +89,11 @@ function scheduleFlyoutUnmount(openRef, mountedRef, setTimer) {
 
 function releaseFlyoutPanels() {
   clearFlyoutUnmountTimer(jobsUnmountTimer);
+  clearFlyoutUnmountTimer(notifUnmountTimer);
   jobsUnmountTimer = null;
+  notifUnmountTimer = null;
   jobsPanelMounted.value = false;
+  notifPanelMounted.value = false;
 }
 
 watch(jobsPopoverOpen, (open) => {
@@ -99,6 +106,19 @@ watch(jobsPopoverOpen, (open) => {
   clearFlyoutUnmountTimer(jobsUnmountTimer);
   scheduleFlyoutUnmount(jobsPopoverOpen, jobsPanelMounted, (timer) => {
     jobsUnmountTimer = timer;
+  });
+});
+
+watch(notifPopoverOpen, (open) => {
+  if (open) {
+    clearFlyoutUnmountTimer(notifUnmountTimer);
+    notifUnmountTimer = null;
+    notifPanelMounted.value = true;
+    return;
+  }
+  clearFlyoutUnmountTimer(notifUnmountTimer);
+  scheduleFlyoutUnmount(notifPopoverOpen, notifPanelMounted, (timer) => {
+    notifUnmountTimer = timer;
   });
 });
 
@@ -116,12 +136,19 @@ onMounted(() => {
     if (!document.hidden) refreshActiveJobCount();
   }, 15_000);
   window.addEventListener("resize", onViewportResize, { passive: true });
+  window.addEventListener(PLATFORM_JOBS_REFRESH_EVENT, onJobsRefreshEvent);
 });
+
+function onJobsRefreshEvent() {
+  void refreshActiveJobCount();
+  jobsPopoverOpen.value = true;
+}
 
 onUnmounted(() => {
   if (badgeTimer) clearInterval(badgeTimer);
   releaseFlyoutPanels();
   window.removeEventListener("resize", onViewportResize);
+  window.removeEventListener(PLATFORM_JOBS_REFRESH_EVENT, onJobsRefreshEvent);
 });
 
 async function refreshActiveJobCount() {
@@ -141,6 +168,7 @@ async function refreshActiveJobCount() {
 
 function closeAllFlyouts({ releasePanels = false } = {}) {
   jobsPopoverOpen.value = false;
+  notifPopoverOpen.value = false;
   if (releasePanels) releaseFlyoutPanels();
 }
 
@@ -158,6 +186,10 @@ function toggleJobsPopover() {
   toggleFlyout(jobsPopoverOpen);
 }
 
+function toggleNotifPopover() {
+  toggleFlyout(notifPopoverOpen);
+}
+
 function onUserMenuSelect(key) {
   userMenuOpen.value = false;
   if (key === "toggle_locale") {
@@ -167,11 +199,6 @@ function onUserMenuSelect(key) {
   } else if (key === "logout") {
     logout();
   }
-}
-
-function onAvatarClick() {
-  closeAllFlyouts();
-  emit("toggle-notifications");
 }
 
 defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
@@ -184,13 +211,13 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
         <n-button
           quaternary
           circle
-          size="small"
+          size="tiny"
           class="header-icon-btn"
           :class="{ 'header-icon-btn--active': jobsPopoverOpen || route.name === 'jobs' }"
           :aria-label="'后台任务'"
           @click.stop="toggleJobsPopover"
         >
-          <n-icon :size="18" :component="TimeOutline" />
+          <n-icon :size="16" :component="TimeOutline" />
         </n-button>
         <n-badge
           v-if="activeJobCount > 0"
@@ -200,22 +227,27 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
         />
       </span>
 
-      <div class="header-user">
-        <button
-          type="button"
-          class="header-user__avatar-wrap"
-          aria-label="通知"
-          @click="onAvatarClick"
+      <span ref="notifTriggerRef" class="header-icon-wrap">
+        <n-button
+          quaternary
+          circle
+          size="tiny"
+          class="header-icon-btn"
+          :class="{ 'header-icon-btn--active': notifPopoverOpen || route.name === 'notifications' }"
+          :aria-label="'消息'"
+          @click.stop="toggleNotifPopover"
         >
-          <span class="header-user__avatar-inner">
-            <n-avatar round size="small" class="header-user__avatar">
-              {{ (userDisplayName || "U")[0] }}
-            </n-avatar>
-            <span v-if="unreadCount > 0" class="header-user__badge">
-              {{ unreadCount > 99 ? "99+" : unreadCount }}
-            </span>
-          </span>
-        </button>
+          <n-icon :size="16" :component="NotificationsOutline" />
+        </n-button>
+        <n-badge
+          v-if="unreadCount > 0"
+          class="header-icon-wrap__badge"
+          :value="unreadCount"
+          :max="99"
+        />
+      </span>
+
+      <div class="header-user">
         <n-dropdown
           trigger="click"
           placement="bottom-end"
@@ -225,9 +257,14 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
           @update:show="(v) => (userMenuOpen = v)"
           @select="onUserMenuSelect"
         >
-          <button type="button" class="header-user__meta" :aria-label="userDisplayName || '用户菜单'">
-            <span class="header-user__name">{{ userDisplayName }}</span>
-            <span v-if="!isMobile && roleLabel" class="header-user__role">{{ roleLabel }}</span>
+          <button type="button" class="header-user__trigger" :aria-label="userDisplayName || '用户菜单'">
+            <n-avatar round size="small" class="header-user__avatar">
+              {{ (userDisplayName || "U")[0] }}
+            </n-avatar>
+            <span class="header-user__meta">
+              <span class="header-user__name">{{ userDisplayName }}</span>
+              <span v-if="!isMobile && roleLabel" class="header-user__role">{{ roleLabel }}</span>
+            </span>
           </button>
         </n-dropdown>
       </div>
@@ -247,6 +284,19 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
           @navigate="jobsPopoverOpen = false"
         />
       </HeaderFlyoutShell>
+      <HeaderFlyoutShell
+        v-if="notifPanelMounted"
+        v-model:show="notifPopoverOpen"
+        :anchor-el="notifTriggerRef"
+        aria-label="消息"
+      >
+        <NotificationsPanel
+          :active="notifPopoverOpen"
+          @updated="refreshNotificationAlerts"
+          @navigate="notifPopoverOpen = false"
+          @close="notifPopoverOpen = false"
+        />
+      </HeaderFlyoutShell>
     </template>
   </div>
 </template>
@@ -263,19 +313,30 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
 .header-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px;
+  gap: 6px;
+  padding: 2px;
   border-radius: var(--platform-radius-sm);
   position: relative;
   z-index: 2;
 }
 
 .header-icon-btn {
-  width: 32px;
-  height: 32px;
+  width: 26px !important;
+  height: 26px !important;
+  min-width: 26px !important;
+  min-height: 26px !important;
+  padding: 0 !important;
   position: relative;
   z-index: 1;
   color: var(--platform-icon);
+  --n-height: 26px !important;
+  --n-icon-size: 16px !important;
+}
+
+.header-icon-btn :deep(.n-icon) {
+  font-size: 16px !important;
+  width: 16px !important;
+  height: 16px !important;
 }
 
 .header-icon-wrap {
@@ -283,8 +344,8 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   vertical-align: middle;
   flex-shrink: 0;
 }
@@ -306,45 +367,28 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
   border-left: 1px solid var(--platform-border, rgba(0, 0, 0, 0.08));
 }
 
-.header-user__avatar-wrap {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
+.header-user__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 160px;
   padding: 0;
   margin: 0;
-  line-height: 0;
-}
-
-.header-user__avatar-inner {
-  position: relative;
-  display: inline-block;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
 }
 
 .header-user__avatar {
+  flex-shrink: 0;
   width: 28px !important;
   height: 28px !important;
-  background: #0a6bff !important;
+  background: var(--platform-accent, #005A9E) !important;
   color: #fff !important;
   font-size: 11px;
   font-weight: 600;
-}
-
-.header-user__badge {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 14px;
-  text-align: center;
-  border-radius: 7px;
-  background: var(--platform-danger, #be1743);
-  color: #fff;
-  pointer-events: none;
 }
 
 .header-user__meta {
@@ -355,16 +399,10 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
   min-width: 0;
   line-height: 1.25;
   max-width: 120px;
-  padding: 0;
-  margin: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
 }
 
-.header-user__meta:hover .header-user__name {
-  color: var(--platform-accent, #0a6bff);
+.header-user__trigger:hover .header-user__name {
+  color: var(--platform-accent, #005A9E);
 }
 
 .header-user__name {
@@ -396,6 +434,10 @@ defineExpose({ refreshHeaderBadges: refreshActiveJobCount, closeAllFlyouts });
     gap: 4px;
     padding-left: 2px;
     border-left: none;
+  }
+
+  .header-user__trigger {
+    max-width: 120px;
   }
 
   .header-user__meta {

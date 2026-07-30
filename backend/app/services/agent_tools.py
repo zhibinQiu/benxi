@@ -13,7 +13,6 @@ from app.core.agent_loop_state import LoopState
 
 from sqlalchemy.orm import Session
 
-from app.core.permissions import user_has_permission
 from app.models.org import User
 
 _BROWSER_SESSION_TOOLS = frozenset(
@@ -62,6 +61,12 @@ def push_intermediate_progress(
     for key, value in extra.items():
         if value is not None:
             ev[key] = value
+    from app.agent.orchestrate.protocol import enrich_workflow_data
+
+    enrich_workflow_data(ev)
+    from app.core.agent_language import stamp_workflow_agent
+
+    stamp_workflow_agent(ev, loop_state=loop_state if isinstance(loop_state, dict) else None)
     # 供无新事件时的心跳文案复用
     hint = (detail or title or "").strip()
     if hint:
@@ -101,13 +106,12 @@ def record_stream_screenshot_attachment(
 from app.services.skill_chat_service import (
     ATOMIC_TOOL_KG_QUERY,
     ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
+    ATOMIC_TOOL_ONTOLOGY_QUERY,
     ATOMIC_TOOL_WEB_SEARCH,
 )
 from app.core.tool_skill_taxonomy import is_global_atomic_tool
-from app.tool_center.agent_bridge import execute_global_atomic_tool_json
+from app.tools.agent_bridge import execute_global_atomic_tool_json
 from app.core.agent_tool_args import (
-    ADMIN_DEPT_TOOL_NAMES,
-    ADMIN_USER_TOOL_NAMES,
     AGENT_SKILL_TOOL_NAMES,
     BROWSER_TOOL_NAMES,
     DOCUMENT_TOOL_NAMES,
@@ -263,10 +267,6 @@ _ORCHESTRATION_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(ORCHESTRATION
 
 AGENT_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(AGENT_SKILL_TOOL_NAMES)
 
-_ADMIN_USER_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(ADMIN_USER_TOOL_NAMES)
-
-_ADMIN_DEPT_TOOL_SPECS: list[dict[str, Any]] = build_tool_specs(ADMIN_DEPT_TOOL_NAMES)
-
 
 def _build_tool_specs_from_list(names: tuple[str, ...]) -> list[dict[str, Any]]:
     """从工具名列表构建 tool specs，自动去重。"""
@@ -308,10 +308,6 @@ def _apply_platform_gates(
         names_ok.discard("run_skill_script")
     if not get_browser_rpa_config(db).enabled:
         names_ok -= {str((s.get("function") or {}).get("name") or "") for s in _BROWSER_TOOL_SPECS}
-    if not user_has_permission(db, user, "admin.user"):
-        names_ok -= {str((s.get("function") or {}).get("name") or "") for s in _ADMIN_USER_TOOL_SPECS}
-    if not user_has_permission(db, user, "admin.dept"):
-        names_ok -= {str((s.get("function") or {}).get("name") or "") for s in _ADMIN_DEPT_TOOL_SPECS}
 
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
@@ -385,10 +381,6 @@ def build_agent_tool_specs(
         specs.extend(_ATOMIC_RETRIEVAL_TOOL_SPECS)
         specs.extend(_DOCUMENT_TOOL_SPECS)
         specs.extend(_PLATFORM_TOOL_SPECS)
-        if user_has_permission(db, user, "admin.user"):
-            specs.extend(_ADMIN_USER_TOOL_SPECS)
-        if user_has_permission(db, user, "admin.dept"):
-            specs.extend(_ADMIN_DEPT_TOOL_SPECS)
         if get_settings().agent_skill_script_enabled:
             specs.append(_RUN_SKILL_SCRIPT_SPEC)
         from app.integrations.browser_automation.browser_config import get_browser_rpa_config
@@ -441,16 +433,6 @@ def agent_tool_names() -> set[str]:
     names.update(
         spec["function"]["name"]
         for spec in _PLATFORM_TOOL_SPECS
-        if spec.get("function", {}).get("name")
-    )
-    names.update(
-        spec["function"]["name"]
-        for spec in _ADMIN_USER_TOOL_SPECS
-        if spec.get("function", {}).get("name")
-    )
-    names.update(
-        spec["function"]["name"]
-        for spec in _ADMIN_DEPT_TOOL_SPECS
         if spec.get("function", {}).get("name")
     )
     return names
@@ -570,7 +552,7 @@ async def _execute_invoke_skill(
             existing.extend(citations)
 
     from app.core.tool_skill_taxonomy import RETRIEVAL_SKILL_ATOMIC_MAP
-    from app.tool_center.agent_bridge import _format_retrieval_json, _prepare_retrieval_params
+    from app.tools.agent_bridge import _format_retrieval_json, _prepare_retrieval_params
 
     mapped = RETRIEVAL_SKILL_ATOMIC_MAP.get(skill_name)
     if mapped and action == mapped[1]:
@@ -861,129 +843,6 @@ def _execute_platform_tool(
     except ValueError as exc:
         return _tool_result(False, str(exc))
 
-
-def _execute_admin_tool(
-    db: Session,
-    user: User,
-    *,
-    tool_name: str,
-    params: dict[str, Any],
-) -> str | None:
-    from app.core.exceptions import AppError
-    from app.services import agent_admin_service as admin_svc
-
-    handlers = {
-        "list_users": lambda: admin_svc.list_users_for_agent(
-            db,
-            user,
-            page=int(params.get("page") or 1),
-            page_size=int(params.get("page_size") or 20),
-            keyword=str(params.get("keyword") or "") or None,
-        ),
-        "create_user": lambda: admin_svc.create_user_for_agent(
-            db,
-            user,
-            phone=str(params.get("phone") or ""),
-            email=str(params.get("email") or ""),
-            display_name=str(params.get("display_name") or ""),
-            password=str(params.get("password") or ""),
-            status=str(params.get("status") or "active"),
-            department_id=_parse_uuid(params["department_id"], field="department_id")
-            if params.get("department_id")
-            else None,
-            department_name=str(params.get("department_name") or "") or None,
-        ),
-        "update_user": lambda: admin_svc.update_user_for_agent(
-            db,
-            user,
-            user_id=_parse_uuid(params["user_id"], field="user_id")
-            if params.get("user_id")
-            else None,
-            user_name=str(params.get("user_name") or "") or None,
-            phone=str(params.get("phone") or "") or None,
-            email=str(params.get("email") or "") or None,
-            display_name=str(params.get("display_name") or "") or None,
-            password=str(params.get("password") or "") or None,
-            status=str(params.get("status") or "") or None,
-            department_id=_parse_uuid(params["department_id"], field="department_id")
-            if params.get("department_id")
-            else None,
-            department_name=str(params.get("department_name") or "") or None,
-            clear_department=bool(params.get("clear_department")),
-        ),
-        "delete_user": lambda: admin_svc.delete_user_for_agent(
-            db,
-            user,
-            user_id=_parse_uuid(params["user_id"], field="user_id")
-            if params.get("user_id")
-            else None,
-            user_name=str(params.get("user_name") or "") or None,
-            confirm=bool(params.get("confirm")),
-        ),
-        "list_departments": lambda: admin_svc.list_departments_for_agent(db, user),
-        "create_department": lambda: admin_svc.create_department_for_agent(
-            db,
-            user,
-            name=str(params.get("name") or ""),
-            parent_id=_parse_uuid(params["parent_id"], field="parent_id")
-            if params.get("parent_id")
-            else None,
-            parent_name=str(params.get("parent_name") or "") or None,
-        ),
-        "update_department": lambda: admin_svc.update_department_for_agent(
-            db,
-            user,
-            department_id=_parse_uuid(params["department_id"], field="department_id")
-            if params.get("department_id")
-            else None,
-            department_name=str(params.get("department_name") or "") or None,
-            name=str(params.get("name") or "") or None,
-            parent_id=_parse_uuid(params["parent_id"], field="parent_id")
-            if params.get("parent_id")
-            else None,
-            parent_name=str(params.get("parent_name") or "") or None,
-            clear_parent=bool(params.get("clear_parent")),
-        ),
-        "delete_department": lambda: admin_svc.delete_department_for_agent(
-            db,
-            user,
-            department_id=_parse_uuid(params["department_id"], field="department_id")
-            if params.get("department_id")
-            else None,
-            department_name=str(params.get("department_name") or "") or None,
-            confirm=bool(params.get("confirm")),
-        ),
-    }
-    handler = handlers.get(tool_name)
-    if handler is None:
-        return None
-    try:
-        data = handler()
-        if tool_name == "list_users" and isinstance(data, dict):
-            from app.services.agent_admin_reply import summarize_user_list
-
-            return _tool_result(True, summarize_user_list(data), data)
-        if tool_name == "list_departments" and isinstance(data, list):
-            return _tool_result(
-                True,
-                f"共 {len(data)} 个部门",
-                {"items": data, "count": len(data)},
-            )
-        if isinstance(data, dict) and data.get("message"):
-            return _tool_result(True, str(data["message"]), data)
-        if isinstance(data, list):
-            return _tool_result(
-                True,
-                f"共 {len(data)} 条",
-                {"items": data, "count": len(data)},
-            )
-        return _tool_result(True, "操作完成", data)
-    except AppError as exc:
-        detail = exc.detail
-        msg = detail.get("message") if isinstance(detail, dict) else str(detail)
-        return _tool_result(False, msg)
-    except ValueError as exc:
-        return _tool_result(False, str(exc))
 
 
 async def _execute_create_skill(
@@ -1304,7 +1163,7 @@ async def execute_agent_tool(
             max_chars = int(params.get("max_chars") or 50000)
             if not url:
                 return _tool_result(False, "缺少 url 参数")
-            from app.tool_center.adapters import _firecrawl_scrape
+            from app.tools.adapters import _firecrawl_scrape
 
             loop = asyncio.get_running_loop()
             content = await loop.run_in_executor(None, _firecrawl_scrape, url)
@@ -1749,10 +1608,18 @@ def tool_workflow_meta(tool_name: str, raw_args: str | dict | None) -> dict[str,
     if name == ATOMIC_TOOL_KG_QUERY:
         question = str(params.get("question") or "").strip() or "?"
         return {
-            "title": f"使用知识图谱查询「{question[:80]}」",
-            "result_title": "图谱查询完成",
+            "title": f"知识图谱服务：查询「{question[:80]}」",
+            "result_title": "知识图谱服务完成",
             "detail": question[:120],
             "tool": ATOMIC_TOOL_KG_QUERY,
+        }
+    if name == ATOMIC_TOOL_ONTOLOGY_QUERY:
+        question = str(params.get("question") or params.get("query") or "").strip() or "?"
+        return {
+            "title": f"本体语义中枢：理解「{question[:80]}」",
+            "result_title": "本体语义决策完成",
+            "detail": question[:120],
+            "tool": ATOMIC_TOOL_ONTOLOGY_QUERY,
         }
     if name == "search_tools":
         query = str(params.get("query") or "").strip() or "?"

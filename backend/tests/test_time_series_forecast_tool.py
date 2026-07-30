@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from app.core.agent_tool_args import TOOL_ARG_MODELS, validate_tool_arguments
 from app.core.tool_skill_taxonomy import ToolCategory, _TOOL_CATEGORIES
-from app.tool_center.adapters import _run_time_series_forecast, _slim_forecast_payload
+from app.tools.adapters import _run_time_series_forecast, _slim_forecast_payload
 
 
 def test_time_series_forecast_category_is_model():

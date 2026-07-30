@@ -2,13 +2,13 @@
 
 检测用户消息中的语义信号（技能管理、图表、平台操作、浏览器、记忆读写、串行/并行路由等）。
 与 agent_skill_routing（路由规划）、agent_skill_match（匹配评分）构成信号层→规划层→评分层。
-通用 SignalDetector 契约在 agentkit.route.signals；本文件为平台绑定 regex 实现。"""
+通用 SignalDetector 契约在 app.agent.route.signals；本文件为平台绑定 regex 实现。"""
 
 from __future__ import annotations
 
 import re
 
-from app.benxi_semantic.intents import (
+from app.semantic.ontology.intents import (
     is_org_member_list_question,
     is_person_org_affiliation_question,
 )
@@ -244,24 +244,25 @@ _PLATFORM_USAGE_RE = re.compile(
 )
 
 # 平台用户/部门/组织等系统数据查询（走平台操作 Agent，勿误路由检索专精）
+# 注意：人员「属于哪个部门/公司」与「部门有哪些人」走知识图谱，不归此类。
 _PLATFORM_SYS_DATA_RE = re.compile(
     r"(?:系统|平台|组织|部门|成员|账号).{0,12}(?:用户|人员|成员|部门|组织)"
     r"|(?:用户|人员|成员|部门|组织).{0,12}(?:列表|有哪些|多少|几个|查询|查看|管理|架构|树)"
-    r"|list_users|list_departments|"
-    r"有哪些用户|用户列表|部门列表|组织架构|组织树|"
+    r"|有哪些用户|用户列表|部门列表|组织架构|组织树|"
     r"谁在平台|平台上有谁",
     re.I,
 )
 
-# 部门成员清单 / 人员组织归属意图：委托 benxi_semantic.intents（上方已 import re-export）
+# 部门成员清单 / 人员组织归属意图：委托 semantic.ontology.intents（上方已 import re-export）
 
 
 def is_platform_system_data_message(message: str) -> bool:
-    """用户是否在查询/管理平台用户、部门等系统数据。"""
-    if is_org_member_list_question(message):
-        return True
-    if is_person_org_affiliation_question(message):
-        return True
+    """用户是否在查询/管理平台用户、部门等系统数据。
+
+    人员归属、部门成员清单优先走本体 + 知识图谱，不算平台账号管理类意图。
+    """
+    if is_person_org_affiliation_question(message) or is_org_member_list_question(message):
+        return False
     return bool(_PLATFORM_SYS_DATA_RE.search((message or "").strip()))
 
 
@@ -282,7 +283,6 @@ def is_platform_operation_message(message: str) -> bool:
         re.search(
             r"(?:文档库|文件夹|我的文件|待办|todo|"
             r"list_document|list_library|list_manageable|list_todos|"
-            r"list_users|list_departments|"
             r"用户管理|部门管理|系统设置|"
             r"send_notification|schedule_notification|"
             r"创建.{0,4}待办|分享.{0,4}文档|上传.{0,6}文档)",

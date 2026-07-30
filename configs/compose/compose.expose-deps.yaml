@@ -13,6 +13,9 @@
 #   40004 minio    (TCP, S3 API)
 #   40006 MySQL    (TCP, RAGFlow)
 #   40008 speech   (TCP, FunASR)
+#   40011 GraphDB  (HTTP, 本体 TBox；亦在 compose.yaml 常驻映射)
+#   40012 Neo4j    (Bolt；亦在 compose.yaml 常驻映射)
+#   40013 Neo4j    (HTTP Browser；亦在 compose.yaml 常驻映射)
 # pdf2zh / RAGFlow Web API / knowflow-backend 经 gateway /deps/ 代理，不直连
 #
 # 注意: knowflow-mysql / knowflow-backend 定义在 third_party/deploy/knowflow.yml 中，
@@ -37,6 +40,8 @@ services:
   speech-api:
     ports:
       - "${REMOTE_SPEECH_PORT:-40008}:8765"
+
+  # Neo4j / GraphDB 端口已在 compose.yaml 常驻映射（40012/40013、40011），此处仅作文档对齐
 
   # knowflow-mysql 的定义在 knowflow.yml 中（third_party/deploy/），需要 --profile knowflow
   # 端口映射已在 knowflow.yml 中通过条件 EXPOSE_DEPS 添加

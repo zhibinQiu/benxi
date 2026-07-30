@@ -22,6 +22,7 @@ import {
   ClipboardOutline,
   TrendingUpOutline,
   JournalOutline,
+  AnalyticsOutline,
 } from "@vicons/ionicons5";
 
 /** 与系统功能插件 icon 字段一致 */
@@ -33,6 +34,7 @@ export const FEATURE_ICON_MAP = Object.freeze({
   scan: ScanOutline,
   "git-compare": GitCompareOutline,
   "stats-chart": StatsChartOutline,
+  analytics: AnalyticsOutline,
   sparkles: SparklesOutline,
   grid: GridOutline,
   "document-text": DocumentTextOutline,

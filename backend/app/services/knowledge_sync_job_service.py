@@ -403,8 +403,16 @@ def _maybe_fallback_plain_text_parse(
     *,
     detail: str | None,
 ) -> bool:
-    """PaddleOCR 等版面识别失败时，先尝试 DeepDOC，最后才 Plain Text（Plain Text 无引用截图）。"""
-    from app.services.knowledge_parser_service import resolve_job_parser_id
+    """PaddleOCR 等版面识别失败时，先尝试 DeepDOC，最后才 Plain Text（Plain Text 无引用截图）。
+
+    Word/纯文本类文件跳过 DeepDOC（其面向 PDF 版面），直接 Plain Text。
+    """
+    from app.models.document import DocumentVersion
+    from app.services.document_service import resolve_current_version
+    from app.services.knowledge_parser_service import (
+        is_text_first_file,
+        resolve_job_parser_id,
+    )
 
     if _index_job_should_abort(db, job):
         return False
@@ -418,7 +426,20 @@ def _maybe_fallback_plain_text_parse(
     layout = (payload.get("layout_recognize") or settings.knowledge_default_layout_recognize or "").strip()
     modern_ocr = frozenset({"PaddleOCR", "MinerU", "DOTS"})
 
-    if layout in modern_ocr and not payload.get("parse_deepdoc_fallback"):
+    version = (
+        db.get(DocumentVersion, version_id)
+        if version_id
+        else resolve_current_version(db, document)
+    )
+    file_name = (version.file_name if version else "") or ""
+    mime_type = (version.mime_type if version else "") or ""
+    prefer_plain = is_text_first_file(file_name, mime_type)
+
+    if (
+        layout in modern_ocr
+        and not prefer_plain
+        and not payload.get("parse_deepdoc_fallback")
+    ):
         if _retrigger_ragflow_parse(
             db,
             actor,
@@ -426,10 +447,12 @@ def _maybe_fallback_plain_text_parse(
             version_id,
             parser_id=resolve_job_parser_id(payload),
             layout_recognize="DeepDOC",
+            force_parse=True,
         ):
             payload["parse_deepdoc_fallback"] = True
             payload["layout_recognize"] = "DeepDOC"
-            payload["parse_retry_count"] = int(payload.get("parse_retry_count") or 0)
+            payload["parse_bootstrapped"] = False
+            payload["parse_retry_count"] = int(payload.get("parse_retry_count") or 0) + 1
             payload["last_parse_retry_at"] = time.time()
             job.payload = payload
             update_job_status(
@@ -454,9 +477,12 @@ def _maybe_fallback_plain_text_parse(
         version_id,
         parser_id="naive",
         layout_recognize="Plain Text",
+        force_parse=True,
     ):
         payload["parse_plain_text_fallback"] = True
-        payload["parse_retry_count"] = int(payload.get("parse_retry_count") or 0)
+        payload["layout_recognize"] = "Plain Text"
+        payload["parse_bootstrapped"] = False
+        payload["parse_retry_count"] = int(payload.get("parse_retry_count") or 0) + 1
         payload["last_parse_retry_at"] = time.time()
         job.payload = payload
         update_job_status(
@@ -608,6 +634,9 @@ def _advance_parse_job_progress(
     return progress, stagnant_polls
 
 
+_PARSE_BOOTSTRAP_COOLDOWN_SEC = 300
+
+
 def _maybe_bootstrap_ragflow_parse(
     db: Session,
     job: Job,
@@ -626,13 +655,23 @@ def _maybe_bootstrap_ragflow_parse(
     if unparsed_polls < 4:
         return unparsed_polls + 1
     payload = dict(job.payload or {})
-    if payload.get("parse_bootstrapped"):
-        return 0
+    last_boot = payload.get("parse_bootstrapped_at")
+    if last_boot is None and payload.get("parse_bootstrapped"):
+        # 兼容旧标记：视为刚启动过，避免进程重启后立即连打。
+        last_boot = time.time()
+    if last_boot is not None:
+        try:
+            if time.time() - float(last_boot) < _PARSE_BOOTSTRAP_COOLDOWN_SEC:
+                return 0
+        except (TypeError, ValueError):
+            pass
     if not _retrigger_ragflow_parse(db, actor, document, version_id):
         payload["parse_bootstrapped"] = True
+        payload["parse_bootstrapped_at"] = time.time()
         job.payload = payload
         return 0
     payload["parse_bootstrapped"] = True
+    payload["parse_bootstrapped_at"] = time.time()
     job.payload = payload
     db.commit()
     logger.info(
@@ -681,6 +720,8 @@ def _is_ocr_layout_failure(detail: str | None) -> bool:
         "layout_recognize",
         "ocr failed",
         "recognize pdf",
+        "版面识别失败",
+        "版面 ocr",
     )
     return any(m in text for m in markers)
 
@@ -806,6 +847,7 @@ def _wait_for_parse(
     last_status: str | None = None
     stagnant_polls = 0
     queue_backlog_polls = 0
+    unparsed_polls = 0
 
     while time.time() < absolute_deadline:
         db = SessionLocal()
@@ -843,6 +885,15 @@ def _wait_for_parse(
             )
             last_status = status
             _record_parse_progress(job, progress_pct=rag_progress, detail=detail)
+            unparsed_polls = _maybe_bootstrap_ragflow_parse(
+                db,
+                job,
+                actor,
+                document,
+                version_id,
+                status=status,
+                unparsed_polls=unparsed_polls,
+            )
             if (
                 _is_ragflow_queue_backlog(detail)
                 and (rag_progress is None or rag_progress <= 0)
@@ -864,6 +915,22 @@ def _wait_for_parse(
                 db.commit()
                 return True
             if _is_parse_failed(status):
+                if _maybe_fallback_plain_text_parse(
+                    db,
+                    job,
+                    actor,
+                    document,
+                    version_id,
+                    detail=detail,
+                ):
+                    last_status = "解析中"
+                    stagnant_polls = 0
+                    unparsed_polls = 0
+                    soft_deadline = min(
+                        absolute_deadline, time.time() + soft_extend
+                    )
+                    db.commit()
+                    continue
                 db.commit()
                 raise RuntimeError(_format_parse_failure(status, detail))
             if status == "索引失效":
@@ -1167,6 +1234,22 @@ def _complete_knowledge_index_job(
         )
     except Exception as exc:
         logger.debug("知识检索树缓存刷新跳过 job=%s: %s", job.id, exc)
+
+    # 索引完成后补抽：上传当时正文可能尚未就绪
+    try:
+        from app.services.kg_extraction_service import extract_kg_for_document_upload
+
+        ver = db.get(DocumentVersion, indexed_version_id) if indexed_version_id else None
+        extract_kg_for_document_upload(
+            db,
+            user,
+            doc,
+            ver,
+            force=False,
+            discover_ontology=True,
+        )
+    except Exception as exc:
+        logger.debug("索引完成后 KG 抽取跳过 doc=%s: %s", doc.id, exc)
 
 
 def _defer_awaiting_parse_phase(

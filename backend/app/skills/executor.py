@@ -1,10 +1,10 @@
-"""Skill 工具执行器 — catalog 解析 + agentkit dispatch。"""
+"""Skill 工具执行器 — catalog 解析 + app.agent dispatch。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.agentkit.skills.executor import (
+from app.agent.skills.executor import (
     SkillNotFoundError,
     SkillNotReadyError,
     invoke_skill_definition,

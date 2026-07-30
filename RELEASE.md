@@ -1,5 +1,15 @@
 # 发布说明
 
+## 4.9.0（v4.9.0）— Agent 运行时收敛与架构文档对齐
+
+- **智能体运行时**：核心收敛为内置 `backend/app/agent/`（可抽离库）+ 宿主六相 `agent_tool_loop`；业务偏好在 `backend/agent_md/`；文档不再描述已废弃的外置 agentkit 分包安装方式
+- **调度契约（现状）**：orchestrator 仅编排入口，不直执原子工具；子智能体 `search`/`use`/`execute`；专精经 AIP handoff；终稿基于观测证据
+- **架构总览同步**：`system-architecture-overview` 对齐目录（`backend/`/`frontend/`）、全 Docker 开发入口、端口（含 docs :40100、knowflow-backend :5000）、数据与 `backups/` 备份目录
+- **文档查阅入口**：宣传页「产品文档」指向 MkDocs 公开站；运维手册注明本地 `./dev.sh docs` 与公开查阅
+- **Agent 架构扩写**：Plan-and-Execute（thinking/planning/executing）、AIP 通信与 handoff、sequential/parallel/TaskDAG 并行编排写入主文档
+- **文档站标题**：MkDocs `site_name` 定为「本析-企业级 AI 智能体平台」；导航新增「智能体设计」一级分组
+- **版本统一**：VERSION 同步 API / 前端 / Docker 镜像 tag（4.9.0）
+
 ## 4.8.8（v4.8.8）— 图谱直答、Agent LLM 路由与工作记忆
 
 - **路由流程重构**：硬规则 → 知识图谱可直答 → Skill 混合 RAG → LLM 动态读 `agents.md` 选型 → orchestrator 兜底；业务偏好收敛到目录文件

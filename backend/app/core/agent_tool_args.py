@@ -6,9 +6,9 @@ import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from app.agentkit.tools.schema import build_function_tool_spec as _build_function_tool_spec
-from app.agentkit.tools.schema import compact_tool_parameters_schema as tool_parameters_schema
-from app.agentkit.tools.validate import (
+from app.agent.tools.schema import build_function_tool_spec as _build_function_tool_spec
+from app.agent.tools.schema import compact_tool_parameters_schema as tool_parameters_schema
+from app.agent.tools.validate import (
     coerce_dict_field,
     format_validation_error as _format_validation_error,
 )
@@ -111,8 +111,14 @@ class CarbonPriceArgs(_StrictArgs):
 
 
 class CarbonPolicyArgs(_StrictArgs):
-    keyword: str = Field(default="", description="可选关键词，如 钢铁纳入碳市场、碳达峰方案")
-    url: str = Field(default="", description="可选，指定政策页 URL；留空则按 gov/ndrc/mee/miit 等默认源查询")
+    keyword: str = Field(
+        default="",
+        description="搜索关键词，默认「碳」；走发改委智能云搜索 so.ndrc.gov.cn",
+    )
+    url: str = Field(
+        default="",
+        description="可选，指定政策详情页 URL 直接抓取全文；留空则按 keyword 搜索",
+    )
 
 
 class CarbonDataArgs(_StrictArgs):
@@ -205,7 +211,7 @@ class InvokeContextSubagentArgs(_StrictArgs):
     queries: list[str] | None = Field(
         default=None,
         max_length=4,
-        description="search 可选：2–4 个关键词并行检索；不传则子 Agent 自主分析意图并生成搜索词",
+        description="search 可选：最多 4 个关键词并行检索；多传会自动截断；不传则子 Agent 自主分析意图并生成搜索词",
     )
     steps: list[ExecuteStepItem] | None = Field(
         default=None,
@@ -222,7 +228,18 @@ class InvokeContextSubagentArgs(_StrictArgs):
             value = [value]
         if not isinstance(value, list):
             return None
-        return [str(x).strip() for x in value if str(x).strip()]
+        # 模型常多传；超限截断而非整次失败
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            q = str(item).strip()
+            if not q or q in seen:
+                continue
+            seen.add(q)
+            out.append(q)
+            if len(out) >= 4:
+                break
+        return out or None
 
     @model_validator(mode="after")
     def _task_or_queries_or_steps(self) -> InvokeContextSubagentArgs:
@@ -565,63 +582,7 @@ class DescribeToolArgs(_StrictArgs):
     )
 
 
-# --- 管理 ---
-
-
-class ListUsersArgs(_StrictArgs):
-    page: int = Field(default=1, ge=1)
-    page_size: int = Field(default=20, ge=1, le=100)
-    keyword: str | None = Field(default=None, max_length=200)
-
-
-class CreateUserArgs(_StrictArgs):
-    phone: str = Field(min_length=1, max_length=32)
-    email: str = Field(min_length=3, max_length=200)
-    display_name: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=6, max_length=128)
-    status: str = Field(default="active", max_length=32)
-    department_id: str | None = Field(default=None, max_length=64)
-    department_name: str | None = Field(default=None, max_length=200)
-
-
-class UpdateUserArgs(_StrictArgs):
-    user_id: str | None = Field(default=None, max_length=64)
-    user_name: str | None = Field(default=None, max_length=200)
-    phone: str | None = Field(default=None, max_length=32)
-    email: str | None = Field(default=None, max_length=200)
-    display_name: str | None = Field(default=None, max_length=120)
-    password: str | None = Field(default=None, max_length=128)
-    status: str | None = Field(default=None, max_length=32)
-    department_id: str | None = Field(default=None, max_length=64)
-    department_name: str | None = Field(default=None, max_length=200)
-    clear_department: bool = False
-
-
-class DeleteUserArgs(_StrictArgs):
-    confirm: bool
-    user_id: str | None = Field(default=None, max_length=64)
-    user_name: str | None = Field(default=None, max_length=200)
-
-
-class CreateDepartmentArgs(_StrictArgs):
-    name: str = Field(min_length=1, max_length=200)
-    parent_id: str | None = Field(default=None, max_length=64)
-    parent_name: str | None = Field(default=None, max_length=200)
-
-
-class UpdateDepartmentArgs(_StrictArgs):
-    department_id: str | None = Field(default=None, max_length=64)
-    department_name: str | None = Field(default=None, max_length=200)
-    name: str | None = Field(default=None, max_length=200)
-    parent_id: str | None = Field(default=None, max_length=64)
-    parent_name: str | None = Field(default=None, max_length=200)
-    clear_parent: bool = False
-
-
-class DeleteDepartmentArgs(_StrictArgs):
-    confirm: bool
-    department_id: str | None = Field(default=None, max_length=64)
-    department_name: str | None = Field(default=None, max_length=200)
+# --- 元工具 ---
 
 
 class ToolDef(BaseModel):
@@ -643,8 +604,6 @@ class ToolDef(BaseModel):
 #   document      → DOCUMENT_TOOL_NAMES
 #   platform      → PLATFORM_TOOL_NAMES
 #   orchestration → ORCHESTRATION_TOOL_NAMES
-#   admin_user    → ADMIN_USER_TOOL_NAMES
-#   admin_dept    → ADMIN_DEPT_TOOL_NAMES
 #   skill_runtime → SKILL_RUNTIME_TOOL_NAMES
 #   （空）         → 不由 TOOL_NAMES 自动收录（通过 describe_tool 动态解锁）
 ALL_TOOLS: list[ToolDef] = [
@@ -775,7 +734,7 @@ ALL_TOOLS: list[ToolDef] = [
     ToolDef(
         name="carbon_policy",
         description=(
-            "从官方渠道获取双碳政策法规摘要：gov.cn / ndrc.gov.cn / mee.gov.cn / miit.gov.cn 等。"
+            "从发改委智能云搜索（so.ndrc.gov.cn）获取双碳政策法规，并抓取详情页正文全文。"
             "适用于碳达峰碳中和顶层文件、行业方案、碳市场条例等。"
             "每日新闻/政策解读请用浏览器查最新，勿用本工具冒充即时资讯。"
         ),
@@ -1190,56 +1149,6 @@ ALL_TOOLS: list[ToolDef] = [
         args_schema=RequestOrchestratorAssistArgs,
         authority=("orchestration",),
     ),
-    # ── 用户管理 ────────────────────────────────────
-    ToolDef(
-        name="list_users",
-        description="列出用户",
-        args_schema=ListUsersArgs,
-        authority=("admin_user",),
-    ),
-    ToolDef(
-        name="create_user",
-        description="创建用户",
-        args_schema=CreateUserArgs,
-        authority=("admin_user",),
-    ),
-    ToolDef(
-        name="update_user",
-        description="更新用户",
-        args_schema=UpdateUserArgs,
-        authority=("admin_user",),
-    ),
-    ToolDef(
-        name="delete_user",
-        description="删除用户（须 confirm）",
-        args_schema=DeleteUserArgs,
-        authority=("admin_user",),
-    ),
-    # ── 部门管理 ────────────────────────────────────
-    ToolDef(
-        name="list_departments",
-        description="列出部门",
-        args_schema=EmptyArgs,
-        authority=("admin_dept",),
-    ),
-    ToolDef(
-        name="create_department",
-        description="创建部门",
-        args_schema=CreateDepartmentArgs,
-        authority=("admin_dept",),
-    ),
-    ToolDef(
-        name="update_department",
-        description="更新部门",
-        args_schema=UpdateDepartmentArgs,
-        authority=("admin_dept",),
-    ),
-    ToolDef(
-        name="delete_department",
-        description="删除部门（须 confirm）",
-        args_schema=DeleteDepartmentArgs,
-        authority=("admin_dept",),
-    ),
 ]
 
 # ── 向后兼容别名（TOOL_DEFINITIONS 保持 (描述, model) 元组格式） ──
@@ -1292,19 +1201,11 @@ SKILL_RUNTIME_TOOL_NAMES: tuple[str, ...] = tuple(
 # 记忆由系统自动处理；原子读写仅在内部 Tool 池
 AGENT_SKILL_TOOL_NAMES: tuple[str, ...] = SKILL_RUNTIME_TOOL_NAMES
 
-ADMIN_USER_TOOL_NAMES: tuple[str, ...] = tuple(
-    t.name for t in ALL_TOOLS if "admin_user" in t.authority
-)
-
-ADMIN_DEPT_TOOL_NAMES: tuple[str, ...] = tuple(
-    t.name for t in ALL_TOOLS if "admin_dept" in t.authority
-)
-
 
 def build_tool_specs(names: tuple[str, ...] | list[str]) -> list[dict[str, Any]]:
     """批量构建 OpenAI function calling spec。
 
-    描述优先从 tools/definitions/<name>.md 加载（热生效），
+    描述优先从 agent_md/tools/<name>.md 加载（热生效），
     无 MD 文件时回退 TOOL_DEFINITIONS 的硬编码描述。
     """
     specs: list[dict[str, Any]] = []

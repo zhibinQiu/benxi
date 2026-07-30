@@ -176,7 +176,7 @@ def sync_platform_org_to_kg(db: Session, user: User) -> dict[str, int]:
         return {"departments": 0, "users": 0, "relations": 0}
 
     dept_rows = list(
-        db.scalars(select(Department).order_by(Department.sort_order, Department.name)).all()
+        db.scalars(select(Department).order_by(Department.name)).all()
     )
     dept_entity: dict[uuid.UUID, KgEntity] = {}
     for dept in dept_rows:

@@ -3,7 +3,7 @@ import uuid
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.phone import normalize_phone
-from app.core.user_identity import normalize_email, normalize_username
+from app.core.user_identity import normalize_email
 
 
 class LoginRequest(BaseModel):
@@ -32,12 +32,6 @@ class RegisterRequest(BaseModel):
     email: str = Field(..., description="邮箱")
     password: str = Field(..., min_length=6)
     display_name: str = Field(..., min_length=2, max_length=64, description="显示名")
-    username: str | None = Field(
-        default=None,
-        min_length=2,
-        max_length=64,
-        description="用户名（登录用，默认同显示名）",
-    )
     captcha_token: str | None = Field(default=None, description="验证码 token")
 
     @field_validator("phone")
@@ -49,13 +43,6 @@ class RegisterRequest(BaseModel):
     @classmethod
     def valid_email(cls, v: str) -> str:
         return normalize_email(v)
-
-    @field_validator("username")
-    @classmethod
-    def valid_username_optional(cls, v: str | None) -> str | None:
-        if v is None or not str(v).strip():
-            return None
-        return normalize_username(v)
 
     @field_validator("display_name")
     @classmethod

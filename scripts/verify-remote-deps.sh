@@ -15,6 +15,9 @@ POSTGRES_PORT="${REMOTE_POSTGRES_PORT:-40002}"
 REDIS_PORT="${REMOTE_REDIS_PORT:-40003}"
 MINIO_PORT="${REMOTE_MINIO_PORT:-40004}"
 MYSQL_PORT="${REMOTE_MYSQL_PORT:-40006}"
+GRAPHDB_PORT="${REMOTE_GRAPHDB_PORT:-40011}"
+NEO4J_PORT="${REMOTE_NEO4J_PORT:-40012}"
+NEO4J_HTTP_PORT="${REMOTE_NEO4J_HTTP_PORT:-40013}"
 GATEWAY_PORT="${REMOTE_GATEWAY_PORT:-}"
 
 if [[ -f "$ENV_FILE" ]]; then
@@ -75,6 +78,9 @@ fi
 check_tcp "Redis" "$HOST" "$REDIS_PORT"
 check_tcp "MinIO" "$HOST" "$MINIO_PORT"
 check_tcp "RAGFlow MySQL" "$HOST" "$MYSQL_PORT"
+check_http "GraphDB 本体" "http://${HOST}:${GRAPHDB_PORT}/rest/repositories"
+check_tcp "Neo4j Bolt" "$HOST" "$NEO4J_PORT"
+check_http "Neo4j Browser" "http://${HOST}:${NEO4J_HTTP_PORT}"
 
 if [[ -n "$GATEWAY_PORT" ]]; then
   check_http "PDF 翻译 pdf2zh" "http://${HOST}:${GATEWAY_PORT}/deps/pdf2zh/docs"

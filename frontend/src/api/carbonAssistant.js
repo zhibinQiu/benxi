@@ -1,4 +1,4 @@
-/** 双碳助手 — 资讯报告 API（履约策略见 carbonCompliance.js） */
+/** 碳资产报告 — 资讯报告 API（履约策略见 carbonCompliance.js） */
 
 import { api } from "./http.js";
 

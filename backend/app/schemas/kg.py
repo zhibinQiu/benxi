@@ -100,6 +100,7 @@ class GraphNodeOut(BaseModel):
     type_code: str
     type_label: str = ""
     type_color: str = "gray"
+    type_uri: str = ""
 
 
 class GraphEdgeOut(BaseModel):
@@ -137,6 +138,18 @@ class ExtractFromTextIn(BaseModel):
     text: str = Field(min_length=1)
     source_type: str = Field(default="manual", max_length=64)
     source_id: str | None = None
+    discover_ontology: bool = Field(
+        default=True,
+        description="是否先从正文发现并合并候选本体，再约束实例抽取",
+    )
+
+
+class OntologyExtractStats(BaseModel):
+    """本体发现阶段统计。"""
+
+    entity_types_created: int = 0
+    relation_types_created: int = 0
+    candidates: int = 0
 
 
 class ExtractFromTextOut(BaseModel):
@@ -147,6 +160,8 @@ class ExtractFromTextOut(BaseModel):
     entities_created: int = 0
     relations_created: int = 0
     validation_errors: list[str] = []
+    ontology: OntologyExtractStats = Field(default_factory=OntologyExtractStats)
+    dropped: int = 0
 
 
 class ExtractBatchIn(BaseModel):
@@ -158,6 +173,10 @@ class ExtractBatchIn(BaseModel):
     )
     force: bool = False
     max_docs: int = Field(default=20, ge=1, le=100, description="最大处理文档数")
+    discover_ontology: bool = Field(
+        default=True,
+        description="是否先发现/合并本体再抽取实例",
+    )
 
 
 class ExtractBatchOut(BaseModel):
@@ -195,3 +214,10 @@ class ClearOut(BaseModel):
 
     deleted_entities: int = 0
     deleted_relations: int = 0
+
+
+class EntityMergeIn(BaseModel):
+    """合并两个实体实例（source → target）。"""
+
+    source_id: str
+    target_id: str

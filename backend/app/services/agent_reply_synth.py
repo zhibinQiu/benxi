@@ -750,7 +750,7 @@ def build_tool_outcome_summary(loop_state: LoopState | None) -> list[str]:
 
 def _true_deliverable_reply(loop_state: LoopState | None) -> str | None:
     """结构化交付物（确定性答复 / 脚本结论），不含工具状态清单。"""
-    from app.agentkit.message.filter import has_mermaid_deliverable
+    from app.agent.message.filter import has_mermaid_deliverable
 
     state = loop_state or {}
     det = str(state.get("deterministic_reply") or "").strip()

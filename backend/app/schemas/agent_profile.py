@@ -25,6 +25,7 @@ class AgentProfileOut(BaseModel):
     tool_categories: list[str] = Field(default_factory=list)
     tool_count: int = 0
     active_conversations: int = 0
+    mount_count: int = 0
 
 
 class AgentProfileDetailOut(AgentProfileOut):

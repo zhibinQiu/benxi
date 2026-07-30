@@ -1,4 +1,4 @@
-"""双碳助手资讯报告服务 — 复用 carbon_service 取数，异步生成市场/政策简报。
+"""碳资产报告资讯报告服务 — 复用 carbon_service 取数，异步生成市场/政策简报。
 
 履约综合分析见 report_type=compliance_analysis；旧 strategy 已废弃。
 """

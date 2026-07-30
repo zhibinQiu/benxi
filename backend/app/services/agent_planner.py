@@ -29,7 +29,7 @@ from app.core.llm_parse import parse_llm_json
 from app.integrations.deepseek_client import chat_completion_message_async, is_configured
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
-from app.agentkit.loop.plan import AgentExecutionPlan
+from app.agent.loop.plan import AgentExecutionPlan
 from app.services.agent_intent import AgentToolPlan, plan_agent_tools
 from app.services.agent_skill_router import (
     MERMAID_DIAGRAM_SKILL,
@@ -410,14 +410,35 @@ def match_uploaded_skill_for_message(
 def _match_explicit_uploaded_skill_name(message: str, uploaded_names: set[str]) -> str | None:
     """用户消息中明确写出技能名时返回该技能。"""
     from app.services.agent_skill_router import MERMAID_DIAGRAM_SKILL
+    from app.services.user_capability_directive import parse_user_capability_directive
 
     msg = (message or "").strip()
     if not msg or not uploaded_names:
         return None
+
+    def _ok(name: str) -> str | None:
+        if not name or name == MERMAID_DIAGRAM_SKILL:
+            return None
+        return name
+
+    # 前端固定格式「请使用 X 技能：…」
+    directive = parse_user_capability_directive(msg)
+    if directive is not None and directive.kind == "skill":
+        label = directive.raw_label.casefold()
+        for name in uploaded_names:
+            if name.casefold() == label:
+                return _ok(name)
+        for name in sorted(uploaded_names, key=len, reverse=True):
+            n = name.casefold()
+            if n and (n in label or label in n):
+                hit = _ok(name)
+                if hit:
+                    return hit
+
     msg_fold = msg.casefold()
-    # 「使用/调用 xxx 技能」优先
+    # 「使用/调用 xxx 技能」优先（含中文名）
     m = re.search(
-        r"(?:请使用|使用|调用|按|执行)\s*[「\"'`]?([A-Za-z0-9][\w.-]{1,80})[」\"'`]?\s*技能",
+        r"(?:请使用|使用|调用|按|执行)\s*[「\"'`]?([^\s「」\"'`：:]{1,80})[」\"'`]?\s*技能",
         msg,
         re.I,
     )
@@ -425,9 +446,7 @@ def _match_explicit_uploaded_skill_name(message: str, uploaded_names: set[str]) 
         named = m.group(1).casefold()
         for name in uploaded_names:
             if name.casefold() == named:
-                if name == MERMAID_DIAGRAM_SKILL:
-                    return None
-                return name
+                return _ok(name)
     for name in sorted(uploaded_names, key=len, reverse=True):
         if name == MERMAID_DIAGRAM_SKILL:
             continue
@@ -441,14 +460,13 @@ def _rule_plan_for_platform_system_data(
     user: User,
     message: str,
 ) -> AgentExecutionPlan | None:
-    """平台用户/部门等系统数据：必须调 list_users / list_departments 或 kg_query。"""
+    """平台用户/部门等组织数据：统一经知识图谱（必要时先 sync_platform_org）。"""
     from app.services.agent_skill_router import (
         is_org_member_list_question,
         is_person_org_affiliation_question,
     )
 
-    if not is_platform_system_data_message(message):
-        return None
+    # 人员归属 / 部门成员优先图谱（即使不算「平台系统数据」意图）
     if is_person_org_affiliation_question(message):
         return _make_plan(
             reasoning="人员组织归属须来自知识图谱 employs/member_of，禁止臆造或仅凭常识回答",
@@ -471,33 +489,17 @@ def _rule_plan_for_platform_system_data(
                 "仅根据工具返回数据作答，禁止编造姓名或邮箱",
             ),
         )
-    from app.core.permissions import user_has_permission
-
-    msg = (message or "").strip().casefold()
-    dept_focus = any(k in msg for k in ("部门", "组织", "架构"))
-    can_admin_user = user_has_permission(db, user, "admin.user")
-    can_admin_dept = user_has_permission(db, user, "admin.dept")
-    steps: list[str] = []
-    if dept_focus and can_admin_dept:
-        steps.append(
-            "invoke_skill(dept-administration, call, {operation: list_departments})"
-        )
-    elif can_admin_user:
-        steps.append(
-            "invoke_skill(user-administration, call, {operation: list_users, params: {page_size: 100}})"
-        )
-    else:
-        steps.append(
-            "invoke_skill(kg, query_entities, {question: ...})"
-        )
-    steps.append("仅根据 Skill 返回数据作答，禁止编造姓名或邮箱")
-    allowed_tools = (ATOMIC_TOOL_KG_QUERY,) if not can_admin_user else ()
+    if not is_platform_system_data_message(message):
+        return None
     return _make_plan(
-        reasoning="系统数据须经 user-administration / dept-administration / kg Skill，禁止臆造",
+        reasoning="平台用户/部门列表须经知识图谱（平台组织同步后的 ABox），禁止臆造",
         intent="查询平台用户/组织数据",
-        allowed_tools=allowed_tools,
+        allowed_tools=(ATOMIC_TOOL_KG_QUERY,),
         blocked_tools=(ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,),
-        steps=tuple(steps),
+        steps=(
+            "kg_query 查询平台组织/用户相关实体与关系（图谱无数据时可先同步平台组织）",
+            "仅根据图谱返回数据作答，禁止编造姓名或邮箱",
+        ),
     )
 
 
@@ -709,7 +711,7 @@ def _build_specialist_domain_plan(
     return None
 
 
-# 兼容旧导出名
+# 对外别名（历史 import 名）
 _rule_plan_for_specialist_domain = _build_specialist_domain_plan
 
 
@@ -951,13 +953,13 @@ def _plannable_skill_names(
     return names
 
 
-# 兼容旧名：语义已变为「可规划集」而非平台全库
+# 对外别名：可规划 Skill 名集合（非平台全库）
 _all_available_skill_names = _plannable_skill_names  # type: ignore[assignment]
 _skill_name_sets = _plannable_skill_names  # type: ignore[assignment]
 
 
 _KG_PLANNING_USER_LABEL = "【语义层决策上下文（规划参考）】"
-_KG_PROBE_TIMEOUT_SEC = 0.45
+_KG_PROBE_TIMEOUT_SEC = 2.5
 _KG_DECISION_CACHE_TTL = 45.0
 # key → (monotonic_ts, planning_text, can_direct, direct_reply)
 _KG_DECISION_CACHE: dict[str, tuple[float, str, bool, str]] = {}
@@ -1029,19 +1031,27 @@ async def resolve_kg_decision_context(
     """
     import asyncio
 
-    from app.benxi_semantic import (
-        SemanticLayer,
+    from app.semantic import (
+        OntologyHubService,
         can_answer_from_decision,
         try_direct_answer_from_decision,
     )
-    from app.benxi_semantic.models import AgentDecisionContext
+    from app.services.semantic_runtime import (
+        get_kg_query_service,
+        get_ontology_hub_service,
+    )
+    from app.semantic.models import AgentDecisionContext
     from app.core.conversation_turn_context import effective_question_for_retrieval
-    from app.core.neo4j import get_neo4j
     from app.core.permissions import user_has_semantic_layer_permission
+    from app.services.user_capability_directive import analysis_text_for_semantic
 
     if not user_has_semantic_layer_permission(db, user):
         return None
-    text = effective_question_for_retrieval(question, history).strip()
+    # 固定前缀（请让/请使用…技能）只分析冒号后；无正文则跳过
+    seed = analysis_text_for_semantic(question)
+    if not seed:
+        return None
+    text = effective_question_for_retrieval(seed, history).strip()
     if not text:
         return None
 
@@ -1055,8 +1065,9 @@ async def resolve_kg_decision_context(
         _KG_DECISION_CACHE.pop(cache_key, None)
 
     probe = (mode or "probe").strip().lower() != "full"
-    depth = 1 if probe else 3
-    include_inferred = not probe
+    # 通用真多跳：probe/full 均深度 3 并开启推理；超时由 _KG_PROBE_TIMEOUT_SEC 控制
+    depth = 3
+    include_inferred = True
     wait = (
         float(timeout_sec)
         if timeout_sec is not None
@@ -1064,20 +1075,21 @@ async def resolve_kg_decision_context(
     )
 
     async def _probe() -> AgentDecisionContext | None:
-        driver = await get_neo4j()
-        layer = SemanticLayer(driver)
-        # 1) 仅关键词匹配（快）；无命中则不进入邻域搜索
-        matched = await layer.query.match_entities_in_question(text, uid, limit=5)
-        if not matched:
-            return None
-        # 2) 有关键词再做浅层/完整决策上下文
-        decision = await layer.build_decision_context(
+        kg = await get_kg_query_service()
+        hub: OntologyHubService = await get_ontology_hub_service(kg=kg)
+        decision = await hub.build_decision_context(
             text,
             uid,
             max_depth=depth,
             include_inferred=include_inferred,
+            db=db,
         )
-        return decision if isinstance(decision, AgentDecisionContext) else None
+        if not isinstance(decision, AgentDecisionContext):
+            return None
+        # 无图谱/SQL 材料时不进入直答缓存
+        if not decision.has_material and not decision.matched_entities:
+            return None
+        return decision
 
     try:
         from app.core.stream_cancel import await_unless_cancelled, raise_if_stream_cancelled
@@ -1199,10 +1211,9 @@ async def resolve_execution_plan(
 
     specialist_id = (agent_id or "").strip()
 
-    # 系统数据：仅当本轮图谱决策已指向 kg_query / 系统数据意图时优先；
-    # 避免无图谱命中时压过专精域规划。
-    if not force_replan and (kg_planning_context or "").strip():
-        from app.benxi_semantic.intents import (
+    # 人员归属 / 部门成员：无论是否已有图谱上下文，一律 kg_query（禁止 list_users）
+    if not force_replan:
+        from app.semantic.ontology.intents import (
             INTENT_ORG_MEMBERS,
             INTENT_PERSON_AFFILIATION,
             detect_intent_tags,

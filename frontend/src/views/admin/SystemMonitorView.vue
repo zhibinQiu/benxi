@@ -55,12 +55,12 @@ const CARD_ICONS = {
 };
 
 const CARD_ACCENTS = {
-  documents_total: "#5b9cf5",
-  documents_indexed: "#34d399",
+  documents_total: "#1A7FD4",
+  documents_indexed: "#2F9E68",
   features_total: "var(--platform-accent)",
-  features_pending: "#fbbf24",
-  users_registered: "#60a5fa",
-  users_online: "#f472b6",
+  features_pending: "#D99B2B",
+  users_registered: "#459BDB",
+  users_online: "#7DBCE8",
 };
 
 const CARD_I18N_KEYS = {

@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from app.agentkit.skills.search import skill_query_tokens
+from app.agent.skills.search import skill_query_tokens
 
-_SKILLS_MD = Path(__file__).resolve().parent.parent / "skills" / "skills.md"
-_AGENTS_MD = Path(__file__).resolve().parent / "agents.md"
+_SKILLS_MD = Path(__file__).resolve().parents[2] / "agent_md" / "routing" / "skills.md"
+_AGENTS_MD = Path(__file__).resolve().parents[2] / "agent_md" / "routing" / "agents.md"
 
 _FIELD_ALIASES = {
     "use when": "use_when",

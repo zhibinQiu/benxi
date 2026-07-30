@@ -159,7 +159,7 @@ defineExpose({ load, toggleSearch, loading });
 <template>
     <div class="tools-card__header">
       <div class="tools-card__title-row">
-        <div class="tools-card__title">{{ t('admin.agentSkills.tabTools') }}</div>
+        <div class="tools-card__hint">{{ t('admin.agentSkills.toolbarHint.tools') }}</div>
         <div class="tools-card__actions">
           <IconAction
             :label="t('common.search')"
@@ -184,7 +184,6 @@ defineExpose({ load, toggleSearch, loading });
           />
         </div>
       </div>
-      <div class="tools-card__hint">{{ t('admin.agentSkills.toolbarHint.tools') }}</div>
     </div>
     <div class="tools-card">
       <div class="tools-filter-bar">
@@ -280,7 +279,7 @@ defineExpose({ load, toggleSearch, loading });
   align-items: center;
   gap: 8px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   margin-bottom: 0;
 }
 
@@ -313,7 +312,9 @@ defineExpose({ load, toggleSearch, loading });
 }
 
 .tools-card__hint {
-  margin-top: 2px;
+  margin: 0;
+  min-width: 0;
+  flex: 1;
   font-size: var(--platform-font-size-sm);
   font-weight: 400;
   color: var(--platform-text-tertiary);
@@ -326,7 +327,7 @@ defineExpose({ load, toggleSearch, loading });
 }
 
 .tools-card :deep(.n-data-table-td) {
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   vertical-align: middle;
 }
 
@@ -340,7 +341,7 @@ defineExpose({ load, toggleSearch, loading });
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  border-top: 1px solid var(--platform-border-strong);
+  border-top: 1px solid var(--platform-border-light, #E8E8E8);
   font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
 }

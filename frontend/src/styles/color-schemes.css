@@ -1,63 +1,71 @@
-/* 默认蓝色系统配色 — 蓝色系（扁平底） */
+/* Smart Carbon Blue — 碳蓝色卡系统配色 */
 
 html[data-color-scheme="blue"]:root,
 html[data-color-scheme="blue"][data-theme="light"] {
-  --platform-bg-base: #FAFAFA;
-  --platform-bg: #FAFAFA;
+  --platform-bg-base: #F2F6FA;
+  --platform-bg: #F2F6FA;
   --platform-modal-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.04),
-    0 20px 48px rgba(0, 0, 0, 0.08),
-    0 48px 96px rgba(0, 0, 0, 0.06);
-  --platform-bg-secondary: #eaeaea;
-  --platform-bg-tertiary: #eeeeee;
-  --platform-border: rgba(0, 0, 0, 0.05);
-  --platform-border-strong: rgba(0, 0, 0, 0.09);
-  --platform-divider: rgba(0, 0, 0, 0.03);
-  --platform-icon: #686868;
+    0 0 0 1px rgba(24, 42, 59, 0.06),
+    0 4px 12px rgba(24, 42, 59, 0.04),
+    0 20px 48px rgba(24, 42, 59, 0.08),
+    0 48px 96px rgba(24, 42, 59, 0.06);
+  --platform-bg-secondary: #E8EEF4;
+  --platform-bg-tertiary: #F0F7FC;
+  --platform-border: #D9E3EC;
+  --platform-border-light: #E8E8E8;
+  --platform-border-strong: color-mix(in srgb, #D9E3EC 70%, #3D556D);
+  --platform-divider: color-mix(in srgb, #D9E3EC 80%, transparent);
+  --platform-icon: #6B7F92;
+  --platform-text: #182A3B;
+  --platform-text-secondary: #3D556D;
+  --platform-text-tertiary: #6B7F92;
 
-  --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-  --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.02);
+  --platform-shadow: 0 1px 2px rgba(24, 42, 59, 0.04);
+  --platform-shadow-sm: 0 1px 2px rgba(24, 42, 59, 0.03);
   --platform-shadow-lg:
-    0 0 0 1px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.04),
-    0 20px 48px rgba(0, 0, 0, 0.08),
-    0 48px 96px rgba(0, 0, 0, 0.06);
+    0 0 0 1px rgba(24, 42, 59, 0.05),
+    0 4px 12px rgba(24, 42, 59, 0.04),
+    0 20px 48px rgba(24, 42, 59, 0.08);
 
-  --platform-accent: #0a6bff;
-  --platform-accent-hover: #0058e0;
-  --platform-accent-pressed: #004ac2;
-  --platform-accent-secondary: #3b82ff;
-  --platform-accent-secondary-hover: #1a6cff;
-  --platform-accent-soft: rgba(10, 107, 255, 0.12);
-  --platform-accent-soft-2: rgba(10, 107, 255, 0.08);
-  --platform-accent-gradient: linear-gradient(180deg, #3b82ff 0%, #0a6bff 100%);
-  --platform-accent-gradient-hover: linear-gradient(180deg, #5c96ff 0%, #0058e0 100%);
-  --platform-accent-gradient-soft: #f3f3f3;
-  --platform-accent-muted: rgba(10, 107, 255, 0.08);
-  --platform-accent-muted-strong: rgba(10, 107, 255, 0.14);
-  --platform-accent-border: rgba(10, 107, 255, 0.35);
-  --platform-accent-border-soft: rgba(10, 107, 255, 0.2);
+  --platform-accent: #005A9E;
+  --platform-accent-hover: #00497F;
+  --platform-accent-pressed: #003A66;
+  --platform-accent-secondary: #1A7FD4;
+  --platform-accent-secondary-hover: #459BDB;
+  --platform-accent-soft: rgba(0, 90, 158, 0.1);
+  --platform-accent-soft-2: rgba(0, 90, 158, 0.06);
+  --platform-accent-gradient: linear-gradient(135deg, #1A7FD4 0%, #005A9E 58%, #003B6B 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #459BDB 0%, #1A7FD4 45%, #005A9E 100%);
+  --platform-accent-gradient-soft: #F0F7FC;
+  --platform-accent-muted: rgba(0, 90, 158, 0.08);
+  --platform-accent-muted-strong: rgba(0, 90, 158, 0.14);
+  --platform-accent-border: rgba(0, 90, 158, 0.32);
+  --platform-accent-border-soft: rgba(0, 90, 158, 0.18);
 
-  --platform-accent-stop-a: #d0e1ff;
-  --platform-accent-stop-b: #0a6bff;
-  --platform-accent-stop-c: #3b82ff;
-  --platform-accent-stop-d: #004ac2;
-  --platform-accent-stop-e: #0058e0;
+  --platform-accent-stop-a: #B3D8F2;
+  --platform-accent-stop-b: #005A9E;
+  --platform-accent-stop-c: #1A7FD4;
+  --platform-accent-stop-d: #003A66;
+  --platform-accent-stop-e: #00497F;
 
-  --platform-loader-gradient-start: #d0e1ff;
-  --platform-loader-gradient-mid: #6ea3ff;
-  --platform-loader-gradient-end: #0a6bff;
-  --platform-loader-path: rgba(10, 107, 255, 0.28);
-  --platform-loader-color: #0a6bff;
+  --platform-loader-gradient-start: #B3D8F2;
+  --platform-loader-gradient-mid: #459BDB;
+  --platform-loader-gradient-end: #005A9E;
+  --platform-loader-path: rgba(0, 90, 158, 0.28);
+  --platform-loader-color: #005A9E;
 
-  --platform-shell-gradient: #FAFAFA;
-  --platform-header-bg: #FAFAFA;
-  --platform-sider-bg: var(--platform-glass-sider-bg, color-mix(in srgb, #F2F2F2 78%, transparent));
-  --platform-toolbar-bg: var(--platform-glass-sider-bg, color-mix(in srgb, #F2F2F2 78%, transparent));
+  --platform-shell-gradient: #F2F6FA;
+  --platform-header-bg: #F2F6FA;
+  --platform-sider-bg: #0D2A47;
+  --platform-glass-sider-bg: #0D2A47;
+  --platform-glass-header-bg: #F2F6FA;
+  --platform-toolbar-bg: #F0F7FC;
 
-  --platform-focus-ring: 0 0 0 2px rgba(0, 0, 0, 0.1);
-  --platform-link: #22507c;
+  --platform-focus-ring: 0 0 0 2px rgba(0, 90, 158, 0.2);
+  --platform-link: #005A9E;
+  --platform-success: #2F9E68;
+  --platform-caution: #D99B2B;
+  --platform-danger: #DC5A5A;
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
@@ -67,51 +75,57 @@ html[data-color-scheme="blue"][data-theme="light"] {
 }
 
 html[data-color-scheme="blue"][data-theme="dark"] {
-  --platform-bg-base: #212121;
-  --platform-bg: #212121;
-  --platform-bg-secondary: #171717;
-  --platform-bg-tertiary: #2f2f2f;
-  --platform-border: rgba(255, 255, 255, 0.1);
-  --platform-border-strong: rgba(255, 255, 255, 0.16);
-  --platform-divider: rgba(255, 255, 255, 0.08);
+  --platform-bg-base: #0A1622;
+  --platform-bg: #0A1622;
+  --platform-bg-secondary: #071018;
+  --platform-bg-tertiary: #132536;
+  --platform-border: rgba(217, 227, 236, 0.12);
+  --platform-border-light: rgba(217, 227, 236, 0.14);
+  --platform-border-strong: rgba(217, 227, 236, 0.2);
+  --platform-divider: rgba(217, 227, 236, 0.08);
 
   --platform-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
   --platform-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
   --platform-shadow-lg: 0 14px 38px rgba(0, 0, 0, 0.45);
 
-  --platform-accent: #3094ff;
-  --platform-accent-hover: #4da3ff;
-  --platform-accent-pressed: #1a7ee6;
-  --platform-accent-secondary: #4da3ff;
-  --platform-accent-secondary-hover: #3094ff;
-  --platform-accent-soft: rgba(48, 148, 255, 0.14);
-  --platform-accent-soft-2: rgba(48, 148, 255, 0.2);
-  --platform-accent-gradient: linear-gradient(180deg, #4da3ff 0%, #3094ff 100%);
-  --platform-accent-gradient-hover: linear-gradient(180deg, #6eb7ff 0%, #1a7ee6 100%);
-  --platform-accent-gradient-soft: linear-gradient(180deg, #2f2f2f 0%, #212121 100%);
-  --platform-accent-muted: rgba(48, 148, 255, 0.12);
-  --platform-accent-muted-strong: rgba(48, 148, 255, 0.18);
-  --platform-accent-border: rgba(48, 148, 255, 0.35);
-  --platform-accent-border-soft: rgba(48, 148, 255, 0.22);
+  --platform-accent: #459BDB;
+  --platform-accent-hover: #7DBCE8;
+  --platform-accent-pressed: #1A7FD4;
+  --platform-accent-secondary: #7DBCE8;
+  --platform-accent-secondary-hover: #B3D8F2;
+  --platform-accent-soft: rgba(69, 155, 219, 0.14);
+  --platform-accent-soft-2: rgba(69, 155, 219, 0.2);
+  --platform-accent-gradient: linear-gradient(135deg, #7DBCE8 0%, #459BDB 55%, #1A7FD4 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #B3D8F2 0%, #7DBCE8 50%, #459BDB 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #132536 0%, #0A1622 100%);
+  --platform-accent-muted: rgba(69, 155, 219, 0.12);
+  --platform-accent-muted-strong: rgba(69, 155, 219, 0.18);
+  --platform-accent-border: rgba(69, 155, 219, 0.35);
+  --platform-accent-border-soft: rgba(69, 155, 219, 0.22);
 
-  --platform-accent-stop-a: #94c4ff;
-  --platform-accent-stop-b: #3094ff;
-  --platform-accent-stop-c: #4da3ff;
-  --platform-accent-stop-d: #1a7ee6;
-  --platform-accent-stop-e: #4da3ff;
+  --platform-accent-stop-a: #B3D8F2;
+  --platform-accent-stop-b: #459BDB;
+  --platform-accent-stop-c: #7DBCE8;
+  --platform-accent-stop-d: #1A7FD4;
+  --platform-accent-stop-e: #7DBCE8;
 
-  --platform-loader-gradient-start: #94c4ff;
-  --platform-loader-gradient-mid: #4da3ff;
-  --platform-loader-gradient-end: #3094ff;
-  --platform-loader-path: rgba(48, 148, 255, 0.26);
-  --platform-loader-color: #3094ff;
+  --platform-loader-gradient-start: #B3D8F2;
+  --platform-loader-gradient-mid: #7DBCE8;
+  --platform-loader-gradient-end: #459BDB;
+  --platform-loader-path: rgba(69, 155, 219, 0.26);
+  --platform-loader-color: #459BDB;
 
-  --platform-shell-gradient: #212121;
-  --platform-header-bg: #212121;
-  --platform-sider-bg: #171717;
+  --platform-shell-gradient: #0A1622;
+  --platform-header-bg: #0A1622;
+  --platform-sider-bg: #0D2A47;
+  --platform-glass-sider-bg: #0D2A47;
+  --platform-toolbar-bg: #0D2A47;
 
-  --platform-focus-ring: 0 0 0 2px rgba(255, 255, 255, 0.08);
-  --platform-link: #6a9fcf;
+  --platform-focus-ring: 0 0 0 2px rgba(69, 155, 219, 0.28);
+  --platform-link: #7DBCE8;
+  --platform-success: #3CB87A;
+  --platform-caution: #E0B04A;
+  --platform-danger: #E87878;
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
   --platform-green-deep: var(--platform-accent-pressed);
@@ -125,71 +139,71 @@ html[data-color-scheme="blue"][data-theme="dark"] {
 
 /* ── 主题色恢复（多智能体/本析智能/知识检索/报告生成等界面使用蓝色主题） ── */
 .accent-theme {
-  --platform-accent: #3094ff;
-  --platform-accent-hover: #4da3ff;
-  --platform-accent-pressed: #1a7ee6;
-  --platform-accent-secondary: #4da3ff;
-  --platform-accent-secondary-hover: #3094ff;
-  --platform-accent-soft: rgba(48, 148, 255, 0.14);
-  --platform-accent-soft-2: rgba(48, 148, 255, 0.2);
-  --platform-accent-gradient: linear-gradient(180deg, #4da3ff 0%, #3094ff 100%);
-  --platform-accent-gradient-hover: linear-gradient(180deg, #6eb7ff 0%, #1a7ee6 100%);
-  --platform-accent-gradient-soft: linear-gradient(180deg, #eaf0ff 0%, #dce8ff 100%);
-  --platform-accent-muted: rgba(48, 148, 255, 0.12);
-  --platform-accent-muted-strong: rgba(48, 148, 255, 0.18);
-  --platform-accent-border: rgba(48, 148, 255, 0.35);
-  --platform-accent-border-soft: rgba(48, 148, 255, 0.22);
-  --platform-accent-stop-a: #94c4ff;
-  --platform-accent-stop-b: #3094ff;
-  --platform-accent-stop-c: #4da3ff;
-  --platform-accent-stop-d: #1a7ee6;
-  --platform-accent-stop-e: #4da3ff;
-  --platform-link: #22507c;
-  --platform-loader-gradient-start: #94c4ff;
-  --platform-loader-gradient-mid: #4da3ff;
-  --platform-loader-gradient-end: #3094ff;
-  --platform-loader-path: rgba(48, 148, 255, 0.26);
-  --platform-loader-color: #3094ff;
-  --platform-green: #3094ff;
-  --platform-green-hover: #4da3ff;
-  --platform-green-deep: #1a7ee6;
-  --platform-green-soft: #4da3ff;
-  --platform-green-surface: rgba(48, 148, 255, 0.14);
-  --platform-green-surface-2: rgba(48, 148, 255, 0.2);
-  --platform-focus-ring: 0 0 0 2px rgba(255, 255, 255, 0.08);
+  --platform-accent: #005A9E;
+  --platform-accent-hover: #00497F;
+  --platform-accent-pressed: #003A66;
+  --platform-accent-secondary: #1A7FD4;
+  --platform-accent-secondary-hover: #459BDB;
+  --platform-accent-soft: rgba(0, 90, 158, 0.1);
+  --platform-accent-soft-2: rgba(0, 90, 158, 0.06);
+  --platform-accent-gradient: linear-gradient(135deg, #1A7FD4 0%, #005A9E 58%, #003B6B 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #459BDB 0%, #1A7FD4 45%, #005A9E 100%);
+  --platform-accent-gradient-soft: #F0F7FC;
+  --platform-accent-muted: rgba(0, 90, 158, 0.08);
+  --platform-accent-muted-strong: rgba(0, 90, 158, 0.14);
+  --platform-accent-border: rgba(0, 90, 158, 0.32);
+  --platform-accent-border-soft: rgba(0, 90, 158, 0.18);
+  --platform-accent-stop-a: #B3D8F2;
+  --platform-accent-stop-b: #005A9E;
+  --platform-accent-stop-c: #1A7FD4;
+  --platform-accent-stop-d: #003A66;
+  --platform-accent-stop-e: #00497F;
+  --platform-link: #005A9E;
+  --platform-loader-gradient-start: #B3D8F2;
+  --platform-loader-gradient-mid: #459BDB;
+  --platform-loader-gradient-end: #005A9E;
+  --platform-loader-path: rgba(0, 90, 158, 0.26);
+  --platform-loader-color: #005A9E;
+  --platform-green: #005A9E;
+  --platform-green-hover: #00497F;
+  --platform-green-deep: #003A66;
+  --platform-green-soft: #1A7FD4;
+  --platform-green-surface: rgba(0, 90, 158, 0.1);
+  --platform-green-surface-2: rgba(0, 90, 158, 0.06);
+  --platform-focus-ring: 0 0 0 2px rgba(0, 90, 158, 0.2);
 }
 
 html[data-theme="dark"] .accent-theme {
-  --platform-accent: #3094ff;
-  --platform-accent-hover: #4da3ff;
-  --platform-accent-pressed: #1a7ee6;
-  --platform-accent-secondary: #4da3ff;
-  --platform-accent-secondary-hover: #3094ff;
-  --platform-accent-soft: rgba(48, 148, 255, 0.18);
-  --platform-accent-soft-2: rgba(48, 148, 255, 0.24);
-  --platform-accent-gradient: linear-gradient(180deg, #4da3ff 0%, #3094ff 100%);
-  --platform-accent-gradient-hover: linear-gradient(180deg, #6eb7ff 0%, #1a7ee6 100%);
-  --platform-accent-gradient-soft: linear-gradient(180deg, #2f2f2f 0%, #212121 100%);
-  --platform-accent-muted: rgba(48, 148, 255, 0.16);
-  --platform-accent-muted-strong: rgba(48, 148, 255, 0.22);
-  --platform-accent-border: rgba(48, 148, 255, 0.4);
-  --platform-accent-border-soft: rgba(48, 148, 255, 0.26);
-  --platform-accent-stop-a: #4da3ff;
-  --platform-accent-stop-b: #3094ff;
-  --platform-accent-stop-c: #4da3ff;
-  --platform-accent-stop-d: #1a7ee6;
-  --platform-accent-stop-e: #4da3ff;
-  --platform-link: #6a9fcf;
-  --platform-loader-gradient-start: #4da3ff;
-  --platform-loader-gradient-mid: #3094ff;
-  --platform-loader-gradient-end: #1a7ee6;
-  --platform-loader-path: rgba(48, 148, 255, 0.3);
-  --platform-loader-color: #3094ff;
-  --platform-green: #3094ff;
-  --platform-green-hover: #4da3ff;
-  --platform-green-deep: #1a7ee6;
-  --platform-green-soft: #4da3ff;
-  --platform-green-surface: rgba(48, 148, 255, 0.18);
-  --platform-green-surface-2: rgba(48, 148, 255, 0.24);
-  --platform-focus-ring: 0 0 0 2px rgba(255, 255, 255, 0.12);
+  --platform-accent: #459BDB;
+  --platform-accent-hover: #7DBCE8;
+  --platform-accent-pressed: #1A7FD4;
+  --platform-accent-secondary: #7DBCE8;
+  --platform-accent-secondary-hover: #B3D8F2;
+  --platform-accent-soft: rgba(69, 155, 219, 0.18);
+  --platform-accent-soft-2: rgba(69, 155, 219, 0.24);
+  --platform-accent-gradient: linear-gradient(135deg, #7DBCE8 0%, #459BDB 55%, #1A7FD4 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #B3D8F2 0%, #7DBCE8 50%, #459BDB 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #132536 0%, #0A1622 100%);
+  --platform-accent-muted: rgba(69, 155, 219, 0.16);
+  --platform-accent-muted-strong: rgba(69, 155, 219, 0.22);
+  --platform-accent-border: rgba(69, 155, 219, 0.4);
+  --platform-accent-border-soft: rgba(69, 155, 219, 0.26);
+  --platform-accent-stop-a: #7DBCE8;
+  --platform-accent-stop-b: #459BDB;
+  --platform-accent-stop-c: #7DBCE8;
+  --platform-accent-stop-d: #1A7FD4;
+  --platform-accent-stop-e: #7DBCE8;
+  --platform-link: #7DBCE8;
+  --platform-loader-gradient-start: #7DBCE8;
+  --platform-loader-gradient-mid: #459BDB;
+  --platform-loader-gradient-end: #1A7FD4;
+  --platform-loader-path: rgba(69, 155, 219, 0.3);
+  --platform-loader-color: #459BDB;
+  --platform-green: #459BDB;
+  --platform-green-hover: #7DBCE8;
+  --platform-green-deep: #1A7FD4;
+  --platform-green-soft: #7DBCE8;
+  --platform-green-surface: rgba(69, 155, 219, 0.18);
+  --platform-green-surface-2: rgba(69, 155, 219, 0.24);
+  --platform-focus-ring: 0 0 0 2px rgba(69, 155, 219, 0.28);
 }

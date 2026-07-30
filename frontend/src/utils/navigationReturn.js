@@ -15,6 +15,7 @@ export const VALID_RETURN_ROUTE_NAMES = new Set([
   "carbon-qa",
   "smart-data-query",
   "data-analysis",
+  "auto-ml",
   "translate",
   "speech",
   "text-to-speech",

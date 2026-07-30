@@ -1,0 +1,49 @@
+/* 对话壳层：输入框 Naive UI 穿透样式与滚动区 scrollbar 收敛
+ * 注意：本文件经 <style src> 以非 scoped 引入，勿使用 :deep()（不会被编译，浏览器会整条丢弃）。
+ * .ai-chat-textarea 挂在 n-input 根节点上，选择器按「自身 + 后代」书写。
+ */
+
+.ai-chat-textarea.n-input .n-input__border,
+.ai-chat-textarea.n-input .n-input__state-border {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ai-chat-textarea.n-input .n-input-wrapper,
+.ai-chat-textarea.n-input.n-input--textarea {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* 压过 platform / glass 全局 hover·focus 描边与光晕（否则四角会出现双层圆角） */
+.app-shell .ai-chat-textarea.n-input .n-input-wrapper,
+.app-shell .ai-chat-textarea.n-input.n-input--textarea {
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+.ai-chat-textarea.n-input:not(.n-input--disabled):hover .n-input__state-border,
+.ai-chat-textarea.n-input.n-input--focus .n-input__state-border,
+.app-shell .ai-chat-textarea.n-input:not(.n-input--disabled):hover .n-input__state-border,
+.app-shell .ai-chat-textarea.n-input.n-input--focus .n-input__state-border {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.ai-chat-textarea.n-input .n-input__textarea-el {
+  color: var(--platform-text);
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ai-chat-textarea.n-input .n-input__textarea-el::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.ai-home-messages,
+.ai-home-bubble--streaming .ai-home-stream-md {
+  -webkit-overflow-scrolling: touch;
+}

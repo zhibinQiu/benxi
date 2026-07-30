@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.agentkit.aip.orchestration import best_reply_from_hops, merge_hop_citations
-from app.agentkit.route.routing import infer_route_mode
+from app.agent.aip.orchestration import best_reply_from_hops, merge_hop_citations
+from app.agent.route.routing import infer_route_mode
 from app.core.agent.types import AgentRoute
 from app.core.phone import bootstrap_login_id
 from app.database import SessionLocal

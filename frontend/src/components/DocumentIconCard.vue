@@ -1,8 +1,7 @@
 <script setup>
 import { computed } from "vue";
-import { NCheckbox, NTag } from "naive-ui";
+import { NCheckbox } from "naive-ui";
 import DocumentFileIcon from "./DocumentFileIcon.vue";
-import { formatDocumentFormatLabel } from "../constants/documentUpload.js";
 import { knowledgeIndexTagProps } from "../utils/knowledgeIndex.js";
 
 const props = defineProps({
@@ -15,7 +14,10 @@ const props = defineProps({
 const emit = defineEmits(["open", "update:selected"]);
 
 const formatCode = computed(() => props.document.file_format || "");
-const formatLabel = computed(() => formatDocumentFormatLabel(formatCode.value));
+const uploadedAtLabel = computed(() => {
+  const ts = props.document.uploaded_at || props.document.created_at;
+  return ts ? new Date(ts).toLocaleString() : "";
+});
 const indexTag = computed(() => knowledgeIndexTagProps(props.document));
 </script>
 
@@ -42,22 +44,23 @@ const indexTag = computed(() => knowledgeIndexTagProps(props.document));
 
     <div class="doc-icon-card__body">
       <div class="doc-icon-card__art-wrap">
-        <DocumentFileIcon :format="formatCode" :size="48" />
+        <div class="doc-icon-card__icon-box">
+          <DocumentFileIcon :format="formatCode" :size="38" />
+          <span
+            class="doc-index-badge"
+            :class="`doc-index-badge--${indexTag.type}`"
+            :title="indexTag.label"
+          >
+            {{ indexTag.label }}
+          </span>
+        </div>
       </div>
       <div class="doc-icon-card__caption">
         <h3 class="doc-icon-card__title" :title="document.title">
           {{ document.title || "—" }}
         </h3>
-        <div class="doc-icon-card__meta">
-          <span class="doc-icon-card__format">{{ formatLabel }}</span>
-          <n-tag
-            size="tiny"
-            :type="indexTag.type"
-            :bordered="false"
-            class="doc-icon-card__index"
-          >
-            {{ indexTag.label }}
-          </n-tag>
+        <div v-if="uploadedAtLabel" class="doc-icon-card__meta">
+          <span class="doc-icon-card__time">{{ uploadedAtLabel }}</span>
         </div>
       </div>
     </div>
@@ -129,13 +132,21 @@ const indexTag = computed(() => knowledgeIndexTagProps(props.document));
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 58px;
+  min-height: 46px;
   transition: transform 0.28s cubic-bezier(0.34, 1.25, 0.64, 1);
 }
 
 .doc-icon-card:hover .doc-icon-card__art-wrap,
 .doc-icon-card:focus-visible .doc-icon-card__art-wrap {
   transform: translateY(-3px) scale(1.03);
+}
+
+.doc-icon-card__icon-box {
+  position: relative;
+  display: inline-flex;
+  line-height: 0;
+  /* 角标在图标右侧外侧 */
+  margin-right: 44px;
 }
 
 .doc-icon-card__caption {
@@ -151,7 +162,7 @@ const indexTag = computed(() => knowledgeIndexTagProps(props.document));
 .doc-icon-card__title {
   margin: 0;
   width: 100%;
-  font-size: var(--platform-font-size-lg, 14px);
+  font-size: var(--platform-font-size-sm, 12px);
   font-weight: 500;
   line-height: 1.35;
   color: var(--platform-text, #0f172a);
@@ -173,21 +184,22 @@ const indexTag = computed(() => knowledgeIndexTagProps(props.document));
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 4px;
   margin-top: 4px;
   width: 100%;
 }
 
-.doc-icon-card__format {
+.doc-icon-card__time {
   font-size: 10px;
   color: var(--platform-text-quaternary, #999);
   line-height: 1.2;
 }
 
-.doc-icon-card__index {
-  font-size: 10px !important;
-  line-height: 1.2;
+.doc-icon-card .doc-index-badge {
+  position: absolute;
+  top: -3px;
+  left: calc(100% + 2px);
+  right: auto;
+  z-index: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

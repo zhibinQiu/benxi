@@ -15,7 +15,7 @@ const show = computed(() => props.itemCount > props.pageSize);
 </script>
 
 <template>
-  <footer v-if="show" class="list-table-footer feature-bottom-strip">
+  <footer v-if="show" class="list-table-footer">
     <n-pagination
       :page="page"
       :page-size="pageSize"

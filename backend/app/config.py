@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # ── 平台基础 ──────────────────────────────────────────────────────────────
     app_name: str = "本析"
-    platform_version: str = "4.8.8"
+    platform_version: str = "4.9.0"
     debug: bool = False
     debug_sql: bool = False
     remote_deps: bool = False
@@ -205,12 +205,14 @@ class Settings(BaseSettings):
     agent_max_adaptive_passes: int = 2
     agent_specialist_max_tool_rounds: int = 20
     agent_max_sequential_handoffs: int = 2
-    agent_max_parallel_handoffs: int = 2
+    agent_max_parallel_handoffs: int = 3
+    agent_task_dag_enabled: bool = True
+    agent_max_dag_nodes: int = 4
+    agent_dag_planner_llm_enabled: bool = True
     agent_routing_llm_enabled: bool = False
     agent_skill_rag_enabled: bool = True
     agent_skill_rag_min_similarity: float = 0.42
     agent_skill_match_threshold: float = 0.3
-    agent_capability_fallback_mode: str = "loose"
     agent_orchestrator_max_assist_rounds: int = 2
     agent_supervisor_max_global_rounds: int = 3
     agent_planning_enabled: bool = True
@@ -264,11 +266,17 @@ class Settings(BaseSettings):
     kg_extraction_enabled: bool = True
     kg_extraction_max_chars: int = 10000
 
-    # ── Neo4j 图数据库（本体定义 + 知识图谱）────────────────────────────────
+    # ── Neo4j 图数据库（知识图谱实例 ABox）──────────────────────────────────
     neo4j_uri: str = "bolt://neo4j:7687"  # env NEO4J_URI
     neo4j_user: str = "neo4j"             # env NEO4J_USER
     neo4j_password: str = Field("", alias="NEO4J_PASSWORD")
     neo4j_database: str = "neo4j"         # env NEO4J_DATABASE
+
+    # ── GraphDB（全局本体 TBox，无租户隔离）──────────────────────────────────
+    graphdb_url: str = "http://graphdb:7200"  # env GRAPHDB_URL
+    graphdb_repository: str = "benxi-ontology"  # env GRAPHDB_REPOSITORY
+    graphdb_user: str = ""  # env GRAPHDB_USER
+    graphdb_password: str = Field("", alias="GRAPHDB_PASSWORD")
 
     # ── 系统设置 · 模型配置（页面只读展示，回退 deepseek_*）──────────────────
     platform_llm_base_url: str = ""
@@ -350,6 +358,11 @@ class Settings(BaseSettings):
     data_analysis_storage_dir: str = ""
     data_analysis_max_file_mb: int = 50
     data_analysis_exec_timeout_seconds: int = 60
+
+    # ── 自动化机器学习（PyCaret）──────────────────────────────────────────────
+    automl_storage_dir: str = ""
+    automl_max_upload_mb: int = 50
+    automl_job_timeout_sec: int = 1800
 
     # ── AI 聊天附件 ──────────────────────────────────────────────────────────
     ai_chat_attachment_storage_dir: str = ""

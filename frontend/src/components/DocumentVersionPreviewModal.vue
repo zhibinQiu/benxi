@@ -30,7 +30,7 @@ const props = defineProps({
   previewFileName: { type: String, default: "" },
   showDownloadAction: { type: Boolean, default: null },
   width: { type: [Number, String], default: "min(960px, 96vw)" },
-  viewportHeight: { type: String, default: "min(45vh, 480px)" },
+  viewportHeight: { type: String, default: "min(70vh, 720px)" },
   /** PDF 预览缩放：width 按弹窗宽度铺满（竖版文档可读性更好）；page 整页缩放进视口 */
   pdfFitMode: { type: String, default: "width" },
 });
@@ -431,7 +431,8 @@ function onAfterLeave() {
   align-self: stretch;
   width: 100%;
   flex: 1 1 0;
-  min-height: 0;
+  /* 弹窗已设明确 height，此处靠 flex 吃满剩余空间；min-height 防止链路断裂时塌缩 */
+  min-height: 280px;
   max-height: none;
   height: auto;
   aspect-ratio: unset;
@@ -546,7 +547,8 @@ function onAfterLeave() {
 <style>
 /* Naive UI card preset 将 attrs.class 合并在 .n-card.n-modal 同一节点，勿用 .n-modal .n-card 后代选择器 */
 .n-card.n-modal.document-preview-modal.admin-form-modal {
-  max-height: calc(100dvh - 38px);
+  height: min(90dvh, 900px);
+  max-height: calc(100dvh - 24px);
   display: flex;
   flex-direction: column;
   overflow: hidden;

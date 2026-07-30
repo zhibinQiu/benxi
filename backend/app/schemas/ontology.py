@@ -1,13 +1,11 @@
 """本体定义（Ontology）API 数据结构。
 
-本体层（TBox）管理领域知识 Schema，包括：
-- 实体类型定义（含属性模式）
-- 关系类型定义（含 domain/range、传递性、互逆）
-- 公理规则（推理 Cypher）
+本体层（TBox）存 GraphDB，全局共享；实例层（ABox）存 Neo4j。
 """
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -195,3 +193,177 @@ class DefaultSeedIn(BaseModel):
     """初始化默认本体的输入。"""
 
     confirm: bool = Field(default=False, description="确认初始化")
+
+
+class MergeTypesIn(BaseModel):
+    """合并两个实体类型（source → target）。"""
+
+    source_code: str = Field(min_length=1, max_length=64, pattern="^[a-z][a-z0-9_]*$")
+    target_code: str = Field(min_length=1, max_length=64, pattern="^[a-z][a-z0-9_]*$")
+
+
+class SchemaGraphNodeOut(BaseModel):
+    """语义模型可视化节点（Class / Property）。"""
+
+    id: str
+    code: str
+    label: str
+    kind: str = Field(description="class | property")
+    type_uri: str = ""
+    color: str = "blue"
+    icon: str = "help-circle"
+    entity_count: int = 0
+    parent_code: str | None = None
+    property_keys: list[str] = Field(default_factory=list)
+
+
+class SchemaGraphEdgeOut(BaseModel):
+    """语义模型可视化边（subClassOf / objectProperty）。"""
+
+    id: str
+    source: str
+    target: str
+    kind: str = Field(description="subClassOf | property")
+    label: str = ""
+    code: str = ""
+    transitive: bool = False
+    symmetric: bool = False
+
+
+class SchemaGraphOut(BaseModel):
+    """本体 TBox 可视化图（供前端 ECharts Graph）。"""
+
+    nodes: list[SchemaGraphNodeOut] = Field(default_factory=list)
+    edges: list[SchemaGraphEdgeOut] = Field(default_factory=list)
+    class_count: int = 0
+    property_count: int = 0
+    subclass_count: int = 0
+
+
+# ── LLM TBox 发现 ──────────────────────────────────────────────────────────
+
+
+class OntologyDiscoverFromTextIn(BaseModel):
+    """从文本发现本体候选（不写库）。"""
+
+    text: str = Field(min_length=1, description="文档/资料正文")
+    title: str = Field(default="文档抽取", max_length=200)
+    max_chars: int | None = Field(default=None, ge=2000, le=200000)
+
+
+class OntologyDiscoverFromDocumentsIn(BaseModel):
+    """从平台文档发现本体候选（不写库）。"""
+
+    document_ids: list[uuid.UUID] = Field(min_length=1, max_length=20)
+    max_chars: int | None = Field(default=None, ge=2000, le=200000)
+
+
+class OntologyDiscoverPropertyIn(BaseModel):
+    name: str = ""
+    type: str = "string"
+    required: bool = False
+    description: str = ""
+
+
+class OntologyDiscoverEntityCandidate(BaseModel):
+    code: str
+    label: str
+    description: str = ""
+    parent_code: str | None = None
+    properties: list[OntologyDiscoverPropertyIn] = Field(default_factory=list)
+    action: str = Field(description="create | merge | exists")
+    merge_into: str | None = None
+    note: str = ""
+    selected: bool = True
+
+
+class OntologyDiscoverRelationCandidate(BaseModel):
+    code: str
+    label: str
+    domain_types: list[str] = Field(default_factory=list)
+    range_types: list[str] = Field(default_factory=list)
+    transitive: bool = False
+    symmetric: bool = False
+    action: str = Field(description="create | exists")
+    note: str = ""
+    selected: bool = True
+
+
+class OntologyDiscoverSkipped(BaseModel):
+    kind: str = ""
+    code: str = ""
+    label: str = ""
+    reason: str = ""
+
+
+class OntologyDiscoverResultOut(BaseModel):
+    entity_types: list[OntologyDiscoverEntityCandidate] = Field(default_factory=list)
+    relation_types: list[OntologyDiscoverRelationCandidate] = Field(
+        default_factory=list
+    )
+    skipped: list[OntologyDiscoverSkipped] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
+    document_count: int | None = None
+    titles: list[str] = Field(default_factory=list)
+
+
+class OntologyDiscoverApplyIn(BaseModel):
+    """将勾选候选写入 GraphDB。"""
+
+    entity_types: list[OntologyDiscoverEntityCandidate] = Field(default_factory=list)
+    relation_types: list[OntologyDiscoverRelationCandidate] = Field(
+        default_factory=list
+    )
+
+
+class FieldBindingOut(BaseModel):
+    """问数映射：概念属性 → 表列（非 TBox）。"""
+
+    id: str = ""
+    concept: str
+    property_key: str
+    source: str = "sql"
+    table_name: str = ""
+    column_name: str = ""
+    join_template: str = ""
+    notes: str = ""
+    confidence: float = 1.0
+    origin: str = "auto"
+    enabled: bool = True
+    status: str = "active"
+
+
+class FieldBindingUpsert(BaseModel):
+    concept: str = Field(min_length=1, max_length=64)
+    property_key: str = Field(min_length=1, max_length=64)
+    source: str = "sql"
+    table_name: str = ""
+    column_name: str = ""
+    join_template: str = ""
+    notes: str = ""
+    enabled: bool = True
+    status: str = "active"
+
+
+class FieldBindingUpdate(BaseModel):
+    table_name: str | None = None
+    column_name: str | None = None
+    join_template: str | None = None
+    notes: str | None = None
+    enabled: bool | None = None
+    status: str | None = None
+
+
+class FieldBindingDiscoverOut(BaseModel):
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    total: int = 0
+    items: list[FieldBindingOut] = Field(default_factory=list)
+
+
+class FieldBindingSchemaOut(BaseModel):
+    """受控 SQL 可编辑的表白名单与列。"""
+
+    tables: dict[str, list[str]] = Field(default_factory=dict)
+    join_templates: list[str] = Field(default_factory=list)

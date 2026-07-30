@@ -602,6 +602,20 @@ def summarize_ragflow_progress_msg(msg: str | None, *, max_len: int = 500) -> st
             return (
                 "文档索引失败：检索服务连接异常，请稍后重试或联系管理员。"
             )[:max_len]
+        ocr_blob = "\n".join(error_lines).lower()
+        if any(
+            m in ocr_blob
+            for m in (
+                "paddleocr",
+                "failed to recognize pdf",
+                "ocr api error",
+                "layout recognize",
+                "ocr failed",
+            )
+        ):
+            return (
+                "文档解析失败：PaddleOCR 版面识别失败，请更换识别方式后重试，或联系管理员。"
+            )[:max_len]
         return "文档解析出现问题，请稍后重试或联系管理员。"[:max_len]
     tail = "\n".join(lines[-3:])
     if len(tail) <= max_len:

@@ -17,9 +17,9 @@ from app.core.agent_profiles import get_agent_profile, resolve_agent_title
 from app.core.aip.aid import build_agent_aid, orchestrator_aid, parse_agent_id_from_aid
 from app.core.aip.external_registry import get_external_agent, is_external_aid
 from app.core.aip.handoff import build_specialist_handoff_message
-from app.agentkit.aip.messaging import handoff_from_complete, reply_text_from_complete
+from app.agent.aip.messaging import handoff_from_complete, reply_text_from_complete
 from app.core.aip.session_bus import get_session_bus
-from app.agentkit.aip.types import AipInteractEnvelope, AipMessage, AipMessageType
+from app.agent.aip.types import AipInteractEnvelope, AipMessage, AipMessageType
 from app.core.exceptions import bad_request, not_found, service_unavailable
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage

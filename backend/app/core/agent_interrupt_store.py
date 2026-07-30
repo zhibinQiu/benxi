@@ -1,6 +1,6 @@
 """Redis 实现的 InterruptStore 和 HitlResponseStore。
 
-本模块不是 agentkit-interrupt 包的一部分，因为它依赖
+本模块不是 app.agent.interrupt 包的一部分，因为它依赖
 平台特定的 ``app.core.redis_client.get_redis_client()``。
 """
 
@@ -10,7 +10,7 @@ import json
 import logging
 from typing import Any
 
-from app.agentkit.interrupt import HitlRequest, InterruptState
+from app.agent.interrupt import HitlRequest, InterruptState
 
 logger = logging.getLogger(__name__)
 

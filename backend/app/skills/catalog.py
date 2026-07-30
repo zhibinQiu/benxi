@@ -17,7 +17,7 @@ from app.skills.routing import (
     format_skill_route_line,
     uploaded_skill_tag,
 )
-from app.agentkit.skills.search import rank_skills_by_query, skill_query_tokens
+from app.agent.skills.search import rank_skills_by_query, skill_query_tokens
 from app.core.ttl_cache import ttl_cache
 from app.skills.types import SkillDefinition, SkillReadiness, SkillSource
 
@@ -232,7 +232,7 @@ def get_merged_skill_definition(
 
 
 # 向后兼容：外部可能 from app.skills.catalog import _skill_query_tokens, rank_skills_by_query
-# 真实实现在 agentkit-skills
+# 真实实现在 app.agent.skills
 
 
 def _skill_query_tokens(query: str) -> list[str]:

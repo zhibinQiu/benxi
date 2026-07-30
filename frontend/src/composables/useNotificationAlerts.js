@@ -5,7 +5,7 @@ import { getToken } from "../api/http";
 const POLL_MS = 5_000;
 const BOOST_POLL_MS = 2_500;
 const MAX_TOASTS = 2;
-const AUTO_DISMISS_MS = 14_000;
+const AUTO_DISMISS_MS = 3_000;
 const DEFAULT_BOOST_MS = 15 * 60 * 1000;
 
 const activeToasts = ref([]);

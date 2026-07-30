@@ -220,7 +220,7 @@ const columns = [
 }
 
 .kg-entity-card :deep(.n-data-table-td) {
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   vertical-align: middle;
 }
 

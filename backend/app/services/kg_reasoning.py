@@ -1,4 +1,4 @@
-"""通过 SemanticLayer 执行多跳推理，将结果适配为 KgQaContext。"""
+"""通过 KgQueryService 执行多跳推理，将结果适配为 KgQaContext。"""
 
 from __future__ import annotations
 
@@ -27,12 +27,13 @@ def _payload_to_kg_context(payload: Any) -> KgQaContext:
 
 
 class KGReasoningEngine:
-    """本体感知的多跳逻辑推理引擎（SemanticLayer 门面）。"""
+    """本体感知的多跳逻辑推理引擎（KgQueryService 门面）。"""
 
     def __init__(self, driver: AsyncDriver) -> None:
-        from app.benxi_semantic import SemanticLayer
+        from app.semantic import KgQueryService, OntologyHubService
 
-        self._layer = SemanticLayer(driver)
+        self._kg = KgQueryService(driver)
+        self._hub = OntologyHubService(kg=self._kg)
 
     async def reason(
         self,
@@ -42,14 +43,21 @@ class KGReasoningEngine:
         max_depth: int = 5,
         include_inferred: bool = True,
     ) -> KgQaContext:
-        payload = await self._layer.reason_abox(
+        plan = await self._hub.plan_query(
+            question,
+            owner_id=user_id,
+            max_depth=max_depth,
+            include_inferred=include_inferred,
+        )
+        payload = await self._kg.reason(
             question,
             user_id,
             max_depth=max_depth,
             include_inferred=include_inferred,
+            plan=plan,
         )
         return _payload_to_kg_context(payload)
 
     async def query_ontology(self, question: str) -> str:
-        """查询本体定义（精简相关类型，非整库 dump）。"""
-        return await self._layer.ontology_compact(question or "")
+        """语义中枢说明（概念/映射/计划），非整库 dump。"""
+        return await self._hub.explain_for_tool(question or "")

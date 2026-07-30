@@ -72,6 +72,7 @@ from app.models import (  # noqa: F401 — register ORM models
     ragflow_link,
     ragflow_scope_dataset,
     scheduled_notification,
+    semantic_field_binding,
     todo,
     wechat_mp,
     agent_automation,
@@ -133,6 +134,9 @@ def _check_database_cached() -> bool:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from app.services.platform_sql_bindings import register_platform_sql_bindings
+
+    register_platform_sql_bindings()
     await asyncio.to_thread(_bootstrap_database_with_retry)
     from app.services.data_analysis_profile import warn_if_data_analysis_deps_missing
 
@@ -150,12 +154,23 @@ async def lifespan(_app: FastAPI):
     except Exception:
         _logger.exception("Neo4j 初始化失败（不影响启动，图谱功能将不可用）")
 
-    def _recover_index_jobs_background() -> None:
-        try:
-            from app.services.document_index_coordinator import recover_interrupted_jobs
-            from app.services.job_watchdog_service import cancel_stale_background_jobs
+    # 初始化 GraphDB 本体仓库（全局 TBox）
+    try:
+        from app.core.graphdb import init_graphdb
 
+        await init_graphdb()
+    except Exception:
+        _logger.exception("GraphDB 初始化失败（不影响启动，本体功能将不可用）")
+
+    def _recover_index_jobs_background() -> None:
+        from app.services.document_index_coordinator import recover_interrupted_jobs
+        from app.services.job_watchdog_service import cancel_stale_background_jobs
+
+        try:
             cancel_stale_background_jobs()
+        except Exception:
+            _logger.exception("启动时取消超时后台任务失败")
+        try:
             recover_interrupted_jobs()
         except Exception:
             _logger.exception("后台恢复文档索引任务失败")

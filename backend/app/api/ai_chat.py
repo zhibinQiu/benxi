@@ -203,7 +203,7 @@ def read_openai_api_settings(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(get_current_user)],
 ) -> ApiResponse[AiHomeOpenAiSettingsOut]:
-    """本析智能 OpenAI 兼容 API 平台开关（只读）。"""
+    """本析智能 OpenAI 兼容 API 开关（只读；等同小析「服务开放」）。"""
     return ApiResponse(
         data=AiHomeOpenAiSettingsOut.model_validate(
             ai_home_api_settings_svc.get_openai_api_settings(db)
@@ -220,7 +220,7 @@ def update_openai_api_settings(
     db: Annotated[Session, Depends(get_db)],
     _: Annotated[User, Depends(require_permission("admin.user"))],
 ) -> ApiResponse[AiHomeOpenAiSettingsOut]:
-    """管理员启停本析智能 OpenAI 兼容 API。"""
+    """管理员启停本析智能 OpenAI 兼容 API（写入小析「服务开放」）。"""
     return ApiResponse(
         data=AiHomeOpenAiSettingsOut.model_validate(
             ai_home_api_settings_svc.set_openai_api_enabled(db, body.enabled)

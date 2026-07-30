@@ -2,7 +2,7 @@
  *  仅覆盖 accent / 焦点等强调色；背景、壳层、侧栏色由 tokens.css 固定，不随主题色变化。
  */
 
-export const DEFAULT_CUSTOM_PRIMARY = "#0067ff";
+export const DEFAULT_CUSTOM_PRIMARY = "#005A9E";
 
 const HEX_RE = /^#([0-9a-f]{6})$/i;
 

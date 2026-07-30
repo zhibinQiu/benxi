@@ -10,8 +10,8 @@ from app.services.agent_skill_router import (
     is_platform_system_data_message,
 )
 from app.services.retrieval_priority import DEFAULT_RETRIEVAL_TOOL_ORDER
-from app.benxi_semantic.intents import detect_intent_tags, tools_for_intents
-from app.benxi_semantic.models import AgentDecisionContext, MatchedEntity
+from app.semantic.ontology.intents import detect_intent_tags, tools_for_intents
+from app.semantic.models import AgentDecisionContext, MatchedEntity
 
 
 def test_retrieval_order_kg_before_ontology():
@@ -22,7 +22,7 @@ def test_retrieval_order_kg_before_ontology():
 def test_affiliation_decision_prefers_kg_query():
     q = "邱智斌是哪个公司的？"
     assert is_person_org_affiliation_question(q)
-    assert is_platform_system_data_message(q)
+    assert not is_platform_system_data_message(q)
     tags = detect_intent_tags(q)
     preferred, blocked = tools_for_intents(tags)
     assert "kg_query" in preferred

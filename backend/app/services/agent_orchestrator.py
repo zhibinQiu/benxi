@@ -7,8 +7,8 @@ import re
 import uuid
 from typing import Any
 
-from app.agentkit.aip.types import AipMessage
-from app.agentkit.orchestrate import (
+from app.agent.aip.types import AipMessage
+from app.agent.orchestrate import (
     AssistRules,
     OrchestratorAnswerAssessment,
     OrchestratorTask,
@@ -42,7 +42,7 @@ _logger = logging.getLogger(__name__)
 
 # 最大子任务尝试次数（内部使用，非导出）
 
-# 平台 agent 分类与 marker（注入 agentkit-orchestrate 规则层）
+# 平台 agent 分类与 marker（注入 app.agent.orchestrate 规则层）
 _VERIFY_RULES = VerifyRules(
     action_agent_ids=frozenset({"platform"}),
     skill_dev_agent_id="skill-dev",
@@ -129,6 +129,8 @@ def workflow_plan_tasks(
     *,
     step_id: str,
     mode: str = "sequential",
+    detail: str | None = None,
+    edges: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     return _workflow_plan_tasks(
         tasks,
@@ -136,6 +138,9 @@ def workflow_plan_tasks(
         mode=mode,
         orchestrator_title="orchestrator",
         orchestrator_label=resolve_agent_title("orchestrator"),
+        detail=detail,
+        edges=edges,
+        plan_title="规划方案",
     )
 
 
@@ -370,7 +375,7 @@ def append_screenshot_markdown_to_reply(
 
 
 def build_task_plan_workflow_update(tasks: list[OrchestratorTask]) -> list[dict[str, Any]]:
-    from app.agentkit.orchestrate.events import task_to_json
+    from app.agent.orchestrate.events import task_to_json
 
     return [task_to_json(t) for t in tasks]
 
@@ -408,7 +413,7 @@ async def synthesize_specialist_correction_instruction(
     memory_context: str = "",
 ) -> str:
     """专精多轮失败后，由调度层生成面向专精的具体改正指引（非用户终稿）。"""
-    from app.agentkit.aip.messaging import reply_text_from_complete
+    from app.agent.aip.messaging import reply_text_from_complete
     from app.integrations.deepseek_client import chat_completion_message_async, is_configured
 
     failures = tool_failure_lines_in_events(events)

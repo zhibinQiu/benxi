@@ -1,4 +1,4 @@
-"""双碳助手报告任务。"""
+"""碳资产报告任务。"""
 
 from __future__ import annotations
 

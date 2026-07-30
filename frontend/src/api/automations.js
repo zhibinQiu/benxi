@@ -23,5 +23,10 @@ export function deleteAutomation(id) {
 }
 
 export function runAutomationNow(id) {
-  return api(`/api/v1/automations/${id}/run`, { method: "POST" });
+  return api(`/api/v1/automations/${id}/run`, {
+    method: "POST",
+    // 走本析智能编排，耗时可远超默认 20s
+    timeoutMs: 300_000,
+    preserveOnNavigate: true,
+  });
 }

@@ -1,7 +1,7 @@
 # Agent Skills 实现说明
 
 > **适用读者**：产品经理、运维、后端/前端开发  
-> **版本**：v4.8.8 · [开发说明书总览](../development/implementation-manual.md)  
+> **版本**：v4.9.0 · [开发说明书总览](../development/implementation-manual.md)  
 > **配套阅读**：[功能实现说明 §4.8 / §14](../operations/feature-implementation.md)（偏业务视角）
 
 ---
@@ -39,7 +39,7 @@
 
 ---
 
-## 1. 实现总览（v4.8.8）
+## 1. 实现总览（v4.9.0）
 
 对话入口先经 **路由裁决**（`agent_route_resolver`）：硬规则 → 知识图谱可直答 → Skill 混合 RAG → LLM 读 `agents.md` 选型 → orchestrator 兜底。图谱直答命中时跳过 Skill 匹配与 tool loop。
 

@@ -175,6 +175,70 @@ def _try_acquire_recovery_lock() -> bool:
         return True
 
 
+def _lease_is_active(payload: dict | None, *, now: float | None = None) -> bool:
+    until = (payload or {}).get("exec_lease_until")
+    if until is None:
+        return False
+    try:
+        return float(until) > (now if now is not None else time.time())
+    except (TypeError, ValueError):
+        return False
+
+
+def recover_orphaned_awaiting_parse_jobs() -> int:
+    """重新调度无活跃执行租约的 awaiting_parse 任务。
+
+    进程内 Timer 续跑在 API 重启后会丢失；Celery countdown 也可能漏调度。
+    本函数可安全周期调用：仅处理租约缺失/已过期的解析等待任务，不清活跃租约。
+    """
+    from app.config import get_settings
+    from app.database import SessionLocal
+    from app.services.knowledge_sync_job_service import (
+        _index_job_should_abort,
+        _index_target_exists,
+    )
+
+    if not get_settings().knowflow_enabled:
+        return 0
+
+    db = SessionLocal()
+    recovered = 0
+    try:
+        active_jobs = db.scalars(
+            select(Job).where(
+                Job.type == JobType.document_index.value,
+                Job.status.in_(_ACTIVE_JOB_STATUSES),
+            )
+        ).all()
+        now = time.time()
+        for job in active_jobs:
+            payload = job.payload if isinstance(job.payload, dict) else {}
+            if not is_awaiting_parse_phase(payload):
+                continue
+            if _lease_is_active(payload, now=now):
+                continue
+            doc_id = job.document_id
+            version_id = None
+            if payload.get("version_id"):
+                try:
+                    version_id = uuid.UUID(str(payload["version_id"]))
+                except (TypeError, ValueError):
+                    version_id = None
+            if not _index_target_exists(db, doc_id, version_id):
+                continue
+            if _index_job_should_abort(db, job):
+                continue
+            dispatch(job.id)
+            recovered += 1
+        if recovered:
+            logger.info("已续跑 %s 个无租约的文档解析等待任务", recovered)
+    except Exception:
+        logger.exception("续跑文档解析等待任务失败")
+    finally:
+        db.close()
+    return recovered
+
+
 def recover_interrupted_jobs() -> int:
     """进程启动时恢复中断的文档索引任务（全局仅一个进程执行）。"""
     from app.config import get_settings
@@ -190,7 +254,8 @@ def recover_interrupted_jobs() -> int:
         return 0
     if not _try_acquire_recovery_lock():
         logger.debug("文档索引恢复已由其他进程执行，跳过")
-        return 0
+        # 分布式锁被占时仍续跑本机可见的无租约 awaiting_parse，避免卡在 98%。
+        return recover_orphaned_awaiting_parse_jobs()
 
     db = SessionLocal()
     recovered = 0

@@ -248,12 +248,12 @@ const compareKeys = computed(() => {
 
 const testimonialsBgStyle = computed(() => {
   const gradient = isDark.value
-    ? 'linear-gradient(to bottom, rgba(15,15,22,0.78) 0%, rgba(15,15,22,0.85) 70%, rgba(15,15,22,1) 100%)'
-    : 'linear-gradient(to bottom, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.85) 70%, rgba(255,255,255,1) 100%)';
+    ? "linear-gradient(to bottom, rgba(10,22,34,0.82) 0%, rgba(10,22,34,0.9) 70%, #0A1622 100%)"
+    : "linear-gradient(to bottom, rgba(242,246,250,0.84) 0%, rgba(240,247,252,0.9) 55%, #F2F6FA 100%)";
   return {
-    backgroundImage: `${gradient}, url(${imgUrl('/images/bg.jpg')})`,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center'
+    backgroundImage: `${gradient}, url(${imgUrl("/images/bg.jpg")})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
   };
 });
 
@@ -327,7 +327,7 @@ watch(locale, () => {
 </script>
 
 <template>
-  <div class="login-feature-scroll" :style="{ '--bg-url': `url(${imgUrl('/images/bg.jpg')})` }">
+  <div class="login-feature-scroll">
 
     <!-- 产品愿景 -->
     <section
@@ -355,10 +355,8 @@ watch(locale, () => {
             </button>
           </div>
           <div v-if="vision.image" class="login-feature-scroll__image-wrapper">
-            <div class="login-feature-scroll__image-backplate">
-              <div class="login-feature-scroll__media">
-                <img :src="imgUrl(vision.image)" alt="" class="login-feature-scroll__img" loading="lazy" />
-              </div>
+            <div class="login-feature-scroll__media">
+              <img :src="imgUrl(vision.image)" alt="" class="login-feature-scroll__img" loading="lazy" />
             </div>
           </div>
         </div>
@@ -373,7 +371,7 @@ watch(locale, () => {
       class="login-feature-scroll__section"
     >
       <div class="login-feature-scroll__inner login-feature-scroll__inner--wide">
-        <div class="login-feature-scroll__split">
+        <div class="login-feature-scroll__split login-feature-scroll__split--reverse">
           <div class="login-feature-scroll__text">
             <p class="login-feature-scroll__stat login-feature-scroll__stat--multi">
               <span>
@@ -405,57 +403,55 @@ watch(locale, () => {
             </button>
           </div>
           <div v-if="skillsMedia" class="login-feature-scroll__image-wrapper">
-            <div class="login-feature-scroll__image-backplate">
-              <div
-                v-if="skillsMedia.kind === 'file' || skillsMedia.kind === 'embed'"
-                class="login-feature-scroll__video"
+            <div
+              v-if="skillsMedia.kind === 'file' || skillsMedia.kind === 'embed'"
+              class="login-feature-scroll__video"
+            >
+              <button
+                v-if="!mediaActivated.skills"
+                type="button"
+                class="login-feature-scroll__video-poster"
+                :aria-label="`播放：${skillsMedia.title || '演示视频'}`"
+                @click="activateMedia('skills')"
               >
-                <button
-                  v-if="!mediaActivated.skills"
-                  type="button"
-                  class="login-feature-scroll__video-poster"
-                  :aria-label="`播放：${skillsMedia.title || '演示视频'}`"
-                  @click="activateMedia('skills')"
-                >
-                  <img
-                    v-if="skillsMedia.poster"
-                    :src="skillsMedia.poster"
-                    alt=""
-                    class="login-feature-scroll__video-poster-img"
-                    loading="lazy"
-                  />
-                  <span class="login-feature-scroll__video-play" aria-hidden="true" />
-                </button>
-                <video
-                  v-else-if="skillsMedia.kind === 'file'"
-                  :src="skillsMedia.src"
-                  :poster="skillsMedia.poster || undefined"
-                  :aria-label="skillsMedia.title"
-                  controls
-                  playsinline
-                  autoplay
-                  preload="none"
-                  @error="onLocalVideoError('skills')"
-                />
-                <iframe
-                  v-else
-                  :src="skillsMedia.src"
-                  :title="skillsMedia.title || 'AgentKit demo'"
-                  scrolling="no"
-                  border="0"
-                  frameborder="no"
-                  framespacing="0"
-                  allowfullscreen="true"
-                />
-              </div>
-              <div v-else class="login-feature-scroll__media">
                 <img
-                  :src="skillsMedia.src"
+                  v-if="skillsMedia.poster"
+                  :src="skillsMedia.poster"
                   alt=""
-                  class="login-feature-scroll__img"
+                  class="login-feature-scroll__video-poster-img"
                   loading="lazy"
                 />
-              </div>
+                <span class="login-feature-scroll__video-play" aria-hidden="true" />
+              </button>
+              <video
+                v-else-if="skillsMedia.kind === 'file'"
+                :src="skillsMedia.src"
+                :poster="skillsMedia.poster || undefined"
+                :aria-label="skillsMedia.title"
+                controls
+                playsinline
+                autoplay
+                preload="none"
+                @error="onLocalVideoError('skills')"
+              />
+              <iframe
+                v-else
+                :src="skillsMedia.src"
+                :title="skillsMedia.title || 'AgentKit demo'"
+                scrolling="no"
+                border="0"
+                frameborder="no"
+                framespacing="0"
+                allowfullscreen="true"
+              />
+            </div>
+            <div v-else class="login-feature-scroll__media">
+              <img
+                :src="skillsMedia.src"
+                alt=""
+                class="login-feature-scroll__img"
+                loading="lazy"
+              />
             </div>
           </div>
         </div>
@@ -498,57 +494,55 @@ watch(locale, () => {
             </div>
           </div>
           <div v-if="knowledgeSearchMedia" class="login-feature-scroll__image-wrapper">
-            <div class="login-feature-scroll__image-backplate">
-              <div
-                v-if="knowledgeSearchMedia.kind === 'file' || knowledgeSearchMedia.kind === 'embed'"
-                class="login-feature-scroll__video"
+            <div
+              v-if="knowledgeSearchMedia.kind === 'file' || knowledgeSearchMedia.kind === 'embed'"
+              class="login-feature-scroll__video"
+            >
+              <button
+                v-if="!mediaActivated.knowledgeSearch"
+                type="button"
+                class="login-feature-scroll__video-poster"
+                :aria-label="`播放：${knowledgeSearchMedia.title || '演示视频'}`"
+                @click="activateMedia('knowledgeSearch')"
               >
-                <button
-                  v-if="!mediaActivated.knowledgeSearch"
-                  type="button"
-                  class="login-feature-scroll__video-poster"
-                  :aria-label="`播放：${knowledgeSearchMedia.title || '演示视频'}`"
-                  @click="activateMedia('knowledgeSearch')"
-                >
-                  <img
-                    v-if="knowledgeSearchMedia.poster"
-                    :src="knowledgeSearchMedia.poster"
-                    alt=""
-                    class="login-feature-scroll__video-poster-img"
-                    loading="lazy"
-                  />
-                  <span class="login-feature-scroll__video-play" aria-hidden="true" />
-                </button>
-                <video
-                  v-else-if="knowledgeSearchMedia.kind === 'file'"
-                  :src="knowledgeSearchMedia.src"
-                  :poster="knowledgeSearchMedia.poster || undefined"
-                  :aria-label="knowledgeSearchMedia.title"
-                  controls
-                  playsinline
-                  autoplay
-                  preload="none"
-                  @error="onLocalVideoError('knowledgeSearch')"
-                />
-                <iframe
-                  v-else
-                  :src="knowledgeSearchMedia.src"
-                  :title="knowledgeSearchMedia.title || 'Knowledge search demo'"
-                  scrolling="no"
-                  border="0"
-                  frameborder="no"
-                  framespacing="0"
-                  allowfullscreen="true"
-                />
-              </div>
-              <div v-else class="login-feature-scroll__media">
                 <img
-                  :src="knowledgeSearchMedia.src"
+                  v-if="knowledgeSearchMedia.poster"
+                  :src="knowledgeSearchMedia.poster"
                   alt=""
-                  class="login-feature-scroll__img"
+                  class="login-feature-scroll__video-poster-img"
                   loading="lazy"
                 />
-              </div>
+                <span class="login-feature-scroll__video-play" aria-hidden="true" />
+              </button>
+              <video
+                v-else-if="knowledgeSearchMedia.kind === 'file'"
+                :src="knowledgeSearchMedia.src"
+                :poster="knowledgeSearchMedia.poster || undefined"
+                :aria-label="knowledgeSearchMedia.title"
+                controls
+                playsinline
+                autoplay
+                preload="none"
+                @error="onLocalVideoError('knowledgeSearch')"
+              />
+              <iframe
+                v-else
+                :src="knowledgeSearchMedia.src"
+                :title="knowledgeSearchMedia.title || 'Knowledge search demo'"
+                scrolling="no"
+                border="0"
+                frameborder="no"
+                framespacing="0"
+                allowfullscreen="true"
+              />
+            </div>
+            <div v-else class="login-feature-scroll__media">
+              <img
+                :src="knowledgeSearchMedia.src"
+                alt=""
+                class="login-feature-scroll__img"
+                loading="lazy"
+              />
             </div>
           </div>
         </div>
@@ -563,7 +557,7 @@ watch(locale, () => {
       class="login-feature-scroll__section"
     >
       <div class="login-feature-scroll__inner login-feature-scroll__inner--wide">
-        <div class="login-feature-scroll__split">
+        <div class="login-feature-scroll__split login-feature-scroll__split--reverse">
           <div class="login-feature-scroll__text">
             <p class="login-feature-scroll__stat">
               {{ statLabels.notesPrefix || "平台已保存工作笔记" }}
@@ -574,57 +568,55 @@ watch(locale, () => {
             <p class="login-feature-scroll__body">{{ notes.body }}</p>
           </div>
           <div v-if="notesMedia" class="login-feature-scroll__image-wrapper">
-            <div class="login-feature-scroll__image-backplate">
-              <div
-                v-if="notesMedia.kind === 'file' || notesMedia.kind === 'embed'"
-                class="login-feature-scroll__video"
+            <div
+              v-if="notesMedia.kind === 'file' || notesMedia.kind === 'embed'"
+              class="login-feature-scroll__video"
+            >
+              <button
+                v-if="!mediaActivated.notes"
+                type="button"
+                class="login-feature-scroll__video-poster"
+                :aria-label="`播放：${notesMedia.title || '演示视频'}`"
+                @click="activateMedia('notes')"
               >
-                <button
-                  v-if="!mediaActivated.notes"
-                  type="button"
-                  class="login-feature-scroll__video-poster"
-                  :aria-label="`播放：${notesMedia.title || '演示视频'}`"
-                  @click="activateMedia('notes')"
-                >
-                  <img
-                    v-if="notesMedia.poster"
-                    :src="notesMedia.poster"
-                    alt=""
-                    class="login-feature-scroll__video-poster-img"
-                    loading="lazy"
-                  />
-                  <span class="login-feature-scroll__video-play" aria-hidden="true" />
-                </button>
-                <video
-                  v-else-if="notesMedia.kind === 'file'"
-                  :src="notesMedia.src"
-                  :poster="notesMedia.poster || undefined"
-                  :aria-label="notesMedia.title"
-                  controls
-                  playsinline
-                  autoplay
-                  preload="none"
-                  @error="onLocalVideoError('notes')"
-                />
-                <iframe
-                  v-else
-                  :src="notesMedia.src"
-                  :title="notesMedia.title || 'Notes system demo'"
-                  scrolling="no"
-                  border="0"
-                  frameborder="no"
-                  framespacing="0"
-                  allowfullscreen="true"
-                />
-              </div>
-              <div v-else class="login-feature-scroll__media">
                 <img
-                  :src="notesMedia.src"
+                  v-if="notesMedia.poster"
+                  :src="notesMedia.poster"
                   alt=""
-                  class="login-feature-scroll__img"
+                  class="login-feature-scroll__video-poster-img"
                   loading="lazy"
                 />
-              </div>
+                <span class="login-feature-scroll__video-play" aria-hidden="true" />
+              </button>
+              <video
+                v-else-if="notesMedia.kind === 'file'"
+                :src="notesMedia.src"
+                :poster="notesMedia.poster || undefined"
+                :aria-label="notesMedia.title"
+                controls
+                playsinline
+                autoplay
+                preload="none"
+                @error="onLocalVideoError('notes')"
+              />
+              <iframe
+                v-else
+                :src="notesMedia.src"
+                :title="notesMedia.title || 'Notes system demo'"
+                scrolling="no"
+                border="0"
+                frameborder="no"
+                framespacing="0"
+                allowfullscreen="true"
+              />
+            </div>
+            <div v-else class="login-feature-scroll__media">
+              <img
+                :src="notesMedia.src"
+                alt=""
+                class="login-feature-scroll__img"
+                loading="lazy"
+              />
             </div>
           </div>
         </div>
@@ -656,10 +648,8 @@ watch(locale, () => {
             </div>
           </div>
           <div v-if="featuresMeta.image" class="login-feature-scroll__image-wrapper">
-            <div class="login-feature-scroll__image-backplate">
-              <div class="login-feature-scroll__media">
-                <img :src="imgUrl(featuresMeta.image)" alt="" class="login-feature-scroll__img" loading="lazy" />
-              </div>
+            <div class="login-feature-scroll__media">
+              <img :src="imgUrl(featuresMeta.image)" alt="" class="login-feature-scroll__img" loading="lazy" />
             </div>
           </div>
         </div>
@@ -773,9 +763,6 @@ watch(locale, () => {
   </div>
 </template>
 
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-</style>
 <style scoped>
 .login-feature-scroll {
   width: 100%;
@@ -789,11 +776,11 @@ watch(locale, () => {
   display: flex;
   justify-content: center;
   padding: 96px max(80px, env(safe-area-inset-right, 0px)) 96px max(80px, env(safe-area-inset-left, 0px));
-  background: #fff;
+  background: #F2F6FA;
 }
 
 html[data-theme="dark"] .login-feature-scroll__section {
-  background: #0f0f16;
+  background: #0A1622;
 }
 
 .login-feature-scroll__section--compare {
@@ -803,11 +790,11 @@ html[data-theme="dark"] .login-feature-scroll__section {
 
 .login-feature-scroll__section--footer {
   padding: 0 0 38px;
-  background: #fff;
+  background: #F2F6FA;
 }
 
 html[data-theme="dark"] .login-feature-scroll__section--footer {
-  background: #0f0f16;
+  background: #0A1622;
 }
 
 /* ---------- reveal animation ---------- */
@@ -841,26 +828,26 @@ html[data-theme="dark"] .login-feature-scroll__section--footer {
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.03em;
-  color: #000;
+  color: #182A3B;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
 html[data-theme="dark"] .login-feature-scroll__title {
-  color: #e0e0e8;
+  color: #E8EEF4;
 }
 
 .login-feature-scroll__stat {
   margin: 0 0 8px;
   font-size: clamp(10px, 0.95vw, 11.5px);
   line-height: 1.5;
-  color: #888;
+  color: #6B7F92;
   letter-spacing: 0.01em;
 }
 
 html[data-theme="dark"] .login-feature-scroll__stat {
-  color: #8a8a96;
+  color: #7A8FA3;
 }
 
 .login-feature-scroll__stat--multi {
@@ -887,13 +874,13 @@ html[data-theme="dark"] .login-feature-scroll__stat {
   margin: 0;
   font-size: clamp(12px, 1vw, 13.5px);
   line-height: 1.65;
-  color: #000;
+  color: #3D556D;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 html[data-theme="dark"] .login-feature-scroll__body {
-  color: #c8c8d0;
+  color: #B3C2D1;
 }
 
 .login-feature-scroll__body--subtitle {
@@ -904,43 +891,25 @@ html[data-theme="dark"] .login-feature-scroll__body {
 .login-feature-scroll__split {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
-  gap: clamp(36px, 4vw, 64px);
+  justify-content: center;
+  gap: clamp(64px, 8vw, 128px);
   margin-top: 9px;
 }
 
 .login-feature-scroll__split .login-feature-scroll__text {
-  flex: 0 1 36%;
+  flex: 0 1 32%;
   width: auto;
   max-width: 26em;
 }
 
 .login-feature-scroll__split .login-feature-scroll__image-wrapper {
-  flex: 1 1 58%;
+  flex: 0 1 52%;
   width: 100%;
-  max-width: min(560px, 58%);
+  max-width: min(560px, 52%);
 }
 
-.login-feature-scroll__image-backplate {
-  position: relative;
-  padding: 12px;
-  border-radius: 16px;
-  background: #fff;
-  background-image: var(--bg-url);
-  background-size: cover;
-  background-position: center;
-  box-shadow: none;
-  isolation: isolate;
-  overflow: hidden;
-}
-
-.login-feature-scroll__image-backplate::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(255,255,255,0.6);
-  z-index: 1;
-  border-radius: 14px;
+.login-feature-scroll__split--reverse {
+  flex-direction: row-reverse;
 }
 
 .login-feature-scroll__text {
@@ -953,33 +922,15 @@ html[data-theme="dark"] .login-feature-scroll__body {
   min-width: 0;
 }
 
-html[data-theme="dark"] .login-feature-scroll__image-backplate {
-  background-image: var(--bg-url);
-  background-size: cover;
-  background-position: center;
-  box-shadow: none;
-}
-
-html[data-theme="dark"] .login-feature-scroll__image-backplate::before {
-  background: rgba(15,15,22,0.7);
-}
-
-/* 图片与视频共用同一媒体框尺寸（约 16:10） */
+/* 图片与视频共用同一媒体框尺寸（约 16:10），无背板 */
 .login-feature-scroll__media,
 .login-feature-scroll__video {
   position: relative;
-  z-index: 2;
   width: 100%;
   aspect-ratio: 16 / 10;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background: #111;
-}
-
-html[data-theme="dark"] .login-feature-scroll__media,
-html[data-theme="dark"] .login-feature-scroll__video {
-  border-color: rgba(255, 255, 255, 0.08);
+  background: transparent;
 }
 
 .login-feature-scroll__img {
@@ -988,13 +939,7 @@ html[data-theme="dark"] .login-feature-scroll__video {
   height: 100%;
   object-fit: cover;
   border: 0;
-  background: #fff;
-  position: relative;
-  z-index: 2;
-}
-
-html[data-theme="dark"] .login-feature-scroll__img {
-  background: #1a1a24;
+  background: transparent;
 }
 
 .login-feature-scroll__video iframe,
@@ -1004,7 +949,7 @@ html[data-theme="dark"] .login-feature-scroll__img {
   height: 100%;
   border: 0;
   object-fit: cover;
-  background: #111;
+  background: #0D2A47;
 }
 
 .login-feature-scroll__video-poster {
@@ -1021,7 +966,7 @@ html[data-theme="dark"] .login-feature-scroll__img {
   padding: 0;
   border: 0;
   border-radius: 14px;
-  background: #111;
+  background: #0D2A47;
   cursor: pointer;
   overflow: hidden;
 }
@@ -1096,22 +1041,22 @@ html[data-theme="dark"] .login-feature-scroll__enterprise-link--primary:hover {
 .login-feature-scroll__feature-title {
   margin: 0 0 4px;
   font-size: 13px;
-  color: #000;
+  color: #182A3B;
 }
 
 html[data-theme="dark"] .login-feature-scroll__feature-title {
-  color: #e0e0e8;
+  color: #E8EEF4;
 }
 
 .login-feature-scroll__feature-body {
   margin: 0;
   font-size: 11px;
   line-height: 1.55;
-  color: #555;
+  color: #3D556D;
 }
 
 html[data-theme="dark"] .login-feature-scroll__feature-body {
-  color: #999;
+  color: #7A8FA3;
 }
 
 .login-feature-scroll__section[data-section="testimonials"] .login-feature-scroll__title {
@@ -1133,25 +1078,27 @@ html[data-theme="dark"] .login-feature-scroll__feature-body {
   margin: 0;
   padding: 20px 22px;
   border-radius: 12px;
-  background: #f8f8fa;
-  border: 1px solid #e8e8ee;
+  background: #FFFFFF;
+  border: 1px solid #D9E3EC;
+  box-shadow: 0 1px 2px rgba(24, 42, 59, 0.04);
 }
 
 html[data-theme="dark"] .login-feature-scroll__testimonial {
-  background: #181820;
-  border-color: #2a2a36;
+  background: #132536;
+  border-color: rgba(217, 227, 236, 0.12);
+  box-shadow: none;
 }
 
 .login-feature-scroll__testimonial-quote {
   margin: 0;
   font-size: 13px;
   line-height: 1.7;
-  color: #000;
+  color: #182A3B;
   font-style: normal;
 }
 
 html[data-theme="dark"] .login-feature-scroll__testimonial-quote {
-  color: #d0d0d8;
+  color: #E8EEF4;
 }
 
 .login-feature-scroll__testimonial-author {
@@ -1160,11 +1107,11 @@ html[data-theme="dark"] .login-feature-scroll__testimonial-quote {
   justify-content: center;
   margin-top: auto;
   font-size: 12px;
-  color: #999;
+  color: #6B7F92;
 }
 
 html[data-theme="dark"] .login-feature-scroll__testimonial-author {
-  color: #888;
+  color: #7A8FA3;
 }
 
 /* ---------- acknowledgments ---------- */
@@ -1184,11 +1131,11 @@ html[data-theme="dark"] .login-feature-scroll__testimonial-author {
   font-weight: 400;
   line-height: 1.6;
   text-align: center;
-  color: #666;
+  color: #6B7F92;
 }
 
 html[data-theme="dark"] .login-feature-scroll__acknowledgments-subtitle {
-  color: #999;
+  color: #7A8FA3;
 }
 
 .login-feature-scroll__acknowledgments-grid {
@@ -1209,15 +1156,17 @@ html[data-theme="dark"] .login-feature-scroll__acknowledgments-subtitle {
   min-width: 120px;
   padding: 16px 22px;
   border-radius: var(--platform-card-radius);
-  background: var(--platform-card-bg);
-  border: 1px solid var(--platform-card-border-color);
+  background: #FFFFFF;
+  border: 1px solid #D9E3EC;
   text-decoration: none;
   transition: var(--platform-card-transition);
+  box-shadow: 0 1px 2px rgba(24, 42, 59, 0.04);
 }
 
 html[data-theme="dark"] .login-feature-scroll__acknowledgment-card {
-  background: var(--platform-card-bg);
-  border-color: var(--platform-card-border-color);
+  background: #132536;
+  border-color: rgba(217, 227, 236, 0.12);
+  box-shadow: none;
 }
 
 
@@ -1240,24 +1189,24 @@ html[data-theme="dark"] .login-feature-scroll__acknowledgment-card {
 .login-feature-scroll__acknowledgment-name {
   font-size: 13px;
   line-height: 1.3;
-  color: #111;
+  color: #182A3B;
   white-space: nowrap;
 }
 
 html[data-theme="dark"] .login-feature-scroll__acknowledgment-name {
-  color: #e0e0e8;
+  color: #E8EEF4;
 }
 
 .login-feature-scroll__acknowledgment-desc {
   font-size: 10px;
   line-height: 1.4;
-  color: #999;
+  color: #6B7F92;
   text-align: center;
   max-width: 140px;
 }
 
 html[data-theme="dark"] .login-feature-scroll__acknowledgment-desc {
-  color: #777;
+  color: #7A8FA3;
 }
 
 /* ---------- compare table ---------- */
@@ -1285,13 +1234,13 @@ html[data-theme="dark"] .login-feature-scroll__acknowledgment-desc {
   font-size: 12px;
   letter-spacing: 0.04em;
   text-align: center;
-  color: #999;
-  border-bottom: 1px solid #e8e8ee;
+  color: #6B7F92;
+  border-bottom: 1px solid #D9E3EC;
 }
 
 html[data-theme="dark"] .login-feature-scroll__compare-table thead th {
-  color: #777;
-  border-color: #2a2a36;
+  color: #7A8FA3;
+  border-color: rgba(217, 227, 236, 0.12);
 }
 
 .login-feature-scroll__compare-feature-col {
@@ -1300,12 +1249,12 @@ html[data-theme="dark"] .login-feature-scroll__compare-table thead th {
 
 .login-feature-scroll__compare-table tbody tr + tr th,
 .login-feature-scroll__compare-table tbody tr + tr td {
-  border-top: 1px solid #e8e8ee;
+  border-top: 1px solid #D9E3EC;
 }
 
 html[data-theme="dark"] .login-feature-scroll__compare-table tbody tr + tr th,
 html[data-theme="dark"] .login-feature-scroll__compare-table tbody tr + tr td {
-  border-color: #2a2a36;
+  border-color: rgba(217, 227, 236, 0.12);
 }
 
 .login-feature-scroll__compare-table tbody th,
@@ -1319,12 +1268,12 @@ html[data-theme="dark"] .login-feature-scroll__compare-table tbody tr + tr td {
 }
 
 .login-feature-scroll__compare-table tbody tr {
-  background: #f8f8fa;
+  background: #FFFFFF;
   transition: opacity 0.15s ease;
 }
 
 html[data-theme="dark"] .login-feature-scroll__compare-table tbody tr {
-  background: #181820;
+  background: #132536;
 }
 
 .login-feature-scroll__compare-table tbody tr:hover {
@@ -1337,16 +1286,16 @@ html[data-theme="dark"] .login-feature-scroll__compare-table tbody tr:hover {
 
 .login-feature-scroll__compare-feature {
   text-align: left;
-  color: #111;
+  color: #182A3B;
   white-space: nowrap;
 }
 
 html[data-theme="dark"] .login-feature-scroll__compare-feature {
-  color: #e8e8ee;
+  color: #E8EEF4;
 }
 
 .login-feature-scroll__compare-ours-col {
-  background: color-mix(in srgb, var(--platform-accent) 6%, transparent);
+  background: color-mix(in srgb, var(--platform-accent) 8%, #F0F7FC);
 }
 
 .login-feature-scroll__compare-table thead .login-feature-scroll__compare-ours-col {
@@ -1359,27 +1308,27 @@ html[data-theme="dark"] .login-feature-scroll__compare-feature {
 }
 
 .login-feature-scroll__compare-no {
-  color: #ccc;
+  color: #B3C5D6;
   font-size: 17px;
 }
 
 html[data-theme="dark"] .login-feature-scroll__compare-no {
-  color: #555;
+  color: #3D556D;
 }
 
 .login-feature-scroll__footnote {
   margin: 24px 0 0;
   padding-top: 19px;
-  border-top: 1px solid #e8e8ee;
+  border-top: 1px solid #D9E3EC;
   font-size: 14px;
   line-height: 1.65;
   font-weight: 500;
-  color: #111;
+  color: #182A3B;
 }
 
 html[data-theme="dark"] .login-feature-scroll__footnote {
-  border-color: #2a2a36;
-  color: #e8e8ee;
+  border-color: rgba(217, 227, 236, 0.12);
+  color: #E8EEF4;
 }
 
 /* ---------- footer ---------- */
@@ -1403,7 +1352,7 @@ html[data-theme="dark"] .login-feature-scroll__footnote {
 .login-feature-scroll__footer-link {
   font-size: 13px;
   font-weight: 500;
-  color: #777;
+  color: #6B7F92;
   text-decoration: none;
   transition: color 0.18s ease;
   white-space: nowrap;
@@ -1425,16 +1374,16 @@ html[data-theme="dark"] .login-feature-scroll__footnote {
   justify-content: center;
   gap: 10px 20px;
   padding-top: 14px;
-  border-top: 1px solid #e8e8ee;
+  border-top: 1px solid #D9E3EC;
 }
 
 html[data-theme="dark"] .login-feature-scroll__footer-legal {
-  border-color: #2a2a36;
+  border-color: rgba(217, 227, 236, 0.12);
 }
 
 .login-feature-scroll__footer-link--legal {
   font-size: 10px;
-  color: #bbb;
+  color: #8FA0B0;
 }
 
 .login-feature-scroll__footer-link--btn {
@@ -1482,11 +1431,11 @@ html[data-theme="dark"] .login-feature-scroll__enterprise-link:hover {
 /* ---------- responsive ---------- */
 @media (max-width: 1024px) {
   .login-feature-scroll__split {
-    gap: 40px;
+    gap: 72px;
   }
 
   .login-feature-scroll__split .login-feature-scroll__image-wrapper {
-    max-width: min(520px, 62%);
+    max-width: min(520px, 56%);
   }
 }
 
@@ -1498,7 +1447,11 @@ html[data-theme="dark"] .login-feature-scroll__enterprise-link:hover {
   .login-feature-scroll__split {
     flex-direction: column;
     align-items: stretch;
-    gap: 28px;
+    gap: 48px;
+  }
+
+  .login-feature-scroll__split--reverse {
+    flex-direction: column;
   }
 
   .login-feature-scroll__split .login-feature-scroll__text,
@@ -1553,12 +1506,7 @@ html[data-theme="dark"] .login-feature-scroll__enterprise-link:hover {
   }
 
   .login-feature-scroll__split {
-    gap: 24px;
-  }
-
-  .login-feature-scroll__image-backplate {
-    padding: 10px;
-    border-radius: 12px;
+    gap: 36px;
   }
 
   .login-feature-scroll__media,

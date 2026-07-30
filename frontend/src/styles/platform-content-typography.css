@@ -83,7 +83,7 @@
 
 .app-content .functions-page .feature-card__title {
   font-size: var(--platform-font-size-base);
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .app-content .functions-page .feature-card__desc {
@@ -102,7 +102,8 @@
   font-size: var(--platform-font-size-sm);
 }
 
-.app-content .documents-page .kb-folder-card__title {
+.app-content .documents-page .kb-folder-card__title,
+.app-content .documents-page .doc-icon-card__title {
   font-size: 11px;
 }
 

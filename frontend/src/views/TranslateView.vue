@@ -917,7 +917,7 @@ function loadPreviewBlob() {
       :preview-file-name="previewFileName"
       :show-download-action="false"
       width="min(760px, 94vw)"
-      viewport-height="min(45vh, 480px)"
+      viewport-height="min(70vh, 720px)"
     />
   </FeatureSubsystemShell>
 </template>

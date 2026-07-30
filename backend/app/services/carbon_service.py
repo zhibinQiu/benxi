@@ -1,7 +1,8 @@
 """双碳官方源取数 — 碳价 / 政策 / 排放·CCER·国际·地方数据。
 
-从官方渠道抓取 HTML 并做内存摘要，不持久化原文。新闻资讯不走本服务，
-由浏览器工具（invoke_context_subagent kind=execute）查最新。
+碳价与结构化数据从官方渠道抓取 HTML 并做内存摘要，不持久化原文。
+政策（carbon_policy）走发改委智能云搜索，详情页提取正文全文。
+新闻资讯不走本服务，由浏览器工具（invoke_context_subagent kind=execute）查最新。
 """
 
 from __future__ import annotations
@@ -108,6 +109,102 @@ NEWS_BROWSER_HINT_URLS = (
     "https://www.tandao.org",
     "https://www.3060.org.cn",
 )
+
+# 用户口语问句 → 发改委搜索词时剥离的噪声
+_POLICY_QUERY_NOISE = (
+    "最新的",
+    "最新",
+    "近期的",
+    "近期",
+    "目前的",
+    "目前",
+    "当前的",
+    "当前",
+    "有哪些",
+    "是什么",
+    "怎么样",
+    "如何",
+    "介绍一下",
+    "介绍下",
+    "介绍",
+    "帮我查一下",
+    "帮我看看",
+    "帮我",
+    "请帮我",
+    "请",
+    "查一下",
+    "查询",
+    "看看",
+    "告诉我",
+    "说一下",
+    "列举",
+    "列出",
+    "？",
+    "?",
+    "。",
+    "!",
+    "！",
+)
+
+_POLICY_AGENT_PAGE_SIZE = 20
+_POLICY_AGENT_TIMEOUT = 180.0
+_POLICY_BODY_EXCERPT = 600
+
+
+def normalize_policy_keyword(keyword: str) -> str:
+    """把用户问句收成适合发改委搜索的短关键词。"""
+    from app.services.ndrc_policy_scraper import DEFAULT_KEYWORD
+
+    q = (keyword or "").strip()
+    if not q:
+        return DEFAULT_KEYWORD
+    for noise in _POLICY_QUERY_NOISE:
+        q = q.replace(noise, "")
+    q = re.sub(r"\s+", " ", q).strip(" ，,、")
+    if len(q) < 2:
+        return DEFAULT_KEYWORD
+    return q[:60]
+
+
+def _build_policy_summary_md(
+    *,
+    keyword: str,
+    queried_at: str,
+    total_hits: int,
+    sources: list[dict[str, Any]],
+    failed: list[str],
+) -> str:
+    """供 Agent 列举「最新政策」：标题/时间/类型/链接 + 短摘要，避免全文撑爆超时与上下文。"""
+    lines = [
+        f"查询关键词：{keyword}",
+        f"查询时间：{queried_at}",
+        f"上游命中：{total_hits}",
+        f"本次返回：{len(sources)} 条（国家发改委智能云搜索 so.ndrc.gov.cn）",
+        "",
+        "回答「有哪些 / 最新政策」时：按下列条目的发布时间优先列举标题、类型、来源与 URL；"
+        "不要编造未出现的政策；若条目偏新闻解读，请标明类型。",
+        "",
+    ]
+    for i, s in enumerate(sources, 1):
+        title = str(s.get("title") or "（无标题）")
+        body = str(s.get("body") or "").strip()
+        excerpt = body[:_POLICY_BODY_EXCERPT]
+        if len(body) > _POLICY_BODY_EXCERPT:
+            excerpt += "…"
+        lines.extend(
+            [
+                f"### {i}. {title}",
+                f"- 类型：{s.get('doc_type') or '—'}",
+                f"- 发布时间：{s.get('published_at') or '—'}",
+                f"- 来源：{s.get('source') or '—'}",
+                f"- URL：{s.get('url') or '—'}",
+                f"- 摘要：{excerpt or '（未能提取正文）'}",
+                "",
+            ]
+        )
+    if failed:
+        lines.append(f"（以下链接未能提取正文：{', '.join(failed)}）")
+    return "\n".join(lines).strip()
 
 
 class _HtmlAnalyzer(HTMLParser):
@@ -422,70 +519,137 @@ async def fetch_carbon_policy(
     *,
     keyword: str = "",
     url: str = "",
-    timeout: float = _DEFAULT_FETCH_TIMEOUT,
+    timeout: float = _POLICY_AGENT_TIMEOUT,
+    pages: int = 1,
+    page_size: int = _POLICY_AGENT_PAGE_SIZE,
 ) -> dict[str, Any]:
-    """获取双碳政策与公开资讯：官网相关内容 + 站外新闻媒体。
+    """从发改委智能云搜索获取双碳政策，并抓取详情页正文。
 
-    - 官网优先：仅保留与碳市场/履约主题相关的摘要，无关首页不收录
-    - 同步拉取行业新闻站，避免资讯仅来自指定官网
+    - 无 url：按 keyword 搜索 so.ndrc.gov.cn（问句会先规范化为短关键词）
+    - 有 url：直接抓取指定政策页
+    - summary_md 为面向 Agent 的精简列表（标题/时间/短摘要），全文在 sources[].body
     """
-    if url.startswith(("http://", "https://")):
-        return await _fetch_sources("policy", keyword=keyword, url=url, timeout=timeout)
+    from app.services.ndrc_policy_scraper import NdrcPolicySearcher
 
-    official, news = await asyncio.gather(
-        _fetch_sources("policy", keyword=keyword, timeout=timeout),
-        _fetch_sources("policy_news", keyword=keyword, timeout=timeout),
-        return_exceptions=True,
-    )
-    if isinstance(official, BaseException):
-        official = {
-            "ok": False,
-            "sources": [],
-            "failed_urls": [],
-            "summary_md": f"官网政策检索失败（{type(official).__name__}）",
-            "error": "official_exception",
-        }
-    if isinstance(news, BaseException):
-        news = {
-            "ok": False,
-            "sources": [],
-            "failed_urls": [],
-            "summary_md": f"新闻资讯检索失败（{type(news).__name__}）",
-            "error": "news_exception",
-        }
+    queried_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    kw = normalize_policy_keyword(keyword)
+    searcher = NdrcPolicySearcher(keyword=kw, delay=0.12)
+    failed: list[str] = []
 
-    sources = list(official.get("sources") or []) + list(news.get("sources") or [])
-    failed = list(official.get("failed_urls") or []) + list(news.get("failed_urls") or [])
-    parts: list[str] = []
-    if official.get("ok") and official.get("summary_md"):
-        parts.append("### 官网政策要点\n\n" + str(official["summary_md"]))
-    if news.get("ok") and news.get("summary_md"):
-        parts.append("### 公开新闻与行业资讯\n\n" + str(news["summary_md"]))
-    if not parts:
-        tried = "官网政策站 + 行业新闻站"
+    try:
+        if url.startswith(("http://", "https://")):
+            detail = await asyncio.wait_for(searcher.fetch_detail(url), timeout=timeout)
+            items = [
+                {
+                    "title": "",
+                    "url": url,
+                    "doc_type": "",
+                    "published_at": detail.get("published_at") or "",
+                    "source": detail.get("source") or "",
+                    "body": detail.get("body") or "",
+                }
+            ]
+            if not items[0]["body"]:
+                failed.append(url)
+        else:
+            items = await asyncio.wait_for(
+                searcher.scrape(
+                    max_pages=max(1, min(int(pages), 3)),
+                    page_size=max(1, min(int(page_size), 20)),
+                    with_detail=True,
+                ),
+                timeout=timeout,
+            )
+    except asyncio.TimeoutError:
         return {
             "ok": False,
             "query_type": "policy",
-            "keyword": keyword,
-            "queried_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+            "keyword": kw,
+            "queried_at": queried_at,
+            "sources": [],
+            "failed_urls": failed,
+            "summary_md": f"发改委政策检索超时（>{timeout}s）。请稍后重试或缩小关键词。",
+            "error": "timeout",
+            "total_hits": searcher.total_hits,
+        }
+    except Exception as exc:
+        logger.warning("ndrc policy scrape failed: %s", exc)
+        return {
+            "ok": False,
+            "query_type": "policy",
+            "keyword": kw,
+            "queried_at": queried_at,
+            "sources": [],
+            "failed_urls": failed,
+            "summary_md": f"发改委政策检索失败：{type(exc).__name__}: {exc}",
+            "error": "scrape_failed",
+            "total_hits": searcher.total_hits,
+        }
+    finally:
+        await searcher.aclose()
+
+    sources_out: list[dict[str, Any]] = []
+    for item in items:
+        body = str(item.get("body") or "").strip()
+        link = str(item.get("url") or "").strip()
+        title = str(item.get("title") or "").strip() or "（无标题）"
+        if not body and not title:
+            if link:
+                failed.append(link)
+            continue
+        if not body and link:
+            failed.append(link)
+        published = str(item.get("published_at") or "")
+        source = str(item.get("source") or "")
+        doc_type = str(item.get("doc_type") or "")
+        sources_out.append(
+            {
+                "url": link,
+                "title": title,
+                "headings": [doc_type] if doc_type else [],
+                "snippet": (body[:800] if body else "（未能提取正文）"),
+                "extracted": [body[:1200]] if body else [],
+                "published_at": published,
+                "source": source,
+                "doc_type": doc_type,
+                "body": body,
+            }
+        )
+
+    if not sources_out:
+        return {
+            "ok": False,
+            "query_type": "policy",
+            "keyword": kw,
+            "queried_at": queried_at,
             "sources": [],
             "failed_urls": failed,
             "summary_md": (
-                f"未获取到与「{keyword or '全国碳市场履约'}」相关的政策/资讯。"
-                f"已跳过无关页面；尝试来源：{tried}。"
+                f"未从发改委智能云搜索获取到与「{kw}」相关的政策。"
+                "数据源：https://so.ndrc.gov.cn/"
             ),
             "error": "no_relevant_sources",
+            "total_hits": searcher.total_hits,
         }
+
+    summary_md = _build_policy_summary_md(
+        keyword=kw,
+        queried_at=queried_at,
+        total_hits=int(searcher.total_hits or len(sources_out)),
+        sources=sources_out,
+        failed=failed,
+    )
 
     return {
         "ok": True,
         "query_type": "policy",
-        "keyword": keyword,
-        "queried_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "sources": sources,
+        "keyword": kw,
+        "queried_at": queried_at,
+        "sources": sources_out,
         "failed_urls": failed,
-        "summary_md": "\n\n---\n\n".join(parts),
+        "summary_md": summary_md,
         "error": None,
+        "total_hits": searcher.total_hits,
     }
 
 

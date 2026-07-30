@@ -19,7 +19,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse, StreamingResponse
 
-from app.agentkit.aip.auth import is_aip_sk_token
+from app.agent.aip.auth import is_aip_sk_token
 from app.api.deps import _resolve_token, get_client_ip
 from app.core.agent_api_mode import agent_api_mode
 from app.core.async_db import StreamCapacityError, detach_request_db, stream_db_slot
@@ -43,14 +43,22 @@ _DIRECT_LLM_MODEL = "grm"
 # 映射到 reasoning 的 workflow phase（排除纯 UI 噪声）
 _REASONING_PHASES = frozenset(
     {
+        "workflow_started",
         "thinking_delta",
         "agent_thinking",
         "llm_thinking",
         "agent_thought",
         "llm_decision",
         "agent_plan",
+        "plan_tasks",
+        "task_started",
+        "task_retry",
+        "task_done",
+        "task_failed",
         "tool_call",
         "tool_result",
+        "url_parse_progress",
+        "orchestrator_progress",
     }
 )
 
@@ -91,7 +99,7 @@ def _require_sk_user(
 
 def _require_openai_api_enabled(db: Session) -> None:
     if not settings_svc.is_openai_api_enabled(db):
-        raise forbidden("本析智能 OpenAPI 未开放，请在本析智能界面开启")
+        raise forbidden("本析智能 OpenAPI 未开放，请在多智能体中为「小析」开启「服务开放」")
 
 
 def _message_text(content: Any) -> str:
@@ -180,30 +188,13 @@ def _completion_id() -> str:
 
 
 def _reasoning_from_workflow(wf: dict[str, Any]) -> str:
-    """将平台 workflow 事件转为 OpenAI reasoning 增量文本。"""
+    """将平台 workflow 事件转为 OpenAI reasoning 增量（标准 stage 前缀）。"""
+    from app.agent.orchestrate.protocol import format_reasoning_line
+
     phase = str(wf.get("phase") or "").strip()
-    if phase not in _REASONING_PHASES:
+    if phase not in _REASONING_PHASES and not wf.get("stage"):
         return ""
-    if phase == "thinking_delta":
-        return str(wf.get("delta") or "")
-    title = str(wf.get("title") or "").strip()
-    detail = str(wf.get("detail") or "").strip()
-    tool = str(wf.get("tool") or "").strip()
-    if phase == "tool_call":
-        head = f"→ {tool}" if tool else "→ tool"
-        body = detail or title
-        line = f"{head}: {body}" if body else head
-        return line + "\n"
-    if phase == "tool_result":
-        status = str(wf.get("status") or "done").strip() or "done"
-        body = detail or title
-        if not body:
-            return ""
-        return f"[{status}] {body}\n"
-    if detail and title and detail != title:
-        return f"{title}: {detail}\n"
-    text = detail or title
-    return (text + "\n") if text else ""
+    return format_reasoning_line(wf)
 
 
 @dataclass

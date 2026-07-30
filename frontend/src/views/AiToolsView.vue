@@ -123,7 +123,7 @@ function openTool(tool) {
           <component :is="cat.icon" />
         </n-icon>
         <div class="category-titles">
-          <n-text strong class="category-title">{{ cat.title }}</n-text>
+          <n-text class="category-title">{{ cat.title }}</n-text>
           <n-text v-if="cat.hint" depth="3" class="category-hint">{{ cat.hint }}</n-text>
         </div>
       </div>
@@ -150,7 +150,7 @@ function openTool(tool) {
                 <component :is="cat.icon" v-else />
               </n-icon>
               <div class="feature-body">
-                <n-text strong class="feature-title">{{ tool.title }}</n-text>
+                <n-text class="feature-title">{{ tool.title }}</n-text>
                 <n-text depth="3" class="feature-desc">{{ tool.description }}</n-text>
               </div>
               <n-icon v-if="!tool.pending" :size="19" class="external-icon" depth="3">
@@ -178,7 +178,7 @@ function openTool(tool) {
 }
 .page-hint {
   display: block;
-  font-size: 16px;
+  font-size: var(--platform-font-size-sm);
 }
 .category-section {
   margin-top: 24px;
@@ -202,12 +202,13 @@ function openTool(tool) {
 }
 .category-title {
   display: block;
-  font-size: 18px;
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-normal);
   line-height: 1.35;
 }
 .category-hint {
   display: block;
-  font-size: var(--platform-font-size-base);
+  font-size: var(--platform-font-size-sm);
   margin-top: 2px;
 }
 .category-grid {
@@ -241,11 +242,12 @@ function openTool(tool) {
 }
 .feature-title {
   display: block;
-  font-size: 17px;
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-normal);
   line-height: 1.35;
 }
 .feature-desc {
-  font-size: 11px;
+  font-size: var(--platform-font-size-sm);
   line-height: 1.4;
   margin-top: 5px;
   display: -webkit-box;

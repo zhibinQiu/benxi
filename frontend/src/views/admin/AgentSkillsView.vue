@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: "AgentSkillsView" });
 import { computed, defineAsyncComponent, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { SearchOutline, RefreshOutline, DownloadOutline } from "@vicons/ionicons5";
@@ -181,6 +182,7 @@ function connectExternalAgent() {
 
 <style scoped>
 .agent-skills-view {
+  position: relative;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -189,23 +191,33 @@ function connectExternalAgent() {
   height: 100%;
 }
 .agent-skills-view :deep(.n-tabs) {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: visible;
+  background: transparent;
 }
 .agent-skills-view :deep(.n-tabs-nav) {
   position: sticky;
   top: 0;
-  z-index: 1;
-  background: var(--platform-bg);
+  z-index: 2;
+  background: color-mix(in srgb, var(--platform-bg) 78%, transparent) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.agent-skills-view :deep(.n-tabs-pane-wrapper),
+.agent-skills-view :deep(.n-tab-pane),
+.agent-skills-view :deep(.n-tabs-scroll-padding) {
+  background: transparent !important;
 }
 .agent-skills-view :deep(.n-tabs-tab--active) {
-  color: var(--n-tab-text-color) !important;
+  color: var(--platform-accent) !important;
 }
 .agent-skills-view :deep(.n-tabs-tab):hover {
-  color: var(--n-tab-text-color) !important;
+  color: var(--platform-accent) !important;
 }
 .agent-skills-view :deep(.n-tabs-bar) {
   display: none;

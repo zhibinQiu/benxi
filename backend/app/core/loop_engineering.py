@@ -1,4 +1,4 @@
-"""Loop Engineering — agentkit-loop 适配（注入平台 planner / 观测层）。"""
+"""Loop Engineering — app.agent.loop 适配（注入平台 planner / 观测层）。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any
 
 from app.core.agent_loop_state import LoopState
 
-from app.agentkit.loop import LoopEvidence, LoopExitRequest, build_loop_exit_prompt_messages as _build_loop_exit
+from app.agent.loop import LoopEvidence, LoopExitRequest, build_loop_exit_prompt_messages as _build_loop_exit
 
 # 平台终稿契约（含简体中文要求）
 LOOP_SYSTEM_CONTRACT = (
@@ -26,7 +26,7 @@ LOOP_SYSTEM_CONTRACT = (
 
 def build_agent_generated_instruction(loop_state: LoopState | None) -> str:
     """从 loop_state 中的执行计划提取智能体自生成的任务指令。"""
-    from app.agentkit.loop import AgentExecutionPlan, build_agent_instruction_from_plan
+    from app.agent.loop import AgentExecutionPlan, build_agent_instruction_from_plan
     from app.services.agent_planner import build_plan_context_instruction
 
     plan = (loop_state or {}).get("_execution_plan")

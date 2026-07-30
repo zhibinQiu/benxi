@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.agent_loop_session import AgentLoopSession
 from app.core.aip.handoff import build_specialist_assist_handoff
-from app.agentkit.aip.messaging import attach_handoff_to_complete
+from app.agent.aip.messaging import attach_handoff_to_complete
 from app.integrations.deepseek_client import chat_completion_stream_choice
 from app.models.org import User
 from app.schemas.ai_chat import AiChatMessage
@@ -86,6 +86,12 @@ def _is_orchestrator_parent(loop_state: LoopState | None) -> bool:
         return False
     aid = str(state.get("agent_id") or "").strip()
     return aid in ("", "orchestrator")
+
+
+def _stamp_agent_workflow(data: dict[str, Any], loop_state: LoopState | None) -> dict[str, Any]:
+    from app.core.agent_language import stamp_workflow_agent
+
+    return stamp_workflow_agent(data, loop_state=loop_state if isinstance(loop_state, dict) else None)
 
 
 def _should_delegate_to_subagent(loop_state: LoopState | None, tool_name: str) -> bool:
@@ -210,7 +216,10 @@ def _human_tool_call_detail(tool_name: str, raw_args: dict[str, Any]) -> str:
         return f"知识库检索：{q[:120]}" if q else "知识库检索"
     if tn == "kg_query":
         q = str(raw_args.get("question") or raw_args.get("query") or "").strip()
-        return f"知识图谱查询：{q[:120]}" if q else "知识图谱查询"
+        return f"知识图谱服务：{q[:120]}" if q else "知识图谱服务：检索实例事实"
+    if tn == "ontology_query":
+        q = str(raw_args.get("question") or raw_args.get("query") or "").strip()
+        return f"本体语义中枢：{q[:120]}" if q else "本体语义中枢：概念理解与路径规划"
     if tn == "browser_snapshot":
         return "读取当前页面结构"
     if tn == "browser_run_task":
@@ -288,10 +297,16 @@ def _parse_tool_summary(result_text: str) -> tuple[bool, str]:
     return False, result_text[:200]
 
 
-def _tool_timeout() -> int:
+def _tool_timeout(tool_name: str = "") -> int:
+    """单次工具超时；碳政策抓取较慢，单独放宽。"""
     from app.config import get_settings
 
-    return max(10, int(get_settings().agent_tool_timeout_sec or 60))
+    base = max(10, int(get_settings().agent_tool_timeout_sec or 60))
+    name = (tool_name or "").strip()
+    # carbon_policy 一次最多 20 条详情；carbon-qa 经 invoke_skill 嵌套调用
+    if name in ("carbon_policy", "invoke_skill"):
+        return max(base, 180)
+    return base
 
 
 def _progress_heartbeat_detail(loop_state: LoopState, fallback: str) -> str:
@@ -629,6 +644,18 @@ def _build_nudge_cache(
         nudges["platform"] = (
             "【系统】必须先调用工具获取真实数据（如 search_documents_by_name / list_todos / send_notification 等）；"
             "禁止编造数据或仅用文字描述来假装已完成操作。"
+        )
+    from app.semantic.ontology.intents import (
+        is_org_member_list_question,
+        is_person_org_affiliation_question,
+    )
+
+    if is_person_org_affiliation_question(user_message) or is_org_member_list_question(
+        user_message
+    ):
+        nudges["platform"] = (
+            "【系统】人员所属组织/部门成员必须调用 kg_query（知识图谱），"
+            "禁止臆造；仅根据图谱返回的所属组织作答。"
         )
     if execution_plan.uploaded_skill:
         skill = execution_plan.uploaded_skill
@@ -1016,7 +1043,7 @@ async def emit_final_user_reply(
         elif ev.get("type") == "complete_text":
             text = str(ev.get("text") or "").strip()
             if text:
-                from app.agentkit.message.filter import has_mermaid_deliverable
+                from app.agent.message.filter import has_mermaid_deliverable
                 from app.services.agent_reply_synth import looks_like_tool_status_dump
 
                 # 禁止把工具状态清单当终稿（如「web_search：联网检索返回…」）
@@ -1251,7 +1278,7 @@ async def _iter_agent_tool_loop_body(
 
     kg_plan_text = ""
     kg_decision = None
-    from app.benxi_semantic import try_direct_answer_from_decision
+    from app.semantic import try_direct_answer_from_decision
     from app.core.conversation_turn_context import effective_question_for_retrieval
     from app.services.agent_intent import is_chitchat_message
     from app.services.agent_planner import (
@@ -1261,13 +1288,35 @@ async def _iter_agent_tool_loop_body(
         resolve_kg_decision_context,
     )
     from app.services.agent_skill_router import is_trivial_direct_question, should_skip_kg_probe
+    from app.services.semantic_workflow import (
+        semantic_cache_reuse_event,
+        semantic_probe_done_events,
+        semantic_probe_start_events,
+    )
 
     skip_kg_plan = (
         is_chitchat_message(user_message, chat_history)
         or is_trivial_direct_question(user_message)
         or should_skip_kg_probe(user_message)
     )
-    kg_q = effective_question_for_retrieval(user_message, chat_history).strip() or user_message
+    from app.services.user_capability_directive import (
+        analysis_text_for_semantic,
+        parse_user_capability_directive,
+    )
+
+    # 用户已指定技能/智能体：能力选型走 Catalog，过程区不再刷本体/图谱探测
+    _dir = parse_user_capability_directive(user_message)
+    if _dir is not None and _dir.kind in ("skill", "agent"):
+        skip_kg_plan = True
+
+    kg_seed = analysis_text_for_semantic(user_message) or ""
+    if not kg_seed:
+        skip_kg_plan = True
+    kg_q = (
+        effective_question_for_retrieval(kg_seed, chat_history).strip()
+        if kg_seed
+        else ""
+    ) or kg_seed
     # 路由阶段已探测：优先复用短时缓存，禁止重复 Neo4j 推理
     cached_kg = "" if skip_kg_plan else peek_cached_kg_planning_text(str(user.id), kg_q)
     cached_direct = "" if skip_kg_plan else peek_cached_kg_direct_reply(str(user.id), kg_q)
@@ -1278,7 +1327,13 @@ async def _iter_agent_tool_loop_body(
     )
     if cached_kg:
         kg_plan_text = cached_kg
+        yield {
+            "type": "workflow",
+            "data": semantic_cache_reuse_event(loop_id),
+        }
     elif not skip_kg_plan and not prefetched:
+        for ev in semantic_probe_start_events(loop_id):
+            yield {"type": "workflow", "data": ev}
         kg_decision = await resolve_kg_decision_context(
             db, user, user_message, history=chat_history, mode="probe"
         )
@@ -1286,9 +1341,23 @@ async def _iter_agent_tool_loop_body(
             kg_plan_text = kg_decision.planning_text(max_chars=1800)
         else:
             kg_plan_text = peek_cached_kg_planning_text(str(user.id), kg_q)
+        _probe_direct = bool(
+            try_direct_answer_from_decision(kg_decision, kg_seed or user_message)
+        )
+        for ev in semantic_probe_done_events(
+            loop_id,
+            planning_text=kg_plan_text,
+            direct=_probe_direct,
+            has_material=bool(
+                _probe_direct
+                or (kg_decision and getattr(kg_decision, "has_material", False))
+            ),
+            evidence_paths=list(getattr(kg_decision, "evidence_paths", None) or []),
+        ):
+            yield {"type": "workflow", "data": ev}
 
     kg_direct = (
-        try_direct_answer_from_decision(kg_decision, user_message)
+        try_direct_answer_from_decision(kg_decision, kg_seed or user_message)
         or cached_direct
     )
     if kg_direct:
@@ -1300,17 +1369,16 @@ async def _iter_agent_tool_loop_body(
             append_retrieval_context(loop_state, kg_plan_text)
             if not loop_state.get("kg_context"):
                 loop_state["kg_context"] = KgQaContext(context_text=kg_plan_text)
-        yield {
-            "type": "workflow",
-            "data": {
-                "phase": "agent_thought",
-                "title": "知识图谱直答",
-                "detail": "",
-                "tool": "kg_query",
-                "step_id": loop_id,
-                "status": "done",
-            },
-        }
+        # 仅缓存直答（未走上方 probe done）时补发完成事件
+        if cached_direct and not kg_decision:
+            for ev in semantic_probe_done_events(
+                loop_id,
+                planning_text=kg_plan_text,
+                direct=True,
+                has_material=True,
+                evidence_paths=[],
+            ):
+                yield {"type": "workflow", "data": ev}
         yield {"type": "replace", "text": kg_direct}
         yield {
             "type": "complete",
@@ -1339,7 +1407,7 @@ async def _iter_agent_tool_loop_body(
     plan_step_id = f"agent-plan-{uuid.uuid4().hex[:8]}"
     plan_detail = "分析意图，拆解执行计划…"
     if kg_has_material:
-        plan_detail = "参考知识图谱上下文进行规划…"
+        plan_detail = "参考本体查询计划与知识图谱上下文进行规划…"
     yield {
         "type": "workflow",
         "data": {
@@ -1445,6 +1513,164 @@ async def _iter_agent_tool_loop_body(
             "step_id": loop_id,
         },
     }
+
+    # 人员归属 / 部门成员：同步平台组织→图谱后查询；仍无命中则明确结束（禁止直查 PG）
+    if (
+        not loop_state.get("deterministic_reply")
+        and str(execution_plan.intent or "") in ("查询人员所属组织", "查询部门成员")
+        and ATOMIC_TOOL_KG_QUERY in (execution_plan.allowed_tools or ())
+    ):
+        from app.semantic import try_direct_answer_from_decision
+        from app.services.semantic_runtime import (
+            get_kg_query_service,
+            get_ontology_hub_service,
+        )
+        from app.core.agent_tool_context import append_retrieval_context
+        from app.schemas.kg import KgQaContext
+        from app.services.semantic_workflow import (
+            semantic_probe_done_events,
+            semantic_probe_start_events,
+        )
+
+        kg_step = f"{loop_id}-forced-kg"
+        for ev in semantic_probe_start_events(kg_step):
+            yield {"type": "workflow", "data": ev}
+        try:
+            kg = await get_kg_query_service()
+            hub = await get_ontology_hub_service(kg=kg)
+            matched0 = await kg.match_entities(user_message, str(user.id), limit=5)
+            if not matched0:
+                yield {
+                    "type": "workflow",
+                    "data": {
+                        "phase": "tool_call",
+                        "title": "同步平台组织到知识图谱",
+                        "detail": "图谱暂无人员实体，先将用户/部门写入 Neo4j 再查询",
+                        "callDetail": "KgService.sync_platform_org",
+                        "tool": "kg_query",
+                        "tool_name": "kg_query",
+                        "step_id": f"{kg_step}-sync",
+                    },
+                }
+                try:
+                    from app.core.neo4j import get_neo4j
+                    from app.services.kg_service import KgService
+
+                    driver = await get_neo4j()
+                    sync_stats = await KgService(driver).sync_platform_org(
+                        db, str(user.id)
+                    )
+                    yield {
+                        "type": "workflow",
+                        "data": {
+                            "phase": "tool_result",
+                            "title": "平台组织已同步到图谱",
+                            "detail": (
+                                f"用户 {sync_stats.get('users', 0)}，"
+                                f"部门 {sync_stats.get('departments', 0)}，"
+                                f"关系 {sync_stats.get('relations', 0)}"
+                            ),
+                            "tool": "kg_query",
+                            "step_id": f"{kg_step}-sync",
+                            "status": "done",
+                        },
+                    }
+                except Exception as sync_exc:
+                    _logger.warning("归属查询前同步平台组织失败: %s", sync_exc)
+                    yield {
+                        "type": "workflow",
+                        "data": {
+                            "phase": "tool_result",
+                            "title": "平台组织同步失败",
+                            "detail": str(sync_exc)[:160],
+                            "tool": "kg_query",
+                            "step_id": f"{kg_step}-sync",
+                            "status": "failed",
+                        },
+                    }
+
+            decision = await hub.build_decision_context(
+                user_message,
+                str(user.id),
+                max_depth=3,
+                include_inferred=True,
+                db=db,
+            )
+            plan_text = decision.planning_text(max_chars=1800)
+            forced_reply = try_direct_answer_from_decision(decision, user_message)
+            for ev in semantic_probe_done_events(
+                kg_step,
+                planning_text=plan_text,
+                direct=bool(forced_reply),
+                has_material=bool(decision.has_material),
+                evidence_paths=list(decision.evidence_paths or []),
+            ):
+                yield {"type": "workflow", "data": ev}
+
+            if plan_text and len(plan_text) > 10:
+                append_retrieval_context(loop_state, plan_text)
+                loop_state["kg_context"] = KgQaContext(
+                    context_text=decision.abox_snippets or plan_text,
+                    citations=list(decision.citations or []),
+                    matched_entity_ids=[e.id for e in decision.matched_entities],
+                    entity_count=decision.entity_count,
+                    relation_count=decision.relation_count,
+                    reasoning_hops=decision.reasoning_hops,
+                    inferred_entities=decision.inferred_entities,
+                )
+            if forced_reply:
+                loop_state["deterministic_reply"] = forced_reply
+                yield {"type": "replace", "text": forced_reply}
+                yield {
+                    "type": "complete",
+                    "messages": working,
+                    "reply": forced_reply,
+                    "citations": list(decision.citations or []),
+                    "kg_context": loop_state.get("kg_context"),
+                }
+                return
+            # 仍无答案：明确结束，禁止后续 request_orchestrator_assist 走账号 SQL 工具
+            miss = (
+                "已通过本体规划并查询知识图谱，但未找到该人员的组织归属事实。"
+                "请确认姓名是否正确，或先在「本体/知识图谱」同步平台组织。"
+            )
+            yield {
+                "type": "workflow",
+                "data": {
+                    "phase": "agent_thought",
+                    "title": "未找到人员归属事实",
+                    "detail": miss,
+                    "tool": "kg_query",
+                    "step_id": kg_step,
+                    "status": "done",
+                },
+            }
+            loop_state["deterministic_reply"] = miss
+            yield {"type": "replace", "text": miss}
+            yield {
+                "type": "complete",
+                "messages": working,
+                "reply": miss,
+                "citations": [],
+                "kg_context": loop_state.get("kg_context"),
+            }
+            return
+        except Exception as exc:
+            _logger.warning("强制 kg_query 失败: %s", exc)
+            miss = (
+                "知识图谱查询失败，无法确认人员组织归属。"
+                "请稍后重试，或先在「本体/知识图谱」同步平台组织。"
+            )
+            loop_state["deterministic_reply"] = miss
+            yield {"type": "replace", "text": miss}
+            yield {
+                "type": "complete",
+                "messages": working,
+                "reply": miss,
+                "citations": [],
+                "kg_context": None,
+            }
+            return
 
     # #知识问答 硬触发：直接 invoke_skill，跳过模型工具选型
     from app.core.tool_skill_taxonomy import SKILL_KNOWLEDGE_QA
@@ -1719,12 +1945,15 @@ async def _iter_agent_tool_loop_body(
             )
             # 有工具可见时注入通用兜底指引：无合适工具时如实告知，勿乱调用
             if tool_specs:
+                from app.core.agent_language import assistant_language_rules
+
                 llm_messages.append({
                     "role": "system",
                     "content": (
                         "【系统提示】优先使用可用的工具和技能来满足用户请求。"
                         "如果确实没有任何可用的工具或技能能完成用户的请求，"
-                        "直接告知用户你暂时无法完成，不要调用不相关的工具。"
+                        "直接告知用户你暂时无法完成，不要调用不相关的工具。\n"
+                        f"{assistant_language_rules(user_message=user_message)}"
                     ),
                 })
             sess.release_before_io()
@@ -1738,9 +1967,21 @@ async def _iter_agent_tool_loop_body(
                 from app.core.stream_cancel import raise_if_stream_cancelled
 
                 raise_if_stream_cancelled()
-                # 不把模型正文 token 写入 thinking_delta：空口草稿（尤其 mermaid）
-                # 会污染执行详情 / 答后「思考过程」，看起来像反复重试。
-                if ev["type"] == "choice":
+                # 仅转发 reasoning（思考过程）；不转发正文 token，避免 mermaid/草稿污染
+                if ev["type"] == "reasoning" and ev.get("text"):
+                    yield {
+                        "type": "workflow",
+                        "data": _stamp_agent_workflow(
+                            {
+                                "phase": "thinking_delta",
+                                "delta": ev["text"],
+                                "tool": "agent.llm",
+                                "step_id": f"agent-think-{loop_id}",
+                            },
+                            loop_state,
+                        ),
+                    }
+                elif ev["type"] == "choice":
                     choice = ev
             _llm_elapsed = time.monotonic() - _llm_t0
             db, user = sess.open()
@@ -2094,7 +2335,7 @@ async def _iter_agent_tool_loop_body(
                                            "本次对话中已禁用。请尝试换用其他工具或直接回答。",
                             }, ensure_ascii=False)
                         else:
-                            timeout = _tool_timeout()
+                            timeout = _tool_timeout(tool_name)
                             try:
                                 # ── 工具执行拦截 ──────────────────────────────────
                                 # 父编排：非直调工具透明路由到子智能体（kind=execute）
@@ -2210,16 +2451,6 @@ async def _iter_agent_tool_loop_body(
                             summary=summary or ("完成" if ok else "失败"),
                             step_id=step_id,
                         )
-                    from app.services.agent_admin_reply import (
-                        capture_admin_list_deterministic_reply,
-                    )
-
-                    capture_admin_list_deterministic_reply(
-                        db,
-                        tool_name=tool_name,
-                        result_text=result_text,
-                        loop_state=loop_state,
-                    )
                     if (
                         ok
                         and tool_name == ATOMIC_TOOL_KG_QUERY
@@ -2689,12 +2920,15 @@ async def _exec_one_tool_round(
         keep_full_tool_results=1,
     )
     if tool_specs:
+        from app.core.agent_language import assistant_language_rules
+
         llm_messages.append({
             "role": "system",
             "content": (
                 "【系统提示】优先使用可用的工具和技能来满足用户请求。"
                 "如果确实没有任何可用的工具或技能能完成用户的请求，"
-                "直接告知用户你暂时无法完成，不要调用不相关的工具。"
+                "直接告知用户你暂时无法完成，不要调用不相关的工具。\n"
+                f"{assistant_language_rules(user_message=user_message)}"
             ),
         })
 
@@ -2702,13 +2936,16 @@ async def _exec_one_tool_round(
     think_step_id = f"spec-llm-{uuid.uuid4().hex[:8]}"
     yield {
         "type": "workflow",
-        "data": {
-            "phase": "agent_thinking",
-            "title": "正在分析并调用工具",
-            "detail": (user_message or "")[:120],
-            "tool": "agent.execute",
-            "step_id": think_step_id,
-        },
+        "data": _stamp_agent_workflow(
+            {
+                "phase": "agent_thinking",
+                "title": "正在分析并调用工具",
+                "detail": (user_message or "")[:120],
+                "tool": "agent.execute",
+                "step_id": think_step_id,
+            },
+            loop_state,
+        ),
     }
     sess.release_before_io()
     choice = None
@@ -2718,8 +2955,21 @@ async def _exec_one_tool_round(
         tools=tool_specs or None,
         temperature=0.3,
     ):
-        # 专精单轮同样不转发正文 token 到 thinking_delta（见主循环注释）
-        if ev["type"] == "choice":
+        # 仅转发 reasoning；不转发正文 token（见主循环注释）
+        if ev["type"] == "reasoning" and ev.get("text"):
+            yield {
+                "type": "workflow",
+                "data": _stamp_agent_workflow(
+                    {
+                        "phase": "thinking_delta",
+                        "delta": ev["text"],
+                        "tool": "agent.llm",
+                        "step_id": think_step_id,
+                    },
+                    loop_state,
+                ),
+            }
+        elif ev["type"] == "choice":
             choice = ev
     _llm_elapsed = time.monotonic() - _llm_t0
     db, user = sess.open()
@@ -2863,13 +3113,16 @@ async def _exec_one_tool_round(
         meta = _human_tool_call_detail(tool_name, raw_params if isinstance(raw_params, dict) else {})
         yield {
             "type": "workflow",
-            "data": {
-                "phase": "tool_call",
-                "title": meta or f"调用 {tool_name}",
-                "detail": tool_name,
-                "tool": tool_name,
-                "step_id": f"spec-{tool_name}-{uuid.uuid4().hex[:6]}",
-            },
+            "data": _stamp_agent_workflow(
+                {
+                    "phase": "tool_call",
+                    "title": meta or f"调用 {tool_name}",
+                    "detail": tool_name,
+                    "tool": tool_name,
+                    "step_id": f"spec-{tool_name}-{uuid.uuid4().hex[:6]}",
+                },
+                loop_state,
+            ),
         }
         result_text = await execute_agent_tool(
             db, user,
@@ -2886,7 +3139,7 @@ async def _exec_one_tool_round(
             "content": compress_tool_result_for_loop(result_text),
         })
         # 专精直执也必须写入证据线，否则下一轮会误判「无结果」并反复催促直至触顶
-        from app.agentkit.subagent.loop import parse_tool_summary
+        from app.agent.subagent.loop import parse_tool_summary
         from app.core.agent_tool_context import append_retrieval_context
 
         ok, summary = parse_tool_summary(result_text)

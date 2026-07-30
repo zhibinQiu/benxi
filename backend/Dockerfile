@@ -15,6 +15,7 @@ ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG APT_MIRROR=mirrors.aliyun.com
 ARG INSTALL_PAGEINDEX=0
 ARG INSTALL_BROWSER=0
+ARG INSTALL_AUTOML=0
 ARG PLAYWRIGHT_DOWNLOAD_HOST=https://playwright.download.azure.cn
 
 FROM ${PYTHON_IMAGE} AS base
@@ -44,6 +45,7 @@ FROM base AS deps
 ARG PIP_INDEX_URL
 ARG INSTALL_PAGEINDEX
 ARG INSTALL_BROWSER
+ARG INSTALL_AUTOML
 ARG PLAYWRIGHT_DOWNLOAD_HOST
 ENV PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST}
 
@@ -52,16 +54,14 @@ COPY backend/pyproject.toml backend/README.md ./
 # hatchling 打 wheel 需要包目录；runtime 由 volume 挂载真实 app/workers
 RUN mkdir -p app workers && touch app/__init__.py workers/__init__.py
 
-# 创建空 app/agentkit 目录（运行时由 volume 挂载真实代码）
-RUN mkdir -p app/agentkit && touch app/agentkit/__init__.py
+# 占位包目录（运行时由 volume 挂载真实代码）
+RUN mkdir -p app/agent app/semantic app/tools \
+    && touch app/agent/__init__.py app/semantic/__init__.py app/tools/__init__.py
 
 # PageIndex 可选；仅 INSTALL_PAGEINDEX=1 时安装 extra
 COPY third_party/pageindex ./third_party/pageindex/
 # pyproject.toml 依赖路径为 pageindex-upstream，建立软链接兼容
 RUN ln -sf /app/third_party/pageindex /app/third_party/pageindex-upstream
-
-# agentkit 本地包（pip install 时 file:../packages/ 需要 /packages/）
-COPY packages /packages
 
 RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
     pip install --no-cache-dir -i "${PIP_INDEX_URL}" . && \
@@ -75,6 +75,17 @@ RUN pip install --no-cache-dir --upgrade "pip>=24.0" && \
       pip install --no-cache-dir -i "${PIP_INDEX_URL}" playwright && \
       python -m playwright install-deps chromium && \
       python -m playwright install chromium; \
+    fi && \
+    if [ "${INSTALL_AUTOML}" = "1" ]; then \
+      pip install --no-cache-dir -i "${PIP_INDEX_URL}" "pycaret==3.3.2" --no-deps && \
+      pip install --no-cache-dir -i "${PIP_INDEX_URL}" \
+        "scikit-learn>=1.4.0,<1.5" "joblib>=1.2.0,<1.4" "scipy>=1.11.0,<1.12" \
+        "plotly>=5.0.0" "kaleido>=0.2.1" "imbalanced-learn>=0.12.0" \
+        "category-encoders>=2.4.0" "lightgbm>=3.0.0" "sktime>=0.26.0,<0.27" \
+        "pyod>=1.1.0" "yellowbrick>=1.4" "tbats>=1.1.0" "pmdarima>=2.0.0" \
+        "xxhash" "wurlitzer" "deprecation>=2.1.0" "schemdraw>=0.15,<0.16" \
+        "ipython>=8.0.0" "ipywidgets>=8.0.0" "tqdm>=4.62.0" "jinja2>=3.0.0" \
+        "numba>=0.57.0" "statsmodels>=0.14.0"; \
     fi
 RUN find /usr/local/lib/python3.11 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
@@ -94,5 +105,6 @@ FROM deps AS production
 COPY RELEASE.md ./
 COPY backend/app ./app
 COPY backend/workers ./workers
+COPY backend/agent_md ./agent_md
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

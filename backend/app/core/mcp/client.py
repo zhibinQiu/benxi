@@ -1,10 +1,10 @@
-"""MCP HTTP/SSE 客户端 — agentkit 适配层。"""
+"""MCP HTTP/SSE 客户端 — app.agent 适配层。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.agentkit.mcp import McpClient, McpClientConfig
+from app.agent.mcp import McpClient, McpClientConfig
 
 from app import __version__
 from app.core.mcp.protocol import MCP_CLIENT_NAME, summarize_mcp_tool_result

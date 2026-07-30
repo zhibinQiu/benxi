@@ -19,21 +19,19 @@ import { fetchChatConversationMessages } from "../api/client";
 import {
   collectScreenshotAttachmentCandidates,
   markdownHasAuthScreenshot,
-  mergeAuthScreenshotMarkdownBlocks,
-  normalizeChatAttachmentUrl,
 } from "../utils/authenticatedImage.js";
 import AssistantConclusionContent from "./AssistantConclusionContent.vue";
 import {
   AI_CHAT_ATTACHMENT_ACCEPT,
   clearAiChatAttachments,
-  fetchAiChatAgentCatalog,
-  fetchAiChatSkillCatalog,
   fetchAiChatAttachments,
   removeAiChatAttachmentFile,
   submitAiChatFeedback,
   uploadAiChatAttachments,
 } from "../api/chat.js";
-import { formatAgentDisplayName } from "../utils/agentDisplay.js";
+import { useAgentSelection } from "../composables/useAgentSelection.js";
+import { useChatCitations } from "../composables/useChatCitations.js";
+import { useChatStream } from "../composables/useChatStream.js";
 import CurveAnimation from "./CurveAnimation.vue";
 import { transcribeSpeech } from "../api/speech";
 import { NButton, NCollapse, NCollapseItem, NIcon, NPopover } from "naive-ui";
@@ -50,16 +48,21 @@ import KnowledgeCitationCard from "./KnowledgeCitationCard.vue";
 import ChatMessageCitations from "./ChatMessageCitations.vue";
 import { useI18n } from "../composables/useI18n.js";
 import AgentWorkflowProgress from "./AgentWorkflowProgress.vue";
-import { handleAgentWorkflowForNotifications } from "../composables/useNotificationAlerts.js";
 import {
   emptyAgentWorkflow,
   applyAgentWorkflowEvent,
   getWorkflowLastError,
+  scrubThinkingDisplayText,
+  looksLikeToolCallPayload,
+  resolveAgentDisplayName,
 } from "../utils/agentWorkflow.js";
-import { alignCitationsWithContent, splitCitedCitations } from "../utils/reportCitations.js";
+import {
+  agentBadgeStyle,
+  agentRoleLabel,
+  resolveAgentCardIcon,
+} from "../utils/agentDisplay.js";
 import { exportMindmapMarkdown, exportMindmapOpml } from "../utils/mindmapExport.js";
 import { navigateWithReturn } from "../utils/navigationReturn";
-import { openExternal } from "../utils/openExternal.js";
 import {
   clearChatSession,
   loadChatSession,
@@ -172,30 +175,16 @@ const sessionBootstrap = readChatSessionBootstrap(storageScope.value, {
 const started = ref(sessionBootstrap.started);
 const loadingHistory = ref(sessionBootstrap.loadingHistory);
 const input = ref(sessionBootstrap.input);
-const sending = ref(false);
-const resumingCheckpoint = ref(null);
 const messages = ref(sessionBootstrap.messages);
-/** 本析智能：生成中可继续提交，进入排队；完成后自动发送 */
-const messageQueue = ref([]);
-let queueSeq = 0;
 const messagesRef = ref(null);
 const composerRef = ref(null);
-const citationPreviewShow = ref(false);
-const citationPreviewTarget = ref(null);
-const citationPreviewQuestion = ref("");
 const reportViewMode = ref("answer");
 const reportMindmapRef = ref(null);
 const exportingWord = ref(false);
 const savingToLibrary = ref(false);
 const savedLibraryDocumentId = ref(null);
 const exportingMindmap = ref("");
-let streamAbort = null;
-let streamGeneration = 0;
 let persistTimer = null;
-/** 本析智能思考计时 */
-let thinkingTimer = null;
-const thinkingStartTime = ref(0);
-const elapsedMs = ref(0);
 /** 长对话只渲染最近 N 条，更早消息按需加载 */
 const messageWindowStart = ref(sessionBootstrap.messageWindowStart);
 /** KeepAlive 失活时不渲染 Markdown DOM，仅保留纯文本占位 */
@@ -237,38 +226,34 @@ function getConversationTitle() {
   return "";
 }
 
-function reportChatState() {
-  props.onChatStateChange?.({
-    streaming: sending.value,
-    hasContent: hasConversationContent(),
-    title: getConversationTitle(),
-  });
+function syncMessageScreenshots(row) {
+  if (!row) return;
+  const fromAttachments = (row.browserScreenshots || []).map((shot) => ({
+    type: "image",
+    url: shot.url,
+    title: shot.title,
+  }));
+  const shots = collectScreenshotAttachmentCandidates(row.content || "", fromAttachments);
+  if (shots.length) row.browserScreenshots = shots;
 }
 
-if (props.onChatStateChange) {
-  watch(sending, reportChatState);
-  watch(messages, reportChatState, { deep: true });
-  /* 首次报告状态 */
-  nextTick(reportChatState);
-  /* KeepAlive 切回时重新报告（watcher 在 deactivate 期间被暂停） */
-  onActivated(reportChatState);
+async function scrollToBottom() {
+  await nextTick();
+  const el = messagesRef.value;
+  if (el) el.scrollTop = el.scrollHeight;
+  const streamMd = el?.querySelector?.('.ai-home-bubble--streaming .ai-home-stream-md');
+  if (streamMd) streamMd.scrollTop = streamMd.scrollHeight;
 }
 
-/** 本析智能：开始/停止思考计时 */
-watch(sending, (val) => {
-  if (val && props.chatScope === "ai-home") {
-    thinkingStartTime.value = Date.now();
-    elapsedMs.value = 0;
-    thinkingTimer = setInterval(() => {
-      elapsedMs.value = Date.now() - thinkingStartTime.value;
-    }, 200);
-  } else {
-    if (thinkingTimer) {
-      clearInterval(thinkingTimer);
-      thinkingTimer = null;
-    }
+function buildChatHistory() {
+  if (props.chatScope === "report-generation") {
+    return trimHistoryForApi(messages.value, {
+      maxMessages: MAX_REPORT_HISTORY_FOR_API,
+      maxChars: MAX_REPORT_HISTORY_CHARS,
+    });
   }
-});
+  return trimHistoryForApi(messages.value);
+}
 
 const hiddenOlderCount = computed(() => messageWindowStart.value);
 const canLoadOlder = computed(() => hiddenOlderCount.value > 0 || historyHasOlder.value);
@@ -351,17 +336,6 @@ function hasAssistantAnswer(message) {
   return hasAssistantAnswerText(message) || messageScreenshots(message).length > 0;
 }
 
-function syncMessageScreenshots(row) {
-  if (!row) return;
-  const fromAttachments = (row.browserScreenshots || []).map((shot) => ({
-    type: "image",
-    url: shot.url,
-    title: shot.title,
-  }));
-  const shots = collectScreenshotAttachmentCandidates(row.content || "", fromAttachments);
-  if (shots.length) row.browserScreenshots = shots;
-}
-
 function expandMessage(index) {
   const next = new Set(expandedMessageIndexes.value);
   next.add(index);
@@ -387,224 +361,109 @@ const attachmentFiles = ref(sessionBootstrap.attachmentFiles);
 const uploadingAttachments = ref(false);
 const attachmentInputRef = ref(null);
 
-const agentCatalog = ref([]);
-const agentCatalogLoading = ref(false);
-const agentPopoverShow = ref(false);
-const agentCatalogLoaded = ref(false);
+const {
+  agentCatalog,
+  agentCatalogLoading,
+  loadAgentCatalog,
+  modelOptions,
+  modelSettingsLoading,
+  modelOptionsLoaded,
+  selectedModelProviderId,
+  loadModelOptions,
+  agentPopoverShow,
+  skillCatalog,
+  skillPopoverShow,
+  modelPopoverShow,
+  reportSkillPopoverShow,
+  reportOptimizePopoverShow,
+  currentModelLabel,
+  selectModel,
+  onModelPopoverShowChange,
+  onAgentPopoverShowChange,
+  useAgent,
+  onSkillPopoverShowChange,
+  useSkill,
+  useReportOptimizePreset,
+  useReportAgentSkill,
+  closeSelectionPopovers,
+} = useAgentSelection({ input, composerRef, ui, t });
 
-const skillCatalog = ref([]);
-const skillCatalogLoading = ref(false);
-const skillPopoverShow = ref(false);
-const skillCatalogLoaded = ref(false);
+const persistSessionStateHolder = { fn: () => {} };
 
-/** ── 模型切换 ───────────────────────────────────── */
-const MODEL_CACHE_KEY = "ai_chat_model_options";
-const MODEL_CACHE_TS_KEY = "ai_chat_model_options_ts";
-const MODEL_SELECTED_KEY = "ai_chat_model_provider_id";
-const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 分钟
-
-function loadModelCache() {
-  const raw = localStorage.getItem(MODEL_CACHE_KEY);
-  const ts = Number(localStorage.getItem(MODEL_CACHE_TS_KEY) || "0");
-  if (raw && Date.now() - ts < MODEL_CACHE_TTL_MS) {
-    try {
-      return JSON.parse(raw);
-    } catch { /* ignore */ }
-  }
-  return null;
-}
-
-function saveModelCache(groups) {
-  localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify(groups));
-  localStorage.setItem(MODEL_CACHE_TS_KEY, String(Date.now()));
-}
-
-const modelSettingsLoading = ref(false);
-const modelOptions = ref([]);
-const selectedModelProviderId = ref(localStorage.getItem(MODEL_SELECTED_KEY) || "");
-const modelOptionsLoaded = ref(false);
-const modelPopoverShow = ref(false);
-
-const reportSkillPopoverShow = ref(false);
-const reportOptimizePopoverShow = ref(false);
-
-async function loadAgentCatalog() {
-  if (agentCatalogLoading.value) return;
-  agentCatalogLoading.value = true;
-  try {
-    agentCatalog.value = (await fetchAiChatAgentCatalog()) || [];
-    agentCatalogLoaded.value = true;
-  } catch (e) {
-    ui.error(e.message || t("chat.agentSkills.loadFailed"));
-  } finally {
-    agentCatalogLoading.value = false;
-  }
-}
-
-/** ── 模型切换 ───────────────────────────────────── */
-async function loadModelOptions() {
-  if (modelSettingsLoading.value) return;
-
-  // 1) 尝试从 localStorage 缓存恢复
-  const cached = loadModelCache();
-  if (cached) {
-    modelOptions.value = cached;
-    modelOptionsLoaded.value = true;
-    // 如果之前选中的 model 仍然在缓存列表中，保持选中；否则 fallback
-    _ensureSelectedValid();
-    // 后台静默刷新，避免用户感觉延迟
-    _refreshModelOptionsSilently();
-    return;
-  }
-
-  // 2) 无缓存，首次加载
-  modelSettingsLoading.value = true;
-  try {
-    await _doFetchModelOptions();
-  } catch (e) {
-    console.warn("[ai-home] 模型选项加载失败:", e);
-  } finally {
-    modelSettingsLoading.value = false;
-  }
-}
-
-async function _refreshModelOptionsSilently() {
-  try {
-    const { fetchAiChatModelProviders } = await import("../api/chat");
-    const items = await fetchAiChatModelProviders();
-    const groups = _buildGroups(items);
-    if (groups.length) {
-      modelOptions.value = groups;
-      saveModelCache(groups);
-    }
-    _ensureSelectedValid();
-  } catch {
-    // 静默失败，继续使用缓存
-  }
-}
-
-async function _doFetchModelOptions() {
-  const { fetchAiChatModelProviders } = await import("../api/chat");
-  const items = await fetchAiChatModelProviders();
-  const groups = _buildGroups(items);
-  modelOptions.value = groups;
-  if (groups.length) {
-    saveModelCache(groups);
-  }
-  _ensureSelectedValid();
-  modelOptionsLoaded.value = true;
-}
-
-function _buildGroups(items) {
-  const groups = [];
-  let llmGroup = null;
-  let mmGroup = null;
-
-  for (const item of items || []) {
-    const label = item.model_name || item.label || "模型";
-    const entry = { label, value: item.id };
-    if (item.description) entry.desc = item.description;
-    if (item.resource_type === "multimodal") {
-      if (!mmGroup) {
-        mmGroup = { type: "group", label: "多模态模型", key: "multimodal", children: [] };
-        groups.push(mmGroup);
-      }
-      mmGroup.children.push(entry);
-    } else {
-      if (!llmGroup) {
-        llmGroup = { type: "group", label: "语言模型", key: "llm", children: [] };
-        groups.push(llmGroup);
-      }
-      llmGroup.children.push(entry);
-    }
-  }
-  return groups;
-}
-
-function _ensureSelectedValid() {
-  if (!selectedModelProviderId.value) {
-    // 首次访问：取第一个模型作为默认，并持久化
-    const first = modelOptions.value?.[0]?.children?.[0];
-    if (first) {
-      selectedModelProviderId.value = first.value;
-      localStorage.setItem(MODEL_SELECTED_KEY, first.value);
-    }
-    return;
-  }
-  // 检查之前选中的是否还在列表中
-  const allValues = new Set();
-  for (const g of modelOptions.value) {
-    for (const c of g.children || []) {
-      allValues.add(c.value);
-    }
-  }
-  if (!allValues.has(selectedModelProviderId.value)) {
-    // 之前选中的模型不在当前列表中（如列表变更），UI 回退到第一个可用模型，
-    // 但不覆写 localStorage，保留上次用户选择的记录，等模型恢复时自动恢复。
-    const first = modelOptions.value?.[0]?.children?.[0];
-    selectedModelProviderId.value = first?.value || "";
-  }
-}
-
-/** 当前选中模型的显示名称 */
-const currentModelLabel = computed(() => {
-  for (const g of modelOptions.value) {
-    const found = g.children?.find((c) => c.value === selectedModelProviderId.value);
-    if (found) return found.label;
-  }
-  return "切换模型";
+const {
+  citationPreviewShow,
+  citationPreviewTarget,
+  citationPreviewQuestion,
+  citationPanelOpen,
+  thinkingPanelOpen,
+  reportCitationGroups,
+  messageCitationView,
+  reportQuestionForMessage,
+  onReportCitationClick,
+  citationCount,
+  citationShowsDocumentSource,
+  shouldShowFinalPanels,
+  assistantConclusionContent,
+  openCitationPreview,
+  closeCitationPreview,
+} = useChatCitations({
+  messages,
+  router,
+  props,
+  hasAssistantAnswer,
+  hasAssistantAnswerText,
 });
 
-function selectModel(opt) {
-  selectedModelProviderId.value = opt.value;
-  localStorage.setItem(MODEL_SELECTED_KEY, opt.value);
-  modelPopoverShow.value = false;
+const {
+  sending,
+  resumingCheckpoint,
+  messageQueue,
+  elapsedMs,
+  queueEnabled,
+  formatElapsed,
+  removeQueuedMessage,
+  updateQueuedMessage,
+  showFollowUpForMessage,
+  useFollowUpQuestion,
+  sendMessage,
+  stopGeneration,
+  onComposerKeydown,
+  resumeCheckpoint,
+  resumeCheckpointWithChoice,
+  abortActiveStream,
+  resetStreamControl,
+  clearMessageQueue,
+  retryFromUserMessage,
+} = useChatStream({
+  props,
+  ui,
+  t,
+  messages,
+  input,
+  conversationId,
+  started,
+  attachmentSessionId,
+  selectedModelProviderId,
+  buildChatHistory,
+  scrollToBottom,
+  reportChatState: () => reportChatState(),
+  persistSessionState: (opts) => persistSessionStateHolder.fn(opts),
+  syncMessageScreenshots,
+});
+
+function reportChatState() {
+  props.onChatStateChange?.({
+    streaming: sending.value,
+    hasContent: hasConversationContent(),
+    title: getConversationTitle(),
+  });
 }
 
-async function onModelPopoverShowChange(show) {
-  modelPopoverShow.value = show;
-}
-
-async function onAgentPopoverShowChange(show) {
-  agentPopoverShow.value = show;
-  if (show && !agentCatalogLoaded.value) {
-    await loadAgentCatalog();
-  }
-}
-
-function useAgent(agent) {
-  const label = formatAgentDisplayName(agent.title);
-  input.value = `请让 ${label}：`;
-  agentPopoverShow.value = false;
-  nextTick(() => composerRef.value?.focus?.());
-}
-
-async function loadSkillCatalog() {
-  if (skillCatalogLoading.value) return;
-  skillCatalogLoading.value = true;
-  try {
-    skillCatalog.value = (await fetchAiChatSkillCatalog()) || [];
-    skillCatalogLoaded.value = true;
-  } catch (e) {
-    ui.error(e.message || t("chat.agentSkills.skillLoadFailed"));
-  } finally {
-    skillCatalogLoading.value = false;
-  }
-}
-
-async function onSkillPopoverShowChange(show) {
-  skillPopoverShow.value = show;
-  if (show && !skillCatalogLoaded.value) {
-    await loadSkillCatalog();
-  }
-}
-
-function useSkill(skill) {
-  const label = (skill.title || skill.name || "").trim();
-  if (!label) return;
-  input.value = `请使用 ${label} 技能：`;
-  skillPopoverShow.value = false;
-  nextTick(() => composerRef.value?.focus?.());
+if (props.onChatStateChange) {
+  watch(sending, reportChatState);
+  watch(messages, reportChatState, { deep: true });
+  nextTick(reportChatState);
+  onActivated(reportChatState);
 }
 
 function openAttachmentPicker() {
@@ -800,109 +659,44 @@ function exportReportMindmap(format, messageIndex) {
   }
 }
 
-function reportCitationGroups(message) {
-  const aligned = alignCitationsWithContent(message?.content, message?.citations || []);
-  return splitCitedCitations(aligned.content, aligned.citations);
-}
-
-function messageCitationView(message) {
-  return alignCitationsWithContent(message?.content, message?.citations || []);
-}
-
-function reportQuestionForMessage(index) {
-  for (let i = index - 1; i >= 0; i -= 1) {
-    if (messages.value[i]?.role === "user") {
-      return messages.value[i].content || "";
-    }
-  }
-  return "";
-}
-
-function onReportCitationClick(index, message, messageIndex) {
-  const groups = reportCitationGroups(message);
-  const all = [...groups.local, ...groups.web];
-  openCitationPreview(index, all, reportQuestionForMessage(messageIndex));
-}
-
-/* ── 最终回复折叠面板 ── */
-const citationPanelOpen = ref([]);
-const thinkingPanelOpen = ref(false);
-
-function citationCount(message) {
-  return Array.isArray(message?.citations) ? message.citations.length : 0;
-}
-
-/** 文档检索引用：在数据来源区用卡片展示截图，不把图塞进最终回答。 */
-function citationShowsDocumentSource(cit) {
-  if (!cit || cit.source === "web") return false;
-  if (String(cit.image_id || "").trim()) return true;
-  if (Array.isArray(cit.inline_images) && cit.inline_images.some((img) => img?.url)) {
-    return true;
-  }
-  if (cit.preview_available === true) return true;
-  return Boolean(cit.document_id || cit.chunk_id);
-}
-
-function shouldShowFinalPanels(entry) {
-  if (!hasAssistantAnswer(entry.message)) return false;
-  if (props.showReportTools) return false;
-  // AiHomeView 始终展示折叠面板（包含引用+思考过程）
-  return true;
-}
-
 function workflowPlanSteps(message) {
   return message?.workflow?.taskPlan || [];
+}
+
+function planTaskStatusLabel(status) {
+  const s = String(status || "").trim();
+  if (s === "running") return "进行中";
+  if (s === "done") return "完成";
+  if (s === "failed") return "失败";
+  return "待执行";
 }
 
 function workflowExecSteps(message) {
   const workflow = message?.workflow;
   if (!workflow) return [];
-  // 合并顶层步骤和所有子任务内部步骤，确保思考过程不丢失
   const allSteps = [...(workflow.steps || [])];
   for (const task of workflow.taskPlan || []) {
     if (Array.isArray(task.steps) && task.steps.length > 0) {
       allSteps.push(...task.steps);
     }
   }
-  return allSteps;
-}
-
-function useReportOptimizePreset(preset) {
-  const prompt = (preset?.prompt || preset?.description || preset?.label || "").trim();
-  if (!prompt) return;
-  input.value = prompt;
-  reportOptimizePopoverShow.value = false;
-  nextTick(() => composerRef.value?.focus?.());
-}
-
-function useReportAgentSkill(skill) {
-  const prompt = String(skill?.sample_prompt || skill?.samplePrompt || "").trim();
-  if (!prompt) return;
-  input.value = prompt;
-  reportSkillPopoverShow.value = false;
-  nextTick(() => composerRef.value?.focus?.());
-}
-
-function openCitationPreview(citationOrIndex, citations = [], question = "") {
-  let citation = citationOrIndex;
-  if (typeof citationOrIndex === "number") {
-    citation = (citations || []).find((c) => Number(c.index) === citationOrIndex);
+  // 若工具步骤为空，用答后固化的过程快照补齐，避免折叠面板空白
+  if (!allSteps.length && workflow.processLog) {
+    for (const line of String(workflow.processLog).split("\n")) {
+      const title = scrubThinkingDisplayText(line.trim());
+      if (title) allSteps.push({ kind: "tool", title, detail: "" });
+    }
   }
-  if (!citation) return;
-  if (citation.source === "kg" && citation.entity_id) {
-    router.push({
-      name: "ontology",
-      query: { tab: "graph", focusEntityId: citation.entity_id },
-    });
-    return;
-  }
-  if (citation.source === "web" && citation.url) {
-    openExternal(citation.url);
-    return;
-  }
-  citationPreviewQuestion.value = question || "";
-  citationPreviewTarget.value = citation;
-  citationPreviewShow.value = true;
+  // 答后过程：只展示规划/工具短标题，不展示长思考正文
+  return allSteps
+    .filter((step) => step && step.kind !== "thinking")
+    .map((step) => {
+      const title = scrubThinkingDisplayText(step?.title || "");
+      if (!title || looksLikeToolCallPayload(title)) return null;
+      return { ...step, title, detail: "" };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
 }
 
 const headerSub = computed(
@@ -944,604 +738,9 @@ function workflowAwaitingAnswer(message) {
   return Boolean(message?.streaming || workflow.running);
 }
 
-function assistantConclusionContent(message) {
-  if (!message) return "";
-  if (props.linkifyCitations && hasAssistantAnswerText(message)) {
-    return messageCitationView(message).content;
-  }
-  return message.content || "";
-}
-
 function workflowAnswerStatusText(workflow) {
   if (!workflow) return "";
   return workflow.summary || "";
-}
-
-function formatElapsed(ms) {
-  const totalSec = Math.floor(ms / 1000);
-  if (totalSec < 60) return `已处理 ${totalSec} 秒`;
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `已处理 ${min} 分 ${sec} 秒`;
-}
-
-function clearFollowUpQuestions() {
-  for (const msg of messages.value) {
-    if (msg.followUpQuestions) delete msg.followUpQuestions;
-  }
-}
-
-function stripFollowUpMarkdown(text) {
-  return String(text || "")
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/[*_~]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function applyFollowUpQuestions(row, questions) {
-  if (props.chatScope !== "ai-home" || !row) return;
-  if (!Array.isArray(questions) || !questions.length) return;
-  row.followUpQuestions = questions
-    .map((q) => stripFollowUpMarkdown(q))
-    .filter((q) => q.length >= 4);
-}
-
-const queueEnabled = computed(() => props.chatScope === "ai-home");
-
-function enqueueMessage(text) {
-  const content = String(text || "").trim();
-  if (!content) return false;
-  queueSeq += 1;
-  messageQueue.value.push({
-    id: `q-${Date.now()}-${queueSeq}`,
-    text: content,
-  });
-  return true;
-}
-
-function removeQueuedMessage(id) {
-  messageQueue.value = messageQueue.value.filter((item) => item.id !== id);
-}
-
-function updateQueuedMessage(id, text) {
-  const item = messageQueue.value.find((q) => q.id === id);
-  if (!item) return;
-  item.text = String(text || "");
-}
-
-async function drainMessageQueue() {
-  if (!queueEnabled.value || sending.value) return;
-  while (messageQueue.value.length) {
-    const next = messageQueue.value.shift();
-    const content = String(next?.text || "").trim();
-    if (!content) continue;
-    await dispatchMessage(content);
-    return;
-  }
-}
-
-function showFollowUpForMessage(index, message) {
-  if (props.chatScope !== "ai-home") return false;
-  if (message?.role !== "assistant" || message.streaming || message.error) return false;
-  if (!Array.isArray(message.followUpQuestions) || !message.followUpQuestions.length) {
-    return false;
-  }
-  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
-    if (messages.value[i]?.role === "assistant") {
-      return i === index;
-    }
-  }
-  return false;
-}
-
-function useFollowUpQuestion(text) {
-  const q = stripFollowUpMarkdown(text);
-  if (!q) return;
-  if (sending.value && queueEnabled.value) {
-    enqueueMessage(q);
-    return;
-  }
-  if (sending.value) return;
-  void dispatchMessage(q);
-}
-
-async function scrollToBottom() {
-  await nextTick();
-  const el = messagesRef.value;
-  if (el) el.scrollTop = el.scrollHeight;
-  /* 流式内容区域同步滚到底部 */
-  const streamMd = el?.querySelector?.('.ai-home-bubble--streaming .ai-home-stream-md');
-  if (streamMd) streamMd.scrollTop = streamMd.scrollHeight;
-}
-
-function buildChatHistory() {
-  if (props.chatScope === "report-generation") {
-    return trimHistoryForApi(messages.value, {
-      maxMessages: MAX_REPORT_HISTORY_FOR_API,
-      maxChars: MAX_REPORT_HISTORY_CHARS,
-    });
-  }
-  return trimHistoryForApi(messages.value);
-}
-
-const streamedScreenshotBlocks = [];
-
-function applyScreenshotAttachments(row, attachments) {
-  if (!row || !Array.isArray(attachments)) return;
-  if (!row.browserScreenshots) row.browserScreenshots = [];
-  for (const att of attachments) {
-    if (att?.type !== "image" || !att.url) continue;
-    const src = normalizeChatAttachmentUrl(att.url);
-    if (!src) continue;
-    const title = att.title || "浏览器截图";
-    const block = `![${title}](${src})`;
-    if (!streamedScreenshotBlocks.includes(block)) {
-      streamedScreenshotBlocks.push(block);
-    }
-    if (!row.browserScreenshots.some((shot) => shot.url === src)) {
-      row.browserScreenshots.push({ url: src, title });
-    }
-  }
-  row.content = mergeAuthScreenshotMarkdownBlocks(
-    row.content || "",
-    streamedScreenshotBlocks
-  );
-}
-
-function mergeScreenshotBlocksIntoContent(text) {
-  return mergeAuthScreenshotMarkdownBlocks(text, streamedScreenshotBlocks);
-}
-
-async function sendMessageStreaming(content, assistantIdx, history) {
-  streamAbort?.abort();
-  streamAbort = new AbortController();
-
-  let scrollTick = 0;
-  let typewriterActive = false;
-  streamedScreenshotBlocks.length = 0;
-
-  try {
-    await props.streamChat(
-      {
-        message: content,
-        history,
-        conversationId: conversationId.value,
-        attachmentSessionId: attachmentSessionId.value,
-        model_provider_id: selectedModelProviderId.value || undefined,
-      },
-      {
-        signal: streamAbort.signal,
-        onWorkflow: (ev) => {
-          handleAgentWorkflowForNotifications(ev);
-          if (!props.showWorkflowProgress) return;
-          const row = messages.value[assistantIdx];
-          if (!row) return;
-          if (!row.workflow) row.workflow = emptyWorkflow();
-          applyWorkflowEvent(row.workflow, ev);
-          scrollTick += 1;
-          if (scrollTick % 2 === 0) scrollToBottom();
-        },
-        onReplace: (text) => {
-          const row = messages.value[assistantIdx];
-          if (!row) return;
-          const formatted = mergeScreenshotBlocksIntoContent(text);
-          // 立刻展示正文，避免打字机人为拖慢「可直答」路径
-          row.content = formatted;
-          syncMessageScreenshots(row);
-          scrollToBottom();
-        },
-        onCitations: (citations) => {
-          if ((!props.showCitations && !props.showReportTools) || !Array.isArray(citations)) return;
-          const row = messages.value[assistantIdx];
-          if (row) row.citations = citations;
-        },
-        onAttachments: (attachments) => {
-          const row = messages.value[assistantIdx];
-          applyScreenshotAttachments(row, attachments);
-          scrollToBottom();
-        },
-        onDelta: (delta) => {
-          const row = messages.value[assistantIdx];
-          if (!row) return;
-          row.content += delta;
-          syncMessageScreenshots(row);
-          scrollTick += 1;
-          if (scrollTick % 4 === 0) scrollToBottom();
-        },
-        onError: (err) => {
-          const row = messages.value[assistantIdx];
-          if (row?.content?.trim()) {
-            row.streaming = false;
-            if (row.workflow) {
-              row.workflow.running = false;
-            }
-            return;
-          }
-          if (row) {
-            row.streaming = false;
-            const wfErr = row.workflow ? getWorkflowLastError(row.workflow) : "";
-            if (!wfErr) {
-              row.error = true;
-            }
-            row.content = err?.message?.trim() || wfErr || t("chat.sorryRetry");
-            if (row.workflow) {
-              row.workflow.running = false;
-            }
-          }
-          ui.error(err?.message || t("chat.sendFailed"));
-        },
-        onDone: (payload) => {
-          if (
-            !payload?.done &&
-            !String(payload?.reply || "").trim() &&
-            !(Array.isArray(payload?.attachments) && payload.attachments.length) &&
-            !payload?.conversation_id
-          ) {
-            return;
-          }
-          const row = messages.value[assistantIdx];
-          if (row) {
-            applyScreenshotAttachments(row, payload?.attachments);
-            if (payload?.suspended) {
-              // Checkpoint 暂停：保留 workflow 状态（含 checkpointId），前端展示暂停标记
-              row.streaming = false;
-              row.suspended = true;
-              row.checkpointId = payload.checkpoint_id || null;
-            } else if (!typewriterActive) {
-              // 打字机动画进行中时，不覆盖逐字展示的内容，由动画最终设置完整文本
-              const merged = mergeScreenshotBlocksIntoContent(
-                payload?.reply || row.content || ""
-              );
-              if (merged) {
-                row.content = merged;
-              }
-              row.streaming = false;
-            }
-            syncMessageScreenshots(row);
-            if (row.workflow) {
-              row.workflow.running = false;
-            }
-            if (props.showCitations || props.showReportTools) {
-              if (Array.isArray(payload?.citations)) {
-                row.citations = payload.citations;
-              }
-            }
-            applyFollowUpQuestions(row, payload?.follow_up_questions);
-          }
-          if (payload?.conversation_id) {
-            conversationId.value = payload.conversation_id;
-          }
-          /* 回复完成立即释放发送锁，用户可继续输入下个问题 */
-          sending.value = false;
-          /* 每次智能体回复完毕后更新标签标题 */
-          reportChatState();
-        },
-        onFollowUpQuestions: (questions) => {
-          const row = messages.value[assistantIdx];
-          applyFollowUpQuestions(row, questions);
-        },
-        onConversationId: (id) => {
-          if (id) conversationId.value = id;
-        },
-      }
-    );
-    const row = messages.value[assistantIdx];
-    if (row && !typewriterActive) {
-      row.streaming = false;
-      if (row.workflow) {
-        row.workflow.running = false;
-      }
-      if (!row.content.trim()) {
-        row.content = "";
-      }
-    }
-  } catch (e) {
-    if (e?.name === "AbortError") {
-      finalizeStoppedAssistant(assistantIdx);
-      return;
-    }
-    throw e;
-  }
-}
-
-function finalizeStoppedAssistant(assistantIdx) {
-  const row = messages.value[assistantIdx];
-  if (!row || row.role !== "assistant") return;
-  row.streaming = false;
-  if (row.workflow) row.workflow.running = false;
-  if (!row.content.trim()) {
-    row.content = t("chat.stoppedGeneration");
-  }
-}
-
-function stopGeneration() {
-  if (!sending.value) return;
-  streamGeneration += 1;
-  const assistantIdx = messages.value.length - 1;
-  streamAbort?.abort();
-  finalizeStoppedAssistant(assistantIdx);
-  sending.value = false;
-  streamAbort = null;
-  void drainMessageQueue();
-}
-
-async function revealContentTypewriter(row, fullText) {
-  const text = (fullText || "").trim();
-  if (!text) {
-    row.streaming = false;
-    row.content = "";
-    return;
-  }
-  row.content = "";
-  row.streaming = true;
-  const step = Math.max(1, Math.floor(text.length / 100));
-  for (let i = 0; i < text.length; i += step) {
-    row.content = text.slice(0, Math.min(i + step, text.length));
-    if (i % (step * 4) === 0) await scrollToBottom();
-    await new Promise((r) => setTimeout(r, 14));
-  }
-  row.content = text;
-  row.streaming = false;
-}
-
-/** 从 checkpoint 恢复 Agent 执行。 */
-async function resumeCheckpoint(checkpointId, assistantIdx, accepted) {
-  const { resumeCheckpointStream } = await import("../api/rag.js");
-  resumingCheckpoint.value = checkpointId;
-  const row = messages.value[assistantIdx];
-  if (row) {
-    row.streaming = true;
-    row.suspended = false;
-  }
-
-  try {
-    await resumeCheckpointStream(checkpointId, { accepted })(
-      {
-        onDelta: (delta) => {
-          if (row) row.content += delta;
-        },
-        onReplace: (text) => {
-          if (row) row.content = text;
-        },
-        onWorkflow: (ev) => {
-          if (!row) return;
-          if (!row.workflow) row.workflow = emptyWorkflow();
-          applyWorkflowEvent(row.workflow, ev);
-        },
-        onCitations: (citations) => {
-          if (row && (props.showCitations || props.showReportTools)) {
-            row.citations = citations;
-          }
-        },
-        onAttachments: (attachments) => {
-          if (row) applyScreenshotAttachments(row, attachments);
-        },
-        onFollowUpQuestions: (questions) => {
-          if (row) applyFollowUpQuestions(row, questions);
-        },
-        onConversationId: (id) => {
-          if (id) conversationId.value = id;
-        },
-        onError: (err) => {
-          if (row) {
-            row.streaming = false;
-            if (!row.content.trim()) row.error = true;
-          }
-          ui.error(err?.message || "恢复执行失败");
-        },
-        onDone: (payload) => {
-          if (row) {
-            if (payload?.reply) {
-              row.content = payload.reply;
-            }
-            row.streaming = false;
-            if (row.workflow) row.workflow.running = false;
-            row.suspended = false;
-            row.checkpointId = null;
-          }
-          if (payload?.conversation_id) conversationId.value = payload.conversation_id;
-          reportChatState();
-        },
-      }
-    );
-  } catch (err) {
-    if (row) {
-      row.streaming = false;
-      row.suspended = false;
-    }
-    ui.error(err?.message || "恢复执行失败");
-  } finally {
-    resumingCheckpoint.value = null;
-  }
-}
-
-/** 从 checkpoint 恢复，带方案选择。 */
-async function resumeCheckpointWithChoice(checkpointId, assistantIdx, choice) {
-  resumingCheckpoint.value = checkpointId;
-  const row = messages.value[assistantIdx];
-  if (row) {
-    row.streaming = true;
-    row.suspended = false;
-  }
-
-  try {
-    const { resumeCheckpointStream } = await import("../api/rag.js");
-    await resumeCheckpointStream(checkpointId, { choice })(
-      {
-        onDelta: (delta) => { if (row) row.content += delta; },
-        onReplace: (text) => { if (row) row.content = text; },
-        onWorkflow: (ev) => {
-          if (!row) return;
-          if (!row.workflow) row.workflow = emptyWorkflow();
-          applyWorkflowEvent(row.workflow, ev);
-        },
-        onCitations: (citations) => { if (row && props.showCitations) row.citations = citations; },
-        onAttachments: (attachments) => { if (row) applyScreenshotAttachments(row, attachments); },
-        onFollowUpQuestions: (questions) => { if (row) applyFollowUpQuestions(row, questions); },
-        onConversationId: (id) => { if (id) conversationId.value = id; },
-        onError: (err) => {
-          if (row) { row.streaming = false; if (!row.content.trim()) row.error = true; }
-          ui.error(err?.message || "恢复执行失败");
-        },
-        onDone: (payload) => {
-          if (row) {
-            if (payload?.reply) row.content = payload.reply;
-            row.streaming = false;
-            if (row.workflow) row.workflow.running = false;
-            row.suspended = false;
-            row.checkpointId = null;
-          }
-          if (payload?.conversation_id) conversationId.value = payload.conversation_id;
-          reportChatState();
-        },
-      }
-    );
-  } catch (err) {
-    if (row) { row.streaming = false; row.suspended = false; }
-    ui.error(err?.message || "恢复执行失败");
-  } finally {
-    resumingCheckpoint.value = null;
-  }
-}
-
-async function sendMessageBlocking(content, assistantIdx, history) {
-  messages.value.push({ role: "assistant", content: "", streaming: true });
-  await scrollToBottom();
-
-  const data = await props.chatSend({
-    message: content,
-    history,
-    conversationId: conversationId.value,
-    model_provider_id: selectedModelProviderId.value || undefined,
-  });
-
-  const row = messages.value[assistantIdx];
-  if (row) {
-    const reply = (data?.reply || "").trim();
-    if (props.showCitations && Array.isArray(data?.citations)) {
-      row.citations = data.citations;
-    }
-    if (data?.conversation_id) {
-      conversationId.value = data.conversation_id;
-    }
-    if (reply) {
-      await revealContentTypewriter(row, reply);
-    } else {
-      row.streaming = false;
-      row.content = "";
-    }
-    applyFollowUpQuestions(row, data?.follow_up_questions);
-  }
-}
-
-async function sendMessage(text) {
-  const content = (text ?? input.value).trim();
-  if (!content) return;
-
-  if (sending.value && queueEnabled.value) {
-    if (enqueueMessage(content)) {
-      input.value = "";
-    }
-    return;
-  }
-  if (sending.value) return;
-
-  input.value = "";
-  await dispatchMessage(content);
-}
-
-async function dispatchMessage(content) {
-  const text = String(content || "").trim();
-  if (!text) return;
-
-  if (props.streaming && !props.streamChat) {
-    ui.error(t("chat.streamNotConfigured"));
-    return;
-  }
-  if (!props.streaming && !props.chatSend) {
-    ui.error(t("chat.chatNotConfigured"));
-    return;
-  }
-
-  const generation = ++streamGeneration;
-  const firstTurn = !started.value;
-  if (firstTurn) started.value = true;
-
-  clearFollowUpQuestions();
-
-  const history = buildChatHistory();
-  messages.value.push({ role: "user", content: text });
-  sending.value = true;
-
-  if (firstTurn) {
-    await nextTick();
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  }
-  await scrollToBottom();
-
-  const assistantIdx = messages.value.length;
-
-  try {
-    if (props.streaming) {
-      messages.value.push({
-        role: "assistant",
-        content: "",
-        streaming: true,
-        workflow: props.showWorkflowProgress
-          ? {
-              ...emptyWorkflow(),
-              running: true,
-              currentTitle: t("chat.thinking"),
-            }
-          : null,
-      });
-      await scrollToBottom();
-      await sendMessageStreaming(text, assistantIdx, history);
-    } else {
-      await sendMessageBlocking(text, assistantIdx, history);
-    }
-  } catch (e) {
-    if (e?.name === "AbortError") {
-      finalizeStoppedAssistant(assistantIdx);
-      return;
-    }
-    ui.error(e.message || t("chat.sendFailed"));
-    const row = messages.value[assistantIdx];
-    if (row) {
-      row.streaming = false;
-      row.error = true;
-      if (!row.content.trim()) {
-        row.content = e.message?.trim() || t("chat.sorryRetry");
-      }
-    } else {
-      messages.value.push({
-        role: "assistant",
-        content: t("chat.sorryRetry"),
-        error: true});
-    }
-  } finally {
-    if (generation === streamGeneration) {
-      sending.value = false;
-      streamAbort = null;
-    }
-    await scrollToBottom();
-    persistSessionState({ immediate: true });
-    if (generation === streamGeneration) {
-      await drainMessageQueue();
-    }
-  }
-}
-
-function onComposerKeydown(e) {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
 }
 
 /* ---- 语音输入 ---- */
@@ -1609,28 +808,8 @@ async function shareAssistantMessage(message) {
 
 /** 打断当前生成（若有），从指定用户消息截断并重发。 */
 async function retryUserMessage(index) {
-  const message = messages.value[index];
-  if (!message || !canRetryUserMessage(index, message)) return;
-
-  const content = (message.content || "").trim();
-  if (!content) return;
-
-  streamAbort?.abort();
-  streamGeneration += 1;
-  const lastIdx = messages.value.length - 1;
-  const last = messages.value[lastIdx];
-  if (last?.role === "assistant" && (last.streaming || sending.value)) {
-    finalizeStoppedAssistant(lastIdx);
-  }
-  sending.value = false;
-  streamAbort = null;
-
-  messages.value = messages.value.slice(0, index);
-  if (!messages.value.length) {
-    started.value = false;
-  }
-
-  await sendMessage(content);
+  if (!canRetryUserMessage(index, messages.value[index])) return;
+  await retryFromUserMessage(index);
 }
 
 async function likeAssistantMessage(index) {
@@ -1695,11 +874,12 @@ function persistSessionState({ immediate = false } = {}) {
   }, sending.value ? 1200 : 200);
 }
 
+persistSessionStateHolder.fn = persistSessionState;
+
 function newChat() {
-  streamAbort?.abort();
-  streamAbort = null;
-  sending.value = false;
-  messageQueue.value = [];
+  abortActiveStream();
+  resetStreamControl();
+  clearMessageQueue();
   started.value = false;
   messages.value = [];
   messageWindowStart.value = 0;
@@ -1761,10 +941,9 @@ async function loadConversationFromId(id) {
     historyHasOlder.value = Boolean(data?.has_older);
     historyOldestId.value = data?.oldest_id || null;
     expandedMessageIndexes.value = new Set();
-    streamAbort?.abort();
-    streamAbort = null;
-    sending.value = false;
-    messageQueue.value = [];
+    abortActiveStream();
+    resetStreamControl();
+    clearMessageQueue();
     messages.value = trimChatMessages(
       rows.map((m) => {
         const row = {
@@ -1832,22 +1011,14 @@ onMounted(async () => {
 onDeactivated(() => {
   chatDomActive.value = false;
   expandedMessageIndexes.value = new Set();
-  citationPreviewShow.value = false;
-  agentPopoverShow.value = false;
-  skillPopoverShow.value = false;
-  reportSkillPopoverShow.value = false;
-  reportOptimizePopoverShow.value = false;
+  closeCitationPreview();
+  closeSelectionPopovers();
   // 面板失活时仅释放富文本 DOM / 图表实例；流式请求继续在后台更新 messages
   if (messagesRef.value) disposeRichContentInElement(messagesRef.value);
   reportViewMode.value = "answer";
   if (messages.value.length > MAX_VISIBLE_CHAT_MESSAGES) {
     messages.value = trimChatMessages(messages.value);
     messageWindowStart.value = Math.max(0, messages.value.length - MAX_VISIBLE_CHAT_MESSAGES);
-  }
-  /* 停止思考计时，切回时重新开始 */
-  if (thinkingTimer) {
-    clearInterval(thinkingTimer);
-    thinkingTimer = null;
   }
   persistSessionState({ immediate: true });
 });
@@ -1858,15 +1029,6 @@ onActivated(async () => {
   if (!messages.value.length && storageScope.value) {
     await restorePersistedSession();
   }
-  /* 从后台切回时重启思考计时 */
-  if (sending.value && props.chatScope === "ai-home" && !thinkingTimer) {
-    thinkingStartTime.value = Date.now() - elapsedMs.value;
-    thinkingTimer = setInterval(() => {
-      elapsedMs.value = Date.now() - thinkingStartTime.value;
-    }, 200);
-  }
-  /* 重新报告状态：watcher 在 deactivate 期间被暂停，
-     若后台流已完成，tabStreaming 尚未更新会显示为仍在加载 */
   reportChatState();
   if ((started.value || sending.value) && !loadingHistory.value) scrollToBottom();
 });
@@ -1875,17 +1037,6 @@ onBeforeUnmount(() => {
   if (persistTimer) {
     clearTimeout(persistTimer);
     persistTimer = null;
-  }
-  if (thinkingTimer) {
-    clearInterval(thinkingTimer);
-    thinkingTimer = null;
-  }
-  /* KeepAlive 驱逐缓存时：不中止流式请求，让其在后台自然完成。
-     onDone 会更新内容，finally 块会持久化正确状态到 sessionStorage，
-     避免 catch(AbortError) 中的 finalizeStoppedAssistant 写入「已停止生成」。 */
-  if (sending.value) {
-    streamGeneration += 1;
-    /* 注意：不调 streamAbort?.abort() */
   }
   persistSessionState({ immediate: true });
 });
@@ -2148,37 +1299,62 @@ defineExpose({
                   </n-collapse-item>
                   <n-collapse-item name="thinking">
                     <template #header>
-                      <span class="ai-home-panel-header">思考过程</span>
+                      <span class="ai-home-panel-header">执行过程</span>
                     </template>
                     <template #arrow>
                       <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M5.7 11.7 9.4 8 5.7 4.3a.7.7 0 0 1 1-1l4 4a.7.7 0 0 1 0 1l-4 4a.7.7 0 0 1-1-1z"/></svg>
                     </template>
                     <div class="ai-home-panel-body">
-                      <div v-for="(task, ti) in workflowPlanSteps(entry.message)" :key="`plan-${ti}`" class="ai-home-panel-plan-step">
-                        <div class="ai-home-panel-plan-step-title">{{ task.title }}</div>
-                        <div v-if="task.summary" class="ai-home-panel-plan-step-summary">{{ task.summary }}</div>
-                        <div v-if="task.substeps && task.substeps.length" class="ai-home-panel-plan-substeps">
-                          <div v-for="(sub, si) in task.substeps" :key="`sub-${si}`" class="ai-home-panel-plan-substep">
-                            <span class="ai-home-panel-plan-substep-dot">•</span>
-                            <span>{{ sub.title }}</span>
-                          </div>
+                      <div
+                        v-for="(task, ti) in workflowPlanSteps(entry.message)"
+                        :key="`plan-${ti}`"
+                        class="ai-home-panel-plan-step"
+                        :data-status="task.status || 'pending'"
+                      >
+                        <div class="ai-home-panel-plan-step-title">
+                          <span
+                            v-if="task.status"
+                            class="ai-home-panel-plan-step-status"
+                            :data-status="task.status"
+                          >{{ planTaskStatusLabel(task.status) }}</span>
+                          <span
+                            v-if="resolveAgentDisplayName(task.agentId, task.agentTitle)"
+                            class="ai-home-panel-plan-agent"
+                            :style="agentBadgeStyle(task.agentId)"
+                          >
+                            <NIcon
+                              class="ai-home-panel-plan-agent-icon"
+                              :size="11"
+                              :component="resolveAgentCardIcon(task.agentId)"
+                            />
+                            <span class="ai-home-panel-plan-agent-role">{{ agentRoleLabel(task.agentId) }}</span>
+                            <span>{{ resolveAgentDisplayName(task.agentId, task.agentTitle) }}</span>
+                          </span>
+                          {{ task.title }}
                         </div>
                       </div>
-                      <div v-for="(step, si) in workflowExecSteps(entry.message)" :key="`exec-${si}`" class="ai-home-panel-plan-step">
-                        <!-- 思考型步骤：仅正文，不显示「思考」标题 -->
-                        <template v-if="step.kind === 'thinking'">
-                          <div v-if="step.detail" class="ai-home-panel-thinking-text">{{ step.detail }}</div>
-                        </template>
-                        <template v-else>
-                          <div class="ai-home-panel-plan-step-title">{{ step.title }}</div>
-                          <div v-if="Array.isArray(step.detail) && step.detail.length" class="ai-home-panel-plan-substeps">
-                            <div v-for="(row, ri) in step.detail" :key="`det-${ri}`" class="ai-home-panel-plan-substep">
-                              <span class="ai-home-panel-plan-substep-dot">•</span>
-                              <span>{{ row.label || row.text || row }}</span>
-                            </div>
-                          </div>
-                        </template>
+                      <div
+                        v-for="(step, si) in workflowExecSteps(entry.message)"
+                        :key="`exec-${si}`"
+                        class="ai-home-panel-plan-step"
+                      >
+                        <div class="ai-home-panel-plan-step-title">{{ step.title }}</div>
                       </div>
+                      <pre
+                        v-if="
+                          !workflowPlanSteps(entry.message).length &&
+                          !workflowExecSteps(entry.message).length &&
+                          entry.message.workflow?.processLog
+                        "
+                        class="ai-home-panel-process-log"
+                      >{{ entry.message.workflow.processLog }}</pre>
+                      <div
+                        v-else-if="
+                          !workflowPlanSteps(entry.message).length &&
+                          !workflowExecSteps(entry.message).length
+                        "
+                        class="ai-home-panel-empty"
+                      >暂无执行步骤记录</div>
                     </div>
                   </n-collapse-item>
                 </n-collapse>
@@ -2761,6 +1937,8 @@ defineExpose({
       :question="citationPreviewQuestion"
     />
 </template>
+
+<style src="../styles/chat-shell.css"></style>
 
 <style scoped>
 .ai-home {
@@ -3405,7 +2583,6 @@ defineExpose({
   min-height: 0;
   overflow-y: auto;
   padding: 0 24px 10px;
-  -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
   background:
     radial-gradient(ellipse at 20% 50%, color-mix(in srgb, var(--platform-accent) 2%, transparent) 0%, transparent 55%),
@@ -4008,6 +3185,23 @@ defineExpose({
   font-size: 10px;
 }
 
+.ai-home-panel-process-log {
+  margin: 0;
+  padding: 4px 2px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--platform-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+
+.ai-home-panel-empty {
+  padding: 4px 2px;
+  font-size: 11px;
+  color: var(--platform-text-tertiary, #94a3b8);
+}
+
 .ai-home-panel-body--citations {
   display: flex;
   flex-direction: column;
@@ -4070,6 +3264,60 @@ defineExpose({
   margin-bottom: 1px;
 }
 
+.ai-home-panel-plan-step-status {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--platform-text-tertiary);
+  background: var(--platform-fill-secondary, rgba(0, 0, 0, 0.04));
+}
+
+.ai-home-panel-plan-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 4px;
+  padding: 0 6px 0 4px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--card-accent, var(--platform-primary, #2080f0));
+  background: var(--card-accent-soft, color-mix(in srgb, var(--platform-primary, #2080f0) 12%, transparent));
+  border: 1px solid color-mix(in srgb, var(--card-accent, var(--platform-primary, #2080f0)) 28%, transparent);
+  vertical-align: middle;
+}
+
+.ai-home-panel-plan-agent-icon {
+  flex: 0 0 auto;
+}
+
+.ai-home-panel-plan-agent-role {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--card-accent, var(--platform-primary, #2080f0));
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.ai-home-panel-plan-step-status[data-status="running"] {
+  color: var(--platform-primary, #2080f0);
+}
+
+.ai-home-panel-plan-step-status[data-status="done"] {
+  color: var(--platform-success, #18a058);
+}
+
+.ai-home-panel-plan-step-status[data-status="failed"] {
+  color: var(--platform-error, #d03050);
+}
+
 .ai-home-panel-plan-step-summary {
   font-size: 10px;
   color: var(--platform-text-tertiary);
@@ -4098,17 +3346,17 @@ defineExpose({
 }
 
 .ai-home-panel-thinking-text {
-  font-size: 10px;
-  line-height: 1.5;
-  color: var(--platform-text-tertiary);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--platform-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 4px 8px;
-  margin-top: 2px;
+  padding: 6px 10px;
+  margin-top: 4px;
   background: var(--platform-bg-tertiary);
-  border-radius: 4px;
-  max-height: 400px;
-  overflow-y: auto;
+  border-radius: 6px;
+  max-height: none;
+  overflow: visible;
 }
 
 .ai-report-citations {

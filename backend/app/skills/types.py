@@ -1,4 +1,4 @@
-"""Agent Skills 核心类型 — agentkit 泛型 + 平台 ORM 上下文。"""
+"""平台 Skill 类型 — 在 ``app.agent.skills`` 泛型之上叠加 ORM / 用户上下文。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 
 from app.core.agent_loop_state import LoopState
 
-from app.agentkit.skills.types import SkillKind, SkillReadiness, SkillSource, SkillToolSpec
+from app.agent.skills.types import SkillKind, SkillReadiness, SkillSource, SkillToolSpec
 from sqlalchemy.orm import Session
 
 from app.models.org import User
@@ -20,11 +20,9 @@ SkillHandler = Callable[["SkillInvocationContext", dict[str, Any]], Awaitable["S
 
 @dataclass(frozen=True, slots=True)
 class SkillDefinition:
-    """统一的 Skill 描述（内置或上传），skill_id 使用 uuid.UUID。
+    """平台 Skill 描述（内置或上传）；``skill_id`` 为 UUID。
 
-    .. hint::
-        ``agentkit_skills.SkillDefinition`` 是同一 dataclass 的泛化版本（skill_id: str）。
-        本类型用于含 DB 回话的平台上下文；纯代理场景可直接用 agentkit 版本。
+    纯运行时场景可直接使用 ``app.agent.skills.types.SkillDefinition``（``skill_id: str``）。
     """
 
     name: str
@@ -49,6 +47,8 @@ class SkillDefinition:
 
 @dataclass(slots=True)
 class SkillInvocationContext:
+    """单次 Skill 调用上下文（DB 会话、用户、附件与进度回调）。"""
+
     db: Session
     user: User
     conversation_id: str | None = None
@@ -64,10 +64,13 @@ class SkillInvocationContext:
 
 @dataclass(slots=True)
 class SkillInvocationResult:
+    """Skill 调用结果。"""
+
     ok: bool
     summary: str
     data: Any = None
     error: str | None = None
+
 
 __all__ = [
     "SkillDefinition",
@@ -78,6 +81,4 @@ __all__ = [
     "SkillReadiness",
     "SkillSource",
     "SkillToolSpec",
-    "from_agentkit_skill",
-    "to_agentkit_skill",
 ]

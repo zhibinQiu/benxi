@@ -1,10 +1,10 @@
-"""AIP 平台配置 — 将 get_settings() 注入 agentkit HandoffBuilder / AidConfig。"""
+"""AIP 平台配置 — 将 get_settings() 注入 app.agent HandoffBuilder / AidConfig。"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.agentkit.aip import AidConfig, AipDataItem, HandoffBuilder
+from app.agent.aip import AidConfig, AipDataItem, HandoffBuilder
 
 from app.config import get_settings
 

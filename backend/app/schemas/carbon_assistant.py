@@ -1,4 +1,4 @@
-"""双碳助手 — Pydantic schemas。"""
+"""碳资产报告 — Pydantic schemas。"""
 
 from __future__ import annotations
 

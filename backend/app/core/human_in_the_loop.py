@@ -13,7 +13,7 @@ import json
 import logging
 from typing import Any
 
-from app.agentkit.interrupt import HitlRequest, generate_hitl_request_id
+from app.agent.interrupt import HitlRequest, generate_hitl_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,6 @@ logger = logging.getLogger(__name__)
 CONFIRMATION_REQUIRED_TOOLS: set[str] = {
     "delete_document",
     "delete_kb_folder",
-    "delete_user",
-    "delete_department",
     "delete_uploaded_skill",
     "browser_run_task",
     "run_skill_script",
@@ -52,8 +50,6 @@ def build_confirmation_summary(tool_name: str, params: dict[str, Any]) -> str:
     summaries = {
         "delete_document": lambda p: f"删除文档「{p.get('document_id', '?')}」",
         "delete_kb_folder": lambda p: f"删除文件夹「{p.get('folder_name') or p.get('folder_id', '?')}」",
-        "delete_user": lambda p: f"删除用户「{p.get('user_name') or p.get('user_id', '?')}」",
-        "delete_department": lambda p: f"删除部门「{p.get('department_name') or p.get('department_id', '?')}」",
         "delete_uploaded_skill": lambda p: f"删除技能「{p.get('skill_name', '?')}」",
         "browser_run_task": lambda p: (p.get("task") or "?")[:200],
         "run_skill_script": lambda p: f"执行脚本「{p.get('skill_name', '?')}/{p.get('entry', '?')}」",

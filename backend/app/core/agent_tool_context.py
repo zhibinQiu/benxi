@@ -15,7 +15,7 @@ from typing import Any, Final
 
 from app.core.agent_loop_state import LoopState
 
-from app.agentkit.tools.compress import compress_tool_result as _compress_tool_result
+from app.agent.tools.compress import compress_tool_result as _compress_tool_result
 from app.core.prompt_budget import fit_messages_to_total_budget, get_prompt_limits, truncate_to_budget
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────

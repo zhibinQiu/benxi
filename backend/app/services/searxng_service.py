@@ -108,4 +108,18 @@ def search_web(
             break
 
     has_more = len(raw_items) > len(items) or len(raw_items) >= page_size
+    if not items:
+        unresp = payload.get("unresponsive_engines") or []
+        if unresp:
+            # [["bing","timeout"], ...] 或字符串
+            parts: list[str] = []
+            for row in unresp[:6]:
+                if isinstance(row, (list, tuple)) and row:
+                    name = str(row[0])
+                    reason = str(row[1]) if len(row) > 1 else "unavailable"
+                    parts.append(f"{name}:{reason}")
+                elif row:
+                    parts.append(str(row))
+            detail = "、".join(parts) if parts else "全部引擎失败"
+            raise SearxngSearchError(f"联网搜索无结果（引擎不可用：{detail}）")
     return items, has_more

@@ -1,47 +1,44 @@
-# AgentKit
+# 本析智能体运行时（`app.agent`）
 
-> 多智能体架构的 Python 工具包 — 路由 · 编排 · 通信 · 执行
-
-[![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.12+-blue)]()
-
-**AgentKit** 是一个多智能体架构的 Python 工具包，提供从路由、编排、通信到执行的全链路组件。
-
-- **GitHub**: [https://github.com/zhibinQiu/Agentkit](https://github.com/zhibinQiu/Agentkit)
-- **本析平台**: [https://github.com/zhibinQiu/benxi](https://github.com/zhibinQiu/benxi)
+> 多智能体核心已内置于本析后端：`backend/app/agent/`。  
+> 架构与哲学：[Agent 架构](zh/agent-architecture.md) · [设计哲学](zh/agent-philosophy.md)
 
 ---
 
-## 子包一览
+## 职责边界
 
-| 包 | 版本 | 说明 |
-|----|------|------|
-| agentkit-aip | 4.6.0 | AIP 消息类型、handoff、会话总线 |
-| agentkit-loop | 4.6.0 | Loop Engineering 动态 Prompt 组装 |
-| agentkit-mcp | 4.6.0 | MCP JSON-RPC 协议与客户端 |
-| agentkit-message | 4.6.0 | LLM 消息解析、内嵌工具调用提取 |
-| agentkit-orchestrate | 4.6.0 | 多专精任务编排 |
-| agentkit-route | 4.6.0 | 路由类型与纯逻辑 |
-| agentkit-skills | 4.6.0 | Skill 插件框架 |
-| agentkit-subagent | 4.6.0 | 子 Agent 运行时 |
-| agentkit-tools | 4.6.0 | 工具注册、Schema 生成、校验 |
-| agentkit-interrupt | 4.6.0 | 中断与 Checkpoint、HITL |
+可抽离库：路由、编排/DAG、loop 终稿契约、Skill 泛型、子智能体、AIP、工具 Schema/校验。  
+**禁止**依赖 `app.services` / `models` / `config` / `database` / `api`；宿主经 Protocol / 回调注入 LLM、存储等。
+
+六相主循环仍在宿主：`backend/app/services/agent_tool_loop.py`。
+
+## 子包
+
+| 子包 | 说明 |
+|------|------|
+| `aip` | 消息、handoff、会话总线、多 hop 合并 |
+| `route` | 路由计划纯逻辑 |
+| `orchestrate` | TaskDAG、并行波次、assist、验收 |
+| `loop` | 计划类型、exit prompt、`LoopState` |
+| `subagent` | 隔离上下文子 Agent（search/use/execute） |
+| `skills` | Skill 注册/执行泛型（平台 ORM 见 `app.skills`） |
+| `tools` | Schema、校验、结果压缩（全局注册见 `app.tools`） |
+| `mcp` | MCP JSON-RPC 客户端 |
+| `interrupt` | HITL 与 checkpoint 协议 |
+| `message` | 消息解析、过滤、裁剪 |
+| `config` | Markdown/YAML 热加载 |
+
+## 业务配置
+
+指令与路由偏好：`backend/agent_md/`（agents / routing / tools / skills）。
 
 ## 设计原则
 
-- **Protocol 注入**：宿主通过 Protocol 接口注入 LLM、Tool 等依赖，无平台耦合
-- **渐进式采用**：子包可独立安装，按需引入
-- **零 ORM/DB**：业务上下文通过 `extras` 字典传递
-- **面向测试**：纯函数核心，I/O 边界清晰
-
-## 安装
-
-```bash
-pip install agentkit           # 全部组件
-pip install agentkit-aip       # 仅 AIP 协议
-pip install agentkit-mcp       # 仅 MCP 客户端
-```
+- Protocol 注入，库与平台解耦  
+- 调度不直执原子工具；执行下沉子智能体或专精  
+- 业务偏好写在 MD，代码不做领域硬编码  
+- 终稿基于观测证据，禁止编造  
 
 ## 许可
 
-[AGPL v3](LICENSE)
+[AGPL v3](../LICENSE)

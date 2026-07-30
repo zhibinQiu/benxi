@@ -1,4 +1,4 @@
-"""GB/Z 185.6 专精智能体 handoff — agentkit 适配（保留平台 citations / kg 等扩展）。"""
+"""GB/Z 185.6 专精智能体 handoff — app.agent 适配（保留平台 citations / kg 等扩展）。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.agent_loop_state import LoopState
 
-from app.agentkit.aip.handoff import (
+from app.agent.aip.handoff import (
     SpecialistHandoffResult,
     build_sequential_task_request as _build_sequential_task_request,
     build_specialist_handoff_message as _build_specialist_handoff_message,
@@ -16,7 +16,7 @@ from app.agentkit.aip.handoff import (
 )
 
 from app.core.aip._platform_config import platform_handoff_builder
-from app.agentkit.aip.types import AipDataItem, AipMessage
+from app.agent.aip.types import AipDataItem, AipMessage
 
 __all__ = [
     "SpecialistHandoffResult",
@@ -152,7 +152,7 @@ def build_specialist_assist_handoff(
 
 def orchestrator_assist_from_complete(complete: dict[str, Any] | None) -> dict[str, Any] | None:
     """从 complete 事件解析专精向调度层发起的协助请求。"""
-    from app.agentkit.aip.messaging import handoff_from_complete
+    from app.agent.aip.messaging import handoff_from_complete
 
     message = handoff_from_complete(complete)
     if message is None:

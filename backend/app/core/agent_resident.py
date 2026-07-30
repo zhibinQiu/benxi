@@ -81,6 +81,7 @@ def _specialist_common_prefix(*, task_mode: bool = False) -> str:
         parts.extend(
             [
                 _SPECIALIST_TASK_MODE,
+                "工作区可见的思考/推理过程优先使用简体中文。",
                 _TOOL_LOOP_REPLY_RULE,
                 _SPECIALIST_TOOL_RULES,
             ]
@@ -90,6 +91,7 @@ def _specialist_common_prefix(*, task_mode: bool = False) -> str:
             [
                 _USER_REPLY_RULE,
                 _USER_STYLE_RULES,
+                "最终回答语言与用户一致；工作区可见的思考/推理过程优先使用简体中文。",
                 _TOOL_LOOP_REPLY_RULE,
                 _SPECIALIST_TOOL_RULES,
             ]
@@ -118,7 +120,8 @@ def build_specialist_resident_prompt(
         return (
             f"{assistant_ai_home_persona()}。\n"
             f"{assistant_completion_first_principle()}\n"
-            "- \u7b80\u4f53\u4e2d\u6587\uff1b\u3010\u7528\u6237\u8bb0\u5fc6\u3011\u540d\u79f0\u4f18\u5148\n"
+            "- 简体中文；【用户记忆】名称优先\n"
+            "- 最终回答语言与用户一致；工作区可见的思考/推理过程优先使用简体中文\n"
             "══════════════════════════════════════════\n"
             "## 调度原则\n"
             "⊙ 你是一个**调度 Agent**（Orchestrator）。\n"

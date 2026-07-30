@@ -200,7 +200,7 @@ function formatTime(sec) {
 function speakerColor(speaker) {
   const n = parseInt(String(speaker).replace(/\D/g, ""), 10) || 1;
   // 仅使用平台既有色：accent / accent-secondary / caution / danger / accent-hover
-  const colors = ["#0a6bff", "#3b82ff", "#e25507", "#BE1743", "#0058e0"];
+  const colors = ["#005A9E", "#1A7FD4", "#D99B2B", "#DC5A5A", "#00497F"];
   return colors[(n - 1) % colors.length];
 }
 

@@ -10,9 +10,8 @@
 
 - **在线体验**: [http://36.151.146.71:40005/ai/](http://36.151.146.71:40005/ai/)
 - **GitHub**: [https://github.com/zhibinQiu/benxi](https://github.com/zhibinQiu/benxi)
-- **AgentKit** <sup>[¹](#设计哲学)</sup>: [https://github.com/zhibinQiu/Agentkit](https://github.com/zhibinQiu/Agentkit)
-- **文档站点**: [https://zhibinQiu.github.io/benxi/](https://zhibinQiu.github.io/benxi/)
-- **版本**: v4.8.8（见根目录 `VERSION`）
+- **文档站点**: [https://zhibinQiu.github.io/benxi/](https://zhibinQiu.github.io/benxi/)（标题：本析-企业级 AI 智能体平台）
+- **版本**: v4.9.0（见根目录 `VERSION`）
 
 ---
 
@@ -50,7 +49,7 @@
 | 📄 **PDF 翻译** | 科学文献全格式翻译，保留排版 |
 | 🧠 **AI 知识库** | 文档入库、语义检索、智能问答 |
 | 🔗 **本体构建** | 自动抽取实体关系，构建领域知识图谱 |
-| 🤖 **AgentKit** <sup>[¹](#设计哲学)</sup> | 多智能体编排框架，支持工具注册与子 Agent |
+| 🤖 **多智能体** <sup>[¹](#设计哲学)</sup> | 调度 / 专精 / 子智能体分层编排，Tool · Skill · HITL |
 | 📊 **报告生成** | 基于知识库的自动报告与对比分析 |
 | 🔐 **权限体系** | 组织架构 + 角色权限 + 字段级管控 |
 | 🌐 **多语言** | 中英文界面，国际化支持 |
@@ -61,9 +60,12 @@
 
 ```
 pdf_trans/
-├── backend/             # FastAPI 后端（API / 认证 / 文档 / 知识库 / AgentKit）
-│   └── app/agentkit/    # AgentKit 智能体工具箱（内置，无需额外安装）
+├── backend/             # FastAPI 后端（API / 认证 / 文档 / 知识库 / Agent）
+│   ├── app/agent/       # 可抽离智能体运行时（路由 · 编排 · AIP · 子智能体）
+│   └── agent_md/        # Agent 指令 · 路由偏好 · 工具描述
 ├── frontend/            # Vue 3 + Naive UI 前端
+├── data/                # DATA_ROOT（开发默认）；生产常为 /root/qzb/benxi/data
+├── backups/             # stack.sh backup 产物
 ├── compose.yaml         # Docker Compose
 └── VERSION              # 版本号
 ```
@@ -96,16 +98,11 @@ cp backend/.env.example backend/.env    # 按需编辑
 
 ---
 
-## 🔧 AgentKit — 多智能体框架 <sup>[¹](#设计哲学)</sup>
+## 🔧 多智能体运行时 <sup>[¹](#设计哲学)</sup>
 
-AgentKit <sup>[¹](#设计哲学)</sup> 是本析平台的多智能体架构 Python 工具包，提供从路由、编排、通信到执行的全链路组件。
+核心在 `backend/app/agent/`（可抽离库）+ `agent_tool_loop` 宿主六相循环；业务偏好在 `backend/agent_md/`。
 
-```bash
-# AgentKit 已内置在 backend/app/agentkit/ 中，无需额外安装
-# 直接启动后端即可：cd backend && pip install -e . && doc-platform
-```
-
-> 详细文档见 [AgentKit 仓库](https://github.com/zhibinQiu/Agentkit) 或 [AgentKit 开发者指南](https://zhibinQiu.github.io/benxi/)。
+> [Agent 架构](docs/zh/agent-architecture.md) · [设计哲学](docs/zh/agent-philosophy.md) · [通俗长文](my-agent-philosophy.md)
 
 ---
 
@@ -113,9 +110,9 @@ AgentKit <sup>[¹](#设计哲学)</sup> 是本析平台的多智能体架构 Pyt
 
 | 文档 | 说明 |
 |------|------|
-| [产品文档](https://zhibinQiu.github.io/benxi/) | 在线文档 — 使用指南与最佳实践 |
-| [AgentKit 开发者指南](https://github.com/zhibinQiu/Agentkit) | AgentKit 开发文档 |
-| [API 参考](https://github.com/zhibinQiu/benxi/tree/main/backend) | 后端 API 说明 |
+| [产品文档](https://zhibinQiu.github.io/benxi/) | 本析-企业级 AI 智能体平台 · 架构与运维 |
+| [Agent 架构](docs/zh/agent-architecture.md) | 流程 · 分层 · 代码地图 |
+| [组件与数据存储](docs/zh/operations/components-and-storage.md) | DATA_ROOT 与 backups/ |
 | [运维部署指南](https://zhibinQiu.github.io/benxi/operations/README/) | 部署、配置、升级 |
 
 ---
@@ -132,7 +129,7 @@ AgentKit <sup>[¹](#设计哲学)</sup> 是本析平台的多智能体架构 Pyt
 
 ## 📖 设计哲学
 
-[¹](#设计哲学): 关于 AgentKit 的设计理念，请参阅 [我的智能体设计哲学](my-agent-philosophy.md) —— 深入理解 Tool、Skill、子智能体、专精智能体等核心概念的由来与取舍。
+[¹](#设计哲学): 设计理念见 [我的智能体设计哲学](my-agent-philosophy.md) 与 [docs/zh/agent-philosophy.md](docs/zh/agent-philosophy.md)。
 
 ---
 

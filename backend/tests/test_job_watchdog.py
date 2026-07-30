@@ -160,3 +160,89 @@ def test_cancel_stale_skips_document_index_awaiting_parse():
         assert job.progress == 90
     finally:
         db.close()
+
+
+def test_recover_orphaned_awaiting_parse_redispatches_without_lease():
+    from app.services.document_index_coordinator import (
+        enter_awaiting_parse_phase,
+        recover_orphaned_awaiting_parse_jobs,
+    )
+
+    job = Job(
+        id=uuid.uuid4(),
+        type=JobType.document_index.value,
+        status=JobStatus.running.value,
+        created_by=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        progress=98,
+        payload=enter_awaiting_parse_phase(
+            {},
+            dataset_id="ds-1",
+            ragflow_document_id="rid-1",
+            mode="reindex",
+            version_id_raw=None,
+        ),
+    )
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [job]
+    settings = MagicMock(knowflow_enabled=True)
+
+    with patch(
+        "app.config.get_settings", return_value=settings
+    ), patch(
+        "app.database.SessionLocal", return_value=db
+    ), patch(
+        "app.services.knowledge_sync_job_service._index_target_exists",
+        return_value=True,
+    ), patch(
+        "app.services.knowledge_sync_job_service._index_job_should_abort",
+        return_value=False,
+    ), patch(
+        "app.services.document_index_coordinator.dispatch",
+    ) as dispatch:
+        count = recover_orphaned_awaiting_parse_jobs()
+
+    assert count == 1
+    dispatch.assert_called_once_with(job.id)
+
+
+def test_recover_orphaned_awaiting_parse_skips_active_lease():
+    import time
+
+    from app.services.document_index_coordinator import (
+        enter_awaiting_parse_phase,
+        recover_orphaned_awaiting_parse_jobs,
+    )
+
+    payload = enter_awaiting_parse_phase(
+        {},
+        dataset_id="ds-1",
+        ragflow_document_id="rid-1",
+        mode="reindex",
+        version_id_raw=None,
+    )
+    payload["exec_lease_until"] = time.time() + 3600
+    job = Job(
+        id=uuid.uuid4(),
+        type=JobType.document_index.value,
+        status=JobStatus.running.value,
+        created_by=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        progress=98,
+        payload=payload,
+    )
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [job]
+    settings = MagicMock(knowflow_enabled=True)
+
+    with patch(
+        "app.config.get_settings", return_value=settings
+    ), patch(
+        "app.database.SessionLocal", return_value=db
+    ), patch(
+        "app.services.document_index_coordinator.dispatch",
+    ) as dispatch:
+        count = recover_orphaned_awaiting_parse_jobs()
+
+    assert count == 0
+    dispatch.assert_not_called()

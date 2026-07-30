@@ -1,6 +1,6 @@
 """系统智能体注册表 — 内置专精智能体，不支持手动创建。
 
-路由描述见 app/core/agents.md；运行时正文见 AGENT.md。
+路由描述见 agent_md/routing/agents.md；运行时正文见 AGENT.md。
 """
 
 from __future__ import annotations

@@ -46,6 +46,22 @@ def test_summarize_ragflow_progress_msg_extracts_model_disabled():
     assert "图表识别" in out or "管理员" in out
 
 
+def test_summarize_ragflow_progress_msg_extracts_paddleocr_failure():
+    msg = (
+        "10:57:17 Page(1~100000001): Parsing with PaddleOCR...\n"
+        "10:57:22 Page(1~100000001): Smart chunking failed: "
+        'PaddleOCR API error: 500 - {"error":"PaddleOCR failed to recognize PDF"}\n'
+        "10:57:22 Page(1~100000001): [ERROR]Internal server error while chunking: "
+        'PaddleOCR API error: 500 - {"error":"PaddleOCR failed to recognize PDF"}\n'
+        '10:57:22 [ERROR][Exception]: PaddleOCR API error: 500 - '
+        '{"error":"PaddleOCR failed to recognize PDF"}'
+    )
+    out = summarize_ragflow_progress_msg(msg)
+    assert out is not None
+    assert "PaddleOCR" in out
+    assert "版面识别" in out
+
+
 def test_summarize_ragflow_progress_msg_prefers_embedding_bind_error():
     msg = (
         "17:30:42 Task has been received.\n"

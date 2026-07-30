@@ -1,17 +1,10 @@
 [project]
 name = "doc-platform"
-version = "4.8.8"
+version = "4.9.0"
 description = "Single-tenant document platform (IAM, documents, jobs, notifications)"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "agentkit-aip @ file:../packages/agentkit-aip",
-    "agentkit-orchestrate @ file:../packages/agentkit-orchestrate",
-    "agentkit-loop @ file:../packages/agentkit-loop",
-    "agentkit-mcp @ file:../packages/agentkit-mcp",
-    "agentkit-route @ file:../packages/agentkit-route",
-    "agentkit-skills @ file:../packages/agentkit-skills",
-    "agentkit-subagent @ file:../packages/agentkit-subagent",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "sqlalchemy>=2.0.36",
@@ -48,6 +41,8 @@ dependencies = [
     "statsmodels>=0.14.0",
     "jieba>=0.42.1",
     "rank-bm25>=0.2.2",
+    "rdflib>=7.0.0",
+    "pyshacl>=0.26.0",
 ]
 
 [project.optional-dependencies]
@@ -56,6 +51,12 @@ pageindex = [
 ]
 browser = [
     "playwright>=1.49.0",
+]
+automl = [
+    # PyCaret 3.x 与平台 pandas>=2.2 / matplotlib>=3.8 声明冲突。
+    # 服务器镜像请用: bash scripts/stack.sh build-automl（Dockerfile.automl，--no-deps）。
+    # 本机: pip install 'pycaret==3.3.2' --no-deps 后再按需补 scikit-learn 等。
+    "pycaret==3.3.2",
 ]
 
 [project.scripts]

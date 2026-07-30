@@ -87,6 +87,12 @@ const routes = [
         component: () => import("../views/DataAnalysisView.vue"),
       },
       {
+        path: "system/auto-ml",
+        name: "auto-ml",
+        meta: { title: "自动化机器学习", fullHeight: true, featureIcon: "analytics" },
+        component: () => import("../views/AutoMlView.vue"),
+      },
+      {
         path: "system/smart-data-query-v2",
         redirect: { name: "smart-data-query" },
       },
@@ -95,6 +101,12 @@ const routes = [
         name: "carbon-qa",
         meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles" },
         component: () => import("../views/CarbonQaV2View.vue"),
+      },
+      {
+        path: "system/carbon-news",
+        name: "carbon-news",
+        meta: { title: "碳新闻", fullHeight: true, featureIcon: "newspaper" },
+        component: () => import("../views/CarbonNewsView.vue"),
       },
       {
         path: "system/wechat-mp",

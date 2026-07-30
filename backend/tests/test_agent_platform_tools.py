@@ -2,40 +2,37 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.services.agent_tools import agent_tool_names, build_agent_tool_specs
 
 
-def test_admin_tools_registered():
+def test_platform_tools_registered_without_user_dept_sql():
     names = agent_tool_names()
     for tool in (
         "sync_document_knowledge",
         "reindex_document",
         "update_kb_folder",
-        "list_users",
-        "create_department",
+        "list_todos",
     ):
         assert tool in names
-
-
-def test_build_agent_tool_specs_gates_admin_by_permission():
-    db = MagicMock()
-    admin = MagicMock()
-    member = MagicMock()
-
-    with patch(
-        "app.services.agent_tools.user_has_permission",
-        side_effect=lambda _db, user, code: user is admin
-        and code in ("admin.user", "admin.dept"),
+    for tool in (
+        "list_users",
+        "create_user",
+        "update_user",
+        "delete_user",
+        "list_departments",
+        "create_department",
+        "update_department",
+        "delete_department",
     ):
-        admin_specs = {
-            s["function"]["name"] for s in build_agent_tool_specs(db, admin)
-        }
-        member_specs = {
-            s["function"]["name"] for s in build_agent_tool_specs(db, member)
-        }
+        assert tool not in names
 
-    assert "create_user" in admin_specs
-    assert "create_department" in admin_specs
-    assert "create_user" not in member_specs
+
+def test_build_agent_tool_specs_excludes_user_dept_sql():
+    db = MagicMock()
+    user = MagicMock()
+    specs = {s["function"]["name"] for s in build_agent_tool_specs(db, user)}
+    assert "create_user" not in specs
+    assert "create_department" not in specs
+    assert "list_users" not in specs

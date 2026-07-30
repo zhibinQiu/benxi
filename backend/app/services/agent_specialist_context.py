@@ -68,6 +68,13 @@ def build_specialist_chat_messages(
     config_body = resolve_agent_instruction_body(db, agent_id)
     memory_context = build_memory_prompt_context(user.id)
 
+    from app.core.agent_language import assistant_language_rules
+
+    lang_rules = assistant_language_rules(user_message=message)
+    merged_instruction = "\n".join(
+        p for p in (lang_rules, (context_instruction or "").strip()) if p
+    )
+
     return build_bounded_chat_messages(
         system=build_specialist_resident_prompt(
             agent_id, config_body=config_body, task_mode=task_mode
@@ -79,6 +86,6 @@ def build_specialist_chat_messages(
         skill_catalog=skill_catalog,
         memory_context=memory_context,
         runtime_context=build_runtime_context(channel=agent_id, user=user),
-        context_instruction=context_instruction or "",
+        context_instruction=merged_instruction,
         route_reason=route_reason,
     )

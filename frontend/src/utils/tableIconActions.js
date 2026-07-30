@@ -15,6 +15,7 @@ export function renderIconAction({
   onClick,
   type = "default",
   disabled = false,
+  loading = false,
 }) {
   return h(
     NTooltip,
@@ -28,16 +29,26 @@ export function renderIconAction({
             circle: true,
             size: "small",
             type: "default",
-            disabled,
-            class: tableIconActionClass(type),
+            disabled: disabled || loading,
+            class: [
+              tableIconActionClass(type),
+              loading ? "table-icon-action--loading" : null,
+            ],
             "aria-label": label,
+            "aria-busy": loading || undefined,
             onClick: (e) => {
               e.stopPropagation();
+              if (loading) return;
               onClick?.(e);
             },
           },
           {
-            default: () => h(NIcon, { size: 16, component: icon }),
+            default: () =>
+              h(NIcon, {
+                size: 16,
+                component: icon,
+                class: loading ? "table-icon-action__spin" : undefined,
+              }),
           }
         ),
       default: () => label,

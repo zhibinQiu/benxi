@@ -48,6 +48,7 @@ class _BindingInfo:
     skill_names: list[str] = field(default_factory=list)
     runtime_tool_names: list[str] = field(default_factory=list)
     config_md: str | None = None
+    mount_count: int = 0
 
 
 # 手动 TTL 缓存 — 避免 ORM 对象跨越 session 成为 detached
@@ -76,6 +77,7 @@ def _binding_map(db: Session) -> dict[str, _BindingInfo]:
                 skill_names=list(row.skill_names) if row.skill_names is not None else [],
                 runtime_tool_names=list(row.runtime_tool_names) if row.runtime_tool_names is not None else [],
                 config_md=str(row.config_md) if row.config_md else None,
+                mount_count=len(row.knowledge_mounts or []),
             )
         _binding_cache["_"] = (now, result)
         return result
@@ -272,6 +274,7 @@ def _to_out_with_prefetched(
         tool_categories=_tool_names_to_categories(runtime_names),
         tool_count=len(runtime_names),
         active_conversations=active_count,
+        mount_count=binding.mount_count if binding is not None else 0,
     )
 
 
@@ -324,6 +327,7 @@ def _to_out(
         tool_categories=_tool_names_to_categories(runtime_names),
         tool_count=len(runtime_names),
         active_conversations=active_count,
+        mount_count=binding.mount_count if binding is not None else 0,
     )
 
 
@@ -589,7 +593,11 @@ def is_agent_enabled(db: Session, agent_id: str) -> bool:
 
 
 def is_agent_service_enabled(db: Session, agent_id: str) -> bool:
-    """AIP 对外服务是否开放（需同时启用内部智能体）。"""
+    """对外服务是否开放。
+
+    - 专精 Agent：AIP 发现与外部调用
+    - 小析（orchestrator）：本析智能 OpenAI 兼容 API
+    """
     if not is_agent_enabled(db, agent_id):
         return False
     binding = _binding_map(db).get(agent_id)

@@ -67,7 +67,7 @@ def promo_stats(
     from app.models.document import Document, DocumentStatus
     from app.models.note import Note
     from app.skills.registry import all_registered_skills, ensure_skills_loaded
-    from app.tool_center.registry import list_tool_descriptors
+    from app.tools.registry import list_tool_descriptors
 
     # 知识库文档（未删除的活跃文档）
     documents = int(
@@ -88,7 +88,7 @@ def promo_stats(
     registered = list(all_registered_skills())
     skills = len(registered)
     registered_names = {getattr(s, "name", None) for s in registered}
-    skills_root = Path(__file__).resolve().parents[2] / "agent_skills"
+    skills_root = Path(__file__).resolve().parents[2] / "agent_md" / "skills"
     if skills_root.is_dir():
         for p in skills_root.iterdir():
             if p.is_dir() and (p / "SKILL.md").exists() and p.name not in registered_names:

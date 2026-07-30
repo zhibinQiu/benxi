@@ -1,8 +1,8 @@
-"""GB/Z 185.2 智能体身份码（AID）— agentkit 适配层。"""
+"""GB/Z 185.2 智能体身份码（AID）— app.agent 适配层。"""
 
 from __future__ import annotations
 
-from app.agentkit.aip.aid import (
+from app.agent.aip.aid import (
     AidConfig,
     build_agent_aid as _build_agent_aid,
     orchestrator_aid as _orchestrator_aid,

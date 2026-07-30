@@ -1,8 +1,8 @@
-"""智能体路由与编排 — 类型定义（agentkit-route + 平台路由文案）。"""
+"""智能体路由与编排 — 类型定义（app.agent.route + 平台路由文案）。"""
 
 from __future__ import annotations
 
-from app.agentkit.route.types import AgentRoute, AgentRoutePlan, RouteMode
+from app.agent.route.types import AgentRoute, AgentRoutePlan, RouteMode
 
 FALLBACK_AGENT_ID = "orchestrator"
 

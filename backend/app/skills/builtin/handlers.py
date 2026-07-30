@@ -67,7 +67,7 @@ async def _collect_stock_facts(
 
     mode: fundamental | shortterm | vpa
     """
-    from app.tool_center.skill_bridge import invoke_atomic_tool
+    from app.tools.skill_bridge import invoke_atomic_tool
 
     pure_code = _pure_stock_code(stock)
     name = (stock_name or "").strip() or pure_code
@@ -307,7 +307,7 @@ def _fill_placeholders(
 async def handle_web_search(
     ctx: SkillInvocationContext, params: dict[str, Any]
 ) -> SkillInvocationResult:
-    from app.tool_center.skill_bridge import invoke_atomic_tool
+    from app.tools.skill_bridge import invoke_atomic_tool
 
     query = str(params.get("query") or "").strip()
     if not query:
@@ -324,7 +324,7 @@ async def handle_web_search(
 async def handle_knowledge_retrieve(
     ctx: SkillInvocationContext, params: dict[str, Any]
 ) -> SkillInvocationResult:
-    from app.tool_center.skill_bridge import invoke_atomic_tool
+    from app.tools.skill_bridge import invoke_atomic_tool
 
     query = str(params.get("query") or "").strip()
     if not query:
@@ -351,7 +351,7 @@ async def handle_knowledge_retrieve(
 async def handle_kg_query(
     ctx: SkillInvocationContext, params: dict[str, Any]
 ) -> SkillInvocationResult:
-    from app.tool_center.skill_bridge import invoke_atomic_tool
+    from app.tools.skill_bridge import invoke_atomic_tool
 
     question = str(params.get("question") or params.get("query") or "").strip()
     if not question:
@@ -627,7 +627,7 @@ async def handle_carbon_qa_ask(
             },
         )
 
-    from app.tool_center.skill_bridge import invoke_atomic_tool
+    from app.tools.skill_bridge import invoke_atomic_tool
 
     if progress:
         progress(15, "正在从官方源获取双碳数据...")
@@ -646,14 +646,20 @@ async def handle_carbon_qa_ask(
     elif kind == "price":
         tool_calls.append(("carbon_price", {"keyword": question[:80]}))
     elif kind == "policy":
-        tool_calls.append(("carbon_policy", {"keyword": question[:80]}))
+        from app.services.carbon_service import normalize_policy_keyword
+
+        tool_calls.append(
+            ("carbon_policy", {"keyword": normalize_policy_keyword(question)})
+        )
     elif kind in ("emission", "ccer", "international", "local"):
         tool_calls.append(("carbon_data", {"topic": kind, "keyword": question[:80]}))
     else:
+        from app.services.carbon_service import normalize_policy_keyword
+
         # 综合问答：并行拉碳价 + 政策，必要时再补排放
         tool_calls.extend([
             ("carbon_price", {"keyword": question[:80]}),
-            ("carbon_policy", {"keyword": question[:80]}),
+            ("carbon_policy", {"keyword": normalize_policy_keyword(question)}),
         ])
 
     results = await asyncio.gather(*[
@@ -685,6 +691,9 @@ async def handle_carbon_qa_ask(
                 )
             if not md:
                 md = str(res.summary or "")[:6000]
+            elif tid == "carbon_policy":
+                # 默认 20 条精简列表，保留足够条目供「有哪些」作答
+                md = md[:20000]
             else:
                 md = md[:6000]
             parts.append(f"### {tid}\n\n{md}")
@@ -931,7 +940,7 @@ async def _knowledge_qa_deep_search(
     ctx: SkillInvocationContext, question: str
 ) -> tuple[bool, str, list[dict]]:
     """DeepSearch：联网检索并读前若干条全文（单次工具，不启多轮 search 子智能体）。"""
-    from app.tool_center.skill_bridge import invoke_atomic_tool
+    from app.tools.skill_bridge import invoke_atomic_tool
 
     res = await invoke_atomic_tool(
         ctx,
@@ -963,7 +972,7 @@ async def _knowledge_qa_simple_retrieve(
     ctx: SkillInvocationContext, question: str, params: dict[str, Any]
 ) -> tuple[bool, str, list[dict]]:
     """一次简单知识库检索。"""
-    from app.tool_center.skill_bridge import invoke_atomic_tool
+    from app.tools.skill_bridge import invoke_atomic_tool
 
     kb_params: dict[str, Any] = {"query": question, "limit": 6}
     doc_ids = _resolve_doc_ids(ctx, params)

@@ -1,11 +1,11 @@
-"""智能体路由 — 评分、模糊判定、handoff 上限（agentkit-route + 平台 DB/配置）。"""
+"""智能体路由 — 评分、模糊判定、handoff 上限（app.agent.route + 平台 DB/配置）。"""
 
 from __future__ import annotations
 
-from app.agentkit.route import RouteLimits, build_route_plan as _build_route_plan
-from app.agentkit.route import cap_routes as _cap_routes
-from app.agentkit.route import infer_route_mode as _infer_route_mode
-from app.agentkit.route import pick_route_with_fallback
+from app.agent.route import RouteLimits, build_route_plan as _build_route_plan
+from app.agent.route import cap_routes as _cap_routes
+from app.agent.route import infer_route_mode as _infer_route_mode
+from app.agent.route import pick_route_with_fallback
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -102,6 +102,7 @@ def should_use_llm_routing(
     force_replan: bool,
     prior_outcomes: list[str] | None = None,
 ) -> bool:
+    """Deprecated unused helper; kept for import compatibility."""
     if not get_settings().agent_routing_llm_enabled:
         return False
     return force_replan or is_routing_ambiguous(

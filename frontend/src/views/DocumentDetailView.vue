@@ -1312,7 +1312,7 @@ onMounted(() => {
     :version="previewVersion"
     pdf-fit-mode="width"
     width="min(960px, 96vw)"
-    viewport-height="min(45vh, 480px)"
+    viewport-height="min(70vh, 720px)"
     @download="onPreviewDownload"
   />
 
@@ -1631,11 +1631,11 @@ onMounted(() => {
   font-size: 12px !important;
   font-weight: 500 !important;
   color: var(--platform-text) !important;
-  border-bottom: 1px solid var(--platform-border-strong) !important;
+  border-bottom: 1px solid var(--platform-border-light) !important;
 }
 .documents-table :deep(.n-data-table-tbody .n-data-table-td) {
   font-size: 12px;
-  border-bottom: 1px solid var(--platform-border-strong) !important;
+  border-bottom: 1px solid var(--platform-border-light) !important;
   vertical-align: middle;
 }
 .documents-table :deep(.n-data-table-tr:last-child .n-data-table-td) {

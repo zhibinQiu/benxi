@@ -1,7 +1,7 @@
 import { ref } from "vue";
 import { fetchSystemFeatures } from "../api/system.js";
 
-const SYSTEM_FEATURES_CACHE_KEY = "platform:system-features";
+const SYSTEM_FEATURES_CACHE_KEY = "platform:system-features:v2";
 const SYSTEM_FEATURES_TTL = 300_000; // 5min
 
 const features = ref([]);

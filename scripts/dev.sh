@@ -11,6 +11,7 @@
 #   ./dev.sh remote-dev         # 生成本机 + 远程依赖 backend/.env
 #
 #   ./dev.sh sync [--frontend|--all|--no-restart-api]  同步代码到服务器（默认重启 API/Worker）
+#   ./dev.sh sync --automl                          同步并重建含 PyCaret 的 runtime 镜像
 #   ./dev.sh sync-frp-uninstall                 卸载服务器 frps
 #
 set -euo pipefail
@@ -244,7 +245,7 @@ usage() {
 环境与运维:
   stop                                     停止 Docker 栈 + 本机 dev 进程
   remote-dev                               生成 REMOTE_DEPS backend/.env
-  sync [--frontend|--all|--browser]                    同步代码到服务器并重启 API/Worker
+  sync [--frontend|--all|--browser|--automl]           同步代码到服务器并重启 API/Worker
   sync --with-data                         同步代码 + 服务器端数据备份（stack.sh backup，不拉到本地）
   sync --backup                            仅服务器端数据备份（不同步代码）
   sync-frp-uninstall                       卸载服务器 frps

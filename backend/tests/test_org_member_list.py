@@ -20,7 +20,8 @@ def test_person_org_affiliation_question():
     assert is_person_org_affiliation_question("邱智斌是哪个部门的")
     assert is_person_org_affiliation_question("李四在哪工作")
     assert not is_person_org_affiliation_question("碳配额政策有哪些要点")
-    assert is_platform_system_data_message("邱智斌是哪个公司的？")
+    # 人员归属走图谱，不再归类为平台账号管理
+    assert not is_platform_system_data_message("邱智斌是哪个公司的？")
 
 
 def test_affiliation_rule_plan_forces_kg_query():
@@ -76,8 +77,9 @@ def test_org_member_list_question_detects_dept_people_query():
     assert not is_org_member_list_question("碳配额政策有哪些要点")
 
 
-def test_platform_system_data_includes_dept_member_query():
-    assert is_platform_system_data_message("咨询服务部有哪些人")
+def test_platform_system_data_excludes_dept_member_query():
+    """部门成员清单走知识图谱，不算平台账号管理类系统数据。"""
+    assert not is_platform_system_data_message("咨询服务部有哪些人")
 
 
 def test_dept_member_query_skips_doc_retrieval():

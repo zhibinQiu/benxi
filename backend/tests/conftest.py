@@ -9,6 +9,13 @@ from app.main import create_app
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _register_platform_sql_bindings():
+    from app.services.platform_sql_bindings import register_platform_sql_bindings
+
+    register_platform_sql_bindings()
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _ensure_version_compare_tables():
     from app.database import engine
     from app.schema_migrate import (
@@ -21,6 +28,7 @@ def _ensure_version_compare_tables():
         ensure_version_compare_schema,
         ensure_version_compare_llm_summary_schema,
         ensure_document_version_blocks_schema,
+        drop_unused_org_columns,
     )
 
     ensure_aip_secret_keys_schema(engine)
@@ -30,6 +38,7 @@ def _ensure_version_compare_tables():
     ensure_version_compare_llm_summary_schema(engine)
     ensure_document_version_blocks_schema(engine)
     ensure_user_auth_token_version_schema(engine)
+    drop_unused_org_columns(engine)
     ensure_kg_schema(engine)
     ensure_subscription_item_removal_schema(engine)
 

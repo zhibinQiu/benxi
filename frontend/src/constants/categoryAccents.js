@@ -2,8 +2,8 @@
 
 export const FEATURE_CATEGORY_ACCENTS = Object.freeze({
   document: Object.freeze({
-    accent: "#2563eb",
-    soft: "rgba(37, 99, 235, 0.12)",
+    accent: "#005A9E",
+    soft: "rgba(0, 90, 158, 0.1)",
   }),
   tools: Object.freeze({
     accent: "var(--platform-accent)",
@@ -17,8 +17,8 @@ export const FEATURE_CATEGORY_ACCENTS = Object.freeze({
 
 export const ADMIN_RESOURCE_GROUP_ACCENTS = Object.freeze({
   platform: Object.freeze({
-    accent: "#0067ff",
-    soft: "rgba(0, 103, 255, 0.1)",
+    accent: "#005A9E",
+    soft: "rgba(0, 90, 158, 0.1)",
   }),
   model: Object.freeze({
     accent: "var(--platform-accent-secondary)",
@@ -29,8 +29,8 @@ export const ADMIN_RESOURCE_GROUP_ACCENTS = Object.freeze({
     soft: "var(--platform-accent-soft)",
   }),
   default: Object.freeze({
-    accent: "#5b9cf5",
-    soft: "rgba(91, 156, 245, 0.1)",
+    accent: "#1A7FD4",
+    soft: "rgba(26, 127, 212, 0.1)",
   }),
 });
 

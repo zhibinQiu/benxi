@@ -9,8 +9,10 @@ def register_builtin_plugins() -> None:
         agent_skills,  # noqa: F401
         ai_home,  # noqa: F401
         ai_tools,  # noqa: F401
+        auto_ml,  # noqa: F401
         carbon_ai_v1,  # noqa: F401
         carbon_assistant,  # noqa: F401
+        carbon_news,  # noqa: F401 — 注册 id=carbon_news
         carbon_platform_v3,  # noqa: F401
         carbon_qa_v2,  # noqa: F401 — 注册 id=carbon_qa
         compare,  # noqa: F401

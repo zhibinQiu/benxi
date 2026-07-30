@@ -33,6 +33,8 @@ def workflow_event(
     step_id: str = "",
     **extra: Any,
 ) -> dict[str, Any]:
+    from app.agent.orchestrate.protocol import enrich_workflow_data
+
     ev: dict[str, Any] = {"phase": phase, "title": title, "status": status}
     if detail:
         ev["detail"] = detail
@@ -41,7 +43,7 @@ def workflow_event(
     if step_id:
         ev["step_id"] = step_id
     ev.update(extra)
-    return ev
+    return enrich_workflow_data(ev)
 
 
 def workflow_event_json(

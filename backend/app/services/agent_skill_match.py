@@ -24,7 +24,7 @@ from app.services.agent_skill_routing import (
     pick_skill_route_scores,
     resolve_skill_routed_agent_scores,
 )
-from app.agentkit.skills.search import rank_skills_by_query, skill_query_tokens
+from app.agent.skills.search import rank_skills_by_query, skill_query_tokens
 from app.skills.catalog import list_all_skill_definitions
 from app.skills.types import SkillDefinition, SkillReadiness
 

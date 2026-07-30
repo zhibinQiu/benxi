@@ -49,24 +49,41 @@ const showShareModal = ref(false);
 const shareTargetReport = ref(null);
 const shareModalUrl = ref("");
 
-const CONCLUSION_TAGS = ["价值线索", "风险压力", "跟踪优先级"];
+/** 与报告 Markdown 中文标签匹配；展示经 displayTag 映射 */
+const CONCLUSION_MATCH_TAGS = ["价值线索", "风险压力", "跟踪优先级"];
+const CONCLUSION_TAG_I18N = {
+  价值线索: "financeAssistant.tagValueClue",
+  风险压力: "financeAssistant.tagRiskPressure",
+  跟踪优先级: "financeAssistant.tagTrackPriority",
+};
+function displayTag(label) {
+  const key = CONCLUSION_TAG_I18N[label];
+  return key ? t(key) : label;
+}
+function displayConclusionTags() {
+  return CONCLUSION_MATCH_TAGS.map(displayTag);
+}
 
-/** 报告类型中文（含生成前选择的圆桌子类型 / 方向） */
+/** 报告类型标签（含圆桌类型 / 方向） */
 function reportTypeLabel(report) {
   const type = report?.report_type;
-  if (type === "ai") return "AI 解读";
-  if (type === "vpa") return "量价会诊";
+  if (type === "ai") return t("financeAssistant.reportAi");
+  if (type === "vpa") return t("financeAssistant.reportVpa");
   if (type === "roundtable") {
-    const kind = report.roundtable_type === "research" ? "专业研究" : "辩论圆桌";
-    const dir = report.research_direction === "shortterm" ? "短线" : "基本面";
-    return `圆桌报告 · ${kind} · ${dir}`;
+    const kind = report.roundtable_type === "research"
+      ? t("financeAssistant.typeRoundtableResearch")
+      : t("financeAssistant.typeRoundtableDebate");
+    const dir = report.research_direction === "shortterm"
+      ? t("financeAssistant.typeShortterm")
+      : t("financeAssistant.typeFundamental");
+    return t("financeAssistant.roundtableReportLabel", { kind, dir });
   }
-  return type || "报告";
+  return type || t("financeAssistant.reportFallback");
 }
 
 function reportCardTitle(report) {
-  const name = (report?.stock_name || "").trim() || report?.stock_code || "股票";
-  return `${name}研究报告`;
+  const name = (report?.stock_name || "").trim() || report?.stock_code || t("financeAssistant.stockFallback");
+  return `${name}${t("financeAssistant.researchReportSuffix")}`;
 }
 
 function formatReportTime(iso) {
@@ -91,7 +108,7 @@ function shortenConclusion(text, maxLen = 42) {
 
 /** 从报告 Markdown 抽取短结论标题、一句话结论与三个结论标签 */
 function parseReportConclusion(content) {
-  const empty = { tags: [...CONCLUSION_TAGS], title: "", sentence: "" };
+  const empty = { tags: displayConclusionTags(), title: "", sentence: "" };
   const raw = String(content || "").trim();
   if (!raw) return empty;
 
@@ -104,8 +121,11 @@ function parseReportConclusion(content) {
 
   const placeholder = /最终研究报告结论将在辩论结束后生成|结论将在/.test(block);
   if (placeholder) {
-    const sentence = "结论生成中，完成后可在此查看摘要。";
-    return { tags: [...CONCLUSION_TAGS], title: "结论生成中", sentence };
+    return {
+      tags: displayConclusionTags(),
+      title: t("financeAssistant.conclusionGeneratingTitle"),
+      sentence: t("financeAssistant.conclusionGenerating"),
+    };
   }
 
   const lines = block.split(/\n+/).map((l) => l.trim()).filter(Boolean);
@@ -117,7 +137,7 @@ function parseReportConclusion(content) {
     const bullet = line.match(/^[-*•]\s*(.+)$/);
     if (bullet) {
       const item = bullet[1];
-      for (const label of CONCLUSION_TAGS) {
+      for (const label of CONCLUSION_MATCH_TAGS) {
         if (item.includes(label) && !foundTags.includes(label)) foundTags.push(label);
       }
       continue;
@@ -128,9 +148,9 @@ function parseReportConclusion(content) {
     }
   }
 
-  const full = sentence || "报告已生成，点击阅读查看完整研究结论。";
+  const full = sentence || t("financeAssistant.conclusionReady");
   return {
-    tags: foundTags.length ? foundTags : [...CONCLUSION_TAGS],
+    tags: (foundTags.length ? foundTags : CONCLUSION_MATCH_TAGS).map(displayTag),
     title: shortenConclusion(full),
     sentence: full,
   };
@@ -138,12 +158,12 @@ function parseReportConclusion(content) {
 
 // ── Tab ──
 const activeTab = ref("ai-research");
-const tabs = [
-  { value: "ai-research", label: "AI 研究" },
-  { value: "strategy", label: "实战策略" },
-  { value: "factors", label: "因子配置" },
-  { value: "gap", label: "断层研究" },
-];
+const tabs = computed(() => [
+  { value: "ai-research", label: t("financeAssistant.tabAiResearch") },
+  { value: "strategy", label: t("financeAssistant.tabStrategy") },
+  { value: "factors", label: t("financeAssistant.tabFactors") },
+  { value: "gap", label: t("financeAssistant.tabGap") },
+]);
 
 // ── 快捷股票（展示码带交易所后缀，如 000682.sz）──
 const quickStocks = [
@@ -153,12 +173,12 @@ const quickStocks = [
 ];
 
 // ── 量价会诊分析框架 ──
-const vpaFramework = [
-  { title: "指标", icon: SpeedometerOutline, items: "强弱评分、量比、换手率、资金流向与市场温度" },
-  { title: "形态", icon: GitBranchOutline, items: "K线结构、经典形态、放量/缩量关键位置" },
-  { title: "趋势", icon: AnalyticsOutline, items: "均线位置、近期涨跌幅、波段强度与背离风险" },
-  { title: "决策", icon: CompassOutline, items: "输出观察清单和风险边界，不给买卖指令" },
-];
+const vpaFramework = computed(() => [
+  { title: t("financeAssistant.vpaLayerIndicator"), icon: SpeedometerOutline, items: t("financeAssistant.vpaLayerIndicatorItems") },
+  { title: t("financeAssistant.vpaLayerPattern"), icon: GitBranchOutline, items: t("financeAssistant.vpaLayerPatternItems") },
+  { title: t("financeAssistant.vpaLayerTrend"), icon: AnalyticsOutline, items: t("financeAssistant.vpaLayerTrendItems") },
+  { title: t("financeAssistant.vpaLayerDecision"), icon: CompassOutline, items: t("financeAssistant.vpaLayerDecisionItems") },
+]);
 
 // ── 股票搜索状态 ──
 const stockQuery = ref("");
@@ -191,8 +211,8 @@ const directionCards = computed(() => [
 ]);
 
 const card3Title = computed(() => {
-  if (reportType.value === "ai" || reportType.value === "roundtable") return "配置";
-  return "分析框架";
+  if (reportType.value === "ai" || reportType.value === "roundtable") return t("financeAssistant.configLabel");
+  return t("financeAssistant.frameworkLabel");
 });
 
 const showAiContext = computed(() => reportType.value === "ai");
@@ -200,9 +220,9 @@ const showRoundtableConfig = computed(() => reportType.value === "roundtable");
 const showVpaHint = computed(() => reportType.value === "vpa");
 
 const actionLabel = computed(() => {
-  if (reportType.value === "ai") return "生成解读";
-  if (reportType.value === "roundtable") return "生成专业圆桌";
-  return "运行量价会诊";
+  if (reportType.value === "ai") return t("financeAssistant.btnAiSummary");
+  if (reportType.value === "roundtable") return t("financeAssistant.btnRoundtable");
+  return t("financeAssistant.btnVpa");
 });
 const actionDisabled = computed(() => !selectedStock.value || submitting.value);
 
@@ -237,9 +257,9 @@ const pagedHistoryCards = computed(() => {
     conclusion:
       report.status === "failed"
         ? {
-            tags: [...CONCLUSION_TAGS],
-            title: "生成失败",
-            sentence: report.error_message || "生成失败",
+            tags: displayConclusionTags(),
+            title: t("financeAssistant.taskFailed"),
+            sentence: report.error_message || t("financeAssistant.taskFailed"),
           }
         : parseReportConclusion(report.content),
   }));
@@ -261,10 +281,10 @@ async function doSearch() {
     const results = await searchStocks(q);
     stockSearchResults.value = results || [];
     showDropdown.value = true;
-    if (!stockSearchResults.value.length) ui.warning("未找到匹配结果");
+    if (!stockSearchResults.value.length) ui.warning(t("financeAssistant.noSearchResults"));
   } catch {
     stockSearchResults.value = [];
-    ui.error("搜索失败");
+    ui.error(t("financeAssistant.searchFailed"));
   } finally {
     stockSearching.value = false;
   }
@@ -301,12 +321,12 @@ async function handleAction() {
       payload.research_direction = researchDirection.value;
     }
     await submitReport(payload);
-    ui.success("任务已提交，后台分析中");
+    ui.success(t("financeAssistant.taskSubmitted"));
     await fetchAllReports();
     startPolling();
     boostNotificationPolling(15000);
   } catch {
-    ui.error("提交失败");
+    ui.error(t("financeAssistant.submitFailed"));
   } finally {
     submitting.value = false;
   }
@@ -334,21 +354,21 @@ function stopPolling() { if (pollTimer !== null) { clearTimeout(pollTimer); poll
 async function handleCancelTask(taskId) {
   try {
     await cancelReport(taskId);
-    ui.success("任务已取消");
+    ui.success(t("financeAssistant.cancelOk"));
     await fetchAllReports();
   } catch {
-    ui.error("取消失败");
+    ui.error(t("financeAssistant.cancelFailed"));
   }
 }
 
 async function handleDeleteReport(reportId) {
   ui.confirmDelete({
-    title: "确认删除",
-    content: "确定要删除此报告吗？删除后无法恢复。",
-    positiveText: "确定",
+    title: t("financeAssistant.deleteConfirmTitle"),
+    content: t("financeAssistant.deleteConfirmContent"),
+    positiveText: t("financeAssistant.deleteConfirmOk"),
     onPositive: async () => {
       await deleteReport(reportId);
-      ui.success("已删除");
+      ui.success(t("financeAssistant.deleted"));
       await fetchAllReports();
     },
   });
@@ -356,12 +376,12 @@ async function handleDeleteReport(reportId) {
 
 async function handleDownload(reportId, fmt = "md") {
   try { await downloadReport(reportId, fmt); }
-  catch { ui.error("下载失败"); }
+  catch { ui.error(t("financeAssistant.downloadFailed")); }
 }
 
 async function handleViewReport(report) {
   try { await viewReport(report.id, report.share_token); }
-  catch { ui.error("查看报告失败"); }
+  catch { ui.error(t("financeAssistant.viewReportFailed")); }
 }
 
 async function handleImportLibrary(report) {
@@ -369,9 +389,9 @@ async function handleImportLibrary(report) {
   importingLibraryId.value = report.id;
   try {
     const res = await importReportToLibrary(report.id);
-    ui.success(res?.message || "已加入个人文档库（未分类）");
+    ui.success(res?.message || t("financeAssistant.addedToLibrary"));
   } catch (e) {
-    ui.error(e?.message || "加入文档库失败");
+    ui.error(e?.message || t("financeAssistant.addToLibraryFailed"));
   } finally {
     importingLibraryId.value = null;
   }
@@ -394,18 +414,18 @@ async function generateOrRefreshReportShare(report, { regenerate = true } = {}) 
   try {
     const res = await shareReport(target.id, { regenerate });
     const token = res?.share_token;
-    if (!token) throw new Error("未返回分享令牌");
+    if (!token) throw new Error(t("financeAssistant.shareNoToken"));
     target.share_token = token;
     const url = getReportShareUrl(token);
     shareModalUrl.value = url;
     try {
       await navigator.clipboard.writeText(url);
-      ui.success(regenerate ? "已重新分享，链接已复制" : "链接已复制");
+      ui.success(regenerate ? t("financeAssistant.shareCopiedRegen") : t("financeAssistant.shareCopied"));
     } catch {
-      ui.success(regenerate ? "已重新分享" : "分享链接已生成");
+      ui.success(regenerate ? t("financeAssistant.shareCreatedRegen") : t("financeAssistant.shareCreated"));
     }
   } catch (e) {
-    ui.error(e?.message || "分享失败");
+    ui.error(e?.message || t("financeAssistant.shareFailed"));
   } finally {
     sharingReportId.value = null;
   }
@@ -419,9 +439,9 @@ async function unshareCurrentReport() {
     await unshareReport(target.id);
     target.share_token = null;
     shareModalUrl.value = "";
-    ui.success("已取消分享");
+    ui.success(t("financeAssistant.unshareOk"));
   } catch (e) {
-    ui.error(e?.message || "取消分享失败");
+    ui.error(e?.message || t("financeAssistant.unshareFailed"));
   } finally {
     sharingReportId.value = null;
   }
@@ -432,9 +452,9 @@ async function copyShareModalUrl() {
   if (!url) return;
   try {
     await navigator.clipboard.writeText(url);
-    ui.success("链接已复制");
+    ui.success(t("financeAssistant.copyOk"));
   } catch {
-    ui.error("复制失败");
+    ui.error(t("financeAssistant.copyFailed"));
   }
 }
 
@@ -445,25 +465,31 @@ onMounted(() => {
 onUnmounted(() => stopPolling());
 
 function statusLabel(s) {
-  const m = { pending: "排队中", running: "进行中", completed: "已完成", failed: "失败", cancelled: "已取消" };
-  return m[s] || s;
+  const map = {
+    pending: t("financeAssistant.statusPending"),
+    running: t("financeAssistant.statusRunning"),
+    completed: t("financeAssistant.statusCompleted"),
+    failed: t("financeAssistant.statusFailed"),
+    cancelled: t("financeAssistant.statusCancelled"),
+  };
+  return map[s] || s;
 }
 
 // ── 占位数据 ──
-const strategyPlans = [
-  { name: "均线低吸策略", desc: "5/10/20 日均线金叉买入，死叉卖出", interval: "日线", perf: "+12.3%" },
-  { name: "放量突破策略", desc: "成交量放大 2 倍 + 突破前高入场", interval: "60分钟", perf: "+8.7%" },
-  { name: "MACD 底背离", desc: "价格新低而 MACD 不创新低时买入", interval: "日线", perf: "+15.1%" },
-];
+const strategyPlans = computed(() => [
+  { name: t("financeAssistant.strategyMaName"), desc: t("financeAssistant.strategyMaDesc"), interval: t("financeAssistant.strategyMaInterval"), perf: "+12.3%" },
+  { name: t("financeAssistant.strategyVolumeName"), desc: t("financeAssistant.strategyVolumeDesc"), interval: t("financeAssistant.strategyVolumeInterval"), perf: "+8.7%" },
+  { name: t("financeAssistant.strategyMacdName"), desc: t("financeAssistant.strategyMacdDesc"), interval: t("financeAssistant.strategyMacdInterval"), perf: "+15.1%" },
+]);
 
-const factorGroups = [
-  { name: "动量因子", desc: "过去 20 日收益率排名", enabled: true },
-  { name: "估值因子", desc: "PE / PB 历史分位数", enabled: true },
-  { name: "资金因子", desc: "主力净流入 / 大单占比", enabled: true },
-  { name: "情绪因子", desc: "换手率 / 融资余额变化", enabled: false },
-  { name: "波动因子", desc: "ATR / 振幅波动率", enabled: false },
-  { name: "质量因子", desc: "ROE / 毛利率 / 负债率", enabled: false },
-];
+const factorGroups = computed(() => [
+  { name: t("financeAssistant.factorMomentum"), desc: t("financeAssistant.factorMomentumDesc"), enabled: true },
+  { name: t("financeAssistant.factorValuation"), desc: t("financeAssistant.factorValuationDesc"), enabled: true },
+  { name: t("financeAssistant.factorCapital"), desc: t("financeAssistant.factorCapitalDesc"), enabled: true },
+  { name: t("financeAssistant.factorSentiment"), desc: t("financeAssistant.factorSentimentDesc"), enabled: false },
+  { name: t("financeAssistant.factorVolatility"), desc: t("financeAssistant.factorVolatilityDesc"), enabled: false },
+  { name: t("financeAssistant.factorQuality"), desc: t("financeAssistant.factorQualityDesc"), enabled: false },
+]);
 </script>
 
 <template>
@@ -498,7 +524,7 @@ const factorGroups = [
                       />
                       <n-button size="small" tertiary @click="doSearch">
                         <template #icon><n-icon :size="14" :component="SearchOutline" /></template>
-                        搜索
+                        {{ t("financeAssistant.search") }}
                       </n-button>
                     </div>
                     <div v-if="showDropdown && stockSearchResults.length" class="fa-dropdown">
@@ -597,7 +623,7 @@ const factorGroups = [
                     </div>
                   </div>
                   <div v-if="showVpaHint" class="fa-vpa-section">
-                    <div class="fa-vpa-intro">围绕指标、形态、趋势、决策四个层面，快速生成可复核的短线检查单。</div>
+                    <div class="fa-vpa-intro">{{ t("financeAssistant.vpaIntro") }}</div>
                     <div class="fa-vpa-grid">
                       <div v-for="f in vpaFramework" :key="f.title" class="fa-vpa-card">
                         <div class="fa-vpa-card-icon"><n-icon :size="14" :component="f.icon" /></div>
@@ -622,11 +648,11 @@ const factorGroups = [
               </div>
 
               <div class="fa-side">
-                <FeatureSection title="进行中的任务" dense>
+                <FeatureSection :title="t('financeAssistant.runningTasks')" dense>
                   <template #extra>
                     <n-tag v-if="runningTasks.length" size="tiny" :bordered="false" round>{{ runningTasks.length }}</n-tag>
                   </template>
-                  <div v-if="!runningTasks.length" class="fa-empty">暂无进行中的任务</div>
+                  <div v-if="!runningTasks.length" class="fa-empty">{{ t("financeAssistant.noRunningTasks") }}</div>
                   <div v-for="task in runningTasks" :key="task.id" class="fa-task-item">
                     <div class="fa-task-top">
                       <div class="fa-task-info">
@@ -654,11 +680,11 @@ const factorGroups = [
                   </div>
                 </FeatureSection>
 
-                <FeatureSection title="历史报告" dense>
+                <FeatureSection :title="t('financeAssistant.historyReports')" dense>
                   <div class="fa-history-search">
-                    <n-input v-model:value="historySearchQuery" placeholder="搜索报告（代码/名称/类型）" size="tiny" clearable />
+                    <n-input v-model:value="historySearchQuery" :placeholder="t('financeAssistant.historySearchPlaceholder')" size="tiny" clearable />
                   </div>
-                  <div v-if="!filteredHistory.length" class="fa-empty">暂无历史报告</div>
+                  <div v-if="!filteredHistory.length" class="fa-empty">{{ t("financeAssistant.noHistoryReports") }}</div>
                   <div v-for="{ report, conclusion } in pagedHistoryCards" :key="report.id" class="fa-history-card">
                     <div class="fa-history-card-hd">
                       <div class="fa-history-title">{{ reportCardTitle(report) }}</div>
@@ -673,7 +699,7 @@ const factorGroups = [
                     <div class="fa-conclusion">
                       <span class="fa-conclusion-badge">
                         <n-icon :size="12" :component="BulbOutline" />
-                        <span>研究结论</span>
+                        <span>{{ t("financeAssistant.conclusionBadge") }}</span>
                       </span>
                       <div class="fa-conclusion-title">{{ conclusion.title || conclusion.sentence }}</div>
                       <div class="fa-conclusion-tags">
@@ -700,13 +726,13 @@ const factorGroups = [
                       @click="handleViewReport(report)"
                     >
                       <template #icon><n-icon :component="BookOutline" /></template>
-                      阅读报告
+                      {{ t("financeAssistant.readReport") }}
                     </n-button>
 
                     <div class="fa-history-actions-row">
                       <IconAction
                         v-if="report.status === 'completed'"
-                        label="加入文档库"
+                        :label="t('financeAssistant.addToLibrary')"
                         :icon="FolderOpenOutline"
                         size="tiny"
                         :loading="importingLibraryId === report.id"
@@ -714,7 +740,7 @@ const factorGroups = [
                       />
                       <IconAction
                         v-if="report.status === 'completed'"
-                        label="分享"
+                        :label="t('financeAssistant.share')"
                         :icon="ShareSocialOutline"
                         size="tiny"
                         :active="!!report.share_token"
@@ -723,13 +749,13 @@ const factorGroups = [
                       />
                       <IconAction
                         v-if="report.status === 'completed'"
-                        label="下载"
+                        :label="t('financeAssistant.download')"
                         :icon="DownloadOutline"
                         size="tiny"
                         @click="handleDownload(report.id, 'md')"
                       />
                       <IconAction
-                        label="删除"
+                        :label="t('financeAssistant.delete')"
                         :icon="CloseCircleOutline"
                         size="tiny"
                         type="error"
@@ -755,7 +781,7 @@ const factorGroups = [
           <template v-if="tab.value === 'strategy'">
             <div class="fa-body fa-body--single">
               <div class="fa-main">
-                <FeatureSection title="策略监控">
+                <FeatureSection :title="t('financeAssistant.strategyMonitor')">
                   <div class="fa-strategy-grid">
                     <div v-for="plan in strategyPlans" :key="plan.name" class="fa-strategy-card">
                       <div class="fa-strategy-hd">
@@ -765,13 +791,13 @@ const factorGroups = [
                       <div class="fa-strategy-desc">{{ plan.desc }}</div>
                       <div class="fa-strategy-meta">
                         <n-tag size="tiny" :bordered="false">{{ plan.interval }}</n-tag>
-                        <n-button size="small" quaternary>运行回测</n-button>
+                        <n-button size="small" quaternary>{{ t("financeAssistant.runBacktest") }}</n-button>
                       </div>
                     </div>
                   </div>
                 </FeatureSection>
-                <FeatureSection title="持仓监控">
-                  <n-empty description="暂无持仓数据" />
+                <FeatureSection :title="t('financeAssistant.positionMonitor')">
+                  <n-empty :description="t('financeAssistant.noPositions')" />
                 </FeatureSection>
               </div>
             </div>
@@ -781,7 +807,7 @@ const factorGroups = [
           <template v-if="tab.value === 'factors'">
             <div class="fa-body fa-body--single">
               <div class="fa-main">
-                <FeatureSection title="因子开关">
+                <FeatureSection :title="t('financeAssistant.factorSwitches')">
                   <div class="fa-factor-grid">
                     <div v-for="f in factorGroups" :key="f.name" class="fa-factor-card" :class="{ 'fa-factor-card--on': f.enabled }">
                       <div class="fa-factor-top">
@@ -792,22 +818,22 @@ const factorGroups = [
                     </div>
                   </div>
                 </FeatureSection>
-                <FeatureSection title="组合权重">
+                <FeatureSection :title="t('financeAssistant.portfolioWeights')">
                   <div class="fa-factor-weights">
                     <div class="fa-factor-weight-row">
-                      <span>动量 30%</span><div class="fa-bar"><div class="fa-bar-fill" style="width:30%" /></div>
+                      <span>{{ t("financeAssistant.weightMomentum") }}</span><div class="fa-bar"><div class="fa-bar-fill" style="width:30%" /></div>
                     </div>
                     <div class="fa-factor-weight-row">
-                      <span>估值 25%</span><div class="fa-bar"><div class="fa-bar-fill" style="width:25%" /></div>
+                      <span>{{ t("financeAssistant.weightValuation") }}</span><div class="fa-bar"><div class="fa-bar-fill" style="width:25%" /></div>
                     </div>
                     <div class="fa-factor-weight-row">
-                      <span>资金 20%</span><div class="fa-bar"><div class="fa-bar-fill" style="width:20%" /></div>
+                      <span>{{ t("financeAssistant.weightCapital") }}</span><div class="fa-bar"><div class="fa-bar-fill" style="width:20%" /></div>
                     </div>
                     <div class="fa-factor-weight-row">
-                      <span>情绪 15%</span><div class="fa-bar"><div class="fa-bar-fill" style="width:15%" /></div>
+                      <span>{{ t("financeAssistant.weightSentiment") }}</span><div class="fa-bar"><div class="fa-bar-fill" style="width:15%" /></div>
                     </div>
                     <div class="fa-factor-weight-row">
-                      <span>波动 10%</span><div class="fa-bar"><div class="fa-bar-fill" style="width:10%" /></div>
+                      <span>{{ t("financeAssistant.weightVolatility") }}</span><div class="fa-bar"><div class="fa-bar-fill" style="width:10%" /></div>
                     </div>
                   </div>
                 </FeatureSection>
@@ -819,16 +845,16 @@ const factorGroups = [
           <template v-if="tab.value === 'gap'">
             <div class="fa-body fa-body--single">
               <div class="fa-main">
-                <FeatureSection title="业绩断层扫描">
-                  <n-empty description="暂无断层信号">
+                <FeatureSection :title="t('financeAssistant.gapScanTitle')">
+                  <n-empty :description="t('financeAssistant.gapScanEmpty')">
                     <template #extra>
-                      <n-button size="small" tertiary>开始扫描</n-button>
+                      <n-button size="small" tertiary>{{ t("financeAssistant.gapScanStart") }}</n-button>
                     </template>
                   </n-empty>
-                  <p class="fa-hint">业绩断层指财报发布后跳空缺口不回补。此处将扫描全市场业绩预告/财报并标记跳空缺口。</p>
+                  <p class="fa-hint">{{ t("financeAssistant.gapScanHint") }}</p>
                 </FeatureSection>
-                <FeatureSection title="缺口回补跟踪">
-                  <n-empty description="暂无跟踪数据" />
+                <FeatureSection :title="t('financeAssistant.gapTrackTitle')">
+                  <n-empty :description="t('financeAssistant.gapTrackEmpty')" />
                 </FeatureSection>
               </div>
             </div>
@@ -840,11 +866,11 @@ const factorGroups = [
 
   <ShareLinkModal
     v-model:show="showShareModal"
-    title="分享报告"
+    :title="t('financeAssistant.shareModalTitle')"
     :url="shareModalUrl"
     :shared="!!shareModalUrl"
     :loading="!!sharingReportId"
-    hint="链接可公开访问报告内容；重新分享将更新链接，旧链接失效。"
+    :hint="t('financeAssistant.shareModalHint')"
     @generate="generateOrRefreshReportShare(null, { regenerate: true })"
     @reshare="generateOrRefreshReportShare(null, { regenerate: true })"
     @unshare="unshareCurrentReport"
@@ -883,7 +909,7 @@ const factorGroups = [
 }
 .fa-view :deep(.n-tabs-tab--active),
 .fa-view :deep(.n-tabs-tab):hover {
-  color: var(--n-tab-text-color);
+  color: var(--platform-accent);
 }
 .fa-view :deep(.n-tabs-bar) {
   display: none;

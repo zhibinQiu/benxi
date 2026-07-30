@@ -177,6 +177,11 @@ onMounted(load);
   max-width: 984px;
 }
 
+.menu-settings-page :deep(.n-card > .n-card-header .n-card-header__main) {
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-normal);
+}
+
 .page-hint {
   display: block;
   margin-bottom: 14px;
@@ -186,8 +191,8 @@ onMounted(load);
 
 .menu-group__title {
   margin: 0 0 10px;
-  font-size: var(--platform-font-size-sm);
-  font-weight: 500;
+  font-size: var(--platform-font-size-base);
+  font-weight: var(--platform-font-weight-normal);
   line-height: 1.35;
   color: var(--platform-text);
 }
@@ -230,14 +235,14 @@ onMounted(load);
 }
 
 .menu-row__info strong {
-  font-size: var(--platform-font-size-sm);
+  font-size: var(--platform-font-size-base);
   font-weight: var(--platform-font-weight-normal);
   line-height: 1.4;
   color: var(--platform-text);
 }
 
 .menu-row__info :deep(.n-text) {
-  font-size: var(--platform-font-size-xs);
+  font-size: var(--platform-font-size-sm);
   line-height: 1.45;
   color: var(--platform-text-tertiary);
 }

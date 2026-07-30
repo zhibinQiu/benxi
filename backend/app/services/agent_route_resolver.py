@@ -1,11 +1,12 @@
 """智能体路由解析。
 
 标准化流程（能少则少）：
-  1. 确定性硬规则（标签 / 画图 / 定时）
-  2. 知识图谱可直答则止
-  3. Skill Agentic RAG → 倒排索引落 Agent
-  4. 无专精 Skill → LLM 读动态注入的 agents.md 选型
-  5. 兜底 orchestrator
+  1. 用户固定前缀指定智能体/技能（请让…： / 请使用…技能：）→ 硬定位
+  2. 确定性硬规则（标签 / 画图 / 定时）
+  3. 知识图谱可直答则止（仅分析冒号后正文）
+  4. Skill Agentic RAG → 倒排索引落 Agent
+  5. 无专精 Skill → LLM 读动态注入的 agents.md 选型
+  6. 兜底 orchestrator
 
 约束：Agent/Skill 业务偏好只写在 agents.md / skills.md，本模块只注入与解析。
 """
@@ -109,6 +110,8 @@ def _resolve_hard_rule_routes(db: Session, message: str) -> list[AgentRoute] | N
         return None
     from app.services.agent_skill_router import (
         is_diagram_generation_message,
+        is_org_member_list_question,
+        is_person_org_affiliation_question,
         match_knowledge_qa_hashtag,
         matches_scheduler_intent,
     )
@@ -117,6 +120,15 @@ def _resolve_hard_rule_routes(db: Session, message: str) -> list[AgentRoute] | N
         return [pick_route(db, "orchestrator", "知识问答 → knowledge-qa")]
     if is_diagram_generation_message(msg):
         return [pick_route(db, "orchestrator", "图表绘制：直接输出 Mermaid")]
+    # 人员归属 / 部门成员：必须走编排层本体语义中枢 + 知识图谱，禁止 platform/list_users
+    if is_person_org_affiliation_question(msg) or is_org_member_list_question(msg):
+        return [
+            pick_route(
+                db,
+                "orchestrator",
+                "人员组织归属/部门成员 → 本体语义中枢 + 知识图谱",
+            )
+        ]
     if matches_scheduler_intent(msg):
         return [pick_route(db, "platform", ROUTE_REASONS["platform"])]
     return None
@@ -367,14 +379,51 @@ async def resolve_agent_route_plan(
     _t0 = time.monotonic()
     outcomes = prior_outcomes if (force_replan or prior_outcomes) else None
 
+    # 0) 前端固定前缀：请让 {智能体}： / 请使用 {技能} 技能： → 先硬定位
+    from app.services.user_capability_directive import (
+        analysis_text_for_semantic,
+        resolve_user_capability_directive,
+    )
+
+    directive = None
+    try:
+        directive = resolve_user_capability_directive(db, msg, user=user)
+    except Exception:
+        _logger.exception("解析用户指定智能体/技能前缀失败，回退常规路由")
+    analysis_msg = analysis_text_for_semantic(msg)
+    if directive is not None and directive.resolved:
+        if directive.kind == "agent" and directive.agent_id:
+            routes = [
+                pick_route(
+                    db,
+                    directive.agent_id,
+                    f"用户指定智能体 `{directive.raw_label}`",
+                )
+            ]
+            source = "user_agent_directive"
+        else:
+            agent_id = directive.agent_id or "orchestrator"
+            routes = [
+                pick_route(
+                    db,
+                    agent_id,
+                    f"用户指定技能 `{directive.skill_name or directive.raw_label}`",
+                )
+            ]
+            source = "user_skill_directive"
+        plan = _plan_from_routes(db, msg, routes, source=source, settings=settings)
+        # 用户已指定技能/智能体：能力选型走 Catalog，不再用 KG 探测掺进执行过程
+        _logger.info("route %s %.1fs", source, time.monotonic() - _t0)
+        return _done(plan, kg="")
+
     hard = _resolve_hard_rule_routes(db, msg)
     if hard is not None:
         plan = _plan_from_routes(db, msg, hard, source="hard_rule", settings=settings)
         _logger.info("route hard_rule %.1fs", time.monotonic() - _t0)
         return _done(plan)
 
-    # KG
-    from app.benxi_semantic import try_direct_answer_from_decision
+    # KG：只用冒号后分析正文（无前缀则为全文）
+    from app.semantic import try_direct_answer_from_decision
     from app.core.conversation_turn_context import effective_question_for_retrieval
     from app.services.agent_planner import (
         peek_cached_kg_direct_reply,
@@ -383,18 +432,19 @@ async def resolve_agent_route_plan(
     )
     from app.services.agent_skill_router import should_skip_kg_probe
 
-    kg_q = effective_question_for_retrieval(msg, chat_history).strip() or msg
+    kg_seed = analysis_msg or msg
+    kg_q = effective_question_for_retrieval(kg_seed, chat_history).strip() or kg_seed
     kg_text = ""
-    if not should_skip_kg_probe(msg):
+    if kg_seed and not should_skip_kg_probe(kg_seed):
         kg_decision = await resolve_kg_decision_context(
-            db, user, msg, history=chat_history, mode="probe"
+            db, user, kg_seed, history=chat_history, mode="probe"
         )
         kg_text = (
             (kg_decision.planning_text(max_chars=1800) if kg_decision else "")
             or peek_cached_kg_planning_text(uid, kg_q)
         )
         kg_reply = (
-            try_direct_answer_from_decision(kg_decision, msg)
+            try_direct_answer_from_decision(kg_decision, kg_seed)
             or peek_cached_kg_direct_reply(uid, kg_q)
         )
         if kg_reply:

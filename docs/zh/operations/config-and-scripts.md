@@ -1,4 +1,4 @@
-# 配置文件与脚本说明（v4.8.8）
+# 配置文件与脚本说明（v4.9.0）
 
 > 本文说明当前系统**仍在使用**的 Compose 编排文件、环境配置与脚本职责。  
 > 数据存储与数据库连接见 [组件位置与数据存储](components-and-storage.md)。
@@ -67,6 +67,16 @@ flowchart LR
 
 仅在服务器跑依赖、本机跑 API 时使用。映射 postgres:40002、redis:40003 … knowflow-mysql:40009。  
 模板：`.env.server.deps.example`。
+
+#### `compose.firecrawl.yaml` — FireCrawl 自托管（可选）
+
+独立 compose 项目（`zhitan-firecrawl`），加入外部网络 `benxi`，供平台 API 内网调用 `http://firecrawl-api:3002`。  
+不并入主栈 profile，需单独启停：
+
+```bash
+docker compose -f configs/compose/compose.firecrawl.yaml up -d
+docker compose -f configs/compose/compose.firecrawl.yaml down
+```
 
 #### `deploy/knowflow.yml` — KnowFlow profile
 
@@ -155,6 +165,8 @@ bash scripts/setup-stack-env.sh   # 合并 platform/.env → 根 .env
 ## 4. 文档站（MkDocs）
 
 系统文档使用 [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) 构建，源码在 `docs/zh/`，导航见 `mkdocs.yml`。
+
+**查阅入口**：宣传页底部「产品文档」→ [https://zhibinQiu.github.io/benxi/](https://zhibinQiu.github.io/benxi/)（公开站）；本地/内网预览用下方 `./dev.sh docs`（默认 :40100）。
 
 ### 4.1 独立服务启动（推荐）
 

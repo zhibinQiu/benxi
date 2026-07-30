@@ -106,6 +106,14 @@ async def _watchdog_loop() -> None:
                 await asyncio.to_thread(cancel_stale_background_jobs)
         except Exception:
             logger.exception("后台任务超时看门狗检查失败")
+        try:
+            from app.services.document_index_coordinator import (
+                recover_orphaned_awaiting_parse_jobs,
+            )
+
+            await asyncio.to_thread(recover_orphaned_awaiting_parse_jobs)
+        except Exception:
+            logger.exception("续跑无租约文档解析等待任务失败")
         await asyncio.sleep(interval)
 
 

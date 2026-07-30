@@ -506,7 +506,7 @@ _KEYWORD_ONLY_MIN_RAW = 3
 
 def _normalize_keyword_score_100(raw: float, query: str) -> float:
     """将关键词原始分映射到 0–100，与 Embedding(sim*100) 同量纲。"""
-    from app.agentkit.skills.search import skill_query_tokens
+    from app.agent.skills.search import skill_query_tokens
 
     tokens = skill_query_tokens(query)
     if raw <= 0 or not tokens:

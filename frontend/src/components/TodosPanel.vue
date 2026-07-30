@@ -838,7 +838,7 @@ defineExpose({ load, refresh: load });
 .todos-page__toolbar {
   flex-shrink: 0;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   background: var(--platform-bg-secondary);
 }
 

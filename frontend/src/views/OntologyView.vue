@@ -1,6 +1,32 @@
 <template>
   <div class="ontology-wrapper">
-    <Teleport to="#header-page-tools">
+    <Teleport
+      v-if="headerTeleportReady && headerExtensionActive"
+      to="#header-title-adjacent"
+    >
+      <n-radio-group
+        class="ontology-header-mode"
+        size="small"
+        :value="activeMode"
+        @update:value="onModeChange"
+      >
+        <n-radio-button value="ontology">
+          本体模型
+          <span class="ontology-header-mode__count">{{ stats.entityTypeCount }}</span>
+          <span class="ontology-header-mode__count">· 关系 {{ stats.relationTypeCount }}</span>
+        </n-radio-button>
+        <n-radio-button value="kg">
+          知识图谱
+          <span class="ontology-header-mode__count">{{ stats.entityTotal }}</span>
+          <span class="ontology-header-mode__count">· 关系 {{ stats.relationTotal }}</span>
+        </n-radio-button>
+      </n-radio-group>
+    </Teleport>
+
+    <Teleport
+      v-if="headerTeleportReady && headerExtensionActive"
+      to="#header-page-tools"
+    >
       <n-dropdown trigger="click" :options="syncMenuOptions" @select="handleSyncSelect">
         <n-button quaternary size="tiny" class="header-icon-btn" aria-label="同步平台数据" :loading="syncing">
           <template #icon><n-icon :size="14"><CloudDownloadOutline /></n-icon></template>
@@ -14,151 +40,78 @@
       </n-button>
     </Teleport>
 
-    <div v-if="showSeed && !loading" class="ontology-empty">
-      <div class="ontology-empty__icon">
-        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="48" height="48">
-          <circle cx="16" cy="16" r="6" />
-          <circle cx="36" cy="14" r="5" />
-          <circle cx="30" cy="36" r="5" />
-          <line x1="21" y1="14" x2="31" y2="14" />
-          <line x1="18" y1="19" x2="27" y2="33" />
-          <line x1="34" y1="19" x2="32" y2="32" />
-        </svg>
-      </div>
-      <h2 class="ontology-empty__title">本体定义</h2>
-      <p class="ontology-empty__desc">
-        本体定义包含模式层（实体类型、关系类型、公理）与实例层（图谱实体、关系与探索）。
-        可先初始化默认本体，再同步平台组织/智能体，或从文档抽取实例。
-      </p>
+    <div v-if="schemaLoadError && !loading" class="ontology-empty">
+      <h2 class="ontology-empty__title">本体加载失败</h2>
+      <p class="ontology-empty__desc">{{ schemaLoadError }}</p>
       <div class="ontology-empty__actions">
         <n-button quaternary size="small" class="ontology-empty__btn" @click="refreshAll">
-          <template #icon><n-icon :size="14"><RefreshOutline /></n-icon></template>
-          刷新
+          重试
         </n-button>
+      </div>
+    </div>
+
+    <div v-else-if="showSeed && !loading" class="ontology-empty">
+      <h2 class="ontology-empty__title">本体定义</h2>
+      <p class="ontology-empty__desc">
+        尚无语义模型。可初始化默认概念与关系类型，再同步或抽取知识图谱实例。
+      </p>
+      <div class="ontology-empty__actions">
+        <n-button quaternary size="small" class="ontology-empty__btn" @click="refreshAll">刷新</n-button>
         <n-button quaternary size="small" class="ontology-empty__btn" @click="handleSeedDefaults">
-          <template #icon><n-icon :size="14"><FlashOutline /></n-icon></template>
           初始化默认本体
         </n-button>
       </div>
     </div>
 
-    <n-space v-if="filterLabel" class="filter-bar" justify="center">
-      <n-tag closable type="info" @close="clearFilter">
-        <template #icon><n-icon><FilterOutline /></n-icon></template>
-        筛选: {{ filterLabel }}
-      </n-tag>
-    </n-space>
-
-    <n-tabs
-      v-show="!showSeed || loading"
-      v-model:value="activeTab"
-      type="line"
-      animated
-      @update:value="onTabChange"
-    >
-      <n-tab-pane name="architecture" tab="本体感知架构">
-        <OntologyGraphMap
-          :entity-types="entityTypes"
-          :relation-types="relationTypes"
-          :axioms="axioms"
-          :loading="loading"
-          @navigate="(tab) => activeTab = tab"
-        />
-      </n-tab-pane>
-      <n-tab-pane name="entity-types" :tab="`实体类型 (${stats.entityTypeCount})`">
-        <EntityTypesPanel
-          ref="entityTypesRef"
-          :entity-types="entityTypes"
-          :loading="loading"
-          @refresh="fetchEntityTypes"
-        />
-      </n-tab-pane>
-      <n-tab-pane name="relation-types" :tab="`关系类型 (${stats.relationTypeCount})`">
-        <RelationTypesPanel
-          ref="relationTypesRef"
-          :relation-types="relationTypes"
-          :loading="loading"
-          @refresh="fetchRelationTypes"
-        />
-      </n-tab-pane>
-      <n-tab-pane name="axioms" :tab="`公理规则 (${stats.axiomCount})`">
-        <AxiomsPanel
-          ref="axiomsRef"
-          :axioms="axioms"
-          :loading="loading"
-          @refresh="fetchAxioms"
-        />
-      </n-tab-pane>
-      <n-tab-pane name="entities" :tab="`实体 (${stats.entityTotal})`">
-        <KgEntityList
-          ref="entityListRef"
-          :entities="entities"
-          :entity-types="entityTypes"
-          :loading="loadingEntities"
-          @refresh="fetchEntities"
-        />
-      </n-tab-pane>
-      <n-tab-pane name="relations" :tab="`关系 (${stats.relationTotal})`">
-        <KgRelationList
-          ref="relationListRef"
-          :relations="instanceRelations"
-          :relation-types="relationTypes"
-          :entities="entities"
-          :loading="loadingRelations"
-          @refresh="fetchInstanceRelations"
-        />
-      </n-tab-pane>
-      <n-tab-pane name="graph" tab="图谱探索">
-        <KgGraphExplore
-          ref="graphExploreRef"
-          :graph-data="graphData"
-          :loading="loadingGraph"
-          @refresh="fetchGraph"
-          @focus-entity="onFocusEntity"
-        />
-      </n-tab-pane>
-      <n-tab-pane name="extraction" tab="LLM 抽取">
-        <KgExtractionPanel
-          ref="extractionPanelRef"
-          :entity-types="entityTypes"
-          @extracted="onExtracted"
-        />
-      </n-tab-pane>
-    </n-tabs>
+    <div v-else class="ontology-body">
+      <OntologyModelWorkbench
+        v-if="activeMode === 'ontology'"
+        ref="ontoWorkbenchRef"
+        :entity-types="entityTypes"
+        :relation-types="relationTypes"
+        :loading="loading"
+        @refresh="onOntologyRefresh"
+        @explore-concept="onExploreConcept"
+      />
+      <KgInstanceWorkbench
+        v-else
+        ref="kgWorkbenchRef"
+        :entities="entities"
+        :entity-types="entityTypes"
+        :relation-types="relationTypes"
+        :graph-data="graphData"
+        :loading="loadingEntities"
+        :loading-graph="loadingGraph"
+        @refresh="onKgRefresh"
+        @refresh-graph="onRefreshGraph"
+        @trace-concept="onTraceConcept"
+        @extracted="onExtracted"
+      />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, h, watch } from "vue";
+import { ref, reactive, computed, onMounted, onActivated, watch, nextTick, h } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useI18n } from "../composables/useI18n";
-import { useMessage } from "naive-ui";
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { usePageHeaderExtension } from "../composables/usePageHeaderExtension";
 import {
   RefreshOutline,
   FlashOutline,
   CloudDownloadOutline,
-  FilterOutline,
 } from "@vicons/ionicons5";
-import EntityTypesPanel from "../components/ontology/EntityTypesPanel.vue";
-import RelationTypesPanel from "../components/ontology/RelationTypesPanel.vue";
-import AxiomsPanel from "../components/ontology/AxiomsPanel.vue";
-import OntologyGraphMap from "../components/ontology/OntologyGraphMap.vue";
-import KgEntityList from "../components/kg/KgEntityList.vue";
-import KgRelationList from "../components/kg/KgRelationList.vue";
-import KgGraphExplore from "../components/kg/KgGraphExplore.vue";
-import KgExtractionPanel from "../components/kg/KgExtractionPanel.vue";
+import OntologyModelWorkbench from "../components/ontology/OntologyModelWorkbench.vue";
+import KgInstanceWorkbench from "../components/kg/KgInstanceWorkbench.vue";
 import {
   fetchOntologyEntityTypes,
   fetchOntologyRelationTypes,
-  fetchOntologyAxioms,
   fetchOntologyMeta,
   seedOntologyDefaults,
 } from "../api/ontology.js";
 import {
   fetchKgMeta,
   fetchKgEntities,
-  fetchKgRelations,
   fetchKgGraph,
   syncKgOrg,
   syncKgAgents,
@@ -166,117 +119,86 @@ import {
   syncKgAll,
   extractKgDocuments,
 } from "../api/kg.js";
+import { PLATFORM_JOBS_REFRESH_EVENT } from "../constants/platformEvents.js";
+import { cleanupBlockingUiArtifacts } from "../utils/blockingUiCleanup.js";
 
 defineOptions({ name: "OntologyView" });
 
-const VALID_TABS = new Set([
+const ONTOLOGY_TABS = new Set([
+  "ontology",
   "architecture",
   "entity-types",
   "relation-types",
   "axioms",
-  "entities",
-  "relations",
-  "graph",
-  "extraction",
 ]);
+const KG_TABS = new Set(["kg", "entities", "relations", "graph", "extraction"]);
 
-const { t } = useI18n();
-const message = useMessage();
+function normalizeMode(tab) {
+  const t = String(tab || "");
+  if (KG_TABS.has(t)) return "kg";
+  if (ONTOLOGY_TABS.has(t) || t === "ontology") return "ontology";
+  return "ontology";
+}
+
 const ui = usePlatformUi();
 const route = useRoute();
 const router = useRouter();
 
-const activeTab = ref("architecture");
+const activeMode = ref("ontology");
 const loading = ref(false);
 const loadingEntities = ref(false);
-const loadingRelations = ref(false);
 const loadingGraph = ref(false);
+const schemaLoadError = ref("");
 const entityTypes = ref([]);
 const relationTypes = ref([]);
-const axioms = ref([]);
 const entities = ref([]);
-const instanceRelations = ref([]);
 const graphData = ref({ nodes: [], edges: [] });
 const stats = reactive({
   entityTypeCount: 0,
   relationTypeCount: 0,
-  axiomCount: 0,
   entityTotal: 0,
   relationTotal: 0,
 });
-const showSeed = computed(() => entityTypes.value.length === 0);
-
-const entityTypesRef = ref(null);
-const relationTypesRef = ref(null);
-const axiomsRef = ref(null);
-const entityListRef = ref(null);
-const relationListRef = ref(null);
-const graphExploreRef = ref(null);
-const extractionPanelRef = ref(null);
-
-const filterEntityType = ref("");
-const filterRelationType = ref("");
-
-const filterLabel = computed(() => {
-  if (filterEntityType.value) {
-    const et = entityTypes.value.find((e) => e.code === filterEntityType.value);
-    return `实体类型: ${et?.label || filterEntityType.value}`;
-  }
-  if (filterRelationType.value) {
-    const rt = relationTypes.value.find((r) => r.code === filterRelationType.value);
-    return `关系类型: ${rt?.label || filterRelationType.value}`;
-  }
-  return "";
-});
-
-function clearFilter() {
-  filterEntityType.value = "";
-  filterRelationType.value = "";
-  const q = { ...route.query };
-  delete q.entityType;
-  delete q.relationType;
-  router.replace({ query: q });
-  fetchEntities();
-  fetchInstanceRelations();
-}
-
-function onTabChange(tab) {
-  const q = { ...route.query, tab };
-  router.replace({ query: q });
-  if (tab === "entities" || tab === "relations" || tab === "graph") {
-    ensureInstanceData();
-  }
-}
-
+const ontoWorkbenchRef = ref(null);
+const kgWorkbenchRef = ref(null);
 const syncing = ref(false);
+const bootstrapped = ref(false);
+const hasLoadedSchema = ref(false);
+const { headerExtensionActive } = usePageHeaderExtension();
+const headerTeleportReady = ref(false);
+
+function markHeaderTeleportReady() {
+  headerTeleportReady.value = !!(
+    document.getElementById("header-title-adjacent") &&
+    document.getElementById("header-page-tools")
+  );
+}
+
+function ensureHeaderTeleportReady() {
+  const tryMark = (left) => {
+    markHeaderTeleportReady();
+    if (!headerTeleportReady.value && left > 0) {
+      requestAnimationFrame(() => tryMark(left - 1));
+    }
+  };
+  nextTick(() => tryMark(8));
+}
+
+const showSeed = computed(
+  () =>
+    !schemaLoadError.value &&
+    !loading.value &&
+    entityTypes.value.length === 0 &&
+    !hasLoadedSchema.value
+);
 
 const syncMenuOptions = [
-  {
-    label: "组织（用户/部门）",
-    key: "org",
-    icon: () => h("span", { style: "font-size:16px" }, "🏢"),
-  },
-  {
-    label: "智能体/工具/Skill",
-    key: "agents",
-    icon: () => h("span", { style: "font-size:16px" }, "🤖"),
-  },
-  {
-    label: "智能体记忆",
-    key: "memory",
-    icon: () => h("span", { style: "font-size:16px" }, "🧠"),
-  },
-  {
-    label: "文档内容抽取",
-    key: "extract",
-    icon: () => h("span", { style: "font-size:16px" }, "📄"),
-  },
+  { label: "组织（用户/部门）", key: "org", icon: () => h("span", { style: "font-size:16px" }, "🏢") },
+  { label: "智能体/工具/Skill", key: "agents", icon: () => h("span", { style: "font-size:16px" }, "🤖") },
+  { label: "智能体记忆", key: "memory", icon: () => h("span", { style: "font-size:16px" }, "🧠") },
+  { label: "文档内容抽取", key: "extract", icon: () => h("span", { style: "font-size:16px" }, "📄") },
   { type: "divider", key: "d1" },
-  {
-    label: "一键全量同步",
-    key: "all",
-    icon: () => h("span", { style: "font-size:16px" }, "🔄"),
-  },
+  { label: "一键全量同步", key: "all", icon: () => h("span", { style: "font-size:16px" }, "🔄") },
 ];
 
 const syncLabels = {
@@ -286,6 +208,28 @@ const syncLabels = {
   extract: "文档内容",
   all: "全量数据",
 };
+
+function onModeChange(mode) {
+  activeMode.value = mode;
+  const q = { ...route.query, tab: mode };
+  // 顶栏切换到知识图谱时拉全量列表；概念筛选仅由「查看实例」带入 entityType
+  if (mode === "kg") {
+    delete q.entityType;
+  }
+  router.replace({ query: q });
+  nextTick(() => {
+    // 工作台 v-if 切换可能残留 drawer 遮罩，额外清一次
+    cleanupBlockingUiArtifacts({ aggressive: true });
+    if (mode === "ontology") ontoWorkbenchRef.value?.resize?.();
+    else {
+      clearGraph();
+      ensureInstanceData().then(() => {
+        kgWorkbenchRef.value?.reloadRelations?.();
+        kgWorkbenchRef.value?.resize?.();
+      });
+    }
+  });
+}
 
 async function handleSyncSelect(key) {
   if (syncing.value) return;
@@ -301,32 +245,19 @@ async function handleSyncSelect(key) {
     if (!fn) return;
     const res = await fn();
     const data = res || {};
-    const parts = [];
-    if (data.departments) parts.push(`部门 ${data.departments}`);
-    if (data.users) parts.push(`用户 ${data.users}`);
-    if (data.agents) parts.push(`智能体 ${data.agents}`);
-    if (data.tools) parts.push(`工具 ${data.tools}`);
-    if (data.skills) parts.push(`技能 ${data.skills}`);
-    if (data.relations) parts.push(`关系 ${data.relations}`);
-    if (data.entities) parts.push(`实体 ${data.entities}`);
-    if (data.entities_created) parts.push(`新增实体 ${data.entities_created}`);
-    if (data.relations_created) parts.push(`新增关系 ${data.relations_created}`);
-    if (data.processed) parts.push(`处理文档 ${data.processed}`);
-    if (data.org_departments) parts.push(`部门 ${data.org_departments}`);
-    if (data.org_users) parts.push(`用户 ${data.org_users}`);
-    if (data.agent_agents) parts.push(`智能体 ${data.agent_agents}`);
-    if (data.agent_tools) parts.push(`工具 ${data.agent_tools}`);
-    if (data.agent_skills) parts.push(`技能 ${data.agent_skills}`);
-    if (data.memory_entities) parts.push(`记忆条目 ${data.memory_entities}`);
-    if (data.deleted) parts.push(`清除 ${data.deleted}`);
-    if (data.org_deleted) parts.push(`清除组织 ${data.org_deleted}`);
-    if (data.agent_deleted) parts.push(`清除智能体 ${data.agent_deleted}`);
-    if (data.memory_deleted) parts.push(`清除记忆 ${data.memory_deleted}`);
-    message.success(`${syncLabels[key]}同步完成: ` + (parts.join("、") || "无变更"));
+    if (data.queued || data.job_id) {
+      ui.success(
+        data.message ||
+          `${syncLabels[key]}已加入后台任务，可在右上角「后台任务」查看进度`
+      );
+      window.dispatchEvent(new CustomEvent(PLATFORM_JOBS_REFRESH_EVENT));
+      return;
+    }
+    ui.success(`${syncLabels[key]}同步完成`);
     await refreshAll();
   } catch (err) {
     if (err?.code === "ROUTE_ABORT") return;
-    message.error(`${syncLabels[key]}同步失败: ` + (err.message || ""));
+    ui.error(`${syncLabels[key]}同步失败: ` + (err.message || ""));
   } finally {
     syncing.value = false;
   }
@@ -336,145 +267,236 @@ async function fetchSchemaMeta() {
   try {
     const metaRes = await fetchOntologyMeta();
     const meta = metaRes || {};
-    stats.entityTypeCount = meta.entity_type_count || 0;
-    stats.relationTypeCount = meta.relation_type_count || 0;
-    stats.axiomCount = meta.axiom_count || 0;
-  } catch {
-    /* ignore */
+    if (typeof meta.entity_type_count === "number") {
+      stats.entityTypeCount = meta.entity_type_count;
+    }
+    if (typeof meta.relation_type_count === "number") {
+      stats.relationTypeCount = meta.relation_type_count;
+    }
+  } catch (err) {
+    if (err?.code === "ROUTE_ABORT") return;
+    throw err;
   }
 }
 
-async function fetchInstanceMeta() {
-  try {
-    const res = await fetchKgMeta();
-    const data = res || {};
-    stats.entityTotal = data.entity_total || 0;
-    stats.relationTotal = data.relation_total || 0;
-  } catch {
-    /* ignore */
+function applyTypeCounts(entityCounts, relationCounts) {
+  if (entityCounts && typeof entityCounts === "object") {
+    entityTypes.value = entityTypes.value.map((et) => ({
+      ...et,
+      entity_count: entityCounts[et.code] ?? et.entity_count ?? 0,
+    }));
+  }
+  if (relationCounts && typeof relationCounts === "object") {
+    relationTypes.value = relationTypes.value.map((rt) => ({
+      ...rt,
+      relation_count: relationCounts[rt.code] ?? rt.relation_count ?? 0,
+    }));
   }
 }
 
 async function fetchEntityTypes() {
-  try {
-    const res = await fetchOntologyEntityTypes();
-    entityTypes.value = res || [];
-  } catch {
-    /* ignore */
-  }
+  const res = await fetchOntologyEntityTypes();
+  // 失败或空响应时保留旧数据，避免页面被误判为「空」
+  if (!Array.isArray(res)) return;
+  entityTypes.value = res;
+  stats.entityTypeCount = res.length;
 }
 
 async function fetchRelationTypes() {
-  try {
-    const res = await fetchOntologyRelationTypes();
-    relationTypes.value = res || [];
-  } catch {
-    /* ignore */
-  }
+  const res = await fetchOntologyRelationTypes();
+  if (!Array.isArray(res)) return;
+  relationTypes.value = res;
+  stats.relationTypeCount = res.length;
 }
 
-async function fetchAxioms() {
-  try {
-    const res = await fetchOntologyAxioms();
-    axioms.value = res || [];
-  } catch {
-    /* ignore */
-  }
-}
-
-async function fetchEntities() {
+async function fetchEntities(typeCode = null) {
   loadingEntities.value = true;
   try {
     const res = await fetchKgEntities({
-      limit: 200,
-      typeCode: filterEntityType.value || undefined,
+      limit: 500,
+      typeCode: typeCode || undefined,
     });
-    entities.value = res || [];
+    const rows = Array.isArray(res) ? res : res?.items;
+    if (Array.isArray(rows)) {
+      entities.value = rows;
+      // meta 失败时至少用列表长度兜底，避免顶栏长期显示 0
+      if (stats.entityTotal < rows.length) {
+        stats.entityTotal = rows.length;
+      }
+    }
   } catch (err) {
     if (err?.code === "ROUTE_ABORT") return;
-    message.error("加载实体失败: " + (err.message || ""));
+    ui.error("加载实体失败: " + (err.message || ""));
   } finally {
     loadingEntities.value = false;
-  }
-}
-
-async function fetchInstanceRelations() {
-  loadingRelations.value = true;
-  try {
-    const res = await fetchKgRelations({
-      typeCode: filterRelationType.value || undefined,
-    });
-    instanceRelations.value = res || [];
-  } catch (err) {
-    if (err?.code === "ROUTE_ABORT") return;
-    message.error("加载关系失败: " + (err.message || ""));
-  } finally {
-    loadingRelations.value = false;
   }
 }
 
 async function fetchGraph(focusEntityId = null, depth = 2) {
   loadingGraph.value = true;
   try {
-    const res = await fetchKgGraph({ focusEntityId, depth });
+    const res = await fetchKgGraph({
+      focusEntityId: focusEntityId || undefined,
+      depth,
+      limit: focusEntityId ? undefined : 300,
+    });
     graphData.value = res || { nodes: [], edges: [] };
   } catch (err) {
     if (err?.code === "ROUTE_ABORT") return;
-    message.error("加载图谱失败: " + (err.message || ""));
+    ui.error("加载图谱失败: " + (err.message || ""));
   } finally {
     loadingGraph.value = false;
   }
 }
 
-function onFocusEntity(entityId) {
-  activeTab.value = "graph";
-  onTabChange("graph");
-  fetchGraph(entityId, 2);
+function clearGraph() {
+  graphData.value = { nodes: [], edges: [] };
 }
 
-function onExtracted() {
-  message.success("抽取完成");
-  fetchInstanceMeta();
-  fetchEntities();
+function onRefreshGraph(focusEntityId = null, depth = 2) {
+  if (focusEntityId === "__clear__") {
+    clearGraph();
+    return;
+  }
+  return fetchGraph(focusEntityId || null, depth || 2);
 }
 
-async function ensureInstanceData() {
-  await Promise.all([fetchInstanceMeta(), fetchEntities(), fetchInstanceRelations()]);
+/** 实例列表 + meta；默认不拉图，节约内存。
+ * entityType 只做客户端筛选，避免服务端筛空后 Tab 显示 0。
+ */
+async function ensureInstanceData({ withGraph = false } = {}) {
+  const typeCode =
+    typeof route.query.entityType === "string" ? route.query.entityType : null;
+  await Promise.all([fetchInstanceMeta(), fetchEntities()]);
+  if (typeCode) {
+    await nextTick();
+    kgWorkbenchRef.value?.setTypeFilter?.(typeCode);
+  } else {
+    kgWorkbenchRef.value?.setTypeFilter?.(null);
+  }
+  if (withGraph) {
+    await fetchGraph();
+  }
+  kgWorkbenchRef.value?.reloadRelations?.();
 }
 
 async function fetchAll() {
   loading.value = true;
+  schemaLoadError.value = "";
   try {
-    await fetchSchemaMeta();
-    await Promise.all([fetchEntityTypes(), fetchRelationTypes(), fetchAxioms()]);
-    await ensureInstanceData();
+    const results = await Promise.allSettled([
+      fetchSchemaMeta(),
+      fetchEntityTypes(),
+      fetchRelationTypes(),
+      fetchInstanceMetaRaw(),
+    ]);
+    const metaRes = results[3].status === "fulfilled" ? results[3].value : null;
+    if (metaRes) {
+      applyTypeCounts(metaRes.entity_type_counts || {}, metaRes.relation_type_counts || {});
+    }
+    const schemaFailed = results[0].status === "rejected"
+      || results[1].status === "rejected"
+      || results[2].status === "rejected";
+    if (schemaFailed && entityTypes.value.length === 0) {
+      const err = [results[0], results[1], results[2]].find((r) => r.status === "rejected");
+      throw (err && err.status === "rejected" ? err.reason : new Error("无法加载本体定义"));
+    }
+    hasLoadedSchema.value = true;
+    if (activeMode.value === "kg") {
+      await ensureInstanceData();
+    }
   } catch (err) {
     if (err?.code === "ROUTE_ABORT") return;
-    message.error("加载本体数据失败: " + (err.message || ""));
+    if (entityTypes.value.length === 0) {
+      schemaLoadError.value = err.message || "无法加载本体定义";
+    }
+    ui.error("加载本体数据失败: " + (err.message || ""));
   } finally {
     loading.value = false;
   }
 }
 
+/** 拉取 kg meta，更新顶栏总数并返回原始计数对象 */
+async function fetchInstanceMetaRaw() {
+  try {
+    const res = await fetchKgMeta();
+    const data = res || {};
+    if (typeof data.entity_total === "number") stats.entityTotal = data.entity_total;
+    if (typeof data.relation_total === "number") stats.relationTotal = data.relation_total;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchInstanceMeta() {
+  const data = await fetchInstanceMetaRaw();
+  if (data) {
+    applyTypeCounts(data.entity_type_counts || {}, data.relation_type_counts || {});
+  }
+}
+
 function refreshAll() {
-  fetchAll();
+  return fetchAll().then(() => {
+    nextTick(() => {
+      ontoWorkbenchRef.value?.reloadViz?.();
+      ontoWorkbenchRef.value?.resize?.();
+      kgWorkbenchRef.value?.resize?.();
+    });
+  });
+}
+
+async function onOntologyRefresh() {
+  await Promise.all([fetchEntityTypes(), fetchRelationTypes(), fetchSchemaMeta()]);
+  await fetchInstanceMeta();
+  ontoWorkbenchRef.value?.reloadViz?.();
+}
+
+async function onKgRefresh() {
+  await Promise.all([fetchEntities(), fetchInstanceMeta()]);
+  kgWorkbenchRef.value?.reloadRelations?.();
+}
+
+function onExtracted() {
+  onKgRefresh();
+  // 抽取后不自动拉全图，由用户点刷新
+  onOntologyRefresh();
+}
+
+function onExploreConcept(payload) {
+  activeMode.value = "kg";
+  router.replace({
+    query: { ...route.query, tab: "kg", entityType: payload.code },
+  });
+  clearGraph();
+  ensureInstanceData().then(() => {
+    nextTick(() => {
+      kgWorkbenchRef.value?.setTypeFilter?.(payload.code);
+      kgWorkbenchRef.value?.resize?.();
+    });
+  });
+}
+
+function onTraceConcept(payload) {
+  activeMode.value = "ontology";
+  router.replace({
+    query: { ...route.query, tab: "ontology", entityType: payload.code },
+  });
+  nextTick(() => ontoWorkbenchRef.value?.resize?.());
+  ui.info(`已切换到本体模型：${payload.label || payload.code || ""}`);
 }
 
 function handleSeedDefaults() {
   ui.confirmAction({
     title: "初始化默认本体",
-    content:
-      "将创建预定义的实体类型（组织、人员、文档等）和关系类型（包含、任职、约束等）。已有定义将跳过。",
+    content: "将创建预定义实体类型与关系类型。已有定义将跳过。",
     positiveText: "确认初始化",
     negativeText: "取消",
     onPositive: async () => {
-      try {
-        await seedOntologyDefaults();
-        message.success("默认本体初始化完成");
-        await fetchAll();
-      } catch (err) {
-        message.error("初始化失败: " + (err.message || ""));
-      }
+      await seedOntologyDefaults();
+      ui.success("默认本体初始化完成");
+      await fetchAll();
+      ontoWorkbenchRef.value?.reloadViz?.();
     },
   });
 }
@@ -482,78 +504,93 @@ function handleSeedDefaults() {
 async function autoSeedDefaults() {
   try {
     await seedOntologyDefaults();
-    message.success("默认本体初始化完成");
+    ui.success("默认本体初始化完成");
     await fetchAll();
   } catch (err) {
-    message.warning("自动初始化默认本体失败: " + (err.message || ""));
+    ui.warning("自动初始化默认本体失败: " + (err.message || ""));
   }
 }
 
 function applyRouteQuery() {
-  const tab = String(route.query.tab || "");
-  if (tab && VALID_TABS.has(tab)) {
-    activeTab.value = tab;
-  }
-  const qFocus = route.query.focusEntityId;
-  if (qFocus) {
-    activeTab.value = "graph";
-  }
-  const qEntityType = route.query.entityType;
-  const qRelationType = route.query.relationType;
-  if (qEntityType && qEntityType !== filterEntityType.value) {
-    filterEntityType.value = String(qEntityType);
-    filterRelationType.value = "";
-    activeTab.value = "entities";
-  } else if (qRelationType && qRelationType !== filterRelationType.value) {
-    filterRelationType.value = String(qRelationType);
-    filterEntityType.value = "";
-    activeTab.value = "relations";
-  } else if (
-    !qEntityType &&
-    !qRelationType &&
-    (filterEntityType.value || filterRelationType.value)
-  ) {
-    filterEntityType.value = "";
-    filterRelationType.value = "";
-  }
+  activeMode.value = normalizeMode(route.query.tab);
 }
 
-onMounted(async () => {
+async function bootstrap() {
   applyRouteQuery();
   await fetchAll();
-
-  if (entityTypes.value.length === 0 && !loading.value) {
-    message.info("本体定义为空，正在初始化默认本体…");
-    await autoSeedDefaults();
+  if (!schemaLoadError.value) {
+    // 概念或关系类型缺失时补种默认 TBox（已有项会跳过）
+    if (entityTypes.value.length === 0 || relationTypes.value.length === 0) {
+      ui.info(
+        entityTypes.value.length === 0
+          ? "本体定义为空，正在初始化默认本体…"
+          : "关系类型为空，正在补种默认关系…"
+      );
+      await autoSeedDefaults();
+    }
   }
+  bootstrapped.value = true;
+  await nextTick();
+  ontoWorkbenchRef.value?.resize?.();
+  if (activeMode.value === "kg") kgWorkbenchRef.value?.resize?.();
+}
 
-  const focusId = route.query.focusEntityId
-    ? String(route.query.focusEntityId)
-    : "";
-  if (focusId) {
-    await fetchGraph(focusId);
-  }
+onMounted(() => {
+  ensureHeaderTeleportReady();
+  bootstrap();
+});
 
-  if (
-    !filterEntityType.value &&
-    !filterRelationType.value &&
-    !focusId &&
-    stats.entityTotal === 0 &&
-    entities.value.length === 0 &&
-    instanceRelations.value.length === 0
-  ) {
-    message.info("图谱实例为空，正在自动同步平台数据…");
-    await handleSyncSelect("all");
+onActivated(async () => {
+  // 从知识页等切回时，顶栏节点可能同帧才重建，需等 DOM 就绪再 Teleport
+  headerTeleportReady.value = false;
+  ensureHeaderTeleportReady();
+  applyRouteQuery();
+  if (!bootstrapped.value) return;
+  // 返回本页：只做软刷新；失败不覆盖已有列表，避免「数据被清空」
+  try {
+    if (activeMode.value === "ontology") {
+      await Promise.allSettled([
+        fetchEntityTypes(),
+        fetchRelationTypes(),
+        fetchSchemaMeta(),
+      ]);
+      ontoWorkbenchRef.value?.reloadViz?.();
+    } else {
+      await ensureInstanceData();
+    }
+  } catch {
+    /* ignore soft refresh errors */
   }
+  await nextTick();
+  requestAnimationFrame(() => {
+    ontoWorkbenchRef.value?.resize?.();
+    kgWorkbenchRef.value?.resize?.();
+  });
 });
 
 watch(
-  () => route.query,
-  () => {
-    applyRouteQuery();
-    if (["entities", "relations", "graph", "extraction"].includes(activeTab.value)) {
-      fetchEntities();
-      fetchInstanceRelations();
+  () => route.query.tab,
+  (tab) => {
+    const mode = normalizeMode(tab);
+    if (mode !== activeMode.value) {
+      activeMode.value = mode;
+      if (mode === "kg") {
+        clearGraph();
+        ensureInstanceData();
+      }
+      nextTick(() => {
+        ontoWorkbenchRef.value?.resize?.();
+        kgWorkbenchRef.value?.resize?.();
+      });
+    }
+  }
+);
+
+watch(
+  () => route.query.entityType,
+  (code) => {
+    if (activeMode.value === "kg" && typeof code === "string") {
+      nextTick(() => kgWorkbenchRef.value?.setTypeFilter?.(code));
     }
   }
 );
@@ -561,7 +598,7 @@ watch(
 
 <style scoped>
 .ontology-wrapper {
-  padding: 20px 24px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -569,41 +606,15 @@ watch(
   height: 100%;
   overflow: hidden;
 }
-.ontology-wrapper :deep(.n-tabs) {
+.ontology-body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  padding: 12px 16px 16px;
+  box-sizing: border-box;
 }
-.ontology-wrapper :deep(.n-tabs-nav) {
-  background: var(--platform-bg);
-}
-.ontology-wrapper :deep(.n-tabs-tab--active) {
-  color: var(--n-tab-text-color) !important;
-}
-.ontology-wrapper :deep(.n-tabs-tab):hover {
-  color: var(--n-tab-text-color) !important;
-}
-.ontology-wrapper :deep(.n-tabs-bar) {
-  display: none;
-}
-.ontology-wrapper :deep(.n-tabs .n-tabs-tab-panes) {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding-bottom: 4px;
-}
-.ontology-wrapper :deep(.n-tabs .n-tab-pane) {
+.ontology-body > * {
   height: 100%;
-  min-height: 0;
-  overflow: visible;
 }
-
-.filter-bar {
-  margin-bottom: 8px;
-}
-
 .ontology-empty {
   flex: 1;
   display: flex;
@@ -611,31 +622,42 @@ watch(
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 16px;
-  padding: 40px 24px;
-}
-.ontology-empty__icon {
-  color: var(--platform-text-quaternary);
-  opacity: 0.6;
+  gap: 12px;
+  padding: 40px 20px;
 }
 .ontology-empty__title {
   margin: 0;
-  font-size: var(--platform-font-size-lg);
-  font-weight: var(--platform-font-weight-strong);
-  color: var(--platform-text);
-  letter-spacing: -0.01em;
+  font-size: 20px;
+  font-weight: 650;
 }
 .ontology-empty__desc {
   margin: 0;
-  max-width: 420px;
-  font-size: var(--platform-font-size-sm);
-  line-height: 1.6;
+  max-width: 480px;
   color: var(--platform-text-tertiary);
+  line-height: 1.6;
+  font-size: 14px;
 }
 .ontology-empty__actions {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
+  gap: 8px;
+}
+.ontology-empty__btn {
+  border: 1px solid var(--platform-border, #e5e7eb);
+}
+</style>
+
+<style>
+/* Teleport 到顶栏中部的模式切换 */
+.ontology-header-mode {
+  white-space: nowrap;
+}
+.ontology-header-mode .n-radio-button {
+  --n-button-border-radius: 8px;
+}
+.ontology-header-mode__count {
+  margin-left: 4px;
+  font-size: 11px;
+  opacity: 0.55;
+  font-weight: 500;
 }
 </style>

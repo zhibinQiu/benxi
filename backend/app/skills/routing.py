@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from app.agentkit.skills.routing import format_skill_route_line
+from app.agent.skills.routing import format_skill_route_line
 
 
-# 路由描述统一维护于 app/skills/skills.md；调度层只读该文件。
-# Agent 路由描述见 app/core/agents.md。
+# 路由描述统一维护于 agent_md/routing/skills.md；调度层只读该文件。
+# Agent 路由描述见 agent_md/routing/agents.md。
 # 发展技能的路由摘要来自各 SKILL.md frontmatter，运行时合并进目录。
 
 SKILL_DISCOVERY_RULES = """【Skill 按需发现 · 专精 Agent】

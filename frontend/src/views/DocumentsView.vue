@@ -5,46 +5,30 @@ import { useRoute, useRouter } from "vue-router";
 import {
   NButton,
   NSpace,
-  NDataTable,
   NInput,
   NForm,
   NFormItem,
-  NUpload,
-  NUploadDragger,
   NTabs,
   NTabPane,
   NSelect,
   NTag,
-  NEmpty,
-  NProgress,
   NText,
-  NIcon,
-  NCard } from "naive-ui";
+} from "naive-ui";
 import {
-  CreateOutline,
-  TrashOutline,
-  MoveOutline,
   ArrowBackOutline,
   SearchOutline,
   CloudUploadOutline,
-  RocketOutline,
   EyeOutline,
   ConstructOutline,
   RefreshOutline,
-  GridOutline,
-  ListOutline } from "@vicons/ionicons5";
+} from "@vicons/ionicons5";
 import MoveDocumentFolderModal from "../components/MoveDocumentFolderModal.vue";
 import BatchPublishModal from "../components/BatchPublishModal.vue";
-import DocumentUploadLocationPicker from "../components/DocumentUploadLocationPicker.vue";
-import KbFolderCard from "../components/KbFolderCard.vue";
-import KbFolderCreateCard from "../components/KbFolderCreateCard.vue";
-import DocumentIconCard from "../components/DocumentIconCard.vue";
+import DocumentsFolderSection from "../components/documents/DocumentsFolderSection.vue";
+import DocumentsTableSection from "../components/documents/DocumentsTableSection.vue";
+import DocumentsUploadModal from "../components/documents/DocumentsUploadModal.vue";
 import IconAction from "../components/IconAction.vue";
-import PlatformSpin from "../components/PlatformSpin.vue";
-import BatchTableToolbar from "../components/BatchTableToolbar.vue";
-import ListTableFooter from "../components/ListTableFooter.vue";
 import AdminFormModal from "../components/AdminFormModal.vue";
-import FileDropZone from "../components/FileDropZone.vue";
 import { navigateWithReturn } from "../utils/navigationReturn";
 import { KNOWLEDGE_INDEX_UPDATED_EVENT } from "../constants/platformEvents.js";
 import { useAuth } from "../composables/useAuth";
@@ -54,20 +38,14 @@ import { usePageHeader } from "../composables/usePageHeader";
 import { usePageHeaderExtension } from "../composables/usePageHeaderExtension.js";
 import { useDocumentLibrary } from "../composables/useDocumentLibrary.js";
 import {
+  useDocumentUpload,
+  VIRTUAL_UNCATEGORIZED,
+} from "../composables/useDocumentUpload.js";
+import { useDocumentBatchActions } from "../composables/useDocumentBatchActions.js";
+import {
   ORG_SCOPES,
   LIBRARY_FOLDER_ORDER } from "../constants/documentScope";
-import {
-  DOCUMENT_UPLOAD_ACCEPT,
-  DOCUMENT_UPLOAD_MAX_FILES,
-  formatDocumentFormatLabel,
-  getDocumentUploadMaxMb,
-  titleFromFileName,
-  validateUploadFiles } from "../constants/documentUpload.js";
-import {
-  canBatchSelectDocument,
-  canDeleteDocument,
-  canModifyDocument,
-} from "../utils/documentCaps.js";
+import { canBatchSelectDocument } from "../utils/documentCaps.js";
 import {
   clearDocumentsViewCache,
   invalidateDocumentsKbFoldersCache,
@@ -77,21 +55,15 @@ import {
   writeDocumentsFolderViewMode,
   writeDocumentsKbFoldersCache,
   writeDocumentsListCache } from "../utils/documentsViewCache.js";
+import DocumentFileIcon from "../components/DocumentFileIcon.vue";
 import { renderIconAction } from "../utils/tableIconActions";
 import { knowledgeIndexTagProps, isDocumentIndexReady } from "../utils/knowledgeIndex.js";
 import { notifyKnowledgeScopeTreeStale } from "../utils/knowledgeScopeRefresh.js";
-import { isRouteAbortError } from "../api/requestScope.js";
 import {
-  createDocument,
   createKbFolder,
   deleteKbFolder,
   fetchDocuments,
   fetchKbFolders,
-  prepareUpload,
-  uploadDocumentBlob,
-  completeUpload,
-  batchDeleteDocuments,
-  deleteDocument,
   updateKbFolder } from "../api/documents.js";
 import { fetchReindexUnindexedDocuments as reindexUnindexedDocuments } from "../api/knowledge.js";
 
@@ -133,7 +105,6 @@ onMounted(() => {
     headerTeleportReady.value = true;
   });
 });
-const uploadMaxMb = computed(() => getDocumentUploadMaxMb());
 const activeDeptId = ref(null);
 /** 系统管理员在个人级 Tab 下切换查看的账户 */
 const activeOwnerId = ref(null);
@@ -144,7 +115,6 @@ const companies = ref([]);
 const departments = ref([]);
 const teams = ref([]);
 
-const VIRTUAL_UNCATEGORIZED = "__uncategorized__";
 /** 忽略过期的 load / loadKbFolders 结果，避免切换分级时串数据 */
 let kbFoldersLoadSeq = 0;
 let documentsLoadSeq = 0;
@@ -188,64 +158,6 @@ const editFolderTarget = ref(null);
 const editFolderName = ref("");
 const editFolderDesc = ref("");
 
-const showMoveDoc = ref(false);
-const moveDocTarget = ref(null);
-const batchMoveDocIds = ref([]);
-
-const showPublishDoc = ref(false);
-const publishDocIds = ref([]);
-
-const checkedRowKeys = ref([]);
-
-const showUploadModal = ref(false);
-const uploadMode = ref("single");
-const createScope = ref("personal");
-const createDeptId = ref(null);
-const createOwnerId = ref(null);
-const createFolderId = ref(VIRTUAL_UNCATEGORIZED);
-const uploadFile = ref(null);
-const creating = ref(false);
-
-const batchUploadFiles = ref([]);
-const batchUploadFileList = ref([]);
-const batchUploading = ref(false);
-const batchProgress = ref({ done: 0, total: 0 });
-const batchUploadKey = ref(0);
-
-const batchUploadStats = computed(() => {
-  const files = batchUploadFiles.value;
-  return {
-    count: files.length,
-    totalSize: files.reduce((sum, file) => sum + (Number(file?.size) || 0), 0),
-  };
-});
-
-function formatUploadFileSize(bytes) {
-  const n = Number(bytes);
-  if (!Number.isFinite(n) || n <= 0) return "—";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-const hasAnyCreatableScope = computed(() =>
-  folders.value.some((f) => f.can_create && f.scope !== "all" && f.scope !== "shared")
-);
-
-const canSubmitUploadLocation = computed(() => {
-  const scopeFolder = folders.value.find((f) => f.scope === createScope.value);
-  if (!scopeFolder?.can_create) return false;
-  if (ORG_SCOPES.includes(createScope.value) && !createDeptId.value) return false;
-  return Boolean(createFolderId.value);
-});
-
-const canSubmitSingleUpload = computed(
-  () =>
-    Boolean(uploadFile.value) &&
-    !creating.value &&
-    !batchUploading.value &&
-    canSubmitUploadLocation.value
-);
 const activeFolder = computed(() =>
   folders.value.find((f) => f.scope === activeScope.value)
 );
@@ -388,21 +300,6 @@ const canShowMoveInList = computed(
     activeScope.value !== "all"
 );
 
-const moveFolderScope = computed(() => {
-  if (!moveDocTarget.value) return "";
-  if (isMainView.value && activeScope.value !== "all") {
-    return activeScope.value;
-  }
-  return moveDocTarget.value.scope || "personal";
-});
-
-const moveFolderDeptId = computed(() => {
-  if (ORG_SCOPES.includes(activeScope.value) && activeDeptId.value) {
-    return activeDeptId.value;
-  }
-  return moveDocTarget.value?.dept_id ?? null;
-});
-
 const canShowDeleteInList = computed(
   () => isMainView.value
 );
@@ -438,18 +335,6 @@ function setFolderDocViewMode(mode) {
   void load({ force: true });
 }
 
-function onIconCardSelected(row, checked) {
-  if (!canBatchSelectDocument(row)) return;
-  const id = row.id;
-  if (checked) {
-    if (!checkedRowKeys.value.includes(id)) {
-      checkedRowKeys.value = [...checkedRowKeys.value, id];
-    }
-  } else {
-    checkedRowKeys.value = checkedRowKeys.value.filter((k) => k !== id);
-  }
-}
-
 const showFolderNavInActions = computed(
   () =>
     isMainView.value &&
@@ -460,36 +345,6 @@ const showFolderNavInActions = computed(
 
 const showBottomBatchToolbar = computed(
   () => showBatchDocActions.value && !showTopFolderBatchActions.value
-);
-
-const selectedRows = computed(() =>
-  items.value.filter((row) => checkedRowKeys.value.includes(row.id))
-);
-
-const deletableSelectedRows = computed(() =>
-  selectedRows.value.filter((row) => canDeleteDocument(row))
-);
-
-const canBatchMove = computed(
-  () =>
-    showBatchDocActions.value &&
-    canShowMoveInList.value &&
-    selectedRows.value.length > 0 &&
-    selectedRows.value.every((row) => canModifyDocument(row))
-);
-
-const canBatchPublish = computed(
-  () =>
-    showBatchDocActions.value &&
-    selectedRows.value.length > 0 &&
-    selectedRows.value.every((row) => canModifyDocument(row))
-);
-
-const canBatchDelete = computed(
-  () =>
-    showBatchDocActions.value &&
-    canShowDeleteInList.value &&
-    deletableSelectedRows.value.length > 0
 );
 
 const columns = computed(() => {
@@ -503,33 +358,36 @@ const columns = computed(() => {
   base.push({
     title: t("documents.columns.title"),
     key: "title",
-    minWidth: 200,
-    ellipsis: { tooltip: true },
-    render: (row) => h("span", { class: "documents-doc-title" }, row.title || "—"),
-  });
-  base.push({
-    title: t("documents.columns.format"),
-    key: "file_format",
-    width: 106,
-    render: (row) =>
-      row.file_format
-        ? h(
-            NTag,
-            { size: "tiny", bordered: false, type: "info", class: "documents-meta-tag" },
-            { default: () => formatDocumentFormatLabel(row.file_format) }
-          )
-        : "—"});
-  base.push({
-    title: t("documents.columns.indexStatus"),
-    key: "indexStatus",
-    width: 115,
+    minWidth: 220,
     render: (row) => {
       const tag = knowledgeIndexTagProps(row);
-      return h(
-        NTag,
-        { size: "tiny", type: tag.type, bordered: false, class: "documents-meta-tag" },
-        { default: () => tag.label }
-      );
+      return h("div", { class: "documents-doc-title-cell" }, [
+        h("span", { class: "documents-doc-icon-wrap" }, [
+          h(DocumentFileIcon, { format: row.file_format || "", size: 26 }),
+          h(
+            "span",
+            {
+              class: ["doc-index-badge", `doc-index-badge--${tag.type}`],
+              title: tag.label,
+            },
+            tag.label
+          ),
+        ]),
+        h(
+          "span",
+          { class: "documents-doc-title", title: row.title || "" },
+          row.title || "—"
+        ),
+      ]);
+    },
+  });
+  base.push({
+    title: t("documents.columns.uploadedAt"),
+    key: "uploaded_at",
+    width: 176,
+    render: (row) => {
+      const ts = row.uploaded_at || row.created_at;
+      return ts ? new Date(ts).toLocaleString() : "—";
     }});
   if (!isSearchMode.value && !isInsideKbFolder.value) {
     base.push({
@@ -629,47 +487,6 @@ const columns = computed(() => {
   );
   return base;
 });
-
-async function handleBatchDelete() {
-  const rows = deletableSelectedRows.value;
-  if (!rows.length) return;
-  const skipped = selectedRows.value.length - rows.length;
-  ui.confirmDelete({
-    title: t("common.batchDelete"),
-    content:
-      skipped > 0
-        ? t("documents.confirm.deleteBatchPartial", {
-            count: rows.length,
-            skipped})
-        : t("documents.confirm.deleteBatch", { count: rows.length }),
-    onPositive: async () => {
-      const res = await batchDeleteDocuments(rows.map((row) => row.id));
-      const count = res.deleted_count ?? res.deleted?.length ?? 0;
-      const failed = res.failed || [];
-      if (failed.length) {
-        ui.warning("messages.batchDeletedPartial", {
-          success: count,
-          failed: failed.length});
-      } else {
-        ui.success("documents.messages.deletedBatch", { count });
-      }
-      checkedRowKeys.value = [];
-      const deletedIds = new Set(res.deleted || []);
-      if (deletedIds.size) {
-        items.value = items.value.filter((row) => !deletedIds.has(row.id));
-        total.value = Math.max(0, total.value - deletedIds.size);
-        clearDocumentsViewCache();
-        invalidateDocumentLibrary();
-        notifyKnowledgeScopeTreeStale();
-      }
-      void loadKbFolders({ force: true });
-      void load({ force: true, background: true });
-    }});
-}
-
-function onCheckedRowKeysChange(keys) {
-  checkedRowKeys.value = keys;
-}
 
 function normalizeFolders(list) {
   const byScope = Object.fromEntries((list || []).map((f) => [f.scope, f]));
@@ -970,7 +787,7 @@ async function load({ force = false, background = false } = {}) {
   const hadItems = items.value.length > 0;
   if (!background && !hadItems) {
     loading.value = true;
-    checkedRowKeys.value = [];
+    clearSelection();
   }
   try {
     if (isSearchMode.value) {
@@ -1144,7 +961,7 @@ async function openKbFolder(folder) {
   appliedSearch.value = "";
   activeKbFolderKey.value = key;
   page.value = 1;
-  checkedRowKeys.value = [];
+  clearSelection();
   applyCachedListForActiveFolder();
   skipNextRouteLoad = true;
   try {
@@ -1164,7 +981,7 @@ async function backToKbFolders() {
   items.value = [];
   total.value = 0;
   loading.value = false;
-  checkedRowKeys.value = [];
+  clearSelection();
   const query = { ...buildLibraryQuery() };
   delete query.folder;
   skipNextRouteLoad = true;
@@ -1275,56 +1092,6 @@ async function onDeleteKbFolder(folder) {
   }
 }
 
-function folderTooltip(folder) {
-  const parts = [];
-  if (folder.description) parts.push(folder.description);
-  parts.push(t("documents.folderDocCount", { count: folder.document_count ?? 0 }));
-  if (folder.is_system && folder.system_hint) parts.push(folder.system_hint);
-  return parts.join("\n");
-}
-
-function folderMenuOptions(folder) {
-  if (!folder.can_manage || !folder.id || folder.is_system) return [];
-  return [
-    {
-      label: t("common.edit"),
-      key: "edit",
-      icon: () => h(NIcon, null, { default: () => h(CreateOutline) })},
-    {
-      label: t("common.delete"),
-      key: "delete",
-      icon: () => h(NIcon, null, { default: () => h(TrashOutline) })},
-  ];
-}
-
-function openBatchMove() {
-  if (!canBatchMove.value) return;
-  batchMoveDocIds.value = selectedRows.value.map((row) => row.id);
-  moveDocTarget.value = selectedRows.value[0] || null;
-  showMoveDoc.value = true;
-}
-
-function openBatchPublish() {
-  if (!canBatchPublish.value) return;
-  publishDocIds.value = selectedRows.value.map((row) => row.id);
-  showPublishDoc.value = true;
-}
-
-function onDocumentPublished() {
-  showPublishDoc.value = false;
-  publishDocIds.value = [];
-  checkedRowKeys.value = [];
-}
-
-function onDocumentMoved() {
-  showMoveDoc.value = false;
-  moveDocTarget.value = null;
-  batchMoveDocIds.value = [];
-  checkedRowKeys.value = [];
-  loadKbFolders({ force: true });
-  load({ force: true });
-}
-
 function onFolderMenuSelect(key, folder) {
   if (key === "edit") openEditFolder(folder);
   if (key === "delete") {
@@ -1343,276 +1110,102 @@ function backToLibrary() {
   router.replace({ name: "documents", query: buildLibraryQuery() });
 }
 
-function orgUnitsForScope(scope) {
-  if (scope === "company") return companies.value;
-  if (scope === "team") return teams.value;
-  if (scope === "department") return departments.value;
-  return [];
-}
+const batchActions = useDocumentBatchActions({
+  items,
+  total,
+  showBatchDocActions,
+  canShowMoveInList,
+  canShowDeleteInList,
+  isMainView,
+  activeScope,
+  activeDeptId,
+  load,
+  loadKbFolders,
+  invalidateDocumentLibrary,
+  ui,
+  t,
+});
 
-function initUploadLocation() {
-  const scope = folders.value.find(
-    (f) => f.scope === activeScope.value && f.can_create
-  )
-    ? activeScope.value
-    : folders.value.find((f) => f.can_create)?.scope || "personal";
-  createScope.value = scope;
-  createDeptId.value = ORG_SCOPES.includes(scope)
-    ? (activeScope.value === scope ? activeDeptId.value : null) ||
-      orgUnitsForScope(scope)[0]?.id ||
-      null
-    : null;
-  createOwnerId.value =
-    scope === "personal" && isSystemAdmin.value
-      ? (activeScope.value === "personal" ? activeOwnerId.value : null) ||
-        user.value?.id ||
-        null
-      : null;
-  const sameContext = activeScope.value === scope;
-  createFolderId.value =
-    sameContext &&
-    activeKbFolderKey.value
-      ? activeKbFolderKey.value
-      : VIRTUAL_UNCATEGORIZED;
-}
+const {
+  checkedRowKeys,
+  deletableSelectedRows,
+  canBatchMove,
+  canBatchPublish,
+  canBatchDelete,
+  showMoveDoc,
+  moveDocTarget,
+  batchMoveDocIds,
+  moveFolderScope,
+  moveFolderDeptId,
+  showPublishDoc,
+  publishDocIds,
+  onCheckedRowKeysChange,
+  clearSelection,
+  onIconCardSelected,
+  handleBatchDelete,
+  openBatchMove,
+  openBatchPublish,
+  onDocumentPublished,
+  onDocumentMoved,
+} = batchActions;
 
-function validateUploadLocation() {
-  const scopeFolder = folders.value.find((f) => f.scope === createScope.value);
-  if (!scopeFolder?.can_create) {
-    return { ok: false, message: t("documents.messages.noDocPermission") };
-  }
-  if (ORG_SCOPES.includes(createScope.value) && !createDeptId.value) {
-    return { ok: false, message: t("validation.selectDepartment") };
-  }
-  if (!createFolderId.value) {
-    return { ok: false, message: t("documents.messages.selectUploadFolder") };
-  }
-  return { ok: true };
-}
+const upload = useDocumentUpload({
+  folders,
+  companies,
+  departments,
+  teams,
+  activeScope,
+  activeDeptId,
+  activeOwnerId,
+  activeKbFolderKey,
+  isMainView,
+  isSharedScopeTab,
+  isSearchMode,
+  isSystemAdmin,
+  user,
+  loadKbFolders,
+  load,
+  openDocumentDetail,
+  ui,
+  t,
+});
 
-function buildCreatePayload(title, description = "") {
-  const payload = {
-    title,
-    description: description || "",
-    scope: createScope.value};
-  if (ORG_SCOPES.includes(createScope.value) && createDeptId.value) {
-    payload.dept_id = createDeptId.value;
-  }
-  if (
-    createFolderId.value &&
-    createFolderId.value !== VIRTUAL_UNCATEGORIZED
-  ) {
-    payload.folder_id = createFolderId.value;
-  }
-  return payload;
-}
-
-async function uploadFileToDocument(docId, file) {
-  const prep = await prepareUpload(
-    docId,
-    file.name,
-    file.type || "application/octet-stream"
-  );
-  await uploadDocumentBlob(prep.upload_url, file);
-  await completeUpload(docId, {
-    version_id: prep.version_id,
-    file_size: file.size});
-}
-
-function onSingleFileDropChange(e) {
-  const file = e.target?.files?.[0] ?? null;
-  if (!file) return;
-  const check = validateUploadFiles([file], { maxFiles: 1 });
-  if (!check.ok) {
-    ui.warning(check.message);
-    return;
-  }
-  uploadFile.value = file;
-}
-
-function clearBatchUploadSelection() {
-  batchUploadFiles.value = [];
-  batchUploadFileList.value = [];
-  batchUploadKey.value += 1;
-}
-
-function onBatchFileChange(opts) {
-  let fileList = opts.fileList;
-  const files = fileList.map((f) => f.file).filter(Boolean);
-  const check = validateUploadFiles(files);
-  if (!check.ok) {
-    ui.warning(check.message);
-    if (files.length > DOCUMENT_UPLOAD_MAX_FILES) {
-      fileList = fileList.slice(0, DOCUMENT_UPLOAD_MAX_FILES);
-    }
-    batchUploadFileList.value = fileList;
-    batchUploadFiles.value = fileList.map((f) => f.file).filter(Boolean);
-    return;
-  }
-  batchUploadFileList.value = fileList;
-  batchUploadFiles.value = check.files;
-}
-
-function ensureCanCreateDocuments() {
-  if (
-    !isMainView.value ||
-    activeScope.value === "all" ||
-    isSharedScopeTab.value ||
-    isSearchMode.value
-  ) {
-    ui.warning("documents.messages.enterKbFolder");
-    return false;
-  }
-  if (!hasAnyCreatableScope.value) {
-    ui.warning("documents.messages.noDocPermission");
-    return false;
-  }
-  initUploadLocation();
-  return true;
-}
-
-function onUploadLocationFoldersChanged() {
-  if (
-    activeScope.value === createScope.value &&
-    (!ORG_SCOPES.includes(createScope.value) ||
-      String(activeDeptId.value) === String(createDeptId.value))
-  ) {
-    void loadKbFolders({ force: true });
-  }
-}
-
-function openUploadModal(mode = "single") {
-  if (!ensureCanCreateDocuments()) return;
-  uploadMode.value = mode;
-  uploadFile.value = null;
-  batchUploadFiles.value = [];
-  batchUploadFileList.value = [];
-  batchUploadKey.value += 1;
-  batchProgress.value = { done: 0, total: 0 };
-  showUploadModal.value = true;
-}
-
-function closeUploadModal() {
-  if (batchUploading.value || creating.value) return;
-  showUploadModal.value = false;
-}
-
-async function submitCreate() {
-  if (!uploadFile.value) {
-    ui.warning("validation.selectFile");
-    return;
-  }
-  const check = validateUploadFiles([uploadFile.value], { maxFiles: 1 });
-  if (!check.ok) {
-    ui.warning(check.message);
-    return;
-  }
-  const title = titleFromFileName(uploadFile.value.name) || uploadFile.value.name;
-  if (!title) {
-    ui.warning("validation.titleRequired");
-    return;
-  }
-  const locCheck = validateUploadLocation();
-  if (!locCheck.ok) {
-    ui.warning(locCheck.message);
-    return;
-  }
-  creating.value = true;
-  let createdId = null;
-  let uploadCompleted = false;
-  try {
-    const doc = await createDocument(buildCreatePayload(title, ""));
-    createdId = doc.id;
-    await uploadFileToDocument(doc.id, uploadFile.value);
-    uploadCompleted = true;
-    ui.success("documents.messages.docCreated");
-    showUploadModal.value = false;
-    uploadFile.value = null;
-    notifyKnowledgeScopeTreeStale();
-    await loadKbFolders({ force: true });
-    await load({ force: true });
-    openDocumentDetail(doc.id);
-  } catch (e) {
-    if (createdId && !uploadCompleted) {
-      try {
-        await deleteDocument(createdId);
-      } catch {
-        /* 忽略回滚失败 */
-      }
-    }
-    if (!isRouteAbortError(e)) {
-      ui.error(e);
-    }
-  } finally {
-    creating.value = false;
-  }
-}
-
-async function submitBatchUpload() {
-  const check = validateUploadFiles(batchUploadFiles.value);
-  if (!check.ok) {
-    ui.warning(check.message);
-    return;
-  }
-  const locCheck = validateUploadLocation();
-  if (!locCheck.ok) {
-    ui.warning(locCheck.message);
-    return;
-  }
-  batchUploading.value = true;
-  batchProgress.value = { done: 0, total: check.files.length };
-  const failed = [];
-  let success = 0;
-  try {
-    for (const file of check.files) {
-      let createdId = null;
-      try {
-        const title = titleFromFileName(file.name) || file.name;
-        const doc = await createDocument(buildCreatePayload(title, ""));
-        createdId = doc.id;
-        await uploadFileToDocument(doc.id, file);
-        success += 1;
-      } catch (e) {
-        failed.push({ name: file.name, reason: e.message });
-        if (createdId) {
-          try {
-            await deleteDocument(createdId);
-          } catch {
-            /* 忽略回滚失败 */
-          }
-        }
-      } finally {
-        batchProgress.value = {
-          done: batchProgress.value.done + 1,
-          total: check.files.length};
-      }
-    }
-    if (success && !failed.length) {
-      ui.success("documents.messages.batchUploadSuccess", { count: success });
-      showUploadModal.value = false;
-      batchUploadFiles.value = [];
-    } else if (success) {
-      ui.warning("documents.messages.batchUploadPartial", {
-        success,
-        failed: failed.length,
-        names: failed.map((f) => f.name).join("、")});
-    } else {
-      ui.error("documents.messages.batchUploadFailed");
-    }
-    await loadKbFolders({ force: true });
-    await load({ force: true });
-    if (success) notifyKnowledgeScopeTreeStale();
-  } finally {
-    batchUploading.value = false;
-  }
-}
+const {
+  showUploadModal,
+  uploadMode,
+  createScope,
+  createDeptId,
+  createOwnerId,
+  createFolderId,
+  uploadFile,
+  creating,
+  batchUploadFiles,
+  batchUploadFileList,
+  batchUploading,
+  batchProgress,
+  batchUploadKey,
+  uploadMaxMb,
+  batchUploadStats,
+  hasAnyCreatableScope,
+  canSubmitUploadLocation,
+  canSubmitSingleUpload,
+  formatUploadFileSize,
+  openUploadModal,
+  closeUploadModal,
+  onSingleFileDropChange,
+  clearBatchUploadSelection,
+  onBatchFileChange,
+  onUploadLocationFoldersChanged,
+  submitCreate,
+  submitBatchUpload,
+} = upload;
 
 watch(activeScope, () => {
   if (isMainView.value) page.value = 1;
 });
 
 watch(libraryView, () => {
-  checkedRowKeys.value = [];
+  clearSelection();
   if (!isMainView.value) {
     keyword.value = "";
     appliedSearch.value = "";
@@ -1781,7 +1374,7 @@ watch(
           <template #tab>
             <span>{{ scopeLabel(f.scope) || f.label }}</span>
             <n-tag
-              v-if="!f.can_create"
+              v-if="!f.can_create && f.scope !== 'shared'"
               size="tiny"
               :bordered="false"
               style="margin-left:4px;flex-shrink:0"
@@ -1794,295 +1387,86 @@ watch(
     </div>
 
     <Transition name="doc-view" mode="out-in">
-    <PlatformSpin
-      v-if="showKbFolderList"
-      key="folder-grid"
-      :show="kbFoldersLoading"
-      class="documents-view-spin"
-      local
-    >
-      <n-empty
-        v-if="!kbFolders.length && !canManageKbFolders"
-        :description="t('documents.emptyFolders')"
+      <DocumentsFolderSection
+        v-if="showKbFolderList"
+        key="folder-grid"
+        :loading="kbFoldersLoading"
+        :folders="kbFolders"
+        :can-manage-folders="canManageKbFolders"
+        @prefetch-folder="prefetchFolderDocuments"
+        @open-folder="openKbFolder"
+        @menu-select="onFolderMenuSelect"
+        @create-folder="openCreateFolder"
       />
-      <div v-else class="kb-folder-explorer">
-        <div
-          v-for="(folder, folderIdx) in kbFolders"
-          :key="folder.virtual_id || folder.id"
-          class="kb-folder-explorer__cell"
-          :style="{ '--folder-i': folderIdx }"
-          @mouseenter="prefetchFolderDocuments(folder)"
-        >
-          <KbFolderCard
-            :folder="folder"
-            :title="folderTooltip(folder)"
-            :card-key="folder.virtual_id || folder.id || `f-${folderIdx}`"
-            :menu-options="folderMenuOptions(folder)"
-            @open="openKbFolder"
-            @menu-select="onFolderMenuSelect"
-          />
-        </div>
-        <div
-          v-if="canManageKbFolders"
-          class="kb-folder-explorer__cell"
-          :style="{ '--folder-i': kbFolders.length }"
-        >
-          <KbFolderCreateCard @create="openCreateFolder" />
-        </div>
-      </div>
-    </PlatformSpin>
 
-    <div v-else key="doc-list" class="documents-list-panel">
-    <!-- 文件夹内操作栏：在卡片上方显示 -->
-    <div v-if="isInsideKbFolder" class="documents-folder-toolbar">
-      <IconAction :label="t('documents.backToFolders')" :icon="ArrowBackOutline" @click="backToKbFolders" />
-      <span class="documents-folder-toolbar__name">{{ activeKbFolderLabel }}</span>
-      <div class="folder-view-toggle" role="group" :aria-label="t('documents.viewModeLabel')">
-        <IconAction
-          :label="t('documents.viewList')"
-          :icon="ListOutline"
-          :active="folderDocViewMode === 'list'"
-          @click="setFolderDocViewMode('list')"
-        />
-        <IconAction
-          :label="t('documents.viewIcons')"
-          :icon="GridOutline"
-          :active="folderDocViewMode === 'icons'"
-          @click="setFolderDocViewMode('icons')"
-        />
-      </div>
-      <div v-if="showTopFolderBatchActions" class="folder-action-pills">
-        <NButton text size="tiny" class="folder-action-btn" :disabled="!canBatchPublish" @click="openBatchPublish">
-          {{ t("documents.detail.publish") }}
-        </NButton>
-        <NButton text size="tiny" class="folder-action-btn" :disabled="!canBatchMove" @click="openBatchMove">
-          {{ t("common.move") }}
-        </NButton>
-        <NButton text size="tiny" class="folder-action-btn folder-action-btn--danger" :disabled="!canBatchDelete" @click="handleBatchDelete">
-          {{ t("common.delete") }}
-        </NButton>
-      </div>
-    </div>
-    <div v-if="showBottomBatchToolbar" class="doc-list-toolbar page-toolbar">
-      <n-space align="center" :size="7">
-        <IconAction
-          :label="t('documents.detail.publish')"
-          :icon="RocketOutline"
-          :disabled="!canBatchPublish"
-          @click="openBatchPublish"
-        />
-        <IconAction
-          :label="t('common.move')"
-          :icon="MoveOutline"
-          :disabled="!canBatchMove"
-          @click="openBatchMove"
-        />
-        <BatchTableToolbar
-          :count="deletableSelectedRows.length || checkedRowKeys.length"
-          :disabled="!canBatchDelete"
-          :icon="TrashOutline"
-          action-type="warning"
-          @action="handleBatchDelete"
-        />
-      </n-space>
-    </div>
-
-    <PlatformSpin
-      v-if="showFolderIconView"
-      :show="loading && !items.length"
-      class="documents-view-spin"
-      local
-    >
-      <n-empty
-        v-if="!items.length && !loading"
-        :description="t('documents.emptyDocs')"
-      />
-      <div v-else class="kb-folder-explorer documents-icon-explorer">
-        <div
-          v-for="(row, docIdx) in items"
-          :key="row.id"
-          class="kb-folder-explorer__cell"
-          :style="{ '--folder-i': docIdx }"
-        >
-          <DocumentIconCard
-            :document="row"
-            :selectable="showBatchDocActions"
-            :selected="checkedRowKeys.includes(row.id)"
-            :select-disabled="!canBatchSelectDocument(row)"
-            @open="(doc) => openDocumentDetail(doc.id)"
-            @update:selected="(v) => onIconCardSelected(row, v)"
-          />
-        </div>
-      </div>
-    </PlatformSpin>
-
-        <n-card v-else class="documents-list-card" :bordered="true">
-    <PlatformSpin :show="loading && !items.length" class="documents-view-spin" local>
-      <n-data-table
-        class="documents-table"
+      <DocumentsTableSection
+        v-else
+        key="doc-list"
+        :is-inside-kb-folder="isInsideKbFolder"
+        :active-kb-folder-label="activeKbFolderLabel"
+        :folder-doc-view-mode="folderDocViewMode"
+        :show-top-folder-batch-actions="showTopFolderBatchActions"
+        :show-bottom-batch-toolbar="showBottomBatchToolbar"
+        :can-batch-publish="canBatchPublish"
+        :can-batch-move="canBatchMove"
+        :can-batch-delete="canBatchDelete"
+        :show-folder-icon-view="showFolderIconView"
+        :loading="loading"
+        :items="items"
+        :show-batch-doc-actions="showBatchDocActions"
+        :checked-row-keys="checkedRowKeys"
+        :deletable-selected-count="deletableSelectedRows.length"
         :columns="columns"
-        :data="items"
-        :row-key="(row) => row.id"
-        :row-props="documentRowProps"
-        :checked-row-keys="showBatchDocActions ? checkedRowKeys : undefined"
+        :document-row-props="documentRowProps"
+        :page="page"
+        :page-size="pageSize"
+        :total="total"
+        @back-to-folders="backToKbFolders"
+        @set-view-mode="setFolderDocViewMode"
+        @batch-publish="openBatchPublish"
+        @batch-move="openBatchMove"
+        @batch-delete="handleBatchDelete"
         @update:checked-row-keys="onCheckedRowKeysChange"
-        :pagination="false"
+        @icon-card-selected="onIconCardSelected"
+        @open-document="openDocumentDetail"
+        @update:page="onPageChange"
       />
-    </PlatformSpin>
-    </n-card>
-    </div>
     </Transition>
-
-    <ListTableFooter
-      v-if="!showKbFolderList"
-      :page="page"
-      :page-size="pageSize"
-      :item-count="total"
-      @update:page="onPageChange"
-    />
   </div>
 
-  <AdminFormModal
+  <DocumentsUploadModal
     v-model:show="showUploadModal"
-    class="documents-upload-modal"
-    :title="t('documents.uploadModalTitle')"
-    width="min(480px, 94vw)"
-  >
-    <n-tabs
-      v-model:value="uploadMode"
-      type="segment"
-      size="small"
-      class="documents-upload-modal__tabs"
-    >
-      <n-tab-pane name="single" :tab="t('documents.uploadSingle')" />
-      <n-tab-pane name="batch" :tab="t('documents.batchUpload')" />
-    </n-tabs>
-
-    <n-form
-      class="documents-upload-modal__form admin-form-modal__form admin-form-modal__form--compact"
-      label-placement="top"
-      @submit.prevent
-    >
-      <DocumentUploadLocationPicker
-        v-model:scope="createScope"
-        v-model:dept-id="createDeptId"
-        v-model:owner-id="createOwnerId"
-        v-model:folder-id="createFolderId"
-        :library-folders="folders"
-        :companies="companies"
-        :departments="departments"
-        :teams="teams"
-        :personal-owners="personalOwners"
-        :is-system-admin="isSystemAdmin"
-        @folders-changed="onUploadLocationFoldersChanged"
-      />
-
-      <template v-if="uploadMode === 'single'">
-        <n-form-item :label="t('documents.uploadFileLabel')" required>
-          <file-drop-zone
-            class="documents-upload-modal__file-picker"
-            compact
-            hide-button
-            :accept="DOCUMENT_UPLOAD_ACCEPT"
-            :title="t('documents.uploadDropHint')"
-            :hint="t('documents.uploadSizeHint', { mb: uploadMaxMb })"
-            :file-name="uploadFile?.name || ''"
-            :disabled="creating"
-            @change="onSingleFileDropChange"
-          />
-        </n-form-item>
-      </template>
-
-      <template v-else>
-        <n-form-item :label="t('documents.uploadFileLabel')" required>
-          <n-upload
-            :key="batchUploadKey"
-            v-model:file-list="batchUploadFileList"
-            multiple
-            :accept="DOCUMENT_UPLOAD_ACCEPT"
-            :default-upload="false"
-            :show-file-list="false"
-            @change="onBatchFileChange"
-          >
-            <n-upload-dragger
-              class="documents-upload-modal__dropzone"
-              :class="{ 'documents-upload-modal__dropzone--ready': batchUploadFiles.length }"
-            >
-              <div class="documents-upload-modal__dropzone-inner">
-                <n-icon :size="28" :component="CloudUploadOutline" class="documents-upload-modal__dropzone-icon" />
-                <span class="documents-upload-modal__dropzone-title">
-                  {{
-                    batchUploadFiles.length
-                      ? t("documents.uploadBatchSelected", { count: batchUploadStats.count })
-                      : t("documents.uploadBatchDropHint", { max: DOCUMENT_UPLOAD_MAX_FILES })
-                  }}
-                </span>
-                <span class="documents-upload-modal__dropzone-meta">
-                  <template v-if="batchUploadFiles.length">
-                    {{
-                      t("documents.uploadBatchSummary", {
-                        size: formatUploadFileSize(batchUploadStats.totalSize),
-                      })
-                    }}
-                    ·
-                    <n-button
-                      text
-                      type="primary"
-                      size="tiny"
-                      :disabled="batchUploading"
-                      @click.stop="clearBatchUploadSelection"
-                    >
-                      {{ t("documents.uploadReselect") }}
-                    </n-button>
-                  </template>
-                  <template v-else>
-                    {{ t("documents.uploadBatchMeta", { mb: uploadMaxMb }) }}
-                  </template>
-                </span>
-              </div>
-            </n-upload-dragger>
-          </n-upload>
-          <n-progress
-            v-if="batchUploading && batchProgress.total"
-            type="line"
-            :percentage="Math.round((batchProgress.done / batchProgress.total) * 100)"
-            :show-indicator="true"
-            class="documents-upload-modal__batch-progress"
-          />
-        </n-form-item>
-      </template>
-    </n-form>
-
-    <p class="documents-upload-modal__footnote">
-      {{ t("documents.uploadIndexHint") }}
-    </p>
-
-    <template #footer>
-      <n-space justify="end" :size="8">
-        <n-button :disabled="batchUploading || creating" @click="closeUploadModal">
-          {{ t("common.cancel") }}
-        </n-button>
-        <n-button
-          v-if="uploadMode === 'single'"
-          type="primary"
-          :loading="creating"
-          :disabled="!canSubmitSingleUpload"
-          @click="submitCreate"
-        >
-          {{ t("documents.uploadSubmitSingle") }}
-        </n-button>
-        <n-button
-          v-else
-          type="primary"
-          :loading="batchUploading"
-          :disabled="!batchUploadFiles.length || !canSubmitUploadLocation"
-          @click="submitBatchUpload"
-        >
-          {{ t("documents.uploadSubmitBatch", { count: batchUploadFiles.length || 0 }) }}
-        </n-button>
-      </n-space>
-    </template>
-  </AdminFormModal>
+    v-model:upload-mode="uploadMode"
+    v-model:create-scope="createScope"
+    v-model:create-dept-id="createDeptId"
+    v-model:create-owner-id="createOwnerId"
+    v-model:create-folder-id="createFolderId"
+    v-model:batch-upload-file-list="batchUploadFileList"
+    :folders="folders"
+    :companies="companies"
+    :departments="departments"
+    :teams="teams"
+    :personal-owners="personalOwners"
+    :is-system-admin="isSystemAdmin"
+    :upload-file="uploadFile"
+    :creating="creating"
+    :batch-upload-files="batchUploadFiles"
+    :batch-uploading="batchUploading"
+    :batch-progress="batchProgress"
+    :batch-upload-key="batchUploadKey"
+    :upload-max-mb="uploadMaxMb"
+    :batch-upload-stats="batchUploadStats"
+    :can-submit-single-upload="canSubmitSingleUpload"
+    :can-submit-upload-location="canSubmitUploadLocation"
+    :format-upload-file-size="formatUploadFileSize"
+    @folders-changed="onUploadLocationFoldersChanged"
+    @single-file-change="onSingleFileDropChange"
+    @batch-file-change="onBatchFileChange"
+    @clear-batch-selection="clearBatchUploadSelection"
+    @close="closeUploadModal"
+    @submit-single="submitCreate"
+    @submit-batch="submitBatchUpload"
+  />
 
   <AdminFormModal
     v-model:show="showCreateFolder"
@@ -2169,82 +1553,8 @@ watch(
   />
 </template>
 
+<style src="../styles/pages/documents.css"></style>
 <style scoped>
-.folder-action-pills {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.documents-folder-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-  flex-shrink: 0;
-}
-
-.documents-folder-toolbar__name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--platform-font-size-lg);
-  font-weight: 500;
-  color: var(--platform-text);
-  letter-spacing: -0.01em;
-}
-
-.folder-view-toggle {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-/* ── 文件夹内操作按钮（纯文字） ── */
-.documents-folder-toolbar .folder-action-btn.n-button {
-  width: auto !important;
-  padding: 0 6px !important;
-  font-size: var(--platform-font-size-xs) !important;
-  line-height: 1.2 !important;
-  --n-height: 22px;
-  font-weight: 400;
-  color: var(--platform-text-secondary);
-}
-.documents-folder-toolbar .folder-action-btn.n-button:not(:disabled):hover {
-  color: var(--platform-accent);
-}
-.documents-folder-toolbar .folder-action-btn--danger.n-button:not(:disabled) {
-  color: var(--platform-danger);
-}
-.documents-folder-toolbar .folder-action-btn--danger.n-button:not(:disabled):hover {
-  color: var(--platform-danger);
-  opacity: 0.85;
-}
-
-.documents-doc-title {
-  font-size: 15px;
-}
-
-.documents-table :deep(.documents-meta-tag) {
-  font-size: var(--platform-font-size-xs) !important;
-}
-
-/* 文档表格 — 参照多智能体技能表格样式 */
-.documents-table :deep(.n-data-table-thead .n-data-table-th) {
-  font-size: 15px !important;
-  font-weight: 500 !important;
-  color: var(--platform-text) !important;
-  border-bottom: 1px solid var(--platform-border-light, #e8e8e8) !important;
-}
-.documents-table :deep(.n-data-table-tbody .n-data-table-td) {
-  border-bottom: 1px solid var(--platform-border-light, #e8e8e8) !important;
-  font-size: 13px;
-}
-
 .documents-scope-tabs {
   position: sticky;
   top: 0;
@@ -2252,10 +1562,10 @@ watch(
   background: var(--platform-bg);
 }
 .documents-scope-tabs :deep(.n-tabs-tab--active) {
-  color: var(--n-tab-text-color) !important;
+  color: var(--platform-accent) !important;
 }
 .documents-scope-tabs :deep(.n-tabs-tab):hover {
-  color: var(--n-tab-text-color) !important;
+  color: var(--platform-accent) !important;
 }
 .documents-scope-tabs :deep(.n-tabs-bar) {
   display: none;
@@ -2264,7 +1574,6 @@ watch(
   display: none;
 }
 
-/* ── 文档中心 Tab 滚动容器 ── */
 .documents-scope-tabs :deep(.n-tabs-nav-scroll-wrapper) {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -2273,73 +1582,7 @@ watch(
   display: none;
 }
 
-/* ── 文件夹内操作按钮在移动端可横向滚动 ── */
-.documents-folder-toolbar .folder-action-pills {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  flex-shrink: 0;
-}
-.documents-folder-toolbar .folder-action-pills::-webkit-scrollbar {
-  display: none;
-}
-
-/* =============================================
- * 移动端适配
- * ============================================= */
 @media (max-width: 768px) {
-  /* 1. 表格可水平滚动 */
-  .documents-list-card :deep(.n-card__content) {
-    padding: 8px 4px !important;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .documents-table :deep(.n-data-table-wrapper) {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    min-width: auto;
-  }
-
-  /* 2. 隐藏非核心列（索引状态、状态、范围、文件夹等） */
-  .documents-table :deep(.n-data-table-th):nth-child(3), /* 索引 */
-  .documents-table :deep(.n-data-table-td):nth-child(3),
-  .documents-table :deep(.n-data-table-th):nth-child(4), /* 状态 */
-  .documents-table :deep(.n-data-table-td):nth-child(4) {
-    display: none;
-  }
-
-  /* 搜索结果或 all 范围模式下显示更多列，但也隐藏一些次要列 */
-  .documents-table :deep(.n-data-table-th):nth-child(7), /* 部门 */
-  .documents-table :deep(.n-data-table-td):nth-child(7),
-  .documents-table :deep(.n-data-table-th):nth-child(8), /* 权限 */
-  .documents-table :deep(.n-data-table-td):nth-child(8) {
-    display: none;
-  }
-
-  /* 3. 文件标题列宽度自适应 */
-  .documents-doc-title {
-    font-size: 13px !important;
-    max-width: 36vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    display: block;
-  }
-
-  /* 4. 文件夹网格紧凑 */
-  .kb-folder-explorer {
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important;
-    gap: 10px;
-    padding: 8px 0 16px;
-  }
-  .kb-folder-explorer__cell {
-    max-width: 100%;
-  }
-  .kb-folder-explorer__cell > * {
-    max-width: 100%;
-  }
-
-  /* 5. 工具栏折叠 */
   .documents-actions-toolbar {
     gap: 4px !important;
     flex-wrap: wrap;
@@ -2349,46 +1592,15 @@ watch(
     gap: 4px !important;
   }
 
-  /* 6. 文件夹工具栏紧凑 */
-  .documents-folder-toolbar {
-    gap: 6px;
-    margin-bottom: 6px;
-    flex-wrap: wrap;
-  }
-  .documents-folder-toolbar__name {
-    font-size: 14px;
-    min-width: 0;
-    max-width: 40vw;
-  }
-  .folder-view-toggle {
-    order: 3;
-  }
-
-  /* 7. 搜索框全宽 */
   .documents-search {
     width: 100% !important;
   }
 
-  /* 8. 分页脚紧凑 */
-  .list-table-footer {
-    padding: 10px;
+  .documents-org-picker__select {
+    width: 100% !important;
+    min-width: 0 !important;
   }
 
-  /* 9. 上传弹窗全屏 */
-  .documents-upload-modal.n-modal :deep(.n-card) {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    height: 100vh;
-    max-height: 100vh;
-    border-radius: 0 !important;
-    margin: 0;
-  }
-  .documents-upload-modal.n-modal :deep(.n-card__content) {
-    flex: 1;
-    overflow-y: auto;
-  }
-
-  /* 10. Tab 栏更紧凑 */
   .documents-scope-tabs :deep(.n-tabs-nav) {
     padding: 0 4px;
   }
@@ -2398,47 +1610,6 @@ watch(
   }
   .documents-scope-tabs {
     margin-bottom: 0;
-  }
-
-  /* 11. 操作栏筛选控件全宽 */
-  .documents-org-picker__select {
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  /* 12. 文件夹创建卡片紧凑 */
-  .kb-folder-create-card {
-    padding: 8px 6px 10px;
-  }
-
-  /* 13. 桌面端的分页脚相对定位 */
-  .list-table-footer :deep(.n-pagination) {
-    gap: 2px;
-  }
-  .list-table-footer :deep(.n-pagination .n-pagination-item) {
-    min-width: 28px;
-    height: 28px;
-    font-size: 12px;
-  }
-}
-
-@media (max-width: 400px) {
-  .kb-folder-explorer {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 8px;
-    padding: 6px 0 12px;
-  }
-
-  .documents-folder-toolbar .folder-action-btn.n-button {
-    font-size: var(--platform-font-size-xs) !important;
-    padding: 0 4px !important;
-  }
-
-  .documents-table :deep(.n-data-table-th):nth-child(5), /* scope */
-  .documents-table :deep(.n-data-table-td):nth-child(5),
-  .documents-table :deep(.n-data-table-th):nth-child(6), /* folder */
-  .documents-table :deep(.n-data-table-td):nth-child(6) {
-    display: none;
   }
 }
 </style>

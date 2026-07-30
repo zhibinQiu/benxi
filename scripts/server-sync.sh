@@ -8,6 +8,7 @@
 #   ./dev.sh sync --frontend       # 同步前端源码 + npm build + nginx reload（挂载 dist，不重建镜像）
 #   ./dev.sh sync --all            # 后端 + 前端
 #   ./dev.sh sync --browser            # 同步后在服务器重建 Playwright runtime
+#   ./dev.sh sync --automl             # 同步后在服务器重建含 PyCaret 的 runtime（需重建镜像）
 #   ./dev.sh sync --with-data          # 同步代码后，在服务器执行 stack.sh backup（数据备份，不拉到本地）
 #   ./dev.sh sync --backup             # 仅备份数据（不同步代码），在服务器执行 stack.sh backup
 #
@@ -33,6 +34,7 @@ DEPLOY_PATH="${DEPLOY_PATH:-/root/qzb/benxi}"
 SYNC_FRONTEND=0
 RESTART_API=1
 SYNC_BROWSER=0
+SYNC_AUTOML=0
 SYNC_DATA=0
 BACKUP_DATA=0
 RSYNC_OPTS=(-avz --delete)
@@ -52,6 +54,7 @@ parse_args() {
       --all) SYNC_FRONTEND=1; shift ;;
       --no-restart-api) RESTART_API=0; shift ;;
       --browser) SYNC_BROWSER=1; shift ;;
+      --automl) SYNC_AUTOML=1; shift ;;
       --with-data) SYNC_DATA=1; shift ;;
       --backup) BACKUP_DATA=1; shift ;;
       --restart-api)
@@ -59,7 +62,7 @@ parse_args() {
         shift
         ;;
       -h|--help)
-        sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
       *) error "未知参数: $1"; exit 1 ;;
@@ -74,31 +77,45 @@ remote() {
 rsync_to_server() {
   local dest="${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
   info "同步后端 → ${dest}"
-  remote "mkdir -p '${DEPLOY_PATH}/backend/app' '${DEPLOY_PATH}/backend/workers' '${DEPLOY_PATH}/third_party/examples/agent-skills' '${DEPLOY_PATH}/docs' '${DEPLOY_PATH}/scripts/lib' '${DEPLOY_PATH}/configs/compose' '${DEPLOY_PATH}/configs/envs'"
+  remote "mkdir -p '${DEPLOY_PATH}/backend/app' '${DEPLOY_PATH}/backend/workers' '${DEPLOY_PATH}/backend/agent_md' '${DEPLOY_PATH}/third_party/examples/agent-skills' '${DEPLOY_PATH}/docs' '${DEPLOY_PATH}/scripts/lib' '${DEPLOY_PATH}/configs/compose' '${DEPLOY_PATH}/configs/envs'"
   rsync "${RSYNC_OPTS[@]}" \
     --exclude '__pycache__/' --exclude '*.pyc' \
     "$ROOT/backend/app/" "${dest}backend/app/"
   rsync "${RSYNC_OPTS[@]}" \
     --exclude '__pycache__/' \
     "$ROOT/backend/workers/" "${dest}backend/workers/"
+  rsync "${RSYNC_OPTS[@]}" \
+    --exclude '__pycache__/' \
+    "$ROOT/backend/agent_md/" "${dest}backend/agent_md/"
   rsync -avz \
     "$ROOT/third_party/examples/agent-skills/" "${dest}third_party/examples/agent-skills/"
   rsync -avz \
     "$ROOT/docs/" "${dest}docs/" \
     "$ROOT/RELEASE.md" "${dest}RELEASE.md" \
     "$ROOT/运维部署指南.md" "${dest}运维部署指南.md" 2>/dev/null || true
+  remote "mkdir -p '${DEPLOY_PATH}/configs/compose' '${DEPLOY_PATH}/configs/envs' '${DEPLOY_PATH}/scripts/lib' '${DEPLOY_PATH}/backend'"
   rsync -avz \
-    "$ROOT/configs/compose/compose.yaml" "${dest}configs/compose/compose.yaml" \
-    "$ROOT/configs/compose/compose.server.yaml" "${dest}configs/compose/compose.server.yaml" \
-    "$ROOT/configs/compose/compose.expose-deps.yaml" "${dest}configs/compose/compose.expose-deps.yaml" \
-    "$ROOT/configs/envs/.env.stack.example" "${dest}configs/envs/.env.stack.example" \
-    "$ROOT/scripts/stack.sh" "${dest}scripts/stack.sh" \
-    "$ROOT/scripts/setup-stack-env.sh" "${dest}scripts/setup-stack-env.sh" \
-    "$ROOT/scripts/setup-browser-rpa.sh" "${dest}scripts/setup-browser-rpa.sh" \
-    "$ROOT/scripts/lib/browser-rpa.sh" "${dest}scripts/lib/browser-rpa.sh" \
-    "$ROOT/backend/Dockerfile" "${dest}backend/Dockerfile" \
-    "$ROOT/backend/pyproject.toml" "${dest}backend/pyproject.toml" \
-    2>/dev/null || true
+    "$ROOT/configs/compose/compose.yaml" \
+    "$ROOT/configs/compose/compose.server.yaml" \
+    "$ROOT/configs/compose/compose.expose-deps.yaml" \
+    "${dest}configs/compose/"
+  rsync -avz \
+    "$ROOT/configs/envs/.env.stack.example" \
+    "${dest}configs/envs/"
+  rsync -avz \
+    "$ROOT/scripts/stack.sh" \
+    "$ROOT/scripts/setup-stack-env.sh" \
+    "$ROOT/scripts/setup-browser-rpa.sh" \
+    "$ROOT/scripts/server-sync.sh" \
+    "${dest}scripts/"
+  rsync -avz \
+    "$ROOT/scripts/lib/browser-rpa.sh" \
+    "${dest}scripts/lib/"
+  rsync -avz \
+    "$ROOT/backend/Dockerfile" \
+    "$ROOT/backend/Dockerfile.automl" \
+    "$ROOT/backend/pyproject.toml" \
+    "${dest}backend/"
 
   if [[ "$SYNC_FRONTEND" == 1 ]]; then
     info "同步前端 → ${dest}"
@@ -267,6 +284,17 @@ export INSTALL_BROWSER=1 SERVER_MOUNT_CODE=1
 export COMPOSE_PROJECT_NAME="\${COMPOSE_PROJECT_NAME:-benxi}"
 [[ -f .env ]] && set -a && source .env && set +a
 bash scripts/stack.sh build-browser
+EOF
+  fi
+  if [[ "$SYNC_AUTOML" == 1 ]]; then
+    info "重建含 AutoML(PyCaret) 的 runtime 镜像（约 5–15 分钟）…"
+    remote bash -s <<EOF
+set -euo pipefail
+cd '${DEPLOY_PATH}'
+export INSTALL_BROWSER=1 INSTALL_AUTOML=1 SERVER_MOUNT_CODE=1
+export COMPOSE_PROJECT_NAME="\${COMPOSE_PROJECT_NAME:-benxi}"
+[[ -f .env ]] && set -a && source .env && set +a
+bash scripts/stack.sh build-automl
 EOF
   fi
   if [[ "$SYNC_DATA" == 1 || "$BACKUP_DATA" == 1 ]]; then

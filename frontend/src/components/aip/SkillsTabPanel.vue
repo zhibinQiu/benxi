@@ -715,7 +715,7 @@ defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openM
 <template>
     <div class="skills-card__header">
       <div class="skills-card__title-row">
-        <div class="skills-card__title">{{ t('admin.agentSkills.tabSkills') }}</div>
+        <div class="skills-card__hint">{{ t('admin.agentSkills.toolbarHint.skills') }}</div>
         <div class="skills-card__actions">
           <IconAction
             :label="t('common.search')"
@@ -751,7 +751,6 @@ defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openM
           />
         </div>
       </div>
-      <div class="skills-card__hint">{{ t('admin.agentSkills.toolbarHint.skills') }}</div>
     </div>
     <div class="skills-card">
       <div class="admin-list-table">
@@ -1047,7 +1046,9 @@ defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openM
 }
 
 .skills-card__hint {
-  margin-top: 2px;
+  margin: 0;
+  min-width: 0;
+  flex: 1;
   font-size: var(--platform-font-size-sm);
   font-weight: 400;
   color: var(--platform-text-tertiary);
@@ -1060,7 +1061,7 @@ defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openM
 }
 
 .skills-card :deep(.n-data-table-td) {
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   vertical-align: middle;
 }
 
@@ -1088,7 +1089,7 @@ defineExpose({ reload, toggleSearch, loadRegistry, loadMcpSkills, loading, openM
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  border-top: 1px solid var(--platform-border-strong);
+  border-top: 1px solid var(--platform-border-light, #E8E8E8);
   font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
 }

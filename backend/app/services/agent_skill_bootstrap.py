@@ -17,13 +17,17 @@ _logger = logging.getLogger(__name__)
 
 
 def _example_skills_root() -> Path:
-    """本机仓库根或 Docker /app 下的 examples/agent-skills。"""
+    """示例 Skill 包根目录：优先 agent_md/skills，其次 examples/agent-skills。"""
     here = Path(__file__).resolve()
-    for base in (here.parents[3], here.parents[2]):
-        candidate = base / "examples" / "agent-skills"
+    candidates = (
+        here.parents[2] / "agent_md" / "skills",  # backend/agent_md/skills
+        here.parents[3] / "examples" / "agent-skills",
+        here.parents[2] / "examples" / "agent-skills",
+    )
+    for candidate in candidates:
         if candidate.is_dir():
             return candidate
-    return here.parents[3] / "examples" / "agent-skills"
+    return candidates[0]
 
 
 def _read_skill_folder_entries(skill_dir: Path) -> list[tuple[str, bytes]]:
@@ -39,7 +43,7 @@ def _read_skill_folder_entries(skill_dir: Path) -> list[tuple[str, bytes]]:
 
 
 def ensure_example_skill(db: Session, skill_name: str) -> bool:
-    """若库中无该 Skill 或未启用，则从 examples/agent-skills 导入。"""
+    """若库中无该 Skill 或未启用，则从 agent_md/skills（或 examples）导入。"""
     row = db.scalar(select(AgentSkill).where(AgentSkill.name == skill_name))
     if row is not None and row.enabled:
         return False

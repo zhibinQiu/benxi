@@ -70,11 +70,21 @@ curl http://127.0.0.1:7861/api/health   # 需 exec 进网或 port-forward
 
 ## 备份
 
+| 目录 | 路径 |
+|------|------|
+| 运行时数据 | `${DATA_ROOT}`（开发默认 `./data`；服务器常用 `/root/qzb/benxi/data`） |
+| 备份产物 | 仓库根 **`backups/<YYYYMMDD_HHMMSS>/`**（含 `postgres.sql.gz`、`knowflow-mysql.sql.gz`、`minio.tar.gz`、`manifest.json`） |
+
 ```bash
-bash scripts/stack.sh backup
+bash scripts/stack.sh backup                    # 写入 backups/<时间戳>/
 ls backups/
 bash scripts/stack.sh restore backups/<timestamp>
+
+./dev.sh sync --backup                          # 仅在服务器跑 backup
+bash scripts/server-backup.sh --keep 30         # 定时备份并清理旧目录
 ```
+
+详情见 [组件位置与数据存储 §2.2](components-and-storage.md)。
 
 ## 监控
 

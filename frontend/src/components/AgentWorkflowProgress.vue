@@ -1,79 +1,63 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
+import { computed } from "vue";
+import { NIcon } from "naive-ui";
 import { useI18n } from "../composables/useI18n.js";
 import RoseLoader from "./RoseLoader.vue";
 import { confirmToolExecution, chooseToolOption } from "../api/chat.js";
+import {
+  scrubThinkingDisplayText,
+  resolveAgentDisplayName,
+  workflowRunningTasks,
+} from "../utils/agentWorkflow.js";
+import {
+  agentBadgeStyle,
+  agentRoleLabel,
+  resolveAgentCardIcon,
+} from "../utils/agentDisplay.js";
 
 const props = defineProps({
   workflow: { type: Object, default: null },
-  /** 流程结束后仍展示（如流式回答阶段） */
   keepVisibleAfterDone: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["confirm", "reject", "choose"]);
-
 const { t } = useI18n();
 
 const running = computed(() => props.workflow?.running ?? false);
-const liveThinking = computed(() => String(props.workflow?.liveThinking || "").trim());
-const parsingUrls = computed(() => {
-  const list = props.workflow?.parsingUrls;
-  return Array.isArray(list) ? list : [];
-});
-/** 仅在有「解析中」网址时，把网址并入动作行；无解析任务不展示网址列表 */
-const activeParsingUrl = computed(() => {
-  const item =
-    parsingUrls.value.find((u) => u.status === "parsing") ||
-    parsingUrls.value.find((u) => u.status === "pending");
-  return item?.url ? shortUrl(item.url) : "";
-});
-const summary = computed(() => {
-  const base = props.workflow?.summary || "";
-  if (activeParsingUrl.value && !String(base).includes(activeParsingUrl.value)) {
-    return `正在解析：${activeParsingUrl.value}`;
-  }
-  return base;
-});
+const summary = computed(() => props.workflow?.summary || "");
+const stage = computed(() => props.workflow?.stage || "");
+const activeAgentId = computed(() => String(props.workflow?.activeAgentId || "").trim());
+const activeAgent = computed(() =>
+  resolveAgentDisplayName(
+    activeAgentId.value,
+    props.workflow?.activeAgentTitle,
+  ),
+);
+const liveThinking = computed(() =>
+  scrubThinkingDisplayText(props.workflow?.liveThinking || ""),
+);
+const parallelTasks = computed(() => workflowRunningTasks(props.workflow));
+const showParallel = computed(() => parallelTasks.value.length > 1);
+
+function taskAgentLabel(task) {
+  return resolveAgentDisplayName(task?.agentId, task?.agentTitle);
+}
+
+function taskAgentId(task) {
+  return String(task?.agentId || "").trim();
+}
 
 const visible = computed(() => {
   if (!props.workflow) return false;
   if (running.value) return true;
   if (props.workflow.failed) return true;
   if (props.workflow.pendingConfirmation || props.workflow.pendingChoice) return true;
-  if (props.keepVisibleAfterDone && summary.value) return true;
+  if (props.keepVisibleAfterDone && (summary.value || liveThinking.value)) return true;
   return false;
 });
 
-const showLiveStatus = computed(() => running.value);
+const showLiveStatus = computed(() => running.value || Boolean(liveThinking.value));
 
-/** 执行中详情区：随内容增长自动滚到底，形成流式观感 */
-const thinkingScrollRef = ref(null);
-
-watch(
-  liveThinking,
-  async () => {
-    if (!running.value) return;
-    await nextTick();
-    const el = thinkingScrollRef.value;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  },
-  { flush: "post" },
-);
-
-function shortUrl(url) {
-  const u = String(url || "").trim();
-  if (!u) return "";
-  try {
-    const parsed = new URL(u);
-    const path = `${parsed.hostname}${parsed.pathname || ""}`.replace(/\/$/, "");
-    return path.length > 64 ? `${path.slice(0, 61)}…` : path;
-  } catch {
-    return u.length > 64 ? `${u.slice(0, 61)}…` : u;
-  }
-}
-
-/* Human-in-the-Loop 确认 */
 const pendingConfirm = computed(() => {
   const pc = props.workflow?.pendingConfirmation;
   if (!pc) return null;
@@ -106,7 +90,6 @@ async function onReject() {
   }
 }
 
-/* Human-in-the-Loop 方案选择 */
 const pendingChoice = computed(() => {
   const pc = props.workflow?.pendingChoice;
   if (!pc) return null;
@@ -132,27 +115,46 @@ async function onChoose(index) {
 
 <template>
   <div v-if="visible" class="aw" role="status" aria-live="polite">
-    <!-- 上行：黑色较大「正在执行」；下行：灰色较小流式思考 -->
     <div v-if="showLiveStatus" class="aw__main">
-      <RoseLoader class="aw__loader" :size="24" :rotation-duration="12000" />
+      <RoseLoader v-if="running" class="aw__loader" :size="24" :rotation-duration="12000" />
       <div class="aw__body">
-        <div class="aw__status">
-          {{ summary || t("agentWorkflow.executing") }}
+        <div v-if="running || summary" class="aw__status" :data-stage="stage">
+          <span
+            v-if="activeAgent"
+            class="aw__agent"
+            :data-agent="activeAgentId || 'unknown'"
+            :style="agentBadgeStyle(activeAgentId)"
+          >
+            <NIcon class="aw__agent-icon" :size="13" :component="resolveAgentCardIcon(activeAgentId)" />
+            <span class="aw__agent-role">{{ agentRoleLabel(activeAgentId) }}</span>
+            <span class="aw__agent-name">{{ activeAgent }}</span>
+          </span>
+          <span>{{ summary || t("agentWorkflow.executing") }}</span>
         </div>
-
-        <div
-          v-if="liveThinking"
-          ref="thinkingScrollRef"
-          class="aw__thinking"
-          :class="{ 'aw__thinking--streaming': running }"
-          aria-label="执行详情"
-        >
-          <div class="aw__thinking-inner">{{ liveThinking }}<span v-if="running" class="aw__caret" aria-hidden="true" /></div>
-        </div>
+        <ul v-if="showParallel" class="aw__parallel" aria-label="并行执行">
+          <li
+            v-for="(task, idx) in parallelTasks"
+            :key="task.id || idx"
+            class="aw__parallel-item"
+          >
+            <span class="aw__parallel-dot" aria-hidden="true" />
+            <span
+              v-if="taskAgentLabel(task)"
+              class="aw__agent aw__agent--inline"
+              :data-agent="taskAgentId(task) || 'unknown'"
+              :style="agentBadgeStyle(taskAgentId(task))"
+            >
+              <NIcon class="aw__agent-icon" :size="12" :component="resolveAgentCardIcon(taskAgentId(task))" />
+              <span class="aw__agent-role">{{ agentRoleLabel(taskAgentId(task)) }}</span>
+              <span class="aw__agent-name">{{ taskAgentLabel(task) }}</span>
+            </span>
+            <span>{{ task.title }}</span>
+          </li>
+        </ul>
+        <div v-if="liveThinking" class="aw__thinking">{{ liveThinking }}</div>
       </div>
     </div>
 
-    <!-- Human-in-the-Loop 确认 -->
     <div v-if="pendingConfirm?.status === 'awaiting'" class="aw__hitl">
       <div class="aw__hitl-icon">?</div>
       <div class="aw__hitl-body">
@@ -163,344 +165,116 @@ async function onChoose(index) {
             <RoseLoader v-if="pendingConfirm.accepting" class="aw__btn-loader" :size="16" />
             <template v-else>确认执行</template>
           </button>
-          <button class="aw__btn aw__btn--reject" :disabled="pendingConfirm.disabled" @click="onReject">
-            取消
-          </button>
+          <button class="aw__btn aw__btn--reject" :disabled="pendingConfirm.disabled" @click="onReject">取消</button>
         </div>
       </div>
     </div>
     <div v-else-if="pendingConfirm?.status === 'accepted'" class="aw__hitl aw__hitl--done">
       <div class="aw__hitl-icon aw__hitl-icon--done">&#x2713;</div>
-      <div class="aw__hitl-body">
-        <div class="aw__hitl-title">已确认：{{ pendingConfirm.title }}</div>
-        <div v-if="pendingConfirm.detail" class="aw__hitl-detail">{{ pendingConfirm.detail }}</div>
-      </div>
+      <div class="aw__hitl-body"><div class="aw__hitl-title">已确认：{{ pendingConfirm.title }}</div></div>
     </div>
     <div v-else-if="pendingConfirm?.status === 'rejected'" class="aw__hitl aw__hitl--rejected">
       <div class="aw__hitl-icon aw__hitl-icon--rejected">&#x2717;</div>
-      <div class="aw__hitl-body">
-        <div class="aw__hitl-title">已取消：{{ pendingConfirm.title }}</div>
-        <div v-if="pendingConfirm.detail" class="aw__hitl-detail">{{ pendingConfirm.detail }}</div>
-      </div>
+      <div class="aw__hitl-body"><div class="aw__hitl-title">已取消：{{ pendingConfirm.title }}</div></div>
     </div>
 
-    <!-- Human-in-the-Loop 方案选择 -->
     <div v-if="pendingChoice?.status === 'awaiting'" class="aw__choice">
       <div class="aw__choice-icon">?</div>
       <div class="aw__choice-body">
         <div class="aw__choice-question">{{ pendingChoice.question }}</div>
         <div class="aw__choice-options">
-          <button v-for="(option, optIndex) in pendingChoice.options" :key="optIndex"
-            class="aw__choice-btn" :disabled="pendingChoice.choosing" @click="onChoose(optIndex)">
-            <RoseLoader v-if="pendingChoice.choosing" class="aw__btn-loader" :size="16" />
-            <span v-else>{{ option }}</span>
-          </button>
+          <button
+            v-for="(opt, idx) in pendingChoice.options"
+            :key="idx"
+            class="aw__btn aw__btn--choice"
+            :disabled="pendingChoice.disabled"
+            @click="onChoose(idx)"
+          >{{ opt }}</button>
         </div>
-      </div>
-    </div>
-    <div v-else-if="pendingChoice?.status === 'chosen'" class="aw__choice aw__choice--done">
-      <div class="aw__choice-icon aw__choice-icon--done">&#x2713;</div>
-      <div class="aw__choice-body">
-        <div class="aw__choice-question">{{ pendingChoice.question }}</div>
-        <div class="aw__choice-result">已选择：{{ pendingChoice.selected }}</div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.aw {
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  font-size: 13px;
-  color: var(--platform-text);
-}
-
-.aw__main {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  line-height: 1.5;
-}
-
-.aw__loader {
-  flex-shrink: 0;
-  margin-top: -2px;
-  line-height: 0;
-}
-
-.aw__body {
-  flex: 1;
-  min-width: 0;
-}
-
-.aw__btn-loader {
-  flex-shrink: 0;
-  line-height: 0;
-}
-
-.aw__status {
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.5;
-  color: var(--platform-text, #0f172a);
-  word-break: break-word;
-}
-
-.aw__thinking {
-  margin-top: 6px;
-  width: 100%;
+.aw { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 10px; }
+.aw__main { display: flex; align-items: flex-start; gap: 10px; min-height: 28px; }
+.aw__loader { flex: 0 0 auto; margin-top: 2px; }
+.aw__body { flex: 1; min-width: 0; }
+.aw__status { color: var(--n-text-color); font-size: 15px; font-weight: 500; line-height: 1.4; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.aw__agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--card-accent, var(--n-primary-color));
+  background: var(--card-accent-soft, color-mix(in srgb, var(--n-primary-color) 12%, transparent));
+  border: 1px solid color-mix(in srgb, var(--card-accent, var(--n-primary-color)) 28%, transparent);
+  flex: 0 0 auto;
   max-width: 100%;
-  box-sizing: border-box;
-  max-height: min(18vh, 140px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 0;
+}
+.aw__agent-icon {
+  flex: 0 0 auto;
+  opacity: 0.95;
+}
+.aw__agent-role {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--card-accent, var(--n-primary-color));
+  line-height: 1.5;
+}
+.aw__agent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aw__agent--inline {
+  padding: 1px 6px 1px 4px;
   font-size: 11px;
-  font-weight: 400;
-  line-height: 1.55;
-  color: var(--platform-text-secondary, #64748b);
+  gap: 4px;
+}
+.aw__agent--inline .aw__agent-role {
+  font-size: 9px;
+  padding: 0 4px;
+}
+.aw__parallel { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.aw__parallel-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--n-text-color-2); line-height: 1.35; }
+.aw__parallel-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--n-primary-color); flex: 0 0 auto; animation: aw-pulse 1.2s ease-in-out infinite; }
+@keyframes aw-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+.aw__thinking {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--n-text-color-3, #64748b);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: normal;
-  /* 可滚动但不显示滚动条 */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  font-family: inherit;
+  max-height: none;
+  overflow: visible;
 }
-
-.aw__thinking::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-.aw__thinking-inner {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  min-height: 1.55em;
-}
-
-.aw__thinking--streaming {
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 8%, #000 100%);
-}
-
-.aw__caret {
-  display: inline-block;
-  width: 0.55em;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: -0.12em;
-  background: color-mix(in srgb, var(--platform-accent) 75%, transparent);
-  animation: aw-caret-blink 1s steps(1) infinite;
-}
-
-@keyframes aw-caret-blink {
-  0%,
-  45% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
-/* ── HITL ── */
-
-.aw__hitl {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: var(--platform-radius-sm, 8px);
-  background: rgba(59, 130, 246, 0.06);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-}
-
-.aw__hitl--done {
-  background: rgba(34, 197, 94, 0.06);
-  border-color: rgba(34, 197, 94, 0.2);
-}
-
-.aw__hitl--rejected {
-  background: rgba(239, 68, 68, 0.06);
-  border-color: rgba(239, 68, 68, 0.2);
-}
-
-.aw__hitl-icon {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  font-size: 12px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.aw__hitl-icon--done {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-}
-
-.aw__hitl-icon--rejected {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.aw__hitl-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.aw__hitl-title {
-  font-weight: 600;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--platform-text, #0f172a);
-}
-
-.aw__hitl-detail {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--platform-text-secondary, #64748b);
-  word-break: break-word;
-}
-
-.aw__hitl-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.aw__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-  line-height: 1.4;
-}
-
-.aw__btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.aw__btn--confirm {
-  background: #3b82f6;
-  color: #fff;
-}
-
-.aw__btn--confirm:hover:not(:disabled) {
-  background: #2563eb;
-}
-
-.aw__btn--reject {
-  background: rgba(15, 23, 42, 0.06);
-  color: var(--platform-text, #0f172a);
-}
-
-.aw__btn--reject:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-/* ── Choice ── */
-
-.aw__choice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: var(--platform-radius-sm, 8px);
-  background: rgba(139, 92, 246, 0.06);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-}
-
-.aw__choice--done {
-  background: rgba(34, 197, 94, 0.06);
-  border-color: rgba(34, 197, 94, 0.2);
-}
-
-.aw__choice-icon {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  margin-top: 1px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  font-size: 12px;
-  background: rgba(139, 92, 246, 0.15);
-  color: #8b5cf6;
-}
-
-.aw__choice-icon--done {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-}
-
-.aw__choice-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.aw__choice-question {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--platform-text, #0f172a);
-  margin-bottom: 8px;
-}
-
-.aw__choice-result {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--platform-text-secondary, #64748b);
-}
-
-.aw__choice-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.aw__choice-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px 18px;
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-  line-height: 1.4;
-  background: rgba(139, 92, 246, 0.06);
-  color: var(--platform-text, #0f172a);
-  white-space: nowrap;
-}
-
-.aw__choice-btn:hover:not(:disabled) {
-  background: rgba(139, 92, 246, 0.15);
-  border-color: #8b5cf6;
-}
-
-.aw__choice-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.aw__hitl, .aw__choice { display: flex; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--n-color-embedded, rgba(0,0,0,0.03)); border: 1px solid var(--n-border-color); }
+.aw__hitl-icon, .aw__choice-icon { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--n-primary-color); color: #fff; flex: 0 0 auto; }
+.aw__hitl-icon--done { background: #18a058; }
+.aw__hitl-icon--rejected { background: #d03050; }
+.aw__hitl-body, .aw__choice-body { flex: 1; min-width: 0; }
+.aw__hitl-title, .aw__choice-question { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+.aw__hitl-detail { font-size: 12px; color: var(--n-text-color-3); margin-bottom: 8px; }
+.aw__hitl-actions, .aw__choice-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.aw__btn { border: 1px solid var(--n-border-color); background: var(--n-color); border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.aw__btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.aw__btn--confirm { background: var(--n-primary-color); border-color: var(--n-primary-color); color: #fff; }
+.aw__btn--reject { color: var(--n-text-color-2); }
+.aw__btn--choice:hover:not(:disabled) { border-color: var(--n-primary-color); }
+.aw__btn-loader { display: inline-block; vertical-align: middle; }
 </style>

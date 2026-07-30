@@ -94,6 +94,12 @@ const routes = [
         component: () => import("../views/DataAnalysisView.vue"),
       },
       {
+        path: "system/auto-ml",
+        name: "auto-ml",
+        meta: { title: "自动化机器学习", fullHeight: true, featureIcon: "analytics" },
+        component: () => import("../views/AutoMlView.vue"),
+      },
+      {
         path: "system/smart-data-query-v2",
         redirect: { name: "smart-data-query" },
       },
@@ -102,6 +108,12 @@ const routes = [
         name: "carbon-qa",
         meta: { title: "双碳问答", fullHeight: true, featureIcon: "chatbubbles" },
         component: () => import("../views/CarbonQaV2View.vue"),
+      },
+      {
+        path: "system/carbon-news",
+        name: "carbon-news",
+        meta: { title: "碳新闻", fullHeight: true, featureIcon: "newspaper" },
+        component: () => import("../views/CarbonNewsView.vue"),
       },
       {
         path: "system/wechat-mp",
@@ -187,12 +199,13 @@ const routes = [
           flushEnd: true,
           featureIcon: "git-network",
           perm: "feature.ontology",
+          keepAlive: true,
         },
         component: () => import("../views/OntologyView.vue"),
       },
       {
         path: "system/kg",
-        redirect: { path: "/system/ontology", query: { tab: "entities" } },
+        redirect: { path: "/system/ontology", query: { tab: "kg" } },
       },
       {
         path: "system/compare",
@@ -358,6 +371,7 @@ const routes = [
           title: "定时任务",
           featureIcon: "timer",
           featureLocalNav: true,
+          fullHeight: true,
           keepAlive: true,
         },
         component: () => import("../views/AutomationView.vue"),
@@ -376,10 +390,9 @@ const routes = [
         path: "system/carbon-assistant",
         name: "carbon-assistant",
         meta: {
-          title: "双碳助手",
+          title: "碳资产报告",
           featureLocalNav: true,
           featureIcon: "leaf",
-          keepAlive: true,
         },
         component: () => import("../views/CarbonAssistantView.vue"),
       },
@@ -499,11 +512,17 @@ let _chunksPrefetched = false;
 
 function _prefetchPopularChunksIfNeeded(to) {
   if (_chunksPrefetched) return;
-  if (!to.meta?.public && to.name !== "login") {
-    _chunksPrefetched = true;
+  if (to.meta?.public || to.name === "login") return;
+  _chunksPrefetched = true;
+  const run = () => {
     for (const imp of _POPULAR_CHUNKS) {
       imp().catch(() => {});
     }
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 4000 });
+  } else {
+    setTimeout(run, 800);
   }
 }
 

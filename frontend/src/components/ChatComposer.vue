@@ -289,15 +289,18 @@ defineExpose({ focus });
   </div>
 </template>
 
+<style src="../styles/chat-shell.css"></style>
+
 <style scoped>
 .chat-composer {
   position: relative;
   width: 100%;
+  border-radius: var(--platform-radius);
 }
 
 .chat-composer__surface {
   position: relative;
-  border-radius: var(--platform-radius);
+  border-radius: inherit;
   overflow: hidden;
   border: 1px solid var(--platform-border);
   background: var(--platform-bg-elevated-solid, #fcfcfc);
@@ -331,7 +334,7 @@ defineExpose({ focus });
 
 .chat-composer:focus-within .chat-composer__surface {
   border-color: var(--platform-border-strong);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3), none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
 .chat-composer__attachments {
@@ -386,24 +389,6 @@ defineExpose({ focus });
   cursor: not-allowed;
 }
 
-.chat-composer__input :deep(.n-input__border),
-.chat-composer__input :deep(.n-input__state-border) {
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.chat-composer__input :deep(.n-input-wrapper) {
-  border-radius: 0;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-.chat-composer__input :deep(.n-input:not(.n-input--disabled):hover .n-input__state-border),
-.chat-composer__input :deep(.n-input.n-input--focus .n-input__state-border) {
-  border: none !important;
-  box-shadow: none !important;
-}
-
 .chat-composer--has-files .chat-composer__input :deep(.n-input__textarea-el),
 .chat-composer--has-files .chat-composer__input :deep(.n-input__placeholder),
 .chat-composer--has-files .chat-composer__input :deep(.n-input__textarea-mirror) {
@@ -415,18 +400,6 @@ defineExpose({ focus });
 .chat-composer__input :deep(.n-input__textarea-mirror) {
   padding-right: 48px !important;
   padding-bottom: 48px !important;
-}
-
-.chat-composer__input :deep(.n-input__textarea-el) {
-  color: var(--platform-text);
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.chat-composer__input :deep(.n-input__textarea-el)::-webkit-scrollbar {
-  width: 0;
-  height: 0;
 }
 
 .chat-composer--single .chat-composer__input :deep(.n-input__textarea-el),

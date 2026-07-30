@@ -23,7 +23,7 @@ defineEmits(["click"]);
 
 const isTableVariant = computed(() => props.variant === "table");
 
-const iconSize = computed(() => (isTableVariant.value ? 16 : 15));
+const iconSize = computed(() => (isTableVariant.value ? 16 : 14));
 
 const actionClass = computed(() => {
   if (isTableVariant.value) {

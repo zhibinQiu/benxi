@@ -35,3 +35,12 @@ def test_is_ocr_layout_failure_detects_paddleocr_pdf_error():
         '{"error":"PaddleOCR failed to recognize PDF"}'
     )
     assert _is_ocr_layout_failure(detail) is True
+
+
+def test_is_ocr_layout_failure_detects_summarized_paddleocr_message():
+    from app.services.knowledge_sync_job_service import _is_ocr_layout_failure
+
+    assert _is_ocr_layout_failure(
+        "文档解析失败：PaddleOCR 版面识别失败，请更换识别方式后重试，或联系管理员。"
+    ) is True
+    assert _is_ocr_layout_failure("文档解析出现问题，请稍后重试或联系管理员。") is False

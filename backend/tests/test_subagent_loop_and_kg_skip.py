@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock
 
-from app.agentkit.subagent.loop import (
+from app.agent.subagent.loop import (
     _is_promise_only_summary,
     run_subagent_tool_loop,
 )
-from app.agentkit.subagent.runtime import execute_subagent
-from app.agentkit.subagent.types import SubagentKindConfig, SubagentRuntime
-from app.agentkit.subagent.config import SubagentConfig
+from app.agent.subagent.runtime import execute_subagent
+from app.agent.subagent.types import SubagentKindConfig, SubagentRuntime
+from app.agent.subagent.config import SubagentConfig
 from app.services.agent_skill_router import (
     matches_research_intent,
     should_skip_kg_probe,
@@ -213,7 +213,7 @@ def test_execute_subagent_merges_citations_via_shared_holder():
 
 
 def test_merge_child_citations_reindexes_into_parent():
-    from app.agentkit.subagent.context import merge_child_into_parent
+    from app.agent.subagent.context import merge_child_into_parent
 
     parent = {"citations": [{"index": 1, "title": "p", "url": "https://p.example"}]}
     child = {

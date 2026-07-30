@@ -406,9 +406,10 @@ async def chat_completion_stream_choice(
     temperature: float = 0.3,
     timeout: float = 120.0,
 ) -> AsyncIterator[dict[str, Any]]:
-    """流式 chat/completions（支持 tools），产出两类事件：
+    """流式 chat/completions（支持 tools），产出三类事件：
 
-    - {"type": "delta", "text": str}  — 内容片段（供 thinking_delta 展示）
+    - {"type": "reasoning", "text": str} — 推理片段（供 thinking_delta 展示）
+    - {"type": "delta", "text": str}  — 正文片段（工具环不转发，避免草稿污染）
     - {"type": "choice", "message": dict, "finish_reason": str}
       — 完整 choice（含 tool_calls），流结束时产出
     """
@@ -487,6 +488,9 @@ async def chat_completion_stream_choice(
                     if content:
                         assistant_message["content"] = (assistant_message.get("content") or "") + content
                         yield {"type": "delta", "text": content}
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                    if reasoning:
+                        yield {"type": "reasoning", "text": reasoning}
                     fr = choices[0].get("finish_reason")
                     if fr:
                         finish_reason = fr

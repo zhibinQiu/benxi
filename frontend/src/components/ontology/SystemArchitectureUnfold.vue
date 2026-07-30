@@ -118,7 +118,7 @@
 import { ref, reactive, onMounted, onUnmounted } from "vue";
 
 // ── 配色 ──
-const COLORS = ["#4d94ff", "#a78bfa", "#f59e0b", "#34d399"];
+const COLORS = ["#005A9E", "#1A7FD4", "#D99B2B", "#2F9E68"];
 const ZONES = [
   {
     id: "infra", name: "平台设施层", color: COLORS[0],
@@ -188,7 +188,7 @@ function rosePath(scale, steps = 240) {
 
 // ── 曲线动画（路径绘制 + 粒子沿曲线滑动） ──
 const curveScale = ref(0.7);
-const curveColor = "var(--platform-accent, #4d94ff)";
+const curveColor = "var(--platform-accent, #005A9E)";
 const dashOffset = ref(0);
 const dashArray = "1400";
 

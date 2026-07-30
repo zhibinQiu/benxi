@@ -1,4 +1,4 @@
-"""为缺失的 tools/definitions/<name>.md 创建空壳骨架（不写空话占位）。
+"""为缺失的 agent_md/tools/<name>.md 创建空壳骨架（不写空话占位）。
 
 禁止再生成「根据当前任务需求自动调用」类模板。
 新工具须人工按 knowledge_retrieve.md / fetch_url_content.md 规范补全：
@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT_DIR = (ROOT / "backend" / "tools" / "definitions").resolve()
+OUT_DIR = (ROOT / "backend" / "agent_md" / "tools").resolve()
 
 # 与历史列表对齐；新增工具应写入 ALL_TOOLS 后在此补充或改脚本从 ALL_TOOLS 导入
 TOOL_NAMES = [
@@ -73,14 +73,6 @@ TOOL_NAMES = [
     "cancel_scheduled_notification",
     "ask_user_choice",
     "request_orchestrator_assist",
-    "list_users",
-    "create_user",
-    "update_user",
-    "delete_user",
-    "list_departments",
-    "create_department",
-    "update_department",
-    "delete_department",
 ]
 
 _SKELETON = """---

@@ -5,6 +5,7 @@ import { NIcon } from "naive-ui";
 import { useI18n } from "../composables/useI18n";
 import { acknowledgeToast, useNotificationAlerts } from "../composables/useNotificationAlerts";
 import { PLATFORM_Z } from "../constants/zIndex.js";
+import { renderMarkdown } from "../utils/markdown.js";
 
 const router = useRouter();
 const { t } = useI18n();
@@ -38,12 +39,14 @@ function onOpen(toast) {
           @click="onOpen(toast)"
         >
           <span class="system-notif-card__icon" aria-hidden="true">
-            <n-icon :size="24" :component="NotificationsOutline" />
+            <n-icon :size="16" :component="NotificationsOutline" />
           </span>
           <span class="system-notif-card__text">
-            <span v-if="toast.notification.body" class="system-notif-card__desc">
-              {{ toast.notification.body }}
-            </span>
+            <div
+              v-if="toast.notification.body"
+              class="system-notif-card__desc"
+              v-html="renderMarkdown(toast.notification.body)"
+            />
             <span class="system-notif-card__hint">{{ t("notifications.alertHint") }}</span>
           </span>
         </button>
@@ -57,23 +60,23 @@ function onOpen(toast) {
   position: fixed;
   /* 避开顶栏/标签栏，整体下移，避免贴顶遮挡 */
   top: 72px;
-  right: 19px;
+  right: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: min(432px, calc(100vw - 38px));
+  gap: 8px;
+  width: min(280px, calc(100vw - 32px));
   pointer-events: none;
 }
 
 .system-notif-card {
   position: relative;
   pointer-events: auto;
-  border-radius: var(--platform-card-radius);
-  border: 1px solid color-mix(in srgb, var(--platform-accent) 35%, var(--platform-border));
+  border-radius: var(--platform-radius-md, 10px);
+  border: 1px solid color-mix(in srgb, var(--platform-accent) 28%, var(--platform-border));
   background: var(--platform-card-bg);
   box-shadow:
-    0 14px 38px color-mix(in srgb, var(--platform-accent) 18%, transparent),
-    0 2px 10px rgba(15, 23, 42, 0.08);
+    0 8px 22px color-mix(in srgb, var(--platform-accent) 12%, transparent),
+    0 1px 6px rgba(15, 23, 42, 0.06);
   overflow: hidden;
 }
 
@@ -84,9 +87,9 @@ function onOpen(toast) {
 .system-notif-card__body {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 10px;
   width: 100%;
-  padding: 17px;
+  padding: 10px 12px;
   border: none;
   background: transparent;
   text-align: left;
@@ -104,9 +107,9 @@ function onOpen(toast) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background: var(--platform-accent-gradient-soft, rgba(24, 160, 88, 0.12));
   color: var(--platform-accent);
 }
@@ -115,18 +118,36 @@ function onOpen(toast) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 2px;
 }
 
 .system-notif-card__desc {
-  font-size: 14px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.4;
   color: var(--platform-text-secondary);
   word-break: break-word;
 }
 
+.system-notif-card__desc :deep(p) {
+  margin: 0 0 0.25em;
+}
+
+.system-notif-card__desc :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.system-notif-card__desc :deep(ul),
+.system-notif-card__desc :deep(ol) {
+  margin: 0.15em 0;
+  padding-left: 1.2em;
+}
+
+.system-notif-card__desc :deep(a) {
+  color: var(--platform-accent);
+}
+
 .system-notif-card__hint {
-  font-size: 13px;
+  font-size: 11px;
   color: var(--platform-text-tertiary);
 }
 

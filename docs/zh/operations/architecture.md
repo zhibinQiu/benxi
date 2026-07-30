@@ -60,7 +60,7 @@ flowchart TB
 
 ## 功能插件模型
 
-后端 `platform/app/features/builtin/` 注册 `FeaturePlugin`：
+后端 `backend/app/features/builtin/` 注册 `FeaturePlugin`：
 
 - 自动挂载 `/api/v1` 路由（若有 `router`）
 - 写入 RBAC 权限种子
@@ -77,15 +77,16 @@ flowchart TB
 
 详见 [知识服务实现](../implementation/knowledge-implementation.md)（实现细节）与本目录 [网络拓扑](network-topology.md)。
 
-## 启动与版本（v4.8.8）
+## 启动与版本（v4.9.0）
 
 | 项 | 说明 |
 |----|------|
-| 版本源 | 仓库根 `VERSION`（当前 4.8.8）→ `BENXI_VERSION` 镜像 tag |
+| 版本源 | 仓库根 `VERSION`（当前 4.9.0）→ `BENXI_VERSION` 镜像 tag |
 | 开发入口 | `./dev.sh docker`（全 Docker 热重载） |
 | 编排 | `bash scripts/stack.sh` build / up / dev-up / down |
 | 数据存储 | PostgreSQL（平台）· MySQL+Infinity（KnowFlow）· MinIO · Redis；见 [组件与数据存储](components-and-storage.md) |
-| 应用配置 | `platform/.env`；栈级 `/.env` 由 `setup-stack-env.sh` 合并 |
+| 应用配置 | `backend/.env`；栈级 `/.env` 由 `setup-stack-env.sh` 合并 |
+| 智能体 | `backend/app/agent/` + `agent_md/`；见 [Agent 架构](../agent-architecture.md) |
 
 新增 **资源管理**（系统设置，需 `admin.user`）：在线配置 LLM / 语音合成 / KnowFlow / OCR 等，`GET /api/v1/system/client-config` 供前端启动拉取主题与 API 根地址。
 
@@ -96,8 +97,8 @@ flowchart TB
 | DB 启动 | `auto` / `light` / `full` 分流；light 仅跑增量 DDL + 权限种子 |
 | 流式 API | 鉴权后 `detach_request_db` 归还连接池；SSE 轮询用独立短会话 |
 | Agent 工具循环 | `AgentLoopSession`：LLM/外部 I/O 前 `release_before_io()`，工具执行前 `open()`；supervisor / report 流式路径不再长占 `SessionLocal` |
-| SSE 取消（v4.8.8） | `stream_cancel`：客户端断开时协作中断 supervisor / tool loop / 子 Agent / 图谱 probe |
-| 工作时记忆（v4.8.8） | `agent_working_memory` 注入调度轨迹；与用户系统记忆 `MEMORY.md` 分离 |
+| SSE 取消（v4.9.0） | `stream_cancel`：客户端断开时协作中断 supervisor / tool loop / 子 Agent / 图谱 probe |
+| 工作时记忆（v4.9.0） | `agent_working_memory` 注入调度轨迹；与用户系统记忆 `MEMORY.md` 分离 |
 | 路由信号 | `agent_routing_signals` 集中 regex（浏览器/调度/复合句等），planner 与 supervisor 共用 |
 | 前端内存 | 对话/知识壳 KeepAlive；知识双面板 max=1；重型 chunk 异步加载 |
 | 进程退出 | 关闭 `last_seen` 线程池与后台 executor |
@@ -144,7 +145,7 @@ pdf_trans/
 ├── configs/
 │   ├── compose/               # Docker Compose 编排文件
 │   └── envs/                  # 环境配置模板
-├── backend/                    # FastAPI 后端（含 app/agentkit/ 智能体工具箱）
+├── backend/                    # FastAPI 后端（含 app/agent/ 智能体运行时）
 ├── scripts/                   # 运维与开发脚本
 ├── docs/                      # 项目文档
 └── tests/                     # 测试

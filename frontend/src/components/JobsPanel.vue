@@ -18,10 +18,12 @@ import { deleteSequentially } from "../utils/batchActions";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import ListTableFooter from "./ListTableFooter.vue";
 import {
+  EyeOutline,
   ListOutline,
   RefreshOutline,
   StopCircleOutline,
   TrashOutline } from "@vicons/ionicons5";
+import IconAction from "./IconAction.vue";
 
 const props = defineProps({
   variant: {
@@ -51,6 +53,7 @@ const TYPE_LABELS = {
   maintenance: "jobs.types.maintenance",
   finance_report: "jobs.types.finance_report",
   carbon_report: "jobs.types.carbon_report",
+  kg_sync: "jobs.types.kg_sync",
 };
 
 const STATUS_LABELS = {
@@ -364,7 +367,7 @@ defineExpose({ load, refresh: load });
 <template>
   <div :class="['jobs-panel', { 'jobs-panel--popover': variant === 'popover' }]">
     <header v-if="variant === 'popover'" class="jobs-panel__header">
-      <strong class="platform-text-gradient jobs-panel__title">
+      <strong class="jobs-panel__title">
         {{ t("jobs.title") }}
       </strong>
       <div class="jobs-panel__actions panel-header-actions">
@@ -377,7 +380,7 @@ defineExpose({ load, refresh: load });
               :disabled="loading"
               @click="load"
             >
-              <n-icon :size="19" :component="RefreshOutline" />
+              <n-icon :size="15" :component="RefreshOutline" />
             </button>
           </template>
           {{ t("common.refresh") }}
@@ -386,11 +389,11 @@ defineExpose({ load, refresh: load });
           <template #trigger>
             <button
               type="button"
-              class="panel-header-btn panel-header-btn--accent"
+              class="panel-header-btn"
               :aria-label="t('jobs.viewAll')"
               @click="goJobsPage"
             >
-              <n-icon :size="19" :component="ListOutline" />
+              <n-icon :size="15" :component="ListOutline" />
             </button>
           </template>
           {{ t("jobs.viewAll") }}
@@ -403,7 +406,7 @@ defineExpose({ load, refresh: load });
               :aria-label="t('jobs.clearDone')"
               @click="doClearFinished"
             >
-              <n-icon :size="19" :component="TrashOutline" />
+              <n-icon :size="15" :component="TrashOutline" />
             </button>
           </template>
           {{ t("jobs.clearDone") }}
@@ -428,25 +431,25 @@ defineExpose({ load, refresh: load });
                 {{ documentTitle(row) }} · {{ new Date(row.created_at).toLocaleString() }}
               </div>
             </div>
-            <n-space :size="5" class="jobs-panel__item-actions">
-              <n-button
+            <n-space :size="2" class="jobs-panel__item-actions">
+              <IconAction
                 v-if="['pdf_translate', 'document_index'].includes(row.type)"
-                text
+                :label="t('common.view')"
+                :icon="EyeOutline"
+                variant="table"
+                size="tiny"
                 type="primary"
-                size="small"
                 @click="openJob(row)"
-              >
-                {{ t("common.view") }}
-              </n-button>
-              <n-button
+              />
+              <IconAction
                 v-if="isCancellable(row)"
-                text
+                :label="t('batch.cancel')"
+                :icon="StopCircleOutline"
+                variant="table"
+                size="tiny"
                 type="warning"
-                size="small"
                 @click="confirmCancelJob(row.id)"
-              >
-                {{ t("batch.cancel") }}
-              </n-button>
+              />
             </n-space>
           </div>
         </div>
@@ -543,18 +546,15 @@ defineExpose({ load, refresh: load });
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 16px 10px;
+  padding: 10px 14px 8px;
   border-bottom: 1px solid var(--platform-border);
-  background: linear-gradient(
-    180deg,
-    var(--platform-toolbar-bg) 0%,
-    transparent 100%
-  );
+  background: transparent;
 }
 
 .jobs-panel__title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
+  color: var(--platform-text);
   letter-spacing: var(--platform-tracking-tight);
 }
 
@@ -741,10 +741,19 @@ defineExpose({ load, refresh: load });
   flex-shrink: 0;
 }
 
-/* 头部图标按钮 — 与通知/待办面板统一的轻量样式 */
+.jobs-panel__item-actions :deep(.table-icon-action) {
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  --n-height: 24px !important;
+  --n-icon-size: 14px !important;
+}
+
+/* 头部图标按钮 — 与通知面板统一的轻量小尺寸 */
 .jobs-panel__header .panel-header-btn {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
   background: transparent;
   color: var(--platform-text-secondary);
   border-radius: var(--platform-radius-sm, 6px);
@@ -757,6 +766,8 @@ defineExpose({ load, refresh: load });
 .jobs-panel__header .panel-header-btn--accent:not(:disabled):hover {
   background: var(--platform-accent-soft);
   color: var(--platform-accent);
+  transform: none;
+  box-shadow: none;
 }
 
 .jobs-panel__header .panel-header-btn--danger:not(:disabled):hover {
@@ -764,7 +775,6 @@ defineExpose({ load, refresh: load });
   color: var(--platform-error, #d03050);
 }
 
-/* 覆盖全局 panel-header-btn 的 hover 抬起效果，保持面板内一致的轻量交互 */
 .jobs-panel__header .panel-header-btn:not(:disabled):active {
   transform: none;
 }

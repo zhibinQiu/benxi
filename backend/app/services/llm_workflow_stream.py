@@ -38,6 +38,7 @@ async def iter_llm_answer_events(
 
     answer_thought_done = False
     content_emitted = False
+    reasoning_notified = False
     dsml_filter = DsmlStreamFilter()
     async for part in chat_completion_stream_parts(
         messages=messages,
@@ -63,27 +64,37 @@ async def iter_llm_answer_events(
             yield {"type": "error", "message": text}
             return
         if kind == "reasoning" and text:
+            if not reasoning_notified:
+                reasoning_notified = True
+                yield {
+                    "type": "workflow",
+                    "data": {
+                        "phase": "agent_thinking",
+                        "title": "思考中",
+                        "detail": "",
+                        "tool": "llm",
+                        "step_id": answer_think_id,
+                    },
+                }
             yield {
                 "type": "workflow",
                 "data": {
                     "phase": "thinking_delta",
-                    "step_id": answer_think_id,
                     "delta": text,
-                    "title": think_title,
                     "tool": "llm",
+                    "step_id": answer_think_id,
                 },
             }
             continue
         if kind != "content" or not text:
             continue
         if not answer_thought_done:
-            thought_detail = ""
             yield {
                 "type": "workflow",
                 "data": {
                     "phase": "agent_thought",
                     "title": "思考完成",
-                    "detail": thought_detail,
+                    "detail": "",
                     "tool": "llm",
                     "step_id": answer_think_id,
                     "status": "done",

@@ -41,7 +41,11 @@ def test_delete_department_rejects_child(client, admin_token):
         headers=_auth(admin_token),
     )
     assert r.status_code == 400
-    assert "下级" in r.json()["detail"]["message"]
+    body = r.json()
+    msg = str(body.get("message") or "")
+    if not msg and isinstance(body.get("detail"), dict):
+        msg = str(body["detail"].get("message") or "")
+    assert "下级" in msg
 
 
 def test_delete_department_ok(client, admin_token):

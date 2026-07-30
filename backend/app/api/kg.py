@@ -19,6 +19,7 @@ from app.schemas.common import ApiResponse
 from app.schemas.kg import (
     ClearOut,
     EntityIn,
+    EntityMergeIn,
     EntityOut,
     EntityUpdate,
     ExtractBatchIn,
@@ -147,6 +148,20 @@ async def delete_entity(
     return ApiResponse(data=None)
 
 
+@router.post("/entities/merge", response_model=ApiResponse[dict])
+async def merge_entities(
+    body: EntityMergeIn,
+    user: Annotated[User, Depends(get_current_user)],
+) -> ApiResponse[dict]:
+    """合并两个实体实例（source → target）。"""
+    svc = await _get_kg_svc()
+    try:
+        result = await svc.merge_entities(body.source_id, body.target_id, str(user.id))
+        return ApiResponse(data=result)
+    except ValueError as exc:
+        raise bad_request(str(exc))
+
+
 # ── 关系 CRUD ────────────────────────────────────────────────────────────────
 
 
@@ -216,15 +231,16 @@ async def get_graph(
     user: Annotated[User, Depends(get_current_user)],
     focus_entity_id: str | None = None,
     depth: int = Query(default=2, ge=1, le=5),
+    limit: int = Query(default=300, ge=1, le=1000),
 ) -> ApiResponse[GraphOut]:
-    """获取子图（按 focus 实体展开）或全图。"""
+    """获取子图（按 focus 实体展开）或全图。全图默认不自动调用，由前端显式刷新触发。"""
     svc = await _get_kg_svc()
     if focus_entity_id:
         graph = await svc.get_subgraph(
             focus_entity_id, depth=depth, user_id=str(user.id)
         )
     else:
-        graph = await svc.get_full_graph(str(user.id), limit=50)
+        graph = await svc.get_full_graph(str(user.id), limit=limit)
     return ApiResponse(data=graph)
 
 
@@ -273,24 +289,12 @@ async def extract_from_text(
         user_id=str(user.id),
         source_type=body.source_type,
         source_id=body.source_id,
+        discover_ontology=body.discover_ontology,
     )
     if result.get("skipped"):
-        raise bad_request(str(result.get("reason", "抽取失败")))
+        detail = result.get("error") or result.get("reason") or "抽取失败"
+        raise bad_request(str(detail))
     return ApiResponse(data=ExtractFromTextOut(**result))
-
-
-@router.post("/extract/documents", response_model=ApiResponse[dict[str, Any]])
-async def extract_documents(
-    body: ExtractBatchIn,
-    user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)],
-) -> ApiResponse[dict[str, Any]]:
-    """批量读取文档正文并通过 LLM 抽取实体/关系到知识图谱。"""
-    svc = await _get_kg_svc()
-    stats = await svc.batch_extract_documents_from_content(
-        db, str(user.id), max_docs=body.max_docs
-    )
-    return ApiResponse(data=stats)
 
 
 @router.post("/extract/batch", response_model=ApiResponse[ExtractBatchOut])
@@ -309,65 +313,90 @@ async def extract_batch(
     )
 
 
-# ── 平台数据同步 ──────────────────────────────────────────────────────────
+# ── 平台数据同步（后台任务）──────────────────────────────────────────────
+
+
+def _enqueue_sync(
+    db: Session,
+    user: User,
+    *,
+    scope: str,
+    max_docs: int = 20,
+    force: bool = False,
+    discover_ontology: bool = True,
+) -> dict[str, Any]:
+    from app.services.kg_sync_job_service import enqueue_kg_sync_job, scope_label
+
+    try:
+        job = enqueue_kg_sync_job(
+            db,
+            user,
+            scope=scope,
+            max_docs=max_docs,
+            force=force,
+            discover_ontology=discover_ontology,
+        )
+    except ValueError as exc:
+        raise bad_request(str(exc)) from exc
+    return {
+        "queued": True,
+        "job_id": str(job.id),
+        "scope": scope,
+        "scope_label": scope_label(scope),
+        "message": f"已加入后台任务：知识图谱同步 · {scope_label(scope)}",
+    }
 
 
 @router.post("/sync/org", response_model=ApiResponse[dict[str, Any]])
-async def sync_platform_org(
+def sync_platform_org(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[dict[str, Any]]:
-    """全量同步平台用户/部门到知识图谱（upsert + 清除已删/停用对象）。"""
-    svc = await _get_kg_svc()
-    stats = await svc.sync_platform_org(db, str(user.id))
-    return ApiResponse(data=stats)
+    """将平台用户/部门同步到知识图谱（后台任务）。"""
+    return ApiResponse(data=_enqueue_sync(db, user, scope="org"))
 
 
 @router.post("/sync/agents", response_model=ApiResponse[dict[str, Any]])
-async def sync_platform_agents(
+def sync_platform_agents(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[dict[str, Any]]:
-    """全量同步平台智能体/工具/Skill（upsert + 清除已不存在项）。"""
-    svc = await _get_kg_svc()
-    stats = await svc.sync_platform_agents(db, str(user.id))
-    return ApiResponse(data=stats)
+    """将平台智能体/工具/Skill 同步到知识图谱（后台任务）。"""
+    return ApiResponse(data=_enqueue_sync(db, user, scope="agents"))
 
 
 @router.post("/sync/memory", response_model=ApiResponse[dict[str, Any]])
-async def sync_agent_memory(
-    user: Annotated[User, Depends(get_current_user)],
-) -> ApiResponse[dict[str, Any]]:
-    """全量同步智能体记忆到知识图谱（更新内容并清除已移除章节）。"""
-    svc = await _get_kg_svc()
-    stats = await svc.sync_agent_memory_to_kg(str(user.id))
-    return ApiResponse(data=stats)
-
-
-@router.post("/sync/all", response_model=ApiResponse[dict[str, Any]])
-async def sync_all_platform(
+def sync_agent_memory(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ApiResponse[dict[str, Any]]:
-    """一键全量同步所有平台数据到知识图谱（组织 + 智能体 + 记忆）。"""
-    svc = await _get_kg_svc()
-    stats: dict[str, Any] = {}
-    try:
-        org_stats = await svc.sync_platform_org(db, str(user.id))
-        stats.update({f"org_{k}": v for k, v in org_stats.items()})
-    except Exception as exc:
-        logger.warning("组织同步失败: %s", exc)
-        stats["org_error"] = str(exc)[:200]
-    try:
-        agent_stats = await svc.sync_platform_agents(db, str(user.id))
-        stats.update({f"agent_{k}": v for k, v in agent_stats.items()})
-    except Exception as exc:
-        logger.warning("智能体同步失败: %s", exc)
-        stats["agent_error"] = str(exc)[:200]
-    try:
-        memory_stats = await svc.sync_agent_memory_to_kg(str(user.id))
-        stats.update({f"memory_{k}": v for k, v in memory_stats.items()})
-    except Exception as exc:
-        logger.warning("记忆同步失败: %s", exc)
-        stats["memory_error"] = str(exc)[:200]
-    return ApiResponse(data=stats)
+    """将智能体记忆同步到知识图谱（后台任务）。"""
+    return ApiResponse(data=_enqueue_sync(db, user, scope="memory"))
+
+
+@router.post("/sync/all", response_model=ApiResponse[dict[str, Any]])
+def sync_all_platform(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict[str, Any]]:
+    """一键全量同步（组织+智能体+记忆+文档抽取）到知识图谱（后台任务）。"""
+    return ApiResponse(data=_enqueue_sync(db, user, scope="all"))
+
+
+@router.post("/extract/documents", response_model=ApiResponse[dict[str, Any]])
+def extract_documents(
+    body: ExtractBatchIn,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ApiResponse[dict[str, Any]]:
+    """批量文档 LLM 抽取（后台任务）：本体发现 + 约束实例抽取。"""
+    return ApiResponse(
+        data=_enqueue_sync(
+            db,
+            user,
+            scope="extract",
+            max_docs=body.max_docs,
+            force=body.force,
+            discover_ontology=body.discover_ontology,
+        )
+    )

@@ -80,6 +80,34 @@ def deliver_scheduled_notification_task(self, notification_id: str) -> dict:
 
 
 @celery_app.task(
+    name="platform.run_kg_sync_job",
+    bind=True,
+    max_retries=0,
+    acks_late=True,
+)
+def run_kg_sync_job_task(self, job_id: str) -> dict:
+    from app.services.kg_sync_job_service import run_kg_sync_job
+
+    run_kg_sync_job(uuid.UUID(job_id))
+    return {"ok": True, "job_id": job_id}
+
+
+@celery_app.task(
+    name="platform.run_automl_job",
+    bind=True,
+    max_retries=0,
+    acks_late=True,
+    soft_time_limit=1900,
+    time_limit=2000,
+)
+def run_automl_job_task(self, job_id: str) -> dict:
+    from app.services.automl_service import run_job as run_automl_job
+
+    run_automl_job(uuid.UUID(job_id))
+    return {"ok": True, "job_id": job_id}
+
+
+@celery_app.task(
     name="platform.deliver_scheduled_rpa_task",
     bind=True,
     max_retries=0,

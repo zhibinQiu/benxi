@@ -10,7 +10,7 @@ import {
   NSpin,
   NThing,
   NTooltip } from "naive-ui";
-import { RefreshOutline, CheckmarkDoneOutline, CloseOutline, TrashOutline } from "@vicons/ionicons5";
+import { RefreshOutline, CheckmarkDoneOutline, TrashOutline } from "@vicons/ionicons5";
 import {
   fetchNotifications,
   markAllNotificationsRead,
@@ -19,6 +19,7 @@ import { clearAllNotifications } from "../api/notifications";
 import { LIST_PAGE_SIZE } from "../constants/listPage.js";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { renderMarkdown } from "../utils/markdown.js";
 
 const props = defineProps({
   active: {
@@ -120,7 +121,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
 <template>
   <div class="notifications-panel">
     <header class="notifications-panel__header">
-      <strong class="platform-text-gradient notifications-panel__title">
+      <strong class="notifications-panel__title">
         {{ t("notifications.title") }}
       </strong>
       <div class="notifications-panel__actions panel-header-actions">
@@ -133,7 +134,7 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
               :disabled="loading"
               @click="load"
             >
-              <n-icon :size="18" :component="RefreshOutline" />
+              <n-icon :size="15" :component="RefreshOutline" />
             </button>
           </template>
           {{ t("common.refresh") }}
@@ -142,12 +143,12 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
           <template #trigger>
             <button
               type="button"
-              class="panel-header-btn panel-header-btn--accent"
+              class="panel-header-btn"
               :aria-label="t('notifications.markAllRead')"
               :disabled="loading || clearing"
               @click="markAllRead"
             >
-              <n-icon :size="18" :component="CheckmarkDoneOutline" />
+              <n-icon :size="15" :component="CheckmarkDoneOutline" />
             </button>
           </template>
           {{ t("notifications.markAllRead") }}
@@ -161,20 +162,11 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
               :disabled="loading || clearing"
               @click="clearAll"
             >
-              <n-icon :size="18" :component="TrashOutline" />
+              <n-icon :size="15" :component="TrashOutline" />
             </button>
           </template>
           {{ t("notifications.actions.delete") }}
         </n-tooltip>
-        <div class="panel-header-sep" />
-        <button
-          type="button"
-          class="panel-header-btn"
-          aria-label="关闭"
-          @click="emit('close')"
-        >
-          <n-icon :size="18" :component="CloseOutline" />
-        </button>
       </div>
     </header>
 
@@ -187,7 +179,10 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
             :class="{ 'notif-clickable': !!n.link, 'notif-unread': !n.read_at }"
             @click="n.link && openNotification(n)"
           >
-            <n-thing :title="n.title" :description="n.body">
+            <n-thing :title="n.title">
+              <template v-if="n.body" #description>
+                <div class="notif-body" v-html="renderMarkdown(n.body)" />
+              </template>
               <template #footer>
                 <n-space>
                   <span class="notif-time">
@@ -223,19 +218,16 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 17px 12px;
+  gap: 10px;
+  padding: 10px 14px 8px;
   border-bottom: 1px solid var(--platform-border);
-  background: linear-gradient(
-    180deg,
-    var(--platform-toolbar-bg) 0%,
-    transparent 100%
-  );
+  background: transparent;
 }
 
 .notifications-panel__title {
-  font-size: var(--platform-font-size-lg, 14px);
+  font-size: 13px;
   font-weight: 600;
+  color: var(--platform-text);
   letter-spacing: var(--platform-tracking-tight);
 }
 
@@ -243,13 +235,13 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .notifications-panel__body {
   max-height: 432px;
   overflow-y: auto;
-  padding: 4px 12px 10px;
+  padding: 8px 14px 14px;
 }
 
 .notifications-panel :deep(.n-list) {
@@ -286,6 +278,44 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   font-size: 11px;
   line-height: 1.4;
   margin-top: 2px;
+}
+
+.notif-body {
+  word-break: break-word;
+}
+
+.notif-body :deep(p) {
+  margin: 0 0 0.35em;
+}
+
+.notif-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.notif-body :deep(ul),
+.notif-body :deep(ol) {
+  margin: 0.2em 0;
+  padding-left: 1.25em;
+}
+
+.notif-body :deep(a) {
+  color: var(--platform-accent);
+}
+
+.notif-body :deep(code) {
+  font-size: 0.95em;
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  background: var(--platform-toolbar-bg);
+}
+
+.notif-body :deep(pre) {
+  margin: 0.35em 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: var(--platform-radius-sm, 6px);
+  background: var(--platform-toolbar-bg);
+  font-size: 11px;
 }
 
 .notifications-panel :deep(.n-thing .n-thing-main__footer) {
@@ -346,13 +376,14 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
   color: var(--platform-text-tertiary);
 }
 
-/* panel-header-btn — 通用头部图标按钮 */
-:deep(.panel-header-btn) {
+.notifications-panel__header .panel-header-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
   border: none;
   border-radius: var(--platform-radius-sm, 6px);
   background: transparent;
@@ -363,31 +394,20 @@ defineExpose({ load, refresh: load, markAllRead, clearAll });
     color 0.15s ease;
 }
 
-:deep(.panel-header-btn:hover) {
+.notifications-panel__header .panel-header-btn:not(:disabled):hover {
   background: var(--platform-accent-soft);
   color: var(--platform-accent);
+  transform: none;
+  box-shadow: none;
 }
 
-:deep(.panel-header-btn:disabled) {
+.notifications-panel__header .panel-header-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-:deep(.panel-header-btn--accent:hover) {
-  background: var(--platform-accent-soft);
-  color: var(--platform-accent);
-}
-
-:deep(.panel-header-btn--danger:hover) {
+.notifications-panel__header .panel-header-btn--danger:not(:disabled):hover {
   background: color-mix(in srgb, var(--platform-error, #d03050) 12%, transparent);
   color: var(--platform-error, #d03050);
-}
-
-.panel-header-sep {
-  width: 1px;
-  height: 18px;
-  background: var(--platform-border);
-  flex-shrink: 0;
-  margin: 0 2px;
 }
 </style>

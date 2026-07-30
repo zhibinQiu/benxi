@@ -1,4 +1,4 @@
-# 组件位置与数据存储（v4.8.8）
+# 组件位置与数据存储（v4.9.0）
 
 > **本文描述当前系统的真实部署形态**：各服务跑在哪里、数据存在哪、如何连接查看。  
 > 启动与部署命令见 [运维部署指南](../../../运维部署指南.md)；容器细节见 [Docker 容器说明](docker-services.md)。
@@ -55,10 +55,15 @@
 
 容器间访问 **必须用 Docker 服务名**（如 `postgres`、`minio`、`ragflow`），不能写 `127.0.0.1`（浏览器地址除外）。
 
-### 2.2 宿主机数据目录（`DATA_ROOT`，默认 `./data`）
+### 2.2 宿主机数据目录（`DATA_ROOT`）
+
+| 环境 | 路径 |
+|------|------|
+| 开发（默认） | 仓库根下 `./data`（`DATA_ROOT` 可覆盖） |
+| 生产服务器（本析） | **`/root/qzb/benxi/data`**（compose 经 `DATA_ROOT` 挂载进容器） |
 
 ```
-data/
+${DATA_ROOT}/
 ├── postgres/           # PostgreSQL 数据文件
 ├── minio/              # MinIO 对象（含 documents 桶与 KnowFlow 对象）
 ├── pdf2zh-config/      # BabelDOC 模型与配置缓存
@@ -68,21 +73,47 @@ data/
 └── knowflow-logs/      # RAGFlow 运行日志
 ```
 
-备份目录：`backups/<时间戳>/`（`stack.sh backup` 生成 `postgres.sql.gz`、`knowflow-mysql.sql.gz`、`minio.tar.gz`）。
+**务必定期备份**（库 + 对象存储丢了不可自行恢复）。
+
+### 2.2.1 备份目录（`backups/`）
+
+| 项 | 说明 |
+|----|------|
+| **位置** | 仓库根下 **`backups/<YYYYMMDD_HHMMSS>/`**（与 `DATA_ROOT` 并列，默认不进 Git） |
+| **生产示例** | `/root/qzb/benxi/backups/20260730_030000/` |
+| **生成命令** | `bash scripts/stack.sh backup` |
+| **恢复** | `bash scripts/stack.sh restore backups/<时间戳>` |
+
+单次备份内容：
+
+| 文件 | 来源 |
+|------|------|
+| `postgres.sql.gz` | 平台 PostgreSQL `pg_dump` |
+| `knowflow-mysql.sql.gz` | KnowFlow MySQL（容器在跑时） |
+| `minio.tar.gz` | `${DATA_ROOT}/minio` 打包 |
+| `manifest.json` | 版本、时间、`data_root` |
+
+其它入口：
+
+```bash
+./dev.sh sync --with-data   # 同步代码后，在服务器执行 backup（不拉到本地）
+./dev.sh sync --backup      # 仅服务器端 backup
+bash scripts/server-backup.sh [--keep 30]   # 定时备份 + 按天清理；cron 示例见脚本头
+```
 
 ### 2.3 代码与配置位置
 
 | 路径 | 内容 |
 |------|------|
-| `compose.yaml` | 核心服务定义 |
-| `compose.dev.yaml` | 开发覆盖（API :18000、Vite 热重载） |
-| `deploy/knowflow.yml` | KnowFlow profile 服务 |
-| `deploy/knowflow/settings.yaml` | knowflow-backend 业务配置 |
-| `platform/app/` | FastAPI 后端源码 |
-| `platform-frontend/` | Vue 3 前端 |
-| `pdf2zh_next/` | PDF 翻译引擎 |
+| `configs/compose/compose.yaml` | 核心服务定义 |
+| `configs/compose/compose.dev.yaml` | 开发覆盖（API :18000、Vite 热重载） |
+| `third_party/deploy/knowflow.yml` | KnowFlow profile 服务 |
+| `backend/` | FastAPI 后端源码（含 `app/agent/`） |
+| `backend/agent_md/` | Agent 指令 · 路由 · 工具描述 |
+| `frontend/` | Vue 3 前端 |
+| `third_party/` | pdf2zh、speech、knowflow 等 |
 | `.env` | 栈运行时配置（不提交 Git） |
-| `platform/.env` | 业务密钥模板源（JWT、API Key 等） |
+| `backend/.env` | 业务密钥（JWT、API Key 等） |
 
 ---
 

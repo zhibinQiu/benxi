@@ -22,13 +22,13 @@ function readAccentColors() {
   const el = wrapRef.value || document.documentElement;
   const styles = getComputedStyle(el);
   return {
-    accent: styles.getPropertyValue("--platform-accent").trim() || "#0a6bff",
+    accent: styles.getPropertyValue("--platform-accent").trim() || "#005A9E",
     accentSecondary:
-      styles.getPropertyValue("--platform-accent-secondary").trim() || "#3b82ff",
+      styles.getPropertyValue("--platform-accent-secondary").trim() || "#1A7FD4",
     accentPressed:
-      styles.getPropertyValue("--platform-accent-pressed").trim() || "#004ac2",
-    idle: styles.getPropertyValue("--platform-border-strong").trim() || "rgba(0,0,0,0.09)",
-    midLine: styles.getPropertyValue("--platform-accent-border-soft").trim() || "rgba(10,107,255,0.15)",
+      styles.getPropertyValue("--platform-accent-pressed").trim() || "#003A66",
+    idle: styles.getPropertyValue("--platform-border-strong").trim() || "#D9E3EC",
+    midLine: styles.getPropertyValue("--platform-accent-border-soft").trim() || "rgba(0,90,158,0.16)",
   };
 }
 

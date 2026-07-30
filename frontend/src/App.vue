@@ -60,20 +60,17 @@ watch(
 @import "./styles/tokens.css";
 @import "./styles/color-schemes.css";
 
-/* Inter 字体 — 与登录页统一，打造 Codex 级排版质感 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 html,
 body,
 #app {
   margin: 0;
   min-height: 100vh;
   font-family: var(--platform-font);
-  font-size: 15px;
+  font-size: var(--platform-font-size-base);
   line-height: var(--platform-line-body);
   letter-spacing: var(--platform-tracking-normal);
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "ss01" 1, "cv05" 1;
-  background: var(--platform-bg-base, #FAFAFA);
+  background: var(--platform-bg-base, #F2F6FA);
   color: var(--platform-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

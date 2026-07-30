@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.tool_skill_taxonomy import ToolCategory, _TOOL_CATEGORIES
 from app.models.org import User
 from app.schemas.agent_skill import AgentToolCategoryOut, AgentToolOut, RateLimitOut
-from app.tool_center.registry import get_tool_center
+from app.tools.registry import get_tool_center
 
 
 def list_agent_tools(

@@ -39,6 +39,13 @@ def bootstrap_db(db: Session) -> None:
     _sync_plugin_role_grants(db)
     _prune_orphan_feature_permissions(db)
     _seed_admin(db)
+    # 新功能权限种子后清掉功能清单缓存，避免 Redis 旧列表缺条目
+    try:
+        from app.core.platform_cache import invalidate_features_cache
+
+        invalidate_features_cache()
+    except Exception:
+        pass
 
 
 def _migrate_kg_grants_to_ontology(db: Session) -> None:

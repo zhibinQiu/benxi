@@ -1,4 +1,4 @@
-"""独立上下文 Subagent — agentkit-subagent 平台适配。"""
+"""独立上下文 Subagent — app.agent.subagent 平台适配。"""
 
 from __future__ import annotations
 
@@ -10,16 +10,17 @@ from typing import Any
 
 from app.core.agent_loop_state import LoopState
 
-from app.agentkit.subagent import (
+from app.agent.subagent import (
     SubagentConfig,
     SubagentKindConfig,
     SubagentRuntime,
     execute_subagent,
 )
-from app.agentkit.subagent.loop import parse_tool_summary
+from app.agent.subagent.loop import parse_tool_summary
 from sqlalchemy.orm import Session
 
 from app.core.agent_tool_context import append_retrieval_context, record_executed_tool_call
+from app.core.stream_cancel import await_unless_cancelled, raise_if_stream_cancelled
 from app.integrations.deepseek_client import chat_completion_message_async, is_configured
 from app.models.org import User
 from app.core.agent_tool_args import ALL_TOOLS
@@ -376,7 +377,7 @@ async def execute_context_subagent(
             )
         return summary if ok else ""
 
-    from app.agentkit.subagent.context import child_state_from_parent
+    from app.agent.subagent.context import child_state_from_parent
 
     agent = str((loop_state or {}).get("agent_id") or "")
     sub_kind = (kind or "").strip().lower()
@@ -593,7 +594,7 @@ async def execute_context_subagent(
             cs = loop_holder.get("state")
             if cs:
                 # 必须把检索正文/引用合并回父状态，否则终稿只能看到工具状态摘要
-                from app.agentkit.subagent.context import merge_child_into_parent
+                from app.agent.subagent.context import merge_child_into_parent
 
                 merge_child_into_parent(
                     loop_state,
@@ -631,6 +632,8 @@ async def execute_context_subagent(
             invoke_skill=invoke_skill_step,
             append_retrieval=append_retrieval_context,
             child_state_holder=loop_holder,
+            check_cancelled=raise_if_stream_cancelled,
+            await_unless_cancelled=await_unless_cancelled,
         ),
         kind=sub_kind,
         task=task_text,

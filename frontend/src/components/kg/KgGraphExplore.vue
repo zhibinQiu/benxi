@@ -1,199 +1,359 @@
 <template>
-  <n-space vertical>
-    <n-space justify="space-between" align="center">
+  <div class="kg-explore">
+    <div class="kg-explore__toolbar">
       <n-space align="center">
-        <n-input v-model:value="focusId" placeholder="输入实体 ID 聚焦" style="width: 300px" />
-        <n-input-number v-model:value="depth" :min="1" :max="5" style="width: 80px" />
-        <n-button @click="loadGraph">加载子图</n-button>
-        <n-button @click="loadFullGraph">全图</n-button>
+        <n-tag size="small" :bordered="false">实例图谱</n-tag>
+        <n-text depth="3" style="font-size: 12px">
+          节点 {{ graphData.nodes?.length || 0 }} · 边 {{ graphData.edges?.length || 0 }}
+        </n-text>
       </n-space>
-      <n-space>
-        <n-statistic :value="graphData.nodes?.length || 0" title="节点" />
-        <n-statistic :value="graphData.edges?.length || 0" title="边" />
+      <n-space align="center">
+        <n-button
+          v-if="graphData.nodes?.length"
+          size="tiny"
+          quaternary
+          @click="clearLocal"
+        >
+          清空
+        </n-button>
+        <n-button size="tiny" quaternary :loading="loading" @click="loadFullGraph">
+          刷新
+        </n-button>
       </n-space>
-    </n-space>
-
-    <div class="graph-canvas" ref="graphContainer">
-      <n-spin :show="loading" style="display: flex; justify-content: center; align-items: center; height: 100%;">
-        <div v-if="!graphData.nodes?.length && !loading" style="color: #999; text-align: center; padding: 60px;">
-          图谱为空，请先创建实体
-        </div>
-        <div v-else ref="svgContainer" class="svg-graph"
-          @mousedown="onMouseDown"
-          @mousemove="onMouseMove"
-          @mouseup="onMouseUp"
-          @mouseleave="onMouseUp"
-          @wheel.prevent="onWheel"
-        ></div>
-      </n-spin>
     </div>
-  </n-space>
+
+    <div ref="chartHost" class="kg-explore__chart">
+      <div v-if="!graphData.nodes?.length && !loading" class="kg-explore__empty">
+        默认不加载图谱。点击「刷新」展示全部实体与关系，或从左侧选择实体查看关联。
+      </div>
+    </div>
+
+    <Transition name="kg-fade">
+      <div v-if="selected && !hideDetailPanel" class="kg-explore__panel">
+        <div class="kg-explore__panel-hd">
+          <span class="kg-explore__dot" :style="{ background: selected.type_color || '#64748b' }" />
+          <div>
+            <div class="kg-explore__panel-title">{{ selected.name }}</div>
+            <div class="kg-explore__panel-sub">{{ selected.type_label || selected.type_code }}</div>
+          </div>
+          <n-button text size="tiny" @click="selected = null">关闭</n-button>
+        </div>
+        <div class="kg-explore__panel-body">
+          <div class="kg-explore__stat"><span>实体 ID</span><code>{{ selected.id }}</code></div>
+          <div class="kg-explore__stat"><span>类型 code</span><code>{{ selected.type_code }}</code></div>
+          <div class="kg-explore__stat"><span>语义 URI</span><code class="kg-explore__uri">{{ selected.type_uri || '—' }}</code></div>
+        </div>
+        <n-space vertical :size="8">
+          <n-button block size="small" secondary @click="focusNeighbors">以该实体为中心展开</n-button>
+          <n-button block type="primary" secondary size="small" @click="emitTraceConcept">
+            追溯所属概念 →
+          </n-button>
+        </n-space>
+      </div>
+    </Transition>
+  </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted, nextTick } from "vue";
-import { useMessage } from "naive-ui";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { loadEcharts } from "../../utils/echartsLoader.js";
 
 const props = defineProps({
   graphData: { type: Object, default: () => ({ nodes: [], edges: [] }) },
   loading: Boolean,
+  hideDetailPanel: { type: Boolean, default: false },
+  selectedId: { type: String, default: "" },
 });
 
-const emit = defineEmits(["refresh"]);
+const emit = defineEmits(["refresh", "focus-entity", "trace-concept", "select-entity"]);
 
-const message = useMessage();
 const focusId = ref("");
 const depth = ref(2);
-const graphContainer = ref(null);
-const svgContainer = ref(null);
+const chartHost = ref(null);
+const selected = ref(null);
 
-// ── 拖拽与缩放状态 ──
+let chart = null;
 
-const pan = ref({ x: 0, y: 0 });
-const scale = ref(1);
-let isDragging = false;
-let dragStart = { x: 0, y: 0 };
-let panStart = { x: 0, y: 0 };
+const COLOR_MAP = {
+  blue: "#3b82f6",
+  green: "#22c55e",
+  purple: "#a855f7",
+  orange: "#f97316",
+  pink: "#ec4899",
+  yellow: "#eab308",
+  teal: "#14b8a6",
+  indigo: "#6366f1",
+  cyan: "#06b6d4",
+  gray: "#94a3b8",
+};
 
-function onMouseDown(e) {
-  isDragging = true;
-  dragStart = { x: e.clientX, y: e.clientY };
-  panStart = { x: pan.value.x, y: pan.value.y };
-}
-
-function onMouseMove(e) {
-  if (!isDragging) return;
-  const dx = e.clientX - dragStart.x;
-  const dy = e.clientY - dragStart.y;
-  pan.value = { x: panStart.x + dx, y: panStart.y + dy };
-  applyTransform();
-}
-
-function onMouseUp() {
-  isDragging = false;
-}
-
-function onWheel(e) {
-  const delta = e.deltaY > 0 ? -0.1 : 0.1;
-  const newScale = Math.min(3, Math.max(0.2, scale.value + delta));
-  scale.value = newScale;
-  applyTransform();
-}
-
-function applyTransform() {
-  const container = svgContainer.value;
-  if (!container) return;
-  const g = container.querySelector("svg g.graph-group");
-  if (g) {
-    g.setAttribute("transform", `translate(${pan.value.x}, ${pan.value.y}) scale(${scale.value})`);
-  }
+function resolveColor(c) {
+  if (!c) return COLOR_MAP.blue;
+  if (String(c).startsWith("#")) return c;
+  return COLOR_MAP[c] || COLOR_MAP.blue;
 }
 
 function loadGraph() {
-  if (!focusId.value) {
-    message.warning("请输入实体 ID");
-    return;
-  }
-  pan.value = { x: 0, y: 0 };
-  scale.value = 1;
+  if (!focusId.value) return;
   emit("refresh", focusId.value, depth.value);
 }
 
 function loadFullGraph() {
   focusId.value = "";
-  pan.value = { x: 0, y: 0 };
-  scale.value = 1;
   emit("refresh", null, depth.value);
 }
 
-// ── 图谱渲染 ──
-function renderGraph() {
-  const container = svgContainer.value;
-  if (!container) return;
+function clearLocal() {
+  focusId.value = "";
+  selected.value = null;
+  chart?.clear();
+  emit("refresh", "__clear__", 0);
+}
 
-  const { nodes = [], edges = [] } = props.graphData;
+function focusNeighbors() {
+  if (!selected.value) return;
+  focusId.value = selected.value.id;
+  emit("refresh", selected.value.id, depth.value);
+  emit("focus-entity", selected.value.id);
+}
 
-  if (nodes.length === 0) {
-    container.innerHTML = "";
+function emitTraceConcept() {
+  if (!selected.value) return;
+  emit("trace-concept", {
+    code: selected.value.type_code,
+    label: selected.value.type_label,
+    type_uri: selected.value.type_uri,
+    entity_id: selected.value.id,
+    entity_name: selected.value.name,
+  });
+}
+
+async function render() {
+  if (!chartHost.value) return;
+  const nodes = props.graphData?.nodes || [];
+  const edges = props.graphData?.edges || [];
+  if (!nodes.length) {
+    chart?.clear();
     return;
   }
 
-  const width = container.clientWidth || 800;
-  const height = container.clientHeight || 500;
-  const padding = 60;
+  const echarts = await loadEcharts();
+  if (!chart) {
+    chart = echarts.init(chartHost.value, undefined, { renderer: "canvas" });
+    chart.on("click", (params) => {
+      if (params.dataType !== "node") return;
+      // 用当前 props / raw，避免 render 闭包里的 nodes 过期导致点选失效
+      const id = params.data?.id;
+      const node =
+        params.data?.raw ||
+        (props.graphData?.nodes || []).find((n) => n.id === id);
+      if (!node) return;
+      selected.value = {
+        ...node,
+        type_color: resolveColor(node.type_color),
+      };
+      emit("select-entity", selected.value);
+    });
+  }
 
-  // 圆形布局
-  const centerX = 0;
-  const centerY = 0;
-  const radius = Math.min(width, height) / 2 - padding;
-
-  const nodePositions = {};
-  nodes.forEach((node, i) => {
-    const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
-    nodePositions[node.id] = {
-      x: centerX + radius * Math.cos(angle),
-      y: centerY + radius * Math.sin(angle),
-    };
+  const categories = [];
+  const catIndex = new Map();
+  nodes.forEach((n) => {
+    const key = n.type_code || "unknown";
+    if (!catIndex.has(key)) {
+      catIndex.set(key, categories.length);
+      categories.push({ name: n.type_label || key });
+    }
   });
 
-  let svg = `<svg width="${width}" height="${height}" style="background: #fafafa; cursor: ${isDragging ? 'grabbing' : 'grab'}; display: block;">
-    <g class="graph-group" transform="translate(${pan.value.x}, ${pan.value.y}) scale(${scale.value})">`;
+  chart.setOption(
+    {
+      tooltip: {
+        formatter(p) {
+          if (p.dataType === "edge") {
+            return `${p.data.source} —${p.data.name || ""}→ ${p.data.target}`;
+          }
+          const n = p.data?.raw || {};
+          return `<b>${p.name}</b><br/>${n.type_label || n.type_code || ""}<br/>${n.type_uri || ""}`;
+        },
+      },
+      legend: categories.length > 1 ? [{ data: categories.map((c) => c.name), type: "scroll" }] : undefined,
+      series: [
+        {
+          type: "graph",
+          layout: "force",
+          roam: true,
+          draggable: true,
+          categories,
+          data: nodes.map((n) => ({
+            id: n.id,
+            name: n.name,
+            category: catIndex.get(n.type_code || "unknown"),
+            symbolSize: props.selectedId === n.id ? 34 : 26,
+            itemStyle: {
+              color: resolveColor(n.type_color),
+              borderColor: props.selectedId === n.id ? "#0f172a" : undefined,
+              borderWidth: props.selectedId === n.id ? 3 : 0,
+            },
+            raw: n,
+          })),
+          links: edges.map((e) => ({
+            source: e.from_entity_id,
+            target: e.to_entity_id,
+            name: e.type_label || e.type_code,
+            lineStyle: {
+              color: e.inferred ? "#94a3b8" : "#64748b",
+              type: e.inferred ? "dashed" : "solid",
+              curveness: 0.12,
+            },
+            label: { show: true, formatter: e.type_label || e.type_code, fontSize: 10 },
+          })),
+          label: { show: true, position: "bottom", fontSize: 11 },
+          force: {
+            repulsion: 260,
+            edgeLength: [60, 140],
+            gravity: 0.06,
+          },
+          emphasis: { focus: "adjacency" },
+        },
+      ],
+    },
+    true
+  );
+}
 
-  // 绘制边
-  edges.forEach((edge) => {
-    const from = nodePositions[edge.from_entity_id];
-    const to = nodePositions[edge.to_entity_id];
-    if (!from || !to) return;
-    const stroke = edge.inferred ? "#aaa" : "#666";
-    svg += `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
-      stroke="${stroke}" stroke-width="1.5" stroke-dasharray="${edge.inferred ? '4,3' : ''}"
-      opacity="0.6"/>`;
-    const mx = (from.x + to.x) / 2;
-    const my = (from.y + to.y) / 2;
-    svg += `<text x="${mx}" y="${my - 6}" text-anchor="middle" font-size="10"
-      fill="#666">${edge.type_code}</text>`;
-  });
-
-  // 绘制节点
-  nodes.forEach((node) => {
-    const pos = nodePositions[node.id];
-    if (!pos) return;
-    const color = node.type_color || "#409eff";
-    svg += `<circle cx="${pos.x}" cy="${pos.y}" r="20" fill="${color}" opacity="0.9"
-      stroke="#fff" stroke-width="2"/>`;
-    svg += `<text x="${pos.x}" y="${pos.y + 5}" text-anchor="middle" font-size="10"
-      fill="#fff" font-weight="bold">${node.name.slice(0, 6)}</text>`;
-    svg += `<text x="${pos.x}" y="${pos.y - 28}" text-anchor="middle" font-size="10"
-      fill="#333">${node.type_label || node.type_code}</text>`;
-  });
-
-  svg += `</g></svg>`;
-  container.innerHTML = svg;
+function onResize() {
+  chart?.resize();
 }
 
 watch(
   () => props.graphData,
-  () => nextTick(renderGraph),
+  () => nextTick(render),
   { deep: true }
 );
 
+watch(
+  () => props.selectedId,
+  () => nextTick(render)
+);
+
 onMounted(() => {
-  nextTick(renderGraph);
+  nextTick(render);
+  window.addEventListener("resize", onResize);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("resize", onResize);
+  chart?.dispose();
+  chart = null;
+});
+
+defineExpose({
+  setFocus(id) {
+    focusId.value = id || "";
+  },
+  resize: () => chart?.resize(),
 });
 </script>
 
 <style scoped>
-.graph-canvas {
-  height: 500px;
-  border: 1px solid #eee;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #fafafa;
-}
-
-.svg-graph {
-  width: 100%;
+.kg-explore {
+  position: relative;
   height: 100%;
-  user-select: none;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--platform-border, #e5e7eb);
+  border-radius: var(--platform-radius, 8px);
+  background: var(--platform-bg-base, #fff);
+  overflow: hidden;
+}
+.kg-explore__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--platform-border, #e5e7eb);
+}
+.kg-explore__chart {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  width: 100%;
+}
+.kg-explore__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--platform-text-tertiary);
+  font-size: 13px;
+  pointer-events: none;
+}
+.kg-explore__panel {
+  position: absolute;
+  right: 12px;
+  top: 56px;
+  width: 300px;
+  background: var(--platform-bg-elevated, #fff);
+  border: 1px solid var(--platform-border, #e5e7eb);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  z-index: 5;
+}
+.kg-explore__panel-hd {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.kg-explore__dot {
+  width: 6px;
+  height: 28px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.kg-explore__panel-title {
+  font-weight: 680;
+  font-size: 14px;
+}
+.kg-explore__panel-sub {
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+}
+.kg-explore__panel-body {
+  margin: 12px 0;
+}
+.kg-explore__stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--platform-text-tertiary);
+  border-bottom: 1px solid color-mix(in srgb, var(--platform-text) 6%, transparent);
+}
+.kg-explore__stat code {
+  color: var(--platform-text);
+  font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kg-explore__uri {
+  word-break: break-all;
+  white-space: normal !important;
+  max-width: 180px;
+}
+.kg-fade-enter-active,
+.kg-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.kg-fade-enter-from,
+.kg-fade-leave-to {
+  opacity: 0;
 }
 </style>

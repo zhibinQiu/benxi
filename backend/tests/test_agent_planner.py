@@ -323,13 +323,16 @@ def test_skill_first_plan_before_web_search():
     assert any("kind=use" in s for s in plan.steps)
 
 
-def test_rule_platform_system_data_requires_list_users():
+def test_rule_platform_system_data_requires_kg_query():
     from sqlalchemy import select
 
     from app.database import SessionLocal
     from app.models.org import User
     from app.services.agent_planner import _rule_plan_for_platform_system_data
-    from app.services.skill_chat_service import ATOMIC_TOOL_KNOWLEDGE_RETRIEVE
+    from app.services.skill_chat_service import (
+        ATOMIC_TOOL_KG_QUERY,
+        ATOMIC_TOOL_KNOWLEDGE_RETRIEVE,
+    )
 
     db = SessionLocal()
     try:
@@ -338,7 +341,9 @@ def test_rule_platform_system_data_requires_list_users():
         plan = _rule_plan_for_platform_system_data(db, admin, "用户管理列表")
         assert plan is not None
         assert plan.direct_answer is False
-        assert any("invoke_skill" in step and "list_users" in step for step in plan.steps)
+        assert ATOMIC_TOOL_KG_QUERY in plan.allowed_tools
+        assert any("kg_query" in step for step in plan.steps)
+        assert not any("list_users" in step for step in plan.steps)
         assert ATOMIC_TOOL_KNOWLEDGE_RETRIEVE in plan.blocked_tools
     finally:
         db.close()

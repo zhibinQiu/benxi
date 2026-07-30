@@ -1,13 +1,13 @@
 """解析 LLM 正文中嵌入的工具调用，并净化面向用户的回复。
 
-大部分逻辑委托给 ``agentkit-message``，本层保留平台特有的内部模式匹配。"""
+大部分逻辑委托给 ``app.agent.message``，本层保留平台特有的内部模式匹配。"""
 
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from app.agentkit.message import (
+from app.agent.message import (
     DsmlStreamFilter as _DsmlStreamFilter,
     content_has_tool_markup,
     extract_embedded_tool_calls as _extract_embedded_tool_calls,
@@ -21,7 +21,7 @@ from app.agentkit.message import (
 _DSML_PIPE = "\uff5c"
 _DSML_TAG = f"{_DSML_PIPE}{_DSML_PIPE}DSML{_DSML_PIPE}{_DSML_PIPE}"
 
-# 平台特有内部模式（agentkit 通用模式 + 平台业务关键词）
+# 平台特有内部模式（app.agent 通用模式 + 平台业务关键词）
 _INTERNAL_PATTERNS = (
     re.compile(r"\bL\d+\s*行\b"),
     re.compile(r"re\.(?:search|DOTALL|compile)"),
@@ -83,7 +83,7 @@ def looks_like_internal_agent_content(text: str) -> bool:
 
 def has_mermaid_deliverable(text: str) -> bool:
     """正文是否包含可渲染的 Mermaid 图表围栏。"""
-    from app.agentkit.message.filter import has_mermaid_deliverable as _check
+    from app.agent.message.filter import has_mermaid_deliverable as _check
 
     return _check(text)
 

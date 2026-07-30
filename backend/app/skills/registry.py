@@ -1,8 +1,8 @@
-"""Skill 注册表 — agentkit LazySkillRegistry 适配。"""
+"""Skill 注册表 — app.agent LazySkillRegistry 适配。"""
 
 from __future__ import annotations
 
-from app.agentkit.skills.registry import get_default_registry, set_registry_loader
+from app.agent.skills.registry import get_default_registry, set_registry_loader
 
 from app.skills.types import SkillDefinition, SkillSource
 

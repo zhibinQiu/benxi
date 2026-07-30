@@ -10,8 +10,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 from app.core.agent_tool_args import (
-    ADMIN_DEPT_TOOL_NAMES,
-    ADMIN_USER_TOOL_NAMES,
     BROWSER_TOOL_NAMES,
     DOCUMENT_TOOL_NAMES,
     PLATFORM_TOOL_NAMES,
@@ -41,7 +39,7 @@ class ToolCategory(StrEnum):
     DOCUMENT = "document"
 
 
-# ── 工具分类（供 tool_center/registry.py 和 agent_tool_registry.py 使用，非唯一源）──
+# ── 工具分类（供 app.tools/registry.py 和 agent_tool_registry.py 使用，非唯一源）──
 _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     # ── 数据（网站拉取/爬取、外部行情、领域取数、知识检索）──
     ATOMIC_TOOL_WEB_SEARCH: ToolCategory.DATA,
@@ -72,14 +70,6 @@ _TOOL_CATEGORIES: dict[str, ToolCategory] = {
     "schedule_notification": ToolCategory.PLATFORM,
     "list_scheduled_notifications": ToolCategory.PLATFORM,
     "cancel_scheduled_notification": ToolCategory.PLATFORM,
-    "list_users": ToolCategory.PLATFORM,
-    "create_user": ToolCategory.PLATFORM,
-    "update_user": ToolCategory.PLATFORM,
-    "delete_user": ToolCategory.PLATFORM,
-    "list_departments": ToolCategory.PLATFORM,
-    "create_department": ToolCategory.PLATFORM,
-    "update_department": ToolCategory.PLATFORM,
-    "delete_department": ToolCategory.PLATFORM,
     "invoke_skill": ToolCategory.PLATFORM,
     "find_skills": ToolCategory.PLATFORM,
     "describe_tool": ToolCategory.PLATFORM,
@@ -152,8 +142,6 @@ GLOBAL_ATOMIC_TOOL_NAMES: frozenset[str] = frozenset(
         *DOCUMENT_TOOL_NAMES,
         *PLATFORM_TOOL_NAMES,
         *BROWSER_TOOL_NAMES,
-        *ADMIN_USER_TOOL_NAMES,
-        *ADMIN_DEPT_TOOL_NAMES,
         "read_agent_memory",
         "append_agent_memory",
         "knowledge_folder_search",
@@ -276,8 +264,9 @@ AGENT_TOOL_WHITELIST: dict[str, dict[str, tuple[str, ...]]] = {
             *NOTIFICATION_TOOL_NAMES,
             "read_agent_memory",
             "append_agent_memory",
-            *ADMIN_USER_TOOL_NAMES,
-            *ADMIN_DEPT_TOOL_NAMES,
+            # 组织人事查询走本体 + 知识图谱（非 PG SQL 工具）
+            ATOMIC_TOOL_KG_QUERY,
+            "ontology_query",
         ),
     },
     "skill-dev": {
@@ -382,19 +371,11 @@ def agent_atomic_tool_names(agent_id: str) -> tuple[str, ...]:
 # 工具自动推导规则：
 #   - 在 orchestrator 白名单中 → ORCHESTRATOR scope（所有智能体可见）
 #   - 不在 orchestrator 白名单但属于某专精 Agent → SPECIALIST scope
-#   - ADMIN 工具需额外权限检查（显式声明）
-
-_ADMIN_ONLY_TOOL_NAMES: frozenset[str] = frozenset({
-    "list_users", "create_user", "update_user", "delete_user",
-    "list_departments", "create_department", "update_department", "delete_department",
-})
 
 
 def _build_tool_scope_from_whitelist() -> dict[str, ToolScope]:
     """从 AGENT_TOOL_WHITELIST 自动推导工具可见性范围。"""
     scope: dict[str, ToolScope] = {}
-    for t in _ADMIN_ONLY_TOOL_NAMES:
-        scope[t] = ToolScope.ADMIN
 
     orch_tools: set[str] = set()
     for cat in ("runtime", "atomic"):

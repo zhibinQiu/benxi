@@ -201,6 +201,38 @@ def _dispatch_scheduled_notification_inprocess(notification_id: uuid.UUID) -> No
     )
 
 
+def dispatch_kg_sync_job(job_id: uuid.UUID) -> None:
+    """知识图谱同步 Job 调度。"""
+    from workers.tasks.platform_jobs import run_kg_sync_job_task
+
+    if _try_celery(
+        run_kg_sync_job_task,
+        [str(job_id)],
+        countdown=0,
+        label=f"kg-sync-{job_id}",
+    ):
+        return
+    from app.services.kg_sync_job_service import run_kg_sync_job
+
+    submit_background(f"kg-sync-{job_id}", run_kg_sync_job, job_id)
+
+
+def dispatch_automl_job(job_id: uuid.UUID) -> None:
+    """自动化机器学习训练 Job 调度。"""
+    from workers.tasks.platform_jobs import run_automl_job_task
+
+    if _try_celery(
+        run_automl_job_task,
+        [str(job_id)],
+        countdown=0,
+        label=f"automl-{job_id}",
+    ):
+        return
+    from app.services.automl_service import run_job as run_automl_job
+
+    submit_background(f"automl-{job_id}", run_automl_job, job_id)
+
+
 def dispatch_scheduled_rpa_task(task_id: uuid.UUID, *, countdown: int = 0) -> None:
     from workers.tasks.platform_jobs import deliver_scheduled_rpa_task_task
 

@@ -7,8 +7,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agentkit.aip.auth import generate_aip_sk, hash_aip_sk
-from app.core.exceptions import not_found, unauthorized
+from app.agent.aip.auth import generate_aip_sk, hash_aip_sk
+from app.core.exceptions import bad_request, not_found, unauthorized
 from app.models.aip_secret_key import AipSecretKey
 from app.models.org import User
 from app.schemas.aip_secret_key import AipSecretKeyCreatedOut, AipSecretKeyOut
@@ -38,12 +38,14 @@ def list_secret_keys(db: Session) -> list[AipSecretKeyOut]:
 
 
 def create_secret_key(db: Session, user: User, purpose: str) -> AipSecretKeyCreatedOut:
-    text = (purpose or "").strip() or "未命名密钥"
+    text = (purpose or "").strip()
+    if not text:
+        raise bad_request("请填写密钥用途")
     full, prefix, digest = generate_aip_sk()
     row = AipSecretKey(
         key_prefix=prefix,
         key_hash=digest,
-        purpose=text,
+        purpose=text[:500],
         created_by_id=user.id,
     )
     db.add(row)

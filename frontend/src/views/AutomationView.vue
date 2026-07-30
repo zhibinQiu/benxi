@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: "AutomationView" });
 import { computed, h, onMounted, ref } from "vue";
 import {
   NButton,
@@ -29,6 +30,7 @@ import FeatureSubsystemShell from "../components/FeatureSubsystemShell.vue";
 import IconAction from "../components/IconAction.vue";
 import { useI18n } from "../composables/useI18n";
 import { usePlatformUi } from "../composables/usePlatformUi";
+import { isRouteAbortError } from "../api/http.js";
 import {
   createAutomation,
   deleteAutomation,
@@ -48,6 +50,8 @@ const editingId = ref(null);
 const activeTab = ref("configured");
 const automations = ref([]);
 const runs = ref([]);
+/** 手动「立即执行」进行中的任务 id → true */
+const runningById = ref({});
 const form = ref({
   name: "",
   prompt: "",
@@ -158,6 +162,7 @@ async function load() {
     automations.value = Array.isArray(data?.automations) ? data.automations : [];
     runs.value = Array.isArray(data?.runs) ? data.runs : [];
   } catch (e) {
+    if (isRouteAbortError(e) || e?.code === "ROUTE_ABORT") return;
     ui.error(e.message || t("automation.loadFailed"));
   } finally {
     loading.value = false;
@@ -224,12 +229,20 @@ function onDelete(row) {
 }
 
 async function onRunNow(row) {
+  const id = row.id;
+  if (runningById.value[id]) return;
+  runningById.value = { ...runningById.value, [id]: true };
   try {
-    await runAutomationNow(row.id);
+    await runAutomationNow(id);
     ui.success(t("automation.runQueued"));
     await load();
   } catch (e) {
+    if (isRouteAbortError(e) || e?.code === "ROUTE_ABORT") return;
     ui.error(e.message || t("automation.runFailed"));
+  } finally {
+    const next = { ...runningById.value };
+    delete next[id];
+    runningById.value = next;
   }
 }
 
@@ -268,26 +281,31 @@ const automationColumns = computed(() => [
     title: t("common.actions"),
     key: "actions",
     width: 132,
-    render: (row) =>
-      renderIconActionGroup([
+    render: (row) => {
+      const running = !!runningById.value[row.id];
+      return renderIconActionGroup([
         {
           label: t("common.edit"),
           icon: CreateOutline,
+          disabled: running,
           onClick: () => openEdit(row),
         },
         {
-          label: t("automation.runNow"),
-          icon: PlayOutline,
+          label: running ? t("automation.statusRunning") : t("automation.runNow"),
+          icon: running ? RefreshOutline : PlayOutline,
           type: "primary",
+          loading: running,
           onClick: () => onRunNow(row),
         },
         {
           label: t("common.delete"),
           icon: TrashOutline,
           type: "error",
+          disabled: running,
           onClick: () => onDelete(row),
         },
-      ]),
+      ]);
+    },
   },
 ]);
 
@@ -321,13 +339,15 @@ onMounted(load);
 </script>
 
 <template>
-  <FeatureSubsystemShell :show-intro="false">
+  <FeatureSubsystemShell :show-intro="false" fill>
     <div class="automation-view">
-      <n-tabs v-model:value="activeTab" type="line" animated>
+      <n-tabs v-model:value="activeTab" type="line">
         <n-tab-pane name="configured" :tab="t('automation.tabConfigured')">
           <div class="automation-card__header">
             <div class="automation-card__title-row">
-              <div class="automation-card__title">{{ t("automation.tabConfigured") }}</div>
+              <div class="automation-card__hint">
+                {{ t("automation.toolbarHint.configured") }}
+              </div>
               <div class="automation-card__actions">
                 <IconAction
                   :label="t('automation.create')"
@@ -341,9 +361,6 @@ onMounted(load);
                   @click="load"
                 />
               </div>
-            </div>
-            <div class="automation-card__hint">
-              {{ t("automation.toolbarHint.configured") }}
             </div>
           </div>
           <div class="automation-card">
@@ -368,7 +385,9 @@ onMounted(load);
         <n-tab-pane name="runs" :tab="t('automation.tabRuns')">
           <div class="automation-card__header">
             <div class="automation-card__title-row">
-              <div class="automation-card__title">{{ t("automation.tabRuns") }}</div>
+              <div class="automation-card__hint">
+                {{ t("automation.toolbarHint.runs") }}
+              </div>
               <div class="automation-card__actions">
                 <IconAction
                   :label="t('common.refresh')"
@@ -377,9 +396,6 @@ onMounted(load);
                   @click="load"
                 />
               </div>
-            </div>
-            <div class="automation-card__hint">
-              {{ t("automation.toolbarHint.runs") }}
             </div>
           </div>
           <div class="automation-card">
@@ -494,11 +510,11 @@ onMounted(load);
 }
 
 .automation-view :deep(.n-tabs-tab--active) {
-  color: var(--n-tab-text-color) !important;
+  color: var(--platform-accent) !important;
 }
 
 .automation-view :deep(.n-tabs-tab):hover {
-  color: var(--n-tab-text-color) !important;
+  color: var(--platform-accent) !important;
 }
 
 .automation-view :deep(.n-tabs-bar) {
@@ -536,14 +552,6 @@ onMounted(load);
   gap: 8px;
 }
 
-.automation-card__title {
-  font-size: var(--platform-font-size-sm);
-  font-weight: 500;
-  color: var(--platform-text);
-  line-height: 1.4;
-  flex-shrink: 0;
-}
-
 .automation-card__actions {
   display: flex;
   align-items: center;
@@ -565,7 +573,9 @@ onMounted(load);
 }
 
 .automation-card__hint {
-  margin-top: 2px;
+  margin: 0;
+  min-width: 0;
+  flex: 1;
   font-size: var(--platform-font-size-sm);
   font-weight: 400;
   color: var(--platform-text-tertiary);
@@ -578,7 +588,7 @@ onMounted(load);
 }
 
 .automation-card :deep(.n-data-table-td) {
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   vertical-align: middle;
 }
 

@@ -4,7 +4,7 @@ import { api } from "./http.js";
 // ── 元数据 ───────────────────────────────────────────────────────────────
 
 export function fetchKgMeta() {
-  return api("/api/v1/kg/meta");
+  return api("/api/v1/kg/meta", { preserveOnNavigate: true });
 }
 
 // ── 实体 CRUD ───────────────────────────────────────────────────────────
@@ -16,7 +16,9 @@ export function fetchKgEntities({ typeCode, q, limit, offset } = {}) {
   if (limit) params.set("limit", String(limit));
   if (offset) params.set("offset", String(offset));
   const qs = params.toString();
-  return api(`/api/v1/kg/entities${qs ? `?${qs}` : ""}`);
+  return api(`/api/v1/kg/entities${qs ? `?${qs}` : ""}`, {
+    preserveOnNavigate: true,
+  });
 }
 
 export function fetchKgEntity(entityId) {
@@ -48,7 +50,9 @@ export function fetchKgRelations({ entityId, typeCode } = {}) {
   if (entityId) params.set("entity_id", entityId);
   if (typeCode) params.set("type_code", typeCode);
   const qs = params.toString();
-  return api(`/api/v1/kg/relations${qs ? `?${qs}` : ""}`);
+  return api(`/api/v1/kg/relations${qs ? `?${qs}` : ""}`, {
+    preserveOnNavigate: true,
+  });
 }
 
 export function createKgRelation(body) {
@@ -71,10 +75,11 @@ export function updateKgRelation(relationId, body) {
 
 // ── 图谱可视化 ───────────────────────────────────────────────────────────
 
-export function fetchKgGraph({ focusEntityId, depth } = {}) {
+export function fetchKgGraph({ focusEntityId, depth, limit } = {}) {
   const params = new URLSearchParams();
   if (focusEntityId) params.set("focus_entity_id", focusEntityId);
   if (depth) params.set("depth", String(depth));
+  if (limit) params.set("limit", String(limit));
   const qs = params.toString();
   return api(`/api/v1/kg/graph${qs ? `?${qs}` : ""}`);
 }
@@ -114,16 +119,29 @@ export function syncKgAll() {
 
 // ── 文档内容抽取 ──────────────────────────────────────────────
 
-export function extractKgDocuments({ maxDocs = 20 } = {}) {
+export function extractKgDocuments({
+  maxDocs = 20,
+  force = false,
+  discoverOntology = true,
+} = {}) {
   return api("/api/v1/kg/extract/documents", {
     method: "POST",
-    body: JSON.stringify({ max_docs: maxDocs, scope: "knowledge" }),
+    body: JSON.stringify({
+      max_docs: maxDocs,
+      force,
+      discover_ontology: discoverOntology,
+      scope: "knowledge",
+    }),
   });
 }
 
 // ── LLM 抽取 ────────────────────────────────────────────────────────────
 
-export function extractKgFromText(title, text, { sourceType = "manual", sourceId = null } = {}) {
+export function extractKgFromText(
+  title,
+  text,
+  { sourceType = "manual", sourceId = null, discoverOntology = true } = {}
+) {
   return api("/api/v1/kg/extract-from-text", {
     method: "POST",
     body: JSON.stringify({
@@ -131,6 +149,7 @@ export function extractKgFromText(title, text, { sourceType = "manual", sourceId
       text,
       source_type: sourceType,
       source_id: sourceId,
+      discover_ontology: discoverOntology,
     }),
   });
 }

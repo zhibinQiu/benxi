@@ -1,6 +1,6 @@
-"""Agent 执行状态 Checkpoint — 对 agentkit-interrupt 的 Redis 后端适配层。
+"""Agent 执行状态 Checkpoint — 对 app.agent.interrupt 的 Redis 后端适配层。
 
-保留向后兼容的 API，底层委托给 agentkit-interrupt + RedisInterruptStore。
+保留向后兼容的 API，底层委托给 app.agent.interrupt + RedisInterruptStore。
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from typing import Any
 
 from app.core.agent_loop_state import LoopState
 
-from app.agentkit.interrupt import (
+from app.agent.interrupt import (
     clear_interrupt as _clear_interrupt,
     list_user_interrupts as _list_user_interrupts,
     load_interrupt as _load_interrupt,
@@ -79,7 +79,7 @@ def clear_checkpoint(checkpoint_id: str) -> bool:
 
 def generate_checkpoint_id() -> str:
     """生成 checkpoint ID。"""
-    from app.agentkit.interrupt import generate_checkpoint_id as _gen
+    from app.agent.interrupt import generate_checkpoint_id as _gen
 
     return _gen()
 

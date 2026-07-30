@@ -18,7 +18,6 @@ from app.core.workflow_events import (
     next_workflow_step_id,
     sse_attachment,
     sse_citations,
-    sse_conversation_id,
     sse_delta,
     sse_done,
     sse_error,
@@ -500,10 +499,19 @@ async def _iter_stream_turn_tail(
     if display_citations:
         yield sse_citations(display_citations)
 
+    # 先落库再发 done，避免客户端收到 done 后断开导致会话未写入、历史一直为空
+    out_conv_id = await run_db_task(
+        _persist_turn,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        message=message,
+        reply=normalized_reply,
+    )
+
     done_payload: dict[str, Any] = {
         "done": True,
         "reply": normalized_reply,
-        "conversation_id": conversation_id,
+        "conversation_id": out_conv_id or conversation_id,
         "tool_loop": tool_loop,
         **_kg_meta_payload(kg_context),
     }
@@ -517,16 +525,6 @@ async def _iter_stream_turn_tail(
         for att in merged_attachments:
             yield sse_attachment(att)
     yield json.dumps(done_payload, ensure_ascii=False)
-
-    out_conv_id = await run_db_task(
-        _persist_turn,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        message=message,
-        reply=normalized_reply,
-    )
-    if out_conv_id and str(out_conv_id) != str(conversation_id or ""):
-        yield sse_conversation_id(out_conv_id)
 
     # 回复完成后异步写入本轮对话摘要（不阻塞 SSE）
     asyncio.create_task(

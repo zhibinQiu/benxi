@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.agentkit.aip.types import AipAgentDescription, AipInteractEnvelope, AipMessage
+from app.agent.aip.types import AipAgentDescription, AipInteractEnvelope, AipMessage
 
 
 class AipDiscoverItemOut(BaseModel):

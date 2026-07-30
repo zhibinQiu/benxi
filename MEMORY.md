@@ -42,11 +42,14 @@
 - **代码分析范围**：分析代码时只分析前端（frontend/）和后端（backend/）目录，不需要分析所有文件（如 config/、docs/ 等）。
 - **倒计时提醒方式**：提醒类任务（"8s 后提醒我喝水"），用 `schedule_notification` 工具，参数名 **`scheduled_at`**，传 ISO 8601 绝对时间（当前时间+延迟）。
 - **系统 MEMORY.md**：平台 AI 记忆文件通过对象存储 `agent-memory/{user_id}/MEMORY.md` 管理，通过平台前端「AI 设置 → 智能体记忆」编辑。本 Cursor 工作区 MEMORY.md 仅用于 IDE AI 助手，两者独立。平台多智能体在每轮对话结束后自动写入本轮摘要；用户显式说「请记住…」时优先写入其指定内容（`maybe_write_user_memory`）。
-- **数据持久化**：项目数据目录在服务器 `/root/qzb/benxi/data`，容器内通过 `DATA_ROOT` 映射（compose.yaml 中 `${DATA_ROOT:-../../data}`）。数据包含 PostgreSQL、MinIO、pdf2zh 配置等，非常重要，需定期备份。
-  - 备份方式：服务器上 `bash scripts/stack.sh backup`（备份到 `backups/` 目录）
-  - 同步代码时附带备份：`./dev.sh sync --with-data`（在服务器端执行备份，不拉到本地）
-  - 仅备份：`./dev.sh sync --backup`（不同步代码，只做服务器端备份）
-  - 定时备份脚本：`scripts/server-backup.sh`（可通过 cron 安装，默认保留 30 天）
+- **数据持久化**：
+  - **运行时数据** `DATA_ROOT`：开发默认仓库根 `./data`；生产服务器 **`/root/qzb/benxi/data`**（compose 挂载）。含 postgres / minio / pdf2zh-config / knowflow-* 等。
+  - **备份产物目录**：仓库根 **`backups/<YYYYMMDD_HHMMSS>/`**（生产例：`/root/qzb/benxi/backups/...`），内含 `postgres.sql.gz`、`knowflow-mysql.sql.gz`、`minio.tar.gz`、`manifest.json`。
+  - 备份：`bash scripts/stack.sh backup`；恢复：`bash scripts/stack.sh restore backups/<时间戳>`
+  - 同步附带备份：`./dev.sh sync --with-data`；仅备份：`./dev.sh sync --backup`（均在服务器执行，不拉本地）
+  - 定时：`scripts/server-backup.sh`（cron，默认保留 30 天）
+  - 文档：[docs/zh/operations/components-and-storage.md](docs/zh/operations/components-and-storage.md) §2.2
+- **系统文档查阅**：MkDocs 文档站；公开入口 [https://zhibinQiu.github.io/benxi/](https://zhibinQiu.github.io/benxi/)，与登录宣传页底部「产品文档」同一链接；本地预览 `./dev.sh docs` → `:40100`。
 - **品牌名**：项目名称统一为「本析」（benxi），没有任何 `lvye` 相关的目录或配置。
 
 ## 📝 代码注释与文档规范
@@ -94,7 +97,7 @@
 
 ---
 
-> 最后更新: 2026-07-17
+> 最后更新: 2026-07-30
 
 ## 💾 保存系统版本的工作流
 

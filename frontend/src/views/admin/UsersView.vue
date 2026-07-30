@@ -777,7 +777,7 @@ onMounted(async () => {
 }
 
 .users-card :deep(.n-data-table-td) {
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   vertical-align: middle;
 }
 
@@ -790,7 +790,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  border-top: 1px solid var(--platform-border-strong);
+  border-top: 1px solid var(--platform-border-light, #E8E8E8);
   font-size: var(--platform-font-size-sm);
   color: var(--platform-text-tertiary);
 }

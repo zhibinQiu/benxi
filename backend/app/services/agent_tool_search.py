@@ -136,16 +136,10 @@ TOOL_USE_EXAMPLES: dict[str, list[dict[str, Any]]] = {
             ],
         },
     ],
-    "list_users": [
-        {"page": 1, "page_size": 20},
-        {"keyword": "张三"},
-    ],
-    "list_departments": [
-        {},
-    ],
     "kg_query": [
         {"question": "本析产品分部有哪些成员"},
         {"question": "系统中有哪些用户"},
+        {"question": "邱智斌是哪个部门的"},
     ],
 }
 

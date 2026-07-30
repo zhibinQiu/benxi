@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from app.agentkit.loop import AgentToolPlan
+from app.agent.loop import AgentToolPlan
 
 from app.schemas.ai_chat import AiChatMessage
 from app.services.agent_skill_router import is_platform_usage_message, is_platform_operation_message, is_platform_system_data_message

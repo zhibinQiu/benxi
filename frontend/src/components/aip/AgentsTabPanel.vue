@@ -15,11 +15,18 @@ import {
   NSwitch,
   NTag,
   NText,
+  NIcon,
 } from "naive-ui";
-import { SettingsOutline, TrashOutline } from "@vicons/ionicons5";
+import { TrashOutline } from "@vicons/ionicons5";
 import IconAction from "../IconAction.vue";
 import AdminFormModal from "../AdminFormModal.vue";
-import { agentCardCoverUrl, formatAgentDisplayName, hasAgentCardBg } from "../../utils/agentDisplay.js";
+import {
+  agentCardAccentStyle,
+  agentCardCoverUrl,
+  formatAgentDisplayName,
+  hasAgentCardBg,
+  resolveAgentCardIcon,
+} from "../../utils/agentDisplay.js";
 import { usePlatformUi } from "../../composables/usePlatformUi";
 import { useI18n } from "../../composables/useI18n";
 import {
@@ -175,18 +182,11 @@ async function loadAgents({ background = false, foreground = false } = {}) {
   if (showLoading) loading.value = true;
   try {
     const rows = (await fetchAgentProfiles()) || [];
-    agents.value = rows.map(normalizeBuiltinAgent);
-    // 并行拉取每个内置智能体的知识库挂载数量
-    await Promise.all(
-      agents.value.map(async (agent) => {
-        try {
-          const res = await fetchKnowledgeMounts(agent.id);
-          agent.mount_count = res?.data?.length ?? 0;
-        } catch {
-          agent.mount_count = 0;
-        }
-      })
-    );
+    agents.value = rows.map((row) => {
+      const agent = normalizeBuiltinAgent(row);
+      agent.mount_count = Number(row.mount_count ?? 0);
+      return agent;
+    });
     hydrated.value = true;
     persistCache();
   } catch (e) {
@@ -608,6 +608,7 @@ defineExpose({
     <div v-for="n in 6" :key="n" class="agent-card agent-card--skeleton">
       <div class="agent-card__progress" aria-hidden="true" />
       <div class="agent-card__head">
+        <div class="skeleton-line skeleton-line--icon" />
         <div class="agent-card__identity">
           <div class="skeleton-line skeleton-line--title" />
         </div>
@@ -633,11 +634,14 @@ defineExpose({
       class="agent-card"
       :class="{
         'agent-card--disabled': !agent.enabled,
-        'agent-card--clickable': false,
+        'agent-card--clickable': true,
         'agent-card--has-cover': hasAgentCardBg(agent.id),
       }"
+      :style="agentCardAccentStyle(agent.id)"
       :content-style="hasAgentCardBg(agent.id) ? { padding: '0' } : undefined"
+      @click="openConfigDrawer(agent)"
     >
+      <span class="agent-card__glow" aria-hidden="true" />
       <div
         class="agent-card__progress"
         :class="{ 'agent-card__progress--active': agent.status === 'running' }"
@@ -651,6 +655,15 @@ defineExpose({
       />
       <div class="agent-card__body">
         <div class="agent-card__head">
+          <div
+            v-if="!hasAgentCardBg(agent.id)"
+            class="agent-card__icon"
+            aria-hidden="true"
+          >
+            <NIcon :size="18">
+              <component :is="resolveAgentCardIcon(agent.id)" />
+            </NIcon>
+          </div>
           <div class="agent-card__identity">
             <div class="agent-card-title">{{ formatAgentDisplayName(agent.title) }}</div>
             <span
@@ -676,7 +689,7 @@ defineExpose({
           </NText>
         </div>
 
-        <div class="agent-card__bottom" @click.stop>
+        <div class="agent-card__bottom">
           <div class="agent-card__meta">
             <span class="agent-card__meta-item">
               {{ t("admin.agentSkills.toolsCount", { count: agent.tool_count }) }}
@@ -702,15 +715,6 @@ defineExpose({
               </span>
             </template>
           </div>
-          <div class="agent-card__actions">
-            <IconAction
-              variant="table"
-              type="primary"
-              :label="t('admin.agentSkills.configure')"
-              :icon="SettingsOutline"
-              @click="openConfigDrawer(agent)"
-            />
-          </div>
         </div>
       </div>
     </NCard>
@@ -720,9 +724,20 @@ defineExpose({
       :key="agent.aid"
       size="small"
       class="agent-card agent-card--external"
-      :class="{ 'agent-card--disabled': !agent.enabled }"
+      :class="{
+        'agent-card--disabled': !agent.enabled,
+        'agent-card--clickable': true,
+      }"
+      :style="agentCardAccentStyle(agent.aid, { external: true })"
+      @click="openConfigDrawer(agent, 'external')"
     >
+      <span class="agent-card__glow" aria-hidden="true" />
       <div class="agent-card__head">
+        <div class="agent-card__icon" aria-hidden="true">
+          <NIcon :size="18">
+            <component :is="resolveAgentCardIcon(agent.aid, { external: true })" />
+          </NIcon>
+        </div>
         <div class="agent-card__identity">
           <div class="agent-card-title">{{ agent.name }}</div>
         </div>
@@ -758,16 +773,8 @@ defineExpose({
             {{ t("admin.agentSkills.serviceClosed") }}
           </span>
         </div>
-        <div class="agent-card__actions">
+        <div v-if="agent.source !== 'config'" class="agent-card__actions" @click.stop>
           <IconAction
-            variant="table"
-            type="primary"
-            :label="t('admin.agentSkills.configure')"
-            :icon="SettingsOutline"
-            @click="openConfigDrawer(agent, 'external')"
-          />
-          <IconAction
-            v-if="agent.source !== 'config'"
             variant="table"
             type="error"
             :label="t('common.delete')"
@@ -790,9 +797,6 @@ defineExpose({
         <div class="agent-config-drawer">
           <!-- 通用设置（始终显示在 tab 上方） -->
           <section class="agent-config-drawer__section">
-            <div class="agent-config-drawer__section-title">
-              {{ t("admin.agentSkills.configSectionGeneral") }}
-            </div>
             <div class="agent-config-drawer__toggles">
               <div
                 v-if="configDrawerKind === 'builtin' && configDrawerAgent?.id !== 'orchestrator'"
@@ -811,7 +815,9 @@ defineExpose({
                     {{
                       configDrawerKind === "external"
                         ? t("admin.agentSkills.externalServiceHint")
-                        : t("admin.agentSkills.serviceEnabledHint")
+                        : configDrawerAgent?.id === "orchestrator"
+                          ? t("admin.agentSkills.orchestratorServiceEnabledHint")
+                          : t("admin.agentSkills.serviceEnabledHint")
                     }}
                   </span>
                 </div>
@@ -843,43 +849,45 @@ defineExpose({
             <div class="agent-config-drawer__tabs-wrap">
             <n-tabs v-model:value="configActiveTab" type="line" size="small" style="margin-top: 4px;">
               <n-tab-pane name="agent-md" tab="AGENT.md">
-                <div v-if="configAgentMdLoading" style="padding: 20px 0;">
-                  {{ t("common.loading") }}
-                </div>
-                <template v-else>
+                <div class="agent-config-drawer__pane-body">
+                  <div v-if="configAgentMdLoading" class="agent-config-drawer__pane-loading">
+                    {{ t("common.loading") }}
+                  </div>
                   <NInput
+                    v-else
                     v-model:value="configAgentMdContent"
+                    class="agent-config-drawer__md-editor"
                     type="textarea"
-                    :rows="16"
                     :placeholder="t('admin.agentSkills.agentConfigHint')"
                   />
-                </template>
+                </div>
               </n-tab-pane>
               <n-tab-pane name="style-md" tab="STYLE.md">
-                <div v-if="configStyleMdLoading" style="padding: 20px 0;">
-                  {{ t("common.loading") }}
-                </div>
-                <template v-else>
+                <div class="agent-config-drawer__pane-body">
+                  <div v-if="configStyleMdLoading" class="agent-config-drawer__pane-loading">
+                    {{ t("common.loading") }}
+                  </div>
                   <NInput
+                    v-else
                     v-model:value="configStyleMdContent"
+                    class="agent-config-drawer__md-editor"
                     type="textarea"
-                    :rows="16"
                     :placeholder="t('admin.agentSkills.stylePlaceholder')"
                   />
-                </template>
+                </div>
               </n-tab-pane>
               <n-tab-pane name="files" :tab="t('admin.agentSkills.tabFiles')">
-                <div class="agent-config-drawer__tab-content">
-                  <NSpin :show="configFolderTreeLoading">
+                <div class="agent-config-drawer__pane-body agent-config-drawer__tab-content">
+                  <NSpin :show="configFolderTreeLoading" class="agent-config-drawer__pane-spin">
                     <template v-if="!configFolderTreeLoading">
-                      <div v-if="!folderTreeData.length" style="padding: 20px 0;">
+                      <div v-if="!folderTreeData.length" class="agent-config-drawer__pane-loading">
                         <NEmpty :description="t('admin.agentSkills.knowledgeMountsEmpty')" />
                       </div>
                       <template v-else>
                         <NText depth="3" class="agent-config-drawer__section-hint">
                           {{ t("admin.agentSkills.knowledgeMountsHint") }}
                         </NText>
-                        <NScrollbar style="max-height: 400px;">
+                        <NScrollbar class="agent-config-drawer__folder-scroll">
                           <div class="agent-config-drawer__folder-tree">
                             <div
                               v-for="lib in folderTreeData"
@@ -926,9 +934,9 @@ defineExpose({
                 </div>
               </n-tab-pane>
               <n-tab-pane name="skills" :tab="t('admin.agentSkills.tabSkills')">
-                <div class="agent-config-drawer__tab-content">
+                <div class="agent-config-drawer__pane-body agent-config-drawer__tab-content">
                   <template v-if="configDrawerAgent?.skills_configurable">
-                    <div v-if="!skillPickerOptions.length" style="padding: 20px 0;">
+                    <div v-if="!skillPickerOptions.length" class="agent-config-drawer__pane-loading">
                       <NEmpty :description="t('admin.agentSkills.noSkillsAvailable')" />
                     </div>
                     <div v-else class="agent-config-drawer__skills-list">
@@ -969,10 +977,10 @@ defineExpose({
                 </div>
               </n-tab-pane>
               <n-tab-pane name="tools" :tab="t('admin.agentSkills.tabTools')">
-                <div class="agent-config-drawer__tab-content">
-                  <NSpin :show="configToolsLoading">
+                <div class="agent-config-drawer__pane-body agent-config-drawer__tab-content">
+                  <NSpin :show="configToolsLoading" class="agent-config-drawer__pane-spin">
                     <template v-if="!configToolsLoading">
-                      <div v-if="!configAgentTools.length" style="padding: 20px 0;">
+                      <div v-if="!configAgentTools.length" class="agent-config-drawer__pane-loading">
                         <NEmpty :description="t('admin.agentSkills.noToolsAvailable')" />
                       </div>
                       <div v-else class="agent-config-drawer__tools-list">
@@ -1082,6 +1090,16 @@ defineExpose({
   margin-bottom: 16px;
 }
 
+/* 配置抽屉：去掉标题栏/底栏分割线；保留 Tab 下划线 */
+:deep(.n-drawer-header),
+:deep(.n-drawer-footer) {
+  border: none !important;
+  box-shadow: none !important;
+}
+.agent-config-drawer__tabs-wrap :deep(.n-tabs-nav::before) {
+  display: none !important;
+}
+
 .agents-tab-header {
   display: flex;
   align-items: flex-start;
@@ -1124,13 +1142,10 @@ defineExpose({
   background: var(--platform-card-bg);
 }
 .agent-config-drawer__tabs-wrap :deep(.n-tabs-tab--active) {
-  color: var(--n-tab-text-color) !important;
+  color: var(--platform-accent) !important;
 }
 .agent-config-drawer__tabs-wrap :deep(.n-tabs-tab):hover {
-  color: var(--n-tab-text-color) !important;
-}
-.agent-config-drawer__tabs-wrap :deep(.n-tabs-bar) {
-  display: none;
+  color: var(--platform-accent) !important;
 }
 
 .agent-drawer-scroll :deep(.n-tabs-nav-wrapper),
@@ -1142,15 +1157,58 @@ defineExpose({
   overflow: hidden;
 }
 
-/* ── 运行设置（通用设置——简洁 toggle 列表） ── */
-.agent-config-drawer__section-title {
-  font-size: var(--platform-font-size-sm, 13px);
-  font-weight: 500;
-  color: var(--platform-text, #333);
-  line-height: 1.4;
-  margin-bottom: 8px;
+/* 各 Tab 共用可视高度，与技能/工具对齐 */
+.agent-config-drawer__pane-body {
+  --agent-config-pane-h: max(520px, calc(100vh - 260px));
+  min-height: var(--agent-config-pane-h);
+  display: flex;
+  flex-direction: column;
 }
 
+.agent-config-drawer__pane-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--agent-config-pane-h);
+  padding: 20px 0;
+}
+
+.agent-config-drawer__pane-spin {
+  flex: 1;
+  min-height: var(--agent-config-pane-h);
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-config-drawer__pane-spin :deep(.n-spin-container),
+.agent-config-drawer__pane-spin :deep(.n-spin-content) {
+  flex: 1;
+  min-height: inherit;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-config-drawer__md-editor {
+  flex: 1;
+  min-height: var(--agent-config-pane-h);
+}
+
+.agent-config-drawer__md-editor :deep(.n-input),
+.agent-config-drawer__md-editor :deep(.n-input-wrapper),
+.agent-config-drawer__md-editor :deep(textarea) {
+  height: var(--agent-config-pane-h) !important;
+  min-height: var(--agent-config-pane-h) !important;
+}
+
+.agent-config-drawer__folder-scroll {
+  flex: 1;
+  min-height: 0;
+  height: calc(var(--agent-config-pane-h) - 48px);
+  max-height: calc(var(--agent-config-pane-h) - 48px);
+}
+
+/* ── 通用设置（简洁 toggle 列表） ── */
 .agent-config-drawer__toggles {
   display: flex;
   flex-direction: column;
@@ -1162,6 +1220,7 @@ defineExpose({
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0;
+  border: none;
 }
 
 .agent-config-drawer__toggle-body {

@@ -180,6 +180,7 @@ cmd_build_runtime() {
     --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
     --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
     --build-arg "INSTALL_BROWSER=${INSTALL_BROWSER:-1}" \
+    --build-arg "INSTALL_AUTOML=${INSTALL_AUTOML:-0}" \
     --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST:-https://playwright.download.azure.cn}" \
     -t "${local_tag}" \
     .
@@ -210,6 +211,56 @@ cmd_build_browser() {
   browser_verify_ready_or_fail
 }
 
+cmd_build_automl() {
+  # 在已有 runtime 镜像上叠加 PyCaret，避免重下 Playwright（CDN 常不稳定）
+  export INSTALL_AUTOML=1
+  load_env
+  default_profiles
+  local local_tag="benxi-api-runtime:${BENXI_VERSION}"
+  local base_tag=""
+  if docker image inspect "${local_tag}" >/dev/null 2>&1; then
+    base_tag="${local_tag}"
+  else
+    base_tag="$(docker images --format '{{.Repository}}:{{.Tag}}' 'benxi-api-runtime' 2>/dev/null | head -1 || true)"
+  fi
+  if [[ -z "${base_tag}" ]]; then
+    warn "未找到既有 benxi-api-runtime，回退全量构建（INSTALL_BROWSER=${INSTALL_BROWSER:-0}）…"
+    export INSTALL_BROWSER="${INSTALL_BROWSER:-0}"
+    cmd_build_runtime
+  else
+    local staged="benxi-api-runtime:automl-base"
+    info "基于 ${base_tag} 叠加 AutoML(PyCaret) → ${local_tag}"
+    docker tag "${base_tag}" "${staged}"
+    docker build \
+      -f backend/Dockerfile.automl \
+      --build-arg "BASE_IMAGE=${staged}" \
+      --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}" \
+      -t "${local_tag}" \
+      .
+  fi
+  if [[ "$COMPOSE_DEV" == 1 ]] || [[ "$COMPOSE_SERVER" == 1 ]] || [[ "${SERVER_MOUNT_CODE:-0}" == 1 ]]; then
+    if [[ "$COMPOSE_SERVER" == 1 ]] || [[ "${SERVER_MOUNT_CODE:-0}" == 1 ]]; then
+      COMPOSE_SERVER=1
+    fi
+    info "应用 runtime 镜像并重启 api / worker…"
+    compose_cmd up -d api worker
+    api_cid="$(docker ps -q -f "name=${COMPOSE_PROJECT_NAME:-benxi}-api" | head -1)"
+    worker_cid="$(docker ps -q -f "name=${COMPOSE_PROJECT_NAME:-benxi}-worker" | head -1)"
+    [[ -n "$api_cid" ]] && docker restart "$api_cid" || true
+    [[ -n "$worker_cid" ]] && docker restart "$worker_cid" || true
+  else
+    compose_cmd up -d api worker
+  fi
+  info "校验 PyCaret…"
+  local cid
+  cid="$(docker ps -q -f "name=${COMPOSE_PROJECT_NAME:-benxi}-api" | head -1)"
+  if [[ -n "$cid" ]]; then
+    docker exec "$cid" python -c "import pycaret; print('automl ok', pycaret.__version__)"
+  else
+    warn "未找到 api 容器，跳过 PyCaret 校验"
+  fi
+}
+
 cmd_push_registry() {
   load_env
   local prefix="${REGISTRY_IMAGE_PREFIX:-}"
@@ -234,6 +285,7 @@ cmd_push_registry() {
     --build-arg "APT_MIRROR=${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}" \
     --build-arg "INSTALL_PAGEINDEX=${INSTALL_PAGEINDEX:-1}" \
     --build-arg "INSTALL_BROWSER=${INSTALL_BROWSER:-1}" \
+    --build-arg "INSTALL_AUTOML=${INSTALL_AUTOML:-0}" \
     --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST:-https://playwright.download.azure.cn}" \
     -t "${image}" \
     -t "${prefix}benxi-api-runtime:latest" \
@@ -452,6 +504,7 @@ usage() {
   build [服务名...]     构建镜像（可加 --profile knowflow --profile speech）
   build-runtime         构建 benxi-api-runtime（仅 Python 依赖，供挂载部署）
   build-browser         构建含 Playwright 的 runtime 并重启 api/worker（服务器 RPA）
+  build-automl          构建含 PyCaret AutoML 的 runtime（默认保留 Playwright）并重启 api/worker
   push-registry         buildx 推送 runtime 镜像到 REGISTRY_IMAGE_PREFIX（amd64+arm64）
   pull-registry         从 REGISTRY_IMAGE_PREFIX 拉 runtime 镜像
   server-up             服务器模式：runtime 镜像 + 挂载 backend/app
@@ -472,6 +525,7 @@ usage() {
   BUILD_PLATFORMS       push-registry 用，默认 linux/amd64,linux/arm64
   INSTALL_PAGEINDEX     构建时安装 PageIndex extra，默认 1
   INSTALL_BROWSER       构建时安装 Playwright Chromium（RPA），默认 1
+  INSTALL_AUTOML        构建时安装 PyCaret AutoML extra，默认 0（build-automl 强制 1）
   SERVER_MOUNT_CODE=1   叠加 compose.server.yaml（等同 server-up）
   STACK_USE_MIRROR=1    叠加 compose.mirror.yaml（默认开启）
   COMPOSE_PROJECT_NAME  默认 benxi；远程依赖栈可用 benxi
@@ -523,6 +577,12 @@ main() {
         COMPOSE_SERVER=1
       fi
       cmd_build_browser "$@"
+      ;;
+    build-automl)
+      if [[ "${SERVER_MOUNT_CODE:-0}" == 1 ]]; then
+        COMPOSE_SERVER=1
+      fi
+      cmd_build_automl "$@"
       ;;
     push-registry) cmd_push_registry "$@" ;;
     pull-registry) cmd_pull_registry "$@" ;;

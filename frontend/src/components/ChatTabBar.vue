@@ -1,10 +1,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from "vue";
-import { CloseOutline, AddOutline, TimeOutline, CheckmarkOutline, CloseCircleOutline } from "@vicons/ionicons5";
+import { CloseOutline, AddOutline, CheckmarkOutline, CloseCircleOutline, ChatbubblesOutline } from "@vicons/ionicons5";
 import { NIcon } from "naive-ui";
 import { useI18n } from "../composables/useI18n.js";
 import CurveAnimation from "./CurveAnimation.vue";
-import AiHomeOpenApiPanel from "./AiHomeOpenApiPanel.vue";
 
 const props = defineProps({
   tabs: { type: Array, required: true },
@@ -17,9 +16,11 @@ const props = defineProps({
   tabHasContent: { type: Object, default: () => ({}) },
   /** 操作栏介绍性文字，tab 过多侵占空间时自动隐藏 */
   introText: { type: String, default: "" },
+  /** 历史侧栏是否打开（用于高亮按钮） */
+  historyActive: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["switch", "close", "create", "history", "closeAll"]);
+const emit = defineEmits(["switch", "close", "create", "closeAll", "history"]);
 
 const { t } = useI18n();
 
@@ -53,6 +54,16 @@ onUnmounted(() => {
 
 <template>
   <div class="chat-tab-bar">
+    <button
+      type="button"
+      class="chat-tab-history"
+      :class="{ 'chat-tab-history--active': historyActive }"
+      :aria-label="t('chat.history')"
+      :title="t('chat.history')"
+      @click="emit('history')"
+    >
+      <n-icon :size="16" :component="ChatbubblesOutline" />
+    </button>
     <div ref="scrollRef" class="chat-tab-bar__scroll">
       <button
         v-for="tab in tabs"
@@ -96,7 +107,10 @@ onUnmounted(() => {
         <n-icon :size="16" :component="AddOutline" />
       </button>
     </div>
-    <div class="chat-tab-bar__actions">
+    <div
+      v-if="tabs.length > 1 || (introText && !isOverflow)"
+      class="chat-tab-bar__actions"
+    >
       <button
         v-if="tabs.length > 1"
         type="button"
@@ -108,16 +122,6 @@ onUnmounted(() => {
         <n-icon :size="16" :component="CloseCircleOutline" />
       </button>
       <span v-if="introText && !isOverflow" class="chat-tab-bar__intro">{{ introText }}</span>
-      <button
-        type="button"
-        class="chat-tab-action"
-        :aria-label="t('chat.viewHistory')"
-        :title="t('chat.viewHistory')"
-        @click="emit('history')"
-      >
-        <n-icon :size="16" :component="TimeOutline" />
-      </button>
-      <AiHomeOpenApiPanel />
     </div>
   </div>
 </template>
@@ -129,6 +133,29 @@ onUnmounted(() => {
   width: 100%;
   min-width: 0;
   border-bottom: none;
+  gap: 4px;
+}
+
+.chat-tab-history {
+  all: unset;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  color: var(--platform-text-tertiary);
+  cursor: pointer;
+  border-radius: var(--platform-radius-sm);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.chat-tab-history:hover,
+.chat-tab-history--active {
+  color: var(--platform-accent, #005A9E);
+  background: color-mix(in srgb, var(--platform-accent) 8%, transparent);
 }
 
 .chat-tab-bar__scroll {

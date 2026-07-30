@@ -1,6 +1,7 @@
 """Neo4j 连接池管理器 — 应用生命周期全局单例。
 
-通过异步驱动程序连接 Neo4j 图数据库，提供连接获取/关闭/模式初始化的统一入口。
+通过异步驱动程序连接 Neo4j 图数据库，仅存知识图谱实例（ABox）。
+本体定义（TBox）存 GraphDB，见 app.core.graphdb。
 """
 
 from __future__ import annotations
@@ -97,9 +98,7 @@ async def init_neo4j_schema() -> None:
         "CREATE INDEX relates_type IF NOT EXISTS FOR ()-[r:RELATES]-() ON (r.type_code)",
         # 唯一约束（unique constraint 自动创建索引，不再单独建同名属性索引）
         "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (n:Entity) REQUIRE n.id IS UNIQUE",
-        "CREATE CONSTRAINT oet_code_unique IF NOT EXISTS FOR (n:OntologyEntityType) REQUIRE n.code IS UNIQUE",
-        "CREATE CONSTRAINT ort_code_unique IF NOT EXISTS FOR (n:OntologyRelationType) REQUIRE n.code IS UNIQUE",
-        "CREATE CONSTRAINT oa_name_unique IF NOT EXISTS FOR (n:OntologyAxiom) REQUIRE n.name IS UNIQUE",
+        "CREATE INDEX entity_type_uri IF NOT EXISTS FOR (n:Entity) ON (n.type_uri)",
     ]
     try:
         async with driver.session(database=settings.neo4j_database) as session:
@@ -151,3 +150,19 @@ async def run_cypher(query: str, params: dict[str, Any] | None = None) -> list[d
         async for record in result:
             records.append(dict(record))
         return records
+
+
+def make_neo4j_base_service(driver: Any) -> Any:
+    """Platform Neo4jBaseService with AppError mapping."""
+    from app.core.exceptions import service_unavailable
+    from app.core.neo4j_base import Neo4jBaseService
+
+    def _unavailable(message: str, cause: BaseException) -> BaseException:
+        return service_unavailable(message)
+
+    return Neo4jBaseService(driver, unavailable=_unavailable)
+
+
+# Re-export for callers that only need the base class + connection helpers
+from app.core.neo4j_base import Neo4jBaseService  # noqa: E402
+

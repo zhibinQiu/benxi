@@ -404,17 +404,22 @@ async function selectFile(file) {
 
   closePolishPreview();
 
-  // 离开前缓存并异步落盘，不阻塞切换
+  // 离开前缓存并异步落盘，不阻塞切换；快照避免 await 后串写到新文件
   if (currentNote.value?.id) {
-    noteContentCache.set(currentNote.value.id, {
-      ...currentNote.value,
+    const leaving = {
+      id: currentNote.value.id,
+      folder_id: currentNote.value.folder_id,
       content: editorContent.value,
+    };
+    noteContentCache.set(leaving.id, {
+      ...currentNote.value,
+      content: leaving.content,
       _full: true,
     });
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
-      void saveNoteContent();
+      void saveNoteContent(leaving);
     }
   }
 
@@ -610,34 +615,59 @@ function onEditorKeydown(e) {
 
 function debounceSave() {
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveNoteContent, 800);
+  saveTimer = setTimeout(() => {
+    if (!currentNote.value?.id) return;
+    void saveNoteContent({
+      id: currentNote.value.id,
+      folder_id: currentNote.value.folder_id,
+      content: editorContent.value,
+    });
+  }, 800);
 }
 
-async function saveNoteContent() {
-  if (!currentNote.value) return;
+function deriveTitleFromContent(c) {
+  const text = c || "";
+  const fl = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith("#") && !l.startsWith("!["));
+  const tm = text.match(/^#\s+(.+)/m);
+  return tm ? tm[1].trim().slice(0, 200) : (fl || "新文件").slice(0, 200);
+}
+
+/** @param {{ id: string, folder_id?: string, content?: string } | null} snapshot */
+async function saveNoteContent(snapshot = null) {
+  const noteId = snapshot?.id ?? currentNote.value?.id;
+  if (!noteId) return;
+  const folderId = snapshot?.folder_id ?? currentNote.value?.folder_id;
+  const c = snapshot?.content ?? editorContent.value;
+  const t = deriveTitleFromContent(c);
   saving.value = true;
   try {
-    const c = editorContent.value;
-    const fl = c
-      .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l && !l.startsWith("#") && !l.startsWith("!["));
-    const tm = c.match(/^#\s+(.+)/m);
-    const t = tm ? tm[1].trim().slice(0, 200) : (fl || "新文件").slice(0, 200);
-    await updateNoteFile(currentNote.value.id, { content: c, title: t });
+    await updateNoteFile(noteId, { content: c, title: t });
     const now = new Date().toISOString();
-    currentNote.value = { ...currentNote.value, content: c, title: t, updated_at: now };
-    noteContentCache.set(currentNote.value.id, { ...currentNote.value, _full: true });
-    const mid = currentNote.value.folder_id;
-    if (mid && menuFiles.value[mid]) {
-      const idx = menuFiles.value[mid].findIndex((f) => f.id === currentNote.value.id);
+    const cached = noteContentCache.get(noteId);
+    noteContentCache.set(noteId, {
+      ...(cached || {}),
+      id: noteId,
+      folder_id: folderId,
+      content: c,
+      title: t,
+      updated_at: now,
+      _full: true,
+    });
+    if (folderId && menuFiles.value[folderId]) {
+      const idx = menuFiles.value[folderId].findIndex((f) => f.id === noteId);
       if (idx >= 0) {
-        menuFiles.value[mid][idx] = {
-          ...menuFiles.value[mid][idx],
+        menuFiles.value[folderId][idx] = {
+          ...menuFiles.value[folderId][idx],
           title: t,
           updated_at: now,
         };
       }
+    }
+    if (currentNote.value?.id === noteId) {
+      currentNote.value = { ...currentNote.value, content: c, title: t, updated_at: now };
     }
   } catch {
     /* 静默 */
@@ -721,7 +751,12 @@ async function flushNoteBeforeShare() {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  await saveNoteContent();
+  if (!currentNote.value?.id) return;
+  await saveNoteContent({
+    id: currentNote.value.id,
+    folder_id: currentNote.value.folder_id,
+    content: editorContent.value,
+  });
 }
 
 async function importCurrentNoteToLibrary() {
@@ -1569,10 +1604,19 @@ onActivated(() => {
   transition: background 0.12s ease;
 }
 .sb-file:hover:not(.active) {
-  background: var(--platform-bg-tertiary);
+  background: var(--platform-bg-secondary);
 }
 .sb-file.active {
-  background: var(--platform-bg-tertiary);
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
+}
+.sb-file.active .sb-file-name {
+  font-weight: 500;
+  color: var(--platform-accent);
+}
+.sb-file.active .sb-file-icon,
+.sb-file.active .sb-pin {
+  color: var(--platform-accent);
 }
 .sb-file__body {
   flex: 1;
@@ -1653,7 +1697,7 @@ onActivated(() => {
   flex-direction: column;
   gap: 4px;
   padding: 8px 14px;
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   flex-shrink: 0;
   min-height: 42px;
 }
@@ -1743,7 +1787,7 @@ onActivated(() => {
   flex-wrap: wrap;
   gap: 2px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--platform-border-strong);
+  border-bottom: 1px solid var(--platform-border-light);
   background: var(--platform-bg);
   flex-shrink: 0;
 }

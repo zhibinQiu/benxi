@@ -74,93 +74,94 @@ html[data-theme="light"] {
   --platform-duration-spring: 0.4s;
   --platform-duration-smooth: 0.22s;
 
-  /* #FAFAFA 内容区 / #F2F2F2 侧栏 / #FCFCFC 卡片前景 */
-  --platform-bg-base: #FAFAFA;
-  --platform-bg: #FAFAFA;
-  --platform-bg-elevated: #FCFCFC;
-  --platform-bg-elevated-solid: #FCFCFC;
-  --platform-modal-mask: rgba(0, 0, 0, 0.3);
-  --platform-modal-bg: rgba(255, 255, 255, 0.85);
+  /* Smart Carbon Blue：Canvas #F2F6FA / Menu #0D2A47 / Card #FFFFFF */
+  --platform-bg-base: #F2F6FA;
+  --platform-bg: #F2F6FA;
+  --platform-bg-elevated: #FFFFFF;
+  --platform-bg-elevated-solid: #FFFFFF;
+  --platform-modal-mask: rgba(13, 42, 71, 0.32);
+  --platform-modal-bg: rgba(255, 255, 255, 0.92);
   --platform-modal-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.04),
-    0 20px 48px rgba(0, 0, 0, 0.08),
-    0 48px 96px rgba(0, 0, 0, 0.06);
-  --platform-bg-secondary: #eaeaea;
-  --platform-bg-tertiary: #eeeeee;
-  --platform-text: #141414;
-  --platform-text-secondary: #4f4f4f;
-  --platform-text-tertiary: #6f6f6f;
-  --platform-text-quaternary: #999999;
-  --platform-icon: #686868;
-  --platform-border: rgba(0, 0, 0, 0.05);
-  --platform-border-strong: rgba(0, 0, 0, 0.09);
-  --platform-divider: rgba(0, 0, 0, 0.03);
+    0 0 0 1px rgba(24, 42, 59, 0.06),
+    0 4px 12px rgba(24, 42, 59, 0.04),
+    0 20px 48px rgba(24, 42, 59, 0.08),
+    0 48px 96px rgba(24, 42, 59, 0.06);
+  --platform-bg-secondary: #E8EEF4;
+  --platform-bg-tertiary: #F0F7FC;
+  --platform-text: #182A3B;
+  --platform-text-secondary: #3D556D;
+  --platform-text-tertiary: #6B7F92;
+  --platform-text-quaternary: #8FA0B0;
+  --platform-icon: #6B7F92;
+  --platform-border: #D9E3EC;
+  --platform-border-light: #E8E8E8;
+  --platform-border-strong: color-mix(in srgb, #D9E3EC 70%, #3D556D);
+  --platform-divider: color-mix(in srgb, #D9E3EC 80%, transparent);
 
   --platform-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.03),
-    0 1px 1px rgba(0, 0, 0, 0.01);
+    0 1px 2px rgba(24, 42, 59, 0.04),
+    0 1px 1px rgba(24, 42, 59, 0.02);
   --platform-shadow-sm:
-    0 1px 2px rgba(0, 0, 0, 0.02);
+    0 1px 2px rgba(24, 42, 59, 0.03);
   --platform-shadow-card: none;
   --platform-shadow-card-hover: none;
   --platform-shadow-lg:
-    0 1px 4px rgba(0, 0, 0, 0.03);
+    0 1px 4px rgba(24, 42, 59, 0.04);
 
-  /* 蓝色主题色 */
-  --platform-accent: #0a6bff;
-  --platform-accent-hover: #0058e0;
-  --platform-accent-pressed: #004ac2;
-  --platform-accent-secondary: #3b82ff;
-  --platform-accent-secondary-hover: #1a6cff;
-  --platform-accent-soft: rgba(10, 107, 255, 0.07);
-  --platform-accent-soft-2: rgba(10, 107, 255, 0.035);
-  --platform-accent-gradient: linear-gradient(135deg, #3b82ff 0%, #0a6bff 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #5c96ff 0%, #0058e0 100%);
-  --platform-accent-gradient-soft: #f3f3f3;
-  --platform-accent-muted: rgba(10, 107, 255, 0.05);
-  --platform-accent-muted-strong: rgba(10, 107, 255, 0.1);
-  --platform-accent-border: rgba(10, 107, 255, 0.3);
-  --platform-accent-border-soft: rgba(10, 107, 255, 0.15);
+  /* Carbon Blue · #005A9E */
+  --platform-accent: #005A9E;
+  --platform-accent-hover: #00497F;
+  --platform-accent-pressed: #003A66;
+  --platform-accent-secondary: #1A7FD4;
+  --platform-accent-secondary-hover: #459BDB;
+  --platform-accent-soft: rgba(0, 90, 158, 0.08);
+  --platform-accent-soft-2: rgba(0, 90, 158, 0.04);
+  --platform-accent-gradient: linear-gradient(135deg, #1A7FD4 0%, #005A9E 58%, #003B6B 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #459BDB 0%, #1A7FD4 45%, #005A9E 100%);
+  --platform-accent-gradient-soft: #F0F7FC;
+  --platform-accent-muted: rgba(0, 90, 158, 0.06);
+  --platform-accent-muted-strong: rgba(0, 90, 158, 0.12);
+  --platform-accent-border: rgba(0, 90, 158, 0.32);
+  --platform-accent-border-soft: rgba(0, 90, 158, 0.16);
 
-  --platform-accent-stop-a: #d0e1ff;
-  --platform-accent-stop-b: #0a6bff;
-  --platform-accent-stop-c: #3b82ff;
-  --platform-accent-stop-d: #004ac2;
-  --platform-accent-stop-e: #0058e0;
+  --platform-accent-stop-a: #B3D8F2;
+  --platform-accent-stop-b: #005A9E;
+  --platform-accent-stop-c: #1A7FD4;
+  --platform-accent-stop-d: #003A66;
+  --platform-accent-stop-e: #00497F;
 
-  --platform-loader-gradient-start: #d0e1ff;
-  --platform-loader-gradient-mid: #6ea3ff;
-  --platform-loader-gradient-end: #0a6bff;
-  --platform-loader-path: rgba(10, 107, 255, 0.24);
-  --platform-loader-color: #0a6bff;
+  --platform-loader-gradient-start: #B3D8F2;
+  --platform-loader-gradient-mid: #459BDB;
+  --platform-loader-gradient-end: #005A9E;
+  --platform-loader-path: rgba(0, 90, 158, 0.24);
+  --platform-loader-color: #005A9E;
 
   /* ── 全局毛玻璃设计令牌（侧栏 / 顶栏 / 卡片 / 浮层统一引用） ── */
   --platform-glass-blur: 18px;
   --platform-glass-saturate: 1.45;
   --platform-glass-filter: blur(var(--platform-glass-blur)) saturate(var(--platform-glass-saturate));
-  --platform-glass-sider-bg: color-mix(in srgb, #F2F2F2 78%, transparent);
+  --platform-glass-sider-bg: #0D2A47;
   /* 顶栏与内容区同色，视觉融为一体 */
-  --platform-glass-header-bg: #FAFAFA;
-  --platform-glass-panel-bg: color-mix(in srgb, #FCFCFC 68%, transparent);
-  --platform-glass-float-bg: color-mix(in srgb, #FFFFFF 78%, transparent);
-  --platform-glass-border: color-mix(in srgb, #ffffff 72%, rgba(0, 0, 0, 0.08));
-  --platform-glass-border-soft: color-mix(in srgb, #ffffff 55%, rgba(0, 0, 0, 0.06));
-  --platform-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --platform-glass-header-bg: #F2F6FA;
+  --platform-glass-panel-bg: color-mix(in srgb, #FFFFFF 78%, transparent);
+  --platform-glass-float-bg: color-mix(in srgb, #FFFFFF 86%, transparent);
+  --platform-glass-border: color-mix(in srgb, #ffffff 72%, #D9E3EC);
+  --platform-glass-border-soft: color-mix(in srgb, #ffffff 55%, #D9E3EC);
+  --platform-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   --platform-glass-shadow:
     var(--platform-glass-highlight),
-    0 1px 2px rgba(15, 23, 42, 0.03),
-    0 10px 28px rgba(15, 23, 42, 0.04);
+    0 1px 2px rgba(24, 42, 59, 0.04),
+    0 10px 28px rgba(24, 42, 59, 0.05);
   --platform-glass-shadow-sm:
     var(--platform-glass-highlight),
-    0 1px 2px rgba(15, 23, 42, 0.02);
+    0 1px 2px rgba(24, 42, 59, 0.03);
 
-  /* 壳层：内容区 / 顶栏同色 #FAFAFA，侧栏单独分层 */
-  --platform-shell-gradient: #FAFAFA;
-  --platform-chat-gradient: #FAFAFA;
-  --platform-header-bg: #FAFAFA;
+  /* 壳层：Canvas #F2F6FA，侧栏 Menu #0D2A47 */
+  --platform-shell-gradient: #F2F6FA;
+  --platform-chat-gradient: #F2F6FA;
+  --platform-header-bg: #F2F6FA;
   --platform-sider-bg: var(--platform-glass-sider-bg);
-  --platform-toolbar-bg: var(--platform-glass-sider-bg);
+  --platform-toolbar-bg: #F0F7FC;
 
   --platform-radius-lg: 16px;
   --platform-radius: 12px;
@@ -182,20 +183,24 @@ html[data-theme="light"] {
 
   --platform-touch-target: 44px;
 
-  --platform-focus-ring: 0 0 0 3px rgba(0, 0, 0, 0.1);
+  --platform-focus-ring: 0 0 0 3px rgba(0, 90, 158, 0.18);
 
-  --platform-link: #22507c;
+  --platform-link: #005A9E;
 
-  --platform-caution: #e25507;
-  --platform-caution-hover: #c94806;
-  --platform-caution-pressed: #a83d05;
-  --platform-caution-soft: rgba(226, 85, 7, 0.08);
-  --platform-danger: #BE1743;
-  --platform-danger-hover: #a01337;
-  --platform-danger-pressed: #820f2c;
-  --platform-danger-soft: rgba(190, 23, 67, 0.08);
+  --platform-success: #2F9E68;
+  --platform-success-hover: #278556;
+  --platform-success-pressed: #1F6C46;
+  --platform-success-soft: rgba(47, 158, 104, 0.1);
+  --platform-caution: #D99B2B;
+  --platform-caution-hover: #C48920;
+  --platform-caution-pressed: #A87418;
+  --platform-caution-soft: rgba(217, 155, 43, 0.12);
+  --platform-danger: #DC5A5A;
+  --platform-danger-hover: #C94A4A;
+  --platform-danger-pressed: #B03E3E;
+  --platform-danger-soft: rgba(220, 90, 90, 0.1);
 
-  --platform-surface: #FCFCFC;
+  --platform-surface: #FFFFFF;
   --platform-muted: var(--platform-text-secondary);
   --platform-green: var(--platform-accent);
   --platform-green-hover: var(--platform-accent-hover);
@@ -226,26 +231,27 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  /* Cursor 风格 — 深色主题：纯黑基调 */
-  --platform-bg-base: #0c0c0f;
-  --platform-bg: #0c0c0f;
-  --platform-bg-elevated: rgba(26, 26, 32, 0.8);
-  --platform-bg-elevated-solid: #1a1a20;
+  /* 与默认蓝 scheme / themeColors.js 对齐的暗色基准 */
+  --platform-bg-base: #212121;
+  --platform-bg: #212121;
+  --platform-bg-elevated: rgba(47, 47, 47, 0.88);
+  --platform-bg-elevated-solid: #2f2f2f;
   --platform-modal-mask: rgba(0, 0, 0, 0.6);
-  --platform-modal-bg: rgba(26, 26, 32, 0.88);
+  --platform-modal-bg: rgba(47, 47, 47, 0.92);
   --platform-modal-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.04),
     0 4px 12px rgba(0, 0, 0, 0.35),
     0 20px 48px rgba(0, 0, 0, 0.45),
     0 48px 96px rgba(0, 0, 0, 0.55);
-  --platform-bg-secondary: #141417;
-  --platform-bg-tertiary: #1e1e24;
+  --platform-bg-secondary: #171717;
+  --platform-bg-tertiary: #2f2f2f;
   --platform-text: #e8e8ec;
   --platform-text-secondary: #b0b0be;
   --platform-text-tertiary: #787888;
   --platform-text-quaternary: #585868;
   --platform-icon: #8e8ea0;
   --platform-border: rgba(255, 255, 255, 0.05);
+  --platform-border-light: rgba(255, 255, 255, 0.08);
   --platform-border-strong: rgba(255, 255, 255, 0.1);
   --platform-divider: rgba(255, 255, 255, 0.03);
 
@@ -256,45 +262,45 @@ html[data-theme="dark"] {
   --platform-shadow-lg:
     0 1px 4px rgba(0, 0, 0, 0.15);
 
-  --platform-accent: #4d94ff;
-  --platform-accent-hover: #6ea3ff;
-  --platform-accent-pressed: #3b82ff;
-  --platform-accent-secondary: #6ea3ff;
-  --platform-accent-secondary-hover: #4d94ff;
-  --platform-accent-soft: rgba(77, 148, 255, 0.12);
-  --platform-accent-soft-2: rgba(77, 148, 255, 0.18);
-  --platform-accent-gradient: linear-gradient(135deg, #6ea3ff 0%, #4d94ff 100%);
-  --platform-accent-gradient-hover: linear-gradient(135deg, #8fb8ff 0%, #3b82ff 100%);
-  --platform-accent-gradient-soft: linear-gradient(180deg, #1e1e24 0%, #141417 100%);
-  --platform-accent-muted: rgba(77, 148, 255, 0.1);
-  --platform-accent-muted-strong: rgba(77, 148, 255, 0.16);
-  --platform-accent-border: rgba(77, 148, 255, 0.3);
-  --platform-accent-border-soft: rgba(77, 148, 255, 0.18);
+  --platform-accent: #459BDB;
+  --platform-accent-hover: #7DBCE8;
+  --platform-accent-pressed: #1A7FD4;
+  --platform-accent-secondary: #7DBCE8;
+  --platform-accent-secondary-hover: #B3D8F2;
+  --platform-accent-soft: rgba(69, 155, 219, 0.14);
+  --platform-accent-soft-2: rgba(69, 155, 219, 0.2);
+  --platform-accent-gradient: linear-gradient(135deg, #7DBCE8 0%, #459BDB 55%, #1A7FD4 100%);
+  --platform-accent-gradient-hover: linear-gradient(135deg, #B3D8F2 0%, #7DBCE8 50%, #459BDB 100%);
+  --platform-accent-gradient-soft: linear-gradient(180deg, #132536 0%, #0D1A28 100%);
+  --platform-accent-muted: rgba(69, 155, 219, 0.12);
+  --platform-accent-muted-strong: rgba(69, 155, 219, 0.18);
+  --platform-accent-border: rgba(69, 155, 219, 0.35);
+  --platform-accent-border-soft: rgba(69, 155, 219, 0.2);
 
-  --platform-accent-stop-a: #a0c8ff;
-  --platform-accent-stop-b: #4d94ff;
-  --platform-accent-stop-c: #6ea3ff;
-  --platform-accent-stop-d: #3b82ff;
-  --platform-accent-stop-e: #6ea3ff;
+  --platform-accent-stop-a: #B3D8F2;
+  --platform-accent-stop-b: #459BDB;
+  --platform-accent-stop-c: #7DBCE8;
+  --platform-accent-stop-d: #1A7FD4;
+  --platform-accent-stop-e: #7DBCE8;
 
-  --platform-loader-gradient-start: #a0c8ff;
-  --platform-loader-gradient-mid: #6ea3ff;
-  --platform-loader-gradient-end: #4d94ff;
-  --platform-loader-path: rgba(77, 148, 255, 0.24);
-  --platform-loader-color: #4d94ff;
+  --platform-loader-gradient-start: #B3D8F2;
+  --platform-loader-gradient-mid: #7DBCE8;
+  --platform-loader-gradient-end: #459BDB;
+  --platform-loader-path: rgba(69, 155, 219, 0.26);
+  --platform-loader-color: #459BDB;
 
-  --platform-focus-ring: 0 0 0 3px rgba(255, 255, 255, 0.08);
+  --platform-focus-ring: 0 0 0 3px rgba(69, 155, 219, 0.22);
 
-  --platform-link: #6a9fcf;
+  --platform-link: #7DBCE8;
 
   /* 深色毛玻璃（须先于 shell 背景引用） */
   --platform-glass-blur: 20px;
   --platform-glass-saturate: 1.35;
   --platform-glass-filter: blur(var(--platform-glass-blur)) saturate(var(--platform-glass-saturate));
-  --platform-glass-sider-bg: color-mix(in srgb, #141417 72%, transparent);
-  --platform-glass-header-bg: #0c0c0f;
-  --platform-glass-panel-bg: color-mix(in srgb, #1a1a20 68%, transparent);
-  --platform-glass-float-bg: color-mix(in srgb, #1e1e24 78%, transparent);
+  --platform-glass-sider-bg: #0D2A47;
+  --platform-glass-header-bg: #0A1622;
+  --platform-glass-panel-bg: color-mix(in srgb, #132536 72%, transparent);
+  --platform-glass-float-bg: color-mix(in srgb, #163048 80%, transparent);
   --platform-glass-border: color-mix(in srgb, #ffffff 12%, transparent);
   --platform-glass-border-soft: color-mix(in srgb, #ffffff 8%, transparent);
   --platform-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -306,20 +312,24 @@ html[data-theme="dark"] {
     var(--platform-glass-highlight),
     0 1px 2px rgba(0, 0, 0, 0.22);
 
-  --platform-shell-gradient: #0c0c0f;
-  --platform-chat-gradient: #0c0c0f;
-  --platform-header-bg: #0c0c0f;
+  --platform-shell-gradient: #0A1622;
+  --platform-chat-gradient: #0A1622;
+  --platform-header-bg: #0A1622;
   --platform-sider-bg: var(--platform-glass-sider-bg);
   --platform-toolbar-bg: var(--platform-glass-sider-bg);
 
-  --platform-caution: #f59e0b;
-  --platform-caution-hover: #fbbf24;
-  --platform-caution-pressed: #d97706;
-  --platform-caution-soft: rgba(245, 158, 11, 0.12);
-  --platform-danger: #f87171;
-  --platform-danger-hover: #fca5a5;
-  --platform-danger-pressed: #ef4444;
-  --platform-danger-soft: rgba(248, 113, 113, 0.12);
+  --platform-success: #3CB87A;
+  --platform-success-hover: #52C98C;
+  --platform-success-pressed: #2F9E68;
+  --platform-success-soft: rgba(60, 184, 122, 0.14);
+  --platform-caution: #E0B04A;
+  --platform-caution-hover: #EBC06A;
+  --platform-caution-pressed: #D99B2B;
+  --platform-caution-soft: rgba(224, 176, 74, 0.14);
+  --platform-danger: #E87878;
+  --platform-danger-hover: #F09A9A;
+  --platform-danger-pressed: #DC5A5A;
+  --platform-danger-soft: rgba(232, 120, 120, 0.14);
 
   --platform-surface: #1a1a20;
   --platform-muted: var(--platform-text-secondary);

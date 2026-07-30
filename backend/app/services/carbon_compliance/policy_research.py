@@ -528,7 +528,7 @@ async def research_carbon_market_news(
 
     if read_full > 0 and top:
         try:
-            from app.tool_center.adapters import _enrich_items_with_full_text
+            from app.tools.adapters import _enrich_items_with_full_text
 
             # 官方与社媒都尽量读正文，避免摘要只停在标题级
             show_official_pre, show_social_pre = _split_buckets(top, social_q_set)

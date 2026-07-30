@@ -133,24 +133,24 @@ onActivated(() => {
   border-radius: 0 !important;
 }
 
-/* ── 报告生成页面：仅标题、图标使用蓝色 ── */
+/* ── 报告生成页面：仅标题、图标使用碳蓝 ── */
 .report-gen-page__panel :deep(.ai-home-title.platform-text-gradient) {
-  background-image: linear-gradient(135deg, #3b82ff 0%, #0a6bff 100%);
+  background-image: var(--platform-accent-gradient);
 }
 .report-gen-page__panel :deep(.ai-home-icon) {
-  color: #0a6bff;
+  color: var(--platform-accent);
 }
 /* 思考呼吸气泡 + 智能体名称仍使用蓝色主题色 */
 .report-gen-page__panel :deep(.ai-std__dot) {
-  background: #0a6bff;
+  background: var(--platform-accent);
 }
 .report-gen-page__panel :deep(.agent-workflow__agent-tag) {
-  color: #0a6bff;
-  background: rgba(10, 107, 255, 0.1);
-  border: 1px solid rgba(10, 107, 255, 0.18);
+  color: var(--platform-accent);
+  background: var(--platform-accent-soft);
+  border: 1px solid var(--platform-accent-border-soft);
 }
 .report-gen-page__panel :deep(.agent-workflow__checkbox) {
-  background: rgba(10, 107, 255, 0.12);
-  color: #0a6bff;
+  background: var(--platform-accent-soft);
+  color: var(--platform-accent);
 }
 </style>

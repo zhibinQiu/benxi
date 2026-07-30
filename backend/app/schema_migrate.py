@@ -957,6 +957,13 @@ def ensure_user_auth_token_version_schema(engine: Engine) -> None:
         )
 
 
+def drop_unused_org_columns(engine: Engine) -> None:
+    """删除用户/部门表中确认无业务引用的冗余列。"""
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users DROP COLUMN IF EXISTS ldap_dn"))
+        conn.execute(text("ALTER TABLE departments DROP COLUMN IF EXISTS sort_order"))
+
+
 def ensure_ragflow_version_index_completed_schema(engine: Engine) -> None:
     """版本索引完成时间：文档检索绑定「最后索引成功」的版本。"""
     with engine.begin() as conn:
@@ -969,7 +976,7 @@ def ensure_ragflow_version_index_completed_schema(engine: Engine) -> None:
 
 
 # 新增 ensure_* 补丁时递增；启动时若库中无对应记录则自动跑全量 schema 迁移。
-PLATFORM_SCHEMA_REVISION = 4
+PLATFORM_SCHEMA_REVISION = 6
 
 
 def platform_schema_revision_patch() -> str:
@@ -1529,7 +1536,7 @@ def ensure_finance_report_schema(engine: Engine) -> None:
 
 
 def ensure_carbon_report_schema(engine: Engine) -> None:
-    """双碳助手报告 / 策略任务表。"""
+    """碳资产报告 / 策略任务表。"""
     statements = [
         """
         CREATE TABLE IF NOT EXISTS carbon_reports (
@@ -2011,6 +2018,7 @@ def run_light_schema_patches(engine: Engine) -> None:
     migrate_carbon_qty_unit_wan_v1(engine)
     migrate_carbon_cea_carry_forward_v1(engine)
     migrate_carbon_cea_net_sell_v1(engine)
+    ensure_semantic_field_binding_schema(engine)
 
     # patches: 新增 system_job_id / view_count / share_token 列
     with engine.begin() as conn:
@@ -2049,6 +2057,40 @@ def run_light_schema_patches(engine: Engine) -> None:
         )
 
 
+def ensure_semantic_field_binding_schema(engine: Engine) -> None:
+    """问数映射表：概念属性 → 表列（自动发现落库）。"""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS semantic_field_bindings (
+                    id UUID PRIMARY KEY,
+                    concept VARCHAR(64) NOT NULL,
+                    property_key VARCHAR(64) NOT NULL,
+                    source VARCHAR(16) NOT NULL DEFAULT 'sql',
+                    table_name VARCHAR(128) NOT NULL DEFAULT '',
+                    column_name VARCHAR(128) NOT NULL DEFAULT '',
+                    join_template VARCHAR(64) NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+                    origin VARCHAR(16) NOT NULL DEFAULT 'auto',
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    status VARCHAR(16) NOT NULL DEFAULT 'active',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    CONSTRAINT uq_semantic_field_binding UNIQUE (concept, property_key, source)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_semantic_field_bindings_concept "
+                "ON semantic_field_bindings (concept)"
+            )
+        )
+
+
 def run_all_schema_migrations(engine: Engine) -> None:
     """全量 DDL/数据补丁（与 app.main 启动顺序一致）。"""
     from app.database import Base
@@ -2073,6 +2115,7 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_user_phone_schema(engine)
     ensure_user_last_seen_schema(engine)
     ensure_user_auth_token_version_schema(engine)
+    drop_unused_org_columns(engine)
     ensure_ragflow_version_index_completed_schema(engine)
     ensure_document_version_change_description(engine)
     ensure_version_compare_schema(engine)
@@ -2080,6 +2123,7 @@ def run_all_schema_migrations(engine: Engine) -> None:
     ensure_document_version_blocks_schema(engine)
     ensure_permission_level_migration(engine)
     ensure_document_library_align_v1(engine)
+    ensure_semantic_field_binding_schema(engine)
     migrate_legacy_admin_roles(engine)
     backfill_ragflow_version_links_once(engine)
     mark_platform_schema_current(engine)

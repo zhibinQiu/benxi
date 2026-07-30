@@ -15,7 +15,7 @@ services:
     command: postgres -c max_connections=220 -c shared_buffers=512MB
 
   api:
-    image: ${REGISTRY_IMAGE_PREFIX:-}benxi-api-runtime:${BENXI_VERSION:-4.8.8}
+    image: ${REGISTRY_IMAGE_PREFIX:-}benxi-api-runtime:${BENXI_VERSION:-4.9.0}
     shm_size: "512mb"
     mem_limit: 4g
     ports:
@@ -23,6 +23,7 @@ services:
     volumes:
       - ../../backend/app:/app/app
       - ../../backend/workers:/app/workers:ro
+      - ../../backend/agent_md:/app/agent_md:ro
       - ../../packages:/packages
       - ../../third_party/examples/agent-skills:/app/examples/agent-skills:ro
       - ../../RELEASE.md:/app/RELEASE.md:ro
@@ -54,11 +55,12 @@ services:
       start_period: 45s
 
   worker:
-    image: ${REGISTRY_IMAGE_PREFIX:-}benxi-api-runtime:${BENXI_VERSION:-4.8.8}
+    image: ${REGISTRY_IMAGE_PREFIX:-}benxi-api-runtime:${BENXI_VERSION:-4.9.0}
     shm_size: "512mb"
     volumes:
       - ../../backend/app:/app/app:ro
       - ../../backend/workers:/app/workers:ro
+      - ../../backend/agent_md:/app/agent_md:ro
       - ../../packages:/packages:ro
       - ${DATA_ROOT:-../../data}/pageindex:/app/.run/pageindex
     command:

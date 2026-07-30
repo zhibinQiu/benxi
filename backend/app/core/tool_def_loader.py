@@ -1,19 +1,19 @@
-"""工具 MD 定义热加载器 — 继承 agentkit 通用 MarkdownConfigLoader。
+"""工具 MD 定义热加载器 — 继承 app.agent 通用 MarkdownConfigLoader。
 
-配置目录: backend/tools/definitions/<name>.md
+配置目录: backend/agent_md/tools/<name>.md
 修改 MD 文件后，下次 get_tool_description() 调用即时生效（mtime 检测）。
 无 MD 文件时回退 TOOL_DEFINITIONS 中的硬编码描述。
 """
 
 from __future__ import annotations
 
-from app.agentkit.config import MarkdownConfigLoader
+from app.agent.config import MarkdownConfigLoader
 
 
 class _ToolDefLoader(MarkdownConfigLoader):
-    """工具定义加载器：从 tools/definitions/*.md 读取描述。"""
+    """工具定义加载器：从 agent_md/tools/*.md 读取描述。"""
 
-    _CONFIG_DIR = "tools/definitions"
+    _CONFIG_DIR = "agent_md/tools"
     _SCAN_INTERVAL = 2.0
     _SKIP_FRONTMATTER = True
 
@@ -39,4 +39,4 @@ def tool_def_files_status() -> list[dict]:
 
 def tool_defs_routing_text() -> str:
     """返回 tools.md 路由目录文本（如存在）。"""
-    return _loader.text()
+    return _loader.get("tools") or _loader.text()

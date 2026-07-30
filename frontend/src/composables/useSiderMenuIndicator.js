@@ -1,12 +1,8 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
-/** 与 sider-menu.css 中指示条内边距保持一致 */
-function readMenuGlassInset(contentEl) {
-  const collapsed = contentEl.classList.contains("n-menu-item-content--collapsed");
-  if (collapsed) {
-    return { top: 2, right: 6, bottom: 2, left: 6 };
-  }
-  return { top: 2, right: 4, bottom: 2, left: 0 };
+/** 通栏直角选中条：无内缩 */
+function readMenuGlassInset() {
+  return { top: 0, right: 0, bottom: 0, left: 0 };
 }
 
 /**
@@ -27,7 +23,7 @@ export function useSiderMenuIndicator(wrapRef, { activeKey, collapsed, expandedK
     const wrap = wrapRef.value;
     if (!wrap || !contentEl) return;
 
-    const inset = readMenuGlassInset(contentEl);
+    const inset = readMenuGlassInset();
     const wrapRect = wrap.getBoundingClientRect();
     const itemRect = contentEl.getBoundingClientRect();
     const top = itemRect.top - wrapRect.top + inset.top;

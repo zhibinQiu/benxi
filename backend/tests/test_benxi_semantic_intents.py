@@ -1,14 +1,14 @@
-"""app.benxi_semantic 意图与决策上下文单测（纯函数 / 无 Neo4j）。"""
+"""app.semantic 意图与决策上下文单测（纯函数 / 无 Neo4j）。"""
 
 from __future__ import annotations
 
-from app.benxi_semantic.intents import (
+from app.semantic.ontology.intents import (
     INTENT_PERSON_AFFILIATION,
     detect_intent_tags,
     is_person_org_affiliation_question,
     tools_for_intents,
 )
-from app.benxi_semantic.models import AgentDecisionContext, MatchedEntity
+from app.semantic.models import AgentDecisionContext, MatchedEntity
 
 
 def test_detect_person_affiliation_intent():

@@ -42,7 +42,6 @@ import HeaderToolbar from "../components/layout/HeaderToolbar.vue";
 import PlatformBrandTitle from "../components/PlatformBrandTitle.vue";
 import PlatformBrandIcon from "../components/PlatformBrandIcon.vue";
 import SystemNotificationToast from "../components/SystemNotificationToast.vue";
-import NotificationsPanel from "../components/NotificationsPanel.vue";
 import { startNotificationAlerts, stopNotificationAlerts } from "../composables/useNotificationAlerts.js";
 import { SUBSYSTEM_PAGE_ROUTES } from "../utils/routeTransition";
 import { useSiderMenuIndicator } from "../composables/useSiderMenuIndicator";
@@ -61,10 +60,10 @@ import { getToken } from "../api/client.js";
 import { openExternal } from "../utils/openExternal.js";
 import { publicAsset } from "../utils/appBase.js";
 import ChatTabBar from "../components/ChatTabBar.vue";
+import ChatHistorySidebar from "../components/ChatHistorySidebar.vue";
 import { useChatTabs } from "../composables/useChatTabs.js";
 
-/** 侧栏底部装饰：海颐 logo + 建筑图 */
-const siderBgSrc = publicAsset("images/sider-bg.jpg");
+/** 侧栏底部装饰：海颐 logo；双碳线条图标为内联 SVG 背景 */
 const haiyiLogoSrc = publicAsset("images/haiyi-logo.png");
 
 /** 对话 / 知识检索 / 报告生成 / 文档管理 / 多智能体保留实例；其余功能离开路由后销毁以释放内存 */
@@ -73,7 +72,8 @@ const KEEP_ALIVE_VIEWS = [
   "KnowledgeFeatureLayout",
   "DocumentsView",
   "AgentSkillsView",
-  "CarbonAssistantView",
+  "OntologyView",
+  "AutomationView",
 ];
 
 function routeViewKey(viewRoute) {
@@ -102,7 +102,7 @@ const pageHeaderOverride = getPageHeaderOverride();
 const headerToolbarRef = ref(null);
 const releaseHighlightsOpen = ref(false);
 const releaseHighlights = ref(null);
-const notifDrawerOpen = ref(false);
+const chatHistoryDrawerOpen = ref(false);
 
 const SETTINGS_KEY = "system-settings";
 const expandedKeys = ref([]);
@@ -111,9 +111,9 @@ const siderMenuWrapRef = ref(null);
 const siderCollapsed = ref(false);
 const isMobile = ref(window.innerWidth < 768);
 
-function toggleNotifDrawer() {
+function toggleChatHistoryDrawer() {
   headerToolbarRef.value?.closeAllFlyouts?.();
-  notifDrawerOpen.value = !notifDrawerOpen.value;
+  chatHistoryDrawerOpen.value = !chatHistoryDrawerOpen.value;
 }
 
 function checkMobile() {
@@ -169,18 +169,29 @@ const showHeaderPrimary = computed(() => !HEADERLESS_PRIMARY_ROUTES.has(String(r
 
 const EXCLUDED_BACK_ROUTES = new Set(["knowledge-search", "report-generation", "agent-skills", "knowledge-subscriptions"]);
 
-function prefetchFeatureCaches() {
-  if (!getToken()) return;
-  prefetchKnowledgeScopeTree();
+let knowledgeScopePrefetchScheduled = false;
+
+function scheduleKnowledgeScopePrefetch() {
+  if (!getToken() || knowledgeScopePrefetchScheduled) return;
+  knowledgeScopePrefetchScheduled = true;
+  const run = () => {
+    knowledgeScopePrefetchScheduled = false;
+    if (getToken()) prefetchKnowledgeScopeTree();
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 2500 });
+  } else {
+    setTimeout(run, 400);
+  }
 }
 
 onMounted(() => {
   startNotificationAlerts();
-  prefetchFeatureCaches();
+  scheduleKnowledgeScopePrefetch();
   checkMobile();
   window.addEventListener("resize", onResize);
   Promise.allSettled([loadUser(), loadSystemFeatures(), loadMenuSettings()]).then(() => {
-    prefetchFeatureCaches();
+    scheduleKnowledgeScopePrefetch();
     nextTick(() => {
       const wrap = siderMenuWrapRef.value;
       const selected = wrap?.querySelector(".n-menu-item-content.n-menu-item-content--selected");
@@ -200,9 +211,10 @@ watch(
   (name) => {
     if (!getToken()) return;
     const routeName = String(name || "");
-    if (routeName === "knowledge-search" || routeName === "report-generation") prefetchKnowledgeScopeTree();
-  },
-  { immediate: true }
+    if (routeName === "knowledge-search" || routeName === "report-generation") {
+      scheduleKnowledgeScopePrefetch();
+    }
+  }
 );
 
 async function tryShowReleaseHighlights() {
@@ -364,6 +376,10 @@ const activeKey = computed(() => {
     route.name === "smart-data-query" ||
     route.name === "data-analysis" ||
     route.name === "carbon-qa" ||
+    route.name === "carbon-news" ||
+    route.name === "carbon-assistant" ||
+    route.name === "finance-assistant" ||
+    route.name === "notes" ||
     route.name === "smart-forecast"
   ) {
     return "system-functions";
@@ -459,12 +475,12 @@ const showAiHomeTabBar = computed(() =>
   route.name === "ai-home" || route.name === "ai-home-tab"
 );
 
+watch(showAiHomeTabBar, (show) => {
+  if (!show) chatHistoryDrawerOpen.value = false;
+});
+
 function goSubsystemBack() {
   goBackToEntry(router, route);
-}
-
-function goToChatHistory() {
-  router.push({ name: "chat-history", params: { scope: "ai-home" } });
 }
 
 const contentStyle = computed(() => {
@@ -633,6 +649,65 @@ function onMenuSelect(key) {
       :width="220"
     >
       <div class="sider-inner">
+        <div class="sider-carbon-bg" aria-hidden="true">
+          <svg
+            class="sider-carbon-bg__svg"
+            viewBox="0 0 220 210"
+            fill="none"
+            preserveAspectRatio="xMidYMax meet"
+          >
+            <defs>
+              <g
+                id="sider-leaf"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  fill="currentColor"
+                  fill-opacity="0.1"
+                  stroke="currentColor"
+                  stroke-width="1.05"
+                  d="M50 8C70 20 84 48 88 86C92 124 78 152 54 168C52 170 51 170 50 170C49 170 48 170 46 168C22 152 8 124 12 86C16 48 30 20 50 8Z"
+                />
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="0.68"
+                  d="M50 164C51 128 52 78 50 22"
+                />
+                <g
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="0.4"
+                  opacity="0.8"
+                >
+                  <path d="M50 52C40 57 31 65 26 74" />
+                  <path d="M50 52C60 57 69 65 74 74" />
+                  <path d="M50 88C38 95 28 105 22 116" />
+                  <path d="M50 88C62 95 72 105 78 116" />
+                  <path d="M50 124C40 131 31 140 26 150" />
+                  <path d="M50 124C60 131 69 140 74 150" />
+                </g>
+              </g>
+            </defs>
+            <g>
+              <!-- 双叶同向：尖端朝右上，整体偏下 -->
+              <use
+                href="#sider-leaf"
+                transform="translate(62 198) rotate(36) translate(-50 -170)"
+              />
+              <path
+                fill="#0D2A47"
+                d="M50 8C70 20 84 48 88 86C92 124 78 152 54 168C52 170 51 170 50 170C49 170 48 170 46 168C22 152 8 124 12 86C16 48 30 20 50 8Z"
+                transform="translate(98 188) rotate(42) translate(-50 -170)"
+              />
+              <use
+                href="#sider-leaf"
+                transform="translate(98 188) rotate(42) translate(-50 -170)"
+              />
+            </g>
+          </svg>
+        </div>
         <div class="brand" :class="{ 'brand--collapsed': siderCollapsed }">
           <template v-if="siderCollapsed">
             <n-button
@@ -662,7 +737,7 @@ function onMenuSelect(key) {
             <PlatformBrandIcon class="brand-logo" />
             <div class="brand-head">
               <span class="brand-name">
-                <PlatformBrandTitle :title="sidebarBrandTitle" />
+                <PlatformBrandTitle :title="sidebarBrandTitle" strong />
               </span>
               <n-button
                 quaternary
@@ -700,13 +775,15 @@ function onMenuSelect(key) {
             :value="resolvedActiveKey"
             :options="menuOptions"
             :expanded-keys="expandedKeys"
+            :collapsed-width="56"
+            :icon-size="18"
+            :collapsed-icon-size="18"
             :node-props="siderMenuNodeProps"
             @update:expanded-keys="onExpandedKeysUpdate"
           />
         </div>
         <div v-if="!siderCollapsed" class="sider-decor" aria-hidden="true">
           <img class="sider-decor__logo" :src="haiyiLogoSrc" alt="" />
-          <img class="sider-decor__building" :src="siderBgSrc" alt="" />
         </div>
       </div>
     </n-layout-sider>
@@ -728,7 +805,7 @@ function onMenuSelect(key) {
                 </template>
               </n-space>
               <span v-else aria-hidden="true" />
-              <HeaderToolbar ref="headerToolbarRef" @toggle-notifications="toggleNotifDrawer" />
+              <HeaderToolbar ref="headerToolbarRef" />
             </n-space>
           </div>
           <div
@@ -744,11 +821,12 @@ function onMenuSelect(key) {
                 :tab-count="chatTabCount"
                 :tab-streaming="tabStreaming"
                 :tab-has-content="tabHasContent"
+                :history-active="chatHistoryDrawerOpen"
                 @switch="switchChatTab"
                 @close="closeChatTab"
                 @create="createChatTab"
-                @history="goToChatHistory"
                 @close-all="closeAllTabs"
+                @history="toggleChatHistoryDrawer"
               />
             </div>
             <div v-else-if="!showTitleInPrimary" class="bare-feature-title-row">
@@ -762,10 +840,13 @@ function onMenuSelect(key) {
                   :aria-label="t('header.back')"
                   @click="goSubsystemBack"
                 >
-                  <n-icon :size="19" :component="ArrowBackOutline" />
+                  <n-icon :size="14" :component="ArrowBackOutline" />
                 </n-button>
                 <div class="bare-feature-title-block">
-                  <span class="bare-feature-title">{{ headerTitle }}</span>
+                  <div class="bare-feature-title-line">
+                    <span class="bare-feature-title">{{ headerTitle }}</span>
+                    <div id="header-title-adjacent" class="header-title-adjacent"></div>
+                  </div>
                   <div class="bare-feature-description-row">
                     <span v-if="headerDescription" class="bare-feature-description">{{ headerDescription }}</span>
                   </div>
@@ -798,7 +879,7 @@ function onMenuSelect(key) {
           ]"
         >
           <router-view v-slot="{ Component, route: viewRoute }">
-            <KeepAlive :max="12" :include="KEEP_ALIVE_VIEWS">
+            <KeepAlive :max="8" :include="KEEP_ALIVE_VIEWS">
               <component
                 :is="Component"
                 :key="routeViewKey(viewRoute)"
@@ -819,17 +900,28 @@ function onMenuSelect(key) {
     @acknowledge="onReleaseHighlightsAcknowledge"
   />
   <SystemNotificationToast />
-  <!-- 通知右侧抽屉 -->
+  <!-- 本析智能：历史对话左侧抽屉 -->
   <Teleport to="body">
-    <Transition name="notif-backdrop">
-      <div v-if="notifDrawerOpen" class="notif-drawer-backdrop" @click="notifDrawerOpen = false" />
+    <Transition name="chat-history-backdrop">
+      <div
+        v-if="chatHistoryDrawerOpen"
+        class="chat-history-drawer-backdrop"
+        @click="chatHistoryDrawerOpen = false"
+      />
     </Transition>
-    <Transition name="notif-slide">
-      <div v-if="notifDrawerOpen" class="notif-drawer" role="dialog" aria-label="通知" @click.stop>
-        <NotificationsPanel
-          :active="notifDrawerOpen"
-          @close="notifDrawerOpen = false"
-          @navigate="notifDrawerOpen = false"
+    <Transition name="chat-history-slide">
+      <div
+        v-if="chatHistoryDrawerOpen"
+        class="chat-history-drawer"
+        role="dialog"
+        :aria-label="t('chatHistory.title')"
+        @click.stop
+      >
+        <ChatHistorySidebar
+          :show="chatHistoryDrawerOpen"
+          scope="ai-home"
+          @update:show="chatHistoryDrawerOpen = $event"
+          @navigate="chatHistoryDrawerOpen = false"
         />
       </div>
     </Transition>
@@ -863,14 +955,11 @@ function onMenuSelect(key) {
 
 /* 系统壳层：侧栏 / 顶栏毛玻璃由 platform-ui-glass.css 统一控制 */
 .main-layout :deep(.app-sider.n-layout-sider) {
-  box-shadow: none !important;
-  border-right: 1px solid var(--platform-glass-border-soft, var(--platform-border)) !important;
+  border-right: 1px solid var(--platform-glass-border-soft, var(--platform-border));
 }
 
 .main-layout .header {
-  border-bottom: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
+  border-bottom: none;
 }
 
 /* Header 微妙的玻璃质感 — 仅在非 tab 模式 / 无 feature-local-nav 时生效 */
@@ -880,7 +969,7 @@ function onMenuSelect(key) {
 
 /* ai-home 标签页模式：移除 header 底部边框，交由标签栏的标签下边框控制 */
 .main-layout .header.header--tab-mode {
-  border-bottom: none !important;
+  border-bottom: none;
 }
 
 
@@ -888,7 +977,7 @@ function onMenuSelect(key) {
   height: 100vh;
 }
 
-/* 侧栏最底部：海颐 logo + 建筑图 */
+/* 侧栏最底部：海颐 logo */
 .sider-decor {
   flex-shrink: 0;
   display: flex;
@@ -896,7 +985,7 @@ function onMenuSelect(key) {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  padding: 4px 0 0;
+  padding: 12px 0 16px;
   box-sizing: border-box;
 }
 
@@ -908,42 +997,76 @@ function onMenuSelect(key) {
   object-fit: contain;
 }
 
-.sider-decor__building {
-  width: 100%;
-  max-width: none;
-  height: auto;
-  display: block;
-  object-fit: cover;
-  object-position: center bottom;
-  margin-bottom: 0;
-}
-
 .app-sider :deep(.n-layout-sider-scroll-container) {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 .sider-inner {
+  position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
   min-height: 0;
   padding: 6px 0 0;
   box-sizing: border-box;
   background: transparent;
+  overflow: hidden;
+}
+
+/* 双碳线条图标：贴在 haiyi logo 正上方 */
+.sider-carbon-bg {
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  bottom: 52px;
+  height: 38%;
+  max-height: 280px;
+  z-index: 0;
+  pointer-events: none;
+  overflow: visible;
+  color: #8EC4E8;
+  opacity: 0.42;
+}
+
+.sider-carbon-bg__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.app-sider.n-layout-sider--collapsed .sider-carbon-bg {
+  left: -10%;
+  right: -10%;
+  bottom: 16px;
+  height: 36%;
+  opacity: 0.24;
+}
+
+.app-sider:not(.n-layout-sider--collapsed) .sider-carbon-bg {
+  bottom: 52px;
+}
+
+.brand,
+.sider-menu-wrap,
+.sider-decor {
+  position: relative;
+  z-index: 1;
 }
 .sider-toggle {
   flex-shrink: 0;
   width: 36px;
   height: 36px;
-  color: var(--platform-icon);
+  color: #ACD2EB;
   border: none !important;
   outline: none !important;
   border-radius: var(--platform-radius-sm);
 }
 .sider-toggle:hover {
-  color: var(--platform-icon);
-  background: transparent !important;
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 .sider-toggle-icon {
   width: 20px;
@@ -955,7 +1078,7 @@ function onMenuSelect(key) {
   gap: 10px;
   padding: 8px 12px 12px 12px;
   margin: 0 8px 4px;
-  border-bottom: 1px solid var(--platform-divider);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
   overflow: hidden;
   font-size: 0.9375rem;
@@ -986,11 +1109,22 @@ function onMenuSelect(key) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--platform-text);
+  color: #FFFFFF;
+}
+.brand-name :deep(.platform-brand-title),
+.brand-name :deep(.platform-brand-title--strong),
+.brand-name :deep(.platform-brand-title__plain),
+.brand-name :deep(.platform-text-gradient) {
+  color: #FFFFFF !important;
+  font-weight: 700;
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: #FFFFFF !important;
 }
 .brand-logo {
   flex-shrink: 0;
-  filter: hue-rotate(324deg) saturate(1.4);
+  filter: none;
 }
 .brand-logo :deep(.platform-brand-icon) {
   width: 1em;
@@ -1012,7 +1146,16 @@ function onMenuSelect(key) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 8px 12px 10px;
+  padding: 4px 0 12px;
+}
+
+/* 收缩后：图标水平居中，与上方展开按钮对齐 */
+.app-sider.n-layout-sider--collapsed .sider-menu .n-menu-item-content {
+  padding-right: 0 !important;
+  justify-content: center;
+}
+.app-sider.n-layout-sider--collapsed .sider-menu .n-menu-item-content__icon {
+  margin-right: 0 !important;
 }
 .app-main {
   height: 100vh;
@@ -1157,6 +1300,26 @@ function onMenuSelect(key) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.bare-feature-title-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.header-title-adjacent {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  /* 避免 :empty 在 Teleport 注入瞬间把容器隐藏导致定位失败 */
+  min-height: 1px;
+}
+.header-title-adjacent:empty {
+  display: flex;
+  width: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 .bare-feature-description {
   font-size: var(--platform-font-size-sm);
   font-weight: 400;
@@ -1175,9 +1338,18 @@ function onMenuSelect(key) {
 
 .header-back {
   flex-shrink: 0;
-  width: 31px;
-  height: 31px;
+  width: 26px !important;
+  height: 26px !important;
+  min-width: 26px !important;
+  min-height: 26px !important;
   color: var(--platform-accent);
+  --n-height: 26px !important;
+  --n-icon-size: 16px !important;
+}
+.header-back :deep(.n-icon) {
+  font-size: 16px !important;
+  width: 16px !important;
+  height: 16px !important;
 }
 
 .header-back:hover {
@@ -1263,7 +1435,7 @@ function onMenuSelect(key) {
   width: 100%;
   display: flex;
   align-items: stretch;
-  padding: 0 24px;
+  padding: 0 24px 0 4px;
   box-sizing: border-box;
   background: transparent;
 }
@@ -1314,7 +1486,7 @@ function onMenuSelect(key) {
     min-height: 36px;
   }
   .ai-home-tab-bar-wrap {
-    padding: 0 10px;
+    padding: 0 10px 0 2px;
   }
   /* 移动端底部导航栏：预留空间 */
   .main-layout .app-content {
@@ -1445,75 +1617,62 @@ function onMenuSelect(key) {
 
   /* ── 隐藏侧栏相关的不必要元素 ── */
   .header-back {
-    width: 28px;
-    height: 28px;
+    width: 26px !important;
+    height: 26px !important;
   }
   .header-back :deep(.n-icon) {
-    font-size: 17px !important;
+    font-size: 16px !important;
+    width: 16px !important;
+    height: 16px !important;
   }
 }
 
-/* === 通知右侧抽屉 === */
-.notif-drawer-backdrop {
+/* === 本析智能：历史对话左侧抽屉 === */
+.chat-history-drawer-backdrop {
   position: fixed;
   inset: 0;
   z-index: 10590;
   background: rgba(0, 0, 0, 0.25);
 }
 
-.notif-drawer {
+.chat-history-drawer {
   position: fixed;
-  right: 0;
+  left: 0;
   top: 0;
   bottom: 0;
-  width: min(420px, calc(100vw - 32px));
+  width: min(360px, calc(100vw - 48px));
   z-index: 10600;
   display: flex;
   flex-direction: column;
-  background: var(--platform-bg-elevated-solid);
-  border-left: 1px solid var(--platform-border);
+  background: var(--platform-bg-elevated-solid, #fff);
+  border-right: 1px solid var(--platform-border);
   box-shadow: var(--platform-shadow-lg);
   overflow: hidden;
 }
 
-.notif-drawer :deep(.notifications-panel) {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.notif-drawer :deep(.notifications-panel__body) {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-}
-
-/* 滑入/滑出动画 */
-.notif-slide-enter-active {
+.chat-history-slide-enter-active {
   transition: transform 0.28s cubic-bezier(0.22, 0.85, 0.32, 1);
 }
 
-.notif-slide-leave-active {
+.chat-history-slide-leave-active {
   transition: transform 0.22s cubic-bezier(0.22, 0.85, 0.32, 1);
 }
 
-.notif-slide-enter-from,
-.notif-slide-leave-to {
-  transform: translateX(100%);
+.chat-history-slide-enter-from,
+.chat-history-slide-leave-to {
+  transform: translateX(-100%);
 }
 
-.notif-backdrop-enter-active {
+.chat-history-backdrop-enter-active {
   transition: opacity 0.28s ease;
 }
 
-.notif-backdrop-leave-active {
+.chat-history-backdrop-leave-active {
   transition: opacity 0.22s ease;
 }
 
-.notif-backdrop-enter-from,
-.notif-backdrop-leave-to {
+.chat-history-backdrop-enter-from,
+.chat-history-backdrop-leave-to {
   opacity: 0;
 }
 
@@ -1551,7 +1710,7 @@ function onMenuSelect(key) {
 }
 
 .mobile-tab-item--active {
-  color: var(--platform-accent, #0067ff);
+  color: var(--platform-accent, #005A9E);
 }
 
 .mobile-tab-label {
@@ -1616,7 +1775,8 @@ function onMenuSelect(key) {
   gap: 6px;
 }
 
-/* —— 统一工具栏按钮：24px 圆形，透明玻璃背景，强制覆盖 Naive UI 内部变量 —— */
+/* —— 统一工具栏按钮：约头像尺寸再略小（26px），图标 16px —— */
+.header .header-toolbar .header-icon-btn,
 #header-page-tools .header-icon-btn,
 #header-actions .header-icon-btn,
 #header-actions .icon-action,
@@ -1624,8 +1784,8 @@ function onMenuSelect(key) {
 #header-actions-row .n-button.n-button--quaternary:not(.agent-skills-action-btn),
 #header-page-tools .n-button.n-button--quaternary {
   flex-shrink: 0 !important;
-  width: 24px !important;
-  height: 24px !important;
+  width: 26px !important;
+  height: 26px !important;
   min-width: 0 !important;
   min-height: 0 !important;
   padding: 0 !important;
@@ -1637,8 +1797,8 @@ function onMenuSelect(key) {
   align-items: center !important;
   justify-content: center !important;
   line-height: 0 !important;
-  --n-height: 24px !important;
-  --n-icon-size: 14px !important;
+  --n-height: 26px !important;
+  --n-icon-size: 16px !important;
   background: color-mix(in srgb, var(--platform-bg-tertiary) 52%, transparent) !important;
   color: var(--platform-text-tertiary) !important;
   font-size: var(--platform-font-size-sm) !important;
@@ -1647,17 +1807,19 @@ function onMenuSelect(key) {
     background 0.2s ease !important;
 }
 
-/* 工具栏按钮中的图标: 统一 14px */
+/* 工具栏按钮中的图标: 统一 16px */
+.header .header-toolbar .header-icon-btn .n-icon,
 #header-page-tools .header-icon-btn .n-icon,
 #header-actions .header-icon-btn .n-icon,
 #header-actions-row .icon-action .n-icon,
-#header-actions-row .n-button .n-icon {
+#header-actions-row .n-button .n-icon,
+#header-page-tools .n-button .n-icon {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: 14px !important;
-  width: 14px !important;
-  height: 14px !important;
+  font-size: 16px !important;
+  width: 16px !important;
+  height: 16px !important;
 }
 
 /* 刷新按钮：加载时图标旋转动画（替代 Naive UI 内置 loading spinner） */
@@ -1767,34 +1929,40 @@ function onMenuSelect(key) {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
-  --n-text-color: var(--platform-icon) !important;
-  --n-text-color-hover: var(--platform-icon) !important;
-  --n-text-color-pressed: var(--platform-icon) !important;
-  --n-text-color-focus: var(--platform-icon) !important;
-  color: var(--platform-icon) !important;
+  --n-text-color: #ACD2EB !important;
+  --n-text-color-hover: #FFFFFF !important;
+  --n-text-color-pressed: #FFFFFF !important;
+  --n-text-color-focus: #FFFFFF !important;
+  color: #ACD2EB !important;
 }
 .app-sider .sider-toggle .n-button__border,
 .app-sider .sider-toggle .n-button__state-border {
   display: none !important;
 }
 
-/* ── 侧栏菜单图标：统一系统灰色，无颜色/大小/动画变化 ── */
+/* ── 侧栏菜单图标 / 文字：未选中 #ACD2EB，选中白色 ── */
 .app-sider .sider-menu .n-menu-item-content {
   transition: none !important;
+  color: #ACD2EB !important;
 }
 .app-sider .sider-menu .n-menu-item-content__icon {
   transition: none !important;
-  color: var(--platform-icon) !important;
+  color: #ACD2EB !important;
   font-size: 18px !important;
   width: 18px !important;
   height: 18px !important;
 }
 .app-sider .sider-menu .n-menu-item-content__icon .n-icon {
   transition: none !important;
-  color: var(--platform-icon) !important;
+  color: #ACD2EB !important;
   font-size: 18px !important;
   width: 18px !important;
   height: 18px !important;
+}
+.app-sider .sider-menu .n-menu-item-content--selected,
+.app-sider .sider-menu .n-menu-item-content--child-active,
+.app-sider .sider-menu .n-menu-item-content--hovered {
+  color: #FFFFFF !important;
 }
 .app-sider .sider-menu .n-menu-item-content--selected .n-menu-item-content__icon,
 .app-sider .sider-menu .n-menu-item-content--selected .n-menu-item-content__icon .n-icon,
@@ -1803,6 +1971,6 @@ function onMenuSelect(key) {
 .app-sider .sider-menu .n-menu-item-content--child-active .n-menu-item-content__icon,
 .app-sider .sider-menu .n-menu-item-content--child-active .n-menu-item-content__icon .n-icon {
   transition: none !important;
-  color: var(--platform-icon) !important;
+  color: #FFFFFF !important;
 }
 </style>

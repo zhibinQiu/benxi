@@ -1,9 +1,10 @@
-# 企业 AI 知识库平台 — 项目总体架构
+# 本析-企业级 AI 智能体平台 — 项目总体架构
 
 > **开发实现说明书 · 第一篇 §1.1** · [说明书总览](implementation-manual.md)  
-> **文档性质**：项目级架构总览（含架构图、核心流程、难点与实现方式）。  
-> **版本对齐**：平台 **v4.8.8** · Monorepo `pdf_trans/`  
-> **运维架构（推荐）**：[系统架构](../operations/architecture.md) · [运维手册](../operations/README.md)
+> **文档性质**：项目级架构总览（含智能体编排、架构图、核心流程、难点与实现）。  
+> **版本对齐**：平台 **v4.9.0** · Monorepo `pdf_trans/`  
+> **运维架构**：[系统架构](../operations/architecture.md) · [运维手册](../operations/README.md)  
+> **智能体设计（主文档）**：[Agent 架构](../agent-architecture.md) · [设计哲学](../agent-philosophy.md)
 
 ---
 
@@ -13,10 +14,10 @@
 
 | 能力域 | 说明 | 主要交付 |
 |--------|------|----------|
-| **企业控制面** | 身份、组织、文档库、权限、任务、系统功能插件 | `platform` API + `platform-frontend` |
-| **文档智能** | 版式保留 PDF 翻译、知识库问答、文档对比、录音转写、网站收藏等 | `pdf2zh_next`、KnowFlow/RAGFlow、speech-service |
+| **企业控制面** | 身份、组织、文档库、权限、任务、系统功能插件、多智能体 | `backend/`（FastAPI）+ `frontend/`（Vue 3） |
+| **文档智能** | 版式保留 PDF 翻译、知识库问答、文档对比、录音转写、网站收藏等 | `third_party/pdf2zh*`、KnowFlow/RAGFlow、speech-service |
 
-设计目标：**平台是权限与元数据的唯一真相**；重计算与 RAG 能力通过独立服务或可选栈接入，避免把业务逻辑绑死在单一进程里。
+设计目标：**平台是权限与元数据的唯一真相**；重计算与 RAG 经独立服务或 Compose profile 接入；智能体运行时在 `backend/app/agent/`（可抽离库），业务偏好在 `backend/agent_md/`。
 
 ---
 
@@ -29,7 +30,7 @@ flowchart TB
     U2[系统管理员]
   end
 
-  subgraph system [企业 AI 知识库平台]
+  subgraph system [本析-企业级 AI 智能体平台]
     FE[Web 前端 Vue3]
     API[控制面 FastAPI]
     WRK[Celery Worker]
@@ -67,26 +68,24 @@ flowchart TB
 
 ## 3. 物理部署架构
 
-### 3.1 本地开发（默认）
+### 3.1 本地开发（推荐：全 Docker）
 
 ```mermaid
 flowchart LR
-  subgraph docker [Docker Compose]
+  subgraph docker [Docker Compose · ./dev.sh docker]
+    FE[frontend Vite :40005]
+    API[api 热重载 :18000]
+    WRK[celery worker]
     PG[(postgres)]
     RD[(redis)]
     MN[(minio)]
-    KF_OPT[KnowFlow 栈 可选]
-    SP_OPT[speech-api 可选]
+    PDF[pdf2zh-api]
+    KF_OPT[KnowFlow 栈 profile]
+    SP_OPT[speech-api profile]
+    DOCS[docs MkDocs :40100 profile]
   end
 
-  subgraph host [宿主机进程]
-    API[uvicorn :8000]
-    WRK[celery worker]
-    FE[vite :40005]
-    PDF[pdf2zh :7861]
-  end
-
-  FE --> API
+  FE -->|/ai/api| API
   API --> PG
   API --> RD
   API --> MN
@@ -95,24 +94,24 @@ flowchart LR
   API -.-> SP_OPT
 ```
 
-启动入口：`./dev.sh`（基础设施 Docker + 应用宿主机）；KnowFlow / 语音为附加 profile。
+启动入口：`./dev.sh docker`（`stack.sh dev-up`）。KnowFlow / 语音 / 文档站为附加 profile（`--profile knowflow|speech|docs`）。数据目录 `${DATA_ROOT}`（开发默认 `./data`），备份产物在仓库根 `backups/`。
 
-### 3.2 生产（amd64 全 Docker）
+### 3.2 生产（全 Docker）
 
 ```mermaid
 flowchart TB
-  GW[反向代理 /ai 前缀]
-  FE_C[platform-frontend 容器]
-  API_C[platform API 容器]
+  GW[对外仅 :40005 Nginx /ai]
+  FE_C[frontend 容器]
+  API_C[api 容器]
   WRK_C[worker 容器]
   PDF_C[pdf2zh 容器]
   PG[(PostgreSQL)]
   RD[(Redis)]
   MN[(MinIO)]
-  KF[KnowFlow 预构建镜像 可选]
+  KF[KnowFlow 可选]
 
   GW --> FE_C
-  GW --> API_C
+  GW -->|/ai/api| API_C
   FE_C --> API_C
   API_C --> PG
   API_C --> RD
@@ -122,18 +121,20 @@ flowchart TB
   API_C -.-> KF
 ```
 
-详见 [部署指南](../operations/deployment.md)。Apple Silicon 上 KnowFlow 需从 `third_party/KnowFlow` **源码构建** arm64 镜像。
+详见 [部署指南](../operations/deployment.md)、[组件与数据存储](../operations/components-and-storage.md)。生产数据常见路径：`/root/qzb/benxi/data`；备份：`/root/qzb/benxi/backups/<时间戳>/`。
 
 ### 3.3 服务端口一览
 
 | 端口 | 组件 | 职责 |
 |------|------|------|
-| 40005 | platform-frontend | 管理端 UI（`/ai/` 前缀可配置） |
-| 8000 | platform API | REST、`/docs` Swagger |
-| 7861 | pdf2zh_next | PDF 翻译 REST |
-| 9380 | RAGFlow Web | 知识问答 iframe、文档解析 UI |
-| 5001 | KnowFlow Backend | RBAC、知识库 ACL 等扩展 API |
-| 8765 | speech-api | FunASR 转写 + 说话人分离 |
+| 40005 | frontend | 唯一 Web 入口（`/ai/`）；生产 Nginx / 开发 Vite |
+| 18000 | api（dev） | Docker 开发时宿主机映射的 FastAPI |
+| 8000 | api | 容器内 REST、Swagger `/docs` |
+| 7861 | pdf2zh-api | PDF 翻译 REST |
+| 9380 | ragflow | 知识问答 iframe、解析 UI（栈内） |
+| 5000 | knowflow-backend | KnowFlow 管理 / 扩展 API（栈内） |
+| 8765 | speech-api | FunASR 转写（profile speech） |
+| 40100 | docs | MkDocs 文档查阅（profile docs；公开站见宣传页「产品文档」） |
 
 ---
 
@@ -198,11 +199,12 @@ flowchart LR
   VIEWS --> API_LAYER
   VIEWS --> COMP
   VIEWS --> AUTH
-  API_LAYER -->|Bearer JWT| BE[platform API]
+  API_LAYER -->|Bearer JWT| BE[backend API]
 ```
 
 - 系统功能入口由 `GET /system/features` 驱动，**不硬编码**全部路由。
 - 知识问答通过 `useKnowflowEmbed` + iframe 加载 RAGFlow UI。
+- 目录：`frontend/`。
 
 ### 4.3 功能插件注册
 
@@ -221,36 +223,40 @@ sequenceDiagram
   FE-->>Admin: 按权限展示入口
 ```
 
-已实现插件示例：`translate`、`compare`、`rag`、`speech`、`agent_skills`、`subscriptions` 等（见 `platform/app/features/builtin/`）。
+已实现插件示例：`translate`、`compare`、`rag`、`speech`、`agent_skills`、`subscriptions` 等（见 `backend/app/features/builtin/`）。
 
-### 4.4 Agent Skills 与工具循环（v4.8.6）
+### 4.4 多智能体与工具循环（v4.9.0）
 
 ```mermaid
-flowchart LR
-  subgraph skills [Skill 框架 app/skills]
-    REG[registry 内置]
-    CAT[catalog Discovery]
-    EXEC[executor Activation]
-  end
-
-  subgraph agent [AI 智能体]
-    CHAT[ai_chat_service]
-    LOOP[agent_tool_loop]
-    SUB[subagent search/use/execute]
-    TOOLS[agent_tools + find_skills]
-  end
-
-  REG --> CAT
-  CAT --> CHAT
-  CHAT --> LOOP
-  LOOP --> TOOLS
-  LOOP --> SUB
-  TOOLS --> EXEC
-  EXEC --> KB[knowledge_qa / kg / searxng]
-  EXEC --> MD[上传 SKILL.md]
+flowchart TB
+  API[ai_chat / openai_compat / aip] --> SUP[Supervisor 路由]
+  SUP --> ORCH[调度 orchestrator]
+  ORCH -->|invoke_context_subagent| SUB[子智能体 search/use/execute]
+  ORCH -->|request_orchestrator_assist| SP[专精 Agent]
+  SP --> LOOP[六相 tool loop]
+  SUB --> LOOP
+  ORCH --> LOOP
+  LOOP --> TOOLS[app/tools 原子工具]
+  LOOP --> SK[app/skills + agent_md/skills]
+  SP -->|AIP handoff| SUP
 ```
 
-AI 首页对话不再 HTTP 层预检索；LLM 通过原子工具与 Skill 按需激活。v4.4.1 起工具循环采用 **`AgentLoopSession` 短会话**。v4.6.0 新增 **AgentKit 包拆分**。v4.8.x 将旧 `kg_palantir` 拆为 `ontology` + `kg`。**v4.8.6**：子智能体统一为 `search` / `use` / `execute`（移除 `explore` 与独立 `rpa` 专精）；`find_skills` 替代 `search_skills`；新增理财/双碳助手、笔记、提示词与 `share_token` 公开分享。详见 [Agent Skills 实现](../implementation/agent-skills-implementation.md)、[功能实现 §17–§20](../operations/feature-implementation.md) 与 [系统架构](../operations/architecture.md#容量与连接池v460)。
+| 层 | 路径 | 职责 |
+|----|------|------|
+| 可抽离库 | `backend/app/agent/` | 路由、DAG、AIP、loop 终稿、子智能体、Skill/Tool 泛型 |
+| 宿主循环 | `app/services/agent_tool_loop.py` | 六相：输入→组装→推理→执行→观测→记忆 |
+| 配置 | `backend/agent_md/` | agents / routing / tools / skills（热加载；路由偏好唯一源） |
+| 平台 Tool/Skill | `app/tools/` · `app/skills/` | 全局注册与执行 |
+
+**要点（现状）**：
+
+- 对外阶段 **Plan-and-Execute**：`thinking → planning → executing`；单 Agent 内再跑六相 tool loop。
+- 调度**不直执**原子工具；检索/浏览器等经子智能体，领域操作经专精。
+- 智能体间经 **AIP**（task_request / handoff / 会话总线）通信；多 hop 可 **sequential / parallel / TaskDAG**。
+- 子智能体：`search` / `use` / `execute`；专精含 platform / report / skill-dev / carbon / power-economy / stock。
+- 终稿基于观测证据；HITL 覆盖危险工具；业务偏好写在 MD。
+
+详见 [Agent 架构](../agent-architecture.md)（通信 · 并行 · Plan-and-Execute）、[Agent Skills 实现](../implementation/agent-skills-implementation.md)。
 
 ---
 
@@ -258,7 +264,7 @@ AI 首页对话不再 HTTP 层预检索；LLM 通过原子工具与 Skill 按需
 
 ```mermaid
 flowchart TB
-  root[企业 AI 知识库平台]
+  root[本析-企业级 AI 智能体平台]
   root --> IAM[IAM]
   root --> DOC[文档库]
   root --> KB[知识服务]
@@ -278,8 +284,10 @@ flowchart TB
   AI --> AI3[网站收藏 / 录音转写]
   AI --> AI4[理财助手 / 双碳助手]
   AI --> AI5[工作笔记 / 提示词]
+  AI --> AI6[多智能体调度 / 专精 / 子智能体]
   OPS --> OPS1[审计监控]
   OPS --> OPS2[待办通知 / 部署脚本]
+  OPS --> OPS3[数据备份 backups/]
 ```
 
 | 域 | 数据主存储 | 外部依赖 |
@@ -294,6 +302,7 @@ flowchart TB
 | 理财助手 | PostgreSQL `finance_*` | AKShare、行情源 |
 | 双碳助手 | PostgreSQL `carbon_reports` | 碳价/政策数据源 |
 | 笔记 / 提示词 | PostgreSQL `notes` / `prompt_templates` | — |
+| 多智能体 | PostgreSQL（会话/任务）+ Redis（HITL/checkpoint）+ MinIO（agent-memory） | LLM、沙箱（Skill 脚本） |
 
 ---
 
@@ -304,7 +313,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
   participant FE as 前端
-  participant API as platform API
+  participant API as backend API
   participant DB as PostgreSQL
   participant RF as RAGFlow 可选
 
@@ -324,7 +333,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant FE as 前端
-  participant API as platform API
+  participant API as backend API
   participant MN as MinIO
   participant KF as KnowledgeGateway 可选
 
@@ -411,7 +420,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
   participant U as 用户
-  participant API as platform API
+  participant API as backend API
   participant KG as KnowledgeGateway
   participant RF as RAGFlow
   participant KB as KnowFlow Backend
@@ -430,7 +439,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant FE as 前端
-  participant API as platform API
+  participant API as backend API
   participant DB as PostgreSQL
   participant CEL as Celery
   participant PDF as pdf2zh_next
@@ -454,7 +463,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant FE as 前端
-  participant API as platform API
+  participant API as backend API
   participant BG as BackgroundTasks
   participant KF as KnowFlow 可选
 
@@ -568,9 +577,9 @@ erDiagram
 
 | 难点 | 说明 |
 |------|------|
-| **问题** | 开发机 arm64 无法直接用 amd64 预构建 KnowFlow 镜像；生产需全 Docker 与 `.env.docker` 改写。 |
-| **实现** | ① `dev.sh` 统一子命令；② `docker-compose.knowflow.yml` 源码构建 + `docker-compose.knowflow.amd64.yml` 预构建；③ `scripts/deploy.sh` 生成 `knowflow.env.docker`、不改密钥只改服务名。 |
-| **文档** | [部署指南](../operations/deployment.md)、`scripts/README.md` |
+| **问题** | 开发机 arm64 与生产 amd64 镜像差异；需统一编排入口与数据卷。 |
+| **实现** | ① `./dev.sh docker` / `scripts/stack.sh` 统一编排；② 根目录 `compose.yaml` + `compose.dev.yaml` + `deploy/knowflow.yml`（profile）；③ `DATA_ROOT` 挂载 postgres/minio/knowflow-*；④ `stack.sh backup` → `backups/<时间戳>/`。 |
+| **文档** | [部署指南](../operations/deployment.md)、[组件与数据存储](../operations/components-and-storage.md)、`scripts/README.md` |
 
 ### 8.8 文档对比：异步 diff + 可选语义检索
 
@@ -605,11 +614,11 @@ erDiagram
 | 4 | scope 演进 | migrate + `document_scope` 单点判定 | `schema_migrate`, `document_scope` |
 | 5 | 功能扩展 | FeatureRegistry 插件 | `features/builtin/*` |
 | 6 | iframe 问答 | embed-session + 主题代理 | `rag.py`, `useKnowflowEmbed` |
-| 7 | 跨架构部署 | compose 分文件 + deploy 脚本 | `scripts/`, `docker-compose.*` |
+| 7 | 跨架构部署 | compose + stack/dev.sh + DATA_ROOT/backups | `configs/compose/`、`scripts/` |
 | 8 | 文档对比 | 异步 job + ACL 白名单检索 | `compare` 插件 |
 | 9 | 外部内容 | fetch + markdown + 摘要 | `integrations/web_*`, `subscription_*` |
 | 10 | 错误体验 | 统一 ApiResponse + 中文文案 | `core/exceptions`, `client.js` |
-| 11 | Agent Skills | Discovery 常驻 + tool loop 按需 Activation | `app/skills/*`, `agent_tool_loop` |
+| 11 | 多智能体 | 调度/专精/子智能体 + 六相 loop + agent_md | `app/agent/*`, `agent_tool_loop`, `agent_md/` |
 
 ---
 
@@ -617,13 +626,14 @@ erDiagram
 
 | 层次 | 技术 |
 |------|------|
-| 前端 | Vue 3、Vite、Naive UI、Vue Router |
-| 后端 | FastAPI、SQLAlchemy 2、Pydantic、Celery |
-| 数据 | PostgreSQL、Redis、MinIO |
-| 翻译 | pdf2zh_next / BabelDOC |
-| 知识 | RAGFlow + KnowFlow（可选） |
+| 前端 | Vue 3、Vite、Naive UI、Vue Router（`frontend/`） |
+| 后端 | FastAPI、SQLAlchemy 2、Pydantic、Celery（`backend/`） |
+| 智能体 | `app.agent` 可抽离库 + Supervisor/六相 loop；指令 `agent_md/` |
+| 数据 | PostgreSQL、Redis、MinIO；备份 `backups/` |
+| 翻译 | pdf2zh / BabelDOC（third_party） |
+| 知识 | RAGFlow + KnowFlow + Infinity（可选 profile） |
 | 语音 | FunASR Docker、CAM++ 说话人 |
-| 文档站 | MkDocs Material |
+| 文档站 | MkDocs Material（:40100 / GitHub Pages） |
 
 ---
 
@@ -632,9 +642,11 @@ erDiagram
 | 主题 | 文档 |
 |------|------|
 | 运维与端口 | [系统架构](../operations/architecture.md) · [配置说明](../operations/configuration.md) |
+| 数据与备份 | [组件与数据存储](../operations/components-and-storage.md) |
 | 分层与迁移 | [分层架构](./layered-architecture.md) |
 | RBAC 与文档 ACL | [权限模型](../platform/permission-model.md) |
 | 功能插件开发 | [功能插件](../platform/feature-plugins.md) |
+| Agent 架构 / 哲学 | [Agent 架构](../agent-architecture.md) · [设计哲学](../agent-philosophy.md) |
 | Agent Skills | [Agent Skills 实现](../implementation/agent-skills-implementation.md) |
 | 文档对比产品 | [文档对比](../platform/doc-compare-product-design.md) |
 | 快速上手 | [getting-started.md](../getting-started.md) |

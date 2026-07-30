@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 210" fill="none" aria-hidden="true">
+  <defs>
+    <g id="sider-leaf" stroke-linecap="round" stroke-linejoin="round">
+      <path fill="#8EC4E8" fill-opacity="0.1" stroke="#8EC4E8" stroke-width="1.05" d="M50 8C70 20 84 48 88 86C92 124 78 152 54 168C52 170 51 170 50 170C49 170 48 170 46 168C22 152 8 124 12 86C16 48 30 20 50 8Z"/>
+      <path fill="none" stroke="#8EC4E8" stroke-width="0.68" d="M50 164C51 128 52 78 50 22"/>
+      <g fill="none" stroke="#8EC4E8" stroke-width="0.4" opacity="0.8">
+        <path d="M50 52C40 57 31 65 26 74"/>
+        <path d="M50 52C60 57 69 65 74 74"/>
+        <path d="M50 88C38 95 28 105 22 116"/>
+        <path d="M50 88C62 95 72 105 78 116"/>
+        <path d="M50 124C40 131 31 140 26 150"/>
+        <path d="M50 124C60 131 69 140 74 150"/>
+      </g>
+    </g>
+  </defs>
+  <use href="#sider-leaf" transform="translate(62 198) rotate(36) translate(-50 -170)"/>
+  <path fill="#0D2A47" d="M50 8C70 20 84 48 88 86C92 124 78 152 54 168C52 170 51 170 50 170C49 170 48 170 46 168C22 152 8 124 12 86C16 48 30 20 50 8Z" transform="translate(98 188) rotate(42) translate(-50 -170)"/>
+  <use href="#sider-leaf" transform="translate(98 188) rotate(42) translate(-50 -170)"/>
+</svg>

@@ -216,6 +216,9 @@ def test_wait_for_parse_raises_on_failed_status_with_detail():
         ), patch(
             "app.services.knowledge_sync_job_service._index_job_should_abort",
             return_value=False,
+        ), patch(
+            "app.services.knowledge_sync_job_service._maybe_fallback_plain_text_parse",
+            return_value=False,
         ):
             with pytest.raises(RuntimeError) as exc:
                 _wait_for_parse(
@@ -227,6 +230,57 @@ def test_wait_for_parse_raises_on_failed_status_with_detail():
                     max_wait_sec=5,
                 )
         assert "Visual model error" in str(exc.value)
+        db.close.assert_called()
+
+
+def test_wait_for_parse_retries_after_ocr_fallback():
+    job_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    user = MagicMock(id=user_id)
+    job = MagicMock(id=job_id, progress=70, payload={"layout_recognize": "PaddleOCR"})
+    document = MagicMock(id=document_id)
+    polls = {"n": 0}
+
+    def fake_status(*_a, **_k):
+        polls["n"] += 1
+        if polls["n"] == 1:
+            return (
+                "解析失败",
+                None,
+                -1,
+                "文档解析失败：PaddleOCR 版面识别失败，请更换识别方式后重试，或联系管理员。",
+            )
+        return ("已完成", 10, 100, None)
+
+    db, stack = _mock_parse_session(job=job, user=user, document=document)
+    with stack:
+        with patch(
+            "app.services.knowledge_sync_job_service._parse_run_status",
+            side_effect=fake_status,
+        ), patch(
+            "app.services.knowledge_sync_job_service.update_job_status",
+        ), patch(
+            "app.services.knowledge_sync_job_service._index_job_should_abort",
+            return_value=False,
+        ), patch(
+            "app.services.knowledge_sync_job_service._maybe_fallback_plain_text_parse",
+            return_value=True,
+        ) as fallback, patch(
+            "app.services.knowledge_sync_job_service.time.sleep",
+            return_value=None,
+        ):
+            out = _wait_for_parse(
+                job_id=job_id,
+                user_id=user_id,
+                document_id=document_id,
+                dataset_id="ds",
+                ragflow_document_id="doc",
+                max_wait_sec=30,
+            )
+        assert out is True
+        assert fallback.call_count == 1
+        assert polls["n"] == 2
         db.close.assert_called()
 
 
@@ -275,35 +329,99 @@ def test_wait_for_parse_defers_when_still_running_after_wait():
         assert out is False
 
 
-def test_defer_awaiting_parse_phase_schedules_with_countdown():
-    from app.services.knowledge_sync_job_service import _defer_awaiting_parse_phase
+def test_wait_for_parse_bootstraps_when_unparsed():
+    from app.models.job import Job, JobStatus, JobType
+    from app.models.org import User
 
-    job = MagicMock()
-    job.id = uuid.uuid4()
-    job.payload = {}
+    job_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    job = Job(
+        id=job_id,
+        type=JobType.document_index.value,
+        status=JobStatus.running.value,
+        created_by=user_id,
+        document_id=document_id,
+        progress=90,
+        payload={},
+    )
+    user = MagicMock(spec=User)
+    user.id = user_id
+    document = MagicMock()
+    document.id = document_id
+
     db = MagicMock()
+    db.get.side_effect = lambda model, key: {
+        (Job, job_id): job,
+        (User, user_id): user,
+    }.get((model, key))
+
+    clock = {"t": 1000.0}
+    polls = {"n": 0}
+    bootstraps = {"n": 0}
+
+    def fake_time():
+        return clock["t"]
+
+    def fake_sleep(sec):
+        clock["t"] += float(sec)
+
+    def fake_status(*_a, **_k):
+        polls["n"] += 1
+        if bootstraps["n"] == 0:
+            return ("未解析", 0, 0, None)
+        return ("已完成", 1, 100, None)
+
+    def fake_bootstrap(*_a, **_k):
+        bootstraps["n"] += 1
+        return 0
+
+    settings = MagicMock(
+        knowledge_parse_poll_interval_sec=1,
+        knowledge_parse_soft_extend_sec=60,
+        knowledge_parse_initial_wait_sec=30,
+    )
 
     with patch(
+        "app.config.get_settings", return_value=settings
+    ), patch(
+        "app.database.SessionLocal", return_value=db
+    ), patch(
+        "app.services.knowledge_sync_job_service.get_document",
+        return_value=document,
+    ), patch(
         "app.services.knowledge_sync_job_service._index_job_should_abort",
         return_value=False,
     ), patch(
+        "app.services.knowledge_sync_job_service._background_actor",
+        return_value=user,
+    ), patch(
+        "app.services.knowledge_sync_job_service._parse_run_status",
+        side_effect=fake_status,
+    ), patch(
+        "app.services.knowledge_sync_job_service._maybe_bootstrap_ragflow_parse",
+        side_effect=fake_bootstrap,
+    ), patch(
         "app.services.knowledge_sync_job_service.update_job_status",
     ), patch(
-        "app.services.knowledge_sync_job_service.dispatch_index_job",
-    ) as dispatch, patch(
-        "app.config.get_settings",
-        return_value=MagicMock(knowledge_parse_poll_interval_sec=5),
+        "app.services.knowledge_sync_job_service.renew_execution_lease",
+    ), patch(
+        "app.services.knowledge_sync_job_service.time.time",
+        fake_time,
+    ), patch(
+        "app.services.knowledge_sync_job_service.time.sleep",
+        fake_sleep,
     ):
-        _defer_awaiting_parse_phase(
-            db,
-            job,
-            dataset_id="ds-1",
-            ragflow_document_id="rid-1",
-            mode="reindex",
-            version_id_raw=None,
+        out = _wait_for_parse(
+            job_id=job_id,
+            user_id=user_id,
+            document_id=document_id,
+            dataset_id="ds",
+            ragflow_document_id="rid",
+            max_wait_sec=20,
+            update_progress=False,
         )
 
-    dispatch.assert_called_once()
-    assert dispatch.call_args.kwargs.get("countdown", 0) >= 2
-    assert (job.payload or {}).get("index_phase") == "awaiting_parse"
-    assert (job.payload or {}).get("awaiting_parse") is True
+    assert out is True
+    assert bootstraps["n"] >= 1
+    assert polls["n"] >= 2

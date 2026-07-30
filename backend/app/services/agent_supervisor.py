@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-
-from app.agentkit.aip.orchestration import merge_hop_citations
+from app.agent.aip.orchestration import merge_hop_citations
 from app.core.agent.types import (
     AgentRoute,
     AgentRoutePlan,
@@ -31,7 +29,6 @@ from app.services.agent_intent import (
 from app.services.agent_orchestrator import (
     OrchestratorTask,
 )
-from app.config import get_settings
 from app.services.agent_route_resolver import (
     resolve_agent_route_plan,
 )
@@ -205,139 +202,6 @@ def _orchestrator_progress_event(
     }
 
 
-async def _execute_tasks_with_orchestrator_progress(
-    subagent_generator,
-    *,
-    agent_titles: list[str],
-    progress_interval: float = 2.5,
-) -> AsyncIterator[dict[str, Any]]:
-    """包装子任务流，在后台任务运行时交织调度端进度事件。
-
-    所有子智能体同时在后台运行，调度器不阻塞等待，而是周期性发送
-    orchestrator_progress 事件，让前端看到调度仍在工作。
-    """
-    queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue(maxsize=200)
-    total = len(agent_titles)
-    completed = 0
-    results: list[Any] = []
-
-    async def _subagent_forwarder():
-        nonlocal completed, results
-        try:
-            async for event in subagent_generator:
-                # 检测 complete 事件 → 任务完成计数+1
-                if event.get("type") == "complete":
-                    completed = min(completed + 1, total)
-                await queue.put(("event", event))
-        except asyncio.TimeoutError:
-            await queue.put(("timeout", None))
-        except Exception as exc:
-            import traceback
-            await queue.put(("error", f"子任务异常：{exc}\n{traceback.format_exc()}"))
-        finally:
-            await queue.put(("_done", None))
-
-    forward_task = asyncio.create_task(_subagent_forwarder())
-
-    async def _progress_emitter():
-        while True:
-            await asyncio.sleep(progress_interval)
-            running = agent_titles[completed:]
-            if not running:
-                # 全部完成，发射最终进度
-                try:
-                    await queue.put(
-                        ("progress", _orchestrator_progress_event(detail=f"✔ 全部完成（{completed}/{total}）"))
-                    )
-                except asyncio.QueueFull:
-                    pass
-                continue
-            try:
-                detail = f"调度中 · {'、'.join(running)} · {completed}/{total}"
-                running_agent = running[0] if running else ""
-                await queue.put(("progress", _orchestrator_progress_event(
-                    detail=detail,
-                    agent_title=running_agent,
-                )))
-            except asyncio.QueueFull:
-                pass
-
-    progress_task = asyncio.create_task(_progress_emitter())
-
-    timeout = getattr(get_settings(), "agent_subagent_timeout_sec", 600) or 600
-    last_real_event_time = time.monotonic()
-    # 连续 N 秒仅收到心跳事件（无 delta/workflow/complete），判定为卡住。
-    # 须大于工具执行超时（agent_tool_timeout_sec，默认 60s），
-    # 因为 search 子智能体执行多轮 web_search 时父工具循环被阻塞，
-    # 不会产生事件。若 stall 阈值小于工具超时，会在工具正常执行中被误触发。
-    max_stalled_sec = 120
-    stall_reason = ""
-
-    try:
-        while True:
-            stall_elapsed = time.monotonic() - last_real_event_time
-            if stall_elapsed >= max_stalled_sec:
-                stall_reason = f"子任务 {max_stalled_sec}s 未产出有效事件，强制结束（已完成 {completed}/{total}）"
-                _logger.warning(stall_reason)
-                yield {
-                    "type": "complete",
-                    "reply": f"子任务执行卡住：{stall_reason}",
-                    "messages": [],
-                    "citations": [],
-                    "kg_context": None,
-                }
-                break
-            try:
-                kind, payload = await asyncio.wait_for(queue.get(), timeout=timeout)
-            except asyncio.TimeoutError:
-                stall_reason = f"子任务执行超时（{timeout}s），强制结束（已完成 {completed}/{total}）"
-                _logger.warning(stall_reason)
-                yield {
-                    "type": "complete",
-                    "reply": f"子任务执行超时：{stall_reason}",
-                    "messages": [],
-                    "citations": [],
-                    "kg_context": None,
-                }
-                break
-            if kind == "_done":
-                completed = total
-                break
-            elif kind == "timeout":
-                stall_reason = f"子任务生成器内部超时（已完成 {completed}/{total}）"
-                _logger.warning(stall_reason)
-                yield {
-                    "type": "complete",
-                    "reply": f"子任务内部超时：{stall_reason}",
-                    "messages": [],
-                    "citations": [],
-                    "kg_context": None,
-                }
-                break
-            elif kind == "error":
-                stall_reason = f"子任务异常：{payload[:200]}"
-                _logger.error("子任务异常：%s", payload[:500])
-                yield {"type": "complete", "reply": f"子任务执行错误：{payload[:200]}", "messages": [], "citations": [], "kg_context": None}
-                break
-            elif kind == "event":
-                last_real_event_time = time.monotonic()
-                yield payload
-            elif kind == "progress":
-                last_real_event_time = time.monotonic()
-                yield payload
-    finally:
-        progress_task.cancel()
-        try:
-            await progress_task
-        except asyncio.CancelledError:
-            pass
-        forward_task.cancel()
-        try:
-            await forward_task
-        except asyncio.CancelledError:
-            pass
-
-
 def _merge_context_instruction(base: str, extra: str) -> str:
     parts = [(base or "").strip(), (extra or "").strip()]
     return "\n\n".join(p for p in parts if p)
@@ -349,54 +213,6 @@ def _is_capability_gap_plan(plan: AgentRoutePlan) -> bool:
 
 def _is_auto_skill_dev_plan(plan: AgentRoutePlan) -> bool:
     return plan.source == "capability_gap_skill_dev"
-
-
-async def _execute_route_plan(
-    plan: AgentRoutePlan,
-    *,
-    sess: AgentLoopSession,
-    user_id: uuid.UUID,
-    messages: list[dict[str, Any]],
-    conversation_id: str | None,
-    max_rounds: int | None,
-    user_message: str,
-    attachment_session_id: str | None,
-    intent_plan: AgentToolPlan | None,
-    chat_history: list[AiChatMessage] | None,
-    retrieval_context: str,
-    context_instruction: str,
-) -> AsyncIterator[dict[str, Any]]:
-    routes = list(plan.routes)
-    hop_context = _merge_context_instruction(
-        context_instruction, plan.capability_gap_instruction
-    )
-    if not routes:
-        async for event in _execute_empty_routes(
-            messages
-        ):
-            yield event
-        return
-
-    if _is_capability_gap_plan(plan):
-        async for event in _execute_capability_gap(
-            plan, routes[0], messages, hop_context
-        ):
-            yield event
-        return
-
-    async for event in _execute_single_route(
-        routes[0], sess, user_id, messages, conversation_id,
-        max_rounds, user_message, attachment_session_id,
-        intent_plan, chat_history, retrieval_context,
-        context_instruction, hop_context, plan,
-    ):
-        yield event
-
-
-async def _execute_empty_routes(
-    messages: list[dict[str, Any]],
-) -> AsyncIterator[dict[str, Any]]:
-    yield _build_final_complete(messages=messages, hop_completes=[], reply=None)
 
 
 async def _execute_capability_gap(
@@ -454,169 +270,11 @@ async def _execute_capability_gap(
     yield complete
 
 
-def _single_route_hop_kwargs(
-    route: AgentRoute,
-    sess: AgentLoopSession,
-    user_id: uuid.UUID,
-    messages: list[dict[str, Any]],
-    conversation_id: str | None,
-    max_rounds: int | None,
-    user_message: str,
-    attachment_session_id: str | None,
-    intent_plan: AgentToolPlan | None,
-    chat_history: list[AiChatMessage] | None,
-    retrieval_context: str,
-    context_instruction: str,
-) -> dict[str, Any]:
-    return dict(
-        sess=sess,
-        user_id=user_id,
-        route=route,
-        user_message=user_message,
-        chat_history=chat_history,
-        retrieval_context=retrieval_context,
-        context_instruction=context_instruction,
-        conversation_id=conversation_id,
-        attachment_session_id=attachment_session_id,
-        intent_plan=intent_plan,
-        max_rounds=max_rounds,
-    )
-
-
-async def _execute_single_route(
-    route: AgentRoute,
-    sess: AgentLoopSession,
-    user_id: uuid.UUID,
-    messages: list[dict[str, Any]],
-    conversation_id: str | None,
-    max_rounds: int | None,
-    user_message: str,
-    attachment_session_id: str | None,
-    intent_plan: AgentToolPlan | None,
-    chat_history: list[AiChatMessage] | None,
-    retrieval_context: str,
-    context_instruction: str,
-    hop_context: str,
-    plan: AgentRoutePlan,
-) -> AsyncIterator[dict[str, Any]]:
-    if _is_auto_skill_dev_plan(plan):
-        kwargs = _single_route_hop_kwargs(
-            route, sess, user_id, messages, conversation_id,
-            max_rounds, user_message, attachment_session_id,
-            intent_plan, chat_history, retrieval_context, context_instruction,
-        )
-        async for event in _execute_auto_skill_dev_task_interactive(**kwargs):
-            yield event
-        return
-
-    agent_title = resolve_agent_title(route.agent_id)
-    hop_gen = _run_specialist_hop(
-        sess,
-        user_id,
-        route=route,
-        user_message=user_message,
-        chat_history=chat_history,
-        retrieval_context=retrieval_context,
-        context_instruction=context_instruction,
-        conversation_id=conversation_id,
-        attachment_session_id=attachment_session_id,
-        intent_plan=intent_plan,
-        max_rounds=max_rounds,
-        task_mode=False,
-    )
-
-    needs_reroute = False
-    assist_reason = ""
-    got_complete = False
-    async for event in _execute_tasks_with_orchestrator_progress(
-        hop_gen, agent_titles=[agent_title]
-    ):
-        if event.get("type") == "complete":
-            got_complete = True
-            handoff_msg = event.get("aip_handoff")
-            if handoff_msg and isinstance(handoff_msg, dict):
-                payload = handoff_msg.get("payload", {})
-                if isinstance(payload, dict) and payload.get("status") == "needs_assist":
-                    needs_reroute = True
-                    assist = payload.get("assist", {})
-                    if isinstance(assist, dict):
-                        assist_reason = str(assist.get("reason", "") or "")
-                    if not assist_reason:
-                        assist_reason = str(event.get("reply", "") or "")
-                    continue  # 不转发 specialist 的 complete
-            if not needs_reroute:
-                yield event  # 正常完成，立即转发
-        else:
-            yield event  # 渐进式转发（workflow、delta 等）
-
-    # 正常完成（complete 事件已在循环中 yield）→ 直接返回
-    if got_complete and not needs_reroute:
-        return
-
-    # 安全兜底：如果 progress wrapper 未产出任何 complete（如异常吞没后退出），
-    # 生成一个 fallback complete 事件，避免上游收不到循环结束信号
-    if not got_complete and not needs_reroute:
-        _logger.warning(
-            "专精智能体 %s 未产出 complete 事件，触发安全兜底",
-            agent_title,
-        )
-        yield {
-            "type": "complete",
-            "reply": f"{agent_title} 执行异常中断（未收到完成信号）",
-            "messages": [],
-            "citations": [],
-            "kg_context": None,
-        }
-        return
-
-    # ── 专精智能体无法完成 → 重路由至调度智能体 ──
-    yield {
-        "type": "workflow",
-        "data": {
-            "phase": "agent_thought",
-            "title": f"{agent_title} 请求调度协助",
-            "detail": assist_reason[:120],
-            "tool": "supervisor.reroute",
-            "step_id": f"reroute-{uuid.uuid4().hex[:8]}",
-            "status": "done",
-            "agent_id": route.agent_id,
-            "agent_title": agent_title,
-        },
-    }
-
-    reroute_instruction = (
-        f"【专精智能体无法完成，已交还调度】\n"
-        f"用户原问题：{user_message}\n"
-        f"专精智能体 [{agent_title}] 反馈：{assist_reason}\n\n"
-        f"请根据以上信息重新处理用户请求，可直接回复或分配给其他智能体。"
-    )
-
-    orch_route = AgentRoute(
-        agent_id="orchestrator",
-        reason=f"{agent_title} 无法完成，由调度重新处理",
-    )
-    async for event in _run_specialist_hop(
-        sess, user_id, route=orch_route,
-        user_message=user_message,
-        chat_history=chat_history,
-        retrieval_context=retrieval_context,
-        context_instruction=reroute_instruction,
-        conversation_id=conversation_id,
-        attachment_session_id=attachment_session_id,
-        intent_plan=intent_plan,
-        max_rounds=max_rounds,
-        task_mode=False,
-    ):
-        yield event
-
-
-async def _execute_multi_route_plan(
+async def _execute_task_dag(
     sess: AgentLoopSession,
     user_id: uuid.UUID,
     *,
-    plan: AgentRoutePlan,
-    routes: list[AgentRoute],
-    mode: str,
+    dag,
     user_message: str,
     chat_history: list[AiChatMessage] | None,
     retrieval_context: str,
@@ -627,81 +285,55 @@ async def _execute_multi_route_plan(
     max_rounds: int | None,
     messages: list[dict[str, Any]],
 ) -> AsyncIterator[dict[str, Any]]:
-    """消费 plan.mode：sequential 串行 hop；parallel 并行 hop 后汇总。"""
-    from app.agentkit.orchestrate.parallel import iter_parallel_task_events
-    from app.agentkit.orchestrate.types import ORCH_TASK_RESULT, TaskExecutionResult
+    """按 TaskDAG 波次调度专精 hop，综合终稿。"""
+    from app.agent.orchestrate.scheduler import iter_dag_wave_events
+    from app.agent.orchestrate.types import ORCH_TASK_RESULT, TaskExecutionResult
+    from app.config import get_settings
     from app.core.stream_cancel import raise_if_stream_cancelled
-    from app.services.agent_orchestrator import tasks_from_routes, workflow_plan_tasks
-
-    tasks = tasks_from_routes(routes)
-    yield workflow_plan_tasks(
-        tasks,
-        step_id=f"multi-{uuid.uuid4().hex[:8]}",
-        mode=mode,
+    from app.services.agent_orchestrator import workflow_plan_tasks
+    from app.services.agent_task_dag_planner import (
+        agent_plan_detail_lines,
+        build_node_user_message,
+        synthesize_dag_final_reply,
     )
 
-    hop_replies: list[str] = []
+    step_id = f"dag-{uuid.uuid4().hex[:8]}"
+    yield workflow_plan_tasks(
+        dag.orchestrator_tasks(),
+        step_id=step_id,
+        mode="dag",
+        detail=dag.summary_chain(),
+        edges=dag.edges(),
+    )
+    plan_detail = agent_plan_detail_lines(dag)
+    yield {
+        "type": "workflow",
+        "data": {
+            "phase": "agent_plan",
+            "title": "制定计划",
+            "detail": plan_detail,
+            "tool": "supervisor.plan",
+            "step_id": step_id,
+            "mode": "dag",
+            "agent_id": "orchestrator",
+            "agent_title": _ORCH_TITLE,
+        },
+    }
+
     hop_completes: list[dict[str, Any]] = []
+    cfg = get_settings()
+    max_par = max(1, int(getattr(cfg, "agent_max_parallel_handoffs", 3) or 3))
 
-    if mode == "sequential":
-        running_msg = user_message
-        for idx, route in enumerate(routes):
-            raise_if_stream_cancelled()
-            complete = None
-            async for event in _run_specialist_hop(
-                sess,
-                user_id,
-                route=route,
-                user_message=running_msg,
-                chat_history=chat_history,
-                retrieval_context=retrieval_context,
-                context_instruction=context_instruction,
-                conversation_id=conversation_id,
-                attachment_session_id=attachment_session_id,
-                intent_plan=intent_plan,
-                max_rounds=max_rounds,
-                task_mode=True,
-            ):
-                if event.get("type") == "complete":
-                    complete = event
-                elif event.get("type") == "step_complete":
-                    complete = {
-                        "type": "complete",
-                        "reply": event.get("reply"),
-                        "messages": event.get("working") or [],
-                        "citations": list(
-                            (event.get("loop_state") or {}).get("citations") or []
-                        ),
-                        "kg_context": (event.get("loop_state") or {}).get("kg_context"),
-                    }
-                elif not _skip_hop_client_preview(event):
-                    yield event
-            if complete:
-                hop_completes.append(complete)
-                reply = str(complete.get("reply") or "").strip()
-                if reply:
-                    hop_replies.append(reply)
-                    title = resolve_agent_title(route.agent_id)
-                    running_msg = (
-                        f"{user_message}\n\n【上一步 {title} 结论】\n{reply[:1200]}"
-                    )
-        merged = "\n\n".join(hop_replies).strip() or None
-        yield _build_final_complete(
-            messages=messages, hop_completes=hop_completes, reply=merged
-        )
-        return
-
-    # parallel
-    results: list[TaskExecutionResult] = []
-
-    async def run_one_task(_sess, *, task, route, **_kw):
-        events: list[dict[str, Any]] = []
+    async def run_one_node(*, node, task, route, **_kw):
+        parent_replies = dag.parent_replies(node.id)
+        node_msg = build_node_user_message(user_message, node, parent_replies)
         complete = None
+        events: list[dict[str, Any]] = []
         async for event in _run_specialist_hop(
             sess,
             user_id,
             route=route,
-            user_message=user_message,
+            user_message=node_msg,
             chat_history=chat_history,
             retrieval_context=retrieval_context,
             context_instruction=context_instruction,
@@ -735,32 +367,30 @@ async def _execute_multi_route_plan(
         )
         yield {"type": ORCH_TASK_RESULT, "result": result}
 
-    async for kind, payload in iter_parallel_task_events(
-        tasks,
-        routes,
-        session_factory=lambda: None,
-        run_one_task=run_one_task,
-        all_tasks=tasks,
+    async for kind, payload in iter_dag_wave_events(
+        dag,
+        run_one_node=run_one_node,
+        max_parallel=max_par,
         agent_title_fn=resolve_agent_title,
-        close_session=None,
     ):
         raise_if_stream_cancelled()
         if kind == "event":
             yield payload
         elif kind == "result" and isinstance(payload, TaskExecutionResult):
-            results.append(payload)
             if payload.complete:
                 hop_completes.append(payload.complete)
-                reply = str(payload.complete.get("reply") or "").strip()
-                if reply:
-                    title = resolve_agent_title(
-                        getattr(payload.route, "agent_id", "") or ""
-                    )
-                    hop_replies.append(f"【{title}】\n{reply}" if title else reply)
 
-    merged = "\n\n".join(hop_replies).strip() or None
+    results = dag.done_results()
+    reply = await synthesize_dag_final_reply(user_message, results)
+    if not reply:
+        # 全部失败时仍给出可读说明
+        failed = [n for n in dag.nodes if n.status == "failed"]
+        if failed:
+            reply = "部分子任务未能完成：" + "；".join(
+                f"{n.title}（{n.last_error or '无结果'}）" for n in failed[:4]
+            )
     yield _build_final_complete(
-        messages=messages, hop_completes=hop_completes, reply=merged
+        messages=messages, hop_completes=hop_completes, reply=reply or None
     )
 
 
@@ -801,10 +431,12 @@ async def iter_supervised_agent_loop(
             )
 
         route_plan_step_id = f"route-plan-{uuid.uuid4().hex[:8]}"
+        will_semantic_probe = False
         if not skip_route_plan_ui:
-            # 硬规则可瞬间返回；需图谱探测时再显示「正在检索知识图谱」
+            # 硬规则可瞬间返回；需图谱探测时再显示本体/图谱服务步骤
             from app.services.agent_route_resolver import _resolve_hard_rule_routes
             from app.services.agent_skill_router import should_skip_kg_probe
+            from app.services.semantic_workflow import semantic_probe_start_events
 
             db_pre, bound_pre = sess.open()
             try:
@@ -816,19 +448,31 @@ async def iter_supervised_agent_loop(
             elif should_skip_kg_probe(user_message):
                 thinking_title = "正在规划方案"
             else:
-                thinking_title = "正在检索知识图谱"
+                will_semantic_probe = True
+                thinking_title = "本体语义中枢与知识图谱服务"
             yield {
                 "type": "workflow",
                 "data": {
                     "phase": "agent_thinking",
                     "title": thinking_title,
-                    "detail": "",
+                    "detail": (
+                        "先理解概念并规划路径，再检索图谱事实"
+                        if will_semantic_probe
+                        else ""
+                    ),
                     "tool": "supervisor.plan",
                     "step_id": route_plan_step_id,
                     "agent_id": "orchestrator",
                     "agent_title": _ORCH_TITLE,
                 },
             }
+            if will_semantic_probe:
+                for ev in semantic_probe_start_events(
+                    route_plan_step_id,
+                    agent_id="orchestrator",
+                    agent_title=_ORCH_TITLE,
+                ):
+                    yield {"type": "workflow", "data": ev}
 
         _logger.info("SUPERVISOR: pre-route-plan %.1fs msg=%s",
                      time.monotonic() - _t_start, user_message[:60])
@@ -848,20 +492,20 @@ async def iter_supervised_agent_loop(
 
         # 知识图谱已足以作答：跳过 Skill/Agent 匹配与 tool loop，立刻推送正文
         kg_direct = (plan.direct_reply or "").strip() if plan.source == "kg_direct" else ""
+        kg_ctx = (plan.kg_context_text or "").strip()
+        if will_semantic_probe and not skip_route_plan_ui:
+            from app.services.semantic_workflow import semantic_probe_done_events
+
+            for ev in semantic_probe_done_events(
+                route_plan_step_id,
+                planning_text=kg_ctx,
+                direct=bool(kg_direct),
+                has_material=bool(kg_ctx),
+                agent_id="orchestrator",
+                agent_title=_ORCH_TITLE,
+            ):
+                yield {"type": "workflow", "data": ev}
         if kg_direct:
-            yield {
-                "type": "workflow",
-                "data": {
-                    "phase": "agent_thought",
-                    "title": "知识图谱直答",
-                    "detail": "已命中，跳过 Skill 匹配",
-                    "tool": "kg_query",
-                    "step_id": route_plan_step_id,
-                    "status": "done",
-                    "agent_id": "orchestrator",
-                    "agent_title": _ORCH_TITLE,
-                },
-            }
             yield {"type": "replace", "text": kg_direct}
             yield {
                 "type": "complete",
@@ -873,7 +517,6 @@ async def iter_supervised_agent_loop(
             return
 
         # 本轮图谱探测结果并入检索上下文，避免 tool loop 重复推理
-        kg_ctx = (plan.kg_context_text or "").strip()
         effective_retrieval = retrieval_context or ""
         if kg_ctx and kg_ctx not in effective_retrieval:
             from app.services.agent_planner import _KG_PLANNING_USER_LABEL
@@ -942,26 +585,46 @@ async def iter_supervised_agent_loop(
                 messages=messages, hop_completes=[], reply=None)
             return
 
+        # ── Task DAG：复合 / 多路由统一走波次调度 ──
         mode = (plan.mode or "single").strip().lower()
-        if mode in ("sequential", "parallel") and len(routes) > 1:
-            async for event in _execute_multi_route_plan(
-                sess,
-                user_id,
-                plan=plan,
-                routes=routes,
-                mode=mode,
-                user_message=user_message,
-                chat_history=chat_history,
-                retrieval_context=effective_retrieval,
-                context_instruction=hop_context,
-                conversation_id=conversation_id,
-                attachment_session_id=attachment_session_id,
-                intent_plan=intent_plan,
-                max_rounds=max_rounds,
-                messages=messages,
-            ):
-                yield event
-            return
+        if not _is_capability_gap_plan(plan) and not _is_auto_skill_dev_plan(plan):
+            from app.services.agent_task_dag_planner import (
+                dag_from_flat_routes,
+                maybe_plan_task_dag,
+            )
+
+            db_dag, bound_dag = sess.open()
+            try:
+                task_dag = await maybe_plan_task_dag(
+                    db_dag,
+                    bound_dag,
+                    user_message,
+                    chat_history=chat_history,
+                    route_plan=plan,
+                )
+            finally:
+                sess.release_before_io()
+            if task_dag is None and len(routes) > 1:
+                task_dag = dag_from_flat_routes(
+                    routes, message=user_message, mode=mode,
+                )
+            if task_dag is not None and len(task_dag.nodes) > 1:
+                async for event in _execute_task_dag(
+                    sess,
+                    user_id,
+                    dag=task_dag,
+                    user_message=user_message,
+                    chat_history=chat_history,
+                    retrieval_context=effective_retrieval,
+                    context_instruction=hop_context,
+                    conversation_id=conversation_id,
+                    attachment_session_id=attachment_session_id,
+                    intent_plan=intent_plan,
+                    max_rounds=max_rounds,
+                    messages=messages,
+                ):
+                    yield event
+                return
 
         route = routes[0]
 
@@ -1088,7 +751,7 @@ async def iter_supervised_agent_loop(
                 loop_state = dict(step_result.get("loop_state") or {})
                 from app.services.agent_reply_synth import has_deliverable_evidence
                 from app.services.agent_tool_loop import emit_final_user_reply
-                from app.agentkit.message.filter import has_mermaid_deliverable
+                from app.agent.message.filter import has_mermaid_deliverable
 
                 diagram_reply = str(
                     step_result.get("reply")

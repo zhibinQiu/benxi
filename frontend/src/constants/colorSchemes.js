@@ -24,34 +24,34 @@ function deepFreeze(obj) {
   return Object.freeze(obj);
 }
 
-/** Naive UI 主题覆盖色板（蓝色系） */
+/** Naive UI 主题覆盖色板（Smart Carbon Blue） */
 export const NAIVE_PALETTES = deepFreeze({
   blue: {
     light: {
-      primary: "#0a6bff",
-      primaryHover: "#0058e0",
-      primaryPressed: "#004ac2",
-      primarySuppl: "#004ac2",
-      focusBorder: "#a0a0a0",
-      focusShadow: "0 0 0 2px rgba(0, 0, 0, 0.12)",
-      menuActiveBg: "#e6e6e6",
-      menuActiveBgHover: "#d9d9d9",
-      dropdownActiveBg: "rgba(0, 0, 0, 0.06)",
-      tabActive: "#0a6bff",
-      dropdownActiveText: "#0a6bff",
+      primary: "#005A9E",
+      primaryHover: "#00497F",
+      primaryPressed: "#003A66",
+      primarySuppl: "#003B6B",
+      focusBorder: "#7DBCE8",
+      focusShadow: "0 0 0 2px rgba(0, 90, 158, 0.18)",
+      menuActiveBg: "rgba(255, 255, 255, 0.12)",
+      menuActiveBgHover: "rgba(255, 255, 255, 0.16)",
+      dropdownActiveBg: "rgba(0, 90, 158, 0.08)",
+      tabActive: "#005A9E",
+      dropdownActiveText: "#005A9E",
     },
     dark: {
-      primary: "#4d94ff",
-      primaryHover: "#6ea3ff",
-      primaryPressed: "#3b82ff",
-      primarySuppl: "#3b82ff",
-      focusBorder: "#585868",
-      focusShadow: "0 0 0 2px rgba(255, 255, 255, 0.10)",
-      menuActiveBg: "rgba(255, 255, 255, 0.08)",
-      menuActiveBgHover: "rgba(255, 255, 255, 0.12)",
-      dropdownActiveBg: "rgba(255, 255, 255, 0.08)",
-      tabActive: "#4d94ff",
-      dropdownActiveText: "#4d94ff",
+      primary: "#459BDB",
+      primaryHover: "#7DBCE8",
+      primaryPressed: "#1A7FD4",
+      primarySuppl: "#1A7FD4",
+      focusBorder: "#7DBCE8",
+      focusShadow: "0 0 0 2px rgba(69, 155, 219, 0.22)",
+      menuActiveBg: "rgba(255, 255, 255, 0.1)",
+      menuActiveBgHover: "rgba(255, 255, 255, 0.14)",
+      dropdownActiveBg: "rgba(69, 155, 219, 0.16)",
+      tabActive: "#459BDB",
+      dropdownActiveText: "#459BDB",
     },
   },
 });

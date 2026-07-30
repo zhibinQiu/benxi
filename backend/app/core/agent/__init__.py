@@ -7,7 +7,6 @@ from app.core.agent.routing import (
     is_routing_ambiguous,
     pick_route,
     plan_orchestrator_direct,
-    should_use_llm_routing,
 )
 from app.core.agent.subagent import execute_context_subagent
 from app.core.agent.types import (
@@ -31,5 +30,4 @@ __all__ = [
     "is_routing_ambiguous",
     "pick_route",
     "plan_orchestrator_direct",
-    "should_use_llm_routing",
 ]

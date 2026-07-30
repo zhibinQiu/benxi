@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from app.agentkit.config import MarkdownConfigLoader
+from app.agent.config import MarkdownConfigLoader
 from app.core.agent_profiles import AgentProfileDef
 from app.core.exceptions import bad_request
 
@@ -15,14 +15,14 @@ STYLE_MD_FILENAME = "STYLE.md"
 
 
 class _InstructionLoader(MarkdownConfigLoader):
-    """智能体指令加载器：从 agents/instructions/*.md 读取。
+    """智能体指令加载器：从 agent_md/agents/*.md 读取。
 
     每个 MD 文件使用 YAML frontmatter 定义 id/title/description，
     正文部分为智能体的指令内容。
     修改 MD 文件后立即生效（mtime 检测）。
     """
 
-    _CONFIG_DIR = "agents/instructions"
+    _CONFIG_DIR = "agent_md/agents"
     _SCAN_INTERVAL = 2.0
     _SKIP_FRONTMATTER = True  # 只保留正文
 

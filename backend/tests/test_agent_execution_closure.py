@@ -10,7 +10,7 @@ from app.services.agent_execution_closure import (
     replan_after_missing_skill_data,
     resolve_target_uploaded_skill,
 )
-from app.agentkit.loop import AgentExecutionPlan
+from app.agent.loop import AgentExecutionPlan
 
 
 def test_infer_skill_script_args_for_beijing():

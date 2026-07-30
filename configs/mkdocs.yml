@@ -1,10 +1,12 @@
 site_name: 本析-企业级 AI 智能体平台
 site_description: 本析多智能体架构、编排与企业 AI 能力文档（中文）
+site_url: https://zhibinqiu.github.io/benxi/
 repo_url: https://github.com/zhibinQiu/benxi
 edit_uri: edit/main/docs/zh/
 
 use_directory_urls: false
 docs_dir: ../docs/zh
+site_dir: ../site
 
 theme:
   name: material
@@ -22,8 +24,9 @@ theme:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: pink
-  favicon: ../icon/yezi.svg
-  logo: ../icon/yezi.svg
+  # 路径相对 docs_dir（docs/zh）
+  favicon: ../../icon/yezi.svg
+  logo: ../../icon/yezi.svg
 
 plugins:
   - search

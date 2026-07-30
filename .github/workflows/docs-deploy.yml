@@ -5,7 +5,8 @@ on:
       - main
     paths:
       - 'docs/**'
-      - 'mkdocs.yml'
+      - 'configs/mkdocs.yml'
+      - 'icon/**'
       - '.github/workflows/docs-deploy.yml'
   workflow_dispatch:
 
@@ -25,4 +26,4 @@ jobs:
         run: |
           pip install -r docs/requirements-docs.txt
       - name: 部署文档站点
-        run: mkdocs gh-deploy --force
+        run: mkdocs gh-deploy --force -f configs/mkdocs.yml

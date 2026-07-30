@@ -19,7 +19,6 @@ backups/
 # 数据持久化目录（服务器 /root/qzb/benxi/data），内容由容器管理，不提交
 data/
 *.tar.gz
-configs/mkdocs.yml
 .npm-cache/
 .ruff_cache/
 site/
